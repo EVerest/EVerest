@@ -14,6 +14,7 @@
 #include <generated/types/evse_manager.hpp>
 #include <generated/types/grid_support.hpp>
 #include <generated/types/iso15118.hpp>
+#include <generated/types/network.hpp>
 #include <generated/types/ocpp.hpp>
 #include <generated/types/reservation.hpp>
 #include <generated/types/system.hpp>
@@ -318,6 +319,19 @@ ocpp::v2::ChangeAvailabilityRequest
 to_ocpp_change_availability_request(const types::ocpp::ChangeAvailabilityRequest& request);
 types::ocpp::ChangeAvailabilityResponse
 to_everest_change_availability_response(const ocpp::v2::ChangeAvailabilityResponse& response);
+
+/// \brief Converts a given ocpp::v2::OCPPInterfaceEnum \p iface to a types::network::InterfaceClass.
+types::network::InterfaceClass to_everest_interface_class(const ocpp::v2::OCPPInterfaceEnum iface);
+
+/// \brief Converts a given ocpp::v2::APN \p apn to a types::network::APN.
+types::network::APN to_everest_network_apn(const ocpp::v2::APN& apn);
+
+/// \brief Converts a given ocpp::v2::VPN \p vpn to a types::network::VPN.
+types::network::VPN to_everest_network_vpn(const ocpp::v2::VPN& vpn);
+
+/// \brief Converts \p profile and \p request_id (correlation id) to a types::network::ConfigureNetworkRequest.
+types::network::ConfigureNetworkRequest
+to_everest_configure_network_request(const int32_t request_id, const ocpp::v2::NetworkConnectionProfile& profile);
 
 /// \brief Converts a given ocpp::v2::DERControlEnum \p control_type to a types::grid_support::DirectiveType.
 /// \details Total over the 22 OCPP DERControlEnum values; the 6 ISO-only DirectiveType values have no OCPP producer.

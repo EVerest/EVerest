@@ -401,9 +401,8 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
                                                          const auto& network_connection_profile) {
         return m_callbacks_ptr->cb_validate_network_profile(network_connection_profile);
     };
-    callbacks.configure_network_connection_profile_callback = [this](auto /* configuration_slot */,
-                                                                     const auto& /* network_connection_profile */) {
-        return m_callbacks_ptr->cb_configure_network_connection_profile();
+    callbacks.configure_network_connection_profile_callback = [this](auto&&... args) {
+        return m_callbacks_ptr->cb_configure_network_connection_profile(args...);
     };
     callbacks.all_connectors_unavailable_callback = [this]() { m_callbacks_ptr->cb_all_connectors_unavailable(); };
     callbacks.transaction_event_callback = [this](const ocpp::v2::TransactionEventRequest& transaction_event) {

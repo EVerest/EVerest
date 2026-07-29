@@ -78,7 +78,9 @@ struct GenericChargePointCallbacks {
                                    const types::iso15118::ChargingNeeds& charging_needs) = 0;
     virtual ocpp::v2::ClearDisplayMessageResponse
     cb_clear_display_message(const ocpp::v2::ClearDisplayMessageRequest& request) = 0;
-    virtual std::future<ocpp::ConfigNetworkResult> cb_configure_network_connection_profile() = 0;
+    virtual std::future<ocpp::ConfigNetworkResult>
+    cb_configure_network_connection_profile(std::int32_t configuration_slot,
+                                            const ocpp::v2::NetworkConnectionProfile& network_connection_profile) = 0;
     virtual bool cb_connector_effective_operative_status(std::int32_t evse_id, std::int32_t connector_id,
                                                          ocpp::v2::OperationalStatusEnum new_status) = 0;
     virtual void cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version) = 0;
