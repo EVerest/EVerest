@@ -69,6 +69,19 @@ config:
       for future authorization attempts.
     type: boolean
     default: false
+  stop_transaction_on_reswipe:
+    description: >-
+      Boolean value describing the behavior when a token (or a token sharing the same parent id token) that was used
+      to start a transaction is presented again while the transaction is active.
+
+      If true, presenting the token again stops the ongoing transaction.
+
+      If false, the transaction is not stopped. Instead, the token_validation_status var reports UsedToReauthorize with
+      the referenced EVSE in the token's connectors field. This allows e.g. a display application to let the user
+      decide whether to stop the transaction manually. Stopping transactions via the master pass group id is not
+      affected by this option.
+    type: boolean
+    default: true
 provides:
   main:
     description: This implements the auth interface for EVerest

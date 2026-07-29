@@ -196,6 +196,9 @@ void to_json(json& j, TokenValidationStatus const& k) noexcept {
     case TokenValidationStatus::UsedToStop:
         j = "UsedToStop";
         return;
+    case TokenValidationStatus::UsedToReauthorize:
+        j = "UsedToReauthorize";
+        return;
     }
     j = "INVALID_VALUE__everest::lib::API::V1_0::types::auth::TokenValidationStatus";
 }
@@ -228,6 +231,10 @@ void from_json(const json& j, TokenValidationStatus& k) {
     }
     if (s == "UsedToStop") {
         k = TokenValidationStatus::UsedToStop;
+        return;
+    }
+    if (s == "UsedToReauthorize") {
+        k = TokenValidationStatus::UsedToReauthorize;
         return;
     }
     throw std::out_of_range(
