@@ -1182,31 +1182,35 @@ void EvseManager::ready() {
             powermeter_cv.notify_one();
 
             // External Nodered interface
-            if (p.phase_seq_error) {
-                mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/phaseSeqError", config.connector_id),
-                             p.phase_seq_error.value());
+            if (config.enable_nodered_interface) {
+                if (p.phase_seq_error) {
+                    mqtt.publish(
+                        fmt::format("everest_external/nodered/{}/powermeter/phaseSeqError", config.connector_id),
+                        p.phase_seq_error.value());
+                }
+
+                mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/time_stamp", config.connector_id),
+                             p.timestamp);
+
+                if (p.power_W) {
+                    mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/totalKw", config.connector_id),
+                                 p.power_W.value().total / 1000., 1);
+                }
+
+                mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/totalKWattHr", config.connector_id),
+                             p.energy_Wh_import.total / 1000.);
+
+                if (p.energy_Wh_export.has_value()) {
+                    mqtt.publish(
+                        fmt::format("everest_external/nodered/{}/powermeter/totalExportKWattHr", config.connector_id),
+                        p.energy_Wh_export.value().total / 1000.);
+                }
+
+                json j;
+                to_json(j, p);
+                mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter_json", config.connector_id),
+                             j.dump());
             }
-
-            mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/time_stamp", config.connector_id),
-                         p.timestamp);
-
-            if (p.power_W) {
-                mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/totalKw", config.connector_id),
-                             p.power_W.value().total / 1000., 1);
-            }
-
-            mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/totalKWattHr", config.connector_id),
-                         p.energy_Wh_import.total / 1000.);
-
-            if (p.energy_Wh_export.has_value()) {
-                mqtt.publish(
-                    fmt::format("everest_external/nodered/{}/powermeter/totalExportKWattHr", config.connector_id),
-                    p.energy_Wh_export.value().total / 1000.);
-            }
-
-            json j;
-            to_json(j, p);
-            mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter_json", config.connector_id), j.dump());
             // /External Nodered interface
         });
     }
