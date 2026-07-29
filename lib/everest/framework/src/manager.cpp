@@ -1546,11 +1546,10 @@ int main(int argc, char* argv[]) {
                        "looked up in the default config directory. Optional: if omitted, the manager boots from the "
                        "database, or seeds an empty config and boots into Idle on a fresh database.");
     desc.add_options()("conf", po::value<std::string>(), "Deprecated: Same as --config. Do not use both.");
-    desc.add_options()(
-        "db", po::value<std::string>(),
-        "Full path to the configuration database file. Required. "
-        "The database is initialized automatically from active_modules in the YAML config on first run, "
-        "or with an empty config when no --config is given.");
+    desc.add_options()("db", po::value<std::string>(),
+                       "Full path to the configuration database file. Required. "
+                       "The database is initialized automatically from active_modules in the YAML config on first run, "
+                       "or with an empty config when no --config is given.");
     desc.add_options()("reset-from-yaml", "Discard the existing database slot and re-seed from the YAML config file. "
                                           "Intended for development use when you want to reset to a known YAML state. "
                                           "Requires --config.");
