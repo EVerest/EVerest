@@ -49,6 +49,12 @@ struct MqttStub : public Everest::MQTTAbstraction {
     }
     void unsubscribe(const std::string& topic) override {
     }
+    bool set_lwt(const std::string& topic, const json& json, QOS qos = QOS::QOS2, bool retain = true) override {
+        return true;
+    }
+    bool set_lwt(const std::string& topic, const std::string& data, QOS qos = QOS::QOS2, bool retain = true) override {
+        return true;
+    }
     void clear_retained_topics() override {
     }
     nlohmann::json get(const std::string& topic, QOS qos, std::size_t retries = 0) override {
