@@ -6,8 +6,10 @@
 
 #include "fmt/format.h"
 #include "http_client_interface.hpp"
+#include <array>
 #include <curl/curl.h>
 #include <everest/logging.hpp>
+#include <mutex>
 #include <regex>
 #include <stdexcept>
 #include <string>
@@ -30,7 +32,7 @@ public:
     HttpClient() = delete;
 
     HttpClient(const std::string& host_arg, int port_arg, const std::string& tls_certificate,
-               const std::string& network_interface = "") {
+               const std::string& network_interface = "", bool connection_reuse = true) {
         // initialize libcurl - this is safe to do multiple times, if there are multiple HttpClients
         // Note: This is only thread-safe after libcurl 7.84.0, but we use 8.4.0, so it should be fine
         curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -41,9 +43,15 @@ public:
         tls_enabled = !dcbm_tls_certificate.empty();
         fixup_tls_certificate(dcbm_tls_certificate);
         this->network_interface = network_interface;
+        if (connection_reuse) {
+            setup_share();
+        }
     }
 
     ~HttpClient() override {
+        if (share != nullptr) {
+            curl_share_cleanup(share);
+        }
         // release the libcurl resources - this must be done once for every call to curl_global_init().
         // Note: This is only thread-safe after libcurl 7.84.0, but we use 8.4.0, so it should be fine
         curl_global_cleanup();
@@ -63,6 +71,34 @@ private:
     std::string dcbm_tls_certificate;
     int command_timeout_ms = 5000; // default timeout in milliseconds
     std::string network_interface; // network interface
+
+    // Shared connection/SSL-session/DNS caches, so consecutive requests reuse the TCP (and TLS)
+    // connection instead of reconnecting per request. nullptr if connection reuse is disabled.
+    // The mutexes make the share usable from concurrent requests (poll thread + command handlers).
+    CURLSH* share = nullptr;
+    mutable std::array<std::mutex, CURL_LOCK_DATA_LAST> share_mutexes;
+
+    static void share_lock_cb(CURL* /*handle*/, curl_lock_data data, curl_lock_access /*access*/, void* userptr) {
+        static_cast<HttpClient*>(userptr)->share_mutexes[data].lock();
+    }
+
+    static void share_unlock_cb(CURL* /*handle*/, curl_lock_data data, void* userptr) {
+        static_cast<HttpClient*>(userptr)->share_mutexes[data].unlock();
+    }
+
+    void setup_share() {
+        share = curl_share_init();
+        if (share == nullptr) {
+            EVLOG_warning << "curl_share_init() failed - falling back to one connection per request";
+            return;
+        }
+        curl_share_setopt(share, CURLSHOPT_LOCKFUNC, share_lock_cb);
+        curl_share_setopt(share, CURLSHOPT_UNLOCKFUNC, share_unlock_cb);
+        curl_share_setopt(share, CURLSHOPT_USERDATA, this);
+        curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
+        curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
+        curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+    }
 
     [[nodiscard]] CURL* create_curl_handle_and_setup_url(const std::string& path) const;
     HttpResponse perform_request(CURL* connection, const std::string& request_body, const char* method_name,

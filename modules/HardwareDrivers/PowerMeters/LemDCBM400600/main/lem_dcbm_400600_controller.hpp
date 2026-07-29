@@ -6,6 +6,7 @@
 
 #include "http_client_interface.hpp"
 #include "lem_dcbm_time_sync_helper.hpp"
+#include <chrono>
 #include <functional>
 #include <generated/interfaces/powermeter/Implementation.hpp>
 #include <string>
@@ -45,6 +46,9 @@ public:
         const int IT;
         // command timeout in milliseconds
         const int command_timeout_ms;
+        // minimum time in seconds between fetches of the fallback OCMF record during an active
+        // transaction (0 = fetch on every poll)
+        const int transaction_ocmf_fetch_interval_s = 0;
     };
 
     class DCBMUnexpectedResponseException : public std::exception {
@@ -102,6 +106,8 @@ private:
     bool need_to_stop_transaction = false;
     std::string current_transaction_id;
     types::units_signed::SignedMeterValue current_signed_meter_value;
+    // when the fallback OCMF record was last fetched; epoch value forces a fetch on the next poll
+    std::chrono::steady_clock::time_point last_ocmf_fetch{};
     std::unique_ptr<LemDCBMTimeSyncHelper> time_sync_helper;
     Conf config;
 

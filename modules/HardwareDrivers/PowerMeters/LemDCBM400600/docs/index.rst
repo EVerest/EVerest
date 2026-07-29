@@ -27,8 +27,16 @@ during the module's "ready" thread loop), cf. also the notes on time synchroniza
 Variable Powermeter
 -------------------
 
-Publication of the ``powermeter`` var is done with approx. frequency 1/second. This fetches the current ``livemeasure``
+Publication of the ``powermeter`` var is done with an approx. frequency of 1/second by default; the interval is
+configurable via the ``poll_interval_ms`` config option. This fetches the current ``livemeasure``
 values from the device's ``/v1/livemeasure`` endpoint and injects the meter id as determined at initialization.
+
+While a transaction is active, the current OCMF record is additionally fetched as a fallback so that a signed meter
+value is available even if the device becomes unreachable at transaction stop. By default this happens on every poll;
+it can be throttled with the ``transaction_ocmf_fetch_interval_s`` config option.
+
+By default, HTTP(S) connections to the device are kept alive and reused across requests. Set ``http_connection_reuse``
+to ``false`` to restore the previous behavior of one fresh connection per request.
 
 Command start_transaction
 -------------------------

@@ -15,8 +15,9 @@ namespace module::main {
 void powermeterImpl::init() {
     // Dependency injection pattern: Create the HTTP client first,
     // then move it into the controller as a constructor argument
-    auto http_client = std::make_unique<HttpClient>(mod->config.ip_address, mod->config.port,
-                                                    mod->config.meter_tls_certificate, mod->config.interface);
+    auto http_client =
+        std::make_unique<HttpClient>(mod->config.ip_address, mod->config.port, mod->config.meter_tls_certificate,
+                                     mod->config.interface, mod->config.http_connection_reuse);
 
     auto ntp_server_spec =
         module::main::ntp_server_spec{mod->config.ntp_server_1_ip_addr, mod->config.ntp_server_1_port,
@@ -28,7 +29,8 @@ void powermeterImpl::init() {
             mod->config.resilience_initial_connection_retries, mod->config.resilience_initial_connection_retry_delay,
             mod->config.resilience_transaction_request_retries, mod->config.resilience_transaction_request_retry_delay,
             mod->config.cable_id, mod->config.tariff_id, mod->config.meter_timezone, mod->config.meter_dst,
-            mod->config.SC, mod->config.UV, mod->config.UD, mod->config.IT, mod->config.command_timeout_ms});
+            mod->config.SC, mod->config.UV, mod->config.UD, mod->config.IT, mod->config.command_timeout_ms,
+            mod->config.transaction_ocmf_fetch_interval_s});
 
     // Validate and normalize temperature thresholds for the monitor.
     // If the error level is configured below the warning level, clamp it and log a warning.
@@ -57,7 +59,7 @@ void powermeterImpl::ready() {
                     std::this_thread::sleep_for(
                         std::chrono::milliseconds(mod->config.resilience_initial_connection_retry_delay));
                 } else {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(mod->config.poll_interval_ms));
                     auto powermeter_data = this->controller->get_powermeter();
                     this->publish_powermeter(powermeter_data);
                     // if the communication error is set, clear the error
