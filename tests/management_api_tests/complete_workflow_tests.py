@@ -19,9 +19,9 @@ from everest.testing.core_utils.everest_core import EverestCore, ManagerStatusFi
 from everest.testing.core_utils.fixtures import *
 
 from background_manager_start import background_manager_start
-from configuration_api_client import ConfigurationApiClient
+from everest_management_api_cli.configuration_api import ConfigurationApiClient
 from example_config import example_active_modules_yaml
-from lifecycle_api_client import LifecycleApiClient
+from everest_management_api_cli.lifecycle_api import LifecycleApiClient
 
 # The management API topics are not test-instance specific (no per-test MQTT
 # prefix), so these tests must not run concurrently with each other.

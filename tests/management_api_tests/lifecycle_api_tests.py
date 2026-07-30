@@ -23,8 +23,8 @@ from everest.testing.core_utils.fixtures import *
 
 from assertions import assert_status_subsequence
 from background_manager_start import background_manager_start
-from lifecycle_api_client import (LIFECYCLE_STATUS_TOPIC, LifecycleApiClient, make_mqtt_client,
-                                  read_retained_status)
+from everest_management_api_cli.lifecycle_api import (LIFECYCLE_STATUS_TOPIC, LifecycleApiClient, make_mqtt_client,
+                                                       read_retained_status)
 
 # The lifecycle API topics are not test-instance specific (no per-test MQTT
 # prefix), so these tests must not run concurrently with each other.

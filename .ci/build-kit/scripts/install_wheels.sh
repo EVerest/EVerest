@@ -3,6 +3,7 @@
 ninja -C "$EXT_MOUNT/build" \
     everestpy_install_wheel \
     everest-testing_install_wheel \
+    everest-management-api-cli_install_wheel \
     iso15118_install_wheel
 retVal=$?
 

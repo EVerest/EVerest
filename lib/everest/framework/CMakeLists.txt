@@ -26,7 +26,6 @@ option(EVEREST_ENABLE_PY_SUPPORT "Enable everestpy for Python modules" ON)
 option(EVEREST_ENABLE_RS_SUPPORT "Enable everestrs for Rust modules" OFF)
 option(EVEREST_ENABLE_ADMIN_PANEL_BACKEND "Enable everest admin panel backend" OFF)
 option(EVEREST_INSTALL_ADMIN_PANEL "Download and install everest admin panel" OFF)
-option(EVEREST_ENABLE_CONFIG_TOOL "Enable everest config tool" ON)
 
 set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY "latency" CACHE STRING
     "Thread pool scaling policy for framework message handling: latency, greedy, conservative, fixed_size, custom")
