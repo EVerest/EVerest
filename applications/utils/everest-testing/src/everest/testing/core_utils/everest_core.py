@@ -245,6 +245,11 @@ class EverestCore:
         with self.everest_config_path.open("r") as f:
             return yaml.safe_load(f)
 
+    @property
+    def db_path(self) -> Path:
+        """Path of the manager's configuration database (passed via --db)."""
+        return self._db_path
+
     def _write_temporary_config(self, template_config_path: Path, everest_configuration_adjustment_strategies: Optional[
         List[EverestConfigAdjustmentStrategy]]):
         everest_configuration_adjustment_strategies = everest_configuration_adjustment_strategies if everest_configuration_adjustment_strategies else []
