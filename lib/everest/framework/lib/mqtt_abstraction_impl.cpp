@@ -253,7 +253,7 @@ void MQTTAbstractionImpl::subscribe(const std::string& topic, QOS qos) {
             topic,
             [this, topic]([[maybe_unused]] everest::lib::io::mqtt::mosquitto_cpp& client,
                           everest::lib::io::mqtt::mosquitto_cpp::message const& message) {
-                this->message_queue.emplace(topic, message.payload);
+                this->message_queue.emplace(message.topic, message.payload);
                 this->new_message_event.notify();
             },
             max_qos_level);
