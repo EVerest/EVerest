@@ -6,8 +6,6 @@
 
 namespace iso15118::din::msg {
 
-namespace data_types {} // namespace data_types
-
 struct ContractAuthenticationRequest {
     Header header;
     std::optional<data_types::IDREF> id;

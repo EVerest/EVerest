@@ -78,7 +78,7 @@ enum class PaymentOption : uint8_t {
     ExternalPayment,
 };
 
-enum class EvseProcessing {
+enum class EvseProcessing : uint8_t {
     Finished,
     Ongoing,
 };
