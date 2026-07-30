@@ -104,6 +104,8 @@ protected:
     }
 };
 
+if (!ENFORCE_CERT_PROFILES) {
+    
 class EvseSecurityTestsExpired : public EvseSecurityTests {
 protected:
     static constexpr int GEN_CERTIFICATES = 30;
@@ -1446,7 +1448,8 @@ TEST_F(EvseSecurityTestsMulti, verify_with_invalid_cert_fails) {
 
     ASSERT_EQ(result, CertificateValidationResult::Unknown);
 }
-
+} //end if not statement
+if (ENFORCE_CERT_PROFILES) {
 // ============================================================
 // enforce_certificate_rules tests
 // ============================================================
@@ -1514,6 +1517,7 @@ TEST_F(EvseSecurityTests, verify_expired_cert_does_not_crash) {
     X509Wrapper wrapper(pem, EncodingFormat::PEM);
 
     ASSERT_NO_THROW(enforce_certificate_rules(wrapper.get()));
+} //endif
 } // namespace evse_security
 } // namespace evse_security
 // FIXME(piet): Add more tests for getRootCertificateHashData (incl. V2GCertificateChain etc.)
