@@ -1,0 +1,437 @@
+---
+asyncapi: 3.0.0
+id: 'pionix:de:everest:transaction_storage_consumer_API'
+info:
+  title: 'EVerest API definition for transaction storage (consumer)'
+  version: 1.0.0
+  description: >-
+    API for EVerest API clients to read and clear persistently stored transaction records.
+
+  license:
+    name: Apache-2.0
+    url: https://opensource.org/licenses/Apache-2.0
+  tags:
+    - name: EVerest
+    - name: TransactionStorage
+servers:
+  default:
+    pathname: 'everest_api/1/transaction_storage_consumer/{module_id}'
+    host: 'localhost:1883'
+    description: default local MQTT
+    protocol: mqtt
+    variables:
+      module_id:
+        description: The ID of the module as defined in the EVerest config file.
+defaultContentType: application/json
+
+
+channels:
+  send_request_get_transactions:
+    address: 'm2e/get_transactions'
+    messages:
+      send_request_get_transactions:
+        $ref: '#/components/messages/send_request_get_transactions'
+  receive_reply_get_transactions:
+    address: null
+    messages:
+      receive_reply_get_transactions:
+        $ref: '#/components/messages/receive_reply_get_transactions'
+
+  send_request_get_transaction:
+    address: 'm2e/get_transaction'
+    messages:
+      send_request_get_transaction:
+        $ref: '#/components/messages/send_request_get_transaction'
+  receive_reply_get_transaction:
+    address: null
+    messages:
+      receive_reply_get_transaction:
+        $ref: '#/components/messages/receive_reply_get_transaction'
+
+  send_request_clear_transactions:
+    address: 'm2e/clear_transactions'
+    messages:
+      send_request_clear_transactions:
+        $ref: '#/components/messages/send_request_clear_transactions'
+  receive_reply_clear_transactions:
+    address: null
+    messages:
+      receive_reply_clear_transactions:
+        $ref: '#/components/messages/receive_reply_clear_transactions'
+
+  receive_heartbeat:
+    address: 'e2m/heartbeat'
+    messages:
+      receive_heartbeat:
+        $ref: '#/components/messages/receive_heartbeat'
+  send_communication_check:
+    address: 'm2e/communication_check'
+    messages:
+      send_communication_check:
+        $ref: '#/components/messages/send_communication_check'
+
+
+operations:
+  send_request_get_transactions:
+    title: 'Send request to transmit all stored transaction records'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_transactions'
+    description: 'Direction: Module to EVerest'
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_transactions'
+  receive_reply_get_transactions:
+    title: 'Receive reply with all stored transaction records'
+    action: receive
+    description: 'Direction: EVerest to Module'
+    channel:
+      $ref: '#/channels/receive_reply_get_transactions'
+
+  send_request_get_transaction:
+    title: 'Send request to transmit a single stored transaction record'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_transaction'
+    description: >-
+      Direction: Module to EVerest.
+      Request one transaction record, identified either by its session id or by its
+      OCPP transaction id. The reply will be sent to the replyTo address specified in
+      the message headers. If no record matches the identifier, a null payload will be
+      sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_transaction'
+  receive_reply_get_transaction:
+    title: 'Receive reply with a single stored transaction record'
+    action: receive
+    description: 'Direction: EVerest to Module'
+    channel:
+      $ref: '#/channels/receive_reply_get_transaction'
+
+  send_request_clear_transactions:
+    title: 'Send request to delete all stored transaction records'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_clear_transactions'
+    description: >-
+      Direction: Module to EVerest.
+      Deletes every stored transaction record, including records that are still open.
+      This cannot be undone. When a deleted open transaction finishes later, the
+      finish is dropped and the record does not reappear.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_clear_transactions'
+  receive_reply_clear_transactions:
+    title: 'Receive reply to the request to delete all stored transaction records'
+    action: receive
+    description: 'Direction: EVerest to Module'
+    channel:
+      $ref: '#/channels/receive_reply_clear_transactions'
+
+  receive_heartbeat:
+    title: 'Receive heartbeat'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_heartbeat'
+  send_communication_check:
+    title: 'Send communication check'
+    action: send
+    channel:
+      $ref: '#/channels/send_communication_check'
+
+
+components:
+  messages:
+    send_request_get_transactions:
+      name: send_request_get_transactions
+      title: 'Request all stored transaction records'
+      summary: 'Request all stored transaction records.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: "Request all stored transactions"
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_transactions:
+      name: receive_reply_get_transactions
+      title: 'All stored transaction records'
+      summary: 'Reply to the request to send all stored transaction records'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TransactionList'
+
+    send_request_get_transaction:
+      name: send_request_get_transaction
+      title: 'Request a single stored transaction record'
+      summary: 'Request the transaction record matching the given identifier.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to.
+          payload:
+            $ref: '#/components/schemas/TransactionIdentifier'
+      examples:
+        - summary: "Request a transaction by session id"
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+            payload:
+              session_id: 550e8400-e29b-41d4-a716-446655440000
+    receive_reply_get_transaction:
+      name: receive_reply_get_transaction
+      title: 'A single stored transaction record'
+      summary: >-
+        Reply to the request to send a single transaction record. Null if no record
+        matches the identifier.
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/Transaction'
+          - type: 'null'
+
+    send_request_clear_transactions:
+      name: send_request_clear_transactions
+      title: 'Request deletion of all stored transaction records'
+      summary: 'Delete all stored transaction records.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: "Clear all stored transactions"
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_clear_transactions:
+      name: receive_reply_clear_transactions
+      title: 'Result of deleting all stored transaction records'
+      summary: 'Reply to the request to delete all stored transaction records'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ClearTransactionsResult'
+
+    receive_heartbeat:
+      name: receive_heartbeat
+      title: 'Receive heartbeat'
+      summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HeartBeatId'
+      examples:
+        - summary: "Heartbeat"
+          payload: 42
+
+    send_communication_check:
+      name: send_communication_check
+      title: 'Send communication check'
+      summary: Signal to EVerest that communication is good or check shall be stopped
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CommunicationCheck'
+      examples:
+        - summary: "CommunicationCheck"
+          payload:
+            true
+
+
+  schemas:
+    TransactionList:
+      description: A list of stored transaction records
+      type: object
+      additionalProperties: true
+      required:
+        - transactions
+      properties:
+        transactions:
+          description: >-
+            All stored transaction records, in the order they were stored, oldest
+            first. Empty if nothing is stored.
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+    Transaction:
+      description: >-
+        One persistently stored transaction record. A record is created when the
+        transaction starts and completed when it finishes, so the fields that are only
+        known at the end of a transaction are absent while the record is open.
+      type: object
+      additionalProperties: true
+      required:
+        - session_id
+        - evse_id
+        - state
+        - timestamp_start
+        - meter_value_start
+      properties:
+        session_id:
+          description: >-
+            The EVSE generated UUID of the session this transaction belongs to.
+          type: string
+        ocpp_transaction_id:
+          description: >-
+            The transaction id known to the CSMS, always as a string. Only present in
+            OCPP setups: for OCPP 2.0.1 and 2.1 it is identical to session_id, for
+            OCPP 1.6 it is the numeric id assigned by the CSMS in decimal notation,
+            which arrives only after the transaction has already started.
+          type: string
+        evse_id:
+          description: >-
+            The EVSEID of the EVSE this transaction was charged on,
+            as configured in the EvseManager.
+          type: string
+        state:
+          description: Lifecycle state of this record
+          type: string
+          $ref: '#/components/schemas/TransactionState'
+        id_token_hash:
+          description: >-
+            Hash of the id token that started the transaction. The raw token is never
+            stored. Computed as the lower case hex encoded SHA256 digest of the id token
+            type concatenated with the id token value, matching the hash the OCPP stack
+            uses for its authorization cache, so a hash computed elsewhere in the stack
+            can be compared to this one directly. Absent when the transaction was
+            started without an id token, together with id_token_type and
+            authorization_type.
+          type: string
+          minLength: 64
+          maxLength: 64
+        id_token_type:
+          description: >-
+            Type of the id token that started the transaction. Part of the input to
+            id_token_hash, so it is needed to reproduce the hash.
+          type: string
+          $ref: 'auth_consumer_API.yaml#/components/schemas/IdTokenType'
+        authorization_type:
+          description: >-
+            How the id token was presented, i.e. which authorization mechanism started
+            this transaction.
+          type: string
+          $ref: 'auth_consumer_API.yaml#/components/schemas/AuthorizationType'
+        timestamp_start:
+          description: Time the transaction started, in RFC3339 format
+          type: string
+          format: date-time
+        timestamp_stop:
+          description: >-
+            Time the transaction finished, in RFC3339 format. Absent while the record is
+            Open, and absent on Stale records.
+          type: string
+          format: date-time
+        meter_value_start:
+          description: >-
+            Meter reading taken when the transaction started. The signed variants of the
+            measurements (energy_Wh_import_signed and the other *_signed members, plus
+            signed_meter_value) are never populated: signed meter values embed the raw
+            id token and are therefore not persisted.
+          type: object
+          $ref: 'powermeter_API.yaml#/components/schemas/Powermeter'
+        meter_value_stop:
+          description: >-
+            Meter reading taken when the transaction finished, with the same restriction
+            on signed measurements as meter_value_start. Absent while the record is
+            Open, and absent on Stale records.
+          type: object
+          $ref: 'powermeter_API.yaml#/components/schemas/Powermeter'
+        start_reason:
+          description: Why the session that this transaction belongs to was started
+          type: string
+          $ref: 'evse_manager_consumer_API.yaml#/components/schemas/StartSessionReason'
+        stop_reason:
+          description: >-
+            Why the transaction was stopped. Absent while the record is Open, and absent
+            on Stale records. A transaction that was interrupted by a power cycle and
+            recovered on the next boot carries PowerLoss.
+          type: string
+          $ref: 'evse_manager_consumer_API.yaml#/components/schemas/StopTransactionReason'
+        cost:
+          description: >-
+            Cost and tariff information for this transaction, as far as it was reported.
+            Only present in setups where a cost source is connected, and all figures
+            originate from the CSMS. The id_tag member is never populated, because the
+            raw id token is not persisted.
+          type: object
+          $ref: 'session_cost_API.yaml#/components/schemas/SessionCost'
+    TransactionState:
+      description: |
+        Lifecycle state of a stored transaction record
+        - Open: The transaction has started and has not finished yet. Only the fields known at transaction start are present.
+        - Finished: The transaction finished regularly and the record is complete. This includes transactions that were interrupted by a power cycle and recovered on the next boot, which finish with stop reason PowerLoss.
+        - Stale: The transaction never finished and never will. A newer transaction was stored for the same EVSE while this record was still Open, which means the finish of this one was lost, for example in a crash. The fields known at transaction start are present, the rest stays absent.
+      type: string
+      enum:
+        - Open
+        - Finished
+        - Stale
+    TransactionIdentifier:
+      description: >-
+        Identifies a single transaction record. Exactly one of the members must be set.
+      type: object
+      additionalProperties: true
+      oneOf:
+        - required:
+            - session_id
+        - required:
+            - ocpp_transaction_id
+      properties:
+        session_id:
+          description: The EVSE generated UUID of the session
+          type: string
+        ocpp_transaction_id:
+          description: The transaction id known to the CSMS
+          type: string
+    ClearTransactionsResult:
+      description: Result of deleting all stored transaction records
+      type: object
+      additionalProperties: true
+      required:
+        - cleared
+      properties:
+        cleared:
+          description: Number of transaction records that were deleted
+          type: integer
+          minimum: 0
+
+    CommunicationCheck:
+      type: boolean
+      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+    HeartBeatId:
+      type: integer
+      description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"
