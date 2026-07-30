@@ -49,7 +49,8 @@ enum class TokenHandlingResult {
     USED_TO_STOP_TRANSACTION,
     TIMEOUT,
     NO_CONNECTOR_AVAILABLE,
-    WITHDRAWN
+    WITHDRAWN,
+    USED_TO_REAUTHORIZE
 };
 
 namespace conversions {
@@ -66,7 +67,7 @@ class AuthHandler {
 public:
     AuthHandler(const SelectionAlgorithm& selection_algorithm, const int connection_timeout,
                 bool plug_in_timeout_enabled, bool prioritize_authorization_over_stopping_transaction,
-                bool ignore_connector_faults, const std::string& id, kvsIntf* store);
+                bool ignore_connector_faults, bool stop_transaction_on_reswipe, const std::string& id, kvsIntf* store);
     virtual ~AuthHandler();
 
     /**
@@ -200,6 +201,13 @@ public:
     void set_prioritize_authorization_over_stopping_transaction(bool b);
 
     /**
+     * @brief Set the stop transaction on reswipe flag of the handler.
+     *
+     * @param stop_transaction_on_reswipe
+     */
+    void set_stop_transaction_on_reswipe(bool stop_transaction_on_reswipe);
+
+    /**
      * @brief Registers the given \p callback to notify the evse about the processed authorization request.
      *
      * @param callback
@@ -276,6 +284,7 @@ private:
     std::optional<std::string> master_pass_group_id;
     bool prioritize_authorization_over_stopping_transaction;
     bool ignore_faults;
+    bool stop_transaction_on_reswipe;
     ReservationHandler reservation_handler;
 
     std::map<int, std::unique_ptr<EVSEContext>> evses;
