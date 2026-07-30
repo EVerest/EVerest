@@ -24,6 +24,11 @@ namespace main {
 namespace {
 namespace api_telemetry = everest::lib::API::V1_0::types::telemetry;
 
+// Extra time init() grants the worker beyond startup_delay_ms to open the PLC device and
+// receive the first I/O ready (or error) event before giving up and continuing with a
+// CommunicationFault (see slacImpl::init). Bring-up normally settles within milliseconds.
+constexpr std::chrono::milliseconds IO_BRING_UP_TIMEOUT_MARGIN{10000};
+
 template <typename T> nlohmann::json to_telemetry_json(std::string const& value) {
     return api_telemetry::deserialize<T>(value);
 }
@@ -145,10 +150,24 @@ void slacImpl::shutdown() {
 void slacImpl::init() {
     // setup evse fsm thread
     worker = std::thread(&slacImpl::run, this);
+
+    // Do not report readiness (init() returning -> signal_ready -> global ready) before the PLC
+    // I/O is usable or its bring-up has failed: EvseManager starts issuing enter_bcd/reset right
+    // after global ready and this module drops commands while !slac_io_ready, so a car already
+    // plugged in at boot would silently lose its first SLAC session. EvseSlac holds back
+    // readiness the same way by running startup_delay_ms and the socket open inside init(); this
+    // also restores that meaning of startup_delay_ms. On failure or timeout init() still
+    // returns: the raised generic/CommunicationFault makes EvseManager set the connector
+    // inoperative instead of the whole EVerest stack stalling on this module.
+    const auto timeout = std::chrono::milliseconds(config.startup_delay_ms) + IO_BRING_UP_TIMEOUT_MARGIN;
+    if (wait_for_io_bring_up(lifecycle_state, timeout) == IoBringUpResult::TimedOut) {
+        raise_communication_fault(fmt::format("SLAC I/O on device {} reported neither ready nor an error within {} ms; "
+                                              "continuing startup with SLAC unavailable",
+                                              config.device, timeout.count()));
+    }
 }
 
 void slacImpl::ready() {
-    // let the waiting run thread go
     {
         auto lifecycle = lifecycle_state.handle();
         if (lifecycle->ready_requested) {
@@ -157,6 +176,7 @@ void slacImpl::ready() {
         lifecycle->ready_requested = true;
     }
     lifecycle_state.notify_all();
+    start_fsm_if_ready();
 }
 
 void slacImpl::run() {
@@ -180,10 +200,6 @@ void slacImpl::run() {
         }
     } fsm_ctrl_clearer(*this);
 
-    if (!wait_for_ready_or_shutdown()) {
-        return;
-    }
-
     if (!wait_for_startup_delay_or_shutdown()) {
         return;
     }
@@ -201,12 +217,6 @@ void slacImpl::run() {
 
     configure_slac_io_callbacks();
     run_blocking_event_loop();
-}
-
-bool slacImpl::wait_for_ready_or_shutdown() {
-    auto lifecycle = lifecycle_state.handle();
-    lifecycle.wait([&] { return lifecycle->ready_requested || lifecycle->shutting_down; });
-    return !lifecycle->shutting_down;
 }
 
 bool slacImpl::wait_for_startup_delay_or_shutdown() {
@@ -465,23 +475,35 @@ void slacImpl::run_blocking_event_loop() {
 }
 
 void slacImpl::handle_slac_io_ready() {
-    FSMController* local_fsm_ctrl{nullptr};
     {
         auto lifecycle = lifecycle_state.handle();
         if (lifecycle->shutting_down) {
             return;
         }
         lifecycle->slac_io_ready = true;
+    }
+    // Also notifies the lifecycle waiters, releasing init() from wait_for_io_bring_up().
+    clear_communication_fault();
+    start_fsm_if_ready();
+}
+
+void slacImpl::start_fsm_if_ready() {
+    // Called from both handle_slac_io_ready() and ready(): the FSM starts on whichever of
+    // {PLC I/O ready, global ready} happens second (see LifecycleStateT::fsm_start_allowed).
+    FSMController* local_fsm_ctrl{nullptr};
+    {
+        auto lifecycle = lifecycle_state.handle();
+        if (!lifecycle->fsm_start_allowed()) {
+            return;
+        }
         local_fsm_ctrl = lifecycle->fsm_ctrl;
     }
-
-    clear_communication_fault();
 
     if (local_fsm_ctrl) {
         EVLOG_info << "SLAC I/O is ready. Starting the SLAC state machine.";
         local_fsm_ctrl->init();
     } else {
-        EVLOG_warning << "SLAC I/O ready callback received without an active controller. Start dropped.";
+        EVLOG_warning << "SLAC state machine start requested without an active controller. Start dropped.";
     }
 }
 
@@ -531,6 +553,9 @@ void slacImpl::raise_communication_fault(const std::string& message) {
     if ((should_raise || should_replace) && error_factory && error_manager) {
         raise_error(error_factory->create_error("generic/CommunicationFault", "", message));
     }
+
+    // Wake init(), which blocks in wait_for_io_bring_up() until ready or fault.
+    lifecycle_state.notify_all();
 }
 
 void slacImpl::clear_communication_fault() {
@@ -548,6 +573,9 @@ void slacImpl::clear_communication_fault() {
     if (should_clear && error_manager) {
         clear_error("generic/CommunicationFault");
     }
+
+    // Wake init(), which blocks in wait_for_io_bring_up() until ready or fault.
+    lifecycle_state.notify_all();
 }
 
 void slacImpl::mark_worker_offline(const std::string& reason) {
