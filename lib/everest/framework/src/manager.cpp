@@ -786,7 +786,15 @@ int Manager::run() {
 
     m_config_service_core = std::make_unique<config::ConfigServiceCore>(ms, m_db_connection);
 
-    std::unique_ptr<MQTTAbstraction> mqtt_abstraction = create_and_connect_mqtt(ms);
+    std::unique_ptr<MQTTAbstraction> mqtt_abstraction;
+    if (lfc_api_active) {
+        LwtCfg lwt_cfg;
+        lwt_cfg.topic = Everest::api::lifecycle::LifecycleAPI::Lwt::get_topic();
+        lwt_cfg.data = Everest::api::lifecycle::LifecycleAPI::Lwt::get_data();
+        mqtt_abstraction = create_and_connect_mqtt(ms, std::optional<LwtCfg>{lwt_cfg});
+    } else {
+        mqtt_abstraction = create_and_connect_mqtt(ms, std::nullopt);
+    }
     if (!mqtt_abstraction) {
         return EXIT_FAILURE;
     }
