@@ -313,6 +313,13 @@ public:
     /// \brief Create a ManagerConfig from ConfigParseSettings only
     explicit ManagerConfig(const ConfigParseSettings& ps);
 
+    ///
+    /// \brief Create a ManagerConfig from ConfigParseSettings and pre-loaded ModuleConfigurations.
+    /// Validates \p preloaded_configs against manifests, interfaces and requirements.
+    /// \param ps Parse settings providing paths to schemas, modules, interfaces, types and errors.
+    /// \param preloaded_configs Module configurations loaded from the database before construction.
+    explicit ManagerConfig(const ConfigParseSettings& ps, everest::config::ModuleConfigurations preloaded_configs);
+
     everest::config::GetConfigurationParameterResponse
     get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier) const;
 };
@@ -416,6 +423,17 @@ public:
 /// \throws EverestConfigError if any module manifest is missing, any interface is unresolvable,
 ///         or any requirement cannot be fulfilled.
 ModuleConfigurations validate_module_configs(const ConfigParseSettings& ps, const nlohmann::json& json_config);
+
+/// \brief Validate already-parsed ModuleConfigurations (e.g. loaded from the database) against module manifests,
+/// interface definitions and requirements.
+///
+/// \param ps             Parse settings providing paths to schemas, modules, interfaces, types and errors.
+/// \param module_configs Module configurations as loaded from storage.
+/// \returns Default-enriched ModuleConfigurations.
+/// \throws EverestConfigError if any module manifest is missing, any interface is unresolvable,
+///         or any requirement cannot be fulfilled.
+ModuleConfigurations validate_preloaded_module_configs(const ConfigParseSettings& ps,
+                                                       ModuleConfigurations module_configs);
 
 } // namespace Everest
 

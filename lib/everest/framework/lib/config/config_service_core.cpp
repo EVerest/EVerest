@@ -214,12 +214,20 @@ std::shared_ptr<const ec::ModuleConfigurations> ConfigServiceCore::get_active_mo
 }
 
 void ConfigServiceCore::reload_from_storage() {
-    if (slot_manager_.exists(active_slot_id_)) {
-        const auto resp = active_storage_->get_module_configs();
-        if (resp.status == ec::GenericResponseStatus::OK) {
-            module_configs_ = resp.module_configs;
-            std::atomic_store(&active_configs_ptr_, std::make_shared<const ec::ModuleConfigurations>(module_configs_));
-        }
+    if (not slot_manager_.exists(active_slot_id_)) {
+        return;
+    }
+    const auto resp = active_storage_->get_module_configs();
+    if (resp.status != ec::GenericResponseStatus::OK) {
+        return;
+    }
+    try {
+        // Validate against manifests, interfaces and requirements; enriches configs with manifest metadata.
+        module_configs_ = Everest::validate_preloaded_module_configs(parse_settings_, resp.module_configs);
+        std::atomic_store(&active_configs_ptr_, std::make_shared<const ec::ModuleConfigurations>(module_configs_));
+    } catch (const std::exception& e) {
+        EVLOG_error << "Configuration loaded from database for slot " << active_slot_id_
+                    << " failed validation: " << e.what() << " -> Keeping the previous in-memory configuration.";
     }
 }
 

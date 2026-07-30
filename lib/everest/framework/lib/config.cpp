@@ -1154,11 +1154,23 @@ ManagerConfig::ManagerConfig(const ConfigParseSettings& ps) : ConfigBase(MQTTSet
     init_from_yaml();
 }
 
+ManagerConfig::ManagerConfig(const ConfigParseSettings& ps, everest::config::ModuleConfigurations preloaded_configs) :
+    ConfigBase(MQTTSettings{}), ps(ps) {
+    BOOST_LOG_FUNCTION();
+    init_from_preloaded(std::move(preloaded_configs));
+}
+
 ModuleConfigurations validate_module_configs(const ConfigParseSettings& ps, const nlohmann::json& json_config) {
     ConfigParseSettings val_ps = ps;
     val_ps.config = json_config;
     val_ps.config_file.clear(); // no file; skip canonical() and user-config lookup
     ManagerConfig tmp(val_ps);  // validation-only path; validates manifests and requirements
+    return tmp.get_module_configurations();
+}
+
+ModuleConfigurations validate_preloaded_module_configs(const ConfigParseSettings& ps,
+                                                       ModuleConfigurations module_configs) {
+    ManagerConfig tmp(ps, std::move(module_configs)); // validation-only path; validates manifests and requirements
     return tmp.get_module_configurations();
 }
 

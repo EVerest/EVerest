@@ -329,7 +329,7 @@ active_modules:
 
         // Module A: has allow_set_read_only set
         everest::config::ModuleConfig flexible_module;
-        flexible_module.module_name = "FlexibleModule";
+        flexible_module.module_name = "TESTCSTarget";
         flexible_module.module_id = "flexible_module";
 
         everest::config::ConfigAccess flex_access;
@@ -347,7 +347,7 @@ active_modules:
 
         // Module B: allow_set_read_only not set (default)
         everest::config::ModuleConfig strict_module;
-        strict_module.module_name = "StrictModule";
+        strict_module.module_name = "TESTCSTarget";
         strict_module.module_id = "strict_module";
 
         everest::config::ConfigAccess strict_access;
@@ -730,7 +730,7 @@ active_modules:
         everest::config::ModuleConfigurations mock_configs;
 
         everest::config::ModuleConfig dummy_module;
-        dummy_module.module_name = "DummyModule";
+        dummy_module.module_name = "TESTCSTarget";
         dummy_module.module_id = "dummy_module";
 
         everest::config::ConfigurationParameter rw_param;
@@ -894,7 +894,7 @@ active_modules:
     SECTION("Set Parameters: WriteOnly handling and SetCallFailed") {
         everest::config::ModuleConfigurations mock_configs;
         everest::config::ModuleConfig test_module;
-        test_module.module_name = "TestModule";
+        test_module.module_name = "TESTCSTarget";
         test_module.module_id = "test_module";
 
         everest::config::ConfigurationParameter wo_param;
@@ -1130,7 +1130,7 @@ active_modules:
     SECTION("Edge Cases: set_config_parameters with non-existent parameter") {
         everest::config::ModuleConfigurations mock_configs;
         everest::config::ModuleConfig dummy_module;
-        dummy_module.module_name = "DummyModule";
+        dummy_module.module_name = "TESTCSTarget";
         dummy_module.module_id = "dummy_module";
         mock_configs["dummy_module"] = dummy_module;
 
