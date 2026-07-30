@@ -289,15 +289,7 @@ struct Session_def     : public state_machine_def<Session_def> {
         auto mmtype = slac::defs::MMTYPE_CM_ATTEN_PROFILE | slac::defs::MMTYPE_MODE_IND;
         return check_message<slac::messages::cm_atten_profile_ind>(e, mmtype, session_data);
     }
-    // CM_ATTEN_PROFILE.IND is handled in this machine's transition table instead of a
-    // Sounding-internal transition table: Boost.MSM dispatches a state's internal
-    // transitions before the machine's rows and they consume the event, so an exit row
-    // guarded on the sound count could never fire — every sounding phase silently ran
-    // the full TT_EVSE_MATCH_MNBC (600 ms) window and kept counting past the limit.
-    // EvseSlac finalizes FINALIZE_SOUNDING_DELAY_MS (45 ms) after the sound that
-    // completes the count and ignores later profiles, so num_sounds never exceeds
-    // CM_SLAC_PARM_CNF_NUM_SOUNDS. The two guards are mutually exclusive: the
-    // completing sound takes the exit row to FinalizeSounding.
+
     struct sound_below_limit {
         template <class Fsm, class SrcT, class TarT>
         bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
@@ -325,21 +317,10 @@ struct Session_def     : public state_machine_def<Session_def> {
     struct retry_limit {
         template <class Fsm, class Evt, class SrcT, class TarT>
         bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
-            // CM_ATTEN_CHAR.IND retransmission is limited to C_EV_match_retry (2)
-            // retries after the initial IND (ISO 15118-3, C_EV_match_retry). Fail
-            // once num_retries reaches the limit (>=), matching EvseSlac which
-            // retransmits at num_retries 1 and 2 then fails; a strict '>' sent a
-            // third retransmission and failed AttenuationCharacterization_004..011.
             return fsm.session_data.num_retries >= slac::defs::C_EV_MATCH_RETRY;
         }
     };
-    // Accept CM_START_ATTEN_CHAR.IND only while WaitStartAtten is still within
-    // TT_match_sequence. The plain timeout->Failed transition only fires on the
-    // periodic update event, so a CM_START_ATTEN_CHAR.IND arriving after the
-    // deadline but before the next update tick would otherwise race past it and
-    // wrongly start sounding. Checking state_timeout() here as well drops such a
-    // late frame; the next update then fails the session and no CM_ATTEN_CHAR.IND
-    // is produced (ISO 15118-5 AttenuationCharacterization_012).
+
     struct start_atten_in_time {
         template <class Fsm, class SrcT, class TarT>
         bool operator()(message const& e, Fsm& fsm, SrcT& src, TarT&) {
@@ -376,8 +357,7 @@ struct Session_def     : public state_machine_def<Session_def> {
             }
         }
     };
-    // Shared by finalize_snd and retry_snd: send the CM_ATTEN_CHAR.IND and log the averaged
-    // attenuation, matching EvseSlac's "Avg atten.: ..." session log line.
+
     template <class Fsm> static void send_atten_char(Fsm& fsm) {
         auto atten_char = fsm.session_data.create_cm_atten_char_ind(fsm.ctx->slac_config.sounding_atten_adjustment);
         if (not fsm.ctx->send_slac_message(fsm.session_data.ev_mac, atten_char)) {
@@ -446,7 +426,6 @@ struct Session_def     : public state_machine_def<Session_def> {
         std::copy(std::begin(session_data.ev_mac), std::end(session_data.ev_mac), std::begin(ctx->status.ev_mac));
     }
 
-    // Failure logging: state why the session failed, so the log tells where matching stopped.
     template <char const* Reason> struct log_session_failed {
         template <class Fsm, class Evt, class SrcT, class TarT>
         void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
@@ -465,24 +444,28 @@ struct Session_def     : public state_machine_def<Session_def> {
     // Transitions
     using initial_state = WaitStartAtten;
     using p = Session_def;
-    using retry_timeout = And_<timeout, retry_limit>;
+    using retry_timeout         = And_<timeout, retry_limit>;
+    using log_no_start_atten    = log_session_failed<fail_no_start_atten>;
+    using log_no_atten_rsp      = log_session_failed<fail_no_atten_rsp>;
+    using log_no_slac_match     = log_session_failed<fail_no_slac_match>;
+    using log_validation_window = log_session_failed<fail_validation_window>;
     struct transition_table : boost::mpl::vector<
-        //    +------------------+---------+------------------+---------------+--------------------------+
-        //    | Source           | Event   | Target           | Action        | Guard                    |
-        //    +------------------+---------+------------------+---------------+--------------------------+
-        Row   < WaitStartAtten   , update  , Failed           , log_session_failed<fail_no_start_atten> , timeout >,
-        Row   < WaitStartAtten   , message , Sounding         , sounding_started , start_atten_in_time   >,
-        Row   < Sounding         , update  , FinalizeSounding , none          , timeout                  >,
-        Row   < Sounding         , message , none             , capture_sound , sound_below_limit        >,
-        Row   < Sounding         , message , FinalizeSounding , capture_sound , sound_completes_count    >,
-        Row   < FinalizeSounding , update  , WaitAttenRsp     , finalize_snd  , timeout                  >,
-        Row   < WaitAttenRsp     , update  , WaitAttenRsp     , retry_snd     , timeout                  >,
-        Row   < WaitAttenRsp     , update  , Failed           , log_session_failed<fail_no_atten_rsp> , retry_timeout >,
-        row   < WaitAttenRsp     , message , WaitSlacMatch    , &p::on_atten_char_rsp , &p::is_atten_char_rsp >,
-        Row   < WaitSlacMatch    , update  , Failed           , log_session_failed<fail_no_slac_match> , timeout >,
-        Row   < WaitSlacMatch    , update  , Failed           , log_session_failed<fail_validation_window> , validation_window_expired>,
-        row   < WaitSlacMatch    , message , MatchComplete    , &p::match_cnf , &p::is_slac_match_req    >
-        //    +------------------+---------+------------------+---------------+--------------------------+
+        //    +------------------+---------+------------------+-----------------------+---------------------------+
+        //    | Source           | Event   | Target           | Action                | Guard                     |
+        //    +------------------+---------+------------------+-----------------------+---------------------------+
+        Row   < WaitStartAtten   , update  , Failed           , log_no_start_atten    , timeout                   >,
+        Row   < WaitStartAtten   , message , Sounding         , sounding_started      , start_atten_in_time       >,
+        Row   < Sounding         , update  , FinalizeSounding , none                  , timeout                   >,
+        Row   < Sounding         , message , none             , capture_sound         , sound_below_limit         >,
+        Row   < Sounding         , message , FinalizeSounding , capture_sound         , sound_completes_count     >,
+        Row   < FinalizeSounding , update  , WaitAttenRsp     , finalize_snd          , timeout                   >,
+        Row   < WaitAttenRsp     , update  , WaitAttenRsp     , retry_snd             , timeout                   >,
+        Row   < WaitAttenRsp     , update  , Failed           , log_no_atten_rsp      , retry_timeout             >,
+        row   < WaitAttenRsp     , message , WaitSlacMatch    , &p::on_atten_char_rsp , &p::is_atten_char_rsp     >,
+        Row   < WaitSlacMatch    , update  , Failed           , log_no_slac_match     , timeout                   >,
+        Row   < WaitSlacMatch    , update  , Failed           , log_validation_window , validation_window_expired >,
+        row   < WaitSlacMatch    , message , MatchComplete    , &p::match_cnf         , &p::is_slac_match_req     >
+        //    +------------------+---------+------------------+-----------------------+---------------------------+
         >{};
     template <class FSM,class Event>
     void no_transition(Event const&, FSM&, int) { }
@@ -742,20 +725,20 @@ struct Matching_def    : public state_machine_def<Matching_def> {
     using reset_matching = should_reset_instead_of_fail;
     using not_validate_req = Not_<is_validate_req>;
     struct transition_table : boost::mpl::vector<
-        //    +--------+---------+---------+------------------------+-------------------+
-        //    | Source | Event   | Target  | Action                 | Guard             |
-        //    +--------+---------+---------+------------------------+-------------------+
-        g_row < Init   , update  , Matched /* none */               , &p::is_matched    >,
-        Row   < Init   , update  , Failed  , none                   , fail_matching     >,
-        Row   < Init   , update  , Init    , reset_matching_subfsm  , reset_matching    >,
-        //    +--------+---------+---------+------------------------+-------------------+
-        Row   < Listen , message , Listen  , add_session            , is_slac_param_req >,
-        Row   < Listen , message , Listen  , handle_validate_req    , is_validate_req   >,
-        Row   < Listen , update  , Listen  , validate_tick          , validate_needs_service >,
-        //    +--------+---------+---------+------------------------+-------------------+
-        Row   < Pipe   , message , none    , pipe_event             , not_validate_req  >,
-        Row   < Pipe   , update  , none    , pipe_event             , none              >
-        //    +--------+---------+---------+------------------------+-------------------+
+        //    +--------+---------+---------+-----------------------+------------------------+
+        //    | Source | Event   | Target  | Action                | Guard                  |
+        //    +--------+---------+---------+-----------------------+------------------------+
+        g_row < Init   , update  , Matched /* none */              , &p::is_matched         >,
+        Row   < Init   , update  , Failed  , none                  , fail_matching          >,
+        Row   < Init   , update  , Init    , reset_matching_subfsm , reset_matching         >,
+        //    +--------+---------+---------+-----------------------+------------------------+
+        Row   < Listen , message , Listen  , add_session           , is_slac_param_req      >,
+        Row   < Listen , message , Listen  , handle_validate_req   , is_validate_req        >,
+        Row   < Listen , update  , Listen  , validate_tick         , validate_needs_service >,
+        //    +--------+---------+---------+-----------------------+------------------------+
+        Row   < Pipe   , message , none    , pipe_event            , not_validate_req       >,
+        Row   < Pipe   , update  , none    , pipe_event            , none                   >
+        //    +--------+---------+---------+-----------------------+------------------------+
         >{};
 
     template <class FSM,class Event>
@@ -1199,43 +1182,31 @@ struct Matched_def     : public state_machine_def<Matched_def> {
     using p = ResetChip_def;
     using link_detection_off = Not_<detect_link>;
     struct transition_table : boost::mpl::vector<
-        //    +----------+---------+----------+-----------------+--------------------+
-        //    | Source   | Event   | Target   | Action          | Guard              |
-        //    +----------+---------+----------+-----------------+--------------------+
-        // Route into the matched substate deterministically: with link detection on
-        // enter the vendor-specific LINK_STATUS-polling substate (Qualcomm/Lumissil),
-        // otherwise the passive NoDetect substate. The guards are mutually exclusive
-        // so there is no anonymous-transition ambiguity -- an earlier unconditional
-        // Init->Other row shadowed the polling routing, so a matched-state connection
-        // loss was never detected and the SECC never left the logical network
-        // (ISO 15118-5 PLCLinkStatus_005 / f_SECC_getPLCLinkTermination).
-        Row   < Init     , none    , Lumissil , link_status_req , And_<detect_link, is_lumissil> >,
-        Row   < Init     , none    , Qualcomm , link_status_req , And_<detect_link, is_qualcomm> >,
-        Row   < Init     , none    , NoDetect , none            , link_detection_off             >,
-        //    +----------+---------+----------+-----------------+--------------------+
-        Row   < Lumissil , update  , Lumissil , link_status_req    , timeout               >,
-        Row   < Lumissil , update  , Lumissil , retransmit_amp_map , amp_map_retransmit_due >,
-        Row   < Lumissil , message , Failed   , none               , link_status_neg       >,
-        Row   < Lumissil , message , Lumissil , send_amp_map_cnf   , is_amp_map_req         >,
-        Row   < Lumissil , message , Lumissil , amp_map_cnf_ack    , is_amp_map_cnf_ok      >,
-        //    +----------+---------+----------+-----------------+--------------------+
-        Row   < Qualcomm , update  , Qualcomm , link_status_req    , timeout               >,
-        Row   < Qualcomm , update  , Qualcomm , retransmit_amp_map , amp_map_retransmit_due >,
-        Row   < Qualcomm , message , Failed   , none               , link_status_neg       >,
-        Row   < Qualcomm , message , Qualcomm , send_amp_map_cnf   , is_amp_map_req         >,
-        Row   < Qualcomm , message , Qualcomm , amp_map_cnf_ack    , is_amp_map_cnf_ok      >,
-        //    +----------+---------+----------+-----------------+--------------------+
-        // Respond to an incoming CM_AMP_MAP.REQ without leaving the matched state
-        // (ISO 15118-5 CmAmpMap responder, TC 001/006/007). The invalid am_len==0
-        // case is filtered by is_amp_map_req so no CNF is emitted (TC 005). Covered
-        // for the link-detection-off (NoDetect) and pre-detection (Other/Init)
-        // substates too so the responder works regardless of the matched substate.
-        Row   < NoDetect , message , NoDetect , send_amp_map_cnf   , is_amp_map_req         >,
-        Row   < NoDetect , update  , NoDetect , retransmit_amp_map , amp_map_retransmit_due >,
-        Row   < NoDetect , message , NoDetect , amp_map_cnf_ack    , is_amp_map_cnf_ok      >,
-        Row   < Other    , message , Other    , send_amp_map_cnf   , is_amp_map_req         >,
-        Row   < Init     , message , Init     , send_amp_map_cnf   , is_amp_map_req         >
-        //    +----------+---------+----------+-----------------+--------------------+
+        //    +----------+---------+----------+--------------------+--------------------------------+
+        //    | Source   | Event   | Target   | Action             | Guard                          |
+        //    +----------+---------+----------+--------------------+--------------------------------+
+        Row   < Init     , none    , Lumissil , link_status_req    , And_<detect_link, is_lumissil> >,
+        Row   < Init     , none    , Qualcomm , link_status_req    , And_<detect_link, is_qualcomm> >,
+        Row   < Init     , none    , NoDetect , none               , link_detection_off             >,
+        //    +----------+---------+----------+--------------------+--------------------------------+
+        Row   < Lumissil , update  , Lumissil , link_status_req    , timeout                        >,
+        Row   < Lumissil , update  , Lumissil , retransmit_amp_map , amp_map_retransmit_due         >,
+        Row   < Lumissil , message , Failed   , none               , link_status_neg                >,
+        Row   < Lumissil , message , Lumissil , send_amp_map_cnf   , is_amp_map_req                 >,
+        Row   < Lumissil , message , Lumissil , amp_map_cnf_ack    , is_amp_map_cnf_ok              >,
+        //    +----------+---------+----------+--------------------+--------------------------------+
+        Row   < Qualcomm , update  , Qualcomm , link_status_req    , timeout                        >,
+        Row   < Qualcomm , update  , Qualcomm , retransmit_amp_map , amp_map_retransmit_due         >,
+        Row   < Qualcomm , message , Failed   , none               , link_status_neg                >,
+        Row   < Qualcomm , message , Qualcomm , send_amp_map_cnf   , is_amp_map_req                 >,
+        Row   < Qualcomm , message , Qualcomm , amp_map_cnf_ack    , is_amp_map_cnf_ok              >,
+        //    +----------+---------+----------+--------------------+--------------------------------+
+        Row   < NoDetect , message , NoDetect , send_amp_map_cnf   , is_amp_map_req                 >,
+        Row   < NoDetect , update  , NoDetect , retransmit_amp_map , amp_map_retransmit_due         >,
+        Row   < NoDetect , message , NoDetect , amp_map_cnf_ack    , is_amp_map_cnf_ok              >,
+        Row   < Other    , message , Other    , send_amp_map_cnf   , is_amp_map_req                 >,
+        Row   < Init     , message , Init     , send_amp_map_cnf   , is_amp_map_req                 >
+        //    +----------+---------+----------+--------------------+--------------------------------+
         >{};
 
     template <class FSM,class Event>
@@ -1578,28 +1549,11 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
         //  +-------------------+-----------+-------------+-----------------+-------------------+
         Row < Matched           , reset     , Reset       , none            , none              >,
         Row < Matched           , leave_bcd , Reset       , none            , none              >,
-        // A connection loss detected while matched (negative LINK_STATUS) must make the
-        // SECC leave the logical network within TP_match_leave: go to Reset, which
-        // regenerates the session NMK and re-keys the modem (regenerate_key_on_reset),
-        // so the SUT's node drops out of the AVLN -- matching EvseSlac, which re-keys on
-        // ResetState entry (ISO 15118-3 D-LINK termination; ISO 15118-5 PLCLinkStatus_005).
-        // on_matched_fail still logs the loss and signals the error routine.
         Row < Matched_Fail      , message   , Reset       , on_matched_fail , none              >,
         //  +-------------------+-----------+-------------+-----------------+-------------------+
         Row < Failed            , reset     , Reset       , none            , none              >,
         Row < Failed            , leave_bcd , Reset       , none            , none              >
         //  +-------------------+-----------+-------------+-----------------+-------------------+
-        // Unplug (CP -> A/E/F) must ALWAYS fully restore the SECC, using leave_bcd alone: it is
-        // the only event EvseManager is guaranteed to send. Its follow-up call_reset(false) is
-        // conditional on the last published SLAC state not being UNMATCHED, so any state that
-        // publishes UNMATCHED (Failed) would otherwise never be left again and the SECC would
-        // stop answering CM_SLAC_PARM.REQ for good -- the -5 SLAC TCs that dwell past
-        // TT_EVSE_SLAC_init (CmSlacParm_004..006 with reset_instead_of_fail=false) wedged the
-        // SUT for every following TC that way. leave_bcd therefore targets Reset, which leaves
-        // the logical network, regenerates the NMK and re-keys the modem before landing in Idle.
-        // The states without a leave_bcd row need none: Init/Reset/ResetChip are transient and
-        // reach Idle on their own, Idle already IS the unplugged-and-ready state, and Matching
-        // goes straight to Idle (no AVLN or session key of its own to tear down).
         > {};
     template <class FSM,class Event>
     void no_transition(Event const&, FSM&, int) {
