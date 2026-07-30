@@ -145,6 +145,10 @@ everest-testing:
   name: "EVerest Testing"
   description: "This python package provides utilities for testing EVerest with pytest"
   license: "Apache-2.0"
+everest-management-api-cli:
+  name: "EVerest Management API CLI"
+  description: "Command line client for the lifecycle and configuration APIs of the EVerest manager; the management API integration tests use its client modules"
+  license: "Apache-2.0"
 # dependencies of everest-testing
 pytest:
   description: "pytest: simple powerful testing with Python"
