@@ -482,7 +482,11 @@ void slacImpl::handle_slac_io_ready() {
         }
         lifecycle->slac_io_ready = true;
     }
-    // Also notifies the lifecycle waiters, releasing init() from wait_for_io_bring_up().
+
+    if (slac_io && fsm_ctx) {
+        std::copy_n(slac_io->get_mac_addr(), fsm_ctx->evse_mac.size(), fsm_ctx->evse_mac.begin());
+    }
+
     clear_communication_fault();
     start_fsm_if_ready();
 }
