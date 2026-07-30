@@ -510,7 +510,7 @@ void slacImpl::start_fsm_if_ready() {
 void slacImpl::handle_slac_io_error(bool on_error, const std::string& detail) {
     if (on_error) {
         if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
-            local_fsm_ctrl->stop();
+            local_fsm_ctrl->teardown();
         }
         auto const detail_message = detail.empty() ? "unknown error" : detail;
         auto const fault_message =
@@ -592,7 +592,9 @@ void slacImpl::mark_worker_offline(const std::string& reason) {
     }
 
     if (local_fsm_ctrl) {
-        local_fsm_ctrl->stop();
+        // Worker-thread only (all callers run on the worker); see handle_slac_io_error for why the
+        // FSM must be torn down through a reset event instead of frozen with stop().
+        local_fsm_ctrl->teardown();
     }
 
     if (should_raise_fault) {

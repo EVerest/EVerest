@@ -2089,6 +2089,107 @@ bool test_leave_bcd_recovers_from_failed_state() {
 
 // Same requirement from Matched: the unplug must leave the logical network and re-key even when
 // EvseManager's conditional reset(false) does arrive first-or-not-at-all.
+bool test_restart_fsm_from_matched_emits_dlink_ready_false() {
+    // PLC I/O recovery restarts the FSM via restart_fsm(). A bare msm::start() re-enters the
+    // initial state WITHOUT running on_exit of the active states, so a restart while Matched
+    // skipped Matched_def::on_exit — the only producer of dlink_ready(false) — and consumers
+    // kept a stale dlink_ready=true forever while state flipped to UNMATCHED.
+    const char* test_name = "test_restart_fsm_from_matched_emits_dlink_ready_false";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    std::vector<bool> dlink_events;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+    callbacks.signal_dlink_ready = [&dlink_events](bool value) { dlink_events.push_back(value); };
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+    fill_session_nmk(ctx, 0x42);
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0B};
+    auto run_id = fill_run_id(0xB1);
+    if (!perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::Matched, 700)) {
+        return false;
+    }
+    if (!assert_true(!dlink_events.empty() && dlink_events.back(), test_name,
+                     "expected d_link_ready after a full match")) {
+        return false;
+    }
+
+    machine.restart_fsm();
+    if (!assert_true(!dlink_events.empty() && !dlink_events.back(), test_name,
+                     "restart_fsm from Matched did not emit dlink_ready(false) — stale dlink_ready "
+                     "would tell the HLC stack the data link is still up")) {
+        return false;
+    }
+    if (!assert_true(ctx.status.modem_link_ready == false, test_name,
+                     "modem_link_ready not cleared by the Matched exit on restart")) {
+        return false;
+    }
+
+    return true;
+}
+
+bool test_reset_from_matched_emits_dlink_ready_false() {
+    // The module's PLC I/O error handler tears the FSM down with a synchronous reset event before
+    // stopping the controller (FSMController::teardown). That must leave Matched through the
+    // regular transition so Matched_def::on_exit publishes dlink_ready(false).
+    const char* test_name = "test_reset_from_matched_emits_dlink_ready_false";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    std::vector<bool> dlink_events;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+    callbacks.signal_dlink_ready = [&dlink_events](bool value) { dlink_events.push_back(value); };
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+    fill_session_nmk(ctx, 0x42);
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0C};
+    auto run_id = fill_run_id(0xC1);
+    if (!perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::Matched, 700)) {
+        return false;
+    }
+    if (!assert_true(!dlink_events.empty() && dlink_events.back(), test_name,
+                     "expected d_link_ready after a full match")) {
+        return false;
+    }
+
+    machine.reset();
+    if (!assert_true(!dlink_events.empty() && !dlink_events.back(), test_name,
+                     "reset from Matched did not emit dlink_ready(false)")) {
+        return false;
+    }
+    if (!wait_for_match_state(ctx, SlacState::Reset, machine, 200)) {
+        return assert_true(false, test_name, "reset in Matched did not transition to Reset");
+    }
+
+    return true;
+}
+
 bool test_leave_bcd_leaves_matched_state() {
     const char* test_name = "test_leave_bcd_leaves_matched_state";
     ContextCallbacks callbacks{};
@@ -2136,7 +2237,7 @@ bool test_leave_bcd_leaves_matched_state() {
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 31>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 33>{
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
                        test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
@@ -2191,6 +2292,10 @@ int main() {
         std::make_pair("test_matched_qualcomm_link_status_rejects_only_negative_cnf",
                        test_matched_qualcomm_link_status_rejects_only_negative_cnf),
         std::make_pair("test_leave_bcd_recovers_from_failed_state", test_leave_bcd_recovers_from_failed_state),
+        std::make_pair("test_restart_fsm_from_matched_emits_dlink_ready_false",
+                       test_restart_fsm_from_matched_emits_dlink_ready_false),
+        std::make_pair("test_reset_from_matched_emits_dlink_ready_false",
+                       test_reset_from_matched_emits_dlink_ready_false),
         std::make_pair("test_leave_bcd_leaves_matched_state", test_leave_bcd_leaves_matched_state),
     };
 
