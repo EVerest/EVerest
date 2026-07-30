@@ -1450,22 +1450,23 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
                 if (is_valid) {
                     any_valid_certificate = true;
 
-                    for (size_t i = 0; i < chain.size(); ++i) {
-                        std::string subType;
-                        if (i == 0)
-                            subType = "leaf";
-                        else if (i == chain.size() - 1)
-                            subType = "root";
-                        else
-                            subType = "intermediate";
-
-                        if (enforce_certificate_rules(chain.at(i).get())) {
-                            EVLOG_error << "Certificate chain invalid at " << subType;
-                            result.status = GetCertificateInfoStatus::NotFoundValid;
-                            return false; // skip this chain
+                    if (ENFORCE_CERT_PROFILES) {
+                        for (size_t i = 0; i < chain.size(); ++i) {
+                            std::string subType;
+                            if (i == 0)
+                                subType = "leaf";
+                            else if (i == chain.size() - 1)
+                                subType = "root";
+                            else
+                                subType = "intermediate";
+    
+                            if (enforce_certificate_rules(chain.at(i).get())) {
+                                EVLOG_error << "Certificate chain invalid at " << subType;
+                                result.status = GetCertificateInfoStatus::NotFoundValid;
+                                return false; // skip this chain
+                            }
                         }
                     }
-
                     // Search for the private key
                     auto priv_key_path =
                         get_private_key_path_of_certificate(chain.at(0), key_dir, this->private_key_password);
