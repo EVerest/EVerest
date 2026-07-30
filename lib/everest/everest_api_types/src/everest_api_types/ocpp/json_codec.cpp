@@ -417,6 +417,66 @@ void from_json(const json& j, StatusInfoType& k) {
     set_obj_optional(additional_info);
 }
 
+void to_json(json& j, OperationalStatusEnumType const& k) noexcept {
+    switch (k) {
+        set_json_enum(OperationalStatusEnumType, Inoperative);
+        set_json_enum(OperationalStatusEnumType, Operative);
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::ocpp::OperationalStatusEnumType";
+}
+
+void from_json(const json& j, OperationalStatusEnumType& k) {
+    std::string s = j;
+    set_string_enum(OperationalStatusEnumType, Inoperative);
+    set_string_enum(OperationalStatusEnumType, Operative);
+    throw std::out_of_range(
+        "Provided string " + s +
+        " could not be converted to enum of type everest::lib::API::V1_0::types::ocpp::OperationalStatusEnumType");
+}
+
+void to_json(json& j, ChangeAvailabilityStatusEnumType const& k) noexcept {
+    switch (k) {
+        set_json_enum(ChangeAvailabilityStatusEnumType, Accepted);
+        set_json_enum(ChangeAvailabilityStatusEnumType, Rejected);
+        set_json_enum(ChangeAvailabilityStatusEnumType, Scheduled);
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::ocpp::ChangeAvailabilityStatusEnumType";
+}
+
+void from_json(const json& j, ChangeAvailabilityStatusEnumType& k) {
+    std::string s = j;
+    set_string_enum(ChangeAvailabilityStatusEnumType, Accepted);
+    set_string_enum(ChangeAvailabilityStatusEnumType, Rejected);
+    set_string_enum(ChangeAvailabilityStatusEnumType, Scheduled);
+    throw std::out_of_range("Provided string " + s +
+                            " could not be converted to enum of type "
+                            "everest::lib::API::V1_0::types::ocpp::ChangeAvailabilityStatusEnumType");
+}
+
+void to_json(json& j, ChangeAvailabilityRequest const& k) noexcept {
+    j = json{
+        {"operational_status", k.operational_status},
+    };
+    set_json_optional(evse);
+}
+
+void from_json(const json& j, ChangeAvailabilityRequest& k) {
+    set_obj(operational_status);
+    set_obj_optional(evse);
+}
+
+void to_json(json& j, ChangeAvailabilityResponse const& k) noexcept {
+    j = json{
+        {"status", k.status},
+    };
+    set_json_optional(status_info);
+}
+
+void from_json(const json& j, ChangeAvailabilityResponse& k) {
+    set_obj(status);
+    set_obj_optional(status_info);
+}
+
 void to_json(json& j, BootNotificationResponse const& k) noexcept {
     j = json{
         {"status", k.status},

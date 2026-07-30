@@ -83,6 +83,8 @@ private:
     void generate_api_cmd_get_variables();
     void generate_api_cmd_set_variables();
     void generate_api_cmd_monitor_variables();
+    void generate_api_cmd_change_availability();
+    void generate_api_cmd_security_event();
 
     void generate_api_var_security_event();
     void generate_api_var_is_connected();

@@ -76,6 +76,21 @@ channels:
     messages:
       send_request_monitor_variables:
         $ref: '#/components/messages/send_request_monitor_variables'
+  send_request_change_availability:
+    address: 'm2e/change_availability'
+    messages:
+      send_request_change_availability:
+        $ref: '#/components/messages/send_request_change_availability'
+  receive_reply_change_availability:
+    address: null
+    messages:
+      receive_reply_change_availability:
+        $ref: '#/components/messages/receive_reply_change_availability'
+  send_request_security_event:
+    address: 'm2e/security_event'
+    messages:
+      send_request_security_event:
+        $ref: '#/components/messages/send_request_security_event'
 
   receive_ocpp_transaction_event:
     address: 'e2m/ocpp_transaction_event'
@@ -272,6 +287,28 @@ operations:
     action: send
     channel:
       $ref: '#/channels/send_request_monitor_variables'
+    description: 'Direction: Module to EVerest'
+  send_request_change_availability:
+    title: 'Send request to change the availability'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_change_availability'
+    description: 'Direction: Module to EVerest'
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_change_availability'
+  receive_reply_change_availability:
+    title: 'Receive response to the change availability request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_change_availability'
+  send_request_security_event:
+    title: 'Send request to trigger a security event'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_security_event'
     description: 'Direction: Module to EVerest'
 
   receive_ocpp_transaction_event:
@@ -673,6 +710,65 @@ components:
               variable:
                 name: string
                 instance: string
+    send_request_change_availability:
+      title: 'Request change availability'
+      summary: 'Request to change the availability of the Charging Station / an EVSE / a Connector.'
+      description: >-
+        Allows to send a ChangeAvailabilityRequest internally (as can be done by the CSMS).
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
+          payload:
+            $ref: '#/components/schemas/ChangeAvailabilityRequest'
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+            payload:
+              operational_status: Inoperative
+              evse:
+                id: 1
+                connector_id: 1
+    receive_reply_change_availability:
+      name: receive_reply_change_availability
+      title: 'Reply to change availability request'
+      summary: 'Reply to the request to change the availability'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ChangeAvailabilityResponse'
+      examples:
+        - summary: ""
+          payload:
+            status: Accepted
+            status_info:
+              reason_code: string
+              additional_info: string
+    send_request_security_event:
+      title: 'Trigger security event'
+      summary: 'Trigger a security event.'
+      description: >-
+        Triggers a SecurityEventNotification.req at the CSMS if it is deemed critical,
+        either by setting the flag in this event or if absent automatically by libocpp
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SecurityEvent'
+      examples:
+        - summary: ""
+          payload:
+            type: string
+            info: string
+            critical: true
+            timestamp: '2026-07-30T12:00:00Z'
 
     receive_ocpp_transaction_event:
       name: receive_ocpp_transaction_event
@@ -1023,6 +1119,53 @@ components:
             returns something other than Accepted, the value of the interval field indicates the
             minimum wait time before sending a next BootNotification request.
           type: integer
+        status_info:
+          description: Detailed status information.
+          type: object
+          $ref: '#/components/schemas/StatusInfoType'
+    OperationalStatusEnumType:
+      description: >-
+        Operational status of Charging Station /EVSE / Connector
+      type: string
+      enum:
+        - Inoperative
+        - Operative
+    ChangeAvailabilityRequest:
+      description: Request type to change the availability of the Charging Station/ an EVSE / a Connector.
+      type: object
+      additionalProperties: true
+      required:
+        - operational_status
+      properties:
+        operational_status:
+          description: Type of availability change that the Charging Station should perform.
+          type: string
+          $ref: '#/components/schemas/OperationalStatusEnumType'
+        evse:
+          description: >-
+            Specify EVSE/Connector whose status is changed. When omitted, the
+            message refers to the Charging Station as a whole.
+          type: object
+          $ref: '#/components/schemas/EVSE'
+    ChangeAvailabilityStatusEnumType:
+      description: >-
+        Status returned in response to ChangeAvailabilityRequest.
+      type: string
+      enum:
+        - Accepted
+        - Rejected
+        - Scheduled
+    ChangeAvailabilityResponse:
+      description: Response type to request to change the availability of the Charging Station/ an EVSE / a Connector.
+      type: object
+      additionalProperties: true
+      required:
+        - status
+      properties:
+        status:
+          description: Indicates whether the Charging Station is able to perform the availability change.
+          type: string
+          $ref: '#/components/schemas/ChangeAvailabilityStatusEnumType'
         status_info:
           description: Detailed status information.
           type: object
