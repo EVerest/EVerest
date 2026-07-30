@@ -249,39 +249,7 @@ struct Session_def     : public state_machine_def<Session_def> {
     // States
     static constexpr auto FINALIZE_SOUNDING_DELAY_MS = 45;
     struct WaitStartAtten   : public timeout_ms_state<defs::TT_MATCH_SEQUENCE_MS> { };
-    struct Sounding         : public timeout_ms_state<defs::TT_EVSE_MATCH_MNBC_MS> {
-        struct update_session {
-            template <class Fsm, class SrcT, class TarT>
-            void operator()(message const& e, Fsm& fsm, SrcT&, TarT& ) {
-                auto const msg = e.payload.payload_as<slac::messages::cm_atten_profile_ind>();
-                if (not msg.has_value()) {
-                    return;
-                }
-                for (int i = 0; i < slac::defs::AAG_LIST_LEN; ++i) {
-                    fsm.session_data.captured_aags[i] += msg->aag[i];
-                }
-                fsm.session_data.captured_sounds++;
-                fsm.ctx->log_debug(session_log_prefix(fsm.session_data) + "Received CM_ATTEN_PROFILE.IND (" +
-                                   std::to_string(fsm.session_data.captured_sounds) + " of " +
-                                   std::to_string(slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS) + " sounds captured)");
-            }
-        };
-        struct is_atten_profile_ind {
-            template <class Fsm, class SrcT, class TarT>
-            bool operator()(message const& e, Fsm& fsm, SrcT&, TarT& ) {
-                auto mmtype = slac::defs::MMTYPE_CM_ATTEN_PROFILE | slac::defs::MMTYPE_MODE_IND;
-                return check_message<slac::messages::cm_atten_profile_ind>(e, mmtype, fsm.session_data);
-            }
-        };
-
-        struct internal_transition_table : boost::mpl::vector<
-            //        +---------+----------------+----------------------+
-            //        | Event   | Action         | Guard                |
-            //        +---------+----------------+----------------------+
-            Internal  < message , update_session , is_atten_profile_ind >
-            //        +---------+----------------+----------------------+
-            > {};
-    };
+    struct Sounding         : public timeout_ms_state<defs::TT_EVSE_MATCH_MNBC_MS> { };
     struct FinalizeSounding : public timeout_ms_state<FINALIZE_SOUNDING_DELAY_MS> { };
     struct WaitAttenRsp     : public timeout_ms_state<defs::TT_MATCH_RESPONSE_MS> { };
     struct WaitSlacMatch    : public timeout_ms_state<defs::TT_EVSE_MATCH_SESSION_MS> {  };
@@ -317,9 +285,33 @@ struct Session_def     : public state_machine_def<Session_def> {
         auto mmtype = slac::defs::MMTYPE_CM_SLAC_MATCH | slac::defs::MMTYPE_MODE_REQ;
         return check_message<slac::messages::cm_slac_match_req>(e, mmtype, session_data);
     }
-    bool enough_sounds(message const&) {
-        return session_data.captured_sounds >= slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS;
+    bool is_atten_profile_ind(message const& e) {
+        auto mmtype = slac::defs::MMTYPE_CM_ATTEN_PROFILE | slac::defs::MMTYPE_MODE_IND;
+        return check_message<slac::messages::cm_atten_profile_ind>(e, mmtype, session_data);
     }
+    // CM_ATTEN_PROFILE.IND is handled in this machine's transition table instead of a
+    // Sounding-internal transition table: Boost.MSM dispatches a state's internal
+    // transitions before the machine's rows and they consume the event, so an exit row
+    // guarded on the sound count could never fire — every sounding phase silently ran
+    // the full TT_EVSE_MATCH_MNBC (600 ms) window and kept counting past the limit.
+    // EvseSlac finalizes FINALIZE_SOUNDING_DELAY_MS (45 ms) after the sound that
+    // completes the count and ignores later profiles, so num_sounds never exceeds
+    // CM_SLAC_PARM_CNF_NUM_SOUNDS. The two guards are mutually exclusive: the
+    // completing sound takes the exit row to FinalizeSounding.
+    struct sound_below_limit {
+        template <class Fsm, class SrcT, class TarT>
+        bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+            return fsm.session_data.captured_sounds + 1 < slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS and
+                   fsm.is_atten_profile_ind(e);
+        }
+    };
+    struct sound_completes_count {
+        template <class Fsm, class SrcT, class TarT>
+        bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+            return fsm.session_data.captured_sounds + 1 >= slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS and
+                   fsm.is_atten_profile_ind(e);
+        }
+    };
     // After a CM_VALIDATE process, the CM_SLAC_MATCH.REQ must arrive within TT_match_sequence (much
     // shorter than the overall TT_EVSE_match_session that bounds WaitSlacMatch otherwise). When that
     // shorter window elapses the matching has FAILED (ISO 15118-5 CmSlacMatch_003/004 cmValidate
@@ -361,6 +353,27 @@ struct Session_def     : public state_machine_def<Session_def> {
         void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
             fsm.ctx->log_info(session_log_prefix(fsm.session_data) +
                               "Received CM_START_ATTEN_CHAR.IND, MNBC sounding started");
+        }
+    };
+    // Accumulate one CM_ATTEN_PROFILE.IND (see sound_below_limit / sound_completes_count).
+    struct capture_sound {
+        template <class Fsm, class SrcT, class TarT>
+        void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+            auto const msg = e.payload.payload_as<slac::messages::cm_atten_profile_ind>();
+            if (not msg.has_value()) {
+                return;
+            }
+            for (int i = 0; i < slac::defs::AAG_LIST_LEN; ++i) {
+                fsm.session_data.captured_aags[i] += msg->aag[i];
+            }
+            fsm.session_data.captured_sounds++;
+            fsm.ctx->log_debug(session_log_prefix(fsm.session_data) + "Received CM_ATTEN_PROFILE.IND (" +
+                               std::to_string(fsm.session_data.captured_sounds) + " of " +
+                               std::to_string(slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS) + " sounds captured)");
+            if (fsm.session_data.captured_sounds >= slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS) {
+                fsm.ctx->log_info(session_log_prefix(fsm.session_data) +
+                                  "Received all sounds, finalizing sounding");
+            }
         }
     };
     // Shared by finalize_snd and retry_snd: send the CM_ATTEN_CHAR.IND and log the averaged
@@ -460,7 +473,8 @@ struct Session_def     : public state_machine_def<Session_def> {
         Row   < WaitStartAtten   , update  , Failed           , log_session_failed<fail_no_start_atten> , timeout >,
         Row   < WaitStartAtten   , message , Sounding         , sounding_started , start_atten_in_time   >,
         Row   < Sounding         , update  , FinalizeSounding , none          , timeout                  >,
-        g_row < Sounding         , message , FinalizeSounding /* none */      , &p::enough_sounds        >,
+        Row   < Sounding         , message , none             , capture_sound , sound_below_limit        >,
+        Row   < Sounding         , message , FinalizeSounding , capture_sound , sound_completes_count    >,
         Row   < FinalizeSounding , update  , WaitAttenRsp     , finalize_snd  , timeout                  >,
         Row   < WaitAttenRsp     , update  , WaitAttenRsp     , retry_snd     , timeout                  >,
         Row   < WaitAttenRsp     , update  , Failed           , log_session_failed<fail_no_atten_rsp> , retry_timeout >,

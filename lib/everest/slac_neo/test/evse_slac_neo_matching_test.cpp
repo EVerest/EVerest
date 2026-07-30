@@ -570,6 +570,130 @@ bool test_duplicate_cm_slac_parm_req_restarts_inflight_session() {
     return true;
 }
 
+bool test_atten_char_ind_sent_promptly_after_last_sound() {
+    // ISO 15118-3 / EvseSlac behavior: the sounding phase ends as soon as the
+    // CM_SLAC_PARM_CNF_NUM_SOUNDS'th CM_ATTEN_PROFILE.IND arrives, and the
+    // CM_ATTEN_CHAR.IND follows FINALIZE_SOUNDING_DELAY_MS (45 ms) later. It must
+    // NOT wait out the full TT_EVSE_MATCH_MNBC (600 ms) sounding window. A
+    // Sounding-internal transition used to consume every profile before the
+    // exit row's guard was evaluated, so the fast path was dead code.
+    const char* test_name = "test_atten_char_ind_sent_promptly_after_last_sound";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x01};
+    auto run_id = fill_run_id(0x71);
+
+    machine.message(create_cm_slac_parm_req(ev_mac, run_id));
+    if (!wait_for_parm_cnf_count(sent_messages, 1, machine, 100)) {
+        return assert_true(false, test_name, "did not emit CM_SLAC_PARM.CNF");
+    }
+
+    machine.message(create_cm_start_atten_char_ind(ev_mac, run_id));
+    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+        machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
+    }
+
+    // Well below TT_EVSE_MATCH_MNBC_MS (600 ms): only the last-sound fast path can make this.
+    const auto last_sound_time = std::chrono::steady_clock::now();
+    if (!wait_for_atten_char_ind_count(sent_messages, 1, machine, 300)) {
+        return assert_true(false, test_name,
+                           "CM_ATTEN_CHAR.IND not sent within 300 ms of the last sound (fast path dead, "
+                           "session waits out the full 600 ms TT_EVSE_MATCH_MNBC window)");
+    }
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - last_sound_time);
+    if (!assert_true(elapsed.count() < 300, test_name, "CM_ATTEN_CHAR.IND arrived too late after the last sound")) {
+        return false;
+    }
+
+    messages::cm_atten_char_ind atten_char;
+    if (!get_last_cm_atten_char_ind(sent_messages, atten_char)) {
+        return assert_true(false, test_name, "could not read CM_ATTEN_CHAR.IND");
+    }
+    return assert_true(atten_char.num_sounds == defs::CM_SLAC_PARM_CNF_NUM_SOUNDS, test_name,
+                       "CM_ATTEN_CHAR.IND num_sounds != CM_SLAC_PARM_CNF_NUM_SOUNDS");
+}
+
+bool test_atten_char_ind_ignores_sounds_beyond_num_sounds() {
+    // EvseSlac leaves the sounding sub-state on the 10th profile and rejects any
+    // further CM_ATTEN_PROFILE.IND, so num_sounds is never > CM_SLAC_PARM_CNF_NUM_SOUNDS
+    // and the average covers exactly the first 10 samples. Feeding 12 profiles must
+    // not produce num_sounds=12 or an average over 12 samples.
+    const char* test_name = "test_atten_char_ind_ignores_sounds_beyond_num_sounds";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x01};
+    auto run_id = fill_run_id(0x81);
+
+    machine.message(create_cm_slac_parm_req(ev_mac, run_id));
+    if (!wait_for_parm_cnf_count(sent_messages, 1, machine, 100)) {
+        return assert_true(false, test_name, "did not emit CM_SLAC_PARM.CNF");
+    }
+
+    machine.message(create_cm_start_atten_char_ind(ev_mac, run_id));
+    constexpr std::size_t excess_profiles = defs::CM_SLAC_PARM_CNF_NUM_SOUNDS + 2;
+    for (std::size_t i = 0; i < excess_profiles; ++i) {
+        machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
+    }
+
+    // Generous window: this test only checks the cap, not the fast-path timing.
+    if (!wait_for_atten_char_ind_count(sent_messages, 1, machine, 1000)) {
+        return assert_true(false, test_name, "did not emit CM_ATTEN_CHAR.IND");
+    }
+
+    messages::cm_atten_char_ind atten_char;
+    if (!get_last_cm_atten_char_ind(sent_messages, atten_char)) {
+        return assert_true(false, test_name, "could not read CM_ATTEN_CHAR.IND");
+    }
+    if (!assert_true(atten_char.num_sounds == defs::CM_SLAC_PARM_CNF_NUM_SOUNDS, test_name,
+                     "num_sounds exceeds CM_SLAC_PARM_CNF_NUM_SOUNDS (excess profiles were counted)")) {
+        return false;
+    }
+
+    const auto expected_aag =
+        calc_expected_aag(0xA0, defs::CM_SLAC_PARM_CNF_NUM_SOUNDS, ctx.slac_config.sounding_atten_adjustment);
+    for (std::size_t i = 0; i < defs::AAG_LIST_LEN; ++i) {
+        if (!assert_true(atten_char.attenuation_profile.aag[i] == expected_aag[i], test_name,
+                         "attenuation average includes profiles beyond CM_SLAC_PARM_CNF_NUM_SOUNDS")) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool test_invalid_cm_slac_parm_req_is_ignored() {
     const char* test_name = "test_invalid_cm_slac_parm_req_is_ignored";
     ContextCallbacks callbacks{};
@@ -2012,11 +2136,15 @@ bool test_leave_bcd_leaves_matched_state() {
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 29>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 31>{
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
                        test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
                        test_duplicate_cm_slac_parm_req_restarts_inflight_session),
+        std::make_pair("test_atten_char_ind_sent_promptly_after_last_sound",
+                       test_atten_char_ind_sent_promptly_after_last_sound),
+        std::make_pair("test_atten_char_ind_ignores_sounds_beyond_num_sounds",
+                       test_atten_char_ind_ignores_sounds_beyond_num_sounds),
         std::make_pair("test_invalid_cm_slac_parm_req_is_ignored", test_invalid_cm_slac_parm_req_is_ignored),
         std::make_pair("test_short_cm_slac_param_req_does_not_create_session",
                        test_short_cm_slac_param_req_does_not_create_session),
