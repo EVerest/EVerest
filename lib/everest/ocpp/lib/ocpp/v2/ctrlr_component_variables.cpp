@@ -1400,6 +1400,12 @@ const ComponentVariable WaitForSetUserPriceTimeout = {
         "WaitForSetUserPriceTimeout",
     }),
 };
+const ComponentVariable ReportClearedErrors = {
+    ControllerComponents::OCPP16LegacyCtrlr,
+    std::optional<Variable>({
+        "ReportClearedErrors",
+    }),
+};
 } // namespace ControllerComponentVariables
 
 namespace EvseComponentVariables {
