@@ -2101,6 +2101,81 @@ bool test_matched_link_status_neg_debounce_tolerates_transient_flaps() {
                        "did not transition to Reset on the 3rd consecutive negative link-status CNF");
 }
 
+// TC_SECC_CMN_VTB_PLCLinkStatus_003: once CM_SLAC_MATCH.CNF is out, a fresh CM_SLAC_PARM.REQ must
+// get no CNF. The FSM exits Matching only on the next update tick, so a PARM.REQ arriving inside
+// that window used to be answered by the Listen region (and, with the same run_id, restarted the
+// completed session). The harness is synchronous: no update runs between message() calls, so the
+// window is hit deterministically.
+bool test_parm_req_after_match_cnf_gets_no_cnf() {
+    const char* test_name = "test_parm_req_after_match_cnf_gets_no_cnf";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0B};
+    auto run_id = fill_run_id(0x78);
+
+    const auto initial_parm_count = count_slac_parm_cnf(sent_messages);
+    const auto initial_atten_count = count_cm_atten_char_ind(sent_messages);
+    machine.message(create_cm_slac_parm_req(ev_mac, run_id));
+    if (!wait_for_parm_cnf_count(sent_messages, initial_parm_count + 1, machine, 700)) {
+        return assert_true(false, test_name, "did not emit CM_SLAC_PARM.CNF");
+    }
+    machine.message(create_cm_start_atten_char_ind(ev_mac, run_id));
+    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+        machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
+    }
+    if (!wait_for_atten_char_ind_count(sent_messages, initial_atten_count + 1, machine, 700)) {
+        return assert_true(false, test_name, "did not emit CM_ATTEN_CHAR.IND");
+    }
+    machine.message(create_cm_atten_char_rsp(ev_mac, run_id));
+    machine.message(create_cm_slac_match_req(ev_mac, run_id, evse_mac));
+
+    if (!assert_true(ctx.status.match_state == SlacState::Matching, test_name,
+                     "expected the FSM to still be in Matching right after CM_SLAC_MATCH.REQ")) {
+        return false;
+    }
+    const auto parm_cnf_after_match = count_slac_parm_cnf(sent_messages);
+
+    machine.message(create_cm_slac_parm_req(ev_mac, fill_run_id(0x79)));
+    if (!assert_true(count_slac_parm_cnf(sent_messages) == parm_cnf_after_match, test_name,
+                     "CM_SLAC_PARM.REQ with a new run_id after match completion was answered")) {
+        return false;
+    }
+    machine.message(create_cm_slac_parm_req(ev_mac, run_id));
+    if (!assert_true(count_slac_parm_cnf(sent_messages) == parm_cnf_after_match, test_name,
+                     "CM_SLAC_PARM.REQ with the matched run_id after match completion was answered")) {
+        return false;
+    }
+
+    // The ignored requests must not have unwound the completed match.
+    if (!wait_for_match_state(ctx, SlacState::Matched, machine, 700)) {
+        return assert_true(false, test_name, "did not reach Matched after ignored CM_SLAC_PARM.REQs");
+    }
+
+    machine.message(create_cm_slac_parm_req(ev_mac, fill_run_id(0x7A)));
+    if (!assert_parm_cnf_count_stays_at(parm_cnf_after_match, sent_messages, machine, 100)) {
+        return assert_true(false, test_name, "CM_SLAC_PARM.REQ in Matched state was answered");
+    }
+
+    return true;
+}
+
 bool test_matched_link_status_neg_debounce_clamps_invalid_to_one() {
     const char* test_name = "test_matched_link_status_neg_debounce_clamps_invalid_to_one";
     ContextCallbacks callbacks{};
@@ -2360,7 +2435,7 @@ bool test_leave_bcd_leaves_matched_state() {
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 35>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 36>{
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
                        test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
@@ -2416,6 +2491,7 @@ int main() {
                        test_matched_qualcomm_link_status_rejects_only_negative_cnf),
         std::make_pair("test_matched_link_status_neg_debounce_tolerates_transient_flaps",
                        test_matched_link_status_neg_debounce_tolerates_transient_flaps),
+        std::make_pair("test_parm_req_after_match_cnf_gets_no_cnf", test_parm_req_after_match_cnf_gets_no_cnf),
         std::make_pair("test_matched_link_status_neg_debounce_clamps_invalid_to_one",
                        test_matched_link_status_neg_debounce_clamps_invalid_to_one),
         std::make_pair("test_leave_bcd_recovers_from_failed_state", test_leave_bcd_recovers_from_failed_state),
