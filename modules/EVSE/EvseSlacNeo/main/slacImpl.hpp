@@ -63,6 +63,7 @@ struct Conf {
     bool link_status_detection;
     int link_status_retry_ms;
     int link_status_timeout_ms;
+    int link_status_poll_in_matched_state_ms;
     int link_status_debounce_count;
     bool debug_simulate_failed_matching;
     bool reset_instead_of_fail;
