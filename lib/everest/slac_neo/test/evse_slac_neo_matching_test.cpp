@@ -2025,6 +2025,129 @@ bool test_matched_qualcomm_link_status_rejects_only_negative_cnf() {
     return true;
 }
 
+bool test_matched_link_status_neg_debounce_tolerates_transient_flaps() {
+    const char* test_name = "test_matched_link_status_neg_debounce_tolerates_transient_flaps";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+    ctx.slac_config.link_status.do_detect = true;
+    ctx.slac_config.link_status.retry_ms = 20;
+    ctx.slac_config.link_status.poll_in_matched_state_ms = 120;
+    ctx.slac_config.link_status.timeout_ms = 300;
+    ctx.slac_config.link_status.debounce_count = 3;
+    ctx.modem_vendor = defs::ModemVendor::Qualcomm;
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x09};
+    auto run_id = fill_run_id(0x76);
+    if (!perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::WaitForLink, 700)) {
+        return false;
+    }
+
+    EvMac modem_source = {0x00, 0xB0, 0x52, 0x00, 0x00, 0x02};
+    machine.message(create_qualcomm_link_status_cnf(modem_source, defs::D_LINK_STATUS_LINKED));
+    if (!wait_for_match_state(ctx, SlacState::Matched, machine, 200)) {
+        return assert_true(false, test_name, "did not transition to Matched on positive link-status CNF");
+    }
+
+    auto const stays_matched = [&ctx, &machine]() {
+        return not wait_for(std::chrono::milliseconds(60), machine,
+                            [&ctx]() { return ctx.status.match_state != SlacState::Matched; });
+    };
+
+    machine.message(create_qualcomm_link_status_cnf(modem_source, 0x00));
+    if (!assert_true(stays_matched(), test_name, "1st negative link-status CNF left Matched despite debounce")) {
+        return false;
+    }
+    machine.message(create_qualcomm_link_status_cnf(modem_source, 0x00));
+    if (!assert_true(stays_matched(), test_name, "2nd negative link-status CNF left Matched despite debounce")) {
+        return false;
+    }
+
+    machine.message(create_qualcomm_link_status_cnf(modem_source, defs::D_LINK_STATUS_LINKED));
+    if (!assert_true(stays_matched(), test_name, "positive link-status CNF changed matched state")) {
+        return false;
+    }
+    machine.message(create_qualcomm_link_status_cnf(modem_source, 0x00));
+    if (!assert_true(stays_matched(), test_name,
+                     "1st negative after recovery left Matched (positive CNF did not reset the count)")) {
+        return false;
+    }
+    machine.message(create_qualcomm_link_status_cnf(modem_source, 0x00));
+    if (!assert_true(stays_matched(), test_name,
+                     "2nd negative after recovery left Matched (positive CNF did not reset the count)")) {
+        return false;
+    }
+
+    machine.message(create_qualcomm_link_status_cnf(modem_source, 0x00));
+    auto left_matched = wait_for(std::chrono::milliseconds(200), machine, [&ctx]() {
+        return ctx.status.match_state == SlacState::Reset || ctx.status.match_state == SlacState::Idle;
+    });
+    return assert_true(left_matched, test_name,
+                       "did not transition to Reset on the 3rd consecutive negative link-status CNF");
+}
+
+bool test_matched_link_status_neg_debounce_clamps_invalid_to_one() {
+    const char* test_name = "test_matched_link_status_neg_debounce_clamps_invalid_to_one";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+    ctx.slac_config.link_status.do_detect = true;
+    ctx.slac_config.link_status.retry_ms = 20;
+    ctx.slac_config.link_status.poll_in_matched_state_ms = 120;
+    ctx.slac_config.link_status.timeout_ms = 300;
+    ctx.slac_config.link_status.debounce_count = 0;
+    ctx.modem_vendor = defs::ModemVendor::Lumissil;
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0A};
+    auto run_id = fill_run_id(0x77);
+    if (!perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::WaitForLink, 700)) {
+        return false;
+    }
+
+    EvMac modem_source = {0x00, 0x00, 0x00, 0x00, 0x00, 0x02};
+    machine.message(create_lumissil_link_status_cnf(modem_source, defs::D_LINK_STATUS_LINKED));
+    if (!wait_for_match_state(ctx, SlacState::Matched, machine, 200)) {
+        return assert_true(false, test_name, "did not transition to Matched on positive link-status CNF");
+    }
+
+    machine.message(create_lumissil_link_status_cnf(modem_source, 0x00));
+    auto left_matched = wait_for(std::chrono::milliseconds(200), machine, [&ctx]() {
+        return ctx.status.match_state == SlacState::Reset || ctx.status.match_state == SlacState::Idle;
+    });
+    return assert_true(left_matched, test_name,
+                       "clamped debounce_count=0 did not tear down on the first negative link-status CNF");
+}
+
 // An unplug is signalled by leave_bcd alone: EvseManager only follows up with reset(false) when
 // the last published SLAC state is not UNMATCHED, which Failed publishes. So leave_bcd on its own
 // must fully restore the SECC, otherwise the first matching failure wedges it for good and every
@@ -2237,7 +2360,7 @@ bool test_leave_bcd_leaves_matched_state() {
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 33>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 35>{
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
                        test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
@@ -2291,6 +2414,10 @@ int main() {
                        test_matched_link_status_rejects_only_negative_cnf),
         std::make_pair("test_matched_qualcomm_link_status_rejects_only_negative_cnf",
                        test_matched_qualcomm_link_status_rejects_only_negative_cnf),
+        std::make_pair("test_matched_link_status_neg_debounce_tolerates_transient_flaps",
+                       test_matched_link_status_neg_debounce_tolerates_transient_flaps),
+        std::make_pair("test_matched_link_status_neg_debounce_clamps_invalid_to_one",
+                       test_matched_link_status_neg_debounce_clamps_invalid_to_one),
         std::make_pair("test_leave_bcd_recovers_from_failed_state", test_leave_bcd_recovers_from_failed_state),
         std::make_pair("test_restart_fsm_from_matched_emits_dlink_ready_false",
                        test_restart_fsm_from_matched_emits_dlink_ready_false),
