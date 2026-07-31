@@ -297,6 +297,8 @@ components:
       required:
         - session_id
         - evse_id
+        - evse_id_string
+        - connector_id
         - state
         - timestamp_start
         - meter_value_start
@@ -314,9 +316,19 @@ components:
           type: string
         evse_id:
           description: >-
+            The numeric id of the EVSE this transaction was charged on, as used
+            across EVerest interfaces (1-based).
+          type: integer
+          minimum: 1
+        evse_id_string:
+          description: >-
             The EVSEID of the EVSE this transaction was charged on,
             as configured in the EvseManager.
           type: string
+        connector_id:
+          description: The id of the connector that was used for this transaction.
+          type: integer
+          minimum: 1
         state:
           description: Lifecycle state of this record
           type: string
