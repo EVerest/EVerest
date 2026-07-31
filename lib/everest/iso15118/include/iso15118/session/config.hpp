@@ -8,15 +8,105 @@
 #include <string>
 #include <vector>
 
+#include <iso15118/d2/ev/config.hpp>
 #include <iso15118/d20/config.hpp>
+#include <iso15118/d20/ev/config.hpp>
 #include <iso15118/d20/limits.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message_2/common_types.hpp>
 #include <iso15118/session/protocol.hpp>
 
+// Protocol-neutral, universal EV configuration. Although the charge-parameter payload structs still
+// live in the d20::ev namespace (they are expressed with the -20 RationalNumber datatype), the
+// EvSetupConfig / EvSessionConfig aggregates below are consumed by the ISO 15118-2 and DIN SPEC 70121
+// engines as well, so they live in the protocol-neutral iso15118::session namespace.
 namespace iso15118::session {
 
 namespace dt = message_20::datatypes;
+
+// Session-independent EV setup configuration
+struct EvSetupConfig {
+    std::string evcc_id;
+
+    // Prioritized list of the energy transfer services the EV wants to use.
+    // Lower index == higher priority.
+    std::vector<dt::ServiceCategory> supported_energy_services;
+
+    // Preferred control mode. The mode actually used is derived from the selected parameter set.
+    dt::ControlMode preferred_control_mode{dt::ControlMode::Dynamic};
+
+    // Supported authorization options, defaults to EIM.
+    std::vector<dt::Authorization> supported_auth_options{dt::Authorization::EIM};
+
+    std::optional<std::string> custom_protocol{std::nullopt};
+
+    // Priority-ordered list of protocol generations offered in the SupportedAppProtocol handshake.
+    // Lower index == higher priority.
+    std::vector<ProtocolId> supported_protocols{ProtocolId::ISO15118_20};
+
+    // EVCCID / MAC used by the ISO 15118-2 and DIN SPEC 70121 SessionSetup.
+    std::array<uint8_t, 6> evcc_mac{0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    // Requested energy transfer mode granularity for the pre-20 protocols (AC single vs three phase,
+    // or DC_extended). Selects the AC/DC branch of the ISO-2 / DIN state machines.
+    message_2::datatypes::EnergyTransferMode iso2_energy_transfer_mode{
+        message_2::datatypes::EnergyTransferMode::DC_extended};
+
+    // AC charge parameters for the ISO 15118-2 AC branch.
+    float iso2_ac_e_amount{60000.0f};
+    float iso2_ac_ev_max_voltage{400.0f};
+    float iso2_ac_ev_max_current{32.0f};
+    float iso2_ac_ev_min_current{10.0f};
+
+    // When set, re-join a paused session of the negotiated protocol (the SAP offer is constrained to
+    // that protocol). Only honored by the ISO-2 and DIN engines.
+    std::optional<std::array<uint8_t, 8>> resumed_session_id{std::nullopt};
+
+    d20::ev::DcEvChargeParameters dc_charge_parameters{};
+    std::optional<d20::ev::DcEvBptChargeParameters> dc_bpt_charge_parameters{std::nullopt};
+    d20::ev::AcEvChargeParameters ac_charge_parameters{};
+
+    // ISO 15118-2 Plug-and-Charge (Contract) configuration. Passed through to the d2 EV engine; the
+    // module fills it from EvseSecurity when PnC is enabled.
+    d2::ev::PnCConfig iso2_pnc{};
+
+    // Set when the module reports the applied control pilot state (CpState control events). The DC cable
+    // check states then hold the first CableCheckReq until CP state C/D is reported.
+    bool has_cp_state_feedback{false};
+};
+
+// Session-scoped EV configuration. Constructed from EvSetupConfig at the start of a session.
+struct EvSessionConfig {
+    EvSessionConfig() = default;
+    explicit EvSessionConfig(EvSetupConfig config);
+
+    std::string evcc_id;
+
+    std::vector<dt::ServiceCategory> supported_energy_services;
+    dt::ControlMode preferred_control_mode{dt::ControlMode::Dynamic};
+    std::vector<dt::Authorization> supported_auth_options{dt::Authorization::EIM};
+    std::optional<std::string> custom_protocol{std::nullopt};
+
+    std::vector<ProtocolId> supported_protocols{ProtocolId::ISO15118_20};
+    std::array<uint8_t, 6> evcc_mac{0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    message_2::datatypes::EnergyTransferMode iso2_energy_transfer_mode{
+        message_2::datatypes::EnergyTransferMode::DC_extended};
+    float iso2_ac_e_amount{60000.0f};
+    float iso2_ac_ev_max_voltage{400.0f};
+    float iso2_ac_ev_max_current{32.0f};
+    float iso2_ac_ev_min_current{10.0f};
+    std::optional<std::array<uint8_t, 8>> resumed_session_id{std::nullopt};
+
+    d20::ev::DcEvChargeParameters dc_charge_parameters{};
+    std::optional<d20::ev::DcEvBptChargeParameters> dc_bpt_charge_parameters{std::nullopt};
+    d20::ev::AcEvChargeParameters ac_charge_parameters{};
+
+    // ISO 15118-2 Plug-and-Charge (Contract) configuration (see EvSetupConfig::iso2_pnc).
+    d2::ev::PnCConfig iso2_pnc{};
+
+    // See EvSetupConfig::has_cp_state_feedback.
+    bool has_cp_state_feedback{false};
+};
 
 // Protocol-neutral, universal SECC configuration. The per-service parameter list, DC/AC/DER limit and
 // setup sub-structs still live in the d20 namespace (they are expressed with the -20 RationalNumber

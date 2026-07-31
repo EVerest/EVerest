@@ -12,6 +12,25 @@ provides:
         description: Timeout for CM_SET_KEY.REQ. Default works for QCA7000/QCA7005/CG5317.
         type: integer
         default: 500
+      link_status_detection:
+        description: >-
+          While matched, poll the local modem for the data link status using the LINK_STATUS Vendor
+          MME Extension (works on Qualcomm and Lumissil chips) and leave the logical network once the
+          link is gone. ISO 15118-3 [V2G3-M07-34] refers an unexpected loss of communication to
+          [V2G3-M09-19], which requires leaving within TP_match_leave; without this the EV only
+          notices a lost link through the control pilot.
+        type: boolean
+        default: false
+      link_status_retry_ms:
+        description: Delay before re-asking when a LINK_STATUS request went unanswered.
+        type: integer
+        default: 100
+      link_status_poll_ms:
+        description: >-
+          Interval between LINK_STATUS polls while the data link is up. Must be well below
+          TP_match_leave (1 s) for the leave to happen in time.
+        type: integer
+        default: 250
 metadata:
   base_license: https://directory.fsf.org/wiki/License:BSD-3-Clause-Clear
   license: https://opensource.org/licenses/Apache-2.0

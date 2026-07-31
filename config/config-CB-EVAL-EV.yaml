@@ -8,12 +8,12 @@ active_modules:
           module_id: ev_manager
     module: EvAPI
   iso15118_ev:
-    module: PyEvJosev
+    module: Ev15118
     config_module:
       device: cb_ev_plc
       supported_DIN70121: true
       supported_ISO15118_2: true
-      supported_ISO15118_20_DC: true
+      supported_d20_energy_services: "DC,DC_BPT"
       tls_active: false
   ev_bsp_1:
     module: ev_board_support_API

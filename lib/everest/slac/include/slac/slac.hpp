@@ -55,6 +55,17 @@ const int TT_EVSE_MATCH_SESSION_MS = 10000;
 const int TT_EVSE_SLAC_INIT_MS = 40000; // (20s - 50s)
 const int TT_MATCH_JOIN_MS = 12000;     // max. 12s
 const int T_STEP_EF_MS = 4000;          // min. 4s
+// [V2G3-A09-122] / [V2G3-A09-124]: a failed matching process is repeated,
+// TT_matching_rate apart, until TT_matching_repetition since the trigger runs out.
+const int TT_MATCHING_REPETITION_MS = 10000;
+// ISO 15118-3 Table 12 gives TT_matching_rate as a TYPICAL 400ms, not a fixed
+// value (unlike TT_match_response, which is a max). 400ms is too eager to be
+// conformance-testable: the ISO 15118-5 ATS requires silence for
+// TT_match_response + 2 * CMN_Transmission_Delay = 700ms after the last retry
+// of a burst, and 200ms + 400ms restarts 100ms inside that window. 600ms keeps
+// the restart clear of it while staying the same order as the typical value,
+// and still allows ~7 matching attempts inside TT_matching_repetition.
+const int TT_MATCHING_RATE_MS = 600;
 
 const uint16_t MMTYPE_CM_SET_KEY = 0x6008;
 const uint16_t MMTYPE_CM_SLAC_PARAM = 0x6064;

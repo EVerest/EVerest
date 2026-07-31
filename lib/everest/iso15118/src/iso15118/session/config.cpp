@@ -10,6 +10,31 @@
 
 namespace iso15118::session {
 
+EvSessionConfig::EvSessionConfig(EvSetupConfig config) :
+    evcc_id(std::move(config.evcc_id)),
+    supported_energy_services(std::move(config.supported_energy_services)),
+    preferred_control_mode(config.preferred_control_mode),
+    supported_auth_options(std::move(config.supported_auth_options)),
+    custom_protocol(std::move(config.custom_protocol)),
+    supported_protocols(std::move(config.supported_protocols)),
+    evcc_mac(config.evcc_mac),
+    iso2_energy_transfer_mode(config.iso2_energy_transfer_mode),
+    iso2_ac_e_amount(config.iso2_ac_e_amount),
+    iso2_ac_ev_max_voltage(config.iso2_ac_ev_max_voltage),
+    iso2_ac_ev_max_current(config.iso2_ac_ev_max_current),
+    iso2_ac_ev_min_current(config.iso2_ac_ev_min_current),
+    resumed_session_id(config.resumed_session_id),
+    dc_charge_parameters(std::move(config.dc_charge_parameters)),
+    dc_bpt_charge_parameters(std::move(config.dc_bpt_charge_parameters)),
+    ac_charge_parameters(std::move(config.ac_charge_parameters)),
+    iso2_pnc(std::move(config.iso2_pnc)),
+    has_cp_state_feedback(config.has_cp_state_feedback) {
+
+    if (supported_auth_options.empty()) {
+        supported_auth_options = {dt::Authorization::EIM};
+    }
+}
+
 namespace {
 
 auto get_mobility_needs_mode(const d20::ControlMobilityNeedsModes& mode) {

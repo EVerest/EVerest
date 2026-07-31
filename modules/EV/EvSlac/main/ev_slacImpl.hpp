@@ -22,6 +22,9 @@ namespace main {
 struct Conf {
     std::string device;
     int set_key_timeout_ms;
+    bool link_status_detection;
+    int link_status_retry_ms;
+    int link_status_poll_ms;
 };
 
 class ev_slacImpl : public ev_slacImplBase {

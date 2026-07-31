@@ -17,15 +17,23 @@ void CarSimulation::state_machine() {
     switch (sim_data.state) {
     case SimState::UNPLUGGED:
         if (state_has_changed) {
+            EVLOG_info << "<<< UNPLUGGED: resetting the vehicle - CP state A (resistor released), power off, "
+                          "SLAC unmatched, charging stopped";
 
             r_ev_board_support->call_set_cp_state(EvCpState::A);
             r_ev_board_support->call_allow_power_on(false);
             // Wait for physical plugin (ev BSP sees state A on CP and not Disconnected)
 
-            sim_data.slac_state = types::slac::State::UNMATCHED;
+            // [V2G3-A09-126]: a plug out detected during the matching process
+            // stops it in "Unmatched". Resetting only our cached state is not
+            // enough -- the SLAC stack repeats a failed match for the rest of
+            // TT_matching_repetition, so without this it keeps sending
+            // CM_SLAC_PARM.REQ after the cable is gone.
+            stop_matching();
             if (!r_ev.empty()) {
                 r_ev[0]->call_stop_charging();
             }
+            EVLOG_info << "Vehicle reset complete - ready for the next plug-in";
         }
         break;
     case SimState::PLUGGED_IN:
@@ -103,6 +111,19 @@ void CarSimulation::state_machine() {
     }
     timepoint_last_update = std::chrono::steady_clock::now();
 };
+
+bool CarSimulation::cp_state_allows_matching() const {
+    using types::board_support_common::Event;
+    const auto cp = sim_data.actual_bsp_event;
+    return cp == Event::B or cp == Event::C or cp == Event::D;
+}
+
+void CarSimulation::stop_matching() {
+    sim_data.slac_state = types::slac::State::UNMATCHED;
+    if (!r_slac.empty()) {
+        r_slac[0]->call_reset();
+    }
+}
 
 void CarSimulation::simulate_soc() {
     const double ms =
@@ -182,9 +203,35 @@ bool CarSimulation::iec_wait_pwr_ready(const CmdArguments& arguments) {
     return (sim_data.pwm_duty_cycle > 7.0f && sim_data.pwm_duty_cycle < 97.0f);
 }
 
-bool CarSimulation::iso_wait_pwm_is_running(const CmdArguments& arguments) {
+bool CarSimulation::iso_wait_pwm_is_running(const CmdArguments& arguments, size_t loop_interval_ms) {
     sim_data.state = SimState::PLUGGED_IN;
-    return (sim_data.pwm_duty_cycle > 4.0f && sim_data.pwm_duty_cycle < 97.0f);
+    if (sim_data.pwm_duty_cycle > 4.0f && sim_data.pwm_duty_cycle < 97.0f) {
+        sim_data.pwm_wait_ticks_left.reset();
+        return true;
+    }
+    if (arguments.empty()) {
+        // No fallback requested: wait for the PWM indefinitely (default).
+        return false;
+    }
+    // Optional fallback timeout. The EVSE signals its readiness for high level
+    // communication with the 5 % duty cycle, so waiting for it is the sane
+    // default. ISO 15118-3 [V2G3-M06-13] however triggers the matching process
+    // on the CP transition into Bx/Cx/Dx alone, so an EVSE that holds a static
+    // +12 V (X1, oscillator off) must not stall the EV forever. After the
+    // timeout the chain proceeds and SLAC starts regardless of the duty cycle.
+    if (not sim_data.pwm_wait_ticks_left.has_value()) {
+        const auto timeout_ms = std::stold(arguments[0]) * 1000;
+        sim_data.pwm_wait_ticks_left = static_cast<size_t>(timeout_ms / loop_interval_ms) + 1;
+    }
+    auto& ticks_left = sim_data.pwm_wait_ticks_left.value();
+    ticks_left -= 1;
+    if (ticks_left > 0) {
+        return false;
+    }
+    sim_data.pwm_wait_ticks_left.reset();
+    EVLOG_info << "iso_wait_pwm_is_running: no PWM within " << arguments[0]
+               << " s, starting the matching process on the CP state alone";
+    return true;
 }
 
 bool CarSimulation::draw_power_regulated(const CmdArguments& arguments) {
@@ -247,7 +294,12 @@ bool CarSimulation::iso_wait_slac_matched(const CmdArguments& arguments) {
 
     if (sim_data.slac_state == types::slac::State::UNMATCHED) {
         EVLOG_debug << "Slac UNMATCHED";
-        if (!r_slac.empty()) {
+        // [V2G3-M06-13] launches the matching process on a transition into
+        // Bx/Cx/Dx, and [V2G3-A09-123] only repeats it while the pilot is in
+        // one of those states. Triggering unconditionally restarted matching
+        // into a dead or errored pilot -- the EV kept announcing itself with
+        // CM_SLAC_PARM.REQ while the EVSE was signalling E, F, or nothing.
+        if (!r_slac.empty() and cp_state_allows_matching()) {
             EVLOG_debug << "Slac trigger matching";
             r_slac[0]->call_reset();
             r_slac[0]->call_trigger_matching();
@@ -270,6 +322,14 @@ bool CarSimulation::iso_wait_pwr_ready(const CmdArguments& arguments) {
 }
 
 bool CarSimulation::iso_dc_power_on(const CmdArguments& arguments) {
+    if (sim_data.v2g_finished) {
+        // The V2G session ended while we were waiting for the charger to power up (a fatal
+        // ResponseCode, a message timeout, the pre-charge timeout). No power is coming, so park
+        // here: the vehicle stays plugged in, in the safe State B end_charging_session() applied,
+        // until it is physically unplugged -- a car does not pull its own cable. Re-asserting
+        // ISO_POWER_READY on every tick (below) would instead drive the pilot straight back to C.
+        return false;
+    }
     sim_data.state = SimState::ISO_POWER_READY;
     if (sim_data.dc_power_on) {
         sim_data.state = SimState::ISO_CHARGING_REGULATED;
@@ -332,6 +392,21 @@ bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool th
 
         return selected_payment_option;
     }(payment_option == "auto");
+
+    // Clear the latches the ISO stack sets during a session. They are answers
+    // about THIS session, and a stale one makes the corresponding iso_wait_*
+    // command return immediately: v2g_finished (left over from a session the
+    // charger aborted, or from an attempt that failed before an EvSession
+    // existed -- both publish after the command sequence has moved on) unplugs
+    // the vehicle in the middle of the new session, while the charger is still
+    // expecting the WeldingDetection / SessionStop wind-down; iso_pwr_ready
+    // makes it close the contactor and signal CP state C before pre-charge has
+    // converged, so an aborted pre-charge never comes back to State B.
+    sim_data.v2g_finished = false;
+    sim_data.iso_pwr_ready = false;
+    sim_data.iso_stopped = false;
+    sim_data.iso_charger_paused = false;
+    sim_data.dc_power_on = false;
 
     if (energy_mode == constants::AC) {
         sim_data.energy_mode = EnergyMode::AC;
@@ -400,6 +475,13 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
         sim_data.sleep_ticks_left.reset();
         return true;
     }
+    if (sim_data.v2g_finished) {
+        // Same as in iso_dc_power_on: the session ended without the PowerDelivery(Stop) exchange,
+        // so there is no charging left to wait out. Park in the safe State B that
+        // end_charging_session() applied and wait to be unplugged rather than running the rest of
+        // the sequence, whose unplug would take the pilot from C straight to A.
+        return false;
+    }
 
     if (sim_data.iso_charger_paused) {
 
@@ -463,9 +545,18 @@ bool CarSimulation::iso_start_bcb_toggle(const CmdArguments& arguments) {
 bool CarSimulation::wait_for_real_plugin(const CmdArguments& arguments) {
     using types::board_support_common::Event;
     if (sim_data.actual_bsp_event == Event::A) {
-        EVLOG_info << "Real plugin detected";
+        EVLOG_info << ">>> PLUG-IN detected (CP energized, measured state A) - starting charging session";
         sim_data.state = SimState::PLUGGED_IN;
         return true;
+    }
+    // Otherwise keep waiting -- but say WHAT is being measured, once per
+    // distinct state. A silent wait_for_real_plugin is indistinguishable from
+    // a hang; e.g. a CP still reading B (a resistor the vehicle never
+    // released) never qualifies as a plug-in and would wait forever.
+    if (sim_data.actual_bsp_event != sim_data.last_logged_wait_event) {
+        sim_data.last_logged_wait_event = sim_data.actual_bsp_event;
+        EVLOG_info << "Waiting for plug-in: CP currently measures " << sim_data.actual_bsp_event
+                   << " (plug-in requires state A)";
     }
     return false;
 }

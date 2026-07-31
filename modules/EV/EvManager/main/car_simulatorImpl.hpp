@@ -58,6 +58,8 @@ private:
     bool run_simulation_loop();
     void register_all_commands();
     void subscribe_to_variables_on_init();
+    // Console session log of the HLC message flow (config.session_logging).
+    void log_v2g_message(const types::iso15118::V2gMessages& v2g_messages);
     void setup_ev_parameters();
     void call_ev_board_support_functions();
     void subscribe_to_external_mqtt();
@@ -65,6 +67,14 @@ private:
     void update_command_queue(std::string& value);
     void set_execution_active(bool value);
     void cancel_charging_session();
+    // Tear the V2G communication session down at once (no SessionStop exchange), for the cases
+    // where the control pilot says high level communication is over: CP state E/F or a plug-out
+    // ([V2G2-025], [V2G2-728]).
+    void abort_v2g_session();
+    // Push the applied control pilot state to the HLC stack (ISO15118_ev cp_state_changed): the
+    // stack has no board support connection of its own, and needs the state for the CP checks tied
+    // to the message sequence ([V2G2-847]).
+    void forward_cp_state_to_hlc(types::board_support_common::Event event);
 
     std::unique_ptr<CommandRegistry> command_registry;
 
@@ -82,6 +92,8 @@ private:
     std::string simulated_already_plugged_in_key;
     std::string simulated_plugged_in_command_key;
     std::string last_commands;
+    /// Command the queue is currently parked on; only used to log the wait once.
+    std::string last_blocked_command;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

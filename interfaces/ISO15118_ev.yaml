@@ -27,7 +27,29 @@ cmds:
   stop_charging:
     description: Stop the ev charging communication process
   pause_charging:
-    description: Pause the ev charging communication process  
+    description: Pause the ev charging communication process
+  abort_charging:
+    description: >-
+      Terminate the V2G communication session immediately, without the
+      SessionStop exchange stop_charging performs. Used when the control pilot
+      left the Bx/Cx/Dx range (CP state E/F) or the cable was unplugged: there
+      is no pilot left to run high level communication on, and ISO 15118-2
+      [V2G2-025] / [V2G2-728] require the EVCC to end the session as soon as it
+      detects that.
+  cp_state_changed:
+    description: >-
+      Informs the HLC stack about the control pilot state the vehicle currently
+      applies. Needed for the EVCC-side CP checks tied to the message sequence:
+      ISO 15118-2 [V2G2-847] has the EV apply CP state C or D before it requests
+      the cable check, so the stack holds the first CableCheckReq until this
+      reports C or D. The manager that owns the ev_board_support connection
+      pushes the state here, mirroring cp_state_changed on the SECC-side
+      ISO15118_charger interface.
+    arguments:
+      cp_state:
+        description: The CP state the vehicle has applied
+        type: string
+        $ref: /iso15118#/CpState
   set_fault:
     description: >-
       TODO_SL: Set the different ev faults to communicate these errors
@@ -56,6 +78,12 @@ cmds:
         type: number
         minimum: 0
 vars:
+  v2g_messages:
+    description: >-
+      Debug - This element contains all V2G elements and should be used
+      for debug purposes only
+    type: object
+    $ref: /iso15118#/V2gMessages
   v2g_session_finished:
     description: The v2g session between the charger and the car is finished
     type: 'null'

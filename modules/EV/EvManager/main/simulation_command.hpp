@@ -22,6 +22,9 @@ public:
 
     bool execute() const;
 
+    /// Name of the underlying registered command, for diagnostics.
+    [[nodiscard]] const std::string& name() const;
+
     static std::queue<SimulationCommand> parse_sim_commands(const std::string& value,
                                                             const CommandRegistry& command_registry);
 
