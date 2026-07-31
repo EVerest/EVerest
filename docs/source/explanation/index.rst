@@ -29,6 +29,18 @@ Below that, you will be presented with a categorized list of all articles.
 
         Learn about the module concept of EVerest.
 
+    .. grid-item-card:: Manager Lifecycle
+        :link: manager-lifecycle
+        :link-type: doc
+
+        How the manager starts, restarts and shuts down module processes.
+
+    .. grid-item-card:: Configuration Service
+        :link: configuration-service
+        :link-type: doc
+
+        How module configuration is stored in slots, booted from and changed at runtime.
+
     .. grid-item-card:: Tier Module Mapping
         :link: tier-module-mappings
         :link-type: doc
@@ -103,6 +115,8 @@ Below that, you will be presented with a categorized list of all articles.
     high-level-overview
     error-framework
     detail-module-concept
+    manager-lifecycle
+    configuration-service
     tier-module-mappings
     adapt-everest/index
     energymanagement/index

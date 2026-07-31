@@ -1,0 +1,8 @@
+sequenceDiagram
+    participant Client as EVerest Module
+    participant Manager as MqttConfigServiceHandler + ConfigServiceCore
+ 
+    Client->>Manager: [Internal API] GetRequest(identifier)
+    Manager->Manager: Validate request, Access control
+    Manager->Manager: Read from memory
+    Manager-->>Client: [Internal API] GetResponse(data)

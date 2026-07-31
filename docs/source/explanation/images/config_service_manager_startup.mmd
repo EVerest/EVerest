@@ -1,0 +1,17 @@
+sequenceDiagram
+    participant Manager as EVerest Manager + ConfigServiceCore
+    participant Modules as EVerest Modules
+ 
+    Note over Manager: Manager starts
+    Manager->Manager: Initialize ConfigServiceCore (SQLite)
+    Manager->Manager: Load boot_slot configuration
+    Manager->Manager: Validate configuration
+    Manager->>Modules: Spawn modules
+    loop For every module
+        Modules->>Manager: [Internal API] GetRequest(type: Module)
+        Manager-->>Modules: [Internal API] GetResponse(data)
+        Modules->Modules: init()
+        Modules-->>Manager: [Internal API] Ready
+    end
+    Note over Manager: All modules ready
+    Manager->>Modules: [Internal API] Global ready signal
