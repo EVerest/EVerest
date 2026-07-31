@@ -102,6 +102,14 @@ provides:
         description: Timeout for Link to come up after matching request
         type: integer
         default: 10000
+      link_status_poll_in_matched_state_ms:
+        description: >-
+          Interval between LINK_STATUS polls while matched. Link-loss detection takes up to
+          link_status_debounce_count consecutive polls, so keep debounce count times poll interval
+          well below TP_match_leave (1 s) for ISO 15118-3 conformant leaving on connection loss.
+        type: integer
+        default: 200
+        minimum: 10
       link_status_debounce_count:
         description: >-
           Consecutive negative LINK_STATUS confirmations in the matched state before the link

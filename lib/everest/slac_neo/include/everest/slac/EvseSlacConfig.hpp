@@ -65,7 +65,10 @@ struct EvseSlacConfig {
     struct link_status_struct {
         bool do_detect = false;
         int retry_ms = 100;
-        int poll_in_matched_state_ms = 1000;
+        // Detection of a link loss takes up to debounce_count consecutive polls; keep
+        // debounce_count * poll_in_matched_state_ms well below TP_match_leave (1 s) so the SECC
+        // leaves the AVLN in time on connection loss (ISO 15118-3, PLCLinkStatus_005).
+        int poll_in_matched_state_ms = 200;
         int timeout_ms = 5000;
         int debounce_count = 1;
         bool debug_simulate_failed_matching = false;
