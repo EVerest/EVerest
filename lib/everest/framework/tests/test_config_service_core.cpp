@@ -837,9 +837,8 @@ active_modules:
             config_service.mark_active_slot(0);
             config_service.reinitialize_from_db(true);
 
-            auto result =
-                config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {bad_update, good_update},
-                                                     origin);
+            auto result = config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT,
+                                                               {bad_update, good_update}, origin);
 
             REQUIRE(result.status == SetConfigParameterStatus::Ok);
             REQUIRE(result.parameter_results.has_value());
@@ -964,14 +963,12 @@ active_modules:
         // Handlers run on the actor thread. Calling back into a public method used to deadlock:
         // the actor would wait on a queued task that only the actor itself could run.
         std::optional<int> slot_id_seen_by_config_handler;
-        config_service.register_config_update_handler([&](const ConfigurationUpdate&) {
-            slot_id_seen_by_config_handler = config_service.get_active_slot_id();
-        });
+        config_service.register_config_update_handler(
+            [&](const ConfigurationUpdate&) { slot_id_seen_by_config_handler = config_service.get_active_slot_id(); });
 
         std::optional<std::size_t> slots_seen_by_slot_handler;
-        config_service.register_active_slot_update_handler([&](const ActiveSlotUpdate&) {
-            slots_seen_by_slot_handler = config_service.list_all_slots().size();
-        });
+        config_service.register_active_slot_update_handler(
+            [&](const ActiveSlotUpdate&) { slots_seen_by_slot_handler = config_service.list_all_slots().size(); });
 
         // Publishes an ActiveSlotUpdate -> slot handler re-enters via list_all_slots()
         config_service.reinitialize_from_db(true);
@@ -1034,9 +1031,8 @@ active_modules:
         ConfigParameterUpdate good_update{good_id, "7"};
         Origin origin{false, "manager"};
 
-        auto result =
-            config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {failing_update, good_update},
-                                                 origin);
+        auto result = config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT,
+                                                           {failing_update, good_update}, origin);
 
         REQUIRE(db->execute_statement("DROP TRIGGER sabotage_rw_param;"));
 

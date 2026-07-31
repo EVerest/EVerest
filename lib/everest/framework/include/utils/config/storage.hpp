@@ -62,7 +62,6 @@ public:
     write_configuration_parameter(const ConfigurationParameterIdentifier& identifier,
                                   const ConfigurationParameterCharacteristics characteristics,
                                   const std::string& value) = 0;
-
 };
 
 } // namespace everest::config

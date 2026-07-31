@@ -795,7 +795,8 @@ int Manager::run() {
     std::vector<std::string> standalone_modules;
     std::vector<std::string> ignored_modules;
 
-    RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules, ms, status_fifo, retain_topics};
+    RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
+                               ms,     status_fifo,       retain_topics};
 
     bool runtime_ctx_has_valid_config = reload_and_update_context(runtime_ctx);
 

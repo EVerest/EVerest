@@ -341,7 +341,8 @@ nlohmann::json MQTTAbstractionImpl::get_internal(const MQTTRequest& request) {
     this->register_handler(request.response_topic, res_token, request.qos);
     if (request.request_topic.has_value()) {
         if (request.request_data.has_value()) {
-            MqttMessagePayload payload{MqttMessageType::ConfigurationRequest, json::parse(request.request_data.value())};
+            MqttMessagePayload payload{MqttMessageType::ConfigurationRequest,
+                                       json::parse(request.request_data.value())};
             this->publish(request.request_topic.value(), payload, request.qos);
         } else {
             MqttMessagePayload payload{MqttMessageType::ConfigurationRequest, json{}};

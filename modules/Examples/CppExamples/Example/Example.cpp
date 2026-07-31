@@ -65,8 +65,8 @@ Everest::config::ConfigChangeResult Example::on_log_interval_changed(const int& 
         }
     }
 
-    EVLOG_info << log_prefix << "old == '" << std::to_string(old_value) << "', new == '"
-               << std::to_string(new_interval) << "' " << desc;
+    EVLOG_info << log_prefix << "old == '" << std::to_string(old_value) << "', new == '" << std::to_string(new_interval)
+               << "' " << desc;
     return ret;
 }
 

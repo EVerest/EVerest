@@ -352,8 +352,8 @@ TEST_CASE("MqttConfigServiceHandler", "[config_service]") {
     SECTION("handler replies with an error to Get requests from an unknown origin") {
         // Regression: these used to throw inside the handler and produce NO reply at all,
         // leaving the requesting client to block until its timeout.
-        const auto get_type = GENERATE(std::string("Module"), std::string("Value"), std::string("All"),
-                                       std::string("AllMappings"));
+        const auto get_type =
+            GENERATE(std::string("Module"), std::string("Value"), std::string("All"), std::string("AllMappings"));
         nlohmann::json request = {{"type", "Get"}, {"origin", "ghost_module"}, {"request", {{"type", get_type}}}};
         if (get_type == "Value") {
             request["request"]["identifier"] = {{"module_id", "target_module"},

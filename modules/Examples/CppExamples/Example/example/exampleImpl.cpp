@@ -55,8 +55,7 @@ void exampleImpl::ready() {
             log_interval = mod->rw_config.log_interval;
         }
         std::unique_lock<std::mutex> lock(shutdown_mutex);
-        shutdown_cv.wait_for(lock, std::chrono::seconds(log_interval),
-                             [this]() { return shutdown_requested.load(); });
+        shutdown_cv.wait_for(lock, std::chrono::seconds(log_interval), [this]() { return shutdown_requested.load(); });
     }
     ready_finished = true;
     shutdown_cv.notify_one();
@@ -109,8 +108,8 @@ Everest::config::ConfigChangeResult exampleImpl::on_current_changed(const double
         ret = Everest::config::ConfigChangeResult::Accepted();
     }
 
-    EVLOG_info << log_prefix << "old == '" << std::to_string(old_value) << "', new == '"
-               << std::to_string(new_current) << "' " << desc;
+    EVLOG_info << log_prefix << "old == '" << std::to_string(old_value) << "', new == '" << std::to_string(new_current)
+               << "' " << desc;
     return ret;
 }
 

@@ -66,8 +66,7 @@ public:
     /// Optionals without a value will set the corresponding value to NULL in the DB
     /// \param slot_id Id of the slot; must not exist yet
     /// \param description Arbitrary text
-    GenericResponseStatus update_description(int slot_id,
-                                                                      const std::optional<std::string>& description);
+    GenericResponseStatus update_description(int slot_id, const std::optional<std::string>& description);
 
     std::vector<SlotInfo> list_slots();
     GenericResponseStatus delete_slot(int slot_id);

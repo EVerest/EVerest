@@ -523,7 +523,8 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
         try {
             Request request = data;
             response.type = request.type;
-            response_topic = fmt::format("{}modules/{}/response", mqtt_abstraction.get_everest_prefix(), request.origin);
+            response_topic =
+                fmt::format("{}modules/{}/response", mqtt_abstraction.get_everest_prefix(), request.origin);
 
             const auto module_configs_ptr = config_svc.get_active_module_configurations();
             const auto& module_configs = *module_configs_ptr;
