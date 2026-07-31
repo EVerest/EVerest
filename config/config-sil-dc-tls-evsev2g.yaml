@@ -1,52 +1,20 @@
 active_modules:
-  iso15118_2:
+  iso15118_charger:
     module: EvseV2G
-    config_module:
-      device: lo
-      tls_security: allow
-      enable_sdp_server: false
-    connections:
-      security:
-        - module_id: evse_security
-          implementation_id: main
-  iso15118_20:
-    module: Evse15118D20
-    config_module:
-      device: lo
-      tls_negotiation_strategy: ACCEPT_CLIENT_OFFER
-      enable_sdp_server: false
-    connections:
-      security:
-        - module_id: evse_security
-          implementation_id: main
-  iso_mux:
-    module: IsoMux
     config_module:
       device: auto
       tls_security: force
+      tls_key_logging: true
     connections:
       security:
         - module_id: evse_security
           implementation_id: main
-      iso2:
-        - module_id: iso15118_2
-          implementation_id: charger
-      iso20:
-        - module_id: iso15118_20
-          implementation_id: charger
-      ext2:
-        - module_id: iso15118_2
-          implementation_id: extensions
-      ext20:
-        - module_id: iso15118_20
-          implementation_id: extensions
   iso15118_car:
     module: PyEvJosev
     config_module:
       device: auto
       supported_DIN70121: false
       supported_ISO15118_2: true
-      supported_ISO15118_20_DC: true
       tls_active: true
       enforce_tls: true
   evse_manager:
@@ -72,7 +40,7 @@ active_modules:
         - module_id: slac
           implementation_id: evse
       hlc:
-        - module_id: iso_mux
+        - module_id: iso15118_charger
           implementation_id: charger
       powersupply_DC:
         - module_id: powersupply_dc

@@ -11,6 +11,7 @@ target_sources(iso15118
     PRIVATE
         misc/helper.cpp
         misc/cb_exi.cpp
+        misc/random.cpp
 
         io/connection_plain.cpp
         io/logging.cpp
@@ -20,16 +21,58 @@ target_sources(iso15118
         io/socket_helper.cpp
 
         session/feedback.cpp
+        session/protocol.cpp
         session/iso.cpp
+        session/secc_sap.cpp
+        session/config.cpp
+        session/d20_secc_engine.cpp
+        session/d2_secc_engine.cpp
+        session/din_secc_engine.cpp
+
+        din/context.cpp
+
+        # din (DIN SPEC 70121) SECC state machine
+        din/state/session_setup.cpp
+        din/state/service_discovery.cpp
+        din/state/service_payment_selection.cpp
+        din/state/contract_authentication.cpp
+        din/state/charge_parameter_discovery.cpp
+        din/state/cable_check.cpp
+        din/state/pre_charge.cpp
+        din/state/power_delivery.cpp
+        din/state/current_demand.cpp
+        din/state/welding_detection.cpp
+        din/state/session_stop.cpp
+        din/state/sequence_error.cpp
 
         d20/context.cpp
         d20/context_helper.cpp
         d20/control_event_queue.cpp
         d20/session.cpp
         d20/timeout.cpp
-        d20/config.cpp
 
-        d20/state/supported_app_protocol.cpp
+        d2/context.cpp
+
+        # d2 (ISO 15118-2) SECC state machine
+        d2/crypto.cpp
+        d2/state/sequence_error.cpp
+        d2/state/session_setup.cpp
+        d2/state/service_discovery.cpp
+        d2/state/service_detail.cpp
+        d2/state/payment_service_selection.cpp
+        d2/state/payment_details.cpp
+        d2/state/certificate_installation.cpp
+        d2/state/authorization.cpp
+        d2/state/charge_parameter_discovery.cpp
+        d2/state/cable_check.cpp
+        d2/state/pre_charge.cpp
+        d2/state/power_delivery.cpp
+        d2/state/current_demand.cpp
+        d2/state/charging_status.cpp
+        d2/state/welding_detection.cpp
+        d2/state/session_stop.cpp
+        d2/state/metering_receipt.cpp
+
         d20/state/session_setup.cpp
         d20/state/authorization_setup.cpp
         d20/state/authorization.cpp

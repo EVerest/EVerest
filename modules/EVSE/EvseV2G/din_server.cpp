@@ -1132,6 +1132,12 @@ static enum v2g_event handle_din_session_stop(struct v2g_connection* conn) {
     /* Check the current response code and check if no external error has occurred */
     utils::din_validate_response_code(&res->ResponseCode, conn);
 
+    /* A positive SessionStopRes anchors the CP-oscillator retain time [V2G-DC-968]; DIN has no
+     * pause, so this is always a terminate */
+    if (res->ResponseCode == din_responseCodeType_OK) {
+        conn->session_stop_res_pending = v2g_connection::SessionStopResPending::TERMINATE;
+    }
+
     /* Setuo dlink action */
     conn->d_link_action = dLinkAction::D_LINK_ACTION_TERMINATE;
 

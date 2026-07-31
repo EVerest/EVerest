@@ -21,6 +21,10 @@ public:
 
     void close() final;
 
+    bool is_secure() const final {
+        return false;
+    }
+
     std::optional<sha512_hash_t> get_vehicle_cert_hash() const final {
         return std::nullopt;
     }
@@ -35,6 +39,8 @@ private:
     int fd{-1};
 
     bool connection_open{false};
+    // set once the socket is gone, whether we closed it or the peer's EOF was seen in read()
+    bool closed{false};
 
     ConnectionEventCallback event_callback{nullptr};
 

@@ -16,15 +16,16 @@ namespace iso15118 {
 
 static constexpr auto POLL_MANAGER_TIMEOUT_MS = 50;
 
-TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_, d20::EvseSetupConfig setup_) :
+TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_,
+                             session::EvseSetupConfig setup_) :
     TbdController(std::move(config_), std::move(callbacks_), std::move(setup_),
                   [](io::PollManager& poll_manager_, const std::string& interface_name_) {
                       return std::make_unique<io::ConnectionPlain>(poll_manager_, interface_name_);
                   }) {
 }
 
-TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_, d20::EvseSetupConfig setup_,
-                             ConnectionFactory connection_factory_) :
+TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_,
+                             session::EvseSetupConfig setup_, ConnectionFactory connection_factory_) :
     config(std::move(config_)),
     callbacks(std::move(callbacks_)),
     evse_setup(std::move(setup_)),
@@ -75,13 +76,19 @@ void TbdController::loop() {
 void TbdController::tick() {
     next_event = offset_time_point_by_ms(get_current_time_point(), POLL_MANAGER_TIMEOUT_MS);
 
-    if (communication_setup_timeout && communication_setup_timeout->is_reached()) {
-        logf_warning("V2G communication setup timeout (18s) expired before session was established");
-        communication_setup_timeout.reset();
-        if (sdp_server) {
-            sdp_server->set_dlink_ready(false);
+    // Apply dlink-ready requests from the module command thread. The loop thread owns
+    // communication_setup_timeout; the command thread only publishes its request via the
+    // generation counter / flag pair (seq_cst), so there is no cross-thread access to the
+    // std::optional<Timeout> itself.
+    const auto dlink_generation = dlink_ready_generation.load();
+    if (dlink_generation != dlink_ready_applied) {
+        dlink_ready_applied = dlink_generation;
+        if (dlink_ready_requested.load()) {
+            communication_setup_timeout.emplace(V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
+            logf_info("V2G communication setup timeout started (%u ms)", V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
+        } else {
+            communication_setup_timeout.reset();
         }
-        callbacks.signal(session::feedback::Signal::DLINK_ERROR);
     }
 
     if (session and shutdown_active.load() and not shutdown_signaled) {
@@ -97,6 +104,10 @@ void TbdController::tick() {
         session->close();
     }
 
+    // Poll the session BEFORE evaluating the communication-setup timeout: a SessionSetupReq received
+    // in the last poll cycle is only processed here, setting is_v2g_session_established(). Evaluating
+    // the timeout first would tear down a session whose SessionSetupReq arrived just in time at the
+    // 18 s boundary.
     if (session) {
         try {
             const auto next_session_event = session->poll();
@@ -108,13 +119,49 @@ void TbdController::tick() {
         }
 
         if (session->is_finished()) {
+            std::lock_guard<std::mutex> lock(session_mutex);
             session.reset();
         }
     }
 
+    if (session and communication_setup_timeout and session->is_v2g_session_established()) {
+        // The EV sent its SessionSetupReq, so the communication-setup phase is over and the per-message
+        // sequence timeout takes over. Cancel the comm-setup timeout; otherwise it would fire mid-session
+        // (a full charging session far outlives 18 s) and tear down an active connection. Note the cancel
+        // point is SessionSetupReq, not TCP-accept: the wait for SupportedAppProtocolReq / SessionSetupReq
+        // after connecting is still part of communication setup (SupportedAppProtocol_003 / SessionSetup).
+        communication_setup_timeout.reset();
+        logf_info("V2G session established (SessionSetupReq received); communication setup timeout cancelled");
+    }
+
+    if (communication_setup_timeout && communication_setup_timeout->is_reached()) {
+        logf_warning("V2G communication setup timeout (18s) expired before the V2G session was established");
+        communication_setup_timeout.reset();
+        if (sdp_server) {
+            sdp_server->set_dlink_ready(false);
+        }
+        {
+            // A session that never established the V2G session (no SessionSetupReq) is torn down here.
+            // The timeout is cancelled on establishment above, so any session still present has NOT
+            // established and must go, covering three cases with one teardown:
+            //   - the EV never opened its TCP connection (SupportedAppProtocol_005): resetting closes the
+            //     still-listening socket, so a late connect is refused (RST) instead of accepted;
+            //   - the EV connected but sent no SupportedAppProtocolReq (SupportedAppProtocol_003);
+            //   - the EV completed SupportedAppProtocol but sent no SessionSetupReq (SessionSetup timeout).
+            // For the connected cases this closes the TCP connection within the termination budget instead
+            // of waiting out the 60 s V2G_SECC_Sequence_Timeout. ~Session -> ~ConnectionPlain closes the
+            // fd (listener or accepted connection) either way. reset() on a null session is a no-op.
+            std::lock_guard<std::mutex> lock(session_mutex);
+            session.reset();
+        }
+        callbacks.signal(session::feedback::Signal::DLINK_ERROR);
+    }
+
     if (not session and not shutdown_active.load() and not config.enable_sdp_server) {
-        session = std::make_unique<Session>(connection_factory(poll_manager, interface_name),
-                                            d20::SessionConfig(*evse_setup.handle()), callbacks, pause_ctx);
+        std::lock_guard<std::mutex> lock(session_mutex);
+        session =
+            std::make_unique<Session>(connection_factory(poll_manager, interface_name),
+                                      session::SessionConfig(*evse_setup.handle()), callbacks, pause_ctx, d2_pause_ctx);
     }
 }
 
@@ -124,6 +171,7 @@ void TbdController::shutdown() {
 }
 
 void TbdController::send_control_event(const d20::ControlEvent& event) {
+    std::lock_guard<std::mutex> lock(session_mutex);
     if (session) {
         session->push_control_event(event);
     }
@@ -144,6 +192,12 @@ void TbdController::update_authorization_services(const std::vector<message_20::
     }
 }
 
+void TbdController::update_iso2_pnc_config(bool pnc_enabled, bool central_contract_validation_allowed) {
+    auto s = evse_setup.handle();
+    s->iso2_pnc_enabled = pnc_enabled;
+    s->central_contract_validation_allowed = central_contract_validation_allowed;
+}
+
 void TbdController::update_dc_limits(const d20::DcTransferLimits& limits) {
 
     {
@@ -151,6 +205,7 @@ void TbdController::update_dc_limits(const d20::DcTransferLimits& limits) {
         s->dc_limits = limits;
     }
 
+    std::lock_guard<std::mutex> lock(session_mutex);
     if (session) {
         session->push_control_event(limits);
     }
@@ -161,12 +216,17 @@ void TbdController::update_powersupply_limits(const d20::DcTransferLimits& limit
     s->powersupply_limits = limits;
 }
 
+void TbdController::update_receipt_required(bool receipt_required) {
+    evse_setup.handle()->iso2_receipt_required = receipt_required;
+}
+
 void TbdController::update_energy_modes(const std::vector<message_20::datatypes::ServiceCategory>& modes) {
     {
         auto s = evse_setup.handle();
         s->supported_energy_services = modes;
     }
 
+    std::lock_guard<std::mutex> lock(session_mutex);
     if (session) {
         session->push_control_event(modes);
     }
@@ -179,6 +239,7 @@ void TbdController::update_supported_vas_services(const d20::SupportedVASs& vas_
         s->supported_vas_services = vas_services;
     }
 
+    std::lock_guard<std::mutex> lock(session_mutex);
     if (session) {
         session->push_control_event(vas_services);
     }
@@ -191,6 +252,7 @@ void TbdController::update_ac_limits(const d20::AcTransferLimits& limits) {
         s->ac_limits = limits;
     }
 
+    std::lock_guard<std::mutex> lock(session_mutex);
     if (session) {
         session->push_control_event(limits);
     }
@@ -201,11 +263,12 @@ void TbdController::set_dlink_ready(bool ready) {
         sdp_server->set_dlink_ready(ready);
     }
 
-    if (ready) {
-        communication_setup_timeout.emplace(V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
-        logf_info("V2G communication setup timeout started (%u ms)", V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
-    } else {
-        communication_setup_timeout.reset();
+    // Publish the request for the loop thread (tick applies it to communication_setup_timeout);
+    // called from a module command thread, so the timeout object itself must not be touched here.
+    dlink_ready_requested.store(ready);
+    dlink_ready_generation.fetch_add(1);
+
+    if (not ready) {
         terminate_session_requested.store(true);
     }
 }
@@ -283,9 +346,18 @@ void TbdController::handle_sdp_server_input() {
 
     const auto ipv6_endpoint = connection->get_public_endpoint();
 
-    session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(*evse_setup.handle()), callbacks,
-                                        pause_ctx);
-    communication_setup_timeout.reset();
+    {
+        std::lock_guard<std::mutex> lock(session_mutex);
+        session = std::make_unique<Session>(std::move(connection), session::SessionConfig(*evse_setup.handle()),
+                                            callbacks, pause_ctx, d2_pause_ctx);
+    }
+    // Deliberately do NOT cancel communication_setup_timeout here. Sending the SDP response does not end
+    // the communication-setup phase: the EV has not yet opened TCP, nor sent SupportedAppProtocolReq /
+    // SessionSetupReq. The timeout keeps running so that if the EV never gets that far
+    // (V2G_SECC_CommunicationSetup_Timeout) the session is torn down in tick() -- closing the still-
+    // listening socket (SupportedAppProtocol_005) or the connected-but-idle TCP connection
+    // (SupportedAppProtocol_003 / SessionSetup timeout). It is cancelled once the SessionSetupReq
+    // establishes the V2G session (session->is_v2g_session_established() in tick()).
 
     // Deliberately do not clear terminate_session_requested here. A data-link
     // loss that races this session creation must win: tick() consumes the flag

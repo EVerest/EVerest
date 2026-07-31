@@ -336,6 +336,12 @@ private:
     std::atomic_bool hlc_waiting_for_auth_eim;
     std::atomic_bool hlc_waiting_for_auth_pnc;
 
+    // An HLC data link/session is currently in use (set at protocol selection, cleared by the
+    // dlink_* events). While true, the SLAC leave on unplug is deferred to the dlink_terminate
+    // that follows the stack's own TCP teardown, so the FIN still traverses the AVLN
+    // ([V2G-DC-962]/[V2G-DC-940]; the SLAC leave has T_match_leave of budget).
+    std::atomic_bool hlc_link_in_use{false};
+
     std::atomic_bool pnc_enabled{false};
     std::atomic_bool central_contract_validation_allowed{false};
     std::atomic_bool contract_certificate_installation_enabled{false};
@@ -392,6 +398,7 @@ private:
     bool wait_powersupply_DC_below_voltage(double target_voltage);
 
     bool cable_check_should_exit();
+    bool cable_check_wait_for_prepare_charging();
 
     double get_emergency_over_voltage_threshold();
     double get_error_over_voltage_threshold();
