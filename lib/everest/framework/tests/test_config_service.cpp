@@ -3,10 +3,14 @@
 
 #include <catch2/catch_all.hpp>
 
+#include <everest/database/sqlite/connection.hpp>
+#include <everest/database/sqlite/schema_updater.hpp>
 #include <framework/runtime.hpp>
 #include <tests/helpers.hpp>
 #include <tests/mock_mqtt_abstraction.hpp>
 #include <utils/config.hpp>
+#include <utils/config/config_service_core.hpp>
+#include <utils/config/storage_sqlite.hpp>
 #include <utils/config_service_interface.hpp>
 #include <utils/mqtt_config_service.hpp>
 
@@ -588,5 +592,164 @@ TEST_CASE("MqttConfigServiceHandler", "[config_service]") {
 
         const Response resp = parse_published_response(mock.published().back());
         CHECK(resp.status == ResponseStatus::Error);
+    }
+}
+
+// ─── Integration: real handler wired to the real core ────────────────────────
+//
+// The suites above test MqttConfigServiceHandler against StubConfigService and (elsewhere)
+// ConfigServiceCore against hand-written lambdas. This TEST_CASE wires the two real halves
+// together - only the MQTT transport is mocked - so the wire-visible behavior is asserted
+// against the core's real semantics instead of a stub's beliefs about them.
+TEST_CASE("MqttConfigServiceHandler wired to a real ConfigServiceCore", "[config_service][integration]") {
+    const std::string prefix = "everest/";
+    MockMQTTAbstraction mock(prefix);
+
+    const auto bin_dir = get_bin_dir().string() + "/";
+    ManagerSettings ms(bin_dir + "config_service_test/", bin_dir + "config_service_test/config.yaml");
+    ms.validate_schema = false;
+
+    auto db = std::make_shared<everest::db::sqlite::Connection>("file::memory:?cache=shared");
+    REQUIRE(db->open_connection());
+    everest::db::sqlite::SchemaUpdater updater{db.get()};
+    REQUIRE(updater.apply_migration_files(bin_dir + "migrations", TARGET_MIGRATION_FILE_VERSION));
+
+    ConfigServiceCore core(ms, db);
+
+    // Same modules and access rules as the config_service_test fixture, loaded through the real
+    // yaml/manifest validation path into the real storage.
+    const std::string config_yaml = R"(
+active_modules:
+  target_module:
+    module: TESTCSTarget
+    config_module:
+      rw_param: "initial"
+      ro_param: "fixed"
+  manager_module:
+    module: TESTValidManifest
+    config_module:
+      valid_config_entry: "hello"
+    config_implementation:
+      main:
+        valid_config_entry: "hello"
+    access:
+      config:
+        modules:
+          target_module:
+            allow_read: true
+            allow_write: true
+            allow_set_read_only: true
+  restricted_module:
+    module: TESTValidManifest
+    config_module:
+      valid_config_entry: "hello"
+    config_implementation:
+      main:
+        valid_config_entry: "hello"
+)";
+    auto load_result = core.load_from_yaml(config_yaml, "integration", 0);
+    INFO(load_result.error_message);
+    REQUIRE(load_result.success);
+    core.mark_active_slot(0);
+    core.reinitialize_from_db(true);
+
+    MqttConfigServiceHandler service(mock, core);
+
+    const std::string config_topic = prefix + "config/request";
+    auto invoke = [&](const nlohmann::json& req) {
+        REQUIRE(mock.registered_handlers().count(config_topic) == 1);
+        (*mock.registered_handlers().at(config_topic)->handler)(config_topic, req);
+    };
+
+    SECTION("Set of a ReadWrite param persists in the core and reports RebootRequired on the wire") {
+        // Modules are running but no runtime-forwarding callback is registered (as at manager
+        // boot before the management API wires it): the core persists the change and reports
+        // WillApplyOnRestart, which must reach the wire as RebootRequired - NOT as Rejected.
+        core.set_modules_running();
+
+        const nlohmann::json request = {
+            {"type", "Set"},
+            {"origin", "manager_module"},
+            {"request",
+             {{"identifier", {{"module_id", "target_module"}, {"configuration_parameter_name", "rw_param"}}},
+              {"value", "new_value"}}}};
+
+        invoke(request);
+
+        REQUIRE(mock.published().size() == 1);
+        const Response resp = parse_published_response(mock.published().front());
+        CHECK(resp.status == ResponseStatus::Ok);
+        REQUIRE(resp.type.has_value());
+        CHECK(resp.type.value() == Type::Set);
+        const auto& set_resp = std::get<SetResponse>(resp.response);
+        CHECK(set_resp.status == SetResponseStatus::RebootRequired);
+
+        // The change is really persisted in the core's storage ...
+        everest::config::SqliteStorage storage(db, 0);
+        auto persisted = storage.get_configuration_parameter({"target_module", "rw_param", "!module"});
+        REQUIRE(persisted.status == everest::config::GetSetResponseStatus::OK);
+        CHECK(std::get<std::string>(persisted.configuration_parameter.value().value) == "new_value");
+
+        // ... while the in-memory (runtime) value stays untouched until the next restart.
+        auto active_configs = core.get_active_module_configurations();
+        const auto& params = active_configs->at("target_module").configuration_parameters.at("!module");
+        const auto param_it =
+            std::find_if(params.begin(), params.end(), [](const auto& p) { return p.name == "rw_param"; });
+        REQUIRE(param_it != params.end());
+        CHECK(std::get<std::string>(param_it->value) == "initial");
+    }
+
+    SECTION("Get::Module returns the real core's configuration") {
+        const nlohmann::json request = {
+            {"type", "Get"}, {"origin", "target_module"}, {"request", {{"type", "Module"}}}};
+
+        invoke(request);
+
+        REQUIRE(mock.published().size() == 1);
+        const Response resp = parse_published_response(mock.published().front());
+        CHECK(resp.status == ResponseStatus::Ok);
+        const auto& get_resp = std::get<GetResponse>(resp.response);
+        CHECK(get_resp.type == GetType::Module);
+        REQUIRE(get_resp.data.contains("module_config"));
+        const auto dump = get_resp.data.dump();
+        CHECK(dump.find("rw_param") != std::string::npos);
+        CHECK(dump.find("initial") != std::string::npos);
+    }
+
+    SECTION("Access rules from the real configuration are enforced") {
+        const nlohmann::json request = {
+            {"type", "Set"},
+            {"origin", "restricted_module"},
+            {"request",
+             {{"identifier", {{"module_id", "target_module"}, {"configuration_parameter_name", "rw_param"}}},
+              {"value", "new_value"}}}};
+
+        invoke(request);
+
+        REQUIRE(mock.published().size() == 1);
+        const Response resp = parse_published_response(mock.published().front());
+        CHECK(resp.status == ResponseStatus::AccessDenied);
+
+        // Nothing was persisted
+        everest::config::SqliteStorage storage(db, 0);
+        auto persisted = storage.get_configuration_parameter({"target_module", "rw_param", "!module"});
+        REQUIRE(persisted.status == everest::config::GetSetResponseStatus::OK);
+        CHECK(std::get<std::string>(persisted.configuration_parameter.value().value) == "initial");
+    }
+
+    SECTION("Set of an unknown parameter surfaces the real core's DoesNotExist as an error") {
+        const nlohmann::json request = {
+            {"type", "Set"},
+            {"origin", "manager_module"},
+            {"request",
+             {{"identifier", {{"module_id", "target_module"}, {"configuration_parameter_name", "no_such_param"}}},
+              {"value", "new_value"}}}};
+
+        invoke(request);
+
+        REQUIRE(mock.published().size() == 1);
+        const Response resp = parse_published_response(mock.published().front());
+        CHECK(resp.status == ResponseStatus::Error);
+        CHECK(resp.status_info.find("not found") != std::string::npos);
     }
 }

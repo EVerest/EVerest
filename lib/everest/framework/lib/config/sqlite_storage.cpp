@@ -824,7 +824,8 @@ GetModuleTierMappingsResponse SqliteStorage::get_module_tier_mappings(const std:
 
 GetModuleConfigAccessResponse SqliteStorage::get_module_config_access(const std::string& module_id) {
     GetModuleConfigAccessResponse response;
-    const std::string sql = "SELECT OTHER_MODULE_ID, ALLOW_SET_READ_ONLY FROM MODULE_CONFIG_ACCESS "
+    const std::string sql = "SELECT OTHER_MODULE_ID, ALLOW_READ, ALLOW_WRITE, ALLOW_SET_READ_ONLY "
+                            "FROM MODULE_CONFIG_ACCESS "
                             "WHERE CONFIG_ID = @config_id AND MODULE_ID = @module_id";
 
     auto stmt = this->db->new_statement(sql);
@@ -834,8 +835,10 @@ GetModuleConfigAccessResponse SqliteStorage::get_module_config_access(const std:
     std::map<std::string, everest::config::ModuleConfigAccess> module_config_access;
     while (stmt->step() == SQLITE_ROW) {
         const auto other_module_id = stmt->column_text(0);
-        const auto allow_set_read_only = stmt->column_int(1) != 0;
-        module_config_access[other_module_id].allow_set_read_only = allow_set_read_only;
+        auto& access = module_config_access[other_module_id];
+        access.allow_read = stmt->column_int(1) != 0;
+        access.allow_write = stmt->column_int(2) != 0;
+        access.allow_set_read_only = stmt->column_int(3) != 0;
     }
 
     response.module_config_access = module_config_access;
@@ -846,7 +849,7 @@ GetModuleConfigAccessResponse SqliteStorage::get_module_config_access(const std:
 GetConfigAccessResponse SqliteStorage::get_config_access(const std::string& module_id) {
     GetConfigAccessResponse response;
 
-    const std::string sql = "SELECT ALLOW_GLOBAL_READ, ALLOW_SET_READ_ONLY FROM CONFIG_ACCESS "
+    const std::string sql = "SELECT ALLOW_GLOBAL_READ, ALLOW_GLOBAL_WRITE, ALLOW_SET_READ_ONLY FROM CONFIG_ACCESS "
                             "WHERE CONFIG_ID = @config_id AND MODULE_ID = @module_id";
 
     auto stmt = this->db->new_statement(sql);
@@ -863,7 +866,8 @@ GetConfigAccessResponse SqliteStorage::get_config_access(const std::string& modu
     if (status == SQLITE_ROW) {
         ConfigAccess config_access;
         config_access.allow_global_read = stmt->column_int(0) != 0;
-        config_access.allow_set_read_only = stmt->column_int(1) != 0;
+        config_access.allow_global_write = stmt->column_int(1) != 0;
+        config_access.allow_set_read_only = stmt->column_int(2) != 0;
         const auto module_config_access = get_module_config_access(module_id);
         if (module_config_access.status == GenericResponseStatus::OK) {
             config_access.modules = module_config_access.module_config_access;
