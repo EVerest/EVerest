@@ -16,7 +16,7 @@ namespace everest::config {
 
 /// \brief Result of duplicate_slot(); slot_id holds the id of the newly created slot on success
 struct DuplicateSlotResult {
-    bool success = false;
+    bool success{false};
     std::optional<int> slot_id;
 };
 
@@ -48,7 +48,7 @@ using StoredSlotInfo = SlotInfo;
 class SqliteConfigSlotManager {
 public:
     /// \brief The slot ID used when no explicit ID is given, and the fallback for the next boot slot
-    static constexpr int DEFAULT_SLOT_ID = 0;
+    static constexpr int DEFAULT_SLOT_ID{0};
 
     /// \brief Opens its own Connection and applies migrations.
     SqliteConfigSlotManager(const std::filesystem::path& db_path, const std::filesystem::path& migrations_path);
@@ -111,10 +111,10 @@ public:
     GenericResponseStatus set_next_boot_slot_id(int slot_id);
 
 private:
-    std::shared_ptr<everest::db::sqlite::ConnectionInterface> db;
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> m_db;
 
     // a conservative maximum slot_id value, compatible with sqlite but more than big enough for practical usage
-    const int max_slot_id{(2 << 16) - 1};
+    const int m_max_slot_id{(2 << 16) - 1};
 };
 
 } // namespace everest::config
