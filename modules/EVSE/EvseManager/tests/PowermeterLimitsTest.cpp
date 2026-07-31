@@ -178,6 +178,15 @@ TEST(PowermeterLimitsTest, discharge_minimum_not_clamped_when_max_import_unset) 
     EXPECT_FALSE(result.nominal_min_import_current_A.has_value());
 }
 
+TEST(PowermeterLimitsTest, zero_max_export_still_clamps_minimum) {
+    auto caps = make_psu_caps();
+    caps.max_export_current_A = 0.0f;
+
+    const auto result = module::apply_powermeter_limits(caps, make_meter_caps(12.0f, std::nullopt));
+
+    EXPECT_FLOAT_EQ(result.min_export_current_A, 0.0f);
+}
+
 TEST(PowermeterLimitsTest, both_directions_applied_independently) {
     auto caps = make_psu_caps();
     caps.max_import_current_A = 200.0f;

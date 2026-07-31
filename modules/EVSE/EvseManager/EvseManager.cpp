@@ -2709,19 +2709,23 @@ types::power_supply_DC::Capabilities EvseManager::get_powersupply_capabilities()
     return caps;
 }
 
-types::power_supply_DC::Capabilities EvseManager::apply_powermeter_limits(types::power_supply_DC::Capabilities caps) {
+types::power_supply_DC::Capabilities EvseManager::apply_powermeter_limits(types::power_supply_DC::Capabilities caps,
+                                                                          bool log_warnings) {
     std::optional<types::powermeter::Capabilities> meter;
     {
         std::scoped_lock lock(powermeter_capabilities_mutex);
         meter = powermeter_capabilities;
     }
 
-    return module::apply_powermeter_limits(std::move(caps), meter);
+    return module::apply_powermeter_limits(std::move(caps), meter, log_warnings);
 }
 
 void EvseManager::update_powersupply_capabilities(types::power_supply_DC::Capabilities caps) {
     {
         std::scoped_lock lock(powersupply_capabilities_mutex);
+        if (powersupply_capabilities == caps) {
+            return;
+        }
         powersupply_capabilities = caps;
     }
     push_powersupply_capabilities_to_hlc();
@@ -2750,7 +2754,7 @@ void EvseManager::update_powermeter_capabilities(const types::powermeter::Capabi
 void EvseManager::push_powersupply_capabilities_to_hlc() {
     // Hold the lock across merge and send so concurrent pushes cannot reach HLC out of order
     std::scoped_lock lock(powersupply_capabilities_mutex);
-    const auto caps = apply_powermeter_limits(powersupply_capabilities);
+    const auto caps = apply_powermeter_limits(powersupply_capabilities, true);
 
     if (not last_hlc_capabilities.has_value() or caps != last_hlc_capabilities.value()) {
         r_hlc[0]->call_set_powersupply_capabilities(caps);

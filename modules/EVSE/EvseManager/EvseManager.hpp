@@ -294,7 +294,10 @@ private:
     // Capabilities of the car side power meter. Only set in DC charge mode.
     std::optional<types::powermeter::Capabilities> powermeter_capabilities;
 
-    types::power_supply_DC::Capabilities apply_powermeter_limits(types::power_supply_DC::Capabilities caps);
+    // log_warnings defaults to off since this runs in hot paths; the deduplicated capability
+    // update paths pass true so clamp warnings appear once per actual change
+    types::power_supply_DC::Capabilities apply_powermeter_limits(types::power_supply_DC::Capabilities caps,
+                                                                 bool log_warnings = false);
     void push_powersupply_capabilities_to_hlc();
 
     Everest::timed_mutex_traceable power_mutex;

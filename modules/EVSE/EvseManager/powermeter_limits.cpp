@@ -29,7 +29,7 @@ std::optional<float> max_optional(std::optional<float> const& a, std::optional<f
 
 types::power_supply_DC::Capabilities
 apply_powermeter_limits(types::power_supply_DC::Capabilities caps,
-                        const std::optional<types::powermeter::Capabilities>& meter_capabilities) {
+                        const std::optional<types::powermeter::Capabilities>& meter_capabilities, bool log_warnings) {
     if (not meter_capabilities.has_value()) {
         return caps;
     }
@@ -46,9 +46,11 @@ apply_powermeter_limits(types::power_supply_DC::Capabilities caps,
         }
 
         if (caps.min_export_current_A > caps.max_export_current_A) {
-            EVLOG_warning << "Power meter minimum current in charging direction (" << meter_min
-                          << " A) exceeds power supply maximum (" << caps.max_export_current_A
-                          << " A), clamping minimum to maximum";
+            if (log_warnings) {
+                EVLOG_warning << "Power meter minimum current in charging direction (" << meter_min
+                              << " A) exceeds power supply maximum (" << caps.max_export_current_A
+                              << " A), clamping minimum to maximum";
+            }
             caps.min_export_current_A = caps.max_export_current_A;
         }
         if (caps.nominal_min_export_current_A.has_value() and caps.nominal_max_export_current_A.has_value() and
@@ -66,9 +68,11 @@ apply_powermeter_limits(types::power_supply_DC::Capabilities caps,
 
         if (caps.max_import_current_A.has_value() and
             caps.min_import_current_A.value() > caps.max_import_current_A.value()) {
-            EVLOG_warning << "Power meter minimum current in discharge direction (" << meter_min
-                          << " A) exceeds power supply maximum (" << caps.max_import_current_A.value()
-                          << " A), clamping minimum to maximum";
+            if (log_warnings) {
+                EVLOG_warning << "Power meter minimum current in discharge direction (" << meter_min
+                              << " A) exceeds power supply maximum (" << caps.max_import_current_A.value()
+                              << " A), clamping minimum to maximum";
+            }
             caps.min_import_current_A = caps.max_import_current_A;
         }
         if (caps.nominal_min_import_current_A.has_value() and caps.nominal_max_import_current_A.has_value() and
