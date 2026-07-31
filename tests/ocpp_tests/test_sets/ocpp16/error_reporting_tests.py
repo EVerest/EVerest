@@ -23,7 +23,7 @@ MREC_VENDOR_ID = "https://chargex.inl.gov"
 MREC_VENDOR_ERROR_CODE = "CX002"
 
 # The `info` field on a cleared error is generated from `vendorErrorCode`
-MREC_CLEARED_INFO = f"Error {MREC_VENDOR_ERROR_CODE} resolved"
+MREC_CLEARED_INFO = f"{MREC_VENDOR_ERROR_CODE} resolved"
 
 NON_MREC_ORIGIN = f"{MREC_MODULE_ID}->main"
 NON_MREC_ERROR_TYPE = "VendorError"
@@ -70,7 +70,7 @@ async def _validate_inoperative_cleared(
         {
             "connector_id": 1,
             "error_code": ChargePointErrorCode.no_error,
-            "info": f"Error {vendor_error_code} resolved",
+            "info": f"{vendor_error_code} resolved",
             "vendor_id": INOPERATIVE_VENDOR_ID,
             "vendor_error_code": vendor_error_code,
         },
@@ -251,7 +251,7 @@ async def test_non_mrec_error_with_message_is_unchanged_from_baseline(
         "StatusNotification",
         {
             "connector_id": 1,
-            "info": f"Error {non_mrec_vendor_error_code} resolved",
+            "info": f"{non_mrec_vendor_error_code} resolved",
             "vendor_id": message,
             "vendor_error_code": non_mrec_vendor_error_code,
         },
