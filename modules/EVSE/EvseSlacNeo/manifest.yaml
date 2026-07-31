@@ -102,6 +102,16 @@ provides:
         description: Timeout for Link to come up after matching request
         type: integer
         default: 10000
+      link_status_debounce_count:
+        description: >-
+          Consecutive negative LINK_STATUS confirmations in the matched state before the link
+          counts as lost and the session is torn down. 1 tears down on the first negative reply;
+          higher values ride out transient PLC link flaps (e.g. re-sync under full DC load) at the
+          cost of one poll interval of detection latency per additional confirmation. A positive
+          confirmation resets the count.
+        type: integer
+        default: 1
+        minimum: 1
       debug_simulate_failed_matching:
         description: Only for debugging. Simulate failed matching by sending a wrong NMK to the EV.
         type: boolean

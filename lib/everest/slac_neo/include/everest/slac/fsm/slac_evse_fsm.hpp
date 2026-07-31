@@ -1180,14 +1180,42 @@ struct Matched_def     : public state_machine_def<Matched_def> {
         }
     };
 
+    struct neg_threshold_reached {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            return fsm.consecutive_neg_link_status + 1 >= fsm.neg_link_status_threshold;
+        }
+    };
+    using link_lost = And_<link_status_neg, neg_threshold_reached>;
+    using link_flap = And_<link_status_neg, Not_<neg_threshold_reached>>;
+    struct count_link_status_neg {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            fsm.consecutive_neg_link_status++;
+            std::ostringstream ss;
+            ss << "Negative LINK_STATUS while matched (" << fsm.consecutive_neg_link_status << "/"
+               << fsm.neg_link_status_threshold << "), keeping the link up while debouncing";
+            fsm.ctx->log_warn(ss.str());
+        }
+    };
+    struct clear_link_status_neg {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            if (fsm.consecutive_neg_link_status != 0) {
+                fsm.consecutive_neg_link_status = 0;
+                fsm.ctx->log_info("Positive LINK_STATUS, link recovered; debounce count cleared");
+            }
+        }
+    };
+
     // Transitions
     using initial_state = Init;
     using p = ResetChip_def;
     using link_detection_off = Not_<detect_link>;
     struct transition_table : boost::mpl::vector<
-        //    +----------+---------+----------+-----------------+--------------------+
-        //    | Source   | Event   | Target   | Action          | Guard              |
-        //    +----------+---------+----------+-----------------+--------------------+
+        //    +----------+---------+----------+-----------------------+--------------------------------+
+        //    | Source   | Event   | Target   | Action                | Guard                          |
+        //    +----------+---------+----------+-----------------------+--------------------------------+
         // Route into the matched substate deterministically: with link detection on
         // enter the vendor-specific LINK_STATUS-polling substate (Qualcomm/Lumissil),
         // otherwise the passive NoDetect substate. The guards are mutually exclusive
@@ -1195,33 +1223,37 @@ struct Matched_def     : public state_machine_def<Matched_def> {
         // Init->Other row shadowed the polling routing, so a matched-state connection
         // loss was never detected and the SECC never left the logical network
         // (ISO 15118-5 PLCLinkStatus_005 / f_SECC_getPLCLinkTermination).
-        Row   < Init     , none    , Lumissil , link_status_req , And_<detect_link, is_lumissil> >,
-        Row   < Init     , none    , Qualcomm , link_status_req , And_<detect_link, is_qualcomm> >,
-        Row   < Init     , none    , NoDetect , none            , link_detection_off             >,
-        //    +----------+---------+----------+-----------------+--------------------+
-        Row   < Lumissil , update  , Lumissil , link_status_req    , timeout               >,
-        Row   < Lumissil , update  , Lumissil , retransmit_amp_map , amp_map_retransmit_due >,
-        Row   < Lumissil , message , Failed   , none               , link_status_neg       >,
-        Row   < Lumissil , message , Lumissil , send_amp_map_cnf   , is_amp_map_req         >,
-        Row   < Lumissil , message , Lumissil , amp_map_cnf_ack    , is_amp_map_cnf_ok      >,
-        //    +----------+---------+----------+-----------------+--------------------+
-        Row   < Qualcomm , update  , Qualcomm , link_status_req    , timeout               >,
-        Row   < Qualcomm , update  , Qualcomm , retransmit_amp_map , amp_map_retransmit_due >,
-        Row   < Qualcomm , message , Failed   , none               , link_status_neg       >,
-        Row   < Qualcomm , message , Qualcomm , send_amp_map_cnf   , is_amp_map_req         >,
-        Row   < Qualcomm , message , Qualcomm , amp_map_cnf_ack    , is_amp_map_cnf_ok      >,
-        //    +----------+---------+----------+-----------------+--------------------+
+        Row   < Init     , none    , Lumissil , link_status_req       , And_<detect_link, is_lumissil> >,
+        Row   < Init     , none    , Qualcomm , link_status_req       , And_<detect_link, is_qualcomm> >,
+        Row   < Init     , none    , NoDetect , none                  , link_detection_off             >,
+        //    +----------+---------+----------+-----------------------+--------------------------------+
+        Row   < Lumissil , update  , Lumissil , link_status_req       , timeout                        >,
+        Row   < Lumissil , update  , Lumissil , retransmit_amp_map    , amp_map_retransmit_due         >,
+        Row   < Lumissil , message , Failed   , none                  , link_lost                      >,
+        Row   < Lumissil , message , Lumissil , count_link_status_neg , link_flap                      >,
+        Row   < Lumissil , message , Lumissil , clear_link_status_neg , link_status_cnf                >,
+        Row   < Lumissil , message , Lumissil , send_amp_map_cnf      , is_amp_map_req                 >,
+        Row   < Lumissil , message , Lumissil , amp_map_cnf_ack       , is_amp_map_cnf_ok              >,
+        //    +----------+---------+----------+-----------------------+--------------------------------+
+        Row   < Qualcomm , update  , Qualcomm , link_status_req       , timeout                        >,
+        Row   < Qualcomm , update  , Qualcomm , retransmit_amp_map    , amp_map_retransmit_due         >,
+        Row   < Qualcomm , message , Failed   , none                  , link_lost                      >,
+        Row   < Qualcomm , message , Qualcomm , count_link_status_neg , link_flap                      >,
+        Row   < Qualcomm , message , Qualcomm , clear_link_status_neg , link_status_cnf                >,
+        Row   < Qualcomm , message , Qualcomm , send_amp_map_cnf      , is_amp_map_req                 >,
+        Row   < Qualcomm , message , Qualcomm , amp_map_cnf_ack       , is_amp_map_cnf_ok              >,
+        //    +----------+---------+----------+-----------------------+--------------------------------+
         // Respond to an incoming CM_AMP_MAP.REQ without leaving the matched state
         // (ISO 15118-5 CmAmpMap responder, TC 001/006/007). The invalid am_len==0
         // case is filtered by is_amp_map_req so no CNF is emitted (TC 005). Covered
         // for the link-detection-off (NoDetect) and pre-detection (Other/Init)
         // substates too so the responder works regardless of the matched substate.
-        Row   < NoDetect , message , NoDetect , send_amp_map_cnf   , is_amp_map_req         >,
-        Row   < NoDetect , update  , NoDetect , retransmit_amp_map , amp_map_retransmit_due >,
-        Row   < NoDetect , message , NoDetect , amp_map_cnf_ack    , is_amp_map_cnf_ok      >,
-        Row   < Other    , message , Other    , send_amp_map_cnf   , is_amp_map_req         >,
-        Row   < Init     , message , Init     , send_amp_map_cnf   , is_amp_map_req         >
-        //    +----------+---------+----------+-----------------+--------------------+
+        Row   < NoDetect , message , NoDetect , send_amp_map_cnf      , is_amp_map_req                 >,
+        Row   < NoDetect , update  , NoDetect , retransmit_amp_map    , amp_map_retransmit_due         >,
+        Row   < NoDetect , message , NoDetect , amp_map_cnf_ack       , is_amp_map_cnf_ok              >,
+        Row   < Other    , message , Other    , send_amp_map_cnf      , is_amp_map_req                 >,
+        Row   < Init     , message , Init     , send_amp_map_cnf      , is_amp_map_req                 >
+        //    +----------+---------+----------+-----------------------+--------------------------------+
         >{};
 
     template <class FSM,class Event>
@@ -1241,6 +1273,9 @@ struct Matched_def     : public state_machine_def<Matched_def> {
         ctx->clear_match_confirm_cache();
         ctx->signal_dlink_ready(true);
         link_check_to_ms = ctx->slac_config.link_status.poll_in_matched_state_ms;
+        consecutive_neg_link_status = 0;
+        neg_link_status_threshold =
+            ctx->slac_config.link_status.debounce_count < 1 ? 1 : ctx->slac_config.link_status.debounce_count;
         ctx->status.match_state = SlacState::Matched;
         ctx->status.d3_state = D3State::Matched;
         ctx->status.modem_link_ready = true;
@@ -1274,6 +1309,8 @@ struct Matched_def     : public state_machine_def<Matched_def> {
 
     fsm::evse::Context* ctx;
     int link_check_to_ms{0};
+    int consecutive_neg_link_status{0};
+    int neg_link_status_threshold{1};
     // SECC-initiated CM_AMP_MAP retransmission state (see the amp_map_* guards/actions above).
     bool amp_map_awaiting_cnf{false};
     int amp_map_retries{0};
