@@ -517,18 +517,26 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
                                                                                    const nlohmann::json& data) {
         Response response;
         response.status = ResponseStatus::Error;
+        // Set as soon as the request is parsed, so the catch handler below can still answer the
+        // requester when request handling throws.
+        std::optional<std::string> response_topic;
         try {
             Request request = data;
             response.type = request.type;
-            const auto response_topic =
-                fmt::format("{}modules/{}/response", mqtt_abstraction.get_everest_prefix(), request.origin);
+            response_topic = fmt::format("{}modules/{}/response", mqtt_abstraction.get_everest_prefix(), request.origin);
 
             const auto module_configs_ptr = config_svc.get_active_module_configurations();
             const auto& module_configs = *module_configs_ptr;
 
             if (request.type == Type::Get) {
                 const GetRequest get_request = std::get<GetRequest>(request.request);
-                if (get_request.type == GetType::Module) {
+                if (module_configs.find(request.origin) == module_configs.end()) {
+                    // Reply explicitly (like the Set path does): without a reply the requesting
+                    // client would block until its timeout. Error responses carry no type/payload.
+                    response.type.reset();
+                    response.status = ResponseStatus::Error;
+                    response.status_info = fmt::format("Unknown origin module: {}", request.origin);
+                } else if (get_request.type == GetType::Module) {
                     response.response = handle_get_module_config(request.origin, module_configs);
                     response.status = ResponseStatus::Ok;
                 } else if (get_request.type == GetType::Value) {
@@ -547,10 +555,23 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
             }
 
             MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, response};
-            mqtt_abstraction.publish(response_topic, payload, QOS::QOS2);
+            mqtt_abstraction.publish(response_topic.value(), payload, QOS::QOS2);
 
         } catch (const std::exception& e) {
             EVLOG_error << "Exception during handling of request: " << e.what();
+            if (response_topic.has_value()) {
+                // The request was parsed, so the requester is known: publish an error response
+                // instead of leaving the client to run into its timeout.
+                Response error_response;
+                error_response.status = ResponseStatus::Error;
+                error_response.status_info = std::string("Exception during handling of request: ") + e.what();
+                try {
+                    MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, error_response};
+                    mqtt_abstraction.publish(response_topic.value(), payload, QOS::QOS2);
+                } catch (...) {
+                    EVLOG_error << "Could not publish the error response";
+                }
+            }
         } catch (...) {
             EVLOG_error << "Could not parse request: " << data.dump();
         }

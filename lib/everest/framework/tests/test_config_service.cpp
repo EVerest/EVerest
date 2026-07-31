@@ -103,7 +103,12 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
     }
     void notice_module_restart_triggered() override {
     }
+    bool throw_on_get_active_module_configurations{false};
+
     std::shared_ptr<const everest::config::ModuleConfigurations> get_active_module_configurations() const override {
+        if (throw_on_get_active_module_configurations) {
+            throw std::runtime_error("stub failure");
+        }
         return std::make_shared<const everest::config::ModuleConfigurations>(module_configurations);
     }
 };
@@ -338,6 +343,49 @@ TEST_CASE("MqttConfigServiceHandler", "[config_service]") {
 
     SECTION("constructor registers handler on config/request topic") {
         CHECK(mock.registered_handlers().count(config_topic) == 1);
+    }
+
+    SECTION("handler replies with an error to Get requests from an unknown origin") {
+        // Regression: these used to throw inside the handler and produce NO reply at all,
+        // leaving the requesting client to block until its timeout.
+        const auto get_type = GENERATE(std::string("Module"), std::string("Value"), std::string("All"),
+                                       std::string("AllMappings"));
+        nlohmann::json request = {{"type", "Get"}, {"origin", "ghost_module"}, {"request", {{"type", get_type}}}};
+        if (get_type == "Value") {
+            request["request"]["identifier"] = {{"module_id", "target_module"},
+                                                {"configuration_parameter_name", "some_param"}};
+        }
+
+        invoke(request);
+
+        REQUIRE(mock.published().size() == 1);
+        const auto& [resp_topic, payload] = mock.published().front();
+        CHECK(resp_topic == prefix + "modules/ghost_module/response");
+
+        const Response resp = parse_published_response(mock.published().front());
+        CHECK(resp.status == ResponseStatus::Error);
+        CHECK(resp.status_info == "Unknown origin module: ghost_module");
+        // Error responses carry no type/payload (see Response::type documentation).
+        CHECK_FALSE(resp.type.has_value());
+    }
+
+    SECTION("handler replies with an error when request handling throws") {
+        // Regression guard: once the request is parsed the requester is known, so even an
+        // unexpected exception must produce an error reply instead of silence.
+        stub_svc.throw_on_get_active_module_configurations = true;
+        const nlohmann::json request = {
+            {"type", "Get"}, {"origin", "target_module"}, {"request", {{"type", "Module"}}}};
+
+        invoke(request);
+
+        REQUIRE(mock.published().size() == 1);
+        const auto& [resp_topic, payload] = mock.published().front();
+        CHECK(resp_topic == prefix + "modules/target_module/response");
+
+        const Response resp = parse_published_response(mock.published().front());
+        CHECK(resp.status == ResponseStatus::Error);
+        CHECK(resp.status_info == "Exception during handling of request: stub failure");
+        CHECK_FALSE(resp.type.has_value());
     }
 
     SECTION("handler responds to Get::Module request") {

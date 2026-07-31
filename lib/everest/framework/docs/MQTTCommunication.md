@@ -317,7 +317,8 @@ Top-level `status` values:
 
 - `Ok`: Request handled successfully
 - `Error`: An error occurred; details in `status_info`. Error responses carry no `type` and no
-  `response` payload.
+  `response` payload. This includes requests from an unknown origin module and unexpected errors
+  during request handling — the manager always replies once a request could be parsed.
 - `AccessDenied`: The requesting module lacks permission to access the target configuration
 
 Set-specific `response.status` values:
