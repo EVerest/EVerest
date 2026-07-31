@@ -57,6 +57,8 @@ struct EventQueueState {
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     std::string selection_algorithm;
     int connection_timeout;
@@ -65,6 +67,9 @@ struct Conf {
     bool ignore_connector_faults;
     bool plug_in_timeout_enabled;
     bool stop_transaction_on_reswipe;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class Auth : public Everest::ModuleBase {

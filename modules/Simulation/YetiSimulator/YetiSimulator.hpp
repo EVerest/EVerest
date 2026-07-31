@@ -25,6 +25,8 @@
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     int connector_id;
     bool reset_powermeter_on_session_start;
@@ -32,6 +34,9 @@ struct Conf {
     std::string dummy_meter_value_blob_start;
     std::string dummy_meter_value_blob_stop;
     double ac_nominal_voltage;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class YetiSimulator : public Everest::ModuleBase {

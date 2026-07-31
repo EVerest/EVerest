@@ -28,6 +28,8 @@
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     std::string device;
     bool supported_DIN70121;
@@ -42,6 +44,9 @@ struct Conf {
     int auth_timeout_eim;
     bool enable_sdp_server;
     bool publish_telemetry_only_on_change;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class EvseV2G : public Everest::ModuleBase {
