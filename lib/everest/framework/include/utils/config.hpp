@@ -217,7 +217,10 @@ public:
 ///
 class ManagerConfig : public ConfigBase {
 private:
-    const ConfigParseSettings& ps;
+    // Stored by value on purpose: a reference member would dangle when the config outlives the
+    // settings it was constructed from (e.g. construction from a temporary ManagerSettings).
+    // Construction is rare and dominated by parsing/validation, so the copy is negligible.
+    const ConfigParseSettings ps;
     Validators validators;
     std::unique_ptr<nlohmann::json_schema::json_validator> draft7_validator;
     std::unique_ptr<everest::config::UserConfigStorage> user_config_storage;
