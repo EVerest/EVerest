@@ -31,6 +31,7 @@ struct Conf {
     bool dummy_meter_value_send_on_transaction_start;
     std::string dummy_meter_value_blob_start;
     std::string dummy_meter_value_blob_stop;
+    double ac_nominal_voltage;
 };
 
 class YetiSimulator : public Everest::ModuleBase {
@@ -67,7 +68,18 @@ public:
     std::unique_ptr<state::ModuleState> module_state;
 
     void reset_module_state() {
-        module_state = std::make_unique<state::ModuleState>();
+        auto new_state = std::make_unique<state::ModuleState>();
+        const auto nominal_voltage = config.ac_nominal_voltage;
+        new_state->simdata_setting.voltages.L1 = nominal_voltage;
+        new_state->simdata_setting.voltages.L2 = nominal_voltage;
+        new_state->simdata_setting.voltages.L3 = nominal_voltage;
+        new_state->simulation_data.voltages.L1 = nominal_voltage;
+        new_state->simulation_data.voltages.L2 = nominal_voltage;
+        new_state->simulation_data.voltages.L3 = nominal_voltage;
+        new_state->powermeter_data.vrmsL1 = nominal_voltage;
+        new_state->powermeter_data.vrmsL2 = nominal_voltage;
+        new_state->powermeter_data.vrmsL3 = nominal_voltage;
+        module_state = std::move(new_state);
     }
 
     void pwm_on(const double dutycycle);

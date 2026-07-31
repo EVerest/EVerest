@@ -19,6 +19,11 @@ config:
     description: Dummy meter value blob sent on transaction stop to be used for testing
     type: string
     default: "test stop value"
+  ac_nominal_voltage:
+    description: Nominal AC voltage between phase and neutral in Volt, reported per phase by the simulated power meter
+    type: number
+    default: 230.0
+    minimum: 99.0
 provides:
   powermeter:
     interface: powermeter
