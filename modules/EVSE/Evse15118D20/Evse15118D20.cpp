@@ -35,4 +35,10 @@ void Evse15118D20::notify_der_directives_changed() {
     }
 }
 
+void Evse15118D20::shutdown() {
+    invoke_shutdown(*p_charger);
+    invoke_shutdown(*p_extensions);
+    invoke_shutdown(*p_grid_support);
+}
+
 } // namespace module

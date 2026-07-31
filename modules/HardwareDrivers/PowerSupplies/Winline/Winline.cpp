@@ -28,4 +28,8 @@ void Winline::ready() {
     invoke_ready(*p_main);
 }
 
+void Winline::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

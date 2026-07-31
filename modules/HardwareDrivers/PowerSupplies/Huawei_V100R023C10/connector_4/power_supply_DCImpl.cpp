@@ -16,6 +16,9 @@ void power_supply_DCImpl::ready() {
     base.ev_ready();
 }
 
+void power_supply_DCImpl::shutdown() {
+}
+
 void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
                                          types::power_supply_DC::ChargingPhase& phase) {
     base.ev_handle_setMode(mode, phase);

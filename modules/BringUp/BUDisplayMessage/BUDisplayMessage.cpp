@@ -543,4 +543,7 @@ void BUDisplayMessage::ready() {
     screen.Loop(main_renderer);
 }
 
+void BUDisplayMessage::shutdown() {
+}
+
 } // namespace module

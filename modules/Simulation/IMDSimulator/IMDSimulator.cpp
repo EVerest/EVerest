@@ -12,4 +12,8 @@ void IMDSimulator::ready() {
     invoke_ready(*p_main);
 }
 
+void IMDSimulator::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

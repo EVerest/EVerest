@@ -12,4 +12,8 @@ void ExampleErrorGlobalSubscriber::ready() {
     invoke_ready(*p_example_global_subscriber);
 }
 
+void ExampleErrorGlobalSubscriber::shutdown() {
+    invoke_shutdown(*p_example_global_subscriber);
+}
+
 } // namespace module

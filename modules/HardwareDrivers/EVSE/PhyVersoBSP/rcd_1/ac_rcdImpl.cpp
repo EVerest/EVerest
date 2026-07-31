@@ -25,6 +25,9 @@ void ac_rcdImpl::init() {
 void ac_rcdImpl::ready() {
 }
 
+void ac_rcdImpl::shutdown() {
+}
+
 void ac_rcdImpl::handle_self_test() {
     mod->serial.set_rcd_test(1, true);
 }

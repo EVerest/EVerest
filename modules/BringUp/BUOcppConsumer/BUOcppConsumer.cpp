@@ -35,4 +35,9 @@ void BUOcppConsumer::event_monitor_variable(const std::string& name) {
     std::cout << "MonitorVariable: " << name << '\n';
 }
 
+void BUOcppConsumer::shutdown() {
+    invoke_shutdown(*p_ocpp);
+    invoke_shutdown(*p_ocpp_data_transfer);
+}
+
 } // namespace module

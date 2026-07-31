@@ -99,4 +99,8 @@ std::string isolation_monitor_API::make_error_string(API_types_ext::Error const&
     return result;
 }
 
+void isolation_monitor_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

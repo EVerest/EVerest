@@ -7,7 +7,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/isolation_monitor/Implementation.hpp>
@@ -24,10 +24,15 @@
 namespace module {
 namespace main {
 
+struct RwConf {};
+
 struct Conf {
     double resistance_F_Ohm;
     int interval;
     bool selftest_success;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class isolation_monitorImpl : public isolation_monitorImplBase {
@@ -56,6 +61,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here

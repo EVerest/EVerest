@@ -137,6 +137,9 @@ void energyImpl::ready() {
     });
 }
 
+void energyImpl::shutdown() {
+}
+
 types::energy::EvseState to_energy_evse_state(const Charger::EvseState charger_state) {
     switch (charger_state) {
     case Charger::EvseState::Disabled:

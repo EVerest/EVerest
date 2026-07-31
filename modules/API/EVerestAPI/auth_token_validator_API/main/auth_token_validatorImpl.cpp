@@ -23,6 +23,9 @@ void auth_token_validatorImpl::init() {
 void auth_token_validatorImpl::ready() {
 }
 
+void auth_token_validatorImpl::shutdown() {
+}
+
 template <class T, class ReqT>
 auto auth_token_validatorImpl::generic_request_reply(T const& default_value, ReqT const& request,
                                                      std::string const& topic) {

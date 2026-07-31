@@ -150,6 +150,9 @@ void ISO15118_vasImpl::ready() {
     publish_offered_vas(offered_services);
 }
 
+void ISO15118_vasImpl::shutdown() {
+}
+
 std::vector<types::iso15118_vas::ParameterSet> ISO15118_vasImpl::handle_get_service_parameters(int& service_id) {
     for (const auto& item : value_added_services) {
         if (item.first.service_id == service_id) {

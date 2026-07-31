@@ -68,4 +68,8 @@ void auth_consumer_API::generate_api_var_token_validation_status() {
     r_auth->subscribe_token_validation_status(forward_and_cache_api_var("token_validation_status"));
 }
 
+void auth_consumer_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

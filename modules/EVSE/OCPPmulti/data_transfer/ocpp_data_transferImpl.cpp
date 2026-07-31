@@ -12,6 +12,9 @@ void ocpp_data_transferImpl::init() {
 void ocpp_data_transferImpl::ready() {
 }
 
+void ocpp_data_transferImpl::shutdown() {
+}
+
 types::ocpp::DataTransferResponse
 ocpp_data_transferImpl::handle_data_transfer(types::ocpp::DataTransferRequest& request) {
     return mod->m_ocpp.handle_data_transfer(request);

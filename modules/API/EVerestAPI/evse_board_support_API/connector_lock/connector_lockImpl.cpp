@@ -14,6 +14,9 @@ void connector_lockImpl::init() {
 void connector_lockImpl::ready() {
 }
 
+void connector_lockImpl::shutdown() {
+}
+
 void connector_lockImpl::handle_lock() {
     static const auto topic = mod->helper.get_topics().everest_to_extern("lock");
     mod->mqtt_v.publish(topic, "");

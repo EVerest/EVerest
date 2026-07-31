@@ -12,6 +12,9 @@ void connector_lockImpl::init() {
 void connector_lockImpl::ready() {
 }
 
+void connector_lockImpl::shutdown() {
+}
+
 void connector_lockImpl::handle_lock() {
     EVLOG_info << "Lock connector";
 }

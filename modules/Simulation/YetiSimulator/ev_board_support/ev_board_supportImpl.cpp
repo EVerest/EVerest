@@ -19,6 +19,9 @@ void ev_board_supportImpl::init() {
 void ev_board_supportImpl::ready() {
 }
 
+void ev_board_supportImpl::shutdown() {
+}
+
 void ev_board_supportImpl::handle_enable(bool& value) {
     if (mod->module_state->simulation_enabled and not value) {
         publish_bsp_event({types::board_support_common::Event::A});

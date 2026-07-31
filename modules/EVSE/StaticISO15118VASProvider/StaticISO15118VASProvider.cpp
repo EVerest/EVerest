@@ -12,4 +12,8 @@ void StaticISO15118VASProvider::ready() {
     invoke_ready(*p_iso15118_vas);
 }
 
+void StaticISO15118VASProvider::shutdown() {
+    invoke_shutdown(*p_iso15118_vas);
+}
+
 } // namespace module

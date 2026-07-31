@@ -19,6 +19,9 @@ void slacImpl::init() {
 void slacImpl::ready() {
 }
 
+void slacImpl::shutdown() {
+}
+
 void slacImpl::handle_reset(bool& enable) {
     static const auto topic = mod->helper.get_topics().everest_to_extern("reset");
     const auto data = generic::serialize(enable);

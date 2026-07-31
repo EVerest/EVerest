@@ -590,6 +590,9 @@ void powermeterImpl::ready() {
     time_sync_thread_ = std::thread([this]() { time_sync_thread(); });
 }
 
+void powermeterImpl::shutdown() {
+}
+
 void powermeterImpl::write_transaction_registers(const types::powermeter::TransactionReq& transaction_req) {
     // 1. Write OCMF Identification Status (register 328673, 7000h)
     // 0 = NOT_ASSIGNED (False), 1 = ASSIGNED (True)

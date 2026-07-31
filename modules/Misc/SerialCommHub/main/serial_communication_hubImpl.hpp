@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/serial_communication_hub/Implementation.hpp>
@@ -25,6 +25,8 @@
 namespace module {
 namespace main {
 
+struct RwConf {};
+
 struct Conf {
     std::string serial_port;
     int baudrate;
@@ -38,6 +40,9 @@ struct Conf {
     int initial_timeout_ms;
     int within_message_timeout_ms;
     int retries;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class serial_communication_hubImpl : public serial_communication_hubImplBase {
@@ -83,6 +88,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here

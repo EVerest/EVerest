@@ -13,6 +13,9 @@ void ocppImpl::init() {
 void ocppImpl::ready() {
 }
 
+void ocppImpl::shutdown() {
+}
+
 bool ocppImpl::handle_stop() {
     // your code for cmd stop goes here
     return true;

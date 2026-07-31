@@ -137,4 +137,8 @@ ConfigChangeResult OCPPExtensionExample::on_keys_to_monitor_changed(const std::s
     return ConfigChangeResult::Accepted();
 }
 
+void OCPPExtensionExample::shutdown() {
+    invoke_shutdown(*p_data_transfer);
+}
+
 } // namespace module

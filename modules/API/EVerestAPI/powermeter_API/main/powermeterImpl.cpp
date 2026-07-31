@@ -27,6 +27,9 @@ void powermeterImpl::init() {
 void powermeterImpl::ready() {
 }
 
+void powermeterImpl::shutdown() {
+}
+
 template <class T, class ReqT>
 auto powermeterImpl::generic_request_reply(T const& default_value, ReqT const& request, std::string const& topic) {
     using ExtT = decltype(API_types_ext::to_external_api(std::declval<T>()));

@@ -218,4 +218,10 @@ evse_board_support_API::ErrorHandler evse_board_support_API::make_error_handler(
     return result;
 }
 
+void evse_board_support_API::shutdown() {
+    invoke_shutdown(*p_main);
+    invoke_shutdown(*p_rcd);
+    invoke_shutdown(*p_connector_lock);
+}
+
 } // namespace module

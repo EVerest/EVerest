@@ -81,4 +81,7 @@ void BUTokenProvider::ready() {
     screen.Loop(main_renderer);
 }
 
+void BUTokenProvider::shutdown() {
+}
+
 } // namespace module

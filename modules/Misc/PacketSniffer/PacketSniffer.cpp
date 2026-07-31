@@ -110,4 +110,7 @@ void PacketSniffer::capture(const std::string& logpath, const std::string& sessi
     already_started = false;
 }
 
+void PacketSniffer::shutdown() {
+}
+
 } // namespace module

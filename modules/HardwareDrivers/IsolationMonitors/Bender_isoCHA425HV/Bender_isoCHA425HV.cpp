@@ -13,4 +13,8 @@ void Bender_isoCHA425HV::ready() {
     invoke_ready(*p_main);
 }
 
+void Bender_isoCHA425HV::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

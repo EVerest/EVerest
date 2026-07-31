@@ -12,5 +12,8 @@ void temperature_sensorImpl::init() {
 void temperature_sensorImpl::ready() {
 }
 
+void temperature_sensorImpl::shutdown() {
+}
+
 } // namespace temperature_sensor
 } // namespace module

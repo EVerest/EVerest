@@ -151,4 +151,9 @@ void AdAcEvse22KwzKitBSP::error_handling(ErrorFlags e) {
     last_error_flags = e;
 }
 
+void AdAcEvse22KwzKitBSP::shutdown() {
+    invoke_shutdown(*p_powermeter);
+    invoke_shutdown(*p_board_support);
+}
+
 } // namespace module

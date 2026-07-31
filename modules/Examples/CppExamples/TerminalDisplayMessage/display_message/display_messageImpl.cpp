@@ -12,6 +12,9 @@ void display_messageImpl::init() {
 void display_messageImpl::ready() {
 }
 
+void display_messageImpl::shutdown() {
+}
+
 types::display_message::SetDisplayMessageResponse
 display_messageImpl::handle_set_display_message(std::vector<types::display_message::DisplayMessage>& request) {
     types::display_message::SetDisplayMessageResponse response;

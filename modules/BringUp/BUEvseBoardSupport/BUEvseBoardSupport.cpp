@@ -508,4 +508,7 @@ void BUEvseBoardSupport::ready() {
     screen.Loop(main_renderer);
 }
 
+void BUEvseBoardSupport::shutdown() {
+}
+
 } // namespace module

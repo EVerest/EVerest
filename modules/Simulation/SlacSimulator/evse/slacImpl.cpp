@@ -15,6 +15,9 @@ void slacImpl::ready() {
     publish_state(state);
 }
 
+void slacImpl::shutdown() {
+}
+
 void slacImpl::handle_reset(bool& enable) {
     set_state_to_unmatched();
 }

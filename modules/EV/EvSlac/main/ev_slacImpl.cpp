@@ -24,6 +24,9 @@ void ev_slacImpl::ready() {
     module_ready.set_value();
 }
 
+void ev_slacImpl::shutdown() {
+}
+
 void ev_slacImpl::run() {
     // wait until ready
     module_ready.get_future().get();

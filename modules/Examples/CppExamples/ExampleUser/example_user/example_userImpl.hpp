@@ -19,7 +19,13 @@
 namespace module {
 namespace example_user {
 
-struct Conf {};
+struct RwConf {};
+
+struct Conf {
+
+    Conf() = default;
+    Conf(const RwConf&){};
+};
 
 class example_userImpl : public example_userImplBase {
 public:
@@ -44,7 +50,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
-    void shutdown();
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here

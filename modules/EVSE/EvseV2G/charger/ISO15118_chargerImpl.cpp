@@ -127,6 +127,9 @@ void ISO15118_chargerImpl::ready() {
     publish_supported_app_protocols_secc(supp_app_protocols_secc);
 }
 
+void ISO15118_chargerImpl::shutdown() {
+}
+
 void ISO15118_chargerImpl::handle_setup(types::iso15118::EVSEID& evse_id,
                                         types::iso15118::SaeJ2847BidiMode& sae_j2847_mode, bool& debug_mode) {
 

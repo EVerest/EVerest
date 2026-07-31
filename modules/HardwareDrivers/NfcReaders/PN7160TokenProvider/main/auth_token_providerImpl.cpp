@@ -83,5 +83,8 @@ void auth_token_providerImpl::ready() {
     }
 }
 
+void auth_token_providerImpl::shutdown() {
+}
+
 } // namespace main
 } // namespace module

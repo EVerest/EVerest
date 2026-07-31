@@ -768,4 +768,13 @@ types::board_support_common::ProximityPilot YetiSimulator::read_pp_ampacity() co
     return {types::board_support_common::Ampacity::None};
 }
 
+void YetiSimulator::shutdown() {
+    invoke_shutdown(*p_powermeter);
+    invoke_shutdown(*p_temperature_sensor);
+    invoke_shutdown(*p_board_support);
+    invoke_shutdown(*p_ev_board_support);
+    invoke_shutdown(*p_rcd);
+    invoke_shutdown(*p_connector_lock);
+}
+
 } // namespace module

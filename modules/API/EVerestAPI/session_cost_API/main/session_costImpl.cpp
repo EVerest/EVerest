@@ -12,5 +12,8 @@ void session_costImpl::init() {
 void session_costImpl::ready() {
 }
 
+void session_costImpl::shutdown() {
+}
+
 } // namespace main
 } // namespace module

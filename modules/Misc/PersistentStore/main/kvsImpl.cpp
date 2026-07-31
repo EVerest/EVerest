@@ -84,6 +84,9 @@ void kvsImpl::init() {
 void kvsImpl::ready() {
 }
 
+void kvsImpl::shutdown() {
+}
+
 class TypeNameVisitor {
 public:
     std::string operator()(std::nullptr_t t) const {

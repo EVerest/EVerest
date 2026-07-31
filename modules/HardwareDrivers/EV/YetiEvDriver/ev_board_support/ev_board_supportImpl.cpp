@@ -12,6 +12,9 @@ void ev_board_supportImpl::init() {
 void ev_board_supportImpl::ready() {
 }
 
+void ev_board_supportImpl::shutdown() {
+}
+
 void ev_board_supportImpl::handle_enable(bool& value) {
     // your code for cmd enable goes here
 }

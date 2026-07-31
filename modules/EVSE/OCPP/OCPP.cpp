@@ -1132,4 +1132,13 @@ int32_t OCPP::get_ocpp_connector_id(int32_t evse_id, int32_t connector_id) {
     return this->evse_connector_map.at(evse_id).at(connector_id);
 }
 
+void OCPP::shutdown() {
+    invoke_shutdown(*p_main);
+    invoke_shutdown(*p_auth_validator);
+    invoke_shutdown(*p_auth_provider);
+    invoke_shutdown(*p_data_transfer);
+    invoke_shutdown(*p_ocpp_generic);
+    invoke_shutdown(*p_session_cost);
+}
+
 } // namespace module

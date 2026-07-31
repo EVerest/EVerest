@@ -12,6 +12,9 @@ void energyImpl::init() {
 void energyImpl::ready() {
 }
 
+void energyImpl::shutdown() {
+}
+
 void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
     // your code for cmd enforce_limits goes here
 }

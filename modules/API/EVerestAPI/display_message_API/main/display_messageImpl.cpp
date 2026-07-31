@@ -24,6 +24,9 @@ void display_messageImpl::init() {
 void display_messageImpl::ready() {
 }
 
+void display_messageImpl::shutdown() {
+}
+
 template <class T, class ReqT>
 auto display_messageImpl::generic_request_reply(T const& default_value, ReqT const& request, std::string const& topic) {
     using namespace API_types_ext;

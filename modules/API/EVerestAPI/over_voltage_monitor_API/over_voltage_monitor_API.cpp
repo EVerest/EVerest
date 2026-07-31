@@ -102,4 +102,8 @@ void over_voltage_monitor_API::generate_api_var_clear_error() {
     });
 }
 
+void over_voltage_monitor_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

@@ -152,4 +152,7 @@ void BUDCExternalDerate::ready() {
     screen.Loop(main_renderer);
 }
 
+void BUDCExternalDerate::shutdown() {
+}
+
 } // namespace module

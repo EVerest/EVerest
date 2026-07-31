@@ -142,4 +142,7 @@ void BUSlac::ready() {
     screen.Loop(main_renderer);
 }
 
+void BUSlac::shutdown() {
+}
+
 } // namespace module

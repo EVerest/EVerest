@@ -12,4 +12,8 @@ void DummyBankSessionTokenProvider::ready() {
     invoke_ready(*p_main);
 }
 
+void DummyBankSessionTokenProvider::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

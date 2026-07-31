@@ -23,6 +23,9 @@ void ocppImpl::init() {
 void ocppImpl::ready() {
 }
 
+void ocppImpl::shutdown() {
+}
+
 bool ocppImpl::handle_stop() {
     // Disconnects the websocket connection and stops the OCPP communication.
     // No OCPP messages will be stored and sent after a restart.

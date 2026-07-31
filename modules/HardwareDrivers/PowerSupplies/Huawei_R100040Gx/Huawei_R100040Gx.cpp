@@ -43,4 +43,8 @@ void Huawei_R100040Gx::ready() {
     acdc.switch_on(false);
 }
 
+void Huawei_R100040Gx::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

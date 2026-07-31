@@ -26,6 +26,9 @@ void error_historyImpl::init() {
 void error_historyImpl::ready() {
 }
 
+void error_historyImpl::shutdown() {
+}
+
 Everest::error::StateFilter convert_state_filter(types::error_history::State filter) {
     switch (filter) {
     case types::error_history::State::Active:

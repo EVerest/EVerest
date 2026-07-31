@@ -24,6 +24,9 @@ void kvsImpl::init() {
 void kvsImpl::ready() {
 }
 
+void kvsImpl::shutdown() {
+}
+
 void kvsImpl::handle_store(std::string& key,
                            std::variant<std::nullptr_t, Array, Object, bool, double, int, std::string>& value) {
     // this is a read-only kvs - do nothing but prevent compiler warnings about unused parameters

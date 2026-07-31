@@ -71,4 +71,7 @@ void TerminalCostAndPriceMessage::init() {
 void TerminalCostAndPriceMessage::ready() {
 }
 
+void TerminalCostAndPriceMessage::shutdown() {
+}
+
 } // namespace module

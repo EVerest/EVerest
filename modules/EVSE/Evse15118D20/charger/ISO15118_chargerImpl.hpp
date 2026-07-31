@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/ISO15118_charger/Implementation.hpp>
@@ -28,7 +28,13 @@
 namespace module {
 namespace charger {
 
-struct Conf {};
+struct RwConf {};
+
+struct Conf {
+
+    Conf() = default;
+    Conf(const RwConf&){};
+};
 
 class ISO15118_chargerImpl : public ISO15118_chargerImplBase {
 public:
@@ -88,6 +94,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     iso15118::session::feedback::Callbacks create_callbacks();

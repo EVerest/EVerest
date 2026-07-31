@@ -18,6 +18,9 @@ void over_voltage_monitorImpl::init() {
 void over_voltage_monitorImpl::ready() {
 }
 
+void over_voltage_monitorImpl::shutdown() {
+}
+
 void over_voltage_monitorImpl::handle_set_limits(double& emergency_over_voltage_limit_V,
                                                  double& error_over_voltage_limit_V) {
     static const auto topic = mod->helper.get_topics().everest_to_extern("set_limits");

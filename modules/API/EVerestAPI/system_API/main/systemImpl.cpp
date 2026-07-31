@@ -28,6 +28,9 @@ void systemImpl::init() {
 void systemImpl::ready() {
 }
 
+void systemImpl::shutdown() {
+}
+
 template <class T, class ReqT>
 auto systemImpl::generic_request_reply(T const& default_value, ReqT const& request, std::string const& topic) {
     using namespace API_types_ext;

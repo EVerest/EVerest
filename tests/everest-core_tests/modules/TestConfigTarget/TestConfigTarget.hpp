@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -30,9 +30,15 @@ struct RwConfUpdate {
 
     virtual ~RwConfUpdate() = default;
 
-    // override in class TestConfigTarget adding the implementation to
-    // TestConfigTarget.cpp or inline e.g. ConfigChangeResult
-    // on_rw_param_changed(const std::string& value) override {
+    // override in class TestConfigTarget adding the implementation to TestConfigTarget.cpp
+    // or inline
+    //
+    // note: these handlers are invoked from a different thread than the one
+    // executing your module code, so guard rw_config with a mutex both here
+    // and wherever your module accesses config or rw_config
+    // e.g.
+    // ConfigChangeResult on_rw_param_changed(const std::string& value) override {
+    //     std::scoped_lock lock(config_mutex);
     //     rw_config.rw_param = value;
     //     return ConfigChangeResult::Accepted();
     // }
@@ -75,7 +81,6 @@ public:
     ConfigChangeResult on_rw_param_changed(const std::string& value) override;
     ConfigChangeResult on_rw_reboot_param_changed(const std::string& value) override;
     ConfigChangeResult on_rw_reject_param_changed(const std::string& value) override;
-
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -87,6 +92,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

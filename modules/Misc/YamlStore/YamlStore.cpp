@@ -12,4 +12,8 @@ void YamlStore::ready() {
     invoke_ready(*p_main);
 }
 
+void YamlStore::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

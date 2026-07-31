@@ -232,4 +232,9 @@ WithdrawAuthorizationResult Auth::handle_withdraw_authorization(const WithdrawAu
     return this->auth_handler->handle_withdraw_authorization(request);
 }
 
+void Auth::shutdown() {
+    invoke_shutdown(*p_main);
+    invoke_shutdown(*p_reservation);
+}
+
 } // namespace module

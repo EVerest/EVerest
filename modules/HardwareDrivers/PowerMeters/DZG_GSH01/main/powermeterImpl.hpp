@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/powermeter/Implementation.hpp>
@@ -23,6 +23,8 @@
 namespace module {
 namespace main {
 
+struct RwConf {};
+
 struct Conf {
     int powermeter_device_id;
     std::string serial_port;
@@ -34,6 +36,9 @@ struct Conf {
     int max_clock_diff_s;
     bool publish_device_data;
     bool publish_device_diagnostics;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class powermeterImpl : public powermeterImplBase {
@@ -62,6 +67,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here

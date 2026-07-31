@@ -18,4 +18,8 @@ void InfyPower_BEG1K075G::ready() {
     invoke_ready(*p_main);
 }
 
+void InfyPower_BEG1K075G::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

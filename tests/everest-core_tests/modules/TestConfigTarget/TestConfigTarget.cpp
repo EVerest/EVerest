@@ -26,4 +26,8 @@ TestConfigTarget::ConfigChangeResult TestConfigTarget::on_rw_reject_param_change
     return ConfigChangeResult::Rejected("test rejection reason");
 }
 
+void TestConfigTarget::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module
