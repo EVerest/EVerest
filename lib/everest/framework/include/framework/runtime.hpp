@@ -137,16 +137,16 @@ struct VersionInformation {
 
 class ModuleLoader {
 private:
-    std::unique_ptr<RuntimeSettings> runtime_settings;
-    MQTTSettings mqtt_settings;
-    std::shared_ptr<MQTTAbstraction> mqtt;
-    std::string module_id;
-    std::string original_process_name;
-    std::string application_name;
-    ModuleCallbacks callbacks;
-    VersionInformation version_information;
-    fs::path logging_config_file;
-    bool should_exit = false;
+    std::unique_ptr<RuntimeSettings> m_runtime_settings;
+    MQTTSettings m_mqtt_settings;
+    std::shared_ptr<MQTTAbstraction> m_mqtt;
+    std::string m_module_id;
+    std::string m_original_process_name;
+    std::string m_application_name;
+    ModuleCallbacks m_callbacks;
+    VersionInformation m_version_information;
+    fs::path m_logging_config_file;
+    bool m_should_exit = false;
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): pass-through of argc and argv from main()
     bool parse_command_line(int argc, char* argv[]);

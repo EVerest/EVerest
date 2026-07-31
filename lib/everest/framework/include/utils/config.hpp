@@ -44,6 +44,9 @@ struct Schemas {
     nlohmann::json error_declaration_list; ///< The error-declaration-list schema
 };
 
+///
+/// \brief A structure that contains all schema validators
+///
 struct Validators {
     nlohmann::json_schema::json_validator config;
     nlohmann::json_schema::json_validator manifest;
@@ -52,11 +55,17 @@ struct Validators {
     nlohmann::json_schema::json_validator error_declaration_list;
 };
 
+///
+/// \brief Bundles the loaded schemas together with their related validators
+///
 struct SchemaValidation {
     Schemas schemas;
     Validators validators;
 };
 
+///
+/// \brief Information identifying a module implementation
+///
 struct ImplementationInfo {
     std::string module_id;
     std::string module_name;
@@ -102,25 +111,25 @@ json get_serialized_module_config(std::string_view module_id, const ModuleConfig
 ///
 class ConfigBase {
 protected:
-    ModuleConfigurations module_configs;
-    nlohmann::json settings;
+    ModuleConfigurations m_module_configs;
+    nlohmann::json m_settings;
 
-    nlohmann::json manifests;
-    nlohmann::json interfaces;
-    nlohmann::json interface_definitions;
-    nlohmann::json types;
-    Schemas schemas;
+    nlohmann::json m_manifests;
+    nlohmann::json m_interfaces;
+    nlohmann::json m_interface_definitions;
+    nlohmann::json m_types;
+    Schemas m_schemas;
     // experimental caches
-    std::map<std::string, std::string, std::less<>> module_names;
+    std::map<std::string, std::string, std::less<>> m_module_names;
 
-    error::ErrorTypeMap error_map;
+    error::ErrorTypeMap m_error_map;
 
-    const MQTTSettings mqtt_settings;
+    const MQTTSettings m_mqtt_settings;
 
 public:
     ///
     /// \brief Create a ConfigBase with the provided \p mqtt_settings
-    explicit ConfigBase(const MQTTSettings& mqtt_settings) : mqtt_settings(mqtt_settings){};
+    explicit ConfigBase(const MQTTSettings& mqtt_settings) : m_mqtt_settings(mqtt_settings){};
 
     ///
     /// \brief turns then given \p module_id into a printable identifier
@@ -220,10 +229,10 @@ private:
     // Stored by value on purpose: a reference member would dangle when the config outlives the
     // settings it was constructed from (e.g. construction from a temporary ManagerSettings).
     // Construction is rare and dominated by parsing/validation, so the copy is negligible.
-    const ConfigParseSettings ps;
-    Validators validators;
-    std::unique_ptr<nlohmann::json_schema::json_validator> draft7_validator;
-    std::unique_ptr<everest::config::UserConfigStorage> user_config_storage;
+    const ConfigParseSettings m_ps;
+    Validators m_validators;
+    std::unique_ptr<nlohmann::json_schema::json_validator> m_draft7_validator;
+    std::unique_ptr<everest::config::UserConfigStorage> m_user_config_storage;
 
     /// \brief Sets up schemas, validators and error map (shared by all constructors).
     void init_schemas();
@@ -323,6 +332,9 @@ public:
     /// \param preloaded_configs Module configurations loaded from the database before construction.
     explicit ManagerConfig(const ConfigParseSettings& ps, everest::config::ModuleConfigurations preloaded_configs);
 
+    ///
+    /// \brief returns the configuration parameter identified by \p identifier together with a status indicating
+    /// whether it was found
     everest::config::GetConfigurationParameterResponse
     get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier) const;
 };
@@ -333,10 +345,10 @@ public:
 ///
 class Config : public ConfigBase {
 private:
-    ModuleConfig module_config;
-    std::map<std::string, ModuleTierMappings, std::less<>> tier_mappings;
-    std::optional<TelemetryConfig> telemetry_config;
-    std::map<std::string, ConfigCache, std::less<>> module_config_cache;
+    ModuleConfig m_module_config;
+    std::map<std::string, ModuleTierMappings, std::less<>> m_tier_mappings;
+    std::optional<TelemetryConfig> m_telemetry_config;
+    std::map<std::string, ConfigCache, std::less<>> m_module_config_cache;
 
     void populate_module_config_cache();
 

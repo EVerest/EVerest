@@ -43,6 +43,7 @@ public:
     /// \param restart_fn     Callback to restart modules (optional stub).
     ConfigServiceCore(const ConfigParseSettings& parse_settings,
                       std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection);
+    /// \brief Stops and joins the actor worker thread.
     ~ConfigServiceCore() override;
 
     // --- Re-initialize configuration ---
@@ -51,20 +52,30 @@ public:
     void reinitialize_from_db(bool force_reload = false);
 
     // --- Active-slot in-memory access (zero-copy) ---
+    /// \brief Returns the current lock-free in-memory snapshot of the active slot's module configurations.
     std::shared_ptr<const everest::config::ModuleConfigurations> get_active_module_configurations() const override;
 
     // --- Slot management ---
+    /// \brief Lists metadata for all configuration slots.
     std::vector<SlotInfo> list_all_slots() override;
+    /// \brief Returns the id of the currently active slot.
     int get_active_slot_id() override;
+    /// \brief Returns the id of the slot that will be activated on the next boot.
     int get_next_boot_slot_id() override;
+    /// \brief Marks the given slot as the one to activate on the next boot.
     SetActiveSlotStatus mark_active_slot(int slot_id) override;
+    /// \brief Deletes the given slot (never the active or next-boot slot).
     DeleteSlotStatus delete_slot(int slot_id) override;
+    /// \brief Duplicates the given slot into a new slot, optionally with a description.
     DuplicateSlotResult duplicate_slot(int slot_id, std::optional<std::string> description) override;
+    /// \brief Validates and loads raw YAML into the given (or a newly created) slot.
     LoadFromYamlResult load_from_yaml(const std::string& raw_yaml, std::optional<std::string> description,
                                       std::optional<int> slot_id) override;
+    /// \brief Sets the description of the given slot.
     bool set_description(int slot_id, const std::string& description) override;
 
     // --- Slot-scoped configuration ---
+    /// \brief Applies configuration parameter updates to the given slot.
     SetConfigParameterResult set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates,
                                                    const Origin& origin) override;
 
@@ -85,11 +96,17 @@ public:
     void register_set_runtime_parameter_handler(const SetParamCallback& callback);
 
     // --- Module state ---
+    /// \brief Records that the active-slot modules are stopped.
     void set_modules_stopped() override;
+    /// \brief Records that the active-slot modules are running.
     void set_modules_running() override;
+    /// \brief Records that the active-slot modules are starting.
     void set_modules_starting() override;
+    /// \brief Records that the active-slot modules are stopping.
     void set_modules_stopping() override;
+    /// \brief Records that module configuration validation failed to start the modules.
     void notice_cfg_validation_failed() override;
+    /// \brief Records that a module restart was triggered.
     void notice_module_restart_triggered() override;
 
 protected:
@@ -101,25 +118,25 @@ protected:
                             bool force_read_from_db) override;
 
 private:
-    everest::config::ModuleConfigurations module_configs_;
-    ConfigParseSettings parse_settings_;
-    everest::config::SqliteConfigSlotManager slot_manager_;
+    everest::config::ModuleConfigurations m_module_configs;
+    ConfigParseSettings m_parse_settings;
+    everest::config::SqliteConfigSlotManager m_slot_manager;
     /// \brief Keepalive for the shared connection
-    std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_;
-    std::shared_ptr<const everest::config::ModuleConfigurations> active_configs_ptr_;
-    int active_slot_id_{everest::config::SqliteStorage::DEFAULT_CONFIG_ID};
-    int next_boot_slot_id_{everest::config::SqliteStorage::DEFAULT_CONFIG_ID};
-    ActiveSlotStatus module_status_{ActiveSlotStatus::Stopped};
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> m_db;
+    std::shared_ptr<const everest::config::ModuleConfigurations> m_active_configs_ptr;
+    int m_active_slot_id{everest::config::SqliteStorage::DEFAULT_CONFIG_ID};
+    int m_next_boot_slot_id{everest::config::SqliteStorage::DEFAULT_CONFIG_ID};
+    ActiveSlotStatus m_module_status{ActiveSlotStatus::Stopped};
 
-    std::vector<std::function<void(const ActiveSlotUpdate&)>> active_slot_handlers_;
-    std::vector<std::function<void(const ConfigurationUpdate&)>> config_update_handlers_;
+    std::vector<std::function<void(const ActiveSlotUpdate&)>> m_active_slot_handlers;
+    std::vector<std::function<void(const ConfigurationUpdate&)>> m_config_update_handlers;
 
-    // Actor infrastructure: worker_thread_ drains command_queue_ one task at a
+    // Actor infrastructure: m_worker_thread drains m_command_queue one task at a
     // time, so all mutable state is touched by a single thread. See the
     // "Threading model" comment at the top of config_service_core.cpp.
-    everest::lib::util::thread_safe_queue<std::function<void()>> command_queue_;
-    std::thread worker_thread_;
-    std::atomic<bool> worker_thread_running_{false};
+    everest::lib::util::thread_safe_queue<std::function<void()>> m_command_queue;
+    std::thread m_worker_thread;
+    std::atomic<bool> m_worker_thread_running{false};
 
     void process_queue();
 
@@ -133,12 +150,12 @@ private:
         // calling back into a public method - execute inline: the actor is busy running the
         // very task that triggered the handler, so waiting on the queue would deadlock. Inline
         // execution preserves the single-writer model, since we already are the actor thread.
-        if (std::this_thread::get_id() == worker_thread_.get_id()) {
+        if (std::this_thread::get_id() == m_worker_thread.get_id()) {
             return f();
         }
         auto promise = std::make_shared<std::promise<ReturnType>>();
         auto future = promise->get_future();
-        command_queue_.push([promise, f = std::forward<Func>(f)]() mutable {
+        m_command_queue.push([promise, f = std::forward<Func>(f)]() mutable {
             try {
                 if constexpr (std::is_void_v<ReturnType>) {
                     f();
@@ -194,9 +211,9 @@ private:
     void publish_config_update(const ConfigurationUpdate& update);
 
     /// \brief Storage handle for the currently active slot, used to persist runtime config writes.
-    std::unique_ptr<everest::config::SqliteStorage> active_storage_;
+    std::unique_ptr<everest::config::SqliteStorage> m_active_storage;
 
-    SetParamCallback set_parameter_callback_;
+    SetParamCallback m_set_parameter_callback;
 };
 
 } // namespace Everest::config

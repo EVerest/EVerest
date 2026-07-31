@@ -62,7 +62,7 @@ struct SetConfigPerParameterResult {
 };
 
 struct SetConfigParameterResult {
-    SetConfigParameterStatus status = SetConfigParameterStatus::Error;
+    SetConfigParameterStatus status{SetConfigParameterStatus::Error};
     std::string status_info;
     std::optional<std::vector<SetConfigPerParameterResult>> parameter_results;
 };
@@ -89,7 +89,7 @@ enum class ActiveSlotStatus {
 using DuplicateSlotResult = everest::config::DuplicateSlotResult;
 
 struct LoadFromYamlResult {
-    bool success = false;
+    bool success{false};
     std::optional<int> slot_id;
     std::string error_message;
 };
@@ -129,12 +129,12 @@ struct ConfigurationUpdate {
 };
 
 struct GetConfigurationResult {
-    GetConfigurationStatus status = GetConfigurationStatus::SlotDoesNotExist;
+    GetConfigurationStatus status{GetConfigurationStatus::SlotDoesNotExist};
     everest::config::ModuleConfigurations module_configurations;
 };
 
 struct GetConfigParametersResult {
-    GetConfigurationStatus status = GetConfigurationStatus::SlotDoesNotExist;
+    GetConfigurationStatus status{GetConfigurationStatus::SlotDoesNotExist};
     std::vector<std::optional<everest::config::ConfigurationParameter>> parameters;
 };
 

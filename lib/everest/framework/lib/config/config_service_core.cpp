@@ -22,8 +22,8 @@ namespace Everest::config {
 // Threading model: single-writer actor
 // ============================================================================
 //
-// All mutable state (module_configs_, active_slot_id_, module_status_,
-// active_storage_, the handler lists, set_parameter_callback_, ...) is owned by
+// All mutable state (m_module_configs, m_active_slot_id, m_module_status,
+// m_active_storage, the handler lists, m_set_parameter_callback, ...) is owned by
 // a single "actor" thread running process_queue(), which executes queued tasks
 // one at a time. Because every mutation happens on that one thread, the
 // internal_* methods need no locks.
@@ -47,8 +47,8 @@ namespace Everest::config {
 //
 // Runtime module callbacks are processed sequentially.
 //
-// Shutdown: ~ConfigServiceCore() clears worker_thread_running_, stops
-// command_queue_ and joins the worker thread.
+// Shutdown: ~ConfigServiceCore() clears m_worker_thread_running, stops
+// m_command_queue and joins the worker thread.
 // ============================================================================
 
 namespace {
@@ -115,14 +115,14 @@ bool persist_parameter_change(ec::SqliteStorage& storage, const ec::Configuratio
 
 ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
                                      std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection) :
-    parse_settings_(parse_settings),
-    slot_manager_(db_connection),
-    db_(std::move(db_connection)),
-    next_boot_slot_id_(slot_manager_.get_next_boot_slot_id()) {
-    active_configs_ptr_ = std::make_shared<const ec::ModuleConfigurations>();
+    m_parse_settings(parse_settings),
+    m_slot_manager(db_connection),
+    m_db(std::move(db_connection)),
+    m_next_boot_slot_id(m_slot_manager.get_next_boot_slot_id()) {
+    m_active_configs_ptr = std::make_shared<const ec::ModuleConfigurations>();
 
-    worker_thread_running_ = true;
-    worker_thread_ = std::thread(&ConfigServiceCore::process_queue, this);
+    m_worker_thread_running = true;
+    m_worker_thread = std::thread(&ConfigServiceCore::process_queue, this);
 
     try {
         post_to_actor([this]() { internal_reinitialize_from_db(true); });
@@ -141,17 +141,17 @@ ConfigServiceCore::~ConfigServiceCore() {
 }
 
 void ConfigServiceCore::stop_worker() {
-    worker_thread_running_ = false;
-    command_queue_.stop();
-    if (worker_thread_.joinable()) {
-        worker_thread_.join();
+    m_worker_thread_running = false;
+    m_command_queue.stop();
+    if (m_worker_thread.joinable()) {
+        m_worker_thread.join();
     }
 }
 
 void ConfigServiceCore::process_queue() {
-    while (worker_thread_running_) {
+    while (m_worker_thread_running) {
         try {
-            auto task = command_queue_.wait_and_pop();
+            auto task = m_command_queue.wait_and_pop();
             if (task) {
                 (*task)();
             }
@@ -168,16 +168,16 @@ void ConfigServiceCore::reinitialize_from_db(bool force_reload) {
 }
 
 void ConfigServiceCore::internal_reinitialize_from_db(bool force_reload) {
-    if (module_status_ != ActiveSlotStatus::Stopped) {
+    if (m_module_status != ActiveSlotStatus::Stopped) {
         return;
     }
-    next_boot_slot_id_ = slot_manager_.get_next_boot_slot_id();
-    const int new_active_slot_id = next_boot_slot_id_;
-    bool slot_changed = (new_active_slot_id != active_slot_id_);
+    m_next_boot_slot_id = m_slot_manager.get_next_boot_slot_id();
+    const int new_active_slot_id = m_next_boot_slot_id;
+    bool slot_changed = (new_active_slot_id != m_active_slot_id);
     if (slot_changed or force_reload) {
         slot_changed = true;
-        active_slot_id_ = new_active_slot_id;
-        active_storage_ = make_storage(active_slot_id_);
+        m_active_slot_id = new_active_slot_id;
+        m_active_storage = make_storage(m_active_slot_id);
     }
     // always reload module configuration in order to include possible WillApplyOnRestart changes
     reload_from_storage();
@@ -187,12 +187,12 @@ void ConfigServiceCore::internal_reinitialize_from_db(bool force_reload) {
 }
 
 std::unique_ptr<ec::SqliteStorage> ConfigServiceCore::make_storage(int slot_id) {
-    return std::make_unique<ec::SqliteStorage>(db_, slot_id);
+    return std::make_unique<ec::SqliteStorage>(m_db, slot_id);
 }
 
 void ConfigServiceCore::publish_active_slot_update() {
-    const ActiveSlotUpdate update{now_rfc3339(), active_slot_id_, next_boot_slot_id_, module_status_};
-    auto handlers_copy = active_slot_handlers_;
+    const ActiveSlotUpdate update{now_rfc3339(), m_active_slot_id, m_next_boot_slot_id, m_module_status};
+    auto handlers_copy = m_active_slot_handlers;
 
     for (const auto& handler : handlers_copy) {
         handler(update);
@@ -200,7 +200,7 @@ void ConfigServiceCore::publish_active_slot_update() {
 }
 
 void ConfigServiceCore::publish_config_update(const ConfigurationUpdate& update) {
-    auto handlers_copy = config_update_handlers_;
+    auto handlers_copy = m_config_update_handlers;
 
     for (const auto& handler : handlers_copy) {
         handler(update);
@@ -210,23 +210,23 @@ void ConfigServiceCore::publish_config_update(const ConfigurationUpdate& update)
 // --- Active-slot in-memory access ---
 
 std::shared_ptr<const ec::ModuleConfigurations> ConfigServiceCore::get_active_module_configurations() const {
-    return std::atomic_load(&active_configs_ptr_);
+    return std::atomic_load(&m_active_configs_ptr);
 }
 
 void ConfigServiceCore::reload_from_storage() {
-    if (not slot_manager_.exists(active_slot_id_)) {
+    if (not m_slot_manager.exists(m_active_slot_id)) {
         return;
     }
-    const auto resp = active_storage_->get_module_configs();
+    const auto resp = m_active_storage->get_module_configs();
     if (resp.status != ec::GenericResponseStatus::OK) {
         return;
     }
     try {
         // Validate against manifests, interfaces and requirements; enriches configs with manifest metadata.
-        module_configs_ = Everest::validate_preloaded_module_configs(parse_settings_, resp.module_configs);
-        std::atomic_store(&active_configs_ptr_, std::make_shared<const ec::ModuleConfigurations>(module_configs_));
+        m_module_configs = Everest::validate_preloaded_module_configs(m_parse_settings, resp.module_configs);
+        std::atomic_store(&m_active_configs_ptr, std::make_shared<const ec::ModuleConfigurations>(m_module_configs));
     } catch (const std::exception& e) {
-        EVLOG_error << "Configuration loaded from database for slot " << active_slot_id_
+        EVLOG_error << "Configuration loaded from database for slot " << m_active_slot_id
                     << " failed validation: " << e.what() << " -> Keeping the previous in-memory configuration.";
     }
 }
@@ -237,40 +237,40 @@ std::vector<SlotInfo> ConfigServiceCore::list_all_slots() {
     return post_to_actor([this]() { return internal_list_all_slots(); });
 }
 std::vector<SlotInfo> ConfigServiceCore::internal_list_all_slots() {
-    return slot_manager_.list_slots();
+    return m_slot_manager.list_slots();
 }
 
 int ConfigServiceCore::get_active_slot_id() {
     return post_to_actor([this]() { return internal_get_active_slot_id(); });
 }
 int ConfigServiceCore::internal_get_active_slot_id() {
-    return active_slot_id_;
+    return m_active_slot_id;
 }
 
 int ConfigServiceCore::get_next_boot_slot_id() {
     return post_to_actor([this]() { return internal_get_next_boot_slot_id(); });
 }
 int ConfigServiceCore::internal_get_next_boot_slot_id() {
-    return next_boot_slot_id_;
+    return m_next_boot_slot_id;
 }
 
 SetActiveSlotStatus ConfigServiceCore::mark_active_slot(int slot_id) {
     return post_to_actor([this, slot_id]() { return internal_mark_active_slot(slot_id); });
 }
 SetActiveSlotStatus ConfigServiceCore::internal_mark_active_slot(int slot_id) {
-    if (slot_id == next_boot_slot_id_) {
+    if (slot_id == m_next_boot_slot_id) {
         return SetActiveSlotStatus::NoChangeRequired;
     }
-    if (not slot_manager_.exists(slot_id)) {
+    if (not m_slot_manager.exists(slot_id)) {
         EVLOG_warning << "Failed to mark slot " << slot_id << " as active: slot does not exist.";
         return SetActiveSlotStatus::DoesNotExist;
     }
-    const auto status = slot_manager_.set_next_boot_slot_id(slot_id);
+    const auto status = m_slot_manager.set_next_boot_slot_id(slot_id);
     if (status != ec::GenericResponseStatus::OK) {
         EVLOG_error << "Failed to mark slot " << slot_id << " as active in database.";
         return SetActiveSlotStatus::Failed;
     }
-    next_boot_slot_id_ = slot_id;
+    m_next_boot_slot_id = slot_id;
     publish_active_slot_update();
     EVLOG_info << "Successfully marked slot " << slot_id << " as active for next boot.";
     return SetActiveSlotStatus::Success;
@@ -280,22 +280,22 @@ DeleteSlotStatus ConfigServiceCore::delete_slot(int slot_id) {
     return post_to_actor([this, slot_id]() { return internal_delete_slot(slot_id); });
 }
 DeleteSlotStatus ConfigServiceCore::internal_delete_slot(int slot_id) {
-    if (slot_id == active_slot_id_ and active_slot_id_ != next_boot_slot_id_ and
-        module_status_ == ActiveSlotStatus::Stopped) {
-        active_slot_id_ = next_boot_slot_id_;
+    if (slot_id == m_active_slot_id and m_active_slot_id != m_next_boot_slot_id and
+        m_module_status == ActiveSlotStatus::Stopped) {
+        m_active_slot_id = m_next_boot_slot_id;
         internal_reinitialize_from_db(true);
-        EVLOG_warning << "Switched the active slot to the next boot slot (" << active_slot_id_
+        EVLOG_warning << "Switched the active slot to the next boot slot (" << m_active_slot_id
                       << ") and deleted the old one.";
     }
-    if (slot_id == active_slot_id_ or slot_id == next_boot_slot_id_) {
+    if (slot_id == m_active_slot_id or slot_id == m_next_boot_slot_id) {
         EVLOG_warning << "Failed to delete slot " << slot_id << ": cannot delete the active or next boot slot.";
         return DeleteSlotStatus::CannotDeleteActiveSlot;
     }
-    if (not slot_manager_.exists(slot_id)) {
+    if (not m_slot_manager.exists(slot_id)) {
         EVLOG_warning << "Failed to delete slot " << slot_id << ": slot does not exist.";
         return DeleteSlotStatus::DoesNotExist;
     }
-    const auto status = slot_manager_.delete_slot(slot_id);
+    const auto status = m_slot_manager.delete_slot(slot_id);
     if (status != ec::GenericResponseStatus::OK) {
         EVLOG_error << "Failed to delete slot " << slot_id << " from database.";
         return DeleteSlotStatus::Failed;
@@ -308,7 +308,7 @@ DuplicateSlotResult ConfigServiceCore::duplicate_slot(int slot_id, std::optional
     return post_to_actor([this, slot_id, description]() { return internal_duplicate_slot(slot_id, description); });
 }
 DuplicateSlotResult ConfigServiceCore::internal_duplicate_slot(int slot_id, std::optional<std::string> description) {
-    auto result = slot_manager_.duplicate_slot(slot_id, description);
+    auto result = m_slot_manager.duplicate_slot(slot_id, description);
     if (result.success) {
         EVLOG_info << "Successfully duplicated slot " << slot_id << " to new slot " << result.slot_id.value_or(-1)
                    << " with description: " << description.value_or("<none>");
@@ -327,24 +327,24 @@ LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml
 LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string& raw_yaml,
                                                               const std::optional<std::string>& description,
                                                               std::optional<int> slot_id) {
-    int target_slot_id = slot_id.value_or(slot_manager_.next_slot_id());
+    int target_slot_id = slot_id.value_or(m_slot_manager.next_slot_id());
 
-    if (target_slot_id == active_slot_id_ and module_status_ != ActiveSlotStatus::Stopped) {
+    if (target_slot_id == m_active_slot_id and m_module_status != ActiveSlotStatus::Stopped) {
         const char* err_msg = "Cannot load YAML into the active slot when modules are running";
         EVLOG_warning << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
         return {false, std::nullopt, err_msg};
     }
-    const bool into_new_slot = not slot_manager_.exists(target_slot_id);
+    const bool into_new_slot = not m_slot_manager.exists(target_slot_id);
     try {
         const auto json_config = Everest::load_yaml_from_string(raw_yaml);
 
         // Validate against manifests, interfaces and requirements; enriches configs with manifest metadata.
-        const auto module_configs = Everest::validate_module_configs(parse_settings_, json_config);
+        const auto module_configs = Everest::validate_module_configs(m_parse_settings, json_config);
 
         // If the slot doesn't exist, create it and write the config
         if (into_new_slot) {
-            if (slot_manager_.write_config_slot(target_slot_id, nlohmann::json(module_configs).dump(), std::nullopt,
-                                                description) != ec::GenericResponseStatus::OK) {
+            if (m_slot_manager.write_config_slot(target_slot_id, nlohmann::json(module_configs).dump(), std::nullopt,
+                                                 description) != ec::GenericResponseStatus::OK) {
                 const char* err_msg = "Failed to create new config slot";
                 EVLOG_error << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
                 return {false, std::nullopt, err_msg};
@@ -353,14 +353,14 @@ LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string&
             auto storage = make_storage(target_slot_id);
 
             if (storage->write_module_configs(module_configs) != ec::GenericResponseStatus::OK) {
-                slot_manager_.delete_slot(target_slot_id);
+                m_slot_manager.delete_slot(target_slot_id);
                 const char* err_msg = "Failed to write module configs to new slot";
                 EVLOG_error << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
                 return {false, std::nullopt, err_msg};
             }
         } else {
-            if (slot_manager_.update_config_slot(target_slot_id, nlohmann::json(module_configs).dump(), std::nullopt,
-                                                 description) != ec::GenericResponseStatus::OK) {
+            if (m_slot_manager.update_config_slot(target_slot_id, nlohmann::json(module_configs).dump(), std::nullopt,
+                                                  description) != ec::GenericResponseStatus::OK) {
                 const char* err_msg = "Failed to replace config slot";
                 EVLOG_error << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
                 return {false, std::nullopt, err_msg};
@@ -375,7 +375,7 @@ LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string&
                 return {false, std::nullopt, err_msg};
             }
 
-            if (target_slot_id == active_slot_id_) {
+            if (target_slot_id == m_active_slot_id) {
                 internal_reinitialize_from_db(true);
             }
         }
@@ -393,8 +393,8 @@ bool ConfigServiceCore::set_description(int slot_id, const std::string& descript
     return post_to_actor([this, slot_id, description]() { return internal_set_description(slot_id, description); });
 }
 bool ConfigServiceCore::internal_set_description(int slot_id, const std::string& description) {
-    if (slot_manager_.exists(slot_id)) {
-        if (slot_manager_.update_description(slot_id, {description}) == ec::GenericResponseStatus::OK) {
+    if (m_slot_manager.exists(slot_id)) {
+        if (m_slot_manager.update_description(slot_id, {description}) == ec::GenericResponseStatus::OK) {
             EVLOG_info << "Successfully set description for slot " << slot_id << ".";
             return true;
         } else {
@@ -414,12 +414,12 @@ GetConfigurationResult ConfigServiceCore::get_configuration_v(int slot_id, bool 
         [this, slot_id, force_read_from_db]() { return internal_get_configuration(slot_id, force_read_from_db); });
 }
 GetConfigurationResult ConfigServiceCore::internal_get_configuration(int slot_id, bool force_read_from_db) {
-    const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
-    if (resolved_slot_id == active_slot_id_ and not force_read_from_db) {
-        return {GetConfigurationStatus::Success, module_configs_};
+    const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? m_active_slot_id : slot_id;
+    if (resolved_slot_id == m_active_slot_id and not force_read_from_db) {
+        return {GetConfigurationStatus::Success, m_module_configs};
     }
 
-    if (not slot_manager_.exists(resolved_slot_id)) {
+    if (not m_slot_manager.exists(resolved_slot_id)) {
         return {GetConfigurationStatus::SlotDoesNotExist, {}};
     }
 
@@ -443,10 +443,10 @@ ConfigServiceCore::internal_set_config_parameters(int slot_id, const std::vector
     SetConfigParameterResult result;
     result.status = SetConfigParameterStatus::Ok;
 
-    const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
-    const bool modifies_active_slot = resolved_slot_id == active_slot_id_;
+    const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? m_active_slot_id : slot_id;
+    const bool modifies_active_slot = resolved_slot_id == m_active_slot_id;
     const bool modules_in_transient =
-        module_status_ != ActiveSlotStatus::Running and module_status_ != ActiveSlotStatus::Stopped;
+        m_module_status != ActiveSlotStatus::Running and m_module_status != ActiveSlotStatus::Stopped;
 
     result.status = SetConfigParameterStatus::Ok;
     result.parameter_results.emplace(updates.size(),
@@ -470,7 +470,8 @@ ConfigServiceCore::internal_set_config_parameters(int slot_id, const std::vector
 
     if (not event.updates.empty()) {
         if (modifies_active_slot) {
-            std::atomic_store(&active_configs_ptr_, std::make_shared<const ec::ModuleConfigurations>(module_configs_));
+            std::atomic_store(&m_active_configs_ptr,
+                              std::make_shared<const ec::ModuleConfigurations>(m_module_configs));
         }
         publish_config_update(event);
         EVLOG_info << "Successfully set " << event.updates.size() << " of " << updates.size()
@@ -485,14 +486,14 @@ ConfigServiceCore::internal_set_config_parameters(int slot_id, const std::vector
 
 void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParameterUpdate>& updates,
                                                   SetConfigParameterResult& result, ConfigurationUpdate& event) {
-    const bool modules_are_running = module_status_ == ActiveSlotStatus::Running;
+    const bool modules_are_running = m_module_status == ActiveSlotStatus::Running;
 
     for (size_t i = 0; i < updates.size(); ++i) {
         const auto& update = updates[i];
         auto& per_result = result.parameter_results.value()[i];
         SetConfigParameterResultEnum& result_enum = per_result.status;
 
-        auto lookup = find_parameter_or_explain(update.identifier, module_configs_, per_result);
+        auto lookup = find_parameter_or_explain(update.identifier, m_module_configs, per_result);
         if (not lookup.has_value()) {
             // result_enum already set to DoesNotExist
             continue;
@@ -513,7 +514,7 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
         // The parameter exists and the value is well-formed -> store the update in the database so
         // it can be applied on the next restart. Persist-first: this happens before the module is
         // consulted.
-        if (not persist_parameter_change(*active_storage_, update.identifier, in_memory_parameter->characteristics,
+        if (not persist_parameter_change(*m_active_storage, update.identifier, in_memory_parameter->characteristics,
                                          update.value)) {
             result_enum = SetConfigParameterResultEnum::Rejected;
             per_result.status_info = "Failed to persist change";
@@ -523,7 +524,7 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
 
         // Now test if the module applies the update at runtime
         if (mutability == ec::Mutability::ReadWrite and modules_are_running) {
-            if (not set_parameter_callback_) {
+            if (not m_set_parameter_callback) {
                 // The value is already persisted; without a runtime-change callback it simply
                 // takes effect on the next restart.
                 per_result.status_info = "No runtime-change callback registered; value persisted and "
@@ -531,7 +532,7 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
                 EVLOG_warning << "ConfigServiceCore: No callback registered for setting the configuration parameter "
                                  "change in the module -> change applies on next restart.";
             } else {
-                switch (set_parameter_callback_(update.identifier, update.value)) {
+                switch (m_set_parameter_callback(update.identifier, update.value)) {
                 case SetParameterResponse::SetCallFailed:
                     per_result.status_info = "Module not responding";
                     break;
@@ -548,6 +549,10 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
                 }
                 case SetParameterResponse::ModuleReplied_RequiresRestart:
                     break;
+                default:
+                    EVLOG_error << "ConfigServiceCore: Unexpected SetParameterResponse from runtime-change callback; "
+                                   "the value stays persisted and applies on next restart.";
+                    break;
                 }
             }
         }
@@ -559,7 +564,7 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
 
 void ConfigServiceCore::apply_inactive_slot_updates(int slot_id, const std::vector<ConfigParameterUpdate>& updates,
                                                     SetConfigParameterResult& result, ConfigurationUpdate& event) {
-    if (not slot_manager_.exists(slot_id)) {
+    if (not m_slot_manager.exists(slot_id)) {
         std::fill(result.parameter_results->begin(), result.parameter_results->end(),
                   SetConfigPerParameterResult{SetConfigParameterResultEnum::DoesNotExist, "Slot does not exist"});
         return;
@@ -641,16 +646,16 @@ GetConfigParametersResult ConfigServiceCore::internal_get_config_parameters(
 
 void ConfigServiceCore::register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) {
     post_to_actor(
-        [this, handler = std::move(handler)]() mutable { active_slot_handlers_.push_back(std::move(handler)); });
+        [this, handler = std::move(handler)]() mutable { m_active_slot_handlers.push_back(std::move(handler)); });
 }
 
 void ConfigServiceCore::register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) {
     post_to_actor(
-        [this, handler = std::move(handler)]() mutable { config_update_handlers_.push_back(std::move(handler)); });
+        [this, handler = std::move(handler)]() mutable { m_config_update_handlers.push_back(std::move(handler)); });
 }
 
 void ConfigServiceCore::register_set_runtime_parameter_handler(const SetParamCallback& callback) {
-    post_to_actor([this, callback]() { set_parameter_callback_ = callback; });
+    post_to_actor([this, callback]() { m_set_parameter_callback = callback; });
 }
 
 // --- Module state ---
@@ -658,7 +663,7 @@ void ConfigServiceCore::set_modules_running() {
     post_to_actor([this]() { internal_set_modules_running(); });
 }
 void ConfigServiceCore::internal_set_modules_running() {
-    module_status_ = ActiveSlotStatus::Running;
+    m_module_status = ActiveSlotStatus::Running;
     publish_active_slot_update();
 }
 
@@ -666,7 +671,7 @@ void ConfigServiceCore::set_modules_stopped() {
     post_to_actor([this]() { internal_set_modules_stopped(); });
 }
 void ConfigServiceCore::internal_set_modules_stopped() {
-    module_status_ = ActiveSlotStatus::Stopped;
+    m_module_status = ActiveSlotStatus::Stopped;
     publish_active_slot_update();
 }
 
@@ -674,7 +679,7 @@ void ConfigServiceCore::set_modules_starting() {
     post_to_actor([this]() { internal_set_modules_starting(); });
 }
 void ConfigServiceCore::internal_set_modules_starting() {
-    module_status_ = ActiveSlotStatus::Starting;
+    m_module_status = ActiveSlotStatus::Starting;
     publish_active_slot_update();
 }
 
@@ -682,7 +687,7 @@ void ConfigServiceCore::set_modules_stopping() {
     post_to_actor([this]() { internal_set_modules_stopping(); });
 }
 void ConfigServiceCore::internal_set_modules_stopping() {
-    module_status_ = ActiveSlotStatus::Stopping;
+    m_module_status = ActiveSlotStatus::Stopping;
     publish_active_slot_update();
 }
 
@@ -690,7 +695,7 @@ void ConfigServiceCore::notice_cfg_validation_failed() {
     post_to_actor([this]() { internal_notice_cfg_validation_failed(); });
 }
 void ConfigServiceCore::internal_notice_cfg_validation_failed() {
-    module_status_ = ActiveSlotStatus::FailedToStart;
+    m_module_status = ActiveSlotStatus::FailedToStart;
     publish_active_slot_update();
 }
 
@@ -698,7 +703,7 @@ void ConfigServiceCore::notice_module_restart_triggered() {
     post_to_actor([this]() { internal_notice_module_restart_triggered(); });
 }
 void ConfigServiceCore::internal_notice_module_restart_triggered() {
-    module_status_ = ActiveSlotStatus::RestartTriggered;
+    m_module_status = ActiveSlotStatus::RestartTriggered;
     publish_active_slot_update();
 }
 

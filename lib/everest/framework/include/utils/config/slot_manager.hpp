@@ -15,7 +15,7 @@ class ConnectionInterface;
 namespace everest::config {
 
 struct DuplicateSlotResult {
-    bool success = false;
+    bool success{false};
     std::optional<int> slot_id;
 };
 
@@ -28,9 +28,11 @@ struct SlotInfo {
 
 using StoredSlotInfo = SlotInfo;
 
+/// \brief Manages configuration slots (add, update, list, delete, duplicate, boot selection)
+/// persisted in a SQLite database.
 class SqliteConfigSlotManager {
 public:
-    static constexpr int DEFAULT_SLOT_ID = 0;
+    static constexpr int DEFAULT_SLOT_ID{0};
 
     /// \brief Opens its own Connection and applies migrations.
     SqliteConfigSlotManager(const std::filesystem::path& db_path, const std::filesystem::path& migrations_path);
@@ -42,6 +44,7 @@ public:
 
     ~SqliteConfigSlotManager();
 
+    /// \brief Checks whether a configuration slot with \p slot_id exists.
     bool exists(int slot_id);
     /// \brief Returns the next available slot ID (MAX(ID) + 1, or 0 if no slots exist).
     int next_slot_id();
@@ -68,7 +71,10 @@ public:
     /// \param description Arbitrary text
     GenericResponseStatus update_description(int slot_id, const std::optional<std::string>& description);
 
+    /// \brief Returns metadata for all stored configuration slots.
     std::vector<SlotInfo> list_slots();
+    /// \brief Deletes the configuration slot with \p slot_id.
+    /// Deleting a non-existing slot is a no-op and returns OK.
     GenericResponseStatus delete_slot(int slot_id);
 
     /// \brief Duplicates all data belonging to \p source_slot_id into a new slot.
@@ -83,10 +89,10 @@ public:
     GenericResponseStatus set_next_boot_slot_id(int slot_id);
 
 private:
-    std::shared_ptr<everest::db::sqlite::ConnectionInterface> db;
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> m_db;
 
     // a conservative maximum slot_id value, compatible with sqlite but more than big enough for practical usage
-    const int max_slot_id{(2 << 16) - 1};
+    const int m_max_slot_id{(2 << 16) - 1};
 };
 
 } // namespace everest::config

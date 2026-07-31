@@ -120,6 +120,7 @@ struct ModuleIdType {
     std::string module_id;   ///< The module id
     std::string module_type; ///< The associated module type
 
+    /// \brief Orders by module_id first, then by module_type
     bool operator<(const ModuleIdType& rhs) const;
 };
 
@@ -164,19 +165,21 @@ public:
     /// \returns a result containing the configuration item or an error
     GetConfigResult get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier);
 
+    /// \brief Registers the \p handler to be invoked when the configuration parameter \p param_name of the
+    /// implementation identified by \p impl_id is changed
     void register_config_change_handler(const std::string& impl_id, const std::string_view param_name,
                                         ConfigChangeHandler handler);
 
 private:
-    std::shared_ptr<MQTTAbstraction> mqtt_abstraction;
-    std::string origin;
-    std::map<std::string, std::string, std::less<>> module_names;
+    std::shared_ptr<MQTTAbstraction> m_mqtt_abstraction;
+    std::string m_origin;
+    std::map<std::string, std::string, std::less<>> m_module_names;
     // a key-value (parameter-name to handler) store for each implementation_id
-    std::map<std::string, std::map<std::string, ConfigChangeHandler>> change_callbacks;
-    // Guards change_callbacks: register_config_change_handler() may be called from any module
+    std::map<std::string, std::map<std::string, ConfigChangeHandler>> m_change_callbacks;
+    // Guards m_change_callbacks: register_config_change_handler() may be called from any module
     // thread (e.g. from Python at runtime) while the MQTT dispatch thread reads the map in
     // mqtt_set_request().
-    std::mutex change_callbacks_mutex;
+    std::mutex m_change_callbacks_mutex;
 
     void mqtt_set_request(const nlohmann::json& data);
 };
@@ -200,9 +203,9 @@ public:
     cmd_set_cfg_param(const everest::config::ConfigurationParameterIdentifier& cfg_param_id, const std::string& value);
 
 private:
-    MQTTAbstraction& mqtt_abstraction;
-    std::shared_ptr<TypedHandler> get_config_token;
-    ConfigServiceInterface& config_svc;
+    MQTTAbstraction& m_mqtt_abstraction;
+    std::shared_ptr<TypedHandler> m_get_config_token;
+    ConfigServiceInterface& m_config_svc;
 };
 
 namespace conversions {
