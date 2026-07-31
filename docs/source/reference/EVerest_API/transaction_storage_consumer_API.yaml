@@ -324,7 +324,9 @@ components:
         id_token_hash:
           description: >-
             Hash of the id token that started the transaction. The raw token is never
-            stored. Computed as the lower case hex encoded SHA256 digest of the id token
+            stored as a dedicated field, but note that a stored signed meter value
+            embeds it (OCMF ID field).
+            Computed as the lower case hex encoded SHA256 digest of the id token
             type concatenated with the id token value, matching the hash the OCPP stack
             uses for its authorization cache, so a hash computed elsewhere in the stack
             can be compared to this one directly. Absent when the transaction was
@@ -359,13 +361,15 @@ components:
           description: >-
             Meter reading taken when the transaction started. The signed variants of the
             measurements (energy_Wh_import_signed and the other *_signed members, plus
-            signed_meter_value) are never populated: signed meter values embed the raw
-            id token and are therefore not persisted.
+            signed_meter_value) are only populated when the module is configured to
+            store signed meter values via its store_signed_meter_values config option.
+            Be aware that the signed data typically embeds the raw id token (OCMF ID
+            field), so enabling the option persists raw tokens.
           type: object
           $ref: 'powermeter_API.yaml#/components/schemas/Powermeter'
         meter_value_stop:
           description: >-
-            Meter reading taken when the transaction finished, with the same restriction
+            Meter reading taken when the transaction finished, with the same config gate
             on signed measurements as meter_value_start. Absent while the record is
             Open, and absent on Stale records.
           type: object
