@@ -509,8 +509,24 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         return true;
     }
     struct is_slac_param_req : public is_message_of_type<slac::defs::MMTYPE_CM_SLAC_PARAM | slac::defs::MMTYPE_MODE_REQ> { };
+    // A session in MatchComplete means CM_SLAC_MATCH.CNF is out, but Matching is only exited on the
+    // next update tick. In that window (and per ISO 15118-3 whenever an AVLN is up) a fresh
+    // CM_SLAC_PARM.REQ must get no CNF (TC_SECC_CMN_VTB_PLCLinkStatus_003) and must not restart the
+    // completed session.
+    struct has_matched_session {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            return fsm.is_matched(update{});
+        }
+    };
 
     //Actions
+    struct ignore_parm_req {
+        template <class Fsm, class SrcT, class TarT>
+        void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
+            fsm.ctx->log_info("Ignoring CM_SLAC_PARM.REQ, match already completed");
+        }
+    };
     struct pipe_event {
         template <class Fsm, class Evt, class SrcT, class TarT>
         void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT& ) {
@@ -724,6 +740,8 @@ struct Matching_def    : public state_machine_def<Matching_def> {
     using fail_matching = should_transition_to_failed_matching;
     using reset_matching = should_reset_instead_of_fail;
     using not_validate_req = Not_<is_validate_req>;
+    using new_parm_req = And_<is_slac_param_req, Not_<has_matched_session>>;
+    using late_parm_req = And_<is_slac_param_req, has_matched_session>;
     struct transition_table : boost::mpl::vector<
         //    +--------+---------+---------+-----------------------+------------------------+
         //    | Source | Event   | Target  | Action                | Guard                  |
@@ -732,7 +750,8 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         Row   < Init   , update  , Failed  , none                  , fail_matching          >,
         Row   < Init   , update  , Init    , reset_matching_subfsm , reset_matching         >,
         //    +--------+---------+---------+-----------------------+------------------------+
-        Row   < Listen , message , Listen  , add_session           , is_slac_param_req      >,
+        Row   < Listen , message , Listen  , add_session           , new_parm_req           >,
+        Row   < Listen , message , Listen  , ignore_parm_req       , late_parm_req          >,
         Row   < Listen , message , Listen  , handle_validate_req   , is_validate_req        >,
         Row   < Listen , update  , Listen  , validate_tick         , validate_needs_service >,
         //    +--------+---------+---------+-----------------------+------------------------+
