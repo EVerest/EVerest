@@ -74,7 +74,42 @@ target_sources(iso15118
         message/ac_der_sae_charge_loop.cpp
         message/ac_der_sae_types.cpp
 
-        tbd_controller.cpp    
+        # message_din (DIN SPEC 70121)
+        message_din/variant.cpp
+        message_din/common_types.cpp
+        message_din/session_setup.cpp
+        message_din/service_discovery.cpp
+        message_din/service_payment_selection.cpp
+        message_din/contract_authentication.cpp
+        message_din/charge_parameter_discovery.cpp
+        message_din/cable_check.cpp
+        message_din/pre_charge.cpp
+        message_din/power_delivery.cpp
+        message_din/current_demand.cpp
+        message_din/welding_detection.cpp
+        message_din/session_stop.cpp
+
+        # message_2 (ISO 15118-2)
+        message_2/variant.cpp
+        message_2/common_types.cpp
+        message_2/session_setup.cpp
+        message_2/service_discovery.cpp
+        message_2/service_detail.cpp
+        message_2/payment_service_selection.cpp
+        message_2/payment_details.cpp
+        message_2/authorization.cpp
+        message_2/charge_parameter_discovery.cpp
+        message_2/power_delivery.cpp
+        message_2/charging_status.cpp
+        message_2/cable_check.cpp
+        message_2/pre_charge.cpp
+        message_2/current_demand.cpp
+        message_2/welding_detection.cpp
+        message_2/session_stop.cpp
+        message_2/metering_receipt.cpp
+        message_2/certificate_installation.cpp
+
+        tbd_controller.cpp
 )
 
 target_link_libraries(iso15118
@@ -82,6 +117,8 @@ target_link_libraries(iso15118
         # FIXME (aw): would be nice if we could make this private!
         cbv2g::tp
         cbv2g::iso20
+        cbv2g::iso2
+        cbv2g::din
         everest::util
     PRIVATE
         Threads::Threads
