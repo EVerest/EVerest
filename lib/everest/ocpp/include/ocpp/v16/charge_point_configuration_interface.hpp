@@ -102,6 +102,7 @@ public:
     virtual std::optional<bool> getQueueAllMessages() = 0;
     virtual std::optional<bool> getRejectRemoteStartTransactionWithoutConnectorId() = 0;
     virtual std::optional<bool> getRemoteStartTransactionWithoutConnectorIdFindFirst() = 0;
+    virtual std::optional<bool> getReportClearedErrors() = 0;
     virtual std::optional<int> getMessageQueueSizeThreshold() = 0;
     virtual std::optional<std::int32_t> getCompositeScheduleDefaultLimitAmps() = 0;
     virtual std::optional<std::int32_t> getCompositeScheduleDefaultLimitWatts() = 0;
@@ -161,6 +162,7 @@ public:
     virtual std::optional<KeyValue> getQueueAllMessagesKeyValue() = 0;
     virtual std::optional<KeyValue> getRejectRemoteStartTransactionWithoutConnectorIdKeyValue() = 0;
     virtual std::optional<KeyValue> getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue() = 0;
+    virtual std::optional<KeyValue> getReportClearedErrorsKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectCommonNameKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectCountryKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectOrganizationKeyValue() = 0;

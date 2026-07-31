@@ -167,6 +167,7 @@ The implementation in code (for example `known_keys` conversion logic and patchi
 | 120 | `ConnectorEvseIds` | VariableAttribute | `OCPP16LegacyCtrlr` | `ConnectorEvseIds` | `Actual` |
 | 121 | `RejectRemoteStartTransactionWithoutConnectorId` | VariableAttribute | `OCPP16LegacyCtrlr` | `RejectRemoteStartTransactionWithoutConnectorId` | `Actual` |
 | 122 | `RemoteStartTransactionWithoutConnectorIdFindFirst` | VariableAttribute | `OCPP16LegacyCtrlr` | `RemoteStartTransactionWithoutConnectorIdFindFirst` | `Actual` |
+| 123 | `ReportClearedErrors` | VariableAttribute | `OCPP16LegacyCtrlr` | `ReportClearedErrors` | `Actual` |
 
 
 ## Network Connection Profile
@@ -175,14 +176,14 @@ Keys in this section target the active connection slot. The component is `Networ
 
 | ID | OCPP1.6 key | Mapping type | Component | Variable | Target field |
 | ---: | --- | --- | --- | --- | --- |
-| 123 | `HostName` | VariableAttribute | `NetworkConfiguration[1]` | `HostName` | `Actual` |
-| 124 | `CentralSystemURI` | VariableAttribute | `NetworkConfiguration[1]` | `OcppCsmsUrl` | `Actual` |
-| 125 | `SecurityProfile` | VariableAttribute | `NetworkConfiguration[1]` | `SecurityProfile` | `Actual` |
-| 126 | `AuthorizationKey` | VariableAttribute | `NetworkConfiguration[1]` | `BasicAuthPassword` | `Actual` |
-| 127 | `ChargePointId` | VariableAttribute | `NetworkConfiguration[1]` | `Identity` | `Actual` |
+| 124 | `HostName` | VariableAttribute | `NetworkConfiguration[1]` | `HostName` | `Actual` |
+| 125 | `CentralSystemURI` | VariableAttribute | `NetworkConfiguration[1]` | `OcppCsmsUrl` | `Actual` |
+| 126 | `SecurityProfile` | VariableAttribute | `NetworkConfiguration[1]` | `SecurityProfile` | `Actual` |
+| 127 | `AuthorizationKey` | VariableAttribute | `NetworkConfiguration[1]` | `BasicAuthPassword` | `Actual` |
+| 128 | `ChargePointId` | VariableAttribute | `NetworkConfiguration[1]` | `Identity` | `Actual` |
 
 ## Keys without a direct mapping
 
 | ID | OCPP1.6 key | Mapping type | Component | Variable | Target field |
 | ---: | --- | --- | --- | --- | --- |
-| 128 | `SupportedMeasurands` | VariableCharacteristics | `*` | `Measurands` | `valuesList` |
+| 129 | `SupportedMeasurands` | VariableCharacteristics | `*` | `Measurands` | `valuesList` |

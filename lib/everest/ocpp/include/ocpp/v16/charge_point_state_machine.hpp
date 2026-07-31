@@ -70,7 +70,8 @@ public:
         const ChargePointStatus status, const ChargePointErrorCode error_code, const ocpp::DateTime& timestamp,
         const std::optional<CiString<50>>& info, const std::optional<CiString<255>>& vendor_id,
         const std::optional<CiString<50>>& vendor_error_code)>;
-    explicit ChargePointFSM(const StatusNotificationCallback& status_notification_callback, FSMState initial_state);
+    explicit ChargePointFSM(const StatusNotificationCallback& status_notification_callback, FSMState initial_state,
+                            bool report_cleared_errors);
 
     bool handle_event(FSMEvent event, const ocpp::DateTime timestamp, const std::optional<CiString<50>>& info);
     bool handle_error(const ErrorInfo& error_info);
@@ -87,6 +88,7 @@ private:
 
     FSMState state;
     std::unordered_map<std::string, ErrorInfo> active_errors;
+    const bool report_cleared_errors;
 
     bool is_faulted();
 };
@@ -97,7 +99,7 @@ public:
         const int connector_id, const ChargePointErrorCode errorCode, const ChargePointStatus status,
         const ocpp::DateTime& timestamp, const std::optional<CiString<50>>& info,
         const std::optional<CiString<255>>& vendor_id, const std::optional<CiString<50>>& vendor_error_code)>;
-    ChargePointStates(const ConnectorStatusCallback& connector_status_callback);
+    ChargePointStates(const ConnectorStatusCallback& connector_status_callback, bool report_cleared_errors);
     void reset(std::map<int, ChargePointStatus> connector_status_map);
 
     void submit_event(const int connector_id, FSMEvent event, const ocpp::DateTime& timestamp,
@@ -113,6 +115,7 @@ public:
 
 private:
     ConnectorStatusCallback connector_status_callback;
+    const bool report_cleared_errors;
 
     std::unique_ptr<ChargePointFSM> state_machine_connector_zero;
     std::vector<ChargePointFSM> state_machines;

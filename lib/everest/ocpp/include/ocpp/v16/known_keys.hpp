@@ -189,6 +189,7 @@ namespace ocpp::v16::keys {
     mapping(WaitForSetUserPriceTimeout, WaitForSetUserPriceTimeout) \
     mapping(NumberOfConnectors, NumberOfConnectors) \
     mapping(ConnectorEvseIds, ConnectorEvseIds) \
+    mapping(ReportClearedErrors, ReportClearedErrors) \
 
 
 #define MAPPING_ALL(mapping) \
@@ -282,6 +283,7 @@ namespace ocpp::v16::keys {
     key(Internal, QueueAllMessages) \
     key(Internal, RejectRemoteStartTransactionWithoutConnectorId) \
     key(Internal, RemoteStartTransactionWithoutConnectorIdFindFirst) \
+    key(Internal, ReportClearedErrors) \
     key(Internal, RetryBackoffRandomRange) \
     key(Internal, RetryBackoffRepeatTimes) \
     key(Internal, RetryBackoffWaitMinimum) \
