@@ -15,6 +15,9 @@ provides:
   none:
     interface: errors_none
     description: No errors defined
+  capitalized:
+    interface: errors_CAPITALIZED
+    description: Capitalized group/interface name
   empty:
     interface: empty
     description: An empty interface
