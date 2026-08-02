@@ -93,6 +93,14 @@ public:
     virtual std::optional<std::int32_t>
     get_priority_from_configuration_slot(const std::int32_t configuration_slot) const = 0;
 
+    /// \brief Get the active network configuration slot in use.
+    /// \return The active slot (or pending slot override) if one is available, std::nullopt if the slot
+    ///         list is empty or the current priority index would be out of range.
+    ///
+    virtual std::optional<int> get_active_network_configuration_slot() const {
+        return std::nullopt;
+    }
+
     /// @brief Get a snapshot of the network connection slots sorted by priority.
     /// Each item in the vector contains the configured configuration slots, where the slot with index 0 has the highest
     /// priority. A copy is returned so callers do not observe mid-mutation state through a reference.
@@ -234,6 +242,13 @@ public:
     /// connected security profile
     void check_cache_for_invalid_security_profiles();
 
+    ///
+    /// \brief Get the active network configuration slot in use.
+    /// \return The active slot (or pending slot override) if one is available, std::nullopt if the slot
+    ///         list is empty or the current priority index would be out of range.
+    ///
+    std::optional<int> get_active_network_configuration_slot() const override;
+
 private:
     std::atomic<std::chrono::time_point<std::chrono::steady_clock>> time_disconnected{};
 
@@ -277,13 +292,6 @@ private:
     ///        and does not re-attempt to connect again
     ///
     void on_websocket_stopped_connecting(ocpp::WebsocketCloseReason reason);
-
-    ///
-    /// \brief Get the active network configuration slot in use.
-    /// \return The active slot (or pending slot override) if one is available, std::nullopt if the slot
-    ///         list is empty or the current priority index would be out of range.
-    ///
-    std::optional<int> get_active_network_configuration_slot() const;
 
     ///
     /// \brief Get the network configuration slot of the given priority.

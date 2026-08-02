@@ -521,7 +521,35 @@ public:
 
     std::optional<ConfigurationStatus> set(const CiString<50>& key, const CiString<500>& value) override;
 
+    // Connectivity: device-model-backed multi-slot network profiles.
+    //
+    // Unlike the JSON backend (single slot-1 profile), these overrides source per-slot connection details from the
+    // v2 device-model NetworkConfiguration[N] components (the same data 2.x uses)
+    // Slots without a configured NetworkConfiguration component fall back to the legacy single-profile behavior
+    // synthesized from the global v1.6 getters.
+    std::string get_network_configuration_priority() override;
+    std::optional<ocpp::v2::NetworkConnectionProfile> read_network_connection_profile(int32_t slot) override;
+    std::optional<WebsocketConnectionOptions> get_websocket_connection_options(int32_t slot) override;
+    void set_active_network_profile_slot(int32_t slot, const std::string& source) override;
+    std::optional<int32_t> get_network_config_timeout() override;
+
+    // Returns the confirmed security profile (SecurityCtrlr.SecurityProfile, set on successful connect),
+    // not the attempt-time value served by getSecurityProfile().
+    int32_t get_security_profile() override;
+    // Writes NetworkConfiguration[slot].SecurityProfile, unlike setSecurityProfile() which targets the
+    // active slot at call time.
+    void set_security_profile_for_slot(std::int32_t slot, std::int32_t security_profile) override;
+    void set_active_security_profile(int32_t security_profile, const std::string& source) override;
+    void set_security_ctrl_security_profile(int32_t security_profile, const std::string& source) override;
+
 private:
+    /// \brief A slot is usable for OCPP 1.6 when its NetworkConfiguration[slot].OcppVersion is unset/empty or
+    /// names "OCPP16"; slots pinned to any other version are filtered out of priority and profile lookups.
+    bool is_slot_usable_for_ocpp16(int32_t slot);
+    /// \brief OCPPCommCtrlr/NetworkProfileConnectionAttempts, or 3 (the shipped component-config default) when
+    /// absent. A finite value is what lets the ConnectivityManager fail over to the next priority slot instead of
+    /// retrying forever.
+    std::int32_t getNetworkProfileConnectionAttempts();
     bool shouldExposeKey(keys::valid_keys key) const;
     std::optional<KeyValue> getCustomKeyValue(const std::string& key);
     void appendDefaultPriceTextKeyValues(std::vector<KeyValue>& all);

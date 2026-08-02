@@ -121,4 +121,61 @@ TEST_F(Ocpp16CustomConfigMappingsTest, missing_file_throws) {
     EXPECT_THROW((void)load_ocpp16_custom_config_mappings_from_yaml(missing_file), Ocpp16CustomConfigMappingsError);
 }
 
+TEST_F(Ocpp16CustomConfigMappingsTest, network_configuration_target_throws) {
+    // any NetworkConfiguration slot instance counts as connection config
+    const auto yaml_file = write_yaml_file("network_configuration.yaml", R"yaml(
+mappings:
+  - ocpp16_key: MyBackendUrl
+    component:
+      name: NetworkConfiguration
+      instance: "1"
+    variable:
+      name: OcppCsmsUrl
+)yaml");
+
+    EXPECT_THROW((void)load_ocpp16_custom_config_mappings_from_yaml(yaml_file), Ocpp16CustomConfigMappingsError);
+}
+
+TEST_F(Ocpp16CustomConfigMappingsTest, network_profile_selector_target_throws) {
+    const auto yaml_file = write_yaml_file("profile_selector.yaml", R"yaml(
+mappings:
+  - ocpp16_key: MyNetworkPriority
+    component:
+      name: OCPPCommCtrlr
+    variable:
+      name: NetworkConfigurationPriority
+)yaml");
+
+    EXPECT_THROW((void)load_ocpp16_custom_config_mappings_from_yaml(yaml_file), Ocpp16CustomConfigMappingsError);
+}
+
+TEST_F(Ocpp16CustomConfigMappingsTest, security_ctrlr_fallback_target_throws) {
+    const auto yaml_file = write_yaml_file("security_fallback.yaml", R"yaml(
+mappings:
+  - ocpp16_key: MyAuthKey
+    component:
+      name: SecurityCtrlr
+    variable:
+      name: BasicAuthPassword
+)yaml");
+
+    EXPECT_THROW((void)load_ocpp16_custom_config_mappings_from_yaml(yaml_file), Ocpp16CustomConfigMappingsError);
+}
+
+TEST_F(Ocpp16CustomConfigMappingsTest, non_connection_security_ctrlr_target_is_allowed) {
+    // the ban covers the connection fallback CVs, not the whole SecurityCtrlr component
+    const auto yaml_file = write_yaml_file("security_other.yaml", R"yaml(
+mappings:
+  - ocpp16_key: MyCertificateEntries
+    component:
+      name: SecurityCtrlr
+    variable:
+      name: CertificateEntries
+)yaml");
+
+    const auto mappings = load_ocpp16_custom_config_mappings_from_yaml(yaml_file);
+    ASSERT_EQ(mappings.size(), 1);
+    ASSERT_TRUE(mappings.find("MyCertificateEntries") != mappings.end());
+}
+
 } // namespace ocpp::v2

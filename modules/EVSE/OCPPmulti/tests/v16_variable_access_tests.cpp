@@ -6,6 +6,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <ocpp/v16/variable_resolver.hpp>
@@ -71,9 +72,11 @@ protected:
         m_keys["AuthorizationKey"] = ""; // derived key, write-only in 1.6
     }
 
-    ocpp_multi::V16VariableAccess make_access() {
+    ocpp_multi::V16VariableAccess
+    make_access(ocpp_multi::V16VariableAccess::on_connection_config_changed_fn on_connection_config_changed = nullptr,
+                const ocpp::v16::VariableResolver* resolver = nullptr) {
         return ocpp_multi::V16VariableAccess(
-            m_resolver, m_device_model,
+            resolver != nullptr ? *resolver : m_resolver, m_device_model,
             [this](const std::vector<ocpp::CiString<50>>& keys) {
                 ++m_get_keys_calls;
                 ocpp::v16::GetConfigurationResponse response;
@@ -110,7 +113,19 @@ protected:
                 }
                 m_keys[key.get()] = value.get();
                 return ocpp::v16::ConfigurationStatus::Accepted;
-            });
+            },
+            std::move(on_connection_config_changed));
+    }
+
+    // Seeds the five mandatory NetworkConnectionProfile variables so read_profile_from_device_model()
+    // sees a complete profile for the slot (as the B09-style write validation requires).
+    void add_complete_network_slot(int slot, const std::string& url, const std::string& security_profile = "1") {
+        const auto component = make_component("NetworkConfiguration", std::to_string(slot));
+        m_device_model.add(component, make_variable("OcppCsmsUrl"), url);
+        m_device_model.add(component, make_variable("SecurityProfile"), security_profile);
+        m_device_model.add(component, make_variable("OcppInterface"), "Any");
+        m_device_model.add(component, make_variable("OcppTransport"), "JSON");
+        m_device_model.add(component, make_variable("MessageTimeout"), "30");
     }
 
     ocpp::v16::VariableResolver m_resolver;
@@ -278,16 +293,20 @@ TEST_F(V16VariableAccess, freeCvReadsAndWritesDeviceModel) {
     EXPECT_TRUE(m_set_calls.empty()); // never touched the 1.6 key path
 }
 
-TEST_F(V16VariableAccess, freeCvReadOnlyMutabilityRejectsWrite) {
+// Mirrors the 2.x consumer path (Provisioning::set_variables, allow_read_only=true): this API is a
+// trusted local channel, so ReadOnly mutability does not reject writes in either mode.
+TEST_F(V16VariableAccess, freeCvReadOnlyMutabilityIsWritableLikeThe2xConsumerPath) {
     m_device_model.add(make_component("VendorCtrlr"), make_variable("FrozenSetting"), "fixed",
                        ocpp::v2::MutabilityEnum::ReadOnly);
     auto access = make_access();
 
-    const auto results = access.set({make_set("VendorCtrlr", "FrozenSetting", "nope")}, "csms");
+    const auto results = access.set({make_set("VendorCtrlr", "FrozenSetting", "thawed")}, "csms");
     ASSERT_EQ(results.size(), 1);
-    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Rejected);
-    EXPECT_FALSE(results[0].monitor_value.has_value());
-    EXPECT_EQ(m_device_model.entry(make_component("VendorCtrlr"), make_variable("FrozenSetting")).value, "fixed");
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);
+    ASSERT_TRUE(results[0].monitor_value.has_value());
+    EXPECT_EQ(results[0].monitor_value.value(), "thawed");
+    EXPECT_EQ(m_device_model.entry(make_component("VendorCtrlr"), make_variable("FrozenSetting")).value, "thawed");
+    // still routed through set_value (with allow_read_only), never set_read_only_value
     EXPECT_EQ(m_device_model.set_read_only_calls(), 0);
 }
 
@@ -353,9 +372,10 @@ TEST_F(V16VariableAccess, freeCvDirectRebootRequiredStillFlagsWrite) {
 }
 
 TEST_F(V16VariableAccess, connectionConfigWriteIsRebootRequired) {
-    m_device_model.add(make_component("NetworkConfiguration", std::string("2")), make_variable("OcppCsmsUrl"),
-                       "wss://old");
+    // the portable configuration flow: write a spare slot (2), then flip the priority to it
+    add_complete_network_slot(2, "wss://old", "2");
     m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("NetworkConfigurationPriority"), "1");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("ActiveNetworkProfile"), "1");
     auto access = make_access();
 
     const auto results = access.set({make_set("NetworkConfiguration", "OcppCsmsUrl", "wss://new", std::string("2")),
@@ -389,6 +409,277 @@ TEST_F(V16VariableAccess, connectionConfigReadsDeviceModel) {
     EXPECT_EQ(results[0].attributeValue.value().get(), "wss://csms");
     ASSERT_TRUE(results[0].component.instance.has_value());
     EXPECT_EQ(results[0].component.instance.value().get(), "2");
+}
+
+// ---- connection-config change callback (network profile reload trigger) ----
+
+TEST_F(V16VariableAccess, connectionConfigWriteFiresCallbackOncePerBatch) {
+    m_device_model.add(make_component("NetworkConfiguration", std::string("1")), make_variable("OcppCsmsUrl"),
+                       "wss://old1");
+    m_device_model.add(make_component("NetworkConfiguration", std::string("2")), make_variable("OcppCsmsUrl"),
+                       "wss://old2");
+    m_device_model.add(make_component("VendorCtrlr"), make_variable("BazSetting"), "baz"); // Free CV
+    int callback_count = 0;
+    auto access = make_access([&callback_count]() { ++callback_count; });
+
+    const auto results = access.set({make_set("NetworkConfiguration", "OcppCsmsUrl", "wss://new1", std::string("1")),
+                                     make_set("NetworkConfiguration", "OcppCsmsUrl", "wss://new2", std::string("2")),
+                                     make_set("VendorCtrlr", "BazSetting", "new-baz")},
+                                    "test");
+
+    ASSERT_EQ(results.size(), 3);
+    EXPECT_EQ(callback_count, 1) << "one refresh per batch, not one per connection-config write";
+}
+
+TEST_F(V16VariableAccess, freeWriteDoesNotFireCallback) {
+    m_device_model.add(make_component("VendorCtrlr"), make_variable("BazSetting"), "baz");
+    int callback_count = 0;
+    auto access = make_access([&callback_count]() { ++callback_count; });
+
+    const auto results = access.set({make_set("VendorCtrlr", "BazSetting", "new-baz")}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(callback_count, 0);
+}
+
+TEST_F(V16VariableAccess, rejectedConnectionConfigWriteDoesNotFireCallback) {
+    // NetworkConfiguration slot 7 is absent from the device model -> the write is not committed.
+    int callback_count = 0;
+    auto access = make_access([&callback_count]() { ++callback_count; });
+
+    const auto results =
+        access.set({make_set("NetworkConfiguration", "OcppCsmsUrl", "wss://new", std::string("7"))}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_NE(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::RebootRequired);
+    EXPECT_EQ(callback_count, 0);
+}
+
+TEST_F(V16VariableAccess, priorityAndSecurityCtrlrCredentialWritesFireCallback) {
+    add_complete_network_slot(1, "wss://one", "2");
+    add_complete_network_slot(2, "wss://two", "2");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("NetworkConfigurationPriority"), "1");
+    m_device_model.add(make_component("SecurityCtrlr"), make_variable("BasicAuthPassword"), "old-secret");
+    int callback_count = 0;
+    auto access = make_access([&callback_count]() { ++callback_count; });
+
+    access.set({make_set("OCPPCommCtrlr", "NetworkConfigurationPriority", "2,1")}, "test");
+    EXPECT_EQ(callback_count, 1);
+
+    access.set({make_set("SecurityCtrlr", "BasicAuthPassword", "new-secret")}, "test");
+    EXPECT_EQ(callback_count, 2);
+}
+
+// B09.FR.27 mirror: a committed write to the SecurityCtrlr/BasicAuthPassword global clears the per-slot
+// override on the active slot (and only there), so connection-time reads fall back to the new global.
+TEST_F(V16VariableAccess, securityGlobalPasswordWriteClearsActiveSlotOverride) {
+    add_complete_network_slot(1, "wss://one", "2");
+    add_complete_network_slot(2, "wss://two", "2");
+    const auto slot1 = make_component("NetworkConfiguration", std::string("1"));
+    const auto slot2 = make_component("NetworkConfiguration", std::string("2"));
+    m_device_model.add(slot1, make_variable("BasicAuthPassword"), "slot-one-secret-16");
+    m_device_model.add(slot2, make_variable("BasicAuthPassword"), "slot-two-secret-16");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("ActiveNetworkProfile"), "1");
+    m_device_model.add(make_component("SecurityCtrlr"), make_variable("BasicAuthPassword"), "old-global-secret");
+    auto access = make_access();
+
+    const auto results = access.set({make_set("SecurityCtrlr", "BasicAuthPassword", "new-global-secret")}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::RebootRequired);
+    EXPECT_EQ(m_device_model.entry(make_component("SecurityCtrlr"), make_variable("BasicAuthPassword")).value,
+              "new-global-secret");
+    EXPECT_EQ(m_device_model.entry(slot1, make_variable("BasicAuthPassword")).value, "");
+    EXPECT_EQ(m_device_model.entry(slot2, make_variable("BasicAuthPassword")).value, "slot-two-secret-16");
+}
+
+// B09.FR.26 mirror: same clearing for SecurityCtrlr/Identity.
+TEST_F(V16VariableAccess, securityGlobalIdentityWriteClearsActiveSlotOverride) {
+    add_complete_network_slot(1, "wss://one", "2");
+    const auto slot1 = make_component("NetworkConfiguration", std::string("1"));
+    m_device_model.add(slot1, make_variable("Identity"), "slot-identity");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("ActiveNetworkProfile"), "1");
+    m_device_model.add(make_component("SecurityCtrlr"), make_variable("Identity"), "old-identity");
+    auto access = make_access();
+
+    const auto results = access.set({make_set("SecurityCtrlr", "Identity", "new-identity")}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::RebootRequired);
+    EXPECT_EQ(m_device_model.entry(slot1, make_variable("Identity")).value, "");
+}
+
+TEST_F(V16VariableAccess, securityGlobalWriteWithoutActiveSlotLeavesOverrides) {
+    add_complete_network_slot(1, "wss://one", "2");
+    const auto slot1 = make_component("NetworkConfiguration", std::string("1"));
+    m_device_model.add(slot1, make_variable("BasicAuthPassword"), "slot-one-secret-16");
+    m_device_model.add(make_component("SecurityCtrlr"), make_variable("BasicAuthPassword"), "old-global-secret");
+    auto access = make_access();
+
+    const auto results = access.set({make_set("SecurityCtrlr", "BasicAuthPassword", "new-global-secret")}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::RebootRequired);
+    EXPECT_EQ(m_device_model.entry(slot1, make_variable("BasicAuthPassword")).value, "slot-one-secret-16");
+}
+
+TEST_F(V16VariableAccess, rejectedSecurityGlobalWriteLeavesOverrides) {
+    add_complete_network_slot(1, "wss://one", "2");
+    const auto slot1 = make_component("NetworkConfiguration", std::string("1"));
+    m_device_model.add(slot1, make_variable("BasicAuthPassword"), "slot-one-secret-16");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("ActiveNetworkProfile"), "1");
+    // SecurityCtrlr exists but BasicAuthPassword does not -> UnknownVariable, write not committed
+    m_device_model.add(make_component("SecurityCtrlr"), make_variable("Identity"), "identity");
+    auto access = make_access();
+
+    const auto results = access.set({make_set("SecurityCtrlr", "BasicAuthPassword", "new-global-secret")}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::UnknownVariable);
+    EXPECT_EQ(m_device_model.entry(slot1, make_variable("BasicAuthPassword")).value, "slot-one-secret-16");
+}
+
+// Custom config mappings can target connection-config CVs; both the legacy key path (path 1) and the key-backed
+// canonical path (path 2) must then fire the callback on a committed write.
+TEST_F(V16VariableAccess, customMappedConnectionConfigKeyFiresCallback) {
+    ocpp::v2::Ocpp16CustomConfigMappings mappings;
+    mappings.emplace("VendorCsmsUrl", std::make_pair(make_component("NetworkConfiguration", std::string("2")),
+                                                     make_variable("OcppCsmsUrl")));
+    const ocpp::v16::VariableResolver resolver(mappings);
+    m_keys["VendorCsmsUrl"] = "wss://old";
+    int callback_count = 0;
+    auto access = make_access([&callback_count]() { ++callback_count; }, &resolver);
+
+    // path 1: legacy write by key name
+    const auto legacy = access.set({make_set("", "VendorCsmsUrl", "wss://new")}, "test");
+    ASSERT_EQ(legacy.size(), 1);
+    EXPECT_EQ(callback_count, 1);
+
+    // path 2: canonical write via the mapped CV routes through the same key
+    const auto canonical =
+        access.set({make_set("NetworkConfiguration", "OcppCsmsUrl", "wss://newer", std::string("2"))}, "test");
+    ASSERT_EQ(canonical.size(), 1);
+    EXPECT_EQ(callback_count, 2);
+}
+
+// ---- B09-style protection of the in-use network configuration (mirrors 2.x SetVariables validation) ----
+
+TEST_F(V16VariableAccess, writeToActiveSlotIsRejectedWithPriorityNetworkConf) {
+    add_complete_network_slot(2, "wss://two", "2");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("ActiveNetworkProfile"), "2");
+    int callback_count = 0;
+    auto access = make_access([&callback_count]() { ++callback_count; });
+
+    const auto results =
+        access.set({make_set("NetworkConfiguration", "OcppCsmsUrl", "wss://new", std::string("2"))}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Rejected);
+    ASSERT_TRUE(results[0].result.attributeStatusInfo.has_value());
+    EXPECT_EQ(results[0].result.attributeStatusInfo.value().reasonCode.get(), "PriorityNetworkConf");
+    EXPECT_EQ(
+        m_device_model.entry(make_component("NetworkConfiguration", std::string("2")), make_variable("OcppCsmsUrl"))
+            .value,
+        "wss://two");
+    EXPECT_EQ(callback_count, 0);
+}
+
+TEST_F(V16VariableAccess, writeToPriorityListedSlotIsRejectedWithPriorityNetworkConf) {
+    add_complete_network_slot(2, "wss://two", "2");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("NetworkConfigurationPriority"), "1,2");
+    int callback_count = 0;
+    auto access = make_access([&callback_count]() { ++callback_count; });
+
+    const auto results =
+        access.set({make_set("NetworkConfiguration", "OcppCsmsUrl", "wss://new", std::string("2"))}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Rejected);
+    ASSERT_TRUE(results[0].result.attributeStatusInfo.has_value());
+    EXPECT_EQ(results[0].result.attributeStatusInfo.value().reasonCode.get(), "PriorityNetworkConf");
+    EXPECT_EQ(callback_count, 0);
+}
+
+TEST_F(V16VariableAccess, priorityWriteReferencingIncompleteSlotIsRejected) {
+    add_complete_network_slot(1, "wss://one", "2");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("NetworkConfigurationPriority"), "1");
+    int callback_count = 0;
+    auto access = make_access([&callback_count]() { ++callback_count; });
+
+    // slot 3 holds no complete profile -> the priority must not point at it
+    const auto results = access.set({make_set("OCPPCommCtrlr", "NetworkConfigurationPriority", "3,1")}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Rejected);
+    ASSERT_TRUE(results[0].result.attributeStatusInfo.has_value());
+    EXPECT_EQ(results[0].result.attributeStatusInfo.value().reasonCode.get(), "InvalidNetworkConf");
+    EXPECT_EQ(
+        m_device_model.entry(make_component("OCPPCommCtrlr"), make_variable("NetworkConfigurationPriority")).value,
+        "1");
+    EXPECT_EQ(callback_count, 0);
+}
+
+TEST_F(V16VariableAccess, slotSecurityProfileDowngradeBelowConfirmedIsRejected) {
+    add_complete_network_slot(2, "wss://two", "2");
+    m_device_model.add(make_component("SecurityCtrlr"), make_variable("SecurityProfile"), "2");
+    auto access = make_access();
+
+    const auto results =
+        access.set({make_set("NetworkConfiguration", "SecurityProfile", "1", std::string("2"))}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Rejected);
+    ASSERT_TRUE(results[0].result.attributeStatusInfo.has_value());
+    EXPECT_EQ(results[0].result.attributeStatusInfo.value().reasonCode.get(), "NoSecurityDowngrade");
+    EXPECT_EQ(
+        m_device_model.entry(make_component("NetworkConfiguration", std::string("2")), make_variable("SecurityProfile"))
+            .value,
+        "2");
+}
+
+TEST_F(V16VariableAccess, slotUrlSchemeSecurityProfileMismatchIsRejected) {
+    add_complete_network_slot(2, "ws://plain", "1");
+    auto access = make_access();
+
+    // raising the slot to security profile 2 while its URL is still ws:// yields an inconsistent profile
+    const auto results =
+        access.set({make_set("NetworkConfiguration", "SecurityProfile", "2", std::string("2"))}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Rejected);
+    ASSERT_TRUE(results[0].result.attributeStatusInfo.has_value());
+    EXPECT_EQ(results[0].result.attributeStatusInfo.value().reasonCode.get(), "InvalidNetworkConf");
+}
+
+TEST_F(V16VariableAccess, customMappedWriteToActiveSlotIsRejected) {
+    // the B09-style gate must also cover key-routed writes (paths 1 and 2) targeting slot CVs
+    ocpp::v2::Ocpp16CustomConfigMappings mappings;
+    mappings.emplace("VendorCsmsUrl", std::make_pair(make_component("NetworkConfiguration", std::string("2")),
+                                                     make_variable("OcppCsmsUrl")));
+    const ocpp::v16::VariableResolver resolver(mappings);
+    m_keys["VendorCsmsUrl"] = "wss://old";
+    add_complete_network_slot(2, "wss://two", "2");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("ActiveNetworkProfile"), "2");
+    int callback_count = 0;
+    auto access = make_access([&callback_count]() { ++callback_count; }, &resolver);
+
+    // path 1: legacy write by key name
+    const auto legacy = access.set({make_set("", "VendorCsmsUrl", "wss://new")}, "test");
+    ASSERT_EQ(legacy.size(), 1);
+    EXPECT_EQ(legacy[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Rejected);
+    ASSERT_TRUE(legacy[0].result.attributeStatusInfo.has_value());
+    EXPECT_EQ(legacy[0].result.attributeStatusInfo.value().reasonCode.get(), "PriorityNetworkConf");
+
+    // path 2: canonical write via the mapped CV
+    const auto canonical =
+        access.set({make_set("NetworkConfiguration", "OcppCsmsUrl", "wss://newer", std::string("2"))}, "test");
+    ASSERT_EQ(canonical.size(), 1);
+    EXPECT_EQ(canonical[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Rejected);
+
+    EXPECT_TRUE(m_set_calls.empty()); // the 1.6 key path was never reached
+    EXPECT_EQ(m_keys["VendorCsmsUrl"], "wss://old");
+    EXPECT_EQ(callback_count, 0);
 }
 
 TEST_F(V16VariableAccess, readOnlyDerivedReadsDeviceModelAndRejectsWrite) {

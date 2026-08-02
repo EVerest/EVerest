@@ -522,6 +522,10 @@ public:
     /// \brief Disconnects the the websocket connection to the CSMS if it is connected
     void disconnect_websocket();
 
+    /// \brief Rebuilds the ConnectivityManager's cached network connection profiles and slot priority list.
+    /// \see ocpp::v16::ChargePoint::reload_network_profiles
+    void reload_network_profiles();
+
     /// \brief Calls the set_connection_timeout_callback that can be registered. This function is used to notify an
     /// Authorization mechanism about a changed ConnectionTimeout configuration key.
     void call_set_connection_timeout();
@@ -865,6 +869,12 @@ public:
     /// the CSMS.
     /// \param callback
     void register_set_connection_timeout_callback(const std::function<void(std::int32_t connection_timeout)>& callback);
+
+    /// \brief registers a \p callback on the connectivity manager that is called before each websocket connection
+    /// attempt so the host can configure the network interface for the network connection profile. Must be called
+    /// before start(). \see ocpp::v16::ChargePoint::register_configure_network_connection_profile_callback
+    /// \param callback
+    void register_configure_network_connection_profile_callback(ConfigureNetworkConnectionProfileCallback callback);
 
     /// \brief registers a \p callback function that can be used to check if a reset is allowed . The
     /// is_reset_allowed_callback is called when a Reset.req is received.

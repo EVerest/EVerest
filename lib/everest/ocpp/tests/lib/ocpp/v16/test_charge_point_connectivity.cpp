@@ -104,6 +104,7 @@ TEST_F(ChargePointConnectivityTest, InjectedManagerNotAutoWiredForLifecycle) {
     EXPECT_CALL(*this->connectivity_manager, set_websocket_disconnected_callback(_)).Times(0);
     EXPECT_CALL(*this->connectivity_manager, set_websocket_connection_failed_callback(_)).Times(0);
     EXPECT_CALL(*this->connectivity_manager, set_message_callback(_)).Times(0);
+    EXPECT_CALL(*this->connectivity_manager, set_configure_network_connection_profile_callback(_)).Times(0);
 
     auto charge_point = make_charge_point();
 

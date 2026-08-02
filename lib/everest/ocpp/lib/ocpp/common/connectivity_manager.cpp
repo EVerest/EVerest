@@ -531,6 +531,20 @@ void ConnectivityManager::append_slot_to_network_configuration_priority_if_absen
 
 void ConnectivityManager::cache_network_connection_profiles() {
     auto state = this->m_state.handle();
+
+    // Capture the slot currently in use (pending attempt, else the active one) so the rebuild can re-derive
+    // its index: a reordered or extended priority list shifts indices, and keeping the raw active_priority
+    // would silently name a different slot (wrong confirms and disconnect/connected slot reporting).
+    std::optional<std::int32_t> before_slot;
+    if (state->pending_configuration_slot.has_value()) {
+        before_slot = state->pending_configuration_slot;
+    } else if (!state->slots.empty()) {
+        const auto idx = static_cast<std::size_t>(std::max<std::int32_t>(state->active_priority, 0));
+        if (idx < state->slots.size()) {
+            before_slot = state->slots[idx];
+        }
+    }
+
     state->cached_profiles.clear();
     state->slots.clear();
 
@@ -552,12 +566,27 @@ void ConnectivityManager::cache_network_connection_profiles() {
         }
     }
 
-    // Re-clamp active_priority to remain a valid index after rebuild
+    // Remap active_priority to the slot captured above; clamp when that slot is gone from the list.
+    // The recursive mutex allows get_priority_from_configuration_slot to re-acquire the same handle.
     if (state->slots.empty()) {
         state->active_priority = 0;
-    } else if (static_cast<std::size_t>(state->active_priority) >= state->slots.size()) {
-        state->active_priority = static_cast<std::int32_t>(state->slots.size() - 1);
+    } else {
+        std::optional<std::int32_t> remapped_priority;
+        if (before_slot.has_value()) {
+            remapped_priority = this->get_priority_from_configuration_slot(before_slot.value());
+        }
+        if (remapped_priority.has_value()) {
+            state->active_priority = remapped_priority.value();
+        } else if (static_cast<std::size_t>(state->active_priority) >= state->slots.size()) {
+            state->active_priority = static_cast<std::int32_t>(state->slots.size() - 1);
+        }
     }
+
+    // The rebuild resurrects every slot listed in the priority string, including ones previously pruned for an
+    // insufficient security profile. Force the next check_cache_for_invalid_security_profiles() (always run before
+    // an attempt, see try_connect_websocket) to re-prune instead of early-returning on an unchanged level;
+    // otherwise a reload could let a lower-security-profile slot connect and downgrade the confirmed profile.
+    state->last_known_security_level = -1;
 
     this->warn_if_all_security_level_zero_locked(*state);
 }

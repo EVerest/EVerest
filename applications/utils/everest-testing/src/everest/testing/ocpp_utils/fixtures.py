@@ -49,6 +49,15 @@ def ocpp_config(request, central_system: CentralSystem, test_config: OcppTestCon
                            "adjust_ocpp_configuration"), "Arguments to 'ocpp_config_adaptions' must all provide interface of OCPPConfigAdjustmentStrategy"
             ocpp_configuration_strategies.append(v)
 
+    ocpp16_component_config_strategies_marker = request.node.get_closest_marker(
+        "ocpp16_component_config_adaptions")
+    ocpp16_component_config_strategies = []
+    if ocpp16_component_config_strategies_marker:
+        for v in ocpp16_component_config_strategies_marker.args:
+            assert hasattr(v,
+                           "adjust_ocpp_configuration"), "Arguments to 'ocpp16_component_config_adaptions' must all provide interface of OCPPConfigAdjustmentStrategy"
+            ocpp16_component_config_strategies.append(v)
+
     return EverestEnvironmentOCPPConfiguration(
         central_system_port=central_system.port,
         central_system_host="127.0.0.1",
@@ -56,7 +65,8 @@ def ocpp_config(request, central_system: CentralSystem, test_config: OcppTestCon
         template_ocpp_config=Path(
             ocpp_config_marker.args[0]) if ocpp_config_marker else None,
         device_model_component_config_path=Path(f"{request.config.getoption('--everest-prefix')}/share/everest/modules/OCPP201/component_config"),
-        configuration_strategies=ocpp_configuration_strategies
+        configuration_strategies=ocpp_configuration_strategies,
+        ocpp16_component_config_strategies=ocpp16_component_config_strategies
     )
 
 

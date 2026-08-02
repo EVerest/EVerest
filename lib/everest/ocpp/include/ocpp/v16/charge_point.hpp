@@ -168,6 +168,12 @@ public:
     /// \brief Disconnects the the websocket connection to the CSMS if it is connected
     void disconnect_websocket();
 
+    /// \brief Rebuilds the cached network connection profiles and slot priority list from the configuration.
+    /// Call after network-related configuration (NetworkConfiguration components, NetworkConfigurationPriority)
+    /// was changed externally, e.g. via the EVerest ocpp interface. Does not affect an active connection; the
+    /// updated profiles take effect on the next (re)connect attempt.
+    void reload_network_profiles();
+
     /// \brief Notifies the charge point that the websocket is connected. This allows an external owner of an injected
     /// ConnectivityManager to drive the charge point's websocket lifecycle (mirroring ocpp::v2::ChargePointInterface).
     void on_websocket_connected(const int configuration_slot,
@@ -546,6 +552,14 @@ public:
     /// the CSMS.
     /// \param callback
     void register_set_connection_timeout_callback(const std::function<void(std::int32_t connection_timeout)>& callback);
+
+    /// \brief registers a \p callback that is called before each websocket connection attempt so the host can
+    /// configure (e.g. bring up) the network interface for the network connection profile. OCPP 1.6 has a single
+    /// implicit profile (configuration slot 1, ocppInterface Any) synthesized from CentralSystemURI/SecurityProfile.
+    /// The returned future is awaited (60 s default timeout) before connecting; an unsuccessful result skips the
+    /// connection attempt and schedules a retry. Must be called before start().
+    /// \param callback
+    void register_configure_network_connection_profile_callback(ConfigureNetworkConnectionProfileCallback callback);
 
     /// \brief registers a \p callback function that can be used to check if a reset is allowed . The
     /// is_reset_allowed_callback is called when a Reset.req is received.

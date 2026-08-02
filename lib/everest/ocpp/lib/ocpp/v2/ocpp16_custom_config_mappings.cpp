@@ -10,6 +10,8 @@
 #include <ryml.hpp>
 #include <ryml_std.hpp>
 
+#include <ocpp/v16/variable_resolver.hpp>
+
 namespace ocpp::v2 {
 
 namespace {
@@ -209,6 +211,16 @@ load_ocpp16_custom_config_mappings_from_yaml(const std::filesystem::path& mappin
         variable.name = entry.at("variable").at("name").get<std::string>();
         if (entry.at("variable").contains("instance")) {
             variable.instance = entry.at("variable").at("instance").get<std::string>();
+        }
+
+        // Connection config is managed by the standardized OCPP 1.6 keys (with their reboot/reconnect
+        // semantics) or direct canonical CV access; a custom key would write it without either.
+        if (v16::is_connection_config_cv(component, variable)) {
+            throw Ocpp16CustomConfigMappingsError(
+                "Invalid custom mapping in '" + mapping_file_path.string() + "': key '" + ocpp16_key +
+                "' targets connection configuration " + component.name.get() + "/" + variable.name.get() +
+                "; connection configuration is managed via the standardized OCPP 1.6 keys and must not be "
+                "custom-mapped");
         }
 
         if (!mappings.emplace(ocpp16_key, std::make_pair(component, variable)).second) {

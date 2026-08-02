@@ -25,7 +25,8 @@ from .everest_configuration_strategies.persistent_store_configuration_strategy i
 from .everest_configuration_strategies.probe_module_configuration_strategy import \
     ProbeModuleConfigurationStrategy
 from .libocpp_configuration_helper import \
-    LibOCPP2XConfigurationHelper, LibOCPP16ConfigurationHelper
+    LibOCPP2XConfigurationHelper, LibOCPP16ConfigurationHelper, \
+    OCPPConfigAdjustmentStrategy, _OCPP16ComponentConfigCsmsUrlAdjustment
 
 
 @dataclass
@@ -39,6 +40,9 @@ class EverestEnvironmentOCPPConfiguration:
     device_model_component_config_path: Optional[
         Path] = None  # Path of the OCPP device model json schemas.
     configuration_strategies: list[OCPPModuleConfigurationStrategy] | None = None
+    # OCPP1.6 device-model (component config) adjustment strategies; applied to the copied
+    # NetworkConfiguration/OCPPCommCtrlr component config JSONs before the DB is migrated.
+    ocpp16_component_config_strategies: list[OCPPConfigAdjustmentStrategy] | None = None
 
 
 @dataclass
@@ -317,4 +321,51 @@ class EverestTestEnvironmentSetup:
         shutil.copytree(source_migration_dir,
                         temporary_paths.ocpp_device_model_migration_path,
                         dirs_exist_ok=True)
+
+        self._adjust_ocpp16_component_config(temporary_paths)
+
+    def _adjust_ocpp16_component_config(self, temporary_paths: _EverestEnvironmentTemporaryPaths):
+        """Applies component config adjustment strategies to the copied OCPP1.6 device-model config.
+
+        Loads the copied component config JSONs (standardized/ and custom/ subdirs, keyed by file
+        stem - same shape as LibOCPP2XConfigurationHelper._get_config), applies any user strategies
+        from the ``ocpp16_component_config_adaptions`` marker, then a default strategy that rewrites
+        every configured NetworkConfiguration_N OcppCsmsUrl to the test CSMS URL, and writes the
+        JSONs back to their original locations.
+        """
+        component_config_dir = temporary_paths.ocpp_device_model_config_path
+
+        config_files: Dict[str, Path] = {}
+        component_config: Dict[str, dict] = {}
+        for subdir in ("standardized", "custom"):
+            subdir_path = component_config_dir / subdir
+            if not subdir_path.is_dir():
+                continue
+            for config_file in sorted(subdir_path.glob("*.json")):
+                stem = config_file.stem
+                config_files[stem] = config_file
+                component_config[stem] = json.loads(config_file.read_text())
+
+        strategies: List[OCPPConfigAdjustmentStrategy] = list(
+            self._ocpp_config.ocpp16_component_config_strategies or [])
+        # Default strategy runs last so it also normalizes URLs set by user strategies (e.g. a
+        # placeholder OcppCsmsUrl) to the mock CSMS.
+        strategies.append(_OCPP16ComponentConfigCsmsUrlAdjustment(
+            central_system_host=self._ocpp_config.central_system_host,
+            central_system_port=self._ocpp_config.central_system_port,
+            charge_point_id=self._determine_ocpp16_charge_point_id()))
+
+        for strategy in strategies:
+            component_config = strategy.adjust_ocpp_configuration(component_config)
+
+        for stem, data in component_config.items():
+            config_files[stem].write_text(json.dumps(data))
+
+    def _determine_ocpp16_charge_point_id(self) -> str:
+        """Reads the ChargePointId from the legacy OCPP1.6 config (same source LibOCPP16ConfigurationHelper uses)."""
+        if self._ocpp_config.template_ocpp_config:
+            source_ocpp_config = self._ocpp_config.template_ocpp_config
+        else:
+            source_ocpp_config = self._determine_configured_charge_point_config_path_from_everest_config()
+        return json.loads(source_ocpp_config.read_text())["Internal"]["ChargePointId"]
 
