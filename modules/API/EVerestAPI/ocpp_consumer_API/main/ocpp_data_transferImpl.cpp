@@ -31,7 +31,7 @@ auto ocpp_data_transferImpl::generic_request_reply(T const& default_value, ReqT 
     if (!result) {
         return default_value;
     }
-    return result.value();
+    return std::move(*result);
 }
 
 types::ocpp::DataTransferResponse
