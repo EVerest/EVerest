@@ -99,7 +99,7 @@ public:
 
 private:
     void subscribe_latched_value_request(std::string const& var, std::string const& topic);
-    void publish_and_cache_variable(std::string const& topic, std::string const& payload, bool cache_value);
+    void publish_and_cache_variable(std::string const& topic, std::string payload, bool cache_value);
     void log_forward_api_var_error(std::string const& topic, char const* what);
     void subscribe_mqtt_topic(std::string const& topic, ParseAndPublishFtor parse_and_publish);
     void init_entrypoint_API(V1_0::types::entrypoint::CommunicationParameters const& comm_parameters);

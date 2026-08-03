@@ -37,7 +37,7 @@ auto systemImpl::generic_request_reply(T const& default_value, ReqT const& reque
     if (!result) {
         return default_value;
     }
-    return result.value();
+    return std::move(*result);
 }
 
 types::system::UpdateFirmwareResponse

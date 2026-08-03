@@ -7,8 +7,10 @@
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/ocpp/API.hpp>
 #include <everest_api_types/ocpp/codec.hpp>
+#include <everest_api_types/ocpp/json_codec.hpp>
 #include <everest_api_types/ocpp/wrapper.hpp>
 #include <everest_api_types/utilities/codec.hpp>
+#include <everest_api_types/utilities/request_reply.hpp>
 
 namespace {
 template <class T> T const& to_external_api(T const& val) {
@@ -21,6 +23,7 @@ namespace module {
 namespace API_types_ext = API_types::ocpp;
 namespace API_generic = API_types::generic;
 using ev_API::deserialize;
+using ev_API::deserialize_request;
 
 void ocpp_consumer_API::init() {
     invoke_init(*p_main);
@@ -69,15 +72,13 @@ auto ocpp_consumer_API::forward_and_cache_api_var(std::string const& var) {
 void ocpp_consumer_API::generate_api_cmd_data_transfer() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("data_transfer_outgoing", [=](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
-            DataTransferRequest request;
-            if (deserialize(msg.payload, request)) {
-                auto int_reply = r_data_transfer->call_data_transfer(to_internal_api(request));
-                auto reply = to_external_api(int_reply);
-                mqtt_v.publish(msg.replyTo, serialize(reply));
-                return true;
-            }
+        std::string reply_to;
+        DataTransferRequest request;
+        if (deserialize_request(data, reply_to, request)) {
+            auto int_reply = r_data_transfer->call_data_transfer(to_internal_api(request));
+            auto reply = to_external_api(int_reply);
+            mqtt_v.publish(reply_to, serialize(reply));
+            return true;
         }
         return false;
     });
@@ -86,15 +87,13 @@ void ocpp_consumer_API::generate_api_cmd_data_transfer() {
 void ocpp_consumer_API::generate_api_cmd_get_variables() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("get_variables", [=](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
-            GetVariableRequestList request;
-            if (deserialize(msg.payload, request)) {
-                auto int_reply = r_ocpp->call_get_variables(to_internal_api(request));
-                auto reply = to_external_api(int_reply);
-                mqtt_v.publish(msg.replyTo, serialize(reply));
-                return true;
-            }
+        std::string reply_to;
+        GetVariableRequestList request;
+        if (deserialize_request(data, reply_to, request)) {
+            auto int_reply = r_ocpp->call_get_variables(to_internal_api(request));
+            auto reply = to_external_api(int_reply);
+            mqtt_v.publish(reply_to, serialize(reply));
+            return true;
         }
         return false;
     });
@@ -103,15 +102,13 @@ void ocpp_consumer_API::generate_api_cmd_get_variables() {
 void ocpp_consumer_API::generate_api_cmd_set_variables() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("set_variables", [=](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
-            SetVariablesArgs request;
-            if (deserialize(msg.payload, request)) {
-                auto int_reply = r_ocpp->call_set_variables(to_internal_api(request.variables), request.source);
-                auto reply = to_external_api(int_reply);
-                mqtt_v.publish(msg.replyTo, serialize(reply));
-                return true;
-            }
+        std::string reply_to;
+        SetVariablesArgs request;
+        if (deserialize_request(data, reply_to, request)) {
+            auto int_reply = r_ocpp->call_set_variables(to_internal_api(request.variables), request.source);
+            auto reply = to_external_api(int_reply);
+            mqtt_v.publish(reply_to, serialize(reply));
+            return true;
         }
         return false;
     });

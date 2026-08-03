@@ -5,9 +5,11 @@
 #include "error_wrapper.hpp"
 #include <everest_api_types/error_history/API.hpp>
 #include <everest_api_types/error_history/codec.hpp>
+#include <everest_api_types/error_history/json_codec.hpp>
 #include <everest_api_types/error_history/wrapper.hpp>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/utilities/codec.hpp>
+#include <everest_api_types/utilities/request_reply.hpp>
 
 #include <map>
 #include <utility>
@@ -17,8 +19,7 @@
 
 namespace module {
 
-namespace API_generic = API_types::generic;
-using ev_API::deserialize;
+using ev_API::deserialize_request;
 
 void error_history_consumer_API::init() {
     invoke_init(*p_main);
@@ -57,13 +58,13 @@ auto error_history_consumer_API::forward_and_cache_api_var(std::string const& va
 void error_history_consumer_API::generate_api_cmd_active_errors() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("active_errors", [=](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
+        std::string reply_to;
+        if (deserialize_request(data, reply_to)) {
             types::error_history::FilterArguments&& filter{};
             filter.state_filter = types::error_history::State::Active;
             auto active_errors = r_error_history->call_get_errors(std::move(filter));
             auto reply = to_external_api(active_errors);
-            mqtt_v.publish(msg.replyTo, serialize(reply));
+            mqtt_v.publish(reply_to, serialize(reply));
             return true;
         }
         return false;
@@ -73,15 +74,13 @@ void error_history_consumer_API::generate_api_cmd_active_errors() {
 void error_history_consumer_API::generate_api_cmd_get_errors() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("get_errors", [=](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
-            API_types_ext::FilterArguments_External payload;
-            if (deserialize(msg.payload, payload)) {
-                auto errors = r_error_history->call_get_errors(to_internal_api(payload));
-                auto reply = to_external_api(errors);
-                mqtt_v.publish(msg.replyTo, serialize(reply));
-                return true;
-            }
+        std::string reply_to;
+        API_types_ext::FilterArguments_External payload;
+        if (deserialize_request(data, reply_to, payload)) {
+            auto errors = r_error_history->call_get_errors(to_internal_api(payload));
+            auto reply = to_external_api(errors);
+            mqtt_v.publish(reply_to, serialize(reply));
+            return true;
         }
         return false;
     });
