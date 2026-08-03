@@ -95,4 +95,45 @@ struct CapabilityLimits {
     float total_power_W;
 };
 
+enum class NodeType {
+    Undefined,
+    Evse,
+    Generic,
+};
+
+enum class EvseState {
+    Unplugged,
+    WaitForAuth,
+    WaitForEnergy,
+    PrepareCharging,
+    PausedEV,
+    PausedEVSE,
+    Charging,
+    Finished,
+    Disabled,
+};
+
+struct OptimizerTarget {
+    std::optional<float> energy_amount_needed;
+    std::optional<float> charge_to_max_percent;
+    std::optional<float> car_battery_soc;
+    std::optional<std::string> leave_time;
+    std::optional<float> price_limit;
+    std::optional<bool> full_autonomy;
+};
+
+struct EnergyFlowRequest {
+    std::vector<EnergyFlowRequest> children;
+    std::string uuid;
+    NodeType node_type;
+    std::vector<ScheduleReqEntry> schedule_import;
+    std::vector<ScheduleReqEntry> schedule_export;
+    std::vector<ScheduleSetpointEntry> schedule_setpoints;
+    std::optional<bool> priority_request;
+    std::optional<EvseState> evse_state;
+    std::optional<OptimizerTarget> optimizer_target;
+    std::optional<types::powermeter::PowermeterValues> energy_usage_root;
+    std::optional<types::powermeter::PowermeterValues> energy_usage_leaves;
+};
+
 } // namespace everest::lib::API::V1_0::types::energy
