@@ -176,7 +176,7 @@ handle_request(const message_20::AC_ChargeLoopRequest& req, const d20::Session& 
 }
 
 void AC_ChargeLoop::enter() {
-    m_ctx.log.enter_state("AC_ChargeLoop");
+    logf_debug("Enter state: AC_ChargeLoop");
     dynamic_parameters = m_ctx.cache_dynamic_mode_parameters.value_or(UpdateDynamicModeParameters{});
     target_powers = m_ctx.cache_ac_target_power.value_or(AcTargetPower{});
     present_powers = m_ctx.cache_ac_present_power.value_or(AcPresentPower{});
@@ -263,7 +263,7 @@ Result AC_ChargeLoop::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("Expected PowerDeliveryReq or AC_ChargeLoopRequest! But code type id: %d", variant->get_type());
+        logf_warning("Expected PowerDeliveryReq or AC_ChargeLoopRequest! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

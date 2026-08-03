@@ -9,7 +9,6 @@
 #include <iso15118/d20/context.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/iso.hpp>
-#include <iso15118/session/logger.hpp>
 
 #include "mock_connection.hpp"
 
@@ -30,10 +29,6 @@ constexpr uint8_t session_setup_req[] = {0x80, 0x8c, 0x04, 0x00, 0x00, 0x00, 0x0
 } // namespace
 
 SCENARIO("Session teardown primitives") {
-    // The Session FSM logs a state transition on construction through the
-    // process-global session log callback, which starts null.
-    iso15118::session::logging::set_session_log_callback([](std::size_t, const auto&) {});
-
     iso15118::session::feedback::Callbacks callbacks;
     callbacks.signal = [](auto) {};
 

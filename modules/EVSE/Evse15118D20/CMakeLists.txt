@@ -13,7 +13,6 @@ target_sources(${MODULE_NAME}
         charger/der_relay.cpp
         charger/der_setup.cpp
         charger/grid_event.cpp
-        charger/session_logger.cpp
         charger/utils.cpp
 )
 

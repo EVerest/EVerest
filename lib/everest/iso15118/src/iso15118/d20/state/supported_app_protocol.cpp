@@ -66,7 +66,7 @@ message_20::SupportedAppProtocolResponse handle_request(const message_20::Suppor
 } // namespace
 
 void SupportedAppProtocol::enter() {
-    m_ctx.log.enter_state("SupportedAppProtocol");
+    logf_debug("Enter state: SupportedAppProtocol");
 }
 
 Result SupportedAppProtocol::feed(Event ev) {
@@ -133,7 +133,7 @@ Result SupportedAppProtocol::feed(Event ev) {
         }
         return m_ctx.create_state<SessionSetup>();
     }
-    m_ctx.log("expected SupportedAppProtocolReq! But code type id: %d", variant->get_type());
+    logf_warning("Expected SupportedAppProtocolReq! But code type id: %d", variant->get_type());
 
     m_ctx.session_stopped = true;
     return {};

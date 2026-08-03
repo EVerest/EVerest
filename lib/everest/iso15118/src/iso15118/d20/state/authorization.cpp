@@ -10,6 +10,8 @@
 #include <iso15118/detail/d20/state/authorization.hpp>
 #include <iso15118/detail/d20/state/session_stop.hpp>
 
+#include <iso15118/detail/helper.hpp>
+
 namespace iso15118::d20::state {
 
 namespace dt = message_20::datatypes;
@@ -77,7 +79,7 @@ message_20::AuthorizationResponse handle_request(const message_20::Authorization
 }
 
 void Authorization::enter() {
-    m_ctx.log.enter_state("Authorization");
+    logf_debug("Enter state: Authorization");
 }
 
 Result Authorization::feed(Event ev) {
@@ -143,7 +145,7 @@ Result Authorization::feed(Event ev) {
         m_ctx.session_stopped = true;
         return {};
     } else {
-        m_ctx.log("expected AuthorizationReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected AuthorizationReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();
