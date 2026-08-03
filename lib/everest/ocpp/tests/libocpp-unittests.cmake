@@ -52,7 +52,7 @@ set(TEST_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}
 )
 # If the test is not linked against the ocpp library, most probably those libraries are needed to link against.
 set(LIBOCPP_TEST_DEFAULT_LINK_LIBRARIES
-        SQLite::SQLite3
+        SQLite3::SQLite3
         nlohmann_json::nlohmann_json
         nlohmann_json_schema_validator
         date::date-tz
