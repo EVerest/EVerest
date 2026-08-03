@@ -779,8 +779,9 @@ void GenericOcpp::visit_impl(std::int32_t evse_id, const types::system::Firmware
     using namespace module::conversions;
     EVLOG_info << "Processing queued firmware update status";
     const auto disable_connectors_during_install =
-        !fw_update_status.firmware_update_metadata.has_value() ||
-        fw_update_status.firmware_update_metadata.value().disable_connectors_during_install.value_or(true);
+        fw_update_status.firmware_update_metadata.has_value()
+            ? fw_update_status.firmware_update_metadata->disable_connectors_during_install
+            : std::nullopt;
     mv_charge_point.on_firmware_update_status_notification(
         fw_update_status.request_id, to_ocpp_firmware_status_enum(fw_update_status.firmware_update_status),
         disable_connectors_during_install);
@@ -1110,8 +1111,9 @@ void GenericOcpp::cb_firmware_update_status(types::system::FirmwareUpdateStatus 
 
     if (!enqueue_if_not_started(0, status)) {
         const auto disable_connectors_during_install =
-            !status.firmware_update_metadata.has_value() ||
-            status.firmware_update_metadata.value().disable_connectors_during_install.value_or(true);
+            status.firmware_update_metadata.has_value()
+                ? status.firmware_update_metadata->disable_connectors_during_install
+                : std::nullopt;
         mv_charge_point.on_firmware_update_status_notification(
             status.request_id, to_ocpp_firmware_status_enum(status.firmware_update_status),
             disable_connectors_during_install);
