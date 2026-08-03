@@ -68,6 +68,7 @@ struct Conf {
     bool debug_simulate_failed_matching;
     bool reset_instead_of_fail;
     int startup_delay_ms;
+    int request_info_delay_ms;
     int slac_init_timeout_ms;
     int max_matching_sessions;
     bool print_state_transitions;

@@ -142,6 +142,15 @@ provides:
           On some hardware platforms with multiple EvseSlacNeo  modules loaded this can be necessary to ensure that the initial query of the device information does not happen at the same time.
         type: integer
         default: 0
+      request_info_delay_ms:
+        description: >-
+          Wait time per step of the modem vendor detection sequence during initialization.
+          The state machine waits this long before sending each device information request
+          (Qualcomm OP_ATTR.REQ, Lumissil NSCM_GET_VERSION.REQ) and before finishing the
+          detection, so initialization spends three times this value in total.
+        type: integer
+        minimum: 0
+        default: 100
       slac_init_timeout_ms:
         description: >-
           Timeout for CM_SLAC_PARM.REQ. Values between 10000 and 20000 can be set at your own risk, as they
