@@ -60,7 +60,8 @@ cmds:
       Override the EVCCID that the EV announces in SessionSetupReq. Implementations normally derive it from the
       MAC address of the HLC network interface, which is fixed for the lifetime of the process. Overriding it
       lets a single simulator present itself as a series of different vehicles, which is what Autocharge keys
-      off. Takes effect on the next V2G session, so call it before plugging in.
+      off. The EVCCID is fixed at SessionSetupReq, so this has to be called before the V2G session starts and
+      applies from that session onwards.
     arguments:
       EvccId:
         description: >-
@@ -70,8 +71,8 @@ cmds:
         type: string
     result:
       description: >-
-        The EVCCID that will be announced on the next session, as 12 uppercase hex digits, or an empty string if
-        the argument was not a MAC address - in which case the previous EVCCID stays in use.
+        The EVCCID that will be announced, as 12 uppercase hex digits, or an empty string if the argument was
+        not a MAC address - in which case the previous EVCCID stays in use.
       type: string
 vars:
   v2g_session_finished:

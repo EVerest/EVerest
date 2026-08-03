@@ -271,10 +271,16 @@ void car_simulatorImpl::register_all_commands() {
         command_registry->register_command("iso_start_bcb_toggle", 1, [this](const CmdArguments& arguments) {
             return this->car_simulation->iso_start_bcb_toggle(arguments);
         });
+        // Two arities: "set_evcc_id <mac>" announces that MAC address, "set_evcc_id" on its own drops the
+        // override and goes back to the MAC address of the EV's network interface. The command parser
+        // lower-cases the whole simulation string, which is harmless here because the EV normalises the MAC
+        // address to upper case anyway.
         command_registry->register_command("set_evcc_id", 1, [this](const CmdArguments& arguments) {
-            // The command parser lower-cases the whole simulation string, which is harmless here because the EV
-            // normalises the MAC address to upper case anyway.
             publish_evcc_id(this->car_simulation->set_evcc_id(arguments.at(0)));
+            return true;
+        });
+        command_registry->register_command("set_evcc_id", 0, [this](const CmdArguments& /*arguments*/) {
+            publish_evcc_id(this->car_simulation->set_evcc_id(""));
             return true;
         });
     }
@@ -421,8 +427,6 @@ void car_simulatorImpl::subscribe_to_external_mqtt() {
                        auto data_copy = data;
                        handle_modify_charging_session(data_copy);
                    });
-    mqtt.subscribe("everest_external/nodered/" + std::to_string(mod->config.connector_id) + "/carsim/cmd/set_evcc_id",
-                   [this](const std::string& data) { publish_evcc_id(car_simulation->set_evcc_id(data)); });
 }
 
 void car_simulatorImpl::publish_evcc_id(const std::string& evcc_id) {
