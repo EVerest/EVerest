@@ -369,6 +369,7 @@ void slacImpl::configure_fsm_context() {
     }
 
     fsm_ctx->slac_config.slac_init_timeout_ms = config.slac_init_timeout_ms;
+    fsm_ctx->slac_config.request_info_delay_ms = std::max(0, config.request_info_delay_ms);
     fsm_ctx->slac_config.max_matching_sessions = std::max(1, config.max_matching_sessions);
     if (config.max_matching_sessions > 16) {
         EVLOG_warning << "High max_matching_sessions value '" << config.max_matching_sessions
