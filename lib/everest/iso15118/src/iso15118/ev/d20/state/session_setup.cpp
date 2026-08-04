@@ -65,10 +65,13 @@ Result SessionSetup::feed(Event ev) {
         return {};
     }
 
-    if (res->response_code == message_20::datatypes::ResponseCode::OK_NewSessionEstablished) {
+    // A plain OK carries the same authoritative session id as OK_NewSessionEstablished;
+    // both must be adopted, and a zero id is unusable either way (every later request
+    // would echo zeros).
+    if (res->response_code == message_20::datatypes::ResponseCode::OK or
+        res->response_code == message_20::datatypes::ResponseCode::OK_NewSessionEstablished) {
         logf_info("New session established by EVSE.");
 
-        // A new session must carry a non-zero returned id.
         if (session_is_zero(res->header.session_id)) {
             logf_error("Returned SessionID is zero although a new session was requested. Abort the session.");
             m_ctx.stop_session();

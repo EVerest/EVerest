@@ -53,10 +53,8 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcCharg
         throw std::runtime_error("Ethernet interface was not found: " + config.interface_name);
     }
 
-    // The SDP client is only needed when discovering the endpoint.
-    if (config.discover) {
-        sdp_client.emplace(config.interface_name, config.advertised_security);
-    }
+    // Emplaced here rather than in the init list so it sees the resolved interface name.
+    sdp_client.emplace(config.interface_name, config.advertised_security);
 
     // The data client is created later, in establish_data_path, so this dereferences it
     // lazily; it exists by the time the first frame is sent on connect.
@@ -207,46 +205,37 @@ void Controller::loop() {
 
     // Resolve the SECC endpoint and kick off the async connect chain; the single
     // reactor.run() below drives discovery -> connect -> session start.
-    if (config.discover) {
-        if (not sdp_client->register_events(reactor)) {
-            abort_loop("failed to register the SDP client");
-            return;
-        }
-
-        // Periodic SDP retransmit: a UDP request can be lost, so re-issue it on the
-        // standard interval until the SECC responds (establish_data_path disarms it)
-        // or the setup timeout elapses (its handler disarms it).
-        sdp_retry.set_single_shot(false);
-        if (not reactor.register_event_handler(&sdp_retry, [this]() {
-                if (sdp_client) {
-                    sdp_client->send_request();
-                }
-            })) {
-            abort_loop("failed to register the SDP retry timer");
-            return;
-        }
-        if (not sdp_retry.set_timeout(SDP_RETRY_INTERVAL)) {
-            // A failed arm silently disables SDP retransmit, leaving discovery to hang
-            // on a single lost request until the setup timeout. Treat it as fatal.
-            abort_loop("failed to arm the SDP retry timer");
-            return;
-        }
-
-        // The SDP response carries the SECC endpoint AND the transport security;
-        // both drive the runtime data-client creation in establish_data_path. The
-        // SECC has answered, so stop retransmitting the discovery request.
-        sdp_client->discover([this](transport::SdpResponse response) {
-            sdp_retry.disarm();
-            establish_data_path(response.endpoint, response.security);
-        });
-    } else {
-        if (not config.fixed_endpoint.has_value()) {
-            abort_loop("discover is disabled but no fixed_endpoint configured");
-            return;
-        }
-        // A fixed endpoint skips the SDP exchange; use the configured security.
-        establish_data_path(*config.fixed_endpoint, config.advertised_security);
+    if (not sdp_client->register_events(reactor)) {
+        abort_loop("failed to register the SDP client");
+        return;
     }
+
+    // Periodic SDP retransmit: a UDP request can be lost, so re-issue it on the
+    // standard interval until the SECC responds (establish_data_path disarms it)
+    // or the setup timeout elapses (its handler disarms it).
+    sdp_retry.set_single_shot(false);
+    if (not reactor.register_event_handler(&sdp_retry, [this]() {
+            if (sdp_client) {
+                sdp_client->send_request();
+            }
+        })) {
+        abort_loop("failed to register the SDP retry timer");
+        return;
+    }
+    if (not sdp_retry.set_timeout(SDP_RETRY_INTERVAL)) {
+        // A failed arm silently disables SDP retransmit, leaving discovery to hang
+        // on a single lost request until the setup timeout. Treat it as fatal.
+        abort_loop("failed to arm the SDP retry timer");
+        return;
+    }
+
+    // The SDP response carries the SECC endpoint AND the transport security; both
+    // drive the runtime data-client creation in establish_data_path. The SECC has
+    // answered, so stop retransmitting the discovery request.
+    sdp_client->discover([this](transport::SdpResponse response) {
+        sdp_retry.disarm();
+        establish_data_path(response.endpoint, response.security);
+    });
 
     reactor.run(online);
 
@@ -255,16 +244,6 @@ void Controller::loop() {
     }
 
     feedback.stopped();
-}
-
-void Controller::post_control_event(d20::ControlEvent event) {
-    // Marshal onto the reactor thread: never touch session state from the
-    // caller's thread. The action runs inside reactor.run_actions().
-    reactor.add_action([this, event]() {
-        if (session) {
-            session->deliver_control_event(event);
-        }
-    });
 }
 
 void Controller::request_stop() {
