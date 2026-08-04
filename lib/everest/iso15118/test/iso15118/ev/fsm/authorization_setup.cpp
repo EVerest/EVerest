@@ -51,9 +51,8 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
         }
     }
 
-    // PnC is not yet implemented properly in the EV, but we can at least test that the state machine transitions
-    // correctly
-    GIVEN("Good case - authorization setup response with OK and PnC") {
+    // The EV selects EIM only: see plans/2026-08-04-ev-session-resume-and-pnc.md.
+    GIVEN("Bad case - authorization setup response with OK and PnC only") {
 
         // setup the state and context to something reasonable
         const auto header = message_20::Header{{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02}, 1691411798};
@@ -69,22 +68,13 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
 
         const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
 
-        THEN("Check if passes to authorization state and sends Pnc AuthorizationRequest") {
+        THEN("Check if passes to authorization state, stops the session and sends no AuthorizationRequest") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::Authorization);
+            REQUIRE(ctx.is_session_stopped() == true);
 
             const auto requests = take_all_requests(state_helper.get_message_exchange());
-            const auto request_message = requests.get<message_20::AuthorizationRequest>();
-            REQUIRE(request_message.has_value());
-
-            const auto& request = request_message.value();
-            REQUIRE(request.header.session_id == header.session_id);
-            REQUIRE(request.selected_authorization_service == message_20::datatypes::Authorization::PnC);
-            // The EV serializer does not yet encode a PnC authorization mode: convert()
-            // always emits EIM_AReqAuthorizationMode, so the transmitted request decodes
-            // with the EIM mode even though PnC was the selected service.
-            REQUIRE(
-                std::holds_alternative<message_20::datatypes::EIM_ASReqAuthorizationMode>(request.authorization_mode));
+            REQUIRE(requests.empty());
         }
     }
     // TODO(mlitre): Add more test cases (bad response codes, unsupported authorization modes,
