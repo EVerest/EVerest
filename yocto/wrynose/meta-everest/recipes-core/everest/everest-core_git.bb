@@ -72,20 +72,6 @@ EXTRA_OECMAKE += " \
     -DTLS_INSTALL=ON \
 "
 
-# there are issues with pybind11 and the sstate cache
-#
-#   CMake Error in lib/everest/framework/everestpy/src/everest/CMakeLists.txt:
-#     Imported target "pybind11_json" includes non-existent path
-#
-# INTERFACE_INCLUDE_DIRECTORIES can point outside of the build area
-# when built by a different Yocto project and a shared state cache is used
-
-# Option 1 - disable PY support
-# EXTRA_OECMAKE:append = " -DEVEREST_ENABLE_PY_SUPPORT=OFF"
-
-# Option 2 provide the location to cmake
-EXTRA_OECMAKE:append = " -DPYBIND11_INTERFACE_INCLUDE_DIRECTORIES=${STAGING_INCDIR}/${PYTHON_DIR}"
-
 SYSTEMD_PACKAGES:append = " chargebridge"
 SYSTEMD_SERVICE:${PN} = "everest.service"
 SYSTEMD_SERVICE:chargebridge = "${@bb.utils.contains('PACKAGECONFIG', 'applications', 'chargebridge.service', '', d)}"
