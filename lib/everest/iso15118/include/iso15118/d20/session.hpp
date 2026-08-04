@@ -150,12 +150,12 @@ public:
                selected_services.selected_energy_service == dt::ServiceCategory::MCS_BPT;
     }
 
-    void updating_selected_sae_functions(uint8_t bitmap) {
-        selected_sae_functions.emplace(bitmap);
+    void set_ev_supported_sae_functions(uint32_t bitmap) {
+        ev_supported_sae_functions.emplace(bitmap);
     }
 
-    std::optional<uint8_t> get_selected_sae_functions() {
-        return selected_sae_functions;
+    [[nodiscard]] std::optional<uint32_t> get_ev_supported_sae_functions() const {
+        return ev_supported_sae_functions;
     }
 
     ~Session();
@@ -171,7 +171,8 @@ private:
     SelectedServiceParameters selected_services{};
     SelectedVasParameter selected_vas_services{};
 
-    std::optional<uint8_t> selected_sae_functions{0};
+    // The EV's masked SupportedModes declaration, empty until the SAE CPD has run.
+    std::optional<uint32_t> ev_supported_sae_functions{};
 };
 
 } // namespace iso15118::d20
