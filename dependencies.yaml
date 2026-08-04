@@ -146,7 +146,7 @@ grpc-extended-cpp-plugin:
 nlohmann_json:
   git: https://github.com/nlohmann/json
   git_tag: v3.12.0
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_helpers"
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_helpers OR EVEREST_BUILD_LIB_everest_api_types"
   options: ["JSON_BuildTests OFF", "JSON_MultipleHeaders ON"]
 nlohmann_json_schema_validator:
   git: https://github.com/pboettch/json-schema-validator
