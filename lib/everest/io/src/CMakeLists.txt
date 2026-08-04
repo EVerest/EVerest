@@ -11,6 +11,7 @@ set_target_properties(everest_io PROPERTIES
 target_sources(everest_io
     PRIVATE
         event/fd_event_handler.cpp
+        event/fd_event_sync_interface.cpp
         event/unique_fd.cpp
         event/event_fd.cpp
         event/timer_fd.cpp

@@ -155,7 +155,8 @@ public:
     /**
      * @brief Register a client implementing \ref fd_event_sync_interface for event handling
      * @details On notification from the file descriptor of the client, its sync method is called
-     * If manual handling is necessary use \ref fd_event_client filedescriptor directly
+     * If manual handling is necessary use \ref fd_event_client filedescriptor directly.
+     * The client records this handler and removes its registration when destroyed.
      * @param[in] obj The object to be registerd for event handling
      * @return True on success, false otherwise
      */
@@ -187,10 +188,11 @@ public:
 
     /**
      * @brief Unregister object implementing \ref fd_event_sync_interface from event handling
+     * @details Removes the descriptor recorded at registration time, so \p obj is not asked
+     * for its poll descriptor again.
      * @param[in] obj The object to be removed from event handling
-     * @return True on success, false otherwise
+     * @return True if a registration with this handler was removed, false otherwise
      */
-
     bool unregister_event_handler(fd_event_sync_interface* obj);
 
     /**

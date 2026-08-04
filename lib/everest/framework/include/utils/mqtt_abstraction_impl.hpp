@@ -102,10 +102,12 @@ private:
     std::string mqtt_everest_prefix;
     std::string mqtt_external_prefix;
 
+    // ev_handler is declared first so it outlives mqtt_client, whose destructor removes its
+    // registration from it.
+    everest::lib::io::event::fd_event_handler ev_handler;
     std::unique_ptr<everest::lib::io::mqtt::mqtt_client> mqtt_client;
     everest::lib::io::event::event_fd disconnect_event;
     everest::lib::io::event::event_fd new_message_event;
-    everest::lib::io::event::fd_event_handler ev_handler;
 
     // This must be destroyed first.
     Thread mqtt_mainloop_thread;

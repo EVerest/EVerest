@@ -231,9 +231,7 @@ bool fd_event_handler::register_event_handler(fd_event_sync_interface* obj) {
     if (not obj) {
         return false;
     }
-    auto raw = obj->get_poll_fd();
-    return register_event_handler(
-        raw, [obj](event_list const&) { obj->sync(); }, poll_events::read);
+    return obj->register_events(*this);
 }
 
 bool fd_event_handler::register_event_handler(fd_event_register_interface* obj) {
@@ -268,7 +266,7 @@ bool fd_event_handler::unregister_event_handler(fd_event_sync_interface* obj) {
     if (not obj) {
         return false;
     }
-    return remove_event_handler(obj->get_poll_fd());
+    return obj->unregister_events(*this);
 }
 
 bool fd_event_handler::unregister_event_handler(timer_fd* obj) {

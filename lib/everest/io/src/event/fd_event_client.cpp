@@ -12,7 +12,9 @@ generic_fd_event_client_impl::generic_fd_event_client_impl(action const& send_on
     m_event_handler = std::make_unique<event::fd_event_handler>();
 }
 
-generic_fd_event_client_impl::~generic_fd_event_client_impl() = default;
+generic_fd_event_client_impl::~generic_fd_event_client_impl() {
+    unregister_recorded_events();
+}
 
 int generic_fd_event_client_impl::get_poll_fd() {
     return m_event_handler->get_poll_fd();

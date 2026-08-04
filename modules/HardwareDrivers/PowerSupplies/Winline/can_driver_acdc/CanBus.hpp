@@ -30,9 +30,11 @@ protected:
     bool _tx(uint32_t can_id, const std::vector<uint8_t>& payload);
 
 private:
+    // ev_handler is declared first so it outlives can_bus, whose destructor removes its
+    // registration from the handler.
+    event::fd_event_handler ev_handler;
     std::unique_ptr<can::socket_can> can_bus;
     std::atomic_bool on_error{false};
-    event::fd_event_handler ev_handler;
     event::timer_fd recovery_timer;
     event::timer_fd poll_status_timer;
     std::atomic_bool rx_thread_online;

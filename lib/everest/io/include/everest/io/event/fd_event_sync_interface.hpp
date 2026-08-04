@@ -7,6 +7,8 @@
 
 namespace everest::lib::io::event {
 
+class fd_event_handler;
+
 /**
  * @brief Possible outcomes of syncing
  */
@@ -24,7 +26,10 @@ enum class sync_status {
  */
 class fd_event_sync_interface {
 public:
-    virtual ~fd_event_sync_interface() = default;
+    /**
+     * @brief Drops a registration still recorded by \ref register_events
+     */
+    virtual ~fd_event_sync_interface();
 
     /**
      * @brief Access to the internal event handler
@@ -40,6 +45,37 @@ public:
      * @return Result of sync operation
      */
     virtual everest::lib::io::event::sync_status sync() = 0;
+
+    /**
+     * @brief Register with an existing event handler
+     * @details The default registers \ref get_poll_fd for read (E/POLLIN) and calls \ref sync
+     * on notification. Handler and descriptor are recorded, so the registration can be removed
+     * without asking this object again. Only one registration is recorded at a time.
+     * @param[in] handler The event handler to register with
+     * @return true on success, false otherwise
+     */
+    virtual bool register_events(fd_event_handler& handler);
+
+    /**
+     * @brief Unregister from an existing event handler
+     * @param[in] handler The event handler passed to \ref register_events
+     * @return true if a registration was removed, false otherwise
+     */
+    virtual bool unregister_events(fd_event_handler& handler);
+
+protected:
+    /**
+     * @brief Remove the recorded registration
+     * @details Uses the recorded descriptor instead of \ref get_poll_fd, so this stays callable
+     * while the object is being destroyed. Implementors call it in their destructor to leave the
+     * handler before their own state is gone.
+     * @return true if a registration was removed, false otherwise
+     */
+    bool unregister_recorded_events();
+
+private:
+    fd_event_handler* m_registered_handler{nullptr};
+    int m_registered_fd{-1};
 };
 
 } // namespace everest::lib::io::event
