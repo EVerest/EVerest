@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include "ISO15118_chargerImpl.hpp"
 #include <fmt/core.h>
 #include <fmt/ranges.h>
@@ -461,6 +461,9 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
                 fill_v2x_charging_parameters(v2x_charging_parameters, *dc_evse_limits, *dc_ev_limits);
             } else if (const auto* dc_ev_limits = std::get_if<dt::BPT_DC_CPDReqEnergyTransferMode>(&ev_limits)) {
                 fill_v2x_charging_parameters(v2x_charging_parameters, *dc_evse_limits, *dc_ev_limits);
+            } else {
+                EVLOG_error << "Invalid type received for EV limits! Not sending 'ChargingNeeds'.";
+                return;
             }
         } else if (const auto* ac_evse_limits = std::get_if<iso15118::d20::AcTransferLimits>(&evse_limits)) {
             if (const auto* ac_ev_limits = std::get_if<dt::AC_CPDReqEnergyTransferMode>(&ev_limits)) {
@@ -474,6 +477,9 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
                 charging_needs.der_charging_parameters = to_der_charging_parameters(*der_ac_ev_limits);
                 charging_needs.der_charging_parameters->ev_supported_dercontrol =
                     map_ev_supported_der_controls(ev_selected_der_control_functions);
+            } else {
+                EVLOG_error << "Invalid type received for EV limits! Not sending 'ChargingNeeds'.";
+                return;
             }
         } else {
             EVLOG_error << "Invalid type received for EVSE limits! Not sending 'ChargingNeeds'.";
