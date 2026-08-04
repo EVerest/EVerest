@@ -113,7 +113,7 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
 
     callbacks.timed_out = [] { EVLOG_warning << "EvIso15118D20: response watchdog timed out"; };
 
-    callbacks.stopped = [] { EVLOG_debug << "EvIso15118D20: session stopped"; };
+    callbacks.stopped = [] { EVLOG_info << "EvIso15118D20: session stopped"; };
 
     callbacks.ev_power_ready = [this] { publish_ev_power_ready(true); };
 
