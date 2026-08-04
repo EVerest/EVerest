@@ -113,6 +113,25 @@ TEST(PerPhaseEffectiveLimit, SymmetricLimitStillWinsWhenSmaller) {
     EXPECT_FLOAT_EQ(effective.l1_A, 8.0f);
 }
 
+TEST(PerPhaseEffectiveLimit, OmittedPhaseWithoutSymmetricLimitIsZero) {
+    // Edge case pinned deliberately: a per phase object with an omitted phase and no
+    // symmetric limit yields zero for that phase. The yaml reads "a phase that is omitted
+    // is not limited by this object" - but with no other limit present there is nothing
+    // to fall back to, and treating it as unlimited would let the broker buy unbounded
+    // current. Zero is the safe direction. Unreachable with current producers, which
+    // always fill all three phases.
+    types::energy::LimitsReq limits;
+    types::energy::NumberWithSourcePerPhase per_phase;
+    per_phase.L1 = types::energy::NumberWithSource{20.0f, "TEST_L1"};
+    limits.ac_max_current_per_phase_A = per_phase;
+
+    const auto effective = effective_per_phase_limit(limits, 3);
+
+    EXPECT_FLOAT_EQ(effective.l1_A, 20.0f);
+    EXPECT_FLOAT_EQ(effective.l2_A, 0.0f);
+    EXPECT_FLOAT_EQ(effective.l3_A, 0.0f);
+}
+
 TEST(PerPhaseEffectiveLimit, NoLimitsAtAllYieldsZero) {
     const types::energy::LimitsReq limits;
 

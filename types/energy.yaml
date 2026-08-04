@@ -135,9 +135,11 @@ types:
         description: >-
           Enforced max current limit per individual phase in Ampere. AC only.
           Optional: when omitted, ac_max_current_A applies symmetrically to all phases.
-          Set by the EnergyManager only when per phase trading produced an asymmetric
-          allocation, so consumers that do not understand per phase limits keep working
-          from ac_max_current_A.
+          Set by the EnergyManager whenever the allocation was made through the per phase
+          trading path (i.e. some node in the tree declared per phase limits), including
+          when the resulting allocation happens to be balanced. ac_max_current_A always
+          carries the most heavily loaded phase, so consumers that do not understand per
+          phase limits keep working from it.
         type: object
         $ref: /energy#/NumberWithSourcePerPhase
       ac_max_phase_count:

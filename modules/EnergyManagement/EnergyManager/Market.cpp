@@ -322,6 +322,12 @@ ScheduleReq Market::get_available_energy(const ScheduleReq& max_available, bool 
         // individually, so capacity freed on one phase does not appear on the others.
         // Mirrors the scalar handling above, including the sign convention: add_sold selects
         // the sign, it does not select whether to subtract.
+        //
+        // Symmetric-availability ancestors above a per phase EVSE rely on a load-bearing
+        // invariant here: every allocation is anchored at L1 (phases_in_use fills from L1),
+        // so the scalar sold value - the most loaded phase - equals the L1 sum and the plain
+        // scalar subtraction above remains exact for them. A future feature assigning single
+        // phase connectors to different phases breaks that invariant and must revisit this.
         if (available[i].limits_to_root.ac_max_current_per_phase_A.has_value()) {
             const auto sold_per_phase = get_sold_per_phase_A(static_cast<int>(i));
             auto& per_phase = available[i].limits_to_root.ac_max_current_per_phase_A.value();
@@ -527,10 +533,12 @@ PhaseAllocation Market::get_sold_per_phase_A(int slot) const {
         return sold;
     }
 
-    // Legacy symmetric trade: conservatively assume the same current on every phase.
+    // Legacy symmetric trade: it occupies the phases it declares, anchored at L1. Using
+    // all three regardless would hide a legacy single phase load from the symmetry check.
     if (limits.ac_max_current_A.has_value()) {
         const auto current_A = limits.ac_max_current_A.value().value;
-        sold = {current_A, current_A, current_A};
+        const auto phases = limits.ac_max_phase_count.has_value() ? limits.ac_max_phase_count.value().value : 3;
+        sold = {current_A, phases >= 2 ? current_A : 0.f, phases >= 3 ? current_A : 0.f};
     }
 
     return sold;
@@ -585,8 +593,12 @@ static void schedule_add(ScheduleRes& a, const ScheduleRes& b) {
                         p.L3.has_value() ? p.L3.value().value : 0.f};
             }
             if (limits.ac_max_current_A.has_value()) {
+                // A legacy trade occupies the phases it declares, anchored at L1 like every
+                // other allocation. Assuming all three would hide the imbalance of a legacy
+                // single phase trade from the symmetry constraint.
                 const auto c = limits.ac_max_current_A.value().value;
-                return {c, c, c};
+                const auto phases = limits.ac_max_phase_count.has_value() ? limits.ac_max_phase_count.value().value : 3;
+                return {c, phases >= 2 ? c : 0.f, phases >= 3 ? c : 0.f};
             }
             return {};
         };

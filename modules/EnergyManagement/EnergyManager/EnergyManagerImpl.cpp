@@ -258,15 +258,18 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
         }
 
         // Post validation: the pre trade cap should make this unreachable, but a violation here
-        // would mean real current imbalance on the installation, so make it loud.
+        // would mean real current imbalance on the installation, so make it loud. Every slot is
+        // checked - a violation in a future slot becomes the active one when its time arrives.
         if (config.phase_symmetry_enabled) {
-            const auto sold_per_phase = market.get_sold_per_phase_A(0);
-            if (not is_within_symmetry(sold_per_phase, static_cast<float>(config.max_phase_imbalance_A))) {
-                EVLOG_warning << fmt::format(
-                    "Phase symmetry violated: L1 {:.1f}A L2 {:.1f}A L3 {:.1f}A, imbalance {:.1f}A exceeds "
-                    "configured maximum of {:.1f}A",
-                    sold_per_phase.l1_A, sold_per_phase.l2_A, sold_per_phase.l3_A, sold_per_phase.imbalance_A(),
-                    config.max_phase_imbalance_A);
+            for (int slot = 0; slot < globals.schedule_length; slot++) {
+                const auto sold_per_phase = market.get_sold_per_phase_A(slot);
+                if (not is_within_symmetry(sold_per_phase, static_cast<float>(config.max_phase_imbalance_A))) {
+                    EVLOG_warning << fmt::format(
+                        "Phase symmetry violated in slot {}: L1 {:.1f}A L2 {:.1f}A L3 {:.1f}A, imbalance {:.1f}A "
+                        "exceeds configured maximum of {:.1f}A",
+                        slot, sold_per_phase.l1_A, sold_per_phase.l2_A, sold_per_phase.l3_A,
+                        sold_per_phase.imbalance_A(), config.max_phase_imbalance_A);
+                }
             }
         }
 

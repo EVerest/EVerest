@@ -114,8 +114,10 @@ missing side is derived from the symmetric limit, and neither side may ever wide
 other -- the effective limit on a phase is always the smaller of the two.
 
 The enforced result always populates the symmetric ``ac_max_current_A`` as well, set to
-the most heavily loaded phase, so a consumer that does not understand per phase limits
-still receives a limit it can safely honour.
+the most heavily loaded phase — by magnitude, since export allocations are negative — so
+a consumer that does not understand per phase limits still receives a limit it can
+safely honour. The field is present whenever the allocation went through the per phase
+trading path, including when the result happens to be perfectly balanced.
 
 The phase model
 ---------------
@@ -148,7 +150,11 @@ connection may differ by more than ``max_phase_imbalance_A``.
 The constraint is applied *before* each purchase rather than by trimming allocations
 afterwards, so the market's view of sold capacity always matches what is actually
 enforced. It is evaluated against the whole installation at the root of the energy tree,
-not per connector -- symmetry is a property of the grid connection. A remaining violation
+not per connector -- symmetry is a property of the grid connection. Legacy trades that
+carry no per phase field still count: their declared ``ac_max_phase_count`` books them
+on L1..Ln, so a plain single phase EVSE's imbalance is visible to the constraint. The
+constraint governs import only; export grants are neither counted against it nor
+throttled by it. A remaining violation
 after trading is logged at ``WARN``; with the pre trade cap in place this should be
 unreachable, so a warning indicates a real problem worth investigating.
 

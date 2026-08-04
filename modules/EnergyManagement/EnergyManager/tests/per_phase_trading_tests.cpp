@@ -212,6 +212,35 @@ TEST(PerPhaseMarket, MixedSymmetricAndPerPhaseTradesSumCorrectly) {
     EXPECT_FLOAT_EQ(sold.l3_A, 6.0f);
 }
 
+TEST(PerPhaseMarket, LegacySinglePhaseTradeIsCountedOnItsPhasesOnly) {
+    auto config = test::make_default_config();
+    auto evse = test::make_evse_node("cp01", 32.0f, 6.0f);
+    const auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    init_globals(request, config);
+    Market market(request, static_cast<float>(config.nominal_ac_voltage));
+
+    // A per phase trade first, so the sold ledger carries the per phase field.
+    ScheduleRes per_phase = globals.empty_schedule_res;
+    per_phase[0].limits_to_root.ac_max_current_A = {4.0f, "TEST"};
+    per_phase[0].limits_to_root.ac_max_phase_count = {1, "TEST"};
+    per_phase[0].limits_to_root.ac_max_current_per_phase_A = to_per_phase_limit({4.0f, 0.0f, 0.0f}, "TEST");
+    market.trade(per_phase);
+
+    // A legacy single phase trade: no per phase field, but ac_max_phase_count says 1.
+    // It must be booked on L1 only - counting it on all three phases would hide its
+    // very real imbalance from the symmetry constraint.
+    ScheduleRes legacy = globals.empty_schedule_res;
+    legacy[0].limits_to_root.ac_max_current_A = {16.0f, "TEST"};
+    legacy[0].limits_to_root.ac_max_phase_count = {1, "TEST"};
+    market.trade(legacy);
+
+    const auto sold = market.get_sold_per_phase_A(0);
+    EXPECT_FLOAT_EQ(sold.l1_A, 20.0f);
+    EXPECT_FLOAT_EQ(sold.l2_A, 0.0f);
+    EXPECT_FLOAT_EQ(sold.l3_A, 0.0f);
+}
+
 // ---------------------------------------------------------------- broker per phase buying
 
 TEST(PerPhaseBroker, UnbalancedNodeLimitCapsAtWeakestPhase) {
@@ -399,6 +428,85 @@ TEST(PerPhaseSymmetryEnforcement, SymmetryCanPreventASecondSessionFromStarting) 
     // an EVSE cannot signal a duty cycle below ac_min_current_A.
     const float lower = std::min(enforced_current(results, "cp01"), enforced_current(results, "cp02"));
     EXPECT_FLOAT_EQ(lower, 0.0f);
+}
+
+// ---------------------------------------------------------------- export behaviour
+
+namespace {
+
+// An EVSE that can only export (V2G discharging): no import capacity, 16A of export.
+types::energy::EnergyFlowRequest make_export_evse(const std::string& uuid) {
+    auto evse = test::make_evse_node(uuid, 0.0f, 0.0f);
+    types::energy::ScheduleReqEntry exp;
+    exp.timestamp = "2026-08-04T12:00:00.000Z";
+    exp.limits_to_root.ac_max_current_A = {16.0f, "TEST_export"};
+    exp.limits_to_root.ac_min_current_A = {0.0f, "TEST_export"};
+    exp.limits_to_root.ac_max_phase_count = {3, "TEST_export"};
+    exp.limits_to_root.ac_number_of_active_phases = 3;
+    evse.schedule_export = {exp};
+    return evse;
+}
+
+// A root node with symmetric import capacity and per phase export capacity, so the
+// export offer carries the per phase field and exercises the per phase buy branch.
+types::energy::EnergyFlowRequest make_export_root(std::vector<types::energy::EnergyFlowRequest> children) {
+    auto root = test::make_root_node("grid", 32.0f, std::nullopt, std::move(children));
+    types::energy::ScheduleReqEntry exp;
+    exp.timestamp = "2026-08-04T12:00:00.000Z";
+    exp.limits_to_root.ac_max_current_A = {32.0f, "TEST_grid_export"};
+    exp.limits_to_root.ac_max_phase_count = {3, "TEST_grid_export"};
+    exp.limits_to_root.ac_max_current_per_phase_A = to_per_phase_limit({32.0f, 32.0f, 32.0f}, "TEST_grid_export");
+    root.schedule_export = {exp};
+    return root;
+}
+
+} // namespace
+
+TEST(PerPhaseExport, ExportUnderPerPhaseNodeIsGrantedNegativeSymmetricAllocation) {
+    auto config = test::make_default_config();
+
+    auto request = make_export_root({make_export_evse("cp01")});
+
+    EnergyManagerImpl impl(config, [](const std::vector<types::energy::EnforcedLimits>&) {});
+    const auto results = impl.run_optimizer(request, AT);
+
+    const auto limit = test::find_limit(results, "cp01");
+    ASSERT_TRUE(limit.has_value());
+    ASSERT_TRUE(limit.value().limits_root_side.ac_max_current_A.has_value());
+
+    // Export allocations are negative; the symmetric field must carry the most loaded
+    // phase by magnitude, and all occupied phases must carry the same value.
+    EXPECT_NEAR(limit.value().limits_root_side.ac_max_current_A.value().value, -16.0f, 0.6f);
+
+    ASSERT_TRUE(limit.value().limits_root_side.ac_max_current_per_phase_A.has_value());
+    const auto& per_phase = limit.value().limits_root_side.ac_max_current_per_phase_A.value();
+    EXPECT_NEAR(per_phase.L1.value().value, -16.0f, 0.6f);
+    EXPECT_FLOAT_EQ(per_phase.L1.value().value, per_phase.L2.value().value);
+    EXPECT_FLOAT_EQ(per_phase.L2.value().value, per_phase.L3.value().value);
+}
+
+TEST(PerPhaseExport, ExportDoesNotTripTheSymmetryCap) {
+    auto config = test::make_default_config();
+    config.phase_symmetry_enabled = true;
+    config.max_phase_imbalance_A = 10.0;
+
+    // An importing single phase connector puts real imbalance on the root's sold totals.
+    auto importer = test::make_evse_node("cp01", 8.0f, 6.0f);
+    make_single_phase(importer);
+    importer.schedule_import[0].limits_to_root.ac_max_current_per_phase_A =
+        to_per_phase_limit({8.0f, 0.0f, 0.0f}, "TEST_cp01");
+
+    auto request = make_export_root({importer, make_export_evse("cp02")});
+
+    EnergyManagerImpl impl(config, [](const std::vector<types::energy::EnforcedLimits>&) {});
+    const auto results = impl.run_optimizer(request, AT);
+
+    // The exporter's grant must not be throttled by the importer's imbalance: symmetry is
+    // a constraint on import currents, and projecting a positive export grant onto the
+    // sold import totals would compare opposite signs.
+    const auto exp = test::find_limit(results, "cp02");
+    ASSERT_TRUE(exp.has_value());
+    EXPECT_NEAR(exp.value().limits_root_side.ac_max_current_A.value().value, -16.0f, 0.6f);
 }
 
 // ---------------------------------------------------------------- per phase slice trading

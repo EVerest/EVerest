@@ -4,6 +4,7 @@
 #include "Broker.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 #include <everest/logging.hpp>
@@ -149,9 +150,12 @@ PhaseAllocation Broker::phases_in_use(float ampere, int number_of_phases) const 
 void Broker::buy_ampere_per_phase_unchecked(int index, const PhaseAllocation& allocation, const std::string& source,
                                             types::energy::IntegerWithSource number_of_phases) {
     trading[index].limits_to_root.ac_max_current_per_phase_A = to_per_phase_limit(allocation, source);
-    // Keep the symmetric field populated with the most heavily loaded phase so consumers that
-    // do not understand per phase limits still see a limit they can safely honour.
-    trading[index].limits_to_root.ac_max_current_A = {allocation.max(), source};
+    // Keep the symmetric field populated with the most heavily loaded phase - by magnitude,
+    // since export allocations are negative and their most loaded phase is the minimum - so
+    // consumers that do not understand per phase limits still see a limit they can honour.
+    const auto most_loaded =
+        std::abs(allocation.min()) > std::abs(allocation.max()) ? allocation.min() : allocation.max();
+    trading[index].limits_to_root.ac_max_current_A = {most_loaded, source};
     trading[index].limits_to_root.ac_max_phase_count = number_of_phases;
     traded = true;
     first_trade[index] = false;
@@ -215,13 +219,17 @@ bool Broker::buy_ampere(const types::energy::ScheduleReqEntry& _offer, int index
         }
 
         // Symmetry is evaluated on the projected allocation, so it must be applied before the
-        // allow_less contract is checked below.
-        const auto symmetric_grant = symmetry_capped(index, phases_in_use(grant_A, phase_count));
-        float symmetric_A = std::numeric_limits<float>::max();
-        for (int p = 1; p <= phase_count; p++) {
-            symmetric_A = std::min(symmetric_A, symmetric_grant.phase(p));
+        // allow_less contract is checked below. It only applies to import: the root's sold
+        // totals are import currents, so projecting a positive export grant onto them would
+        // compare quantities with opposite signs and throttle exports for no physical reason.
+        if (import) {
+            const auto symmetric_grant = symmetry_capped(index, phases_in_use(grant_A, phase_count));
+            float symmetric_A = std::numeric_limits<float>::max();
+            for (int p = 1; p <= phase_count; p++) {
+                symmetric_A = std::min(symmetric_A, symmetric_grant.phase(p));
+            }
+            grant_A = std::max(0.f, std::min(grant_A, symmetric_A));
         }
-        grant_A = std::max(0.f, std::min(grant_A, symmetric_A));
 
         // Respect the caller's contract: a minimum current purchase (allow_less == false)
         // must be refused outright rather than silently reduced, so BrokerFastCharging can
