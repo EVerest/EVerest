@@ -47,6 +47,7 @@ target_sources(iso15118
         din/state/session_stop.cpp
         din/state/sequence_error.cpp
 
+        d20/config.cpp
         d20/context.cpp
         d20/context_helper.cpp
         d20/session.cpp
