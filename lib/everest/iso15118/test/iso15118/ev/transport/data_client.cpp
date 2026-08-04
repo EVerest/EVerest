@@ -81,6 +81,14 @@ public:
         return peer_fd;
     }
 
+    // Drop the accepted connection, as a SECC vanishing mid-session would.
+    void close_peer() {
+        if (peer_fd >= 0) {
+            ::close(peer_fd);
+            peer_fd = -1;
+        }
+    }
+
 private:
     int listen_fd{-1};
     int peer_fd{-1};
@@ -257,6 +265,52 @@ SCENARIO("ISO15118-20 EV DataClient surfaces a failed connect via on_failed") {
 
                 REQUIRE(failed_count == 2);
                 REQUIRE(connected_count == 0);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV DataClient surfaces a peer disconnect on an established link") {
+    // on_failed was only ever exercised at connect time. A SECC that vanishes
+    // mid-session must surface the same way, or the EV keeps a dead socket and the
+    // session only ends when its per-request response watchdog expires.
+    // libio reports the drop as an error because a socket past the peer's FIN no
+    // longer counts as alive, so get_error() yields ECONNRESET.
+    GIVEN("a connected DataClient") {
+        LoopbackListener listener;
+        fd_event_handler handler;
+        DataClient client(handler);
+
+        int connected_count = 0;
+        int failed_count = 0;
+        client.connect(
+            loopback_endpoint(listener.port()), "", [&]() { ++connected_count; }, [&]() { ++failed_count; });
+
+        const auto run_until = [&](auto&& predicate, std::chrono::milliseconds budget) {
+            const auto deadline = std::chrono::steady_clock::now() + budget;
+            while (not predicate() and std::chrono::steady_clock::now() < deadline) {
+                handler.poll(std::chrono::milliseconds(5));
+                handler.run_actions();
+                listener.try_accept();
+            }
+            return predicate();
+        };
+
+        REQUIRE(run_until([&]() { return connected_count > 0 and listener.peer() >= 0; }, std::chrono::seconds(5)));
+        REQUIRE(failed_count == 0);
+
+        WHEN("the peer drops the established connection") {
+            listener.close_peer();
+
+            THEN("on_failed fires exactly once and further sends are refused") {
+                REQUIRE(run_until([&]() { return failed_count > 0; }, std::chrono::seconds(2)));
+                REQUIRE(failed_count == 1);
+                REQUIRE(connected_count == 1);
+
+                // The second half of the story: the Session's outbound seam runs through
+                // send(), so even a consumer that ignored on_failed cannot sit waiting for
+                // a response to a frame that was never transmitted.
+                REQUIRE_FALSE(client.send({0x01, 0x02, 0x03}));
             }
         }
     }
