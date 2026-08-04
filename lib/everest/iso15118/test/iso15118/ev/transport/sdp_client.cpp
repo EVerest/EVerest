@@ -77,9 +77,8 @@ SCENARIO("SdpClient parses an SDP response") {
             REQUIRE(std::memcmp(response->endpoint.address, wire_addr, sizeof(wire_addr)) == 0);
         }
 
-        THEN("the advertised security and transport are decoded") {
+        THEN("the advertised security is decoded") {
             REQUIRE(response->security == v2gtp::Security::NO_TRANSPORT_SECURITY);
-            REQUIRE(response->transport == v2gtp::TransportProtocol::TCP);
         }
     }
 

@@ -38,6 +38,14 @@ public:
      */
     explicit DataClient(everest::lib::io::event::fd_event_handler& handler);
 
+    /**
+     * @brief Unregister the internal TCP client from the reactor.
+     * @details The reactor holds this client's fd; leaving the registration behind
+     * would let a poll dispatch into freed memory. Enforced here rather than resting
+     * on the owner's member declaration order, which no compiler checks.
+     */
+    ~DataClient();
+
     // The reactor holds this client's fds and the class stores a reactor
     // reference; a copy or move would leave the reactor pointing at a
     // transferred or destroyed client. Pin the instance.
