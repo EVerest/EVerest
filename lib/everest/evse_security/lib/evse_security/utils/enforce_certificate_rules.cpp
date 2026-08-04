@@ -266,7 +266,7 @@ int enforce_certificate_rules(evse_security::X509Handle* ctx) {
                                            std::to_string(rule.mustExist) + ")");
                     is_valid = 1;
                 }
-            } else if (rule.nid == 83 && rule.mustExist) {
+            } else if (rule.nid == 83 && rule.mustExist) { //openssl 83 keyusage
                 ASN1_BIT_STRING* ku = (ASN1_BIT_STRING*)X509_get_ext_d2i(cert, NID_key_usage, nullptr, nullptr);
                 for (const auto& kr : kuRules) {
                     if ((ku->data[0] & (0x80 >> kr.nid)) != kr.mustExist) {
@@ -275,7 +275,7 @@ int enforce_certificate_rules(evse_security::X509Handle* ctx) {
                         is_valid = 1;
                     }
                 }
-            } else if (rule.nid == 87 && rule.mustExist) {
+            } else if (rule.nid == 87 && rule.mustExist) { //openssl basic constaints
                 BASIC_CONSTRAINTS* bc =
                     (BASIC_CONSTRAINTS*)X509_get_ext_d2i(cert, NID_basic_constraints, nullptr, nullptr);
                 for (const auto& br : bcRules) {
@@ -288,12 +288,12 @@ int enforce_certificate_rules(evse_security::X509Handle* ctx) {
                             log(br.critical, "Path length value does not match expected " + std::to_string(br.data));
                             is_valid = 1;
                         }
-                    } else if (br.val == "CA" && ((br.mustExist && bc->ca != 1) || (!br.mustExist && bc->ca == 1))) {
+                    } else if (br.val == "CA" && ((br.mustExist && bc->ca != 1) || (!br.mustExist && bc->ca == 1))) { //Openssl Certificate Authority: 0 means it is a leaf, 1 is a root or imtermediate certificate
                         log(br.critical, "CA flag does not comply");
                         is_valid = 1;
                     }
                 }
-            } else if (rule.nid == 391 && rule.mustExist && !dcRules.empty()) {
+            } else if (rule.nid == 391 && rule.mustExist && !dcRules.empty()) { //Openssl Domain Component 
                 int len = X509_NAME_get_text_by_NID(name, rule.nid, buf, sizeof(buf));
                 if (std::string(buf, len) != dcRules[0].val) {
                     log(rule.critical,
