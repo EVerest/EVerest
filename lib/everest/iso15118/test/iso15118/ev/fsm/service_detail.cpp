@@ -3,12 +3,17 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <bitset>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "helper.hpp"
 
 #include <iso15118/d20/der_functions.hpp>
 #include <iso15118/ev/d20/state/service_detail.hpp>
 #include <iso15118/ev/der_control_functions.hpp>
+#include <iso15118/io/log_levels.hpp>
+#include <iso15118/io/logging.hpp>
 #include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/service_selection.hpp>
 #include <iso15118/message/type.hpp>
@@ -86,6 +91,25 @@ std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> der_mask(std::initializer_list<DERCo
     return mask;
 }
 
+// Parameter set carrying a raw DERControlFunctions bitmask, so a SECC advertising bits at or
+// above the width the EV models can be exercised.
+ParameterSet make_der_param_set_raw(uint16_t id, ControlMode control_mode, int32_t der_functions) {
+    ParameterSet set{};
+    set.id = id;
+    set.parameter.push_back({"Connector", static_cast<int32_t>(1)});
+    set.parameter.push_back({"ControlMode", static_cast<int32_t>(control_mode)});
+    set.parameter.push_back({"EVSENominalVoltage", static_cast<int32_t>(230)});
+    set.parameter.push_back({"DERControlFunctions", der_functions});
+    return set;
+}
+
+// The lowest bit position the EV models no function for.
+constexpr int32_t UNKNOWN_FUNCTION_BIT = int32_t{1} << ev::DER_CONTROL_FUNCTION_COUNT;
+
+int32_t raw_der_mask(std::initializer_list<DERControlName> functions) {
+    return static_cast<int32_t>(der_mask(functions).to_ulong());
+}
+
 // An EV supporting the two DSO setpoint functions, requesting the AC_DER_IEC service.
 ev::DerControlFunctions dso_setpoint_support() {
     ev::DerControlFunctions functions{};
@@ -93,6 +117,35 @@ ev::DerControlFunctions dso_setpoint_support() {
     functions.dso_cos_phi_setpoint_provision = true;
     return functions;
 }
+
+// Collects libiso15118 log lines while alive, then restores a no-op callback so a later
+// scenario cannot log into freed storage.
+class LogCapture {
+public:
+    LogCapture() {
+        io::set_logging_callback(
+            [this](LogLevel level, std::string message) { lines.emplace_back(level, std::move(message)); });
+    }
+
+    ~LogCapture() {
+        io::set_logging_callback([](LogLevel, const std::string&) {});
+    }
+
+    LogCapture(const LogCapture&) = delete;
+    LogCapture& operator=(const LogCapture&) = delete;
+
+    bool has_warning_containing(const std::string& needle) const {
+        for (const auto& [level, message] : lines) {
+            if (level == LogLevel::Warning and message.find(needle) != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+private:
+    std::vector<std::pair<LogLevel, std::string>> lines;
+};
 } // namespace
 
 SCENARIO("ISO15118-20 EV ServiceDetail transitions to ServiceSelection with the Dynamic parameter set") {
@@ -335,6 +388,87 @@ SCENARIO("ISO15118-20 EV ServiceDetail matches an AC_DER_IEC mask encoded as a n
     REQUIRE(result.transitioned() == true);
     REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
     REQUIRE(ctx.is_session_stopped() == false);
+
+    const auto requests = take_all_requests(helper.get_message_exchange());
+    const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->selected_energy_transfer_service.parameter_set_id == 7);
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail stops on AC_DER_IEC functions above the supported width when strict") {
+    const ev::feedback::Callbacks callbacks{};
+    FsmStateHelper helper{callbacks,
+                          {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                          ServiceCategory::AC_DER_IEC,
+                          dso_setpoint_support(),
+                          true};
+    auto& ctx = helper.get_context();
+    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
+
+    // The only Dynamic set demands a function the EV models no bit for.
+    helper.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC,
+                                         {make_der_param_set_raw(5, ControlMode::Dynamic, UNKNOWN_FUNCTION_BIT)}));
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceDetail);
+    REQUIRE(ctx.is_session_stopped() == true);
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail warns on AC_DER_IEC functions above the supported width when not strict") {
+    const LogCapture logs{};
+    const ev::feedback::Callbacks callbacks{};
+    FsmStateHelper helper{callbacks,
+                          {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                          ServiceCategory::AC_DER_IEC,
+                          dso_setpoint_support(),
+                          false};
+    auto& ctx = helper.get_context();
+    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
+
+    helper.handle_response(
+        make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC,
+                      {make_der_param_set_raw(5, ControlMode::Dynamic,
+                                              UNKNOWN_FUNCTION_BIT | raw_der_mask({DERControlName::VoltWattMode}))}));
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
+    REQUIRE(ctx.is_session_stopped() == false);
+    REQUIRE(logs.has_warning_containing("unknown function bits"));
+    REQUIRE(ctx.der_negotiated_functions().none());
+
+    const auto requests = take_all_requests(helper.get_message_exchange());
+    const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->selected_energy_transfer_service.parameter_set_id == 5);
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail skips an AC_DER_IEC set with functions above the supported width") {
+    const ev::feedback::Callbacks callbacks{};
+    FsmStateHelper helper{callbacks,
+                          {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                          ServiceCategory::AC_DER_IEC,
+                          dso_setpoint_support(),
+                          true};
+    auto& ctx = helper.get_context();
+    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
+
+    // id 5 pairs a supported function with a bit the EV models nothing for; id 7 is a clean subset.
+    helper.handle_response(make_response(
+        SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC,
+        {make_der_param_set_raw(5, ControlMode::Dynamic,
+                                UNKNOWN_FUNCTION_BIT | raw_der_mask({DERControlName::DSOQSetpointProvision})),
+         make_der_param_set_raw(7, ControlMode::Dynamic, raw_der_mask({DERControlName::DSOCosPhiSetpointProvision}))}));
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
+    REQUIRE(ctx.is_session_stopped() == false);
+    REQUIRE(ctx.der_negotiated_functions().test(static_cast<size_t>(DERControlName::DSOCosPhiSetpointProvision)));
 
     const auto requests = take_all_requests(helper.get_message_exchange());
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
