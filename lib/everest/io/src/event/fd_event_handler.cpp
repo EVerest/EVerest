@@ -8,6 +8,7 @@
 #include <everest/io/event/timer_fd.hpp>
 #include <everest/io/event/unique_fd.hpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <fcntl.h>
 #include <map>
@@ -92,7 +93,10 @@ public:
         auto result = epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, fd, &event) == 0;
         if (result) {
             m_event_map[fd] = {std::move(handler), event};
-            m_pollfds.resize(m_pollfds.size() + 1);
+            // Never shrinks, so a dispatch loop reading the array of the running poll cannot
+            // see an entry destroyed or reset by a handler. epoll_wait accepts a maxevents
+            // larger than the number of registered descriptors.
+            m_pollfds.resize(std::max(m_pollfds.size(), m_event_map.size()));
         }
         return result;
     }
@@ -102,7 +106,6 @@ public:
         auto handler_removed = m_event_map.count(fd) != 0;
         if (handler_removed) {
             m_event_map.erase(fd);
-            m_pollfds.resize(m_pollfds.size() - 1);
         }
         // Closing a descriptor drops it from the epoll set, so EPOLL_CTL_DEL then fails
         // EBADF on a live registration. Erasing the map entry alone is still a removal.

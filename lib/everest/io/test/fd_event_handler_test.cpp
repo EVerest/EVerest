@@ -107,6 +107,41 @@ TEST(fd_event_handler_test, register_reports_false_when_epoll_add_fails) {
     ::close(raw);
 }
 
+// A handler that drops one registration and takes another one holds the number of
+// registrations constant, so the epoll_wait batch of the running poll must survive it.
+TEST(fd_event_handler_test, poll_keeps_the_batch_across_a_registration_exchange) {
+    fd_event_handler handler;
+
+    event_fd churn;
+    event_fd doomed;
+    event_fd replacement;
+    event_fd victim;
+
+    auto const doomed_raw = doomed.get_raw_fd();
+
+    int victim_calls = 0;
+
+    ASSERT_TRUE(handler.register_event_handler(&churn, [&](fd_event_handler::event_list const&) {
+        handler.unregister_event_handler(doomed_raw);
+        handler.register_event_handler(
+            replacement.get_raw_fd(), [](fd_event_handler::event_list const&) {}, poll_events::read);
+    }));
+    ASSERT_TRUE(handler.register_event_handler(&doomed, [](fd_event_handler::event_list const&) {}));
+    ASSERT_TRUE(handler.register_event_handler(&victim, [&](fd_event_handler::event_list const&) { ++victim_calls; }));
+
+    // Every registered descriptor must be ready, including the internal action event, so that
+    // the batch covers the whole poll array and the exchange can disturb an entry the dispatch
+    // loop has not read yet.
+    handler.add_action([]() {});
+    churn.notify();
+    doomed.notify();
+    victim.notify();
+
+    handler.poll(100ms);
+
+    EXPECT_EQ(victim_calls, 1);
+}
+
 // A handler that unregisters a descriptor reported ready in the same epoll_wait
 // batch erases the map entry a later iteration of the dispatch loop still looks up.
 TEST(fd_event_handler_test, poll_survives_unregistration_from_within_a_handler) {
