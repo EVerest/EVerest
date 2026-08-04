@@ -29,11 +29,16 @@ constexpr size_t SDP_RESPONSE_PAYLOAD_LEN = 20;
 constexpr size_t RESPONSE_ADDRESS_OFFSET = 8;
 constexpr size_t RESPONSE_PORT_OFFSET = 24;
 constexpr size_t RESPONSE_SECURITY_OFFSET = 26;
-constexpr size_t RESPONSE_TRANSPORT_OFFSET = 27;
 } // namespace
 
 SdpClient::SdpClient(std::string interface_name_, iso15118::io::v2gtp::Security security_) :
     interface_name(std::move(interface_name_)), security(security_) {
+}
+
+SdpClient::~SdpClient() {
+    if (registered_handler != nullptr and client) {
+        registered_handler->unregister_event_handler(client.get());
+    }
 }
 
 std::vector<uint8_t> SdpClient::build_request(iso15118::io::v2gtp::Security security,
@@ -69,7 +74,6 @@ std::optional<SdpResponse> SdpClient::parse_response(const uint8_t* buf, size_t 
     response.endpoint.port = ntohs(port_net);
 
     response.security = static_cast<iso15118::io::v2gtp::Security>(buf[RESPONSE_SECURITY_OFFSET]);
-    response.transport = static_cast<iso15118::io::v2gtp::TransportProtocol>(buf[RESPONSE_TRANSPORT_OFFSET]);
 
     return response;
 }
@@ -77,7 +81,7 @@ std::optional<SdpResponse> SdpClient::parse_response(const uint8_t* buf, size_t 
 bool SdpClient::register_events(everest::lib::io::event::fd_event_handler& handler) {
     // Guard against the double-registration footgun: fd_event_handler does not
     // dedup, so a second register would re-run register_events / restart the client.
-    if (registered) {
+    if (registered_handler != nullptr) {
         return true;
     }
 
@@ -115,7 +119,7 @@ bool SdpClient::register_events(everest::lib::io::event::fd_event_handler& handl
         client.reset();
         return false;
     }
-    registered = true;
+    registered_handler = &handler;
     return true;
 }
 

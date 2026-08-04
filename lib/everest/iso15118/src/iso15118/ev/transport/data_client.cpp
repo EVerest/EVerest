@@ -18,6 +18,12 @@ constexpr int CONNECT_TIMEOUT_MS = 5000;
 DataClient::DataClient(everest::lib::io::event::fd_event_handler& handler_) : handler(handler_) {
 }
 
+DataClient::~DataClient() {
+    if (registered and client) {
+        handler.unregister_event_handler(client.get());
+    }
+}
+
 void DataClient::fire_failed() {
     if (failed_fired) {
         return;
