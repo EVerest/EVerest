@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <ctime>
 #include <map>
 #include <optional>
 #include <vector>
@@ -36,6 +37,23 @@ struct DerIecSetupConfig {
     std::map<iec::DERControlName, iec::DERControlFunction> supported_der_control_functions;
     iec::OperatingMode operating_mode;
     iec::GridConnectionMode grid_connection_mode;
+};
+
+struct DerSaeSetupConfig {
+    explicit DerSaeSetupConfig(sae::DERControl der_control_, sae::RequiredDEROperatingMode op_mode,
+                               sae::GridConnectionMode conn_mode) :
+        der_control(std::move(der_control_)),
+        required_der_operating_mode(op_mode),
+        grid_connection_mode(conn_mode),
+        der_control_update_time(static_cast<uint64_t>(std::time(nullptr))){};
+
+    DerSaeSetupConfig() = delete;
+    // TODO(SL): Check if copy or move constructor should also be removed?
+
+    sae::DERControl der_control;
+    sae::RequiredDEROperatingMode required_der_operating_mode;
+    sae::GridConnectionMode grid_connection_mode;
+    uint64_t der_control_update_time{0}; // SECC time
 };
 
 } // namespace iso15118::d20

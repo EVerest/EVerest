@@ -45,14 +45,12 @@ void set_default_scheduled_control_mode(ScheduledResControlMode& mode, const dt:
     // NOTE: Agreement on iso15118.elaad.io: [V2G20-2176] is not required and should be ignored.
 }
 
-namespace {
 void set_dynamic_parameters_in_res(DynamicResControlMode& res_mode, const UpdateDynamicModeParameters& parameters,
                                    uint64_t header_timestamp) {
     res_mode.departure_time = departure_time_offset(parameters.departure_time, header_timestamp);
     res_mode.target_soc = parameters.target_soc;
     res_mode.minimum_soc = parameters.min_soc;
 }
-} // namespace
 } // namespace
 
 namespace dt = message_20::datatypes;
@@ -64,7 +62,7 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
 
     message_20::ScheduleExchangeResponse res;
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
         return res;
     }
@@ -164,7 +162,8 @@ Result ScheduleExchange::feed(Event ev) {
         }
 
         session::feedback::EvseTransferLimits evse_limits;
-        if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger()) {
+        if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger() or
+            m_ctx.session.is_ac_der_sae_charger()) {
             evse_limits = m_ctx.session_config.ac_limits;
         } else if (m_ctx.session.is_dc_charger()) {
             evse_limits = m_ctx.session_config.dc_limits;
@@ -198,7 +197,8 @@ Result ScheduleExchange::feed(Event ev) {
 
         m_ctx.stop_timeout(d20::TimeoutType::ONGOING);
 
-        if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger()) {
+        if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger() or
+            m_ctx.session.is_ac_der_sae_charger()) {
             // For AC move directly to power delivery
             return m_ctx.create_state<PowerDelivery>();
         }
