@@ -38,12 +38,14 @@ struct EvseSetupConfig {
     bool enable_certificate_install_service;
     d20::DcTransferLimits dc_limits;
     d20::AcTransferLimits ac_limits;
-    std::optional<d20::IecDerTransferLimits> der_limits;
+    std::optional<d20::IecDerTransferLimits> der_iec_limits;
+    std::optional<d20::SaeDerTransferLimits> der_sae_limits;
     std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes;
     std::optional<std::string> custom_protocol{std::nullopt};
     std::optional<d20::AcSetupConfig> ac_setup_config{std::nullopt};
     std::optional<d20::BptSetupConfig> bpt_setup_config{std::nullopt};
     std::optional<d20::DerIecSetupConfig> der_iec_setup_config{std::nullopt};
+    std::optional<d20::DerSaeSetupConfig> der_sae_setup_config{std::nullopt};
     d20::DcTransferLimits powersupply_limits;
     bool selecting_sap_based_on_energy_service{false};
 
@@ -106,7 +108,10 @@ struct SessionConfig {
     d20::AcTransferLimits ac_limits;
 
     d20::DerIecSetupConfig der_iec_setup_config;
-    std::optional<d20::IecDerTransferLimits> der_limits;
+    std::optional<d20::IecDerTransferLimits> der_iec_limits;
+
+    std::optional<d20::DerSaeSetupConfig> der_sae_setup_config;
+    std::optional<d20::SaeDerTransferLimits> der_sae_limits;
 
     d20::DcTransferLimits powersupply_limits;
 
