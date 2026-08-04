@@ -18,14 +18,13 @@
 namespace iso15118::ev::transport {
 
 /**
- * Parsed SDP response: the SECC's TCP/TLS endpoint plus the transport security
- * and protocol it advertises. The security drives which transport client the
- * controller creates (plain TCP vs. TLS).
+ * Parsed SDP response: the SECC's TCP/TLS endpoint plus the transport security it
+ * advertises. The security drives which transport client the controller creates
+ * (plain TCP vs. TLS).
  */
 struct SdpResponse {
     iso15118::io::Ipv6EndPoint endpoint;
     iso15118::io::v2gtp::Security security;
-    iso15118::io::v2gtp::TransportProtocol transport;
 };
 
 /**
@@ -48,9 +47,26 @@ public:
                        iso15118::io::v2gtp::Security security = iso15118::io::v2gtp::Security::NO_TRANSPORT_SECURITY);
 
     /**
+     * @brief Unregister the internal UDP client from the reactor it registered with.
+     * @details The reactor holds this client's fd; leaving the registration behind
+     * would let a poll dispatch into freed memory. Enforced here rather than resting
+     * on the owner's member declaration order, which no compiler checks.
+     */
+    ~SdpClient();
+
+    // The reactor holds this client's fd and the class remembers which reactor it
+    // registered with; a copy or move would leave that reactor pointing at a
+    // transferred or destroyed client. Pin the instance.
+    SdpClient(const SdpClient&) = delete;
+    SdpClient& operator=(const SdpClient&) = delete;
+    SdpClient(SdpClient&&) = delete;
+    SdpClient& operator=(SdpClient&&) = delete;
+
+    /**
      * @brief Register the internal UDP client with an event handler.
      * @details Idempotent: a second call is a no-op (guarded against the
-     * double-registration footgun in fd_event_handler).
+     * double-registration footgun in fd_event_handler). The handler is remembered so
+     * the destructor can unregister from it.
      * @param[in] handler The reactor to register with.
      * @return True on success, false otherwise.
      */
@@ -73,8 +89,8 @@ public:
      * not carry the SDP response payload id (0x9001).
      * @param[in] buf Pointer to the response bytes.
      * @param[in] len Number of bytes available at @p buf.
-     * @return The advertised endpoint, security and transport, or std::nullopt
-     * on a malformed response.
+     * @return The advertised endpoint and security, or std::nullopt on a malformed
+     * response.
      */
     static std::optional<SdpResponse> parse_response(const uint8_t* buf, size_t len);
 
@@ -99,7 +115,10 @@ public:
 private:
     std::string interface_name;
     iso15118::io::v2gtp::Security security;
-    bool registered{false};
+
+    // The reactor a successful register_events registered with; the destructor
+    // unregisters from it. Null until then.
+    everest::lib::io::event::fd_event_handler* registered_handler{nullptr};
     std::function<void(SdpResponse)> on_found;
     std::unique_ptr<everest::lib::io::udp::udp_unconnected_client> client;
 };
