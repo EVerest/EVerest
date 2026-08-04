@@ -18,6 +18,8 @@
 
 using namespace iso15118;
 using namespace std::chrono_literals;
+using iso15118::ev::test::ControllerRun;
+using iso15118::ev::test::poll_until;
 
 SCENARIO("ISO15118-20 EV Controller config defaults") {
     GIVEN("A default-constructed EvConfig") {
@@ -226,6 +228,49 @@ SCENARIO("ISO15118-20 EV Controller loop releases its reactor timers before retu
                 REQUIRE(alive_during_first == 0);
                 REQUIRE(alive_during_second == 1);
                 REQUIRE(stopped_count == 2);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Controller aborts the pre-session phase on the setup timeout") {
+    // The setup timeout is the only bound on a discovery/connect that never completes.
+    // Every other Controller scenario keeps it far from elapsing, so nothing pinned
+    // that it actually ends the run: a timer that failed to fire would leave loop()
+    // parked forever with no stopped signal, and the tests would not notice.
+    //
+    // The timeout is a fixed 18 s production constant with no injection seam, so this
+    // scenario pays that wall time.
+    GIVEN("A Controller running SDP discovery on lo with no SECC present") {
+        ev::EvConfig config{};
+        config.interface_name = "lo";
+        config.send_delay = 5ms;
+        config.response_timeout = 100ms;
+
+        ev::feedback::Callbacks callbacks{};
+        std::atomic_int stopped_count{0};
+        std::atomic_int connected_count{0};
+        callbacks.stopped = [&stopped_count]() { ++stopped_count; };
+        callbacks.connected = [&connected_count](const io::Ipv6EndPoint&) { ++connected_count; };
+
+        ev::Controller controller{config, callbacks};
+
+        WHEN("loop() runs untouched: neither shutdown() nor request_stop() is called") {
+            ControllerRun run{controller};
+
+            THEN("the setup timeout ends the run and fires stopped exactly once") {
+                // The setup-failure aborts are synchronous and sub-millisecond, and the
+                // request_stop grace timer is never armed, so nothing but the setup
+                // timeout can end this run. Five seconds in it must still be alive.
+                const auto alive_at_five_seconds = not poll_until([&]() { return stopped_count > 0; }, 5s);
+
+                const auto ended = poll_until([&]() { return stopped_count > 0; }, 20s);
+
+                REQUIRE(alive_at_five_seconds);
+                REQUIRE(ended);
+                REQUIRE(stopped_count == 1);
+                // No SECC answered, so the data path was never established.
+                REQUIRE(connected_count == 0);
             }
         }
     }
