@@ -11,6 +11,9 @@
 #include <mutex>
 
 #include <Broker.hpp>
+#include <PowerMeterAggregator.hpp>
+
+#include <memory>
 
 namespace module {
 
@@ -28,6 +31,7 @@ struct EnergyManagerConfig {
     int switch_3ph1ph_power_hysteresis_W;
     int switch_3ph1ph_time_hysteresis_s;
     std::string broker_strategy;
+    int power_meter_aggregation_window_s;
 };
 
 /// \brief Broker selected by the broker_strategy config option (see manifest.yaml).
@@ -65,6 +69,11 @@ public:
     /// measurement is available, or no active session).
     ObservedMeasurement get_observed_measurement(const std::string& uuid);
 
+    /// \brief The aggregated leaf power meter reading computed during the most recent
+    /// run_optimizer() call. Readings older than power_meter_aggregation_window_s are
+    /// excluded from the sums.
+    const PowerMeterAggregator::AggregateResult& get_leaf_aggregate() const;
+
 private:
     EnergyManagerConfig config;
     BrokerStrategy broker_strategy;
@@ -78,6 +87,10 @@ private:
     types::energy::EnergyFlowRequest energy_flow_request;
 
     std::map<std::string, BrokerContext> contexts;
+
+    // Aggregates the leaf power meter readings of the tree. Rebuilt on every optimizer run.
+    std::unique_ptr<PowerMeterAggregator> leaf_aggregator;
+    PowerMeterAggregator::AggregateResult leaf_aggregate;
 };
 
 } // namespace module
