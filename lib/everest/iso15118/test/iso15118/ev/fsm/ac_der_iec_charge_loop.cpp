@@ -312,6 +312,24 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop passes a negotiated DSO Q setpoin
     REQUIRE_FALSE(captured->dso_cos_phi_setpoint.has_value());
 }
 
+SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop stops the session on a FAILED response mid-loop") {
+    StopObserver obs;
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{obs.callbacks, seed_present_5000};
+
+    // One accepted iteration first, so the rejection below happens mid-loop and not on entry.
+    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
+    REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned() == false);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+    REQUIRE(primed.take_requests().get<message_20::DER_AC_ChargeLoopRequest>().has_value());
+    obs.der_control_fired = false;
+
+    expect_stops_session(primed, make_res(SESSION_HEADER, ResponseCode::FAILED_SequenceError),
+                         ev::d20::StateID::AC_DER_IEC_ChargeLoop);
+    REQUIRE(obs.fired == false);
+    REQUIRE(obs.der_control_fired == false);
+    REQUIRE(primed.take_requests().empty());
+}
+
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop rejects malformed responses") {
     const ev::feedback::Callbacks callbacks{};
     const auto make_fsm = [](FsmStateHelper& helper) {
