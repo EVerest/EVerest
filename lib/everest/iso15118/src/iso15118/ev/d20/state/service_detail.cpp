@@ -56,13 +56,21 @@ bool is_dynamic(const message_20::datatypes::ParameterSet& set) {
            message_20::to_underlying_value(message_20::datatypes::ControlMode::Dynamic);
 }
 
-std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> get_der_control_functions(const message_20::datatypes::ParameterSet& set) {
+struct DerControlFunctionsOffer {
+    std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> mask;
+    // The offer carried bits at or above DER_CONTROL_FUNCTION_COUNT, so it names functions
+    // the EV models nothing for. The bitset constructor drops them, hence the separate flag.
+    bool has_unknown_functions{false};
+};
+
+DerControlFunctionsOffer get_der_control_functions(const message_20::datatypes::ParameterSet& set) {
     const auto value = get_int_parameter(set, "DERControlFunctions");
     if (not value.has_value()) {
         return {};
     }
-    return std::bitset<ev::DER_CONTROL_FUNCTION_COUNT>(
-        static_cast<unsigned long long>(static_cast<uint32_t>(value.value())));
+    const auto raw = static_cast<unsigned long long>(static_cast<uint32_t>(value.value()));
+    constexpr auto known_functions = (1ULL << ev::DER_CONTROL_FUNCTION_COUNT) - 1ULL;
+    return {std::bitset<ev::DER_CONTROL_FUNCTION_COUNT>(raw), (raw & ~known_functions) != 0ULL};
 }
 
 std::string_view der_function_name(std::size_t index) {
@@ -143,19 +151,19 @@ Result ServiceDetail::feed(Event ev) {
     if (m_ctx.selected_service() == message_20::datatypes::ServiceCategory::AC_DER_IEC) {
         const auto supported = m_ctx.der_supported_functions();
         std::optional<uint16_t> first_dynamic_id;
-        std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> first_dynamic_mask;
+        DerControlFunctionsOffer first_dynamic_offer;
 
         for (const auto& set : res->service_parameter_list) {
             if (not is_dynamic(set)) {
                 continue;
             }
-            const auto mask = get_der_control_functions(set);
+            const auto offer = get_der_control_functions(set);
             if (not first_dynamic_id.has_value()) {
                 first_dynamic_id = set.id;
-                first_dynamic_mask = mask;
+                first_dynamic_offer = offer;
             }
-            if ((mask & ~supported).none()) {
-                m_ctx.set_der_negotiated_functions(mask & supported);
+            if ((offer.mask & ~supported).none() and not offer.has_unknown_functions) {
+                m_ctx.set_der_negotiated_functions(offer.mask & supported);
                 return m_ctx.create_state<ServiceSelection>(set.id);
             }
         }
@@ -166,7 +174,13 @@ Result ServiceDetail::feed(Event ev) {
             return {};
         }
 
-        const auto unsupported = describe_functions(first_dynamic_mask & ~supported);
+        auto unsupported = describe_functions(first_dynamic_offer.mask & ~supported);
+        if (first_dynamic_offer.has_unknown_functions) {
+            if (not unsupported.empty()) {
+                unsupported += ", ";
+            }
+            unsupported += "unknown function bits";
+        }
         if (m_ctx.der_stop_on_unsupported_functions()) {
             logf_error("AC_DER_IEC offers no set within the supported DER functions (unsupported: %s); stopping",
                        unsupported.c_str());
@@ -177,7 +191,7 @@ Result ServiceDetail::feed(Event ev) {
         logf_warning("AC_DER_IEC offers no set within the supported DER functions (unsupported: %s); "
                      "selecting the first Dynamic set anyway",
                      unsupported.c_str());
-        m_ctx.set_der_negotiated_functions(first_dynamic_mask & supported);
+        m_ctx.set_der_negotiated_functions(first_dynamic_offer.mask & supported);
         return m_ctx.create_state<ServiceSelection>(first_dynamic_id.value());
     }
 
