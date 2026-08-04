@@ -1,0 +1,318 @@
+{
+  "description": "Per phase trading with mixed vehicles: cp01 is a single phase vehicle on L1 (own per phase limit 32A) and cp02 a three phase vehicle (16A). The grid node allows 32A per phase. cp02 takes its full 16A on all phases; cp01 receives the remaining 16A of L1 capacity, so L1 sums exactly to the grid limit. Under the legacy symmetric model cp01's draw would have been booked on all three phases and the pair could not both charge at these currents.",
+  "start_times": [
+    "2026-08-04T12:30:00.000Z"
+  ],
+  "config": {
+    "nominal_ac_voltage": 230.0,
+    "update_interval": 1,
+    "schedule_interval_duration": 60,
+    "schedule_total_duration": 1,
+    "slice_ampere": 0.5,
+    "slice_watt": 500,
+    "debug": false,
+    "switch_3ph1ph_while_charging_mode": "Never",
+    "switch_3ph1ph_max_nr_of_switches_per_session": 0,
+    "switch_3ph1ph_switch_limit_stickyness": "DontChange",
+    "switch_3ph1ph_power_hysteresis_W": 200,
+    "switch_3ph1ph_time_hysteresis_s": 0,
+    "phase_symmetry_enabled": false,
+    "max_phase_imbalance_A": 16.0
+  },
+  "request": {
+    "children": [
+      {
+        "children": [],
+        "evse_state": "Charging",
+        "node_type": "Evse",
+        "priority_request": false,
+        "schedule_export": [
+          {
+            "limits_to_leaves": {},
+            "limits_to_root": {
+              "ac_max_current_A": {
+                "source": "TEST_max_current",
+                "value": 0.0
+              },
+              "ac_max_phase_count": {
+                "source": "TEST_max_phases",
+                "value": 3
+              },
+              "ac_min_current_A": {
+                "source": "TEST_min_current",
+                "value": 0.0
+              },
+              "ac_min_phase_count": {
+                "source": "TEST_min_phases",
+                "value": 1
+              },
+              "ac_number_of_active_phases": 3,
+              "ac_supports_changing_phases_during_charging": false,
+              "total_power_W": {
+                "source": "TEST_total_power",
+                "value": 0.0
+              }
+            },
+            "timestamp": "2026-08-04T12:00:00.000Z"
+          }
+        ],
+        "schedule_import": [
+          {
+            "limits_to_leaves": {},
+            "limits_to_root": {
+              "ac_max_current_A": {
+                "source": "TEST_max_current",
+                "value": 32.0
+              },
+              "ac_max_current_per_phase_A": {
+                "L1": {
+                  "source": "CP01_per_phase",
+                  "value": 32.0
+                },
+                "L2": {
+                  "source": "CP01_per_phase",
+                  "value": 0.0
+                },
+                "L3": {
+                  "source": "CP01_per_phase",
+                  "value": 0.0
+                }
+              },
+              "ac_max_phase_count": {
+                "source": "CP01_phase",
+                "value": 1
+              },
+              "ac_min_current_A": {
+                "source": "TEST_min_current",
+                "value": 6.0
+              },
+              "ac_min_phase_count": {
+                "source": "TEST_min_phases",
+                "value": 1
+              },
+              "ac_number_of_active_phases": 1,
+              "ac_supports_changing_phases_during_charging": false
+            },
+            "timestamp": "2026-08-04T12:00:00.000Z"
+          }
+        ],
+        "schedule_setpoints": [],
+        "uuid": "cp01"
+      },
+      {
+        "children": [],
+        "evse_state": "Charging",
+        "node_type": "Evse",
+        "priority_request": false,
+        "schedule_export": [
+          {
+            "limits_to_leaves": {},
+            "limits_to_root": {
+              "ac_max_current_A": {
+                "source": "TEST_max_current",
+                "value": 0.0
+              },
+              "ac_max_phase_count": {
+                "source": "TEST_max_phases",
+                "value": 3
+              },
+              "ac_min_current_A": {
+                "source": "TEST_min_current",
+                "value": 0.0
+              },
+              "ac_min_phase_count": {
+                "source": "TEST_min_phases",
+                "value": 1
+              },
+              "ac_number_of_active_phases": 3,
+              "ac_supports_changing_phases_during_charging": false,
+              "total_power_W": {
+                "source": "TEST_total_power",
+                "value": 0.0
+              }
+            },
+            "timestamp": "2026-08-04T12:00:00.000Z"
+          }
+        ],
+        "schedule_import": [
+          {
+            "limits_to_leaves": {},
+            "limits_to_root": {
+              "ac_max_current_A": {
+                "source": "TEST_max_current",
+                "value": 16.0
+              },
+              "ac_max_phase_count": {
+                "source": "TEST_max_phases",
+                "value": 3
+              },
+              "ac_min_current_A": {
+                "source": "TEST_min_current",
+                "value": 6.0
+              },
+              "ac_min_phase_count": {
+                "source": "TEST_min_phases",
+                "value": 1
+              },
+              "ac_number_of_active_phases": 3,
+              "ac_supports_changing_phases_during_charging": false
+            },
+            "timestamp": "2026-08-04T12:00:00.000Z"
+          }
+        ],
+        "schedule_setpoints": [],
+        "uuid": "cp02"
+      }
+    ],
+    "node_type": "Generic",
+    "priority_request": false,
+    "schedule_export": [
+      {
+        "limits_to_leaves": {},
+        "limits_to_root": {
+          "ac_max_current_A": {
+            "source": "TEST_max_current",
+            "value": 0.0
+          },
+          "ac_max_phase_count": {
+            "source": "TEST_max_phases",
+            "value": 3
+          },
+          "ac_min_current_A": {
+            "source": "TEST_min_current",
+            "value": 0.0
+          },
+          "ac_min_phase_count": {
+            "source": "TEST_min_phases",
+            "value": 1
+          },
+          "ac_number_of_active_phases": 3,
+          "ac_supports_changing_phases_during_charging": false,
+          "total_power_W": {
+            "source": "TEST_total_power",
+            "value": 0.0
+          }
+        },
+        "timestamp": "2026-08-04T12:00:00.000Z"
+      }
+    ],
+    "schedule_import": [
+      {
+        "limits_to_leaves": {},
+        "limits_to_root": {
+          "ac_max_current_A": {
+            "source": "TEST_max_current",
+            "value": 32.0
+          },
+          "ac_max_phase_count": {
+            "source": "TEST_max_phases",
+            "value": 3
+          },
+          "ac_min_current_A": {
+            "source": "TEST_min_current",
+            "value": 0.0
+          },
+          "ac_min_phase_count": {
+            "source": "TEST_min_phases",
+            "value": 1
+          },
+          "ac_number_of_active_phases": 3,
+          "ac_supports_changing_phases_during_charging": false
+        },
+        "timestamp": "2026-08-04T12:00:00.000Z"
+      }
+    ],
+    "schedule_setpoints": [],
+    "uuid": "grid"
+  },
+  "expected_results": [
+    [
+      {
+        "limits_root_side": {
+          "ac_max_current_A": {
+            "source": "TEST_max_current",
+            "value": 16.0
+          },
+          "ac_max_current_per_phase_A": {
+            "L1": {
+              "source": "TEST_max_current",
+              "value": 16.0
+            },
+            "L2": {
+              "source": "TEST_max_current",
+              "value": 0.0
+            },
+            "L3": {
+              "source": "TEST_max_current",
+              "value": 0.0
+            }
+          },
+          "ac_max_phase_count": {
+            "source": "CP01_phase",
+            "value": 1
+          }
+        },
+        "schedule": [
+          {
+            "limits_to_root": {
+              "ac_max_current_A": {
+                "source": "TEST_max_current",
+                "value": 16.0
+              },
+              "ac_max_current_per_phase_A": {
+                "L1": {
+                  "source": "TEST_max_current",
+                  "value": 16.0
+                },
+                "L2": {
+                  "source": "TEST_max_current",
+                  "value": 0.0
+                },
+                "L3": {
+                  "source": "TEST_max_current",
+                  "value": 0.0
+                }
+              },
+              "ac_max_phase_count": {
+                "source": "CP01_phase",
+                "value": 1
+              }
+            },
+            "timestamp": "2026-08-04T12:00:00.000Z"
+          }
+        ],
+        "uuid": "cp01",
+        "valid_for": 10
+      },
+      {
+        "limits_root_side": {
+          "ac_max_current_A": {
+            "source": "TEST_max_current,TEST_max_current",
+            "value": 16.0
+          },
+          "ac_max_phase_count": {
+            "source": "TEST_max_phases,TEST_max_phases",
+            "value": 3
+          }
+        },
+        "schedule": [
+          {
+            "limits_to_root": {
+              "ac_max_current_A": {
+                "source": "TEST_max_current,TEST_max_current",
+                "value": 16.0
+              },
+              "ac_max_phase_count": {
+                "source": "TEST_max_phases,TEST_max_phases",
+                "value": 3
+              }
+            },
+            "timestamp": "2026-08-04T12:00:00.000Z"
+          }
+        ],
+        "uuid": "cp02",
+        "valid_for": 10
+      }
+    ]
+  ]
+}

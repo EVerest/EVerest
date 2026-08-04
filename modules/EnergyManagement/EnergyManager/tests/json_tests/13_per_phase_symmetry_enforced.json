@@ -1,0 +1,225 @@
+{
+  "description": "Phase symmetry enforcement: a single phase vehicle on L1 whose own limits allow 32A, under a 32A grid node, with max_phase_imbalance_A = 10. L2 and L3 carry nothing, so the allocation on L1 is capped at exactly the configured imbalance limit of 10A.",
+  "start_times": [
+    "2026-08-04T12:30:00.000Z"
+  ],
+  "config": {
+    "nominal_ac_voltage": 230.0,
+    "update_interval": 1,
+    "schedule_interval_duration": 60,
+    "schedule_total_duration": 1,
+    "slice_ampere": 0.5,
+    "slice_watt": 500,
+    "debug": false,
+    "switch_3ph1ph_while_charging_mode": "Never",
+    "switch_3ph1ph_max_nr_of_switches_per_session": 0,
+    "switch_3ph1ph_switch_limit_stickyness": "DontChange",
+    "switch_3ph1ph_power_hysteresis_W": 200,
+    "switch_3ph1ph_time_hysteresis_s": 0,
+    "phase_symmetry_enabled": true,
+    "max_phase_imbalance_A": 10.0
+  },
+  "request": {
+    "children": [
+      {
+        "children": [],
+        "evse_state": "Charging",
+        "node_type": "Evse",
+        "priority_request": false,
+        "schedule_export": [
+          {
+            "limits_to_leaves": {},
+            "limits_to_root": {
+              "ac_max_current_A": {
+                "source": "TEST_max_current",
+                "value": 0.0
+              },
+              "ac_max_phase_count": {
+                "source": "TEST_max_phases",
+                "value": 3
+              },
+              "ac_min_current_A": {
+                "source": "TEST_min_current",
+                "value": 0.0
+              },
+              "ac_min_phase_count": {
+                "source": "TEST_min_phases",
+                "value": 1
+              },
+              "ac_number_of_active_phases": 3,
+              "ac_supports_changing_phases_during_charging": false,
+              "total_power_W": {
+                "source": "TEST_total_power",
+                "value": 0.0
+              }
+            },
+            "timestamp": "2026-08-04T12:00:00.000Z"
+          }
+        ],
+        "schedule_import": [
+          {
+            "limits_to_leaves": {},
+            "limits_to_root": {
+              "ac_max_current_A": {
+                "source": "TEST_max_current",
+                "value": 32.0
+              },
+              "ac_max_current_per_phase_A": {
+                "L1": {
+                  "source": "CP01_per_phase",
+                  "value": 32.0
+                },
+                "L2": {
+                  "source": "CP01_per_phase",
+                  "value": 0.0
+                },
+                "L3": {
+                  "source": "CP01_per_phase",
+                  "value": 0.0
+                }
+              },
+              "ac_max_phase_count": {
+                "source": "CP01_phase",
+                "value": 1
+              },
+              "ac_min_current_A": {
+                "source": "TEST_min_current",
+                "value": 6.0
+              },
+              "ac_min_phase_count": {
+                "source": "TEST_min_phases",
+                "value": 1
+              },
+              "ac_number_of_active_phases": 1,
+              "ac_supports_changing_phases_during_charging": false
+            },
+            "timestamp": "2026-08-04T12:00:00.000Z"
+          }
+        ],
+        "schedule_setpoints": [],
+        "uuid": "cp01"
+      }
+    ],
+    "node_type": "Generic",
+    "priority_request": false,
+    "schedule_export": [
+      {
+        "limits_to_leaves": {},
+        "limits_to_root": {
+          "ac_max_current_A": {
+            "source": "TEST_max_current",
+            "value": 0.0
+          },
+          "ac_max_phase_count": {
+            "source": "TEST_max_phases",
+            "value": 3
+          },
+          "ac_min_current_A": {
+            "source": "TEST_min_current",
+            "value": 0.0
+          },
+          "ac_min_phase_count": {
+            "source": "TEST_min_phases",
+            "value": 1
+          },
+          "ac_number_of_active_phases": 3,
+          "ac_supports_changing_phases_during_charging": false,
+          "total_power_W": {
+            "source": "TEST_total_power",
+            "value": 0.0
+          }
+        },
+        "timestamp": "2026-08-04T12:00:00.000Z"
+      }
+    ],
+    "schedule_import": [
+      {
+        "limits_to_leaves": {},
+        "limits_to_root": {
+          "ac_max_current_A": {
+            "source": "TEST_max_current",
+            "value": 32.0
+          },
+          "ac_max_phase_count": {
+            "source": "TEST_max_phases",
+            "value": 3
+          },
+          "ac_min_current_A": {
+            "source": "TEST_min_current",
+            "value": 0.0
+          },
+          "ac_min_phase_count": {
+            "source": "TEST_min_phases",
+            "value": 1
+          },
+          "ac_number_of_active_phases": 3,
+          "ac_supports_changing_phases_during_charging": false
+        },
+        "timestamp": "2026-08-04T12:00:00.000Z"
+      }
+    ],
+    "schedule_setpoints": [],
+    "uuid": "grid"
+  },
+  "expected_results": [
+    [
+      {
+        "limits_root_side": {
+          "ac_max_current_A": {
+            "source": "TEST_max_current,TEST_max_current",
+            "value": 10.0
+          },
+          "ac_max_current_per_phase_A": {
+            "L1": {
+              "source": "TEST_max_current,TEST_max_current",
+              "value": 10.0
+            },
+            "L2": {
+              "source": "TEST_max_current,TEST_max_current",
+              "value": 0.0
+            },
+            "L3": {
+              "source": "TEST_max_current,TEST_max_current",
+              "value": 0.0
+            }
+          },
+          "ac_max_phase_count": {
+            "source": "CP01_phase",
+            "value": 1
+          }
+        },
+        "schedule": [
+          {
+            "limits_to_root": {
+              "ac_max_current_A": {
+                "source": "TEST_max_current,TEST_max_current",
+                "value": 10.0
+              },
+              "ac_max_current_per_phase_A": {
+                "L1": {
+                  "source": "TEST_max_current,TEST_max_current",
+                  "value": 10.0
+                },
+                "L2": {
+                  "source": "TEST_max_current,TEST_max_current",
+                  "value": 0.0
+                },
+                "L3": {
+                  "source": "TEST_max_current,TEST_max_current",
+                  "value": 0.0
+                }
+              },
+              "ac_max_phase_count": {
+                "source": "CP01_phase",
+                "value": 1
+              }
+            },
+            "timestamp": "2026-08-04T12:00:00.000Z"
+          }
+        ],
+        "uuid": "cp01",
+        "valid_for": 10
+      }
+    ]
+  ]
+}
