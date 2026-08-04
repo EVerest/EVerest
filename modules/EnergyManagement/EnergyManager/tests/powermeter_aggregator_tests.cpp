@@ -119,6 +119,34 @@ TEST(PowerMeterAggregatorStorage, PerPhaseUnavailableIfAnyMeterOmitsIt) {
     EXPECT_FLOAT_EQ(result.power_W, 3900.0f);
 }
 
+TEST(PowerMeterAggregatorStorage, ReadingWithoutPowerValueCountsAsStale) {
+    PowerMeterAggregator aggregator(std::chrono::seconds(5));
+
+    auto no_power = make_reading(0.0f, NOW, std::chrono::seconds(0));
+    no_power.power_W.reset();
+    aggregator.update("cp01", no_power);
+    aggregator.update("cp02", make_reading(1200.0f, NOW, std::chrono::seconds(0)));
+
+    const auto result = aggregator.aggregate(NOW);
+
+    EXPECT_EQ(result.stale_meters, 1);
+    EXPECT_EQ(result.fresh_meters, 1);
+    EXPECT_FLOAT_EQ(result.power_W, 1200.0f);
+}
+
+TEST(PowerMeterAggregatorStorage, NegativePowerFromExportingMeterReducesTheSum) {
+    PowerMeterAggregator aggregator(std::chrono::seconds(5));
+
+    aggregator.update("cp01", make_reading(3000.0f, NOW, std::chrono::seconds(0)));
+    // A bidirectional meter reporting export: the aggregate is a net sum.
+    aggregator.update("cp02", make_reading(-1000.0f, NOW, std::chrono::seconds(0)));
+
+    const auto result = aggregator.aggregate(NOW);
+
+    EXPECT_FLOAT_EQ(result.power_W, 2000.0f);
+    EXPECT_EQ(result.fresh_meters, 2);
+}
+
 // ---------------------------------------------------------------- windowed staleness
 
 TEST(PowerMeterAggregatorWindow, ExcludesReadingOlderThanWindow) {
@@ -157,6 +185,24 @@ TEST(PowerMeterAggregatorWindow, ReadingExactlyAtWindowEdgeIsStale) {
     const auto result = aggregator.aggregate(NOW);
 
     EXPECT_FLOAT_EQ(result.power_W, 0.0f);
+    EXPECT_EQ(result.stale_meters, 1);
+}
+
+TEST(PowerMeterAggregatorWindow, SubSecondAgesResolveAtMillisecondPrecision) {
+    PowerMeterAggregator aggregator(std::chrono::seconds(5));
+
+    auto fresh = make_reading(1000.0f, NOW, std::chrono::seconds(0));
+    fresh.timestamp = Everest::Date::to_rfc3339(NOW - std::chrono::milliseconds(4999));
+    aggregator.update("cp01", fresh);
+
+    auto stale = make_reading(2000.0f, NOW, std::chrono::seconds(0));
+    stale.timestamp = Everest::Date::to_rfc3339(NOW - std::chrono::milliseconds(5001));
+    aggregator.update("cp02", stale);
+
+    const auto result = aggregator.aggregate(NOW);
+
+    EXPECT_FLOAT_EQ(result.power_W, 1000.0f);
+    EXPECT_EQ(result.fresh_meters, 1);
     EXPECT_EQ(result.stale_meters, 1);
 }
 
@@ -271,6 +317,23 @@ TEST(CollectLeafMeasurements, FallsBackToRootMeasurementOnEvseNode) {
 
     EXPECT_EQ(aggregator.size(), 1U);
     EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W, 1200.0f);
+}
+
+TEST(CollectLeafMeasurements, DoesNotRecurseBelowAnEvseNode) {
+    // An EVSE's own meter already covers everything downstream of it, so a child meter
+    // below an EVSE must not be counted a second time.
+    auto child = make_node("cp01_sub", types::energy::NodeType::Evse);
+    child.energy_usage_leaves = make_reading(1000.0f, NOW, std::chrono::seconds(0));
+
+    auto cp01 = make_node("cp01", types::energy::NodeType::Evse);
+    cp01.energy_usage_leaves = make_reading(3000.0f, NOW, std::chrono::seconds(0));
+    cp01.children = {child};
+
+    PowerMeterAggregator aggregator(std::chrono::seconds(5));
+    collect_leaf_measurements(cp01, aggregator);
+
+    EXPECT_EQ(aggregator.size(), 1U);
+    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W, 3000.0f);
 }
 
 TEST(CollectLeafMeasurements, SkipsEvseNodesWithoutMeasurement) {

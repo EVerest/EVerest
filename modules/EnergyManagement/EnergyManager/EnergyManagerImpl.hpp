@@ -62,13 +62,16 @@ public:
     /// \brief The aggregated leaf power meter reading computed during the most recent
     /// run_optimizer() call. Readings older than power_meter_aggregation_window_s are
     /// excluded from the sums.
-    const PowerMeterAggregator::AggregateResult& get_leaf_aggregate() const;
+    /// Returned by value under the optimizer lock: run_optimizer() runs on a detached
+    /// thread once start() has been called, so a reference into the live state would be a
+    /// data race for any external caller.
+    PowerMeterAggregator::AggregateResult get_leaf_aggregate() const;
 
 private:
     EnergyManagerConfig config;
     std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)> enforced_limits_callback;
 
-    std::mutex energy_mutex;
+    mutable std::mutex energy_mutex;
     std::condition_variable mainloop_sleep_condvar;
     std::mutex mainloop_sleep_mutex;
 

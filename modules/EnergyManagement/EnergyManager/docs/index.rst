@@ -28,9 +28,11 @@ sum only if that timestamp lies within ``power_meter_aggregation_window_s`` of t
 optimizer's start time. Older readings are counted as stale and excluded rather than
 contributing a wrong value.
 
-Only EVSE nodes contribute to the aggregate. An intermediate node's own meter measures
-the sum of its children, so including it as well would double count. For each EVSE the
-leaves side measurement is used, falling back to the root side measurement.
+Only EVSE nodes contribute to the aggregate, and the tree walk does not descend below
+an EVSE node. An intermediate node's own meter measures the sum of its children — and an
+EVSE's meter covers everything downstream of it — so counting either together with its
+descendants would double count. For each EVSE the leaves side measurement is used,
+falling back to the root side measurement.
 
 Notes on behaviour:
 
@@ -38,9 +40,10 @@ Notes on behaviour:
   disappears from the tree stops contributing immediately.
 * A reading timestamped slightly in the future is treated as fresh -- small clock skew
   between a meter and the controller must not discard data.
-* An unparsable timestamp is logged and the reading treated as stale, so a misbehaving
-  meter cannot skew the sum. Detection relies on the parser returning the epoch rather
-  than raising an error, and applies even when the staleness filter is disabled.
+* An unparsable timestamp is logged — once per meter, not once per optimizer cycle —
+  and the reading treated as stale, so a misbehaving meter cannot skew the sum or flood
+  the log. Detection relies on the parser returning the epoch rather than raising an
+  error, and applies even when the staleness filter is disabled.
 * Per phase sums are reported only when *every* contributing meter supplied per phase
   values, so the per phase figures always cover the same set of meters as the total.
 * Setting the window to ``0`` disables the staleness filter entirely.

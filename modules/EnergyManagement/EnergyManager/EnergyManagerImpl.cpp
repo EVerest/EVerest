@@ -77,7 +77,8 @@ EnergyManagerImpl::EnergyManagerImpl(
         std::make_unique<PowerMeterAggregator>(std::chrono::seconds(config.power_meter_aggregation_window_s));
 }
 
-const PowerMeterAggregator::AggregateResult& EnergyManagerImpl::get_leaf_aggregate() const {
+PowerMeterAggregator::AggregateResult EnergyManagerImpl::get_leaf_aggregate() const {
+    std::scoped_lock lock(energy_mutex);
     return leaf_aggregate;
 }
 
