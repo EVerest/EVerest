@@ -95,6 +95,31 @@ rather than a clean error. To manage several local processes from one remote ``E
 client/server pair per process and let the remote ``EnergyManager`` see each client as its own separate child —
 the usual multi-child allocation in ``EnergyManager`` already handles load-balancing across them.
 
+Securing the external MQTT broker
+----------------------------------
+Anything that can publish to the server's ``m2e/enforce_limits`` topic controls the power allocation of every
+``EnergyNode`` child below it — the module deliberately applies external limits with priority over the internal
+``EnergyManager``. The external MQTT broker is therefore a trust boundary, and in any production deployment it
+must be locked down accordingly:
+
+* Do **not** allow anonymous access; require per-client credentials or mutual TLS.
+* Restrict publish/subscribe rights with broker ACLs so only the paired client may publish to
+  ``everest_api/1/external_energy_node/{server_id}/m2e/#`` and only the server may publish to the matching
+  ``e2m/#`` topics.
+* Use TLS on any link that leaves the host, including the bridge between the local and external brokers.
+
+The bundled devcontainer broker config (``mosquitto-external.conf``) uses ``allow_anonymous true`` and is
+suitable for local development and SIL testing only.
+
+Stale children
+---------------
+The server keeps the last ``energy_flow_request`` of every child that has ever published one; there is no
+staleness timeout. If a child ``EnergyNode`` disappears (crashes, is removed from the config, or changes its
+UUID), its last request stays in the aggregate indefinitely and the remote ``EnergyManager`` keeps allocating
+energy to it. This matches the behavior of ``EnergyNode`` itself, but the effect is more visible here because
+the aggregate crosses a process boundary. After removing or renaming children, restart the server process so
+the aggregate is rebuilt from scratch.
+
 References / Links
 ====================
 * AsyncAPI specification (server): ``docs/source/reference/EVerest_API/external_energy_node_API.yaml``
