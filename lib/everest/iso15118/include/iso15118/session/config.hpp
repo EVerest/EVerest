@@ -84,6 +84,12 @@ struct EvseSetupConfig {
 struct SessionConfig {
     explicit SessionConfig(EvseSetupConfig);
 
+    /// \brief Replaces the offered energy services.
+    ///
+    /// Every replacement runs the same AC_DER_SAE offer rules as the constructor, so a non-conformant
+    /// AC_DER_SAE cannot re-enter the offer through a mid session service update.
+    void set_supported_energy_transfer_services(std::vector<message_20::datatypes::ServiceCategory> services);
+
     std::string evse_id;
 
     bool cert_install_service;
