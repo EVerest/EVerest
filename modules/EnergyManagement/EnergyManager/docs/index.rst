@@ -34,7 +34,13 @@ as fallback). Tracking is therefore per connector. If no measurement is availabl
 broker logs a warning and falls back to the static limits for that connector, so a
 failed meter cannot starve a charging session.
 
-Two properties of the implementation are worth knowing when reading the code:
+Tracking is AC only: a node that declares no ``ac_max_current_A`` (typically a DC
+charger) is left on its static limits, since an amps-to-watts budget has no meaning
+there. The per-session state is only armed while a session is active — optimizer runs
+during which the connector is ``Unplugged`` or ``Finished`` neither consume the
+initial-current request nor produce warnings.
+
+Three properties of the implementation are worth knowing when reading the code:
 
 * **The limit is a budget for a whole optimizer run, not for a single trade.** The
   optimizer performs many trading rounds per run, each against a freshly built offer,
@@ -45,6 +51,10 @@ Two properties of the implementation are worth knowing when reading the code:
   cycle below ``ac_min_current_A``, and a lower limit would make the minimum current
   purchase fail and allocate nothing at all. Tracking releases surplus capacity; it
   must never stop a session.
+* **The budget is priced the way the trading engine prices purchases** — at
+  ``ac_max_phase_count`` phases. A measurement from a single phase session is scaled up
+  accordingly, so a single phase vehicle drawing full power is not mistaken for a small
+  load and tracked down to the minimum current.
 
 The tracking limit is applied as an additional watt limit on top of the existing
 limits -- it can only ever lower the allocation, never raise it above a static or

@@ -25,6 +25,7 @@ struct BrokerContext {
         last_ac_number_of_active_phases_import = 0;
         ts_1ph_optimal = date::utc_clock::now();
         tracking_active = false;
+        tracking_warned_no_measurement = false;
     };
 
     int number_1ph3ph_cycles;
@@ -34,6 +35,10 @@ struct BrokerContext {
     // True once the measurement tracking broker has issued its initial current request
     // for the current charging session. Reset by clear() on unplug.
     bool tracking_active;
+
+    // True once the missing-measurement warning has been logged for this session, so a
+    // meterless connector warns once instead of once per optimizer run.
+    bool tracking_warned_no_measurement;
 };
 
 // base class for different Brokers
