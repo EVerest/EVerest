@@ -74,6 +74,9 @@ Result SessionSetup::feed(Event ev) {
     if (const auto res = variant->get_if<message_20::SessionSetupResponse>()) {
 
         if (not check_response_code(res->response_code)) {
+            // SessionSetup hand-rolls this check instead of using expect_response, so it has to
+            // log the rejection itself.
+            logf_error("SessionSetupResponse rejected with response_code: %d", static_cast<int>(res->response_code));
             m_ctx.stop_session(true); // Tell stack to close the tcp/tls connection
             return {};
         }
