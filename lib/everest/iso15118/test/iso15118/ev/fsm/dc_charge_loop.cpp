@@ -101,6 +101,85 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop emits a Dynamic DC_ChargeLoopRequest on e
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_voltage) == Catch::Approx(200.0f));
 }
 
+SCENARIO("ISO15118-20 EV DC_ChargeLoop seeds present_voltage from the target voltage") {
+    // Nothing feeds a measured present voltage yet, so the first request approximates it
+    // with the voltage the EV asks for rather than putting a zero on the wire.
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_target_only = [](FsmStateHelper& helper) {
+        ev::DcChargeParams params{};
+        params.max_charge_power = 11000.0f;
+        params.max_voltage = 500.0f;
+        params.min_voltage = 200.0f;
+        params.target_voltage = 420.0f;
+        helper.set_dc_params(params);
+    };
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{callbacks, seed_target_only};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::DC_ChargeLoopRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(request_message->present_voltage) == Catch::Approx(420.0f));
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop adopts the present voltage the SECC reports") {
+    // The SECC's reported present voltage is a better approximation than the EV's own
+    // target, so every loop iteration after the first carries it.
+    StopObserver obs;
+    const auto seed_target_only = [](FsmStateHelper& helper) {
+        ev::DcChargeParams params{};
+        params.max_charge_power = 11000.0f;
+        params.max_voltage = 500.0f;
+        params.min_voltage = 200.0f;
+        params.target_voltage = 420.0f;
+        helper.set_dc_params(params);
+    };
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_target_only};
+
+    // The enter() request still carries the seed.
+    const auto seeded = primed.take_requests();
+    const auto seeded_request = seeded.get<message_20::DC_ChargeLoopRequest>();
+    REQUIRE(seeded_request.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(seeded_request->present_voltage) == Catch::Approx(420.0f));
+
+    auto res = make_res(SESSION_HEADER, ResponseCode::OK);
+    res.present_voltage = message_20::datatypes::from_float(390.0f);
+    primed.handle_response(res);
+    REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned() == false);
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::DC_ChargeLoopRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(request_message->present_voltage) == Catch::Approx(390.0f));
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop prefers a module-fed present voltage over the approximation") {
+    StopObserver obs;
+    const auto seed_measured = [](FsmStateHelper& helper) {
+        ev::DcChargeParams params{};
+        params.max_voltage = 500.0f;
+        params.min_voltage = 200.0f;
+        params.target_voltage = 420.0f;
+        params.present_voltage = 380.0f;
+        helper.set_dc_params(params);
+    };
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_measured};
+
+    // The measured value wins over the target-voltage seed.
+    const auto seeded = primed.take_requests();
+    const auto seeded_request = seeded.get<message_20::DC_ChargeLoopRequest>();
+    REQUIRE(seeded_request.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(seeded_request->present_voltage) == Catch::Approx(380.0f));
+
+    // and over the voltage the SECC reports.
+    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
+    REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned() == false);
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::DC_ChargeLoopRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(request_message->present_voltage) == Catch::Approx(380.0f));
+}
+
 SCENARIO("ISO15118-20 EV DC_ChargeLoop stays and re-emits a request on a non-Terminate response") {
     StopObserver obs;
     PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_present_400};
