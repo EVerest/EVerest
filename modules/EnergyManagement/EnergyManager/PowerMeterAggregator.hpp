@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <map>
+#include <set>
 #include <string>
 
 #include <generated/interfaces/energy/Interface.hpp>
@@ -54,11 +55,17 @@ public:
     std::size_t size() const;
 
     /// \brief Sums the readings that are fresh relative to \p now.
+    /// \p now must be a real wall clock time; an epoch value would make every reading
+    /// look like the future and disable the filter.
     AggregateResult aggregate(date::utc_clock::time_point now) const;
 
 private:
     std::map<std::string, types::powermeter::Powermeter> readings;
     std::chrono::seconds aggregation_window;
+    // Meters whose timestamp failed to parse, so the warning is logged once per meter
+    // rather than on every optimizer cycle. An entry is dropped again once the meter
+    // delivers a parsable timestamp.
+    mutable std::set<std::string> warned_unparsable;
 };
 
 /// \brief Feeds the aggregator with the power meter reading of every EVSE node in the tree.
