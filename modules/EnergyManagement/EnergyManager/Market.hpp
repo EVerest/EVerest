@@ -8,6 +8,8 @@
 #include <utils/date.hpp>
 #include <vector>
 
+#include "PhaseAllocation.hpp"
+
 using namespace std::chrono_literals;
 
 namespace module {
@@ -73,6 +75,16 @@ public:
 
     Market* parent();
 
+    /// \brief The root market of the tree this node belongs to.
+    Market* get_root();
+
+    /// \brief Total current sold at this node per phase in the given schedule slot [A].
+    ///
+    /// A trade carrying only the symmetric ac_max_current_A counts on all three phases; a
+    /// trade carrying ac_max_current_per_phase_A counts per phase. This is what the symmetry
+    /// constraint is evaluated against at the root.
+    PhaseAllocation get_sold_per_phase_A(int slot) const;
+
     float nominal_ac_voltage();
 
     // local request only for this node
@@ -97,6 +109,12 @@ private:
 float get_watt_from_freq_table(const std::vector<types::energy::FrequencyWattPoint>& table, float freq);
 void apply_limit_if_smaller(std::optional<types::energy::NumberWithSource>& base, float limit,
                             const std::string& source);
+
+/// \brief Per phase minimum of two optional per phase limits.
+/// A phase present on only one side is taken from that side; absent on both stays absent.
+std::optional<types::energy::NumberWithSourcePerPhase>
+min_optional_per_phase(const std::optional<types::energy::NumberWithSourcePerPhase>& a,
+                       const std::optional<types::energy::NumberWithSourcePerPhase>& b);
 void apply_setpoints(ScheduleReq& imp, ScheduleReq& exp, const ScheduleSetpoints& setpoints, std::optional<float> freq);
 
 } // namespace module

@@ -2,6 +2,9 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "Market.hpp"
+
+#include <algorithm>
+
 #include <everest/logging.hpp>
 #include <fmt/core.h>
 
@@ -194,6 +197,35 @@ ScheduleSetpoints Market::resample(const ScheduleSetpoints& request) {
     return sp;
 }
 
+static std::optional<types::energy::NumberWithSource>
+min_one_phase(const std::optional<types::energy::NumberWithSource>& a,
+              const std::optional<types::energy::NumberWithSource>& b) {
+    if (not a.has_value()) {
+        return b;
+    }
+    if (not b.has_value()) {
+        return a;
+    }
+    return (a.value().value <= b.value().value) ? a : b;
+}
+
+std::optional<types::energy::NumberWithSourcePerPhase>
+min_optional_per_phase(const std::optional<types::energy::NumberWithSourcePerPhase>& a,
+                       const std::optional<types::energy::NumberWithSourcePerPhase>& b) {
+    if (not a.has_value()) {
+        return b;
+    }
+    if (not b.has_value()) {
+        return a;
+    }
+
+    types::energy::NumberWithSourcePerPhase result;
+    result.L1 = min_one_phase(a.value().L1, b.value().L1);
+    result.L2 = min_one_phase(a.value().L2, b.value().L2);
+    result.L3 = min_one_phase(a.value().L3, b.value().L3);
+    return result;
+}
+
 ScheduleReq Market::get_max_available_energy(const ScheduleReq& request) {
 
     ScheduleReq available = globals.empty_schedule_req;
@@ -231,6 +263,11 @@ ScheduleReq Market::get_max_available_energy(const ScheduleReq& request) {
 
             a.limits_to_root.ac_max_current_A =
                 min_optional((*r).limits_to_leaves.ac_max_current_A, (*r).limits_to_root.ac_max_current_A);
+
+            // This function is an explicit field list: without this line the request's per
+            // phase limit is discarded before the market is even built.
+            a.limits_to_root.ac_max_current_per_phase_A = min_optional_per_phase(
+                (*r).limits_to_leaves.ac_max_current_per_phase_A, (*r).limits_to_root.ac_max_current_per_phase_A);
 
             a.limits_to_root.ac_min_phase_count =
                 max_optional((*r).limits_to_root.ac_min_phase_count, (*r).limits_to_leaves.ac_min_phase_count);
@@ -280,6 +317,31 @@ ScheduleReq Market::get_available_energy(const ScheduleReq& max_available, bool 
 
         if (available[i].limits_to_root.total_power_W.has_value())
             available[i].limits_to_root.total_power_W.value().value += sold_watt;
+
+        // Per phase availability: subtract what has already been sold on each phase
+        // individually, so capacity freed on one phase does not appear on the others.
+        // Mirrors the scalar handling above, including the sign convention: add_sold selects
+        // the sign, it does not select whether to subtract.
+        if (available[i].limits_to_root.ac_max_current_per_phase_A.has_value()) {
+            const auto sold_per_phase = get_sold_per_phase_A(static_cast<int>(i));
+            auto& per_phase = available[i].limits_to_root.ac_max_current_per_phase_A.value();
+
+            const auto subtract_one = [add_sold](std::optional<types::energy::NumberWithSource>& phase_limit,
+                                                 float sold_value) {
+                if (not phase_limit.has_value()) {
+                    return;
+                }
+                float sold = (add_sold ? 1.f : -1.f) * sold_value;
+                if (sold > 0.f) {
+                    sold = 0.f;
+                }
+                phase_limit.value().value = std::max(0.f, phase_limit.value().value + sold);
+            };
+
+            subtract_one(per_phase.L1, sold_per_phase.l1_A);
+            subtract_one(per_phase.L2, sold_per_phase.l2_A);
+            subtract_one(per_phase.L3, sold_per_phase.l3_A);
+        }
     }
     return available;
 }
@@ -440,6 +502,40 @@ Market* Market::parent() {
     return _parent;
 }
 
+Market* Market::get_root() {
+    Market* node = this;
+    while (not node->is_root()) {
+        node = node->parent();
+    }
+    return node;
+}
+
+PhaseAllocation Market::get_sold_per_phase_A(int slot) const {
+    PhaseAllocation sold;
+
+    if (slot < 0 or static_cast<ScheduleRes::size_type>(slot) >= sold_root.size()) {
+        return sold;
+    }
+
+    const auto& limits = sold_root[slot].limits_to_root;
+
+    if (limits.ac_max_current_per_phase_A.has_value()) {
+        const auto& per_phase = limits.ac_max_current_per_phase_A.value();
+        sold.l1_A = per_phase.L1.has_value() ? per_phase.L1.value().value : 0.f;
+        sold.l2_A = per_phase.L2.has_value() ? per_phase.L2.value().value : 0.f;
+        sold.l3_A = per_phase.L3.has_value() ? per_phase.L3.value().value : 0.f;
+        return sold;
+    }
+
+    // Legacy symmetric trade: conservatively assume the same current on every phase.
+    if (limits.ac_max_current_A.has_value()) {
+        const auto current_A = limits.ac_max_current_A.value().value;
+        sold = {current_A, current_A, current_A};
+    }
+
+    return sold;
+}
+
 bool Market::is_root() {
     return _parent == nullptr;
 }
@@ -475,6 +571,41 @@ static void schedule_add(ScheduleRes& a, const ScheduleRes& b) {
     const types::energy::NumberWithSource NUMZERO = {0};
 
     for (ScheduleRes::size_type i = 0; i < a.size(); i++) {
+        // Accumulate the per phase currents. A schedule carrying only the symmetric
+        // ac_max_current_A contributes that value on all three phases, so mixing legacy and
+        // per phase trades still yields a correct per phase total.
+        //
+        // This must run BEFORE the symmetric accumulation below: that block adds b into a's
+        // scalar in place, and deriving the per phase value from an already-summed scalar
+        // would count every trade twice.
+        const auto to_phase_allocation = [](const types::energy::LimitsRes& limits) -> PhaseAllocation {
+            if (limits.ac_max_current_per_phase_A.has_value()) {
+                const auto& p = limits.ac_max_current_per_phase_A.value();
+                return {p.L1.has_value() ? p.L1.value().value : 0.f, p.L2.has_value() ? p.L2.value().value : 0.f,
+                        p.L3.has_value() ? p.L3.value().value : 0.f};
+            }
+            if (limits.ac_max_current_A.has_value()) {
+                const auto c = limits.ac_max_current_A.value().value;
+                return {c, c, c};
+            }
+            return {};
+        };
+
+        if (b[i].limits_to_root.ac_max_current_per_phase_A.has_value() or
+            a[i].limits_to_root.ac_max_current_per_phase_A.has_value()) {
+            const auto sum = to_phase_allocation(a[i].limits_to_root) + to_phase_allocation(b[i].limits_to_root);
+
+            std::string per_phase_source;
+            if (b[i].limits_to_root.ac_max_current_A.has_value() and
+                b[i].limits_to_root.ac_max_current_A.value().value not_eq 0.) {
+                per_phase_source = b[i].limits_to_root.ac_max_current_A.value().source;
+            } else if (a[i].limits_to_root.ac_max_current_A.has_value()) {
+                per_phase_source = a[i].limits_to_root.ac_max_current_A.value().source;
+            }
+
+            a[i].limits_to_root.ac_max_current_per_phase_A = to_per_phase_limit(sum, per_phase_source);
+        }
+
         if (b[i].limits_to_root.ac_max_current_A.has_value()) {
             std::string source;
 
