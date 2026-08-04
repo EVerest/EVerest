@@ -35,7 +35,8 @@ d20::EvseSetupConfig make_evse_setup(const std::string& evse_id) {
     setup.enable_certificate_install_service = cert_install;
     setup.dc_limits = dc_limits;
     setup.ac_limits = ac_limits;
-    setup.der_limits = std::nullopt;
+    setup.der_iec_limits = std::nullopt;
+    setup.der_sae_limits = std::nullopt;
     setup.control_mobility_modes = control_mobility_modes;
     setup.powersupply_limits = powersupply_limits;
     return setup;

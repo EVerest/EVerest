@@ -301,7 +301,7 @@ void ISO15118_chargerImpl::ready() {
     {
         const auto& services = setup_config.supported_energy_services;
         if (std::find(services.begin(), services.end(), dt::ServiceCategory::AC_DER_IEC) != services.end()) {
-            setup_config.der_limits = build_iec_der_transfer_limits(setup_config.ac_limits);
+            setup_config.der_iec_limits = build_iec_der_transfer_limits(setup_config.ac_limits);
         }
     }
 
