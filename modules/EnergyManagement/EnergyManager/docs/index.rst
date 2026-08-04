@@ -113,3 +113,79 @@ external limit.
    * - ``power_meter_tracking_margin_W``
      - ``200.0``
      - Margin added to the measured power to form the tracking limit.
+
+Measurement based boosting
+==========================
+
+With ``use_power_meter_tracking`` enabled, each connector is capped at its measured
+consumption plus ``power_meter_tracking_margin_W``. That converges the allocation down
+towards actual use, but on its own it can only ever shrink an allocation. Boosting adds
+the opposite direction: when the installation as a whole has unused capacity, the
+tracking limit of every connector is widened so a vehicle that wants more power can get
+it.
+
+Two different comparisons drive the two behaviours:
+
+* **Boosting** compares the aggregated leaf measurement against the *grid connection's*
+  own import limit. When the spare capacity there exceeds ``boost_threshold_W`` for
+  ``boost_hysteresis_cycles`` consecutive optimizer cycles, the tracking limit is widened
+  by ``boost_step_A``. The offset accumulates while the headroom persists and is released
+  again one step per cycle once it disappears.
+
+* **``power_can_be_reduced``** compares the previous cycle's total *allocation* against
+  the aggregated measurement. When the allocation exceeds consumption by more than
+  ``boost_threshold_W``, the flag is published as true, so an external entity can see that
+  capacity could be released without curtailing any active session.
+
+Boosting is deliberately *not* driven by the difference between allocation and
+measurement. Once tracking is active that difference settles at roughly the number of
+charging connectors multiplied by the margin: it never reaches the threshold on a small
+site, and on a larger one it self-reinforces, since boosting widens the very gap that
+triggered it. The grid limit is bounded by real capacity and cannot ratchet.
+
+Safety properties:
+
+* **Boosting can never exceed the static limits.** The boost only widens the *tracking*
+  limit, which is applied with the same "lower only" rule as every other limit, so
+  configured fuse limits and external limits remain a hard ceiling. The offset is
+  additionally bounded by the grid connection's own ampere limit.
+* **The starting current is never boosted.** The first cycle of a session always requests
+  ``power_meter_tracking_initial_current_A`` exactly, since that is an explicit
+  configuration choice about how conservatively a session begins.
+* **A stale aggregate causes no action.** If no power meter reading is fresh enough, the
+  boost offset is held where it is and ``power_can_be_reduced`` is published as false
+  rather than acting on data that may no longer reflect reality.
+* **Hysteresis prevents oscillation.** Headroom must persist for several consecutive
+  cycles before the limit widens, but is released promptly when it disappears --
+  deliberately asymmetric, since over-allocating is the more dangerous direction.
+
+Setting ``boost_step_A`` to ``0`` disables boosting while keeping measurement tracking
+and the ``power_can_be_reduced`` flag.
+
+Sizing ``boost_threshold_W`` for the reducibility flag
+-----------------------------------------------------
+
+With measurement tracking active, each connector's allocation sits about
+``power_meter_tracking_margin_W`` above what its vehicle actually draws, so across a
+cluster the total allocation exceeds total consumption by roughly
+``connector_count x margin``. ``boost_threshold_W`` must be set above that product or
+``power_can_be_reduced`` saturates to permanently true and stops carrying information.
+The 500 W default suits one or two connectors at the default 200 W margin; a six
+connector cluster wants 1500 W or more. Boosting itself is unaffected -- it compares
+against the grid limit, which does not scale with connector count.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Config option
+     - Default
+     - Description
+   * - ``boost_threshold_W``
+     - ``500.0``
+     - Sensitivity of both boosting and the ``power_can_be_reduced`` flag [W].
+   * - ``boost_step_A``
+     - ``2.0``
+     - Widening of the tracking limit per boost step [A per phase]. ``0`` disables boosting.
+   * - ``boost_hysteresis_cycles``
+     - ``3``
+     - Consecutive cycles the grid headroom must persist before the limit is widened.
