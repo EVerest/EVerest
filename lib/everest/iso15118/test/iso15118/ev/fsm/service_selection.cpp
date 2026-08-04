@@ -160,12 +160,7 @@ SCENARIO("ISO15118-20 EV ServiceSelection stops the session on an unsupported se
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, seed_wpt, uint16_t{1}};
 
-    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, make_response(SESSION_HEADER, ResponseCode::OK), ev::d20::StateID::ServiceSelection);
 }
 
 SCENARIO("ISO15118-20 EV ServiceSelection rejects malformed responses") {

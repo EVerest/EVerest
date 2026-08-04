@@ -179,6 +179,26 @@ private:
     }
 };
 
+// Feed `response` to a hand-built helper/FSM pair and assert the stop tail every
+// negative path shares: the state did not transition, it is still `expected_id`, and it
+// asked for the session to stop. For tests that need non-default FsmStateHelper ctor
+// args and so cannot use PrimedState.
+template <typename ResponseType>
+void expect_stops_session(FsmStateHelper& helper, fsm::v2::FSM<ev::d20::StateBase>& fsm, const ResponseType& response,
+                          ev::d20::StateID expected_id) {
+    helper.handle_response(response);
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(fsm.get_current_state_id() == expected_id);
+    REQUIRE(helper.get_context().is_session_stopped() == true);
+}
+
+// Same stop tail, driven through a PrimedState.
+template <typename Primed, typename ResponseType>
+void expect_stops_session(Primed& primed, const ResponseType& response, ev::d20::StateID expected_id) {
+    expect_stops_session(primed.helper, primed.fsm, response, expected_id);
+}
+
 // The three structurally-identical rejection checks shared by every response-consuming
 // state: it stops the session (and stays put) on a FAILED response code, on a
 // wrong-variant response, and on a response whose session id does not echo the EV's.
@@ -192,11 +212,7 @@ void check_rejection_paths(const ev::feedback::Callbacks& callbacks, ev::d20::St
     const auto run = [&](const auto& response) {
         FsmStateHelper helper{callbacks};
         auto fsm = make_fsm(helper);
-        helper.handle_response(response);
-        const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
-        REQUIRE(result.transitioned() == false);
-        REQUIRE(fsm.get_current_state_id() == expected_id);
-        REQUIRE(helper.get_context().is_session_stopped() == true);
+        expect_stops_session(helper, fsm, response, expected_id);
     };
 
     SECTION("stops the session on a FAILED response code") {
