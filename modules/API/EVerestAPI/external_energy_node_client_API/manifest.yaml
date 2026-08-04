@@ -13,9 +13,10 @@ config:
     description: >-
       Module ID of the external_energy_node_API server to connect to. Must match
       the module ID of the corresponding server instance in the remote EVerest
-      process (e.g., "server_m0_api").
+      process (e.g., "server_m0_api"). Required — there is deliberately no
+      default: an empty value would silently subscribe to a non-existent topic
+      namespace and the module would never receive anything.
     type: string
-    default: ""
   cfg_heartbeat_interval_ms:
     description: "Interval between two heartbeat messages sent by the API. Values <= 0 disable heartbeat."
     type: integer
