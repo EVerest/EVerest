@@ -33,18 +33,6 @@ message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, cons
     mode.max_discharge_power = dt::from_float(params.max_charge_power);
     mode.min_discharge_power = dt::from_float(params.min_charge_power);
     mode.grid_event_condition = 0;
-    if (params.three_phase) {
-        mode.max_charge_power_L2 = mode.max_charge_power;
-        mode.max_charge_power_L3 = mode.max_charge_power;
-        mode.min_charge_power_L2 = mode.min_charge_power;
-        mode.min_charge_power_L3 = mode.min_charge_power;
-        mode.present_active_power_L2 = mode.present_active_power;
-        mode.present_active_power_L3 = mode.present_active_power;
-        mode.max_discharge_power_L2 = mode.max_discharge_power;
-        mode.max_discharge_power_L3 = mode.max_discharge_power;
-        mode.min_discharge_power_L2 = mode.min_discharge_power;
-        mode.min_discharge_power_L3 = mode.min_discharge_power;
-    }
     req.control_mode = mode;
 
     return req;

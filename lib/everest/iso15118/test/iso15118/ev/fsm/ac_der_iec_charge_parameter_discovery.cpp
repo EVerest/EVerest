@@ -31,26 +31,17 @@ message_20::DER_AC_ChargeParameterDiscoveryResponse make_response(const message_
 }
 
 // AC_DER_IEC_ChargeParameterDiscovery builds its request from the EV's AC charge params.
-const auto seed_single_phase = [](FsmStateHelper& helper) {
+const auto seed_charge_limits = [](FsmStateHelper& helper) {
     ev::AcChargeParams p{};
     p.max_charge_power = 22000.0f;
     p.min_charge_power = 1000.0f;
-    p.three_phase = false;
-    helper.set_ac_params(p);
-};
-
-const auto seed_three_phase = [](FsmStateHelper& helper) {
-    ev::AcChargeParams p{};
-    p.max_charge_power = 22000.0f;
-    p.min_charge_power = 1000.0f;
-    p.three_phase = true;
     helper.set_ac_params(p);
 };
 } // namespace
 
-SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeParameterDiscovery emits a single-phase DER request on enter") {
+SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeParameterDiscovery emits a DER request on enter") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::AC_DER_IEC_ChargeParameterDiscovery> primed{callbacks, seed_single_phase};
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeParameterDiscovery> primed{callbacks, seed_charge_limits};
 
     const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::DER_AC_ChargeParameterDiscoveryRequest>();
@@ -65,35 +56,15 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeParameterDiscovery emits a single-phas
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_discharge_power) == Catch::Approx(1000.0f));
     // The EV drives a single discovery round: processing is Finished.
     REQUIRE(mode.processing == message_20::datatypes::Processing::Finished);
-    // Single-phase: no per-phase limits.
+    // The limits are three-phase totals: no per-phase charge or discharge field is advertised.
     REQUIRE_FALSE(mode.max_charge_power_L2.has_value());
     REQUIRE_FALSE(mode.max_charge_power_L3.has_value());
     REQUIRE_FALSE(mode.min_charge_power_L2.has_value());
     REQUIRE_FALSE(mode.min_charge_power_L3.has_value());
-}
-
-SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeParameterDiscovery emits per-phase limits when three_phase") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::AC_DER_IEC_ChargeParameterDiscovery> primed{callbacks, seed_three_phase};
-
-    const auto requests = primed.take_requests();
-    const auto request_message = requests.get<message_20::DER_AC_ChargeParameterDiscoveryRequest>();
-    REQUIRE(request_message.has_value());
-
-    const auto& mode = request_message->transfer_mode;
-    REQUIRE(mode.max_charge_power_L2.has_value());
-    REQUIRE(mode.max_charge_power_L3.has_value());
-    REQUIRE(mode.min_charge_power_L2.has_value());
-    REQUIRE(mode.min_charge_power_L3.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_charge_power_L2) == Catch::Approx(22000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_charge_power_L3) == Catch::Approx(1000.0f));
-    // Discharge capability is advertised per phase too.
-    REQUIRE(mode.max_discharge_power_L2.has_value());
-    REQUIRE(mode.max_discharge_power_L3.has_value());
-    REQUIRE(mode.min_discharge_power_L2.has_value());
-    REQUIRE(mode.min_discharge_power_L3.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_discharge_power_L2) == Catch::Approx(22000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_discharge_power_L3) == Catch::Approx(1000.0f));
+    REQUIRE_FALSE(mode.max_discharge_power_L2.has_value());
+    REQUIRE_FALSE(mode.max_discharge_power_L3.has_value());
+    REQUIRE_FALSE(mode.min_discharge_power_L2.has_value());
+    REQUIRE_FALSE(mode.min_discharge_power_L3.has_value());
 }
 
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeParameterDiscovery transitions to ScheduleExchange and fires ac_limits") {
@@ -106,7 +77,7 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeParameterDiscovery transitions to Sche
         reported_frequency = message_20::datatypes::from_RationalNumber(mode.nominal_frequency);
         reported_max_charge_power = message_20::datatypes::from_RationalNumber(mode.max_charge_power);
     };
-    PrimedState<ev::d20::state::AC_DER_IEC_ChargeParameterDiscovery> primed{callbacks, seed_single_phase};
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeParameterDiscovery> primed{callbacks, seed_charge_limits};
 
     primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);

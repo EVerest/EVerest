@@ -256,33 +256,26 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     EVLOG_info << "EvIso15118D20: start_charging requested (negotiation arguments ignored)";
 
     auto energy_service = iso15118::message_20::datatypes::ServiceCategory::DC;
-    bool three_phase = false;
     switch (EnergyTransferMode) {
     case types::iso15118::EnergyTransferMode::DC:
     case types::iso15118::EnergyTransferMode::DC_core:
     case types::iso15118::EnergyTransferMode::DC_extended:
         energy_service = iso15118::message_20::datatypes::ServiceCategory::DC;
         break;
+    // The advertised AC power limits are three-phase totals either way, so the
+    // single-phase and three-phase modes select the same service.
     case types::iso15118::EnergyTransferMode::AC_single_phase_core:
-        energy_service = iso15118::message_20::datatypes::ServiceCategory::AC;
-        three_phase = false;
-        break;
     case types::iso15118::EnergyTransferMode::AC_three_phase_core:
         energy_service = iso15118::message_20::datatypes::ServiceCategory::AC;
-        three_phase = true;
         break;
     case types::iso15118::EnergyTransferMode::AC_BPT:
-        // AC_BPT carries no phase count; assume a three-phase inverter relay
         energy_service = iso15118::message_20::datatypes::ServiceCategory::AC_BPT;
-        three_phase = true;
         break;
     case types::iso15118::EnergyTransferMode::DC_BPT:
         energy_service = iso15118::message_20::datatypes::ServiceCategory::DC_BPT;
         break;
     case types::iso15118::EnergyTransferMode::AC_DER_IEC:
-        // AC_DER_IEC carries no phase count; assume a three-phase inverter relay
         energy_service = iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC;
-        three_phase = true;
         break;
     default:
         EVLOG_warning << "EvIso15118D20: rejecting start_charging with unsupported EnergyTransferMode '"
@@ -303,7 +296,6 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
         if (is_ac) {
             (*h).ac_params.max_charge_power = static_cast<float>(mod->config.ac_max_charge_power_w);
             (*h).ac_params.min_charge_power = static_cast<float>(mod->config.ac_min_charge_power_w);
-            (*h).ac_params.three_phase = three_phase;
         }
         if (energy_service == dt::ServiceCategory::AC_BPT) {
             (*h).ac_params.max_discharge_power = static_cast<float>(mod->config.ac_max_discharge_power_w);

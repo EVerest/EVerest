@@ -28,41 +28,20 @@ message_20::AC_ChargeParameterDiscoveryResponse make_response(const message_20::
 }
 
 // AC_ChargeParameterDiscovery builds its request from the EV's AC charge params.
-const auto seed_single_phase = [](FsmStateHelper& helper) {
+const auto seed_charge_limits = [](FsmStateHelper& helper) {
     ev::AcChargeParams p{};
     p.max_charge_power = 22000.0f;
     p.min_charge_power = 1000.0f;
-    p.three_phase = false;
     helper.set_ac_params(p);
 };
 
-const auto seed_three_phase = [](FsmStateHelper& helper) {
-    ev::AcChargeParams p{};
-    p.max_charge_power = 22000.0f;
-    p.min_charge_power = 1000.0f;
-    p.three_phase = true;
-    helper.set_ac_params(p);
-};
-
-const auto seed_bpt_single_phase = [](FsmStateHelper& helper) {
+const auto seed_bpt_limits = [](FsmStateHelper& helper) {
     helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC_BPT);
     ev::AcChargeParams p{};
     p.max_charge_power = 22000.0f;
     p.min_charge_power = 1000.0f;
     p.max_discharge_power = 15000.0f;
     p.min_discharge_power = 800.0f;
-    p.three_phase = false;
-    helper.set_ac_params(p);
-};
-
-const auto seed_bpt_three_phase = [](FsmStateHelper& helper) {
-    helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC_BPT);
-    ev::AcChargeParams p{};
-    p.max_charge_power = 22000.0f;
-    p.min_charge_power = 1000.0f;
-    p.max_discharge_power = 15000.0f;
-    p.min_discharge_power = 800.0f;
-    p.three_phase = true;
     helper.set_ac_params(p);
 };
 
@@ -81,9 +60,9 @@ message_20::AC_ChargeParameterDiscoveryResponse make_bpt_response(const message_
 }
 } // namespace
 
-SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery emits a single-phase request built from the AC params on enter") {
+SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery emits a request built from the AC params on enter") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_single_phase};
+    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_charge_limits};
 
     const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::AC_ChargeParameterDiscoveryRequest>();
@@ -94,32 +73,11 @@ SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery emits a single-phase reques
     REQUIRE(mode != nullptr);
     REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_charge_power) == 22000.0f);
     REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_charge_power) == 1000.0f);
-    // Single-phase: no per-phase limits.
+    // The power limits are three-phase totals: no per-phase field is advertised.
     REQUIRE_FALSE(mode->max_charge_power_L2.has_value());
     REQUIRE_FALSE(mode->max_charge_power_L3.has_value());
     REQUIRE_FALSE(mode->min_charge_power_L2.has_value());
     REQUIRE_FALSE(mode->min_charge_power_L3.has_value());
-}
-
-SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery emits per-phase limits when three_phase") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_three_phase};
-
-    const auto requests = primed.take_requests();
-    const auto request_message = requests.get<message_20::AC_ChargeParameterDiscoveryRequest>();
-    REQUIRE(request_message.has_value());
-
-    const auto* mode = std::get_if<message_20::datatypes::AC_CPDReqEnergyTransferMode>(&request_message->transfer_mode);
-    REQUIRE(mode != nullptr);
-    // Three-phase: L2/L3 present and carry the same per-phase value as the total.
-    REQUIRE(mode->max_charge_power_L2.has_value());
-    REQUIRE(mode->max_charge_power_L3.has_value());
-    REQUIRE(mode->min_charge_power_L2.has_value());
-    REQUIRE(mode->min_charge_power_L3.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode->max_charge_power_L2) == 22000.0f);
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode->max_charge_power_L3) == 22000.0f);
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode->min_charge_power_L2) == 1000.0f);
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode->min_charge_power_L3) == 1000.0f);
 }
 
 SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery transitions to ScheduleExchange and fires ac_limits on OK") {
@@ -134,7 +92,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery transitions to ScheduleExch
         reported_max_charge_power = message_20::datatypes::from_RationalNumber(mode.max_charge_power);
         reported_min_charge_power = message_20::datatypes::from_RationalNumber(mode.min_charge_power);
     };
-    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_single_phase};
+    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_charge_limits};
 
     primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
@@ -152,7 +110,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery rejects a BPT transfer-mode
     bool fired = false;
     ev::feedback::Callbacks callbacks{};
     callbacks.ac_limits = [&](const message_20::datatypes::AC_CPDResEnergyTransferMode&) { fired = true; };
-    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_single_phase};
+    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_charge_limits};
 
     message_20::AC_ChargeParameterDiscoveryResponse res{};
     res.header = SESSION_HEADER;
@@ -174,7 +132,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery rejects a BPT transfer-mode
 
 SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery emits a BPT request with discharge limits for a BPT session") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_bpt_single_phase};
+    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_bpt_limits};
 
     const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::AC_ChargeParameterDiscoveryRequest>();
@@ -187,36 +145,15 @@ SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery emits a BPT request with di
     REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_charge_power) == 1000.0f);
     REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_power) == 15000.0f);
     REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_discharge_power) == 800.0f);
-    // Single-phase: no per-phase discharge limits.
+    // The limits are three-phase totals: no per-phase charge or discharge field is advertised.
+    REQUIRE_FALSE(mode->max_charge_power_L2.has_value());
+    REQUIRE_FALSE(mode->max_charge_power_L3.has_value());
+    REQUIRE_FALSE(mode->min_charge_power_L2.has_value());
+    REQUIRE_FALSE(mode->min_charge_power_L3.has_value());
     REQUIRE_FALSE(mode->max_discharge_power_L2.has_value());
     REQUIRE_FALSE(mode->max_discharge_power_L3.has_value());
     REQUIRE_FALSE(mode->min_discharge_power_L2.has_value());
     REQUIRE_FALSE(mode->min_discharge_power_L3.has_value());
-}
-
-SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery mirrors BPT discharge limits to L2/L3 when three_phase") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_bpt_three_phase};
-
-    const auto requests = primed.take_requests();
-    const auto request_message = requests.get<message_20::AC_ChargeParameterDiscoveryRequest>();
-    REQUIRE(request_message.has_value());
-
-    const auto* mode =
-        std::get_if<message_20::datatypes::BPT_AC_CPDReqEnergyTransferMode>(&request_message->transfer_mode);
-    REQUIRE(mode != nullptr);
-    // Charge limits mirrored the same way as the plain-AC three-phase convention.
-    REQUIRE(mode->max_charge_power_L2.has_value());
-    REQUIRE(mode->min_charge_power_L3.has_value());
-    // Discharge limits mirrored to L2/L3.
-    REQUIRE(mode->max_discharge_power_L2.has_value());
-    REQUIRE(mode->max_discharge_power_L3.has_value());
-    REQUIRE(mode->min_discharge_power_L2.has_value());
-    REQUIRE(mode->min_discharge_power_L3.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode->max_discharge_power_L2) == 15000.0f);
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode->max_discharge_power_L3) == 15000.0f);
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode->min_discharge_power_L2) == 800.0f);
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode->min_discharge_power_L3) == 800.0f);
 }
 
 SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery transitions to ScheduleExchange and fires ac_bpt_limits on a "
@@ -230,7 +167,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery transitions to ScheduleExch
         reported_max_discharge = message_20::datatypes::from_RationalNumber(mode.max_discharge_power);
         reported_min_discharge = message_20::datatypes::from_RationalNumber(mode.min_discharge_power);
     };
-    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_bpt_single_phase};
+    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_bpt_limits};
 
     primed.handle_response(make_bpt_response(SESSION_HEADER, ResponseCode::OK));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
@@ -247,7 +184,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery stops the session on a plai
     bool fired = false;
     ev::feedback::Callbacks callbacks{};
     callbacks.ac_bpt_limits = [&](const message_20::datatypes::BPT_AC_CPDResEnergyTransferMode&) { fired = true; };
-    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_bpt_single_phase};
+    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_bpt_limits};
 
     primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
