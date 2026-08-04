@@ -42,10 +42,12 @@ Configuration
      - Response watchdog timeout in milliseconds.
    * - ``ac_max_charge_power_w``
      - ``11040``
-     - Advertised AC maximum charge power in watts.
+     - Advertised AC maximum charge power in watts, as a three-phase total. The
+       default is 16 A x 230 V x 3.
    * - ``ac_min_charge_power_w``
-     - ``1380``
-     - Advertised AC minimum charge power in watts.
+     - ``4140``
+     - Advertised AC minimum charge power in watts, as a three-phase total. The
+       default is 6 A x 230 V x 3.
    * - ``der_over_frequency_watt_mode``
      - ``false``
      - Declare support for the IEC OverFrequencyWattMode DER control function.
@@ -87,10 +89,12 @@ Configuration
      - Stop the session if no AC_DER_IEC parameter set fits the supported DER functions.
    * - ``ac_max_discharge_power_w``
      - ``11040``
-     - Advertised AC maximum discharge power in watts (BPT).
+     - Advertised AC maximum discharge power in watts (BPT), as a three-phase
+       total. The default is 16 A x 230 V x 3.
    * - ``ac_min_discharge_power_w``
-     - ``1380``
-     - Advertised AC minimum discharge power in watts (BPT).
+     - ``4140``
+     - Advertised AC minimum discharge power in watts (BPT), as a three-phase
+       total. The default is 6 A x 230 V x 3.
    * - ``dc_max_discharge_power_w``
      - ``150000``
      - Advertised DC maximum discharge power in watts (BPT).

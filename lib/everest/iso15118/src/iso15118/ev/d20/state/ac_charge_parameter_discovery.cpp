@@ -15,12 +15,6 @@ namespace dt = message_20::datatypes;
 void fill_charge_limits(dt::AC_CPDReqEnergyTransferMode& mode, const AcChargeParams& p) {
     mode.max_charge_power = dt::from_float(p.max_charge_power);
     mode.min_charge_power = dt::from_float(p.min_charge_power);
-    if (p.three_phase) {
-        mode.max_charge_power_L2 = mode.max_charge_power;
-        mode.max_charge_power_L3 = mode.max_charge_power;
-        mode.min_charge_power_L2 = mode.min_charge_power;
-        mode.min_charge_power_L3 = mode.min_charge_power;
-    }
 }
 
 } // namespace
@@ -38,12 +32,6 @@ void AC_ChargeParameterDiscovery::enter() {
         fill_charge_limits(mode, p);
         mode.max_discharge_power = dt::from_float(p.max_discharge_power);
         mode.min_discharge_power = dt::from_float(p.min_discharge_power);
-        if (p.three_phase) {
-            mode.max_discharge_power_L2 = mode.max_discharge_power;
-            mode.max_discharge_power_L3 = mode.max_discharge_power;
-            mode.min_discharge_power_L2 = mode.min_discharge_power;
-            mode.min_discharge_power_L3 = mode.min_discharge_power;
-        }
         req.transfer_mode = mode;
     } else {
         dt::AC_CPDReqEnergyTransferMode mode{};
