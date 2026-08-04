@@ -120,12 +120,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery rejects a BPT transfer-mode
     bpt_mode.nominal_frequency = message_20::datatypes::from_float(50.0f);
     res.transfer_mode = bpt_mode;
 
-    primed.handle_response(res);
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeParameterDiscovery);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, res, ev::d20::StateID::AC_ChargeParameterDiscovery);
     REQUIRE(fired == false);
 }
 
@@ -188,12 +183,8 @@ SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery stops the session on a plai
     PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{
         callbacks, message_20::datatypes::ServiceCategory::AC_BPT, seed_bpt_limits};
 
-    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeParameterDiscovery);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, make_response(SESSION_HEADER, ResponseCode::OK),
+                         ev::d20::StateID::AC_ChargeParameterDiscovery);
     REQUIRE(fired == false);
 }
 

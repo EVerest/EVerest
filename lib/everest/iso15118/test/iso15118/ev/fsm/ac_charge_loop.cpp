@@ -258,12 +258,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop stops the session on a Scheduled control-
 
     auto res = make_res(SESSION_HEADER, ResponseCode::OK);
     res.control_mode = message_20::datatypes::Scheduled_AC_CLResControlMode{};
-    primed.handle_response(res);
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, res, ev::d20::StateID::AC_ChargeLoop);
     REQUIRE(fired == false);
 }
 
@@ -275,12 +270,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop stops the session on a BPT_Dynamic contro
 
     auto res = make_res(SESSION_HEADER, ResponseCode::OK);
     res.control_mode = message_20::datatypes::BPT_Dynamic_AC_CLResControlMode{};
-    primed.handle_response(res);
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, res, ev::d20::StateID::AC_ChargeLoop);
     REQUIRE(fired == false);
 }
 
@@ -337,12 +327,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop stops a BPT session on a plain Dynamic re
     PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, message_20::datatypes::ServiceCategory::AC_BPT,
                                                       seed_bpt_present_5000};
 
-    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, make_res(SESSION_HEADER, ResponseCode::OK), ev::d20::StateID::AC_ChargeLoop);
     REQUIRE(fired == false);
 }
 
@@ -355,12 +340,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop stops a BPT session on a Scheduled reply 
 
     auto res = make_bpt_res(SESSION_HEADER, ResponseCode::OK);
     res.control_mode = message_20::datatypes::Scheduled_AC_CLResControlMode{};
-    primed.handle_response(res);
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, res, ev::d20::StateID::AC_ChargeLoop);
     REQUIRE(fired == false);
 }
 

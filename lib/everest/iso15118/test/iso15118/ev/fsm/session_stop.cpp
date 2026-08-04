@@ -28,25 +28,18 @@ SCENARIO("ISO15118-20 EV SessionStop stops session on OK response") {
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::SessionStop> primed{callbacks, no_seed};
 
-    primed.handle_response(message_20::SessionStopResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::OK});
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed,
+                         message_20::SessionStopResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::OK},
+                         ev::d20::StateID::SessionStop);
 }
 
 SCENARIO("ISO15118-20 EV SessionStop with non-OK response still stops session") {
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::SessionStop> primed{callbacks, no_seed};
 
-    primed.handle_response(
-        message_20::SessionStopResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::FAILED});
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed,
+                         message_20::SessionStopResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::FAILED},
+                         ev::d20::StateID::SessionStop);
 }
 
 SCENARIO("ISO15118-20 EV SessionStop with wrong-variant response stops session") {
@@ -55,10 +48,5 @@ SCENARIO("ISO15118-20 EV SessionStop with wrong-variant response stops session")
 
     const auto wrong = message_20::AuthorizationResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::OK,
                                                          message_20::datatypes::Processing::Finished};
-    primed.handle_response(wrong);
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, wrong, ev::d20::StateID::SessionStop);
 }
