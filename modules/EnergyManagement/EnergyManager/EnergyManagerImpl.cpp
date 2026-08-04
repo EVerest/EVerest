@@ -11,6 +11,7 @@
 #include "BrokerMeasurementTracking.hpp"
 #include "Market.hpp"
 #include "MeasurementTrackingState.hpp"
+#include "PhaseAllocation.hpp"
 #include "PowerMeterAggregator.hpp"
 
 namespace module {
@@ -46,6 +47,8 @@ static BrokerFastCharging::EnergyManagerConfig to_broker_fast_charging_config(co
     broker_conf.use_power_meter_tracking = config.use_power_meter_tracking;
     broker_conf.tracking_initial_current_A = static_cast<float>(config.power_meter_tracking_initial_current_A);
     broker_conf.tracking_margin_W = static_cast<float>(config.power_meter_tracking_margin_W);
+    broker_conf.phase_symmetry_enabled = config.phase_symmetry_enabled;
+    broker_conf.max_phase_imbalance_A = static_cast<float>(config.max_phase_imbalance_A);
 
     return broker_conf;
 }
@@ -252,6 +255,19 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
                 "broker {}ms total {}ms) ---------------- \033[1;0m",
                 100 - max_number_of_trading_rounds, offer_tp.stop(), market_tp.stop(), broker_tp.stop(),
                 optimizer_start.stop());
+        }
+
+        // Post validation: the pre trade cap should make this unreachable, but a violation here
+        // would mean real current imbalance on the installation, so make it loud.
+        if (config.phase_symmetry_enabled) {
+            const auto sold_per_phase = market.get_sold_per_phase_A(0);
+            if (not is_within_symmetry(sold_per_phase, static_cast<float>(config.max_phase_imbalance_A))) {
+                EVLOG_warning << fmt::format(
+                    "Phase symmetry violated: L1 {:.1f}A L2 {:.1f}A L3 {:.1f}A, imbalance {:.1f}A exceeds "
+                    "configured maximum of {:.1f}A",
+                    sold_per_phase.l1_A, sold_per_phase.l2_A, sold_per_phase.l3_A, sold_per_phase.imbalance_A(),
+                    config.max_phase_imbalance_A);
+            }
         }
 
         std::vector<types::energy::EnforcedLimits> optimized_values;
