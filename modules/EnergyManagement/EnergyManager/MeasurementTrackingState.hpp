@@ -64,8 +64,9 @@ float sum_allocated_W(const std::vector<types::energy::EnforcedLimits>& limits, 
 /// power_can_be_reduced is the separate question of whether the current allocation exceeds
 /// actual consumption, which is what an external entity wants to know.
 ///
-/// With no fresh meter the offset is held unchanged and no claim is made about
-/// reducibility - acting on a stale aggregate is worse than not acting.
+/// With any meter stale - not just all of them - the offset is held unchanged and no
+/// claim is made about reducibility: a partially stale aggregate undercounts consumption,
+/// which overstates headroom, and acting on it is worse than not acting.
 MeasurementTrackingState advance_tracking_state(const MeasurementTrackingState& current,
                                                 const MeasurementTrackingInput& input);
 

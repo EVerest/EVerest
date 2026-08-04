@@ -83,10 +83,11 @@ TEST(PowerBoostAllocation, EmptyAllocationIsZero) {
 namespace {
 
 MeasurementTrackingInput make_input(float measured_W, int fresh_meters, std::optional<float> grid_limit_W,
-                                    float last_allocated_W) {
+                                    float last_allocated_W, int stale_meters = 0) {
     MeasurementTrackingInput in;
     in.aggregate.power_W = measured_W;
     in.aggregate.fresh_meters = fresh_meters;
+    in.aggregate.stale_meters = stale_meters;
     in.grid_limit_W = grid_limit_W;
     in.last_allocated_W = last_allocated_W;
     in.boost_threshold_W = 500.0f;
@@ -251,6 +252,36 @@ TEST(PowerBoostStateMachine, ZeroStepDisablesBoosting) {
     EXPECT_TRUE(state.power_can_be_reduced);
 }
 
+TEST(PowerBoostStateMachine, ShrinkingMaxClampsExistingOffsetImmediately) {
+    MeasurementTrackingState state;
+    state.boost_offset_A = 6.0f;
+
+    // The grid limit shrank mid-session (e.g. an external limit arrived); the bound
+    // derived from it must clamp the existing offset the same cycle, not only future
+    // increments.
+    auto input = make_input(3000.0f, 1, 43470.0f, 11040.0f);
+    input.max_boost_offset_A = 1.0f;
+
+    state = advance_tracking_state(state, input);
+    EXPECT_FLOAT_EQ(state.boost_offset_A, 1.0f);
+}
+
+TEST(PowerBoostStateMachine, PartiallyStaleAggregateDoesNotClaimReducibility) {
+    MeasurementTrackingState state;
+    state.boost_offset_A = 4.0f;
+    state.underutilized_cycles = 2;
+
+    // One of two meters is stale: the aggregate undercounts real consumption, so both
+    // boosting and reducibility must stand down, exactly as with a fully stale aggregate.
+    const auto input = make_input(3000.0f, 1, 43470.0f, 11040.0f, 1);
+
+    state = advance_tracking_state(state, input);
+
+    EXPECT_FLOAT_EQ(state.boost_offset_A, 4.0f);
+    EXPECT_EQ(state.underutilized_cycles, 0);
+    EXPECT_FALSE(state.power_can_be_reduced);
+}
+
 // ---------------------------------------------------------------- broker config
 
 TEST(PowerBoostBrokerConfig, BoostOffsetDefaultsToZero) {
@@ -403,6 +434,74 @@ TEST(PowerBoostIntegration, PublishesPowerCanBeReducedOnChangeOnly) {
     // the boost offset changes.
     impl.run_optimizer(request, AT);
     EXPECT_EQ(published.size(), 3U);
+}
+
+TEST(PowerBoostIntegration, BoostAppliesSameOffsetToAllConnectors) {
+    auto cp01 = test::make_evse_node("cp01", 32.0f, 6.0f);
+    auto cp02 = test::make_evse_node("cp02", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 63.0f, std::nullopt, {cp01, cp02});
+
+    EnergyManagerImpl impl(make_boost_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    impl.run_optimizer(request, AT);
+    test::set_measurement(request.children[0], 8000.0f);
+    test::set_measurement(request.children[1], 4000.0f);
+
+    // Cycles 2-4: the fourth run carries the first boost step.
+    impl.run_optimizer(request, AT);
+    impl.run_optimizer(request, AT);
+    const auto results = impl.run_optimizer(request, AT);
+    ASSERT_FLOAT_EQ(impl.get_boost_offset_A(), 2.0f);
+
+    // The offset widens each connector's own budget: measured + margin + 2A * 690.
+    EXPECT_NEAR(enforced_current(results, "cp01"), expected_current_A(8000.0f + 200.0f + 1380.0f), 0.01f);
+    EXPECT_NEAR(enforced_current(results, "cp02"), expected_current_A(4000.0f + 200.0f + 1380.0f), 0.01f);
+}
+
+TEST(PowerBoostIntegration, WattOnlyGridLimitStillBoundsTheOffset) {
+    // The root declares only a power limit. The offset bound must be derived from it -
+    // an unbounded offset would take offset/step cycles to unwind once headroom is gone.
+    auto evse = test::make_evse_node("cp01", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 63.0f, std::nullopt, {evse});
+    request.schedule_import[0].limits_to_root.ac_max_current_A.reset();
+    request.schedule_import[0].limits_to_root.total_power_W = {20000.0f, "TEST_grid_watt"};
+
+    EnergyManagerImpl impl(make_boost_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    impl.run_optimizer(request, AT);
+    test::set_measurement(request.children[0], 2000.0f);
+
+    for (int cycle = 0; cycle < 60; cycle++) {
+        impl.run_optimizer(request, AT);
+    }
+
+    // Bound = 20000W / (3 * 230V) = 28.99A.
+    EXPECT_LE(impl.get_boost_offset_A(), 20000.0f / 690.0f + 0.01f);
+    EXPECT_GT(impl.get_boost_offset_A(), 0.0f);
+}
+
+TEST(PowerBoostIntegration, PowerCanBeReducedStaysFalseWhenTrackingDisabled) {
+    auto request = make_boost_tree(32.0f, 63.0f);
+    auto config = make_boost_config();
+    config.use_power_meter_tracking = false;
+
+    std::vector<bool> published;
+    EnergyManagerImpl impl(
+        config, [](const std::vector<types::energy::EnforcedLimits>&) {},
+        [&published](bool value) { published.push_back(value); });
+
+    // A static 32A allocation with the EV drawing far less: without the tracking guard
+    // this would publish a permanently true reducibility flag.
+    test::set_measurement(request.children[0], 10000.0f);
+
+    for (int cycle = 0; cycle < 5; cycle++) {
+        impl.run_optimizer(request, AT);
+        EXPECT_FALSE(impl.get_power_can_be_reduced());
+    }
+
+    // Published exactly once (the start-up value) and never as true.
+    ASSERT_EQ(published.size(), 1U);
+    EXPECT_FALSE(published[0]);
 }
 
 TEST(PowerBoostIntegration, NoBoostingWhenTrackingIsDisabled) {

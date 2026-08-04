@@ -148,22 +148,26 @@ Safety properties:
 * **Boosting can never exceed the static limits.** The boost only widens the *tracking*
   limit, which is applied with the same "lower only" rule as every other limit, so
   configured fuse limits and external limits remain a hard ceiling. The offset is
-  additionally bounded by the grid connection's own ampere limit.
+  additionally bounded by the grid connection's own limit, converted to amperes when the
+  root declares only a power limit.
 * **The starting current is never boosted.** The first cycle of a session always requests
   ``power_meter_tracking_initial_current_A`` exactly, since that is an explicit
   configuration choice about how conservatively a session begins.
-* **A stale aggregate causes no action.** If no power meter reading is fresh enough, the
-  boost offset is held where it is and ``power_can_be_reduced`` is published as false
-  rather than acting on data that may no longer reflect reality.
+* **A stale aggregate causes no action.** If *any* power meter reading is not fresh —
+  not only when all of them are — the boost offset is held where it is and
+  ``power_can_be_reduced`` is published as false: a partially stale aggregate undercounts
+  consumption, which overstates headroom, and acting on it is worse than not acting.
 * **Hysteresis prevents oscillation.** Headroom must persist for several consecutive
   cycles before the limit widens, but is released promptly when it disappears --
   deliberately asymmetric, since over-allocating is the more dangerous direction.
 
 Setting ``boost_step_A`` to ``0`` disables boosting while keeping measurement tracking
-and the ``power_can_be_reduced`` flag.
+and the ``power_can_be_reduced`` flag. With ``use_power_meter_tracking`` disabled the
+flag is always published as false: a static allocation trivially exceeds consumption,
+and a permanently true flag would invite external consumers to act on it.
 
 Sizing ``boost_threshold_W`` for the reducibility flag
------------------------------------------------------
+------------------------------------------------------
 
 With measurement tracking active, each connector's allocation sits about
 ``power_meter_tracking_margin_W`` above what its vehicle actually draws, so across a

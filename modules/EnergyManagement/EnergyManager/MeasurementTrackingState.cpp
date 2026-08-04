@@ -5,8 +5,6 @@
 
 #include <algorithm>
 
-#include <everest/logging.hpp>
-
 namespace module {
 
 namespace {
@@ -55,9 +53,11 @@ MeasurementTrackingState advance_tracking_state(const MeasurementTrackingState& 
                                                 const MeasurementTrackingInput& input) {
     MeasurementTrackingState next = current;
 
-    if (input.aggregate.fresh_meters == 0) {
-        // No trustworthy measurement this cycle. Hold the offset where it is, drop the
-        // hysteresis progress, and make no claim about reducibility.
+    if (input.aggregate.fresh_meters == 0 or input.aggregate.stale_meters > 0) {
+        // The aggregate does not cover the whole installation this cycle: with any meter
+        // stale, power_W undercounts real consumption, which overstates grid headroom and
+        // fabricates reducibility. Hold the offset where it is, drop the hysteresis
+        // progress, and make no claim about reducibility until every meter is fresh.
         next.underutilized_cycles = 0;
         next.power_can_be_reduced = false;
         return next;
