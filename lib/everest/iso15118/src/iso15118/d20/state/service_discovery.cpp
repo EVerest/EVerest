@@ -73,6 +73,11 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     // Reset default value
     res.energy_transfer_service_list.clear();
 
+    // Service discovery may be re-entered from the DER CPD state, so rebuild instead of accumulating.
+    session.offered_services.energy_services.clear();
+    session.offered_services.vas_services.clear();
+    ev_energy_services.clear();
+
     std::vector<dt::Service> energy_services_list;
     std::vector<dt::VasService> vas_services_list;
 

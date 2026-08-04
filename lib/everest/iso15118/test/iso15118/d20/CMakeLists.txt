@@ -19,3 +19,13 @@ target_link_libraries(test_sae_default_der_control
 )
 
 catch_discover_tests(test_sae_default_der_control)
+
+add_executable(test_sae_der_control_convert sae_der_control_convert.cpp)
+
+target_link_libraries(test_sae_der_control_convert
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_sae_der_control_convert)
