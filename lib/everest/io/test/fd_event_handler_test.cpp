@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <memory>
+#include <type_traits>
 
 #include <unistd.h>
 
@@ -49,6 +50,15 @@ int open_unpollable_fd() {
 }
 
 } // namespace
+
+// Copying a registered client would duplicate the recorded handler and descriptor, so
+// two objects would own one registration and the first destroyed would remove the live one.
+TEST(fd_event_handler_test, sync_interface_cannot_be_copied_or_moved) {
+    EXPECT_FALSE(std::is_copy_constructible_v<minimal_sync_client>);
+    EXPECT_FALSE(std::is_copy_assignable_v<minimal_sync_client>);
+    EXPECT_FALSE(std::is_move_constructible_v<minimal_sync_client>);
+    EXPECT_FALSE(std::is_move_assignable_v<minimal_sync_client>);
+}
 
 // A sync client cannot self-unregister, so its handler map entry outlives it and
 // blocks a later registration of the recycled descriptor number.

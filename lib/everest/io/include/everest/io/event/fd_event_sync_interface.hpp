@@ -26,10 +26,18 @@ enum class sync_status {
  */
 class fd_event_sync_interface {
 public:
+    fd_event_sync_interface() = default;
+
     /**
      * @brief Drops a registration still recorded by \ref register_events
      */
     virtual ~fd_event_sync_interface();
+
+    // A recorded registration has exactly one owner, so it cannot be duplicated or transferred.
+    fd_event_sync_interface(fd_event_sync_interface const&) = delete;
+    fd_event_sync_interface& operator=(fd_event_sync_interface const&) = delete;
+    fd_event_sync_interface(fd_event_sync_interface&&) = delete;
+    fd_event_sync_interface& operator=(fd_event_sync_interface&&) = delete;
 
     /**
      * @brief Access to the internal event handler
