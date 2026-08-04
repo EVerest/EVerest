@@ -59,15 +59,7 @@ struct StopObserver {
 
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop emits a Dynamic DER_AC_ChargeLoopRequest on enter") {
     const ev::feedback::Callbacks callbacks{};
-    const auto seed_single = [](FsmStateHelper& helper) {
-        ev::AcChargeParams p{};
-        p.max_charge_power = 11000.0f;
-        p.min_charge_power = 1000.0f;
-        p.present_active_power = 5000.0f;
-        p.three_phase = false;
-        helper.set_ac_params(p);
-    };
-    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{callbacks, seed_single};
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{callbacks, seed_present_5000};
 
     const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::DER_AC_ChargeLoopRequest>();
@@ -86,52 +78,17 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop emits a Dynamic DER_AC_ChargeLoop
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_discharge_power) == Catch::Approx(1000.0f));
     // No grid event asserted by the EV.
     REQUIRE(mode.grid_event_condition == 0);
-}
-
-SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop emits per-phase charge and discharge limits when three_phase") {
-    const ev::feedback::Callbacks callbacks{};
-    const auto seed_three_phase = [](FsmStateHelper& helper) {
-        ev::AcChargeParams p{};
-        p.max_charge_power = 11000.0f;
-        p.min_charge_power = 1000.0f;
-        p.present_active_power = 5000.0f;
-        p.three_phase = true;
-        helper.set_ac_params(p);
-    };
-    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{callbacks, seed_three_phase};
-
-    const auto requests = primed.take_requests();
-    const auto request_message = requests.get<message_20::DER_AC_ChargeLoopRequest>();
-    REQUIRE(request_message.has_value());
-    REQUIRE(
-        std::holds_alternative<message_20::datatypes::DER_Dynamic_AC_CLReqControlMode>(request_message->control_mode));
-    const auto& mode = std::get<message_20::datatypes::DER_Dynamic_AC_CLReqControlMode>(request_message->control_mode);
-
-    // Per-phase charge limits mirror the aggregate on L2 and L3.
-    REQUIRE(mode.max_charge_power_L2.has_value());
-    REQUIRE(mode.max_charge_power_L3.has_value());
-    REQUIRE(mode.min_charge_power_L2.has_value());
-    REQUIRE(mode.min_charge_power_L3.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_charge_power_L2) == Catch::Approx(11000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_charge_power_L3) == Catch::Approx(11000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_charge_power_L2) == Catch::Approx(1000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_charge_power_L3) == Catch::Approx(1000.0f));
-
-    // Present active power is reported per phase.
-    REQUIRE(mode.present_active_power_L2.has_value());
-    REQUIRE(mode.present_active_power_L3.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.present_active_power_L2) == Catch::Approx(5000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.present_active_power_L3) == Catch::Approx(5000.0f));
-
-    // Discharge capability is advertised per phase as well.
-    REQUIRE(mode.max_discharge_power_L2.has_value());
-    REQUIRE(mode.max_discharge_power_L3.has_value());
-    REQUIRE(mode.min_discharge_power_L2.has_value());
-    REQUIRE(mode.min_discharge_power_L3.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_discharge_power_L2) == Catch::Approx(11000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_discharge_power_L3) == Catch::Approx(11000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_discharge_power_L2) == Catch::Approx(1000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_discharge_power_L3) == Catch::Approx(1000.0f));
+    // The power limits are three-phase totals: no per-phase field is advertised.
+    REQUIRE_FALSE(mode.max_charge_power_L2.has_value());
+    REQUIRE_FALSE(mode.max_charge_power_L3.has_value());
+    REQUIRE_FALSE(mode.min_charge_power_L2.has_value());
+    REQUIRE_FALSE(mode.min_charge_power_L3.has_value());
+    REQUIRE_FALSE(mode.present_active_power_L2.has_value());
+    REQUIRE_FALSE(mode.present_active_power_L3.has_value());
+    REQUIRE_FALSE(mode.max_discharge_power_L2.has_value());
+    REQUIRE_FALSE(mode.max_discharge_power_L3.has_value());
+    REQUIRE_FALSE(mode.min_discharge_power_L2.has_value());
+    REQUIRE_FALSE(mode.min_discharge_power_L3.has_value());
 }
 
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop fires der_control on a Dynamic response") {

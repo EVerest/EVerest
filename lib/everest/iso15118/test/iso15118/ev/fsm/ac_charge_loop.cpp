@@ -79,16 +79,7 @@ struct StopObserver {
 
 SCENARIO("ISO15118-20 EV AC_ChargeLoop emits a Dynamic AC_ChargeLoopRequest on enter") {
     const ev::feedback::Callbacks callbacks{};
-    const auto seed_single = [](FsmStateHelper& helper) {
-        ev::AcChargeParams p{};
-        p.max_charge_power = 11000.0f;
-        p.min_charge_power = 1000.0f;
-        p.present_active_power = 5000.0f;
-        p.three_phase = false;
-        helper.set_ac_params(p);
-    };
-    PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, message_20::datatypes::ServiceCategory::AC_BPT,
-                                                      seed_single};
+    PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, seed_present_5000};
 
     const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::AC_ChargeLoopRequest>();
@@ -106,44 +97,13 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop emits a Dynamic AC_ChargeLoopRequest on e
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_energy_request) == Catch::Approx(0.0f));
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_energy_request) == Catch::Approx(0.0f));
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.present_reactive_power) == Catch::Approx(0.0f));
-    // Single-phase: no per-phase fields.
+    // The power limits are three-phase totals: no per-phase field is advertised.
     REQUIRE_FALSE(mode.max_charge_power_L2.has_value());
     REQUIRE_FALSE(mode.max_charge_power_L3.has_value());
     REQUIRE_FALSE(mode.min_charge_power_L2.has_value());
     REQUIRE_FALSE(mode.min_charge_power_L3.has_value());
     REQUIRE_FALSE(mode.present_active_power_L2.has_value());
     REQUIRE_FALSE(mode.present_active_power_L3.has_value());
-    REQUIRE_FALSE(mode.present_reactive_power_L2.has_value());
-    REQUIRE_FALSE(mode.present_reactive_power_L3.has_value());
-}
-
-SCENARIO("ISO15118-20 EV AC_ChargeLoop emits per-phase fields when three_phase") {
-    const ev::feedback::Callbacks callbacks{};
-    const auto seed_three = [](FsmStateHelper& helper) {
-        ev::AcChargeParams p{};
-        p.max_charge_power = 11000.0f;
-        p.min_charge_power = 1000.0f;
-        p.present_active_power = 5000.0f;
-        p.three_phase = true;
-        helper.set_ac_params(p);
-    };
-    PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, message_20::datatypes::ServiceCategory::AC_BPT,
-                                                      seed_three};
-
-    const auto requests = primed.take_requests();
-    const auto request_message = requests.get<message_20::AC_ChargeLoopRequest>();
-    REQUIRE(request_message.has_value());
-    const auto& mode = std::get<message_20::datatypes::Dynamic_AC_CLReqControlMode>(request_message->control_mode);
-    REQUIRE(mode.max_charge_power_L2.has_value());
-    REQUIRE(mode.max_charge_power_L3.has_value());
-    REQUIRE(mode.min_charge_power_L2.has_value());
-    REQUIRE(mode.min_charge_power_L3.has_value());
-    REQUIRE(mode.present_active_power_L2.has_value());
-    REQUIRE(mode.present_active_power_L3.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_charge_power_L2) == Catch::Approx(11000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_charge_power_L3) == Catch::Approx(1000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.present_active_power_L2) == Catch::Approx(5000.0f));
-    // Per-phase reactive power is never advertised, even three-phase.
     REQUIRE_FALSE(mode.present_reactive_power_L2.has_value());
     REQUIRE_FALSE(mode.present_reactive_power_L3.has_value());
 }
@@ -297,18 +257,8 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop stops the session on a BPT_Dynamic contro
 
 SCENARIO("ISO15118-20 EV AC_ChargeLoop emits a BPT_Dynamic request with discharge limits for a BPT session") {
     const ev::feedback::Callbacks callbacks{};
-    const auto seed_single = [](FsmStateHelper& helper) {
-        ev::AcChargeParams p{};
-        p.max_charge_power = 11000.0f;
-        p.min_charge_power = 1000.0f;
-        p.max_discharge_power = 9000.0f;
-        p.min_discharge_power = 500.0f;
-        p.present_active_power = 5000.0f;
-        p.three_phase = false;
-        helper.set_ac_params(p);
-    };
     PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, message_20::datatypes::ServiceCategory::AC_BPT,
-                                                      seed_single};
+                                                      seed_bpt_present_5000};
 
     const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::AC_ChargeLoopRequest>();
@@ -324,38 +274,11 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop emits a BPT_Dynamic request with discharg
     // v2x energy request fields are deliberately omitted.
     REQUIRE_FALSE(mode.max_v2x_energy_request.has_value());
     REQUIRE_FALSE(mode.min_v2x_energy_request.has_value());
-    // Single-phase: no per-phase discharge fields.
+    // The discharge limits are three-phase totals: no per-phase field is advertised.
     REQUIRE_FALSE(mode.max_discharge_power_L2.has_value());
     REQUIRE_FALSE(mode.max_discharge_power_L3.has_value());
     REQUIRE_FALSE(mode.min_discharge_power_L2.has_value());
     REQUIRE_FALSE(mode.min_discharge_power_L3.has_value());
-}
-
-SCENARIO("ISO15118-20 EV AC_ChargeLoop mirrors BPT discharge limits to L2/L3 when three_phase") {
-    const ev::feedback::Callbacks callbacks{};
-    const auto seed_three = [](FsmStateHelper& helper) {
-        ev::AcChargeParams p{};
-        p.max_charge_power = 11000.0f;
-        p.min_charge_power = 1000.0f;
-        p.max_discharge_power = 9000.0f;
-        p.min_discharge_power = 500.0f;
-        p.present_active_power = 5000.0f;
-        p.three_phase = true;
-        helper.set_ac_params(p);
-    };
-    PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, message_20::datatypes::ServiceCategory::AC_BPT,
-                                                      seed_three};
-
-    const auto requests = primed.take_requests();
-    const auto request_message = requests.get<message_20::AC_ChargeLoopRequest>();
-    REQUIRE(request_message.has_value());
-    const auto& mode = std::get<message_20::datatypes::BPT_Dynamic_AC_CLReqControlMode>(request_message->control_mode);
-    REQUIRE(mode.max_discharge_power_L2.has_value());
-    REQUIRE(mode.max_discharge_power_L3.has_value());
-    REQUIRE(mode.min_discharge_power_L2.has_value());
-    REQUIRE(mode.min_discharge_power_L3.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_discharge_power_L2) == Catch::Approx(9000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_discharge_power_L3) == Catch::Approx(500.0f));
 }
 
 SCENARIO("ISO15118-20 EV AC_ChargeLoop fires ac_target_power on a BPT_Dynamic response for a BPT session") {
