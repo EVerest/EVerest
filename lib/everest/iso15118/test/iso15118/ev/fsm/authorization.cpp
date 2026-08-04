@@ -91,6 +91,21 @@ SCENARIO("ISO15118-20 EV Authorization stops the session when the SECC offers no
     REQUIRE(primed.take_requests().empty());
 }
 
+SCENARIO("ISO15118-20 EV Authorization stops the session on a FAILED response after an Ongoing one") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::Authorization> primed{callbacks, seed_eim};
+
+    // Poll once so the rejection below happens mid-authorization and not on the first response.
+    primed.handle_response(make_auth_res(SESSION_HEADER, ResponseCode::OK, Processing::Ongoing));
+    REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned() == false);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+    REQUIRE(primed.take_requests().get<message_20::AuthorizationRequest>().has_value());
+
+    expect_stops_session(primed, make_auth_res(SESSION_HEADER, ResponseCode::FAILED_SequenceError, Processing::Ongoing),
+                         ev::d20::StateID::Authorization);
+    REQUIRE(primed.take_requests().empty());
+}
+
 SCENARIO("ISO15118-20 EV Authorization rejects malformed responses") {
     const ev::feedback::Callbacks callbacks{};
     const auto make_fsm = [](FsmStateHelper& helper) {
