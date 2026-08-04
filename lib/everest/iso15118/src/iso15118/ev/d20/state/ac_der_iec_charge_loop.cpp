@@ -15,7 +15,18 @@ namespace {
 
 namespace dt = message_20::datatypes;
 
-message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, const AcChargeParams& params) {
+// Approximation, not a measurement: the EV has no power measurement feeding the stack yet
+// and the field is mandatory on the wire, where a zero reads as a measured zero. Prefer a
+// module-fed value, else the target the SECC dictated and the EV is expected to follow.
+float approximate_present_active_power(const AcChargeParams& params, std::optional<float> target_dictated_by_evse) {
+    if (params.present_active_power != 0.0f) {
+        return params.present_active_power;
+    }
+    return target_dictated_by_evse.value_or(0.0f);
+}
+
+message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, const AcChargeParams& params,
+                                                  std::optional<float> target_dictated_by_evse) {
     message_20::DER_AC_ChargeLoopRequest req;
     setup_header(req.header, session);
     req.meter_info_requested = false;
@@ -28,10 +39,10 @@ message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, cons
     mode.min_energy_request = {0, 0};
     mode.max_charge_power = dt::from_float(params.max_charge_power);
     mode.min_charge_power = dt::from_float(params.min_charge_power);
-    mode.present_active_power = dt::from_float(params.present_active_power);
+    mode.present_active_power = dt::from_float(approximate_present_active_power(params, target_dictated_by_evse));
     mode.present_reactive_power = {0, 0};
-    mode.max_discharge_power = dt::from_float(params.max_charge_power);
-    mode.min_discharge_power = dt::from_float(params.min_charge_power);
+    mode.max_discharge_power = dt::from_float(params.max_discharge_power);
+    mode.min_discharge_power = dt::from_float(params.min_discharge_power);
     mode.grid_event_condition = 0;
     req.control_mode = mode;
 
@@ -42,7 +53,7 @@ message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, cons
 
 void AC_DER_IEC_ChargeLoop::enter() {
     logf_debug("Enter state: AC_DER_IEC_ChargeLoop");
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.evse_target_active_power()));
 }
 
 Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
@@ -89,7 +100,8 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
     }
 
     m_ctx.feedback.der_control(directive);
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params()));
+    m_ctx.set_evse_target_active_power(dt::from_RationalNumber(mode->target_active_power));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.evse_target_active_power()));
     return {};
 }
 
