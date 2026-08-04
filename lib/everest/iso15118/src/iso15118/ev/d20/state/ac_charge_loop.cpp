@@ -22,14 +22,6 @@ void fill_dynamic_charge(dt::Dynamic_AC_CLReqControlMode& mode, const AcChargePa
     mode.min_charge_power = dt::from_float(params.min_charge_power);
     mode.present_active_power = dt::from_float(params.present_active_power);
     mode.present_reactive_power = {0, 0};
-    if (params.three_phase) {
-        mode.max_charge_power_L2 = mode.max_charge_power;
-        mode.max_charge_power_L3 = mode.max_charge_power;
-        mode.min_charge_power_L2 = mode.min_charge_power;
-        mode.min_charge_power_L3 = mode.min_charge_power;
-        mode.present_active_power_L2 = mode.present_active_power;
-        mode.present_active_power_L3 = mode.present_active_power;
-    }
 }
 
 message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const AcChargeParams& params,
@@ -44,12 +36,6 @@ message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const Ac
         fill_dynamic_charge(mode, params);
         mode.max_discharge_power = dt::from_float(params.max_discharge_power);
         mode.min_discharge_power = dt::from_float(params.min_discharge_power);
-        if (params.three_phase) {
-            mode.max_discharge_power_L2 = mode.max_discharge_power;
-            mode.max_discharge_power_L3 = mode.max_discharge_power;
-            mode.min_discharge_power_L2 = mode.min_discharge_power;
-            mode.min_discharge_power_L3 = mode.min_discharge_power;
-        }
         req.control_mode = mode;
     } else {
         dt::Dynamic_AC_CLReqControlMode mode;

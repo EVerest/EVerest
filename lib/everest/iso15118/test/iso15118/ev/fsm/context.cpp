@@ -27,7 +27,6 @@ SCENARIO("ISO15118-20 EV Context returns a locked-copy snapshot of the seeded AC
         params.min_charge_power = 1000.0f;
         params.max_discharge_power = 9000.0f;
         params.min_discharge_power = 500.0f;
-        params.three_phase = true;
         params.present_active_power = 5000.0f;
         helper.set_ac_params(params);
 
@@ -42,7 +41,6 @@ SCENARIO("ISO15118-20 EV Context returns a locked-copy snapshot of the seeded AC
                 REQUIRE(snapshot.min_charge_power == params.min_charge_power);
                 REQUIRE(snapshot.max_discharge_power == params.max_discharge_power);
                 REQUIRE(snapshot.min_discharge_power == params.min_discharge_power);
-                REQUIRE(snapshot.three_phase == params.three_phase);
                 REQUIRE(snapshot.present_active_power == params.present_active_power);
             }
         }
@@ -59,7 +57,7 @@ SCENARIO("ISO15118-20 EV Context returns a locked-copy snapshot of the seeded AC
 
                 AND_THEN("The static fields are unchanged") {
                     REQUIRE(snapshot.max_charge_power == params.max_charge_power);
-                    REQUIRE(snapshot.three_phase == params.three_phase);
+                    REQUIRE(snapshot.min_charge_power == params.min_charge_power);
                 }
             }
         }

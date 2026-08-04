@@ -16,15 +16,19 @@ config:
     minimum: 1
     default: 20000
   ac_max_charge_power_w:
-    description: Advertised AC maximum charge power in watts.
+    description:
+      Advertised AC maximum charge power in watts, as a three-phase total. The
+      default is 16 A x 230 V x 3.
     type: number
     minimum: 0
     default: 11040
   ac_min_charge_power_w:
-    description: Advertised AC minimum charge power in watts.
+    description:
+      Advertised AC minimum charge power in watts, as a three-phase total. The
+      default is 6 A x 230 V x 3.
     type: number
     minimum: 0
-    default: 1380
+    default: 4140
   der_over_frequency_watt_mode:
     description: Declare support for the IEC OverFrequencyWattMode DER control function.
     type: boolean
@@ -78,13 +82,17 @@ config:
     type: boolean
     default: true
   ac_max_discharge_power_w:
-    description: Advertised AC maximum discharge power in watts (BPT).
+    description:
+      Advertised AC maximum discharge power in watts (BPT), as a three-phase
+      total. The default is 16 A x 230 V x 3.
     type: number
     default: 11040
   ac_min_discharge_power_w:
-    description: Advertised AC minimum discharge power in watts (BPT).
+    description:
+      Advertised AC minimum discharge power in watts (BPT), as a three-phase
+      total. The default is 6 A x 230 V x 3.
     type: number
-    default: 1380
+    default: 4140
   dc_max_discharge_power_w:
     description: Advertised DC maximum discharge power in watts (BPT).
     type: number
