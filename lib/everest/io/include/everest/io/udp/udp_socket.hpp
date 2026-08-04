@@ -82,7 +82,10 @@ public:
     int get_fd() const;
     /**
      * @brief Get pending errors on the socket.
-     * @details Implementation for \p ClientPolicy
+     * @details Implementation for \p ClientPolicy. With no socket owned, the errno
+     * of the last failed \ref udp_client_socket::connect is reported: SO_ERROR
+     * cannot be probed because no descriptor was assigned. That value is cached, so
+     * repeated calls report the same cause.
      * @return The current errno of the socket. Zero with no pending error.
      */
     int get_error() const;
@@ -132,6 +135,8 @@ protected:
     std::optional<udp_info> rx_impl(void* buffer, size_t buffer_size, ssize_t& payload_size);
 
     event::unique_fd m_owned_udp_fd;
+    /** errno of the last failed connect, reported while no socket is owned */
+    int m_connect_error{0};
 };
 /**
  * A basic <a href="https://man7.org/linux/man-pages/man7/udp.7.html">UDP</a> client.

@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,44 @@
 #include <everest/io/udp/endpoint.hpp>
 
 namespace everest::lib::io::socket {
+
+/**
+ * @brief A failed socket operation, carrying the errno that caused it.
+ * @details Thrown instead of a bare std::runtime_error wherever the cause is an
+ * errno: `errno` itself does not survive the unwind, because cleanup on the way
+ * out (close(), freeaddrinfo()) may overwrite it. The value is captured at the
+ * failure site.
+ */
+class socket_error : public std::runtime_error {
+public:
+    /**
+     * @param[in] what Human readable description.
+     * @param[in] error The errno captured at the failure site.
+     */
+    socket_error(std::string const& what, int error) : std::runtime_error(what), m_error(error) {
+    }
+
+    /**
+     * @brief The errno captured at the failure site.
+     */
+    int error() const {
+        return m_error;
+    }
+
+private:
+    int m_error;
+};
+
+/**
+ * @var reconnect_delay_ms
+ * @brief Throttle applied by a client between failed connect attempts.
+ * @details Deliberately independent of the connect timeout. A connect can fail
+ * without spending any of that timeout (refused peer, local bind failure), and
+ * consumers reset from the error handler, so without a throttle a client spins
+ * against the peer. Charging the connect timeout instead would double failure
+ * latency for the leg that did spend it.
+ */
+constexpr int reconnect_delay_ms{100};
 
 /**
  * @brief Open a UDP socket in server mode

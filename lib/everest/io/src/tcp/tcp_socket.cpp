@@ -28,21 +28,29 @@ bool tcp_socket::setup(std::string const& remote, uint16_t port, int timeout_ms,
     m_port = port;
     m_timeout_ms = timeout_ms;
     m_device = device;
+    m_connect_error = 0;
     m_fd.close();
     return true;
 }
 
 void tcp_socket::connect(std::function<void(bool, int)> const& setup_cb) {
+    int error = 0;
     try {
         auto socket = socket::open_tcp_socket_with_timeout(m_remote, m_port, m_timeout_ms, m_device);
         socket::set_non_blocking(socket);
         const auto fd = static_cast<int>(socket);
         m_fd = std::move(socket);
+        m_connect_error = 0;
         setup_cb(true, fd);
+        return;
+    } catch (socket::socket_error const& e) {
+        error = e.error();
     } catch (...) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(m_timeout_ms));
-        setup_cb(false, -1);
     }
+    // No descriptor was assigned, so get_error() has nothing to probe.
+    m_connect_error = error;
+    std::this_thread::sleep_for(std::chrono::milliseconds(socket::reconnect_delay_ms));
+    setup_cb(false, -1);
 }
 
 bool tcp_socket::tx(PayloadT& payload) {
@@ -81,6 +89,9 @@ int tcp_socket::get_fd() const {
 }
 
 int tcp_socket::get_error() const {
+    if (not is_open() and m_connect_error != 0) {
+        return m_connect_error;
+    }
     if (socket::is_tcp_socket_alive(m_fd)) {
         return socket::get_pending_error(m_fd);
     } else if (is_open()) {

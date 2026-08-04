@@ -50,6 +50,9 @@ int udp_socket_base::get_fd() const {
 }
 
 int udp_socket_base::get_error() const {
+    if (not m_owned_udp_fd.is_fd() and m_connect_error != 0) {
+        return m_connect_error;
+    }
     return socket::get_pending_error(m_owned_udp_fd);
 }
 
@@ -104,20 +107,28 @@ bool udp_client_socket::setup(std::string const& remote, uint16_t port, int time
     m_port = port;
     m_timeout_ms = timeout_ms;
     m_device = device;
+    m_connect_error = 0;
     m_owned_udp_fd.close();
     return true;
 }
 
 void udp_client_socket::connect(std::function<void(bool, int)> const& setup_cb) {
+    int error = 0;
     try {
         auto socket = socket::open_udp_client_socket(m_remote, m_port, m_device);
         socket::set_non_blocking(socket);
+        m_connect_error = 0;
         setup_cb(true, socket);
         m_owned_udp_fd = std::move(socket);
+        return;
+    } catch (socket::socket_error const& e) {
+        error = e.error();
     } catch (...) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(m_timeout_ms));
-        setup_cb(false, -1);
     }
+    // No descriptor was assigned, so get_error() has nothing to probe.
+    m_connect_error = error;
+    std::this_thread::sleep_for(std::chrono::milliseconds(socket::reconnect_delay_ms));
+    setup_cb(false, -1);
 }
 
 bool udp_client_socket::open(std::string const& remote, uint16_t port, std::string const& device) {

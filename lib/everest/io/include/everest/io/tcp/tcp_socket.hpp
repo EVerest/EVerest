@@ -92,7 +92,10 @@ public:
      */
     /**
      * @brief Get pending errors on the socket.
-     * @details Implementation for \p ClientPolicy
+     * @details Implementation for \p ClientPolicy. With no socket owned, the errno
+     * of the last failed \ref connect is reported: SO_ERROR cannot be probed
+     * because no descriptor was assigned. That value is cached, so repeated calls
+     * report the same cause.
      * @return The current errno of the socket. Zero with no pending error.
      */
     int get_error() const;
@@ -131,6 +134,7 @@ private:
     uint16_t m_port{0};
     event::unique_fd m_fd;
     int m_timeout_ms{0};
+    int m_connect_error{0};
     std::string m_device;
     static constexpr size_t default_buffer_size{1500};
 };
