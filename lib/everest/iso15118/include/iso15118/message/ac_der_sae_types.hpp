@@ -72,24 +72,24 @@ struct FrequencyDroopSettings {
     RationalNumber droop_factor;
     std::optional<RationalNumber> droop_factor_L2;
     std::optional<RationalNumber> droop_factor_L3;
-    PowerReference power_reference;
+    PowerReference power_reference{PowerReference::MaximumActivePower};
     std::optional<PowerReference> power_reference_L2;
     std::optional<PowerReference> power_reference_L3;
     RationalNumber open_loop_response_time;
 };
 
 struct FrequencyDroop {
-    bool enable;
+    bool enable{false};
     std::optional<uint16_t> priority;
     std::optional<FrequencyDroopSettings> over_frequency_droop;
     std::optional<FrequencyDroopSettings> under_frequency_droop;
 };
 
 struct VoltWatt {
-    bool enable;
+    bool enable{false};
     std::optional<uint16_t> priority;
-    DERUnit x_unit;
-    DERUnit y_unit;
+    DERUnit x_unit{DERUnit::PercentageV};
+    DERUnit y_unit{DERUnit::PercentageEVMaximumConfiguredActivePower};
     CurveDataPointsList curve_data_points;
     std::optional<CurveDataPointsList> curve_data_points_L2;
     std::optional<CurveDataPointsList> curve_data_points_L3;
@@ -98,39 +98,39 @@ struct VoltWatt {
 };
 
 struct ConstantWatt {
-    bool enable;
+    bool enable{false};
     std::optional<uint16_t> priority;
     RationalNumber watt_setpoint;
     std::optional<RationalNumber> watt_setpoint_L2;
     std::optional<RationalNumber> watt_setpoint_L3;
-    DERUnit unit;
+    DERUnit unit{DERUnit::PercentageEVMaximumConfiguredActivePower};
 };
 
 struct LimitMaxDischargePower {
-    bool enable;
+    bool enable{false};
     std::optional<uint16_t> priority;
-    uint16_t percentage_value;
+    std::uint16_t percentage_value{100};
     std::optional<uint16_t> percentage_value_L2;
     std::optional<uint16_t> percentage_value_L3;
     std::optional<RationalNumber> open_loop_response_time;
 };
 
 struct ConstantPowerFactor {
-    bool enable;
+    bool enable{false};
     std::optional<uint16_t> priority;
     RationalNumber power_factor_value;
     std::optional<RationalNumber> power_factor_value_L2;
     std::optional<RationalNumber> power_factor_value_L3;
-    PowerFactorExcitation power_factor_excitation;
+    PowerFactorExcitation power_factor_excitation{PowerFactorExcitation::OverExcited};
     std::optional<PowerFactorExcitation> power_factor_excitation_L2;
     std::optional<PowerFactorExcitation> power_factor_excitation_L3;
 };
 
 struct WattVar {
-    bool enable;
+    bool enable{false};
     std::optional<uint16_t> priority;
-    DERUnit x_unit;
-    DERUnit y_unit;
+    DERUnit x_unit{DERUnit::PercentageEVMaximumConfiguredActivePower};
+    DERUnit y_unit{DERUnit::PercentageEVMaximumConfiguredReactivePower};
     CurveDataPointsList curve_data_points;
     std::optional<CurveDataPointsList> curve_data_points_L2;
     std::optional<CurveDataPointsList> curve_data_points_L3;
@@ -139,27 +139,27 @@ struct WattVar {
 };
 
 struct VoltVar {
-    bool enable;
+    bool enable{false};
     std::optional<uint16_t> priority;
-    DERUnit x_unit;
-    DERUnit y_unit;
+    DERUnit x_unit{DERUnit::PercentageV};
+    DERUnit y_unit{DERUnit::PercentageEVMaximumConfiguredReactivePower};
     CurveDataPointsList curve_data_points;
     std::optional<CurveDataPointsList> curve_data_points_L2;
     std::optional<CurveDataPointsList> curve_data_points_L3;
     RationalNumber open_loop_response_time;
     std::optional<uint32_t> time_constant_pt1;
     RationalNumber reference_voltage;
-    bool autonomous_reference_voltage_adjustment_enable;
-    uint32_t reference_voltage_adjustment_time_constant;
+    bool autonomous_reference_voltage_adjustment_enable{false};
+    std::uint32_t reference_voltage_adjustment_time_constant{0};
 };
 
 struct ConstantVar {
-    bool enable;
+    bool enable{false};
     std::optional<uint16_t> priority;
     RationalNumber var_setpoint;
     std::optional<RationalNumber> var_setpoint_L2;
     std::optional<RationalNumber> var_setpoint_L3;
-    DERUnit unit;
+    DERUnit unit{DERUnit::PercentageEVMaximumConfiguredReactivePower};
 };
 
 // Enums for DER_SAE_AC_CPDResEnergyTransferMode
@@ -173,12 +173,14 @@ enum class GridConnectionMode : std::uint8_t {
     GridIslanded,
 };
 
-// DERCurve struct used by VoltageTrip and FrequencyTrip
+// DERCurve struct used by VoltageTrip and FrequencyTrip. Producers always assign the units, so
+// these defaults only guard partial initialization; x_unit in particular is family dependent
+// (PercentageV for the voltage trips, Hz for the frequency trips) and no single default fits both.
 struct DERCurve {
-    bool enable;
+    bool enable{false};
     std::optional<uint16_t> priority;
-    DERUnit x_unit;
-    DERUnit y_unit;
+    DERUnit x_unit{DERUnit::PercentageV};
+    DERUnit y_unit{DERUnit::s};
     CurveDataPointsList curve_data_points;
     std::optional<CurveDataPointsList> curve_data_points_L2;
     std::optional<CurveDataPointsList> curve_data_points_L3;
