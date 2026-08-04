@@ -41,7 +41,7 @@ sees the whole local process as a single child in its own energy tree, with no s
 
 Architecture
 ============
-.. image:: images/architecture.png
+.. image:: images/architecture.svg
    :align: center
    :width: 90%
 
