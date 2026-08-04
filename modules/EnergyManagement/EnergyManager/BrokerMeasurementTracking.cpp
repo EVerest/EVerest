@@ -101,7 +101,11 @@ std::optional<float> BrokerMeasurementTracking::compute_tracking_limit_W() {
         // minimum current while drawing full power.
         const float pricing_scale = static_cast<float>(pricing_phases) / static_cast<float>(std::max(1, active_phases));
 
-        limit_W = std::max(0.f, measured_W.value()) * pricing_scale + config.tracking_margin_W;
+        // The boost offset widens the tracking limit when the installation has spare
+        // capacity. It cannot raise the allocation above the static limits: tradeImpl()
+        // applies this budget with apply_limit_if_smaller(), so a tighter limit still wins.
+        limit_W = std::max(0.f, measured_W.value()) * pricing_scale + config.tracking_margin_W +
+                  config.boost_offset_A * watt_per_ampere;
     }
 
     // Never track below the minimum current the EVSE can signal. BrokerFastCharging buys
