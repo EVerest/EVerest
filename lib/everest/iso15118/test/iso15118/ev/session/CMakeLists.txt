@@ -10,6 +10,7 @@ function(create_ev_session_test_target NAME)
     catch_discover_tests(test_ev_${NAME})
 endfunction()
 
+create_ev_session_test_target(config_validation)
 create_ev_session_test_target(session_reactor)
 create_ev_session_test_target(controller)
 create_ev_session_test_target(integration_walk)

@@ -87,6 +87,11 @@ private:
     everest::lib::util::monitor<SessionState> session;
     std::thread worker;
 
+    // Cleared by check_config() when the module config cannot produce a viable session;
+    // start_charging then refuses rather than opening a session doomed to fail.
+    bool config_valid{true};
+
+    void check_config();
     void session_worker();
     void run_one_session();
     iso15118::ev::EvConfig make_ev_config(iso15118::message_20::datatypes::ServiceCategory energy_service) const;
