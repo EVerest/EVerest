@@ -51,6 +51,8 @@ void ocpp_consumer_API::ready() {
     generate_api_cmd_get_variables();
     generate_api_cmd_set_variables();
     generate_api_cmd_monitor_variables();
+    generate_api_cmd_change_availability();
+    generate_api_cmd_security_event();
 
     helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
@@ -123,6 +125,35 @@ void ocpp_consumer_API::generate_api_cmd_monitor_variables() {
         MonitorVariableRequestList request;
         if (deserialize(data, request)) {
             r_ocpp->call_monitor_variables(to_internal_api(request));
+            return true;
+        }
+        return false;
+    });
+}
+
+void ocpp_consumer_API::generate_api_cmd_change_availability() {
+    using namespace API_types_ext;
+    helper.subscribe_api_topic("change_availability", [=](std::string const& data) {
+        API_generic::RequestReply msg;
+        if (deserialize(data, msg)) {
+            ChangeAvailabilityRequest request;
+            if (deserialize(msg.payload, request)) {
+                auto int_reply = r_ocpp->call_change_availability(to_internal_api(request));
+                auto reply = to_external_api(int_reply);
+                mqtt_v.publish(msg.replyTo, serialize(reply));
+                return true;
+            }
+        }
+        return false;
+    });
+}
+
+void ocpp_consumer_API::generate_api_cmd_security_event() {
+    using namespace API_types_ext;
+    helper.subscribe_api_topic("security_event", [=](std::string const& data) {
+        SecurityEvent event;
+        if (deserialize(data, event)) {
+            r_ocpp->call_security_event(to_internal_api(event));
             return true;
         }
         return false;
