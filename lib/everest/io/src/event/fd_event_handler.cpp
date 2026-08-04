@@ -336,7 +336,12 @@ bool fd_event_handler::poll_impl(int timeout_ms) {
 
     if (status > 0) {
         for (int i = 0; i < status; ++i) {
-            auto& item = pollfds[i];
+            auto const item = pollfds[i];
+            // A handler may unregister any descriptor, including one later in this batch.
+            // Such an entry has no handler left to call and must not be dispatched.
+            if (not m_handlers->exists(item.data.fd)) {
+                continue;
+            }
             m_handlers->get(item.data.fd)(bitmask_to_poll_events(item.events));
         }
         return true;
