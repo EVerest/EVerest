@@ -248,12 +248,7 @@ SCENARIO(
 
     auto res = make_res(SESSION_HEADER, ResponseCode::OK);
     res.control_mode = message_20::datatypes::DER_Scheduled_AC_CLResControlMode{};
-    primed.handle_response(res);
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_DER_IEC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, res, ev::d20::StateID::AC_DER_IEC_ChargeLoop);
     REQUIRE(fired == false);
 }
 
