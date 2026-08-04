@@ -11,6 +11,9 @@ namespace module {
 /// \brief Extracts the total imported power measurement from a node of the energy tree.
 /// Prefers the leaves side measurement (what EvseManager reports for an EVSE) and falls
 /// back to the root side measurement.
+/// The reading's own timestamp is not checked here: staleness handling of aggregated
+/// measurements is WP1.b's PowerMeterAggregator's job, and a per-connector broker
+/// tracking a frozen value converges to that value plus the margin, which is safe.
 /// \returns measured power in Watt, or std::nullopt if the node carries no power measurement
 std::optional<float> get_measured_power_W(const types::energy::EnergyFlowRequest& node);
 

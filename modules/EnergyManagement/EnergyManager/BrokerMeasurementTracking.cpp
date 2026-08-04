@@ -43,10 +43,34 @@ std::optional<float> BrokerMeasurementTracking::compute_tracking_limit_W() {
         return std::nullopt;
     }
 
+    // Do not arm or consume the per-session state while no session is active. The optimizer
+    // runs continuously and constructs a broker for every EVSE on every run; without this
+    // guard the initial-current flag would be consumed during Unplugged runs and a real
+    // session would start at the minimum current instead of the configured initial current.
+    if (request.evse_state.has_value() and (request.evse_state.value() == types::energy::EvseState::Unplugged or
+                                            request.evse_state.value() == types::energy::EvseState::Finished)) {
+        return std::nullopt;
+    }
+
     const auto& limits = request.schedule_import[0].limits_to_root;
-    const auto phase_count =
+
+    if (not limits.ac_max_current_A.has_value()) {
+        // Tracking is AC-only: the amps-to-watts conversion below has no meaning for a
+        // watt-only (typically DC) node, and a watt budget derived from an AC starting
+        // current would cap it arbitrarily. Leave such nodes on their static limits.
+        return std::nullopt;
+    }
+
+    // The budget is expressed in the watt units the trading engine prices with. Under the
+    // default switch_1ph_3ph_mode of Never, BrokerFastCharging prices every purchase at
+    // ac_max_phase_count phases regardless of how many are active, so the budget must use
+    // the same convention or the minimum-current purchase would not fit into it.
+    const auto pricing_phases =
         limits.ac_max_phase_count.has_value() ? limits.ac_max_phase_count.value().value : ASSUMED_PHASE_COUNT;
-    const float watt_per_ampere = static_cast<float>(phase_count) * local_market.nominal_ac_voltage();
+    const auto active_phases = request.schedule_import[0].limits_to_root.ac_number_of_active_phases.has_value()
+                                   ? request.schedule_import[0].limits_to_root.ac_number_of_active_phases.value()
+                                   : pricing_phases;
+    const float watt_per_ampere = static_cast<float>(pricing_phases) * local_market.nominal_ac_voltage();
 
     float limit_W = 0.f;
 
@@ -60,21 +84,33 @@ std::optional<float> BrokerMeasurementTracking::compute_tracking_limit_W() {
 
         if (not measured_W.has_value()) {
             // No measurement for this connector. Do not starve it - leave the static limits
-            // in place and let BrokerFastCharging allocate as usual.
-            EVLOG_warning << request.uuid
-                          << ": power meter tracking enabled but no measurement available, "
-                             "falling back to static limits";
+            // in place and let BrokerFastCharging allocate as usual. Warn once per session,
+            // not once per optimizer run.
+            if (not context.tracking_warned_no_measurement) {
+                context.tracking_warned_no_measurement = true;
+                EVLOG_warning << request.uuid
+                              << ": power meter tracking enabled but no measurement available, "
+                                 "falling back to static limits";
+            }
             return std::nullopt;
         }
 
-        limit_W = measured_W.value() + config.tracking_margin_W;
+        // The measurement is physical watts on the active phases, but the budget is in
+        // pricing watts (see above). Scale it up, or a single phase session would look
+        // three times cheaper than the engine prices it and be tracked down to the
+        // minimum current while drawing full power.
+        const float pricing_scale = static_cast<float>(pricing_phases) / static_cast<float>(std::max(1, active_phases));
+
+        limit_W = std::max(0.f, measured_W.value()) * pricing_scale + config.tracking_margin_W;
     }
 
     // Never track below the minimum current the EVSE can signal. BrokerFastCharging buys
     // ac_min_current_A with allow_less=false, so a lower budget makes that purchase fail and
     // the connector receives nothing at all - the session stops instead of being trimmed.
+    // The +1W guards against an ulp mismatch with the engine's own ampere*phases*voltage
+    // expression, which would make the minimum purchase fail by rounding.
     if (limits.ac_min_current_A.has_value()) {
-        limit_W = std::max(limit_W, limits.ac_min_current_A.value().value * watt_per_ampere);
+        limit_W = std::max(limit_W, limits.ac_min_current_A.value().value * watt_per_ampere + 1.0f);
     }
 
     return limit_W;

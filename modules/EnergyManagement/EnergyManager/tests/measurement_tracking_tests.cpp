@@ -195,6 +195,182 @@ TEST(MeasurementTrackingBroker, TracksPerConnectorIndependently) {
     EXPECT_NEAR(l2.value().limits_root_side.ac_max_current_A.value().value, 32.0f, 0.01f);
 }
 
+TEST(MeasurementTrackingBroker, InitialCurrentSurvivesUnpluggedRuns) {
+    // The optimizer runs continuously and builds a broker for every EVSE on every run.
+    // Runs while the connector is Unplugged must not consume the initial-current flag,
+    // or a real session would start at the minimum current instead.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    evse.evse_state = types::energy::EvseState::Unplugged;
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    // Several idle cycles while nothing is plugged in.
+    impl.run_optimizer(request, AT);
+    impl.run_optimizer(request, AT);
+
+    // An EV plugs in and starts charging; no measurement exists yet.
+    request.children[0].evse_state = types::energy::EvseState::Charging;
+    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 16.0f, 0.01f);
+}
+
+TEST(MeasurementTrackingBroker, ReplugRestartsWithInitialCurrent) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    // A full session: initial current, then tracking converges.
+    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 16.0f, 0.01f);
+    test::set_measurement(request.children[0], 10000.0f);
+    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), expected_current_A(10200.0f), 0.01f);
+
+    // The EV unplugs; the meter drops to zero.
+    request.children[0].evse_state = types::energy::EvseState::Unplugged;
+    test::set_measurement(request.children[0], 0.0f);
+    impl.run_optimizer(request, AT);
+
+    // A new session must start from the initial current again, not from measured+margin.
+    request.children[0].evse_state = types::energy::EvseState::Charging;
+    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 16.0f, 0.01f);
+}
+
+TEST(MeasurementTrackingBroker, SinglePhaseSessionHonoursInitialCurrent) {
+    // A three phase EVSE currently charging a single phase vehicle. The budget is priced
+    // the way the trading engine prices purchases (at ac_max_phase_count), so the initial
+    // current still comes out as exactly the configured value.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    evse.schedule_import[0].limits_to_root.ac_number_of_active_phases = 1;
+    const auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 16.0f, 0.01f);
+}
+
+TEST(MeasurementTrackingBroker, SinglePhaseActiveSessionTracksItsRealDraw) {
+    // The measurement is physical watts on one phase, but the engine prices purchases at
+    // three. Without scaling the measurement up, a single phase EV drawing 16A (3680W)
+    // would be given a budget the engine reads as ~5.3A and be tracked down to the
+    // minimum current while drawing full power.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    evse.schedule_import[0].limits_to_root.ac_number_of_active_phases = 1;
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    impl.run_optimizer(request, AT);
+
+    // 16A on one phase at 230V.
+    test::set_measurement(request.children[0], 3680.0f);
+
+    // budget = 3680 * 3 + 200 = 11240W -> 11240 / 690 = 16.29A: the EV keeps its draw
+    // plus the margin, instead of collapsing to the 6A floor.
+    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 16.29f, 0.05f);
+}
+
+TEST(MeasurementTrackingBroker, NegativeMeasurementIsFlooredAtMinimumCurrent) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    impl.run_optimizer(request, AT);
+
+    // A bidirectional meter briefly reporting export must not produce a negative budget.
+    test::set_measurement(request.children[0], -500.0f);
+    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 6.0f, 0.01f);
+}
+
+TEST(MeasurementTrackingBroker, WattOnlyNodeIsNotStarved) {
+    // A node declaring only a watt limit (typically DC) has no meaningful amps-to-watts
+    // conversion; tracking must leave it on its static limits rather than capping it with
+    // an AC-derived budget or starving it to zero.
+    types::energy::EnergyFlowRequest evse;
+    evse.uuid = "dc1";
+    evse.node_type = types::energy::NodeType::Evse;
+    evse.evse_state = types::energy::EvseState::Charging;
+    types::energy::ScheduleReqEntry entry;
+    entry.timestamp = "2026-08-04T12:00:00.000Z";
+    entry.limits_to_root.total_power_W = {11000.0f, "TEST_dc"};
+    evse.schedule_import = {entry};
+    types::energy::ScheduleReqEntry none = entry;
+    none.limits_to_root.total_power_W = {0.0f, "TEST_dc"};
+    evse.schedule_export = {none};
+
+    auto request = test::make_root_node("grid", 63.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    // Two runs: neither the initial-current logic nor the measured branch may apply.
+    impl.run_optimizer(request, AT);
+    const auto results = impl.run_optimizer(request, AT);
+    const auto limit = test::find_limit(results, "dc1");
+    ASSERT_TRUE(limit.has_value());
+    ASSERT_TRUE(limit.value().limits_root_side.total_power_W.has_value());
+    EXPECT_NEAR(limit.value().limits_root_side.total_power_W.value().value, 11000.0f, 1.0f);
+}
+
+TEST(MeasurementTrackingBroker, MultiSlotScheduleCapsEverySlot) {
+    auto config = make_tracking_config();
+    // Two 30 minute slots inside the 1h forecast.
+    config.schedule_interval_duration = 30;
+
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(config, [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    impl.run_optimizer(request, AT);
+    test::set_measurement(request.children[0], 10000.0f);
+
+    const auto results = impl.run_optimizer(request, AT);
+    const auto limit = test::find_limit(results, "evse1");
+    ASSERT_TRUE(limit.has_value());
+    // The slot grid holds the 30 minute intervals plus the request's own timestamps, so
+    // only a lower bound is asserted; what matters is that every slot is capped.
+    ASSERT_GE(limit.value().schedule.size(), 2U);
+
+    // Each slot is an independent time interval with the full per-interval budget.
+    for (const auto& slot : limit.value().schedule) {
+        ASSERT_TRUE(slot.limits_to_root.total_power_W.has_value());
+        EXPECT_NEAR(slot.limits_to_root.total_power_W.value().value, 10200.0f, 1.0f);
+    }
+}
+
+TEST(MeasurementTrackingBroker, TighterStaticWattLimitWins) {
+    // The node itself declares a 5000W limit; the tracking budget (10200W) must not
+    // widen it.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f, 5000.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    impl.run_optimizer(request, AT);
+    test::set_measurement(request.children[0], 10000.0f);
+
+    const auto results = impl.run_optimizer(request, AT);
+    const auto limit = test::find_limit(results, "evse1");
+    ASSERT_TRUE(limit.has_value());
+    ASSERT_TRUE(limit.value().limits_root_side.total_power_W.has_value());
+    EXPECT_NEAR(limit.value().limits_root_side.total_power_W.value().value, 5000.0f, 1.0f);
+}
+
+TEST(MeasurementTrackingBroker, LooserStaticWattLimitDoesNotBind) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f, 20000.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    impl.run_optimizer(request, AT);
+    test::set_measurement(request.children[0], 10000.0f);
+
+    const auto results = impl.run_optimizer(request, AT);
+    const auto limit = test::find_limit(results, "evse1");
+    ASSERT_TRUE(limit.has_value());
+    EXPECT_NEAR(limit.value().limits_root_side.total_power_W.value().value, 10200.0f, 1.0f);
+}
+
 TEST(MeasurementTrackingBroker, TotalPurchaseEqualsTheTrackingLimit) {
     auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
     auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
