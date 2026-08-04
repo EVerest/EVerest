@@ -174,7 +174,8 @@ using DERControlFunction = std::variant<FrequencyWatt, VoltWatt, DERCurve, DSOQS
 
 namespace iso15118::sae {
 
-// LSB
+// Bit positions into the 32 bit SupportedModes and EnabledModes bitmaps, counted from the least significant
+// bit, so ChargeFunction = 0 is bit 0.
 enum class DerBitMapFunctions : std::uint8_t {
     ChargeFunction = 0,
     DischargeFunction = 1,
@@ -246,7 +247,7 @@ using CurveDataPointsList = everest::lib::util::fixed_vector<DataTuple, CurveDat
 
 struct DERCurve {
     bool enable{false};
-    std::optional<uint16_t> priority;
+    std::optional<std::uint16_t> priority;
     DERUnit x_unit{DERUnit::PercentageV};
     DERUnit y_unit{DERUnit::s};
     CurveDataPointsList curve_data_points;
@@ -256,7 +257,7 @@ struct DERCurve {
 
 struct ConstantPowerFactor {
     bool enable{false};
-    std::optional<uint16_t> priority;
+    std::optional<std::uint16_t> priority;
     float power_factor_value{1.0f};
     std::optional<float> power_factor_value_L2;
     std::optional<float> power_factor_value_L3;
@@ -267,34 +268,34 @@ struct ConstantPowerFactor {
 
 struct VoltVar {
     bool enable{false};
-    std::optional<uint16_t> priority;
+    std::optional<std::uint16_t> priority;
     DERUnit x_unit{DERUnit::PercentageV};
     DERUnit y_unit{DERUnit::PercentageEVMaximumConfiguredReactivePower};
     CurveDataPointsList curve_data_points;
     std::optional<CurveDataPointsList> curve_data_points_L2;
     std::optional<CurveDataPointsList> curve_data_points_L3;
     float open_loop_response_time{0.0f};
-    std::optional<uint32_t> time_constant_pt1;
+    std::optional<std::uint32_t> time_constant_pt1;
     float reference_voltage{0.0f};
     bool autonomous_reference_voltage_adjustment_enable{false};
-    uint32_t reference_voltage_adjustment_time_constant{0};
+    std::uint32_t reference_voltage_adjustment_time_constant{0};
 };
 
 struct WattVar {
     bool enable{false};
-    std::optional<uint16_t> priority;
+    std::optional<std::uint16_t> priority;
     DERUnit x_unit{DERUnit::PercentageEVMaximumConfiguredActivePower};
     DERUnit y_unit{DERUnit::PercentageEVMaximumConfiguredReactivePower};
     CurveDataPointsList curve_data_points;
     std::optional<CurveDataPointsList> curve_data_points_L2;
     std::optional<CurveDataPointsList> curve_data_points_L3;
     std::optional<float> open_loop_response_time;
-    std::optional<uint32_t> time_constant_pt1;
+    std::optional<std::uint32_t> time_constant_pt1;
 };
 
 struct ConstantVar {
     bool enable{false};
-    std::optional<uint16_t> priority;
+    std::optional<std::uint16_t> priority;
     float var_setpoint{0.0f};
     std::optional<float> var_setpoint_L2;
     std::optional<float> var_setpoint_L3;
@@ -314,26 +315,26 @@ struct FrequencyDroopSettings {
 
 struct FrequencyDroop {
     bool enable{false};
-    std::optional<uint16_t> priority;
+    std::optional<std::uint16_t> priority;
     std::optional<FrequencyDroopSettings> over_frequency_droop;
     std::optional<FrequencyDroopSettings> under_frequency_droop;
 };
 
 struct VoltWatt {
     bool enable{false};
-    std::optional<uint16_t> priority;
+    std::optional<std::uint16_t> priority;
     DERUnit x_unit{DERUnit::PercentageV};
     DERUnit y_unit{DERUnit::PercentageEVMaximumConfiguredActivePower};
     CurveDataPointsList curve_data_points;
     std::optional<CurveDataPointsList> curve_data_points_L2;
     std::optional<CurveDataPointsList> curve_data_points_L3;
     float open_loop_response_time{0.0f};
-    std::optional<uint32_t> time_constant_pt1;
+    std::optional<std::uint32_t> time_constant_pt1;
 };
 
 struct ConstantWatt {
     bool enable{false};
-    std::optional<uint16_t> priority;
+    std::optional<std::uint16_t> priority;
     float watt_setpoint{0.0f};
     std::optional<float> watt_setpoint_L2;
     std::optional<float> watt_setpoint_L3;
@@ -342,10 +343,10 @@ struct ConstantWatt {
 
 struct LimitMaxDischargePower {
     bool enable{false};
-    std::optional<uint16_t> priority;
-    uint16_t percentage_value{100};
-    std::optional<uint16_t> percentage_value_L2;
-    std::optional<uint16_t> percentage_value_L3;
+    std::optional<std::uint16_t> priority;
+    std::uint16_t percentage_value{100};
+    std::optional<std::uint16_t> percentage_value_L2;
+    std::optional<std::uint16_t> percentage_value_L3;
     std::optional<float> open_loop_response_time;
 };
 
@@ -365,7 +366,7 @@ struct FrequencyTrip {
     std::optional<DERCurve> under_frequency_may_trip_curve;
 };
 
-// TODO(SL): Check 3363, 3364, 3365
+// TODO(mlitre): Check 3363, 3365
 struct EnterServiceCPDRes {
     bool permit_service{false};
     float enter_service_voltage_high{0.0f};
