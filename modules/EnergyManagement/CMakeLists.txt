@@ -22,6 +22,3 @@ if (NOT EEBUS_BUILD_MODE STREQUAL "OFF")
         message(WARNING "Not building the EEBUS module, missing dependencies: ${EEBUS_MISSING_DEPENDENCIES}")
     endif()
 endif()
-
-ev_add_module(external_energy_node_API)
-ev_add_module(external_energy_node_API_client)
