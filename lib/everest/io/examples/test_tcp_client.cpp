@@ -86,6 +86,11 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Connecting to ->  " << remote << ":" << port << std::endl;
+
+    // Declared first so it outlives the client, which removes its registration from it when
+    // it is destroyed.
+    fd_event_handler ev_handler;
+
     tcp_client client(remote, port, 1000);
     timer_fd timer;
     timer.set_timeout_ms(100);
@@ -94,8 +99,6 @@ int main(int argc, char* argv[]) {
     client.set_rx_handler(make_rx_callback(client));
 
     std::cout << "TCP socket ok? -> " << not client.on_error() << std::endl;
-
-    fd_event_handler ev_handler;
 
     ev_handler.register_event_handler(&timer, [&client](auto const&) {
         std::cout << "timer" << std::endl;

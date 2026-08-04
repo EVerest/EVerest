@@ -53,6 +53,10 @@ int main(int, char*[]) {
     bool server_connected = false;
     bool client_connected = false;
 
+    // Create the event handler first so it outlives the clients, which remove their
+    // registrations from it when they are destroyed.
+    fd_event_handler ev_handler;
+
     // Create first mqtt_client
     mqtt::mqtt_client client(2000);
     // Create and assign error handler
@@ -82,8 +86,7 @@ int main(int, char*[]) {
 
     server.connect(HOST, PORT, 1000);
 
-    // Create event handler and register clients
-    fd_event_handler ev_handler;
+    // Register the clients with the event handler
     ev_handler.register_event_handler(&client);
     ev_handler.register_event_handler(&server);
 

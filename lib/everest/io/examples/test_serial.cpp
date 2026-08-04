@@ -24,6 +24,10 @@ using namespace std::chrono_literals;
 int main() {
     std::cout << "This is serial test" << std::endl;
 
+    // Create the event handler first so it outlives the PTY, which removes its registration
+    // from it when it is destroyed.
+    fd_event_handler ev_handler;
+
     // Create PTY
     serial::event_pty handler;
     // Register callback for data events
@@ -55,7 +59,6 @@ int main() {
     });
 
     // register the client with the event handler
-    fd_event_handler ev_handler;
     ev_handler.register_event_handler(&handler);
 
     while (true) {
