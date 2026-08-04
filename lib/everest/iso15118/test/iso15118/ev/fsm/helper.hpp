@@ -152,7 +152,7 @@ inline const auto no_seed = [](FsmStateHelper&) {};
 
 // A primed FSM fixture: owns the state helper, primes the session id to SESSION_HEADER
 // (so response echoes line up), runs `seed(helper)` for per-state context (auth
-// services, DcChargeParams, cert hashes) BEFORE the state is entered, then enters
+// services, DcChargeParams) BEFORE the state is entered, then enters
 // State with any forwarded ctor args. Access the FSM/context/exchange via the public
 // members; the entry request queued by State::enter() is already pending.
 // The Context requests DC unless the test names another service; the service is fixed
