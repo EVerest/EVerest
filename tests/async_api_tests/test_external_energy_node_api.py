@@ -72,3 +72,44 @@ async def test_external_timeout_falls_back_to_internal_energy_manager(
     # 4. Limits sent via energy_grid are now forwarded, proving the fallback engaged.
     await probe_module.call_command("energy_grid", "enforce_limits", {"value": _enforce_limits("internal-2")})
     assert forwarded.get(timeout=5)["uuid"] == "internal-2"
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_core_config('probe-external-energy-node.yaml')
+async def test_external_recovery_after_fallback(
+    everest_core: EverestCore,
+    probe_module: ProbeModule,
+    connected_mqtt_client: mqtt.Client,
+):
+    """After a timeout-driven fallback to the internal EnergyManager, a returning
+    external EnergyManager must take back priority: its limits are routed to the
+    children again and internal limits go back to being discarded.
+    """
+    forwarded = Queue()
+
+    def on_enforce_limits(args):
+        forwarded.put(args["value"])
+        return None
+
+    probe_module.implement_command("energy_consumer", "enforce_limits", on_enforce_limits)
+    probe_module.start()
+    await probe_module.wait_to_be_ready(timeout=10.0)
+
+    mqtt_prefix = everest_core.mqtt_external_prefix
+    external_topic = f"{mqtt_prefix}everest_api/1/external_energy_node/{MODULE_ID}/m2e/enforce_limits"
+
+    # 1. External connects and goes silent past timeout_s -> fallback to internal.
+    connected_mqtt_client.publish(external_topic, json.dumps(_enforce_limits("external-1")))
+    assert forwarded.get(timeout=5)["uuid"] == "external-1"
+    time.sleep(TIMEOUT_S + 1)
+    await probe_module.call_command("energy_grid", "enforce_limits", {"value": _enforce_limits("internal-1")})
+    assert forwarded.get(timeout=5)["uuid"] == "internal-1"
+
+    # 2. External comes back -> its limits are routed to the children again.
+    connected_mqtt_client.publish(external_topic, json.dumps(_enforce_limits("external-2")))
+    assert forwarded.get(timeout=5)["uuid"] == "external-2"
+
+    # 3. External is active again -> internal limits are discarded again.
+    await probe_module.call_command("energy_grid", "enforce_limits", {"value": _enforce_limits("internal-2")})
+    with pytest.raises(Empty):
+        forwarded.get(timeout=1)
