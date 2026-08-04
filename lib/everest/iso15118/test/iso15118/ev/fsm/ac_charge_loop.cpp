@@ -128,6 +128,35 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop fires ac_target_power on a Dynamic respon
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
 }
 
+SCENARIO("ISO15118-20 EV AC_ChargeLoop reports the dictated target as its present power") {
+    // Nothing feeds a measured present power yet, so the request approximates it with the
+    // target the SECC dictated rather than putting a zero on the wire.
+    StopObserver obs;
+    const auto seed_limits_only = [](FsmStateHelper& helper) {
+        ev::AcChargeParams p{};
+        p.max_charge_power = 11000.0f;
+        p.min_charge_power = 1000.0f;
+        helper.set_ac_params(p);
+    };
+    PrimedState<ev::d20::state::AC_ChargeLoop> primed{obs.callbacks, seed_limits_only};
+
+    // No target has been dictated at loop entry, so the first request reports no power.
+    const auto first = primed.take_requests();
+    const auto first_request = first.get<message_20::AC_ChargeLoopRequest>();
+    REQUIRE(first_request.has_value());
+    const auto& first_mode = std::get<message_20::datatypes::Dynamic_AC_CLReqControlMode>(first_request->control_mode);
+    REQUIRE(message_20::datatypes::from_RationalNumber(first_mode.present_active_power) == Catch::Approx(0.0f));
+
+    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
+    REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned() == false);
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::AC_ChargeLoopRequest>();
+    REQUIRE(request_message.has_value());
+    const auto& mode = std::get<message_20::datatypes::Dynamic_AC_CLReqControlMode>(request_message->control_mode);
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.present_active_power) == Catch::Approx(7000.0f));
+}
+
 SCENARIO("ISO15118-20 EV AC_ChargeLoop stays and re-emits a request on a non-Terminate response") {
     StopObserver obs;
     PrimedState<ev::d20::state::AC_ChargeLoop> primed{obs.callbacks, seed_present_5000};
