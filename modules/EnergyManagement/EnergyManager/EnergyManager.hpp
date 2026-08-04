@@ -39,6 +39,7 @@ struct Conf {
     bool use_power_meter_tracking;
     double power_meter_tracking_initial_current_A;
     double power_meter_tracking_margin_W;
+    int power_meter_aggregation_window_s;
 };
 
 class EnergyManager : public Everest::ModuleBase {

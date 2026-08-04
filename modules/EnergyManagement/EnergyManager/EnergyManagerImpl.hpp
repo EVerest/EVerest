@@ -11,6 +11,9 @@
 #include <mutex>
 
 #include <Broker.hpp>
+#include <PowerMeterAggregator.hpp>
+
+#include <memory>
 
 namespace module {
 
@@ -30,6 +33,7 @@ struct EnergyManagerConfig {
     bool use_power_meter_tracking;
     double power_meter_tracking_initial_current_A;
     double power_meter_tracking_margin_W;
+    int power_meter_aggregation_window_s;
 };
 
 class EnergyManagerImpl {
@@ -55,6 +59,11 @@ public:
                                                              date::utc_clock::time_point start_time,
                                                              const std::string& test_name = "");
 
+    /// \brief The aggregated leaf power meter reading computed during the most recent
+    /// run_optimizer() call. Readings older than power_meter_aggregation_window_s are
+    /// excluded from the sums.
+    const PowerMeterAggregator::AggregateResult& get_leaf_aggregate() const;
+
 private:
     EnergyManagerConfig config;
     std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)> enforced_limits_callback;
@@ -67,6 +76,10 @@ private:
     types::energy::EnergyFlowRequest energy_flow_request;
 
     std::map<std::string, BrokerContext> contexts;
+
+    // Aggregates the leaf power meter readings of the tree. Rebuilt on every optimizer run.
+    std::unique_ptr<PowerMeterAggregator> leaf_aggregator;
+    PowerMeterAggregator::AggregateResult leaf_aggregate;
 };
 
 } // namespace module
