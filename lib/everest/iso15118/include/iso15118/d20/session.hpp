@@ -126,24 +126,36 @@ public:
     void selected_service_parameters(const dt::ServiceCategory service, const uint16_t id);
     void selected_service_parameters(const uint16_t vas_service, const uint16_t id);
 
-    auto get_selected_services() const& {
+    [[nodiscard]] auto get_selected_services() const& {
         return selected_services;
     }
 
-    bool is_ac_charger() const {
+    [[nodiscard]] bool is_ac_charger() const {
         return selected_services.selected_energy_service == dt::ServiceCategory::AC or
                selected_services.selected_energy_service == dt::ServiceCategory::AC_BPT;
     }
 
-    bool is_ac_der_iec_charger() const {
+    [[nodiscard]] bool is_ac_der_iec_charger() const {
         return selected_services.selected_energy_service == dt::ServiceCategory::AC_DER_IEC;
     }
 
-    bool is_dc_charger() const {
+    [[nodiscard]] bool is_ac_der_sae_charger() const {
+        return selected_services.selected_energy_service == dt::ServiceCategory::AC_DER_SAE;
+    }
+
+    [[nodiscard]] bool is_dc_charger() const {
         return selected_services.selected_energy_service == dt::ServiceCategory::DC or
                selected_services.selected_energy_service == dt::ServiceCategory::DC_BPT or
                selected_services.selected_energy_service == dt::ServiceCategory::MCS or
                selected_services.selected_energy_service == dt::ServiceCategory::MCS_BPT;
+    }
+
+    void updating_selected_sae_functions(uint8_t bitmap) {
+        selected_sae_functions.emplace(bitmap);
+    }
+
+    std::optional<uint8_t> get_selected_sae_functions() {
+        return selected_sae_functions;
     }
 
     ~Session();
@@ -158,6 +170,8 @@ private:
 
     SelectedServiceParameters selected_services{};
     SelectedVasParameter selected_vas_services{};
+
+    std::optional<uint8_t> selected_sae_functions{0};
 };
 
 } // namespace iso15118::d20
