@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include <iso15118/io/sha_hash.hpp>
 #include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/payload_type.hpp>
@@ -141,22 +140,6 @@ public:
         return stop_charging_requested;
     }
 
-    void set_charger_cert_hash(std::optional<io::sha512_hash_t> hash) {
-        charger_cert_hash = hash;
-    }
-
-    auto get_charger_cert_hash() const {
-        return charger_cert_hash;
-    }
-
-    void set_charger_cert_session_hash(std::optional<io::sha512_hash_t> hash) {
-        charger_cert_session_hash = hash;
-    }
-
-    auto get_charger_cert_session_hash() const {
-        return charger_cert_session_hash;
-    }
-
     const message_20::datatypes::Identifier& get_evcc_id() const {
         return evcc_id;
     }
@@ -279,10 +262,6 @@ private:
     bool session_stopped{false};
 
     bool stop_charging_requested{false};
-
-    std::optional<io::sha512_hash_t> charger_cert_hash{std::nullopt};
-
-    std::optional<io::sha512_hash_t> charger_cert_session_hash{std::nullopt};
 };
 
 } // namespace iso15118::ev::d20

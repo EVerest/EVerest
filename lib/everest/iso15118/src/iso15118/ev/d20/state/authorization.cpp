@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
+#include <algorithm>
+
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/authorization.hpp>
@@ -11,19 +13,12 @@ namespace iso15118::ev::d20::state {
 
 namespace {
 
-// Build an AuthorizationRequest from the service the EVSE offered (chosen in
-// AuthorizationSetup). The EV serializer only emits an EIM mode today, but the
-// selected service is preserved so the SECC sees the intended choice.
+// The EV selects EIM only: see plans/2026-08-04-ev-session-resume-and-pnc.md.
 message_20::AuthorizationRequest make_request(Context& ctx) {
     message_20::AuthorizationRequest req;
     setup_header(req.header, ctx.get_session());
-    req.selected_authorization_service = ctx.get_evse_session_info().auth_services.front();
-    if (req.selected_authorization_service == message_20::datatypes::Authorization::PnC) {
-        // TODO(mlitre): Fill in the PnC authorization mode data.
-        req.authorization_mode = message_20::datatypes::PnC_ASReqAuthorizationMode{};
-    } else {
-        req.authorization_mode = message_20::datatypes::EIM_ASReqAuthorizationMode{};
-    }
+    req.selected_authorization_service = message_20::datatypes::Authorization::EIM;
+    req.authorization_mode = message_20::datatypes::EIM_ASReqAuthorizationMode{};
     return req;
 }
 
@@ -32,8 +27,19 @@ message_20::AuthorizationRequest make_request(Context& ctx) {
 void Authorization::enter() {
     logf_debug("Enter state: Authorization");
 
-    if (m_ctx.get_evse_session_info().auth_services.empty()) {
+    const auto& auth_services = m_ctx.get_evse_session_info().auth_services;
+
+    if (auth_services.empty()) {
         logf_error("No authorization services available to send AuthorizationRequest. Abort the session.");
+        m_ctx.stop_session();
+        return;
+    }
+
+    const auto offers_eim = std::find(auth_services.begin(), auth_services.end(),
+                                      message_20::datatypes::Authorization::EIM) != auth_services.end();
+
+    if (not offers_eim) {
+        logf_error("EVSE does not offer EIM authorization and the EV supports no other mode. Abort the session.");
         m_ctx.stop_session();
         return;
     }
