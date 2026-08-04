@@ -77,9 +77,9 @@ TEST(fd_event_handler_test, destroying_sync_client_drops_its_map_entry) {
     EXPECT_FALSE(handler.is_registered(raw));
 }
 
-// EPOLL_CTL_DEL on a closed descriptor fails with EBADF. With the map entry
-// already gone there is nothing left to remove, so the call must report failure.
-TEST(fd_event_handler_test, unregister_reports_false_when_epoll_del_fails) {
+// Removal reports success when either the epoll set or the handler map gave up an entry,
+// and failure only when neither did.
+TEST(fd_event_handler_test, unregister_reports_false_for_an_unknown_fd) {
     fd_event_handler handler;
 
     auto probe = std::make_unique<event_fd>();
@@ -88,7 +88,9 @@ TEST(fd_event_handler_test, unregister_reports_false_when_epoll_del_fails) {
         raw, [](fd_event_handler::event_list const&) {}, poll_events::read));
 
     probe.reset();
-    handler.unregister_event_handler(raw);
+    // Closing the descriptor dropped it from the epoll set, so EPOLL_CTL_DEL now fails
+    // EBADF. Erasing the handler map entry is still a removal.
+    EXPECT_TRUE(handler.unregister_event_handler(raw));
     ASSERT_FALSE(handler.is_registered(raw));
 
     EXPECT_FALSE(handler.unregister_event_handler(raw));
