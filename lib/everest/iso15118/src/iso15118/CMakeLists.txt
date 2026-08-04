@@ -39,6 +39,7 @@ target_sources(iso15118
         d20/state/ac_charge_parameter_discovery.cpp
         d20/state/ac_der_iec_charge_parameter_discovery.cpp
         d20/state/ac_der_sae_charge_parameter_discovery.cpp
+        d20/state/ac_der_sae_convert.cpp
         d20/state/dc_charge_parameter_discovery.cpp
         d20/state/schedule_exchange.cpp
         d20/state/dc_cable_check.cpp

@@ -16,8 +16,6 @@ struct AC_DER_SAE_ChargeParameterDiscovery : public StateBase {
 
 private:
     AcPresentPower present_powers;
-
-    uint32_t evse_supported_modes{0};
 };
 
 } // namespace iso15118::d20::state

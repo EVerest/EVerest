@@ -2,8 +2,12 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/schedule_exchange.hpp>
+#include <iso15118/d20/state/service_detail.hpp>
 
+#include <iso15118/detail/d20/config_validation.hpp>
 #include <iso15118/detail/d20/context_helper.hpp>
+#include <iso15118/detail/d20/state/ac_der_sae_convert.hpp>
+#include <iso15118/detail/d20/state/service_discovery.hpp>
 #include <iso15118/detail/d20/state/session_stop.hpp>
 #include <iso15118/detail/helper.hpp>
 
@@ -11,237 +15,13 @@
 
 #include <everest/util/vector/fixed_vector.hpp>
 
+#include <cstdint>
+
 namespace iso15118::d20::state {
 
 namespace dt = message_20::datatypes;
 
 namespace {
-
-// void convert(dt::FrequencyWatt& out, const iec::FrequencyWatt& in_) {
-//     out.f_start = dt::from_float(in_.fstart);
-//     out.f_stop = dt::from_float(in_.fstop);
-//     out.intentional_delay_f_stop = in_.intentional_delay_fstop;
-//     out.slope = dt::from_float(in_.slope);
-//     out.deactivation_time = in_.deactivation_time;
-//     out.intentional_delay_power_control = in_.intentional_delay_power_control;
-//     out.power_reference = static_cast<dt::PowerReference>(in_.power_reference);
-//     out.hysteresis_control = in_.hysteresis_control;
-//     out.power_up_ramp = in_.power_up_ramp;
-//     out.pt1_response_active_power = in_.pt1_response_active_power;
-//     out.step_response_time_constant_active_power = dt::from_float(in_.step_response_time_constant_active_power);
-// }
-
-// void convert(dt::VoltWatt& out, const iec::VoltWatt& in) {
-//     out.power_reference = static_cast<dt::PowerReference>(in.power_reference);
-//     out.u_start = dt::from_float(in.u_start);
-//     out.u_stop = dt::from_float(in.u_stop);
-//     out.pt1_response_active_power = in.pt1_response_active_power;
-//     out.step_response_time_constant_active_power = dt::from_float(in.step_response_time_constant_active_power);
-//     out.intentional_delay_power_control = in.intentional_delay_power_control;
-// }
-
-// void convert(dt::CurveDataPointsList& out, const iec::CurveDataPointsList& in) {
-//     for (const auto& in_data_tuple : in) {
-//         auto& out_data_tuple = out.emplace_back();
-
-//         out_data_tuple.x_value = dt::from_float(in_data_tuple.x_value);
-//         out_data_tuple.y_value.set_point_value = dt::from_float(in_data_tuple.y_value.setpoint_value);
-//         out_data_tuple.y_value.excitation =
-//             in_data_tuple.y_value.excitation.has_value()
-//                 ?
-//                 std::make_optional(static_cast<dt::PowerFactorExcitation>(in_data_tuple.y_value.excitation.value()))
-//                 : std::nullopt;
-//     }
-// }
-
-// void convert(dt::DerCurve& out, const iec::DERCurve& in) {
-//     out.x_unit = static_cast<dt::CurveDataPointsUnit>(in.x_unit);
-//     out.y_unit = static_cast<dt::CurveDataPointsUnit>(in.y_unit);
-//     convert(out.curve_data_points, in.curve_data_points);
-//     out.min_cos_phi =
-//         in.min_cos_phi.has_value() ? std::make_optional(dt::from_float(in.min_cos_phi.value())) : std::nullopt;
-//     out.lock_value_unit = in.lock_value_unit.has_value()
-//                               ? std::make_optional(static_cast<dt::LockValueUnit>(in.lock_value_unit.value()))
-//                               : std::nullopt;
-//     out.lock_in_value =
-//         in.lock_in_value.has_value() ? std::make_optional(dt::from_float(in.lock_in_value.value())) : std::nullopt;
-//     out.lock_out_value =
-//         in.lock_out_value.has_value() ? std::make_optional(dt::from_float(in.lock_out_value.value())) : std::nullopt;
-//     out.pt1_response_reactive_power = in.pt1_response_reactive_power;
-//     out.step_response_time_constant_reactive_power = dt::from_float(in.step_response_time_constant_reactive_power);
-//     out.intentional_delay = in.intentional_delay.has_value()
-//                                 ? std::make_optional(dt::from_float(in.intentional_delay.value()))
-//                                 : std::nullopt;
-// }
-
-// void convert(dt::ZeroCurrent& out, const iec::ZeroCurrent& in) {
-//     out.over_voltage_limit = in.over_voltage_limit.has_value()
-//                                  ? std::make_optional(dt::from_float(in.over_voltage_limit.value()))
-//                                  : std::nullopt;
-//     out.under_voltage_limit = in.under_voltage_limit.has_value()
-//                                   ? std::make_optional(dt::from_float(in.under_voltage_limit.value()))
-//                                   : std::nullopt;
-//     out.over_voltage_recovery_limit = in.over_voltage_recovery_limit.has_value()
-//                                           ?
-//                                           std::make_optional(dt::from_float(in.over_voltage_recovery_limit.value()))
-//                                           : std::nullopt;
-//     out.under_voltage_recovery_limit = in.under_voltage_recovery_limit.has_value()
-//                                            ?
-//                                            std::make_optional(dt::from_float(in.under_voltage_recovery_limit.value()))
-//                                            : std::nullopt;
-//     out.pt1_response_active_power = in.pt1_response_active_power;
-//     out.step_response_time_constant_active_power = dt::from_float(in.step_response_time_constant_active_power);
-//     out.pt1_response_reactive_power = in.pt1_response_reactive_power;
-//     out.step_response_time_constant_reactive_power = dt::from_float(in.step_response_time_constant_reactive_power);
-// }
-
-// void convert(dt::FaultRideThrough& out, const iec::FaultRideThrough& in) {
-//     out.voltage_limit_start_frt = dt::from_float(in.voltage_limit_start_frt);
-//     out.voltage_limit_stop_frt = in.voltage_limit_stop_frt.has_value()
-//                                      ? std::make_optional(dt::from_float(in.voltage_limit_stop_frt.value()))
-//                                      : std::nullopt;
-//     out.voltage_recovery_limit = in.voltage_recovery_limit.has_value()
-//                                      ? std::make_optional(dt::from_float(in.voltage_recovery_limit.value()))
-//                                      : std::nullopt;
-//     out.voltage_ride_through_positive_curve_k_factor =
-//         in.voltage_ride_through_positive_curve_k_factor.has_value()
-//             ? std::make_optional(dt::from_float(in.voltage_ride_through_positive_curve_k_factor.value()))
-//             : std::nullopt;
-//     out.voltage_ride_through_negative_curve_k_factor =
-//         in.voltage_ride_through_negative_curve_k_factor.has_value()
-//             ? std::make_optional(dt::from_float(in.voltage_ride_through_negative_curve_k_factor.value()))
-//             : std::nullopt;
-//     out.pt1_response_active_power = in.pt1_response_active_power;
-//     out.step_response_time_constant_active_power = dt::from_float(in.step_response_time_constant_active_power);
-//     out.pt1_response_reactive_power = in.pt1_response_reactive_power;
-//     out.step_response_time_constant_reactive_power = dt::from_float(in.step_response_time_constant_reactive_power);
-// }
-
-// template <typename T> T& get_or_emplace(std::optional<T>& opt) {
-//     return opt.has_value() ? opt.value() : opt.emplace();
-// }
-
-// dt::DerControl create_der_control(const std::bitset<12>& selected_der_functions,
-//                                   const std::map<iec::DERControlName, iec::DERControlFunction>& der_functions) {
-//     dt::DerControl control{};
-
-//     for (const auto& [name, function] : der_functions) {
-//         if (not selected_der_functions.test(static_cast<size_t>(name))) {
-//             logf_warning("DER function ignored, not in selected set: %u", static_cast<uint32_t>(name));
-//             continue;
-//         }
-
-//         switch (name) {
-//         case iec::DERControlName::OverFrequencyWattMode:
-//             if (not std::holds_alternative<iec::FrequencyWatt>(function)) {
-//                 logf_warning("Unexpected variant type for OverFrequencyWattMode");
-//                 break;
-//             }
-//             convert(get_or_emplace(control.active_power_support).over_frequency_watt.emplace(),
-//                     std::get<iec::FrequencyWatt>(function));
-//             break;
-
-//         case iec::DERControlName::UnderFrequencyWattMode:
-//             if (not std::holds_alternative<iec::FrequencyWatt>(function)) {
-//                 logf_warning("Unexpected variant type for UnderFrequencyWattMode");
-//                 break;
-//             }
-//             convert(get_or_emplace(control.active_power_support).under_frequency_watt.emplace(),
-//                     std::get<iec::FrequencyWatt>(function));
-//             break;
-
-//         case iec::DERControlName::VoltWattMode:
-//             if (not std::holds_alternative<iec::VoltWatt>(function)) {
-//                 logf_warning("Unexpected variant type for VoltWattMode");
-//                 break;
-//             }
-//             convert(get_or_emplace(control.active_power_support).volt_watt.emplace(),
-//                     std::get<iec::VoltWatt>(function));
-//             break;
-
-//         case iec::DERControlName::VoltVarMode:
-//             if (not std::holds_alternative<iec::DERCurve>(function)) {
-//                 logf_warning("Unexpected variant type for VoltVarMode");
-//                 break;
-//             }
-//             {
-//                 auto& reactive_power_support = get_or_emplace(control.reactive_power_support);
-//                 reactive_power_support.name = dt::ReactivePowerSupport::ReactivePowerSupportName::VoltVar;
-//                 convert(reactive_power_support.curve, std::get<iec::DERCurve>(function));
-//             }
-//             break;
-
-//         case iec::DERControlName::WattVarMode:
-//             if (not std::holds_alternative<iec::DERCurve>(function)) {
-//                 logf_warning("Unexpected variant type for WattVarMode");
-//                 break;
-//             }
-//             {
-//                 auto& reactive_power_support = get_or_emplace(control.reactive_power_support);
-//                 reactive_power_support.name = dt::ReactivePowerSupport::ReactivePowerSupportName::WattVar;
-//                 convert(reactive_power_support.curve, std::get<iec::DERCurve>(function));
-//             }
-//             break;
-
-//         case iec::DERControlName::WattCosPhiMode:
-//             if (not std::holds_alternative<iec::DERCurve>(function)) {
-//                 logf_warning("Unexpected variant type for WattCosPhiMode");
-//                 break;
-//             }
-//             {
-//                 auto& reactive_power_support = get_or_emplace(control.reactive_power_support);
-//                 reactive_power_support.name = dt::ReactivePowerSupport::ReactivePowerSupportName::WattCosPhi;
-//                 convert(reactive_power_support.curve, std::get<iec::DERCurve>(function));
-//             }
-//             break;
-
-//         case iec::DERControlName::DSOQSetpointProvision:
-//         case iec::DERControlName::DSOCosPhiSetpointProvision:
-//             logf_info("Ignoring for now. DSO setpoints will be set in AcChargeLoopRes");
-//             break;
-
-//         case iec::DERControlName::DCInjectionRestriction:
-//             if (not std::holds_alternative<iec::MaximumLevelDCInjection>(function)) {
-//                 logf_warning("Unexpected variant type for DCInjectionRestriction");
-//                 break;
-//             }
-//             control.max_level_dc_injection.emplace(dt::from_float(std::get<iec::MaximumLevelDCInjection>(function)));
-//             break;
-
-//         case iec::DERControlName::ZeroCurrentMode:
-//             if (not std::holds_alternative<iec::ZeroCurrent>(function)) {
-//                 logf_warning("Unexpected variant type for ZeroCurrentMode");
-//                 break;
-//             }
-//             convert(get_or_emplace(control.zero_current), std::get<iec::ZeroCurrent>(function));
-//             break;
-
-//         case iec::DERControlName::OverVoltageFaultRideThroughMode:
-//             if (not std::holds_alternative<iec::FaultRideThrough>(function)) {
-//                 logf_warning("Unexpected variant type for OverVoltageFaultRideThroughMode");
-//                 break;
-//             }
-//             convert(get_or_emplace(control.over_voltage_fault_ride_through),
-//             std::get<iec::FaultRideThrough>(function)); break;
-
-//         case iec::DERControlName::UnderVoltageFaultRideThroughMode:
-//             if (not std::holds_alternative<iec::FaultRideThrough>(function)) {
-//                 logf_warning("Unexpected variant type for UnderVoltageFaultRideThroughMode");
-//                 break;
-//             }
-//             convert(get_or_emplace(control.under_voltage_fault_ride_through),
-//                     std::get<iec::FaultRideThrough>(function));
-//             break;
-
-//         default:
-//             logf_warning("Unhandled iec::DERControlName enum value: %u", static_cast<uint32_t>(name));
-//             break;
-//         }
-//     }
-
-//     return control;
-// }
-//
 
 void convert_sae_limits(dt::sae::DER_SAE_AC_CPDResEnergyTransferMode& out, const d20::SaeDerTransferLimits& in) {
     out.nominal_charge_power = in.nominal_charge_power;
@@ -290,85 +70,94 @@ void convert_sae_limits(dt::sae::DER_SAE_AC_CPDResEnergyTransferMode& out, const
     out.grid_limits.minimum_voltage = grid_limits.minimum_voltage;
 }
 
-constexpr auto MAX_FUNCTIONS = message_20::to_underlying_value(sae::DerBitMapFunctions::WattVarFunction) + 1;
+// Bits 2, 9, 25 and 27 to 31 are unused by the specification and must be ignored.
+constexpr uint32_t SAE_MODE_BITMAP_MASK = 0x05FFFDFBu;
 
-bool check_supported_evse_functions([[maybe_unused]] sae::DERControl& control, uint32_t ev_supported_modes,
-                                    uint32_t& evse_supported_modes) {
-
-    const auto ev_supported_functions = std::bitset<MAX_FUNCTIONS>(ev_supported_modes);
-    std::bitset<MAX_FUNCTIONS> evse_supported_functions;
-
-    if (not(ev_supported_functions.test(static_cast<size_t>(sae::DerBitMapFunctions::ChargeFunction)) and
-            ev_supported_functions.test(static_cast<size_t>(sae::DerBitMapFunctions::DischargeFunction)))) {
-        logf_error("ChargeFunction and DischargeFunction needs to be enabled from the ev");
-        return false;
-    }
-
-    evse_supported_functions.set(static_cast<size_t>(sae::DerBitMapFunctions::ChargeFunction), true);
-    evse_supported_functions.set(static_cast<size_t>(sae::DerBitMapFunctions::DischargeFunction), true);
-
-    // control.
-
-    evse_supported_modes = evse_supported_functions.to_ulong();
-
-    return true;
+bool is_function_set(uint32_t bitmap, sae::DerBitMapFunctions function) {
+    return (bitmap & (1U << message_20::to_underlying_value(function))) != 0U;
 }
 
-bool check_enabled_modes(const sae::DERControl& control, const uint32_t& ev_enabled_modes) {
-    std::bitset<MAX_FUNCTIONS> evse_enabled_functions;
-
-    evse_enabled_functions.set(static_cast<size_t>(sae::DerBitMapFunctions::ChargeFunction), true);
-    evse_enabled_functions.set(static_cast<size_t>(sae::DerBitMapFunctions::DischargeFunction), true);
-
-    evse_enabled_functions.set(static_cast<size_t>(sae::DerBitMapFunctions::EnterService),
-                               control.enter_service.permit_service);
-
-    if (control.reactive_power_support.constant_power_factor.enable and
-        control.reactive_power_support.constant_power_factor.power_factor_excitation ==
-            sae::PowerFactorExcitation::UnderExcited) {
-        evse_enabled_functions.set(
-            static_cast<size_t>(sae::DerBitMapFunctions::ConstantPowerFactorUnderExcitedFunction));
-    } else if (control.reactive_power_support.constant_power_factor.enable and
-               control.reactive_power_support.constant_power_factor.power_factor_excitation ==
-                   sae::PowerFactorExcitation::OverExcited) {
-        evse_enabled_functions.set(
-            static_cast<size_t>(sae::DerBitMapFunctions::ConstantPowerFactorOverExcitedFunction));
+void gate_enable(bool& enable, bool supported, const char* function_name) {
+    if (enable and not supported) {
+        logf_warning("Clearing enable of %s: EV did not declare support for it", function_name);
+        enable = false;
     }
+}
 
-    // ConstantReactivePowerFunction = 6,
-    // ConstantActivePowerFunction = 7,
-    // FrequencyDroopFunction = 8,
-    // HighFrequencyMayTripFunction = 10,
-    // HighFrequencyMustTripFunction = 11,
-    // HighVoltageMayTripFunction = 12,
-    // HighVoltageMomentaryCessationFunction = 13,
-    // HighVoltageMustTripFunction = 14,
-    // LowFrequencyMayTripFunction = 15,
-    // LowFrequencyMustTripFunction = 16,
-    // LowVoltageMayTripFunction = 17,
-    // LowVoltageMomentaryCessationFunction = 18,
-    // LowVoltageMustTripFunction = 19,
-    // LimitMaximumActiveDischargePowerFunction = 20,
-    // EVSETargetReactivePowerFunction = 21,
-    // EVSETargetActivePowerFunction = 22,
-    // VoltVarFunction = 23,
-    // VoltWattFunction = 24,
-    // WattVarFunction = 26,
-
-    const bool equal_functions = ev_enabled_modes == evse_enabled_functions.to_ulong();
-    if (not equal_functions) {
-        logf_info("EV enabled functions [%u != %u] EVSE enabled functions", ev_enabled_modes,
-                  evse_enabled_functions.to_ulong());
+void gate_optional_curve(std::optional<dt::sae::DERCurve>& curve, bool supported, const char* function_name) {
+    if (curve.has_value()) {
+        gate_enable(curve.value().enable, supported, function_name);
     }
+}
 
-    return equal_functions;
+// The SECC expresses itself only through the per-function Enable flags, so a function the EV does not
+// list in SupportedModes must not be enabled. This follows a semantics statement, not a numbered
+// requirement.
+// Masked bits without a gate: 0 and 1 (ChargeFunction, DischargeFunction) are inherent to the service,
+// 21 and 22 (EVSETargetReactivePowerFunction, EVSETargetActivePowerFunction) are charge loop targets
+// with no Enable in DERControlCPDRes.
+// The call order below follows the DERControlCPDRes declaration order so it can be audited side by side.
+void gate_enables_by_supported_modes(dt::sae::DERControlCPDRes& out, uint32_t supported_modes) {
+    using F = sae::DerBitMapFunctions;
+
+    auto& voltage_trip = out.voltage_trip;
+    gate_enable(voltage_trip.over_voltage_must_trip_curve.enable,
+                is_function_set(supported_modes, F::HighVoltageMustTripFunction), "over voltage must trip curve");
+    gate_enable(voltage_trip.under_voltage_must_trip_curve.enable,
+                is_function_set(supported_modes, F::LowVoltageMustTripFunction), "under voltage must trip curve");
+    gate_optional_curve(voltage_trip.over_voltage_momentary_cessation_trip_curve,
+                        is_function_set(supported_modes, F::HighVoltageMomentaryCessationFunction),
+                        "over voltage momentary cessation trip curve");
+    gate_optional_curve(voltage_trip.under_voltage_momentary_cessation_trip_curve,
+                        is_function_set(supported_modes, F::LowVoltageMomentaryCessationFunction),
+                        "under voltage momentary cessation trip curve");
+    gate_optional_curve(voltage_trip.over_voltage_may_trip_curve,
+                        is_function_set(supported_modes, F::HighVoltageMayTripFunction), "over voltage may trip curve");
+    gate_optional_curve(voltage_trip.under_voltage_may_trip_curve,
+                        is_function_set(supported_modes, F::LowVoltageMayTripFunction), "under voltage may trip curve");
+
+    auto& frequency_trip = out.frequency_trip;
+    gate_enable(frequency_trip.over_frequency_must_trip_curve.enable,
+                is_function_set(supported_modes, F::HighFrequencyMustTripFunction), "over frequency must trip curve");
+    gate_enable(frequency_trip.under_frequency_must_trip_curve.enable,
+                is_function_set(supported_modes, F::LowFrequencyMustTripFunction), "under frequency must trip curve");
+    gate_optional_curve(frequency_trip.over_frequency_may_trip_curve,
+                        is_function_set(supported_modes, F::HighFrequencyMayTripFunction),
+                        "over frequency may trip curve");
+    gate_optional_curve(frequency_trip.under_frequency_may_trip_curve,
+                        is_function_set(supported_modes, F::LowFrequencyMayTripFunction),
+                        "under frequency may trip curve");
+
+    gate_enable(out.enter_service_cpd_res.permit_service, is_function_set(supported_modes, F::EnterService),
+                "enter service");
+
+    auto& reactive = out.reactive_power_support_cpd_res;
+    // Either excitation direction keeps the constant power factor function alive.
+    gate_enable(reactive.constant_power_factor.enable,
+                is_function_set(supported_modes, F::ConstantPowerFactorUnderExcitedFunction) or
+                    is_function_set(supported_modes, F::ConstantPowerFactorOverExcitedFunction),
+                "constant power factor");
+    gate_enable(reactive.volt_var.enable, is_function_set(supported_modes, F::VoltVarFunction), "volt var");
+    gate_enable(reactive.watt_var.enable, is_function_set(supported_modes, F::WattVarFunction), "watt var");
+    gate_enable(reactive.constant_var.enable, is_function_set(supported_modes, F::ConstantReactivePowerFunction),
+                "constant var");
+
+    auto& active = out.active_power_support_cpd_res;
+    gate_enable(active.frequency_droop.enable, is_function_set(supported_modes, F::FrequencyDroopFunction),
+                "frequency droop");
+    gate_enable(active.volt_watt.enable, is_function_set(supported_modes, F::VoltWattFunction), "volt watt");
+    gate_enable(active.constant_watt.enable, is_function_set(supported_modes, F::ConstantActivePowerFunction),
+                "constant watt");
+    gate_enable(active.limit_max_discharge_power.enable,
+                is_function_set(supported_modes, F::LimitMaximumActiveDischargePowerFunction),
+                "limit maximum discharge power");
 }
 
 message_20::DER_SAE_AC_ChargeParameterDiscoveryResponse
-handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req, const d20::Session& session,
+handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req, d20::Session& session,
                const d20::AcTransferLimits& limits, const d20::AcPresentPower& powers,
                const std::optional<d20::SaeDerTransferLimits>& sae_limits,
-               const std::optional<DerSaeSetupConfig>& config, uint32_t evse_supported_modes) {
+               const std::optional<DerSaeSetupConfig>& config) {
 
     message_20::DER_SAE_AC_ChargeParameterDiscoveryResponse res;
 
@@ -387,6 +176,16 @@ handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req
     }
 
     // NOTE(SL): At this point, it's clear that it can only be DER TransferMode
+
+    const auto& sae_config = config.value();
+    const auto& der_limits = sae_limits.value();
+
+    // Validated before the session is touched and before the DER dictate is built. The offer rules ran the
+    // same check, but the AC limits can change through a control event in between.
+    if (const auto violation = validate_sae_nominals_within_maxima(der_limits, limits)) {
+        logf_error("SAE nominal power not within maximum: %s. Shutdown the session", violation.value().c_str());
+        return response_with_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+    }
 
     auto& mode = res.transfer_mode;
     mode.min_charge_power = limits.charge_power.min;
@@ -409,30 +208,28 @@ handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req
     mode.present_active_power_L2 = powers.present_active_power_L2;
     mode.present_active_power_L3 = powers.present_active_power_L3;
 
-    // ---------------------------------------------------------------
-
     // mode.status
-    const auto& sae_config = config.value();
+    const auto ev_supported_modes = req.transfer_mode.supported_modes & SAE_MODE_BITMAP_MASK;
 
-    // TODO(SL):
-    // 1. Based on req.transfer_mode.supported_modes and sae_config.der_control set mode.der_control_cpd_res + save the
-    // enabled in the state
-    auto der_control = sae_config.der_control;
+    // req.transfer_mode.enabled_modes is deliberately not consumed: the SECC dictates through the Enable
+    // flags, so an inequality between SupportedModes and EnabledModes is not an error.
 
-    if (not check_supported_evse_functions(der_control, req.transfer_mode.supported_modes, evse_supported_modes)) {
-        logf_error(""); // TODO(SL): Write prober error message
-        return response_with_code(res, dt::ResponseCode::FAILED);
+    if (not(is_function_set(ev_supported_modes, sae::DerBitMapFunctions::ChargeFunction) and
+            is_function_set(ev_supported_modes, sae::DerBitMapFunctions::DischargeFunction))) {
+        logf_warning("EV did not set both ChargeFunction and DischargeFunction in SupportedModes (0x%08x), "
+                     "continuing the session anyway",
+                     req.transfer_mode.supported_modes);
     }
 
-    // convert(mode.der_control_cpd_res, der_control);
+    session.set_ev_supported_sae_functions(ev_supported_modes);
 
-    // 2. Check mode.der_control_cpd_res with req.transfer_mode.enabled_modes -> Same then Processing::Finished + save
-    // the agreed/enabled
-    mode.processing = check_enabled_modes(der_control, req.transfer_mode.enabled_modes) ? dt::Processing::Finished
-                                                                                        : dt::Processing::Ongoing;
-    // --------------------------------------------------------
+    convert(mode.der_control_cpd_res, sae_config.der_control);
+    gate_enables_by_supported_modes(mode.der_control_cpd_res, ev_supported_modes);
 
-    convert_sae_limits(mode, sae_limits.value());
+    mode.processing =
+        req.transfer_mode.processing == dt::Processing::Ongoing ? dt::Processing::Ongoing : dt::Processing::Finished;
+
+    convert_sae_limits(mode, der_limits);
 
     if (sae_config.required_der_operating_mode == sae::RequiredDEROperatingMode::GridFollowing) {
         mode.required_der_operating_mode = dt::sae::RequiredDEROperatingMode::GridFollowing;
@@ -456,7 +253,6 @@ handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req
 void AC_DER_SAE_ChargeParameterDiscovery::enter() {
     logf_debug("Enter state: AC_DER_SAE_ChargeParameterDiscovery");
     present_powers = m_ctx.cache_ac_present_power.value_or(AcPresentPower{});
-    evse_supported_modes = 0;
 }
 
 Result AC_DER_SAE_ChargeParameterDiscovery::feed(Event ev) {
@@ -479,8 +275,7 @@ Result AC_DER_SAE_ChargeParameterDiscovery::feed(Event ev) {
         // m_ctx.session_ev_info.ev_transfer_limits.emplace<dt::DER_AC_CPDReqEnergyTransferMode>(req->transfer_mode);
 
         const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.ac_limits, present_powers,
-                                        m_ctx.session_config.der_sae_limits, m_ctx.session_config.der_sae_setup_config,
-                                        evse_supported_modes);
+                                        m_ctx.session_config.der_sae_limits, m_ctx.session_config.der_sae_setup_config);
 
         m_ctx.respond(res);
 
@@ -489,9 +284,6 @@ Result AC_DER_SAE_ChargeParameterDiscovery::feed(Event ev) {
             return {};
         }
 
-        // TODO(SL): Check [V2G20-]: It is possible that the EV sends a ServiceDiscoveryReq if the settings from
-        // evse is not accepted from the ev.
-
         // m_ctx.feedback.ac_limits(req->transfer_mode);
 
         if (req->transfer_mode.processing == dt::Processing::Finished and
@@ -499,6 +291,22 @@ Result AC_DER_SAE_ChargeParameterDiscovery::feed(Event ev) {
             return m_ctx.create_state<ScheduleExchange>(); // [V2G20-]
         }
         return {}; // [V2G20-3150]: Stay in the state because ev set processing to Ongoing
+    }
+
+    // The EV may restart service selection if it does not accept the dictated DER control settings.
+    if (const auto* const req = variant->get_if<message_20::ServiceDiscoveryRequest>()) {
+        const auto res =
+            handle_request(*req, m_ctx.session, m_ctx.session_config.supported_energy_transfer_services,
+                           m_ctx.session_config.supported_vas_services, m_ctx.session_ev_info.ev_energy_services);
+
+        m_ctx.respond(res);
+
+        if (res.response_code >= message_20::datatypes::ResponseCode::FAILED) {
+            m_ctx.session_stopped = true;
+            return {};
+        }
+
+        return m_ctx.create_state<ServiceDetail>();
     }
 
     if (const auto* const req = variant->get_if<message_20::SessionStopRequest>()) {
