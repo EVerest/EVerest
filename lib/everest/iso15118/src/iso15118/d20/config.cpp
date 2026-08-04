@@ -194,7 +194,9 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
     supported_vas_services(std::move(config.supported_vas_services)),
     dc_limits(config.dc_limits),
     ac_limits(config.ac_limits),
-    der_limits(config.der_limits),
+    der_iec_limits(config.der_iec_limits),
+    der_sae_setup_config(config.der_sae_setup_config),
+    der_sae_limits(config.der_sae_limits),
     powersupply_limits(config.powersupply_limits),
     supported_control_mobility_modes(std::move(config.control_mobility_modes)),
     custom_protocol(std::move(config.custom_protocol)),
@@ -231,18 +233,18 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
                      "can lead to session shutdowns.");
     }
 
-    // const auto is_ac_der_sae_service = [](dt::ServiceCategory service) {
-    //     return service == dt::ServiceCategory::AC_DER_SAE;
-    // };
-    // const auto ac_der_sae_found = std::any_of(supported_energy_transfer_services.begin(),
-    //                                           supported_energy_transfer_services.end(), is_ac_der_sae_service);
-    // if (ac_der_sae_found and (not der_sae_limits.has_value() or not der_sae_setup_config.has_value())) {
-    //     auto sae_it = std::find(supported_energy_transfer_services.begin(), supported_energy_transfer_services.end(),
-    //                             dt::ServiceCategory::AC_DER_SAE);
-    //     supported_energy_transfer_services.erase(sae_it);
-    //     logf_error("The supported energy services contain AC_DER_SAE, but there is no sae der control and limits "
-    //                "defined. Removing AC_DER_SAE from the supported_energy_transfer list!");
-    // }
+    const auto is_ac_der_sae_service = [](dt::ServiceCategory service) {
+        return service == dt::ServiceCategory::AC_DER_SAE;
+    };
+    const auto ac_der_sae_found = std::any_of(supported_energy_transfer_services.begin(),
+                                              supported_energy_transfer_services.end(), is_ac_der_sae_service);
+    if (ac_der_sae_found and (not der_sae_limits.has_value() or not der_sae_setup_config.has_value())) {
+        auto sae_it = std::find(supported_energy_transfer_services.begin(), supported_energy_transfer_services.end(),
+                                dt::ServiceCategory::AC_DER_SAE);
+        supported_energy_transfer_services.erase(sae_it);
+        logf_error("The supported energy services contain AC_DER_SAE, but there is no sae der control and limits "
+                   "defined. Removing AC_DER_SAE from the supported_energy_transfer list!");
+    }
 
     if (supported_control_mobility_modes.empty()) {
         logf_warning("No control modes were provided, set to scheduled mode");

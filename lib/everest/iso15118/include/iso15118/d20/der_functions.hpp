@@ -171,3 +171,232 @@ struct FaultRideThrough {
 using DERControlFunction = std::variant<FrequencyWatt, VoltWatt, DERCurve, DSOQSetpoint, DSOCosPhiSetpoint,
                                         MaximumLevelDCInjection, ZeroCurrent, FaultRideThrough>;
 } // namespace iso15118::iec
+
+namespace iso15118::sae {
+
+// LSB
+enum class DerBitMapFunctions : std::uint8_t {
+    ChargeFunction = 0,
+    DischargeFunction = 1,
+    EnterService = 3,
+    ConstantPowerFactorUnderExcitedFunction = 4,
+    ConstantPowerFactorOverExcitedFunction = 5,
+    ConstantReactivePowerFunction = 6,
+    ConstantActivePowerFunction = 7,
+    FrequencyDroopFunction = 8,
+    HighFrequencyMayTripFunction = 10,
+    HighFrequencyMustTripFunction = 11,
+    HighVoltageMayTripFunction = 12,
+    HighVoltageMomentaryCessationFunction = 13,
+    HighVoltageMustTripFunction = 14,
+    LowFrequencyMayTripFunction = 15,
+    LowFrequencyMustTripFunction = 16,
+    LowVoltageMayTripFunction = 17,
+    LowVoltageMomentaryCessationFunction = 18,
+    LowVoltageMustTripFunction = 19,
+    LimitMaximumActiveDischargePowerFunction = 20,
+    EVSETargetReactivePowerFunction = 21,
+    EVSETargetActivePowerFunction = 22,
+    VoltVarFunction = 23,
+    VoltWattFunction = 24,
+    WattVarFunction = 26,
+};
+
+enum class RequiredDEROperatingMode : std::uint8_t {
+    GridFollowing,
+    GridForming,
+};
+
+enum class GridConnectionMode : std::uint8_t {
+    GridConnected,
+    GridIslanded,
+};
+
+enum class DERUnit : std::uint8_t {
+    V,
+    Hz,
+    W,
+    s,
+    var,
+    PercentageEVMaximumConfiguredActivePower,
+    PercentageEVMaximumConfiguredReactivePower,
+    PercentageEVMaximumConfiguredApparentPower,
+    PercentageEVMaximumAvailableActivePower,
+    PercentageEVMaximumAvailableReactivePower,
+    PercentageV,
+};
+
+enum class PowerFactorExcitation : std::uint8_t {
+    OverExcited,
+    UnderExcited
+};
+
+enum class PowerReference : std::uint8_t {
+    MaximumActivePower,
+    MomentaryPower,
+};
+
+struct DataTuple {
+    float x_value;
+    float y_value;
+};
+
+constexpr auto CurveDataPointsMaxLength = 10;
+using CurveDataPointsList = everest::lib::util::fixed_vector<DataTuple, CurveDataPointsMaxLength>;
+
+struct DERCurve {
+    bool enable;
+    std::optional<uint16_t> priority;
+    DERUnit x_unit;
+    DERUnit y_unit;
+    CurveDataPointsList curve_data_points;
+    std::optional<CurveDataPointsList> curve_data_points_L2;
+    std::optional<CurveDataPointsList> curve_data_points_L3;
+};
+
+struct ConstantPowerFactor {
+    bool enable;
+    std::optional<uint16_t> priority;
+    float power_factor_value;
+    std::optional<float> power_factor_value_L2;
+    std::optional<float> power_factor_value_L3;
+    PowerFactorExcitation power_factor_excitation;
+    std::optional<PowerFactorExcitation> power_factor_excitation_L2;
+    std::optional<PowerFactorExcitation> power_factor_excitation_L3;
+};
+
+struct VoltVar {
+    bool enable;
+    std::optional<uint16_t> priority;
+    DERUnit x_unit;
+    DERUnit y_unit;
+    CurveDataPointsList curve_data_points;
+    std::optional<CurveDataPointsList> curve_data_points_L2;
+    std::optional<CurveDataPointsList> curve_data_points_L3;
+    float open_loop_response_time;
+    std::optional<uint32_t> time_constant_pt1;
+    float reference_voltage;
+    bool autonomous_reference_voltage_adjustment_enable;
+    uint32_t reference_voltage_adjustment_time_constant;
+};
+
+struct WattVar {
+    bool enable;
+    std::optional<uint16_t> priority;
+    DERUnit x_unit;
+    DERUnit y_unit;
+    CurveDataPointsList curve_data_points;
+    std::optional<CurveDataPointsList> curve_data_points_L2;
+    std::optional<CurveDataPointsList> curve_data_points_L3;
+    std::optional<float> open_loop_response_time;
+    std::optional<uint32_t> time_constant_pt1;
+};
+
+struct ConstantVar {
+    bool enable;
+    std::optional<uint16_t> priority;
+    float var_setpoint;
+    std::optional<float> var_setpoint_L2;
+    std::optional<float> var_setpoint_L3;
+    DERUnit unit;
+};
+
+struct FrequencyDroopSettings {
+    float db;
+    float droop_factor;
+    std::optional<float> droop_factor_L2;
+    std::optional<float> droop_factor_L3;
+    PowerReference power_reference;
+    std::optional<PowerReference> power_reference_L2;
+    std::optional<PowerReference> power_reference_L3;
+    float open_loop_response_time;
+};
+
+struct FrequencyDroop {
+    bool enable;
+    std::optional<uint16_t> priority;
+    std::optional<FrequencyDroopSettings> over_frequency_droop;
+    std::optional<FrequencyDroopSettings> under_frequency_droop;
+};
+
+struct VoltWatt {
+    bool enable;
+    std::optional<uint16_t> priority;
+    DERUnit x_unit;
+    DERUnit y_unit;
+    CurveDataPointsList curve_data_points;
+    std::optional<CurveDataPointsList> curve_data_points_L2;
+    std::optional<CurveDataPointsList> curve_data_points_L3;
+    float open_loop_response_time;
+    std::optional<uint32_t> time_constant_pt1;
+};
+
+struct ConstantWatt {
+    bool enable;
+    std::optional<uint16_t> priority;
+    float watt_setpoint;
+    std::optional<float> watt_setpoint_L2;
+    std::optional<float> watt_setpoint_L3;
+    DERUnit unit;
+};
+
+struct LimitMaxDischargePower {
+    bool enable;
+    std::optional<uint16_t> priority;
+    uint16_t percentage_value;
+    std::optional<uint16_t> percentage_value_L2;
+    std::optional<uint16_t> percentage_value_L3;
+    std::optional<float> open_loop_response_time;
+};
+
+struct VoltageTrip {
+    DERCurve over_voltage_must_trip_curve;
+    DERCurve under_voltage_must_trip_curve;
+    std::optional<DERCurve> over_voltage_momentary_cessation_trip_curve;
+    std::optional<DERCurve> under_voltage_momentary_cessation_trip_curve;
+    std::optional<DERCurve> over_voltage_may_trip_curve;
+    std::optional<DERCurve> under_voltage_may_trip_curve;
+};
+
+struct FrequencyTrip {
+    DERCurve over_frequency_must_trip_curve;
+    DERCurve under_frequency_must_trip_curve;
+    std::optional<DERCurve> over_frequency_may_trip_curve;
+    std::optional<DERCurve> under_frequency_may_trip_curve;
+};
+
+// TODO(SL): Check 3363, 3364, 3365
+struct EnterServiceCPDRes {
+    bool permit_service;
+    float enter_service_voltage_high;
+    float enter_service_voltage_low;
+    float enter_service_frequency_high;
+    float enter_service_frequency_low;
+    std::optional<float> enter_service_delay;
+    std::optional<float> enter_service_randomized_delay;
+    std::optional<float> enter_service_ramp_time;
+};
+
+struct ReactivePowerSupportCPDRes {
+    ConstantPowerFactor constant_power_factor;
+    VoltVar volt_var;
+    WattVar watt_var;
+    ConstantVar constant_var;
+};
+
+struct ActivePowerSupportCPDRes {
+    FrequencyDroop frequency_droop;
+    VoltWatt volt_watt;
+    ConstantWatt constant_watt;
+    LimitMaxDischargePower limit_max_discharge_power;
+};
+
+struct DERControl {
+    VoltageTrip voltage_trip;
+    FrequencyTrip frequency_trip;
+    EnterServiceCPDRes enter_service;
+    ReactivePowerSupportCPDRes reactive_power_support;
+    ActivePowerSupportCPDRes active_power_support;
+};
+
+} // namespace iso15118::sae

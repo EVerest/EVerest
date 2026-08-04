@@ -154,7 +154,11 @@ bool Session::find_energy_parameter_set_id(const dt::ServiceCategory service, in
             return true;
         }
         break;
-
+    case dt::ServiceCategory::AC_DER_SAE:
+        if (this->offered_services.ac_parameter_list.find(id) != this->offered_services.ac_parameter_list.end()) {
+            return true;
+        }
+        break;
     case dt::ServiceCategory::DC:
 
         if (this->offered_services.dc_parameter_list.find(id) != this->offered_services.dc_parameter_list.end()) {
@@ -184,8 +188,6 @@ bool Session::find_energy_parameter_set_id(const dt::ServiceCategory service, in
     case dt::ServiceCategory::DC_ACDP:
         [[fallthrough]];
     case dt::ServiceCategory::DC_ACDP_BPT:
-        [[fallthrough]];
-    case dt::ServiceCategory::AC_DER_SAE:
         [[fallthrough]];
     default:
         logf_warning("Service %u is not supported yet", message_20::to_underlying_value(service));
@@ -260,7 +262,16 @@ void Session::selected_service_parameters(const dt::ServiceCategory service, con
             // Todo(sl): Should be not the case -> Raise Error?
         }
         break;
-
+    case dt::ServiceCategory::AC_DER_SAE:
+        if (this->offered_services.ac_parameter_list.find(id) != this->offered_services.ac_parameter_list.end()) {
+            const auto& parameters = this->offered_services.ac_parameter_list.at(id);
+            this->selected_services = SelectedServiceParameters(dt::ServiceCategory::AC_DER_SAE, parameters.connector,
+                                                                parameters.control_mode, parameters.mobility_needs_mode,
+                                                                parameters.pricing, parameters.evse_nominal_voltage);
+        } else {
+            // Todo(sl): Should be not the case -> Raise Error?
+        }
+        break;
     case dt::ServiceCategory::DC:
         if (this->offered_services.dc_parameter_list.find(id) != this->offered_services.dc_parameter_list.end()) {
             const auto& parameters = this->offered_services.dc_parameter_list.at(id);
@@ -325,8 +336,6 @@ void Session::selected_service_parameters(const dt::ServiceCategory service, con
     case dt::ServiceCategory::DC_ACDP:
         [[fallthrough]];
     case dt::ServiceCategory::DC_ACDP_BPT:
-        [[fallthrough]];
-    case dt::ServiceCategory::AC_DER_SAE:
         [[fallthrough]];
     default:
         logf_warning("Service %u is not supported yet", message_20::to_underlying_value(service));

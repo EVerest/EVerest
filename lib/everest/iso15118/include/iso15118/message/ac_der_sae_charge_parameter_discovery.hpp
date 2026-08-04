@@ -11,8 +11,7 @@
 
 namespace iso15118::message_20 {
 
-namespace datatypes {
-namespace sae {
+namespace datatypes::sae {
 
 // Type aliases for string-based XSD types
 using InverterSwVersion = std::string;
@@ -187,7 +186,7 @@ struct DER_SAE_AC_CPDResEnergyTransferMode : AC_CPDResEnergyTransferMode {
     std::optional<RationalNumber> nominal_discharge_power;
     std::optional<RationalNumber> nominal_discharge_power_L2;
     std::optional<RationalNumber> nominal_discharge_power_L3;
-    RationalNumber maximum_discharge_power;
+    RationalNumber maximum_discharge_power{};
     std::optional<RationalNumber> maximum_discharge_power_L2;
     std::optional<RationalNumber> maximum_discharge_power_L3;
     EVSEReactivePowerLimits reactive_power_limits;
@@ -197,8 +196,7 @@ struct DER_SAE_AC_CPDResEnergyTransferMode : AC_CPDResEnergyTransferMode {
     uint64_t update_time;
 };
 
-} // namespace sae
-} // namespace datatypes
+} // namespace datatypes::sae
 
 struct DER_SAE_AC_ChargeParameterDiscoveryRequest {
     Header header;

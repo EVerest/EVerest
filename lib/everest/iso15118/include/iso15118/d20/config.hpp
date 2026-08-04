@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <ctime>
 #include <map>
 #include <optional>
 #include <vector>
@@ -35,6 +36,23 @@ struct DerIecSetupConfig {
     iec::GridConnectionMode grid_connection_mode;
 };
 
+struct DerSaeSetupConfig {
+    explicit DerSaeSetupConfig(sae::DERControl der_control_, sae::RequiredDEROperatingMode op_mode,
+                               sae::GridConnectionMode conn_mode) :
+        der_control(std::move(der_control_)),
+        required_der_operating_mode(op_mode),
+        grid_connection_mode(conn_mode),
+        der_control_update_time(static_cast<uint64_t>(std::time(nullptr))) {};
+
+    DerSaeSetupConfig() = delete;
+    // TODO(SL): Check if copy or move constructor should also be removed?
+
+    sae::DERControl der_control;
+    sae::RequiredDEROperatingMode required_der_operating_mode;
+    sae::GridConnectionMode grid_connection_mode;
+    uint64_t der_control_update_time{0}; // SECC time
+};
+
 struct EvseSetupConfig {
     std::string evse_id;
     std::vector<message_20::datatypes::ServiceCategory> supported_energy_services;
@@ -43,12 +61,14 @@ struct EvseSetupConfig {
     bool enable_certificate_install_service;
     d20::DcTransferLimits dc_limits;
     d20::AcTransferLimits ac_limits;
-    std::optional<d20::IecDerTransferLimits> der_limits;
+    std::optional<d20::IecDerTransferLimits> der_iec_limits;
+    std::optional<d20::SaeDerTransferLimits> der_sae_limits;
     std::vector<ControlMobilityNeedsModes> control_mobility_modes;
     std::optional<std::string> custom_protocol{std::nullopt};
     std::optional<AcSetupConfig> ac_setup_config{std::nullopt};
     std::optional<BptSetupConfig> bpt_setup_config{std::nullopt};
     std::optional<DerIecSetupConfig> der_iec_setup_config{std::nullopt};
+    std::optional<DerSaeSetupConfig> der_sae_setup_config{std::nullopt};
     d20::DcTransferLimits powersupply_limits;
     bool selecting_sap_based_on_energy_service{false};
 };
@@ -81,7 +101,10 @@ struct SessionConfig {
     AcTransferLimits ac_limits;
 
     DerIecSetupConfig der_iec_setup_config;
-    std::optional<IecDerTransferLimits> der_limits;
+    std::optional<IecDerTransferLimits> der_iec_limits;
+
+    std::optional<DerSaeSetupConfig> der_sae_setup_config;
+    std::optional<SaeDerTransferLimits> der_sae_limits;
 
     DcTransferLimits powersupply_limits;
 
