@@ -6,7 +6,7 @@ SRC_URI = "git://github.com/EVerest/linux_libnfc-nci.git;branch=everest;protocol
 
 inherit cmake
 
-SRCREV = "65276f9221cd2a50dbe4bc22e34879387b5800be"
+SRCREV = "4cc291796b6f3f89df1647ee91008869bdae3659"
 
 DEPENDS = "\
     everest-cmake \
