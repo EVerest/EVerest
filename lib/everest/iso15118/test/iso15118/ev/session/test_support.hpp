@@ -13,6 +13,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <arpa/inet.h>
@@ -33,6 +34,7 @@
 #include <iso15118/message/variant.hpp>
 
 #include <iso15118/ev/ac_charge_params.hpp>
+#include <iso15118/ev/controller.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/session.hpp>
 #include <iso15118/ev/session/feedback.hpp>
@@ -104,6 +106,47 @@ bool run_reactor_until(everest::lib::io::event::fd_event_handler& reactor, Predi
     }
     return predicate();
 }
+
+// Poll @p work on a cadence until it reports done or @p budget elapses. For tests
+// that observe a Controller running its own reactor on a worker thread, where the
+// test thread must not touch that reactor.
+template <typename Work> bool poll_until(Work work, std::chrono::milliseconds budget) {
+    const auto deadline = std::chrono::steady_clock::now() + budget;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (work()) {
+            return true;
+        }
+        std::this_thread::sleep_for(1ms);
+    }
+    return work();
+}
+
+// Runs Controller::loop() on a worker thread and always stops and joins it.
+// Catch2 abandons a section by throwing and then re-enters the enclosing blocks to
+// reach the remaining sections, so a bare thread joined inside a section is left
+// joinable on both paths, which terminates the process instead of reporting the
+// failure. Stopping here cannot perturb what a test observed: only loop() fires
+// stopped, and this destructor runs after every assertion has been evaluated.
+class ControllerRun {
+public:
+    explicit ControllerRun(Controller& controller_) :
+        controller(controller_), worker([&controller_]() { controller_.loop(); }) {
+    }
+
+    ~ControllerRun() {
+        controller.shutdown();
+        if (worker.joinable()) {
+            worker.join();
+        }
+    }
+
+    ControllerRun(const ControllerRun&) = delete;
+    ControllerRun& operator=(const ControllerRun&) = delete;
+
+private:
+    Controller& controller;
+    std::thread worker;
+};
 
 // Owns everything a reactor session test needs: the reactor, the captured outbound
 // frames, the feedback flags, the DC-params channel and the ev::Session.
