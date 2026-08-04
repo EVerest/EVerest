@@ -61,7 +61,7 @@ SCENARIO("ISO15118-20 EV Authorization stays and resends on Ongoing") {
     REQUIRE(request_message->selected_authorization_service == message_20::datatypes::Authorization::EIM);
 }
 
-// The EV only ever selects EIM: see plans/2026-08-04-ev-session-resume-and-pnc.md.
+// The EV only ever selects EIM, whatever order the SECC offers its services in.
 SCENARIO("ISO15118-20 EV Authorization selects EIM when the SECC lists PnC first") {
     const ev::feedback::Callbacks callbacks{};
     const auto seed_pnc_first = [](FsmStateHelper& helper) {

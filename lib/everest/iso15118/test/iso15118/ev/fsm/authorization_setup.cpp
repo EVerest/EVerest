@@ -51,7 +51,7 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
         }
     }
 
-    // The EV selects EIM only: see plans/2026-08-04-ev-session-resume-and-pnc.md.
+    // The EV selects EIM only, so a PnC-only EVSE leaves it with nothing to select.
     GIVEN("Bad case - authorization setup response with OK and PnC only") {
 
         // setup the state and context to something reasonable
@@ -96,7 +96,7 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
 
         const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
 
-        THEN("Check if passes to authorization state and sends EIM AuthorizationRequest") {
+        THEN("Check that the session stops without sending an AuthorizationRequest") {
             REQUIRE(result.transitioned() == false);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::AuthorizationSetup);
             REQUIRE(ctx.is_session_stopped() == true);
