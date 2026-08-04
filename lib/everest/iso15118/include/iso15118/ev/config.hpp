@@ -3,11 +3,9 @@
 #pragma once
 
 #include <chrono>
-#include <optional>
 #include <string>
 #include <vector>
 
-#include <iso15118/io/ipv6_endpoint.hpp>
 #include <iso15118/io/sdp.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
@@ -23,22 +21,15 @@ constexpr auto DEFAULT_SEND_DELAY = std::chrono::milliseconds(25);
 /**
  * Static configuration for the EV-side \ref Controller.
  *
- * Carries the egress interface, how the SECC endpoint is resolved (SDP
- * discovery vs. a fixed endpoint), the transport security advertised in the SDP
+ * Carries the egress interface, the transport security advertised in the SDP
  * exchange, the EVCC identifier surfaced to the SECC in the SessionSetupRequest,
- * and the SupportedAppProtocol list advertised in the SAP request.
+ * and the SupportedAppProtocol list advertised in the SAP request. The SECC
+ * endpoint is always resolved by SDP discovery.
  */
 struct EvConfig {
     // Egress interface used to send the SDP multicast request and to scope the
     // data connection (e.g. "lo", "veth-ev").
     std::string interface_name;
-
-    // true  -> resolve the SECC endpoint via SDP discovery.
-    // false -> use fixed_endpoint (which must then be set).
-    bool discover{true};
-
-    // The SECC endpoint to use when discover == false.
-    std::optional<io::Ipv6EndPoint> fixed_endpoint;
 
     // Transport security advertised in the SDP request. The EV connects over plain
     // TCP today regardless (no libio TLS client yet); this only drives the security

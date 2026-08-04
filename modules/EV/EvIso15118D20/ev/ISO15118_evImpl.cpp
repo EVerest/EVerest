@@ -5,9 +5,13 @@
 
 #include <chrono>
 #include <exception>
+#include <iterator>
 #include <sstream>
+#include <string>
 #include <utility>
+#include <vector>
 
+#include <iso15118/ev/config_validation.hpp>
 #include <iso15118/io/logging.hpp>
 #include <iso15118/io/sdp.hpp>
 
@@ -53,6 +57,41 @@ void ISO15118_evImpl::init() {
             break;
         }
     });
+
+    check_config();
+}
+
+void ISO15118_evImpl::check_config() {
+    namespace dt = iso15118::message_20::datatypes;
+
+    // The energy service only selects the advertised SAP namespace, which this checks
+    // nothing about; DC is as good as any for the transport-level fields.
+    auto problems = iso15118::ev::validate_config(make_ev_config(dt::ServiceCategory::DC));
+
+    const auto append = [&problems](std::vector<std::string> more) {
+        problems.insert(problems.end(), std::make_move_iterator(more.begin()), std::make_move_iterator(more.end()));
+    };
+
+    iso15118::ev::AcChargeParams ac_params;
+    ac_params.max_charge_power = static_cast<float>(mod->config.ac_max_charge_power_w);
+    ac_params.min_charge_power = static_cast<float>(mod->config.ac_min_charge_power_w);
+    ac_params.max_discharge_power = static_cast<float>(mod->config.ac_max_discharge_power_w);
+    ac_params.min_discharge_power = static_cast<float>(mod->config.ac_min_discharge_power_w);
+    append(iso15118::ev::validate_ac_charge_params(ac_params));
+
+    iso15118::ev::DcChargeParams dc_params;
+    dc_params.max_discharge_power = static_cast<float>(mod->config.dc_max_discharge_power_w);
+    dc_params.min_discharge_power = static_cast<float>(mod->config.dc_min_discharge_power_w);
+    dc_params.max_discharge_current = static_cast<float>(mod->config.dc_max_discharge_current_a);
+    append(iso15118::ev::validate_dc_charge_params(dc_params));
+
+    config_valid = problems.empty();
+    for (const auto& problem : problems) {
+        EVLOG_error << "EvIso15118D20: invalid config: " << problem;
+    }
+    if (not config_valid) {
+        EVLOG_error << "EvIso15118D20: start_charging is refused until the module config is corrected";
+    }
 }
 
 void ISO15118_evImpl::ready() {
@@ -83,7 +122,6 @@ ISO15118_evImpl::make_ev_config(iso15118::message_20::datatypes::ServiceCategory
     ev_config.evcc_id = mod->config.evcc_id;
     ev_config.response_timeout = std::chrono::milliseconds(mod->config.response_timeout_ms);
     ev_config.advertised_security = iso15118::io::v2gtp::Security::NO_TRANSPORT_SECURITY;
-    ev_config.discover = true;
 
     namespace dt = iso15118::message_20::datatypes;
     ev_config.energy_service = energy_service;
@@ -277,10 +315,24 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     case types::iso15118::EnergyTransferMode::AC_DER_IEC:
         energy_service = iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC;
         break;
-    default:
+    // Listed rather than folded into a default arm so -Wswitch flags a new mode.
+    case types::iso15118::EnergyTransferMode::AC_two_phase:
+    case types::iso15118::EnergyTransferMode::AC_BPT_DER:
+    case types::iso15118::EnergyTransferMode::AC_DER_SAE:
+    case types::iso15118::EnergyTransferMode::DC_combo_core:
+    case types::iso15118::EnergyTransferMode::DC_unique:
+    case types::iso15118::EnergyTransferMode::DC_ACDP:
+    case types::iso15118::EnergyTransferMode::DC_ACDP_BPT:
+    case types::iso15118::EnergyTransferMode::WPT:
+    case types::iso15118::EnergyTransferMode::MCS:
+    case types::iso15118::EnergyTransferMode::MCS_BPT:
         EVLOG_warning << "EvIso15118D20: rejecting start_charging with unsupported EnergyTransferMode '"
                       << types::iso15118::energy_transfer_mode_to_string(EnergyTransferMode)
                       << "'; only DC, DC BPT, AC single/three-phase, AC BPT and AC DER IEC are supported";
+        return false;
+    }
+    if (not config_valid) {
+        EVLOG_error << "EvIso15118D20: rejecting start_charging; the module config is invalid";
         return false;
     }
     {
