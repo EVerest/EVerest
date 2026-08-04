@@ -374,12 +374,7 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop stops a BPT session on a plain Dynamic re
     PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, message_20::datatypes::ServiceCategory::DC_BPT,
                                                       seed_bpt_present_400};
 
-    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, make_res(SESSION_HEADER, ResponseCode::OK), ev::d20::StateID::DC_ChargeLoop);
     REQUIRE(obs.fired == false);
 }
 
@@ -387,12 +382,7 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop stops a plain DC session on a BPT_Dynamic
     StopObserver obs;
     PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_present_400};
 
-    primed.handle_response(make_bpt_res(SESSION_HEADER, ResponseCode::OK));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, make_bpt_res(SESSION_HEADER, ResponseCode::OK), ev::d20::StateID::DC_ChargeLoop);
     REQUIRE(obs.fired == false);
 }
 
