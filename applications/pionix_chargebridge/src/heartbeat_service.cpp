@@ -81,21 +81,19 @@ heartbeat_service::~heartbeat_service() {
 }
 
 bool heartbeat_service::register_events(everest::lib::io::event::fd_event_handler& handler) {
-    // clang-format off
-    return
-        handler.register_event_handler(m_udp.get()) &&
-        handler.register_event_handler(&m_heartbeat_timer, [this](auto&) { handle_heartbeat_timer(); }) &&
-        handler.register_event_handler(&m_error_timer, [this](auto&) { handle_error_timer(); });
-    // clang-format on
+    auto result = true;
+    result = handler.register_event_handler(m_udp.get()) && result;
+    result = handler.register_event_handler(&m_heartbeat_timer, [this](auto&) { handle_heartbeat_timer(); }) && result;
+    result = handler.register_event_handler(&m_error_timer, [this](auto&) { handle_error_timer(); }) && result;
+    return result;
 }
 
 bool heartbeat_service::unregister_events(everest::lib::io::event::fd_event_handler& handler) {
-    // clang-format off
-    return
-        handler.unregister_event_handler(m_udp.get()) &&
-        handler.unregister_event_handler(&m_heartbeat_timer) &&
-        handler.unregister_event_handler(&m_error_timer);
-    // clang-format on
+    auto result = true;
+    result = handler.unregister_event_handler(m_udp.get()) && result;
+    result = handler.unregister_event_handler(&m_heartbeat_timer) && result;
+    result = handler.unregister_event_handler(&m_error_timer) && result;
+    return result;
 }
 
 void heartbeat_service::handle_error_timer() {
