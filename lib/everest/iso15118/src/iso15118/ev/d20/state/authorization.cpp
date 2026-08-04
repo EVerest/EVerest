@@ -13,7 +13,8 @@ namespace iso15118::ev::d20::state {
 
 namespace {
 
-// The EV selects EIM only: see plans/2026-08-04-ev-session-resume-and-pnc.md.
+// EIM only: the serializer emits EIM_AReqAuthorizationMode unconditionally
+// (message/authorization.cpp), so a PnC selection would go on the wire as EIM.
 message_20::AuthorizationRequest make_request(Context& ctx) {
     message_20::AuthorizationRequest req;
     setup_header(req.header, ctx.get_session());

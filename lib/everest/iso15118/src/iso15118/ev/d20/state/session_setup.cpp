@@ -58,7 +58,8 @@ Result SessionSetup::feed(Event ev) {
         return {};
     }
 
-    // The EV never requests a resume: see plans/2026-08-04-ev-session-resume-and-pnc.md.
+    // SessionSetupRequest always carries a zero session id, so the EV never asks to
+    // resume and OK_OldSessionJoined is a protocol violation.
     if (res->response_code == message_20::datatypes::ResponseCode::OK_OldSessionJoined) {
         logf_error("EVSE joined an old session although the EV requested a new one. Abort the session.");
         m_ctx.stop_session();

@@ -98,7 +98,8 @@ SCENARIO("ISO15118-20 EV session setup adopts the session id on a plain OK") {
 }
 
 // The EV never requests a resume, so OK_OldSessionJoined is a protocol error regardless
-// of the selected service: see plans/2026-08-04-ev-session-resume-and-pnc.md.
+// of the selected service. Characterization test: the deleted resume path also stopped the
+// session here, so this pins the explicit rejection rather than distinguishing it.
 SCENARIO("ISO15118-20 EV session setup rejects a resumed session") {
 
     const ev::feedback::Callbacks callbacks{};
