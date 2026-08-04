@@ -75,6 +75,30 @@ types::energy::ScheduleReqEntry energyImpl::get_local_schedule_req_entry() {
     local_schedule.limits_to_leaves.ac_max_phase_count = {mod->config.phase_count, source_cfg};
     local_schedule.limits_to_leaves.ac_max_current_A = {static_cast<float>(mod->config.fuse_limit_A), source_cfg};
 
+    // Only publish per phase limits when at least one phase is configured differently: a
+    // node with a symmetric fuse must keep its request byte identical to before.
+    const bool any_phase_configured =
+        mod->config.fuse_limit_L1_A >= 0.0 or mod->config.fuse_limit_L2_A >= 0.0 or mod->config.fuse_limit_L3_A >= 0.0;
+
+    if (any_phase_configured) {
+        const auto phase_limit = [this](double configured) {
+            // A phase without its own limit (negative sentinel) falls back to the symmetric
+            // fuse; a phase with one is still bounded by the symmetric fuse, which protects
+            // the whole node.
+            const auto value = (configured >= 0.0) ? std::min(configured, static_cast<double>(mod->config.fuse_limit_A))
+                                                   : static_cast<double>(mod->config.fuse_limit_A);
+            return types::energy::NumberWithSource{static_cast<float>(value), source_cfg};
+        };
+
+        types::energy::NumberWithSourcePerPhase per_phase;
+        per_phase.L1 = phase_limit(mod->config.fuse_limit_L1_A);
+        per_phase.L2 = phase_limit(mod->config.fuse_limit_L2_A);
+        per_phase.L3 = phase_limit(mod->config.fuse_limit_L3_A);
+
+        local_schedule.limits_to_root.ac_max_current_per_phase_A = per_phase;
+        local_schedule.limits_to_leaves.ac_max_current_per_phase_A = per_phase;
+    }
+
     return local_schedule;
 }
 

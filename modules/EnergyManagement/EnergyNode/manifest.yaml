@@ -23,6 +23,27 @@ config:
     minimum: 1.0
     maximum: 1000.0
     default: 230.0
+  fuse_limit_L1_A:
+    description: >-
+      Fuse limit for phase L1 in ampere. Set this only when the phases of this node are
+      protected differently. A negative value means "not configured", in which case
+      fuse_limit_A applies to L1. The effective limit is always the smaller of this value
+      and fuse_limit_A, which protects the node as a whole.
+    type: number
+    minimum: -1.0
+    default: -1.0
+  fuse_limit_L2_A:
+    description: >-
+      Fuse limit for phase L2 in ampere. Negative means not configured. See fuse_limit_L1_A.
+    type: number
+    minimum: -1.0
+    default: -1.0
+  fuse_limit_L3_A:
+    description: >-
+      Fuse limit for phase L3 in ampere. Negative means not configured. See fuse_limit_L1_A.
+    type: number
+    minimum: -1.0
+    default: -1.0
   enhance_external_schedule:
     description: >-
       When enabled, calculates per-phase current limits from total_power_W
