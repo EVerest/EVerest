@@ -317,7 +317,8 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
             (*h).ac_params.max_charge_power = static_cast<float>(mod->config.ac_max_charge_power_w);
             (*h).ac_params.min_charge_power = static_cast<float>(mod->config.ac_min_charge_power_w);
         }
-        if (energy_service == dt::ServiceCategory::AC_BPT) {
+        // AC_DER_IEC carries mandatory discharge limits on the wire just as AC_BPT does.
+        if (energy_service == dt::ServiceCategory::AC_BPT or energy_service == dt::ServiceCategory::AC_DER_IEC) {
             (*h).ac_params.max_discharge_power = static_cast<float>(mod->config.ac_max_discharge_power_w);
             (*h).ac_params.min_discharge_power = static_cast<float>(mod->config.ac_min_discharge_power_w);
         }
