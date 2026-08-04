@@ -18,17 +18,15 @@ using namespace iso15118;
 
 namespace dt = message_20::datatypes;
 
-SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
+namespace {
 
+d20::EvseSetupConfig make_evse_setup(const std::vector<dt::ServiceCategory>& supported_energy_services) {
     const auto evse_id = std::string("everest se");
-    const std::vector<dt::ServiceCategory> supported_energy_services = {
-        dt::ServiceCategory::AC_DER_IEC,
-    };
     const auto cert_install = false;
     const std::vector<dt::Authorization> auth_services = {dt::Authorization::EIM};
     const std::vector<uint16_t> vas_services{};
 
-    d20::DcTransferLimits dc_limits;
+    const d20::DcTransferLimits dc_limits;
 
     d20::AcTransferLimits ac_limits;
     ac_limits.charge_power.max = dt::from_float(11000);
@@ -41,31 +39,41 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
     der_iec_limits.nominal_charge_power = dt::from_float(11000);
     der_iec_limits.nominal_discharge_power = dt::from_float(11000);
 
-    d20::DcTransferLimits powersupply_limits;
+    const d20::DcTransferLimits powersupply_limits;
 
     d20::DerIecSetupConfig der_setup_config;
     der_setup_config.grid_connection_mode = iec::GridConnectionMode::GridConnected;
     der_setup_config.operating_mode = iec::OperatingMode::GridFollowing;
 
-    const auto no_der_function_selected = std::bitset<12>{};
-
     const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
         {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
-    const d20::EvseSetupConfig evse_setup{evse_id,
-                                          supported_energy_services,
-                                          auth_services,
-                                          vas_services,
-                                          cert_install,
-                                          dc_limits,
-                                          ac_limits,
-                                          der_iec_limits,
-                                          control_mobility_modes,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          der_setup_config,
-                                          powersupply_limits};
+    d20::EvseSetupConfig setup{};
+    setup.evse_id = evse_id;
+    setup.supported_energy_services = supported_energy_services;
+    setup.authorization_services = auth_services;
+    setup.supported_vas_services = vas_services;
+    setup.enable_certificate_install_service = cert_install;
+    setup.dc_limits = dc_limits;
+    setup.ac_limits = ac_limits;
+    setup.der_limits = der_iec_limits;
+    setup.control_mobility_modes = control_mobility_modes;
+    setup.der_iec_setup_config = der_setup_config;
+    setup.powersupply_limits = powersupply_limits;
+    return setup;
+}
+
+} // namespace
+
+SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
+
+    const std::vector<dt::ServiceCategory> supported_energy_services = {
+        dt::ServiceCategory::AC_DER_IEC,
+    };
+
+    const auto no_der_function_selected = std::bitset<12>{};
+
+    const auto evse_setup = make_evse_setup(supported_energy_services);
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
     session::feedback::Callbacks callbacks{};

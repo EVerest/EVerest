@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
 #include "helper.hpp"
@@ -11,9 +11,9 @@
 
 using namespace iso15118;
 
-SCENARIO("ISO15118-20 supported app protocol state transitions") {
+namespace {
 
-    // Move to helper function?
+d20::EvseSetupConfig make_evse_setup() {
     const auto evse_id = std::string("everest se");
     const std::vector<message_20::datatypes::ServiceCategory> supported_energy_services = {
         message_20::datatypes::ServiceCategory::DC};
@@ -28,21 +28,27 @@ SCENARIO("ISO15118-20 supported app protocol state transitions") {
         {message_20::datatypes::ControlMode::Scheduled, message_20::datatypes::MobilityNeedsMode::ProvidedByEvcc}};
     const std::string custom_namespace = "urn:iso:std:iso:15118:-20:AABB";
 
-    const d20::EvseSetupConfig evse_setup{evse_id,
-                                          supported_energy_services,
-                                          auth_services,
-                                          vas_services,
-                                          cert_install,
-                                          dc_limits,
-                                          ac_limits,
-                                          std::nullopt,
-                                          control_mobility_modes,
-                                          custom_namespace,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          powersupply_limits,
-                                          false};
+    d20::EvseSetupConfig setup{};
+    setup.evse_id = evse_id;
+    setup.supported_energy_services = supported_energy_services;
+    setup.authorization_services = auth_services;
+    setup.supported_vas_services = vas_services;
+    setup.enable_certificate_install_service = cert_install;
+    setup.dc_limits = dc_limits;
+    setup.ac_limits = ac_limits;
+    setup.der_limits = std::nullopt;
+    setup.control_mobility_modes = control_mobility_modes;
+    setup.custom_protocol = custom_namespace;
+    setup.powersupply_limits = powersupply_limits;
+    setup.selecting_sap_based_on_energy_service = false;
+    return setup;
+}
+
+} // namespace
+
+SCENARIO("ISO15118-20 supported app protocol state transitions") {
+
+    const auto evse_setup = make_evse_setup();
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
 
