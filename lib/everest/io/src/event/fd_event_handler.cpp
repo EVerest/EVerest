@@ -98,13 +98,15 @@ public:
     }
 
     bool remove(int fd) {
-        auto epoll_result = epoll_ctl(m_epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
-        auto handler_result = m_event_map.count(fd);
-        if (handler_result) {
+        auto epoll_removed = epoll_ctl(m_epoll_fd, EPOLL_CTL_DEL, fd, nullptr) == 0;
+        auto handler_removed = m_event_map.count(fd) != 0;
+        if (handler_removed) {
             m_event_map.erase(fd);
             m_pollfds.resize(m_pollfds.size() - 1);
         }
-        return epoll_result or handler_result;
+        // Closing a descriptor drops it from the epoll set, so EPOLL_CTL_DEL then fails
+        // EBADF on a live registration. Erasing the map entry alone is still a removal.
+        return epoll_removed or handler_removed;
     }
     bool modify_remove(int fd, fd_event_handler::event_list const& events) {
         auto action = [](uint32_t current, fd_event_handler::event_list const& change) {
@@ -182,8 +184,7 @@ bool fd_event_handler::register_event_handler(int fd, event_handler_type const& 
     if (fd == -1 or not handler or m_handlers->exists(fd)) {
         return false;
     }
-    m_handlers->add(fd, handler, events);
-    return true;
+    return m_handlers->add(fd, handler, events);
 }
 
 bool fd_event_handler::register_event_handler(int fd, event_handler_type const& handler, poll_events event) {
