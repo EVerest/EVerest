@@ -21,6 +21,22 @@ constexpr auto SETUP_TIMEOUT = std::chrono::milliseconds(18000);
 // SDP discovery retransmit cadence.
 constexpr auto SDP_RETRY_INTERVAL = std::chrono::milliseconds(250);
 
+// Runs its callable when it goes out of scope, so loop() releases its reactor
+// registrations on every exit path rather than only the happy one.
+template <typename F> class ScopeExit {
+public:
+    explicit ScopeExit(F f) : m_f(std::move(f)) {
+    }
+    ScopeExit(const ScopeExit&) = delete;
+    ScopeExit& operator=(const ScopeExit&) = delete;
+    ~ScopeExit() {
+        m_f();
+    }
+
+private:
+    F m_f;
+};
+
 } // namespace
 
 Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcChargeParams initial_dc_params) :
@@ -119,6 +135,15 @@ void Controller::establish_data_path(const iso15118::io::Ipv6EndPoint& endpoint,
 
 void Controller::loop() {
     online = true;
+
+    // The timers below are registered on the reactor for the duration of this call
+    // only. Release them here so every exit path, including the setup-failure aborts,
+    // leaves the reactor holding no timer fds from a finished loop.
+    ScopeExit unregister_timers{[this]() {
+        reactor.unregister_event_handler(&setup_timeout);
+        reactor.unregister_event_handler(&sdp_retry);
+        reactor.unregister_event_handler(&stop_grace_timer);
+    }};
 
     // Timeout as a reactor event: a single-shot timer clears `online` so run()
     // returns even if no socket traffic ever arrives. Its fd wakes the poll, so
