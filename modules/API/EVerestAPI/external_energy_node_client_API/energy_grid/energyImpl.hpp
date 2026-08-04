@@ -14,6 +14,7 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
+#include <everest_api_types/utilities/Topics.hpp>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -48,7 +49,10 @@ private:
     virtual void ready() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
-    // insert your private definitions here
+    // Topics of the remote external_energy_node_API server, derived purely from
+    // config. Set up in init() so handle_enforce_limits works even when the
+    // site-level EnergyManager calls it before this module's ready() has run.
+    everest::lib::API::Topics server_topics;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

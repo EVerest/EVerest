@@ -18,16 +18,17 @@ using API_types_ext::to_internal_api;
 using ev_API::deserialize;
 
 void energyImpl::init() {
-    // Nothing to do at init — MQTT subscriptions require the framework to be ready.
-}
-
-void energyImpl::ready() {
     // Build Topics for the remote server using the ApiHelper topic convention:
     //   everest_api/1/external_energy_node/{server_id}/e2m/energy_flow_request
     //   everest_api/1/external_energy_node/{server_id}/m2e/enforce_limits
-    ev_API::Topics server_topics;
+    // This only depends on config, so do it here: ready() ordering across modules
+    // is not guaranteed, and the site-level EnergyManager may call
+    // handle_enforce_limits before this module's ready() has run.
     server_topics.setup(mod->config.server_id, "external_energy_node", 1);
+    mod->enforce_limits_topic = server_topics.extern_to_everest("enforce_limits");
+}
 
+void energyImpl::ready() {
     // Subscribe to the server's published energy_flow_request (e2m = Everest to Machine).
     // Republish on the local Everest bus so the site-level EnergyNode sees the server
     // as a normal energy_consumer child.
