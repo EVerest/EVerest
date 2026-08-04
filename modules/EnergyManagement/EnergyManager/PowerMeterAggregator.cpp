@@ -9,40 +9,43 @@ namespace module {
 
 namespace {
 
+enum class Freshness {
+    Fresh,
+    Stale,
+    UnparsableTimestamp,
+};
+
 /// \brief Decides whether a reading is recent enough to contribute to the sum.
 ///
-/// An unparsable timestamp is treated as stale. Note that Everest::Date::from_rfc3339
-/// does not report parse failures: it falls back to a stringstream parse which, on
-/// failure, leaves the time point default constructed. So the epoch is the failure
-/// signal and must be checked explicitly - a try/catch here would never fire.
-/// This check runs before the window check, so a meter with a broken clock is excluded
+/// An unparsable timestamp is reported separately so the caller can warn about it. The
+/// epoch check runs before the window check, so a meter with a broken clock is excluded
 /// even when the staleness filter is switched off.
 ///
 /// Readings timestamped slightly in the future (clock skew between meter and
 /// controller) count as fresh. A window of zero disables the age check.
-bool is_fresh(const types::powermeter::Powermeter& reading, date::utc_clock::time_point now,
-              std::chrono::seconds window) {
+Freshness check_freshness(const types::powermeter::Powermeter& reading, date::utc_clock::time_point now,
+                          std::chrono::seconds window) {
     const auto measured_at = Everest::Date::from_rfc3339(reading.timestamp);
 
     if (measured_at == date::utc_clock::time_point{}) {
-        // Either unparsable, or a meter genuinely reporting 1970 - both unusable.
-        EVLOG_warning << "PowerMeterAggregator: cannot parse power meter timestamp '" << reading.timestamp
-                      << "', treating reading as stale";
-        return false;
+        // Either unparsable, or a meter genuinely reporting 1970 - both unusable. Note that
+        // from_rfc3339 never throws: a default constructed time point is its only failure
+        // signal, which is why the epoch is checked instead of catching an exception.
+        return Freshness::UnparsableTimestamp;
     }
 
     if (window <= std::chrono::seconds(0)) {
-        return true;
+        return Freshness::Fresh;
     }
 
     const auto age = now - measured_at;
 
     if (age < std::chrono::seconds(0)) {
         // Reading is timestamped in the future; accept it as the freshest we have.
-        return true;
+        return Freshness::Fresh;
     }
 
-    return age < window;
+    return age < window ? Freshness::Fresh : Freshness::Stale;
 }
 
 } // namespace
@@ -67,7 +70,28 @@ PowerMeterAggregator::AggregateResult PowerMeterAggregator::aggregate(date::utc_
     bool all_have_per_phase = true;
 
     for (const auto& [uuid, reading] : readings) {
-        if (not reading.power_W.has_value() or not is_fresh(reading, now, aggregation_window)) {
+        if (not reading.power_W.has_value()) {
+            result.stale_meters++;
+            continue;
+        }
+
+        const auto freshness = check_freshness(reading, now, aggregation_window);
+
+        if (freshness == Freshness::UnparsableTimestamp) {
+            // Warn once per meter, not once per optimizer cycle: a permanently broken
+            // meter would otherwise produce a warning every second, around the clock.
+            if (warned_unparsable.insert(uuid).second) {
+                EVLOG_warning << "PowerMeterAggregator: cannot parse power meter timestamp '" << reading.timestamp
+                              << "' of meter " << uuid << ", treating its readings as stale until it recovers";
+            }
+            result.stale_meters++;
+            continue;
+        }
+
+        // The meter delivers parsable timestamps (again); allow a future warning.
+        warned_unparsable.erase(uuid);
+
+        if (freshness == Freshness::Stale) {
             result.stale_meters++;
             continue;
         }
@@ -98,6 +122,10 @@ void collect_leaf_measurements(const types::energy::EnergyFlowRequest& node, Pow
         } else if (node.energy_usage_root.has_value()) {
             aggregator.update(node.uuid, node.energy_usage_root.value());
         }
+        // Do not recurse below an EVSE: its own meter already covers everything downstream
+        // of it, so counting descendants as well would double count - the same reason
+        // intermediate Generic nodes are skipped.
+        return;
     }
 
     for (const auto& child : node.children) {
