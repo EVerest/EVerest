@@ -318,6 +318,13 @@ bool fd_event_handler::remove_event_handler(int fd) {
     return m_handlers->remove(fd);
 }
 
+bool fd_event_handler::is_registered(int fd) const {
+    if (fd == -1) {
+        return false;
+    }
+    return m_handlers->exists(fd);
+}
+
 void fd_event_handler::poll() {
     poll_impl(-1);
 }

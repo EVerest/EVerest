@@ -244,6 +244,15 @@ public:
      * @return True on success, false otherwise
      */
     bool remove_event_handler(int fd);
+
+    /**
+     * @brief Check whether a file descriptor has a registered handler
+     * @details Reports the handler map only and makes no claim about the descriptor itself,
+     *          so it stays meaningful for a number whose descriptor has already been closed.
+     * @param[in] fd The file descriptor
+     * @return True if \p fd has a registered handler, false otherwise
+     */
+    bool is_registered(int fd) const;
     /**
      * @}
      */
