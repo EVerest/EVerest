@@ -86,7 +86,9 @@ For the AC DER IEC service the EV declares which IEC DER control functions it
 supports through the ``der_*`` options above; these form a bitmask carried in the
 ServiceDetail exchange. Among the SECC's Dynamic parameter sets the EV selects
 the first whose declared functions are a subset of the supported set (a set with
-no ``DERControlFunctions`` parameter counts as compatible). When no offered set
+no ``DERControlFunctions`` parameter counts as compatible). A mask carrying bits
+above the functions the EV models names functions it cannot honor, so such a set
+is not a subset even when its remaining bits are supported. When no offered set
 fits, ``der_stop_on_unsupported_functions`` decides the outcome: ``true`` stops
 the session cleanly, while ``false`` proceeds with the first Dynamic set and warns
 about the unsupported functions. At runtime, a DSO setpoint (Q or cos phi) that
