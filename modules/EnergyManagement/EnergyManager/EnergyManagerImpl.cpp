@@ -10,6 +10,7 @@
 #include "BrokerFastCharging.hpp"
 #include "BrokerMeasurementTracking.hpp"
 #include "Market.hpp"
+#include "MeasurementTrackingState.hpp"
 #include "PowerMeterAggregator.hpp"
 
 namespace module {
@@ -70,8 +71,11 @@ bool is_priority_request(const types::energy::EnergyFlowRequest& e) {
 
 EnergyManagerImpl::EnergyManagerImpl(
     const EnergyManagerConfig& config,
-    const std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)>& enforced_limits_callback) :
-    config(config), enforced_limits_callback(enforced_limits_callback) {
+    const std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)>& enforced_limits_callback,
+    const std::function<void(bool)>& power_can_be_reduced_callback) :
+    config(config),
+    enforced_limits_callback(enforced_limits_callback),
+    power_can_be_reduced_callback(power_can_be_reduced_callback) {
     this->energy_flow_request.node_type = types::energy::NodeType::Undefined;
     this->leaf_aggregator =
         std::make_unique<PowerMeterAggregator>(std::chrono::seconds(config.power_meter_aggregation_window_s));
@@ -80,6 +84,14 @@ EnergyManagerImpl::EnergyManagerImpl(
 PowerMeterAggregator::AggregateResult EnergyManagerImpl::get_leaf_aggregate() const {
     std::scoped_lock lock(energy_mutex);
     return leaf_aggregate;
+}
+
+bool EnergyManagerImpl::get_power_can_be_reduced() const {
+    return tracking_state.power_can_be_reduced;
+}
+
+float EnergyManagerImpl::get_boost_offset_A() const {
+    return tracking_state.boost_offset_A;
 }
 
 void EnergyManagerImpl::start() {
@@ -121,6 +133,29 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
     collect_leaf_measurements(request, *leaf_aggregator);
     leaf_aggregate = leaf_aggregator->aggregate(globals.start_time);
 
+    // Advance the boosting state before any broker trades, so this cycle's allocations
+    // already use the new offset.
+    {
+        MeasurementTrackingInput tracking_input;
+        tracking_input.aggregate = leaf_aggregate;
+        tracking_input.grid_limit_W = get_grid_limit_W(request, static_cast<float>(config.nominal_ac_voltage));
+        tracking_input.last_allocated_W = last_allocated_W;
+        tracking_input.boost_threshold_W = static_cast<float>(config.boost_threshold_W);
+        tracking_input.boost_step_A = config.use_power_meter_tracking ? static_cast<float>(config.boost_step_A) : 0.f;
+        tracking_input.boost_hysteresis_cycles = config.boost_hysteresis_cycles;
+
+        // Boosting further than the whole grid limit is meaningless; bounding the offset
+        // also keeps it from taking many cycles to unwind once headroom disappears.
+        if (not request.schedule_import.empty()) {
+            const auto& root_limits = request.schedule_import[0].limits_to_root;
+            if (root_limits.ac_max_current_A.has_value()) {
+                tracking_input.max_boost_offset_A = root_limits.ac_max_current_A.value().value;
+            }
+        }
+
+        tracking_state = advance_tracking_state(tracking_state, tracking_input);
+    }
+
     time_probe optimizer_start;
     optimizer_start.start();
     if (globals.debug)
@@ -143,6 +178,9 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
 
     auto evse_markets = market.get_list_of_evses();
 
+    auto broker_conf = to_broker_fast_charging_config(config);
+    broker_conf.boost_offset_A = tracking_state.boost_offset_A;
+
     for (auto m : evse_markets) {
         // Check if we need to clear the context
         // Note that context is created here if it does not exist implicitly by operator[] of the map
@@ -155,11 +193,11 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
 
         // FIXME: check for actual optimizer_targets and create correct broker for this evse
         if (config.use_power_meter_tracking) {
-            brokers.push_back(std::make_shared<BrokerMeasurementTracking>(*m, contexts[m->energy_flow_request.uuid],
-                                                                          to_broker_fast_charging_config(config)));
+            brokers.push_back(
+                std::make_shared<BrokerMeasurementTracking>(*m, contexts[m->energy_flow_request.uuid], broker_conf));
         } else {
-            brokers.push_back(std::make_shared<BrokerFastCharging>(*m, contexts[m->energy_flow_request.uuid],
-                                                                   to_broker_fast_charging_config(config)));
+            brokers.push_back(
+                std::make_shared<BrokerFastCharging>(*m, contexts[m->energy_flow_request.uuid], broker_conf));
         }
         // EVLOG_info << fmt::format("Created broker for {}", m->energy_flow_request.uuid);
     }
@@ -247,6 +285,17 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
         std::ofstream out(test_name.c_str());
         out << test_case;
         out.close();
+    }
+
+    // Remember what we handed out so the next cycle can judge whether it can be reduced.
+    last_allocated_W = sum_allocated_W(optimized_values, static_cast<float>(config.nominal_ac_voltage));
+
+    // Publish the reducibility flag on change, and always once at start up.
+    if (power_can_be_reduced_callback and
+        (not last_published_power_can_be_reduced.has_value() or
+         last_published_power_can_be_reduced.value() != tracking_state.power_can_be_reduced)) {
+        last_published_power_can_be_reduced = tracking_state.power_can_be_reduced;
+        power_can_be_reduced_callback(tracking_state.power_can_be_reduced);
     }
 
     return optimized_values;
