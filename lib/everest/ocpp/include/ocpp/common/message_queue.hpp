@@ -99,12 +99,13 @@ class MalformedRpcMessage : public std::runtime_error {
 inline MessageTransmissionPriority get_message_transmission_priority(bool is_boot_notification_message, bool triggered,
                                                                      bool registration_already_accepted,
                                                                      bool is_transaction_related,
-                                                                     bool queue_all_message) {
+                                                                     bool queue_all_message,
+                                                                     bool queue_until_accepted = false) {
     if (registration_already_accepted || is_boot_notification_message || triggered) {
         return MessageTransmissionPriority::SendImmediately;
     }
 
-    if (is_transaction_related || queue_all_message) {
+    if (is_transaction_related || queue_all_message || queue_until_accepted) {
         return MessageTransmissionPriority::SendAfterRegistrationStatusAccepted;
     }
 

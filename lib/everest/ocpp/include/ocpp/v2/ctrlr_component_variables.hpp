@@ -246,6 +246,7 @@ extern const RequiredComponentVariable NetworkProfileConnectionAttempts;
 extern const RequiredComponentVariable OfflineThreshold;
 extern const ComponentVariable QueueAllMessages;
 extern const ComponentVariable MessageTypesDiscardForQueueing;
+extern const ComponentVariable QueueNotifyEventMessages;
 extern const RequiredComponentVariable ResetRetries;
 extern const RequiredComponentVariable RetryBackOffRandomRange;
 extern const RequiredComponentVariable RetryBackOffRepeatTimes;
