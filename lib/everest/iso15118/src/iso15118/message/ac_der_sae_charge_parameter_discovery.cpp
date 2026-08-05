@@ -537,6 +537,7 @@ template <>
 void convert(const struct iso20_ac_der_sae_AC_ChargeParameterDiscoveryResType& in,
              DER_SAE_AC_ChargeParameterDiscoveryResponse& out) {
     convert(in.Header, out.header);
+    cb_convert_enum(in.ResponseCode, out.response_code);
 
     if (in.DER_AC_CPDResEnergyTransferMode_isUsed) {
         convert(in.DER_AC_CPDResEnergyTransferMode, out.transfer_mode);
