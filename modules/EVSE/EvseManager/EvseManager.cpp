@@ -11,6 +11,7 @@
 #include "SessionLog.hpp"
 #include "Timeout.hpp"
 #include "energy_transfer_modes.hpp"
+#include "hlc_power_clamp.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "utils.hpp"
 
@@ -2599,12 +2600,13 @@ void EvseManager::process_dc_ev_target_voltage_current(const types::iso15118::Dc
         car_sent_zero_voltage = true;
     }
 
-    const auto actual_voltage =
-        ev_info_snapshot.present_voltage.has_value() ? ev_info_snapshot.present_voltage.value() : clamped_voltage;
-
-    const auto target_power = clamped_current * actual_voltage;
-    if (target_power > hlc_limits.evse_maximum_power_limit) {
-        clamped_current = hlc_limits.evse_maximum_power_limit / actual_voltage;
+    const auto clamp = clamp_hlc_power(clamped_current, clamped_voltage,
+                                       ev_info_snapshot.present_voltage.has_value()
+                                           ? std::optional<double>{ev_info_snapshot.present_voltage.value()}
+                                           : std::nullopt,
+                                       hlc_limits.evse_maximum_power_limit);
+    clamped_current = clamp.current;
+    if (clamp.limit_exceeded) {
         car_breaks_limit = true;
     }
 
