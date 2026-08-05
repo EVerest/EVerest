@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
 #include <iso15118/detail/d20/state/service_discovery.hpp>
@@ -183,6 +183,36 @@ SCENARIO("Service discovery state handling") {
             REQUIRE(res.energy_transfer_service_list[0].free_service == false);
             REQUIRE(res.energy_transfer_service_list[0].service_id == dt::ServiceCategory::DC);
             REQUIRE(res.vas_list.has_value() == false);
+        }
+    }
+
+    GIVEN("Good Case - Re-entering service discovery within the same session") {
+
+        d20::Session session = d20::Session();
+
+        message_20::ServiceDiscoveryRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+
+        // A DER session may come back to service discovery from the schedule exchange state, so the session
+        // already carries the offers of the first pass.
+        session.offered_services.energy_services = {dt::ServiceCategory::DC, dt::ServiceCategory::AC};
+        session.offered_services.vas_services = {message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
+
+        std::vector<dt::ServiceCategory> supported_energy_transfer_services = {dt::ServiceCategory::DC};
+        std::vector<dt::ServiceCategory> ev_energy_services = {dt::ServiceCategory::DC};
+
+        const auto res =
+            d20::state::handle_request(req, session, supported_energy_transfer_services, {}, ev_energy_services);
+
+        THEN("The previous offers are replaced instead of accumulated") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.energy_transfer_service_list.size() == 1);
+            REQUIRE(res.energy_transfer_service_list[0].service_id == dt::ServiceCategory::DC);
+            REQUIRE(session.offered_services.energy_services.size() == 1);
+            REQUIRE(session.offered_services.energy_services[0] == dt::ServiceCategory::DC);
+            REQUIRE(session.offered_services.vas_services.empty());
+            REQUIRE(ev_energy_services.empty());
         }
     }
 
