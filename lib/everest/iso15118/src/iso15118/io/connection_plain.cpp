@@ -21,7 +21,7 @@ static constexpr auto DEFAULT_SOCKET_BACKLOG = 4;
 
 ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, const std::string& interface_name) :
     poll_manager(poll_manager_) {
-    sockaddr_in6 address;
+    sockaddr_in6 address{};
     if (not get_first_sockaddr_in6_for_interface(interface_name, address)) {
         const auto msg = "Failed to get ipv6 socket address for interface " + interface_name;
         log_and_throw(msg.c_str());
@@ -65,7 +65,12 @@ ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, const std::string& 
 }
 
 ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, int connected_fd) :
-    poll_manager(poll_manager_), fd(connected_fd) {
+    ConnectionPlain(poll_manager_, connected_fd, std::nullopt) {
+}
+
+ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, int connected_fd,
+                                 const std::optional<sha512_hash_t>& vehicle_cert_hash_) :
+    poll_manager(poll_manager_), fd(connected_fd), vehicle_cert_hash(vehicle_cert_hash_) {
 
     sockaddr_in6 local_adr{};
     socklen_t length = sizeof(local_adr);
