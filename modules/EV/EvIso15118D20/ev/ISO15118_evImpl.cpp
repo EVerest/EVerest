@@ -426,6 +426,7 @@ void ISO15118_evImpl::handle_set_dc_params(types::iso15118::DcEvParameters& EvPa
     note_missing("max_power_limit", EvParameters.max_power_limit.has_value());
     note_missing("max_current_limit", EvParameters.max_current_limit.has_value());
     note_missing("max_voltage_limit", EvParameters.max_voltage_limit.has_value());
+    note_missing("min_voltage_limit", EvParameters.min_voltage_limit.has_value());
     note_missing("energy_capacity", EvParameters.energy_capacity.has_value());
     note_missing("target_voltage", EvParameters.target_voltage.has_value());
     note_missing("target_current", EvParameters.target_current.has_value());
@@ -439,6 +440,7 @@ void ISO15118_evImpl::handle_set_dc_params(types::iso15118::DcEvParameters& EvPa
     params.max_charge_power = EvParameters.max_power_limit.value_or(0.0f);
     params.max_charge_current = EvParameters.max_current_limit.value_or(0.0f);
     params.max_voltage = EvParameters.max_voltage_limit.value_or(0.0f);
+    params.min_voltage = EvParameters.min_voltage_limit.value_or(0.0f);
     params.energy_capacity = EvParameters.energy_capacity.value_or(0.0f);
     params.target_voltage = EvParameters.target_voltage.value_or(0.0f);
     params.target_current = EvParameters.target_current.value_or(0.0f);
@@ -490,6 +492,28 @@ void ISO15118_evImpl::handle_update_soc(double& SoC) {
     (*h).dc_params.present_soc = SoC;
     if ((*h).current) {
         (*h).current->update_present_soc(SoC);
+    }
+}
+
+void ISO15118_evImpl::handle_update_present_values(types::iso15118::EvPresentValues& PresentValues) {
+    // Stored on the session params as well as pushed to the live Controller, so a value
+    // that arrives between sessions still seeds the next one. Both fields are mandatory on
+    // the wire, so an absent one stays at whatever was last reported rather than resetting
+    // to a zero that would read as a measured zero.
+    auto h = session.handle();
+    if (PresentValues.present_voltage.has_value()) {
+        const auto voltage = PresentValues.present_voltage.value();
+        (*h).dc_params.present_voltage = voltage;
+        if ((*h).current) {
+            (*h).current->update_present_voltage(voltage);
+        }
+    }
+    if (PresentValues.present_active_power.has_value()) {
+        const auto power = PresentValues.present_active_power.value();
+        (*h).ac_params.present_active_power = power;
+        if ((*h).current) {
+            (*h).current->update_present_active_power(power);
+        }
     }
 }
 

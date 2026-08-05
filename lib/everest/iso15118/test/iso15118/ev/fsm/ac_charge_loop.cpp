@@ -127,9 +127,10 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop fires ac_target_power on a Dynamic respon
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
 }
 
-SCENARIO("ISO15118-20 EV AC_ChargeLoop reports the dictated target as its present power") {
-    // Nothing feeds a measured present power yet, so the request approximates it with the
-    // target the SECC dictated rather than putting a zero on the wire.
+SCENARIO("ISO15118-20 EV AC_ChargeLoop does not substitute the dictated target for a measurement") {
+    // present_active_power carries the module's measurement only. Reporting the target the
+    // SECC dictated would be indistinguishable from a measurement and could never diverge
+    // from it, hiding the disagreement worth seeing.
     StopObserver obs;
     const auto seed_limits_only = [](FsmStateHelper& helper) {
         ev::AcChargeParams p{};
@@ -139,7 +140,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop reports the dictated target as its presen
     };
     PrimedState<ev::d20::state::AC_ChargeLoop> primed{obs.callbacks, seed_limits_only};
 
-    // No target has been dictated at loop entry, so the first request reports no power.
+    // Unfed, so nothing to report.
     const auto first = primed.take_requests();
     const auto first_request = first.get<message_20::AC_ChargeLoopRequest>();
     REQUIRE(first_request.has_value());
@@ -153,7 +154,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop reports the dictated target as its presen
     const auto request_message = requests.get<message_20::AC_ChargeLoopRequest>();
     REQUIRE(request_message.has_value());
     const auto& mode = std::get<message_20::datatypes::Dynamic_AC_CLReqControlMode>(request_message->control_mode);
-    REQUIRE(message_20::datatypes::from_RationalNumber(mode.present_active_power) == Catch::Approx(7000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.present_active_power) == Catch::Approx(0.0f));
 }
 
 SCENARIO("ISO15118-20 EV AC_ChargeLoop stays and re-emits a request on a non-Terminate response") {
