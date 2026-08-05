@@ -29,3 +29,13 @@ target_link_libraries(test_sae_der_control_convert
 )
 
 catch_discover_tests(test_sae_der_control_convert)
+
+add_executable(test_sae_der_control_cl_res sae_der_control_cl_res.cpp)
+
+target_link_libraries(test_sae_der_control_cl_res
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_sae_der_control_cl_res)
