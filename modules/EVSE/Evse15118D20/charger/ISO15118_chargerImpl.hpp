@@ -15,12 +15,15 @@
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 #include <atomic>
 #include <bitset>
+#include <cstdint>
 #include <mutex>
 #include <optional>
+#include <utility>
 
 #include <iso15118/message/v2g_message_type.hpp>
 
 #include "der_relay.hpp"
+#include "der_setup.hpp"
 #include "grid_event.hpp"
 #include "utils.hpp"
 
@@ -187,6 +190,17 @@ private:
     /// SSLConfig, and applies it or preserves the last-good config; rebuild exceptions are
     /// caught there so the subscriber thread survives RPC failures.
     void on_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event);
+
+    // Re-derives the DER transfer limits and mirrors them into the controller. Call with GEL held, from
+    // every handler that writes one of its inputs.
+    void update_der_limits_locked();
+
+    // Last DER SAE derivation outcome that was logged, so a repeated derivation on unchanged inputs
+    // stays quiet. Guarded by GEL.
+    SaeDerStatus logged_sae_der_status{SaeDerStatus::NotRequested};
+    // Nominal voltage and frequency reported by the last logged Ready derivation, so a change to the
+    // advertised grid values is re-logged instead of staying hidden. Guarded by GEL.
+    std::optional<std::pair<std::uint32_t, float>> logged_sae_nominal;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

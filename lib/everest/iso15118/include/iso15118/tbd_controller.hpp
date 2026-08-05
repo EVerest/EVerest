@@ -107,6 +107,11 @@ public:
     // stored for the next session to start, which consumes it.
     void update_no_energy_pause(d20::NoEnergyPauseMode mode);
 
+    // The DER limits are read when a SessionConfig is built, so an update applies to the next session.
+    void update_der_iec_limits(const std::optional<d20::IecDerTransferLimits>&);
+    void update_der_sae_limits(const std::optional<d20::SaeDerTransferLimits>&,
+                               const std::optional<d20::DerSaeSetupConfig>&);
+
     void update_supported_vas_services(const std::vector<uint16_t>& vas_services);
 
     void set_dlink_ready(bool ready);
