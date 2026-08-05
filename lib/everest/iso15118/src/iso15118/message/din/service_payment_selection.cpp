@@ -16,7 +16,7 @@ template <> void convert(const struct din_ServicePaymentSelectionReqType& in, Se
 
     const size_t selected_services_len = std::min(static_cast<size_t>(in.SelectedServiceList.SelectedService.arrayLen),
                                                   out.selected_service_list.max_size());
-    for (unsigned int i = 0; i < selected_services_len; i++) {
+    for (size_t i = 0; i < selected_services_len; i++) {
         const auto& in_service = in.SelectedServiceList.SelectedService.array[i];
         data_types::SelectedService service;
         if (in_service.ParameterSetID_isUsed) {

@@ -12,3 +12,4 @@ endfunction()
 
 create_exi_test_target(service_discovery)
 create_exi_test_target(service_payment_selection)
+create_exi_test_target(contract_authentication)
