@@ -8,6 +8,10 @@
 #include "grid_event.hpp"
 #include "utils.hpp"
 
+#include <algorithm>
+#include <cstdint>
+#include <string>
+
 #include <utils/date.hpp>
 
 #include <iso15118/config.hpp>
@@ -194,6 +198,8 @@ void ISO15118_chargerImpl::apply_active_der_directives() {
     float volt_base = 0.0f;
     float watt_base = 0.0f;
     std::optional<float> var_base;
+    bool sae_advertised = false;
+    bool iec_advertised = false;
     {
         std::scoped_lock lock(GEL);
         controller_ptr = controller.get();
@@ -201,12 +207,30 @@ void ISO15118_chargerImpl::apply_active_der_directives() {
             setup_config.ac_setup_config.has_value() ? static_cast<float>(setup_config.ac_setup_config->voltage) : 0.0f;
         watt_base = dt::from_RationalNumber(setup_config.ac_limits.charge_power.max);
         var_base = evse_max_reactive_power;
+        // Whether the service is offered, not whether limits happen to be held: the library strips a DER
+        // service whose limits are invalid, so the two diverge exactly when it matters.
+        const auto& services = setup_config.supported_energy_services;
+        const auto advertised = [&services](dt::ServiceCategory service) {
+            return std::find(services.begin(), services.end(), service) != services.end();
+        };
+        sae_advertised = advertised(dt::ServiceCategory::AC_DER_SAE);
+        iec_advertised = advertised(dt::ServiceCategory::AC_DER_IEC);
     }
 
     if (controller_ptr == nullptr) {
         EVLOG_info << "grid_support DER directives stored before HLC controller ready; will apply once the first V2G "
                       "session starts.";
         return;
+    }
+
+    if (sae_advertised) {
+        EVLOG_warning << "grid_support DER directives are applied to the AC_DER_IEC control functions only. An "
+                         "AC_DER_SAE session keeps its configured grid code unchanged.";
+    }
+
+    if (not sae_advertised and not iec_advertised) {
+        EVLOG_warning << "grid_support DER directives were applied while neither AC_DER_IEC nor AC_DER_SAE is "
+                         "advertised. The updated control functions have no effect until a DER service is offered.";
     }
 
     const auto der_map =
@@ -219,6 +243,81 @@ void ISO15118_chargerImpl::apply_active_der_directives() {
             controller_ptr->update_supported_der_functions(name, it->second);
         } else {
             controller_ptr->update_unsupported_der_functions(name);
+        }
+    }
+}
+
+void ISO15118_chargerImpl::update_der_limits_locked() {
+    // DER control directives reach the EV through the control-function relay, not here.
+    const auto derived = derive_der_limits(
+        setup_config.supported_energy_services, setup_config.ac_limits, evse_max_reactive_power,
+        setup_config.ac_setup_config.has_value() ? std::optional<std::uint32_t>{setup_config.ac_setup_config->voltage}
+                                                 : std::nullopt);
+
+    DerAppliedState applied{};
+    applied.iec_limits = setup_config.der_iec_limits;
+    applied.sae_limits = setup_config.der_sae_limits;
+    applied.sae_setup_config = setup_config.der_sae_setup_config;
+
+    const auto transitions = apply_derivation(derived, applied);
+    setup_config.der_iec_limits = applied.iec_limits;
+    setup_config.der_sae_limits = applied.sae_limits;
+    setup_config.der_sae_setup_config = applied.sae_setup_config;
+
+    const auto status_changed = derived.sae_status != logged_sae_der_status;
+    logged_sae_der_status = derived.sae_status;
+
+    // Re-log when the grid values change, not only when the status does: the EV adopts them.
+    const std::pair<std::uint32_t, float> nominal_pair{derived.nominal_voltage, derived.nominal_frequency};
+
+    if (derived.sae_status == SaeDerStatus::GridParametersMissing) {
+        // The EV denormalizes the voltage curves against the nominal voltage and adopts the advertised
+        // nominal frequency, so advertising a placeholder grid is worse than withdrawing the service.
+        const auto frequency_missing = derived.nominal_frequency <= 0.0f;
+        const auto voltage_missing = derived.nominal_voltage == 0;
+        const std::string missing = [&]() -> std::string {
+            if (frequency_missing and voltage_missing) {
+                return fmt::format("ac_limits.nominal_frequency is {} Hz and the nominal voltage is not configured",
+                                   derived.nominal_frequency);
+            }
+            if (frequency_missing) {
+                return fmt::format("ac_limits.nominal_frequency is {} Hz", derived.nominal_frequency);
+            }
+            return "the nominal voltage is not configured";
+        }();
+
+        if (status_changed or logged_sae_nominal != nominal_pair) {
+            logged_sae_nominal = nominal_pair;
+            if (transitions.sae == DerSaeApplyTransition::KeptPrevious) {
+                EVLOG_error << "AC_DER_SAE is supported but " << missing
+                            << ". Not building SAE DER limits; the previously derived limits remain in effect "
+                               "until a valid update arrives.";
+            } else {
+                EVLOG_error << "AC_DER_SAE is supported but " << missing
+                            << ", so the AC parameters have not been received yet. No SAE DER limits have ever "
+                               "been derived, so AC_DER_SAE will not be advertised.";
+            }
+        }
+    } else if (derived.sae_status == SaeDerStatus::Ready) {
+        if (status_changed or logged_sae_nominal != nominal_pair) {
+            logged_sae_nominal = nominal_pair;
+            EVLOG_info << "AC_DER_SAE advertised with the inert default grid code configuration (no control "
+                          "function enabled, service not permitted), nominal voltage "
+                       << derived.nominal_voltage << " V, nominal frequency " << derived.nominal_frequency
+                       << " Hz, reactive power capability "
+                       << (evse_max_reactive_power.has_value()
+                               ? std::to_string(evse_max_reactive_power.value()) + " var"
+                               : std::string{"not configured"})
+                       << ".";
+        }
+    }
+
+    // The two DER flavors are mutually exclusive per EVSE, so only the advertised one is mirrored.
+    if (controller) {
+        if (transitions.iec_assigned) {
+            controller->update_der_iec_limits(setup_config.der_iec_limits);
+        } else if (derived.sae_status != SaeDerStatus::NotRequested) {
+            controller->update_der_sae_limits(setup_config.der_sae_limits, setup_config.der_sae_setup_config);
         }
     }
 }
@@ -296,16 +395,20 @@ void ISO15118_chargerImpl::ready() {
 
     setup_config.selecting_sap_based_on_energy_service = mod->config.selecting_sap_based_on_energy_service;
 
-    // IEC DER limits pass through from ac_limits. Applying DER control directives to the EV is handled
-    // separately by the DER control-function relay.
     {
-        const auto& services = setup_config.supported_energy_services;
-        if (std::find(services.begin(), services.end(), dt::ServiceCategory::AC_DER_IEC) != services.end()) {
-            setup_config.der_iec_limits = build_iec_der_transfer_limits(setup_config.ac_limits);
-        }
-    }
+        // setup_config, evse_max_reactive_power and controller are written by the update_* handlers and read
+        // by apply_active_der_directives under GEL, so the seed derivation and the controller construction
+        // both belong inside the lock. TbdController's constructor takes no EVerest lock and invokes no
+        // callback, so holding GEL across it cannot invert against der_apply_mutex.
+        std::scoped_lock lock(GEL);
 
-    controller = std::make_unique<iso15118::TbdController>(std::move(tbd_config), std::move(callbacks), setup_config);
+        // Boot-time seed. DER services that only become available after OCPP boots are picked up by the
+        // same helper from the update_* handlers.
+        update_der_limits_locked();
+
+        controller =
+            std::make_unique<iso15118::TbdController>(std::move(tbd_config), std::move(callbacks), setup_config);
+    }
 
     // if the vas providers report their supported vas services before the controller exists,
     // we need to update the controller with the supported vas services after instantiation
@@ -477,6 +580,12 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
                 charging_needs.der_charging_parameters = to_der_charging_parameters(*der_ac_ev_limits);
                 charging_needs.der_charging_parameters->ev_supported_dercontrol =
                     map_ev_supported_der_controls(ev_selected_der_control_functions);
+            } else if (std::holds_alternative<dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode>(ev_limits)) {
+                // Expected on every AC_DER_SAE session: the SAE apparent-power, reactive-power and
+                // excitation limits have no DERChargingParameters counterpart yet.
+                EVLOG_info << "'ChargingNeeds' does not yet carry the SAE DER charging parameters; not sending it "
+                              "for this AC_DER_SAE session.";
+                return;
             } else {
                 EVLOG_error << "Invalid type received for EV limits! Not sending 'ChargingNeeds'.";
                 return;
@@ -557,6 +666,12 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
             publish_ac_ev_power_limits(fill_ac_ev_power_limits(*ac_bpt_transfer_mode));
         } else if (const auto* der_iec_transfer_mode = std::get_if<dt::DER_AC_CPDReqEnergyTransferMode>(&limits)) {
             publish_ac_ev_power_limits(fill_ac_ev_power_limits(*der_iec_transfer_mode));
+        } else if (const auto* der_sae_transfer_mode =
+                       std::get_if<dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode>(&limits)) {
+            publish_ac_ev_power_limits(fill_ac_ev_power_limits(*der_sae_transfer_mode));
+        } else {
+            EVLOG_warning << "Unhandled AC EV limits type (variant index " << limits.index()
+                          << "); the EV power limits are not published.";
         }
     };
 
@@ -614,6 +729,30 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
                 publish_grid_event(der_dynamic_mode->grid_event_condition);
                 // TODO(ml): reactive-power fields and session_total_discharge_energy_available are
                 // not yet surfaced.
+            } else if (const auto* sae_scheduled_mode =
+                           std::get_if<dt::sae::DER_Scheduled_AC_CLReqControlMode>(ac_control_mode)) {
+                publish_ac_ev_power_limits(fill_ac_ev_power_limits(*sae_scheduled_mode));
+                publish_ac_ev_present_powers(fill_ac_ev_present_power_values(*sae_scheduled_mode));
+                // No grid event: grid_event_condition is IEC only. The SAE request carries der_alarm_status
+                // instead, which has no grid_support mapping yet.
+                // TODO(ml): present_voltage, present_frequency, der_operational_state, der_connection_status,
+                // der_alarm_status, enabled_modes and the apparent_power, reactive_power and excitation
+                // blocks are not surfaced. present_active_power and present_reactive_power are.
+            } else if (const auto* sae_dynamic_mode =
+                           std::get_if<dt::sae::DER_Dynamic_AC_CLReqControlMode>(ac_control_mode)) {
+                publish_ac_ev_power_limits(fill_ac_ev_power_limits(*sae_dynamic_mode));
+                publish_ac_ev_present_powers(fill_ac_ev_present_power_values(*sae_dynamic_mode));
+                auto ev_dynamic_values = fill_ac_ev_dynamic_control_mode(*sae_dynamic_mode);
+                ev_dynamic_values.max_v2x_energy_request =
+                    convert_from_optional(sae_dynamic_mode->maximum_v2x_energy_request);
+                ev_dynamic_values.min_v2x_energy_request =
+                    convert_from_optional(sae_dynamic_mode->minimum_v2x_energy_request);
+                publish_ac_ev_dynamic_control_mode(ev_dynamic_values);
+                // Same unsurfaced fields as the SAE scheduled branch above, plus
+                // session_total_discharge_energy_available.
+            } else {
+                EVLOG_warning << "Unhandled AC EV control mode (variant index " << ac_control_mode->index()
+                              << "); the EV charge loop values are not published.";
             }
         } else if (const auto* display_parameters = std::get_if<dt::DisplayParameters>(&ac_charge_loop_req)) {
             publish_display_parameters(convert_display_parameters(*display_parameters));
@@ -1112,6 +1251,9 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
 
     setup_config.supported_energy_services = services;
 
+    // AC_DER_IEC and AC_DER_SAE typically appear here for the first time, long after ready().
+    update_der_limits_locked();
+
     if (controller) {
         controller->update_energy_modes(services);
     }
@@ -1144,6 +1286,8 @@ void ISO15118_chargerImpl::handle_update_ac_parameters(types::iso15118::AcParame
 
         evse_max_reactive_power = ac_parameters.evse_max_reactive_power;
 
+        update_der_limits_locked();
+
         if (controller) {
             controller->update_ac_limits(setup_config.ac_limits);
         }
@@ -1170,6 +1314,8 @@ void ISO15118_chargerImpl::handle_update_ac_maximum_limits(types::iso15118::AcEv
                                                      ? -std::fabs(maximum_limits.discharge_power.value().total)
                                                      : maximum_limits.discharge_power.value().total);
         }
+
+        update_der_limits_locked();
 
         if (controller) {
             controller->update_ac_limits(setup_config.ac_limits);
@@ -1198,6 +1344,8 @@ void ISO15118_chargerImpl::handle_update_ac_minimum_limits(types::iso15118::AcEv
                                                  ? -std::fabs(minimum_limits.discharge_power.value().total)
                                                  : minimum_limits.discharge_power.value().total);
     }
+
+    update_der_limits_locked();
 
     if (controller) {
         controller->update_ac_limits(setup_config.ac_limits);

@@ -3,6 +3,7 @@
 #include "der_setup.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 #include <iso15118/d20/der_functions.hpp>
@@ -27,6 +28,94 @@ iso15118::d20::IecDerTransferLimits build_iec_der_transfer_limits(const iso15118
         limits.max_discharge_power = dt::from_float(0.0f);
     }
     return limits;
+}
+
+iso15118::d20::SaeDerTransferLimits build_sae_der_transfer_limits(const iso15118::d20::AcTransferLimits& ac_limits,
+                                                                  std::optional<float> evse_max_reactive_power,
+                                                                  std::uint32_t nominal_voltage) {
+    iso15118::d20::SaeDerTransferLimits limits{};
+
+    limits.nominal_charge_power = ac_limits.charge_power.max;
+    if (ac_limits.discharge_power.has_value()) {
+        limits.nominal_discharge_power = ac_limits.discharge_power.value().max;
+        limits.max_discharge_power = ac_limits.discharge_power.value().max;
+    } else {
+        limits.nominal_discharge_power = dt::from_float(0.0f);
+        limits.max_discharge_power = dt::from_float(0.0f);
+    }
+
+    // All four are mandatory on the wire, so an absent or zero capability yields explicit zeros.
+    // Absorption is reported non-negative and injection non-positive, so both signs use the magnitude
+    // of the configured capability.
+    const auto reactive_magnitude = std::fabs(evse_max_reactive_power.value_or(0.0f));
+    const auto absorption = dt::from_float(reactive_magnitude);
+    const auto injection = dt::from_float(-reactive_magnitude);
+    auto& reactive = limits.reactive_power_limits;
+    reactive.maximum_var_absorption_during_charging = absorption;
+    reactive.maximum_var_injection_during_charging = injection;
+    reactive.maximum_var_absorption_during_discharging = absorption;
+    reactive.maximum_var_injection_during_discharging = injection;
+
+    const auto nominal_voltage_f = static_cast<float>(nominal_voltage);
+    auto& grid = limits.grid_limits;
+    grid.nominal_frequency = ac_limits.nominal_frequency;
+    grid.nominal_voltage = dt::from_float(nominal_voltage_f);
+    grid.nominal_voltage_offset = dt::from_float(0.0f);
+    grid.maximum_voltage = dt::from_float(nominal_voltage_f * OVER_VOLTAGE_TRIP_FRACTION);
+    grid.minimum_voltage = dt::from_float(nominal_voltage_f * UNDER_VOLTAGE_TRIP_FRACTION);
+
+    return limits;
+}
+
+DerLimitsDerivation derive_der_limits(const std::vector<dt::ServiceCategory>& services,
+                                      const iso15118::d20::AcTransferLimits& ac_limits,
+                                      std::optional<float> evse_max_reactive_power,
+                                      std::optional<std::uint32_t> nominal_voltage) {
+    DerLimitsDerivation derivation{};
+    derivation.nominal_frequency = dt::from_RationalNumber(ac_limits.nominal_frequency);
+    derivation.nominal_voltage = nominal_voltage.value_or(0);
+
+    const auto advertised = [&services](dt::ServiceCategory service) {
+        return std::find(services.begin(), services.end(), service) != services.end();
+    };
+
+    if (advertised(dt::ServiceCategory::AC_DER_IEC)) {
+        derivation.iec_limits = build_iec_der_transfer_limits(ac_limits);
+    }
+
+    if (advertised(dt::ServiceCategory::AC_DER_SAE)) {
+        if (derivation.nominal_frequency <= 0.0f or derivation.nominal_voltage == 0) {
+            derivation.sae_status = SaeDerStatus::GridParametersMissing;
+        } else {
+            derivation.sae_limits =
+                build_sae_der_transfer_limits(ac_limits, evse_max_reactive_power, derivation.nominal_voltage);
+            derivation.sae_setup_config.emplace();
+            derivation.sae_status = SaeDerStatus::Ready;
+        }
+    }
+
+    return derivation;
+}
+
+DerApplyTransitions apply_derivation(const DerLimitsDerivation& derived, DerAppliedState& current) {
+    DerApplyTransitions transitions{};
+
+    if (derived.iec_limits.has_value()) {
+        current.iec_limits = derived.iec_limits;
+        transitions.iec_assigned = true;
+    }
+
+    if (derived.sae_limits.has_value()) {
+        current.sae_limits = derived.sae_limits;
+        current.sae_setup_config = derived.sae_setup_config;
+        transitions.sae = DerSaeApplyTransition::Assigned;
+    } else if (current.sae_limits.has_value()) {
+        transitions.sae = DerSaeApplyTransition::KeptPrevious;
+    } else {
+        transitions.sae = DerSaeApplyTransition::NeverDerived;
+    }
+
+    return transitions;
 }
 
 types::iso15118::DERChargingParameters to_der_charging_parameters(const dt::DER_AC_CPDReqEnergyTransferMode& ev) {
