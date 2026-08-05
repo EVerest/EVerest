@@ -6,7 +6,6 @@
 
 #include <iso15118/d20/state/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/schedule_exchange.hpp>
-#include <iso15118/d20/state/service_detail.hpp>
 
 #include <iso15118/d20/config.hpp>
 #include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
@@ -14,6 +13,8 @@
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/session_stop.hpp>
 
+#include <cstdint>
+#include <variant>
 #include <vector>
 
 using namespace iso15118;
@@ -28,20 +29,20 @@ using CpdResponse = message_20::DER_SAE_AC_ChargeParameterDiscoveryResponse;
 namespace {
 
 // Copied from test/exi/cb/iso20/helper.hpp so the FSM tests do not reach across test directories.
-template <typename Message> std::vector<uint8_t> serialize_helper(const Message& message) {
-    uint8_t serialization_buffer[2048];
+template <typename Message> std::vector<std::uint8_t> serialize_helper(const Message& message) {
+    std::uint8_t serialization_buffer[2048];
     io::StreamOutputView out({serialization_buffer, sizeof(serialization_buffer)});
 
     const auto size = message_20::serialize(message, out);
 
-    return std::vector<uint8_t>(serialization_buffer, serialization_buffer + size);
+    return std::vector<std::uint8_t>(serialization_buffer, serialization_buffer + size);
 }
 
-constexpr uint32_t bit_of(sae::DerBitMapFunctions function) {
-    return 1U << static_cast<uint32_t>(function);
+constexpr std::uint32_t bit_of(sae::DerBitMapFunctions function) {
+    return 1U << static_cast<std::uint32_t>(function);
 }
 
-constexpr uint32_t CHARGE_AND_DISCHARGE_ONLY =
+constexpr std::uint32_t CHARGE_AND_DISCHARGE_ONLY =
     bit_of(sae::DerBitMapFunctions::ChargeFunction) | bit_of(sae::DerBitMapFunctions::DischargeFunction);
 
 d20::AcTransferLimits make_ac_limits() {
@@ -58,6 +59,33 @@ d20::SaeDerTransferLimits make_sae_limits() {
     limits.nominal_discharge_power = dt::RationalNumber{-11, 3};
     limits.max_discharge_power = {-22, 3};
     return limits;
+}
+
+d20::EvseSetupConfig make_evse_setup() {
+    d20::EvseSetupConfig setup{};
+    setup.evse_id = "everest se";
+    setup.supported_energy_services = {dt::ServiceCategory::AC_DER_SAE};
+    setup.authorization_services = {dt::Authorization::EIM};
+    setup.supported_vas_services = {};
+    setup.enable_certificate_install_service = false;
+    setup.dc_limits = {};
+    setup.ac_limits = make_ac_limits();
+    setup.der_iec_limits = std::nullopt;
+    setup.der_sae_limits = make_sae_limits();
+    setup.control_mobility_modes = {{dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
+    // Both modes are deliberately the non default enumerator, so an unsent control set cannot be mistaken for
+    // the struct default.
+    setup.der_sae_setup_config =
+        d20::DerSaeSetupConfig{d20::get_default_sae_der_control(), sae::RequiredDEROperatingMode::GridForming,
+                               sae::GridConnectionMode::GridIslanded};
+    setup.powersupply_limits = {};
+    return setup;
+}
+
+d20::SelectedServiceParameters make_service_parameters() {
+    return d20::SelectedServiceParameters(dt::ServiceCategory::AC_DER_SAE, dt::AcConnector::ThreePhase,
+                                          dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc,
+                                          dt::Pricing::NoPricing, 230);
 }
 
 // Turning every enable on makes the gating assertions below non-vacuous: the inert default config has them
@@ -80,8 +108,8 @@ sae::DERControl all_enabled_der_control() {
     return der_control;
 }
 
-CpdRequest make_request(const std::array<uint8_t, 8>& session_id, dt::Processing processing, uint32_t supported_modes,
-                        uint32_t enabled_modes) {
+CpdRequest make_request(const std::array<std::uint8_t, 8>& session_id, dt::Processing processing,
+                        std::uint32_t supported_modes, std::uint32_t enabled_modes) {
     CpdRequest req{};
     req.header.session_id = session_id;
     req.header.timestamp = 1691411798;
@@ -94,6 +122,33 @@ CpdRequest make_request(const std::array<uint8_t, 8>& session_id, dt::Processing
     mode.supported_modes = supported_modes;
     mode.enabled_modes = enabled_modes;
     return req;
+}
+
+// The default request mirrors make_ac_limits and make_sae_limits, so an assertion on those values cannot
+// tell an EV limit apart from the EVSE's own configuration. No generation below matches those, and the
+// generations differ from each other, so consecutive requests within one session stay distinguishable.
+void with_distinct_ev_limits(CpdRequest& req, std::int16_t generation = 1) {
+    auto& mode = req.transfer_mode;
+    mode.max_charge_power = {static_cast<std::int16_t>(7 * generation), 3};
+    mode.max_charge_power_L2 = dt::RationalNumber{static_cast<std::int16_t>(4 * generation), 3};
+    mode.max_charge_power_L3 = dt::RationalNumber{static_cast<std::int16_t>(2 * generation), 3};
+    mode.min_charge_power = {static_cast<std::int16_t>(350 * generation), 0};
+    mode.maximum_discharge_power = {static_cast<std::int16_t>(-6 * generation), 3};
+    mode.maximum_discharge_power_L2 = dt::RationalNumber{static_cast<std::int16_t>(-35 * generation), 2};
+    mode.maximum_discharge_power_L3 = dt::RationalNumber{static_cast<std::int16_t>(-15 * generation), 2};
+    mode.minimum_discharge_power = dt::RationalNumber{static_cast<std::int16_t>(-250 * generation), 0};
+}
+
+void require_distinct_ev_limits(const dt_sae::DER_SAE_AC_CPDReqEnergyTransferMode& mode, std::int16_t generation = 1) {
+    const auto scale = static_cast<float>(generation);
+    REQUIRE(dt::from_RationalNumber(mode.max_charge_power) == 7000.0f * scale);
+    REQUIRE(dt::from_RationalNumber(mode.max_charge_power_L2.value()) == 4000.0f * scale);
+    REQUIRE(dt::from_RationalNumber(mode.max_charge_power_L3.value()) == 2000.0f * scale);
+    REQUIRE(dt::from_RationalNumber(mode.min_charge_power) == 350.0f * scale);
+    REQUIRE(dt::from_RationalNumber(mode.maximum_discharge_power) == -6000.0f * scale);
+    REQUIRE(dt::from_RationalNumber(mode.maximum_discharge_power_L2.value()) == -3500.0f * scale);
+    REQUIRE(dt::from_RationalNumber(mode.maximum_discharge_power_L3.value()) == -1500.0f * scale);
+    REQUIRE(dt::from_RationalNumber(mode.minimum_discharge_power.value()) == -250.0f * scale);
 }
 
 void require_every_enable_cleared(const dt_sae::DERControlCPDRes& out) {
@@ -116,34 +171,13 @@ void require_every_enable_cleared(const dt_sae::DERControlCPDRes& out) {
 
 SCENARIO("ISO15118-20 der sae ac charge parameter discovery state transitions") {
 
-    const d20::EvseSetupConfig evse_setup{
-        .evse_id = "everest se",
-        .supported_energy_services = {dt::ServiceCategory::AC_DER_SAE},
-        .authorization_services = {dt::Authorization::EIM},
-        .supported_vas_services = {},
-        .enable_certificate_install_service = false,
-        .dc_limits = {},
-        .ac_limits = make_ac_limits(),
-        .der_iec_limits = std::nullopt,
-        .der_sae_limits = make_sae_limits(),
-        .control_mobility_modes = {{dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}},
-        // Both modes are deliberately the non default enumerator, so an unsent dictate cannot be mistaken for
-        // the struct default.
-        .der_sae_setup_config =
-            d20::DerSaeSetupConfig{d20::get_default_sae_der_control(), sae::RequiredDEROperatingMode::GridForming,
-                                   sae::GridConnectionMode::GridIslanded},
-        .powersupply_limits = {},
-    };
-
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
     session::feedback::Callbacks callbacks{};
 
-    auto state_helper = FsmStateHelper(d20::SessionConfig(evse_setup), pause_ctx, callbacks);
-    auto ctx = state_helper.get_context();
+    auto state_helper = FsmStateHelper(d20::SessionConfig(make_evse_setup()), pause_ctx, callbacks);
+    auto& ctx = state_helper.get_context();
 
-    const d20::SelectedServiceParameters service_parameters(
-        dt::ServiceCategory::AC_DER_SAE, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
-        dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230);
+    const auto service_parameters = make_service_parameters();
 
     GIVEN("Bad case - unknown session") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeParameterDiscovery>()};
@@ -231,7 +265,7 @@ SCENARIO("ISO15118-20 der sae ac charge parameter discovery state transitions") 
             REQUIRE(res.value().transfer_mode.processing == dt::Processing::Finished);
         }
 
-        THEN("The dictated DER control is marked as delivered") {
+        THEN("The DER control set is marked as delivered") {
             const auto update_time = ctx.session_config.der_sae_setup_config.value().der_control_update_time;
             REQUIRE(ctx.session.der_control_changed_since_cpd(update_time) == false);
         }
@@ -251,13 +285,14 @@ SCENARIO("ISO15118-20 der sae ac charge parameter discovery state transitions") 
         }
     }
 
-    GIVEN("The EV restarts the service selection") {
+    // [V2G20-3354]: while the charge parameter discovery is still Ongoing, the only allowed next request is
+    // another ChargeParameterDiscoveryReq. The service selection restart is only reachable once the state has
+    // been left, and is handled by the schedule exchange state.
+    GIVEN("The EV sends a service discovery while the charge parameter discovery is ongoing") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeParameterDiscovery>()};
 
         ctx.session = d20::Session(service_parameters);
 
-        // A Finished request leaves the state, so the reachable shape is a service discovery after a request
-        // the EV is still processing.
         const auto cpd_req = make_request(ctx.session.get_id(), dt::Processing::Ongoing, CHARGE_AND_DISCHARGE_ONLY, 0);
         state_helper.handle_request(cpd_req);
         REQUIRE(fsm.feed(d20::Event::V2GTP_MESSAGE).transitioned() == false);
@@ -269,14 +304,14 @@ SCENARIO("ISO15118-20 der sae ac charge parameter discovery state transitions") 
         state_helper.handle_request(service_discovery_req);
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
 
-        THEN("The service discovery is accepted instead of a sequence error") {
-            REQUIRE(result.transitioned() == true);
-            REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceDetail);
-            REQUIRE(ctx.session_stopped == false);
+        THEN("The service discovery is rejected with FAILED_SequenceError and the session is stopped") {
+            REQUIRE(result.transitioned() == false);
+            REQUIRE(fsm.get_current_state_id() == d20::StateID::AC_DER_SAE_ChargeParameterDiscovery);
+            REQUIRE(ctx.session_stopped == true);
 
             const auto res = ctx.get_response<message_20::ServiceDiscoveryResponse>();
             REQUIRE(res.has_value());
-            REQUIRE(res.value().response_code == dt::ResponseCode::OK);
+            REQUIRE(res.value().response_code == dt::ResponseCode::FAILED_SequenceError);
         }
     }
 
@@ -316,7 +351,7 @@ SCENARIO("ISO15118-20 der sae ac charge parameter discovery state transitions") 
         state_helper.handle_request(req);
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
 
-        THEN("ResponseCode: FAILED_SequenceError and the session is stopped") {
+        THEN("The session setup is rejected with FAILED_SequenceError and the session is stopped") {
             REQUIRE(result.transitioned() == false);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::AC_DER_SAE_ChargeParameterDiscovery);
             REQUIRE(ctx.session_stopped == true);
@@ -330,7 +365,7 @@ SCENARIO("ISO15118-20 der sae ac charge parameter discovery state transitions") 
     // The per function gating itself is pinned exhaustively by test/iso15118/d20/sae_der_control_convert.cpp.
     // What only the state machine can show is that the gate is driven by the SupportedModes of the request it
     // just recorded on the session.
-    GIVEN("The dictated DER control has every function enabled") {
+    GIVEN("The DER control set has every function enabled") {
         ctx.session_config.der_sae_setup_config.value().der_control = all_enabled_der_control();
 
         THEN("An EV declaring only charge and discharge gets every enable cleared") {
@@ -457,7 +492,7 @@ SCENARIO("ISO15118-20 der sae ac charge parameter discovery state transitions") 
 
         ctx.session = d20::Session(service_parameters);
 
-        constexpr uint32_t reserved_bits = (1U << 2) | (1U << 9) | (1U << 25) | (1U << 31);
+        constexpr std::uint32_t reserved_bits = (1U << 2) | (1U << 9) | (1U << 25) | (1U << 31);
         const auto req =
             make_request(ctx.session.get_id(), dt::Processing::Finished, CHARGE_AND_DISCHARGE_ONLY | reserved_bits, 0);
         state_helper.handle_request(req);
@@ -490,6 +525,140 @@ SCENARIO("ISO15118-20 der sae ac charge parameter discovery state transitions") 
             REQUIRE(res.has_value());
             REQUIRE(res.value().response_code == dt::ResponseCode::OK);
             REQUIRE(ctx.session_stopped == false);
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 der sae ac charge parameter discovery feedback") {
+
+    std::optional<d20::PauseContext> pause_ctx{std::nullopt};
+
+    std::vector<session::feedback::AcLimits> reported_limits;
+    session::feedback::Callbacks callbacks{};
+    callbacks.ac_limits = [&reported_limits](const session::feedback::AcLimits& limits) {
+        reported_limits.push_back(limits);
+    };
+
+    auto state_helper = FsmStateHelper(d20::SessionConfig(make_evse_setup()), pause_ctx, callbacks);
+    auto& ctx = state_helper.get_context();
+
+    const auto service_parameters = make_service_parameters();
+
+    GIVEN("An accepted SAE charge parameter discovery request") {
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeParameterDiscovery>()};
+
+        ctx.session = d20::Session(service_parameters);
+
+        auto req = make_request(ctx.session.get_id(), dt::Processing::Finished, CHARGE_AND_DISCHARGE_ONLY, 0);
+        with_distinct_ev_limits(req);
+        state_helper.handle_request(req);
+        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("The request is accepted and the schedule exchange is entered") {
+            const auto res = ctx.get_response<CpdResponse>();
+            REQUIRE(res.has_value());
+            REQUIRE(res.value().response_code == dt::ResponseCode::OK);
+            REQUIRE(result.transitioned() == true);
+            REQUIRE(fsm.get_current_state_id() == d20::StateID::ScheduleExchange);
+        }
+
+        THEN("The EV limits, not the EVSE configuration, are reported through the ac_limits feedback") {
+            REQUIRE(reported_limits.size() == 1);
+
+            const auto* mode = std::get_if<dt_sae::DER_SAE_AC_CPDReqEnergyTransferMode>(&reported_limits.front());
+            REQUIRE(mode != nullptr);
+            require_distinct_ev_limits(*mode);
+        }
+
+        THEN("The EV limits are recorded for the schedule exchange") {
+            const auto* mode =
+                std::get_if<dt_sae::DER_SAE_AC_CPDReqEnergyTransferMode>(&ctx.session_ev_info.ev_transfer_limits);
+            REQUIRE(mode != nullptr);
+            require_distinct_ev_limits(*mode);
+        }
+    }
+
+    // The state stays resident while the EV keeps the discovery Ongoing, so every iteration has to be
+    // reported and the recording has to track the latest one rather than the first.
+    GIVEN("The EV keeps the charge parameter discovery ongoing before finishing") {
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeParameterDiscovery>()};
+
+        ctx.session = d20::Session(service_parameters);
+
+        const auto feed = [&](dt::Processing processing, std::int16_t generation) {
+            auto req = make_request(ctx.session.get_id(), processing, CHARGE_AND_DISCHARGE_ONLY, 0);
+            with_distinct_ev_limits(req, generation);
+            state_helper.handle_request(req);
+            return fsm.feed(d20::Event::V2GTP_MESSAGE);
+        };
+
+        REQUIRE(feed(dt::Processing::Ongoing, 1).transitioned() == false);
+        REQUIRE(feed(dt::Processing::Ongoing, 2).transitioned() == false);
+        const auto result = feed(dt::Processing::Finished, 3);
+
+        THEN("The schedule exchange is entered only after the finishing request") {
+            REQUIRE(result.transitioned() == true);
+            REQUIRE(fsm.get_current_state_id() == d20::StateID::ScheduleExchange);
+            REQUIRE(ctx.session_stopped == false);
+        }
+
+        THEN("Every iteration is reported through the ac_limits feedback, in order") {
+            REQUIRE(reported_limits.size() == 3);
+
+            for (std::int16_t generation = 1; generation <= 3; generation++) {
+                const auto* mode = std::get_if<dt_sae::DER_SAE_AC_CPDReqEnergyTransferMode>(
+                    &reported_limits.at(static_cast<size_t>(generation - 1)));
+                REQUIRE(mode != nullptr);
+                require_distinct_ev_limits(*mode, generation);
+            }
+        }
+
+        THEN("The recorded EV limits are the ones of the last iteration") {
+            const auto* mode =
+                std::get_if<dt_sae::DER_SAE_AC_CPDReqEnergyTransferMode>(&ctx.session_ev_info.ev_transfer_limits);
+            REQUIRE(mode != nullptr);
+            require_distinct_ev_limits(*mode, 3);
+        }
+    }
+
+    GIVEN("A rejected SAE charge parameter discovery request") {
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeParameterDiscovery>()};
+
+        ctx.session = d20::Session(service_parameters);
+        ctx.session_config.der_sae_limits.reset();
+
+        auto req = make_request(ctx.session.get_id(), dt::Processing::Finished, CHARGE_AND_DISCHARGE_ONLY, 0);
+        with_distinct_ev_limits(req);
+        state_helper.handle_request(req);
+        fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("No EV limits are reported") {
+            REQUIRE(reported_limits.empty());
+        }
+
+        // The recording has to sit behind the same gate as the report, so a rejected request cannot leave its
+        // declared limits on the session.
+        THEN("No EV limits are recorded on the session") {
+            REQUIRE(std::holds_alternative<dt::DC_CPDReqEnergyTransferMode>(ctx.session_ev_info.ev_transfer_limits));
+        }
+    }
+
+    GIVEN("A SAE charge parameter discovery request carrying a foreign session id") {
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeParameterDiscovery>()};
+
+        ctx.session = d20::Session(service_parameters);
+
+        auto req = make_request(d20::Session().get_id(), dt::Processing::Finished, CHARGE_AND_DISCHARGE_ONLY, 0);
+        with_distinct_ev_limits(req);
+        state_helper.handle_request(req);
+        fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("The request is rejected and touches neither the feedback nor the session") {
+            const auto res = ctx.get_response<CpdResponse>();
+            REQUIRE(res.has_value());
+            REQUIRE(res.value().response_code == dt::ResponseCode::FAILED_UnknownSession);
+            REQUIRE(reported_limits.empty());
+            REQUIRE(std::holds_alternative<dt::DC_CPDReqEnergyTransferMode>(ctx.session_ev_info.ev_transfer_limits));
         }
     }
 }
