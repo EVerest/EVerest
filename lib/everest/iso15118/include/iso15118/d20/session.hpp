@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <array>
@@ -150,12 +150,28 @@ public:
                selected_services.selected_energy_service == dt::ServiceCategory::MCS_BPT;
     }
 
-    void set_ev_supported_sae_functions(uint32_t bitmap) {
+    void set_ev_supported_sae_functions(std::uint32_t bitmap) {
         ev_supported_sae_functions.emplace(bitmap);
     }
 
-    [[nodiscard]] std::optional<uint32_t> get_ev_supported_sae_functions() const {
+    [[nodiscard]] std::optional<std::uint32_t> get_ev_supported_sae_functions() const {
         return ev_supported_sae_functions;
+    }
+
+    void set_enabled_der_control_modes(std::uint32_t bitmap) {
+        enabled_der_control_modes = bitmap;
+    }
+
+    [[nodiscard]] std::uint32_t get_enabled_der_control_modes() const {
+        return enabled_der_control_modes;
+    }
+
+    void record_der_control_sent(std::uint64_t update_time) {
+        der_control_sent_update_time.emplace(update_time);
+    }
+
+    [[nodiscard]] bool der_control_changed_since_cpd(std::uint64_t config_update_time) const {
+        return der_control_sent_update_time != config_update_time;
     }
 
     ~Session();
@@ -172,7 +188,15 @@ private:
     SelectedVasParameter selected_vas_services{};
 
     // The EV's masked SupportedModes declaration, empty until the SAE CPD has run.
-    std::optional<uint32_t> ev_supported_sae_functions{};
+    std::optional<std::uint32_t> ev_supported_sae_functions{};
+
+    // The SAE bits the SECC actually enabled in the CPD response, which is what the EV's EnabledModes echo is
+    // compared against. Zero until the SAE CPD has run.
+    std::uint32_t enabled_der_control_modes{0};
+
+    // The DerSaeSetupConfig::der_control_update_time last sent to the EV, to be compared against the
+    // configured one. Empty until the SAE CPD has run.
+    std::optional<std::uint64_t> der_control_sent_update_time{};
 };
 
 } // namespace iso15118::d20
