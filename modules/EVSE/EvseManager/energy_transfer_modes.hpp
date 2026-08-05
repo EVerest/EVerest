@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include <generated/types/evse_board_support.hpp>
@@ -12,6 +13,6 @@ namespace module {
 
 std::vector<types::iso15118::EnergyTransferMode>
 get_supported_ac_energy_transfers(const types::evse_board_support::HardwareCapabilities& caps,
-                                  bool supported_iso_ac_bpt, bool der_available);
+                                  bool supported_iso_ac_bpt, bool der_available, const std::string& der_flavor);
 
 } // namespace module
