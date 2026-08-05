@@ -100,12 +100,12 @@ handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req
         return response_with_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
     }
 
-    // NOTE(SL): At this point, it's clear that it can only be DER TransferMode
+    // NOTE(mlitre): At this point, it's clear that it can only be DER TransferMode
 
     const auto& sae_config = config.value();
     const auto& der_limits = sae_limits.value();
 
-    // Validated before the session is touched and before the DER dictate is built. The offer rules ran the
+    // Validated before the session is touched and before the DER control set is built. The offer rules ran the
     // same check, but the AC limits can change through a control event in between.
     if (const auto violation = validate_sae_nominals_within_maxima(der_limits, limits)) {
         logf_error("SAE nominal power not within maximum: %s. Shutdown the session", violation.value().c_str());
@@ -136,7 +136,7 @@ handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req
     // mode.status
     const auto ev_supported_modes = req.transfer_mode.supported_modes & SAE_MODE_BITMAP_MASK;
 
-    // req.transfer_mode.enabled_modes is deliberately not consumed: the SECC dictates through the Enable
+    // req.transfer_mode.enabled_modes is deliberately not consumed: the SECC decides through the Enable
     // flags, so an inequality between SupportedModes and EnabledModes is not an error.
 
     if (not(is_function_set(ev_supported_modes, sae::DerBitMapFunctions::ChargeFunction) and
@@ -150,6 +150,9 @@ handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req
 
     convert(mode.der_control_cpd_res, sae_config.der_control);
     gate_enables_by_supported_modes(mode.der_control_cpd_res, ev_supported_modes);
+    // The gated Enable flags are the SECC decision, so the EV's later EnabledModes echo is compared against
+    // this and not against its own declaration.
+    session.set_enabled_der_control_modes(derive_enabled_modes(mode.der_control_cpd_res));
     session.record_der_control_sent(sae_config.der_control_update_time);
 
     mode.processing =
@@ -214,9 +217,10 @@ Result AC_DER_SAE_ChargeParameterDiscovery::feed(Event ev) {
 
         if (req->transfer_mode.processing == dt::Processing::Finished and
             res.transfer_mode.processing == dt::Processing::Finished) {
-            return m_ctx.create_state<ScheduleExchange>(); // [V2G20-]
+            return m_ctx.create_state<ScheduleExchange>();
         }
-        return {}; // [V2G20-3150]: Stay in the state because ev set processing to Ongoing
+        // Stay in the state because the EV set processing to Ongoing.
+        return {};
     }
 
     // The EV may restart service selection if it does not accept the dictated DER control settings.
