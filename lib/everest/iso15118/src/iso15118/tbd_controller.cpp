@@ -142,6 +142,11 @@ void TbdController::loop() {
 // The caller of this function needs to provide a non-blocking, keepalive fd.
 // ConnectionPlain::read() depends on the socket being non-blocking
 StartSessionResult TbdController::start_session(int connected_fd) {
+    return start_session(connected_fd, std::nullopt);
+}
+
+StartSessionResult TbdController::start_session(int connected_fd,
+                                                const std::optional<io::sha512_hash_t>& vehicle_cert_hash) {
     if (driver_running.exchange(true)) {
         logf_error("Another driver (loop/start_session) is already running; refusing concurrent entry");
         return StartSessionResult::KeepFdOpen;
@@ -167,7 +172,7 @@ StartSessionResult TbdController::start_session(int connected_fd) {
     // Reseting because this could cancel service_active_session.
     terminate_session_requested.store(false);
 
-    auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, connected_fd);
+    auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, connected_fd, vehicle_cert_hash);
     session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(*evse_setup.handle()), callbacks,
                                         pause_ctx);
     shutdown_active.store(false);

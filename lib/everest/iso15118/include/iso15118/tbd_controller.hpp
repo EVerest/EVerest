@@ -58,6 +58,7 @@ public:
     // Mutually exclusive with the other driver; see the class note. Refuses (logs and returns false) if the other
     // driver is already running.
     StartSessionResult start_session(int connected_fd);
+    StartSessionResult start_session(int connected_fd, const std::optional<io::sha512_hash_t>& vehicle_cert_hash);
     void tick();
 
     bool has_active_session() const {
