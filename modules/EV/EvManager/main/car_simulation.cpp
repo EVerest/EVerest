@@ -350,6 +350,11 @@ bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool th
         r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_BPT, selected_payment_option,
                                      departure_time, e_amount);
         charge_mode = ChargeMode::AC;
+    } else if (energy_mode == constants::AC_DER) {
+        sim_data.energy_mode = EnergyMode::AC;
+        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_DER_IEC, selected_payment_option,
+                                     departure_time, e_amount);
+        charge_mode = ChargeMode::AC;
     } else if (energy_mode == constants::DC) {
         r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::DC_extended, selected_payment_option,
                                      departure_time, e_amount);
