@@ -13,7 +13,7 @@ and ``wait_for_call`` is a plain coroutine.
 import asyncio
 import os
 from copy import deepcopy
-from typing import Dict, List
+from typing import Any, Callable, Dict, List
 from unittest.mock import Mock
 
 from everest.testing.core_utils import EverestConfigAdjustmentStrategy
@@ -35,17 +35,21 @@ class EvAutoExecAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         return adjusted_config
 
 
-def _ev_config_adaptions(auto_exec_commands: str) -> List[EverestConfigAdjustmentStrategy]:
-    """Auto_exec strategy plus, when EVEREST_V2G_DEVICE is set, a device override.
+def _ev_device_adaptions() -> List[EverestConfigAdjustmentStrategy]:
+    """A device override when EVEREST_V2G_DEVICE is set, nothing otherwise.
 
     CI leaves EVEREST_V2G_DEVICE unset (device stays ``auto``, the network-isolation
     plugin picks the per-worker veth); a developer host sets it to e.g. ``v2g0``.
     """
-    adaptions: List[EverestConfigAdjustmentStrategy] = [EvAutoExecAdjustmentStrategy(auto_exec_commands)]
     local_device = os.environ.get("EVEREST_V2G_DEVICE")
     if local_device:
-        adaptions.append(NetworkInterfaceConfigAdjustmentStrategy(local_device))
-    return adaptions
+        return [NetworkInterfaceConfigAdjustmentStrategy(local_device)]
+    return []
+
+
+def _ev_config_adaptions(auto_exec_commands: str) -> List[EverestConfigAdjustmentStrategy]:
+    """Auto_exec strategy plus, when EVEREST_V2G_DEVICE is set, a device override."""
+    return [EvAutoExecAdjustmentStrategy(auto_exec_commands), *_ev_device_adaptions()]
 
 
 async def wait_for_call(mock: Mock, timeout: float = 30.0):
@@ -56,3 +60,20 @@ async def wait_for_call(mock: Mock, timeout: float = 30.0):
             return
         await asyncio.sleep(0.1)
     raise TimeoutError("Timeout waiting for variable publication.")
+
+
+async def wait_for_match(mock: Mock, predicate: Callable[[Any], bool], timeout: float = 30.0) -> Any:
+    """Wait until mock was called with a value the predicate accepts, and return that value.
+
+    Unlike wait_for_call this scans every value seen so far, so a variable that is
+    republished with a changing value (for example a list that grows as the EVSE learns
+    its capabilities) can be awaited for the value under test rather than the first one.
+    """
+    start_time = asyncio.get_event_loop().time()
+    while asyncio.get_event_loop().time() - start_time < timeout:
+        for call in list(mock.call_args_list):
+            value = call[0][0]
+            if predicate(value):
+                return value
+        await asyncio.sleep(0.1)
+    raise TimeoutError("Timeout waiting for a matching variable publication.")
