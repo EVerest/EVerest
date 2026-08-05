@@ -54,8 +54,7 @@ private:
     bool arm_pace_tx_one_shot();
     void disarm_pace_tx_timer();
 
-    // ev_handler is declared first so it outlives can_bus, whose destructor removes its
-    // registration from the handler.
+    // Must outlive everything registered on it, so declare it first.
     event::fd_event_handler ev_handler;
     std::unique_ptr<can::socket_can> can_bus;
     std::atomic_bool on_error{false};

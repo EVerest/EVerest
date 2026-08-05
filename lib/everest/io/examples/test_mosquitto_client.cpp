@@ -53,8 +53,7 @@ int main(int, char*[]) {
     bool server_connected = false;
     bool client_connected = false;
 
-    // Create the event handler first so it outlives the clients, which remove their
-    // registrations from it when they are destroyed.
+    // Must outlive everything registered on it, so declare it first.
     fd_event_handler ev_handler;
 
     // Create first mqtt_client

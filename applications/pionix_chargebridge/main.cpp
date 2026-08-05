@@ -351,8 +351,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> config_files;
     utilities::status_output_mode status_output_mode;
     status_ui_options ui_options;
-    // ev_handler is declared before cb_handler so it outlives it, whose clients remove their
-    // registrations from it when they are destroyed.
+    // Must outlive everything registered on it, so declare it first.
     fd_event_handler ev_handler;
     std::vector<charge_bridge_config> cb_configs;
     std::vector<std::string> cb_names;

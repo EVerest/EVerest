@@ -24,8 +24,7 @@ using namespace std::chrono_literals;
 int main() {
     std::cout << "This is serial test" << std::endl;
 
-    // Create the event handler first so it outlives the PTY, which removes its registration
-    // from it when it is destroyed.
+    // Must outlive everything registered on it, so declare it first.
     fd_event_handler ev_handler;
 
     // Create PTY

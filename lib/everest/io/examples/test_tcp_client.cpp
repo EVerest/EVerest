@@ -87,8 +87,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Connecting to ->  " << remote << ":" << port << std::endl;
 
-    // Declared first so it outlives the client, which removes its registration from it when
-    // it is destroyed.
+    // Must outlive everything registered on it, so declare it first.
     fd_event_handler ev_handler;
 
     tcp_client client(remote, port, 1000);

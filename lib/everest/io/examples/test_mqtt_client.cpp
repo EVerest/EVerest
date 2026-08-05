@@ -50,8 +50,7 @@ mqtt::mqtt_client::cb_rx make_rx_callback(mqtt::mqtt_client& client, std::string
 int main(int, char*[]) {
     std::cout << "mqtt_client ping/pong demonstration" << std::endl;
 
-    // Create the event handler first so it outlives the clients, which remove their
-    // registrations from it when they are destroyed.
+    // Must outlive everything registered on it, so declare it first.
     fd_event_handler ev_handler;
 
     // Create first mqtt_client
