@@ -154,6 +154,37 @@ void CarSimulation::simulate_soc() {
         }
     }
 
+    // The values the simulated EV "measures". Modelling them here rather than in the
+    // protocol stack is deliberate: the stack must not invent a measurement, but a
+    // simulator is entitled to produce one, and doing it here keeps it visible and lets a
+    // future scenario make the EV disagree with the EVSE.
+    std::optional<double> present_voltage;
+    std::optional<double> present_active_power;
+    switch (charge_mode) {
+    case ChargeMode::None:
+        break;
+    case ChargeMode::AC:
+    case ChargeMode::ACThreePhase:
+        present_active_power = power;
+        break;
+    case ChargeMode::DC:
+        present_voltage = config.dc_target_voltage;
+        present_active_power = power;
+        break;
+    }
+
+    if (present_voltage != latest_present_voltage or present_active_power != latest_present_active_power) {
+        latest_present_voltage = present_voltage;
+        latest_present_active_power = present_active_power;
+
+        if (!r_ev.empty() and (present_voltage.has_value() or present_active_power.has_value())) {
+            types::iso15118::EvPresentValues values;
+            values.present_voltage = present_voltage;
+            values.present_active_power = present_active_power;
+            r_ev[0]->call_update_present_values(values);
+        }
+    }
+
     ev_info.soc = soc;
     ev_info.battery_capacity = sim_data.battery_capacity_wh;
     ev_info.battery_full_soc = 100;
