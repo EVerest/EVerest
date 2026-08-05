@@ -12,6 +12,7 @@ namespace iso15118::io {
 class ConnectionPlain : public IConnection {
 public:
     ConnectionPlain(PollManager&, const std::string& interface_name);
+    ConnectionPlain(PollManager&, int connected_fd);
 
     void set_event_callback(const ConnectionEventCallback&) final;
     Ipv6EndPoint get_public_endpoint() const final;
@@ -40,5 +41,6 @@ private:
 
     void handle_connect();
     void handle_data();
+    void handle_bootstrap();
 };
 } // namespace iso15118::io

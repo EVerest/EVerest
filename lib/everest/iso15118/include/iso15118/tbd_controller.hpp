@@ -25,6 +25,13 @@
 
 namespace iso15118 {
 
+enum class StartSessionResult : std::uint8_t {
+    KeepFdOpen,
+    FdNotValid,
+    FdClosed,
+    SessionComplete,
+};
+
 struct TbdConfig {
     config::SSLConfig ssl{};
     std::string interface_name;
@@ -32,6 +39,9 @@ struct TbdConfig {
     bool enable_sdp_server{true};
 };
 
+// TbdController is single-threaded. Exactly one driver may run at a time: either loop() or start_session(), driven from
+// a single thread. They must never run concurrently - they share the poll manager and session state, which are not
+// thread-safe. Sequential reuse (one driver returns, then the other is called) is allowed.
 class TbdController {
 public:
     // Creates the connection for sessions when the SDP server is disabled.
@@ -42,7 +52,12 @@ public:
     TbdController(TbdConfig, session::feedback::Callbacks, d20::EvseSetupConfig, ConnectionFactory);
     ~TbdController();
 
+    // Mutually exclusive with the other driver; see the class note. Refuses (logs and returns) if the other driver is
+    // already running.
     void loop();
+    // Mutually exclusive with the other driver; see the class note. Refuses (logs and returns false) if the other
+    // driver is already running.
+    StartSessionResult start_session(int connected_fd);
     void tick();
 
     bool has_active_session() const {
@@ -76,11 +91,23 @@ private:
     std::atomic_bool shutdown_active{false};
     std::atomic_bool terminate_session_requested{false};
 
+    // Guards against loop() and start_session() running concurrently (see class note).
+    std::atomic_bool driver_running{false};
+
     bool shutdown_signaled{false};
     TimePoint next_event{};
 
     // callbacks for sdp server
     void handle_sdp_server_input();
+
+    // Runs one poll_manager.poll() step using next_event; returns false if poll()
+    // threw, so the caller can break out of its loop.
+    bool poll_once();
+
+    // Services the currently active session for one cycle: propagates a pending
+    // shutdown, consumes the terminate request, polls the session and reaps it when
+    // finished. Shared by loop()/tick() and start_session().
+    void service_active_session();
 
     const TbdConfig config;
     const session::feedback::Callbacks callbacks;

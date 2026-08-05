@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <iso15118/io/connection_plain.hpp>
 #include <iso15118/io/connection_ssl.hpp>
@@ -15,6 +17,21 @@
 namespace iso15118 {
 
 static constexpr auto POLL_MANAGER_TIMEOUT_MS = 50;
+
+namespace {
+bool fd_is_open(int fd) {
+    return fd >= 0 and fcntl(fd, F_GETFD) != -1;
+}
+
+// Resets the driver-running flag on scope exit, so it is released even if an exception
+// propagates out of a driver.
+struct DriverRunningGuard {
+    std::atomic_bool& flag;
+    ~DriverRunningGuard() {
+        flag.store(false);
+    }
+};
+} // namespace
 
 TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_, d20::EvseSetupConfig setup_) :
     TbdController(std::move(config_), std::move(callbacks_), std::move(setup_),
@@ -51,38 +68,21 @@ TbdController::~TbdController() {
     }
 }
 
-void TbdController::loop() {
-    shutdown_active.store(false);
-    shutdown_signaled = false;
+bool TbdController::poll_once() {
+    const auto poll_timeout_ms = get_timeout_ms_until(next_event, POLL_MANAGER_TIMEOUT_MS);
 
-    next_event = get_current_time_point();
-
-    while (session or not shutdown_active.load()) {
-        const auto poll_timeout_ms = get_timeout_ms_until(next_event, POLL_MANAGER_TIMEOUT_MS);
-
-        try {
-            poll_manager.poll(poll_timeout_ms);
-        } catch (const std::runtime_error& e) {
-            logf_error("Shutdown loop() because of: %s", e.what());
-            break;
-        }
-
-        tick();
+    try {
+        poll_manager.poll(poll_timeout_ms);
+    } catch (const std::runtime_error& e) {
+        logf_error("Shutting down poll loop because of: %s", e.what());
+        return false;
     }
-    logf_info("Exiting TbdController loop gracefully");
+
+    return true;
 }
 
-void TbdController::tick() {
+void TbdController::service_active_session() {
     next_event = offset_time_point_by_ms(get_current_time_point(), POLL_MANAGER_TIMEOUT_MS);
-
-    if (communication_setup_timeout && communication_setup_timeout->is_reached()) {
-        logf_warning("V2G communication setup timeout (18s) expired before session was established");
-        communication_setup_timeout.reset();
-        if (sdp_server) {
-            sdp_server->set_dlink_ready(false);
-        }
-        callbacks.signal(session::feedback::Signal::DLINK_ERROR);
-    }
 
     if (session and shutdown_active.load() and not shutdown_signaled) {
         session->request_shutdown(); // Stopping the session
@@ -111,6 +111,95 @@ void TbdController::tick() {
             session.reset();
         }
     }
+}
+
+void TbdController::loop() {
+    if (driver_running.exchange(true)) {
+        logf_error("Another driver (loop/start_session) is already running; refusing concurrent entry");
+        return;
+    }
+    DriverRunningGuard driver_guard{driver_running};
+
+    shutdown_active.store(false);
+    shutdown_signaled = false;
+
+    next_event = get_current_time_point();
+
+    while (session or not shutdown_active.load()) {
+        if (not poll_once()) {
+            if (session) {
+                session->close();
+                session.reset();
+            }
+            break;
+        }
+
+        tick();
+    }
+    logf_info("Exiting TbdController loop gracefully");
+}
+
+// The caller of this function needs to provide a non-blocking, keepalive fd.
+// ConnectionPlain::read() depends on the socket being non-blocking
+StartSessionResult TbdController::start_session(int connected_fd) {
+    if (driver_running.exchange(true)) {
+        logf_error("Another driver (loop/start_session) is already running; refusing concurrent entry");
+        return StartSessionResult::KeepFdOpen;
+    }
+    DriverRunningGuard driver_guard{driver_running};
+
+    if (not fd_is_open(connected_fd)) {
+        logf_error("Passed fd is not open and valid, returning...");
+        return StartSessionResult::FdNotValid;
+    }
+
+    if (config.enable_sdp_server) {
+        logf_error("SDP server is active; incompatible with externally-provided-fd mode. Not starting a session and "
+                   "keeping fd open");
+        return StartSessionResult::KeepFdOpen;
+    }
+
+    if (session) {
+        logf_error("Session already exists; not overwriting the existing session; keeping fd open");
+        return StartSessionResult::KeepFdOpen;
+    }
+
+    // Reseting because this could cancel service_active_session.
+    terminate_session_requested.store(false);
+
+    auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, connected_fd);
+    session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(*evse_setup.handle()), callbacks,
+                                        pause_ctx);
+    shutdown_active.store(false);
+    shutdown_signaled = false;
+
+    next_event = get_current_time_point();
+
+    while (session) {
+        if (not poll_once()) {
+            session->close();
+            session.reset();
+            return StartSessionResult::FdClosed;
+        }
+
+        service_active_session();
+    }
+
+    logf_info("Session is closed");
+    return StartSessionResult::SessionComplete;
+}
+
+void TbdController::tick() {
+    if (communication_setup_timeout && communication_setup_timeout->is_reached()) {
+        logf_warning("V2G communication setup timeout (18s) expired before session was established");
+        communication_setup_timeout.reset();
+        if (sdp_server) {
+            sdp_server->set_dlink_ready(false);
+        }
+        callbacks.signal(session::feedback::Signal::DLINK_ERROR);
+    }
+
+    service_active_session();
 
     if (not session and not shutdown_active.load() and not config.enable_sdp_server) {
         session = std::make_unique<Session>(connection_factory(poll_manager, interface_name),
