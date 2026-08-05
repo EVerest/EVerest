@@ -2,6 +2,9 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/d20/state/ac_der_sae_convert.hpp>
 
+#include <iso15118/detail/helper.hpp>
+
+#include <cstdint>
 #include <optional>
 
 namespace iso15118::d20::state {
@@ -66,7 +69,334 @@ template <typename Out, typename In> std::optional<Out> convert_optional_element
     return out;
 }
 
+using DerFn = sae::DerBitMapFunctions;
+
+// The per family gates below are shared by the charge parameter discovery and the charge loop responses, which
+// carry the identical leaf wire types.
+void gate_function(dt_sae::VoltageTrip& out, std::uint32_t supported_modes) {
+    gate_enable(out.over_voltage_must_trip_curve.enable,
+                is_function_set(supported_modes, DerFn::HighVoltageMustTripFunction), "over voltage must trip curve");
+    gate_enable(out.under_voltage_must_trip_curve.enable,
+                is_function_set(supported_modes, DerFn::LowVoltageMustTripFunction), "under voltage must trip curve");
+    gate_optional_curve(out.over_voltage_momentary_cessation_trip_curve,
+                        is_function_set(supported_modes, DerFn::HighVoltageMomentaryCessationFunction),
+                        "over voltage momentary cessation trip curve");
+    gate_optional_curve(out.under_voltage_momentary_cessation_trip_curve,
+                        is_function_set(supported_modes, DerFn::LowVoltageMomentaryCessationFunction),
+                        "under voltage momentary cessation trip curve");
+    gate_optional_curve(out.over_voltage_may_trip_curve,
+                        is_function_set(supported_modes, DerFn::HighVoltageMayTripFunction),
+                        "over voltage may trip curve");
+    gate_optional_curve(out.under_voltage_may_trip_curve,
+                        is_function_set(supported_modes, DerFn::LowVoltageMayTripFunction),
+                        "under voltage may trip curve");
+}
+
+void gate_function(dt_sae::FrequencyTrip& out, std::uint32_t supported_modes) {
+    gate_enable(out.over_frequency_must_trip_curve.enable,
+                is_function_set(supported_modes, DerFn::HighFrequencyMustTripFunction),
+                "over frequency must trip curve");
+    gate_enable(out.under_frequency_must_trip_curve.enable,
+                is_function_set(supported_modes, DerFn::LowFrequencyMustTripFunction),
+                "under frequency must trip curve");
+    gate_optional_curve(out.over_frequency_may_trip_curve,
+                        is_function_set(supported_modes, DerFn::HighFrequencyMayTripFunction),
+                        "over frequency may trip curve");
+    gate_optional_curve(out.under_frequency_may_trip_curve,
+                        is_function_set(supported_modes, DerFn::LowFrequencyMayTripFunction),
+                        "under frequency may trip curve");
+}
+
+constexpr DerFn excitation_function(dt_sae::PowerFactorExcitation excitation) {
+    return excitation == dt_sae::PowerFactorExcitation::OverExcited ? DerFn::ConstantPowerFactorOverExcitedFunction
+                                                                    : DerFn::ConstantPowerFactorUnderExcitedFunction;
+}
+
+bool excitation_declared(std::uint32_t supported_modes, dt_sae::PowerFactorExcitation excitation) {
+    return is_function_set(supported_modes, excitation_function(excitation));
+}
+
+bool excitation_declared(std::uint32_t supported_modes,
+                         const std::optional<dt_sae::PowerFactorExcitation>& excitation) {
+    return not excitation.has_value() or excitation_declared(supported_modes, excitation.value());
+}
+
+// The direction that costs the function its enable, so the log line names the phase direction actually
+// missing a bit rather than whatever the base phase happens to carry.
+std::optional<dt_sae::PowerFactorExcitation> undeclared_excitation(const dt_sae::ConstantPowerFactor& out,
+                                                                   std::uint32_t supported_modes) {
+    const std::optional<dt_sae::PowerFactorExcitation> phases[] = {
+        out.power_factor_excitation, out.power_factor_excitation_L2, out.power_factor_excitation_L3};
+    for (const auto& excitation : phases) {
+        if (excitation.has_value() and not excitation_declared(supported_modes, excitation.value())) {
+            return excitation;
+        }
+    }
+    return std::nullopt;
+}
+
+void gate_function(dt_sae::ConstantPowerFactor& out, std::uint32_t supported_modes) {
+    // The two excitation directions have separate bits and every phase carries its own direction, so each
+    // direction the SECC actually sends needs its matching bit. A single undeclared direction disables the
+    // whole function: the enable is one flag, there is no per phase enable to clear.
+    const auto undeclared = undeclared_excitation(out, supported_modes);
+    gate_enable(out.enable, not undeclared.has_value(),
+                undeclared.value_or(out.power_factor_excitation) == dt_sae::PowerFactorExcitation::OverExcited
+                    ? "constant power factor over excited"
+                    : "constant power factor under excited");
+}
+
+void gate_function(dt_sae::VoltVar& out, std::uint32_t supported_modes) {
+    gate_enable(out.enable, is_function_set(supported_modes, DerFn::VoltVarFunction), "volt var");
+}
+
+void gate_function(dt_sae::WattVar& out, std::uint32_t supported_modes) {
+    gate_enable(out.enable, is_function_set(supported_modes, DerFn::WattVarFunction), "watt var");
+}
+
+void gate_function(dt_sae::ConstantVar& out, std::uint32_t supported_modes) {
+    gate_enable(out.enable, is_function_set(supported_modes, DerFn::ConstantReactivePowerFunction), "constant var");
+}
+
+void gate_function(dt_sae::FrequencyDroop& out, std::uint32_t supported_modes) {
+    gate_enable(out.enable, is_function_set(supported_modes, DerFn::FrequencyDroopFunction), "frequency droop");
+}
+
+void gate_function(dt_sae::VoltWatt& out, std::uint32_t supported_modes) {
+    gate_enable(out.enable, is_function_set(supported_modes, DerFn::VoltWattFunction), "volt watt");
+}
+
+void gate_function(dt_sae::ConstantWatt& out, std::uint32_t supported_modes) {
+    gate_enable(out.enable, is_function_set(supported_modes, DerFn::ConstantActivePowerFunction), "constant watt");
+}
+
+void gate_function(dt_sae::LimitMaxDischargePower& out, std::uint32_t supported_modes) {
+    gate_enable(out.enable, is_function_set(supported_modes, DerFn::LimitMaximumActiveDischargePowerFunction),
+                "limit maximum discharge power");
+}
+
+template <typename T> void gate_optional_function(std::optional<T>& block, std::uint32_t supported_modes) {
+    if (block.has_value()) {
+        gate_function(block.value(), supported_modes);
+    }
+}
+
+void warn_unpaired_enter_service_delay(const sae::EnterServiceCPDRes& in) {
+    if (in.enter_service_delay.has_value() and not in.enter_service_ramp_time.has_value()) {
+        logf_warning("enter_service_delay is configured without enter_service_ramp_time");
+    }
+    if (not in.enter_service_delay.has_value() and not in.enter_service_randomized_delay.has_value()) {
+        logf_warning("Neither enter_service_delay nor enter_service_randomized_delay is configured");
+    }
+}
+
+// The threshold members are mandatory in EnterServiceCPDRes and optional in EnterServiceCLRes, so both accept
+// the same assignments.
+template <typename Out> void convert_enter_service(Out& out, const sae::EnterServiceCPDRes& in) {
+    warn_unpaired_enter_service_delay(in);
+
+    out.permit_service = in.permit_service;
+    out.enter_service_voltage_high = dt::from_float(in.enter_service_voltage_high);
+    out.enter_service_voltage_low = dt::from_float(in.enter_service_voltage_low);
+    out.enter_service_frequency_high = dt::from_float(in.enter_service_frequency_high);
+    out.enter_service_frequency_low = dt::from_float(in.enter_service_frequency_low);
+    out.enter_service_delay = convert_optional(in.enter_service_delay);
+    out.enter_service_randomized_delay = convert_optional(in.enter_service_randomized_delay);
+    out.enter_service_ramp_time = convert_optional(in.enter_service_ramp_time);
+}
+
 } // namespace
+
+bool is_function_set(std::uint32_t bitmap, sae::DerBitMapFunctions function) {
+    return (bitmap & (1U << message_20::to_underlying_value(function))) != 0U;
+}
+
+void gate_enable(bool& enable, bool supported, const char* function_name) {
+    if (enable and not supported) {
+        logf_warning("Clearing enable of %s: EV did not declare support for it", function_name);
+        enable = false;
+    }
+}
+
+void gate_optional_curve(std::optional<dt_sae::DERCurve>& curve, bool supported, const char* function_name) {
+    if (curve.has_value()) {
+        gate_enable(curve.value().enable, supported, function_name);
+    }
+}
+
+// The SECC expresses itself only through the per-function Enable flags, so a function the EV does not
+// list in SupportedModes must not be enabled. This follows a semantics statement, not a numbered
+// requirement.
+// Masked bits without a gate: 0 and 1 (ChargeFunction, DischargeFunction) are inherent to the service,
+// 21 and 22 (EVSETargetReactivePowerFunction, EVSETargetActivePowerFunction) are charge loop targets
+// with no Enable in DERControlCPDRes.
+// The call order below follows the DERControlCPDRes declaration order so it can be audited side by side.
+void gate_enables_by_supported_modes(dt_sae::DERControlCPDRes& out, std::uint32_t supported_modes) {
+    gate_function(out.voltage_trip, supported_modes);
+    gate_function(out.frequency_trip, supported_modes);
+
+    gate_enable(out.enter_service_cpd_res.permit_service, is_function_set(supported_modes, DerFn::EnterService),
+                "enter service");
+
+    auto& reactive = out.reactive_power_support_cpd_res;
+    gate_function(reactive.constant_power_factor, supported_modes);
+    gate_function(reactive.volt_var, supported_modes);
+    gate_function(reactive.watt_var, supported_modes);
+    gate_function(reactive.constant_var, supported_modes);
+
+    auto& active = out.active_power_support_cpd_res;
+    gate_function(active.frequency_droop, supported_modes);
+    gate_function(active.volt_watt, supported_modes);
+    gate_function(active.constant_watt, supported_modes);
+    gate_function(active.limit_max_discharge_power, supported_modes);
+}
+
+namespace {
+
+void set_bit_if(std::uint32_t& bitmap, bool enabled, DerFn function) {
+    if (enabled) {
+        bitmap |= sae_function_bit(function);
+    }
+}
+
+void set_bit_if(std::uint32_t& bitmap, const std::optional<dt_sae::DERCurve>& curve, DerFn function) {
+    set_bit_if(bitmap, curve.has_value() and curve.value().enable, function);
+}
+
+// The mirror image of the per family gates above: every Enable a gate can clear maps back onto exactly one
+// bit here. The leaves are the types DERControlCPDRes and DERControlCLRes share, so both response shapes
+// read the same mapping and neither can drift from the gates. Bits without an Enable (charge, discharge,
+// the charge loop target powers) are never enabled by the SECC.
+void add_enabled_modes(std::uint32_t& modes, const dt_sae::VoltageTrip& voltage) {
+    set_bit_if(modes, voltage.over_voltage_must_trip_curve.enable, DerFn::HighVoltageMustTripFunction);
+    set_bit_if(modes, voltage.under_voltage_must_trip_curve.enable, DerFn::LowVoltageMustTripFunction);
+    set_bit_if(modes, voltage.over_voltage_momentary_cessation_trip_curve,
+               DerFn::HighVoltageMomentaryCessationFunction);
+    set_bit_if(modes, voltage.under_voltage_momentary_cessation_trip_curve,
+               DerFn::LowVoltageMomentaryCessationFunction);
+    set_bit_if(modes, voltage.over_voltage_may_trip_curve, DerFn::HighVoltageMayTripFunction);
+    set_bit_if(modes, voltage.under_voltage_may_trip_curve, DerFn::LowVoltageMayTripFunction);
+}
+
+void add_enabled_modes(std::uint32_t& modes, const dt_sae::FrequencyTrip& frequency) {
+    set_bit_if(modes, frequency.over_frequency_must_trip_curve.enable, DerFn::HighFrequencyMustTripFunction);
+    set_bit_if(modes, frequency.under_frequency_must_trip_curve.enable, DerFn::LowFrequencyMustTripFunction);
+    set_bit_if(modes, frequency.over_frequency_may_trip_curve, DerFn::HighFrequencyMayTripFunction);
+    set_bit_if(modes, frequency.under_frequency_may_trip_curve, DerFn::LowFrequencyMayTripFunction);
+}
+
+void add_enabled_modes(std::uint32_t& modes, const dt_sae::ConstantPowerFactor& constant_power_factor) {
+    // The two excitation directions have separate bits, so only the one actually sent is named.
+    const auto over_excited =
+        constant_power_factor.power_factor_excitation == dt_sae::PowerFactorExcitation::OverExcited;
+    set_bit_if(modes, constant_power_factor.enable and over_excited, DerFn::ConstantPowerFactorOverExcitedFunction);
+    set_bit_if(modes, constant_power_factor.enable and not over_excited,
+               DerFn::ConstantPowerFactorUnderExcitedFunction);
+}
+
+void add_enabled_modes(std::uint32_t& modes, const dt_sae::VoltVar& volt_var) {
+    set_bit_if(modes, volt_var.enable, DerFn::VoltVarFunction);
+}
+
+void add_enabled_modes(std::uint32_t& modes, const dt_sae::WattVar& watt_var) {
+    set_bit_if(modes, watt_var.enable, DerFn::WattVarFunction);
+}
+
+void add_enabled_modes(std::uint32_t& modes, const dt_sae::ConstantVar& constant_var) {
+    set_bit_if(modes, constant_var.enable, DerFn::ConstantReactivePowerFunction);
+}
+
+void add_enabled_modes(std::uint32_t& modes, const dt_sae::FrequencyDroop& frequency_droop) {
+    set_bit_if(modes, frequency_droop.enable, DerFn::FrequencyDroopFunction);
+}
+
+void add_enabled_modes(std::uint32_t& modes, const dt_sae::VoltWatt& volt_watt) {
+    set_bit_if(modes, volt_watt.enable, DerFn::VoltWattFunction);
+}
+
+void add_enabled_modes(std::uint32_t& modes, const dt_sae::ConstantWatt& constant_watt) {
+    set_bit_if(modes, constant_watt.enable, DerFn::ConstantActivePowerFunction);
+}
+
+void add_enabled_modes(std::uint32_t& modes, const dt_sae::LimitMaxDischargePower& limit_max_discharge_power) {
+    set_bit_if(modes, limit_max_discharge_power.enable, DerFn::LimitMaximumActiveDischargePowerFunction);
+}
+
+// Declared after every leaf overload so ordinary lookup finds them: the leaf types live in another namespace,
+// so argument dependent lookup would not.
+template <typename Leaf> void add_enabled_modes(std::uint32_t& modes, const std::optional<Leaf>& leaf) {
+    if (leaf.has_value()) {
+        add_enabled_modes(modes, leaf.value());
+    }
+}
+
+} // namespace
+
+std::uint32_t derive_enabled_modes(const dt_sae::DERControlCPDRes& res) {
+    std::uint32_t modes = 0;
+
+    add_enabled_modes(modes, res.voltage_trip);
+    add_enabled_modes(modes, res.frequency_trip);
+
+    set_bit_if(modes, res.enter_service_cpd_res.permit_service, DerFn::EnterService);
+
+    const auto& reactive = res.reactive_power_support_cpd_res;
+    add_enabled_modes(modes, reactive.constant_power_factor);
+    add_enabled_modes(modes, reactive.volt_var);
+    add_enabled_modes(modes, reactive.watt_var);
+    add_enabled_modes(modes, reactive.constant_var);
+
+    const auto& active = res.active_power_support_cpd_res;
+    add_enabled_modes(modes, active.frequency_droop);
+    add_enabled_modes(modes, active.volt_watt);
+    add_enabled_modes(modes, active.constant_watt);
+    add_enabled_modes(modes, active.limit_max_discharge_power);
+
+    return modes;
+}
+
+// The charge loop shape carries the same leaves behind optionals. An absent block is one the response does
+// not repeat, which leaves the corresponding bits unset.
+std::uint32_t derive_enabled_modes(const dt_sae::DERControlCLRes& res) {
+    std::uint32_t modes = 0;
+
+    add_enabled_modes(modes, res.voltage_trip);
+    add_enabled_modes(modes, res.frequency_trip);
+
+    set_bit_if(modes, res.enter_service_cl_res.permit_service, DerFn::EnterService);
+
+    if (res.reactive_power_support_cl_res.has_value()) {
+        const auto& reactive = res.reactive_power_support_cl_res.value();
+        add_enabled_modes(modes, reactive.constant_power_factor);
+        add_enabled_modes(modes, reactive.volt_var);
+        add_enabled_modes(modes, reactive.watt_var);
+        add_enabled_modes(modes, reactive.constant_var);
+    }
+
+    if (res.active_power_support_cl_res.has_value()) {
+        const auto& active = res.active_power_support_cl_res.value();
+        add_enabled_modes(modes, active.frequency_droop);
+        add_enabled_modes(modes, active.volt_watt);
+        add_enabled_modes(modes, active.constant_watt);
+        add_enabled_modes(modes, active.limit_max_discharge_power);
+    }
+
+    return modes;
+}
+
+std::string sae_function_names(std::uint32_t bitmap) {
+    std::string names;
+    for (const auto& entry : SAE_ENABLEABLE_FUNCTIONS) {
+        if ((bitmap & sae_function_bit(entry.function)) == 0) {
+            continue;
+        }
+        if (not names.empty()) {
+            names += ", ";
+        }
+        names += entry.name;
+    }
+    return names.empty() ? std::string{"none"} : names;
+}
 
 void convert(dt_sae::CurveDataPointsList& out, const sae::CurveDataPointsList& in) {
     out.clear();
@@ -106,14 +436,7 @@ void convert(dt_sae::FrequencyTrip& out, const sae::FrequencyTrip& in) {
 }
 
 void convert(dt_sae::EnterServiceCPDRes& out, const sae::EnterServiceCPDRes& in) {
-    out.permit_service = in.permit_service;
-    out.enter_service_voltage_high = dt::from_float(in.enter_service_voltage_high);
-    out.enter_service_voltage_low = dt::from_float(in.enter_service_voltage_low);
-    out.enter_service_frequency_high = dt::from_float(in.enter_service_frequency_high);
-    out.enter_service_frequency_low = dt::from_float(in.enter_service_frequency_low);
-    out.enter_service_delay = convert_optional(in.enter_service_delay);
-    out.enter_service_randomized_delay = convert_optional(in.enter_service_randomized_delay);
-    out.enter_service_ramp_time = convert_optional(in.enter_service_ramp_time);
+    convert_enter_service(out, in);
 }
 
 void convert(dt_sae::ConstantPowerFactor& out, const sae::ConstantPowerFactor& in) {
@@ -231,6 +554,66 @@ void convert(dt_sae::DERControlCPDRes& out, const sae::DERControl& in) {
     convert(out.enter_service_cpd_res, in.enter_service);
     convert(out.reactive_power_support_cpd_res, in.reactive_power_support);
     convert(out.active_power_support_cpd_res, in.active_power_support);
+}
+
+void convert(dt_sae::EnterServiceCLRes& out, const sae::EnterServiceCPDRes& in) {
+    convert_enter_service(out, in);
+}
+
+void convert(dt_sae::ReactivePowerSupportCLRes& out, const sae::ReactivePowerSupportCPDRes& in) {
+    convert(out.constant_power_factor.emplace(), in.constant_power_factor);
+    convert(out.volt_var.emplace(), in.volt_var);
+    convert(out.watt_var.emplace(), in.watt_var);
+    convert(out.constant_var.emplace(), in.constant_var);
+}
+
+void convert(dt_sae::ActivePowerSupportCLRes& out, const sae::ActivePowerSupportCPDRes& in) {
+    convert(out.frequency_droop.emplace(), in.frequency_droop);
+    convert(out.volt_watt.emplace(), in.volt_watt);
+    convert(out.constant_watt.emplace(), in.constant_watt);
+    convert(out.limit_max_discharge_power.emplace(), in.limit_max_discharge_power);
+}
+
+void build_der_control_cl_res(dt_sae::DERControlCLRes& out, const DerSaeSetupConfig& config, bool changed_since_cpd,
+                              std::uint32_t ev_supported_modes) {
+    const auto& der_control = config.der_control;
+    const auto enter_service_declared = is_function_set(ev_supported_modes, DerFn::EnterService);
+
+    // The unchanged path runs once per charge loop message, so it converts and logs nothing: only
+    // permit_service is mandatory in EnterServiceCLRes and the other members must not be repeated.
+    if (not changed_since_cpd) {
+        out.voltage_trip.reset();
+        out.frequency_trip.reset();
+        out.reactive_power_support_cl_res.reset();
+        out.active_power_support_cl_res.reset();
+
+        out.enter_service_cl_res = {};
+        out.enter_service_cl_res.permit_service = der_control.enter_service.permit_service and enter_service_declared;
+        return;
+    }
+
+    convert(out.enter_service_cl_res, der_control.enter_service);
+    gate_enable(out.enter_service_cl_res.permit_service, enter_service_declared, "enter service");
+
+    convert(out.voltage_trip.emplace(), der_control.voltage_trip);
+    convert(out.frequency_trip.emplace(), der_control.frequency_trip);
+    convert(out.reactive_power_support_cl_res.emplace(), der_control.reactive_power_support);
+    convert(out.active_power_support_cl_res.emplace(), der_control.active_power_support);
+
+    gate_optional_function(out.voltage_trip, ev_supported_modes);
+    gate_optional_function(out.frequency_trip, ev_supported_modes);
+
+    auto& reactive = out.reactive_power_support_cl_res.value();
+    gate_optional_function(reactive.constant_power_factor, ev_supported_modes);
+    gate_optional_function(reactive.volt_var, ev_supported_modes);
+    gate_optional_function(reactive.watt_var, ev_supported_modes);
+    gate_optional_function(reactive.constant_var, ev_supported_modes);
+
+    auto& active = out.active_power_support_cl_res.value();
+    gate_optional_function(active.frequency_droop, ev_supported_modes);
+    gate_optional_function(active.volt_watt, ev_supported_modes);
+    gate_optional_function(active.constant_watt, ev_supported_modes);
+    gate_optional_function(active.limit_max_discharge_power, ev_supported_modes);
 }
 
 } // namespace iso15118::d20::state
