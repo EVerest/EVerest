@@ -70,89 +70,6 @@ void convert_sae_limits(dt::sae::DER_SAE_AC_CPDResEnergyTransferMode& out, const
     out.grid_limits.minimum_voltage = grid_limits.minimum_voltage;
 }
 
-// Bits 2, 9, 25 and 27 to 31 are unused by the specification and must be ignored.
-constexpr uint32_t SAE_MODE_BITMAP_MASK = 0x05FFFDFBu;
-
-bool is_function_set(uint32_t bitmap, sae::DerBitMapFunctions function) {
-    return (bitmap & (1U << message_20::to_underlying_value(function))) != 0U;
-}
-
-void gate_enable(bool& enable, bool supported, const char* function_name) {
-    if (enable and not supported) {
-        logf_warning("Clearing enable of %s: EV did not declare support for it", function_name);
-        enable = false;
-    }
-}
-
-void gate_optional_curve(std::optional<dt::sae::DERCurve>& curve, bool supported, const char* function_name) {
-    if (curve.has_value()) {
-        gate_enable(curve.value().enable, supported, function_name);
-    }
-}
-
-// The SECC expresses itself only through the per-function Enable flags, so a function the EV does not
-// list in SupportedModes must not be enabled. This follows a semantics statement, not a numbered
-// requirement.
-// Masked bits without a gate: 0 and 1 (ChargeFunction, DischargeFunction) are inherent to the service,
-// 21 and 22 (EVSETargetReactivePowerFunction, EVSETargetActivePowerFunction) are charge loop targets
-// with no Enable in DERControlCPDRes.
-// The call order below follows the DERControlCPDRes declaration order so it can be audited side by side.
-void gate_enables_by_supported_modes(dt::sae::DERControlCPDRes& out, uint32_t supported_modes) {
-    using F = sae::DerBitMapFunctions;
-
-    auto& voltage_trip = out.voltage_trip;
-    gate_enable(voltage_trip.over_voltage_must_trip_curve.enable,
-                is_function_set(supported_modes, F::HighVoltageMustTripFunction), "over voltage must trip curve");
-    gate_enable(voltage_trip.under_voltage_must_trip_curve.enable,
-                is_function_set(supported_modes, F::LowVoltageMustTripFunction), "under voltage must trip curve");
-    gate_optional_curve(voltage_trip.over_voltage_momentary_cessation_trip_curve,
-                        is_function_set(supported_modes, F::HighVoltageMomentaryCessationFunction),
-                        "over voltage momentary cessation trip curve");
-    gate_optional_curve(voltage_trip.under_voltage_momentary_cessation_trip_curve,
-                        is_function_set(supported_modes, F::LowVoltageMomentaryCessationFunction),
-                        "under voltage momentary cessation trip curve");
-    gate_optional_curve(voltage_trip.over_voltage_may_trip_curve,
-                        is_function_set(supported_modes, F::HighVoltageMayTripFunction), "over voltage may trip curve");
-    gate_optional_curve(voltage_trip.under_voltage_may_trip_curve,
-                        is_function_set(supported_modes, F::LowVoltageMayTripFunction), "under voltage may trip curve");
-
-    auto& frequency_trip = out.frequency_trip;
-    gate_enable(frequency_trip.over_frequency_must_trip_curve.enable,
-                is_function_set(supported_modes, F::HighFrequencyMustTripFunction), "over frequency must trip curve");
-    gate_enable(frequency_trip.under_frequency_must_trip_curve.enable,
-                is_function_set(supported_modes, F::LowFrequencyMustTripFunction), "under frequency must trip curve");
-    gate_optional_curve(frequency_trip.over_frequency_may_trip_curve,
-                        is_function_set(supported_modes, F::HighFrequencyMayTripFunction),
-                        "over frequency may trip curve");
-    gate_optional_curve(frequency_trip.under_frequency_may_trip_curve,
-                        is_function_set(supported_modes, F::LowFrequencyMayTripFunction),
-                        "under frequency may trip curve");
-
-    gate_enable(out.enter_service_cpd_res.permit_service, is_function_set(supported_modes, F::EnterService),
-                "enter service");
-
-    auto& reactive = out.reactive_power_support_cpd_res;
-    // Either excitation direction keeps the constant power factor function alive.
-    gate_enable(reactive.constant_power_factor.enable,
-                is_function_set(supported_modes, F::ConstantPowerFactorUnderExcitedFunction) or
-                    is_function_set(supported_modes, F::ConstantPowerFactorOverExcitedFunction),
-                "constant power factor");
-    gate_enable(reactive.volt_var.enable, is_function_set(supported_modes, F::VoltVarFunction), "volt var");
-    gate_enable(reactive.watt_var.enable, is_function_set(supported_modes, F::WattVarFunction), "watt var");
-    gate_enable(reactive.constant_var.enable, is_function_set(supported_modes, F::ConstantReactivePowerFunction),
-                "constant var");
-
-    auto& active = out.active_power_support_cpd_res;
-    gate_enable(active.frequency_droop.enable, is_function_set(supported_modes, F::FrequencyDroopFunction),
-                "frequency droop");
-    gate_enable(active.volt_watt.enable, is_function_set(supported_modes, F::VoltWattFunction), "volt watt");
-    gate_enable(active.constant_watt.enable, is_function_set(supported_modes, F::ConstantActivePowerFunction),
-                "constant watt");
-    gate_enable(active.limit_max_discharge_power.enable,
-                is_function_set(supported_modes, F::LimitMaximumActiveDischargePowerFunction),
-                "limit maximum discharge power");
-}
-
 message_20::DER_SAE_AC_ChargeParameterDiscoveryResponse
 handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req, d20::Session& session,
                const d20::AcTransferLimits& limits, const d20::AcPresentPower& powers,
@@ -160,6 +77,14 @@ handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req
                const std::optional<DerSaeSetupConfig>& config) {
 
     message_20::DER_SAE_AC_ChargeParameterDiscoveryResponse res;
+
+    // DERControlCPDRes is mandatory and its trip and support curves have a minimum length, so an untouched
+    // response cannot be encoded at all. The rejections below therefore carry the inert default control, which
+    // the success path overwrites with the configured one. A rejected response only needs to be encodable, so
+    // the 0 V EnterService bands that a missing nominal voltage yields are acceptable here.
+    convert(res.transfer_mode.der_control_cpd_res,
+            get_default_sae_der_control(
+                sae_limits.has_value() ? dt::from_RationalNumber(sae_limits->grid_limits.nominal_voltage) : 0.0f));
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
@@ -225,6 +150,7 @@ handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req
 
     convert(mode.der_control_cpd_res, sae_config.der_control);
     gate_enables_by_supported_modes(mode.der_control_cpd_res, ev_supported_modes);
+    session.record_der_control_sent(sae_config.der_control_update_time);
 
     mode.processing =
         req.transfer_mode.processing == dt::Processing::Ongoing ? dt::Processing::Ongoing : dt::Processing::Finished;
