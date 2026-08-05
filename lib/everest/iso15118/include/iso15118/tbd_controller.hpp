@@ -80,6 +80,11 @@ public:
     void update_energy_modes(const std::vector<message_20::datatypes::ServiceCategory>&);
     void update_ac_limits(const d20::AcTransferLimits&);
 
+    // The DER limits are read when a SessionConfig is built, so an update applies to the next session.
+    void update_der_iec_limits(const std::optional<d20::IecDerTransferLimits>&);
+    void update_der_sae_limits(const std::optional<d20::SaeDerTransferLimits>&,
+                               const std::optional<d20::DerSaeSetupConfig>&);
+
     void update_supported_vas_services(const std::vector<uint16_t>& vas_services);
 
     void set_dlink_ready(bool ready);
