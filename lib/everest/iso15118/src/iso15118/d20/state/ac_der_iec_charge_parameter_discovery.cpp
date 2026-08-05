@@ -323,7 +323,7 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
 
         m_ctx.session_ev_info.ev_transfer_limits.emplace<dt::DER_AC_CPDReqEnergyTransferMode>(req->transfer_mode);
 
-        // TODO(SL): Should be not a problem but maybe its better to assign the values directly
+        // TODO(mlitre): Should be not a problem but maybe its better to assign the values directly
         const auto operating_mode =
             static_cast<dt::OperatingMode>(m_ctx.session_config.der_iec_setup_config.operating_mode);
         const auto grid_connection_mode =
@@ -345,8 +345,8 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
             return {};
         }
 
-        // TODO(SL): Check [V2G20-3154]: It is possible that the EV sends a ServiceDiscoveryReq if the settings from
-        // evse is not accepted from the ev.
+        // An EV that does not accept the settings may restart the service selection, but only once this
+        // state has finished. The schedule exchange state answers that ServiceDiscoveryReq.
 
         m_ctx.feedback.ac_limits(req->transfer_mode);
 

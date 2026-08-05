@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <algorithm>
 
 #include <iso15118/d20/state/service_detail.hpp>
@@ -70,7 +70,8 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     res.service_renegotiation_supported = false;
     session.service_renegotiation_supported = false;
 
-    // Service discovery may be re-entered from the DER CPD state, so rebuild instead of accumulating.
+    // A DER session may re-enter service discovery from the schedule exchange state, so the offers of the
+    // previous pass are reset here and rebuilt below instead of accumulating.
     session.offered_services.energy_services.clear();
     session.offered_services.vas_services.clear();
     ev_energy_services.clear();

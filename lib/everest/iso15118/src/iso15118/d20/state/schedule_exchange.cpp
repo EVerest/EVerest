@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <ctime>
 
 #include <iso15118/d20/state/dc_cable_check.hpp>
 #include <iso15118/d20/state/power_delivery.hpp>
 #include <iso15118/d20/state/schedule_exchange.hpp>
+#include <iso15118/d20/state/service_detail.hpp>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/schedule_exchange.hpp>
+#include <iso15118/detail/d20/state/service_discovery.hpp>
 #include <iso15118/detail/d20/state/session_stop.hpp>
 #include <iso15118/detail/helper.hpp>
 
@@ -214,6 +216,23 @@ Result ScheduleExchange::feed(Event ev) {
         m_ctx.session_stopped = true;
 
         return {};
+    } else if (const auto req = variant->get_if<message_20::ServiceDiscoveryRequest>();
+               req != nullptr and (m_ctx.session.is_ac_der_iec_charger() or m_ctx.session.is_ac_der_sae_charger())) {
+        // The EV may restart service selection if it rejects the dictated DER settings: [V2G20-3153] IEC,
+        // [V2G20-3231] SAE, allowed as the next request by [V2G20-3348] and [V2G20-3355]. The Finished
+        // plus OK precondition is discharged by both CPD states' transition guards.
+        const auto res =
+            handle_request(*req, m_ctx.session, m_ctx.session_config.supported_energy_transfer_services,
+                           m_ctx.session_config.supported_vas_services, m_ctx.session_ev_info.ev_energy_services);
+
+        m_ctx.respond(res);
+
+        if (res.response_code >= dt::ResponseCode::FAILED) {
+            m_ctx.session_stopped = true;
+            return {};
+        }
+
+        return m_ctx.create_state<ServiceDetail>();
     } else {
         logf_warning("Expected ScheduleExchangeReq! But code type id: %d", variant->get_type());
 
