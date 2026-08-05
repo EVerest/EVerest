@@ -66,6 +66,15 @@ config:
     description: Set to true if ISO15118-20 AC BPT is supported and should be offered to the EV
     type: boolean
     default: false
+  iso15118_der_flavor:
+    description: >-
+      Which ISO 15118-20 Amendment 1 AC DER annex to advertise when DER support is wired. IEC is Annex L,
+      SAE is Annex M. The two are mutually exclusive per EVSE.
+    type: string
+    enum:
+      - IEC
+      - SAE
+    default: IEC
   ac_hlc_enabled:
     description: Enable or disable HLC (aka ISO15118) for AC mode
     type: boolean
