@@ -6,11 +6,13 @@
 #include <algorithm>
 #include <utility>
 
+#include <everest/logging.hpp>
+
 namespace module {
 
 std::vector<types::iso15118::EnergyTransferMode>
 get_supported_ac_energy_transfers(const types::evse_board_support::HardwareCapabilities& caps,
-                                  bool supported_iso_ac_bpt, bool der_available) {
+                                  bool supported_iso_ac_bpt, bool der_available, const std::string& der_flavor) {
     std::vector<types::iso15118::EnergyTransferMode> energy_transfers;
 
     const auto min_phases = std::clamp(caps.min_phase_count_import, 1, 3);
@@ -31,7 +33,16 @@ get_supported_ac_energy_transfers(const types::evse_board_support::HardwareCapab
         energy_transfers.push_back(types::iso15118::EnergyTransferMode::AC_BPT);
     }
     if (der_available and export_capable) {
-        energy_transfers.push_back(types::iso15118::EnergyTransferMode::AC_DER_IEC);
+        if (der_flavor == "NONE") {
+            EVLOG_warning << "DER availability is asserted but iso15118_der_flavor is NONE, so no AC DER service is "
+                             "advertised. Set it to IEC or SAE to offer one.";
+        } else if (der_flavor == "SAE") {
+            energy_transfers.push_back(types::iso15118::EnergyTransferMode::AC_DER_SAE);
+        } else if (der_flavor == "IEC") {
+            energy_transfers.push_back(types::iso15118::EnergyTransferMode::AC_DER_IEC);
+        } else {
+            EVLOG_warning << "Unrecognized iso15118_der_flavor '" << der_flavor << "', not advertising AC DER";
+        }
     }
     return energy_transfers;
 }

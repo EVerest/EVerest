@@ -35,7 +35,7 @@ TEST(EnergyTransferModesTest, single_phase_only) {
     const auto caps = make_caps(1, 1, 0, 0);
 
     const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/false,
-                                                                  /*der_available=*/false);
+                                                                  /*der_available=*/false, /*der_flavor=*/"IEC");
 
     EXPECT_EQ(result, std::vector<EnergyTransferMode>{EnergyTransferMode::AC_single_phase_core});
 }
@@ -44,7 +44,7 @@ TEST(EnergyTransferModesTest, three_phase_range) {
     const auto caps = make_caps(1, 3, 0, 0);
 
     const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/false,
-                                                                  /*der_available=*/false);
+                                                                  /*der_available=*/false, /*der_flavor=*/"IEC");
 
     const std::vector<EnergyTransferMode> expected{
         EnergyTransferMode::AC_single_phase_core,
@@ -59,7 +59,7 @@ TEST(EnergyTransferModesTest, phase_inversion_clamps_to_three_phase) {
     const auto caps = make_caps(3, 1, 0, 0);
 
     const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/false,
-                                                                  /*der_available=*/false);
+                                                                  /*der_available=*/false, /*der_flavor=*/"IEC");
 
     EXPECT_EQ(result, std::vector<EnergyTransferMode>{EnergyTransferMode::AC_three_phase_core});
 }
@@ -69,7 +69,7 @@ TEST(EnergyTransferModesTest, lower_bound_clamp_to_single_phase) {
     const auto caps = make_caps(0, 0, 0, 0);
 
     const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/false,
-                                                                  /*der_available=*/false);
+                                                                  /*der_available=*/false, /*der_flavor=*/"IEC");
 
     EXPECT_EQ(result, std::vector<EnergyTransferMode>{EnergyTransferMode::AC_single_phase_core});
 }
@@ -78,7 +78,7 @@ TEST(EnergyTransferModesTest, ac_bpt_added_when_export_capable) {
     const auto caps = make_caps(1, 3, 16, 3);
 
     const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/true,
-                                                                  /*der_available=*/false);
+                                                                  /*der_available=*/false, /*der_flavor=*/"IEC");
 
     EXPECT_TRUE(contains(result, EnergyTransferMode::AC_BPT));
 }
@@ -87,7 +87,7 @@ TEST(EnergyTransferModesTest, ac_der_iec_added_when_der_available_and_export_cap
     const auto caps = make_caps(1, 3, 16, 3);
 
     const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/false,
-                                                                  /*der_available=*/true);
+                                                                  /*der_available=*/true, /*der_flavor=*/"IEC");
 
     EXPECT_TRUE(contains(result, EnergyTransferMode::AC_DER_IEC));
 }
@@ -96,7 +96,7 @@ TEST(EnergyTransferModesTest, ac_bpt_and_ac_der_iec_coexist) {
     const auto caps = make_caps(1, 3, 16, 3);
 
     const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/true,
-                                                                  /*der_available=*/true);
+                                                                  /*der_available=*/true, /*der_flavor=*/"IEC");
 
     EXPECT_TRUE(contains(result, EnergyTransferMode::AC_BPT));
     EXPECT_TRUE(contains(result, EnergyTransferMode::AC_DER_IEC));
@@ -106,7 +106,7 @@ TEST(EnergyTransferModesTest, ac_der_iec_not_added_when_not_export_capable) {
     const auto caps = make_caps(1, 3, 0, 3);
 
     const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/false,
-                                                                  /*der_available=*/true);
+                                                                  /*der_available=*/true, /*der_flavor=*/"IEC");
 
     EXPECT_FALSE(contains(result, EnergyTransferMode::AC_DER_IEC));
 }
@@ -115,7 +115,67 @@ TEST(EnergyTransferModesTest, ac_der_iec_not_added_when_der_unavailable) {
     const auto caps = make_caps(1, 3, 16, 3);
 
     const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/false,
-                                                                  /*der_available=*/false);
+                                                                  /*der_available=*/false, /*der_flavor=*/"IEC");
 
     EXPECT_FALSE(contains(result, EnergyTransferMode::AC_DER_IEC));
+}
+
+TEST(EnergyTransferModesTest, iec_flavor_advertises_iec_only) {
+    const auto caps = make_caps(1, 3, 16, 3);
+
+    const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/false,
+                                                                  /*der_available=*/true, /*der_flavor=*/"IEC");
+
+    EXPECT_TRUE(contains(result, EnergyTransferMode::AC_DER_IEC));
+    EXPECT_FALSE(contains(result, EnergyTransferMode::AC_DER_SAE));
+}
+
+TEST(EnergyTransferModesTest, sae_flavor_advertises_sae_only) {
+    const auto caps = make_caps(1, 3, 16, 3);
+
+    const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/false,
+                                                                  /*der_available=*/true, /*der_flavor=*/"SAE");
+
+    EXPECT_TRUE(contains(result, EnergyTransferMode::AC_DER_SAE));
+    EXPECT_FALSE(contains(result, EnergyTransferMode::AC_DER_IEC));
+}
+
+TEST(EnergyTransferModesTest, sae_flavor_not_advertised_when_der_unavailable) {
+    const auto caps = make_caps(1, 3, 16, 3);
+
+    const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/false,
+                                                                  /*der_available=*/false, /*der_flavor=*/"SAE");
+
+    EXPECT_FALSE(contains(result, EnergyTransferMode::AC_DER_SAE));
+    EXPECT_FALSE(contains(result, EnergyTransferMode::AC_DER_IEC));
+}
+
+TEST(EnergyTransferModesTest, sae_flavor_not_advertised_when_not_export_capable) {
+    const auto caps = make_caps(1, 3, 0, 3);
+
+    const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/false,
+                                                                  /*der_available=*/true, /*der_flavor=*/"SAE");
+
+    EXPECT_FALSE(contains(result, EnergyTransferMode::AC_DER_SAE));
+    EXPECT_FALSE(contains(result, EnergyTransferMode::AC_DER_IEC));
+}
+
+TEST(EnergyTransferModesTest, none_flavor_advertises_no_der) {
+    const auto caps = make_caps(1, 3, 16, 3);
+
+    const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/false,
+                                                                  /*der_available=*/true, /*der_flavor=*/"NONE");
+
+    EXPECT_FALSE(contains(result, EnergyTransferMode::AC_DER_IEC));
+    EXPECT_FALSE(contains(result, EnergyTransferMode::AC_DER_SAE));
+}
+
+TEST(EnergyTransferModesTest, unrecognized_flavor_advertises_no_der) {
+    const auto caps = make_caps(1, 3, 16, 3);
+
+    const auto result = module::get_supported_ac_energy_transfers(caps, /*supported_iso_ac_bpt=*/false,
+                                                                  /*der_available=*/true, /*der_flavor=*/"sae");
+
+    EXPECT_FALSE(contains(result, EnergyTransferMode::AC_DER_IEC));
+    EXPECT_FALSE(contains(result, EnergyTransferMode::AC_DER_SAE));
 }
