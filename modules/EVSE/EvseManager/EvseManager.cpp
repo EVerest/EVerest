@@ -276,6 +276,14 @@ void EvseManager::init() {
     });
 }
 
+void EvseManager::shutdown() {
+    invoke_shutdown(*p_evse);
+    invoke_shutdown(*p_energy_grid);
+    invoke_shutdown(*p_token_provider);
+    invoke_shutdown(*p_random_delay);
+    invoke_shutdown(*p_dc_external_derate);
+}
+
 void EvseManager::ready() {
     bsp = std::make_unique<IECStateMachine>(r_bsp, config.lock_connector_in_state_b, config.unlock_when_deauthorized);
 
@@ -1879,7 +1887,7 @@ void EvseManager::send_supported_energy_transfers(const std::vector<types::iso15
 std::vector<types::iso15118::EnergyTransferMode> EvseManager::ac_energy_transfers() {
     const auto caps = hw_capabilities.get();
     const auto der = der_available.load();
-    return get_supported_ac_energy_transfers(caps, config.supported_iso_ac_bpt, der);
+    return get_supported_ac_energy_transfers(caps, config.supported_iso_ac_bpt, der, config.iso15118_der_flavor);
 }
 
 std::vector<types::iso15118::EnergyTransferMode> EvseManager::dc_energy_transfers() {
