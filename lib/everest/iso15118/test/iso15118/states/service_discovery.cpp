@@ -192,7 +192,54 @@ SCENARIO("Service discovery state handling") {
     } // Todo(sl): Fill out
 
     GIVEN("Bad case - EV supported_service_ids do not match with evse supported services") {
-    } // Todo(sl): Fill out
+
+        d20::Session session = d20::Session();
+
+        message_20::ServiceDiscoveryRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+
+        // AC_DER_IEC only, which the EVSE below does not offer.
+        auto& supported_service_ids = req.supported_service_ids.emplace();
+        supported_service_ids.push_back(message_20::to_underlying_value(dt::ServiceCategory::AC_DER_IEC));
+
+        std::vector<dt::ServiceCategory> supported_energy_transfer_services = {dt::ServiceCategory::AC,
+                                                                               dt::ServiceCategory::AC_BPT};
+        std::vector<dt::ServiceCategory> ev_energy_services{};
+
+        const auto res =
+            d20::state::handle_request(req, session, supported_energy_transfer_services, {}, ev_energy_services);
+
+        THEN("ResponseCode: FAILED_ServiceIDInvalid, and no empty energy service list is offered") {
+            // An empty EnergyTransferServiceList cannot be encoded: the element is mandatory, so
+            // cbv2g reports EXI_ERROR__UNKNOWN_EVENT_CODE and the session dies on an encode error
+            // instead of the EV receiving a response it can act on.
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_ServiceIDInvalid);
+            REQUIRE(res.energy_transfer_service_list.empty() == false);
+            REQUIRE(res.service_renegotiation_supported == false);
+        }
+    }
+
+    GIVEN("Bad case - evse offers no energy transfer service at all") {
+
+        d20::Session session = d20::Session();
+
+        message_20::ServiceDiscoveryRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+
+        // No filter from the EV, so the offer is whatever the EVSE has, here nothing.
+        std::vector<dt::ServiceCategory> supported_energy_transfer_services{};
+        std::vector<dt::ServiceCategory> ev_energy_services{};
+
+        const auto res =
+            d20::state::handle_request(req, session, supported_energy_transfer_services, {}, ev_energy_services);
+
+        THEN("ResponseCode: FAILED_ServiceIDInvalid, and no empty energy service list is offered") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_ServiceIDInvalid);
+            REQUIRE(res.energy_transfer_service_list.empty() == false);
+        }
+    }
 
     // GIVEN("Bad Case - sequence error") {} // TODO(sl): not here
 
