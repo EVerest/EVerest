@@ -30,3 +30,7 @@ to the corresponding migration guide.
      - 2026.10.0
      - 2027.04.0
      - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`
+   * - The `RsIskraMeter` deprecates its `meter` implementation_id in favor of `main`.
+     - 2026.10.0
+     - 2027.04.0
+     - Change `implementation_id: meter` to `implementation_id: main` in the config connection
