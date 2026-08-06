@@ -56,14 +56,13 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcCharg
     // Emplaced here rather than in the init list so it sees the resolved interface name.
     sdp_client.emplace(config.interface_name, config.advertised_security);
 
-    // The data client is created later, in establish_data_path, so this dereferences it
-    // lazily; it exists by the time the first frame is sent on connect.
+    // data_client is created later, in establish_data_path; dereferenced lazily
+    // here since it exists by the time a frame is first sent.
     session = std::make_unique<Session>(
         callbacks_,
         [this](std::vector<uint8_t> frame) {
-            // Report the result so the Session can stop loudly; both failure modes
-            // (no data client yet, or a refused transmit) return false and would otherwise
-            // only show up as a downstream watchdog timeout.
+            // Report failure so the Session stops loudly instead of via a downstream
+            // watchdog timeout.
             if (not data_client) {
                 logf_error("EV Controller: outbound frame before data client exists; dropping");
                 return false;
@@ -86,9 +85,8 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcCharg
 }
 
 template <typename F> void Controller::guarded(const char* op, F&& f) {
-    // The reactor's poll_impl has no try/catch, so an escaping throw would kill the
-    // reactor thread and leave `online` set, hanging the loop with no stopped signal.
-    // Clear `online` on any throw so run() returns; loop() fires stopped once after.
+    // reactor's poll_impl has no try/catch; an escaping throw would kill the reactor
+    // thread and hang the loop. Clear `online` instead so run() returns normally.
     try {
         f();
     } catch (const std::exception& e) {
@@ -107,26 +105,20 @@ void Controller::abort_loop(const char* reason) {
 
 void Controller::establish_data_path(const iso15118::io::Ipv6EndPoint& endpoint,
                                      iso15118::io::v2gtp::Security security) {
-    // The SDP rx handler fires on-found for every parseable response, and UDP can
-    // duplicate or retransmit the SECC reply. Guard on the data client: a second
-    // call must not recreate and reconnect it, tearing down an in-flight handshake.
+    // UDP can duplicate/retransmit the SECC reply; a second call must not recreate
+    // and reconnect the data client, tearing down an in-flight handshake.
     if (data_client) {
         logf_warning("EV Controller: ignoring additional SDP response; data path already established");
         return;
     }
 
-    // This runs from the SDP on_found rx callback through the reactor's poll_impl,
-    // which has no try/catch. A throw here (make_unique bad_alloc, or the
-    // callbacks.connected consumer callback throwing) would kill the reactor thread
-    // and leave `online` set, hanging the session with no stopped/timed_out signal.
-    // guarded() clears `online` so run() returns; loop() fires stopped once after.
+    // Runs through the reactor's poll_impl (no try/catch); guarded() catches a throw
+    // here (e.g. the consumer connected callback) so the loop still ends cleanly.
     guarded("establishing the data path", [&]() {
         feedback.connected(endpoint);
 
-        // The advertised security only signals that the SECC is *capable* of TLS; it
-        // is not a requirement, and the EV requests plain TCP in its SDP request. Until
-        // libio gains a TLS client the EV always connects over plain TCP. This is the
-        // seam where a future TLS client would be created for a TLS-capable endpoint.
+        // Advertised security only signals SECC TLS *capability*, not a requirement.
+        // libio has no TLS client yet, so the EV always connects over plain TCP.
         if (security == iso15118::io::v2gtp::Security::TLS) {
             logf_info(
                 "EV Controller: SECC advertised TLS capability; connecting over plain TCP (TLS not yet supported)");
@@ -163,18 +155,16 @@ void Controller::loop() {
         return;
     }
 
-    // The timers below are registered on the reactor for the duration of this call
-    // only. Release them here so every exit path, including the setup-failure aborts,
-    // leaves the reactor holding no timer fds from a finished loop.
+    // Release the timers below on every exit path, including setup-failure aborts,
+    // so a finished loop leaves no timer fds registered on the reactor.
     ScopeExit unregister_timers{[this]() {
         reactor.unregister_event_handler(&setup_timeout);
         reactor.unregister_event_handler(&sdp_retry);
         reactor.unregister_event_handler(&stop_grace_timer);
     }};
 
-    // Timeout as a reactor event: a single-shot timer clears `online` so run()
-    // returns even if no socket traffic ever arrives. Its fd wakes the poll, so
-    // the loop exits on the same iteration the timer fires.
+    // Single-shot timer clears `online` so run() returns even with no socket
+    // traffic; its fd wakes the poll so the loop exits the same iteration it fires.
     setup_timeout.set_single_shot(true);
     if (not reactor.register_event_handler(&setup_timeout, [this]() {
             logf_warning("EV Controller: SDP discovery / connect did not complete in time");
@@ -191,9 +181,8 @@ void Controller::loop() {
         return;
     }
 
-    // Register the request_stop grace fallback here, on the reactor thread, before
-    // run(). request_stop() (called from the module command thread) only ARMS it from
-    // a marshaled action, keeping all reactor state on the reactor thread. Single-shot.
+    // Registered here on the reactor thread; request_stop() (called from the module
+    // command thread) only ARMS it via a marshaled action.
     stop_grace_timer.set_single_shot(true);
     if (not reactor.register_event_handler(&stop_grace_timer, [this]() {
             logf_warning("EV Controller: graceful stop did not finish in time; hard-stopping");
@@ -210,9 +199,8 @@ void Controller::loop() {
         return;
     }
 
-    // Periodic SDP retransmit: a UDP request can be lost, so re-issue it on the
-    // standard interval until the SECC responds (establish_data_path disarms it)
-    // or the setup timeout elapses (its handler disarms it).
+    // A UDP request can be lost; re-issue until the SECC responds or the setup
+    // timeout elapses (each disarms this timer).
     sdp_retry.set_single_shot(false);
     if (not reactor.register_event_handler(&sdp_retry, [this]() {
             if (sdp_client) {
@@ -229,9 +217,7 @@ void Controller::loop() {
         return;
     }
 
-    // The SDP response carries the SECC endpoint AND the transport security; both
-    // drive the runtime data-client creation in establish_data_path. The SECC has
-    // answered, so stop retransmitting the discovery request.
+    // The SECC has answered, so stop retransmitting the discovery request.
     sdp_client->discover([this](transport::SdpResponse response) {
         sdp_retry.disarm();
         establish_data_path(response.endpoint, response.security);
@@ -253,9 +239,8 @@ void Controller::request_stop() {
         if (session) {
             session->deliver_control_event(d20::ControlEvent{d20::StopCharging{true}});
         }
-        // Grace fallback: the graceful walk is PowerDelivery(Stop) ->
-        // DC_WeldingDetection -> SessionStop, three response round trips worst case, so
-        // bound the wait at 3x the response timeout before hard-stopping the loop.
+        // Graceful walk is 3 response round trips worst case (PowerDelivery(Stop) ->
+        // DC_WeldingDetection -> SessionStop), hence 3x response timeout.
         if (not stop_grace_timer.set_timeout(3 * config.response_timeout)) {
             // A failed arm removes the only bound on a stalled graceful stop. Fall back
             // to the hard-stop this timer exists to provide rather than risk a hang.
