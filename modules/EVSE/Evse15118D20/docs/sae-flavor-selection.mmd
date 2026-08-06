@@ -1,0 +1,23 @@
+flowchart TD
+    subgraph EvseManager
+        A["set_der_available(available)"] --> B{"DER available for this EVSE?"}
+        B -- no --> Z["No AC DER service advertised"]
+        B -- yes --> C{"EVSE export capable?<br/>max_current_A_export positive and<br/>max_phase_count_export at least 1"}
+        C -- no --> Z
+        C -- yes --> D{"config iso15118_der_flavor"}
+        D -- "NONE (default)" --> Z
+        D -- IEC --> E["EnergyTransferMode AC_DER_IEC"]
+        D -- SAE --> F["EnergyTransferMode AC_DER_SAE"]
+        D -- unrecognized --> W["warning logged,<br/>no AC DER advertised"]
+        W --> Z
+    end
+
+    subgraph Evse15118D20
+        E --> G["IEC DER transfer limits from ac_limits"]
+        G --> H["AC_DER_IEC advertised"]
+        F --> I{"ac_limits.nominal_frequency and<br/>nominal voltage both positive?"}
+        I -- yes --> J["SAE DER transfer limits and the inert default<br/>grid code configuration built,<br/>AC_DER_SAE advertised"]
+        I -- no --> K["error logged, der_sae_limits left unset,<br/>AC_DER_SAE stripped from the offered services"]
+        K --> L["derivation re-runs on the next change of the<br/>supported energy services, AC limits or AC parameters"]
+        L --> I
+    end
