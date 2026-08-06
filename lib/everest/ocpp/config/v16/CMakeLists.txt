@@ -65,7 +65,7 @@ install(
 )
 
 
-if(EXISTS ${USER_CONFIG_FILE})
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${USER_CONFIG_FILE})
      install(
           FILES ${USER_CONFIG_FILE}
           DESTINATION ${CMAKE_INSTALL_DATADIR}/everest/modules/OCPP)
