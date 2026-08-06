@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
@@ -11,7 +11,6 @@ MessageExchange::MessageExchange(io::StreamOutputView output_) : request(std::mo
 
 void MessageExchange::set_response(std::unique_ptr<message_20::Variant> new_request) {
     if (response) {
-        // FIXME (aw): we might want to have a stack here?
         throw std::runtime_error("Previous V2G message has not been handled yet");
     }
 
