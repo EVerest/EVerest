@@ -38,6 +38,7 @@ message_20::DER_AC_ChargeLoopResponse make_res(const message_20::Header& header,
 // other fails rather than passing by coincidence.
 const auto seed_present_5000 = [](FsmStateHelper& helper) {
     ev::AcChargeParams p{};
+    p.phase_count = 1;
     p.max_charge_power = 11000.0f;
     p.min_charge_power = 1000.0f;
     p.max_discharge_power = 9000.0f;
@@ -95,6 +96,45 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop emits a Dynamic DER_AC_ChargeLoop
     REQUIRE_FALSE(mode.min_discharge_power_L3.has_value());
 }
 
+SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop splits charge and discharge limits across a ThreePhase connector") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{callbacks, [](FsmStateHelper& helper) {
+                                                                  ev::AcChargeParams p{};
+                                                                  p.phase_count = 3;
+                                                                  p.max_charge_power = 11100.0f;
+                                                                  p.min_charge_power = 900.0f;
+                                                                  p.max_discharge_power = 9000.0f;
+                                                                  p.min_discharge_power = 600.0f;
+                                                                  p.present_active_power = 5100.0f;
+                                                                  helper.set_ac_params(p);
+                                                                  helper.get_context().set_selected_ac_connector(
+                                                                      message_20::datatypes::AcConnector::ThreePhase);
+                                                              }};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::DER_AC_ChargeLoopRequest>();
+    REQUIRE(request_message.has_value());
+    const auto& mode = std::get<message_20::datatypes::DER_Dynamic_AC_CLReqControlMode>(request_message->control_mode);
+
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_charge_power) == Catch::Approx(3700.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_charge_power_L2) == Catch::Approx(3700.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_charge_power_L3) == Catch::Approx(3700.0f));
+
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_charge_power) == Catch::Approx(300.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_charge_power_L2) == Catch::Approx(300.0f));
+
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.present_active_power) == Catch::Approx(1700.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.present_active_power_L2) == Catch::Approx(1700.0f));
+
+    // Discharge splits the same way; an EV that can export 9 kW total exports 3 kW per line.
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_discharge_power) == Catch::Approx(3000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_discharge_power_L2) == Catch::Approx(3000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_discharge_power_L3) == Catch::Approx(3000.0f));
+
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_discharge_power) == Catch::Approx(200.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_discharge_power_L2) == Catch::Approx(200.0f));
+}
+
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop fires der_control on a Dynamic response") {
     float reported = 0.0f;
     bool fired = false;
@@ -139,6 +179,7 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop does not substitute the dictated 
     // Unfed present power stays unreported; see the note in ac_charge_loop.cpp.
     const auto seed_unfed_present = [](FsmStateHelper& helper) {
         ev::AcChargeParams p{};
+        p.phase_count = 1;
         p.max_charge_power = 11000.0f;
         p.min_charge_power = 1000.0f;
         p.max_discharge_power = 9000.0f;
@@ -213,6 +254,7 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop honors a stop request set before 
     StopObserver obs;
     const auto seed_latched_stop = [](FsmStateHelper& helper) {
         ev::AcChargeParams p{};
+        p.phase_count = 1;
         p.max_charge_power = 11000.0f;
         p.min_charge_power = 1000.0f;
         p.max_discharge_power = 9000.0f;

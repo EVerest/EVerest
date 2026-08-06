@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -23,6 +23,7 @@ struct Conf {
     std::string device;
     std::string evcc_id;
     int response_timeout_ms;
+    int ac_phase_count;
     double ac_max_charge_power_w;
     double ac_min_charge_power_w;
     bool der_over_frequency_watt_mode;
@@ -67,6 +68,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

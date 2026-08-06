@@ -15,17 +15,24 @@ config:
     type: integer
     minimum: 1
     default: 20000
+  ac_phase_count:
+    description:
+      Number of AC lines the EV can draw on, 1 or 3. Selects which connector the
+      EV asks for, and divides the advertised totals below into the per-line
+      values ISO 15118-20 expects once the L2 and L3 elements are present.
+    type: integer
+    default: 3
   ac_max_charge_power_w:
     description:
-      Advertised AC maximum charge power in watts, as a three-phase total. The
-      default is 16 A x 230 V x 3.
+      Advertised AC maximum charge power in watts, as a total across ac_phase_count
+      lines. The default is 16 A x 230 V x 3.
     type: number
     minimum: 0
     default: 11040
   ac_min_charge_power_w:
     description:
-      Advertised AC minimum charge power in watts, as a three-phase total. The
-      default is 6 A x 230 V x 3.
+      Advertised AC minimum charge power in watts, as a total across ac_phase_count
+      lines. The default is 6 A x 230 V x 3.
     type: number
     minimum: 0
     default: 4140
