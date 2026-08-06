@@ -32,6 +32,11 @@ enum class StartSessionResult : std::uint8_t {
     SessionComplete,
 };
 
+struct StartSessionOptions {
+    std::optional<io::sha512_hash_t> vehicle_cert_hash{std::nullopt};
+    bool skip_app_protocol_negotiation{false};
+};
+
 struct TbdConfig {
     config::SSLConfig ssl{};
     std::string interface_name;
@@ -57,8 +62,7 @@ public:
     void loop();
     // Mutually exclusive with the other driver; see the class note. Refuses (logs and returns false) if the other
     // driver is already running.
-    StartSessionResult start_session(int connected_fd);
-    StartSessionResult start_session(int connected_fd, const std::optional<io::sha512_hash_t>& vehicle_cert_hash);
+    StartSessionResult start_session(int connected_fd, const StartSessionOptions& start_options);
     void tick();
 
     bool has_active_session() const {
