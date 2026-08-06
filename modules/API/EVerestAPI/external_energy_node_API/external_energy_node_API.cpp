@@ -22,7 +22,7 @@ void external_energy_node_API::init() {
     invoke_init(*p_main);
     invoke_init(*p_energy_grid);
 
-    // Initialise aggregate from module id
+    // Initialise aggregate from module id and local config
     {
         auto agg = aggregate.handle();
         agg->uuid = info.id;
@@ -112,11 +112,37 @@ void external_energy_node_API::clamp_to_local_limits(types::energy::EnforcedLimi
     }
 }
 
+void external_energy_node_API::arm_external_watchdog(const std::chrono::steady_clock::time_point now) {
+    // caller must hold forwarding_mutex
+    const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(external_deadline - now);
+    external_timeout_timer.timeout([this]() { on_external_timeout(); }, remaining);
+}
+
+void external_energy_node_API::on_external_timeout() {
+    std::lock_guard<std::mutex> lock(forwarding_mutex);
+
+    const auto now = std::chrono::steady_clock::now();
+    if (now < external_deadline) {
+        // Stale or premature fire: either a fresh enforce_limits moved the
+        // deadline after this handler was already queued (Everest::Timer's
+        // cancel() cannot recall it), or the timer's wall clock stepped forward.
+        // The monotonic deadline is authoritative — ignore and re-arm for the
+        // remainder.
+        arm_external_watchdog(now);
+        return;
+    }
+
+    if (external_active) {
+        external_active = false;
+        EVLOG_info << info.id << ": external EnergyManager timed out — falling back to internal EnergyManager";
+    }
+}
+
 void external_energy_node_API::generate_api_var_energy_flow_request() {
     // Subscribe to energy_flow_request from each local EnergyNode (EVSE nodes).
     // On each update: merge the child, republish aggregate on the local Everest bus
     // (for internal) and via ApiHelper topic (for external via bridge). The external
-    // timeout is handled independently by external_timeout_timer, not here.
+    // fallback deadline is handled independently in generate_api_cmd_enforce_limits.
     for (auto& entry : r_energy_consumer) {
         entry->subscribe_energy_flow_request([this](types::energy::EnergyFlowRequest const& child) {
             auto agg = aggregate.handle();
@@ -165,21 +191,34 @@ void external_energy_node_API::generate_api_cmd_enforce_limits() {
         // which a well-behaved external optimizer already respects.
         clamp_to_local_limits(value);
 
-        if (!external_active.exchange(true)) {
+        const auto now = std::chrono::steady_clock::now();
+
+        // Same lock as the internal path (energy_grid/energyImpl.cpp): state
+        // update and forwarding are one atomic step, so a stale internal limit
+        // can never interleave with a fresh external one (TOCTOU).
+        std::lock_guard<std::mutex> lock(forwarding_mutex);
+
+        if (not external_active) {
+            external_active = true;
             EVLOG_info << info.id << ": external EnergyManager connected";
         }
 
-        // (Re)arm the fallback watchdog. If no further enforce_limits arrives within
-        // timeout_s, this fires exactly once and falls back to internal EnergyManager —
-        // independent of whether any local EnergyNode publishes anything in the meantime.
+        // (Re)arm the fallback watchdog. If no further enforce_limits arrives
+        // within timeout_s, it fires and falls back to the internal
+        // EnergyManager — independent of whether any local EnergyNode publishes
+        // anything in the meantime. timeout_s == 0 disables the fallback:
+        // external keeps control forever.
         if (config.timeout_s > 0) {
-            external_timeout_timer.timeout(
-                [this]() {
-                    external_active = false;
-                    EVLOG_info << info.id
-                               << ": external EnergyManager timed out — falling back to internal EnergyManager";
-                },
-                std::chrono::seconds(config.timeout_s));
+            external_deadline = now + std::chrono::seconds(config.timeout_s);
+            arm_external_watchdog(now);
+        } else {
+            external_deadline = std::chrono::steady_clock::time_point::max();
+        }
+
+        // A limit addressed to this bridge node itself cannot be enforced by any
+        // child (mirrors the EnergyNode uuid check); don't broadcast it.
+        if (value.uuid == info.id) {
+            return true;
         }
 
         // Route external limits to all child EnergyNodes (takes priority over internal).

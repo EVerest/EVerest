@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "energyImpl.hpp"
 
+#include <mutex>
+
 namespace module {
 namespace energy_grid {
 
@@ -15,16 +17,25 @@ void energyImpl::ready() {
 
 void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
     // This is called by the internal EnergyManager via the Everest internal bus.
-    // Apply internal limits ONLY when the external EnergyManager is not currently active.
-    // When external is active, its enforce_limits (received via external MQTT in the module's
-    // ready() callback) take priority and internal limits are discarded here.
-    if (!mod->external_active.load()) {
-        for (auto& entry : mod->r_energy_consumer) {
-            entry->call_enforce_limits(value);
-        }
+    // Apply internal limits ONLY when the external EnergyManager is not currently
+    // in control (i.e. the watchdog has fired since its last message).
+    //
+    // The state check and the forwarding happen under the same lock as the
+    // external MQTT path: without it, this thread could pass the check, get
+    // preempted by an external message that re-takes control and forwards its
+    // limits, and then still forward the now-stale internal limits afterwards
+    // (TOCTOU) — whichever arrives last would win at the EVSEs.
+    std::lock_guard<std::mutex> lock(mod->forwarding_mutex);
+
+    if (mod->external_active) {
+        // External EnergyManager is in control: its limits are applied by the MQTT
+        // subscriber in external_energy_node_API.cpp; discard internal limits.
+        return;
     }
-    // If external_active is true: external EnergyManager is in control, silently discard internal limits.
-    // External limits are already being applied by the MQTT subscriber in external_energy_node_API.cpp.
+
+    for (auto& entry : mod->r_energy_consumer) {
+        entry->call_enforce_limits(value);
+    }
 }
 
 } // namespace energy_grid

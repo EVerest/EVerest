@@ -14,17 +14,23 @@ description: >-
 config:
   timeout_s:
     description: >-
-      Seconds without an enforce_limits message from the external EnergyManager                                                                                                                                                                                                                                                         
-      before falling back to limits from the internal EnergyManager. Set to 0 to                                                                                                                                                                                                                                                        
-      disable the timeout (always prefer external limits, ignore internal).                                                                                                                                                                                                                                                             
-      This is independent of cfg_communication_check_to_s: the latter only                                                                                                                                                                                                                                                              
-      triggers a CommunicationFault error signal, it does not itself cause a                                                                                                                                                                                                                                                            
-      fallback to internal limits. If you want the fallback and the fault to                                                                                                                                                                                                                                                            
-      trigger around the same time, set timeout_s and cfg_communication_check_to_s                                                                                                                                                                                                                                                      
+      Seconds without an enforce_limits message from the external EnergyManager
+      before falling back to limits from the internal EnergyManager. Set to 0 to
+      disable the timeout (external keeps control forever once its first message
+      arrives; internal limits are then ignored).
+      Sizing: choose at least 3x the external EnergyManager's update_interval so
+      ordinary broker/bridge jitter does not cause flapping between external and
+      internal control, but not more than the validity of the limits it sends
+      (EnergyManager publishes valid_for = 10x its update_interval) — otherwise
+      EVSE limits expire to 0 A before the fallback engages.
+      This is independent of cfg_communication_check_to_s: the latter only
+      triggers a CommunicationFault error signal, it does not itself cause a
+      fallback to internal limits. If you want the fallback and the fault to
+      trigger around the same time, set timeout_s and cfg_communication_check_to_s
       to comparable values; there is no enforced relationship between them.
     type: integer
     minimum: 0
-    default: 30
+    default: 10
   fuse_limit_A:
     description: >-
       Local fuse limit in ampere (per phase) at this bridge point. It is

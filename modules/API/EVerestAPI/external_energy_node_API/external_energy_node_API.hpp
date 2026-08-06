@@ -19,8 +19,8 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
-#include <atomic>
 #include <chrono>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -65,12 +65,16 @@ public:
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
-    // Shared state — written by MQTT path, read by energy_grid impl (internal path).
-    std::atomic<bool> external_active{false};
+    // Serializes limit forwarding from the external (MQTT) path and the internal
+    // (energy_grid) path, and guards external_active / external_deadline.
+    // Without it, an internal forward that already passed the active-check could
+    // interleave with a fresh external forward and overwrite it at the EVSEs (TOCTOU).
+    std::mutex forwarding_mutex;
 
-    // Watchdog: (re)armed on every enforce_limits received from the external EnergyManager.
-    // Fires once if timeout_s passes without a fresh message, independent of any other event.
-    Everest::SteadyTimer external_timeout_timer;
+    // True while the external EnergyManager is in control — written by the MQTT
+    // path and the watchdog, read by the energy_grid impl (internal path).
+    // Guarded by forwarding_mutex.
+    bool external_active{false};
 
     ev_API::Mqtt::ValidatingMqttProxy mqtt_v{mqtt};
     ev_API::ApiHelper helper{info, mqtt_v, {{"external_energy_node", 1}}, get_config_service_client()};
@@ -104,6 +108,28 @@ private:
     // that are present — absent limits stay absent (EvseManager treats a missing
     // ac_max_current_A as 0 A, so filling them in would RAISE the limit).
     void clamp_to_local_limits(types::energy::EnforcedLimits& value) const;
+
+    // Watchdog: (re)armed on every enforce_limits received from the external
+    // EnergyManager. The timer is only the scheduling mechanism — the decision
+    // is made against external_deadline (monotonic steady_clock) inside
+    // on_external_timeout(), which makes it immune to the two failure modes of
+    // a bare Everest::Timer: a stale fire whose handler was already queued when
+    // a fresh message re-armed the timer (cancel() cannot recall it), and a
+    // premature fire caused by an NTP step of the timer's date::utc_clock.
+    Everest::SteadyTimer external_timeout_timer;
+
+    // Deadline until which the external EnergyManager is in control.
+    // min() = external never seen; max() = in control forever (timeout_s == 0).
+    // Guarded by forwarding_mutex.
+    std::chrono::steady_clock::time_point external_deadline{std::chrono::steady_clock::time_point::min()};
+
+    // (Re)arm external_timeout_timer for the time remaining until
+    // external_deadline. Caller must hold forwarding_mutex.
+    void arm_external_watchdog(std::chrono::steady_clock::time_point now);
+
+    // Timer callback: falls back to the internal EnergyManager, unless the fire
+    // is stale/premature (see external_timeout_timer docs) — then it re-arms.
+    void on_external_timeout();
 
     ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
                                                                ev_API::bridge_connection_lost_message, p_main};

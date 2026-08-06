@@ -60,10 +60,15 @@ Fallback to the internal EnergyManager
 =======================================
 The server can also connect to a local ``EnergyManager`` (via its ``energy_grid`` provided interface), which
 takes over automatically if the external side goes quiet. Every ``enforce_limits`` received from the external
-side (re)arms a watchdog timer set to ``timeout_s``; if no further message arrives before it fires, the server
-falls back to forwarding whatever the internal ``EnergyManager`` sends instead. This fallback is driven purely by
-that timer — it does not depend on any other event, such as local ``EnergyNode`` activity — so it also engages
-correctly on a completely idle process.
+side (re)arms a fallback deadline of ``timeout_s``; once it passes without a further message, internal
+``enforce_limits`` are forwarded again. This fallback is driven purely by that deadline — it does not depend on
+any other event, such as local ``EnergyNode`` activity — so it also engages correctly on a completely idle
+process. The deadline uses the monotonic clock (immune to NTP steps), and the external and internal forwarding
+paths are serialized under one lock, so a stale internal limit can never overtake a fresh external one.
+
+Size ``timeout_s`` to at least 3x the external ``EnergyManager``'s ``update_interval`` (so broker/bridge jitter
+does not cause flapping), but no larger than the validity of the limits it sends (``EnergyManager`` publishes
+``valid_for = 10 x update_interval``) — otherwise EVSE limits expire to 0 A before the fallback engages.
 
 Module Configuration
 =====================
@@ -77,7 +82,7 @@ Module Configuration
    * - ``timeout_s``
      - Seconds without an ``enforce_limits`` message from the external ``EnergyManager`` before falling back to
        the internal one. Set to ``0`` to disable the timeout entirely (always prefer external limits, and never
-       fall back).
+       fall back). See the sizing guidance above.
    * - ``fuse_limit_A``
      - Local fuse limit in ampere (per phase) at this bridge point. Advertised in the aggregate's schedules so
        both the internal and the external ``EnergyManager`` allocate within it, and used as a backstop to lower
