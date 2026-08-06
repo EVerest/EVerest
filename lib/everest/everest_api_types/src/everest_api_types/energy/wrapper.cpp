@@ -234,6 +234,7 @@ ExternalLimits_External to_external_api(ExternalLimits_Internal const& val) {
     ExternalLimits_External result;
     result.schedule_import = vecToExternal(val.schedule_import);
     result.schedule_export = vecToExternal(val.schedule_export);
+    result.schedule_setpoints = vecToExternal(val.schedule_setpoints);
     return result;
 }
 
