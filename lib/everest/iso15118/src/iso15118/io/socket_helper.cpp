@@ -3,6 +3,7 @@
 #include <iso15118/detail/io/socket_helper.hpp>
 
 #include <cstring>
+#include <utility>
 
 #include <arpa/inet.h>
 #include <ifaddrs.h>
@@ -11,6 +12,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include <iso15118/detail/helper.hpp>
 
@@ -45,6 +47,26 @@ auto choose_first_ipv6_interface() {
 
     return interface_name;
 }
+
+// owns an fd until released, so that a throwing setup path cannot leak it
+class fd_guard {
+public:
+    explicit fd_guard(int fd) : fd_{fd} {
+    }
+    fd_guard(const fd_guard&) = delete;
+    fd_guard& operator=(const fd_guard&) = delete;
+    ~fd_guard() {
+        if (fd_ != -1) {
+            ::close(fd_);
+        }
+    }
+    int release() {
+        return std::exchange(fd_, -1);
+    }
+
+private:
+    int fd_;
+};
 
 } // namespace
 
@@ -140,6 +162,36 @@ bool set_tcp_keepalive(int fd) {
     }
 
     return true;
+}
+
+int create_tcp_listen_socket(sockaddr_in6 address, uint16_t port, int backlog, const std::string& interface_name) {
+    const auto fd = socket(AF_INET6, SOCK_STREAM, 0);
+    if (fd == -1) {
+        log_and_throw("Failed to create an ipv6 socket");
+    }
+    fd_guard guard{fd};
+
+    address.sin6_port = htons(port);
+
+    int optval_tmp{1};
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval_tmp, sizeof(optval_tmp)) == -1) {
+        log_and_throw("setsockopt(SO_REUSEADDR) failed");
+    }
+
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &optval_tmp, sizeof(optval_tmp)) == -1) {
+        log_and_throw("setsockopt(SO_REUSEPORT) failed");
+    }
+
+    if (bind(fd, reinterpret_cast<const struct sockaddr*>(&address), sizeof(address)) == -1) {
+        const auto msg = "Failed to bind ipv6 socket to interface " + interface_name;
+        log_and_throw(msg.c_str());
+    }
+
+    if (listen(fd, backlog) == -1) {
+        log_and_throw("Listen on socket failed");
+    }
+
+    return guard.release();
 }
 
 std::unique_ptr<char[]> sockaddr_in6_to_name(const sockaddr_in6& address) {
