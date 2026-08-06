@@ -525,6 +525,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     // observed empty, so queued events always stay ahead of live-path events
     ready_event_queue();
     EVLOG_info << "OCPP started";
+    mv_provides.ocpp_generic.publish_ready(true);
 
     // Signal to EVSEs to start their internal state machines
     for (const auto& evse : mv_requires.evse_manager) {
