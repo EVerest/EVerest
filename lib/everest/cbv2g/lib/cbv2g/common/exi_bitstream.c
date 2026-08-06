@@ -30,7 +30,10 @@ static int exi_bitstream_has_overflow(exi_bitstream_t* stream)
 {
     if (stream->bit_count == EXI_BITSTREAM_MAX_BIT_COUNT)
     {
-        if (stream->byte_pos < stream->data_size)
+        /* The current byte is full, so advance only if the NEXT index is still inside the
+           buffer. Comparing byte_pos itself lets it reach data_size, after which the caller
+           writes one past the end. */
+        if (stream->byte_pos + 1 < stream->data_size)
         {
             stream->byte_pos++;
             stream->bit_count = 0;
