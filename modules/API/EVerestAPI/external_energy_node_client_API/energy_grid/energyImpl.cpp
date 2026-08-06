@@ -78,6 +78,9 @@ void energyImpl::ready() {
         auto request = to_internal_api(val);
         namespace_uuids(request, namespace_prefix(mod->config.server_id));
 
+        // Feed the staleness watchdog before publishing.
+        mod->note_remote_request(request.uuid);
+
         publish_energy_flow_request(request);
     });
 

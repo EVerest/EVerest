@@ -16,8 +16,11 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
+#include <chrono>
+#include <mutex>
 #include <string>
 
+#include <everest/timer.hpp>
 #include <everest_api_module_helpers/ApiHelper.hpp>
 #include <everest_api_types/entrypoint/API.hpp>
 
@@ -30,6 +33,7 @@ namespace module {
 
 struct Conf {
     std::string server_id;
+    int stale_timeout_s;
     int cfg_heartbeat_interval_ms;
     int cfg_communication_check_to_s;
 };
@@ -57,6 +61,10 @@ public:
     // Cached enforce_limits topic — set during init(), used in handle_enforce_limits.
     std::string enforce_limits_topic;
 
+    // Record a fresh energy_flow_request from the remote server: feeds the
+    // staleness watchdog. uuid is the (namespaced) aggregate root uuid.
+    void note_remote_request(const std::string& uuid);
+
     ev_API::Mqtt::ValidatingMqttProxy mqtt_v{mqtt};
     ev_API::ApiHelper helper{info, mqtt_v, {{"external_energy_node_client", 1}}, get_config_service_client()};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
@@ -72,6 +80,25 @@ private:
     void ready();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
+    // Staleness watchdog: (re)armed on every energy_flow_request from the remote
+    // server. The timer is only the scheduling mechanism — the decision is made
+    // against stale_deadline (monotonic steady_clock) inside on_remote_stale(),
+    // which makes it immune to Everest::Timer's queued-handler re-arm race and
+    // to NTP steps of its date::utc_clock.
+    Everest::SteadyTimer stale_timer;
+
+    // Timer callback: withdraws the remote subtree (publishes a zero-limit
+    // aggregate) so the site-level EnergyManager stops reserving budget for
+    // EVSEs it can no longer reach. Re-arms on a stale/premature fire.
+    void on_remote_stale();
+
+    // Guards the staleness state below.
+    std::mutex stale_mutex;
+    // Monotonic deadline after which the remote aggregate counts as stale.
+    std::chrono::steady_clock::time_point stale_deadline{std::chrono::steady_clock::time_point::min()};
+    std::string last_remote_uuid;
+    bool remote_stale_reported{false};
+
     ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
                                                                ev_API::bridge_connection_lost_message, p_main};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1

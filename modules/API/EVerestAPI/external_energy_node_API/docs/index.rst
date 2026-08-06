@@ -16,6 +16,11 @@ Version history of the module:
      - Description
    * - 1.0.0
      - Initial version of the external_energy_node_API / external_energy_node_client_API module pair
+   * - 1.1.0
+     - The server always advertises a schedule (empty schedules were read as "0 A available" by the
+       optimizer) and can carry a local fuse limit (``fuse_limit_A``/``phase_count``); the fallback watchdog
+       is monotonic and race-free; the client namespaces all remote uuids with ``server_id`` and withdraws
+       the remote subtree when the server goes stale (``stale_timeout_s``)
 
 Introduction
 ============
@@ -140,6 +145,14 @@ UUID), its last request stays in the aggregate indefinitely and the remote ``Ene
 energy to it. This matches the behavior of ``EnergyNode`` itself, but the effect is more visible here because
 the aggregate crosses a process boundary. After removing or renaming children, restart the server process so
 the aggregate is rebuilt from scratch.
+
+Stale server (whole remote subtree)
+------------------------------------
+The client handles the inverse case: if no ``energy_flow_request`` arrives from the server for longer than
+``stale_timeout_s``, it publishes a childless zero-limit aggregate under the same root uuid, so the site-level
+``EnergyManager`` stops reserving budget for EVSEs it can no longer reach (those are governed by the remote
+process's internal fallback in the meantime). Normal publishing resumes automatically with the next message
+from the server.
 
 References / Links
 ====================
