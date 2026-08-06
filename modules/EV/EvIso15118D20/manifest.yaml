@@ -8,10 +8,12 @@ config:
   evcc_id:
     description: EVCC identifier sent to the SECC.
     type: string
+    pattern: '^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$'
     default: "02:00:00:00:00:01"
   response_timeout_ms:
     description: Response watchdog timeout in milliseconds.
     type: integer
+    minimum: 1
     default: 20000
   fixed_endpoint:
     description: >-
