@@ -212,21 +212,6 @@ channels:
     messages:
       receive_reply_get_ocpp_message:
         $ref: '#/components/messages/receive_reply_get_ocpp_message'
-  receive_implementation_ready:
-    address: 'e2m/implementation_ready'
-    messages:
-      receive_implementation_ready:
-        $ref: '#/components/messages/receive_implementation_ready'
-  send_request_get_implementation_ready:
-    address: 'm2e/implementation_ready/get'
-    messages:
-      send_request_get_implementation_ready:
-        $ref: '#/components/messages/send_request_get_implementation_ready'
-  receive_reply_get_implementation_ready:
-    address: null
-    messages:
-      receive_reply_get_implementation_ready:
-        $ref: '#/components/messages/receive_reply_get_implementation_ready'
 
 
   receive_heartbeat:
@@ -359,11 +344,6 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_connection_status'
-  receive_implementation_ready:
-    title: 'Receive implementation ready'
-    action: receive
-    channel:
-      $ref: '#/channels/receive_implementation_ready'
   receive_security_event:
     title: 'Receive security event'
     action: receive
@@ -499,26 +479,6 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_reply_get_connection_status'
-  send_request_get_implementation_ready:
-    title: 'Request current Implementation Ready'
-    action: send
-    channel:
-      $ref: '#/channels/send_request_get_implementation_ready'
-    description: >-
-      Request the most recently published (latched) Implementation Ready.
-      The reply will be sent to the replyTo address specified in the message headers.
-      The bridge seeds this value with false at startup, so a reply of null only occurs
-      if latching is disabled for this module.
-    reply:
-      address:
-        location: "$message.header#/replyTo"
-      channel:
-        $ref: '#/channels/receive_reply_get_implementation_ready'
-  receive_reply_get_implementation_ready:
-    title: 'Reply to get Implementation Ready request'
-    action: receive
-    channel:
-      $ref: '#/channels/receive_reply_get_implementation_ready'
   send_request_get_charging_schedules:
     title: 'Request current Charging Schedules'
     action: send
@@ -911,17 +871,6 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ConnectionStatus'
-    receive_implementation_ready:
-      name: receive_implementation_ready
-      title: 'Receive implementation ready'
-      summary: Indicates whether the OCPP implementation behind this API accepts commands
-      description: |
-        True means the OCPP module has finished its startup and accepts the commands offered by
-        this API. Before that, commands are answered with Rejected or Offline results.
-        The heartbeat of this API only proves that the bridge module itself is alive.
-      contentType: application/json
-      payload:
-        $ref: '#/components/schemas/ImplementationReady'
     receive_security_event:
       name: receive_security_event
       title: 'Receive security event'
@@ -1126,38 +1075,6 @@ components:
         oneOf:
           - $ref: '#/components/schemas/ConnectionStatus'
           - type: 'null'
-    send_request_get_implementation_ready:
-      name: send_request_get_implementation_ready
-      title: 'Request current Implementation Ready'
-      summary: 'Request the most recently published (latched) Implementation Ready.'
-      contentType: application/json
-      payload:
-        type: object
-        required:
-          - headers
-        properties:
-          headers:
-            type: object
-            required:
-              - replyTo
-            properties:
-              replyTo:
-                type: string
-                description: Address to send the response to.
-      examples:
-        - summary: ""
-          payload:
-            headers:
-              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
-    receive_reply_get_implementation_ready:
-      name: receive_reply_get_implementation_ready
-      title: 'Reply to get Implementation Ready request'
-      summary: 'The most recently published Implementation Ready.'
-      contentType: application/json
-      payload:
-        oneOf:
-          - $ref: '#/components/schemas/ImplementationReady'
-          - type: 'null'
     send_request_get_charging_schedules:
       name: send_request_get_charging_schedules
       title: 'Request current Charging Schedules'
@@ -1237,9 +1154,8 @@ components:
       title: 'Receive heartbeat'
       summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
       description: |
-        The heartbeat signals that the bridge module serving this API is alive.
-        It says nothing about the readiness of the OCPP module behind it.
-        See receive_implementation_ready for that.
+        Signals that the bridge module serving this API as well as the underlying OCPP module are alive and ready.
+        It may take a while after EVerest startup for the first heartbeat from this module to arrive.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/HeartBeatId'
@@ -1719,11 +1635,6 @@ components:
           description: >-
             OCPP protocol version in use on the connection (e.g. 1.6, 2.0.1 or 2.1)
           type: string
-    ImplementationReady:
-      description: >-
-        Indicates whether the OCPP implementation has finished its startup and accepts commands
-        on this API. Unrelated to CSMS connectivity (see ConnectionStatus).
-      type: boolean
     CustomData:
       description: Custom data extension
       required:
