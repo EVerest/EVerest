@@ -8,9 +8,8 @@
 #include <everest/io/tcp/tcp_client.hpp>
 #include <everest/io/udp/udp_client.hpp>
 
+#include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/io/sdp_client.hpp>
-
-#include <iostream>
 
 using namespace std::chrono_literals;
 
@@ -26,10 +25,10 @@ void EvController::start_session() {
 
     everest::lib::io::udp::udp_client sdp_client(SDP_SERVER_ADDRESS, SDP_SERVER_PORT, 1000);
     sdp_client.set_error_handler(
-        [](int error, const std::string& message) { std::cerr << "ERROR ( " << error << " ): " << message << "\n"; });
+        [](int error, const std::string& message) { logf_error("SDP client error (%d): %s", error, message.c_str()); });
     sdp_client.set_rx_handler([&sdp_response, &running](const everest::lib::io::udp::udp_payload& payload,
                                                         everest::lib::io::udp::udp_client::interface& /*repl*/) {
-        std::cout << "UDP payload: " << std::string(payload.buffer.begin(), payload.buffer.end()) << "\n";
+        logf_debug("SDP response received, %zu bytes", payload.size());
         running = false; // TODO(SL): Check the norm if sdp should stop here or retrigger the sdp process
 
         if (payload.size() != io::SDP_RES_LENGTH) {
@@ -49,7 +48,9 @@ void EvController::start_session() {
         sdp_response = std::make_optional(sdp_response_);
     });
 
-    std::cout << "UDP socket ok? -> " << not sdp_client.on_error() << "\n";
+    if (sdp_client.on_error()) {
+        logf_error("SDP UDP socket is in an error state");
+    }
 
     everest::lib::io::event::timer_fd sdp_timeout;
     sdp_timeout.set_timeout(500ms); // TODO(SL): Check that in the standard
@@ -79,7 +80,7 @@ void EvController::start_session() {
     ev_handler.unregister_event_handler(&comm_failure_timeout);
 
     if (not sdp_response.has_value()) {
-        std::cout << "Stop session because there were no answer from a charger\n";
+        logf_error("Stopping session: no SDP response from any charger");
         return;
     }
 
@@ -89,12 +90,13 @@ void EvController::start_session() {
 
     // Create TCP Client
     everest::lib::io::tcp::tcp_client client(tcp_server_address, tcp_server_port, 1000);
-    client.set_error_handler(
-        [](int error, const std::string& message) { std::cerr << "ERROR ( " << error << " ): " << message << "\n"; });
+    client.set_error_handler([](int error, const std::string& message) {
+        logf_error("V2G TCP client error (%d): %s", error, message.c_str());
+    });
     client.set_rx_handler(
         [](const everest::lib::io::event::fd_event_client<everest::lib::io::tcp::tcp_socket>::payload& payload,
            everest::lib::io::tcp::tcp_client::interface& /*repl*/) {
-            std::cout << "TCP payload: " << std::string(payload.begin(), payload.end()) << "\n";
+            logf_debug("V2G TCP payload received, %zu bytes", payload.size());
         });
 
     // 1. Send udp message
