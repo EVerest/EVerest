@@ -23,14 +23,14 @@ void ServiceDiscovery::enter() {
 
 Result ServiceDiscovery::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::ServiceDiscoveryResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
     }
 
     const auto requested = m_ctx.selected_service();
@@ -41,7 +41,7 @@ Result ServiceDiscovery::feed(Event ev) {
         logf_error("ServiceDiscoveryResponse does not offer the requested energy transfer service: %d",
                    static_cast<int>(message_20::to_underlying_value(requested)));
         m_ctx.stop_session();
-        return {};
+        return Result::stopping();
     }
 
     return m_ctx.create_state<ServiceDetail>();

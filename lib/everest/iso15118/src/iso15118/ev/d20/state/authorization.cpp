@@ -51,19 +51,19 @@ void Authorization::enter() {
 
 Result Authorization::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::AuthorizationResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
     }
 
     if (res->evse_processing == message_20::datatypes::Processing::Ongoing) {
         m_ctx.send_request(make_request(m_ctx));
-        return {};
+        return Result::awaiting();
     }
 
     return m_ctx.create_state<ServiceDiscovery>();

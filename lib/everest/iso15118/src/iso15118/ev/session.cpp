@@ -188,9 +188,13 @@ void Session::handle_complete_frame() {
         if (message_exchange.has_request()) {
             arm_send_delay();
         } else if (not context.is_session_stopped()) {
-            // The watchdog was disarmed above, the state consumed the response, yet it
-            // produced neither a follow-up request nor a session stop. No timer is left
-            // armed, so the session would hang silently. Stop loudly instead.
+            // A state returned Disposition::Awaiting without emitting, or fell out of feed()
+            // some other way. The watchdog was disarmed above and nothing re-armed it, so the
+            // session would hang with no diagnostic. Stop loudly instead.
+            //
+            // This is the last line of defence, not the design: each return site declares its
+            // Disposition (see ev/d20/states.hpp), which is what makes "consumed, then did
+            // nothing" visible while reading a state rather than only when a session hangs.
             logf_warning("EV: state consumed a response without producing a request or stopping; "
                          "stopping the session");
             context.stop_session();

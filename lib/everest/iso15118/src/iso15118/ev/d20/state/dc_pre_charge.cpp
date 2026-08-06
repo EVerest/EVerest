@@ -36,14 +36,14 @@ void DC_PreCharge::enter() {
 
 Result DC_PreCharge::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::DC_PreChargeResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
     }
 
     const auto params = m_ctx.get_dc_params();
@@ -59,7 +59,7 @@ Result DC_PreCharge::feed(Event ev) {
     // precharge requests while its converter ramps, so the EV converges here before
     // transitioning; no Finished precharge request is ever emitted.
     m_ctx.send_request(make_request(m_ctx.get_session(), message_20::datatypes::Processing::Ongoing, params));
-    return {};
+    return Result::awaiting();
 }
 
 } // namespace iso15118::ev::d20::state

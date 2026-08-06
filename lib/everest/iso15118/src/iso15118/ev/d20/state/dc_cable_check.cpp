@@ -25,14 +25,14 @@ void DC_CableCheck::enter() {
 
 Result DC_CableCheck::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::DC_CableCheckResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
     }
 
     if (res->processing == message_20::datatypes::Processing::Finished) {
@@ -41,7 +41,7 @@ Result DC_CableCheck::feed(Event ev) {
 
     // Processing::Ongoing: re-poll
     m_ctx.send_request(make_request(m_ctx.get_session()));
-    return {};
+    return Result::awaiting();
 }
 
 } // namespace iso15118::ev::d20::state
