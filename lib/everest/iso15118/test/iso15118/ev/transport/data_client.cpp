@@ -213,10 +213,8 @@ SCENARIO("ISO15118-20 EV DataClient connects and exchanges raw V2GTP frames over
 
 SCENARIO("ISO15118-20 EV DataClient surfaces a failed connect via on_failed") {
     GIVEN("a closed port that nothing is listening on") {
-        // Bind+listen to learn a free port, then let the listener close so the
-        // connect is refused. libio's connect failure path sleeps for the full
-        // connect timeout (5 s) before reporting, so the surfacing is
-        // deterministic but not instant; the deadline below allows for it.
+        // libio's connect failure path sleeps the full 5s connect timeout before
+        // reporting, hence the generous deadline below.
         uint16_t closed_port = 0;
         {
             LoopbackListener listener;
@@ -251,8 +249,7 @@ SCENARIO("ISO15118-20 EV DataClient surfaces a failed connect via on_failed") {
                 }
                 REQUIRE(failed_count == 1);
 
-                // A reconnect must tear down the prior registration so the fresh
-                // client actually gets registered; otherwise register_events
+                // A reconnect must tear down the prior registration, or register_events
                 // short-circuits and the second failure never surfaces (hang).
                 client.connect(
                     loopback_endpoint(closed_port), "", [&]() { ++connected_count; }, [&]() { ++failed_count; });
@@ -271,11 +268,9 @@ SCENARIO("ISO15118-20 EV DataClient surfaces a failed connect via on_failed") {
 }
 
 SCENARIO("ISO15118-20 EV DataClient surfaces a peer disconnect on an established link") {
-    // on_failed was only ever exercised at connect time. A SECC that vanishes
-    // mid-session must surface the same way, or the EV keeps a dead socket and the
-    // session only ends when its per-request response watchdog expires.
-    // libio reports the drop as an error because a socket past the peer's FIN no
-    // longer counts as alive, so get_error() yields ECONNRESET.
+    // on_failed was only exercised at connect time before; a vanished SECC must
+    // surface the same way or the EV sits on a dead socket until the response
+    // watchdog expires. libio reports the drop as ECONNRESET.
     GIVEN("a connected DataClient") {
         LoopbackListener listener;
         fd_event_handler handler;
@@ -307,9 +302,8 @@ SCENARIO("ISO15118-20 EV DataClient surfaces a peer disconnect on an established
                 REQUIRE(failed_count == 1);
                 REQUIRE(connected_count == 1);
 
-                // The second half of the story: the Session's outbound seam runs through
-                // send(), so even a consumer that ignored on_failed cannot sit waiting for
-                // a response to a frame that was never transmitted.
+                // Session's outbound seam runs through send(), so even a consumer that
+                // ignores on_failed can't wait on a response to an untransmitted frame.
                 REQUIRE_FALSE(client.send({0x01, 0x02, 0x03}));
             }
         }

@@ -41,15 +41,10 @@ SCENARIO("ISO15118-20 EV Controller config defaults") {
 }
 
 SCENARIO("ISO15118-20 EV Controller shutdown stops the loop") {
-    // loop() runs SDP discovery on `lo`; with no SECC responding, the reactor stays
-    // in the pre-session phase (SDP retry + setup timeout, both far from elapsing).
-    // shutdown() must terminate run() promptly, well before the 18 s setup timeout,
-    // and fire the stopped callback.
-    //
-    // Note: this does not isolate shutdown's add_action wake from the periodic SDP
-    // retry timer that also wakes poll() (the wake only bounds the worst-case stop
-    // latency, which is not separately observable through loop()). A socket-level
-    // walk is deferred to the Session-level FSM-walk test.
+    // No SECC responding keeps the reactor in the pre-session phase, far from the
+    // 18 s setup timeout, so an early stop can only be shutdown() itself. Does not
+    // isolate that from the periodic SDP retry timer also waking poll(); a
+    // socket-level walk is deferred to the Session-level FSM-walk test.
     GIVEN("A Controller running SDP discovery with no SECC present") {
         ev::EvConfig config{};
         config.interface_name = "lo";
@@ -66,11 +61,8 @@ SCENARIO("ISO15118-20 EV Controller shutdown stops the loop") {
             std::thread worker([&controller]() { controller.loop(); });
 
             THEN("loop() returns promptly and fires the stopped callback") {
-                // Nothing marks the moment loop() enters reactor.run(), and a shutdown()
-                // racing ahead of `online = true` would be lost, so re-issue it on a short
-                // cadence until the worker reports stopped (or a generous deadline elapses).
-                // Each shutdown() is an idempotent flag+wake, so repeating it is harmless and
-                // robust against the startup ordering race.
+                // A shutdown() racing ahead of `online = true` would be lost, so re-issue
+                // it (idempotent flag+wake) until stopped or a deadline elapses.
                 const auto deadline = std::chrono::steady_clock::now() + 5s;
                 while (not stopped and std::chrono::steady_clock::now() < deadline) {
                     controller.shutdown();
@@ -84,10 +76,8 @@ SCENARIO("ISO15118-20 EV Controller shutdown stops the loop") {
 }
 
 SCENARIO("ISO15118-20 EV Session on_finished callback throwing does not escape") {
-    // The Controller (and any owner) clears its `online` flag from on_finished, which
-    // runs on the reactor thread inside check_finished(). A throwing owner callback
-    // must be swallowed (logged), fired exactly once, and must not re-enter once the
-    // session is already signalled.
+    // on_finished runs on the reactor thread inside check_finished(); a throwing
+    // owner callback must be swallowed (logged), not propagate, and fire only once.
     GIVEN("A Session whose on_finished throws on first invocation") {
         ev::test::SessionFixture fx{"EVTESTID01", ev::SessionTiming{5ms, 50ms}};
 
@@ -100,9 +90,8 @@ SCENARIO("ISO15118-20 EV Session on_finished callback throwing does not escape")
         WHEN("the session finishes (watchdog timeout) and the callback throws") {
             fx.session.start();
 
-            // Run the reactor through the SAP send and the watchdog expiry. A throw
-            // escaping the guard would propagate out of reactor.poll(); the loop below
-            // would then see it, so an unguarded callback fails the test by exception.
+            // A throw escaping the guard would propagate out of reactor.poll() and fail
+            // this test by exception.
             const auto deadline = std::chrono::steady_clock::now() + 2s;
             while (not fx.session.is_finished() and std::chrono::steady_clock::now() < deadline) {
                 fx.reactor.poll(1ms);
@@ -119,10 +108,7 @@ SCENARIO("ISO15118-20 EV Session on_finished callback throwing does not escape")
 
 SCENARIO("ISO15118-20 EV Controller request_stop marshals onto the reactor before the loop runs") {
     // request_stop must be safe to call off the reactor thread before loop() runs:
-    // it only queues an action (deliver StopCharging + arm the grace timer), never
-    // touching session or timer state synchronously. The action itself runs in loop();
-    // that deferred deliver is exercised by the grace-fallback scenario below and by
-    // the Session-level FSM walk.
+    // it only queues an action, never touching session/timer state synchronously.
     GIVEN("A Controller that has never run its loop") {
         ev::EvConfig config{};
         config.interface_name = "lo";
@@ -141,10 +127,9 @@ SCENARIO("ISO15118-20 EV Controller request_stop marshals onto the reactor befor
 }
 
 SCENARIO("ISO15118-20 EV Controller request_stop grace fallback hard-stops a stuck session") {
-    // With no SECC responding, the session never reaches the FSM, so a StopCharging
-    // control event has nothing to walk gracefully. request_stop arms a grace-period
-    // fallback (3x response_timeout) that must hard-stop the loop and fire stopped
-    // exactly once, well before the 18 s setup timeout.
+    // With no SECC responding the session never reaches the FSM, so StopCharging has
+    // nothing to walk gracefully; request_stop's grace fallback (3x response_timeout)
+    // must hard-stop instead.
     GIVEN("A Controller running SDP discovery with no SECC present") {
         ev::EvConfig config{};
         config.interface_name = "lo";
@@ -161,9 +146,8 @@ SCENARIO("ISO15118-20 EV Controller request_stop grace fallback hard-stops a stu
             std::thread worker([&controller]() { controller.loop(); });
 
             THEN("the grace fallback hard-stops the loop and fires stopped exactly once") {
-                // Give loop() a moment to enter reactor.run() and register the grace
-                // timer, then request a graceful stop exactly once. Re-issuing would
-                // re-arm the single-shot timer and defer the fallback indefinitely.
+                // Request the graceful stop exactly once: re-issuing would re-arm the
+                // single-shot grace timer and defer the fallback indefinitely.
                 std::this_thread::sleep_for(50ms);
                 controller.request_stop();
 
@@ -179,18 +163,13 @@ SCENARIO("ISO15118-20 EV Controller request_stop grace fallback hard-stops a stu
 }
 
 SCENARIO("ISO15118-20 EV Controller loop releases its reactor timers before returning") {
-    // loop() registers three timers (setup timeout, SDP retry, stop grace) on the
-    // reactor it owns; epoll rejects EPOLL_CTL_ADD on an fd it already holds. Leaving
-    // them registered therefore breaks the NEXT loop(): its very first
-    // register_event_handler fails and it aborts synchronously, long before the grace
-    // period it would otherwise wait out.
-    //
-    // Registration is not observable from outside the Controller, so this pins the
-    // consequence: 50 ms into the second run (the abort path is synchronous and
-    // sub-millisecond, while the only things that can end a healthy run are the not-yet
-    // armed grace timer and the 18 s setup timeout) the second run must still be
-    // running. request_stop, not shutdown, ends each run: shutdown latches
-    // stop_requested and the second loop() would early-return on it.
+    // loop() registers three timers on the reactor it owns; epoll rejects
+    // EPOLL_CTL_ADD on an fd it already holds, so leaving them registered would
+    // abort the NEXT loop() synchronously on its first register_event_handler.
+    // Registration isn't observable directly, so this pins the consequence: the
+    // second run must still be alive 50 ms in. Uses request_stop, not shutdown,
+    // since shutdown latches stop_requested and the second loop() would
+    // early-return on it.
     GIVEN("A Controller whose loop is run twice, ended by request_stop each time") {
         ev::EvConfig config{};
         config.interface_name = "lo";
@@ -203,8 +182,8 @@ SCENARIO("ISO15118-20 EV Controller loop releases its reactor timers before retu
 
         ev::Controller controller{config, callbacks};
 
-        // Runs loop() to completion, returning the stopped count observed just before
-        // the graceful stop was requested (i.e. whether the run was still alive then).
+        // Runs loop() once, returning whether it was still alive just before the
+        // graceful stop was requested.
         const auto run_and_stop = [&controller, &stopped_count]() {
             const auto before = stopped_count.load();
             std::thread worker([&controller]() { controller.loop(); });
@@ -234,13 +213,10 @@ SCENARIO("ISO15118-20 EV Controller loop releases its reactor timers before retu
 }
 
 SCENARIO("ISO15118-20 EV Controller aborts the pre-session phase on the setup timeout") {
-    // The setup timeout is the only bound on a discovery/connect that never completes.
-    // Every other Controller scenario keeps it far from elapsing, so nothing pinned
-    // that it actually ends the run: a timer that failed to fire would leave loop()
-    // parked forever with no stopped signal, and the tests would not notice.
-    //
-    // The timeout is a fixed 18 s production constant with no injection seam, so this
-    // scenario pays that wall time.
+    // The setup timeout is the only bound on a discovery/connect that never
+    // completes; every other scenario keeps it far from elapsing, so this is the one
+    // place that actually pins it firing. Fixed 18 s production constant, no
+    // injection seam, so this scenario pays the wall time.
     GIVEN("A Controller running SDP discovery on lo with no SECC present") {
         ev::EvConfig config{};
         config.interface_name = "lo";
@@ -259,9 +235,8 @@ SCENARIO("ISO15118-20 EV Controller aborts the pre-session phase on the setup ti
             ControllerRun run{controller};
 
             THEN("the setup timeout ends the run and fires stopped exactly once") {
-                // The setup-failure aborts are synchronous and sub-millisecond, and the
-                // request_stop grace timer is never armed, so nothing but the setup
-                // timeout can end this run. Five seconds in it must still be alive.
+                // The grace timer is never armed, so nothing but the setup timeout can
+                // end this run; it must still be alive five seconds in.
                 const auto alive_at_five_seconds = not poll_until([&]() { return stopped_count > 0; }, 5s);
 
                 const auto ended = poll_until([&]() { return stopped_count > 0; }, 20s);
