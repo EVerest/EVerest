@@ -124,6 +124,14 @@ must be locked down accordingly:
 The bundled devcontainer broker config (``mosquitto-external.conf``) uses ``allow_anonymous true`` and is
 suitable for local development and SIL testing only.
 
+UUID namespacing
+-----------------
+Energy-tree uuids are EVerest module ids, which are unique only within one process. The client therefore
+prefixes every uuid in the server's aggregate with ``{server_id}:`` before republishing it locally, and only
+forwards ``enforce_limits`` whose uuid carries that prefix (stripping it on the way out). A limit computed for
+one process's ``cp01`` can thus never be applied by another process's ``cp01``, and limits addressed to purely
+local nodes are not needlessly fanned out across the bridge.
+
 Stale children
 ---------------
 The server keeps the last ``energy_flow_request`` of every child that has ever published one; there is no

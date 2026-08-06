@@ -54,7 +54,7 @@ public:
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
-    // Cached enforce_limits topic — set during ready(), used in handle_enforce_limits.
+    // Cached enforce_limits topic — set during init(), used in handle_enforce_limits.
     std::string enforce_limits_topic;
 
     ev_API::Mqtt::ValidatingMqttProxy mqtt_v{mqtt};
