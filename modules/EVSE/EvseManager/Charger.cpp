@@ -284,7 +284,10 @@ void Charger::run_state_machine() {
                     error_handling->raise_internal_error("Unsupported charging mode.");
                 }
 
-                if (hlc_use_5percent_current_session) {
+                // Skip the SLAC readiness sleep and do not enable 5 percent PWM if the EV is
+                // already unplugged: the checks directly below this initialization will bail
+                // out to Finished in the same state machine pass.
+                if (hlc_use_5percent_current_session and shared_context.flag_ev_plugged_in) {
                     // FIXME: wait for SLAC to be ready. Teslas are really fast with sending the first slac packet after
                     // enabling PWM.
                     std::this_thread::sleep_for(
@@ -582,11 +585,20 @@ void Charger::run_state_machine() {
                     cp_state_X1();
                 }
             }
-            if (time_in_current_state >= config_context.switch_3ph1ph_delay_s * 1000) {
-                session_log.evse(false, "Exit switching phases");
-                bsp->switch_three_phases_while_charging(shared_context.switch_3ph1ph_threephase);
-                shared_context.switch_3ph1ph_threephase_ongoing = false;
-                shared_context.current_state = internal_context.switching_phases_return_state;
+            {
+                const bool fatal_error = stop_charging_on_fatal_error_internal();
+                if (fatal_error or not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
+                    // Unplug, disable or a fatal error during the switching break. Go back to
+                    // the return state, its checks will tear down the session. The pending
+                    // relay switch is still executed by the generic SwitchPhases cleanup above.
+                    session_log.evse(false, fmt::format("Exit switching phases: {}", stop_reason_flags(fatal_error)));
+                    shared_context.current_state = internal_context.switching_phases_return_state;
+                } else if (time_in_current_state >= config_context.switch_3ph1ph_delay_s * 1000) {
+                    session_log.evse(false, "Exit switching phases");
+                    bsp->switch_three_phases_while_charging(shared_context.switch_3ph1ph_threephase);
+                    shared_context.switch_3ph1ph_threephase_ongoing = false;
+                    shared_context.current_state = internal_context.switching_phases_return_state;
+                }
             }
             break;
 
@@ -595,6 +607,18 @@ void Charger::run_state_machine() {
                 session_log.evse(false, "Enter T_step_EF");
                 internal_context.t_step_ef_x1_pause = false;
                 cp_state_F();
+            }
+            {
+                const bool fatal_error = stop_charging_on_fatal_error_internal();
+                if (fatal_error or not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
+                    // Unplug, disable or a fatal error during the sequence. Leave state F, but
+                    // do not restore PWM: go back to the return state, its checks will tear
+                    // down the session.
+                    session_log.evse(false, fmt::format("Exit T_step_EF: {}", stop_reason_flags(fatal_error)));
+                    cp_state_X1();
+                    shared_context.current_state = internal_context.t_step_EF_return_state;
+                    break;
+                }
             }
             if (time_in_current_state >= T_STEP_EF + STAY_IN_X1_AFTER_TSTEP_EF_MS) {
                 session_log.evse(false, "Exit T_step_EF");
@@ -620,6 +644,17 @@ void Charger::run_state_machine() {
             if (initialize_state) {
                 session_log.evse(false, "Enter T_step_X1");
                 cp_state_X1();
+            }
+            {
+                const bool fatal_error = stop_charging_on_fatal_error_internal();
+                if (fatal_error or not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
+                    // Unplug, disable or a fatal error during the sequence. CP is already in
+                    // X1, do not restore PWM: go back to the return state, its checks will
+                    // tear down the session.
+                    session_log.evse(false, fmt::format("Exit T_step_X1: {}", stop_reason_flags(fatal_error)));
+                    shared_context.current_state = internal_context.t_step_X1_return_state;
+                    break;
+                }
             }
             if (time_in_current_state >= T_STEP_X1) {
                 session_log.evse(false, "Exit T_step_X1");
