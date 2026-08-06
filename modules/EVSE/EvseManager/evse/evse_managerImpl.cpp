@@ -150,7 +150,6 @@ void evse_managerImpl::ready() {
                     provided_token.prevalidated = true;
                     mod->charger->authorize(true, provided_token,
                                             {types::authorization::AuthorizationStatus::Accepted});
-                    mod->charger_was_authorized();
                 });
                 authorize_thread.detach();
             }
@@ -434,7 +433,6 @@ void evse_managerImpl::handle_authorize_response(types::authorization::ProvidedI
         }
 
         this->mod->charger->authorize(true, provided_token, validation_result);
-        mod->charger_was_authorized();
         if (validation_result.reservation_id.has_value()) {
             EVLOG_debug << "Reserve evse manager reservation id for id " << validation_result.reservation_id.value();
             // The validation result returns a reservation id. If this was a reservation for a specific evse, the
