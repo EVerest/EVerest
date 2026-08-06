@@ -2,6 +2,8 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <cstdint>
+
 namespace iso15118::ev {
 
 /**
@@ -13,8 +15,13 @@ namespace iso15118::ev {
  * Context::get_ac_params().
  */
 struct AcChargeParams {
-    // Static: advertised limits, as three-phase totals. Per-phase L2/L3 fields are
-    // never emitted; repeating the total on each phase would overstate the limit.
+    // The EV's own line count, 1 or 3. Decides how the totals below are divided; it is not the
+    // charger's, which arrives separately as the selected connector.
+    uint8_t phase_count{3};
+
+    // Static: advertised limits, as totals across the EV's own phase_count lines. They are split
+    // per line at emission time (\ref split_ac_limit), because ISO 15118-20 reads the base element
+    // as a sum or as L1 depending on the selected connector and on whether peers are present.
     float max_charge_power{0.0f};
     float min_charge_power{0.0f};
     float max_discharge_power{0.0f};

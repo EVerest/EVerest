@@ -64,6 +64,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    virtual void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     enum class SessionPhase {
