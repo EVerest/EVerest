@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH, Roger Bedell, and Contributors to EVerest
+// Copyright 2026 Pionix GmbH, Roger Bedell, and Contributors to EVerest
 #include <algorithm>
 #include <iomanip>
 #include <iso15118/detail/helper.hpp>
