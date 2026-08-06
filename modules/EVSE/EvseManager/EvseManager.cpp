@@ -2547,6 +2547,8 @@ void EvseManager::fail_cable_check(const std::string& reason) {
     if (config.charge_mode == "DC") {
         power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
         powersupply_DC_off();
+        // An abandoned self test must be stopped here, so the IMD can abort cleanly
+        imd_stop();
         // CC.4.1.2: We need to wait until voltage is below 60V before sending a CableCheck Finished to the EV
         if (not wait_powersupply_DC_below_voltage(CABLECHECK_SAFE_VOLTAGE)) {
             EVLOG_error << "Voltage did not drop below 60V within timeout, sending CableCheck Finished(false) anyway";
