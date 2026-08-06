@@ -36,6 +36,7 @@ true and hence downloading the schema files, YOU accept the ISO Customer \
 Licence Agreement (“Licence Agreement”), clauses 1. ISO’s Copyright, \
 7. Termination, 8. Limitations, and 9. Governing Law." OFF)
 
+option(ISO15118_BUILD_EV_SIDE "Build the EV (EVCC) side of the stack, not just the SECC" OFF)
 option(ISO15118_INSTALL "Enable install target" ${EVC_MAIN_PROJECT})
 option(DISABLE_ISO15118_LOCAL_DEPENDENCIES "Disable local dependency lookup for libiso15118" OFF)
 option(ISO15118_USE_EXPORTED_BUILD "Use (experimental) exported build of libiso15118" OFF)
