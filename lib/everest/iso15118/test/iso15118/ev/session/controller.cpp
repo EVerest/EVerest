@@ -46,15 +46,10 @@ SCENARIO("ISO15118-20 EV Controller config defaults") {
 }
 
 SCENARIO("ISO15118-20 EV Controller shutdown stops the loop") {
-    // loop() runs SDP discovery on `lo`; with no SECC responding, the reactor stays
-    // in the pre-session phase (SDP retry + setup timeout, both far from elapsing).
-    // shutdown() must terminate run() promptly, well before the 18 s setup timeout,
-    // and fire the stopped callback.
-    //
-    // Note: this does not isolate shutdown's add_action wake from the periodic SDP
-    // retry timer that also wakes poll() (the wake only bounds the worst-case stop
-    // latency, which is not separately observable through loop()). A socket-level
-    // walk is deferred to the pump-level FSM-walk test.
+    // With no SECC responding, the reactor sits in the pre-session phase. shutdown() must
+    // terminate run() well before the 18 s setup timeout and fire the stopped callback.
+    // It does not isolate the add_action wake from the SDP retry timer, which also wakes
+    // poll(); that latency is not observable through loop().
     GIVEN("A Controller running SDP discovery with no SECC present") {
         ev::EvConfig config{};
         config.interface_name = "lo";
@@ -72,9 +67,8 @@ SCENARIO("ISO15118-20 EV Controller shutdown stops the loop") {
             std::thread worker([&controller]() { controller.loop(); });
 
             THEN("loop() returns promptly and fires the stopped callback") {
-                // No observable signal marks the moment loop() enters reactor.run(), and a
-                // shutdown() racing ahead of loop()'s `online = true` would be lost. Rather
-                // than sleep a fixed interval and hope, re-issue shutdown() on a short
+                // Nothing marks the moment loop() enters reactor.run(), and a shutdown()
+                // racing ahead of `online = true` would be lost, so re-issue it on a short
                 // cadence until the worker reports stopped (or a generous deadline elapses).
                 // Each shutdown() is an idempotent flag+wake, so repeating it is harmless and
                 // robust against the startup ordering race.
