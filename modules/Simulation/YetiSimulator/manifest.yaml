@@ -24,6 +24,12 @@ config:
     type: number
     default: 230.0
     minimum: 99.0
+  ac_nominal_frequency:
+    description: Nominal AC grid frequency in Hertz, reported per phase by the simulated power meter
+    type: number
+    default: 50.0
+    minimum: 50.0
+    maximum: 60.0
 provides:
   powermeter:
     interface: powermeter
