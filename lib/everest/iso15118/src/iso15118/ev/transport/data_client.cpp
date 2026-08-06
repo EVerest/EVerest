@@ -50,10 +50,8 @@ void DataClient::connect(const iso15118::io::Ipv6EndPoint& endpoint, const std::
         return;
     }
 
-    // The scope for a link-local SECC address is supplied by binding the socket
-    // to the egress interface via SO_BINDTODEVICE; without it connect() to an
-    // fe80:: address fails with EINVAL. An empty device leaves the socket unbound
-    // (the unit-test path); the production caller always passes the egress device.
+    // SO_BINDTODEVICE supplies the scope for a link-local SECC address; without it
+    // connect() to an fe80:: address fails with EINVAL. Empty leaves it unbound, for tests.
     try {
         // The tcp_client ctor registers and make_shared internally and is not
         // noexcept; a throw must not escape with client null and on_failed
@@ -67,10 +65,8 @@ void DataClient::connect(const iso15118::io::Ipv6EndPoint& endpoint, const std::
             }
         });
 
-        // libio connects on a detached thread and routes connect/socket failures
-        // through the error handler; without this, a failed or timed-out connect
-        // is invisible because on_connected simply never fires. The handler also
-        // fires on the error-cleared transition (errno 0), which is not a failure.
+        // libio connects on a detached thread, so without this a failed connect is invisible:
+        // on_connected simply never fires. Also fires on error-cleared (errno 0).
         client->set_error_handler([this](int error, std::string const& msg) {
             if (error == 0) {
                 // error-cleared transition, not a failure

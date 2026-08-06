@@ -14,15 +14,11 @@ namespace iso15118::ev {
 
 namespace {
 
-// Bounds the pre-session phase (SDP discovery + TCP connect). Once the session
-// starts this is disarmed and the session's per-request response watchdog governs.
-// Reconciled with the SECC's V2G_COMMUNICATION_SETUP_TIMEOUT_MS{18000} (the V2G
-// communication setup timeout the EVSE applies): use the same 18000 ms here so
-// both ends bound the pre-session phase identically.
+// Bounds SDP discovery plus TCP connect; the session's response watchdog takes over after.
+// Matches the SECC's V2G_COMMUNICATION_SETUP_TIMEOUT_MS so both ends agree.
 constexpr auto SETUP_TIMEOUT = std::chrono::milliseconds(18000);
 
-// SDP request retransmit interval: the EV resends the discovery request on this
-// cadence until a response arrives or the setup timeout elapses.
+// SDP discovery retransmit cadence.
 constexpr auto SDP_RETRY_INTERVAL = std::chrono::milliseconds(250);
 
 } // namespace
@@ -35,18 +31,13 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcCharg
         sdp_client.emplace(config.interface_name, config.advertised_security);
     }
 
-    // Wire the Session's outbound seam. The data client does not exist yet (it is
-    // created in establish_data_path once the transport security is known), so the
-    // lambda dereferences it lazily; by the time the first frame is sent (from
-    // session->start(), invoked on connect) the client is in place. The Session
-    // keeps its own copy of the callbacks (for v2g_message / session_setup_response);
-    // the Controller wraps a separate copy in its own Feedback for connected / stopped.
+    // The data client is created later, in establish_data_path, so this dereferences it
+    // lazily; it exists by the time the first frame is sent on connect.
     session = std::make_unique<Session>(
         callbacks_,
         [this](std::vector<uint8_t> frame) {
-            // Report the send result so the Session can stop loudly. Both failure
-            // modes (a missing data client for a frame produced before the connect
-            // chain ran, and a refused transmit) return false; either would otherwise
+            // Report the result so the Session can stop loudly; both failure modes
+            // (no data client yet, or a refused transmit) return false and would otherwise
             // only show up as a downstream watchdog timeout.
             if (not data_client) {
                 logf_error("EV Controller: outbound frame before data client exists; dropping");
@@ -61,10 +52,7 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcCharg
         reactor, SessionTiming{config.send_delay, config.response_timeout}, config.evcc_id,
         config.advertised_app_protocols, &dc_params);
 
-    // The session can finish inside a timer callback (the response watchdog), so
-    // the run loop can't poll is_finished() between events; let the session clear
-    // `online` directly when it ends. Disarm the request_stop grace fallback on the
-    // same seam so a graceful finish leaves no stale timer armed.
+    // The session can finish inside a timer callback, so the run loop cannot poll for it.
     session->set_on_finished([this]() {
         online = false;
         stop_grace_timer.disarm();

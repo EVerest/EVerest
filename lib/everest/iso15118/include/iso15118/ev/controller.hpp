@@ -124,11 +124,8 @@ private:
     // graceful stop walk does not finish in time. Single-shot; disarmed on finish.
     everest::lib::io::event::timer_fd stop_grace_timer;
 
-    // Declaration order is load-bearing: the reactor outlives the clients that
-    // register fds with it. The data client is created at runtime (in
-    // establish_data_path) once the transport security is known, so the Session's
-    // outbound lambda dereferences it lazily; both are held by unique_ptr and the
-    // Session is constructed last.
+    // Declaration order is load-bearing: the reactor must outlive the clients that
+    // register fds with it, and the Session is constructed last.
     everest::lib::io::event::fd_event_handler reactor;
     std::optional<transport::SdpClient> sdp_client;
     std::unique_ptr<transport::DataClient> data_client;
