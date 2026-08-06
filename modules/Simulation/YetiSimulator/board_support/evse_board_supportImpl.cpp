@@ -28,9 +28,16 @@ void evse_board_supportImpl::init() {
 }
 
 void evse_board_supportImpl::ready() {
-    const auto default_capabilities =
-        set_default_capabilities(mod->config.max_current_A_import, mod->config.min_current_A_import);
-    publish_capabilities(default_capabilities);
+    auto capabilities = set_default_capabilities(mod->config.max_current_A_import, mod->config.min_current_A_import);
+    if (mod->config.caps_min_current_A >= 0) {
+        capabilities.min_current_A_import = mod->config.caps_min_current_A;
+        capabilities.min_current_A_export = mod->config.caps_min_current_A;
+    }
+    if (mod->config.caps_max_current_A >= 0) {
+        capabilities.max_current_A_import = mod->config.caps_max_current_A;
+        capabilities.max_current_A_export = mod->config.caps_max_current_A;
+    }
+    publish_capabilities(capabilities);
 }
 
 void evse_board_supportImpl::handle_enable(bool& value) {

@@ -44,6 +44,18 @@ config:
     type: number
     minimum: 0
     default: 6.0
+  caps_min_current_A:
+    description: >-
+      Minimal current on AC side reported in hardware capabilities.
+      -1 means use min_current_A_import for import and the built-in default for export (0 A).
+    type: integer
+    default: -1
+  caps_max_current_A:
+    description: >-
+      Maximum current on AC side reported in hardware capabilities.
+      -1 means use max_current_A_import for import and the built-in default for export (16 A).
+    type: integer
+    default: -1
 provides:
   powermeter:
     interface: powermeter
