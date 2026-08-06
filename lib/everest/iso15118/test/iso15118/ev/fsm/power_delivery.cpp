@@ -160,16 +160,20 @@ SCENARIO("ISO15118-20 EV PowerDelivery accepts OK_PowerToleranceConfirmed") {
     REQUIRE(primed.ctx.is_session_stopped() == false);
 }
 
-SCENARIO("ISO15118-20 EV PowerDelivery accepts WARNING_StandbyNotAllowed") {
+SCENARIO("ISO15118-20 EV PowerDelivery stops the session on an accepted Standby it cannot drive") {
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, no_seed, Progress::Standby};
 
     primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::WARNING_StandbyNotAllowed));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
 
+    // The response is accepted, but the EV drives no standby loop, so it emits nothing and there
+    // is nothing left to advance the session. It stops here rather than parking silently. This
+    // was already the end-to-end outcome via Session's consumed-but-idle catch-all; the state now
+    // says so itself, which is what makes it visible without running a session.
     REQUIRE(result.transitioned() == false);
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
-    REQUIRE(primed.ctx.is_session_stopped() == false);
+    REQUIRE(primed.ctx.is_session_stopped());
 }
 
 SCENARIO("ISO15118-20 EV PowerDelivery stops session on FAILED_ContactorError") {
