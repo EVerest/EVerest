@@ -443,7 +443,10 @@ module rolls back to the last accepted capability; an EVSE whose very first capa
 
 The CSMS may write the ``Enabled`` variable (``ReadWrite``). Writing ``Enabled="false"`` makes the module push an empty
 directive replacement set to that EVSE, so the device clears the EV's curves; writing ``Enabled="true"`` republishes the
-filtered active set for that EVSE. A CSMS-written ``Enabled`` persists across reboots and is restored at boot.
+filtered active set for that EVSE. A CSMS-written ``Enabled`` persists across reboots and is restored at boot. The
+curve-clearing effect applies to an EVSE configured for the ISO 15118-20 ``AC_DER_IEC`` annex: the push itself always
+happens, but the device's directive relay maps IEC control functions only, so nothing reaches a session running the
+``AC_DER_SAE`` annex.
 
 The device reports grid event faults through the ``alarm`` variable, forwarded to the CSMS as a **NotifyDERAlarm.req**.
 Alarms raised before the backend has accepted a capability for any EVSE are buffered and delivered once the first
@@ -451,8 +454,11 @@ capability is accepted; if no capability is ever accepted, the buffered alarms a
 received before the charge point is initialized are queued and replayed once the charge point is ready.
 
 In addition to enabling the DER device-model component, the module asserts DER availability to the matching EvseManager
-via its **set_der_available** command, so that EvseManager can advertise the corresponding ISO 15118-20 DER energy
-transfer modes. If the device model rejects the capability, DER availability is withdrawn instead.
+via its **set_der_available** command, so that EvseManager can advertise an ISO 15118-20 AC DER energy transfer mode.
+Which annex is advertised (``AC_DER_IEC`` or ``AC_DER_SAE``, or neither) is EvseManager's own
+``iso15118_der_flavor`` config choice, not something OCPP selects; it defaults to ``NONE``, so asserting
+availability alone does not advertise a DER service. If the device model rejects the capability, DER availability is
+withdrawn instead.
 
 The configuration parameter **GridSupportHeartbeatS** sets the interval (in seconds) at which the current active
 directive set is re-sent for every registered EVSE. A value of ``0`` disables the heartbeat; the set is then sent only
