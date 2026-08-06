@@ -1,8 +1,14 @@
-# EVerest Core: Agent Guidelines
+# EVerest: Agent Guidelines
 
-Guidance for AI coding agents working in `everest-core`: runtime manager, modules,
-shared libraries, interface definitions, test infrastructure. C++ primary, plus Python,
-Rust and JavaScript. CMake with Ninja; CI also builds with Bazel.
+Guidance for AI coding agents working in `EVerest`, the mono-repository formerly named
+`everest-core`: runtime manager, modules, shared libraries, interface definitions, test
+infrastructure. C++ primary, plus Python, Rust and JavaScript. CMake with Ninja; CI also
+builds with Bazel.
+
+Libraries that once lived in separate `lib*` repositories are now in-tree under
+`lib/everest/` and are edited in place; there is no upstream repository to mirror them
+to. A few EVerest components are still external dependencies in `dependencies.yaml`,
+notably the Python Josev stack (`ext-switchev-iso15118`).
 
 Contributor policy (licensing, DCO, review, and the project's position on AI-generated
 contributions) is in `docs/source/project/contributing.rst`. This file covers mechanics
@@ -10,8 +16,11 @@ only: build, run, test, code generation, and invariants.
 
 ## Documentation
 
-Prefer project docs over inference, and cite them. Rendered at
-<https://everest.github.io>, starting with the
+Prefer project docs over your own assumptions, and cite them. When docs and the tree
+disagree, the tree wins: manifests, `interfaces/*.yaml` and code describe current
+behavior, docs describe intent. Say so when you find the two diverging.
+
+Docs are rendered at <https://everest.github.io>, starting with the
 [Getting Started Guides](https://everest.github.io/nightly/how-to-guides/getting-started/index.html).
 Sphinx sources are under `docs/source/`: `explanation/` for concepts, `how-to-guides/`
 for recipes. Per-module docs are at `modules/<Category>/<Module>/docs/index.rst`; update
@@ -138,7 +147,7 @@ ev-cli mod update <Category>/<Name> --work-dir . --build-dir build -f
 cmake -S . -B build     # codegen for build/generated/ runs at configure time
 ```
 
-Three traps:
+Traps:
 
 - The module argument is a path relative to `modules/`, so `EVSE/EvseManager`, not a
   bare `EvseManager`. A bare name fails with `Could not open type definition file`.
@@ -148,9 +157,8 @@ Three traps:
 - `--clang-format-file` takes a directory, not a file, and formatting through ev-cli
   bypasses the version CI uses. Prefer `--disable-clang-format`.
 
-Actions: `mod create|update|generate-loader` (`c|u|gl`), `if generate-headers` and
-`ty generate-headers` (`gh`), `hlp generate-uuids|yaml2json|json2yaml`. `--only which`
-lists the files an action would touch.
+`ev-cli --help` lists the available actions; `--only which` lists the files an action
+would touch.
 
 ## Code style
 
@@ -175,9 +183,6 @@ Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
 | API module | `modules/API/API/` | directory name is doubled |
 | libocpp | `lib/everest/ocpp/` | vendored |
 
-Shared libraries under `lib/everest/` are edited in place. There is no separate upstream
-repository to mirror them to.
-
 ## Invariants
 
 - Never remove `// ev@<uuid>:v1` markers from `*Impl.cpp` or `CMakeLists.txt`.
@@ -191,8 +196,8 @@ repository to mirror them to.
 
 ## Contributing essentials
 
-Full policy: `docs/source/project/contributing.rst`. The four items agents get wrong
-most often:
+Full policy: `docs/source/project/contributing.rst`. The items agents get wrong most
+often:
 
 - Sign off every commit (`Signed-off-by`, DCO), enforced by
   `.github/workflows/job_dco-check.yaml`.
@@ -201,5 +206,7 @@ most often:
   was addressed. Squashing to a single commit once approved is how changes land.
 - Every contribution must be reviewed and understood by a human before submission.
 
-Commit subjects follow Conventional Commits and name the affected module, for example
-`fix(EvseManager): handle unplug during timed charging`.
+Commit subjects and pull request titles follow Conventional Commits and name the affected
+module, for example `fix(EvseManager): handle unplug during timed charging`. Changes land
+as GitHub squash merges, so the pull request title becomes the commit subject and the
+description becomes its body.
