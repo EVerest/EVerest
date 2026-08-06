@@ -90,6 +90,12 @@ private:
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     everest::lib::util::monitor<types::energy::EnergyFlowRequest> aggregate;
 
+    // One-entry schedule with no limits set (= unlimited pass-through).
+    // An EMPTY schedule would mean "nothing available" to the EnergyManager
+    // optimizer (see Market.cpp: zero_schedule_req), clamping every EVSE below
+    // this node to 0 A.
+    std::vector<types::energy::ScheduleReqEntry> get_local_schedule() const;
+
     ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
                                                                ev_API::bridge_connection_lost_message, p_main};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1

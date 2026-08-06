@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <string_view>
 
+#include <utils/date.hpp>
+
 #include <everest_api_types/energy/codec.hpp>
 #include <everest_api_types/energy/wrapper.hpp>
 #include <everest_api_types/utilities/codec.hpp>
@@ -20,11 +22,18 @@ void external_energy_node_API::init() {
     invoke_init(*p_main);
     invoke_init(*p_energy_grid);
 
-    // Initialise aggregate UUID from module id
+    // Initialise aggregate from module id
     {
         auto agg = aggregate.handle();
         agg->uuid = info.id;
         agg->node_type = types::energy::NodeType::Generic;
+
+        // Always seed a one-entry schedule: an empty schedule_import/export is
+        // interpreted by the EnergyManager optimizer as "nothing available"
+        // (Market.cpp: zero_schedule_req) and would clamp every EVSE below this
+        // node to 0 A. The entry carries no limits (= unlimited pass-through).
+        agg->schedule_import = get_local_schedule();
+        agg->schedule_export = get_local_schedule();
     }
 
     // Initialise ApiHelper — registers heartbeat and communication-check parameters.
@@ -59,6 +68,13 @@ void external_energy_node_API::ready() {
     helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
 
     helper.publish_ready_beacon();
+}
+
+std::vector<types::energy::ScheduleReqEntry> external_energy_node_API::get_local_schedule() const {
+    types::energy::ScheduleReqEntry entry;
+    entry.timestamp = Everest::Date::to_rfc3339(date::utc_clock::now());
+    // leave limits_to_root / limits_to_leaves unset => unlimited pass-through
+    return {entry};
 }
 
 void external_energy_node_API::generate_api_var_energy_flow_request() {
