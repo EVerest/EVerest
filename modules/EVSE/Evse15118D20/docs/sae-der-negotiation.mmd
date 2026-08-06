@@ -1,0 +1,31 @@
+sequenceDiagram
+    participant EV
+    participant SECC as SECC AC_DER_SAE states
+    participant Config as DerSaeSetupConfig
+
+    Note over Config: default der_control is inert:<br/>every enable false, permit_service false
+
+    rect rgb(238, 244, 250)
+    Note over EV, Config: charge parameter discovery
+    EV->>SECC: DER_SAE_AC_ChargeParameterDiscoveryReq<br/>SupportedModes, EnabledModes, EV limits
+    Note over SECC: declare: SupportedModes AND 0x05FFFDFB<br/>bits 2, 9, 25 and 27 to 31 are unused and ignored<br/>EnabledModes in the request is not consumed
+    SECC->>SECC: session.set_ev_supported_sae_functions(masked)
+    Config-->>SECC: der_control, required_der_operating_mode,<br/>grid_connection_mode, der_control_update_time
+    Note over SECC: enable: gate_enables_by_supported_modes clears<br/>every Enable whose function the EV did not declare.<br/>There is no SECC-side mode bitmap.
+    SECC-->>EV: DER_SAE_AC_ChargeParameterDiscoveryRes<br/>DERControlCPDRes with per-function Enable,<br/>SAE transfer limits, UpdateTime
+    SECC->>SECC: session.record_der_control_sent(der_control_update_time)
+    end
+
+    rect rgb(240, 248, 240)
+    Note over EV, Config: charge loop
+    loop every DER_SAE_AC_ChargeLoopReq
+        EV->>SECC: DER_SAE_AC_ChargeLoopReq<br/>EnabledModes, DERAlarmStatus
+        Note over SECC: acknowledge: EnabledModes, masked with<br/>SAE_ENABLED_MODE_MASK, is compared against the modes<br/>the SECC enabled. A mismatch is one latched warning, not an error.
+        alt der_control_update_time changed since discovery
+            SECC-->>EV: DERControlCLRes: EnterServiceCLRes plus voltage_trip,<br/>frequency_trip, reactive_power_support_cl_res,<br/>active_power_support_cl_res
+            SECC->>SECC: session.record_der_control_sent(der_control_update_time)
+        else unchanged
+            SECC-->>EV: DERControlCLRes: EnterServiceCLRes.permit_service only
+        end
+    end
+    end

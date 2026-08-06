@@ -32,9 +32,9 @@ config:
     default: 230
   ac_nominal_frequency:
     description: >-
-      Nominal AC grid frequency in Hz, normally 50 or 60. Passed to the HLC stack as the reference for
-      the ISO 15118-20 AC DER frequency-trip and frequency-droop grid code, so a wrong value makes the
-      SECC declare its trip thresholds against the wrong reference.
+      Nominal AC grid frequency in Hz, normally 50 or 60. Advertised for ISO 15118-20 AC DER as the
+      GridNominalFrequency the EV adopts, so it must match the installation. It does not scale the grid
+      code frequency-trip curves, which are in absolute Hz.
     type: number
     minimum: 1
     default: 50
@@ -76,13 +76,17 @@ config:
     default: false
   iso15118_der_flavor:
     description: >-
-      Which ISO 15118-20 Amendment 1 AC DER annex to advertise when DER support is wired. IEC is Annex L,
-      SAE is Annex M. The two are mutually exclusive per EVSE.
+      Which ISO 15118-20 Amendment 1 AC DER annex to advertise: IEC is Annex L, SAE is Annex M, NONE
+      advertises neither. The two annexes are mutually exclusive per EVSE, so at most one AC DER energy
+      transfer mode is ever advertised. Takes effect only when DER availability has been asserted for this
+      EVSE and the EVSE is export-capable; SAE additionally needs the AC parameters. grid_support DER
+      directives reach the IEC control functions only, so a SAE EVSE runs the inert default grid code.
     type: string
     enum:
+      - NONE
       - IEC
       - SAE
-    default: IEC
+    default: NONE
   ac_hlc_enabled:
     description: Enable or disable HLC (aka ISO15118) for AC mode
     type: boolean
