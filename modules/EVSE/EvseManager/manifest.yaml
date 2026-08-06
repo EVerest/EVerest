@@ -140,6 +140,13 @@ config:
       Voltage to set for the self test using cable_check_enable_imd_self_test_relays_open option.
     type: integer
     default: 48
+  cable_check_relays_open_self_test_delay_ms:
+    description: >-
+      Delay in milliseconds before starting the early IMD self test (cable_check_enable_imd_self_test_relays_open option).
+      Some IMDs need time to return to their ready state after the previous session released them
+      before they accept a new self test request. Set to 0 to start the self test immediately.
+    type: integer
+    default: 0
   cable_check_relays_closed_timeout_s:
     description: >-
       Timeout in seconds to wait for the relays to close at the beginning of cablecheck.

@@ -82,6 +82,7 @@ struct Conf {
     bool cable_check_enable_imd_self_test;
     bool cable_check_enable_imd_self_test_relays_open;
     int cable_check_relays_open_voltage_V;
+    int cable_check_relays_open_self_test_delay_ms;
     int cable_check_relays_closed_timeout_s;
     bool cable_check_wait_below_60V_before_finish;
     bool hack_skoda_enyaq;
