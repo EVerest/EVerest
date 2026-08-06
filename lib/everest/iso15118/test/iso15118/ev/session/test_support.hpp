@@ -255,4 +255,15 @@ ExpectedReq inject_then_expect(SessionFixture& fx, const char* step, const Respo
     return *request;
 }
 
+// A response of type Res bound to the session and carrying \p code, with every message-specific
+// field left default. Walk steps differ in those fields, not in this preamble.
+template <typename Res>
+Res ok_res(const message_20::datatypes::SessionId& sid,
+           message_20::datatypes::ResponseCode code = message_20::datatypes::ResponseCode::OK) {
+    Res res{};
+    res.header.session_id = sid;
+    res.response_code = code;
+    return res;
+}
+
 } // namespace iso15118::ev::test
