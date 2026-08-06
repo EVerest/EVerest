@@ -27,14 +27,14 @@ void DC_WeldingDetection::enter() {
 
 Result DC_WeldingDetection::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::DC_WeldingDetectionResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
     }
 
     // OK response: transition to SessionStop, whose enter() emits a SessionStopRequest.

@@ -30,7 +30,7 @@ void SessionSetup::enter() {
 
 Result SessionSetup::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
@@ -41,7 +41,7 @@ Result SessionSetup::feed(Event ev) {
     if (res == nullptr) {
         logf_error("expected SessionSetupResponse! But code type id: %d", variant->get_type());
         m_ctx.stop_session();
-        return {};
+        return Result::stopping();
     }
 
     using message_20::datatypes::ResponseCode;
@@ -51,7 +51,7 @@ Result SessionSetup::feed(Event ev) {
     if (res->response_code == ResponseCode::OK_OldSessionJoined) {
         logf_error("EVSE joined an old session although this EV requested a new one; aborting");
         m_ctx.stop_session();
-        return {};
+        return Result::stopping();
     }
 
     // Strict on purpose: this EV exists to surface SECC deviations, so plain OK and every
@@ -61,13 +61,13 @@ Result SessionSetup::feed(Event ev) {
                    "OK_NewSessionEstablished",
                    static_cast<int>(res->response_code));
         m_ctx.stop_session();
-        return {};
+        return Result::stopping();
     }
 
     if (res->evseid.size() <= 0) {
         logf_error("EVSEID is empty. Abort the session.");
         m_ctx.stop_session();
-        return {};
+        return Result::stopping();
     }
 
     logf_info("New session established by EVSE.");
@@ -75,7 +75,7 @@ Result SessionSetup::feed(Event ev) {
     if (session_is_zero(res->header.session_id)) {
         logf_error("Returned SessionID is zero although a new session was requested. Abort the session.");
         m_ctx.stop_session();
-        return {};
+        return Result::stopping();
     }
 
     m_ctx.get_session().set_id(res->header.session_id);

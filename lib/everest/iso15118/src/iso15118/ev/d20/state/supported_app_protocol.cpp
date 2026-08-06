@@ -26,7 +26,7 @@ void SupportedAppProtocol::enter() {
 
 Result SupportedAppProtocol::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     auto variant = m_ctx.pull_response();
@@ -38,7 +38,7 @@ Result SupportedAppProtocol::feed(Event ev) {
         logf_error("expected SupportedAppProtocolRes, but got message type id: %d",
                    static_cast<int>(variant->get_type()));
         m_ctx.stop_session();
-        return {};
+        return Result::stopping();
     }
 
     if (res->response_code != ResponseCode::OK_SuccessfulNegotiation and
@@ -46,7 +46,7 @@ Result SupportedAppProtocol::feed(Event ev) {
         logf_error("SupportedAppProtocol negotiation failed with response code: %d",
                    static_cast<int>(res->response_code));
         m_ctx.stop_session();
-        return {};
+        return Result::stopping();
     }
 
     // Deferred seam: the negotiated schema_id selects the protocol the rest of the
