@@ -13,9 +13,8 @@ namespace iso15118::ev {
  * Context::get_ac_params().
  */
 struct AcChargeParams {
-    // Static: advertised limits, as three-phase totals. The optional per-phase
-    // L2/L3 fields are never emitted: there is no per-phase measurement to put
-    // in them, and repeating the total on each phase would overstate the limit.
+    // Static: advertised limits, as three-phase totals. Per-phase L2/L3 fields are
+    // never emitted; repeating the total on each phase would overstate the limit.
     float max_charge_power{0.0f};
     float min_charge_power{0.0f};
     float max_discharge_power{0.0f};

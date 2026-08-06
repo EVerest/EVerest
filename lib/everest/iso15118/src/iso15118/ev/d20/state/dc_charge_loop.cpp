@@ -31,9 +31,8 @@ message_20::DC_ChargeLoopRequest make_request(const SessionId& session, const Dc
     setup_header(req.header, session);
     req.meter_info_requested = false;
     req.display_parameters = std::nullopt;
-    // Only ever the module's measurement. Substituting the EV's target or the SECC's own
-    // reading would be indistinguishable from a measurement on the wire and could never
-    // diverge from it, so it would hide exactly the disagreement worth seeing.
+    // Only ever the module's measurement: substituting the EV's target or the SECC's
+    // own reading would be indistinguishable from it on the wire.
     req.present_voltage = dt::from_float(params.present_voltage);
 
     if (service == dt::ServiceCategory::DC_BPT) {

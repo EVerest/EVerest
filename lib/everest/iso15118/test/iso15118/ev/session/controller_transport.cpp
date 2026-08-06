@@ -4,13 +4,9 @@
 // Controller-level transport integration: a real ev::Controller is driven over a
 // loopback TCP link with the SECC side played by this test.
 //
-// Reaching Controller::establish_data_path takes a genuine SDP response, and the
-// only interface a test may use is `lo`, which carries no IPv6 link-local
-// multicast: sending to ff02::1 fails with ENETUNREACH. The EV's discovery request
-// therefore never leaves the host and no responder can learn a sender address to
-// answer. The EV's SDP socket is bound to [::]:ephemeral all the same, so these
-// tests locate that port among the process's own descriptors and deliver the
-// unicast response the SECC would have sent.
+// `lo` carries no IPv6 link-local multicast, so real SDP discovery (ff02::1) fails
+// with ENETUNREACH. These tests instead find the EV's SDP rx port among the
+// process's own descriptors and unicast the SDP response directly.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -116,9 +112,8 @@ std::vector<std::pair<int, uint16_t>> bound_udp6_sockets() {
     return found;
 }
 
-// The EV SDP client's rx port: the single bound UDP/IPv6 socket the test does not
-// own. Empty while the Controller has not created it yet, and empty (rather than
-// wrong) should the process ever hold more than one candidate.
+// The EV SDP client's rx port: the one bound UDP/IPv6 socket the test doesn't own.
+// Empty rather than wrong if more than one candidate turns up.
 std::optional<uint16_t> sdp_rx_port(const std::set<int>& own) {
     std::optional<uint16_t> port;
     for (const auto& [fd, candidate] : bound_udp6_sockets()) {
@@ -188,9 +183,8 @@ message_20::datatypes::ParameterSet make_param_set(uint16_t id, ControlMode cont
     return set;
 }
 
-// The SECC end of the data path: a loopback listener that answers each request
-// frame the EV puts on the wire with the canned response for it, walking the DC
-// entry sequence through to a running charge loop.
+// The SECC end of the data path: a loopback listener answering each request frame
+// with its canned response, walking the DC entry sequence to a running charge loop.
 class SeccLink {
 public:
     SeccLink() {
@@ -318,11 +312,7 @@ private:
 
     using Response = std::pair<PT, std::vector<uint8_t>>;
 
-    // The SECC's answer for one request, mirroring the canned DC entry sequence the
-    // session-level walk injects: SAP -> SessionSetup -> AuthorizationSetup ->
-    // Authorization -> ServiceDiscovery -> ServiceDetail -> ServiceSelection ->
-    // DC_ChargeParameterDiscovery -> ScheduleExchange -> DC_CableCheck ->
-    // DC_PreCharge -> PowerDelivery(Start) -> DC_ChargeLoop.
+    // The SECC's canned answer for one DC entry-sequence request.
     static std::optional<Response> canned_response(const message_20::Variant& request) {
         const auto sid = LINK_SESSION_ID;
 
@@ -462,11 +452,8 @@ ev::DcChargeParams link_dc_params() {
 } // namespace
 
 SCENARIO("ISO15118-20 EV Controller ends the run when the SECC drops the data path") {
-    // A SECC that vanishes mid-session must end the run through the transport, not
-    // by leaving the EV parked on a dead socket until the per-request response
-    // watchdog expires. The watchdog is configured five seconds out and the
-    // assertion budget below is one second, so a run that ends in time can only
-    // have ended through the transport.
+    // Watchdog is 5s, assertion budget is 1s, so ending in time proves the
+    // transport (not the watchdog) ended the run.
     GIVEN("a Controller walked over a loopback link to a running DC charge loop") {
         SdpResponder responder;
         SeccLink secc;
@@ -519,11 +506,9 @@ SCENARIO("ISO15118-20 EV Controller ends the run when the SECC drops the data pa
 }
 
 SCENARIO("ISO15118-20 EV Controller fires stopped once when the connected callback throws") {
-    // establish_data_path runs from the SDP rx callback, inside a reactor poll that
-    // has no try/catch of its own. A throwing consumer connected callback must be
-    // caught there and end the run, and the catch must NOT fire stopped itself:
-    // loop() fires it once on the way out, so a second fire in the catch would
-    // deliver two session ends for one session.
+    // establish_data_path runs from the SDP rx callback inside a reactor poll with
+    // no try/catch of its own; the catch there must not itself fire stopped, or
+    // loop()'s own fire on exit would double it.
     GIVEN("a Controller whose connected callback throws") {
         SdpResponder responder;
         SeccLink secc;
@@ -553,8 +538,7 @@ SCENARIO("ISO15118-20 EV Controller fires stopped once when the connected callba
             REQUIRE(responder.respond(*ev_port, secc.port()));
 
             THEN("the throw is caught, the run ends and stopped fires exactly once") {
-                // Well under the 18 s setup timeout, the only other thing that could
-                // end this run.
+                // Well under the 18 s setup timeout, the only other way this run could end.
                 REQUIRE(poll_until(
                     [&]() {
                         secc.service();

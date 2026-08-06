@@ -2,10 +2,9 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
-// Shared helpers for the reactor-driven EV session integration tests
-// (session_reactor, integration_walk). These drive an ev::Session by framing and
-// injecting V2GTP bytes and running a real fd_event_handler reactor. This is the
-// reactor-integration concern; the FSM-unit fixture (fsm/helper.hpp) is separate.
+// Shared helpers for the reactor-driven EV session integration tests: drive an
+// ev::Session by framing/injecting V2GTP bytes over a real fd_event_handler
+// reactor. Separate from the FSM-unit fixture (fsm/helper.hpp).
 
 #include <algorithm>
 #include <chrono>
@@ -43,8 +42,8 @@ namespace iso15118::ev::test {
 
 using namespace std::chrono_literals;
 
-// The single -20 DC entry an ev::Session advertises by default (mirrors the
-// EvConfig default); Session no longer defaults this, so ctor sites pass it here.
+// The single -20 DC entry an ev::Session advertises; Session no longer defaults
+// this itself, so ctor sites pass it here.
 inline std::vector<message_20::SupportedAppProtocol> default_advertised_app_protocols() {
     return {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
 }
@@ -54,8 +53,8 @@ inline std::vector<message_20::SupportedAppProtocol> default_advertised_ac_app_p
     return {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}};
 }
 
-// The DER control functions the fixture declares support for by default: the two DSO
-// setpoint functions (mirroring the module manifest defaults).
+// DER control functions the fixture supports by default, mirroring the module
+// manifest defaults.
 inline DerControlFunctions default_der_control_functions() {
     DerControlFunctions functions{};
     functions.dso_q_setpoint_provision = true;
@@ -63,8 +62,7 @@ inline DerControlFunctions default_der_control_functions() {
     return functions;
 }
 
-// Frame a payload with the 8-byte V2GTP header, mirroring the framing the
-// Session itself uses (V2GTP20_WriteHeader + appended payload).
+// Frame a payload with the 8-byte V2GTP header, mirroring Session's own framing.
 inline std::vector<uint8_t> frame_payload(io::v2gtp::PayloadType payload_type, const std::vector<uint8_t>& payload) {
     std::vector<uint8_t> frame(io::SdpPacket::V2GTP_HEADER_SIZE + payload.size());
     V2GTP20_WriteHeader(frame.data(), static_cast<uint32_t>(payload.size()), static_cast<uint16_t>(payload_type));
@@ -107,9 +105,8 @@ bool run_reactor_until(everest::lib::io::event::fd_event_handler& reactor, Predi
     return predicate();
 }
 
-// Poll @p work on a cadence until it reports done or @p budget elapses. For tests
-// that observe a Controller running its own reactor on a worker thread, where the
-// test thread must not touch that reactor.
+// Poll @p work on a cadence until done or @p budget elapses; for tests observing
+// a Controller's own reactor on a worker thread, which the test thread must not touch.
 template <typename Work> bool poll_until(Work work, std::chrono::milliseconds budget) {
     const auto deadline = std::chrono::steady_clock::now() + budget;
     while (std::chrono::steady_clock::now() < deadline) {
@@ -122,11 +119,9 @@ template <typename Work> bool poll_until(Work work, std::chrono::milliseconds bu
 }
 
 // Runs Controller::loop() on a worker thread and always stops and joins it.
-// Catch2 abandons a section by throwing and then re-enters the enclosing blocks to
-// reach the remaining sections, so a bare thread joined inside a section is left
-// joinable on both paths, which terminates the process instead of reporting the
-// failure. Stopping here cannot perturb what a test observed: only loop() fires
-// stopped, and this destructor runs after every assertion has been evaluated.
+// Catch2 abandons a section by throwing and re-entering enclosing blocks, so a
+// bare thread joined inside a section would be left joinable on the abandoned
+// path, terminating the process instead of reporting the failure.
 class ControllerRun {
 public:
     explicit ControllerRun(Controller& controller_) :
@@ -148,12 +143,10 @@ private:
     std::thread worker;
 };
 
-// Owns everything a reactor session test needs: the reactor, the captured outbound
-// frames, the feedback flags, the DC-params channel and the ev::Session.
-// Replaces the ~20-line construction block the session tests otherwise copy-paste. The
-// wired callbacks and outbound seam capture `this` and read the mutable config members
-// live, so tests set `refuse_send` / `timed_out_throws` after construction and the
-// behavior takes effect when the Session next reaches the seam.
+// Owns everything a reactor session test needs, replacing the ~20-line construction
+// block otherwise copy-pasted per test. Wired callbacks/seam capture `this` and read
+// the mutable config members live, so tests may flip `refuse_send` /
+// `timed_out_throws` after construction and have it take effect at the next seam hit.
 class SessionFixture {
 public:
     explicit SessionFixture(
@@ -194,8 +187,8 @@ public:
 
 private:
     static DcChargeParams default_params() {
-        // A realistic precharge target so DC_PreCharge completes on an in-tolerance
-        // present voltage rather than a degenerate 0 V match.
+        // Realistic precharge target so DC_PreCharge completes on an in-tolerance
+        // voltage rather than a degenerate 0 V match.
         DcChargeParams p{};
         p.target_voltage = 400.0f;
         return p;
@@ -245,10 +238,9 @@ public:
     Session session;
 };
 
-// One walk step: inject a serialized response frame, run the reactor until the Session emits one more
-// request, and assert that request decodes as ExpectedReq. Returns the decoded request
-// for field-level assertions. `step` labels the step so a failure inside the shared
-// REQUIREs still localizes.
+// One walk step: inject a response frame, run until the Session emits the next
+// request, and assert it decodes as ExpectedReq. `step` labels failures for
+// localization.
 template <typename ExpectedReq, typename ResponseMsg>
 ExpectedReq inject_then_expect(SessionFixture& fx, const char* step, const ResponseMsg& response,
                                io::v2gtp::PayloadType response_type) {

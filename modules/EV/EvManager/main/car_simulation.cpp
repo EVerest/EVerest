@@ -154,10 +154,8 @@ void CarSimulation::simulate_soc() {
         }
     }
 
-    // The values the simulated EV "measures". Modelling them here rather than in the
-    // protocol stack is deliberate: the stack must not invent a measurement, but a
-    // simulator is entitled to produce one, and doing it here keeps it visible and lets a
-    // future scenario make the EV disagree with the EVSE.
+    // The values the simulated EV "measures". Kept here, not in the protocol stack,
+    // since the stack must not invent a measurement but a simulator may.
     std::optional<double> present_voltage;
     std::optional<double> present_active_power;
     switch (charge_mode) {

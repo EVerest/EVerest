@@ -138,12 +138,10 @@ private:
     // graceful stop walk does not finish in time. Single-shot; disarmed on finish.
     everest::lib::io::event::timer_fd stop_grace_timer;
 
-    // The reactor is declared before the clients that register fds with it, but the
-    // clients also unregister in their own destructors, so correctness does not rest
-    // on this order. The data client is created at runtime (in establish_data_path)
-    // once the transport security is known, so the Session's outbound lambda
-    // dereferences it lazily. sdp_client is deferred too: it is emplaced only after
-    // the ctor has resolved config.interface_name.
+    // Declaration order here isn't load-bearing: clients unregister in their own
+    // destructors. data_client is created lazily at runtime (in establish_data_path,
+    // once transport security is known); sdp_client is emplaced only after the ctor
+    // resolves config.interface_name.
     everest::lib::io::event::fd_event_handler reactor;
     std::optional<transport::SdpClient> sdp_client;
     std::unique_ptr<transport::DataClient> data_client;
