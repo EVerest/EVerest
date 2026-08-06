@@ -16,6 +16,24 @@ services:
       - ocpp
       - sil
 
+  # Secondary broker for a second EVerest process (external EnergyManager) —
+  # see mosquitto-external.conf. Never share one broker between two EVerest
+  # instances: both use the everest/ internal prefix, so instance A's
+  # everest/ready would fire ready() on instance B's modules. Point the second
+  # process at localhost:1884; the bridge in mosquitto-external.conf forwards
+  # the external_energy_node API topics to/from mqtt-server.
+  mqtt-external:
+    build: ../applications/containers/mosquitto
+    volumes:
+      - ./mosquitto-external.conf:/mosquitto/config/mosquitto.conf:ro
+    depends_on:
+      - mqtt-server
+    ports:
+      - 1884:1883
+    profiles:
+      - all
+      - sil
+
   ocpp-db:
     image: mariadb:10.4.30 # pinned to patch-version because https://github.com/steve-community/steve/pull/1213
     volumes:
