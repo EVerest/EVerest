@@ -36,14 +36,14 @@ void PowerDelivery::enter() {
 
 Result PowerDelivery::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::PowerDeliveryResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
     }
 
     using Progress = message_20::datatypes::Progress;
@@ -64,14 +64,24 @@ Result PowerDelivery::feed(Event ev) {
             return m_ctx.create_state<SessionStop>();
         }
         return m_ctx.create_state<DC_WeldingDetection>();
+    // Standby and ScheduleRenegotiation are accepted on the wire but the EV drives nothing
+    // afterwards: no request goes out and no timer stays armed, so the session cannot progress.
+    // It already ended here, via the catch-all in Session::on_response_consumed; stopping
+    // explicitly says so instead of letting it read as a state that meant to stay.
     case Progress::Standby:
-        logf_info("PowerDelivery Standby accepted; staying in PowerDelivery");
-        return {};
+        logf_warning("PowerDelivery Standby accepted, but the EV drives no standby loop; stopping the session");
+        m_ctx.stop_session();
+        return Result::stopping();
     case Progress::ScheduleRenegotiation:
-        logf_info("PowerDelivery ScheduleRenegotiation accepted; staying in PowerDelivery");
-        return {};
+        logf_warning("PowerDelivery ScheduleRenegotiation accepted, but the EV drives no renegotiation; "
+                     "stopping the session");
+        m_ctx.stop_session();
+        return Result::stopping();
     }
-    return {};
+
+    logf_error("PowerDelivery reached an unhandled charge progress value; stopping the session");
+    m_ctx.stop_session();
+    return Result::stopping();
 }
 
 } // namespace iso15118::ev::d20::state

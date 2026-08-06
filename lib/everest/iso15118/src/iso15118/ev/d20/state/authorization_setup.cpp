@@ -21,14 +21,14 @@ void AuthorizationSetup::enter() {
 
 Result AuthorizationSetup::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::AuthorizationSetupResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
     }
 
     auto& info = m_ctx.get_evse_session_info();
@@ -55,7 +55,7 @@ Result AuthorizationSetup::feed(Event ev) {
     if (info.auth_services.empty()) {
         logf_error("No authorization services offered by the EVSE. Abort the session.");
         m_ctx.stop_session();
-        return {};
+        return Result::stopping();
     }
 
     return m_ctx.create_state<Authorization>();
