@@ -129,9 +129,8 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop fires ac_target_power on a Dynamic respon
 }
 
 SCENARIO("ISO15118-20 EV AC_ChargeLoop does not substitute the dictated target for a measurement") {
-    // present_active_power carries the module's measurement only. Reporting the target the
-    // SECC dictated would be indistinguishable from a measurement and could never diverge
-    // from it, hiding the disagreement worth seeing.
+    // present_active_power carries the module's measurement only; reporting the
+    // SECC-dictated target would be indistinguishable from it on the wire.
     StopObserver obs;
     const auto seed_limits_only = [](FsmStateHelper& helper) {
         ev::AcChargeParams p{};

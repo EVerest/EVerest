@@ -272,9 +272,8 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop defers an EV-initiated stop to the next r
     StopObserver obs;
     PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_present_400};
 
-    // Session::deliver_control_event records an EV-initiated stop on the Context.
-    // The stop request does not transition immediately: a loop request is still outstanding, and a
-    // CONTROL_MESSAGE is a no-op inside the state.
+    // CONTROL_MESSAGE is a no-op inside the state; the stop only takes effect at the
+    // next response boundary.
     primed.ctx.set_stop_charging_requested(true);
     const auto control_result = primed.feed(ev::d20::Event::CONTROL_MESSAGE);
 
@@ -298,9 +297,8 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop defers an EV-initiated stop to the next r
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeLoop honors a stop request set before the state was entered") {
-    // The Context stop request can be set (via Session::deliver_control_event) while the
-    // FSM is in an earlier state; DC_ChargeLoop must honor it on the next response even
-    // though it never saw the CONTROL_MESSAGE itself.
+    // The stop can be set while the FSM is in an earlier state; DC_ChargeLoop must
+    // honor it even though it never saw the CONTROL_MESSAGE itself.
     StopObserver obs;
     const auto seed_stop_request = [](FsmStateHelper& helper) {
         ev::DcChargeParams params{};

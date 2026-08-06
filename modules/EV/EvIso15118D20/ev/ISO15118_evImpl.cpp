@@ -64,8 +64,7 @@ void ISO15118_evImpl::init() {
 void ISO15118_evImpl::check_config() {
     namespace dt = iso15118::message_20::datatypes;
 
-    // The energy service only selects the advertised SAP namespace, which this checks
-    // nothing about; DC is as good as any for the transport-level fields.
+    // energy_service only picks the SAP namespace; DC is fine for validating transport fields.
     auto problems = iso15118::ev::validate_config(make_ev_config(dt::ServiceCategory::DC));
 
     const auto append = [&problems](std::vector<std::string> more) {
@@ -116,8 +115,7 @@ iso15118::ev::EvConfig
 ISO15118_evImpl::make_ev_config(iso15118::message_20::datatypes::ServiceCategory energy_service) const {
     iso15118::ev::EvConfig ev_config;
 
-    // ev::Controller resolves the interface name (including "auto") and throws on failure;
-    // run_one_session()'s catch reports it.
+    // ev::Controller throws on an unresolvable interface (incl. "auto"); caught in run_one_session().
     ev_config.interface_name = mod->config.device;
     ev_config.evcc_id = mod->config.evcc_id;
     ev_config.response_timeout = std::chrono::milliseconds(mod->config.response_timeout_ms);
@@ -241,8 +239,8 @@ void ISO15118_evImpl::session_worker() {
             }
         }
         run_one_session();
-        // published after run_one_session() has reset phase to idle, so a consumer
-        // that starts a new session in response is not rejected by the phase guard
+        // Published after phase resets to idle, so a consumer starting a new session
+        // in response isn't rejected by the phase guard.
         publish_v2g_session_finished(nullptr);
     }
 }
@@ -265,8 +263,7 @@ void ISO15118_evImpl::run_one_session() {
         }
         iso15118::ev::Controller controller(make_ev_config(energy_service), make_callbacks(), cached_dc_params,
                                             cached_ac_params);
-        // declared after the controller, so it runs before ~Controller on every
-        // exit path, clearing the off-thread pointer while the object is still alive
+        // Declared after controller so it clears the off-thread pointer before ~Controller runs.
         ScopeGuard clear_current{[this] {
             auto h = session.handle();
             (*h).current = nullptr;
@@ -476,10 +473,9 @@ void ISO15118_evImpl::handle_update_soc(double& SoC) {
 }
 
 void ISO15118_evImpl::handle_update_present_values(types::iso15118::EvPresentValues& PresentValues) {
-    // Stored on the session params as well as pushed to the live Controller, so a value
-    // that arrives between sessions still seeds the next one. Both fields are mandatory on
-    // the wire, so an absent one stays at whatever was last reported rather than resetting
-    // to a zero that would read as a measured zero.
+    // Stored on session params (seeds the next session) as well as pushed to the live
+    // Controller. Absent fields keep their last value rather than reset to 0, which
+    // would read as a real measurement.
     auto h = session.handle();
     if (PresentValues.present_voltage.has_value()) {
         const auto voltage = PresentValues.present_voltage.value();
