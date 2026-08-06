@@ -2067,6 +2067,21 @@ void EvseManager::cable_check() {
         // measurement, this voltage may be different from the voltage used later to measure the resistance
         // (which is derived from the ev_max_voltage instead)
         if (config.cable_check_enable_imd_self_test_relays_open) {
+            // Some IMDs need time to return to their ready state after the previous session
+            // released them before they accept a new self test request
+            if (config.cable_check_relays_open_self_test_delay_ms > 0) {
+                session_log.evse(true, fmt::format("Waiting {} ms before early IMD self test",
+                                                   config.cable_check_relays_open_self_test_delay_ms));
+                Timeout self_test_delay;
+                self_test_delay.start(std::chrono::milliseconds(config.cable_check_relays_open_self_test_delay_ms));
+                while (not self_test_delay.reached()) {
+                    if (cable_check_should_exit()) {
+                        fail_cable_check("Cancel cable check");
+                        return;
+                    }
+                    std::this_thread::sleep_for(100ms);
+                }
+            }
             session_log.evse(true, "IMD Early self test in cablecheck");
             // Set power supply to configured voltage for the self test
             if (not powersupply_DC_set(config.cable_check_relays_open_voltage_V, CABLECHECK_CURRENT_LIMIT)) {
