@@ -314,11 +314,7 @@ void from_json(const json& j, SetDisplayMessageResponse& k) {
 void to_json(json& j, GetDisplayMessageRequest const& k) noexcept {
     j = json({});
     if (k.id) {
-        if (j.size() == 0) {
-            j = json{{"id", json::array()}};
-        } else {
-            j["id"] = json::array();
-        }
+        j["id"] = json::array();
         for (auto val : k.id.value()) {
             j["id"].push_back(val);
         }
@@ -354,11 +350,7 @@ void to_json(json& j, GetDisplayMessageResponse const& k) noexcept {
         j["status_info"] = k.status_info.value();
     }
     if (k.messages) {
-        if (j.size() == 0) {
-            j = json{{"messages", json::array()}};
-        } else {
-            j["messages"] = json::array();
-        }
+        j["messages"] = json::array();
         for (auto val : k.messages.value()) {
             j["messages"].push_back(val);
         }
