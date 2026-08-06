@@ -30,8 +30,7 @@ Session::Session(feedback::Callbacks callbacks, OutboundSend outbound_send_,
     reactor(reactor_),
     timing(timing_) {
 
-    // Single-shot timers, re-armed on demand. Registering them on the reactor lets
-    // their expiry be dispatched on the reactor thread alongside socket events.
+    // Re-armed on demand; expiry dispatches on the reactor thread.
     send_delay_timer.set_single_shot(true);
     watchdog_timer.set_single_shot(true);
 
@@ -49,15 +48,11 @@ void Session::set_on_finished(std::function<void()> on_finished_) {
 }
 
 void Session::start() {
-    // The Controller invokes start() from the data client's on-connected callback,
-    // which runs on the reactor thread (no try/catch around it). The FSM ctor enters
-    // the initial SupportedAppProtocol state (enter() -> respond()/set_request()),
-    // any of which can throw; an escape would kill the reactor thread and the
-    // session would neither finish nor signal. Stop loudly and finish instead.
+    // Runs on the reactor thread, which has no try/catch: an escape would kill it and the
+    // session would neither finish nor signal.
     try {
-        // Lazily construct the FSM here: its constructor enters the initial
-        // SupportedAppProtocol state, which queues the SAP request. Holding it back to
-        // start() makes start() the trigger for producing the first request.
+        // Constructing the FSM enters SupportedAppProtocol, which queues the first request,
+        // so start() is what produces it.
         fsm.emplace(context.create_state<d20::state::SupportedAppProtocol>());
 
         // Uniform timing: the first request is held for the send delay too (connect is
@@ -75,11 +70,8 @@ void Session::start() {
 }
 
 void Session::on_bytes_received(const std::vector<uint8_t>& bytes) {
-    // A rejected header (bad SDP version -> INVALID_HEADER, or a payload longer than
-    // the buffer -> PAYLOAD_TOO_LONG) is terminal: get_remaining_bytes_to_read() then
-    // returns 0 forever, so the accumulator can never advance and every later byte is
-    // silently dropped, with the failure masquerading as a watchdog timeout. Stop
-    // loudly the moment the accumulator lands in such a state.
+    // These states are terminal: get_remaining_bytes_to_read() returns 0 forever after, so
+    // every later byte is dropped and the failure surfaces as a watchdog timeout instead.
     const auto stop_on_malformed_frame = [this]() {
         const auto state = packet.get_state();
         if (state == io::SdpPacket::State::INVALID_HEADER or state == io::SdpPacket::State::PAYLOAD_TOO_LONG) {
@@ -125,13 +117,9 @@ void Session::on_bytes_received(const std::vector<uint8_t>& bytes) {
 }
 
 void Session::deliver_control_event(const d20::ControlEvent& event) {
-    // The Controller marshals control events onto the reactor thread (via
-    // add_action), which has no try/catch: the FSM feed reaches state code that can
-    // throw, so an escape would kill the reactor thread. Stop loudly and finish.
+    // Runs on the reactor thread, which has no try/catch; see start().
     try {
-        // Apply-before-feed: set the active event so states can read it via
-        // get_control_event<T>(), feed CONTROL_MESSAGE, then clear. Per-state handling
-        // of CONTROL_MESSAGE is deferred; this lays the delivery mechanism.
+        // Apply before feeding so states can read the event, then clear.
         active_control_event = event;
         // Latch a StopCharging request on the Context so it survives regardless of the
         // FSM state at delivery time (the active event is cleared after this feed).
@@ -158,9 +146,8 @@ void Session::deliver_control_event(const d20::ControlEvent& event) {
 }
 
 void Session::handle_complete_frame() {
-    // A response arrived: stop the watchdog for the request it answers. A failed
-    // disarm is lower-impact (a stale single-shot timer that would only fire once)
-    // but must not be fully silent.
+    // Disarm the watchdog for the request this answers. A failed disarm only leaves one
+    // stale single-shot timer, but must not be silent.
     if (not watchdog_timer.disarm()) {
         logf_warning("EV failed to disarm the response watchdog after a response arrived");
     }

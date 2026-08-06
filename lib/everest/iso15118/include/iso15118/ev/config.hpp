@@ -51,11 +51,8 @@ struct EvConfig {
     std::vector<message_20::SupportedAppProtocol> advertised_app_protocols{
         {"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
 
-    // Delay between a request becoming ready (FSM-produced, or the first request
-    // on connect) and it being transmitted. During this window events may replace
-    // the pending request. Zero transmits on the next reactor pass, which makes
-    // Ongoing re-poll states re-send at reactor speed and flood the SECC; the
-    // default paces re-polls. Set 0 to opt into transmit-ASAP.
+    // Delay between a request becoming ready and being transmitted; events may replace it
+    // within that window. Zero makes Ongoing re-poll states flood the SECC at reactor speed.
     std::chrono::milliseconds send_delay{DEFAULT_SEND_DELAY};
 
     // How long to wait for a response after a request is sent before the session
