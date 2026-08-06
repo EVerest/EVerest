@@ -3,12 +3,8 @@
 //
 // Pump-level FSM-walk integration test.
 //
-// This drives an ev::Session purely by injecting canned, EXI-encoded V2GTP
-// response frames via session.on_bytes_received(...) and asserting the request
-// frame the pump emits at each step. No fsm.feed() and no manual create_state<>()
-// are used: the only input is bytes, the only output is captured frames. This is
-// the proof that fsm::v2::FSM<d20::StateBase> drives evio's real EV states
-// unchanged through the implemented entry sequence.
+// Drives an ev::Session by bytes alone: inject EXI-encoded response frames, assert the
+// request frame emitted at each step. No fsm.feed(), no manual create_state<>().
 //
 // Clean DC walk to a graceful SessionStop (each arrow = one injected response →
 // one emitted request):
