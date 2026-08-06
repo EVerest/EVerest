@@ -1,0 +1,35 @@
+# Full client/server pair in one process: the site-level EnergyManager only sees
+# the client, the probe EVSE only talks to the server, and the two module stacks
+# communicate exclusively over the external MQTT topics — exactly as two bridged
+# processes would in production (the mosquitto bridge merges both brokers into
+# one shared everest_api/ topic space).
+active_modules:
+  site_energy_manager:
+    module: EnergyManager
+    config_module:
+      update_interval: 1
+      nominal_ac_voltage: 230.0
+    connections:
+      energy_trunk:
+        - module_id: external_energy_node_client
+          implementation_id: energy_grid
+  external_energy_node_client:
+    module: external_energy_node_client_API
+    config_module:
+      server_id: server_m0_api
+      stale_timeout_s: 30
+      cfg_heartbeat_interval_ms: 0
+      cfg_communication_check_to_s: 0
+  server_m0_api:
+    module: external_energy_node_API
+    config_module:
+      timeout_s: 3
+      fuse_limit_A: 16.0
+      cfg_heartbeat_interval_ms: 0
+      cfg_communication_check_to_s: 0
+    connections:
+      energy_consumer:
+        - module_id: probe
+          implementation_id: energy_consumer
+  probe:
+    module: ProbeModule
