@@ -78,6 +78,14 @@ Module Configuration
      - Seconds without an ``enforce_limits`` message from the external ``EnergyManager`` before falling back to
        the internal one. Set to ``0`` to disable the timeout entirely (always prefer external limits, and never
        fall back).
+   * - ``fuse_limit_A``
+     - Local fuse limit in ampere (per phase) at this bridge point. Advertised in the aggregate's schedules so
+       both the internal and the external ``EnergyManager`` allocate within it, and used as a backstop to lower
+       any external ``enforce_limits`` that exceed it. ``0`` = no fuse here (unlimited pass-through). Note that a
+       fuse *above* this node can never be enforced by the external ``EnergyManager`` — it only ever sees this
+       node and its descendants — so if such a fuse exists, configure it here.
+   * - ``phase_count``
+     - Phase count of the local fuse; only advertised/enforced when ``fuse_limit_A`` is set.
    * - ``cfg_heartbeat_interval_ms``
      - Interval at which the module sends a heartbeat to the external side, so it can detect a connection loss
        even when there is nothing else to publish. Set to ``0`` to disable.

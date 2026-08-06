@@ -25,6 +25,27 @@ config:
     type: integer
     minimum: 0
     default: 30
+  fuse_limit_A:
+    description: >-
+      Local fuse limit in ampere (per phase) at this bridge point. It is
+      advertised in the aggregate's schedule_import/schedule_export so both the
+      internal and the external EnergyManager allocate within it, and it is
+      additionally used as a backstop to lower any enforce_limits from the
+      external EnergyManager that exceed it. Set to 0 if there is no fuse at
+      this point (unlimited pass-through); then any fuse above this node can
+      only be enforced by the manager that can actually see it — the external
+      EnergyManager only ever sees this node and its descendants.
+    type: number
+    minimum: 0.0
+    default: 0.0
+  phase_count:
+    description: >-
+      Phase count of the local fuse. Only advertised/enforced when fuse_limit_A
+      is set (> 0).
+    type: integer
+    minimum: 1
+    maximum: 3
+    default: 3
   cfg_heartbeat_interval_ms:
     description: >-
       Interval in milliseconds at which the module sends a heartbeat to the external

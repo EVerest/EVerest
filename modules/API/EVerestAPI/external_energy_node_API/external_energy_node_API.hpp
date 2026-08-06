@@ -38,6 +38,8 @@ namespace module {
 
 struct Conf {
     int timeout_s;
+    double fuse_limit_A;
+    int phase_count;
     int cfg_heartbeat_interval_ms;
     int cfg_communication_check_to_s;
 };
@@ -90,11 +92,18 @@ private:
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     everest::lib::util::monitor<types::energy::EnergyFlowRequest> aggregate;
 
-    // One-entry schedule with no limits set (= unlimited pass-through).
+    // One-entry schedule advertising the configured local fuse limit, or an
+    // entry without any limits (= unlimited pass-through) when fuse_limit_A == 0.
     // An EMPTY schedule would mean "nothing available" to the EnergyManager
     // optimizer (see Market.cpp: zero_schedule_req), clamping every EVSE below
     // this node to 0 A.
     std::vector<types::energy::ScheduleReqEntry> get_local_schedule() const;
+
+    // Backstop: lower limits from the external EnergyManager to the configured
+    // local fuse limit before forwarding them to children. Only lowers values
+    // that are present — absent limits stay absent (EvseManager treats a missing
+    // ac_max_current_A as 0 A, so filling them in would RAISE the limit).
+    void clamp_to_local_limits(types::energy::EnforcedLimits& value) const;
 
     ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
                                                                ev_API::bridge_connection_lost_message, p_main};
