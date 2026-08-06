@@ -79,9 +79,6 @@ private:
     // input: decoded response.
     std::unique_ptr<message_20::Variant> response{nullptr};
 
-    // Must remain the LAST member: the cbv2g EXI encoder can write past the end
-    // of this buffer on an oversized payload, so keeping it at the object tail
-    // confines the overrun instead of corrupting an adjacent member.
     std::array<uint8_t, OUT_BUFFER_SIZE> out_buffer{};
 };
 
