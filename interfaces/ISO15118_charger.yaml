@@ -87,6 +87,19 @@ cmds:
       status:
         description: Set to true when contactor is closed, false when contactor is open
         type: boolean
+  cp_state_changed:
+    description: >-
+      Informs the HLC stack about the currently measured IEC 61851-1 CP state.
+      Needed for SECC-side CP checks tied to the message sequence, e.g.
+      DIN 70121 [V2G-DC-988]/[V2G-DC-556]: CP State B must be detected within
+      V2G_SECC_CPState_Detection_Timeout (1.5s) after the request following
+      PowerDelivery(off), otherwise the SECC responds FAILED, switches the CP
+      oscillator off and closes the TCP connection.
+    arguments:
+      cp_state:
+        description: The newly measured CP state
+        type: string
+        $ref: /iso15118#/CpState
 # Events
   dlink_ready:
     description: >-
@@ -430,6 +443,20 @@ vars:
       failure independently of the EvseManager state machine transitions.
     type: string
     $ref: /evse_manager#/HlcSessionFailedReasonEnum
+  session_stop_res_sent:
+    description: >-
+      Published immediately after a session-ending response has been written to
+      the wire. For a positive SessionStopRes it carries the stop action
+      requested by the EVCC (Terminate/Pause): per DIN 70121 [V2G-DC-968] the
+      SECC keeps the CP oscillator (5% PWM) on for
+      V2G_SECC_CPOscillator_Retain_Time (1.5s) after this event and then
+      switches to X1. For a session-ending FAILED_* response it carries
+      FailedTermination: per [V2G-DC-942] the oscillator is switched off
+      without delay. This event does NOT imply data link teardown:
+      dlink_terminate/dlink_pause still follow after the TCP connection is
+      closed.
+    type: string
+    $ref: /iso15118#/SessionStopAction
   dlink_terminate:
     description: Terminate the data link and become UNMATCHED.
     type: "null"
