@@ -65,7 +65,9 @@ private:
     void parse_header();
 
     State state{State::BUFFER_EMPTY};
-    uint8_t buffer[2048];
+    // Sized to hold an ISO 15118-2 Plug-and-Charge CertificateInstallationReq (OEM provisioning cert +
+    // root list) as well as every other V2G message; the response counterpart is response_buffer[8192].
+    uint8_t buffer[8192];
     size_t bytes_read{0};
     size_t length; // length includes V2GTP_HEADER_SIZE
 };

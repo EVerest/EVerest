@@ -46,6 +46,10 @@ public:
         fire(io::ConnectionEvent::CLOSED);
     }
 
+    bool is_secure() const override {
+        return false;
+    }
+
     std::optional<io::sha512_hash_t> get_vehicle_cert_hash() const override {
         return std::nullopt;
     }

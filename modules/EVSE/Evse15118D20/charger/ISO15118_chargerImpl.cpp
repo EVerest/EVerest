@@ -665,7 +665,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         }
     };
 
-    callbacks.v2g_message = [this](iso15118::message_20::Type id) {
+    callbacks.v2g_message = [this](const iso15118::V2gMessageType& id) {
         const auto v2g_message_id = convert_v2g_message_type(id);
         publish_v2g_messages({v2g_message_id});
     };
