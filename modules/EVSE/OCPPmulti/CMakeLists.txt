@@ -44,6 +44,18 @@ target_link_libraries(${MODULE_NAME}
     everest::ocpp_module_common
 )
 
+# Install mapping.yaml
+install(
+  FILES everest_config_mapping/mapping.yaml
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/everest/modules/${MODULE_NAME}
+)
+
+# Install schema
+install(
+  FILES everest_config_mapping/mapping_schema.json
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/everest/modules/${MODULE_NAME}
+)
+
 if(EVEREST_CORE_BUILD_TESTING)
     add_subdirectory(tests)
 endif()
