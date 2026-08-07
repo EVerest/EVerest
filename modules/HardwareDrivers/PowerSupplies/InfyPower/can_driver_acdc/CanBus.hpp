@@ -54,10 +54,9 @@ private:
     bool arm_pace_tx_one_shot();
     void disarm_pace_tx_timer();
 
-    // Must outlive everything registered on it, so declare it first.
-    event::fd_event_handler ev_handler;
     std::unique_ptr<can::socket_can> can_bus;
     std::atomic_bool on_error{false};
+    event::fd_event_handler ev_handler;
     event::timer_fd recovery_timer;
     event::timer_fd poll_status_timer;
     event::timer_fd pace_tx_timer;

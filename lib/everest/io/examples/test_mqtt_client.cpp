@@ -50,9 +50,6 @@ mqtt::mqtt_client::cb_rx make_rx_callback(mqtt::mqtt_client& client, std::string
 int main(int, char*[]) {
     std::cout << "mqtt_client ping/pong demonstration" << std::endl;
 
-    // Must outlive everything registered on it, so declare it first.
-    fd_event_handler ev_handler;
-
     // Create first mqtt_client
     mqtt::mqtt_client client(HOST, PORT);
     // Create and assign error handler
@@ -68,7 +65,8 @@ int main(int, char*[]) {
     server.set_message_handler(make_rx_callback(server, "test/client/recv"));
     server.subscribe("test/server/recv/#");
 
-    // Register the clients with the event handler
+    // Create event handler and register clients
+    fd_event_handler ev_handler;
     ev_handler.register_event_handler(&client);
     ev_handler.register_event_handler(&server);
 

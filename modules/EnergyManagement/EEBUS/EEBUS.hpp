@@ -80,11 +80,10 @@ private:
     std::atomic<bool> m_eebus_grpc_api_thread_active{false};
     std::shared_ptr<std::atomic_bool> m_eebus_grpc_api_stop_requested{std::make_shared<std::atomic_bool>(false)};
 
-    // Must outlive everything registered on it, so declare it first.
-    everest::lib::io::event::fd_event_handler m_event_handler;
     std::unique_ptr<EebusConnectionHandler> m_connection_handler;
 
     EebusCallbacks m_callbacks{};
+    everest::lib::io::event::fd_event_handler m_event_handler;
     std::thread m_event_handler_thread;
     std::atomic_bool m_running_flag{true};
     std::mutex m_shutdown_mutex;
