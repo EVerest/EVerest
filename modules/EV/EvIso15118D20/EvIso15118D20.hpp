@@ -13,7 +13,6 @@
 // headers for provided interface implementations
 #include <generated/interfaces/ISO15118_ev/Implementation.hpp>
 
-
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
@@ -30,15 +29,8 @@ struct Conf {
 class EvIso15118D20 : public Everest::ModuleBase {
 public:
     EvIso15118D20() = delete;
-    EvIso15118D20(
-        const ModuleInfo& info,
-        std::unique_ptr<ISO15118_evImplBase> p_ev,
-        Conf& config
-    ) :
-        ModuleBase(info),
-        p_ev(std::move(p_ev)),
-        config(config)
-    {};
+    EvIso15118D20(const ModuleInfo& info, std::unique_ptr<ISO15118_evImplBase> p_ev, Conf& config) :
+        ModuleBase(info), p_ev(std::move(p_ev)), config(config){};
 
     const std::unique_ptr<ISO15118_evImplBase> p_ev;
     const Conf& config;
@@ -60,7 +52,6 @@ private:
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
-
 };
 
 // ev@087e516b-124c-48df-94fb-109508c7cda9:v1
