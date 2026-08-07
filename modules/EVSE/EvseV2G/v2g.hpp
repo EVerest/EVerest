@@ -426,6 +426,16 @@ struct v2g_connection {
     } exi_out;
 
     dLinkAction d_link_action; /* signaled data-link action after connection is closed */
+
+    /* Armed by the session-stop handlers when a positive SessionStopRes is pending; consumed right
+     * after the response hit the wire to publish session_stop_res_sent ([V2G-DC-968] retain anchor).
+     * v2g_connection is calloc'd, so NONE must stay 0. */
+    enum class SessionStopResPending {
+        NONE = 0,
+        TERMINATE,
+        PAUSE
+    };
+    SessionStopResPending session_stop_res_pending;
 };
 
 #endif /* V2G_H */

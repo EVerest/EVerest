@@ -51,7 +51,7 @@ message_20::Type MessageExchange::peek_request_type() const {
     return request->get_type();
 }
 
-Context::Context(session::feedback::Callbacks feedback_callbacks, SessionConfig session_config_,
+Context::Context(session::feedback::Callbacks feedback_callbacks, session::SessionConfig session_config_,
                  std::optional<PauseContext>& pause_ctx_, const std::optional<ControlEvent>& current_control_event_,
                  MessageExchange& message_exchange_, Timeouts& timeouts_) :
     feedback(std::move(feedback_callbacks)),
