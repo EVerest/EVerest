@@ -88,10 +88,10 @@ mod tests {
     /// capitalized names.
     #[test]
     fn test_capitalized() {
-        use crate::generated::errors::errors_capitalized::{CapitalizedErrorsError, Error};
+        use crate::generated::errors::errors_capitalized::{ErrorsCapitalizedError, Error};
 
-        let error = Error::CapitalizedErrors(CapitalizedErrorsError::ExampleErrorA);
-        let error_str = "CAPITALIZED_errors/ExampleErrorA";
+        let error = Error::ErrorsCapitalized(ErrorsCapitalizedError::ExampleErrorA);
+        let error_str = "errors_CAPITALIZED/ExampleErrorA";
 
         assert_eq!(serde_yaml::from_str::<Error>(error_str).unwrap(), error);
         assert_eq!(
