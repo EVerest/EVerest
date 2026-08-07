@@ -138,9 +138,58 @@ struct CpStateChanged {
     CpState state{CpState::A};
 };
 
-using ControlEvent = std::variant<CableCheckFinished, PresentVoltageCurrent, MeterInfo, AuthorizationResponse,
-                                  StopCharging, PauseCharging, DcTransferLimits, AcTransferLimits,
-                                  UpdateDynamicModeParameters, ClosedContactor, AcTargetPower, AcPresentPower,
-                                  EnergyServices, SupportedVASs, CertificateResponse, EvseError, CpStateChanged>;
+// EVSE physical parameters pushed by the module (EvseManager's set_charging_parameters cmd, mirroring
+// types::iso15118::SetupPhysicalValues). Consumed by the ISO 15118-2 and DIN SPEC 70121 SECC engines for
+// the AC/DC EVSEChargeParameter elements of ChargeParameterDiscoveryRes; ISO 15118-20 carries the same
+// information in its own limit structures and ignores this. Every field is optional on its own -- an
+// absent one leaves the engine default in place.
+struct PhysicalValues {
+    std::optional<float> ac_nominal_voltage;
+    std::optional<float> dc_current_regulation_tolerance;
+    std::optional<float> dc_peak_current_ripple;
+    std::optional<float> dc_energy_to_be_delivered;
+};
+
+// The charger has no energy available and asks the SECC to pause the session before charging starts
+// (IEC 61851-23:2023 CC.3.5.3, EvseManager's no_energy_pause_charging cmd). Mirrors
+// types::iso15118::NoEnergyPauseMode plus a None state for "no pause requested".
+enum class NoEnergyPauseMode : uint8_t {
+    None,
+    // Pause before the cable check: the charger has no power at all for this session.
+    BeforeCableCheck,
+    // The charger can still run cable check and pre-charge, but must not start the charge loop.
+    AfterCableCheckPreCharge,
+    // Signal the pause to the EV but tolerate an EV that ignores it and charges anyway (against
+    // IEC 61851-23:2023).
+    AllowEvToIgnorePause,
+};
+
+struct NoEnergyPause {
+    NoEnergyPauseMode mode{NoEnergyPauseMode::None};
+};
+
+// Isolation-monitoring result reported by the module (EvseManager's update_isolation_status cmd,
+// mirroring types::iso15118::IsolationStatus). Consumed by the ISO 15118-2 and DIN SPEC 70121 SECC
+// engines, which report it as DC_EVSEStatus.EVSEIsolationStatus in the DC responses that follow the
+// cable check. ISO 15118-20 has no such element.
+enum class IsolationStatus : uint8_t {
+    Invalid,
+    Valid,
+    Warning,
+    Fault,
+    // No insulation monitoring device fitted, so the cable check was skipped. ISO 15118-2 has a
+    // No_IMD enumerator for this; DIN SPEC 70121 does not and reports Valid instead.
+    NoImd,
+};
+
+struct UpdateIsolationStatus {
+    IsolationStatus status{IsolationStatus::Invalid};
+};
+
+using ControlEvent =
+    std::variant<CableCheckFinished, PresentVoltageCurrent, MeterInfo, AuthorizationResponse, StopCharging,
+                 PauseCharging, DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters, ClosedContactor,
+                 AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs, CertificateResponse, EvseError,
+                 CpStateChanged, PhysicalValues, NoEnergyPause, UpdateIsolationStatus>;
 
 } // namespace iso15118::d20
