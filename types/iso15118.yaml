@@ -70,6 +70,34 @@ types:
       - Error_UtilityInterruptEvent
       - Error_Malfunction
       - Error_EmergencyShutdown
+  SessionStopAction:
+    description: >-
+      How the V2G session ended on the wire. Terminate/Pause map to the
+      ChargingSession requested by the EVCC in SessionStopReq (DIN 70121 has no
+      ChargingSession parameter; DIN sessions always map to Terminate).
+      FailedTermination means the SECC ended the session with a FAILED_*
+      response (sequence error, unknown session): per DIN 70121 [V2G-DC-942]
+      the CP oscillator must then be switched off without delay.
+    type: string
+    enum:
+      - Terminate
+      - Pause
+      - FailedTermination
+  CpState:
+    description: >-
+      IEC 61851-1 control pilot state as measured by the EVSE. Forwarded to
+      the HLC stack for the SECC-side CP checks tied to the message sequence,
+      e.g. DIN 70121 [V2G-DC-988]/[V2G-DC-556] (CP State B required within
+      V2G_SECC_CPState_Detection_Timeout after the request following
+      PowerDelivery(off)).
+    type: string
+    enum:
+      - A
+      - B
+      - C
+      - D
+      - E
+      - F
   V2gMessageId:
     description: This element contains the id of the v2g message body
     type: string
