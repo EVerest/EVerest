@@ -181,6 +181,7 @@ private:
 // Runs before any member is destroyed, so every outstanding registration record is inert by the
 // time EventHandlerMap closes the epoll descriptor.
 fd_event_handler::~fd_event_handler() {
+    unregister_recorded_events();
     m_liveness->handler = nullptr;
 }
 
@@ -192,6 +193,33 @@ fd_event_handler::fd_event_handler() : m_liveness(std::make_shared<handler_liven
 
 std::shared_ptr<handler_liveness> fd_event_handler::liveness() const {
     return m_liveness;
+}
+
+// Compares against the handler map rather than the record alone: a registration dropped by
+// descriptor leaves a record naming a live handler, and that must not block a new one.
+bool fd_event_handler::has_recorded_registration() const {
+    auto const live = m_registered_handler.lock();
+    return live and live->handler and live->handler->is_registered(m_registered_fd);
+}
+
+void fd_event_handler::record_registration(std::shared_ptr<handler_liveness> handler, int fd) {
+    m_registered_handler = std::move(handler);
+    m_registered_fd = fd;
+}
+
+bool fd_event_handler::unregister_recorded_events(std::shared_ptr<handler_liveness> const& handler) {
+    if (m_registered_handler.lock() != handler) {
+        return false;
+    }
+    return unregister_recorded_events();
+}
+
+bool fd_event_handler::unregister_recorded_events() {
+    auto const live = m_registered_handler.lock();
+    auto const fd = m_registered_fd;
+    m_registered_handler.reset();
+    m_registered_fd = -1;
+    return live and live->handler and live->handler->remove_event_handler(fd);
 }
 
 bool fd_event_handler::register_event_handler(int fd, event_handler_type const& handler, event_list const& events) {
@@ -206,17 +234,23 @@ bool fd_event_handler::register_event_handler(int fd, event_handler_type const& 
 }
 
 bool fd_event_handler::register_event_handler(event_fd* fd, event_handler_type const& handler) {
-    if (not fd) {
+    // One record per object. A second registration would leave the first unrecorded and therefore
+    // unremovable.
+    if (not fd or fd->has_recorded_registration()) {
         return false;
     }
     auto raw = fd->get_raw_fd();
-    return register_event_handler(
+    auto const registered = register_event_handler(
         raw,
         [handler, fd](event_list const& e) {
             fd->read();
             handler(e);
         },
         poll_events::read);
+    if (registered) {
+        fd->record_registration(m_liveness, raw);
+    }
+    return registered;
 }
 
 bool fd_event_handler::register_event_handler(event_fd* fd, event_handler_simple_type const& handler) {
@@ -224,17 +258,23 @@ bool fd_event_handler::register_event_handler(event_fd* fd, event_handler_simple
 }
 
 bool fd_event_handler::register_event_handler(timer_fd* fd, event_handler_type const& handler) {
-    if (not fd) {
+    // One record per object. A second registration would leave the first unrecorded and therefore
+    // unremovable.
+    if (not fd or fd->has_recorded_registration()) {
         return false;
     }
     auto raw = fd->get_raw_fd();
-    return register_event_handler(
+    auto const registered = register_event_handler(
         raw,
         [handler, fd](event_list const& e) {
             fd->read();
             handler(e);
         },
         poll_events::read);
+    if (registered) {
+        fd->record_registration(m_liveness, raw);
+    }
+    return registered;
 }
 
 bool fd_event_handler::register_event_handler(timer_fd* fd, event_handler_simple_type const& handler) {
@@ -256,17 +296,23 @@ bool fd_event_handler::register_event_handler(fd_event_register_interface* obj) 
 }
 
 bool fd_event_handler::register_event_handler(fd_event_handler* obj) {
-    if (not obj or obj == this) {
+    // One record per object. A second registration would leave the first unrecorded and therefore
+    // unremovable.
+    if (not obj or obj == this or obj->has_recorded_registration()) {
         return false;
     }
     auto raw = obj->get_poll_fd();
-    return register_event_handler(
+    auto const registered = register_event_handler(
         raw,
         [obj](event_list const&) {
             obj->poll();
             obj->run_actions();
         },
         poll_events::read);
+    if (registered) {
+        obj->record_registration(m_liveness, raw);
+    }
+    return registered;
 }
 
 bool fd_event_handler::unregister_event_handler(fd_event_register_interface* obj) {
@@ -287,14 +333,21 @@ bool fd_event_handler::unregister_event_handler(timer_fd* obj) {
     if (not obj) {
         return false;
     }
-    return remove_event_handler(obj->get_raw_fd());
+    return obj->unregister_recorded_events(m_liveness);
 }
 
 bool fd_event_handler::unregister_event_handler(event_fd* obj) {
     if (not obj) {
         return false;
     }
-    return remove_event_handler(obj->get_raw_fd());
+    return obj->unregister_recorded_events(m_liveness);
+}
+
+bool fd_event_handler::unregister_event_handler(fd_event_handler* obj) {
+    if (not obj or obj == this) {
+        return false;
+    }
+    return obj->unregister_recorded_events(m_liveness);
 }
 
 bool fd_event_handler::unregister_event_handler(int fd) {

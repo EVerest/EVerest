@@ -177,6 +177,7 @@ public:
      * @brief Register an \ref fd_event_handler for event handling
      * @details This will call \p poll on the event_handler whenever any of its handles events
      need attention.
+     * The nested handler records this registration and removes it when destroyed.
      * @param[in] obj The fd_event_handler to be registerd for event handling
      * @return True on success, false otherwise
      */
@@ -201,17 +202,30 @@ public:
 
     /**
      * @brief Unregister timer_fd from event handling
+     * @details Removes the descriptor recorded at registration time and drops the record, so
+     * \p obj does not later try to drop a registration that is already gone.
      * @param[in] obj The timer to be removed
-     * @return True on success, false otherwise
+     * @return True if a registration with this handler was removed, false otherwise
      */
     bool unregister_event_handler(timer_fd* obj);
 
     /**
      * @brief Unregister event_fd from event handling
+     * @details Removes the descriptor recorded at registration time and drops the record, so
+     * \p obj does not later try to drop a registration that is already gone.
      * @param[in] obj The event to be removed
-     * @return True on success, false otherwise
+     * @return True if a registration with this handler was removed, false otherwise
      */
     bool unregister_event_handler(event_fd* obj);
+
+    /**
+     * @brief Unregister a nested \ref fd_event_handler from event handling
+     * @details Removes the descriptor recorded at registration time and drops the record, so
+     * \p obj does not later try to drop a registration that is already gone.
+     * @param[in] obj The handler to be removed
+     * @return True if a registration with this handler was removed, false otherwise
+     */
+    bool unregister_event_handler(fd_event_handler* obj);
 
     /**
      * @brief Unregister a file descriptor from event handling
@@ -338,11 +352,39 @@ private:
      * \return false in case of timeout, true otherwise
      */
     bool poll_impl(int timeout_ms);
+
+    /// True while a recorded registration on another handler is still in place
+    bool has_recorded_registration() const;
+
+    /// Record the registration \p handler made for \p fd
+    void record_registration(std::shared_ptr<handler_liveness> handler, int fd);
+
+    /**
+     * @brief Drop the record of this handler's own registration if it names \p handler
+     * @return true if a registration was removed, false otherwise
+     */
+    bool unregister_recorded_events(std::shared_ptr<handler_liveness> const& handler);
+
+    /**
+     * @brief Drop the record of this handler's own registration
+     * @details Uses the recorded descriptor instead of \ref get_poll_fd, so this stays callable
+     * while this handler is being destroyed.
+     * @return true if a registration was removed, false otherwise
+     */
+    bool unregister_recorded_events();
+
     // Not shared_ptr: EventHandlerMap owns the epoll descriptor, and a registrant outliving this
     // handler must not keep it open.
     std::unique_ptr<EventHandlerMap> m_handlers{nullptr};
+    // The block objects registered on this handler record against.
     std::shared_ptr<handler_liveness> m_liveness;
+    // The registration this handler holds on another handler. A separate concern from m_liveness
+    // and never mixed with it.
+    std::weak_ptr<handler_liveness> m_registered_handler;
+    int m_registered_fd{-1};
     util::thread_safe_queue<task> task_pool;
+    // Registered on this handler in the constructor, so its record names m_liveness. Declared
+    // last, so it is destroyed first and finds a block that is alive but names no handler.
     event_fd m_action_event;
 };
 

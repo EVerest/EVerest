@@ -6,7 +6,10 @@
 #pragma once
 
 #include "unique_fd.hpp"
+#include <everest/io/event/handler_liveness.hpp>
+
 #include <chrono>
+#include <memory>
 
 namespace everest::lib::io::event {
 
@@ -21,6 +24,19 @@ public:
      * @details After construction the timeout is undefined. It must be set manually.
      */
     timer_fd();
+
+    /**
+     * @brief Drops a registration recorded by \ref fd_event_handler
+     * @details The record is a weak reference, so this touches nothing once the handler is gone.
+     */
+    ~timer_fd();
+
+    // fd_event_handler installs a lambda capturing this, so a moved object leaves the handler
+    // reading the timer at the old address.
+    timer_fd(timer_fd const&) = delete;
+    timer_fd& operator=(timer_fd const&) = delete;
+    timer_fd(timer_fd&&) = delete;
+    timer_fd& operator=(timer_fd&&) = delete;
 
     /**
      * @brief Explicit conversion to file descriptor
@@ -107,9 +123,35 @@ public:
      */
 
 private:
+    // Only the handler may write the record, so a registration is recorded exactly once and by
+    // the side that made it.
+    friend class fd_event_handler;
+
+    /// True while a recorded registration is still in place with a live handler
+    bool has_recorded_registration() const;
+
+    /// Record the registration \p handler made for \p fd
+    void record_registration(std::shared_ptr<handler_liveness> handler, int fd);
+
+    /**
+     * @brief Drop the record if it names \p handler
+     * @return true if a registration was removed, false otherwise
+     */
+    bool unregister_recorded_events(std::shared_ptr<handler_liveness> const& handler);
+
+    /**
+     * @brief Drop the record, removing the registration while the handler is alive
+     * @details Uses the recorded descriptor instead of \ref get_raw_fd, so this stays callable
+     * while the object is being destroyed.
+     * @return true if a registration was removed, false otherwise
+     */
+    bool unregister_recorded_events();
+
     unique_fd m_fd;
     long long m_to_ns{0};
     bool m_single_shot{false};
+    std::weak_ptr<handler_liveness> m_registered_handler;
+    int m_registered_fd{-1};
 };
 
 } // namespace everest::lib::io::event
