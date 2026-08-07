@@ -1,237 +1,161 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
+//
+// The SupportedAppProtocol negotiation is now run by the SECC session driver (not the FSM), so it is
+// covered here at function level against session::secc_sap::handle_request, the SECC counterpart of the
+// EVCC ev_sap free functions.
 #include <catch2/catch_test_macros.hpp>
 
-#include "helper.hpp"
-
-#include <iso15118/d20/state/session_setup.hpp>
-#include <iso15118/d20/state/supported_app_protocol.hpp>
+#include <optional>
+#include <string>
+#include <vector>
 
 #include <iso15118/message/supported_app_protocol.hpp>
+#include <iso15118/session/protocol.hpp>
+#include <iso15118/session/secc_sap.hpp>
 
 using namespace iso15118;
+namespace dt = message_20::datatypes;
 
-SCENARIO("ISO15118-20 supported app protocol state transitions") {
+using ResponseCode = message_20::SupportedAppProtocolResponse::ResponseCode;
 
-    // Move to helper function?
-    const auto evse_id = std::string("everest se");
-    const std::vector<message_20::datatypes::ServiceCategory> supported_energy_services = {
-        message_20::datatypes::ServiceCategory::DC};
-    const std::vector<uint16_t> vas_services{};
-    const auto cert_install{false};
-    const std::vector<message_20::datatypes::Authorization> auth_services = {message_20::datatypes::Authorization::EIM};
-    const d20::DcTransferLimits dc_limits;
-    const d20::AcTransferLimits ac_limits;
-    // const d20::IecDerTransferLimits der_limits;
-    const d20::DcTransferLimits powersupply_limits;
-    const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
-        {message_20::datatypes::ControlMode::Scheduled, message_20::datatypes::MobilityNeedsMode::ProvidedByEvcc}};
-    const std::string custom_namespace = "urn:iso:std:iso:15118:-20:AABB";
+namespace {
 
-    const d20::EvseSetupConfig evse_setup{evse_id,
-                                          supported_energy_services,
-                                          auth_services,
-                                          vas_services,
-                                          cert_install,
-                                          dc_limits,
-                                          ac_limits,
-                                          std::nullopt,
-                                          control_mobility_modes,
-                                          custom_namespace,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          powersupply_limits,
-                                          false};
+message_20::SupportedAppProtocol make_app_protocol(const std::string& protocol_namespace, uint8_t schema_id,
+                                                   uint8_t priority, uint32_t version_major = 1,
+                                                   uint32_t version_minor = 0) {
+    return {protocol_namespace, version_major, version_minor, schema_id, priority};
+}
 
-    std::optional<d20::PauseContext> pause_ctx{std::nullopt};
+} // namespace
 
-    const session::feedback::Callbacks callbacks{};
+SCENARIO("ISO15118-20 SECC supported app protocol negotiation") {
 
-    auto state_helper = FsmStateHelper(d20::SessionConfig(evse_setup), pause_ctx, callbacks);
-    auto ctx = state_helper.get_context();
+    const std::vector<ProtocolId> supported_protocols = {ProtocolId::ISO15118_20};
+    const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::DC};
+    const std::optional<std::string> custom_namespace = "urn:iso:std:iso:15118:-20:AABB";
 
     GIVEN("Good case - DC") {
-        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::SupportedAppProtocol>()};
-
         message_20::SupportedAppProtocolRequest req;
-        auto& ap = req.app_protocol.emplace_back();
-        ap.priority = 1;
-        ap.protocol_namespace = "urn:iso:std:iso:15118:-20:DC";
-        ap.schema_id = 1;
-        ap.version_number_major = 1;
-        ap.version_number_minor = 0;
+        req.app_protocol.push_back(make_app_protocol("urn:iso:std:iso:15118:-20:DC", 1, 1));
 
-        state_helper.handle_request(req);
-        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+        const auto result = session::secc_sap::handle_request(req, supported_protocols, supported_energy_services,
+                                                              false, custom_namespace, /*tls_active=*/false);
 
-        THEN("Check state transition") {
-            REQUIRE(result.transitioned() == true);
-            REQUIRE(fsm.get_current_state_id() == d20::StateID::SessionSetup);
-
-            const auto response_message = ctx.get_response<message_20::SupportedAppProtocolResponse>();
-            REQUIRE(response_message.has_value());
-
-            const auto& supported_app_res = response_message.value();
-
-            REQUIRE(supported_app_res.response_code ==
-                    message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
-            REQUIRE(supported_app_res.schema_id.value_or(0) == 1);
+        THEN("Negotiation succeeds with the DC schema") {
+            REQUIRE(result.response.response_code == ResponseCode::OK_SuccessfulNegotiation);
+            REQUIRE(result.response.schema_id.value_or(0) == 1);
+            REQUIRE(result.selected_namespace.has_value());
+            REQUIRE(result.selected_namespace.value() == "urn:iso:std:iso:15118:-20:DC");
         }
     }
 
     GIVEN("Good case - Custom") {
-        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::SupportedAppProtocol>()};
-
         message_20::SupportedAppProtocolRequest req;
+        req.app_protocol.push_back(make_app_protocol("urn:iso:std:iso:15118:-20:AABB", 1, 1));
 
-        auto& ap = req.app_protocol.emplace_back();
-        ap.priority = 1;
-        ap.protocol_namespace = "urn:iso:std:iso:15118:-20:AABB";
-        ap.schema_id = 1;
-        ap.version_number_major = 1;
-        ap.version_number_minor = 0;
+        const auto result = session::secc_sap::handle_request(req, supported_protocols, supported_energy_services,
+                                                              false, custom_namespace, /*tls_active=*/false);
 
-        state_helper.handle_request(req);
-        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
-
-        THEN("Check state transition") {
-            REQUIRE(result.transitioned() == true);
-            REQUIRE(fsm.get_current_state_id() == d20::StateID::SessionSetup);
-
-            const auto response_message = ctx.get_response<message_20::SupportedAppProtocolResponse>();
-            REQUIRE(response_message.has_value());
-
-            const auto& supported_app_res = response_message.value();
-
-            REQUIRE(supported_app_res.response_code ==
-                    message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
-            REQUIRE(supported_app_res.schema_id.value_or(0) == 1);
+        THEN("Negotiation succeeds on the custom namespace") {
+            REQUIRE(result.response.response_code == ResponseCode::OK_SuccessfulNegotiation);
+            REQUIRE(result.response.schema_id.value_or(0) == 1);
+            REQUIRE(result.selected_namespace.value() == "urn:iso:std:iso:15118:-20:AABB");
         }
     }
 
     GIVEN("Good case - Priority") {
-        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::SupportedAppProtocol>()};
-
         message_20::SupportedAppProtocolRequest req;
-        auto& ap_dc = req.app_protocol.emplace_back();
-        ap_dc.priority = 2;
-        ap_dc.protocol_namespace = "urn:iso:std:iso:15118:-20:DC";
-        ap_dc.schema_id = 1;
-        ap_dc.version_number_major = 1;
-        ap_dc.version_number_minor = 0;
+        req.app_protocol.push_back(make_app_protocol("urn:iso:std:iso:15118:-20:DC", 1, 2));
+        req.app_protocol.push_back(make_app_protocol("urn:iso:std:iso:15118:-20:AC", 3, 1));
 
-        auto& ap_custom = req.app_protocol.emplace_back();
-        ap_custom.priority = 1;
-        ap_custom.protocol_namespace = "urn:iso:std:iso:15118:-20:AC";
-        ap_custom.schema_id = 3;
-        ap_custom.version_number_major = 1;
-        ap_custom.version_number_minor = 0;
+        const auto result = session::secc_sap::handle_request(req, supported_protocols, supported_energy_services,
+                                                              false, custom_namespace, /*tls_active=*/false);
 
-        state_helper.handle_request(req);
-        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
-
-        THEN("Check state transition") {
-            REQUIRE(result.transitioned() == true);
-            REQUIRE(fsm.get_current_state_id() == d20::StateID::SessionSetup);
-
-            const auto response_message = ctx.get_response<message_20::SupportedAppProtocolResponse>();
-            REQUIRE(response_message.has_value());
-
-            const auto& supported_app_res = response_message.value();
-
-            REQUIRE(supported_app_res.response_code ==
-                    message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
-            REQUIRE(supported_app_res.schema_id.value_or(0) == 3);
+        THEN("The highest-priority match wins") {
+            REQUIRE(result.response.response_code == ResponseCode::OK_SuccessfulNegotiation);
+            REQUIRE(result.response.schema_id.value_or(0) == 3);
+            REQUIRE(result.selected_namespace.value() == "urn:iso:std:iso:15118:-20:AC");
         }
     }
 
     GIVEN("Bad case - Unknown protocol namespace") {
-        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::SupportedAppProtocol>()};
-
         message_20::SupportedAppProtocolRequest req;
-        auto& ap = req.app_protocol.emplace_back();
-        ap.priority = 1;
-        ap.protocol_namespace = "Foobar";
-        ap.schema_id = 12;
-        ap.version_number_major = 2;
-        ap.version_number_minor = 11;
+        req.app_protocol.push_back(make_app_protocol("Foobar", 12, 1));
 
-        state_helper.handle_request(req);
-        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+        const auto result = session::secc_sap::handle_request(req, supported_protocols, supported_energy_services,
+                                                              false, custom_namespace, /*tls_active=*/false);
 
-        THEN("Check state transition") {
-            REQUIRE(result.transitioned() == false);
-            REQUIRE(fsm.get_current_state_id() == d20::StateID::SupportedAppProtocol);
-
-            const auto response_message = ctx.get_response<message_20::SupportedAppProtocolResponse>();
-            REQUIRE(response_message.has_value());
-
-            const auto& supported_app_res = response_message.value();
-
-            REQUIRE(supported_app_res.response_code ==
-                    message_20::SupportedAppProtocolResponse::ResponseCode::Failed_NoNegotiation);
+        THEN("Negotiation fails") {
+            REQUIRE(result.response.response_code == ResponseCode::Failed_NoNegotiation);
+            REQUIRE(not result.selected_namespace.has_value());
         }
     }
 
     GIVEN("Bad case - empty app protocol") {
-        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::SupportedAppProtocol>()};
-
         message_20::SupportedAppProtocolRequest req;
         req.app_protocol.emplace_back();
 
-        state_helper.handle_request(req);
-        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+        const auto result = session::secc_sap::handle_request(req, supported_protocols, supported_energy_services,
+                                                              false, custom_namespace, /*tls_active=*/false);
 
-        THEN("Check state transition") {
-            REQUIRE(result.transitioned() == false);
-            REQUIRE(fsm.get_current_state_id() == d20::StateID::SupportedAppProtocol);
-
-            const auto response_message = ctx.get_response<message_20::SupportedAppProtocolResponse>();
-            REQUIRE(response_message.has_value());
-
-            const auto& supported_app_res = response_message.value();
-
-            REQUIRE(supported_app_res.response_code ==
-                    message_20::SupportedAppProtocolResponse::ResponseCode::Failed_NoNegotiation);
+        THEN("Negotiation fails") {
+            REQUIRE(result.response.response_code == ResponseCode::Failed_NoNegotiation);
         }
     }
 
     GIVEN("Good case - Selecting namespace based on supported energy services") {
-        ctx.session_config.selecting_sap_based_on_energy_service = true;
-
-        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::SupportedAppProtocol>()};
-
         message_20::SupportedAppProtocolRequest req;
-        auto& ap_dc = req.app_protocol.emplace_back();
-        ap_dc.priority = 2;
-        ap_dc.protocol_namespace = "urn:iso:std:iso:15118:-20:DC";
-        ap_dc.schema_id = 2;
-        ap_dc.version_number_major = 1;
-        ap_dc.version_number_minor = 0;
+        req.app_protocol.push_back(make_app_protocol("urn:iso:std:iso:15118:-20:DC", 2, 2));
+        req.app_protocol.push_back(make_app_protocol("urn:iso:std:iso:15118:-20:AC", 1, 1));
 
-        auto& ap_ac = req.app_protocol.emplace_back();
-        ap_ac.priority = 1;
-        ap_ac.protocol_namespace = "urn:iso:std:iso:15118:-20:AC";
-        ap_ac.schema_id = 1;
-        ap_ac.version_number_major = 1;
-        ap_ac.version_number_minor = 0;
+        // With energy-service-based selection and a DC-only SECC, the higher-priority AC offer is
+        // rejected and the DC schema is chosen instead.
+        const auto result = session::secc_sap::handle_request(req, supported_protocols, supported_energy_services, true,
+                                                              custom_namespace, /*tls_active=*/false);
 
-        state_helper.handle_request(req);
-        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+        THEN("The DC schema is negotiated despite lower priority") {
+            REQUIRE(result.response.response_code == ResponseCode::OK_SuccessfulNegotiation);
+            REQUIRE(result.response.schema_id.value_or(0) == 2);
+            REQUIRE(result.selected_namespace.value() == "urn:iso:std:iso:15118:-20:DC");
+        }
+    }
 
-        THEN("Check state transition") {
-            REQUIRE(result.transitioned() == true);
-            REQUIRE(fsm.get_current_state_id() == d20::StateID::SessionSetup);
+    GIVEN("Protocol not in the configured supported set") {
+        message_20::SupportedAppProtocolRequest req;
+        req.app_protocol.push_back(make_app_protocol("urn:iso:std:iso:15118:-20:DC", 1, 1));
 
-            const auto response_message = ctx.get_response<message_20::SupportedAppProtocolResponse>();
-            REQUIRE(response_message.has_value());
+        // ISO 15118-20 is offered by the EV but the SECC is configured to only support ISO 15118-2.
+        const auto result = session::secc_sap::handle_request(req, {ProtocolId::ISO15118_2}, supported_energy_services,
+                                                              false, std::nullopt, /*tls_active=*/false);
 
-            const auto& supported_app_res = response_message.value();
+        THEN("Negotiation fails") {
+            REQUIRE(result.response.response_code == ResponseCode::Failed_NoNegotiation);
+        }
+    }
 
-            REQUIRE(supported_app_res.response_code ==
-                    message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
-            REQUIRE(supported_app_res.schema_id.value_or(0) == 2);
+    // [V2G-DC-869]: DIN SPEC 70121 is plaintext-only and must not be negotiated over TLS.
+    GIVEN("A DIN-only offer over a TLS connection") {
+        message_20::SupportedAppProtocolRequest req;
+        req.app_protocol.push_back(make_app_protocol("urn:din:70121:2012:MsgDef", 2, 1, 2, 0));
+
+        WHEN("the connection is plaintext") {
+            const auto result = session::secc_sap::handle_request(req, {ProtocolId::DIN70121},
+                                                                  supported_energy_services, false, std::nullopt,
+                                                                  /*tls_active=*/false);
+            THEN("DIN is negotiated") {
+                REQUIRE(result.response.response_code == ResponseCode::OK_SuccessfulNegotiation);
+                REQUIRE(result.selected_namespace.value() == "urn:din:70121:2012:MsgDef");
+            }
+        }
+
+        WHEN("the connection is TLS") {
+            const auto result = session::secc_sap::handle_request(req, {ProtocolId::DIN70121},
+                                                                  supported_energy_services, false, std::nullopt,
+                                                                  /*tls_active=*/true);
+            THEN("negotiation fails - DIN is not offered over TLS") {
+                REQUIRE(result.response.response_code == ResponseCode::Failed_NoNegotiation);
+            }
         }
     }
 }

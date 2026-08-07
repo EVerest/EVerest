@@ -138,9 +138,18 @@ struct CpStateChanged {
     CpState state{CpState::A};
 };
 
-using ControlEvent = std::variant<CableCheckFinished, PresentVoltageCurrent, MeterInfo, AuthorizationResponse,
-                                  StopCharging, PauseCharging, DcTransferLimits, AcTransferLimits,
-                                  UpdateDynamicModeParameters, ClosedContactor, AcTargetPower, AcPresentPower,
-                                  EnergyServices, SupportedVASs, CertificateResponse, EvseError, CpStateChanged>;
+// EVSE maximum AC current (per phase, A) pushed by the module (EvseManager's update_ac_max_current
+// cmd, fired whenever the charger's current limit changes). Consumed by the ISO 15118-2 SECC engine,
+// which reflects it as EVSEMaxCurrent in the next ChargingStatusRes so the EV throttles accordingly
+// (EvseV2G parity; this is how a zero-power limit reaches the EV in the AC charge loop).
+struct UpdateAcMaxCurrent {
+    float ampere{0.0f};
+};
+
+using ControlEvent =
+    std::variant<CableCheckFinished, PresentVoltageCurrent, MeterInfo, AuthorizationResponse, StopCharging,
+                 PauseCharging, DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters, ClosedContactor,
+                 AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs, CertificateResponse, EvseError,
+                 CpStateChanged, UpdateAcMaxCurrent>;
 
 } // namespace iso15118::d20

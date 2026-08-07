@@ -94,7 +94,7 @@ private:
 
     std::unique_ptr<iso15118::TbdController> controller;
 
-    iso15118::d20::EvseSetupConfig setup_config;
+    iso15118::session::EvseSetupConfig setup_config;
     std::bitset<NUMBER_OF_SETUP_STEPS> setup_steps_done{0};
 
     std::optional<float> evse_max_reactive_power;
