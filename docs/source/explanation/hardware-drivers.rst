@@ -296,6 +296,17 @@ Example register mappings are included for the following power meters:
 
 For all non-Eichrecht power metering, this should be easy to adapt.
 
+AC: Eastron SDM630-EV
+---------------------
+
+*Hardware Driver Module* :ref:`Eastron_SDM630EV <everest_modules_Eastron_SDM630EV>`
+
+Driver for the Eastron SDM630-EV, the EV charging variant of the SDM630
+with a hardware crypto chip. Eichrecht/OCMF transactions are supported:
+signed billing documents are generated inside the meter
+(ECDSA-secp256r1-SHA256). For the non-EV SDM630 variants use the
+GenericPowermeter module instead.
+
 AC: Iskra WM3M4 & WM3M4C
 ------------------------
 

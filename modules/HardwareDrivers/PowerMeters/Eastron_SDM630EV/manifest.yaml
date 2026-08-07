@@ -1,0 +1,78 @@
+description: Eastron SDM630-EV powermeter with OCMF/Eichrecht signing support
+provides:
+  main:
+    description: Implementation of the driver functionality
+    interface: powermeter
+    config:
+      powermeter_device_id:
+        description: The powermeter's address on the serial bus
+        type: integer
+        minimum: 1
+        maximum: 247
+        default: 1
+      communication_error_pause_delay_s:
+        description: >-
+          Delay in seconds before retrying communication in the live measurement
+          thread after a failure. Low-level retries per Modbus query are handled
+          by the SerialCommHub module.
+        type: integer
+        minimum: 1
+        maximum: 600
+        default: 10
+      live_measurement_interval_ms:
+        description: Interval in milliseconds between live powermeter reads and publishes.
+        type: integer
+        minimum: 500
+        maximum: 60000
+        default: 1000
+      timezone_offset_minutes:
+        description: Timezone offset from UTC in minutes (e.g. 120 for UTC+2).
+        type: integer
+        minimum: -720
+        maximum: 720
+        default: 0
+      ocmf_charge_point_identification_type:
+        description: OCMF charge point identification type (CT field).
+        type: string
+        enum:
+          - EVSEID
+          - CBIDC
+        default: EVSEID
+      ocmf_charge_point_identification:
+        description: >-
+          OCMF charge point identification (CI field). If empty, the evse_id from
+          the transaction request is used.
+        type: string
+        default: ''
+      ocmf_signature_timeout_ms:
+        description: >-
+          Maximum time in milliseconds to wait for the meter's crypto chip to
+          finish signing after the end of a transaction.
+        type: integer
+        minimum: 1000
+        maximum: 60000
+        default: 10000
+      public_key_format:
+        description: >-
+          Format of the published public key. 'der' prepends the DER
+          SubjectPublicKeyInfo header (needed by Transparenzsoftware), 'raw'
+          prepends the plain ECDSA uncompressed point marker 0x04.
+        type: string
+        enum:
+          - raw
+          - der
+        default: der
+      meter_id:
+        description: >-
+          Meter id published with the live measurements. The device does not
+          expose a serial number register, so it has to be configured here.
+        type: string
+        default: ''
+requires:
+  modbus:
+    interface: serial_communication_hub
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - julian.raedel@pionix.com
+enable_external_mqtt: false

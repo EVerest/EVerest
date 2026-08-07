@@ -1,0 +1,36 @@
+settings:
+  telemetry_enabled: false
+active_modules:
+  sdm630ev_1:
+    module: Eastron_SDM630EV
+    config_implementation:
+      main:
+        powermeter_device_id: 1
+        timezone_offset_minutes: 120
+        live_measurement_interval_ms: 1000
+        public_key_format: der
+        ocmf_charge_point_identification_type: EVSEID
+    connections:
+      modbus:                        # required interface: serial_communication_hub
+        - module_id: comm_hub
+          implementation_id: main
+
+  comm_hub:
+    module: SerialCommHub
+    config_implementation:
+      main:
+        serial_port: /dev/ttyUSB0    # adjust to your device path
+        baudrate: 9600               # SDM630-EV factory default
+        parity: 0                    # SDM630-EV default: no parity, 1 stop bit
+        within_message_timeout_ms: 10
+
+  cli_1:
+    module: BUPowermeter
+    standalone: true
+    config_module:
+      evse_id: "DE*PNX*E12345*1"
+      identification_data: "A1B2C3D4E5F6"
+    connections:
+      powermeter:
+        - module_id: sdm630ev_1
+          implementation_id: main
