@@ -72,7 +72,6 @@ active_modules:
     module: EnergyManager
   connector_1:
     config_module:
-      enable_nodered_interface: true
       ac_enforce_hlc: false
       ac_hlc_enabled: true
       ac_hlc_use_5percent: false
@@ -129,9 +128,9 @@ active_modules:
   iso15118_charger:
     config_module:
       device: auto
+      tls_security: allow
       supported_DIN70121: false
-      supported_ISO15118_2: true
-    module: Evse15118D20
+    module: EvseV2G
     connections:
       security:
         - module_id: evse_security
