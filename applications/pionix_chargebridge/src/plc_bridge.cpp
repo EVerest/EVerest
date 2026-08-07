@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include <charge_bridge/plc_bridge.hpp>
 #include <charge_bridge/utilities/logging.hpp>
 #include <everest/io/event/fd_event_handler.hpp>

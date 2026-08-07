@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "protocol/evse_bsp_cb_to_host.h"
 #include <charge_bridge/everest_api/evse_bsp_api.hpp>
