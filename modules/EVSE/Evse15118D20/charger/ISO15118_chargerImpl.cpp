@@ -10,6 +10,8 @@
 
 #include <utils/date.hpp>
 
+#include <everest/util/misc/container.hpp>
+
 #include <iso15118/config.hpp>
 #include <iso15118/io/logging.hpp>
 
@@ -50,6 +52,110 @@ types::iso15118::DisplayParameters convert_display_parameters(const dt::DisplayP
             in.charging_complete,
             convert_from_optional(in.battery_energy_capacity),
             in.inlet_hot};
+}
+
+// DIN SPEC 70121 / ISO 15118-2 DC_EVStatus (both protocols share iso15118::shared_datatypes::DcEvErrorCode).
+// The wire enumerators happen to match the EVerest type one for one, but the mapping is spelled out
+// rather than static_cast so an added or reordered enumerator surfaces as a -Wswitch warning here.
+types::iso15118::DcEvStatus convert_dc_ev_status(const iso15118::session::feedback::DcEvStatus& in) {
+    using InCode = iso15118::shared_datatypes::DcEvErrorCode;
+    using OutCode = types::iso15118::DcEvErrorCode;
+
+    const auto error_code = [](InCode code) {
+        switch (code) {
+        case InCode::NO_ERROR:
+            return OutCode::NO_ERROR;
+        case InCode::FAILED_RESSTemperatureInhibit:
+            return OutCode::FAILED_RESSTemperatureInhibit;
+        case InCode::FAILED_EVShiftPosition:
+            return OutCode::FAILED_EVShiftPosition;
+        case InCode::FAILED_ChargerConnectorLockFault:
+            return OutCode::FAILED_ChargerConnectorLockFault;
+        case InCode::FAILED_EVRESSMalfunction:
+            return OutCode::FAILED_EVRESSMalfunction;
+        case InCode::FAILED_ChargingCurrentdifferential:
+            return OutCode::FAILED_ChargingCurrentdifferential;
+        case InCode::FAILED_ChargingVoltageOutOfRange:
+            return OutCode::FAILED_ChargingVoltageOutOfRange;
+        case InCode::Reserved_A:
+            return OutCode::Reserved_A;
+        case InCode::Reserved_B:
+            return OutCode::Reserved_B;
+        case InCode::Reserved_C:
+            return OutCode::Reserved_C;
+        case InCode::FAILED_ChargingSystemIncompatibility:
+            return OutCode::FAILED_ChargingSystemIncompatibility;
+        case InCode::NoData:
+            return OutCode::NoData;
+        }
+        return OutCode::NoData;
+    }(in.error_code);
+
+    types::iso15118::DcEvStatus out;
+    out.dc_ev_ready = in.ready;
+    out.dc_ev_error_code = error_code;
+    out.dc_ev_ress_soc = static_cast<float>(in.ress_soc);
+    out.dc_ev_cabin_conditioning = in.cabin_conditioning;
+    out.dc_ev_ress_conditioning = in.ress_conditioning;
+    return out;
+}
+
+// DIN SPEC 70121 / ISO 15118-2 RequestedEnergyTransferMode (both message layers use
+// shared_datatypes::EnergyTransferMode). Spelled out rather than static_cast so an added or reordered
+// enumerator surfaces as a -Wswitch warning here.
+types::iso15118::EnergyTransferMode convert_energy_transfer_mode(iso15118::shared_datatypes::EnergyTransferMode in) {
+    using In = iso15118::shared_datatypes::EnergyTransferMode;
+    using Out = types::iso15118::EnergyTransferMode;
+    switch (in) {
+    case In::AC_single_phase_core:
+        return Out::AC_single_phase_core;
+    case In::AC_three_phase_core:
+        return Out::AC_three_phase_core;
+    case In::DC_core:
+        return Out::DC_core;
+    case In::DC_extended:
+        return Out::DC_extended;
+    case In::DC_combo_core:
+        return Out::DC_combo_core;
+    case In::DC_unique:
+        return Out::DC_unique;
+    }
+    return Out::DC_extended;
+}
+
+// The EV reports remaining times and its departure time as seconds from now; the EVerest vars carry
+// absolute RFC3339 UTC timestamps (EvseV2G publish_dc_ev_remaining_time / publish_departure_time).
+std::string seconds_from_now_to_rfc3339(double seconds) {
+    const auto offset = std::chrono::duration_cast<date::utc_clock::duration>(std::chrono::duration<double>(seconds));
+    return Everest::Date::to_rfc3339(date::utc_clock::now() + offset);
+}
+
+types::iso15118::DCChargingParameters
+convert_dc_charging_parameters(const iso15118::session::feedback::DcEvChargeParameters& in) {
+    types::iso15118::DCChargingParameters out;
+    out.ev_max_current = in.max_current;
+    out.ev_max_voltage = in.max_voltage;
+    out.ev_max_power = in.max_power;
+    out.ev_energy_capacity = in.energy_capacity;
+    out.energy_amount = in.energy_request;
+    out.state_of_charge = static_cast<int32_t>(in.ress_soc);
+    if (in.full_soc.has_value()) {
+        out.full_soc = static_cast<int32_t>(in.full_soc.value());
+    }
+    if (in.bulk_soc.has_value()) {
+        out.bulk_soc = static_cast<int32_t>(in.bulk_soc.value());
+    }
+    return out;
+}
+
+types::iso15118::ACChargingParameters
+convert_ac_charging_parameters(const iso15118::session::feedback::AcEvChargeParameters& in) {
+    types::iso15118::ACChargingParameters out;
+    out.energy_amount = in.e_amount;
+    out.ev_min_current = in.min_current;
+    out.ev_max_current = in.max_current;
+    out.ev_max_voltage = in.max_voltage;
+    return out;
 }
 
 auto fill_mobility_needs_modes_from_config(const module::Conf& module_config) {
@@ -223,12 +329,125 @@ void ISO15118_chargerImpl::apply_active_der_directives() {
     }
 }
 
+std::optional<ISO15118_chargerImpl::TlsChain> ISO15118_chargerImpl::acquire_tls_chain() {
+    // include_ocsp=true so the leaf's cached OCSP responses come back and can be stapled during the TLS
+    // handshake (as EvseV2G does). Returns nullopt when the security module has no usable V2G leaf --
+    // the caller decides whether that is fatal (see ready()).
+    auto response = mod->r_security->call_get_leaf_certificate_info(types::evse_security::LeafCertificateType::V2G,
+                                                                    types::evse_security::EncodingFormat::PEM, true);
+
+    if (response.status != types::evse_security::GetCertificateInfoStatus::Accepted or not response.info.has_value()) {
+        return std::nullopt;
+    }
+
+    auto& info = response.info.value();
+    std::string path_chain;
+    if (info.certificate.has_value()) {
+        path_chain = info.certificate.value();
+    } else if (info.certificate_single.has_value()) {
+        path_chain = info.certificate_single.value();
+    } else {
+        return std::nullopt;
+    }
+
+    return TlsChain{std::move(path_chain), std::move(info)};
+}
+
 void ISO15118_chargerImpl::ready() {
-    publish_supported_app_protocols_secc(
-        types::iso15118::SupportedAppProtocols{{types::iso15118::SupportedAppProtocol::ISO15118D20}});
+    // enforce_tls_1_3 pins the server to TLS 1.3, but ISO 15118-2 mandates TLS 1.2. With both enabled
+    // every ISO 15118-2 client would silently fail the handshake while ISO 15118-2 is still advertised at
+    // SAP, so refuse to start. Mirrors the Ev15118 module guard.
+    if (mod->config.enforce_tls_1_3 and mod->config.supported_ISO15118_2) {
+        EVLOG_error << "Evse15118D20: enforce_tls_1_3 and supported_ISO15118_2 are both set, but ISO 15118-2 "
+                       "requires TLS 1.2; disable one of them. The SECC will not start";
+        return;
+    }
+
+    // Priority-ordered list of protocol generations the SECC offers in the SupportedAppProtocol handshake:
+    // ISO 15118-20 (highest priority), then ISO 15118-2, then DIN SPEC 70121, each enabled via config.
+    if (not mod->config.supported_ISO15118_20 and not mod->config.supported_ISO15118_2 and
+        not mod->config.supported_DIN70121) {
+        EVLOG_error << "Evse15118D20: all of supported_ISO15118_20, supported_ISO15118_2 and supported_DIN70121 "
+                       "are disabled; at least one protocol must be offered. The SECC will not start";
+        return;
+    }
+
+    // Whether a TLS endpoint can be offered at all: it needs the SECC leaf certificate from the security
+    // module. A missing certificate is NOT fatal on its own -- ISO 15118-2 runs EIM sessions over plain
+    // TCP and DIN SPEC 70121 has no TLS at all ([V2G-DC-869]: DIN is never negotiated on a TLS
+    // connection) -- so the SECC still comes up for those. Determined before the protocol offer is built
+    // because ISO 15118-20 depends on it.
+    auto tls_strategy = convert_tls_negotiation_strategy(mod->config.tls_negotiation_strategy);
+    const auto tls_available = acquire_tls_chain();
+
+    if (not tls_available.has_value()) {
+        if (tls_strategy == iso15118::config::TlsNegotiationStrategy::ENFORCE_TLS) {
+            EVLOG_error << "Evse15118D20: no V2G leaf certificate is available, but tls_negotiation_strategy is "
+                           "ENFORCE_TLS, so every session would have to be refused. The SECC will not start";
+            return;
+        }
+        // Answer SDP with a plain endpoint straight away instead of failing the TLS listener per request
+        // (the controller's ACCEPT_CLIENT_OFFER fallback would do it one connection at a time, and an
+        // EV would be told TLS is on offer when it is not). Also makes DIN negotiable, which the SECC
+        // refuses on a TLS connection.
+        if (tls_strategy == iso15118::config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER) {
+            tls_strategy = iso15118::config::TlsNegotiationStrategy::ENFORCE_NO_TLS;
+        }
+        EVLOG_warning << "Evse15118D20: no V2G leaf certificate is available; TLS is disabled and only unsecured "
+                         "sessions are offered. Plug-and-Charge is unavailable (EIM only)";
+    }
+
+    // ISO 15118-20 mandates TLS -- [V2G20-2677]: "Only full-handshake TLS shall be used for V2G
+    // communication between EVCC and SECC" -- so without a certificate it cannot be offered at all. ISO
+    // 15118-2 and DIN SPEC 70121 are offered either way and simply run unsecured.
+    const bool offer_iso15118_20 = mod->config.supported_ISO15118_20 and tls_available.has_value();
+    iso15118_20_offerable = offer_iso15118_20;
+    if (mod->config.supported_ISO15118_20 and not offer_iso15118_20) {
+        EVLOG_warning << "Evse15118D20: supported_ISO15118_20 is set but no V2G leaf certificate is available; "
+                         "ISO 15118-20 requires TLS [V2G20-2677] and is not offered";
+    }
+    if (not offer_iso15118_20 and not mod->config.supported_ISO15118_2 and not mod->config.supported_DIN70121) {
+        EVLOG_error << "Evse15118D20: ISO 15118-20 is the only enabled protocol but no V2G leaf certificate is "
+                       "available, and it cannot run unsecured. The SECC will not start";
+        return;
+    }
+    // A certificate exists, so -20 stays in the offer -- but ENFORCE_NO_TLS means every connection is
+    // plain TCP, and -20 is TLS-only [V2G20-2677]. The offer is deliberately left alone (an EV that only
+    // speaks -20 would otherwise get Failed_NoNegotiation instead of a working, if non-conformant,
+    // session), so flag the combination once at startup rather than only per session in the SAP handshake.
+    if (offer_iso15118_20 and tls_strategy == iso15118::config::TlsNegotiationStrategy::ENFORCE_NO_TLS) {
+        EVLOG_warning << "Evse15118D20: supported_ISO15118_20 is set together with "
+                         "tls_negotiation_strategy ENFORCE_NO_TLS. ISO 15118-20 mandates TLS [V2G20-2677], so any "
+                         "negotiated -20 session will not be standard-conformant. Set supported_ISO15118_20 to false "
+                         "to offer only ISO 15118-2 / DIN SPEC 70121 on unsecured connections";
+    }
+
+    std::vector<iso15118::ProtocolId> supported_protocols;
+    types::iso15118::SupportedAppProtocols secc_app_protocols;
+
+    if (offer_iso15118_20) {
+        supported_protocols.push_back(iso15118::ProtocolId::ISO15118_20);
+        secc_app_protocols.app_protocols.push_back(types::iso15118::SupportedAppProtocol::ISO15118D20);
+    }
+    if (mod->config.supported_ISO15118_2) {
+        supported_protocols.push_back(iso15118::ProtocolId::ISO15118_2);
+        secc_app_protocols.app_protocols.push_back(types::iso15118::SupportedAppProtocol::ISO15118D2);
+    }
+    if (mod->config.supported_DIN70121) {
+        supported_protocols.push_back(iso15118::ProtocolId::DIN70121);
+        secc_app_protocols.app_protocols.push_back(types::iso15118::SupportedAppProtocol::DIN70121);
+    }
+
+    {
+        std::scoped_lock lock(GEL);
+        configured_protocol_offer = supported_protocols;
+        apply_supported_protocols();
+    }
+
+    publish_supported_app_protocols_secc(secc_app_protocols);
 
     while (true) {
-        if (setup_steps_done.all()) {
+        if (setup_steps_done.all_set()) {
             break;
         }
         std::this_thread::sleep_for(WAIT_FOR_SETUP_DONE_MS);
@@ -239,28 +458,12 @@ void ISO15118_chargerImpl::ready() {
                          "Instead use the PacketSniffer module, tpcdump or Wireshark to log the v2gtp messages";
     }
 
-    // Obtain certificate location from the security module
-    const auto certificate_response = mod->r_security->call_get_leaf_certificate_info(
-        types::evse_security::LeafCertificateType::V2G, types::evse_security::EncodingFormat::PEM, false);
-
-    if (certificate_response.status != types::evse_security::GetCertificateInfoStatus::Accepted or
-        !certificate_response.info.has_value()) {
-        EVLOG_AND_THROW(Everest::EverestConfigError("V2G certificate not found"));
-    }
-
-    const auto& certificate_info = certificate_response.info.value();
-    std::string path_chain;
-
-    if (certificate_info.certificate.has_value()) {
-        path_chain = certificate_info.certificate.value();
-    } else if (certificate_info.certificate_single.has_value()) {
-        path_chain = certificate_info.certificate_single.value();
-    } else {
-        EVLOG_AND_THROW(Everest::EverestConfigError("V2G certificate not found"));
-    }
-
     const auto v2g_root_cert_path = mod->r_security->call_get_verify_file(types::evse_security::CaCertificateType::V2G);
     const auto mo_root_cert_path = mod->r_security->call_get_verify_file(types::evse_security::CaCertificateType::MO);
+
+    // Contract certificate chain roots for the ISO 15118-2 Plug-and-Charge PaymentDetails validation.
+    setup_config.contract_mo_root_path = mo_root_cert_path;
+    setup_config.contract_v2g_root_path = v2g_root_cert_path;
 
     // TODO(mlitre): Should be updated once libiso supports service renegotiation
     this->mod->p_extensions->publish_service_renegotiation_supported(false);
@@ -273,17 +476,34 @@ void ISO15118_chargerImpl::ready() {
     ssl_for_controller.enable_tls_key_logging = mod->config.enable_tls_key_logging;
     ssl_for_controller.enforce_tls_1_3 = mod->config.enforce_tls_1_3;
     ssl_for_controller.tls_key_logging_path = mod->config.tls_key_logging_path;
-    ssl_for_controller.chains.push_back(iso15118::config::ChainConfig{
-        path_chain,
-        certificate_info.key,
-        certificate_info.password,
-        {}, // ocsp_response_files — none for the single-chain leaf path
-    });
+    // Without a leaf certificate the TLS server has nothing to present, so no chain is configured and
+    // the controller only ever brings up plain endpoints (tls_strategy was forced to ENFORCE_NO_TLS
+    // above). The roots above are still set: they gate contract-certificate validation, not the server.
+    if (tls_available.has_value()) {
+        const auto& certificate_info = tls_available->info;
+        // Collect the leaf chain's OCSP response files (in chain order) so tls::Server can staple them
+        // (ISO 15118-2 [V2G2-071]). Sourced from EvseSecurity, mirroring EvseV2G's stapling path.
+        std::vector<std::string> ocsp_response_files;
+        if (certificate_info.ocsp.has_value()) {
+            for (const auto& ocsp : certificate_info.ocsp.value()) {
+                if (ocsp.ocsp_path.has_value()) {
+                    ocsp_response_files.push_back(ocsp.ocsp_path.value());
+                }
+            }
+        }
+
+        ssl_for_controller.chains.push_back(iso15118::config::ChainConfig{
+            tls_available->path_chain,
+            certificate_info.key,
+            certificate_info.password,
+            std::move(ocsp_response_files),
+        });
+    }
 
     iso15118::TbdConfig tbd_config = {
         std::move(ssl_for_controller),
         mod->config.device,
-        convert_tls_negotiation_strategy(mod->config.tls_negotiation_strategy),
+        tls_strategy,
         mod->config.enable_sdp_server,
     };
     auto callbacks = create_callbacks();
@@ -296,16 +516,47 @@ void ISO15118_chargerImpl::ready() {
 
     setup_config.selecting_sap_based_on_energy_service = mod->config.selecting_sap_based_on_energy_service;
 
+    // How long the ISO 15118-2 / DIN SPEC 70121 SECC keeps answering EVSEProcessing=Ongoing while waiting
+    // for the authorization result; 0 waits indefinitely. The manifest constrains both to >= 0, but a
+    // config source that bypasses validation must not wrap the unsigned field, so clamp.
+    const auto auth_timeout_seconds = [](int configured, const char* name) -> uint32_t {
+        if (configured < 0) {
+            EVLOG_warning << fmt::format("Evse15118D20: {} is negative ({}); treating it as 0 (wait indefinitely)",
+                                         name, configured);
+            return 0;
+        }
+        return static_cast<uint32_t>(configured);
+    };
+    setup_config.auth_timeout_eim_s = auth_timeout_seconds(mod->config.auth_timeout_eim, "auth_timeout_eim");
+    setup_config.auth_timeout_pnc_s = auth_timeout_seconds(mod->config.auth_timeout_pnc, "auth_timeout_pnc");
+
     // IEC DER limits pass through from ac_limits. Applying DER control directives to the EV is handled
     // separately by the DER control-function relay.
     {
         const auto& services = setup_config.supported_energy_services;
-        if (std::find(services.begin(), services.end(), dt::ServiceCategory::AC_DER_IEC) != services.end()) {
+        if (everest::lib::util::exists(services, dt::ServiceCategory::AC_DER_IEC)) {
             setup_config.der_limits = build_iec_der_transfer_limits(setup_config.ac_limits);
         }
     }
 
     controller = std::make_unique<iso15118::TbdController>(std::move(tbd_config), std::move(callbacks), setup_config);
+
+    // ISO 15118-2 Plug-and-Charge CertificateInstallation relay: forward the backend's
+    // CertificateInstallationRes (received by the extensions impl) into libiso15118 as a control event.
+    // Registered after the controller exists so the extensions impl (a separate command thread) can
+    // safely inject the response into the running session (the control-event queue is mutex-protected).
+    mod->on_certificate_response = [this](const types::iso15118::ResponseExiStreamStatus& response) {
+        std::scoped_lock lock(GEL);
+        if (not controller) {
+            return;
+        }
+        iso15118::d20::CertificateResponse event;
+        event.status_accepted = (response.status == types::iso15118::Status::Accepted);
+        if (response.exi_response.has_value()) {
+            event.exi_response_base64 = response.exi_response.value();
+        }
+        controller->send_control_event(event);
+    };
 
     // if the vas providers report their supported vas services before the controller exists,
     // we need to update the controller with the supported vas services after instantiation
@@ -353,7 +604,7 @@ std::optional<size_t> ISO15118_chargerImpl::get_vas_provider_index(uint16_t serv
 
     for (size_t i = 0; i < supported_vas_services_per_provider.size(); i++) {
         const auto& provider_services = supported_vas_services_per_provider[i];
-        if (std::find(provider_services.begin(), provider_services.end(), service_id) != provider_services.end()) {
+        if (everest::lib::util::exists(provider_services, service_id)) {
             return i;
         }
     }
@@ -501,12 +752,15 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
 
                 publish_dc_ev_target_voltage_current({target_voltage, target_current});
 
-                if (scheduled_mode->max_charge_current and scheduled_mode->max_voltage and
+                // Each maximum is optional on its own (and DIN SPEC 70121 EVs commonly send voltage and
+                // current but no power limit), so publish whichever subset the EV actually sent instead
+                // of dropping all three when one is missing. All three fields of DcEvMaximumLimits are
+                // optional as well.
+                if (scheduled_mode->max_charge_current or scheduled_mode->max_voltage or
                     scheduled_mode->max_charge_power) {
-                    const auto max_current = dt::from_RationalNumber(scheduled_mode->max_charge_current.value());
-                    const auto max_voltage = dt::from_RationalNumber(scheduled_mode->max_voltage.value());
-                    const auto max_power = dt::from_RationalNumber(scheduled_mode->max_charge_power.value());
-                    publish_dc_ev_maximum_limits({max_current, max_power, max_voltage});
+                    publish_dc_ev_maximum_limits({convert_from_optional(scheduled_mode->max_charge_current),
+                                                  convert_from_optional(scheduled_mode->max_charge_power),
+                                                  convert_from_optional(scheduled_mode->max_voltage)});
                 }
 
             } else if (const auto* bpt_scheduled_mode = std::get_if<BPT_ScheduleReqControlModeDC>(dc_control_mode)) {
@@ -514,12 +768,11 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
                 const auto target_current = dt::from_RationalNumber(bpt_scheduled_mode->target_current);
                 publish_dc_ev_target_voltage_current({target_voltage, target_current});
 
-                if (bpt_scheduled_mode->max_charge_current and bpt_scheduled_mode->max_voltage and
+                if (bpt_scheduled_mode->max_charge_current or bpt_scheduled_mode->max_voltage or
                     bpt_scheduled_mode->max_charge_power) {
-                    const auto max_current = dt::from_RationalNumber(bpt_scheduled_mode->max_charge_current.value());
-                    const auto max_voltage = dt::from_RationalNumber(bpt_scheduled_mode->max_voltage.value());
-                    const auto max_power = dt::from_RationalNumber(bpt_scheduled_mode->max_charge_power.value());
-                    publish_dc_ev_maximum_limits({max_current, max_power, max_voltage});
+                    publish_dc_ev_maximum_limits({convert_from_optional(bpt_scheduled_mode->max_charge_current),
+                                                  convert_from_optional(bpt_scheduled_mode->max_charge_power),
+                                                  convert_from_optional(bpt_scheduled_mode->max_voltage)});
                 }
 
                 // publish_dc_ev_maximum_limits({max_limits.current, max_limits.power, max_limits.voltage});
@@ -537,6 +790,89 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
                 EVLOG_info << "Meter info is requested from EV";
                 publish_meter_info_requested(nullptr);
             }
+        }
+    };
+
+    // DIN SPEC 70121 / ISO 15118-2 only: the EV's DC_EVStatus, above all its state of charge, which the
+    // -20 charge loop instead reports through DisplayParameters.
+    callbacks.dc_ev_status = [this](const feedback::DcEvStatus& ev_status) {
+        publish_dc_ev_status(convert_dc_ev_status(ev_status));
+    };
+
+    // DIN SPEC 70121 / ISO 15118-2 only: what the EV asked for in ChargeParameterDiscoveryReq. Fans out
+    // to the per-session ev_info vars EvseManager consumes and to the OCPP ChargingNeeds notification on
+    // the extensions interface. ISO 15118-20 reports the equivalent via notify_ev_charging_needs.
+    callbacks.ev_charge_parameters = [this](const feedback::EvChargeParameters& parameters) {
+        const auto transfer_mode = convert_energy_transfer_mode(parameters.requested_energy_transfer);
+        publish_requested_energy_transfer_mode(transfer_mode);
+
+        types::iso15118::ChargingNeeds charging_needs;
+        charging_needs.requested_energy_transfer = transfer_mode;
+
+        // The EV gives its departure time as seconds from now; both consumers get the same absolute
+        // timestamp rather than two computed moments apart.
+        if (parameters.departure_time.has_value()) {
+            const auto departure_time = seconds_from_now_to_rfc3339(parameters.departure_time.value());
+            publish_departure_time(departure_time);
+            charging_needs.departure_time = departure_time;
+        }
+
+        if (parameters.dc.has_value()) {
+            const auto& dc = parameters.dc.value();
+            if (dc.energy_capacity.has_value()) {
+                publish_dc_ev_energy_capacity(dc.energy_capacity.value());
+            }
+            if (dc.energy_request.has_value()) {
+                publish_dc_ev_energy_request(dc.energy_request.value());
+            }
+            if (dc.full_soc.has_value()) {
+                publish_dc_full_soc(dc.full_soc.value());
+            }
+            if (dc.bulk_soc.has_value()) {
+                publish_dc_bulk_soc(dc.bulk_soc.value());
+            }
+            charging_needs.dc_charging_parameters = convert_dc_charging_parameters(dc);
+        }
+
+        if (parameters.ac.has_value()) {
+            const auto& ac = parameters.ac.value();
+            publish_ac_eamount(ac.e_amount);
+            publish_ac_ev_max_voltage(ac.max_voltage);
+            publish_ac_ev_max_current(ac.max_current);
+            publish_ac_ev_min_current(ac.min_current);
+            charging_needs.ac_charging_parameters = convert_ac_charging_parameters(ac);
+        }
+
+        this->mod->p_extensions->publish_charging_needs(charging_needs);
+    };
+
+    // DIN SPEC 70121 / ISO 15118-2 only: the EV's charge progress. The remaining times are absent when
+    // the update came from a PowerDeliveryReq, which carries only the completion flags -- publishing
+    // dc_ev_remaining_time then would clear the values the charge loop reported.
+    callbacks.dc_ev_charge_progress = [this](const feedback::DcEvChargeProgress& progress) {
+        if (progress.remaining_time_to_full_soc.has_value() or progress.remaining_time_to_bulk_soc.has_value()) {
+            types::iso15118::DcEvRemainingTime remaining_time;
+            if (progress.remaining_time_to_full_soc.has_value()) {
+                remaining_time.ev_remaining_time_to_full_soc =
+                    seconds_from_now_to_rfc3339(progress.remaining_time_to_full_soc.value());
+            }
+            if (progress.remaining_time_to_bulk_soc.has_value()) {
+                remaining_time.ev_remaining_time_to_full_bulk_soc =
+                    seconds_from_now_to_rfc3339(progress.remaining_time_to_bulk_soc.value());
+            }
+            publish_dc_ev_remaining_time(remaining_time);
+        }
+
+        // The remaining times change with nearly every CurrentDemandReq, so the progress feedback fires
+        // that often; the completion flags rarely change and are published only when they do.
+        if (last_charging_complete != progress.charging_complete) {
+            last_charging_complete = progress.charging_complete;
+            publish_dc_charging_complete(progress.charging_complete);
+        }
+        if (progress.bulk_charging_complete.has_value() and
+            last_bulk_charging_complete != progress.bulk_charging_complete) {
+            last_bulk_charging_complete = progress.bulk_charging_complete;
+            publish_dc_bulk_charging_complete(progress.bulk_charging_complete.value());
         }
     };
 
@@ -654,25 +990,66 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
             publish_ac_open_contactor(nullptr);
             break;
         case Signal::DLINK_TERMINATE:
+            report_hlc_session_failed();
             publish_dlink_terminate(nullptr);
             break;
         case Signal::DLINK_PAUSE:
+            // A pause is not a session failure, so nothing is reported -- but the data link ends here
+            // too, so the per-session state still has to go (EvseV2G reinitialises it on every
+            // connection teardown, pause included).
+            reset_session_state();
             publish_dlink_pause(nullptr);
             break;
         case Signal::DLINK_ERROR:
+            report_hlc_session_failed();
             publish_dlink_error(nullptr);
             break;
         }
     };
 
-    callbacks.v2g_message = [this](const iso15118::V2gMessageType& id) {
-        const auto v2g_message_id = convert_v2g_message_type(id);
-        publish_v2g_messages({v2g_message_id});
+    callbacks.v2g_message = [this](const iso15118::V2gMessageType& id, const iso15118::io::StreamInputView& exi_frame) {
+        // Always tracked: hlc_session_failed derives its reason from the last message at teardown.
+        last_v2g_message = id;
+        // Published only in debug mode, mirroring EvseV2G's debugMode gate on this var. The frame is
+        // the complete V2GTP message (8-byte header + EXI payload), rendered in the same two encodings
+        // EvseV2G uses so existing log tooling can decode either one (v2g_server.cpp:275-288). xml and
+        // v2g_json stay unset: neither stack decodes the EXI back into a document.
+        if (debug_mode) {
+            types::iso15118::V2gMessages message;
+            message.id = convert_v2g_message_type(id);
+            if (exi_frame.payload != nullptr and exi_frame.payload_len > 0) {
+                message.exi = to_hex_string(exi_frame);
+                message.exi_base64 = to_base64_string(exi_frame);
+            }
+            publish_v2g_messages(message);
+        }
+    };
+
+    // Debug only, like EvseV2G (v2g_server.cpp:467): the protocol list the EV offered in
+    // SupportedAppProtocolReq, reported whether or not the negotiation went on to succeed.
+    callbacks.ev_app_protocols = [this](const iso15118::message_20::SupportedAppProtocolRequest& req) {
+        if (not debug_mode) {
+            return;
+        }
+        types::iso15118::AppProtocols app_protocols;
+        app_protocols.Protocols.reserve(req.app_protocol.size());
+        for (const auto& protocol : req.app_protocol) {
+            app_protocols.Protocols.push_back(convert_app_protocol(protocol));
+        }
+        publish_ev_app_protocol(app_protocols);
     };
 
     callbacks.evccid = [this](const std::string& evccid) { publish_evcc_id(evccid); };
 
     callbacks.selected_protocol = [this](const std::string& protocol) { publish_selected_protocol(protocol); };
+
+    // DIN SPEC 70121 / ISO 15118-2 only; ISO 15118-20 negotiates authorization services instead and
+    // leaves this var untouched (EvseV2G iso_server.cpp:1020 parity).
+    callbacks.selected_payment_option = [this](iso15118::shared_datatypes::PaymentOption payment_option) {
+        publish_selected_payment_option(payment_option == iso15118::shared_datatypes::PaymentOption::Contract
+                                            ? types::iso15118::PaymentOption::Contract
+                                            : types::iso15118::PaymentOption::ExternalPayment);
+    };
 
     callbacks.selected_service_parameters = [this](const iso15118::d20::SelectedServiceParameters& parameters) {
         // Captured for ChargeParameterDiscovery to surface DERChargingParameters.ev_supported_dercontrol.
@@ -831,43 +1208,146 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         this->mod->p_charger->publish_ev_termination(termination_ctx);
     };
 
+    // ISO 15118-2 Plug-and-Charge: the library verified a signed AuthorizationReq and asks the higher
+    // layer to authorize the contract eMAID. Republish it as a PnC ProvidedIdToken (EvseManager forwards
+    // it to Auth, which validates it and answers via handle_authorization_response).
+    callbacks.require_auth_pnc = [this](const std::string& emaid, const std::string& contract_chain_pem) {
+        types::authorization::ProvidedIdToken token;
+        token.id_token = {emaid, types::authorization::IdTokenType::eMAID};
+        token.authorization_type = types::authorization::AuthorizationType::PlugAndCharge;
+        if (not contract_chain_pem.empty()) {
+            token.certificate = contract_chain_pem;
+        }
+        this->mod->p_charger->publish_require_auth_pnc(token);
+    };
+
+    // ISO 15118-2 Plug-and-Charge CertificateInstallation relay: libiso15118 forwards the raw
+    // CertificateInstallationReq EXI (base64). Republish it verbatim on the iso15118_extensions
+    // interface (iso15118_certificate_request) so the CSMS/CPS backend can build the response. The
+    // response is delivered async via handle_set_get_certificate_response (see on_certificate_response).
+    callbacks.certificate_request = [this](const std::string& exi_request_base64,
+                                           iso15118::session::feedback::CertificateExchangeAction action) {
+        types::iso15118::RequestExiStreamSchema request;
+        request.exi_request = exi_request_base64;
+        request.iso15118_schema_version = "urn:iso:15118:2:2013:MsgDef";
+        request.certificate_action = (action == iso15118::session::feedback::CertificateExchangeAction::Update)
+                                         ? types::iso15118::CertificateActionEnum::Update
+                                         : types::iso15118::CertificateActionEnum::Install;
+        this->mod->p_extensions->publish_iso15118_certificate_request(request);
+    };
+
     return callbacks;
 }
 
+void ISO15118_chargerImpl::reset_session_state() {
+    // Per-session state that must not leak into the following session. Run at every end of the data
+    // link, pause included: EvseV2G clears the equivalent fields from v2g_ctx_init_charging_state()
+    // (v2g_ctx.cpp:104), which connection_teardown() calls before it looks at the D-LINK action, so a
+    // paused session leaves nothing behind either.
+    last_v2g_message.reset();
+    graceful_stop_requested = false;
+    emergency_shutdown_requested = false;
+    last_charging_complete.reset();
+    last_bulk_charging_complete.reset();
+}
+
+void ISO15118_chargerImpl::report_hlc_session_failed() {
+    // Runs on the session loop thread from the DLINK_TERMINATE / DLINK_ERROR feedback. Derive a
+    // protocol-agnostic failure reason from the last V2G message the session handled and publish it,
+    // unless the EVSE ended the session itself.
+    //
+    // Both EVSE-initiated ends suppress the report, matching EvseV2G's
+    // `stop_hlc || intl_emergency_shutdown` (connection.cpp:518). An emergency shutdown is therefore not
+    // reported as an HLC session failure: it is an EVSE fault the module already raised as an error
+    // (handle_send_error), not a failure of the V2G session, and EvseManager learns about it that way.
+    std::optional<types::evse_manager::HlcSessionFailedReasonEnum> reason;
+    if (last_v2g_message.has_value()) {
+        reason = map_v2g_message_to_hlc_failed_reason(*last_v2g_message);
+    }
+
+    const bool evse_initiated_stop = graceful_stop_requested.load() or emergency_shutdown_requested.load();
+    if (reason.has_value() and not evse_initiated_stop) {
+        publish_hlc_session_failed(*reason);
+    }
+
+    reset_session_state();
+}
+
 void ISO15118_chargerImpl::handle_setup(types::iso15118::EVSEID& evse_id,
-                                        [[maybe_unused]] types::iso15118::SaeJ2847BidiMode& sae_j2847_mode,
-                                        [[maybe_unused]] bool& debug_mode) {
+                                        types::iso15118::SaeJ2847BidiMode& sae_j2847_mode, bool& debug_mode) {
+
+    // SAE J2847/2 is not implemented here (EvseV2G offers it). Say so rather than have EvseManager
+    // wait for a sae_bidi_mode_active that never comes.
+    if (sae_j2847_mode != types::iso15118::SaeJ2847BidiMode::None) {
+        EVLOG_warning << "SAE J2847/2 bidirectional mode ("
+                      << types::iso15118::sae_j2847bidi_mode_to_string(sae_j2847_mode)
+                      << ") is not supported by this module; the SAE service is not offered";
+    }
+    // debug_mode gates the v2g_messages and ev_app_protocol publishes like EvseV2G's debugMode.
+    this->debug_mode = debug_mode;
+    if (debug_mode) {
+        EVLOG_info << "debug_mode enabled: publishing v2g_messages (message id plus the raw V2GTP frame as hex "
+                      "and base64) and ev_app_protocol";
+    }
 
     std::scoped_lock lock(GEL);
     setup_config.evse_id = evse_id.evse_id; // TODO(SL): Check format for d20
 
-    setup_steps_done.set(to_underlying_value(SetupStep::SETUP));
+    setup_steps_done.set(SetupStep::SETUP);
 }
 
 void ISO15118_chargerImpl::handle_set_charging_parameters(types::iso15118::SetupPhysicalValues& physical_values) {
-    // your code for cmd set_charging_parameters goes here
+    // Physical EVSE parameters for the ISO 15118-2 / DIN SPEC 70121 EVSEChargeParameter elements:
+    // EVSENominalVoltage (AC) and EVSEPeakCurrentRipple / EVSECurrentRegulationTolerance /
+    // EVSEEnergyToBeDelivered (DC). ISO 15118-20 carries the same information in its limit structures and
+    // ignores this. EvseManager calls this at setup (AC) and on every power-supply capabilities push (DC),
+    // which may land mid-session, so a live controller is updated too (mirrors EvseV2G's handler).
+    iso15118::d20::PhysicalValues values;
+    values.ac_nominal_voltage = physical_values.ac_nominal_voltage;
+    values.dc_current_regulation_tolerance = physical_values.dc_current_regulation_tolerance;
+    values.dc_peak_current_ripple = physical_values.dc_peak_current_ripple;
+    values.dc_energy_to_be_delivered = physical_values.dc_energy_to_be_delivered;
+
+    std::scoped_lock lock(GEL);
+    setup_config.physical_values = values;
+    if (controller) {
+        controller->update_physical_values(values);
+    }
 }
 
 void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::PaymentOption>& payment_options,
                                                 bool& supported_certificate_service,
-                                                [[maybe_unused]] bool& central_contract_validation_allowed) {
+                                                bool& central_contract_validation_allowed) {
     std::scoped_lock lock(GEL);
 
     std::vector<dt::Authorization> auth_services;
 
+    bool contract_offered = false;
     for (auto& option : payment_options) {
         if (option == types::iso15118::PaymentOption::ExternalPayment) {
             auth_services.push_back(dt::Authorization::EIM);
         } else if (option == types::iso15118::PaymentOption::Contract) {
-            // auth_services.push_back(iso15118::message_20::Authorization::PnC);
-            EVLOG_warning << "Currently Plug&Charge is not supported and ignored";
+            // ISO 15118-20 PnC is not yet wired; the ISO 15118-2 SECC engine does support Plug-and-Charge
+            // (Contract payment) and is enabled via setup_config.iso2_pnc_enabled below.
+            contract_offered = true;
         }
     }
 
     setup_config.authorization_services = auth_services;
+    setup_config.iso2_pnc_enabled = contract_offered;
     setup_config.enable_certificate_install_service = supported_certificate_service;
+    // ISO 15118-2 PnC: accept a contract without a local MO root and forward it for central validation
+    // (OCPP CentralContractValidationAllowed, via EvseManager).
+    setup_config.central_contract_validation_allowed = central_contract_validation_allowed;
 
-    setup_steps_done.set(to_underlying_value(SetupStep::AUTH_SETUP));
+    // session_setup is (re)sent by EvseManager for every session: push the updated auth/PnC setup into
+    // the already running controller so runtime changes (e.g. via OCPP) apply to the next session.
+    if (controller) {
+        controller->update_authorization_services(auth_services, supported_certificate_service);
+        controller->update_iso2_pnc_config(contract_offered, central_contract_validation_allowed);
+    }
+
+    setup_steps_done.set(SetupStep::AUTH_SETUP);
 }
 
 void ISO15118_chargerImpl::handle_bpt_setup(types::iso15118::BptSetup& bpt_config) {
@@ -951,24 +1431,23 @@ void ISO15118_chargerImpl::handle_set_powersupply_capabilities(types::power_supp
         controller->update_powersupply_limits(setup_config.powersupply_limits);
     }
 
-    setup_steps_done.set(to_underlying_value(SetupStep::MAX_LIMITS));
-    setup_steps_done.set(to_underlying_value(SetupStep::MIN_LIMITS));
+    setup_steps_done.set(SetupStep::MAX_LIMITS);
+    setup_steps_done.set(SetupStep::MIN_LIMITS);
 }
 
 void ISO15118_chargerImpl::handle_authorization_response(
     types::authorization::AuthorizationStatus& authorization_status,
-    [[maybe_unused]] types::authorization::CertificateStatus& certificate_status) {
+    types::authorization::CertificateStatus& certificate_status) {
 
     std::scoped_lock lock(GEL);
-    // Todo(sl): Currently PnC is not supported
-    bool authorized = false;
-
-    if (authorization_status == types::authorization::AuthorizationStatus::Accepted) {
-        authorized = true;
-    }
+    const bool authorized = (authorization_status == types::authorization::AuthorizationStatus::Accepted);
+    // ISO 15118-2 Plug-and-Charge: a rejection because the contract certificate is revoked is named as
+    // such in the AuthorizationRes (FAILED_CertificateRevoked). Only meaningful with a rejection.
+    const bool certificate_revoked =
+        not authorized and certificate_status == types::authorization::CertificateStatus::CertificateRevoked;
 
     if (controller) {
-        controller->send_control_event(iso15118::d20::AuthorizationResponse{authorized});
+        controller->send_control_event(iso15118::d20::AuthorizationResponse{authorized, certificate_revoked});
     }
 }
 
@@ -995,10 +1474,25 @@ void ISO15118_chargerImpl::handle_cable_check_finished(bool& status) {
 }
 
 void ISO15118_chargerImpl::handle_receipt_is_required(bool& receipt_required) {
-    // your code for cmd receipt_is_required goes here
+    // Request a (signed) MeteringReceipt from the EV: the SECC sets ReceiptRequired in the DC
+    // CurrentDemandRes / AC ChargingStatusRes charge loop (PnC only). EvseManager calls this from its
+    // own ready(), whose order vs this module's ready() (which creates the controller) is not
+    // guaranteed. Store it in setup_config so a controller created later picks it up, AND update a live
+    // controller for calls that arrive after creation. (Mirrors EvseV2G's evse_v2g_data.receipt_required.)
+    std::scoped_lock lock(GEL);
+    setup_config.iso2_receipt_required = receipt_required;
+    if (controller) {
+        controller->update_receipt_required(receipt_required);
+    }
 }
 
 void ISO15118_chargerImpl::handle_stop_charging(bool& stop) {
+
+    if (stop) {
+        // A graceful EVSE-initiated stop is not a session failure: suppress the hlc_session_failed
+        // report at teardown (unless an emergency shutdown also fired).
+        graceful_stop_requested = true;
+    }
 
     std::scoped_lock lock(GEL);
     if (controller) {
@@ -1014,7 +1508,29 @@ void ISO15118_chargerImpl::handle_pause_charging(bool& pause) {
 }
 
 void ISO15118_chargerImpl::handle_no_energy_pause_charging(types::iso15118::NoEnergyPauseMode& mode) {
-    // your code for cmd no_energy_pause_charging goes here
+    // IEC 61851-23:2023 CC.3.5.3: no energy is available for this session. The ISO 15118-2 and DIN SPEC
+    // 70121 SECC engines signal EVSENotification StopCharging in ChargeParameterDiscoveryRes and stop
+    // before starting the charge loop (EvseV2G parity). ISO 15118-20 does not act on it.
+    auto pause = iso15118::d20::NoEnergyPauseMode::None;
+    switch (mode) {
+    case types::iso15118::NoEnergyPauseMode::PauseBeforeCableCheck:
+        pause = iso15118::d20::NoEnergyPauseMode::BeforeCableCheck;
+        break;
+    case types::iso15118::NoEnergyPauseMode::PauseAfterPrecharge:
+        pause = iso15118::d20::NoEnergyPauseMode::AfterCableCheckPreCharge;
+        break;
+    case types::iso15118::NoEnergyPauseMode::AllowEvToIgnorePause:
+        pause = iso15118::d20::NoEnergyPauseMode::AllowEvToIgnorePause;
+        break;
+    }
+
+    std::scoped_lock lock(GEL);
+    // Stored as well as pushed: EvseManager may signal this before the V2G session exists. The stored
+    // value is one-shot -- the next session to start consumes it.
+    setup_config.no_energy_pause = pause;
+    if (controller) {
+        controller->update_no_energy_pause(pause);
+    }
 }
 
 bool ISO15118_chargerImpl::handle_update_supported_app_protocols(
@@ -1035,21 +1551,81 @@ bool ISO15118_chargerImpl::handle_update_supported_app_protocols(
 
     EVLOG_info << "Configured charging protocols: [" << configured_protocols << "]";
 
-    bool has_iso15118_d20{false};
+    // Narrow the SupportedAppProtocol offer to the requested subset of the configured protocols (the
+    // interface exists so a test setup can switch a protocol off). Kept in priority order -- ISO 15118-20,
+    // ISO 15118-2, DIN SPEC 70121 -- regardless of the order requested. Takes effect at the next session,
+    // as with EvseV2G. A protocol that is not configured cannot be switched on here.
     bool all_supported{true};
+    const auto requested = [&](types::iso15118::SupportedAppProtocol protocol) {
+        return std::find(supported_app_protocols.app_protocols.begin(), supported_app_protocols.app_protocols.end(),
+                         protocol) != supported_app_protocols.app_protocols.end();
+    };
+    std::vector<iso15118::ProtocolId> offered;
+    if (requested(types::iso15118::SupportedAppProtocol::ISO15118D20) and iso15118_20_offerable) {
+        offered.push_back(iso15118::ProtocolId::ISO15118_20);
+    }
+    if (requested(types::iso15118::SupportedAppProtocol::ISO15118D2) and mod->config.supported_ISO15118_2) {
+        offered.push_back(iso15118::ProtocolId::ISO15118_2);
+    }
+    if (requested(types::iso15118::SupportedAppProtocol::DIN70121) and mod->config.supported_DIN70121) {
+        offered.push_back(iso15118::ProtocolId::DIN70121);
+    }
 
     for (const auto& protocol : supported_app_protocols.app_protocols) {
-        if (protocol == types::iso15118::SupportedAppProtocol::ISO15118D20) {
-            has_iso15118_d20 = true;
-            continue;
-        } else {
+        const bool configured =
+            (protocol == types::iso15118::SupportedAppProtocol::ISO15118D20 and iso15118_20_offerable) or
+            (protocol == types::iso15118::SupportedAppProtocol::ISO15118D2 and mod->config.supported_ISO15118_2) or
+            (protocol == types::iso15118::SupportedAppProtocol::DIN70121 and mod->config.supported_DIN70121);
+        if (not configured) {
             EVLOG_warning << fmt::format("Unsupported app protocol: {}",
                                          types::iso15118::supported_app_protocol_to_string(protocol));
             all_supported = false;
         }
     }
 
+    if (offered.empty()) {
+        EVLOG_warning << "None of the requested app protocols is configured; keeping the current offer";
+        return false;
+    }
+
+    std::scoped_lock lock(GEL);
+    configured_protocol_offer = offered;
+    apply_supported_protocols();
     return all_supported;
+}
+
+void ISO15118_chargerImpl::apply_supported_protocols() {
+    auto offered = configured_protocol_offer;
+
+    // DIN SPEC 70121 is DC only, so it must not be offered on an AC charger -- an EV picking it would only
+    // run into FAILED_WrongEnergyTransferType at ChargeParameterDiscovery. EvseV2G does the same
+    // (EvseV2G/charger/ISO15118_chargerImpl.cpp handle_update_energy_transfer_modes).
+    bool din_removed{false};
+    if (ac_energy_transfer_mode) {
+        const auto din = std::find(offered.begin(), offered.end(), iso15118::ProtocolId::DIN70121);
+        if (din != offered.end()) {
+            offered.erase(din);
+            din_removed = true;
+        }
+    }
+
+    if (offered == setup_config.supported_protocols) {
+        // Nothing changed; stay quiet (the energy transfer modes are updated during every session setup).
+        return;
+    }
+
+    if (din_removed) {
+        EVLOG_warning << "Removed DIN SPEC 70121 from the list of supported protocols as AC is enabled";
+    }
+    if (offered.empty()) {
+        EVLOG_error << "No protocol left to offer: DIN SPEC 70121 is the only configured protocol but the "
+                       "charger offers AC energy transfer. Every SupportedAppProtocol handshake will fail";
+    }
+
+    setup_config.supported_protocols = offered;
+    if (controller) {
+        controller->update_supported_protocols(offered);
+    }
 }
 
 void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
@@ -1058,6 +1634,7 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
     std::scoped_lock lock(GEL);
 
     std::vector<dt::ServiceCategory> services;
+    bool has_ac{false};
 
     for (const auto& mode : supported_energy_transfer_modes) {
         switch (mode) {
@@ -1065,16 +1642,20 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
         case types::iso15118::EnergyTransferMode::AC_two_phase:
         case types::iso15118::EnergyTransferMode::AC_three_phase_core:
             services.push_back(dt::ServiceCategory::AC);
+            has_ac = true;
             break;
         case types::iso15118::EnergyTransferMode::AC_BPT:
         case types::iso15118::EnergyTransferMode::AC_BPT_DER:
             services.push_back(dt::ServiceCategory::AC_BPT);
+            has_ac = true;
             break;
         case types::iso15118::EnergyTransferMode::AC_DER_IEC:
             services.push_back(dt::ServiceCategory::AC_DER_IEC);
+            has_ac = true;
             break;
         case types::iso15118::EnergyTransferMode::AC_DER_SAE:
             services.push_back(dt::ServiceCategory::AC_DER_SAE);
+            has_ac = true;
             break;
         case types::iso15118::EnergyTransferMode::DC:
         case types::iso15118::EnergyTransferMode::DC_core:
@@ -1106,15 +1687,63 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
 
     setup_config.supported_energy_services = services;
 
+    // The ISO 15118-2 / DIN SPEC 70121 engines advertise the configured modes verbatim, so they keep the
+    // distinctions the -20 service categories above collapse (DC_core vs DC_extended, DC_combo_core,
+    // DC_unique). Modes that only exist in ISO 15118-20 (BPT, WPT, MCS, DER, ...) have no pre-20
+    // counterpart and are left out; the plain "DC" of a -20-style config means DC_extended.
+    std::vector<iso15118::shared_datatypes::EnergyTransferMode> pre20_modes;
+    for (const auto& mode : supported_energy_transfer_modes) {
+        using Pre20 = iso15118::shared_datatypes::EnergyTransferMode;
+        std::optional<Pre20> converted;
+        switch (mode) {
+        case types::iso15118::EnergyTransferMode::AC_single_phase_core:
+            converted = Pre20::AC_single_phase_core;
+            break;
+        case types::iso15118::EnergyTransferMode::AC_three_phase_core:
+            converted = Pre20::AC_three_phase_core;
+            break;
+        case types::iso15118::EnergyTransferMode::DC:
+        case types::iso15118::EnergyTransferMode::DC_extended:
+            converted = Pre20::DC_extended;
+            break;
+        case types::iso15118::EnergyTransferMode::DC_core:
+            converted = Pre20::DC_core;
+            break;
+        case types::iso15118::EnergyTransferMode::DC_combo_core:
+            converted = Pre20::DC_combo_core;
+            break;
+        case types::iso15118::EnergyTransferMode::DC_unique:
+            converted = Pre20::DC_unique;
+            break;
+        default:
+            break;
+        }
+        if (converted.has_value() and
+            std::find(pre20_modes.begin(), pre20_modes.end(), converted.value()) == pre20_modes.end()) {
+            pre20_modes.push_back(converted.value());
+        }
+    }
+    setup_config.pre20_energy_transfer_modes = pre20_modes;
+
+    ac_energy_transfer_mode = has_ac;
+    apply_supported_protocols();
+
     if (controller) {
         controller->update_energy_modes(services);
+        controller->update_pre20_energy_transfer_modes(pre20_modes);
     }
 
-    setup_steps_done.set(to_underlying_value(SetupStep::ENERGY_SERVICE));
+    setup_steps_done.set(SetupStep::ENERGY_SERVICE);
 }
 
 void ISO15118_chargerImpl::handle_update_ac_max_current(double& max_current) {
-    // your code for cmd update_ac_max_current goes here
+    std::scoped_lock lock(GEL);
+
+    setup_config.iso2_ac_max_current = static_cast<float>(max_current);
+
+    if (controller) {
+        controller->update_iso2_ac_max_current(static_cast<float>(max_current));
+    }
 }
 
 void ISO15118_chargerImpl::handle_update_ac_parameters(types::iso15118::AcParameters& ac_parameters) {
@@ -1169,7 +1798,7 @@ void ISO15118_chargerImpl::handle_update_ac_maximum_limits(types::iso15118::AcEv
             controller->update_ac_limits(setup_config.ac_limits);
         }
 
-        setup_steps_done.set(to_underlying_value(SetupStep::MAX_LIMITS));
+        setup_steps_done.set(SetupStep::MAX_LIMITS);
     }
 
     // watt_base changed; re-apply DER directives on the fresh base. Must run after GEL is released
@@ -1197,7 +1826,7 @@ void ISO15118_chargerImpl::handle_update_ac_minimum_limits(types::iso15118::AcEv
         controller->update_ac_limits(setup_config.ac_limits);
     }
 
-    setup_steps_done.set(to_underlying_value(SetupStep::MIN_LIMITS));
+    setup_steps_done.set(SetupStep::MIN_LIMITS);
 }
 
 void ISO15118_chargerImpl::handle_update_ac_target_values(types::iso15118::AcTargetValues& target_values) {
@@ -1295,7 +1924,34 @@ void ISO15118_chargerImpl::handle_update_dc_minimum_limits(types::iso15118::DcEv
 }
 
 void ISO15118_chargerImpl::handle_update_isolation_status(types::iso15118::IsolationStatus& isolation_status) {
-    // your code for cmd update_isolation_status goes here
+    // The isolation-monitoring result reaches the ISO 15118-2 / DIN SPEC 70121 SECC engines, which report
+    // it as DC_EVSEStatus.EVSEIsolationStatus in the DC responses after the cable check. Above all it is
+    // how No_IMD (no insulation monitoring device fitted, cable check skipped) reaches the EV -- the
+    // response builders cannot derive that from the cable-check result alone. CableCheckRes keeps its own
+    // progress-derived status. ISO 15118-20 has no such element and ignores this.
+    auto status = iso15118::d20::IsolationStatus::Invalid;
+    switch (isolation_status) {
+    case types::iso15118::IsolationStatus::Invalid:
+        status = iso15118::d20::IsolationStatus::Invalid;
+        break;
+    case types::iso15118::IsolationStatus::Valid:
+        status = iso15118::d20::IsolationStatus::Valid;
+        break;
+    case types::iso15118::IsolationStatus::Warning:
+        status = iso15118::d20::IsolationStatus::Warning;
+        break;
+    case types::iso15118::IsolationStatus::Fault:
+        status = iso15118::d20::IsolationStatus::Fault;
+        break;
+    case types::iso15118::IsolationStatus::No_IMD:
+        status = iso15118::d20::IsolationStatus::NoImd;
+        break;
+    }
+
+    std::scoped_lock lock(GEL);
+    if (controller) {
+        controller->send_control_event(iso15118::d20::UpdateIsolationStatus{status});
+    }
 }
 
 void ISO15118_chargerImpl::handle_update_dc_present_values(
@@ -1311,15 +1967,59 @@ void ISO15118_chargerImpl::handle_update_dc_present_values(
 }
 
 void ISO15118_chargerImpl::handle_update_meter_info(types::powermeter::Powermeter& powermeter) {
-    // your code for cmd update_meter_info goes here
+    // Forward the latest meter reading into the active session so the charge-loop responses can report it
+    // as MeterInfo (ISO 15118-2: every ChargingStatusRes, and CurrentDemandRes in PnC sessions).
+    iso15118::d20::MeterInfo meter_info{};
+    meter_info.meter_id = powermeter.meter_id.value_or("");
+    // energy_Wh_import.total is the billing-relevant sum in Wh.
+    const float energy_wh = powermeter.energy_Wh_import.total;
+    meter_info.meter_reading_wh = energy_wh > 0.0f ? static_cast<uint64_t>(energy_wh) : 0U;
+
+    std::scoped_lock lock(GEL);
+    if (controller) {
+        controller->send_control_event(meter_info);
+    }
 }
 
 void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) {
-    // your code for cmd send_error goes here
+    // Map the EvseManager error to the library's neutral EVSE error code and forward it as a control
+    // event. The SECC engines stamp Malfunction / UtilityInterruptEvent (RCD -> AC RCD flag) into the DC
+    // charge responses so the EV sees the fault, and abort the session on EmergencyShutdown (mirrors
+    // EvseV2G's handle_send_error).
+    auto code = iso15118::d20::EvseErrorCode::None;
+    switch (error) {
+    case types::iso15118::EvseError::Error_Contactor:
+        code = iso15118::d20::EvseErrorCode::Contactor;
+        break;
+    case types::iso15118::EvseError::Error_RCD:
+        code = iso15118::d20::EvseErrorCode::RCD;
+        break;
+    case types::iso15118::EvseError::Error_UtilityInterruptEvent:
+        code = iso15118::d20::EvseErrorCode::UtilityInterruptEvent;
+        break;
+    case types::iso15118::EvseError::Error_Malfunction:
+        code = iso15118::d20::EvseErrorCode::Malfunction;
+        break;
+    case types::iso15118::EvseError::Error_EmergencyShutdown:
+        code = iso15118::d20::EvseErrorCode::EmergencyShutdown;
+        // The EVSE aborts the session; report hlc_session_failed at teardown even if a graceful stop
+        // was also requested. This is how a failed cable check (isolation fault) surfaces a reason.
+        emergency_shutdown_requested = true;
+        break;
+    }
+
+    std::scoped_lock lock(GEL);
+    if (controller) {
+        controller->send_control_event(iso15118::d20::EvseError{code});
+    }
 }
 
 void ISO15118_chargerImpl::handle_reset_error() {
-    // your code for cmd reset_error goes here
+    // Clear any active EVSE error so subsequent responses report the normal status again.
+    std::scoped_lock lock(GEL);
+    if (controller) {
+        controller->send_control_event(iso15118::d20::EvseError{iso15118::d20::EvseErrorCode::None});
+    }
 }
 
 } // namespace charger

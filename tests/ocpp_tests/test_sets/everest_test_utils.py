@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import pytest
 import queue
 import os
 from pathlib import Path
@@ -418,6 +419,35 @@ def make_on_get_15118_ev_certificate(exi_generator: EXIGenerator):
 
 def get_everest_config_path_str(config_name):
     return (Path(__file__).parent / "everest-aux" / "config" / config_name).as_posix()
+
+
+def parametrize_secc_config(d20_config: str, evsev2g_config: str):
+    """Run an ISO 15118 test against both SECC stacks: Evse15118D20 and the
+    legacy EvseV2G (paired with PyEvJosev on the EV side).
+
+    The everest_core_config marker is carried per param; it overrides a
+    class-level config marker, but a function-level one would win over it,
+    so parametrized tests must not keep a function-level config marker.
+    """
+    return pytest.mark.parametrize(
+        "secc_config",
+        [
+            pytest.param(
+                "evse15118d20",
+                id="Evse15118D20",
+                marks=pytest.mark.everest_core_config(
+                    get_everest_config_path_str(d20_config)
+                ),
+            ),
+            pytest.param(
+                "evsev2g",
+                id="EvseV2G",
+                marks=pytest.mark.everest_core_config(
+                    get_everest_config_path_str(evsev2g_config)
+                ),
+            ),
+        ],
+    )
 
 
 def get_everest_config(function_name, module_name):

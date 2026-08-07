@@ -14,7 +14,10 @@ config:
     type: string
     default: "."
   tls_negotiation_strategy:
-    description: Select strategy on how to negotiate connection encryption
+    description: >-
+      Select strategy on how to negotiate connection encryption. TLS needs a V2G leaf certificate from
+      the security module; when none is installed the SECC still starts and offers unsecured sessions
+      only (ISO 15118-2 with EIM, DIN SPEC 70121), except with ENFORCE_TLS, which then refuses to start.
     type: string
     enum:
       - ACCEPT_CLIENT_OFFER
@@ -22,9 +25,55 @@ config:
       - ENFORCE_NO_TLS
     default: ACCEPT_CLIENT_OFFER  
   enforce_tls_1_3:
-    description: Enforcing tls version 1.3. Only applies if tls_negotiation_strategy is ENFORCE_TLS.
+    description: >-
+      Enforcing tls version 1.3. Applies whenever a TLS connection is established, independently of
+      tls_negotiation_strategy: it pins the min/max protocol version, the cipher list and the
+      client_hello certificate-verify elevation. Set to true for ISO 15118-20 (mandates TLS 1.3 mTLS).
+      Set to false to offer TLS 1.2 (cipher ECDHE-ECDSA-AES128-SHA256, no client-certificate request),
+      which is required for ISO 15118-2 / DIN SPEC 70121.
     type: boolean
     default: false
+  supported_DIN70121:
+    description: >-
+      Offer DIN SPEC 70121 (DC only) in the SupportedAppProtocol handshake. Negotiated with the
+      lowest priority (after ISO 15118-20 and ISO 15118-2).
+    type: boolean
+    default: false
+  supported_ISO15118_2:
+    description: >-
+      Offer ISO 15118-2 (AC and DC) in the SupportedAppProtocol handshake. Negotiated with a lower
+      priority than ISO 15118-20 but higher than DIN SPEC 70121.
+    type: boolean
+    default: false
+  supported_ISO15118_20:
+    description: >-
+      Offer ISO 15118-20 (AC and DC) in the SupportedAppProtocol handshake. Negotiated with the
+      highest priority. At least one of supported_ISO15118_20, supported_ISO15118_2 and
+      supported_DIN70121 must be enabled. ISO 15118-20 is TLS-only ([V2G20-2677]), so it is silently
+      dropped from the offer when no V2G leaf certificate is available; ISO 15118-2 and DIN SPEC 70121
+      keep running unsecured in that case. When a certificate IS available, -20 stays in the offer even
+      on unsecured connections (ENFORCE_NO_TLS, or an EV requesting no transport security): such a
+      session works but is not standard-conformant, and is logged as a warning. Set this to false to
+      offer only ISO 15118-2 / DIN SPEC 70121 on unsecured deployments.
+    type: boolean
+    default: true
+  auth_timeout_eim:
+    description: >-
+      Defines how many seconds the EVSE should wait for authorization in EIM (External Payment) case,
+      before the charging session is aborted. Write 0 if the EVSE should wait indefinitely for EIM
+      authorization. Applies to ISO 15118-2 and DIN SPEC 70121; ISO 15118-20 uses a fixed 3 min window.
+    type: integer
+    minimum: 0
+    default: 300
+  auth_timeout_pnc:
+    description: >-
+      Defines how many seconds the EVSE should wait for authorization in PnC (Contract) case, before the
+      charging session is aborted. Write 0 if the EVSE should wait indefinitely for PnC authorization.
+      Applies to ISO 15118-2 only: DIN SPEC 70121 has no Plug-and-Charge and ISO 15118-20 uses a fixed
+      3 min window. The default is the 55 s V2G_SECC_Ongoing_Performance_Time of [V2G2-712/713].
+    type: integer
+    minimum: 0
+    default: 55
   enable_ssl_logging:
     description: Verbosely log the ssl/tls connection
     type: boolean

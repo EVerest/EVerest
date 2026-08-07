@@ -229,6 +229,18 @@ Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionC
             forward(signal);
         }
     };
+
+    // The engines know the decoded message type but not the bytes it arrived in -- they are handed the
+    // EXI payload alone, while the V2GTP header sits in the Session's packet buffer. Attach the frame
+    // the Session is currently dispatching, so the module can publish the whole thing (EvseV2G's
+    // v2g_messages carries header + payload, v2g_server.cpp:275-288). Responses do not go through here:
+    // the Session emits those itself from send_response(), where it has the frame in hand.
+    callbacks.v2g_message = [this, forward = callbacks_.v2g_message](const V2gMessageType& type,
+                                                                     const io::StreamInputView&) {
+        if (forward) {
+            forward(type, current_request_frame);
+        }
+    };
 }
 
 Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionConfig session_config,
@@ -417,7 +429,12 @@ TimePoint const& Session::poll() {
                 timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
             }
 
+            // Publish the frame the engine is about to decode, header included (see the callback
+            // wrapping in the constructor). Cleared right after: the packet buffer is reused.
+            current_request_frame = {packet.get_buffer(),
+                                     packet.get_payload_length() + io::SdpPacket::V2GTP_HEADER_SIZE};
             visit_engine([payload_type, &view](auto& e) { e.on_packet(payload_type, view); });
+            current_request_frame = {};
 
             packet.reset();
             state.new_data = false; // reset new_data flag
@@ -607,7 +624,7 @@ void Session::send_response() {
 
     timeouts.start_timeout(d20::TimeoutType::SEQUENCE, sequence_timeout_after_response(response_type));
 
-    feedback.v2g_message(response_type);
+    feedback.v2g_message(response_type, {response_buffer, response_size});
 
     // A session-ending response just hit the wire (any protocol): report it. For a positive
     // SessionStopRes this is the anchor of the CP-oscillator retain time [V2G-DC-968]; only the

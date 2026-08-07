@@ -11,6 +11,7 @@
 #include <iso15118/d20/ev_information.hpp>
 #include <iso15118/d20/limits.hpp>
 #include <iso15118/d20/session.hpp>
+#include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/ac_charge_loop.hpp>
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
 #include <iso15118/message/ac_der_iec_charge_loop.hpp>
@@ -21,6 +22,7 @@
 #include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/service_selection.hpp>
 #include <iso15118/message/shared_datatypes.hpp>
+#include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/message/type.hpp>
 #include <iso15118/message/v2g_message_type.hpp>
 
@@ -176,7 +178,14 @@ struct Callbacks {
     // PowerDeliveryReq. Emitted on change only.
     std::function<void(const DcEvChargeProgress&)> dc_ev_charge_progress;
     std::function<void(const AcChargeLoopReq&)> ac_charge_loop_req;
-    std::function<void(const V2gMessageType&)> v2g_message;
+    // Every V2G message the session handled, request and response alike, together with the complete
+    // V2GTP frame it travelled in (8-byte header + EXI payload) exactly as it went over the wire --
+    // what EvseV2G publishes as v2g_messages.exi / .exi_base64 (v2g_server.cpp:271). The frame view is
+    // only valid for the duration of the call; it is empty when the bytes are not available.
+    std::function<void(const V2gMessageType&, const io::StreamInputView& exi_frame)> v2g_message;
+    // The protocol list the EV offered in SupportedAppProtocolReq, reported before the SECC picks one
+    // (so a failed negotiation is reported too, EvseV2G v2g_server.cpp:467 parity).
+    std::function<void(const message_20::SupportedAppProtocolRequest&)> ev_app_protocols;
     std::function<void(const std::string&)> evccid;
     std::function<void(const std::string&)> selected_protocol;
 
@@ -225,7 +234,10 @@ public:
     void ev_charge_parameters(const feedback::EvChargeParameters&) const;
     void dc_ev_charge_progress(const feedback::DcEvChargeProgress&) const;
     void ac_charge_loop_req(const feedback::AcChargeLoopReq&) const;
-    void v2g_message(const V2gMessageType&) const;
+    // \p exi_frame is the full V2GTP frame the message travelled in; the engines omit it (the Session
+    // owns the wire bytes and attaches them on the way through, see Session's callback wrapping).
+    void v2g_message(const V2gMessageType&, const io::StreamInputView& exi_frame = {}) const;
+    void ev_app_protocols(const message_20::SupportedAppProtocolRequest&) const;
     void evcc_id(const std::string&) const;
     void selected_protocol(const std::string&) const;
 

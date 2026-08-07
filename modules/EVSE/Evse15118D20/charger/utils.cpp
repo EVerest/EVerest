@@ -56,6 +56,58 @@ dt::ParameterSet convert_parameter_set(const types::iso15118_vas::ParameterSet& 
 }
 } // namespace
 
+std::string to_hex_string(const iso15118::io::StreamInputView& frame) {
+    static constexpr char HEX_DIGITS[] = "0123456789abcdef";
+
+    std::string out;
+    if (frame.payload == nullptr) {
+        return out;
+    }
+    out.reserve(frame.payload_len * 2);
+    for (std::size_t i = 0; i < frame.payload_len; ++i) {
+        out.push_back(HEX_DIGITS[frame.payload[i] >> 4]);
+        out.push_back(HEX_DIGITS[frame.payload[i] & 0x0f]);
+    }
+    return out;
+}
+
+std::string to_base64_string(const iso15118::io::StreamInputView& frame) {
+    static constexpr char ALPHABET[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    std::string out;
+    if (frame.payload == nullptr) {
+        return out;
+    }
+    out.reserve(((frame.payload_len + 2) / 3) * 4);
+
+    std::size_t i = 0;
+    for (; i + 2 < frame.payload_len; i += 3) {
+        const uint32_t triple = (static_cast<uint32_t>(frame.payload[i]) << 16) |
+                                (static_cast<uint32_t>(frame.payload[i + 1]) << 8) |
+                                static_cast<uint32_t>(frame.payload[i + 2]);
+        out.push_back(ALPHABET[(triple >> 18) & 0x3f]);
+        out.push_back(ALPHABET[(triple >> 12) & 0x3f]);
+        out.push_back(ALPHABET[(triple >> 6) & 0x3f]);
+        out.push_back(ALPHABET[triple & 0x3f]);
+    }
+
+    const auto remaining = frame.payload_len - i;
+    if (remaining == 1) {
+        const uint32_t triple = static_cast<uint32_t>(frame.payload[i]) << 16;
+        out.push_back(ALPHABET[(triple >> 18) & 0x3f]);
+        out.push_back(ALPHABET[(triple >> 12) & 0x3f]);
+        out.append("==");
+    } else if (remaining == 2) {
+        const uint32_t triple =
+            (static_cast<uint32_t>(frame.payload[i]) << 16) | (static_cast<uint32_t>(frame.payload[i + 1]) << 8);
+        out.push_back(ALPHABET[(triple >> 18) & 0x3f]);
+        out.push_back(ALPHABET[(triple >> 12) & 0x3f]);
+        out.push_back(ALPHABET[(triple >> 6) & 0x3f]);
+        out.push_back('=');
+    }
+    return out;
+}
+
 types::iso15118::AppProtocol convert_app_protocol(const iso15118::message_20::SupportedAppProtocol& app_protocol) {
     types::iso15118::AppProtocol result;
     result.protocol_namespace = app_protocol.protocol_namespace;
