@@ -21,6 +21,7 @@
 #include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/service_selection.hpp>
 #include <iso15118/message/type.hpp>
+#include <iso15118/message/v2g_message_type.hpp>
 
 namespace iso15118::session {
 
@@ -71,13 +72,31 @@ using AcChargeLoopReq = std::variant<AcReqControlMode, dt::DisplayParameters, Me
 using AcLimits = std::variant<dt::AC_CPDReqEnergyTransferMode, dt::BPT_AC_CPDReqEnergyTransferMode,
                               dt::DER_AC_CPDReqEnergyTransferMode>;
 
+// Which PnC certificate exchange the SECC is relaying to the backend (ISO 15118-2).
+enum class CertificateExchangeAction {
+    Install,
+    Update,
+};
+
+// How the V2G session ended on the wire, reported right after the session-ending response was
+// written to the socket. Terminate/Pause mirror the ChargingSession of a positive SessionStopRes --
+// the anchor for the CP-oscillator retain time (DIN 70121 [V2G-DC-968]); DIN has no ChargingSession
+// parameter and always maps to Terminate. FailedTermination means the SECC ended the session with a
+// FAILED_* response (sequence error, unknown session): the oscillator must go off without delay
+// ([V2G-DC-942]) and the SECC closes the TCP connection itself ([V2G-DC-940], no linger).
+enum class SessionStopAction {
+    Terminate,
+    Pause,
+    FailedTermination,
+};
+
 struct Callbacks {
     std::function<void(Signal)> signal;
     std::function<void(float)> dc_pre_charge_target_voltage;
     std::function<void(const DcChargeLoopReq&)> dc_charge_loop_req;
     std::function<void(const DcMaximumLimits&)> dc_max_limits;
     std::function<void(const AcChargeLoopReq&)> ac_charge_loop_req;
-    std::function<void(const message_20::Type&)> v2g_message;
+    std::function<void(const V2gMessageType&)> v2g_message;
     std::function<void(const std::string&)> evccid;
     std::function<void(const std::string&)> selected_protocol;
 
@@ -91,6 +110,20 @@ struct Callbacks {
     std::function<void(const dt::VasSelectedServiceList&)> selected_vas_services;
     std::function<void(const AcLimits&)> ac_limits;
     std::function<void(const std::string&, const std::string&)> ev_termination;
+
+    // A positive SessionStopRes was written to the socket (all protocols). Anchors the CP-oscillator
+    // retain time [V2G-DC-968]; does NOT imply link teardown (DLINK_* signals still follow later).
+    std::function<void(SessionStopAction)> session_stop_res_sent;
+
+    // ISO 15118-2 Plug-and-Charge: the SECC verified a signed AuthorizationReq and requests PnC
+    // authorization for the given eMAID (and PEM contract certificate chain) from the higher layer.
+    std::function<void(const std::string& emaid, const std::string& contract_chain_pem)> require_auth_pnc;
+
+    // ISO 15118-2 Plug-and-Charge certificate relay: the SECC received a CertificateInstallationReq or
+    // CertificateUpdateReq and forwards the raw request EXI (base64) plus which action it is to the higher
+    // layer (CSMS/CPS backend). The response is injected back asynchronously via a CertificateResponse
+    // control event.
+    std::function<void(const std::string& exi_request_base64, CertificateExchangeAction action)> certificate_request;
 };
 
 } // namespace feedback
@@ -104,7 +137,7 @@ public:
     void dc_charge_loop_req(const feedback::DcChargeLoopReq&) const;
     void dc_max_limits(const feedback::DcMaximumLimits&) const;
     void ac_charge_loop_req(const feedback::AcChargeLoopReq&) const;
-    void v2g_message(const message_20::Type&) const;
+    void v2g_message(const V2gMessageType&) const;
     void evcc_id(const std::string&) const;
     void selected_protocol(const std::string&) const;
 
@@ -119,6 +152,9 @@ public:
     void selected_vas_services(const dt::VasSelectedServiceList&) const;
     void ac_limits(const feedback::AcLimits&) const;
     void ev_termination(const std::string&, const std::string&) const;
+    void session_stop_res_sent(feedback::SessionStopAction) const;
+    void require_auth_pnc(const std::string& emaid, const std::string& contract_chain_pem) const;
+    void certificate_request(const std::string& exi_request_base64, feedback::CertificateExchangeAction action) const;
 
 private:
     feedback::Callbacks callbacks;

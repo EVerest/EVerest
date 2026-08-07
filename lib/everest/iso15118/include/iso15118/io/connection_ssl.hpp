@@ -36,6 +36,10 @@ public:
 
     void close() final;
 
+    bool is_secure() const final {
+        return true;
+    }
+
     std::optional<sha512_hash_t> get_vehicle_cert_hash() const final;
 
     ~ConnectionSSL();
@@ -49,6 +53,9 @@ private:
     ConnectionEventCallback event_callback{nullptr};
 
     bool handshake_complete{false};
+    // Idempotency guard for close(): guarantees CLOSED is delivered exactly once, on whichever
+    // teardown path runs first (session close, accept/handshake failure, peer EOF).
+    bool closed{false};
 
     void handle_connect();
     void handle_data();
