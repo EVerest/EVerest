@@ -18,6 +18,15 @@ namespace charge_bridge::firmware_update {
 constexpr std::uint16_t default_udp_retries = 3;
 constexpr std::uint16_t default_udp_timeout_ms = 3000;
 
+/// Outcome of an upload step. A cancelled upload is reported separately from a failed one because
+/// the two are indistinguishable to the caller otherwise, while only \ref aborted is an expected,
+/// non-error result (see the abort_requested note on \ref sync_fw_updater).
+enum class upload_result {
+    ok,
+    failed,
+    aborted,
+};
+
 struct fw_update_config {
     std::string cb;
     std::uint16_t cb_port;
@@ -62,12 +71,12 @@ private:
     bool is_abort_requested() const;
     std::string connection_result_message(bool connected) const;
 
-    bool upload_firmware(bool& aborted);
+    upload_result upload_firmware();
 
     bool upload_init(const fs::path& file_path, std::uint32_t& offset,
                      charge_bridge::filesystem_utils::CryptSignedHeader& hdr);
-    bool upload_transfer(const fs::path& file_path, std::uint16_t& sector, std::uint32_t offset,
-                         std::uint32_t& total_bytes, bool& aborted);
+    upload_result upload_transfer(const fs::path& file_path, std::uint16_t& sector, std::uint32_t offset,
+                                  std::uint32_t& total_bytes);
     bool upload_finish(const fs::path& file_path, std::uint32_t total_bytes,
                        const charge_bridge::filesystem_utils::CryptSignedHeader& hdr);
 
