@@ -6,10 +6,8 @@
 #pragma once
 
 #include "unique_fd.hpp"
-#include <everest/io/event/handler_liveness.hpp>
 
 #include <cstdint>
-#include <memory>
 #include <optional>
 
 namespace everest::lib::io::event {
@@ -94,50 +92,10 @@ private:
 /**
  * event_fd creates a blocking eventfd with initial value '0'
  * The lifetime of the event is bound to the lifetime of this object.
- *
- * The registration record lives here rather than in \ref event_fd_base because
- * \ref fd_event_handler registers an \p event_fd, never an \p event_fd_base, so a record on the
- * base would be state \ref semaphore_fd can never use.
  */
 class event_fd : public event_fd_base {
 public:
     event_fd();
-
-    /**
-     * @brief Drops a registration recorded by \ref fd_event_handler
-     * @details Runs before ~event_fd_base closes the descriptor, so the recorded descriptor is
-     * still the one the handler holds. The record is a weak reference, so this touches nothing
-     * once the handler is gone.
-     */
-    ~event_fd() override;
-
-private:
-    // Only the handler may write the record, so a registration is recorded exactly once and by
-    // the side that made it.
-    friend class fd_event_handler;
-
-    /// True while a recorded registration is still in place with a live handler
-    bool has_recorded_registration() const;
-
-    /// Record the registration \p handler made for \p fd
-    void record_registration(std::shared_ptr<handler_liveness> handler, int fd);
-
-    /**
-     * @brief Drop the record if it names \p handler
-     * @return true if a registration was removed, false otherwise
-     */
-    bool unregister_recorded_events(std::shared_ptr<handler_liveness> const& handler);
-
-    /**
-     * @brief Drop the record, removing the registration while the handler is alive
-     * @details Uses the recorded descriptor instead of \ref get_raw_fd, so this stays callable
-     * while the object is being destroyed.
-     * @return true if a registration was removed, false otherwise
-     */
-    bool unregister_recorded_events();
-
-    std::weak_ptr<handler_liveness> m_registered_handler;
-    int m_registered_fd{-1};
 };
 
 /**

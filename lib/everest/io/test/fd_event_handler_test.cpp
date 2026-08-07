@@ -361,8 +361,8 @@ TEST(fd_event_handler_test, register_events_refuses_a_second_registration) {
     EXPECT_TRUE(first.is_registered(raw));
 }
 
-// The constructor registers the handler's own action event on itself, so a handler always holds a
-// registration against its own liveness block. Building and tearing that down must be clean.
+// The constructor registers the handler's own action event on itself, so a handler is never empty.
+// Building that up and tearing it down must be clean.
 TEST(fd_event_handler_test, handler_self_registration_survives_destruction) {
     {
         fd_event_handler handler;
@@ -426,23 +426,6 @@ TEST(fd_event_handler_test, destroying_registered_timer_drops_its_map_entry) {
     EXPECT_FALSE(handler.is_registered(raw));
 }
 
-// Same defect for an event_fd, which is the descriptor every fd_event_client uses to arm write
-// events on its socket.
-TEST(fd_event_handler_test, destroying_registered_event_drops_its_map_entry) {
-    fd_event_handler handler;
-    int raw = -1;
-
-    {
-        event_fd event;
-        raw = event.get_raw_fd();
-        ASSERT_NE(raw, -1);
-        ASSERT_TRUE(handler.register_event_handler(&event, []() {}));
-        ASSERT_TRUE(handler.is_registered(raw));
-    }
-
-    EXPECT_FALSE(handler.is_registered(raw));
-}
-
 // Declaration order is not load bearing. The record is a weak reference to a handler owned block,
 // so a timer that outlives its handler has no pointer left to dereference, and the surviving
 // handler still reports the truth about the registration.
@@ -468,61 +451,6 @@ TEST(fd_event_handler_test, timer_outliving_its_handler_is_inert) {
     // Destroying timer now must reach unrelated and not the dead handler.
 }
 
-// Same for an event_fd. MQTTAbstractionImpl declares its two event_fd members before the handler
-// they are registered on, so this is the order the framework actually tears down in.
-TEST(fd_event_handler_test, event_outliving_its_handler_is_inert) {
-    fd_event_handler unrelated;
-    event_fd event;
-    auto const raw = event.get_raw_fd();
-
-    {
-        fd_event_handler handler;
-        ASSERT_TRUE(handler.register_event_handler(&event, []() {}));
-        ASSERT_TRUE(handler.is_registered(raw));
-    }
-
-    EXPECT_FALSE(unrelated.unregister_event_handler(&event));
-    EXPECT_FALSE(unrelated.is_registered(raw));
-
-    EXPECT_TRUE(unrelated.register_event_handler(&event, []() {}));
-    EXPECT_TRUE(unrelated.is_registered(raw));
-}
-
-// register_event_handler(fd_event_handler*) installs a lambda capturing the nested handler and
-// nothing dropped its entry when it died, so the entry outlived the object it calls into.
-TEST(fd_event_handler_test, destroying_nested_handler_drops_its_map_entry) {
-    fd_event_handler outer;
-    int raw = -1;
-
-    {
-        fd_event_handler nested;
-        raw = nested.get_poll_fd();
-        ASSERT_NE(raw, -1);
-        ASSERT_TRUE(outer.register_event_handler(&nested));
-        ASSERT_TRUE(outer.is_registered(raw));
-    }
-
-    EXPECT_FALSE(outer.is_registered(raw));
-}
-
-// The other order: the nested handler drops its own outward registration in its destructor, and
-// that record is a weak reference, so an outer handler that died first is not touched.
-TEST(fd_event_handler_test, nested_handler_outliving_its_outer_handler_is_inert) {
-    fd_event_handler unrelated;
-    fd_event_handler nested;
-    auto const raw = nested.get_poll_fd();
-
-    {
-        fd_event_handler outer;
-        ASSERT_TRUE(outer.register_event_handler(&nested));
-        ASSERT_TRUE(outer.is_registered(raw));
-    }
-
-    EXPECT_FALSE(unrelated.unregister_event_handler(&nested));
-    EXPECT_TRUE(unrelated.register_event_handler(&nested));
-    EXPECT_TRUE(unrelated.is_registered(raw));
-}
-
 // Behavior change. Two handlers holding one descriptor in two epoll sets used to be legal, but
 // only one registration can be recorded, so the second would be unremovable.
 TEST(fd_event_handler_test, register_event_handler_refuses_a_second_timer_registration) {
@@ -540,22 +468,6 @@ TEST(fd_event_handler_test, register_event_handler_refuses_a_second_timer_regist
     // Twice on the same handler was already refused by the descriptor guard.
     EXPECT_FALSE(first.register_event_handler(&timer, []() {}));
     EXPECT_TRUE(first.is_registered(raw));
-}
-
-// Same narrowing for an event_fd and for a nested handler.
-TEST(fd_event_handler_test, register_event_handler_refuses_a_second_event_registration) {
-    fd_event_handler first;
-    fd_event_handler second;
-    event_fd event;
-    fd_event_handler nested;
-
-    ASSERT_TRUE(first.register_event_handler(&event, []() {}));
-    EXPECT_FALSE(second.register_event_handler(&event, []() {}));
-    EXPECT_FALSE(second.is_registered(event.get_raw_fd()));
-
-    ASSERT_TRUE(first.register_event_handler(&nested));
-    EXPECT_FALSE(second.register_event_handler(&nested));
-    EXPECT_FALSE(second.is_registered(nested.get_poll_fd()));
 }
 
 // CanBus::close_device and mqtt_client cycle a timer registration at runtime, so dropping the
@@ -580,8 +492,7 @@ TEST(fd_event_handler_test, timer_can_register_again_after_unregistering) {
 }
 
 // generic_fd_event_client_impl::reset_client drops its io event by descriptor and the next connect
-// registers the object again. A record compared only against itself would call that a second
-// registration and refuse it, leaving the client unable to arm write events.
+// registers the object again, so registration must not be one shot per object.
 TEST(fd_event_handler_test, registering_again_after_removal_by_descriptor_succeeds) {
     fd_event_handler handler;
     event_fd event;
