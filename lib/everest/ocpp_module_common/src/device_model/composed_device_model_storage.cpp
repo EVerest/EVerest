@@ -18,8 +18,8 @@ void log_device_model_variables(const std::string& storage_name, const ocpp::v2:
                                 ? std::to_string(component.evse.value().connectorId.value())
                                 : "-")
                         << ", variable=" << variable.name << ", variable_instance="
-                        << (variable.instance.has_value() ? variable.instance.value().get() : "-") << ", source="
-                        << variable_meta_data.source.value_or(VARIABLE_SOURCE_OCPP);
+                        << (variable.instance.has_value() ? variable.instance.value().get() : "-")
+                        << ", source=" << variable_meta_data.source.value_or(VARIABLE_SOURCE_OCPP);
         }
     }
 }
@@ -105,13 +105,24 @@ ComposedDeviceModelStorage::get_variable_attributes(const ocpp::v2::Component& c
 ocpp::v2::SetVariableStatusEnum ComposedDeviceModelStorage::set_variable_attribute_value(
     const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
     const ocpp::v2::AttributeEnum& attribute_enum, const std::string& value, const std::string& source) {
-    // the "source" parameter is the VALUE_SOURCE
+
     const auto variable_source = get_variable_source(component_id, variable_id);
-    if (this->device_model_storages.find(variable_source) == this->device_model_storages.end()) {
+    const auto storage_it = this->device_model_storages.find(variable_source);
+    if (storage_it == this->device_model_storages.end()) {
+        EVLOG_debug << "Setting composed device model storage: no storage for resolved variable_source="
+                    << variable_source;
         return ocpp::v2::SetVariableStatusEnum::Rejected;
     }
-    return this->device_model_storages.at(variable_source)
-        ->set_variable_attribute_value(component_id, variable_id, attribute_enum, value, source);
+
+    // this calls set_variable_attribute_value of libocpp device model storage or everest device model storage
+    auto result =
+        storage_it->second->set_variable_attribute_value(component_id, variable_id, attribute_enum, value, source);
+
+    if (result != ocpp::v2::SetVariableStatusEnum::Accepted) {
+        EVLOG_debug << "Failed to set variable attribute value for component '" << component_id.name << "', variable '"
+                    << variable_id.name << "' in source '" << variable_source << "' with status: " << result;
+    }
+    return result;
 }
 
 std::optional<ocpp::v2::VariableMonitoringMeta>
