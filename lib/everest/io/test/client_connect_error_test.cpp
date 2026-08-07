@@ -4,6 +4,7 @@
 // Loopback-only fixtures: no test here depends on DNS or on egress.
 
 #include <everest/io/event/unique_fd.hpp>
+#include <everest/io/mdns/mdns_socket.hpp>
 #include <everest/io/tcp/tcp_socket.hpp>
 #include <everest/io/udp/udp_socket.hpp>
 
@@ -24,8 +25,10 @@
 #include <gtest/gtest.h>
 
 using everest::lib::io::event::unique_fd;
+using everest::lib::io::mdns::mdns_socket;
 using everest::lib::io::tcp::tcp_socket;
 using everest::lib::io::udp::udp_client_socket;
+using everest::lib::io::udp::udp_server_socket;
 
 namespace {
 
@@ -43,6 +46,11 @@ constexpr char unusable_device[] = "nosuchdev0";
 
 // Discard port, never contacted: the device bind fails first.
 constexpr std::uint16_t unused_remote_port = 9;
+
+// Let the kernel choose. A server bound to a nonexistent device never reaches
+// bind(), and open_udp_server_socket sets SO_REUSEADDR, so a duplicate bind is
+// not a dependable way to fail one.
+constexpr std::uint16_t kernel_chosen_port = 0;
 
 unique_fd make_loopback_socket(std::uint16_t& bound_port) {
     unique_fd fd{::socket(AF_INET, SOCK_STREAM, 0)};
@@ -141,6 +149,43 @@ private:
     bool m_refused{false};
 };
 
+/// A 127.0.0.1 listen socket that accepts connects: bound to an ephemeral port
+/// and listen()ed with backlog to spare, never accept()ed. The kernel completes
+/// the handshake from the backlog, so a connect to port() succeeds without a
+/// server thread. A throwaway probe connect confirms that, so accepting() means
+/// "connects here succeed". Ephemeral, because concurrent worktrees in this repo
+/// have collided on fixed test ports.
+class accepting_loopback_port {
+public:
+    accepting_loopback_port() {
+        m_listen_fd = make_loopback_socket(m_port);
+        if (not m_listen_fd.is_fd() || ::listen(m_listen_fd, backlog) != 0) {
+            return;
+        }
+        int err = 0;
+        auto probe = start_nonblocking_connect(m_port, err);
+        if (not probe.is_fd()) {
+            return;
+        }
+        m_accepting = connect_completed(probe, probe_wait_ms);
+    }
+
+    bool accepting() const {
+        return m_accepting;
+    }
+    std::uint16_t port() const {
+        return m_port;
+    }
+
+private:
+    // The probe plus one connect per test; the rest is headroom.
+    static constexpr int backlog = 8;
+    static constexpr int probe_wait_ms = 500;
+    unique_fd m_listen_fd;
+    std::uint16_t m_port{0};
+    bool m_accepting{false};
+};
+
 /// A 127.0.0.1 listen socket whose accept queue is deliberately saturated:
 /// listen(fd, 1), never accept, pre-connects issued until one stalls. With the
 /// queue full the kernel stops completing handshakes, so a later connect to
@@ -227,6 +272,21 @@ TEST(client_connect_error_test, tcp_refused_connect_reports_econnrefused) {
                                  << ") instead of ECONNREFUSED";
 }
 
+// open() is the synchronous path and reports through the same get_error(). A
+// refused open must name the refusal, not get_error()'s own probe of a
+// descriptor that was never assigned.
+TEST(client_connect_error_test, tcp_refused_open_reports_econnrefused) {
+    refused_loopback_port refused;
+    ASSERT_TRUE(refused.reserved()) << "could not reserve a closed loopback port that refuses connects";
+
+    tcp_socket sock;
+    ASSERT_FALSE(sock.open("127.0.0.1", refused.port())) << "open of a closed port reported success";
+
+    const int err = sock.get_error();
+    EXPECT_EQ(err, ECONNREFUSED) << "a refused open reported errno " << err << " (" << ::strerror(err)
+                                 << ") instead of ECONNREFUSED";
+}
+
 TEST(client_connect_error_test, tcp_unreachable_peer_connect_reports_etimedout) {
     saturated_loopback_port blocked;
     ASSERT_TRUE(blocked.saturated()) << "could not saturate the loopback accept queue";
@@ -298,6 +358,51 @@ TEST(client_connect_error_test, tcp_timed_out_connect_latency_is_not_doubled) {
         << short_run.elapsed_ms << "ms to " << long_run.elapsed_ms << "ms, so the connect timeout is charged twice";
 }
 
+// A deliberate close() leaves nothing to probe, and get_error() must still say
+// something. Nonzero is the whole contract: zero means "no recorded reason, fall
+// through to probing the descriptor", and generic_error_state treats zero as not
+// on error, so a descriptor-less socket reporting zero would stop the client from
+// reconnecting and present as a hang. The value itself (EBADF from the fallback
+// probe) is an implementation detail and is not asserted.
+TEST(client_connect_error_test, tcp_closed_socket_reports_nonzero_error) {
+    accepting_loopback_port accepting;
+    ASSERT_TRUE(accepting.accepting()) << "could not reserve a loopback port that accepts connects";
+
+    tcp_socket sock;
+    ASSERT_TRUE(sock.open("127.0.0.1", accepting.port())) << "open of an accepting port failed";
+    ASSERT_TRUE(sock.is_open());
+
+    sock.close();
+
+    const int err = sock.get_error();
+    EXPECT_NE(err, 0) << "a closed socket reported 0, which reads as healthy and suppresses the client reset";
+}
+
+// The recorded reason must move with the descriptor. A failed connect records
+// ECONNREFUSED; a later successful open takes ownership of a descriptor and so
+// invalidates that reason. Once the socket is closed again the stale value must
+// not reappear.
+TEST(client_connect_error_test, tcp_successful_open_clears_recorded_connect_error) {
+    refused_loopback_port refused;
+    ASSERT_TRUE(refused.reserved()) << "could not reserve a closed loopback port that refuses connects";
+    accepting_loopback_port accepting;
+    ASSERT_TRUE(accepting.accepting()) << "could not reserve a loopback port that accepts connects";
+
+    tcp_socket sock;
+    ASSERT_TRUE(sock.setup("127.0.0.1", refused.port(), 1000));
+    const auto outcome = drive_connect(sock);
+    ASSERT_FALSE(outcome.ok) << "connect to a closed port reported success";
+    ASSERT_EQ(sock.get_error(), ECONNREFUSED)
+        << "the refused connect was not recorded, so there is nothing to go stale";
+
+    ASSERT_TRUE(sock.open("127.0.0.1", accepting.port())) << "open of an accepting port failed";
+    sock.close();
+
+    const int err = sock.get_error();
+    EXPECT_NE(err, ECONNREFUSED) << "get_error() still reports the ECONNREFUSED of a connect that predates a "
+                                    "successful open, so the recorded reason outlived the descriptor it described";
+}
+
 // udp_client_socket::connect has the same shape and the same two defects. A UDP
 // connect() is a local operation, so it cannot be refused by the peer; binding
 // to a nonexistent device is the deterministic way to fail it.
@@ -318,6 +423,53 @@ TEST(client_connect_error_test, udp_failed_connect_reports_enodev) {
     // std::runtime_error unwind.
     EXPECT_EQ(err, ENODEV) << "a failed connect reported errno " << err << " (" << ::strerror(err)
                            << ") instead of ENODEV";
+}
+
+// The synchronous open_as_client path, reached through udp_client_socket::open.
+// Same claim strength as the async UDP test above: the recorded reason has to be
+// about the failure, not about probing an unassigned descriptor.
+TEST(client_connect_error_test, udp_failed_open_reports_the_failure_reason) {
+    udp_client_socket sock;
+    ASSERT_FALSE(sock.open("127.0.0.1", unused_remote_port, unusable_device))
+        << "open bound to a nonexistent device reported success";
+
+    const int err = sock.get_error();
+    EXPECT_NE(err, EBADF) << "a failed open reported EBADF, which describes get_error()'s own probe of "
+                             "an unassigned descriptor rather than why the open failed";
+    EXPECT_NE(err, 0) << "a failed open left get_error() at 0";
+}
+
+// open_as_server is reached through udp_server_socket::open, which fd_event_client
+// calls from its synchronous init with no handler around it. A throw there escapes
+// into the event loop instead of being reported, so a failing open has to return
+// false and name the reason like every other policy does.
+TEST(client_connect_error_test, udp_server_failed_open_reports_the_failure_reason) {
+    udp_server_socket sock;
+    ASSERT_FALSE(sock.open(kernel_chosen_port, unusable_device))
+        << "open of a server bound to a nonexistent device reported success";
+    EXPECT_FALSE(sock.is_open()) << "a failed open kept a descriptor the caller was told does not exist";
+
+    const int err = sock.get_error();
+    EXPECT_NE(err, EBADF) << "a failed open reported EBADF, which describes get_error()'s own probe of "
+                             "an unassigned descriptor rather than why the open failed";
+    EXPECT_NE(err, 0) << "a failed open left get_error() at 0";
+    // Same device-lookup-before-capability-check path as the client leg, so ENODEV
+    // at any privilege level.
+    EXPECT_EQ(err, ENODEV) << "a failed open reported errno " << err << " (" << ::strerror(err)
+                           << ") instead of ENODEV";
+}
+
+// mdns_socket::open is the third synchronous open on this policy shape and had the
+// same unguarded throw. The interface lookup it fails in raises a plain
+// std::runtime_error with no errno attached, so only the nonzero invariant is
+// claimed here, not a specific value.
+TEST(client_connect_error_test, mdns_failed_open_reports_failure_instead_of_throwing) {
+    mdns_socket sock;
+    ASSERT_FALSE(sock.open(unusable_device)) << "open on a nonexistent interface reported success";
+    EXPECT_FALSE(sock.is_open()) << "a failed open kept a descriptor the caller was told does not exist";
+
+    const int err = sock.get_error();
+    EXPECT_NE(err, 0) << "a failed open left get_error() at 0, which reads as healthy and suppresses the client reset";
 }
 
 TEST(client_connect_error_test, udp_failed_connect_latency_ignores_connect_timeout) {
