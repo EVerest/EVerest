@@ -380,6 +380,22 @@ void GenericOcpp::handle_monitor_variables(const std::vector<types::ocpp::Compon
     }
 }
 
+std::vector<types::ocpp::GetVariableResult>
+GenericOcpp::handle_monitor_and_get_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) {
+    // register the monitors first so that no change between reading the values and the registration is lost;
+    // both delegates handle the not-yet-started case themselves (skip with warning / all Rejected)
+    handle_monitor_variables(component_variables);
+
+    std::vector<types::ocpp::GetVariableRequest> requests;
+    requests.reserve(component_variables.size());
+    for (const auto& cv : component_variables) {
+        types::ocpp::GetVariableRequest request;
+        request.component_variable = cv; // no attribute_type: Actual is the default
+        requests.push_back(request);
+    }
+    return handle_get_variables(requests);
+}
+
 // ----------------------------------------------------------------------------
 // internal methods
 

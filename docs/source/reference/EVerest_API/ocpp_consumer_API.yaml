@@ -76,6 +76,16 @@ channels:
     messages:
       send_request_monitor_variables:
         $ref: '#/components/messages/send_request_monitor_variables'
+  send_request_monitor_and_get_variables:
+    address: 'm2e/monitor_and_get_variables'
+    messages:
+      send_request_monitor_and_get_variables:
+        $ref: '#/components/messages/send_request_monitor_and_get_variables'
+  receive_reply_monitor_and_get_variables:
+    address: null
+    messages:
+      receive_reply_monitor_and_get_variables:
+        $ref: '#/components/messages/receive_reply_monitor_and_get_variables'
   send_request_change_availability:
     address: 'm2e/change_availability'
     messages:
@@ -288,6 +298,22 @@ operations:
     channel:
       $ref: '#/channels/send_request_monitor_variables'
     description: 'Direction: Module to EVerest'
+  send_request_monitor_and_get_variables:
+    title: 'Send request to monitor the requested variables and read their current values'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_monitor_and_get_variables'
+    description: 'Direction: Module to EVerest'
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_monitor_and_get_variables'
+  receive_reply_monitor_and_get_variables:
+    title: 'Receive the current values of the variables now being monitored'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_monitor_and_get_variables'
   send_request_change_availability:
     title: 'Send request to change the availability'
     action: send
@@ -710,6 +736,62 @@ components:
               variable:
                 name: string
                 instance: string
+    send_request_monitor_and_get_variables:
+      title: 'Monitor variables and read their current values'
+      summary: 'Monitor the variables and receive their current values in the reply.'
+      description: |
+        Combination of monitor_variables and get_variables in one call: starts
+        monitoring the given ComponentVariable(s) exactly like monitor_variables,
+        using the same canonical component/variable addressing as get_variables,
+        identical for OCPP 1.6 and 2.x; the empty-component OCPP 1.6 legacy key
+        form is deprecated. Changes to monitored variables are published on the
+        event_data channel and echo the addressing form used at registration.
+        Consecutive calls of this operation will not override but extend the
+        existing monitors. Additionally the reply contains the current (Actual)
+        value of every requested variable, with the same order, addressing echo
+        and status semantics as get_variables. This allows registering monitors
+        at startup and obtaining the initial values in a single call without a
+        race between the first read and the monitor registration.
+
+        See the OCPPmulti module documentation ("Configuration access" and
+        "Migration from OCPP 1.6 key addressing") for examples and the migration guide.
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to.
+          payload:
+            $ref: '#/components/schemas/MonitorVariableRequestList'
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+            payload:
+              items:
+              - component:
+                  name: string
+                  instance: string
+                  evse:
+                    id: 1
+                    connector_id: 1
+                variable:
+                  name: string
+                  instance: string
+    receive_reply_monitor_and_get_variables:
+      name: receive_reply_monitor_and_get_variables
+      title: 'Reply monitor and get variables'
+      summary: 'Reply with the current values of the variables now being monitored'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/GetVariableResultList'
     send_request_change_availability:
       title: 'Request change availability'
       summary: 'Request to change the availability of the Charging Station / an EVSE / a Connector.'

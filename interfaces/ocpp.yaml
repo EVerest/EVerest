@@ -118,6 +118,34 @@ cmds:
         items:
           type: object
           $ref: /ocpp#/ComponentVariable
+  monitor_and_get_variables:
+    description: >-
+      Combination of monitor_variables and get_variables in one call: starts
+      monitoring the given ComponentVariable(s) exactly like monitor_variables
+      (same canonical component/variable addressing, changes published on the
+      event_data var, consecutive calls extend and never override existing
+      monitors) and additionally returns the current value of each requested
+      variable. This allows integrators to register monitors at startup and
+      obtain the initial values in a single call without a race between the
+      first read and the monitor registration. The returned values are the
+      Actual attribute values; result order, addressing echo and status
+      semantics are identical to a get_variables call with one request per
+      given ComponentVariable and no attribute_type.
+    arguments:
+      component_variables:
+        description: List of ComponentVariable(s) to monitor and read
+        type: array
+        items:
+          type: object
+          $ref: /ocpp#/ComponentVariable
+    result:
+      description: >-
+        List of GetVariableResult with the current (Actual) value for every
+        requested ComponentVariable. Preserves the order of the input list.
+      type: array
+      items:
+        type: object
+        $ref: /ocpp#/GetVariableResult
 vars:
   ocpp_transaction_event:
     description: Emits events related to OCPP transactions
@@ -143,7 +171,8 @@ vars:
     $ref: /ocpp#/SecurityEvent
   event_data:
     description: >-
-      Published when a variable registered via monitor_variables has been changed.
+      Published when a variable registered via monitor_variables or
+      monitor_and_get_variables has been changed.
       The event echoes the addressing form used at registration: canonical
       registrations receive the canonical component_variable, deprecated legacy
       key registrations (empty component.name) receive legacy-shaped events.

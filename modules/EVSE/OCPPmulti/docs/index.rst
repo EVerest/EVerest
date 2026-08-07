@@ -506,8 +506,9 @@ OCPP configuration can be read, written and monitored through three channels:
   ``SetVariables`` / ``SetVariableMonitoring`` in OCPP 2.x,
   ``GetConfiguration`` / ``ChangeConfiguration`` in OCPP 1.6.
 - **EVerest modules**: require the ``ocpp`` interface and call
-  ``call_get_variables`` / ``call_set_variables`` / ``call_monitor_variables``;
-  subscribe ``event_data`` for monitor notifications.
+  ``call_get_variables`` / ``call_set_variables`` / ``call_monitor_variables``
+  / ``call_monitor_and_get_variables``; subscribe ``event_data`` for monitor
+  notifications.
 - **External integrations** (web interface, configuration tools): the
   ``ocpp_consumer_API``; see its own documentation for transport and message
   details.
@@ -639,6 +640,12 @@ Monitoring configuration changes
 
 Legacy-form registrations (empty component name) receive legacy-shaped events.
 Registrations are additive across calls.
+
+``monitor_and_get_variables`` takes the same request, registers the same
+monitors and additionally returns the current values in the reply (same result
+shape, order and echo semantics as ``get_variables``). Use it at startup to
+register monitors and obtain the initial values in a single call, without a
+race between the first read and the monitor registration.
 
 Migration from OCPP 1.6 key addressing
 ======================================
