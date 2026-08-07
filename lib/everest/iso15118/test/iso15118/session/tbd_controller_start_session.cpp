@@ -216,7 +216,8 @@ Response require_response(const std::optional<std::vector<uint8_t>>& response,
 
     const iso15118::io::StreamInputView view{payload, payload_len};
     const iso15118::message_20::Variant variant(payload_type, view);
-    REQUIRE(variant.get_type() == iso15118::message_20::TypeTrait<Response>::type);
+    const auto exptected_type = iso15118::message_20::TypeTrait<Response>::type;
+    REQUIRE(variant.get_type() == exptected_type);
 
     return variant.get<Response>();
 }
