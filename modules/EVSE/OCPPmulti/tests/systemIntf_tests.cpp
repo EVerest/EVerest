@@ -235,12 +235,12 @@ TEST_F(GenericOcppRequiresTester, subscribeSupportedEnergyTransferModes) {
     update.request_id = 128847;
     update.firmware_update_status = FirmwareUpdateStatusEnum::Downloading;
 
-    // No firmware_update_metadata is set, so connectors are disabled during install by default (true).
-    EXPECT_CALL(chargepoint,
-                on_firmware_update_status_notification(update.request_id, FirmwareStatusEnum::Downloading, true))
+    // No firmware_update_metadata is set, so the flag is forwarded unset and libocpp applies its phase defaults.
+    EXPECT_CALL(chargepoint, on_firmware_update_status_notification(update.request_id, FirmwareStatusEnum::Downloading,
+                                                                    std::optional<bool>{}))
         .Times(1);
-    EXPECT_CALL(chargepoint,
-                on_firmware_update_status_notification(update.request_id, FirmwareStatusEnum::Downloaded, true))
+    EXPECT_CALL(chargepoint, on_firmware_update_status_notification(update.request_id, FirmwareStatusEnum::Downloaded,
+                                                                    std::optional<bool>{}))
         .Times(1);
 
     interfaces->publish(0, "firmware_update_status", update);

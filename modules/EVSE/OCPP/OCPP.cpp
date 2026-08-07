@@ -608,10 +608,10 @@ void OCPP::init() {
         [this](types::system::FirmwareUpdateStatus firmware_update_status) {
             std::lock_guard<std::mutex> lg(this->event_mutex);
             if (this->started) {
-                auto disable_connectors_during_install =
-                    !firmware_update_status.firmware_update_metadata.has_value() ||
-                    firmware_update_status.firmware_update_metadata.value().disable_connectors_during_install.value_or(
-                        true);
+                const auto disable_connectors_during_install =
+                    firmware_update_status.firmware_update_metadata.has_value()
+                        ? firmware_update_status.firmware_update_metadata->disable_connectors_during_install
+                        : std::nullopt;
                 this->charge_point->on_firmware_update_status_notification(
                     firmware_update_status.request_id,
                     conversions::to_ocpp_firmware_status_notification(firmware_update_status.firmware_update_status),
@@ -1113,9 +1113,10 @@ void OCPP::ready() {
                                                              types::system::log_status_enum_to_string(log.log_status));
                 },
                 [&](const types::system::FirmwareUpdateStatus& fw) {
-                    auto disable_connectors_during_install =
-                        !fw.firmware_update_metadata.has_value() ||
-                        fw.firmware_update_metadata.value().disable_connectors_during_install.value_or(true);
+                    const auto disable_connectors_during_install =
+                        fw.firmware_update_metadata.has_value()
+                            ? fw.firmware_update_metadata->disable_connectors_during_install
+                            : std::nullopt;
                     charge_point->on_firmware_update_status_notification(
                         fw.request_id, conversions::to_ocpp_firmware_status_notification(fw.firmware_update_status),
                         disable_connectors_during_install);
