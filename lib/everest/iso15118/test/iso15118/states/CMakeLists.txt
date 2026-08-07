@@ -29,3 +29,4 @@ create_states_test_target(session_stop)
 add_subdirectory(din)
 
 # ISO 15118-2 SECC per-state handler tests
+add_subdirectory(iso2)
