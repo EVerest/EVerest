@@ -23,8 +23,15 @@ target_sources(iso15118
         session/feedback.cpp
         session/protocol.cpp
         session/iso.cpp
+        session/secc_sap.cpp
+        session/sap_engine.cpp
+        session/config.cpp
+        session/d20_secc_engine.cpp
+        session/d2_secc_engine.cpp
+        session/din_secc_engine.cpp
 
         din/context.cpp
+
         # din (DIN SPEC 70121) SECC state machine
         din/state/session_setup.cpp
         din/state/service_discovery.cpp
@@ -38,23 +45,14 @@ target_sources(iso15118
         din/state/welding_detection.cpp
         din/state/session_stop.cpp
         din/state/sequence_error.cpp
-        # message_din (DIN SPEC 70121)
-        message_din/variant.cpp
-        message_din/common_types.cpp
-        message_din/cb_enum_sync_checks.cpp
-        message_din/session_setup.cpp
-        message_din/service_discovery.cpp
-        message_din/service_payment_selection.cpp
-        message_din/contract_authentication.cpp
-        message_din/charge_parameter_discovery.cpp
-        message_din/cable_check.cpp
-        message_din/pre_charge.cpp
-        message_din/power_delivery.cpp
-        message_din/current_demand.cpp
-        message_din/welding_detection.cpp
-        message_din/session_stop.cpp
+
+        d20/context.cpp
+        d20/context_helper.cpp
+        d20/session.cpp
+        d20/timeout.cpp
 
         d2/context.cpp
+
         # d2 (ISO 15118-2) SECC state machine
         d2/crypto.cpp
         d2/state/sequence_error.cpp
@@ -74,35 +72,7 @@ target_sources(iso15118
         d2/state/welding_detection.cpp
         d2/state/session_stop.cpp
         d2/state/metering_receipt.cpp
-        # message_2 (ISO 15118-2)
-        message_2/variant.cpp
-        message_2/common_types.cpp
-        message_2/cb_enum_sync_checks.cpp
-        message_2/session_setup.cpp
-        message_2/service_discovery.cpp
-        message_2/service_detail.cpp
-        message_2/payment_service_selection.cpp
-        message_2/payment_details.cpp
-        message_2/authorization.cpp
-        message_2/charge_parameter_discovery.cpp
-        message_2/power_delivery.cpp
-        message_2/charging_status.cpp
-        message_2/cable_check.cpp
-        message_2/pre_charge.cpp
-        message_2/current_demand.cpp
-        message_2/welding_detection.cpp
-        message_2/session_stop.cpp
-        message_2/metering_receipt.cpp
-        message_2/certificate_installation.cpp
 
-        d20/context.cpp
-        d20/context_helper.cpp
-        d20/control_event_queue.cpp
-        d20/session.cpp
-        d20/timeout.cpp
-        d20/config.cpp
-
-        d20/state/supported_app_protocol.cpp
         d20/state/session_setup.cpp
         d20/state/authorization_setup.cpp
         d20/state/authorization.cpp
@@ -147,7 +117,44 @@ target_sources(iso15118
         message/ac_der_sae_charge_loop.cpp
         message/ac_der_sae_types.cpp
 
-        tbd_controller.cpp    
+        # message_din (DIN SPEC 70121)
+        message_din/variant.cpp
+        message_din/common_types.cpp
+        message_din/cb_enum_sync_checks.cpp
+        message_din/session_setup.cpp
+        message_din/service_discovery.cpp
+        message_din/service_payment_selection.cpp
+        message_din/contract_authentication.cpp
+        message_din/charge_parameter_discovery.cpp
+        message_din/cable_check.cpp
+        message_din/pre_charge.cpp
+        message_din/power_delivery.cpp
+        message_din/current_demand.cpp
+        message_din/welding_detection.cpp
+        message_din/session_stop.cpp
+
+        # message_2 (ISO 15118-2)
+        message_2/variant.cpp
+        message_2/common_types.cpp
+        message_2/cb_enum_sync_checks.cpp
+        message_2/session_setup.cpp
+        message_2/service_discovery.cpp
+        message_2/service_detail.cpp
+        message_2/payment_service_selection.cpp
+        message_2/payment_details.cpp
+        message_2/authorization.cpp
+        message_2/charge_parameter_discovery.cpp
+        message_2/power_delivery.cpp
+        message_2/charging_status.cpp
+        message_2/cable_check.cpp
+        message_2/pre_charge.cpp
+        message_2/current_demand.cpp
+        message_2/welding_detection.cpp
+        message_2/session_stop.cpp
+        message_2/metering_receipt.cpp
+        message_2/certificate_installation.cpp
+
+        tbd_controller.cpp
 )
 
 target_link_libraries(iso15118

@@ -147,6 +147,14 @@ struct CpStateChanged {
     CpState state{CpState::A};
 };
 
+// EVSE maximum AC current (per phase, A) pushed by the module (EvseManager's update_ac_max_current
+// cmd, fired whenever the charger's current limit changes). Consumed by the ISO 15118-2 SECC engine,
+// which reflects it as EVSEMaxCurrent in the next ChargingStatusRes so the EV throttles accordingly
+// (EvseV2G parity; this is how a zero-power limit reaches the EV in the AC charge loop).
+struct UpdateAcMaxCurrent {
+    float ampere{0.0f};
+};
+
 // EVSE physical parameters pushed by the module (EvseManager's set_charging_parameters cmd, mirroring
 // types::iso15118::SetupPhysicalValues). Consumed by the ISO 15118-2 and DIN SPEC 70121 SECC engines for
 // the AC/DC EVSEChargeParameter elements of ChargeParameterDiscoveryRes; ISO 15118-20 carries the same
@@ -157,6 +165,15 @@ struct PhysicalValues {
     std::optional<float> dc_current_regulation_tolerance;
     std::optional<float> dc_peak_current_ripple;
     std::optional<float> dc_energy_to_be_delivered;
+};
+
+// Power-supply hardware capabilities pushed by the module (EvseManager's set_powersupply_capabilities
+// cmd, re-sent whenever they change, e.g. on external derating). Wrapped so the variant can tell them
+// apart from the plain DcTransferLimits event, which carries the live energy-management limits: the
+// capabilities feed the ChargeParameterDiscoveryRes offer (the maximum the EVSE could ever deliver),
+// the live limits the charge loop.
+struct UpdatePowersupplyLimits {
+    DcTransferLimits limits{};
 };
 
 // The charger has no energy available and asks the SECC to pause the session before charging starts
@@ -199,6 +216,7 @@ using ControlEvent =
     std::variant<CableCheckFinished, PresentVoltageCurrent, MeterInfo, AuthorizationResponse, StopCharging,
                  PauseCharging, DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters, ClosedContactor,
                  AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs, CertificateResponse, EvseError,
-                 CpStateChanged, PhysicalValues, NoEnergyPause, UpdateIsolationStatus>;
+                 CpStateChanged, UpdateAcMaxCurrent, PhysicalValues, NoEnergyPause, UpdateIsolationStatus,
+                 UpdatePowersupplyLimits>;
 
 } // namespace iso15118::d20
