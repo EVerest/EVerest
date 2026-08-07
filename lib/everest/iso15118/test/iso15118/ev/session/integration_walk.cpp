@@ -1337,11 +1337,11 @@ SCENARIO("ISO15118-20 EV Session drives a full AC_BPT session through the BPT ch
 
     GIVEN("An AC_BPT-configured Session bound to a reactor with short send-delay and watchdog timers") {
         SessionFixture fx{"EVTESTID01",
-                       ev::SessionTiming{5ms, 100ms},
-                       ev::DcChargeParams{},
-                       default_advertised_ac_app_protocols(),
-                       message_20::datatypes::ServiceCategory::AC_BPT,
-                       ac_bpt_seed_params()};
+                          ev::SessionTiming{5ms, 100ms},
+                          ev::DcChargeParams{},
+                          default_advertised_ac_app_protocols(),
+                          message_20::datatypes::ServiceCategory::AC_BPT,
+                          ac_bpt_seed_params()};
 
         WHEN("the session is walked to an active BPT AC_ChargeLoop and the SECC then signals Terminate") {
             const auto sid = walk_to_ac_bpt_charge_loop(fx);
@@ -1380,7 +1380,7 @@ SCENARIO("ISO15118-20 EV Session drives a full DC_BPT session through the BPT ch
 
     GIVEN("A DC_BPT-configured Session bound to a reactor with short send-delay and watchdog timers") {
         SessionFixture fx{"EVTESTID01", ev::SessionTiming{5ms, 100ms}, dc_bpt_seed_params(),
-                       default_advertised_app_protocols(), message_20::datatypes::ServiceCategory::DC_BPT};
+                          default_advertised_app_protocols(), message_20::datatypes::ServiceCategory::DC_BPT};
 
         WHEN("the session is walked to an active BPT DC_ChargeLoop and the SECC then signals Terminate") {
             const auto sid = walk_to_dc_bpt_charge_loop(fx);
