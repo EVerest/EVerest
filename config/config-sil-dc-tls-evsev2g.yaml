@@ -1,10 +1,10 @@
 active_modules:
   iso15118_charger:
-    module: Evse15118D20
+    module: EvseV2G
     config_module:
       device: auto
-      supported_DIN70121: true
-      supported_ISO15118_2: true
+      tls_security: force
+      tls_key_logging: true
     connections:
       security:
         - module_id: evse_security
@@ -15,6 +15,8 @@ active_modules:
       device: auto
       supported_DIN70121: false
       supported_ISO15118_2: true
+      tls_active: true
+      enforce_tls: true
   evse_manager:
     module: EvseManager
     config_module:
@@ -26,9 +28,8 @@ active_modules:
       session_logging_xml: false
       session_logging_path: /tmp/everest-logs
       charge_mode: DC
-      hack_allow_bpt_with_iso2: false
-      sae_j2847_2_bpt_enabled: true
-      sae_j2847_2_bpt_mode: V2G
+      hack_allow_bpt_with_iso2: true
+      payment_enable_contract: false
     connections:
       bsp:
         - module_id: yeti_driver
@@ -57,10 +58,10 @@ active_modules:
   slac:
     module: SlacSimulator
   imd:
-    module: IMDSimulator
     config_implementation:
       main:
         selftest_success: true
+    module: IMDSimulator
   ev_manager:
     module: EvManager
     config_module:
@@ -70,11 +71,6 @@ active_modules:
       auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
       dc_target_current: 20
       dc_target_voltage: 400
-      support_sae_j2847: true
-      dc_discharge_max_current_limit: 30
-      dc_discharge_max_power_limit: 11000
-      dc_discharge_target_current: 15
-      dc_discharge_v2g_minimal_soc: 30
     connections:
       ev_board_support:
         - module_id: yeti_driver
@@ -89,7 +85,7 @@ active_modules:
     module: Auth
     config_module:
       connection_timeout: 10
-      selection_algorithm: PlugEvents
+      selection_algorithm: FindFirst
     connections:
       token_provider:
         - module_id: token_provider
@@ -100,7 +96,7 @@ active_modules:
       evse_manager:
         - module_id: evse_manager
           implementation_id: evse
-  token_provider: 
+  token_provider:
     module: DummyTokenProvider
     config_implementation:
       main:
@@ -138,23 +134,11 @@ active_modules:
     connections:
       price_information: []
       energy_consumer:
-        - module_id: api_sink
+        - module_id: evse_manager
           implementation_id: energy_grid
       powermeter:
         - module_id: yeti_driver
           implementation_id: powermeter
-  api_sink:
-    module: EnergyNode
-    mapping:
-      module:
-        evse: 1
-    config_module:
-      fuse_limit_A: 32.0
-      phase_count: 3
-    connections:
-      energy_consumer:
-        - module_id: evse_manager
-          implementation_id: energy_grid
   api:
     module: API
     connections:
@@ -164,9 +148,6 @@ active_modules:
       error_history:
         - module_id: error_history
           implementation_id: error_history
-      evse_energy_sink:
-        - module_id: api_sink
-          implementation_id: external_limits
   ev_api:
     module: EvAPI
     connections:

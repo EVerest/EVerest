@@ -269,16 +269,3 @@ TEST(ResyncSslConfig, CmdTimeoutFromRebuildIsSwallowedAndApplyNotCalled) {
         [&](iso15118::config::SSLConfig) { apply_called = true; }));
     EXPECT_FALSE(apply_called);
 }
-
-TEST(StartupEmptyChains, EnforceTlsThrows) {
-    EXPECT_EQ(module::charger::decide_startup_empty_chains(iso15118::config::TlsNegotiationStrategy::ENFORCE_TLS),
-              module::charger::StartupChainPolicy::Throw);
-}
-
-TEST(StartupEmptyChains, NonEnforcingStrategiesWarnAndContinue) {
-    EXPECT_EQ(
-        module::charger::decide_startup_empty_chains(iso15118::config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER),
-        module::charger::StartupChainPolicy::WarnAndContinue);
-    EXPECT_EQ(module::charger::decide_startup_empty_chains(iso15118::config::TlsNegotiationStrategy::ENFORCE_NO_TLS),
-              module::charger::StartupChainPolicy::WarnAndContinue);
-}

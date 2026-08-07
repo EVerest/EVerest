@@ -34,6 +34,11 @@ void SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamI
         return;
     }
 
+    // Report what the EV offered before deciding anything, so a failed negotiation is reported too
+    // (EvseV2G fills its list inside the same loop that evaluates the offer and publishes it
+    // regardless of the outcome, v2g_server.cpp:454-467).
+    feedback.ev_app_protocols(*req);
+
     if (selecting_sap_based_on_energy_service) {
         logf_info("Selecting supported app protocol namespace based on the supported energy services");
     }
