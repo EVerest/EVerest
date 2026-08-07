@@ -41,8 +41,12 @@ void Feedback::ac_charge_loop_req(const feedback::AcChargeLoopReq& req_values) c
     call_if_available(callbacks.ac_charge_loop_req, req_values);
 }
 
-void Feedback::v2g_message(const V2gMessageType& v2g_message) const {
-    call_if_available(callbacks.v2g_message, v2g_message);
+void Feedback::v2g_message(const V2gMessageType& v2g_message, const io::StreamInputView& exi_frame) const {
+    call_if_available(callbacks.v2g_message, v2g_message, exi_frame);
+}
+
+void Feedback::ev_app_protocols(const message_20::SupportedAppProtocolRequest& req) const {
+    call_if_available(callbacks.ev_app_protocols, req);
 }
 
 void Feedback::evcc_id(const std::string& evccid) const {
