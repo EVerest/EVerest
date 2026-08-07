@@ -25,6 +25,18 @@ void Feedback::dc_max_limits(const feedback::DcMaximumLimits& max_limits) const 
     call_if_available(callbacks.dc_max_limits, max_limits);
 }
 
+void Feedback::dc_ev_status(const feedback::DcEvStatus& ev_status) const {
+    call_if_available(callbacks.dc_ev_status, ev_status);
+}
+
+void Feedback::ev_charge_parameters(const feedback::EvChargeParameters& parameters) const {
+    call_if_available(callbacks.ev_charge_parameters, parameters);
+}
+
+void Feedback::dc_ev_charge_progress(const feedback::DcEvChargeProgress& progress) const {
+    call_if_available(callbacks.dc_ev_charge_progress, progress);
+}
+
 void Feedback::ac_charge_loop_req(const feedback::AcChargeLoopReq& req_values) const {
     call_if_available(callbacks.ac_charge_loop_req, req_values);
 }
@@ -39,6 +51,10 @@ void Feedback::evcc_id(const std::string& evccid) const {
 
 void Feedback::selected_protocol(const std::string& selected_protocol) const {
     call_if_available(callbacks.selected_protocol, selected_protocol);
+}
+
+void Feedback::selected_payment_option(shared_datatypes::PaymentOption payment_option) const {
+    call_if_available(callbacks.selected_payment_option, payment_option);
 }
 
 void Feedback::notify_ev_charging_needs(
