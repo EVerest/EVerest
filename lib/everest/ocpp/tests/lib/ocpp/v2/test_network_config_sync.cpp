@@ -1005,6 +1005,24 @@ TEST_F(ConnectivityManagerCacheTest, CheckCacheInvalidSecurityProfilesPrunesCach
     EXPECT_EQ(std::find(slots.begin(), slots.end(), 1), slots.end()) << "Slot 1 must be removed from priority list";
 }
 
+// H3: ActiveNetworkProfile is persisted on a confirmed successful connection, not at dial time.
+// Persisting on success means a station that dials a broken slot and reboots does not seed the
+// broken slot as the fallback target.
+TEST_F(ConnectivityManagerCacheTest, ConfirmSuccessfulConnectionPersistsActiveSlot) {
+    // The active slot is slot 1 (from the fixture priority list). Seed ActiveNetworkProfile with a
+    // stale value so we can prove confirm_successful_connection() overwrites it with the slot that
+    // is actually in use, rather than the value being left over from a dial.
+    ASSERT_EQ(cm->get_network_connection_slots().at(0), 1);
+    dm->set_active_network_profile_slot(999, "test");
+    ASSERT_EQ(dm->get_optional_value<int>(ControllerComponentVariables::ActiveNetworkProfile).value(), 999);
+
+    cm->confirm_successful_connection();
+
+    const auto persisted = dm->get_optional_value<int>(ControllerComponentVariables::ActiveNetworkProfile);
+    ASSERT_TRUE(persisted.has_value()) << "ActiveNetworkProfile must be persisted after a confirmed connection";
+    EXPECT_EQ(persisted.value(), 1) << "confirm_successful_connection() must persist the active slot";
+}
+
 // ---------------------------------------------------------------------------
 // Provisioning block — reject active slot modification (B09.FR.21/22)
 // Verifies that validate_set_variable() rejects SetVariables targeting the
