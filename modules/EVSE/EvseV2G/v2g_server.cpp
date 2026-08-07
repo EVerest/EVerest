@@ -765,6 +765,23 @@ int v2g_handle_connection(struct v2g_connection* conn) {
                      v2g_msg_type[conn->ctx->current_v2g_msg], rv);
                 break;
             }
+
+            /* A session-ending response just hit the wire: publish it. A positive SessionStopRes
+             * (pending armed by the session-stop handlers) anchors the retain time [V2G-DC-968];
+             * any other SEND_AND_TERMINATE response is a FAILED_* session end, where the oscillator
+             * goes off without delay [V2G-DC-942]. Only the oscillator timing hangs off this event;
+             * the TCP close and dlink teardown below keep their own anchors so the EV's FIN can
+             * still reach us. */
+            if (conn->session_stop_res_pending != v2g_connection::SessionStopResPending::NONE) {
+                conn->ctx->p_charger->publish_session_stop_res_sent(
+                    conn->session_stop_res_pending == v2g_connection::SessionStopResPending::PAUSE
+                        ? types::iso15118::SessionStopAction::Pause
+                        : types::iso15118::SessionStopAction::Terminate);
+                conn->session_stop_res_pending = v2g_connection::SessionStopResPending::NONE;
+            } else if (v2gEvent == V2G_EVENT_SEND_AND_TERMINATE) {
+                conn->ctx->p_charger->publish_session_stop_res_sent(
+                    types::iso15118::SessionStopAction::FailedTermination);
+            }
             break;
         }
         case V2G_EVENT_IGNORE_MSG:

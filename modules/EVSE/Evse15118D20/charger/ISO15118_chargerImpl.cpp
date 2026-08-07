@@ -1051,6 +1051,20 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
                                             : types::iso15118::PaymentOption::ExternalPayment);
     };
 
+    callbacks.session_stop_res_sent = [this](iso15118::session::feedback::SessionStopAction action) {
+        // Anchor of the CP-oscillator retain time [V2G-DC-968] (Terminate/Pause) resp. of the
+        // immediate oscillator-off in the error case [V2G-DC-942] (FailedTermination); the DLINK_*
+        // signal still follows after the TCP connection is closed.
+        using LibAction = iso15118::session::feedback::SessionStopAction;
+        auto everest_action = types::iso15118::SessionStopAction::Terminate;
+        if (action == LibAction::Pause) {
+            everest_action = types::iso15118::SessionStopAction::Pause;
+        } else if (action == LibAction::FailedTermination) {
+            everest_action = types::iso15118::SessionStopAction::FailedTermination;
+        }
+        publish_session_stop_res_sent(everest_action);
+    };
+
     callbacks.selected_service_parameters = [this](const iso15118::d20::SelectedServiceParameters& parameters) {
         // Captured for ChargeParameterDiscovery to surface DERChargingParameters.ev_supported_dercontrol.
         ev_selected_der_control_functions = parameters.selected_der_control_functions;
@@ -1455,6 +1469,35 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
     std::scoped_lock lock(GEL);
     if (controller) {
         controller->send_control_event(iso15118::d20::ClosedContactor{status});
+    }
+}
+
+void ISO15118_chargerImpl::handle_cp_state_changed(types::iso15118::CpState& cp_state) {
+    using LibCpState = iso15118::d20::CpState;
+    auto state = LibCpState::A;
+    switch (cp_state) {
+    case types::iso15118::CpState::A:
+        state = LibCpState::A;
+        break;
+    case types::iso15118::CpState::B:
+        state = LibCpState::B;
+        break;
+    case types::iso15118::CpState::C:
+        state = LibCpState::C;
+        break;
+    case types::iso15118::CpState::D:
+        state = LibCpState::D;
+        break;
+    case types::iso15118::CpState::E:
+        state = LibCpState::E;
+        break;
+    case types::iso15118::CpState::F:
+        state = LibCpState::F;
+        break;
+    }
+    std::scoped_lock lock(GEL);
+    if (controller) {
+        controller->send_control_event(iso15118::d20::CpStateChanged{state});
     }
 }
 
