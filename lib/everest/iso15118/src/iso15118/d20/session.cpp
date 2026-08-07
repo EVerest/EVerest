@@ -2,9 +2,8 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/session.hpp>
 
-#include <random>
-
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/detail/random.hpp>
 
 namespace iso15118::d20 {
 
@@ -97,35 +96,17 @@ SelectedServiceParameters::SelectedServiceParameters(dt::ServiceCategory energy_
 };
 
 Session::Session() {
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    std::uniform_int_distribution<uint8_t> distribution(0x00, 0xff);
-
-    for (auto& item : id) {
-        item = distribution(generator);
-    }
+    fill_random(id.data(), id.size());
 }
 
 Session::Session(const PauseContext& pause_ctx) :
     id(pause_ctx.old_session_id), selected_services(pause_ctx.selected_service_parameters){};
 
 Session::Session(SelectedServiceParameters service_parameters_) : selected_services(service_parameters_) {
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    std::uniform_int_distribution<uint8_t> distribution(0x00, 0xff);
-
-    for (auto& item : id) {
-        item = distribution(generator);
-    }
+    fill_random(id.data(), id.size());
 }
 Session::Session(OfferedServices services_) : offered_services(services_) {
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    std::uniform_int_distribution<uint8_t> distribution(0x00, 0xff);
-
-    for (auto& item : id) {
-        item = distribution(generator);
-    }
+    fill_random(id.data(), id.size());
 }
 
 Session::~Session() = default;
