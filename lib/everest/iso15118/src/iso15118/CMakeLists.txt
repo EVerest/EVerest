@@ -24,6 +24,36 @@ target_sources(iso15118
         session/protocol.cpp
         session/iso.cpp
 
+        din/context.cpp
+        # din (DIN SPEC 70121) SECC state machine
+        din/state/session_setup.cpp
+        din/state/service_discovery.cpp
+        din/state/service_payment_selection.cpp
+        din/state/contract_authentication.cpp
+        din/state/charge_parameter_discovery.cpp
+        din/state/cable_check.cpp
+        din/state/pre_charge.cpp
+        din/state/power_delivery.cpp
+        din/state/current_demand.cpp
+        din/state/welding_detection.cpp
+        din/state/session_stop.cpp
+        din/state/sequence_error.cpp
+        # message_din (DIN SPEC 70121)
+        message_din/variant.cpp
+        message_din/common_types.cpp
+        message_din/cb_enum_sync_checks.cpp
+        message_din/session_setup.cpp
+        message_din/service_discovery.cpp
+        message_din/service_payment_selection.cpp
+        message_din/contract_authentication.cpp
+        message_din/charge_parameter_discovery.cpp
+        message_din/cable_check.cpp
+        message_din/pre_charge.cpp
+        message_din/power_delivery.cpp
+        message_din/current_demand.cpp
+        message_din/welding_detection.cpp
+        message_din/session_stop.cpp
+
         d20/context.cpp
         d20/context_helper.cpp
         d20/control_event_queue.cpp
@@ -84,6 +114,7 @@ target_link_libraries(iso15118
         # FIXME (aw): would be nice if we could make this private!
         cbv2g::tp
         cbv2g::iso20
+        cbv2g::din
         everest::util
     PRIVATE
         Threads::Threads
