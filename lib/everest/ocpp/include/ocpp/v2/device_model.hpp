@@ -30,6 +30,9 @@ using on_monitor_updated = std::function<void(const VariableMonitoringMeta& upda
 class DeviceModel : public DeviceModelAbstract {
 
 private:
+    // Caches device model map from db
+    void refresh_device_model_map();
+    
     // Serializes access to device_model_map / device_model storage. Recursive: locked methods call back into
     // public methods (e.g. via DeviceModelInterface& composites). Invariant: never held while listeners are
     // invoked; set_value / clear_value / set_monitors copy listeners and payload, unlock, then notify, and
