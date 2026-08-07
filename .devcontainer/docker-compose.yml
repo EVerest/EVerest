@@ -5,8 +5,12 @@ volumes:
     external: false
 
 services:
+  # Uncomment L1_HOST/SERVER_ID in mosquitto-server.conf to bridge this L0
+  # instance's external_energy_node_API server up to a shared L1 broker.
   mqtt-server:
     build: ../applications/containers/mosquitto
+    volumes:
+      - ./mosquitto-server.conf:/mosquitto/config/mosquitto.conf:ro
     ports:
       - 1883:1883
       - 9001:9001
