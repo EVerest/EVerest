@@ -41,15 +41,24 @@ struct MeterInfo {
 
 class AuthorizationResponse {
 public:
-    explicit AuthorizationResponse(bool authorized_) : authorized(authorized_) {
+    explicit AuthorizationResponse(bool authorized_, bool certificate_revoked_ = false) :
+        authorized(authorized_), certificate_revoked(certificate_revoked_) {
     }
 
     operator bool() const {
         return authorized;
     }
 
+    // ISO 15118-2 Plug-and-Charge: a rejection because the contract certificate is revoked is answered
+    // with AuthorizationRes/FAILED_CertificateRevoked instead of a plain FAILED (EvseV2G parity). Only
+    // meaningful when authorized is false; the other protocols ignore it.
+    bool is_certificate_revoked() const {
+        return certificate_revoked;
+    }
+
 private:
     bool authorized;
+    bool certificate_revoked;
 };
 
 class StopCharging {
