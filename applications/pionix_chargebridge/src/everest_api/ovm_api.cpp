@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "protocol/cb_common.h"
 #include "protocol/evse_bsp_cb_to_host.h"
@@ -23,6 +23,13 @@ using namespace everest::lib::API::V1_0::types::generic;
 using namespace everest::lib::API;
 
 namespace charge_bridge::evse_bsp {
+
+namespace {
+// There is exactly one source for the communication fault, so it does not need a sub_type to
+// tell instances apart. Raise and clear must agree on it, otherwise the clear does not match
+// the raised instance.
+constexpr auto comm_fault_subtype = "";
+} // namespace
 
 ovm_api::ovm_api([[maybe_unused]] evse_ovm_config const& config, std::string const& cb_identifier,
                  evse_bsp_host_to_cb& host_status) :
@@ -88,17 +95,18 @@ void ovm_api::dispatch(std::string const& operation, std::string const& payload)
     } else if (operation == "heartbeat") {
         receive_heartbeat(payload);
     } else {
-        std::cerr << "ovm_api: RECEIVE invalid operation: " << operation << std::endl;
+        utilities::print_error(m_cb_identifier, "OVM/EVEREST", -1)
+            << "RECEIVE invalid operation: " << operation << std::endl;
     }
 }
 
 void ovm_api::raise_comm_fault() {
-    send_raise_error(API_OVM::ErrorEnum::CommunicationFault, "ChargeBridge not available", "",
+    send_raise_error(API_OVM::ErrorEnum::CommunicationFault, comm_fault_subtype, "ChargeBridge not available",
                      API_OVM::ErrorSeverityEnum::High);
 }
 
 void ovm_api::clear_comm_fault() {
-    send_clear_error(API_OVM::ErrorEnum::CommunicationFault, "ChargeBridge not available");
+    send_clear_error(API_OVM::ErrorEnum::CommunicationFault, comm_fault_subtype);
 }
 
 void ovm_api::handle_dc_hv_ov_emergency(bool high) {
@@ -132,7 +140,8 @@ void ovm_api::receive_set_limits(std::string const& payload) {
         host_status.ovm_limit_error_mV = static_cast<std::uint32_t>(m_limits.error_limit_V * V_to_mV_factor);
         tx(host_status);
     } else {
-        std::cerr << "ovm_api::receive_set_limits: payload invalid -> " << payload << std::endl;
+        utilities::print_error(m_cb_identifier, "OVM/EVEREST", -1)
+            << "receive_set_limits: payload invalid -> " << payload << std::endl;
     }
 }
 
@@ -209,6 +218,30 @@ void ovm_api::handle_everest_connection_state() {
     auto handle_status = [this](bool status) {
         if (status) {
             utilities::print_error(m_cb_identifier, "OVM/EVEREST", 0) << "EVerest connected" << std::endl;
+            if (m_cb_connected) {
+                // A freshly (re)started EVerest lost every error raised before it came up, while the
+                // MCU keeps its latched ones - and these errors are published on change only, so
+                // without a replay a latched over-voltage stays invisible until the MCU happens to
+                // toggle it. Replay through the very handlers set_cb_message() uses, so the sub_type
+                // a replayed raise carries is by construction the one a later clear will use. Only
+                // active flags are replayed (like the evse adapter's 0 -> raw edge publication): a
+                // clear for an error a fresh EVerest never had says nothing. Raising an already
+                // active error is ignored by the EVerest error framework, so a mere heartbeat gap
+                // costs nothing here.
+                if (m_cb_status.error_flags.flags.dc_hv_ov_emergency not_eq 0) {
+                    handle_dc_hv_ov_emergency(true);
+                }
+                if (m_cb_status.error_flags.flags.dc_hv_ov_error not_eq 0) {
+                    handle_dc_hv_ov_error(true);
+                }
+            } else {
+                // Without a live ChargeBridge m_cb_status is zero or a stale snapshot of a device
+                // that is gone, so it must not be replayed. The communication fault is edge
+                // triggered on the ChargeBridge connection and equally unknown to a restarted
+                // EVerest, so re-assert it here - otherwise the monitor reads as fault free for an
+                // unreachable ChargeBridge.
+                raise_comm_fault();
+            }
         } else {
             utilities::print_error(m_cb_identifier, "OVM/EVEREST", 1) << "Waiting for EVerest...." << std::endl;
         }

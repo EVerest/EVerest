@@ -18,5 +18,21 @@ CB_STATIC_ASSERT((sizeof(CbFirmwarePacket) == 1 + 2 + 2 + 1024 && sizeof(CbFirmw
                  "Wrong CB type size!");
 CB_STATIC_ASSERT((sizeof(CbFirmwareEnd) == 4 + 1 + (128 + 1) && sizeof(CbFirmwareEnd) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");
-CB_STATIC_ASSERT((sizeof(CbHeartbeatPacket) == 120 && sizeof(CbHeartbeatPacket) <= CB_MAX_CB_STRUCT_SIZE),
+CB_STATIC_ASSERT((sizeof(CbHeartbeatPacket) == 224 && sizeof(CbHeartbeatPacket) <= CB_MAX_CB_STRUCT_SIZE),
+                 "Wrong CB type size!");
+CB_STATIC_ASSERT((sizeof(CbDebugUartLinePacket) == 2 + CB_DEBUG_UART_LINE_MAX &&
+                  sizeof(CbDebugUartLinePacket) <= CB_MAX_CB_STRUCT_SIZE),
+                 "Wrong CB type size!");
+CB_STATIC_ASSERT(sizeof(CbTelemetryEntry) == CB_TELEMETRY_NAME_LEN + 4, "Wrong CB type size!");
+CB_STATIC_ASSERT((sizeof(CbTelemetry) == 1 + CB_TELEMETRY_MAX_ENTRIES * (CB_TELEMETRY_NAME_LEN + 4) &&
+                  sizeof(CbTelemetry) <= CB_MAX_CB_STRUCT_SIZE),
+                 "Wrong CB type size!");
+CB_STATIC_ASSERT((sizeof(CbIoPacket) ==
+                      1 + (CB_NUMBER_OF_GPIOS * 2) + 1 + (CB_NUMBER_OF_ADCS * 4) + sizeof(CbTelemetry) &&
+                  sizeof(CbIoPacket) <= CB_MAX_CB_STRUCT_SIZE),
+                 "Wrong CB type size!");
+CB_STATIC_ASSERT((sizeof(CbWs28AnimPacket) == 12 && sizeof(CbWs28AnimPacket) <= CB_MAX_CB_STRUCT_SIZE),
+                 "Wrong CB type size!");
+CB_STATIC_ASSERT((sizeof(CbWs28Packet) == 4 + (CB_WS28_MAX_LEDS * 3) &&
+                  sizeof(CbWs28Packet) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");

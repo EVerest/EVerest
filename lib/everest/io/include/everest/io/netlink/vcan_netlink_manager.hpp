@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 /** \file */
 
@@ -24,8 +24,23 @@ class vcan_netlink_manager {
 public:
     struct NetlinkMessage;
 
+    /// Sink for diagnostics about failed netlink operations. Receives one fully formatted line
+    /// without trailing newline.
+    using error_handler_type = std::function<void(std::string const&)>;
+
     vcan_netlink_manager(vcan_netlink_manager const&) = delete;
     vcan_netlink_manager& operator=(vcan_netlink_manager const&) = delete;
+
+    /**
+     * @brief Redirect diagnostics about failed netlink operations.
+     * @details Without a handler, diagnostics are written to std::cerr. Applications that own the
+     * terminal (or use a logging framework) can install their own sink here. An empty handler
+     * restores the std::cerr default. Exceptions thrown by the handler are swallowed and the message
+     * falls back to std::cerr, since reporting happens in exception handlers and destructors.
+     * This is not synchronized: install the handler during setup, before the first netlink operation.
+     * @param[in] handler The sink to report to
+     */
+    void set_error_handler(error_handler_type handler);
 
     /**
      * @brief Creates a new virtual CAN interface.
@@ -120,6 +135,16 @@ private:
      */
     bool send_netlink_request(int msg_type, int flags, cb_type const& callback, std::string const& interface_name,
                               std::string const& caller);
+
+    /**
+     * @brief Report a failed netlink operation to the error handler, or to std::cerr if none is set.
+     * @param interface_name The interface the operation was about.
+     * @param[in] caller The name of the caller
+     * @param[in] reason Description of the failure
+     */
+    void report_error(std::string const& interface_name, std::string const& caller, std::string const& reason);
+
+    error_handler_type m_error_handler{nullptr};
 };
 
 } // namespace everest::lib::io::netlink

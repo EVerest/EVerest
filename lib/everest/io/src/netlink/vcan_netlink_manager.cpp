@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 // clang-format off
 #include <everest/io/netlink/vcan_netlink_manager.hpp>
@@ -9,6 +9,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <net/if.h>
 #include <linux/if_arp.h>
 #include <linux/rtnetlink.h>
@@ -182,13 +183,30 @@ bool vcan_netlink_manager::send_netlink_request(int msg_type, int flags, cb_type
         send_netlink_request_impl(msg_type, flags, callback);
         return true;
     } catch (std::exception& e) {
-        std::cerr << "[VCAN Netlink] (" << interface_name << ") '" << caller << "' -> " << e.what() << std::endl;
-
+        report_error(interface_name, caller, e.what());
     } catch (...) {
-        std::cerr << "[VCAN Netlink] (" << interface_name << ") '" << caller << "' -> Unexpected exception"
-                  << std::endl;
+        report_error(interface_name, caller, "Unexpected exception");
     }
     return false;
+}
+
+void vcan_netlink_manager::set_error_handler(error_handler_type handler) {
+    m_error_handler = std::move(handler);
+}
+
+void vcan_netlink_manager::report_error(std::string const& interface_name, std::string const& caller,
+                                        std::string const& reason) {
+    auto const message = "[VCAN Netlink] (" + interface_name + ") '" + caller + "' -> " + reason;
+    if (m_error_handler) {
+        try {
+            m_error_handler(message);
+            return;
+        } catch (...) {
+            // Fall back to the default sink. Reporting runs inside exception handlers and, via
+            // destroy(), inside destructors, so a failing handler must not escape from here.
+        }
+    }
+    std::cerr << message << std::endl;
 }
 
 bool vcan_netlink_manager::create(std::string const& interface_name) {

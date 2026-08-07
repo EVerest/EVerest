@@ -55,7 +55,7 @@ int udp_socket_base::get_error() const {
 
 bool udp_socket_base::tx_impl(void const* payload, size_t size) {
     if (not is_open()) {
-        return ENETDOWN;
+        return false;
     }
     size_t nbytes = ::send(m_owned_udp_fd, payload, size, 0);
 
@@ -72,6 +72,15 @@ bool udp_socket_base::tx_impl(void const* payload, size_t size, udp_info const& 
     peer_addr.sin_addr.s_addr = destination.addr;
     peer_addr.sin_family = destination.family;
     size_t nbytes = ::sendto(m_owned_udp_fd, payload, size, 0, (struct sockaddr*)&peer_addr, peer_addr_len);
+
+    return nbytes == size;
+}
+
+bool udp_socket_base::tx_impl(void const* payload, size_t size, endpoint const& destination) {
+    if (not is_open()) {
+        return false;
+    }
+    size_t nbytes = ::sendto(m_owned_udp_fd, payload, size, 0, destination.sa(), destination.sa_len());
 
     return nbytes == size;
 }

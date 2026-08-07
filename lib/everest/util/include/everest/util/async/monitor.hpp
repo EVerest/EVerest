@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 /**
  * @file monitor.hpp
@@ -92,6 +92,23 @@ public:
         } else {
             return &m_obj;
         }
+    }
+
+    /**
+     * @brief Temporarily release the held lock.
+     * @details Use to run a long, self-contained operation that does not touch the guarded resource
+     * without blocking other threads that need the monitor. The caller must \ref lock again before
+     * the handle is used for access or waiting (and before it is destroyed).
+     */
+    void unlock() {
+        m_lock.unlock();
+    }
+
+    /**
+     * @brief Re-acquire the lock previously released via \ref unlock.
+     */
+    void lock() {
+        m_lock.lock();
     }
 
     /**

@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <everest/io/event/unique_fd.hpp>
+#include <everest/io/udp/endpoint.hpp>
 #include <everest/io/udp/udp_payload.hpp>
 #include <functional>
 #include <optional>
@@ -107,6 +108,18 @@ protected:
      * @return True on success, false otherwise.
      */
     bool tx_impl(void const* payload, size_t size, udp_info const& destination);
+
+    /**
+     * @brief Send data to an explicit destination (IPv4 or IPv6).
+     * @details Family-agnostic variant of \ref tx_impl based on \ref endpoint.
+     * The operation will fail if the device is not open or if the data could
+     * not be sent for a different reason.
+     * @param[in] payload Payload
+     * @param[in] size Size of the payload.
+     * @param[in] destination The destination for the message
+     * @return True on success, false otherwise.
+     */
+    bool tx_impl(void const* payload, size_t size, endpoint const& destination);
 
     /**
      * @brief Receive data from the socket

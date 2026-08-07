@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include <everest/io/event/unique_fd.hpp>
+#include <everest/io/mdns/mdns.hpp>
 #include <everest/io/socket/socket.hpp>
 #include <everest/io/udp/endpoint.hpp>
 
@@ -86,6 +87,12 @@ bool apply_so_bindtodevice(int fd, std::string const& device) {
         return false;
     }
     throw std::runtime_error(build_errno_string("Failed to bind socket to device " + device));
+}
+
+// True when the string is an IPv6 link-local (fe80::/10) literal without %scope suffix.
+bool is_link_local_v6_literal(std::string const& addr) {
+    in6_addr parsed{};
+    return inet_pton(AF_INET6, addr.c_str(), &parsed) == 1 && IN6_IS_ADDR_LINKLOCAL(&parsed);
 }
 
 // Returns the socket's address family via getsockname(). Returns AF_UNSPEC if unknown.
@@ -707,7 +714,6 @@ std::string get_interface_address(std::string const& name) {
 
 std::vector<if_info> get_all_interfaces() {
     struct ifaddrs* ifaddr{nullptr};
-    struct ifaddrs* ifa{nullptr};
     if (getifaddrs(&ifaddr) == -1) {
         throw std::runtime_error("Cannot get interfaces: " + std::string(strerror(errno)));
     }
@@ -715,12 +721,43 @@ std::vector<if_info> get_all_interfaces() {
     handle_disposer<ifaddrs, freeifaddrs> ifaddr_disposer(ifaddr);
 
     std::vector<if_info> interfaces;
+    auto entry_for = [&](char const* name) -> if_info& {
+        auto it = std::find_if(interfaces.begin(), interfaces.end(), [&](auto const& e) { return e.name == name; });
+        if (it != interfaces.end()) {
+            return *it;
+        }
+        interfaces.push_back({name, "", ""});
+        return interfaces.back();
+    };
 
-    for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
-        if (ifa->ifa_addr == nullptr || ifa->ifa_addr->sa_family != AF_INET) {
+    for (auto* ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == nullptr) {
             continue;
         }
-        interfaces.push_back({ifa->ifa_name, get_interface_address(ifa->ifa_name)});
+        auto const family = ifa->ifa_addr->sa_family;
+        if (family == AF_INET) {
+            auto& entry = entry_for(ifa->ifa_name);
+            if (not entry.ipv4.empty()) {
+                continue;
+            }
+            char host[INET_ADDRSTRLEN]{};
+            auto const* sin = reinterpret_cast<sockaddr_in const*>(ifa->ifa_addr);
+            if (inet_ntop(AF_INET, &sin->sin_addr, host, sizeof(host))) {
+                entry.ipv4 = host;
+            }
+        } else if (family == AF_INET6) {
+            auto& entry = entry_for(ifa->ifa_name);
+            auto const* sin6 = reinterpret_cast<sockaddr_in6 const*>(ifa->ifa_addr);
+            // prefer a global address; keep a link-local one only until a global shows up
+            if (not entry.ipv6.empty() &&
+                (not is_link_local_v6_literal(entry.ipv6) || IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr))) {
+                continue;
+            }
+            char host[INET6_ADDRSTRLEN]{};
+            if (inet_ntop(AF_INET6, &sin6->sin6_addr, host, sizeof(host))) {
+                entry.ipv6 = host;
+            }
+        }
     }
     return interfaces;
 }
@@ -853,7 +890,57 @@ event::unique_fd open_udp_multicast_socket(std::string const& multicast_group, s
 
 event::unique_fd open_mdns_socket(std::string const& interface_name) {
     auto ip = get_interface_address(interface_name);
-    auto sock = open_udp_multicast_socket("224.0.0.251", 5353, ip, "0.0.0.0", true, true);
+    auto sock = open_udp_multicast_socket(mdns::mdns_multicast_ipv4, mdns::mdns_port, ip, "0.0.0.0", true, true);
+    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, interface_name.c_str(), interface_name.length()) < 0) {
+        throw std::runtime_error("Failed to bind socket to device " + interface_name + " -> " + strerror(errno));
+    }
+    return sock;
+}
+
+event::unique_fd open_mdns_socket6(std::string const& interface_name) {
+    event::unique_fd sock(::socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP));
+    if (not sock.is_fd()) {
+        throw std::runtime_error(build_errno_string("socket(AF_INET6, SOCK_DGRAM) failed"));
+    }
+    // v6-transport only; the IPv4 mDNS traffic is handled by a separate open_mdns_socket
+    int v6only = 1;
+    if (setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only)) < 0) {
+        throw std::runtime_error(build_errno_string("setsockopt(IPV6_V6ONLY=1) failed"));
+    }
+    set_non_blocking(sock);
+    // reuse flags must be set before bind: other mDNS stacks (avahi, resolved) share the mDNS port
+    set_reuse_address(sock);
+    set_reuse_port(sock);
+
+    sockaddr_in6 local{};
+    local.sin6_family = AF_INET6;
+    local.sin6_addr = in6addr_any;
+    local.sin6_port = htons(mdns::mdns_port);
+    if (::bind(sock, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
+        throw std::runtime_error(build_errno_string("bind([::]:" + std::to_string(mdns::mdns_port) + ") failed"));
+    }
+
+    unsigned int const ifindex = if_nametoindex(interface_name.c_str());
+    if (ifindex == 0) {
+        throw std::runtime_error(build_errno_string("if_nametoindex(\"" + interface_name + "\") failed"));
+    }
+    ipv6_mreq mreq{};
+    if (inet_pton(AF_INET6, mdns::mdns_multicast_ipv6, &mreq.ipv6mr_multiaddr) != 1) {
+        throw std::runtime_error(std::string("inet_pton(") + mdns::mdns_multicast_ipv6 + ") failed");
+    }
+    mreq.ipv6mr_interface = ifindex;
+    if (setsockopt(sock, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq, sizeof(mreq)) < 0) {
+        throw std::runtime_error(build_errno_string(std::string("setsockopt(IPV6_JOIN_GROUP, ") +
+                                                    mdns::mdns_multicast_ipv6 + "%" + interface_name + ") failed"));
+    }
+    if (setsockopt(sock, IPPROTO_IPV6, IPV6_MULTICAST_IF, &ifindex, sizeof(ifindex)) < 0) {
+        throw std::runtime_error(build_errno_string("setsockopt(IPV6_MULTICAST_IF, " + interface_name + ") failed"));
+    }
+    // RFC 6762 section 11: mDNS senders SHOULD use a hop limit of 255
+    int hops = 255;
+    if (setsockopt(sock, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &hops, sizeof(hops)) < 0) {
+        throw std::runtime_error(build_errno_string("setsockopt(IPV6_MULTICAST_HOPS) failed"));
+    }
     if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, interface_name.c_str(), interface_name.length()) < 0) {
         throw std::runtime_error("Failed to bind socket to device " + interface_name + " -> " + strerror(errno));
     }
