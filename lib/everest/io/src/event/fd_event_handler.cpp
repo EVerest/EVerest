@@ -138,7 +138,9 @@ public:
         return modify(fd, events, action);
     }
 
-    const auto& get(int fd) const {
+    // By value. A handler is allowed to erase its own entry, which would destroy the
+    // std::function the caller is still executing.
+    auto get(int fd) const {
         return std::get<fd_event_handler::event_handler_type>(m_event_map.at(fd));
     }
 
@@ -343,7 +345,8 @@ bool fd_event_handler::poll_impl(int timeout_ms) {
             if (not m_handlers->exists(item.data.fd)) {
                 continue;
             }
-            m_handlers->get(item.data.fd)(bitmask_to_poll_events(item.events));
+            auto const handler = m_handlers->get(item.data.fd);
+            handler(bitmask_to_poll_events(item.events));
         }
         return true;
     }

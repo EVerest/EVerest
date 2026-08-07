@@ -39,6 +39,55 @@ private:
     event_fd m_event;
 };
 
+/// Sequence numbers for the two events that must stay ordered: a callback finishing, and the
+/// closure it was executing being destroyed.
+struct closure_lifetime {
+    int next{0};
+    /// The probe belonging to the closure copy the running callback was invoked on.
+    void const* running{nullptr};
+    int callback_finished{-1};
+    int closure_destroyed{-1};
+};
+
+/// Captured by value, so every closure copy carries one. Only the copy the running callback
+/// claimed as its own records a sequence number, which is what distinguishes the executing
+/// closure from the copy the handler map owns.
+class destruction_probe {
+public:
+    explicit destruction_probe(closure_lifetime& order) : m_order(&order) {
+    }
+
+    destruction_probe(destruction_probe const&) = default;
+    destruction_probe& operator=(destruction_probe const&) = default;
+
+    ~destruction_probe() {
+        if (m_order->running == this) {
+            m_order->closure_destroyed = ++m_order->next;
+        }
+    }
+
+private:
+    closure_lifetime* m_order;
+};
+
+/// Lives on the stack of the callback invocation, not in the closure, so it can still record the
+/// callback's completion after the closure has been destroyed.
+class completion_marker {
+public:
+    explicit completion_marker(closure_lifetime& order) : m_order(&order) {
+    }
+
+    completion_marker(completion_marker const&) = delete;
+    completion_marker& operator=(completion_marker const&) = delete;
+
+    ~completion_marker() {
+        m_order->callback_finished = ++m_order->next;
+    }
+
+private:
+    closure_lifetime* m_order;
+};
+
 /// Regular files are not pollable, so epoll_ctl rejects them with EPERM.
 int open_unpollable_fd() {
     char path[] = "/tmp/everest_io_fd_event_handler_XXXXXX";
@@ -186,4 +235,41 @@ TEST(fd_event_handler_test, poll_survives_unregistration_from_within_a_handler) 
     // epoll reports the batch in an unspecified order, so whichever handler runs
     // first unregisters the other one, which must then not be dispatched.
     EXPECT_EQ(first_calls + second_calls, 1);
+}
+
+// Unregistering the running descriptor erases the map entry that owns the std::function
+// currently executing, so a dispatch loop holding a reference into the map destroys the
+// callable under its own feet.
+TEST(fd_event_handler_test, callback_may_unregister_its_own_fd) {
+    fd_event_handler handler;
+
+    event_fd self;
+    auto const raw = self.get_raw_fd();
+
+    int calls = 0;
+    closure_lifetime order;
+
+    ASSERT_TRUE(handler.register_event_handler(
+        raw,
+        [&, probe = destruction_probe(order)](fd_event_handler::event_list const&) {
+            completion_marker done{order};
+            order.running = &probe;
+            ++calls;
+            self.read();
+            handler.unregister_event_handler(raw);
+        },
+        poll_events::read));
+
+    self.notify();
+
+    EXPECT_NO_THROW(handler.poll(100ms));
+
+    EXPECT_EQ(calls, 1);
+    EXPECT_FALSE(handler.is_registered(raw));
+
+    // Both sequence numbers are recorded from a live object, so the ordering holds regardless of
+    // what the allocator does with the freed closure.
+    ASSERT_NE(order.callback_finished, -1);
+    ASSERT_NE(order.closure_destroyed, -1);
+    EXPECT_LT(order.callback_finished, order.closure_destroyed);
 }
