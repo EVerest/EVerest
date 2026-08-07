@@ -11,9 +11,15 @@ fd_event_sync_interface::~fd_event_sync_interface() {
     unregister_recorded_events();
 }
 
+// Compares against the handler map rather than the record alone: a registration dropped by
+// descriptor leaves a record naming a live handler, and that must not block a new one.
+bool fd_event_sync_interface::has_recorded_registration() const {
+    auto const live = m_registered_handler.lock();
+    return live and live->handler and live->handler->is_registered(m_registered_fd);
+}
+
 bool fd_event_sync_interface::register_events(fd_event_handler& handler) {
-    auto const recorded = m_registered_handler.lock();
-    if (recorded and recorded->handler != nullptr) {
+    if (has_recorded_registration()) {
         return false;
     }
     auto const fd = get_poll_fd();

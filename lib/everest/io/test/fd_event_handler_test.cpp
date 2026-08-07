@@ -492,7 +492,7 @@ TEST(fd_event_handler_test, timer_can_register_again_after_unregistering) {
 }
 
 // generic_fd_event_client_impl::reset_client drops its io event by descriptor and the next connect
-// registers the object again, so registration must not be one shot per object.
+// registers the object again. event_fd records nothing, so this pins the descriptor guard alone.
 TEST(fd_event_handler_test, registering_again_after_removal_by_descriptor_succeeds) {
     fd_event_handler handler;
     event_fd event;
@@ -503,6 +503,37 @@ TEST(fd_event_handler_test, registering_again_after_removal_by_descriptor_succee
     ASSERT_FALSE(handler.is_registered(raw));
 
     EXPECT_TRUE(handler.register_event_handler(&event, []() {}));
+    EXPECT_TRUE(handler.is_registered(raw));
+}
+
+// A record is honored only while the recording handler's map still holds the recorded descriptor.
+// A removal by descriptor leaves a record naming a live handler, and that must not lock the timer
+// out of ever being polled again.
+TEST(fd_event_handler_test, registering_a_timer_again_after_removal_by_descriptor_succeeds) {
+    fd_event_handler handler;
+    timer_fd timer;
+    auto const raw = timer.get_raw_fd();
+
+    ASSERT_TRUE(handler.register_event_handler(&timer, []() {}));
+    ASSERT_TRUE(handler.remove_event_handler(raw));
+    ASSERT_FALSE(handler.is_registered(raw));
+
+    EXPECT_TRUE(handler.register_event_handler(&timer, []() {}));
+    EXPECT_TRUE(handler.is_registered(raw));
+}
+
+// Same contract for the sync interface, which decides it in register_events rather than in the
+// handler.
+TEST(fd_event_handler_test, registering_a_sync_client_again_after_removal_by_descriptor_succeeds) {
+    fd_event_handler handler;
+    minimal_sync_client client;
+    auto const raw = client.get_poll_fd();
+
+    ASSERT_TRUE(handler.register_event_handler(&client));
+    ASSERT_TRUE(handler.remove_event_handler(raw));
+    ASSERT_FALSE(handler.is_registered(raw));
+
+    EXPECT_TRUE(handler.register_event_handler(&client));
     EXPECT_TRUE(handler.is_registered(raw));
 }
 
