@@ -85,7 +85,77 @@ bool run_resetting_client(std::atomic<bool>& reset_done) {
     return true;
 }
 
+// Connect to the server on loopback and close again; returns true once connected.
+bool run_connecting_client() {
+    sockaddr_in6 addr{};
+    addr.sin6_family = AF_INET6;
+    addr.sin6_port = htons(SERVER_PORT);
+    if (inet_pton(AF_INET6, "::1", &addr.sin6_addr) != 1) {
+        return false;
+    }
+
+    const int fd = ::socket(AF_INET6, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return false;
+    }
+
+    int connected = -1;
+    for (int i = 0; i < 50; ++i) {
+        connected = ::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+        if (connected == 0) {
+            break;
+        }
+        std::this_thread::sleep_for(20ms);
+    }
+
+    ::close(fd);
+    return connected == 0;
+}
+
 } // namespace
+
+SCENARIO("ConnectionPlain survives a close() from the ACCEPTED event handler") {
+
+    GIVEN("A ConnectionPlain whose ACCEPTED handler rejects the connection (e.g. protocol/TLS gating)") {
+        iso15118::io::set_logging_callback([](iso15118::LogLevel, const std::string&) {});
+
+        iso15118::io::PollManager poll_manager;
+        iso15118::io::ConnectionPlain connection(poll_manager, LOOPBACK_IFACE);
+
+        std::atomic<bool> saw_closed{false};
+        std::atomic<bool> saw_open{false};
+        connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
+            if (event == iso15118::io::ConnectionEvent::ACCEPTED) {
+                connection.close();
+            } else if (event == iso15118::io::ConnectionEvent::OPEN) {
+                saw_open.store(true);
+            } else if (event == iso15118::io::ConnectionEvent::CLOSED) {
+                saw_closed.store(true);
+            }
+        });
+
+        WHEN("a client connects") {
+            auto client_future = std::async(std::launch::async, []() { return run_connecting_client(); });
+
+            const bool got_closed = poll_until(
+                poll_manager, [&]() { return saw_closed.load(); }, 5s);
+
+            // Extra poll cycles: a closed fd wrongly re-registered by handle_connect would
+            // dispatch handle_data here and trip its connection_open assertion.
+            for (int i = 0; i < 5; ++i) {
+                poll_manager.poll(10);
+            }
+
+            const auto client_connected = client_future.get();
+
+            THEN("CLOSED is delivered and OPEN never fires after it") {
+                REQUIRE(client_connected);
+                REQUIRE(got_closed);
+                REQUIRE_FALSE(saw_open.load());
+            }
+        }
+    }
+}
 
 SCENARIO("ConnectionPlain::read reports a fatal errno as a closed connection") {
 

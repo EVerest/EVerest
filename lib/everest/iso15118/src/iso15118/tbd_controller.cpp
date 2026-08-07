@@ -57,7 +57,18 @@ TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks cal
 
     if (config.enable_sdp_server) {
         sdp_server = std::make_unique<io::SdpServer>(interface_name);
-        poll_manager.register_fd(sdp_server->get_fd(), [this]() { handle_sdp_server_input(); });
+        // The SDP fd is registered exactly once and never re-registered, so the poll manager's
+        // throw-containment (which unregisters the offending fd) must never see an exception from
+        // this callback: it would silently kill SDP discovery until a process restart. Contain
+        // here instead -- get_peer_request() has consumed the datagram by the time anything below
+        // it can throw, so dropping the request cannot leave the level-triggered fd readable.
+        poll_manager.register_fd(sdp_server->get_fd(), [this]() {
+            try {
+                handle_sdp_server_input();
+            } catch (const std::exception& e) {
+                logf_error("SDP request handling failed: %s; dropping this request", e.what());
+            }
+        });
     }
 }
 
