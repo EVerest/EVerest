@@ -2,12 +2,12 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/service_detail.hpp>
 
-#include <algorithm>
-
 #include <iso15118/d20/state/service_selection.hpp>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/service_detail.hpp>
+
+#include <everest/util/misc/container.hpp>
 #include <iso15118/detail/d20/state/session_stop.hpp>
 
 #include <iso15118/detail/helper.hpp>
@@ -19,7 +19,7 @@ namespace dt = message_20::datatypes;
 namespace {
 
 bool find_energy_services(const std::vector<uint16_t>& services, const uint16_t service) {
-    return std::find(services.begin(), services.end(), service) != services.end();
+    return everest::lib::util::exists(services, service);
 }
 
 void fill_internet_parameter_list(std::vector<dt::InternetParameterList>& internet_parameter_list,
@@ -60,7 +60,7 @@ void fill_parking_parameter_list(std::vector<message_20::datatypes::ParkingParam
 } // namespace
 
 message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetailRequest& req, d20::Session& session,
-                                                 const d20::SessionConfig& config,
+                                                 const session::SessionConfig& config,
                                                  const std::optional<dt::ServiceParameterList>& custom_vas_parameters) {
 
     message_20::ServiceDetailResponse res;
