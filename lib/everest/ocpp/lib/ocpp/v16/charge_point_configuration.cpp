@@ -1547,7 +1547,7 @@ std::optional<KeyValue> ChargePointConfiguration::getStopTransactionOnEVSideDisc
     if (stop_transaction_on_ev_side_disconnect != std::nullopt) {
         KeyValue kv;
         kv.key = "StopTransactionOnEVSideDisconnect";
-        kv.readonly = true;
+        kv.readonly = false;
         kv.value.emplace(ocpp::conversions::bool_to_string(stop_transaction_on_ev_side_disconnect.value()));
         stop_transaction_on_ev_side_disconnect_kv.emplace(kv);
     }
@@ -3991,6 +3991,14 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
     } else if (key == "StopTransactionOnInvalidId") {
         if (isBool(value.get())) {
             this->setStopTransactionOnInvalidId(ocpp::conversions::string_to_bool(value.get()));
+        } else {
+            return ConfigurationStatus::Rejected;
+        }
+    } else if (key == "StopTransactionOnEVSideDisconnect") {
+        if (isBool(value.get())) {
+            this->config["Core"]["StopTransactionOnEVSideDisconnect"] = ocpp::conversions::string_to_bool(value.get());
+            this->setInUserConfig("Core", "StopTransactionOnEVSideDisconnect",
+                                   ocpp::conversions::string_to_bool(value.get()));
         } else {
             return ConfigurationStatus::Rejected;
         }

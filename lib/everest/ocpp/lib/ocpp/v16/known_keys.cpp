@@ -60,7 +60,6 @@ using ocpp::v16::keys::valid_keys;
     key(MeterValuesSampledDataMaxLength) \
     key(NumberOfConnectors) \
     key(ReserveConnectorZeroSupported) \
-    key(StopTransactionOnEVSideDisconnect) \
     key(StopTxnAlignedDataMaxLength) \
     key(StopTxnSampledDataMaxLength) \
     key(SupportedFeatureProfiles) \

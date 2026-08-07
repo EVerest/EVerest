@@ -436,7 +436,7 @@ TEST_P(Configuration, StopTransactionOnEVSideDisconnect) {
     ASSERT_TRUE(kv.has_value());
     EXPECT_EQ(kv.value().key, "StopTransactionOnEVSideDisconnect");
     EXPECT_EQ(kv.value().value, "true");
-    EXPECT_TRUE(kv.value().readonly);
+    EXPECT_FALSE(kv.value().readonly);
 }
 
 TEST_P(Configuration, ConnectorPhaseRotationMaxLength) {
