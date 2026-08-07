@@ -54,6 +54,47 @@ target_sources(iso15118
         message_din/welding_detection.cpp
         message_din/session_stop.cpp
 
+        d2/context.cpp
+        # d2 (ISO 15118-2) SECC state machine
+        d2/crypto.cpp
+        d2/state/sequence_error.cpp
+        d2/state/session_setup.cpp
+        d2/state/service_discovery.cpp
+        d2/state/service_detail.cpp
+        d2/state/payment_service_selection.cpp
+        d2/state/payment_details.cpp
+        d2/state/certificate_installation.cpp
+        d2/state/authorization.cpp
+        d2/state/charge_parameter_discovery.cpp
+        d2/state/cable_check.cpp
+        d2/state/pre_charge.cpp
+        d2/state/power_delivery.cpp
+        d2/state/current_demand.cpp
+        d2/state/charging_status.cpp
+        d2/state/welding_detection.cpp
+        d2/state/session_stop.cpp
+        d2/state/metering_receipt.cpp
+        # message_2 (ISO 15118-2)
+        message_2/variant.cpp
+        message_2/common_types.cpp
+        message_2/cb_enum_sync_checks.cpp
+        message_2/session_setup.cpp
+        message_2/service_discovery.cpp
+        message_2/service_detail.cpp
+        message_2/payment_service_selection.cpp
+        message_2/payment_details.cpp
+        message_2/authorization.cpp
+        message_2/charge_parameter_discovery.cpp
+        message_2/power_delivery.cpp
+        message_2/charging_status.cpp
+        message_2/cable_check.cpp
+        message_2/pre_charge.cpp
+        message_2/current_demand.cpp
+        message_2/welding_detection.cpp
+        message_2/session_stop.cpp
+        message_2/metering_receipt.cpp
+        message_2/certificate_installation.cpp
+
         d20/context.cpp
         d20/context_helper.cpp
         d20/control_event_queue.cpp
@@ -114,6 +155,7 @@ target_link_libraries(iso15118
         # FIXME (aw): would be nice if we could make this private!
         cbv2g::tp
         cbv2g::iso20
+        cbv2g::iso2
         cbv2g::din
         everest::util
     PRIVATE
