@@ -145,6 +145,10 @@ FSMSimpleState::HandleEventReturnType MatchingState::handle_event(AllocatorType&
         return sa.HANDLED_INTERNALLY;
     } else if (ev == Event::RESET) {
         return sa.create_simple<ResetState>(ctx);
+    } else if (ev == Event::LEAVE_BCD) {
+        // EV unplugged mid-matching: abort this matching session.
+        ctx.log_info("Left CP state B/C/D while matching, resetting");
+        return sa.create_simple<ResetState>(ctx);
     } else if (ev == Event::MATCH_COMPLETE) {
         // Wait for link up to be confirmed before going to MATCHED state if enabled in config
         if (ctx.slac_config.link_status.do_detect) {
