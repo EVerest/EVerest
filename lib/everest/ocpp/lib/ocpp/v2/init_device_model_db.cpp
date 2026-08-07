@@ -182,6 +182,24 @@ void InitDeviceModelDb::initialize_database(
     transaction->commit();
 }
 
+void InitDeviceModelDb::remove_components_from_db(
+    const std::map<ComponentKey, std::vector<DeviceModelVariable>>& components) {
+    if (components.empty()) {
+        return;
+    }
+
+    const auto existing_components = get_all_components_from_db();
+
+    std::unique_ptr<TransactionInterface> transaction = database->begin_transaction();
+    for (const auto& [component_to_remove, _] : components) {
+        const auto existing_component = component_exists_in_db(existing_components, component_to_remove);
+        if (existing_component.has_value()) {
+            remove_component_from_db(existing_component->first);
+        }
+    }
+    transaction->commit();
+}
+
 void InitDeviceModelDb::execute_init_sql(const bool delete_db_if_exists) {
     if (delete_db_if_exists) {
         if (std::filesystem::exists(database_path)) {

@@ -60,7 +60,8 @@ public:
         const std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>& evse_supported_energy_transfers,
         const std::map<int32_t, bool>& evse_service_renegotiation_supported, const bool with_der_components,
         const std::filesystem::path& db_path, const std::filesystem::path& migration_files_path,
-        std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client);
+        std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client,
+        bool expose_full_everest_config_in_device_model = false);
     virtual ~EverestDeviceModelStorage() override = default;
     virtual ocpp::v2::DeviceModelMap get_device_model() override;
     virtual std::optional<ocpp::v2::VariableAttribute>
@@ -104,6 +105,7 @@ private:
     std::unique_ptr<ocpp::v2::DeviceModelStorageSqlite> device_model_storage;
     std::set<ocpp::v2::ComponentVariable> stored_in_everest_config_service;
     std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client;
+    bool expose_full_everest_config_in_device_model;
     std::map<Everest::config::ModuleIdType, everest::config::ModuleConfigurationParameters> module_configs;
     std::map<std::string, ModuleTierMappings> mappings;
 

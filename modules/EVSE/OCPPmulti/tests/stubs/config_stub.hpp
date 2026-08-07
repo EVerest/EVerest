@@ -20,6 +20,7 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     std::string DeviceModelDatabaseMigrationPath{"device_model_migrations"};
     bool EnableExternalWebsocketControl{true};
     bool EnableLegacyConfigMigration{false};
+    bool ExposeFullEverestConfigInDeviceModel{false};
     std::string EverestDeviceModelDatabasePath{"everest.db"};
     int GridSupportHeartbeatS{60};
     bool LogDeviceModel{false};
@@ -66,6 +67,9 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     }
     [[nodiscard]] bool getEnableLegacyConfigMigration() const override {
         return EnableLegacyConfigMigration;
+    }
+    [[nodiscard]] bool getExposeFullEverestConfigInDeviceModel() const override {
+        return ExposeFullEverestConfigInDeviceModel;
     }
     [[nodiscard]] std::string getEverestDeviceModelDatabasePath() const override {
         return EverestDeviceModelDatabasePath;

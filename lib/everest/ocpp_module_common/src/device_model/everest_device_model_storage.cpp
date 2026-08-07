@@ -378,6 +378,42 @@ std::string build_supported_protocol_string(const std::string& uri, const int32_
     return uri + ',' + std::to_string(major) + ',' + std::to_string(minor);
 }
 
+std::map<ComponentKey, std::vector<DeviceModelVariable>> build_everest_config_component_configs(
+    const std::map<Everest::config::ModuleIdType, everest::config::ModuleConfigurationParameters>& module_configs,
+    const std::map<std::string, ModuleTierMappings>& mappings) {
+    std::map<ComponentKey, std::vector<DeviceModelVariable>> component_configs;
+
+    // build OCPP2.x device model components from EVerest config    // This is our mapping strategy:
+    // Component.name = module_type
+    // Component.instance = module_id
+    // Component.evse.id/connector = mapping of module
+    // impl mappings are not taken into account at the moment
+    for (const auto& [module_id_type, module_config] : module_configs) {
+        ComponentKey component_key;
+        component_key.name = module_id_type.module_type;
+        component_key.instance = module_id_type.module_id;
+
+        const auto mapping_it = mappings.find(module_id_type.module_id);
+        if (mapping_it != mappings.end() && mapping_it->second.module.has_value()) {
+            const auto& module_mapping = mapping_it->second.module.value();
+            // in OCPP2.x the id and connectorId of the EVSEType must be > 0
+            if (module_mapping.evse > 0) {
+                component_key.evse_id = module_mapping.evse;
+                if (module_mapping.connector.has_value()) {
+                    const auto connector_id = module_mapping.connector.value();
+                    if (connector_id > 0) {
+                        component_key.connector_id = module_mapping.connector;
+                    }
+                }
+            }
+        }
+
+        component_configs[component_key] = build_everest_config_variables(module_config);
+    }
+
+    return component_configs;
+}
+
 ocpp::v2::SetVariableData make_set_variable_data(const ocpp::v2::ComponentVariable& component_variable,
                                                  const std::string& value) {
     ocpp::v2::SetVariableData data;
@@ -546,10 +582,12 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
     const std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>& evse_supported_energy_transfers,
     const std::map<int32_t, bool>& evse_service_renegotiation_supported, const bool with_der_components,
     const std::filesystem::path& db_path, const std::filesystem::path& migration_files_path,
-    std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client) :
+    std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client,
+    const bool expose_full_everest_config_in_device_model) :
     r_evse_manager(r_evse_manager),
     r_extensions_15118(r_extensions_15118),
-    config_service_client(config_service_client) {
+    config_service_client(config_service_client),
+    expose_full_everest_config_in_device_model(expose_full_everest_config_in_device_model) {
     this->module_configs = config_service_client->get_module_configs();
     this->mappings = config_service_client->get_mappings();
     std::map<ComponentKey, std::vector<DeviceModelVariable>> component_configs;
@@ -605,40 +643,27 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
             build_iso15118_variables(true, evse_service_renegotiation_supported.at(evse_id), "");
     }
 
-    // build OCPP2.x device model components from EVerest config    // This is our mapping strategy:
-    // Component.name = module_type
-    // Component.instance = module_id
-    // Component.evse.id/connector = mapping of module
-    // impl mappings are not taken into account at the moment
-    for (const auto& [module_id_type, module_config] : this->module_configs) {
-        ComponentKey component_key;
-        component_key.name = module_id_type.module_type;
-        component_key.instance = module_id_type.module_id;
-        const auto& mapping = this->mappings.at(module_id_type.module_id);
-        if (mapping.module.has_value()) {
-            const auto& module_mapping = mapping.module.value();
-            // in OCPP2.x the id and connectorId of the EVSEType must be > 0
-            if (module_mapping.evse > 0) {
-                component_key.evse_id = module_mapping.evse;
-                if (module_mapping.connector.has_value()) {
-                    const auto connector_id = module_mapping.connector.value();
-                    if (connector_id > 0) {
-                        component_key.connector_id = module_mapping.connector;
-                    }
-                }
-            }
-        }
+    const auto everest_config_component_configs =
+        build_everest_config_component_configs(this->module_configs, this->mappings);
 
-        component_configs[component_key] = build_everest_config_variables(module_config);
+    if (this->expose_full_everest_config_in_device_model) {
+        component_configs.insert(everest_config_component_configs.begin(), everest_config_component_configs.end());
     }
 
     ocpp::v2::InitDeviceModelDb init_device_model_db(db_path, migration_files_path);
     init_device_model_db.initialize_database(component_configs, false, false);
+
+    if (!this->expose_full_everest_config_in_device_model) {
+        init_device_model_db.remove_components_from_db(everest_config_component_configs);
+    }
+    
     init_device_model_db.close_connection();
     this->device_model_storage = std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(db_path);
 
     this->init_evse_components_and_variables(evse_hardware_capabilities_map, evse_supported_energy_transfers);
-    this->init_everest_config();
+    if (this->expose_full_everest_config_in_device_model) {
+        this->init_everest_config();
+    }
 }
 
 void EverestDeviceModelStorage::init_evse_components_and_variables(
