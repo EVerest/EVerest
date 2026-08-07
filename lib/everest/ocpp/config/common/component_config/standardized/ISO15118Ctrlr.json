@@ -43,7 +43,8 @@
       "attributes": [
         {
           "type": "Actual",
-          "mutability": "ReadWrite"
+          "mutability": "ReadWrite",
+          "value": false
         }
       ],
       "description": "If this variable exists and has the value true, then Charging Station can provide a contract certificate that it cannot validate, to the CSMS for validation as part of the AuthorizeRequest.",
