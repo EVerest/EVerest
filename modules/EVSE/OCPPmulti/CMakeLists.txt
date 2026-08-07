@@ -31,6 +31,7 @@ target_sources(${MODULE_NAME}
     grid_support/grid_support_state.cpp
     v2_chargepoint.cpp
     v16_chargepoint.cpp
+    v16_connection_config_validator.cpp
     v16_conversions.cpp
     v16_variable_access.cpp
 )

@@ -53,6 +53,7 @@ target_sources(${TEST_TARGET_NAME}
     ../generic_ocpp.cpp
     ../grid_support/grid_support_state.cpp
     ../v16_chargepoint.cpp
+    ../v16_connection_config_validator.cpp
     ../v16_conversions.cpp
     ../v16_variable_access.cpp
     ../v2_chargepoint.cpp

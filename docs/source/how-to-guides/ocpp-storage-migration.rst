@@ -158,8 +158,21 @@ module configuration parameters:
   ``NetworkConfiguration`` slot that network connection details
   (``CentralSystemURI``, ``SecurityProfile``, ``AuthorizationKey``,
   ``HostName``, ``ChargePointId``) are written to during migration. Any
-  existing attribute values in the target slot are overwritten. Set to ``0``
-  to skip migration of network connection details entirely.
+  existing attribute values in the target slot are overwritten, the slot's
+  ``OcppInterface`` is pinned to ``Any`` unless the component config sets an
+  explicit attribute ``value`` (a ``default`` does not count), and
+  ``OCPPCommCtrlr/ActiveNetworkProfile`` is pointed at the
+  slot. Set to ``0`` to skip migration of network connection details entirely.
+
+  The target slot must be defined in the component configuration at
+  ``DeviceModelConfigPath``: a ``NetworkConfiguration_<N>`` component config
+  must exist for it; a missing component config skips the network connection
+  migration with an error log. Two independent gates apply afterwards: a slot
+  missing from the ``OCPPCommCtrlr/NetworkConfigurationPriority`` *value* is
+  migrated but not used for connecting, and a slot missing from that
+  variable's ``valuesList`` cannot be added to the priority at runtime
+  (each is logged as a warning). With the shipped example configs,
+  the default slot ``1`` satisfies all of this out of the box.
 
 These parameters define the source configuration, the target database, and the
 structural baseline that receives the migrated values.
@@ -307,6 +320,9 @@ so existing connections carry over:
   ``OCPP`` module required it).
 * ``charger_information`` is supported (0..1 connections, as in ``OCPP``; the
   old ``OCPP201`` module did not have it).
+* ``grid_support`` is new in OCPPmulti (optional, 0..128 connections);
+  neither old module had it, so no wiring change is needed unless you want
+  to use it.
 * All other requirements (``auth``, ``data_transfer``, ``display_message``,
   ``evse_energy_sink``, ``evse_manager``, ``extensions_15118``, ``security``,
   ``system``) are identical to both old modules.

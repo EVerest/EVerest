@@ -484,6 +484,8 @@ void ChargePointV16::configure_callbacks() {
         [this](auto&&... args) { return m_callbacks_ptr->cb_all_connectors_unavailable(args...); });
     m_charge_point->register_cancel_reservation_callback(
         [this](auto&&... args) { return m_callbacks_ptr->cb_cancel_reservation(args...); });
+    m_charge_point->register_configure_network_connection_profile_callback(
+        [this](auto&&... args) { return m_callbacks_ptr->cb_configure_network_connection_profile(args...); });
     m_charge_point->register_get_15118_ev_certificate_response_callback(
         [this](auto&&... args) { return m_callbacks_ptr->cb_get_15118_ev_certificate_response(args...); });
     m_charge_point->register_pause_charging_callback([this](std::int32_t ocpp_connector_id) {
@@ -571,6 +573,11 @@ void ChargePointV16::configure_data_model(const config_info_t& config) {
         },
         [this](const ocpp::CiString<50>& key, const ocpp::CiString<500>& value) {
             return m_charge_point->set_configuration_key(key, value);
+        },
+        [this]() {
+            // Connection-config write via the EVerest ocpp interface: refresh the stack's cached network
+            // profiles so priority/slot changes take effect on the next (re)connect; 2.x parity.
+            m_charge_point->reload_network_profiles();
         });
 
     // The factory does not create the message-log directory; retain that here.

@@ -76,6 +76,10 @@ void ChargePoint::disconnect_websocket() {
     this->charge_point->disconnect_websocket();
 }
 
+void ChargePoint::reload_network_profiles() {
+    this->charge_point->reload_network_profiles();
+}
+
 void ChargePoint::on_websocket_connected(const int configuration_slot,
                                          const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
                                          const ocpp::OcppProtocolVersion ocpp_version) {
@@ -314,6 +318,11 @@ void ChargePoint::register_upload_logs_callback(const std::function<GetLogRespon
 void ChargePoint::register_set_connection_timeout_callback(
     const std::function<void(std::int32_t connection_timeout)>& callback) {
     this->charge_point->register_set_connection_timeout_callback(callback);
+}
+
+void ChargePoint::register_configure_network_connection_profile_callback(
+    ConfigureNetworkConnectionProfileCallback callback) {
+    this->charge_point->register_configure_network_connection_profile_callback(std::move(callback));
 }
 
 void ChargePoint::register_is_reset_allowed_callback(const std::function<bool(const ResetType& reset_type)>& callback) {

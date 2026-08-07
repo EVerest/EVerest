@@ -343,6 +343,12 @@ public:
     virtual void setCpoName(const std::string& cpo_name) = 0;
     virtual void setDisableSecurityEventNotifications(bool disable_security_event_notifications) = 0;
     virtual void setSecurityProfile(std::int32_t security_profile) = 0;
+    /// \brief Set the SecurityProfile of a specific network profile slot. Used by the security-profile
+    ///        switch so the revert targets the slot captured at switch time even if the active slot moved
+    ///        (multi-slot failover). Backends without per-slot profiles ignore the slot.
+    virtual void set_security_profile_for_slot(std::int32_t /*slot*/, std::int32_t security_profile) {
+        setSecurityProfile(security_profile);
+    }
 
     // Local Auth List Management Profile
     virtual bool getLocalAuthListEnabled() = 0;

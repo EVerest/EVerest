@@ -32,6 +32,15 @@ enum class CVClass {
     Free,
 };
 
+/// \brief Whether the CV belongs to the connection/network-profile configuration managed by the
+///        1.6 stack (see CVClass::ConnectionConfig): NetworkConfiguration/<slot>, the OCPPCommCtrlr
+///        profile selectors and the SecurityCtrlr connection fallbacks.
+///
+/// Custom config mappings must not target these CVs: the key path writes the device model without
+/// the RebootRequired/reconnect semantics the standardized keys and canonical CVs carry.
+/// load_ocpp16_custom_config_mappings_from_yaml rejects such mappings.
+bool is_connection_config_cv(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
+
 /// \brief Result of a reverse (CV -> 1.6 key) lookup.
 struct ReverseResult {
     std::optional<std::string> key;

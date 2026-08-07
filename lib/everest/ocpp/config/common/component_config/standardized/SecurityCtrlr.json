@@ -160,7 +160,7 @@
     "SecurityProfile": {
       "variable_name": "SecurityProfile",
       "characteristics": {
-        "minLimit": 1,
+        "minLimit": 0,
         "maxLimit": 3,
         "supportsMonitoring": true,
         "dataType": "integer"
@@ -173,7 +173,7 @@
         }
       ],
       "description": "The security profile used by the Charging Station.",
-      "minimum": 1,
+      "minimum": 0,
       "maximum": 3,
       "default": "1",
       "type": "integer"
