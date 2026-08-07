@@ -12,15 +12,21 @@
 #include <charge_bridge/utilities/sync_udp_client.hpp>
 #include <everest/io/event/fd_event_sync_interface.hpp>
 #include <everest/io/netlink/vcan_netlink_manager.hpp>
+#include <everest/io/socket/socket.hpp>
 #include <everest/util/misc/bind.hpp>
 
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <thread>
 
 namespace charge_bridge {
 
 namespace {
+constexpr auto discovery_attempt_timeout = std::chrono::seconds(10);
+constexpr auto discovery_retry_delay = std::chrono::seconds(1);
+constexpr auto manager_base_cycle = std::chrono::seconds(10);
+
 std::pair<bool, std::set<std::string>> make_interface_list(std::string const& str, std::string const& pattern) {
     if (str == pattern) {
         return {false, {}};
@@ -37,18 +43,35 @@ std::pair<bool, std::set<std::string>> make_interface_list(std::string const& st
     std::cout << std::endl;
     return {exclude, items};
 }
+
+const int mqtt_reconnect_timeout_ms = 1000;
+
+endpoint_intent_info parse_endpoint_intent(std::string const& cb_remote) {
+    endpoint_intent_info result;
+
+    if (utilities::string_starts_with(cb_remote, "ANY_EVSE")) {
+        auto params = make_interface_list(cb_remote, "ANY_EVSE");
+        result.value = endpoint_intent::any_evse_mdns;
+        result.excluding_interfaces = params.first;
+        result.interfaces = params.second;
+    } else if (utilities::string_starts_with(cb_remote, "ANY_EV")) {
+        auto params = make_interface_list(cb_remote, "ANY_EV");
+        result.value = endpoint_intent::any_ev_mdns;
+        result.excluding_interfaces = params.first;
+        result.interfaces = params.second;
+    }
+
+    return result;
+}
+
 } // namespace
 
-charge_bridge::charge_bridge(charge_bridge_config const& config) : m_config(config) {
-    if (utilities::string_starts_with(config.cb_remote, "ANY_EVSE")) {
-        auto params = make_interface_list(config.cb_remote, "ANY_EVSE");
-        init_discovery(discovery_device_type::CB_EVSE, params.second, params.first);
-    } else if (utilities::string_starts_with(config.cb_remote, "ANY_EV")) {
-        auto params = make_interface_list(config.cb_remote, "ANY_EV");
-        init_discovery(discovery_device_type::CB_EV, params.second, params.first);
-    } else {
-        init();
-    }
+charge_bridge::charge_bridge(charge_bridge_config const& config,
+                             std::function<void(utilities::chargebridge_status)> status_sink) :
+    m_status_sink(std::move(status_sink)), m_config(config) {
+    std::cout << "CB CONSTRUCT" << std::endl;
+
+    m_endpoint_intent = parse_endpoint_intent(config.cb_remote);
 }
 
 void charge_bridge::init_discovery(discovery_device_type type, std::set<std::string> const& interfaces,
@@ -58,11 +81,98 @@ void charge_bridge::init_discovery(discovery_device_type type, std::set<std::str
 
     m_discovery = std::make_unique<discovery>(type, interfaces, excluding);
     m_discovery->set_discovery_callback(bind_obj(&charge_bridge::handle_discovery, this));
-    {
-        auto handle = m_cb_status.handle();
-        handle->discovery_pending = true;
+    set_discovery_pending(true);
+}
+
+bool charge_bridge::is_mdns_endpoint() const {
+    return m_endpoint_intent.value != endpoint_intent::fixed_ip;
+}
+
+discovery_device_type charge_bridge::mdns_device_type() const {
+    if (m_endpoint_intent.value == endpoint_intent::any_evse_mdns) {
+        return discovery_device_type::CB_EVSE;
     }
-    m_cb_status.notify_one();
+    return discovery_device_type::CB_EV;
+}
+
+std::set<std::string> charge_bridge::select_discovery_interfaces() const {
+    std::set<std::string> available_interfaces;
+    try {
+        for (auto const& item : everest::lib::io::socket::get_all_interaces()) {
+            available_interfaces.insert(item.name);
+        }
+    } catch (std::exception const&) {
+        return {};
+    }
+
+    if (m_endpoint_intent.interfaces.empty()) {
+        return available_interfaces;
+    }
+
+    std::set<std::string> selected_interfaces;
+    if (m_endpoint_intent.excluding_interfaces) {
+        for (auto const& item : available_interfaces) {
+            if (m_endpoint_intent.interfaces.count(item) == 0) {
+                selected_interfaces.insert(item);
+            }
+        }
+        return selected_interfaces;
+    }
+
+    for (auto const& item : m_endpoint_intent.interfaces) {
+        if (available_interfaces.count(item) > 0) {
+            selected_interfaces.insert(item);
+        }
+    }
+    return selected_interfaces;
+}
+
+void charge_bridge::start_discovery_attempt(std::set<std::string> const& interfaces) {
+    if (not m_event_handler) {
+        return;
+    }
+    auto type = mdns_device_type();
+    m_event_handler->add_action([this, type, interfaces]() {
+        try {
+            if (m_discovery) {
+                m_event_handler->unregister_event_handler(m_discovery.get());
+            }
+            m_discovery.reset();
+            init_discovery(type, interfaces, false);
+            auto registered = m_event_handler->register_event_handler(m_discovery.get());
+            if (not registered) {
+                m_event_handler->unregister_event_handler(m_discovery.get());
+                utilities::print_error(m_config.cb_name, "DISCOVERY", -1)
+                    << "Failed to register mDNS discovery handler" << std::endl;
+                std::unique_ptr<discovery> tmp;
+                std::swap(m_discovery, tmp);
+                set_discovery_pending(true);
+            }
+        } catch (std::exception const& e) {
+            utilities::print_error(m_config.cb_name, "DISCOVERY", -1)
+                << "Failed to start mDNS discovery: " << e.what() << std::endl;
+            if (m_discovery) {
+                m_event_handler->unregister_event_handler(m_discovery.get());
+            }
+            std::unique_ptr<discovery> tmp;
+            std::swap(m_discovery, tmp);
+            set_discovery_pending(true);
+        }
+        m_cb_status.notify_one();
+    });
+}
+
+void charge_bridge::stop_discovery() {
+    if (not m_event_handler) {
+        return;
+    }
+    m_event_handler->add_action([this]() {
+        std::unique_ptr<discovery> tmp;
+        if (m_discovery) {
+            m_event_handler->unregister_event_handler(m_discovery.get());
+        }
+        std::swap(m_discovery, tmp);
+    });
 }
 
 void charge_bridge::handle_discovery(std::string const& ip) {
@@ -97,91 +207,438 @@ void charge_bridge::handle_discovery(std::string const& ip) {
 
     m_event_handler->add_action([this]() {
         std::unique_ptr<discovery> tmp;
+        if (m_discovery) {
+            m_event_handler->unregister_event_handler(m_discovery.get());
+        }
         std::swap(m_discovery, tmp);
 
-        init();
-        {
-            auto handle = m_cb_status.handle();
-            handle->discovery_pending = false;
-        }
-        m_cb_status.notify_one();
+        set_discovery_pending(false);
     });
 }
 
-void charge_bridge::init() {
+void charge_bridge::set_discovery_pending(bool pending) {
+    auto handle = m_cb_status.handle();
+    set_discovery_pending(*handle, pending);
+}
+
+void charge_bridge::set_discovery_pending(charge_bridge_status& status, bool pending) {
+    auto changed = status.discovery_pending != pending;
+    status.discovery_pending = pending;
+    m_cb_status.notify_one();
+    if (changed) {
+        m_ready_notify.notify();
+    }
+}
+
+std::future<bool> charge_bridge::start_internal_runtime() {
+    auto promise = std::make_shared<std::promise<bool>>();
+    auto result = promise->get_future();
+    auto preserve_runtime_objects =
+        m_can_0_client || m_pty_1 || m_pty_2 || m_pty_3 || m_bsp || m_plc || m_gpio || m_heartbeat;
+
+    if (not m_event_handler) {
+        promise->set_value(false);
+        return result;
+    }
+
+    m_event_handler->add_action([this, promise = std::move(promise), preserve_runtime_objects]() mutable {
+        try {
+            create_internal_runtime();
+            auto runtime_registered = register_internal_events(*m_event_handler);
+            if (not runtime_registered) {
+                unregister_internal_runtime_events(*m_event_handler);
+                if (preserve_runtime_objects) {
+                    disconnect_internal_runtime_endpoints();
+                } else {
+                    cleanup_internal_runtime();
+                }
+                promise->set_value(false);
+                m_cb_status.notify_one();
+                return;
+            }
+
+            promise->set_value(true);
+            m_cb_status.notify_one();
+        } catch (...) {
+            unregister_internal_runtime_events(*m_event_handler);
+            if (preserve_runtime_objects) {
+                disconnect_internal_runtime_endpoints();
+            } else {
+                cleanup_internal_runtime();
+            }
+            promise->set_exception(std::current_exception());
+            m_cb_status.notify_one();
+        }
+    });
+
+    return result;
+}
+
+void charge_bridge::create_internal_runtime() {
     if (m_config.can0.has_value()) {
-        m_can_0_client = std::make_unique<can_bridge>(m_config.can0.value());
+        if (not m_can_0_client) {
+            m_can_0_client = std::make_unique<can_bridge>(m_config.can0.value(), m_ready_notify);
+        } else {
+            m_can_0_client->connect_cb_endpoint(m_config.can0->cb_remote);
+        }
     }
     if (m_config.serial1.has_value()) {
-        m_pty_1 = std::make_unique<serial_bridge>(m_config.serial1.value());
+        if (not m_pty_1) {
+            m_pty_1 = std::make_unique<serial_bridge>(m_config.serial1.value(), m_ready_notify);
+        } else {
+            m_pty_1->connect_cb_endpoint(m_config.serial1->cb_remote);
+        }
     }
     if (m_config.serial2.has_value()) {
-        m_pty_2 = std::make_unique<serial_bridge>(m_config.serial2.value());
+        if (not m_pty_2) {
+            m_pty_2 = std::make_unique<serial_bridge>(m_config.serial2.value(), m_ready_notify);
+        } else {
+            m_pty_2->connect_cb_endpoint(m_config.serial2->cb_remote);
+        }
     }
     if (m_config.serial3.has_value()) {
-        m_pty_3 = std::make_unique<serial_bridge>(m_config.serial3.value());
+        if (not m_pty_3) {
+            m_pty_3 = std::make_unique<serial_bridge>(m_config.serial3.value(), m_ready_notify);
+        } else {
+            m_pty_3->connect_cb_endpoint(m_config.serial3->cb_remote);
+        }
     }
     if (m_config.plc.has_value()) {
-        m_plc = std::make_unique<plc_bridge>(m_config.plc.value());
+        if (not m_plc) {
+            m_plc = std::make_unique<plc_bridge>(m_config.plc.value(), m_ready_notify);
+        } else {
+            m_plc->connect_cb_endpoint(m_config.plc->cb_remote);
+        }
     }
     if (m_config.bsp.has_value()) {
-        m_bsp = std::make_unique<bsp_bridge>(m_config.bsp.value());
+        if (not m_bsp) {
+            m_bsp = std::make_unique<bsp_bridge>(m_config.bsp.value(), m_ready_notify);
+        } else {
+            m_bsp->connect_cb_endpoint(m_config.bsp->cb_remote);
+        }
+    }
+    if (m_config.gpio.has_value()) {
+        if (not m_gpio) {
+            m_gpio = std::make_unique<gpio_bridge>(m_config.gpio.value(), m_ready_notify);
+        } else {
+            m_gpio->connect_cb_endpoint(m_config.gpio->cb_remote);
+        }
     }
     if (m_config.heartbeat.has_value()) {
-        m_heartbeat = std::make_unique<heartbeat_service>(m_config.heartbeat.value(), [this](bool connected) {
+        auto heartbeat_cb = [this](bool connected) {
             {
                 auto handle = m_cb_status.handle();
                 handle->is_connected = connected;
             }
+            if (m_plc) {
+                m_plc->set_cb_connection_status(connected);
+            }
+            if (m_gpio) {
+                m_gpio->set_cb_connection_status(connected);
+            }
+            if (m_can_0_client) {
+                m_can_0_client->set_cb_connection_status(connected);
+            }
             m_cb_status.notify_one();
-        });
+        };
+
+        if (not m_heartbeat) {
+            m_heartbeat = std::make_unique<heartbeat_service>(m_config.heartbeat.value(), heartbeat_cb, m_ready_notify);
+        } else {
+            m_heartbeat->connect_cb_endpoint(m_config.heartbeat->cb_remote);
+        }
     }
-    if (m_config.gpio.has_value()) {
-        m_gpio = std::make_unique<gpio_bridge>(m_config.gpio.value());
+}
+
+void charge_bridge::cleanup_internal_runtime() {
+    disconnect_internal_runtime_endpoints();
+    m_can_0_client.reset();
+    m_pty_1.reset();
+    m_pty_2.reset();
+    m_pty_3.reset();
+    m_bsp.reset();
+    m_plc.reset();
+    m_gpio.reset();
+    m_heartbeat.reset();
+}
+
+void charge_bridge::disconnect_internal_runtime_endpoints() {
+    if (m_can_0_client) {
+        m_can_0_client->disconnect_cb_endpoint();
     }
+    if (m_pty_1) {
+        m_pty_1->disconnect_cb_endpoint();
+    }
+    if (m_pty_2) {
+        m_pty_2->disconnect_cb_endpoint();
+    }
+    if (m_pty_3) {
+        m_pty_3->disconnect_cb_endpoint();
+    }
+    if (m_bsp) {
+        m_bsp->disconnect_cb_endpoint();
+    }
+    if (m_plc) {
+        m_plc->disconnect_cb_endpoint();
+    }
+    if (m_gpio) {
+        m_gpio->disconnect_cb_endpoint();
+    }
+    if (m_heartbeat) {
+        m_heartbeat->disconnect_cb_endpoint();
+    }
+}
+
+bool charge_bridge::unregister_internal_runtime_events(everest::lib::io::event::fd_event_handler& handler) {
+    auto result = true;
+    if (m_can_0_client) {
+        result = handler.unregister_event_handler(m_can_0_client.get()) && result;
+    }
+    if (m_pty_1) {
+        result = handler.unregister_event_handler(m_pty_1.get()) && result;
+    }
+    if (m_pty_2) {
+        result = handler.unregister_event_handler(m_pty_2.get()) && result;
+    }
+    if (m_pty_3) {
+        result = handler.unregister_event_handler(m_pty_3.get()) && result;
+    }
+    if (m_bsp) {
+        result = handler.unregister_event_handler(m_bsp.get()) && result;
+    }
+    if (m_plc) {
+        result = handler.unregister_event_handler(m_plc.get()) && result;
+    }
+    if (m_heartbeat) {
+        result = handler.unregister_event_handler(m_heartbeat.get()) && result;
+    }
+    if (m_gpio) {
+        result = handler.unregister_event_handler(m_gpio.get()) && result;
+    }
+    return result;
+}
+
+std::future<bool> charge_bridge::stop_internal_runtime() {
+    auto promise = std::make_shared<std::promise<bool>>();
+    auto result = promise->get_future();
+
+    if (not m_event_handler) {
+        cleanup_internal_runtime();
+        promise->set_value(true);
+        return result;
+    }
+    m_event_handler->add_action([this, promise = std::move(promise)]() mutable {
+        try {
+            unregister_internal_runtime_events(*m_event_handler);
+            disconnect_internal_runtime_endpoints();
+            promise->set_value(true);
+        } catch (...) {
+            disconnect_internal_runtime_endpoints();
+            promise->set_exception(std::current_exception());
+        }
+        m_cb_status.notify_one();
+    });
+
+    return result;
 }
 
 charge_bridge::~charge_bridge() {
     m_cb_status.notify_one();
+    if (m_manager.joinable()) {
+        m_manager.join();
+    }
 }
 
 void charge_bridge::manage(everest::lib::io::event::fd_event_handler& handler, std::atomic_bool const& run,
                            bool force_update) {
+    if (m_manager.joinable()) {
+        std::cerr << "WARN: charge_bridge::manage called while manager thread is already running" << std::endl;
+        return;
+    }
+
     using namespace std::chrono_literals;
     m_event_handler = &handler;
     m_force_firmware_update = force_update;
 
-    auto action = [this](bool is_connected, bool discovery_pending, int& error_count) {
-        if (discovery_pending) {
-            if (m_discovery_active) {
+    m_event_handler->add_action([this]() {
+        if (m_config.telemetry.has_value()) {
+            m_1s_tick.disarm();
+            m_mqtt = std::make_unique<everest::lib::io::mqtt::mqtt_client>(mqtt_reconnect_timeout_ms);
+            m_mqtt->connect(m_config.telemetry->mqtt_bind, m_config.telemetry->mqtt_remote,
+                            m_config.telemetry->mqtt_port, m_config.telemetry->mqtt_ping_interval_ms);
+
+            m_mqtt->set_callback_connect(
+                [this](auto&, auto, auto, auto const&) { m_1s_tick.set_timeout(std::chrono::seconds(1)); });
+        }
+        // Register the manage events (readiness notifier + tick) regardless of telemetry, so the
+        // status report is produced even when telemetry/MQTT is disabled. The MQTT fd itself is only
+        // registered when the telemetry client exists (see register_manage_events).
+        register_manage_events(*m_event_handler);
+    });
+
+    if (is_mdns_endpoint()) {
+        set_discovery_pending(true);
+    }
+
+    using clock = std::chrono::steady_clock;
+    auto action = [this](charge_bridge_status& current_status, int& error_count,
+                         std::optional<clock::time_point>& next_connect_retry_time, std::future<bool>& startup_runtime,
+                         bool& startup_runtime_in_progress,
+                         std::optional<clock::time_point>& discovery_attempt_deadline,
+                         std::optional<clock::time_point>& discovery_retry_time, std::future<bool>& stop_runtime,
+                         bool& runtime_stop_in_progress) {
+        auto now = clock::now();
+        if (runtime_stop_in_progress) {
+            if (stop_runtime.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
                 return;
             }
-            m_discovery_active = true;
-            m_event_handler->add_action([this]() { register_events(*m_event_handler); });
-            return;
-        }
-        if (m_was_connected and not is_connected) {
-            if (error_count > 1) {
-                m_event_handler->add_action([this]() { unregister_events(*m_event_handler); });
-                m_was_connected = false;
-            } else {
-                error_count++;
+            try {
+                stop_runtime.get();
+            } catch (...) {
+            }
+            runtime_stop_in_progress = false;
+            m_internal_runtime_started = false;
+            m_was_connected = false;
+            error_count = 0;
+
+            if (is_mdns_endpoint()) {
+                set_discovery_pending(current_status, true);
+                m_discovery_active = false;
+                next_connect_retry_time.reset();
+                discovery_attempt_deadline.reset();
+                discovery_retry_time.reset();
+                return;
             }
         }
+        if (next_connect_retry_time.has_value() && now < next_connect_retry_time.value()) {
+            return;
+        } else if (next_connect_retry_time.has_value()) {
+            next_connect_retry_time.reset();
+        }
+        if (current_status.discovery_pending) {
+            if (m_discovery_active) {
+                if (discovery_attempt_deadline.has_value() && now >= discovery_attempt_deadline.value()) {
+                    stop_discovery();
+                    m_discovery_active = false;
+                    discovery_attempt_deadline.reset();
+                    discovery_retry_time = now + discovery_retry_delay;
+                }
+                return;
+            }
+
+            if (discovery_retry_time.has_value() && now < discovery_retry_time.value()) {
+                return;
+            }
+
+            auto discovery_interfaces = select_discovery_interfaces();
+            if (discovery_interfaces.empty()) {
+                discovery_retry_time = now + discovery_retry_delay;
+                return;
+            }
+
+            start_discovery_attempt(discovery_interfaces);
+            m_discovery_active = true;
+            discovery_attempt_deadline = now + discovery_attempt_timeout;
+            discovery_retry_time.reset();
+            return;
+        }
+
+        if (m_discovery_active) {
+            m_discovery_active = false;
+            discovery_attempt_deadline.reset();
+            discovery_retry_time.reset();
+        }
+
+        if (m_was_connected and not current_status.is_connected) {
+            stop_runtime = stop_internal_runtime();
+            runtime_stop_in_progress = true;
+        }
         if (not m_was_connected) {
+            if (startup_runtime_in_progress) {
+                if (startup_runtime.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                    bool runtime_started = false;
+                    try {
+                        runtime_started = startup_runtime.get();
+                    } catch (...) {
+                        runtime_started = false;
+                    }
+                    startup_runtime_in_progress = false;
+                    if (runtime_started) {
+                        m_internal_runtime_started = true;
+                        m_was_connected = true;
+                        error_count = 0;
+                    }
+                }
+                return;
+            }
+
             if (update_firmware(m_force_firmware_update)) {
-                m_event_handler->add_action([this]() { register_events(*m_event_handler); });
-                m_was_connected = true;
-                error_count = 0;
+                if (not m_internal_runtime_started) {
+                    startup_runtime = start_internal_runtime();
+                    startup_runtime_in_progress = true;
+                } else {
+                    m_event_handler->add_action([this]() { register_internal_events(*m_event_handler); });
+                    m_was_connected = true;
+                    error_count = 0;
+                }
+            } else if (is_mdns_endpoint() && not m_internal_runtime_started) {
+                set_discovery_pending(current_status, true);
+                next_connect_retry_time = clock::now() + manager_base_cycle;
             }
         }
     };
+    m_manager = std::thread([&run, action, this]() {
+        using clock = std::chrono::steady_clock;
+        std::future<bool> startup_runtime;
+        bool startup_runtime_in_progress = false;
+        std::future<bool> stop_runtime;
+        bool runtime_stop_in_progress = false;
+        std::optional<clock::time_point> discovery_attempt_deadline;
+        std::optional<clock::time_point> discovery_retry_time;
+        std::optional<clock::time_point> next_connect_retry_time;
 
-    std::thread manager([&run, action, this]() {
+        auto is_startup_runtime_ready = [&startup_runtime, &startup_runtime_in_progress]() {
+            return startup_runtime_in_progress &&
+                   startup_runtime.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+        };
+        auto is_stop_runtime_ready = [&stop_runtime, &runtime_stop_in_progress]() {
+            return runtime_stop_in_progress &&
+                   stop_runtime.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+        };
+
         auto handle = m_cb_status.handle();
         bool last_is_connected = handle->is_connected;
         bool last_discovery_pending = handle->discovery_pending;
         int error_count = 0;
+        auto compute_wait_timeout = [&](std::chrono::milliseconds wait_timeout) {
+            if (handle->discovery_pending && is_mdns_endpoint()) {
+                if (next_connect_retry_time.has_value()) {
+                    auto now = clock::now();
+                    auto retry_remaining =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(next_connect_retry_time.value() - now);
+                    if (retry_remaining < wait_timeout) {
+                        return retry_remaining;
+                    }
+                }
+                if (m_discovery_active && discovery_attempt_deadline.has_value()) {
+                    auto now = clock::now();
+                    auto attempt_remaining =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(discovery_attempt_deadline.value() - now);
+                    if (attempt_remaining < wait_timeout) {
+                        return attempt_remaining;
+                    }
+                } else if (discovery_retry_time.has_value()) {
+                    auto now = clock::now();
+                    auto retry_remaining =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(discovery_retry_time.value() - now);
+                    if (retry_remaining < wait_timeout) {
+                        return retry_remaining;
+                    }
+                }
+            }
+            return wait_timeout;
+        };
+
         auto condition = [&] {
             if (handle->is_connected not_eq last_is_connected) {
                 return true;
@@ -189,19 +646,53 @@ void charge_bridge::manage(everest::lib::io::event::fd_event_handler& handler, s
             if (handle->discovery_pending not_eq last_discovery_pending) {
                 return true;
             }
+            if (is_startup_runtime_ready()) {
+                return true;
+            }
+            if (is_stop_runtime_ready()) {
+                return true;
+            }
+            if (handle->discovery_pending && m_discovery_active && discovery_attempt_deadline.has_value()) {
+                if (clock::now() >= discovery_attempt_deadline.value()) {
+                    return true;
+                }
+            }
+            if (handle->discovery_pending && (not m_discovery_active) && discovery_retry_time.has_value()) {
+                if (clock::now() >= discovery_retry_time.value()) {
+                    return true;
+                }
+            }
+            if (handle->discovery_pending && next_connect_retry_time.has_value()) {
+                if (clock::now() >= next_connect_retry_time.value()) {
+                    return true;
+                }
+            }
             if (not run.load()) {
                 return true;
             }
             return false;
         };
         while (run.load()) {
-            action(handle->is_connected, handle->discovery_pending, error_count);
-            handle.wait_for(condition, 10s);
+            action(*handle, error_count, next_connect_retry_time, startup_runtime, startup_runtime_in_progress,
+                   discovery_attempt_deadline, discovery_retry_time, stop_runtime, runtime_stop_in_progress);
+            if (handle->discovery_pending && is_mdns_endpoint()) {
+                auto wait_timeout =
+                    compute_wait_timeout(std::chrono::duration_cast<std::chrono::milliseconds>(manager_base_cycle));
+                if (wait_timeout < 0ms) {
+                    wait_timeout = 0ms;
+                }
+                handle.wait_for(condition, wait_timeout);
+                last_is_connected = handle->is_connected;
+                last_discovery_pending = handle->discovery_pending;
+                continue;
+            }
+
+            auto wait_timeout = std::chrono::duration_cast<std::chrono::milliseconds>(manager_base_cycle);
+            handle.wait_for(condition, wait_timeout);
             last_is_connected = handle->is_connected;
             last_discovery_pending = handle->discovery_pending;
         }
     });
-    manager.detach();
 }
 
 bool charge_bridge::update_firmware(bool force) {
@@ -245,7 +736,178 @@ std::string charge_bridge::get_pty_3_slave_path() {
     return "";
 }
 
+utilities::chargebridge_status charge_bridge::get_status() {
+    utilities::chargebridge_status status;
+
+    status.cb_name = m_config.cb_name;
+    {
+        auto handle = m_cb_status.handle();
+        status.connected = handle->is_connected;
+        if (m_endpoint_intent.value != endpoint_intent::fixed_ip) {
+            status.discovered = not handle->discovery_pending;
+        }
+    }
+
+    if (m_can_0_client) {
+        auto available = m_can_0_client->available();
+        status.can0.emplace(available);
+    }
+    if (m_pty_1) {
+        auto available = m_pty_1->available();
+        status.serial1.emplace(available);
+    }
+    if (m_pty_2) {
+        auto available = m_pty_2->available();
+        status.serial2.emplace(available);
+    }
+    if (m_pty_3) {
+        auto available = m_pty_3->available();
+        status.serial3.emplace(available);
+    }
+    if (m_bsp) {
+        auto available = m_bsp->available();
+        status.bsp.emplace(available);
+    }
+    if (m_plc) {
+        auto available = m_plc->available();
+        status.plc.emplace(available);
+    }
+    if (m_heartbeat) {
+        auto available = m_heartbeat->available();
+        status.heartbeat.emplace(available);
+        status.mcu_resets.emplace(m_heartbeat->mcu_reset_count());
+    }
+    if (m_gpio) {
+        auto available = m_gpio->available();
+        status.gpio.emplace(available);
+    }
+
+    return status;
+}
+
+void charge_bridge::handle_ready() {
+    auto status = get_status();
+    publish_status(status);
+    if (m_status_sink) {
+        m_status_sink(status);
+    }
+}
+
+void charge_bridge::handle_tick() {
+    auto status = get_status();
+    publish_status(status);
+}
+
+void charge_bridge::publish_status(utilities::chargebridge_status const& status) {
+    if (not m_config.telemetry.has_value()) {
+        return;
+    }
+
+    bool result = true;
+    auto publish = [this](std::string_view component, std::string_view item, bool status) {
+        std::stringstream topic;
+        topic << m_config.telemetry->telemetry_topic << "/" << m_config.cb_name << "/" << component << "/" << item;
+        std::string_view payload = status ? "true" : "false";
+        m_mqtt->publish(topic.str(), payload);
+    };
+
+    publish("chargebridge", "connected", status.connected);
+    if (status.discovered.has_value()) {
+        auto discovered = status.discovered.value();
+        publish("chargebridge", "discovered", discovered);
+        result = result && discovered;
+    }
+
+    auto publish_status = [publish](std::string_view component, bool status) { publish(component, "status", status); };
+
+    if (status.can0.has_value()) {
+        auto available = status.can0.value();
+        result = result && available;
+        publish_status("can_0", available);
+    }
+    if (status.serial1.has_value()) {
+        auto available = status.serial1.value();
+        result = result && available;
+        publish_status("serial_1", available);
+    }
+    if (status.serial2.has_value()) {
+        auto available = status.serial2.value();
+        result = result && available;
+        publish_status("serial_2", available);
+    }
+    if (status.serial3.has_value()) {
+        auto available = status.serial3.value();
+        result = result && available;
+        publish_status("serial_3", available);
+    }
+    if (status.bsp.has_value()) {
+        auto available = status.bsp.value();
+        result = result && available;
+        publish_status("bsp", available);
+    }
+    if (status.plc.has_value()) {
+        auto available = status.plc.value();
+        result = result && available;
+        publish_status("plc", available);
+    }
+    if (status.heartbeat.has_value()) {
+        auto available = status.heartbeat.value();
+        result = result && available;
+        publish_status("heartbeat", available);
+    }
+    if (status.gpio.has_value()) {
+        auto available = status.gpio.value();
+        result = result && available;
+        publish_status("gpio", available);
+    }
+    publish_status("chargebridge", result);
+}
+
 bool charge_bridge::register_events(everest::lib::io::event::fd_event_handler& handler) {
+    auto result = true;
+    result = register_internal_events(handler) && result;
+    result = register_manage_events(handler) && result;
+
+    return result;
+}
+bool charge_bridge::unregister_events(everest::lib::io::event::fd_event_handler& handler) {
+    auto result = true;
+    result = unregister_internal_events(handler) && result;
+    result = unregister_manage_events(handler) && result;
+
+    return result;
+}
+bool charge_bridge::register_manage_events(everest::lib::io::event::fd_event_handler& handler) {
+    auto result = true;
+    result =
+        handler.register_event_handler(&m_1s_tick, everest::lib::util::bind_obj(&charge_bridge::handle_tick, this)) &&
+        result;
+
+    // The readiness notifier drives the status report (status UI line + the telemetry status publish),
+    // so it must be registered regardless of telemetry. publish_status() itself no-ops when telemetry
+    // is disabled, and the MQTT fd below is only registered when the client exists.
+    result = handler.register_event_handler(&m_ready_notify,
+                                            everest::lib::util::bind_obj(&charge_bridge::handle_ready, this)) &&
+             result;
+
+    if (m_mqtt) {
+        result = handler.register_event_handler(m_mqtt.get()) && result;
+    }
+
+    return result;
+}
+bool charge_bridge::unregister_manage_events(everest::lib::io::event::fd_event_handler& handler) {
+    auto result = true;
+    result = handler.unregister_event_handler(&m_1s_tick) && result;
+    result = handler.unregister_event_handler(&m_ready_notify) && result;
+    if (m_mqtt) {
+        result = handler.unregister_event_handler(m_mqtt.get()) && result;
+    }
+
+    return result;
+}
+
+bool charge_bridge::register_internal_events(everest::lib::io::event::fd_event_handler& handler) {
     auto result = true;
     if (m_can_0_client) {
         result = handler.register_event_handler(m_can_0_client.get()) && result;
@@ -277,8 +939,9 @@ bool charge_bridge::register_events(everest::lib::io::event::fd_event_handler& h
 
     return result;
 }
-bool charge_bridge::unregister_events(everest::lib::io::event::fd_event_handler& handler) {
+bool charge_bridge::unregister_internal_events(everest::lib::io::event::fd_event_handler& handler) {
     auto result = true;
+
     if (m_can_0_client) {
         result = handler.unregister_event_handler(m_can_0_client.get()) && result;
     }
@@ -306,6 +969,7 @@ bool charge_bridge::unregister_events(everest::lib::io::event::fd_event_handler&
     if (m_discovery) {
         result = handler.unregister_event_handler(m_discovery.get()) && result;
     }
+
     return result;
 }
 

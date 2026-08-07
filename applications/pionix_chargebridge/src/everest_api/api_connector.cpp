@@ -134,6 +134,10 @@ void api_connector::set_cb_message(evse_bsp_cb_to_host const& msg) {
     }
 }
 
+void api_connector::set_error_handler(error_ftor const& handler) {
+    m_ready.setCallback([handler](bool, bool new_value) { handler(new_value); });
+}
+
 bool api_connector::check_cb_heartbeat() {
     if (m_last_cb_heartbeat == std::chrono::steady_clock::time_point::max()) {
         return false;
@@ -209,6 +213,7 @@ void api_connector::handle_cb_connection_state() {
         handle_status(not m_cb_connected);
     }
     m_cb_connected = current;
+    m_ready.set(m_cb_connected);
 }
 
 } // namespace charge_bridge::evse_bsp

@@ -2,6 +2,7 @@
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include "everest/io/event/timer_fd.hpp"
 #include <atomic>
 #include <charge_bridge/bsp_bridge.hpp>
 #include <charge_bridge/can_bridge.hpp>
@@ -11,14 +12,20 @@
 #include <charge_bridge/heartbeat_service.hpp>
 #include <charge_bridge/plc_bridge.hpp>
 #include <charge_bridge/serial_bridge.hpp>
+#include <charge_bridge/utilities/print_status.hpp>
 #include <charge_bridge/utilities/symlink.hpp>
 #include <everest/io/event/fd_event_handler.hpp>
+#include <everest/io/mqtt/mosquitto_cpp.hpp>
 #include <everest/io/serial/event_pty.hpp>
 #include <everest/io/tun_tap/tap_client.hpp>
 #include <everest/util/async/monitor.hpp>
 
+#include <functional>
+#include <future>
 #include <memory>
 #include <optional>
+#include <set>
+#include <thread>
 
 namespace charge_bridge {
 
@@ -27,10 +34,21 @@ struct charge_bridge_status {
     bool discovery_pending{false};
 };
 
+struct telemetry_config {
+    std::string cb;
+    std::string item;
+    std::string mqtt_remote;
+    std::string mqtt_bind;
+    std::uint32_t mqtt_ping_interval_ms;
+    std::uint16_t mqtt_port;
+    std::string telemetry_topic;
+};
+
 struct charge_bridge_config {
     std::string cb_name;
     std::uint16_t cb_port;
     std::string cb_remote;
+    std::optional<telemetry_config> telemetry;
     std::optional<can_bridge_config> can0;
     std::optional<serial_bridge_config> serial1;
     std::optional<serial_bridge_config> serial2;
@@ -42,11 +60,24 @@ struct charge_bridge_config {
     firmware_update::fw_update_config firmware;
 };
 
+enum class endpoint_intent {
+    fixed_ip,
+    any_evse_mdns,
+    any_ev_mdns,
+};
+
+struct endpoint_intent_info {
+    endpoint_intent value{endpoint_intent::fixed_ip};
+    std::set<std::string> interfaces;
+    bool excluding_interfaces{false};
+};
+
 void print_charge_bridge_config(charge_bridge_config const& config);
 
 class charge_bridge : public everest::lib::io::event::fd_event_register_interface {
 public:
-    charge_bridge(charge_bridge_config const& config);
+    charge_bridge(charge_bridge_config const& config,
+                  std::function<void(utilities::chargebridge_status)> status_sink = {});
     ~charge_bridge();
 
     bool update_firmware(bool force);
@@ -63,9 +94,29 @@ public:
     void manage(everest::lib::io::event::fd_event_handler& handler, std::atomic_bool const& exit, bool force_update);
 
 private:
-    void init();
+    std::future<bool> start_internal_runtime();
+    void create_internal_runtime();
+    void cleanup_internal_runtime();
+    void disconnect_internal_runtime_endpoints();
+    bool unregister_internal_runtime_events(everest::lib::io::event::fd_event_handler& handler);
+    std::future<bool> stop_internal_runtime();
     void init_discovery(discovery_device_type type, std::set<std::string> const& interfaces, bool excluding);
+    bool is_mdns_endpoint() const;
+    discovery_device_type mdns_device_type() const;
+    std::set<std::string> select_discovery_interfaces() const;
+    void start_discovery_attempt(std::set<std::string> const& interfaces);
+    void stop_discovery();
+    void set_discovery_pending(bool pending);
+    void set_discovery_pending(charge_bridge_status& status, bool pending);
     void handle_discovery(std::string const& ip);
+    void handle_ready();
+    void handle_tick();
+    bool register_internal_events(everest::lib::io::event::fd_event_handler& handler);
+    bool unregister_internal_events(everest::lib::io::event::fd_event_handler& handler);
+    bool register_manage_events(everest::lib::io::event::fd_event_handler& handler);
+    bool unregister_manage_events(everest::lib::io::event::fd_event_handler& handler);
+    void publish_status(utilities::chargebridge_status const& status);
+    utilities::chargebridge_status get_status();
 
 private:
     std::unique_ptr<can_bridge> m_can_0_client;
@@ -79,12 +130,19 @@ private:
     std::unique_ptr<discovery> m_discovery;
 
     everest::lib::io::event::fd_event_handler* m_event_handler{nullptr};
+    everest::lib::io::event::event_fd m_ready_notify;
+    everest::lib::io::event::timer_fd m_1s_tick;
     bool m_force_firmware_update{false};
     everest::lib::util::monitor<charge_bridge_status> m_cb_status;
     bool m_was_connected{false};
     bool m_discovery_active{false};
+    bool m_internal_runtime_started{false};
+    std::thread m_manager;
+    endpoint_intent_info m_endpoint_intent;
+    std::function<void(utilities::chargebridge_status)> m_status_sink;
 
     charge_bridge_config m_config;
+    std::unique_ptr<everest::lib::io::mqtt::mqtt_client> m_mqtt;
 };
 
 } // namespace charge_bridge

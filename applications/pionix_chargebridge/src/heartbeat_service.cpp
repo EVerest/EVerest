@@ -20,9 +20,13 @@ namespace charge_bridge {
 using namespace std::chrono_literals;
 
 heartbeat_service::heartbeat_service(heartbeat_config const& config,
-                                     std::function<void(bool)> const& publish_connection_status) :
-    m_udp(config.cb_remote, config.cb_port, default_udp_timeout_ms),
-    m_publish_connection_status(publish_connection_status) {
+                                     std::function<void(bool)> const& publish_connection_status,
+                                     everest::lib::io::event::event_fd& ready_notify) :
+    m_udp_port(config.cb_port),
+    m_udp_remote(config.cb_remote),
+    m_publish_connection_status(publish_connection_status),
+    m_ready_notify(ready_notify) {
+
     m_identifier = config.cb + "/" + config.item;
     std::memcpy(&m_config_message.data, &config.cb_config, sizeof(CbConfig));
     m_config_message.type = CbStructType::CST_HostToCb_Heartbeat;
@@ -31,16 +35,45 @@ heartbeat_service::heartbeat_service(heartbeat_config const& config,
     m_heartbeat_timer.set_timeout(m_heartbeat_interval);
     m_last_heartbeat_reply = std::chrono::steady_clock::time_point();
 
-    m_udp.set_rx_handler([this](auto const& data, auto&) { handle_udp_rx(data); });
+    create_udp_client(m_udp_remote, m_udp_port);
 
-    m_udp.set_error_handler([this](auto id, auto const& msg) {
+    m_ready.setCallback([this](auto&, auto&) { m_ready_notify.notify(); });
+}
+
+void heartbeat_service::create_udp_client(std::string const& remote, uint16_t remote_port) {
+    m_udp = std::make_unique<everest::lib::io::udp::udp_client>(remote, remote_port, default_udp_timeout_ms);
+    m_udp_on_error = false;
+    m_udp_ready = false;
+    m_udp->set_rx_handler([this](auto const& data, auto&) { handle_udp_rx(data); });
+    m_udp->set_error_handler([this](auto id, auto const& msg) {
         if (m_inital_cb_commcheck and id == 0) {
             utilities::print_error(m_identifier, "HEARTBEAT/UDP", 1) << "Waiting for ChargeBridge" << std::endl;
         } else {
             utilities::print_error(m_identifier, "HEARTBEAT/UDP", id) << msg << std::endl;
         }
         m_udp_on_error = id not_eq 0;
+        m_udp_ready = id == 0;
+        handle_ready();
     });
+}
+
+void heartbeat_service::disconnect_cb_endpoint() {
+    m_udp_ready = false;
+    m_udp_on_error = true;
+    m_cb_connected = false;
+    m_last_heartbeat_reply = std::chrono::steady_clock::time_point();
+    if (m_udp) {
+        m_udp->reset();
+    }
+    m_udp.reset();
+    handle_ready();
+}
+
+void heartbeat_service::connect_cb_endpoint(std::string const& remote) {
+    m_udp_remote = remote;
+    disconnect_cb_endpoint();
+    create_udp_client(m_udp_remote, m_udp_port);
+    handle_ready();
 }
 
 heartbeat_service::~heartbeat_service() {
@@ -49,7 +82,7 @@ heartbeat_service::~heartbeat_service() {
 bool heartbeat_service::register_events(everest::lib::io::event::fd_event_handler& handler) {
     // clang-format off
     return
-        handler.register_event_handler(&m_udp) &&
+        handler.register_event_handler(m_udp.get()) &&
         handler.register_event_handler(&m_heartbeat_timer, [this](auto&) { handle_heartbeat_timer(); });
     // clang-format on
 }
@@ -57,36 +90,52 @@ bool heartbeat_service::register_events(everest::lib::io::event::fd_event_handle
 bool heartbeat_service::unregister_events(everest::lib::io::event::fd_event_handler& handler) {
     // clang-format off
     return
-        handler.unregister_event_handler(&m_udp) &&
+        handler.unregister_event_handler(m_udp.get()) &&
         handler.unregister_event_handler(&m_heartbeat_timer);
     // clang-format on
 }
 
 void heartbeat_service::handle_error_timer() {
     if (m_udp_on_error) {
-        m_udp.reset();
+        if (m_udp) {
+            m_udp->reset();
+        }
     }
 }
 
 void heartbeat_service::handle_heartbeat_timer() {
-    if (not m_udp_on_error) {
+    if (not m_udp_on_error && m_udp) {
         everest::lib::io::udp::udp_payload payload;
         utilities::struct_to_vector(m_config_message, payload.buffer);
-        m_udp.tx(payload);
+        m_udp->tx(payload);
     }
     auto timeout = std::chrono::steady_clock::now() - m_last_heartbeat_reply > m_connection_to;
     if (timeout and m_cb_connected) {
         utilities::print_error(m_identifier, "HEARTBEAT/UDP", 1) << "ChargeBridge connection lost" << std::endl;
         m_cb_connected = false;
+        handle_ready();
     }
 
     else if (not timeout and not m_cb_connected) {
         utilities::print_error(m_identifier, "HEARTBEAT/UDP", 0) << "ChargeBridge connected" << std::endl;
         m_cb_connected = true;
+        handle_ready();
     }
     if (m_publish_connection_status) {
         m_publish_connection_status(m_cb_connected);
     }
+}
+
+void heartbeat_service::handle_ready() {
+    m_ready.set(m_cb_connected and m_udp_ready);
+}
+
+bool heartbeat_service::available() const {
+    return m_ready;
+}
+
+int heartbeat_service::mcu_reset_count() const {
+    return m_mcu_reset_count;
 }
 
 void heartbeat_service::handle_udp_rx(everest::lib::io::udp::udp_payload const& payload) {
@@ -99,6 +148,7 @@ void heartbeat_service::handle_udp_rx(everest::lib::io::udp::udp_payload const& 
             m_mcu_reset_count++;
             utilities::print_error(m_identifier, "HEARTBEAT/UDP", -1)
                 << "ChargeBridge reset count " << m_mcu_reset_count << std::endl;
+            m_ready_notify.notify();
         }
         m_mcu_timestamp = mcu_current;
 
