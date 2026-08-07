@@ -98,6 +98,20 @@ event::unique_fd open_udp_multicast_socket(std::string const& multicast_group, s
 event::unique_fd open_mdns_socket(std::string const& interface_name);
 
 /**
+ * @brief Open an IPv6 UDP socket for
+ * <a href="https://datatracker.ietf.org/doc/html/rfc6762">Multicast DNS</a>
+ * @details AF_INET6/IPV6_V6ONLY socket bound to [::]:5353, joined to the
+ * mDNS group ff02::fb on the specified interface (by interface index, so no
+ * IPv4 address is required on the interface). Multicast egress is pinned to
+ * the interface and messages are only sent on that interface.
+ * @param[in] interface_name The name of interface
+ * @return The managed file descriptor of the socket
+ * @throws std::runtime_error if the operation fails (including when the host
+ * or interface has no IPv6 support).
+ */
+event::unique_fd open_mdns_socket6(std::string const& interface_name);
+
+/**
  * @brief Open a TCP socket in client mode
  * @param[in] host The host to connect to
  * @param[in] port The port to listen to
@@ -395,7 +409,17 @@ std::uint32_t ip_to_s_addr(std::string const& ip);
 
 struct if_info {
     std::string name;
+    /** First IPv4 address of the interface; empty if it has none */
     std::string ipv4;
+    /** IPv6 address of the interface: first global address, falling back to the
+     *  first link-local one; without \%scope suffix; empty if it has none */
+    std::string ipv6;
+    bool has_v4() const {
+        return not ipv4.empty();
+    }
+    bool has_v6() const {
+        return not ipv6.empty();
+    }
 };
 
 /**

@@ -42,7 +42,11 @@ bool tap_handler::tx(PayloadT const& data) {
 }
 
 bool tap_handler::rx(PayloadT& data) {
-    data.resize(m_mtu);
+    // A TAP fd (IFF_NO_PI) delivers whole Ethernet frames: up to MTU bytes of
+    // payload plus the 14 byte Ethernet header (+4 for an optional 802.1Q VLAN
+    // tag). The kernel silently truncates frames larger than the read buffer.
+    constexpr int ethernet_frame_overhead = 18;
+    data.resize(m_mtu + ethernet_frame_overhead);
     auto res = ::read(m_fd, data.data(), data.size());
     if (res < 0) {
         m_error = errno;

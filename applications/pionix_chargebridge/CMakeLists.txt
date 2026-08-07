@@ -1,8 +1,24 @@
 cmake_minimum_required(VERSION 3.16)
 
+# MQTT support in everest::io is mandatory for this application. everest::io exports no property to
+# query it, so the cache variable (declared in the top level CMakeLists.txt, default ON) is the only
+# signal; if it is not defined at all, MQTT support is assumed to be present. As with ftxui below,
+# skip only this application instead of failing the whole project configuration.
 if(DEFINED EVEREST_IO_WITH_MQTT AND NOT EVEREST_IO_WITH_MQTT)
-    message(FATAL_ERROR "pionix_chargebridge requires MQTT support in everest::io. "
+    message(WARNING "Not building pionix_chargebridge because everest::io is built without MQTT support. "
             "Set EVEREST_IO_WITH_MQTT=ON or disable EVEREST_BUILD_APPLICATIONS.")
+    return()
+endif()
+
+# ftxui powers the interactive terminal status UI and is mandatory for this application. It is
+# provided either by the dependency manager (EVEREST_DEPENDENCY_ENABLED_FTXUI) or, for system
+# dependency builds, by find_package(ftxui 6 QUIET) in the top level CMakeLists.txt. If it is not
+# available, skip only this application instead of failing the whole project configuration.
+if(NOT TARGET ftxui::component)
+    message(WARNING "Not building pionix_chargebridge because dependency ftxui is not available. "
+            "Remove ftxui from EVEREST_EXCLUDE_DEPENDENCIES, set EVEREST_DEPENDENCY_ENABLED_FTXUI=ON "
+            "or install ftxui 6 for system dependency builds.")
+    return()
 endif()
 
 find_package(ryml QUIET)
@@ -24,15 +40,17 @@ add_executable(pionix_chargebridge
   src/utilities/logging.cpp
   src/utilities/parse_config.cpp
   src/utilities/print_config.cpp
+  src/utilities/print_status.cpp
   src/utilities/string.cpp
   src/utilities/symlink.cpp
   src/utilities/sync_udp_client.cpp
   src/utilities/type_converters.cpp
+  src/status_ui.cpp
 
+  src/io_bridge.cpp
   src/can_bridge.cpp
   src/charge_bridge.cpp
   src/bsp_bridge.cpp
-  src/gpio_bridge.cpp
   src/heartbeat_service.cpp
   src/plc_bridge.cpp
   src/serial_bridge.cpp
@@ -46,6 +64,9 @@ target_link_libraries(pionix_chargebridge
   everest::everest_api_types
   nlohmann_json::nlohmann_json
   ryml::ryml
+  ftxui::component
+  ftxui::dom
+  ftxui::screen
 )
 
 target_include_directories(pionix_chargebridge
