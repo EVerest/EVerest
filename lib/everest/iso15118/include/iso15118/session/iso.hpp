@@ -149,6 +149,11 @@ private:
     // Latched from the signals the engines send the module, so a teardown can undo them.
     PowerPath power_path;
 
+    // The V2GTP frame (header + payload) currently being dispatched to the engine, attached to the
+    // engine's v2g_message feedback on its way to the module. Only set for the duration of the
+    // on_packet() call; the packet buffer is reused afterwards.
+    io::StreamInputView current_request_frame{};
+
     bool driver_stopped{false};
     // Set once the first application request (SessionSetupReq) has reached the engine; the V2G session
     // is then established and the controller drops the communication-setup timeout (is_v2g_session_established()).
