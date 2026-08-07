@@ -5,37 +5,62 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
-#include <thread>
+#include <string>
 
 #include <arpa/inet.h>
 
-#include <iso15118/d20/state/session_setup.hpp>
-#include <iso15118/d20/state/supported_app_protocol.hpp>
+#include <iso15118/session/d20_secc_engine.hpp>
+#include <iso15118/session/d2_secc_engine.hpp>
+#include <iso15118/session/din_secc_engine.hpp>
+#include <iso15118/session/sap_engine.hpp>
+#include <iso15118/session/secc_engine.hpp>
 
 #include <iso15118/detail/helper.hpp>
 
 namespace iso15118 {
 
 static constexpr auto SESSION_IDLE_TIMEOUT_MS = 5000;
+// After the session ended (SessionStopRes sent), wait this long for the EVCC to close the TCP
+// connection first before we close it ourselves (DIN [V2G-DC-937/938], ISO 15118-20 [V2G20-1633]).
+// It bounds the SECC self-close for the cases that reach it: a graceful SessionStop (the EV normally
+// closes first, so this rarely fires) and engine-level FAILED/timeout terminations
+// (FAILED_SequenceError / FAILED_UnknownSession / V2G_Sequence_Timeout) which end via
+// engine->is_finished(). It MUST stay below par_CMN_TCP_Connection_Termination_Timeout -- the -4 ATS
+// upper bound of 5 s within which the SUT must close after a failure/timeout (asserted as
+// latency <= 5 s, an upper bound with no min-wait); 4 s leaves a 1 s margin while still giving a
+// compliant EV ample time to close first (it typically closes in < 1 s). SupportedAppProtocol
+// negotiation failures and plug-out/kill bypass this linger entirely and close immediately (the
+// driver_stopped branch in poll() and Session::close(); [V2G-DC-940] terminate without delay). Real
+// EVs commonly dislike an SECC-initiated close, so an EV-first close is still preferred. The wait is
+// poll-driven -- it must never block the controller loop (a blocked loop stalls the SDP server and
+// delays the D-LINK signal into the next plug-in cycle).
+static constexpr auto CONNECTION_CLOSE_LINGER_MS = 4000;
+// On an SECC-initiated error close ([V2G-DC-940]: FAILED end, CP State A) the TCP connection is
+// closed immediately (FIN out), but the DLINK_TERMINATE signal is held back this long: it makes
+// SLAC leave the logical network, and the FIN must traverse the AVLN first, otherwise the peer can
+// never observe the close (the SLAC leave itself has T_match_leave of budget, so a short grace is
+// standards-safe). An EV-first close (EOF) still finishes immediately via the not-connected path.
+static constexpr auto DLINK_SIGNAL_GRACE_MS = 300;
 static constexpr auto MIN_RESPONSE_INTERVAL_MS = 100; // minimum time between two response messages
+// ISO 15118-2 / DIN 70121: send each response this long after its request was received (deducting the
+// internal processing time). Some EVs are not ready to receive the response immediately and their
+// controller may crash if the SECC answers too fast (mirrors EvseV2G's MAX_RES_TIME behaviour).
+static constexpr auto RESPONSE_DELAY_AFTER_REQUEST_MS = 100;
 
-namespace {
+// DIN SPEC 70121 [V2G-DC-957], Table 75: after a CurrentDemandRes the SECC guards the wait for the next
+// CurrentDemandReq with V2G_SECC_Sequence_TimeoutCR = 5 s, tighter than the generic 60 s
+// V2G_SECC_Sequence_Timeout used for every other message.
+static constexpr auto DIN_SEQUENCE_TIMEOUT_CURRENT_DEMAND_MS = 5000;
 
-void log_sdp_packet(const iso15118::io::SdpPacket& sdp) {
-    static constexpr auto ESCAPED_BYTE_CHAR_COUNT = 4;
-    auto payload_string_buffer = std::make_unique<char[]>(sdp.get_payload_length() * ESCAPED_BYTE_CHAR_COUNT + 1);
-    for (std::size_t i = 0; i < sdp.get_payload_length(); ++i) {
-        snprintf(payload_string_buffer.get() + i * ESCAPED_BYTE_CHAR_COUNT, ESCAPED_BYTE_CHAR_COUNT + 1, "\\x%02hx",
-                 sdp.get_payload_buffer()[i]);
+// Picks the SECC sequence timeout to arm after a response has been sent. Only DIN CurrentDemandRes
+// deviates from the generic 60 s value.
+static uint32_t sequence_timeout_after_response(const V2gMessageType& response_type) {
+    if (const auto* din_type = std::get_if<message_din::Type>(&response_type)) {
+        if (*din_type == message_din::Type::CurrentDemandRes) {
+            return DIN_SEQUENCE_TIMEOUT_CURRENT_DEMAND_MS;
+        }
     }
-
-    iso15118::logf_info("[SDP Packet in]: Header: %04hx, Payload: %s", sdp.get_payload_type(),
-                        payload_string_buffer.get());
-}
-
-std::unique_ptr<message_20::Variant> make_variant_from_packet(const iso15118::io::SdpPacket& packet) {
-    return std::make_unique<message_20::Variant>(
-        packet.get_payload_type(), io::StreamInputView{packet.get_payload_buffer(), packet.get_payload_length()});
+    return d20::TIMEOUT_SEQUENCE;
 }
 
 void raise_invalid_packet_state(const io::SdpPacket& sdp_packet) {
@@ -122,7 +147,7 @@ V2GTPReadResult read_single_v2gtp_packet(io::IConnection& connection, io::SdpPac
     return V2GTPReadResult::complete;
 }
 
-size_t setup_response_header(uint8_t* buffer, iso15118::io::v2gtp::PayloadType payload_type, size_t size) {
+static size_t setup_response_header(uint8_t* buffer, iso15118::io::v2gtp::PayloadType payload_type, size_t size) {
     buffer[0] = iso15118::io::SDP_PROTOCOL_VERSION;
     buffer[1] = iso15118::io::SDP_INVERSE_PROTOCOL_VERSION;
 
@@ -137,26 +162,163 @@ size_t setup_response_header(uint8_t* buffer, iso15118::io::v2gtp::PayloadType p
 
     return size + iso15118::io::SdpPacket::V2GTP_HEADER_SIZE;
 }
-} // namespace
 
-Session::Session(std::unique_ptr<io::IConnection> connection_, d20::SessionConfig session_config,
-                 const session::feedback::Callbacks& callbacks, std::optional<d20::PauseContext>& pause_ctx) :
-    Session(std::move(connection_), std::move(session_config), callbacks, pause_ctx, false) {
+void PowerPath::observe(session::feedback::Signal signal) {
+    using Signal = session::feedback::Signal;
+    switch (signal) {
+    case Signal::CHARGE_LOOP_STARTED:
+        charge_loop_running = true;
+        break;
+    case Signal::CHARGE_LOOP_FINISHED:
+        charge_loop_running = false;
+        break;
+    case Signal::AC_CLOSE_CONTACTOR:
+        ac_contactor_closed = true;
+        break;
+    case Signal::AC_OPEN_CONTACTOR:
+        ac_contactor_closed = false;
+        break;
+    default:
+        break;
+    }
 }
 
-Session::Session(std::unique_ptr<io::IConnection> connection_, d20::SessionConfig session_config,
-                 const session::feedback::Callbacks& callbacks, std::optional<d20::PauseContext>& pause_ctx,
-                 bool skip_app_protocol_negotiation) :
+std::vector<session::feedback::Signal> PowerPath::take_teardown_signals() {
+    using Signal = session::feedback::Signal;
+
+    std::vector<Signal> signals;
+    if (charge_loop_running) {
+        signals.push_back(Signal::CHARGE_LOOP_FINISHED);
+    }
+    if (ac_contactor_closed) {
+        signals.push_back(Signal::AC_OPEN_CONTACTOR);
+    } else if (charge_loop_running) {
+        // A running charge loop with no AC contactor closed is a DC one: the DC contactor closes with
+        // PowerDelivery(Start) and has no close signal of its own, only DC_OPEN_CONTACTOR.
+        signals.push_back(Signal::DC_OPEN_CONTACTOR);
+    }
+
+    charge_loop_running = false;
+    ac_contactor_closed = false;
+    return signals;
+}
+
+Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionConfig session_config,
+                 const session::feedback::Callbacks& callbacks_, std::optional<d20::PauseContext>& pause_ctx_,
+                 std::optional<d2::PauseContext>& d2_pause_ctx_) :
     connection(std::move(connection_)),
-    ctx(callbacks, std::move(session_config), pause_ctx, active_control_event, message_exchange, timeouts),
-    fsm(skip_app_protocol_negotiation ? ctx.create_state<d20::state::SessionSetup>(true)
-                                      : ctx.create_state<d20::state::SupportedAppProtocol>()) {
+    config(std::move(session_config)),
+    callbacks(callbacks_),
+    feedback(callbacks_),
+    pause_ctx(pause_ctx_),
+    d2_pause_ctx(d2_pause_ctx_),
+    // Every session starts on the SupportedAppProtocol handshake; is_secure() is a property of the
+    // connection type, so the TLS gating of plaintext-only protocols ([V2G-DC-869]) is known here.
+    engine(std::in_place_type<SapEngine>, engine_output_view(), config, callbacks_, connection->is_secure()) {
 
     next_session_event = offset_time_point_by_ms(get_current_time_point(), SESSION_IDLE_TIMEOUT_MS);
     connection->set_event_callback([this](io::ConnectionEvent event) { this->handle_connection_event(event); });
+
+    // Latch the power-path signals on their way to the module, so an aborted teardown can undo them
+    // (open_power_path()). The protocol engines are handed this wrapped copy; the SapEngine keeps the
+    // plain one -- the handshake neither closes a contactor nor starts a charge loop. `feedback` keeps
+    // the plain one too, so the teardown signals the Session itself emits are not re-latched.
+    callbacks.signal = [this, forward = callbacks_.signal](session::feedback::Signal signal) {
+        power_path.observe(signal);
+        if (forward) {
+            forward(signal);
+        }
+    };
+}
+
+Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionConfig session_config,
+                 const session::feedback::Callbacks& callbacks_, std::optional<d20::PauseContext>& pause_ctx_,
+                 std::optional<d2::PauseContext>& d2_pause_ctx_, bool skip_app_protocol_negotiation) :
+    Session(std::move(connection_), std::move(session_config), callbacks_, pause_ctx_, d2_pause_ctx_) {
+    if (skip_app_protocol_negotiation) {
+        // The caller already ran the SupportedAppProtocol handshake (external SAP on a handed-over
+        // socket): replace the SapEngine before anything runs and start directly on the ISO 15118-20
+        // engine, which expects a SessionSetupReq as the first message. No offered/selected protocol
+        // data exists on this path (the caller keeps it), and the vehicle certificate hash comes with
+        // the connection instead of the TLS OPEN event.
+        vehicle_cert_hash = connection->get_vehicle_cert_hash();
+        engine.emplace<D20SeccEngine>(engine_output_view(), config, pause_ctx, callbacks, timeouts,
+                                      d20::EVSupportedAppProtocols{}, message_20::SupportedAppProtocol{},
+                                      vehicle_cert_hash, skip_app_protocol_negotiation);
+    }
 }
 
 Session::~Session() = default;
+
+io::StreamOutputView Session::engine_output_view() {
+    return io::StreamOutputView{response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
+                                sizeof(response_buffer) - io::SdpPacket::V2GTP_HEADER_SIZE};
+}
+
+bool Session::is_finished() const {
+    // Controller-facing: true only once the end-of-session handling (waiting for an EV-initiated TCP
+    // close, closing the connection, sending the D-LINK signal) has completed and the session can be
+    // reaped. The logical end of the V2G session itself is session_over().
+    return finished_reported;
+}
+
+bool Session::session_over() const {
+    // The engines keep is_finished() false while a response is still staged, so a session-ending
+    // response (SessionStopRes, any FAILED_*, a failed SupportedAppProtocol negotiation) is always
+    // flushed before the teardown starts.
+    return driver_stopped or visit_engine([](const auto& e) { return e.is_finished(); });
+}
+
+session::feedback::Signal Session::teardown_signal() const {
+    using Signal = session::feedback::Signal;
+
+    // A paused session keeps the logical network ("Matched") and only asks the lower layers for the
+    // power-saving mode: [V2G2-725] / [V2G20-1777], ISO 15118-3 Table 7. DIN 70121 has no pause.
+    if (visit_engine([](const auto& e) { return e.is_paused(); })) {
+        return Signal::DLINK_PAUSE;
+    }
+
+    // The other regular end -- a positive SessionStopRes(Terminate) -- releases the link and nothing
+    // more: [V2G2-724] / [V2G20-1776] / DIN [V2G-DC-451], ISO 15118-3 Table 5.
+    if (clean_session_end) {
+        return Signal::DLINK_TERMINATE;
+    }
+
+    // Everything else ends the session on an error, and the standards are explicit that an error gets
+    // its own primitive: "If the SECC identifies any error it shall indicate a Data-Link error
+    // (D-LINK_ERROR.request())" -- [V2G2-727], repeated verbatim as [V2G20-727]. Per ISO 15118-3
+    // Table 6 that terminates the data link AND restarts the matching process through a control pilot
+    // transition via state E ([V2G3-M07-04..12]), so the EV can retry without being unplugged;
+    // D-LINK_TERMINATE would leave it stuck. This covers a FAILED_* response, a failed
+    // SupportedAppProtocol negotiation, an unexpected message, a sequence timeout and an EV that
+    // disconnects mid-session.
+    //
+    // DIN SPEC 70121 defines no D-LINK_ERROR primitive, but it asks for the same outcome: [V2G-DC-942]
+    // requires the CP oscillator to go off without delay on any error detection, and the NOTE at
+    // [V2G-DC-943] recommends switching it off precisely so the matching process can be restarted.
+    // D-LINK_ERROR delivers both, so all three generations are treated alike here (EvseV2G does the
+    // same -- its d_link_action defaults to D_LINK_ACTION_ERROR for every teardown that does not
+    // reach a SessionStop handler, DIN sessions included).
+    return Signal::DLINK_ERROR;
+}
+
+void Session::finish_session() {
+    if (finished_reported) {
+        return;
+    }
+    finished_reported = true;
+
+    connection->close(); // idempotent; no-op if the EV already closed and the EOF path cleaned up
+    open_power_path();
+
+    feedback.signal(teardown_signal());
+}
+
+void Session::open_power_path() {
+    for (const auto signal : power_path.take_teardown_signals()) {
+        feedback.signal(signal);
+    }
+}
 
 void Session::push_control_event(const d20::ControlEvent& event) {
     control_event_queue.push(event);
@@ -167,18 +329,20 @@ TimePoint const& Session::poll() {
     // This is the default next session event, which is used when nothing else happens.
     next_session_event = offset_time_point_by_ms(now, SESSION_IDLE_TIMEOUT_MS);
 
-    if (not state.connected) {
-        // nothing happened so far, just return
-        return next_session_event;
-    }
-
-    // check for new data to read
-    if (state.new_data) {
+    // check for new data to read (never while a complete packet is still waiting to be handled: the
+    // SupportedAppProtocol handover below defers a request that arrived before the handshake response
+    // could be sent)
+    if (state.connected and state.new_data and not packet.is_complete()) {
         switch (read_single_v2gtp_packet(*connection, packet)) {
         case V2GTPReadResult::connection_closed:
-            logf_info("Peer closed the connection");
-            close();
-            return next_session_event;
+            // TCP EOF / TLS close_notify: the peer (EV) closed the connection. This is the regular
+            // way a session ends -- the EVCC closes first (DIN [V2G-DC-937], ISO 15118-2 [V2G2-025])
+            // -- but it also covers a mid-session EV disconnect. Close our side now (idempotent);
+            // the not-connected path below completes the end-of-session handling if the V2G session
+            // is logically over, instead of running into a sequence timeout.
+            logf_info("TCP connection closed by the peer");
+            connection->close();
+            break;
         case V2GTPReadResult::would_block:
             state.new_data = false;
             break;
@@ -187,131 +351,280 @@ TimePoint const& Session::poll() {
         }
     }
 
-    // send all of our queued control events
-    while ((active_control_event = control_event_queue.pop()) != std::nullopt) {
-
-        if (const auto control_data = ctx.get_control_event<d20::DcTransferLimits>()) {
-            ctx.session_config.dc_limits = *control_data;
-        } else if (const auto control_data = ctx.get_control_event<d20::EnergyServices>()) {
-            ctx.session_config.supported_energy_transfer_services = *control_data;
-        } else if (const auto control_data = ctx.get_control_event<d20::SupportedVASs>()) {
-            ctx.session_config.supported_vas_services = *control_data;
-        } else if (const auto control_data = ctx.get_control_event<d20::AcTransferLimits>()) {
-            ctx.session_config.ac_limits = *control_data;
-        } else if (const auto control_data = ctx.get_control_event<d20::UpdateDynamicModeParameters>()) {
-            ctx.cache_dynamic_mode_parameters.emplace(*control_data);
-        } else if (const auto control_data = ctx.get_control_event<d20::AcTargetPower>()) {
-            ctx.cache_ac_target_power.emplace(*control_data);
-        } else if (const auto control_data = ctx.get_control_event<d20::AcPresentPower>()) {
-            ctx.cache_ac_present_power.emplace(*control_data);
+    if (not state.connected) {
+        // Either nothing happened so far (still waiting for the TCP accept), or the connection is
+        // gone (EV-initiated close or a local close). If the V2G session is logically over, complete
+        // the end-of-session handling now so the controller can reap the session; an EV closing
+        // right after SessionStopRes ends the linger early (DIN [V2G-DC-937]: EV-first close is the
+        // regular case).
+        if (session_over()) {
+            finish_session();
         }
-        // Save some control events. It can happen that these events are sent before the corresponding state. They are
-        // stored temporarily here.
-        // TODO(sl): Construct ControlEventCache Struct
+        return next_session_event;
+    }
 
-        [[maybe_unused]] const auto res = fsm.feed(d20::Event::CONTROL_MESSAGE);
-        // FIXME (aw): check result!
+    // deliver queued control events to the engine (the handshake engine ignores them)
+    while (const auto event = control_event_queue.try_pop()) {
+        // Remember the latest StopCharging request: the handshake engine cannot act on it, so it is
+        // re-delivered to the protocol engine once that takes over (see create_engine()).
+        if (const auto* stop = std::get_if<d20::StopCharging>(&event.value())) {
+            pending_stop_charging = static_cast<bool>(*stop);
+        }
+        visit_engine([&event](auto& e) { e.on_control_event(event.value()); });
     }
 
     const auto timeouts_reached = timeouts.check();
 
     if (timeouts_reached.has_value()) {
-        const auto& reached = timeouts_reached.value();
-
-        for (const auto& timeout : reached) {
-            if (timeout == d20::TimeoutType::SEQUENCE) {
-                logf_error("Sequence timeout (60s) reached. Stopping the session");
-                ctx.session_stopped = true;
-                break;
-            } else {
-                ctx.set_active_timeout(timeout);
-
-                [[maybe_unused]] const auto res = fsm.feed(d20::Event::TIMEOUT);
-                timeouts.reset_timeout(timeout);
-            }
+        for (const auto& timeout : timeouts_reached.value()) {
+            visit_engine([timeout](auto& e) { e.on_timeout(timeout); });
+            timeouts.reset_timeout(timeout);
         }
     }
 
     // check for complete sdp packet
     if (packet.is_complete()) {
-        // FIXME (aw): this event loop only acts on new packets, seems to be enough for now ...
+        if (session_over()) {
+            // The V2G session already ended (we are only waiting for the EV to close the TCP
+            // connection); no request is allowed anymore -- drop the data instead of feeding it to a
+            // finished engine.
+            logf_warning("Ignoring data received after the V2G session ended");
+            packet.reset();
+            state.new_data = false; // reset new_data flag
+        } else if (in_sap_phase() and visit_engine([](const auto& e) { return e.has_outgoing(); })) {
+            // The SupportedAppProtocolRes is staged but not sent yet (it is paced), so the handover to
+            // the protocol engine has not happened either. An EV is not supposed to send its next
+            // request before receiving that response, but if it does, keep the packet for the engine
+            // that will own the protocol instead of failing it against the handshake engine. The
+            // response is already due within RESPONSE_DELAY_AFTER_REQUEST_MS, so this defers by one
+            // poll iteration.
+        } else {
+            const auto payload_type = packet.get_payload_type();
+            const io::StreamInputView view{packet.get_payload_buffer(), packet.get_payload_length()};
 
-        message_exchange.set_request(make_variant_from_packet(packet));
+            // Timestamp the request so -2/DIN (and the SupportedAppProtocol handshake) can pace their
+            // response a fixed delay after it (see below).
+            last_request_rx_time = now;
 
-        packet.reset();
-        state.new_data = false; // reset new_data flag
+            if (not in_sap_phase()) {
+                // The first request handed to a protocol engine is the SessionSetupReq: the V2G
+                // communication session is now established, so the controller stops
+                // V2G_SECC_CommunicationSetup_Timeout (from here the per-message
+                // V2G_SECC_Sequence_Timeout governs).
+                v2g_session_established = true;
+                // A sequence timer is armed on every response we send; stop it as soon as the next request
+                // arrives (there is no sequence timer during the SupportedAppProtocol handshake).
+                timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
+            }
 
-        const auto request_msg_type = ctx.peek_request_type();
+            visit_engine([payload_type, &view](auto& e) { e.on_packet(payload_type, view); });
 
-        // There is no sequence timer before SupportedAppProtocol
-        if (request_msg_type != message_20::Type::SupportedAppProtocolReq) {
-            timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
+            packet.reset();
+            state.new_data = false; // reset new_data flag
         }
-
-        ctx.feedback.v2g_message(request_msg_type);
-
-        [[maybe_unused]] const auto res = fsm.feed(d20::Event::V2GTP_MESSAGE);
-        // FIXME(sl): check result!
     }
 
-    if (message_exchange.has_response()) {
-        // Before we send back the response message, we check the time between two response messages
-        // sent out. If this is less than MIN_RESPONSE_INTERVAL_MS, we delay the response message to
-        // avoid potential performance issues.
+    // Send a pending response, but not before it is due.
+    //
+    // ISO 15118-2 / DIN 70121 (delay_response_after_request()) and the shared SupportedAppProtocol
+    // handshake: send the response RESPONSE_DELAY_AFTER_REQUEST_MS after the request was received,
+    // deducting the time already spent processing it. If processing took longer than that window, send
+    // immediately and warn that the timing could not be met. This protects EVs whose controller crashes
+    // if the SECC answers too fast.
+    //
+    // Otherwise (ISO 15118-20): pace responses at least MIN_RESPONSE_INTERVAL_MS apart to avoid
+    // potential performance issues.
+    const bool has_outgoing = visit_engine([](const auto& e) { return e.has_outgoing(); });
+    if (has_outgoing) {
         if (not response_send_after.has_value()) {
-            response_send_after = now;
-            if (last_response_tx_time.has_value()) {
-                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    get_current_time_point() - last_response_tx_time.value());
-                if (elapsed < std::chrono::milliseconds(MIN_RESPONSE_INTERVAL_MS)) {
-                    response_send_after =
-                        offset_time_point_by_ms(last_response_tx_time.value(), MIN_RESPONSE_INTERVAL_MS);
+            const bool pace_after_request =
+                visit_engine([](const auto& e) { return e.delay_response_after_request(); });
+            if (pace_after_request and last_request_rx_time.has_value()) {
+                const auto due = offset_time_point_by_ms(last_request_rx_time.value(), RESPONSE_DELAY_AFTER_REQUEST_MS);
+                if (now < due) {
+                    response_send_after = due;
+                } else {
+                    const auto took =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(now - last_request_rx_time.value());
+                    logf_warning("Response not ready within %d ms after the request (took %lld ms), sending "
+                                 "immediately",
+                                 RESPONSE_DELAY_AFTER_REQUEST_MS, static_cast<long long>(took.count()));
+                    response_send_after = now;
+                }
+            } else {
+                response_send_after = now;
+                if (last_response_tx_time.has_value()) {
+                    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        get_current_time_point() - last_response_tx_time.value());
+                    if (elapsed < std::chrono::milliseconds(MIN_RESPONSE_INTERVAL_MS)) {
+                        response_send_after =
+                            offset_time_point_by_ms(last_response_tx_time.value(), MIN_RESPONSE_INTERVAL_MS);
+                    }
                 }
             }
         }
 
-        // Send the response as soon as the response interval is reached
+        // Send the response as soon as it is due
         if (response_send_after.has_value() && now < response_send_after.value()) {
             next_session_event = response_send_after.value();
         } else {
             response_send_after.reset();
-            // FIXME(fh): Currently, the response is still generated when the request is received.
-            // This may have changed after the delay. Ideally, the processing of the request message
-            // and the generated of the response message should be decoupled from each other.
             send_response();
         }
     } else {
         response_send_after.reset();
     }
 
-    if (is_finished()) {
-        // TODO(SL): Does this also apply when a timeout is triggered? Or should the TCP/TLS connection be terminated
-        // directly?
-        // Wait for 5 seconds [V2G20-1643]
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        connection->close();
+    // Runs after the send above: the handover must not swap the engine out from under a staged response.
+    advance_sap_handover();
 
-        const auto signal =
-            (ctx.session_paused) ? session::feedback::Signal::DLINK_PAUSE : session::feedback::Signal::DLINK_TERMINATE;
-        ctx.feedback.signal(signal);
+    if (session_over() and not finished_reported) {
+        if (error_termination or visit_engine([](const auto& e) { return e.is_finished_with_error(); })) {
+            // SECC-initiated error close: FIN out NOW ([V2G-DC-940]), but hold the D-LINK signal
+            // (DLINK_ERROR here, see teardown_signal()) back for DLINK_SIGNAL_GRACE_MS so the FIN
+            // traverses the AVLN before SLAC leaves it.
+            connection->close(); // idempotent
+            if (not dlink_signal_deadline.has_value()) {
+                dlink_signal_deadline = offset_time_point_by_ms(now, DLINK_SIGNAL_GRACE_MS);
+            }
+            if (now >= dlink_signal_deadline.value()) {
+                finish_session();
+            } else {
+                next_session_event = std::min(next_session_event, dlink_signal_deadline.value());
+            }
+        } else if (driver_stopped) {
+            // Error / abnormal termination: the SupportedAppProtocol negotiation failed
+            // (FAILED_NoNegotiation), an unexpected message arrived, the handshake timed out, the
+            // negotiated namespace was unknown, or the engine could not be created. [V2G-DC-940]: the SECC
+            // terminates the session WITHOUT delay -- do not wait CONNECTION_CLOSE_LINGER_MS for the EV to
+            // close first (that grace is only for a normal successful end, DIN [V2G-DC-937/938]). The -4 ATS
+            // (e.g. TC_SECC_VTB_SupportedAppProtocol_002) checks the TCP close and CP oscillator shutdown
+            // happen within par_CMN_TCP_Connection_Termination_Timeout (5 s) /
+            // par_SECC_CPOscillator_Shutdown_Timeout. Any pending response was already flushed by
+            // send_response() earlier this poll(), and TCP delivers the queued bytes before the FIN, so the
+            // FAILED response still reaches the EV. finish_session() closes the socket and emits
+            // DLINK_ERROR ([V2G2-727]/[V2G20-727]: the SECC identified an error), which drops the CP
+            // oscillator and re-arms matching so the EV can retry without a replug.
+            finish_session();
+        } else {
+            // Normal successful end (SessionStopRes sent) but the EV is still connected: give it
+            // CONNECTION_CLOSE_LINGER_MS to close the TCP connection first (DIN [V2G-DC-937/938],
+            // ISO 15118-20 [V2G20-1633]); an EV-initiated close lands as EOF -> CLOSED and finishes via
+            // the not-connected path above. A plug-out bypasses the linger entirely: D-LINK down ->
+            // TbdController kill -> Session::close() ([V2G-DC-940]: on error/HLE request terminate
+            // without delay). Never block here -- the poll loop is shared with the SDP server.
+            if (not connection_close_deadline.has_value()) {
+                connection_close_deadline = offset_time_point_by_ms(now, CONNECTION_CLOSE_LINGER_MS);
+            }
+            if (now >= connection_close_deadline.value()) {
+                logf_info(
+                    "The EV did not close the TCP connection within %d ms after the session ended; closing it now",
+                    CONNECTION_CLOSE_LINGER_MS);
+                finish_session();
+            } else {
+                next_session_event = std::min(next_session_event, connection_close_deadline.value());
+            }
+        }
     }
 
     return next_session_event;
 }
 
-void Session::send_response() {
-    const auto [got_response, payload_size, stored_payload_type, stored_response_type] =
-        message_exchange.check_and_clear_response();
-    if (not got_response) {
+void Session::advance_sap_handover() {
+    auto* sap = std::get_if<SapEngine>(&engine);
+    if (sap == nullptr) {
+        return; // already running on a protocol engine
+    }
+
+    if (sap->has_outgoing()) {
+        // The SupportedAppProtocolRes has not been sent yet (it is paced): the engines share the
+        // Session's output buffer, and replacing the variant alternative destroys the engine that
+        // staged that response. Come back once it is on the wire.
         return;
     }
-    const auto response_size = setup_response_header(response_buffer, stored_payload_type, payload_size);
+
+    if (auto negotiated = sap->take_negotiated()) {
+        // Taken by value: create_engine() destroys the SapEngine holding the original.
+        if (not create_engine(*negotiated)) {
+            logf_error("No engine available for the negotiated protocol, terminating session");
+            driver_stopped = true;
+        } else if (packet.is_complete()) {
+            // A request deferred while the handshake response was pending (see poll()) is now waiting
+            // for the engine that just took over. Nothing else would wake the driver for it, so poll
+            // again immediately instead of sitting on it until the idle timeout.
+            next_session_event = get_current_time_point();
+        }
+        return;
+    }
+
+    if (sap->is_finished()) {
+        // Negotiation failed, an unexpected message arrived or the handshake timed out. Any FAILED_*
+        // response has been flushed above, so the session can be torn down now -- without the EV-first
+        // close linger ([V2G-DC-940]: terminate without delay).
+        driver_stopped = true;
+    }
+}
+
+bool Session::create_engine(const SapEngine::Negotiated& negotiated) {
+    const auto created = [&]() {
+        switch (negotiated.protocol_id) {
+        case ProtocolId::ISO15118_20:
+            engine.emplace<D20SeccEngine>(engine_output_view(), config, pause_ctx, callbacks, timeouts,
+                                          negotiated.offered_protocols, negotiated.selected_protocol,
+                                          vehicle_cert_hash);
+            return true;
+        case ProtocolId::ISO15118_2:
+            engine.emplace<D2SeccEngine>(engine_output_view(), config, d2_pause_ctx, callbacks, timeouts,
+                                         connection->is_secure());
+            return true;
+        case ProtocolId::DIN70121:
+            engine.emplace<DinSeccEngine>(engine_output_view(), config, callbacks, timeouts);
+            return true;
+        }
+        return false;
+    }();
+
+    // A stop requested during the SupportedAppProtocol phase reached only the handshake engine, which
+    // ignores control events: hand it to the fresh protocol engine so the session it now runs tells the
+    // EV to stop from the first response on (EvseV2G reacts to stop_charging in any state).
+    if (created and pending_stop_charging) {
+        const d20::ControlEvent stop_event{d20::StopCharging{true}};
+        visit_engine([&stop_event](auto& e) { e.on_control_event(stop_event); });
+    }
+    return created;
+}
+
+void Session::send_response() {
+    const auto outgoing = visit_engine([](auto& e) { return e.take_outgoing(); });
+    if (not outgoing.has_value()) {
+        return;
+    }
+
+    const auto response_type = outgoing->message_type;
+    const auto response_size = setup_response_header(response_buffer, outgoing->payload_type, outgoing->payload_size);
     connection->write(response_buffer, response_size);
     last_response_tx_time = get_current_time_point();
 
-    timeouts.start_timeout(d20::TimeoutType::SEQUENCE, d20::TIMEOUT_SEQUENCE);
+    timeouts.start_timeout(d20::TimeoutType::SEQUENCE, sequence_timeout_after_response(response_type));
 
-    ctx.feedback.v2g_message(stored_response_type);
+    feedback.v2g_message(response_type);
+
+    // A session-ending response just hit the wire (any protocol): report it. For a positive
+    // SessionStopRes this is the anchor of the CP-oscillator retain time [V2G-DC-968]; only the
+    // oscillator timing hangs off this feedback -- the connection-close linger and the DLINK_*
+    // signals keep their own anchors so the EV's TCP close can still complete over the intact link.
+    // A FAILED_* end (FailedTermination) additionally skips the EV-first close linger: the SECC
+    // closes the TCP connection itself without delay ([V2G-DC-940]).
+    if (const auto stop_action = visit_engine([](auto& e) { return e.pop_session_stop_res_pending(); })) {
+        if (*stop_action == session::feedback::SessionStopAction::FailedTermination) {
+            error_termination = true;
+        } else {
+            // Terminate or Pause: the session reached one of the two regular ends, so the data link is
+            // released with D-LINK_TERMINATE / D-LINK_PAUSE rather than D-LINK_ERROR (teardown_signal()).
+            clean_session_end = true;
+        }
+        feedback.session_stop_res_sent(*stop_action);
+    }
 }
 
 void Session::handle_connection_event(io::ConnectionEvent event) {
@@ -321,6 +634,12 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
         assert(state.connected == false);
         state.connected = true;
         logf_info("Accepted connection on port %d", connection->get_public_endpoint().port);
+        // Guard the wait for the first (supportedAppProtocol) request with the
+        // V2G sequence timeout: if the EV connects but sends nothing, the timer
+        // fires and the session driver closes the connection (on par with the
+        // EvseV2G stack). Subsequent requests re-arm it via send_response(); it
+        // is stopped when the next request arrives (see poll()).
+        timeouts.start_timeout(d20::TimeoutType::SEQUENCE, d20::TIMEOUT_SEQUENCE);
         return;
 
     case Event::NEW_DATA:
@@ -332,38 +651,47 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
         assert(state.connected);
         if (const auto new_vehicle_cert_hash = connection->get_vehicle_cert_hash()) {
             logf_info("Vehicle Cert is available");
-            ctx.set_new_vehicle_cert_hash(new_vehicle_cert_hash);
+            vehicle_cert_hash = new_vehicle_cert_hash;
         }
         // NOTE (aw): for now, we don't really need this information ...
         return;
 
     case Event::CLOSED:
         state.connected = false;
-        // Terminal: trip is_finished() so the controller reaps this session.
-        // Re-entry from Session::close() (which already set the flag) is a no-op.
-        ctx.session_stopped = true;
         logf_info("Connection is closed");
+        // The transport is gone, so this session cannot continue: mark the
+        // driver stopped so the controller reaps it. A lingering session
+        // otherwise blocks the SDP server (new discovery attempts are
+        // refused) until the 40 s sequence timeout finally fires.
+        driver_stopped = true;
         return;
     }
 }
 
 void Session::close() {
+    // Immediate close, bypassing the end-of-session linger: used on D-LINK loss (plug-out), session
+    // kill and shutdown ([V2G-DC-940]: terminate without delay). Always signals DLINK_TERMINATE -- a
+    // killed session is never a pause, and it is not an error the SECC identified either: the link is
+    // already gone or is being taken down from outside, so [V2G2-726] has the SECC simply go back to
+    // waiting rather than run the D-LINK_ERROR recovery ([V2G2-727]) at a connector that no longer has
+    // an EV on it.
+    driver_stopped = true;
+    if (finished_reported) {
+        return; // already closed and signaled
+    }
+    finished_reported = true;
     connection->close();
-    // transport gone; a rate-limiter-deferred response is undeliverable
-    [[maybe_unused]] auto res = message_exchange.check_and_clear_response();
-    ctx.feedback.signal(session::feedback::Signal::DLINK_TERMINATE);
-    ctx.session_stopped = true;
+    open_power_path();
+    feedback.signal(session::feedback::Signal::DLINK_TERMINATE);
 }
 
 void Session::request_shutdown() {
     if (not state.connected) {
         logf_info("Shutdown requested before an EV connected");
-        ctx.session_stopped = true;
-        connection->close();
-        ctx.feedback.signal(session::feedback::Signal::DLINK_TERMINATE);
+        close();
     } else {
         push_control_event(d20::StopCharging{true}); // Stopping active charge loop
-        ctx.request_shutdown();
+        visit_engine([](auto& e) { e.request_shutdown(); });
     }
 }
 
