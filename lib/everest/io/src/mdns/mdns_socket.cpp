@@ -25,8 +25,6 @@ namespace everest::lib::io::mdns {
 /////////////////////////////////////////////////
 
 bool mdns_socket::open(std::string const& interface, int family) {
-    auto const mdns_port = 5353;
-
     // "family not available on this interface" is an expected condition with
     // dual-stack discovery, so socket setup failures map to a false return.
     try {
@@ -35,11 +33,11 @@ bool mdns_socket::open(std::string const& interface, int family) {
             m_owned_udp_fd = std::move(socket);
             // the endpoint resolves the interface to sin6_scope_id, required
             // to send to the link-scoped group
-            m_target = udp::endpoint("ff02::fb", mdns_port, interface);
+            m_target = udp::endpoint(mdns_multicast_ipv6, mdns_port, interface);
         } else {
             auto socket = socket::open_mdns_socket(interface);
             m_owned_udp_fd = std::move(socket);
-            m_target = udp::endpoint("224.0.0.251", mdns_port);
+            m_target = udp::endpoint(mdns_multicast_ipv4, mdns_port);
         }
     } catch (std::exception const&) {
         return false;

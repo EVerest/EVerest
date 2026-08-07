@@ -11,6 +11,13 @@
 
 namespace everest::lib::io::mdns {
 
+/// mDNS UDP port (RFC 6762).
+inline constexpr std::uint16_t mdns_port = 5353;
+/// IPv4 mDNS multicast group address (RFC 6762).
+inline constexpr char const* mdns_multicast_ipv4 = "224.0.0.251";
+/// IPv6 mDNS multicast group address (RFC 6762).
+inline constexpr char const* mdns_multicast_ipv6 = "ff02::fb";
+
 struct mDNS_discovery {
     using txt_field = std::map<std::string, std::string>;
 

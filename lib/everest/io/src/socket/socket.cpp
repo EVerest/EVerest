@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include <everest/io/event/unique_fd.hpp>
+#include <everest/io/mdns/mdns.hpp>
 #include <everest/io/socket/socket.hpp>
 #include <everest/io/udp/endpoint.hpp>
 
@@ -889,7 +890,7 @@ event::unique_fd open_udp_multicast_socket(std::string const& multicast_group, s
 
 event::unique_fd open_mdns_socket(std::string const& interface_name) {
     auto ip = get_interface_address(interface_name);
-    auto sock = open_udp_multicast_socket("224.0.0.251", 5353, ip, "0.0.0.0", true, true);
+    auto sock = open_udp_multicast_socket(mdns::mdns_multicast_ipv4, mdns::mdns_port, ip, "0.0.0.0", true, true);
     if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, interface_name.c_str(), interface_name.length()) < 0) {
         throw std::runtime_error("Failed to bind socket to device " + interface_name + " -> " + strerror(errno));
     }
@@ -907,16 +908,16 @@ event::unique_fd open_mdns_socket6(std::string const& interface_name) {
         throw std::runtime_error(build_errno_string("setsockopt(IPV6_V6ONLY=1) failed"));
     }
     set_non_blocking(sock);
-    // reuse flags must be set before bind: other mDNS stacks (avahi, resolved) share :5353
+    // reuse flags must be set before bind: other mDNS stacks (avahi, resolved) share the mDNS port
     set_reuse_address(sock);
     set_reuse_port(sock);
 
     sockaddr_in6 local{};
     local.sin6_family = AF_INET6;
     local.sin6_addr = in6addr_any;
-    local.sin6_port = htons(5353);
+    local.sin6_port = htons(mdns::mdns_port);
     if (::bind(sock, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
-        throw std::runtime_error(build_errno_string("bind([::]:5353) failed"));
+        throw std::runtime_error(build_errno_string("bind([::]:" + std::to_string(mdns::mdns_port) + ") failed"));
     }
 
     unsigned int const ifindex = if_nametoindex(interface_name.c_str());
@@ -924,13 +925,13 @@ event::unique_fd open_mdns_socket6(std::string const& interface_name) {
         throw std::runtime_error(build_errno_string("if_nametoindex(\"" + interface_name + "\") failed"));
     }
     ipv6_mreq mreq{};
-    if (inet_pton(AF_INET6, "ff02::fb", &mreq.ipv6mr_multiaddr) != 1) {
-        throw std::runtime_error("inet_pton(ff02::fb) failed");
+    if (inet_pton(AF_INET6, mdns::mdns_multicast_ipv6, &mreq.ipv6mr_multiaddr) != 1) {
+        throw std::runtime_error(std::string("inet_pton(") + mdns::mdns_multicast_ipv6 + ") failed");
     }
     mreq.ipv6mr_interface = ifindex;
     if (setsockopt(sock, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq, sizeof(mreq)) < 0) {
-        throw std::runtime_error(
-            build_errno_string("setsockopt(IPV6_JOIN_GROUP, ff02::fb%" + interface_name + ") failed"));
+        throw std::runtime_error(build_errno_string(std::string("setsockopt(IPV6_JOIN_GROUP, ") +
+                                                    mdns::mdns_multicast_ipv6 + "%" + interface_name + ") failed"));
     }
     if (setsockopt(sock, IPPROTO_IPV6, IPV6_MULTICAST_IF, &ifindex, sizeof(ifindex)) < 0) {
         throw std::runtime_error(build_errno_string("setsockopt(IPV6_MULTICAST_IF, " + interface_name + ") failed"));
