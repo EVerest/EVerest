@@ -11,6 +11,7 @@ target_sources(iso15118
     PRIVATE
         misc/helper.cpp
         misc/cb_exi.cpp
+        misc/random.cpp
 
         io/connection_plain.cpp
         io/logging.cpp
@@ -20,6 +21,7 @@ target_sources(iso15118
         io/socket_helper.cpp
 
         session/feedback.cpp
+        session/protocol.cpp
         session/iso.cpp
 
         d20/context.cpp
