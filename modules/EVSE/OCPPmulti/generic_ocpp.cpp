@@ -473,6 +473,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
         device_model_config_path,
         device_model_database_migration_path,
         device_model_database_path,
+        mv_config.getLogDeviceModel(),
         std::move(evse_connector_structure),
         std::move(connector_mapping),
         m_everest_device_model_storage,

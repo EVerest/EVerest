@@ -214,6 +214,7 @@ struct GenericChargePointInterface {
         fs::path v2_device_model_config_path;
         fs::path v2_device_model_database_migration_path;
         fs::path v2_device_model_database_path;
+        bool log_device_model;
         ConnectorStructure evse_connector_structure;
         ConnectorStructureV16 connector_mapping;
         std::shared_ptr<ocpp_module_common::device_model::EverestDeviceModelStorage> everest_device_model;

@@ -61,6 +61,7 @@ public:
     [[nodiscard]] int getOcpp16NetworkConfigSlot() const override;
     [[nodiscard]] std::string getEverestDeviceModelDatabasePath() const override;
     [[nodiscard]] int getGridSupportHeartbeatS() const override;
+    [[nodiscard]] bool getLogDeviceModel() const override;
     [[nodiscard]] std::string getMessageLogPath() const override;
     [[nodiscard]] int getMessageQueueResumeDelay() const override;
     [[nodiscard]] int getRequestCompositeScheduleDurationS() const override;
@@ -89,6 +90,8 @@ struct Conf {
     int Ocpp16NetworkConfigSlot;
     bool EnableExternalWebsocketControl;
     std::string EverestDeviceModelDatabasePath;
+    int GridSupportHeartbeatS;
+    std::string MappingFilePath;
     std::string MessageLogPath;
     int MessageQueueResumeDelay;
     int RequestCompositeScheduleDurationS;
@@ -96,7 +99,7 @@ struct Conf {
     int ResetStopDelay;
     std::string UserConfigPath;
     std::string Mode;
-    int GridSupportHeartbeatS;
+    bool LogDeviceModel;
 };
 
 class OCPPmulti : public Everest::ModuleBase {

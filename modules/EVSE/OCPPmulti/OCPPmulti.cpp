@@ -53,6 +53,9 @@ int ConfigAccess::getOcpp16NetworkConfigSlot() const {
 int ConfigAccess::getGridSupportHeartbeatS() const {
     return m_config.GridSupportHeartbeatS;
 }
+bool ConfigAccess::getLogDeviceModel() const {
+    return m_config.LogDeviceModel;
+}
 std::string ConfigAccess::getMessageLogPath() const {
     return m_config.MessageLogPath;
 }

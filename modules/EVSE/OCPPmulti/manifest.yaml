@@ -99,6 +99,15 @@ config:
     description: Interval (seconds) at which the current active DER directive set is republished per EVSE. 0 disables the heartbeat.
     type: integer
     default: 60
+  LogDeviceModel:
+    description: Logs the device model storages for debugging purposes
+    type: boolean
+    default: false
+  MappingFilePath:
+    description: >-
+      Path to the mapping file that contains the mapping between OCPP variables and Everest configuration parameters.
+    type: string
+    default: mapping.yaml
   MessageLogPath:
     description: >-
       OCPP 1.6

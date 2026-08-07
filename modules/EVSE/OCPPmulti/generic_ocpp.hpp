@@ -128,6 +128,7 @@ struct ConfigInterface {
     [[nodiscard]] virtual int getOcpp16NetworkConfigSlot() const = 0;
     [[nodiscard]] virtual std::string getEverestDeviceModelDatabasePath() const = 0;
     [[nodiscard]] virtual int getGridSupportHeartbeatS() const = 0;
+    [[nodiscard]] virtual bool getLogDeviceModel() const = 0;
     [[nodiscard]] virtual std::string getMessageLogPath() const = 0;
     [[nodiscard]] virtual int getMessageQueueResumeDelay() const = 0;
     [[nodiscard]] virtual int getRequestCompositeScheduleDurationS() const = 0;
