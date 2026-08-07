@@ -13,17 +13,18 @@
 #include "../Evse15118D20.hpp"
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
+#include <atomic>
 #include <bitset>
 #include <mutex>
+#include <optional>
+
+#include <iso15118/message/v2g_message_type.hpp>
 
 #include "der_relay.hpp"
 #include "grid_event.hpp"
 #include "utils.hpp"
 
-#include <generated/types/evse_security.hpp>
-
-#include <iso15118/config.hpp>
-#include <iso15118/d20/config.hpp>
+#include <iso15118/session/config.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/tbd_controller.hpp>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
@@ -49,8 +50,8 @@ protected:
                               bool& debug_mode) override;
     virtual void handle_set_charging_parameters(types::iso15118::SetupPhysicalValues& physical_values) override;
     virtual void handle_session_setup(std::vector<types::iso15118::PaymentOption>& payment_options,
-                                      bool& supported_certificate_service, bool& central_contract_validation_allowed,
-                                      bool& fake_dc_enabled) override;
+                                      bool& supported_certificate_service,
+                                      bool& central_contract_validation_allowed) override;
     virtual void handle_bpt_setup(types::iso15118::BptSetup& bpt_config) override;
     virtual void handle_set_powersupply_capabilities(types::power_supply_DC::Capabilities& capabilities) override;
     virtual void handle_authorization_response(types::authorization::AuthorizationStatus& authorization_status,
@@ -95,10 +96,32 @@ private:
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     iso15118::session::feedback::Callbacks create_callbacks();
 
+    // The SECC leaf certificate chain backing the TLS server.
+    struct TlsChain {
+        std::string path_chain; //!< resolved chain file (multi-cert chain, or the single certificate)
+        types::evse_security::CertificateInfo info;
+    };
+    // Fetch the V2G leaf from the security module. nullopt when none is installed: TLS is then simply
+    // not offered rather than being a startup failure -- ISO 15118-2 still runs unsecured (EIM only) and
+    // DIN SPEC 70121 never uses TLS. Only ISO 15118-20 ([V2G20-2677]) and ENFORCE_TLS need it.
+    std::optional<TlsChain> acquire_tls_chain();
+    // ISO 15118-20 may actually be offered: configured AND a TLS chain exists, since -20 is TLS-only
+    // ([V2G20-2677]). Decided once in ready() and honoured by handle_update_supported_app_protocols too,
+    // so a runtime offer update cannot switch -20 back on when there is no certificate. Atomic: written
+    // on the ready thread, read from the command threads.
+    std::atomic_bool iso15118_20_offerable{false};
+
     std::unique_ptr<iso15118::TbdController> controller;
 
     iso15118::session::EvseSetupConfig setup_config;
-    std::bitset<NUMBER_OF_SETUP_STEPS> setup_steps_done{0};
+    SetupStepsDone setup_steps_done;
+
+    // The protocol offer as configured (module config, narrowed by update_supported_app_protocols), before
+    // the AC filter, plus whether an AC energy transfer mode is configured. apply_supported_protocols()
+    // combines both into setup_config.supported_protocols. All three need GEL held.
+    std::vector<iso15118::ProtocolId> configured_protocol_offer;
+    bool ac_energy_transfer_mode{false};
+    void apply_supported_protocols();
 
     std::optional<float> evse_max_reactive_power;
 
@@ -121,22 +144,25 @@ private:
     std::mutex der_apply_mutex;
     void apply_active_der_directives();
 
-    /// Builds the base SSLConfig: backend, V2G/MO trust-anchor paths, and the module-level
-    /// TLS flags. Carries no certificate chains. Does not depend on leaf-certificate
-    /// availability (still queries evse_security for the V2G/MO verify files).
-    iso15118::config::SSLConfig build_base_ssl_config();
-
-    /// Builds the current SSLConfig: the base config plus the valid V2G certificate chains
-    /// queried from evse_security and mapped via map_valid_chains(). The chains vector is
-    /// empty when no usable chains are available.
-    iso15118::config::SSLConfig build_current_ssl_config();
-
-    /// Subscriber for evse_security::certificate_store_update. Reads this->controller under a
-    /// null guard; the controller is created once in ready() and never reset. Delegates to
-    /// charger::handle_certificate_store_update(), which gates on relevance, rebuilds the
-    /// SSLConfig, and applies it or preserves the last-good config; rebuild exceptions are
-    /// caught there so the subscriber thread survives RPC failures.
-    void on_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event);
+    // hlc_session_failed derivation. The last V2G message handled this session (loop thread only, from
+    // the v2g_message feedback) is mapped to a reason at teardown, mirroring EvseV2G. graceful_stop and
+    // emergency_shutdown are set from the module command threads (handle_stop_charging / handle_send_error)
+    // so they are atomic. Either one suppresses the report: both are EVSE-initiated ends, which is what
+    // EvseV2G checks (`stop_hlc || intl_emergency_shutdown`, connection.cpp:518).
+    std::optional<iso15118::V2gMessageType> last_v2g_message;
+    // Last published EV completion flags (DIN SPEC 70121 / ISO 15118-2 charge progress); published on
+    // change only. Reset when the session's data link ends.
+    std::optional<bool> last_charging_complete;
+    std::optional<bool> last_bulk_charging_complete;
+    std::atomic_bool graceful_stop_requested{false};
+    std::atomic_bool emergency_shutdown_requested{false};
+    // debug_mode from the setup command gates the v2g_messages and ev_app_protocol publishes (mirrors
+    // EvseV2G, which publishes both only with debugMode). Atomic: set from the command thread, read on
+    // the loop thread.
+    std::atomic_bool debug_mode{false};
+    void report_hlc_session_failed();
+    // Clear the per-session state above; called for every end of the data link (terminate, error, pause).
+    void reset_session_state();
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
