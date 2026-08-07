@@ -23,7 +23,7 @@ static constexpr auto SDP_RES_LENGTH = 20;
 
 class SdpRequest {
 public:
-    SdpRequest(Security _security, TransportProtocol _protocol) : security(_security), protocol(_protocol) {};
+    SdpRequest(Security _security, TransportProtocol _protocol) : security(_security), protocol(_protocol){};
     std::array<uint8_t, SDP_REQ_LENGTH> create_req();
 
 private:
