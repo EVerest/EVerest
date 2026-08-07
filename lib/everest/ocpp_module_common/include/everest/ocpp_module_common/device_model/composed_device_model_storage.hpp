@@ -9,7 +9,7 @@
 
 namespace ocpp_module_common::device_model {
 
-using ComponentVariableSourceMap = std::map<ocpp::v2::Component, std::map<ocpp::v2::Variable, std::string>>;
+using ComponentVariableSourceMap = std::map<ocpp::v2::ComponentVariable, std::string>;
 class ComposedDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
 private:
     std::map<std::string, std::shared_ptr<ocpp::v2::DeviceModelStorageInterface>>
