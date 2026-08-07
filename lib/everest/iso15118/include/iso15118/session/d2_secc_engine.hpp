@@ -22,28 +22,28 @@ namespace iso15118 {
 // ISO 15118-2 SECC engine: wraps the d2 SECC state machine starting at SessionSetup. Mirrors
 // D20SeccEngine but over the message_2 types; the module-facing feedback and control events remain the
 // reused d20 ones.
-class D2SeccEngine : public SeccEngine {
+class D2SeccEngine {
 public:
     D2SeccEngine(io::StreamOutputView output_view, const session::SessionConfig& config,
                  std::optional<d2::PauseContext>& pause_ctx, session::feedback::Callbacks callbacks,
                  d20::Timeouts& timeouts, bool tls_active);
 
-    void on_packet(io::v2gtp::PayloadType, const io::StreamInputView&) override;
-    void on_control_event(const d20::ControlEvent&) override;
-    void on_timeout(d20::TimeoutType) override;
+    void on_packet(io::v2gtp::PayloadType, const io::StreamInputView&);
+    void on_control_event(const d20::ControlEvent&);
+    void on_timeout(d20::TimeoutType);
 
-    bool has_outgoing() const override;
-    std::optional<Outgoing> take_outgoing() override;
+    bool has_outgoing() const;
+    std::optional<SeccOutgoing> take_outgoing();
 
-    bool is_finished() const override;
-    bool is_paused() const override;
-    bool is_finished_with_error() const override;
-    std::optional<session::feedback::SessionStopAction> pop_session_stop_res_pending() override;
+    bool is_finished() const;
+    bool is_paused() const;
+    bool is_finished_with_error() const;
+    std::optional<session::feedback::SessionStopAction> pop_session_stop_res_pending();
 
-    void request_shutdown() override;
+    void request_shutdown();
 
     // ISO 15118-2: pace responses to be sent a fixed delay after the request was received.
-    bool delay_response_after_request() const override {
+    bool delay_response_after_request() const {
         return true;
     }
 

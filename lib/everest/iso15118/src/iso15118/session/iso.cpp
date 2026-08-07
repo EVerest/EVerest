@@ -12,10 +12,8 @@
 #include <iso15118/session/d20_secc_engine.hpp>
 #include <iso15118/session/d2_secc_engine.hpp>
 #include <iso15118/session/din_secc_engine.hpp>
+#include <iso15118/session/sap_engine.hpp>
 #include <iso15118/session/secc_engine.hpp>
-#include <iso15118/session/secc_sap.hpp>
-
-#include <iso15118/message/variant.hpp>
 
 #include <iso15118/detail/helper.hpp>
 
@@ -173,13 +171,21 @@ Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionC
     callbacks(callbacks_),
     feedback(callbacks_),
     pause_ctx(pause_ctx_),
-    d2_pause_ctx(d2_pause_ctx_) {
+    d2_pause_ctx(d2_pause_ctx_),
+    // Every session starts on the SupportedAppProtocol handshake; is_secure() is a property of the
+    // connection type, so the TLS gating of plaintext-only protocols ([V2G-DC-869]) is known here.
+    engine(std::in_place_type<SapEngine>, engine_output_view(), config, callbacks_, connection->is_secure()) {
 
     next_session_event = offset_time_point_by_ms(get_current_time_point(), SESSION_IDLE_TIMEOUT_MS);
     connection->set_event_callback([this](io::ConnectionEvent event) { this->handle_connection_event(event); });
 }
 
 Session::~Session() = default;
+
+io::StreamOutputView Session::engine_output_view() {
+    return io::StreamOutputView{response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
+                                sizeof(response_buffer) - io::SdpPacket::V2GTP_HEADER_SIZE};
+}
 
 bool Session::is_finished() const {
     // Controller-facing: true only once the end-of-session handling (waiting for an EV-initiated TCP
@@ -189,13 +195,10 @@ bool Session::is_finished() const {
 }
 
 bool Session::session_over() const {
-    if (pending_sap_outgoing.has_value()) {
-        return false;
-    }
-    if (engine) {
-        return driver_stopped or engine->is_finished();
-    }
-    return driver_stopped;
+    // The engines keep is_finished() false while a response is still staged, so a session-ending
+    // response (SessionStopRes, any FAILED_*, a failed SupportedAppProtocol negotiation) is always
+    // flushed before the teardown starts.
+    return driver_stopped or visit_engine([](const auto& e) { return e.is_finished(); });
 }
 
 void Session::finish_session() {
@@ -206,7 +209,7 @@ void Session::finish_session() {
 
     connection->close(); // idempotent; no-op if the EV already closed and the EOF path cleaned up
 
-    const bool paused = engine and engine->is_paused();
+    const bool paused = visit_engine([](const auto& e) { return e.is_paused(); });
     const auto signal = paused ? session::feedback::Signal::DLINK_PAUSE : session::feedback::Signal::DLINK_TERMINATE;
     feedback.signal(signal);
 }
@@ -220,8 +223,10 @@ TimePoint const& Session::poll() {
     // This is the default next session event, which is used when nothing else happens.
     next_session_event = offset_time_point_by_ms(now, SESSION_IDLE_TIMEOUT_MS);
 
-    // check for new data to read
-    if (state.connected and state.new_data) {
+    // check for new data to read (never while a complete packet is still waiting to be handled: the
+    // SupportedAppProtocol handover below defers a request that arrived before the handshake response
+    // could be sent)
+    if (state.connected and state.new_data and not packet.is_complete()) {
         switch (read_single_v2gtp_packet(*connection, packet)) {
         case V2GTPReadResult::connection_closed:
             // TCP EOF / TLS close_notify: the peer (EV) closed the connection. This is the regular
@@ -252,23 +257,16 @@ TimePoint const& Session::poll() {
         return next_session_event;
     }
 
-    // deliver queued control events to the engine (dropped during the handshake, which ignores them)
+    // deliver queued control events to the engine (the handshake engine ignores them)
     while (const auto event = control_event_queue.pop()) {
-        if (engine) {
-            engine->on_control_event(event.value());
-        }
+        visit_engine([&event](auto& e) { e.on_control_event(event.value()); });
     }
 
     const auto timeouts_reached = timeouts.check();
 
     if (timeouts_reached.has_value()) {
         for (const auto& timeout : timeouts_reached.value()) {
-            if (engine) {
-                engine->on_timeout(timeout);
-            } else {
-                logf_error("Timeout reached during SupportedAppProtocol handshake. Stopping the session");
-                driver_stopped = true;
-            }
+            visit_engine([timeout](auto& e) { e.on_timeout(timeout); });
             timeouts.reset_timeout(timeout);
         }
     }
@@ -281,8 +279,14 @@ TimePoint const& Session::poll() {
             // finished engine.
             logf_warning("Ignoring data received after the V2G session ended");
             packet = {};
+        } else if (in_sap_phase() and visit_engine([](const auto& e) { return e.has_outgoing(); })) {
+            // The SupportedAppProtocolRes is staged but not sent yet (it is paced), so the handover to
+            // the protocol engine has not happened either. An EV is not supposed to send its next
+            // request before receiving that response, but if it does, keep the packet for the engine
+            // that will own the protocol instead of failing it against the handshake engine. The
+            // response is already due within RESPONSE_DELAY_AFTER_REQUEST_MS, so this defers by one
+            // poll iteration.
         } else {
-
             const auto payload_type = packet.get_payload_type();
             const io::StreamInputView view{packet.get_payload_buffer(), packet.get_payload_length()};
 
@@ -290,18 +294,18 @@ TimePoint const& Session::poll() {
             // response a fixed delay after it (see below).
             last_request_rx_time = now;
 
-            if (engine) {
-                // The first request handed to the engine is the SessionSetupReq: the V2G communication
-                // session is now established, so the controller stops V2G_SECC_CommunicationSetup_Timeout
-                // (from here the per-message V2G_SECC_Sequence_Timeout governs).
+            if (not in_sap_phase()) {
+                // The first request handed to a protocol engine is the SessionSetupReq: the V2G
+                // communication session is now established, so the controller stops
+                // V2G_SECC_CommunicationSetup_Timeout (from here the per-message
+                // V2G_SECC_Sequence_Timeout governs).
                 v2g_session_established = true;
                 // A sequence timer is armed on every response we send; stop it as soon as the next request
                 // arrives (there is no sequence timer during the SupportedAppProtocol handshake).
                 timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
-                engine->on_packet(payload_type, view);
-            } else {
-                handle_supported_app_protocol_request(payload_type, view);
             }
+
+            visit_engine([payload_type, &view](auto& e) { e.on_packet(payload_type, view); });
 
             packet = {}; // reset the packet
         }
@@ -317,13 +321,11 @@ TimePoint const& Session::poll() {
     //
     // Otherwise (ISO 15118-20): pace responses at least MIN_RESPONSE_INTERVAL_MS apart to avoid
     // potential performance issues.
-    const bool has_outgoing = pending_sap_outgoing.has_value() or (engine and engine->has_outgoing());
+    const bool has_outgoing = visit_engine([](const auto& e) { return e.has_outgoing(); });
     if (has_outgoing) {
         if (not response_send_after.has_value()) {
-            // Note: handle_supported_app_protocol_request() creates the engine inline, so `engine` is
-            // already non-null while the SAP response is pending; key the SAP case off pending_sap_outgoing.
             const bool pace_after_request =
-                pending_sap_outgoing.has_value() or (engine and engine->delay_response_after_request());
+                visit_engine([](const auto& e) { return e.delay_response_after_request(); });
             if (pace_after_request and last_request_rx_time.has_value()) {
                 const auto due = offset_time_point_by_ms(last_request_rx_time.value(), RESPONSE_DELAY_AFTER_REQUEST_MS);
                 if (now < due) {
@@ -360,8 +362,11 @@ TimePoint const& Session::poll() {
         response_send_after.reset();
     }
 
+    // Runs after the send above: the handover must not swap the engine out from under a staged response.
+    advance_sap_handover();
+
     if (session_over() and not finished_reported) {
-        if (error_termination or (engine and engine->is_finished_with_error())) {
+        if (error_termination or visit_engine([](const auto& e) { return e.is_finished_with_error(); })) {
             // SECC-initiated error close: FIN out NOW ([V2G-DC-940]), but hold the DLINK_TERMINATE
             // back for DLINK_SIGNAL_GRACE_MS so the FIN traverses the AVLN before SLAC leaves it.
             connection->close(); // idempotent
@@ -410,128 +415,66 @@ TimePoint const& Session::poll() {
     return next_session_event;
 }
 
-void Session::handle_supported_app_protocol_request(io::v2gtp::PayloadType payload_type,
-                                                    const io::StreamInputView& view) {
-    const message_20::Variant variant{payload_type, view};
-    feedback.v2g_message(variant.get_type());
+void Session::advance_sap_handover() {
+    auto* sap = std::get_if<SapEngine>(&engine);
+    if (sap == nullptr) {
+        return; // already running on a protocol engine
+    }
 
-    const auto req = variant.get_if<message_20::SupportedAppProtocolRequest>();
-    if (req == nullptr) {
-        logf_warning("Expected SupportedAppProtocolReq! But code type id: %d", variant.get_type());
-        driver_stopped = true;
+    if (sap->has_outgoing()) {
+        // The SupportedAppProtocolRes has not been sent yet (it is paced): the engines share the
+        // Session's output buffer, and replacing the variant alternative destroys the engine that
+        // staged that response. Come back once it is on the wire.
         return;
     }
 
-    if (config.selecting_sap_based_on_energy_service) {
-        logf_info("Selecting supported app protocol namespace based on the supported energy services");
-    }
-
-    const auto result = session::secc_sap::handle_request(
-        *req, config.supported_protocols, config.supported_energy_transfer_services,
-        config.selecting_sap_based_on_energy_service, config.custom_protocol, connection->is_secure());
-
-    const io::StreamOutputView response_view{response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
-                                             sizeof(response_buffer) - io::SdpPacket::V2GTP_HEADER_SIZE};
-    const auto payload_size = message_20::serialize(result.response, response_view);
-    pending_sap_outgoing =
-        PendingOutgoing{payload_size, io::v2gtp::PayloadType::SAP, message_20::Type::SupportedAppProtocolRes};
-
-    sap_offered_protocols = req->app_protocol;
-
-    if (result.response.response_code == message_20::SupportedAppProtocolResponse::ResponseCode::Failed_NoNegotiation) {
-        std::string ev_supported_namespaces{};
-        for (const auto& protocol : req->app_protocol) {
-            ev_supported_namespaces.append(protocol.protocol_namespace + ";");
+    if (auto negotiated = sap->take_negotiated()) {
+        // Taken by value: create_engine() destroys the SapEngine holding the original.
+        if (not create_engine(*negotiated)) {
+            logf_error("No engine available for the negotiated protocol, terminating session");
+            driver_stopped = true;
+        } else if (packet.is_complete()) {
+            // A request deferred while the handshake response was pending (see poll()) is now waiting
+            // for the engine that just took over. Nothing else would wake the driver for it, so poll
+            // again immediately instead of sitting on it until the idle timeout.
+            next_session_event = get_current_time_point();
         }
-        logf_error("Selecting a protocol namespace failed. Ev offered: %s", ev_supported_namespaces.c_str());
-        driver_stopped = true;
         return;
     }
 
-    for (const auto& protocol : req->app_protocol) {
-        if (result.response.schema_id.has_value() and protocol.schema_id == result.response.schema_id.value()) {
-            sap_selected_protocol = protocol;
-        }
-    }
-
-    const auto& selected_namespace = result.selected_namespace.value();
-    if (selected_namespace == ISO20_DC_PROTOCOL_NAMESPACE) {
-        feedback.selected_protocol("ISO15118-20:DC");
-    } else if (selected_namespace == DIN70121_NAMESPACE) {
-        feedback.selected_protocol("DIN70121");
-    } else if (selected_namespace == ISO2_NAMESPACE) {
-        // EvseV2G-compatible string so downstream consumers (EvseManager / RpcApi) classify this as
-        // ISO 15118-2 exactly as the legacy stack does.
-        feedback.selected_protocol("ISO15118-2-2013");
-    } else if (config.custom_protocol.has_value() and config.custom_protocol.value() == selected_namespace) {
-        feedback.selected_protocol(config.custom_protocol.value());
-        logf_warning("EV and EVSE have agreed on a custom protocol namespace. Problems or aborts can occur in the "
-                     "following states!");
-    } else {
-        feedback.selected_protocol("ISO15118-20:AC and similar");
-    }
-
-    const auto protocol_id =
-        session::secc_sap::protocol_id_from_selected_namespace(selected_namespace, config.custom_protocol);
-    if (not protocol_id.has_value()) {
-        logf_error("SupportedAppProtocol negotiated an unknown namespace, terminating session");
+    if (sap->is_finished()) {
+        // Negotiation failed, an unexpected message arrived or the handshake timed out. Any FAILED_*
+        // response has been flushed above, so the session can be torn down now -- without the EV-first
+        // close linger ([V2G-DC-940]: terminate without delay).
         driver_stopped = true;
-        return;
-    }
-
-    engine = create_engine(protocol_id.value());
-    if (not engine) {
-        driver_stopped = true;
-        return;
     }
 }
 
-std::unique_ptr<SeccEngine> Session::create_engine(ProtocolId protocol_id) {
-    switch (protocol_id) {
-    case ProtocolId::ISO15118_20: {
-        const io::StreamOutputView view{response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
-                                        sizeof(response_buffer) - io::SdpPacket::V2GTP_HEADER_SIZE};
-        return std::make_unique<D20SeccEngine>(view, config, pause_ctx, callbacks, timeouts, sap_offered_protocols,
-                                               sap_selected_protocol, vehicle_cert_hash);
+bool Session::create_engine(const SapEngine::Negotiated& negotiated) {
+    switch (negotiated.protocol_id) {
+    case ProtocolId::ISO15118_20:
+        engine.emplace<D20SeccEngine>(engine_output_view(), config, pause_ctx, callbacks, timeouts,
+                                      negotiated.offered_protocols, negotiated.selected_protocol, vehicle_cert_hash);
+        return true;
+    case ProtocolId::ISO15118_2:
+        engine.emplace<D2SeccEngine>(engine_output_view(), config, d2_pause_ctx, callbacks, timeouts,
+                                     connection->is_secure());
+        return true;
+    case ProtocolId::DIN70121:
+        engine.emplace<DinSeccEngine>(engine_output_view(), config, callbacks, timeouts);
+        return true;
     }
-    case ProtocolId::ISO15118_2: {
-        const io::StreamOutputView view{response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
-                                        sizeof(response_buffer) - io::SdpPacket::V2GTP_HEADER_SIZE};
-        return std::make_unique<D2SeccEngine>(view, config, d2_pause_ctx, callbacks, timeouts,
-                                              connection->is_secure());
-    }
-    case ProtocolId::DIN70121: {
-        const io::StreamOutputView view{response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
-                                        sizeof(response_buffer) - io::SdpPacket::V2GTP_HEADER_SIZE};
-        return std::make_unique<DinSeccEngine>(view, config, callbacks, timeouts);
-    }
-    }
-    return nullptr;
+    return false;
 }
 
 void Session::send_response() {
-    size_t payload_size;
-    io::v2gtp::PayloadType payload_type;
-    V2gMessageType response_type;
-
-    if (pending_sap_outgoing.has_value()) {
-        payload_size = pending_sap_outgoing->payload_size;
-        payload_type = pending_sap_outgoing->payload_type;
-        response_type = pending_sap_outgoing->message_type;
-        pending_sap_outgoing.reset();
-    } else if (engine) {
-        const auto outgoing = engine->take_outgoing();
-        if (not outgoing.has_value()) {
-            return;
-        }
-        payload_size = outgoing->payload_size;
-        payload_type = outgoing->payload_type;
-        response_type = outgoing->message_type;
-    } else {
+    const auto outgoing = visit_engine([](auto& e) { return e.take_outgoing(); });
+    if (not outgoing.has_value()) {
         return;
     }
 
-    const auto response_size = setup_response_header(response_buffer, payload_type, payload_size);
+    const auto response_type = outgoing->message_type;
+    const auto response_size = setup_response_header(response_buffer, outgoing->payload_type, outgoing->payload_size);
     connection->write(response_buffer, response_size);
     last_response_tx_time = get_current_time_point();
 
@@ -545,13 +488,11 @@ void Session::send_response() {
     // signals keep their own anchors so the EV's TCP close can still complete over the intact link.
     // A FAILED_* end (FailedTermination) additionally skips the EV-first close linger: the SECC
     // closes the TCP connection itself without delay ([V2G-DC-940]).
-    if (engine) {
-        if (const auto stop_action = engine->pop_session_stop_res_pending()) {
-            if (*stop_action == session::feedback::SessionStopAction::FailedTermination) {
-                error_termination = true;
-            }
-            feedback.session_stop_res_sent(*stop_action);
+    if (const auto stop_action = visit_engine([](auto& e) { return e.pop_session_stop_res_pending(); })) {
+        if (*stop_action == session::feedback::SessionStopAction::FailedTermination) {
+            error_termination = true;
         }
+        feedback.session_stop_res_sent(*stop_action);
     }
 }
 
@@ -615,9 +556,7 @@ void Session::request_shutdown() {
         close();
     } else {
         push_control_event(d20::StopCharging{true}); // Stopping active charge loop
-        if (engine) {
-            engine->request_shutdown();
-        }
+        visit_engine([](auto& e) { e.request_shutdown(); });
     }
 }
 

@@ -90,8 +90,7 @@ din::SessionConfig make_din_config(const session::SessionConfig& config) {
 } // namespace
 
 DinSeccEngine::DinSeccEngine(io::StreamOutputView output_view, const session::SessionConfig& config,
-                             session::feedback::Callbacks callbacks,
-                             d20::Timeouts& timeouts) :
+                             session::feedback::Callbacks callbacks, d20::Timeouts& timeouts) :
     message_exchange(output_view),
     ctx(std::move(callbacks), make_din_config(config), active_control_event, message_exchange, timeouts),
     fsm(ctx.create_state<din::state::SessionSetup>()) {
@@ -165,13 +164,13 @@ bool DinSeccEngine::has_outgoing() const {
     return message_exchange.has_response();
 }
 
-std::optional<SeccEngine::Outgoing> DinSeccEngine::take_outgoing() {
+std::optional<SeccOutgoing> DinSeccEngine::take_outgoing() {
     const auto [got_response, payload_size, payload_type, message_type] = message_exchange.check_and_clear_response();
     if (not got_response) {
         return std::nullopt;
     }
     // message_type is the concrete message_din::Type; report it so the module logs the real name.
-    return Outgoing{payload_size, payload_type, message_type};
+    return SeccOutgoing{payload_size, payload_type, message_type};
 }
 
 bool DinSeccEngine::is_finished() const {

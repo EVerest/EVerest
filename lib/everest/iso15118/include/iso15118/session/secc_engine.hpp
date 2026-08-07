@@ -18,60 +18,60 @@ namespace session::feedback {
 enum class SessionStopAction;
 } // namespace session::feedback
 
-// Protocol-generation-specific state machine driver, the SECC-side (wire-normal) mirror of EvEngine.
-// The Session runs the (protocol-independent) SupportedAppProtocol handshake itself and then hands the
-// session over to the engine selected for the negotiated protocol. The engine owns the message
-// exchange, the decode-by-context and the FSM. Incoming packets are requests; the FSM produces the
-// responses.
-class SeccEngine {
-public:
-    virtual ~SeccEngine() = default;
-
-    // An outgoing response staged by the engine, its payload sitting in the shared output buffer.
-    struct Outgoing {
-        size_t payload_size;
-        io::v2gtp::PayloadType payload_type;
-        V2gMessageType message_type;
-    };
-
-    // Decode an incoming V2GTP request payload and drive the FSM (V2GTP_MESSAGE). The payload type is
-    // passed alongside the bytes because pre-20 generations share a single V2GTP payload type and are
-    // disambiguated by protocol context.
-    virtual void on_packet(io::v2gtp::PayloadType, const io::StreamInputView&) = 0;
-
-    virtual void on_control_event(const d20::ControlEvent&) = 0;
-    virtual void on_timeout(d20::TimeoutType) = 0;
-
-    virtual bool has_outgoing() const = 0;
-    virtual std::optional<Outgoing> take_outgoing() = 0;
-
-    virtual bool is_finished() const = 0;
-    virtual bool is_paused() const = 0;
-
-    // Return-and-clear the stop action armed by the SessionStop state when a positive SessionStopRes
-    // was staged. The Session drains this right after the response was written to the socket and
-    // reports it via feedback.session_stop_res_sent -- the anchor of the CP-oscillator retain time
-    // (DIN 70121 [V2G-DC-968]).
-    virtual std::optional<session::feedback::SessionStopAction> pop_session_stop_res_pending() = 0;
-
-    // The session ended on an error condition detected outside a response (e.g. CP State A / unplug,
-    // [V2G-DC-962]): the Session closes the TCP connection immediately instead of granting the
-    // EV-first close linger.
-    virtual bool is_finished_with_error() const {
-        return false;
-    }
-
-    // Ask the running state machine to shut the session down gracefully.
-    virtual void request_shutdown() = 0;
-
-    // ISO 15118-2 / DIN 70121 only: some EVs are not ready to receive the response immediately after
-    // sending their request and their controller may crash if the SECC answers too fast. When true, the
-    // Session delays each response so it is sent a fixed time after the request was received (deducting
-    // the internal processing time). ISO 15118-20 does not need this and returns false (the default).
-    virtual bool delay_response_after_request() const {
-        return false;
-    }
+// An outgoing response staged by an engine, its payload sitting in the Session's output buffer.
+struct SeccOutgoing {
+    size_t payload_size;
+    io::v2gtp::PayloadType payload_type;
+    V2gMessageType message_type;
 };
+
+// The SECC-side engine contract -- the wire-normal mirror of the EvEngine interface.
+//
+// A Session runs on exactly one engine at a time: the SapEngine drives the (protocol-independent)
+// SupportedAppProtocol handshake, and once a protocol has been negotiated the Session swaps in the
+// engine for that generation (SapEngine -> DinSeccEngine / D2SeccEngine / D20SeccEngine). An engine
+// owns the message exchange, the decode-by-context and the FSM; incoming packets are requests and the
+// FSM produces the responses. All engines write their responses into the Session's shared output
+// buffer, so only the engine currently held by the Session may stage a response.
+//
+// The Session holds the engines by value in a std::variant and dispatches with std::visit -- there is
+// no virtual base class, so this list is the contract every alternative has to satisfy (a missing or
+// mistyped member is a compile error at the visiting call site in the Session):
+//
+//   // Decode an incoming V2GTP request payload and drive the FSM (V2GTP_MESSAGE). The payload type is
+//   // passed alongside the bytes because pre-20 generations share a single V2GTP payload type and are
+//   // disambiguated by protocol context.
+//   void on_packet(io::v2gtp::PayloadType, const io::StreamInputView&);
+//
+//   void on_control_event(const d20::ControlEvent&);
+//   void on_timeout(d20::TimeoutType);
+//
+//   bool has_outgoing() const;
+//   std::optional<SeccOutgoing> take_outgoing();
+//
+//   bool is_finished() const;   // must stay false while a response is still staged
+//   bool is_paused() const;
+//
+//   // Return-and-clear the stop action armed by the SessionStop state when a positive SessionStopRes
+//   // was staged. The Session drains this right after the response was written to the socket and
+//   // reports it via feedback.session_stop_res_sent -- the anchor of the CP-oscillator retain time
+//   // (DIN 70121 [V2G-DC-968]).
+//   std::optional<session::feedback::SessionStopAction> pop_session_stop_res_pending();
+//
+//   // The session ended on an error condition detected outside a response (e.g. CP State A / unplug,
+//   // [V2G-DC-962]): the Session closes the TCP connection immediately instead of granting the
+//   // EV-first close linger.
+//   bool is_finished_with_error() const;
+//
+//   // Ask the running state machine to shut the session down gracefully.
+//   void request_shutdown();
+//
+//   // ISO 15118-2 / DIN 70121 (and the SupportedAppProtocol handshake): some EVs are not ready to
+//   // receive the response immediately after sending their request and their controller may crash if
+//   // the SECC answers too fast. When true, the Session delays each response so it is sent a fixed
+//   // time after the request was received (deducting the internal processing time). ISO 15118-20 does
+//   // not need this and returns false.
+//   bool delay_response_after_request() const;
 
 namespace detail {
 // Upper bound on the number of successive state transitions triggered by a single decoded request.

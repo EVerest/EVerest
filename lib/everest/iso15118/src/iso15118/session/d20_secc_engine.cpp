@@ -14,8 +14,7 @@ namespace iso15118 {
 
 D20SeccEngine::D20SeccEngine(io::StreamOutputView output_view, session::SessionConfig config,
                              std::optional<d20::PauseContext>& pause_ctx, session::feedback::Callbacks callbacks,
-                             d20::Timeouts& timeouts,
-                             const d20::EVSupportedAppProtocols& offered_protocols,
+                             d20::Timeouts& timeouts, const d20::EVSupportedAppProtocols& offered_protocols,
                              const message_20::SupportedAppProtocol& selected_protocol,
                              std::optional<io::sha512_hash_t> vehicle_cert_hash) :
     message_exchange(output_view),
@@ -84,12 +83,12 @@ bool D20SeccEngine::has_outgoing() const {
     return message_exchange.has_response();
 }
 
-std::optional<SeccEngine::Outgoing> D20SeccEngine::take_outgoing() {
+std::optional<SeccOutgoing> D20SeccEngine::take_outgoing() {
     const auto [got_response, payload_size, payload_type, message_type] = message_exchange.check_and_clear_response();
     if (not got_response) {
         return std::nullopt;
     }
-    return Outgoing{payload_size, payload_type, message_type};
+    return SeccOutgoing{payload_size, payload_type, message_type};
 }
 
 bool D20SeccEngine::is_finished() const {

@@ -30,6 +30,16 @@ target_link_libraries(test_tbd_controller_teardown
 
 catch_discover_tests(test_tbd_controller_teardown)
 
+add_executable(test_sap_engine sap_engine.cpp)
+
+target_link_libraries(test_sap_engine
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_sap_engine)
+
 add_executable(test_secc_sap secc_sap.cpp)
 
 target_link_libraries(test_secc_sap

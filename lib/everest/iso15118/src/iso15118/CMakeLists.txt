@@ -29,6 +29,7 @@ target_sources(iso15118
         session/ev.cpp
         session/ev_sap.cpp
         session/secc_sap.cpp
+        session/sap_engine.cpp
         session/config.cpp
         session/d20_secc_engine.cpp
         session/d20_ev_engine.cpp

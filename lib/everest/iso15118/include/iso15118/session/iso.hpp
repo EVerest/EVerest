@@ -4,6 +4,8 @@
 
 #include <memory>
 #include <optional>
+#include <utility>
+#include <variant>
 
 #include <iso15118/config.hpp>
 
@@ -24,14 +26,17 @@
 #include <iso15118/message/type.hpp>
 
 #include <iso15118/session/config.hpp>
+#include <iso15118/session/d20_secc_engine.hpp>
+#include <iso15118/session/d2_secc_engine.hpp>
+#include <iso15118/session/din_secc_engine.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/protocol.hpp>
+#include <iso15118/session/sap_engine.hpp>
+#include <iso15118/session/secc_engine.hpp>
 
 #include <iso15118/d20/timeout.hpp>
 
 namespace iso15118 {
-
-class SeccEngine;
 
 struct SessionState {
     bool connected{false};
@@ -39,8 +44,10 @@ struct SessionState {
     bool fsm_needs_call{false};
 };
 
-// SECC-side session driver. It runs the (protocol-independent) SupportedAppProtocol handshake itself
-// and then delegates the negotiated protocol generation to a swappable SeccEngine.
+// SECC-side session driver. It owns the transport, the shared in/out buffers and the timing rules, and
+// delegates the protocol itself to the engine it currently runs on: every session starts on the
+// SapEngine (SupportedAppProtocol handshake) and is handed over to the engine of the negotiated
+// generation once that handshake succeeded. See secc_engine.hpp for the engine contract.
 class Session {
 public:
     Session(std::unique_ptr<io::IConnection>, session::SessionConfig, const session::feedback::Callbacks&,
@@ -72,12 +79,6 @@ private:
     bool session_over() const;
     // Close the connection (if still open) and send the D-LINK signal; marks the session reapable.
     void finish_session();
-    // A response staged in response_buffer and ready to be written to the wire.
-    struct PendingOutgoing {
-        size_t payload_size;
-        io::v2gtp::PayloadType payload_type;
-        message_20::Type message_type;
-    };
 
     std::unique_ptr<io::IConnection> connection;
 
@@ -108,10 +109,6 @@ private:
     // Vehicle certificate hash captured on connection OPEN, handed to the engine on creation.
     std::optional<io::sha512_hash_t> vehicle_cert_hash{std::nullopt};
 
-    // SupportedAppProtocol phase (before an engine exists).
-    std::optional<PendingOutgoing> pending_sap_outgoing{std::nullopt};
-    d20::EVSupportedAppProtocols sap_offered_protocols;
-    message_20::SupportedAppProtocol sap_selected_protocol{};
     bool driver_stopped{false};
     // Set once the first application request (SessionSetupReq) has reached the engine; the V2G session
     // is then established and the controller drops the communication-setup timeout (is_v2g_session_established()).
@@ -128,13 +125,39 @@ private:
     // DLINK_TERMINATE signal fires when this deadline passes (FIN-flush grace, DLINK_SIGNAL_GRACE_MS).
     std::optional<TimePoint> dlink_signal_deadline{std::nullopt};
 
-    std::unique_ptr<SeccEngine> engine{nullptr};
+    // The engine the session currently runs on. Held by value: there is exactly one at any time, it is
+    // swapped in place at the SupportedAppProtocol handover (SapEngine -> protocol engine) and the
+    // alternatives have nothing in common but the contract in secc_engine.hpp, so the variant replaces
+    // both the allocation and the virtual dispatch of a base-class pointer.
+    using Engine = std::variant<SapEngine, DinSeccEngine, D2SeccEngine, D20SeccEngine>;
+    Engine engine;
+
+    // Call \p f on the active engine. Every member of the engine contract is reached through this, so a
+    // contract violation in any alternative is a compile error here rather than a missing override.
+    template <typename Function> decltype(auto) visit_engine(Function&& f) {
+        return std::visit(std::forward<Function>(f), engine);
+    }
+    template <typename Function> decltype(auto) visit_engine(Function&& f) const {
+        return std::visit(std::forward<Function>(f), engine);
+    }
+
+    // True while the session still runs on the SapEngine, i.e. no protocol has been negotiated yet.
+    bool in_sap_phase() const {
+        return std::holds_alternative<SapEngine>(engine);
+    }
+
+    // The engines stage their responses in response_buffer, behind the V2GTP header the Session fills
+    // in on send.
+    io::StreamOutputView engine_output_view();
 
     TimePoint next_session_event;
 
     void handle_connection_event(io::ConnectionEvent event);
-    void handle_supported_app_protocol_request(io::v2gtp::PayloadType, const io::StreamInputView&);
-    std::unique_ptr<SeccEngine> create_engine(ProtocolId);
+    // Swap the SapEngine for the engine of the negotiated protocol once the handshake response has been
+    // sent, or stop the driver if the handshake failed.
+    void advance_sap_handover();
+    // Replace the active engine with the one for the negotiated protocol. False if there is none.
+    bool create_engine(const SapEngine::Negotiated&);
     void send_response();
 
     std::optional<TimePoint> last_response_tx_time; // timestamp of the last response message sent
