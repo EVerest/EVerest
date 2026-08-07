@@ -56,8 +56,8 @@ private:
     // input buffer
     io::SdpPacket packet;
 
-    // output buffer
-    uint8_t response_buffer[1028];
+    // output buffer; see MAX_V2G_PACKET_SIZE for the sizing rationale
+    uint8_t response_buffer[io::MAX_V2G_PACKET_SIZE];
 
     d20::MessageExchange message_exchange{{response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
                                            sizeof(response_buffer) - io::SdpPacket::V2GTP_HEADER_SIZE}};

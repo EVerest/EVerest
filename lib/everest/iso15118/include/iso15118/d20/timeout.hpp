@@ -19,11 +19,14 @@ enum class TimeoutType : uint8_t {
     PERFORMANCE,
     ONGOING,
     CONTACTOR,
+    // V2G_SECC_CPState_Detection_Timeout: waiting for CP State B after the request following
+    // PowerDelivery(off) (DIN [V2G-DC-988]/[V2G-DC-556], ISO-2 [V2G2-920..922]).
+    CPSTATE,
 };
 
-constexpr uint8_t TIMEOUT_TYPE_SIZE = 4;
+constexpr uint8_t TIMEOUT_TYPE_SIZE = 5;
 
-static_assert(TIMEOUT_TYPE_SIZE == to_underlying_value(TimeoutType::CONTACTOR) + 1,
+static_assert(TIMEOUT_TYPE_SIZE == to_underlying_value(TimeoutType::CPSTATE) + 1,
               "TIMEOUT_TYPE_SIZE should be in sync with the TimeoutType enum definition");
 
 constexpr auto TIMEOUT_ONGOING = 1000 * 55;
