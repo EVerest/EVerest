@@ -1,12 +1,10 @@
 active_modules:
   iso15118_charger:
-    module: Evse15118D20
+    module: EvseV2G
     config_module:
       device: auto
-      supported_DIN70121: true
-      supported_ISO15118_2: true
-      tls_negotiation_strategy: ENFORCE_TLS
-      enable_tls_key_logging: true
+      tls_security: force
+      tls_key_logging: true
     connections:
       security:
         - module_id: evse_security

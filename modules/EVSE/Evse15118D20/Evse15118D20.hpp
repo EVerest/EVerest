@@ -36,6 +36,9 @@ struct Conf {
     std::string logging_path;
     std::string tls_negotiation_strategy;
     bool enforce_tls_1_3;
+    bool supported_DIN70121;
+    bool supported_ISO15118_2;
+    bool supported_ISO15118_20;
     bool enable_ssl_logging;
     bool enable_tls_key_logging;
     std::string tls_key_logging_path;
@@ -76,6 +79,12 @@ public:
     std::optional<types::grid_support::ActiveDirectiveSet> get_active_der_directives() const;
     void register_der_directive_callback(std::function<void()> callback);
     void notify_der_directives_changed();
+
+    // ISO 15118-2 Plug-and-Charge CertificateInstallation relay bridge: the extensions impl receives
+    // the CertificateInstallationRes (from the CSMS/CPS backend) and forwards it here; the charger impl
+    // registers a handler that injects it into libiso15118 as a control event. Set in the charger impl
+    // once its libiso15118 controller exists.
+    std::function<void(const types::iso15118::ResponseExiStreamStatus&)> on_certificate_response;
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:

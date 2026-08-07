@@ -134,10 +134,10 @@ active_modules:
       device: auto
       supported_ISO15118_2: true
   iso15118_charger:
-    module: EvseV2G
+    module: Evse15118D20
     config_module:
       device: auto
-      tls_security: allow
+      supported_ISO15118_2: true
       supported_DIN70121: false
     connections:
       security:

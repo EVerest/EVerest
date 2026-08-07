@@ -1,13 +1,12 @@
 active_modules:
   iso15118_charger:
-    module: Evse15118D20
+    module: EvseV2G
     mapping:
       module:
         evse: 1
     config_module:
       device: auto
-      supported_ISO15118_2: true
-      supported_DIN70121: true
+      tls_security: allow
     connections:
       security:
         - module_id: evse_security
@@ -17,13 +16,14 @@ active_modules:
     config_module:
       device: auto
       supported_ISO15118_2: true
-      tls_active: true
-      is_cert_install_needed: true
+      tls_active: false
+      is_cert_install_needed: false
   connector_1:
     module: EvseManager
     config_module:
       connector_id: 1
       has_ventilation: true
+      enable_autocharge: true
       evse_id: "DE*PNX*100001"
       session_logging: true
       session_logging_xml: false
@@ -92,7 +92,6 @@ active_modules:
     config_module:
       ChargePointConfigPath: libocpp-config-iso-pnc.json
       UserConfigPath: user_config.json
-      EnableExternalWebsocketControl: true
     connections:
       evse_manager:
         - module_id: connector_1
@@ -109,9 +108,6 @@ active_modules:
       security:
         - module_id: evse_security
           implementation_id: main
-      extensions_15118:
-        - module_id: iso15118_charger
-          implementation_id: extensions
   evse_security:
     module: EvseSecurity
     config_module:

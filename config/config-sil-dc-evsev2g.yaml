@@ -1,18 +1,9 @@
 active_modules:
   iso15118_charger:
-    module: Evse15118D20
+    module: EvseV2G
     config_module:
       device: auto
-      supported_DIN70121: true
-      supported_ISO15118_2: true
-      # Do not offer ISO 15118-20: this config is the DIN/ISO-2 SIL charger
-      # (config-sil-dc-d20.yaml covers -20). The protocol-negotiation smoke test relies
-      # on a -20-only EV finding no matching protocol here.
-      supported_ISO15118_20: false
-      # Offer Scheduled mode so the SIL EV (Ev15118, Scheduled preference) drives its
-      # 400 V/20 A targets; in Dynamic mode the supply would be set to the EV maximum
-      # voltage, which the SIL voltage-source supply outputs verbatim (OVM trip at 900 V).
-      supported_scheduled_mode: true
+      tls_security: allow
     connections:
       security:
         - module_id: evse_security

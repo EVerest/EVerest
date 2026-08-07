@@ -1,54 +1,25 @@
 active_modules:
-  iso15118_2:
+  iso15118_charger:
     module: EvseV2G
     config_module:
-      device: lo
-      tls_security: allow
-      enable_sdp_server: false
-    connections:
-      security:
-        - module_id: evse_security
-          implementation_id: main
-  iso15118_20:
-    module: Evse15118D20
-    config_module:
-      device: lo
-      tls_negotiation_strategy: ACCEPT_CLIENT_OFFER
-      enable_sdp_server: false
-    connections:
-      security:
-        - module_id: evse_security
-          implementation_id: main
-  iso_mux:
-    module: IsoMux
-    config_module:
       device: auto
-      tls_security: force
+      tls_security: allow
+      verify_contract_cert_chain: true
     connections:
       security:
         - module_id: evse_security
           implementation_id: main
-      iso2:
-        - module_id: iso15118_2
-          implementation_id: charger
-      iso20:
-        - module_id: iso15118_20
-          implementation_id: charger
-      ext2:
-        - module_id: iso15118_2
-          implementation_id: extensions
-      ext20:
-        - module_id: iso15118_20
-          implementation_id: extensions
+    mapping:
+      module:
+        evse: 1
   iso15118_car:
     module: PyEvJosev
     config_module:
       device: auto
       supported_DIN70121: false
       supported_ISO15118_2: true
-      supported_ISO15118_20_DC: true
       tls_active: true
-      enforce_tls: true
+      is_cert_install_needed: true
   evse_manager:
     module: EvseManager
     config_module:
@@ -60,7 +31,6 @@ active_modules:
       session_logging_path: /tmp/everest-logs
       charge_mode: DC
       hack_allow_bpt_with_iso2: true
-      payment_enable_contract: false
     connections:
       bsp:
         - module_id: yeti_driver
@@ -72,7 +42,7 @@ active_modules:
         - module_id: slac
           implementation_id: evse
       hlc:
-        - module_id: iso_mux
+        - module_id: iso15118_charger
           implementation_id: charger
       powersupply_DC:
         - module_id: powersupply_dc
@@ -80,12 +50,11 @@ active_modules:
       imd:
         - module_id: imd
           implementation_id: main
+      over_voltage_monitor:
+        - module_id: ovm
+          implementation_id: main
   powersupply_dc:
-    module: DCSupplySimulator
-  yeti_driver:
-    module: YetiSimulator
-    config_module:
-      connector_id: 1
+    module: DCSupplySimulator  
   slac:
     module: SlacSimulator
   imd:
@@ -93,6 +62,12 @@ active_modules:
       main:
         selftest_success: true
     module: IMDSimulator
+  ovm:
+    module: OVMSimulator
+    config_implementation:
+      main:
+        simulate_error: false
+        simulate_error_delay: 5
   ev_manager:
     module: EvManager
     config_module:
@@ -112,6 +87,65 @@ active_modules:
       slac:
         - module_id: slac
           implementation_id: ev
+  connector_2:
+    module: EvseManager
+    config_module:
+      connector_id: 2
+      has_ventilation: true
+      evse_id: "2"
+      session_logging: true
+      session_logging_xml: false
+      ac_hlc_enabled: false
+      ac_hlc_use_5percent: false
+      ac_enforce_hlc: false
+    connections:
+      bsp:
+        - module_id: yeti_driver_2
+          implementation_id: board_support
+      powermeter_grid_side:
+        - module_id: yeti_driver_2
+          implementation_id: powermeter
+      slac:
+        - module_id: slac
+          implementation_id: evse
+      hlc:
+        - module_id: iso15118_charger
+          implementation_id: charger
+  yeti_driver:
+    module: YetiSimulator
+    config_module:
+      connector_id: 1
+  yeti_driver_2:
+    module: YetiSimulator
+    config_module:
+      connector_id: 2
+  ocpp:
+    module: OCPP201
+    config_module:
+      EnableExternalWebsocketControl: true
+    connections:
+      evse_manager:
+        - module_id: evse_manager
+          implementation_id: evse
+        - module_id: connector_2
+          implementation_id: evse
+      auth:
+        - module_id: auth
+          implementation_id: main
+      system:
+        - module_id: system
+          implementation_id: main
+      security:
+        - module_id: evse_security
+          implementation_id: main
+      reservation:
+        - module_id: auth
+          implementation_id: reservation
+      extensions_15118:
+        - module_id: iso15118_charger
+          implementation_id: extensions
+  system:
+    module: System
   auth:
     module: Auth
     config_module:
@@ -119,23 +153,23 @@ active_modules:
       selection_algorithm: FindFirst
     connections:
       token_provider:
-        - module_id: token_provider
+        - module_id: token_provider_1
           implementation_id: main
+        - module_id: ocpp
+          implementation_id: auth_provider
+        - module_id: evse_manager
+          implementation_id: token_provider
       token_validator:
-        - module_id: token_validator
-          implementation_id: main
+        - module_id: ocpp
+          implementation_id: auth_validator
       evse_manager:
         - module_id: evse_manager
           implementation_id: evse
-  token_provider:
-    module: DummyTokenProvider
+  token_provider_1:
+    module: DummyTokenProviderManual
     config_implementation:
       main:
-        token: TOKEN1
-    connections:
-      evse:
-        - module_id: evse_manager
-          implementation_id: evse
+        mqtt_topic: 'everest_api/dummy_token_provider/cmd/provide'
   token_validator:
     module: DummyTokenValidator
     config_implementation:
@@ -146,6 +180,14 @@ active_modules:
   evse_security:
     module: EvseSecurity
     config_module:
+      csms_ca_bundle: "ca/v2g/V2G_ROOT_CA.pem"
+      mf_ca_bundle: "ca/mf/MF_ROOT_CA.pem"
+      mo_ca_bundle: "ca/mo/MO_ROOT_CA.pem"
+      v2g_ca_bundle: "ca/v2g/V2G_ROOT_CA.pem"
+      csms_leaf_cert_directory: "client/csms"
+      csms_leaf_key_directory: "client/csms"
+      secc_leaf_cert_directory: "client/cso"
+      secc_leaf_key_directory: "client/cso"
       private_key_password: "123456"
   energy_manager:
     module: EnergyManager
@@ -179,12 +221,6 @@ active_modules:
       error_history:
         - module_id: error_history
           implementation_id: error_history
-  ev_api:
-    module: EvAPI
-    connections:
-      ev_manager:
-        - implementation_id: ev_manager
-          module_id: ev_manager
   error_history:
     module: ErrorHistory
     config_implementation:
