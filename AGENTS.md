@@ -87,27 +87,21 @@ in case and spelling. List with `ctest -N` first. Coverage needs
 `-DEVEREST_ENABLE_COVERAGE=ON`; the `everest-core_create_coverage` target writes
 `build/everest-core_create_coverage/index.html`.
 
-Integration tests use pytest; the virtualenv is `build/venv`:
+Integration tests use pytest through the unified runner `tests/run-tests.sh`, against a
+built and installed prefix. The runner installs the OCPP certificate and component-config
+fixtures itself but not the venv, so activate `build/venv` first:
 
 ```bash
 . build/venv/bin/activate
 cmake --build build --target install_everest_testing
-cd tests && pytest --everest-prefix ../build/dist core_tests/ framework_tests/
+./tests/run-tests.sh core            # suites: all, integration, core, framework,
+                                     # asyncapi, ocpp, ocpp16, ocpp201, ocpp21, eebus
+./tests/run-tests.sh ocpp201 -k authorization   # -k filters; -- passes args to pytest
 ```
 
-OCPP tests also need certificate and per-EVSE component-config fixtures in the prefix.
-`tests/run-tests.sh` handles this; calling pytest directly means re-running the fixture
-scripts after any `ninja install` that touches the prefix. From the repo root:
-
-```bash
-cmake --build build --target everestpy_pip_install_dist
-cmake --build build --target everest-testing_pip_install_dist
-cmake --build build --target iso15118_pip_install_dist
-(cd tests/ocpp_tests/test_sets/everest-aux && \
-  ./install_certs.sh ../../../../build/dist && \
-  ./install_configs.sh ../../../../build/dist)
-cd tests/ocpp_tests && pytest --everest-prefix ../../build/dist test_sets/ocpp201/ -v
-```
+OCPP suites also need the pip packages built into the venv once:
+`everestpy_pip_install_dist`, `everest-testing_pip_install_dist` and
+`iso15118_pip_install_dist` (`cmake --build build --target <name>`).
 
 ISO 15118 has no dedicated suite. It is covered by `tests/core_tests/smoke_tests.py`
 (AC and DC end to end), CSMS-side helpers in
@@ -221,6 +215,8 @@ often:
 - While review is open, do not rebase or force-push, so reviewers can see that feedback
   was addressed. Squashing to a single commit once approved is how changes land.
 - Every contribution must be reviewed and understood by a human before submission.
+- Releases, versioning and what counts as a breaking change:
+  `docs/source/project/releases/releases-and-versioning.rst`.
 
 Commit subjects and pull request titles follow Conventional Commits and name the affected
 module, for example `fix(EvseManager): handle unplug during timed charging`. Changes land
