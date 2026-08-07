@@ -14,7 +14,7 @@ struct FeedbackResults {
     float target_voltage;
     feedback::DcChargeLoopReq dc_charge_loop_req;
     feedback::DcMaximumLimits dc_max_limits;
-    iso15118::message_20::Type v2g_message;
+    iso15118::V2gMessageType v2g_message;
     std::string evcc_id;
     std::string selected_protocol;
     iso15118::d20::EVInformation ev_information;
@@ -37,7 +37,7 @@ SCENARIO("Feedback Tests") {
     callbacks.dc_max_limits = [&feedback_results](const feedback::DcMaximumLimits& dc_max_limits_) {
         feedback_results.dc_max_limits = dc_max_limits_;
     };
-    callbacks.v2g_message = [&feedback_results](const iso15118::message_20::Type& type) {
+    callbacks.v2g_message = [&feedback_results](const iso15118::V2gMessageType& type) {
         feedback_results.v2g_message = type;
     };
     callbacks.evccid = [&feedback_results](const std::string& evcc_id_) { feedback_results.evcc_id = evcc_id_; };
@@ -184,7 +184,7 @@ SCENARIO("Feedback Tests") {
 
     GIVEN("Test v2g_message") {
         using Type = iso15118::message_20::Type;
-        const Type expected = Type::DC_CableCheckReq;
+        const iso15118::V2gMessageType expected = Type::DC_CableCheckReq;
         feedback.v2g_message(Type::DC_CableCheckReq);
 
         THEN("v2g_message should be like expected") {
