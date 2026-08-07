@@ -1293,6 +1293,9 @@ bool ChargePointImpl::stop() {
 
         this->database_handler->close_connection();
         this->connectivity_manager->disconnect();
+        // Disarm before tearing down the message queue: a late websocket-thread disconnect callback
+        // must not reach into members being destroyed.
+        this->connectivity_manager->disarm_connection_callbacks();
         this->message_queue->stop();
 
         this->stopped = true;
