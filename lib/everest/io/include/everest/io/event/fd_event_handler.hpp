@@ -9,6 +9,7 @@
 #include <everest/io/event/event_fd.hpp>
 #include <everest/io/event/fd_event_client.hpp>
 #include <everest/io/event/fd_event_register_interface.hpp>
+#include <everest/io/event/handler_liveness.hpp>
 #include <everest/util/queue/thread_safe_queue.hpp>
 
 #include <atomic>
@@ -55,6 +56,9 @@ class generic_fd_event_client_impl;
  * be registered together with a list of the events of interest and a callback.
  * This class provides itself a filedescriptor that can be added to other event handlers. This way
  * concerns may be separated and event handlers nested.
+ *
+ * Registration, removal and \ref poll must all run on one thread. \ref add_action is the only
+ * member safe to call from another thread.
  */
 class fd_event_handler {
 public:
@@ -255,6 +259,14 @@ public:
      * @return True if \p fd has a registered handler, false otherwise
      */
     bool is_registered(int fd) const;
+
+    /**
+     * @brief The block a registration with this handler is recorded against
+     * @details Cleared in \ref ~fd_event_handler before any member is destroyed. A recorder keeps a
+     * \p std::weak_ptr to it and drops its registration only while the block still names a handler.
+     * @return The liveness block of this handler
+     */
+    std::shared_ptr<handler_liveness> liveness() const;
     /**
      * @}
      */
@@ -326,7 +338,10 @@ private:
      * \return false in case of timeout, true otherwise
      */
     bool poll_impl(int timeout_ms);
+    // Not shared_ptr: EventHandlerMap owns the epoll descriptor, and a registrant outliving this
+    // handler must not keep it open.
     std::unique_ptr<EventHandlerMap> m_handlers{nullptr};
+    std::shared_ptr<handler_liveness> m_liveness;
     util::thread_safe_queue<task> task_pool;
     event_fd m_action_event;
 };

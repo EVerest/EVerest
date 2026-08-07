@@ -273,3 +273,103 @@ TEST(fd_event_handler_test, callback_may_unregister_its_own_fd) {
     ASSERT_NE(order.closure_destroyed, -1);
     EXPECT_LT(order.callback_finished, order.closure_destroyed);
 }
+
+// A client recording a raw handler pointer would dereference a dangling one here. The record is a
+// weak reference to a handler owned liveness block, so it goes inert with the handler.
+TEST(fd_event_handler_test, sync_client_outliving_its_handler_is_inert) {
+    fd_event_handler unrelated;
+    minimal_sync_client client;
+
+    {
+        fd_event_handler handler;
+        ASSERT_TRUE(handler.register_event_handler(&client));
+        ASSERT_TRUE(handler.is_registered(client.get_poll_fd()));
+    }
+
+    // The record names the dead handler, not this one.
+    EXPECT_FALSE(client.unregister_events(unrelated));
+    EXPECT_FALSE(unrelated.is_registered(client.get_poll_fd()));
+
+    // A record whose handler is gone is expired, not merely non-null, so it does not block a new
+    // registration the way a stale raw pointer would.
+    EXPECT_TRUE(unrelated.register_event_handler(&client));
+    EXPECT_TRUE(unrelated.is_registered(client.get_poll_fd()));
+
+    // Destroying client now must not reach the dead handler.
+}
+
+// Declaration order is not load bearing: neither destruction order may crash, and the surviving
+// party must still report the truth about the registration.
+TEST(fd_event_handler_test, either_destruction_order_of_handler_and_client_is_safe) {
+    {
+        // Handler destroyed first.
+        minimal_sync_client client;
+        fd_event_handler handler;
+        ASSERT_TRUE(handler.register_event_handler(&client));
+        ASSERT_TRUE(handler.is_registered(client.get_poll_fd()));
+    }
+
+    {
+        // Client destroyed first.
+        fd_event_handler handler;
+        int raw = -1;
+        {
+            minimal_sync_client client;
+            raw = client.get_poll_fd();
+            ASSERT_TRUE(handler.register_event_handler(&client));
+            ASSERT_TRUE(handler.is_registered(raw));
+        }
+        EXPECT_FALSE(handler.is_registered(raw));
+    }
+}
+
+// charge_bridge cycles register and unregister at runtime on reconnect, so dropping a record must
+// leave the client able to take a new one.
+TEST(fd_event_handler_test, sync_client_can_register_again_after_unregistering) {
+    fd_event_handler handler;
+    minimal_sync_client client;
+    auto const raw = client.get_poll_fd();
+
+    ASSERT_TRUE(handler.register_event_handler(&client));
+    ASSERT_TRUE(handler.is_registered(raw));
+
+    ASSERT_TRUE(handler.unregister_event_handler(&client));
+    ASSERT_FALSE(handler.is_registered(raw));
+
+    ASSERT_TRUE(handler.register_event_handler(&client));
+    EXPECT_TRUE(handler.is_registered(raw));
+
+    EXPECT_TRUE(handler.unregister_event_handler(&client));
+    EXPECT_FALSE(handler.is_registered(raw));
+}
+
+// One record per client. A second registration would leave the first unrecorded and therefore
+// unremovable.
+TEST(fd_event_handler_test, register_events_refuses_a_second_registration) {
+    fd_event_handler first;
+    fd_event_handler second;
+    minimal_sync_client client;
+    auto const raw = client.get_poll_fd();
+
+    ASSERT_TRUE(first.register_event_handler(&client));
+
+    EXPECT_FALSE(first.register_event_handler(&client));
+    EXPECT_FALSE(second.register_event_handler(&client));
+    EXPECT_FALSE(second.is_registered(raw));
+    EXPECT_TRUE(first.is_registered(raw));
+}
+
+// The constructor registers the handler's own action event on itself, so a handler always holds a
+// registration against its own liveness block. Building and tearing that down must be clean.
+TEST(fd_event_handler_test, handler_self_registration_survives_destruction) {
+    {
+        fd_event_handler handler;
+        handler.add_action([]() {});
+        EXPECT_TRUE(handler.poll(100ms));
+        handler.run_actions();
+    }
+
+    // A fresh handler recycles the descriptor numbers of the destroyed one and must start empty.
+    fd_event_handler reused;
+    EXPECT_FALSE(reused.poll(100ms));
+}

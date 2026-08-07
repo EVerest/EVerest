@@ -178,11 +178,20 @@ private:
     unique_fd m_epoll_fd;
 };
 
-fd_event_handler::~fd_event_handler() = default;
+// Runs before any member is destroyed, so every outstanding registration record is inert by the
+// time EventHandlerMap closes the epoll descriptor.
+fd_event_handler::~fd_event_handler() {
+    m_liveness->handler = nullptr;
+}
 
-fd_event_handler::fd_event_handler() {
+fd_event_handler::fd_event_handler() : m_liveness(std::make_shared<handler_liveness>()) {
+    m_liveness->handler = this;
     m_handlers = std::make_unique<EventHandlerMap>();
     register_event_handler(&m_action_event, [](auto&&) {});
+}
+
+std::shared_ptr<handler_liveness> fd_event_handler::liveness() const {
+    return m_liveness;
 }
 
 bool fd_event_handler::register_event_handler(int fd, event_handler_type const& handler, event_list const& events) {

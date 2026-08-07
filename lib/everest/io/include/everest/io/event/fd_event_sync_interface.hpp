@@ -5,6 +5,10 @@
 
 #pragma once
 
+#include <everest/io/event/handler_liveness.hpp>
+
+#include <memory>
+
 namespace everest::lib::io::event {
 
 class fd_event_handler;
@@ -33,7 +37,8 @@ public:
      */
     virtual ~fd_event_sync_interface();
 
-    // A recorded registration has exactly one owner, so it cannot be duplicated or transferred.
+    // register_events installs a lambda capturing this, so a moved object leaves the handler
+    // calling sync() on the old address, independent of any registration record.
     fd_event_sync_interface(fd_event_sync_interface const&) = delete;
     fd_event_sync_interface& operator=(fd_event_sync_interface const&) = delete;
     fd_event_sync_interface(fd_event_sync_interface&&) = delete;
@@ -76,13 +81,14 @@ protected:
      * @brief Remove the recorded registration
      * @details Uses the recorded descriptor instead of \ref get_poll_fd, so this stays callable
      * while the object is being destroyed. Implementors call it in their destructor to leave the
-     * handler before their own state is gone.
+     * handler before their own state is gone. The record is a weak reference, so this reports false
+     * and touches nothing once the handler itself is gone.
      * @return true if a registration was removed, false otherwise
      */
     bool unregister_recorded_events();
 
 private:
-    fd_event_handler* m_registered_handler{nullptr};
+    std::weak_ptr<handler_liveness> m_registered_handler;
     int m_registered_fd{-1};
 };
 
