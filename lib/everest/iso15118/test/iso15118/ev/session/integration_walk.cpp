@@ -553,11 +553,11 @@ SCENARIO("ISO15118-20 EV Session drives the states byte-by-byte through a full A
 
     GIVEN("An AC-configured Session bound to a reactor with short send-delay and watchdog timers") {
         SessionFixture fx{"EVTESTID01",
-                       ev::SessionTiming{5ms, 100ms},
-                       ev::DcChargeParams{},
-                       default_advertised_ac_app_protocols(),
-                       message_20::datatypes::ServiceCategory::AC,
-                       ac_seed_params()};
+                          ev::SessionTiming{5ms, 100ms},
+                          ev::DcChargeParams{},
+                          default_advertised_ac_app_protocols(),
+                          message_20::datatypes::ServiceCategory::AC,
+                          ac_seed_params()};
 
         WHEN("the session is walked to an active AC_ChargeLoop and the SECC then signals Terminate") {
             const auto sid = walk_to_ac_charge_loop(fx);
@@ -611,11 +611,11 @@ SCENARIO("ISO15118-20 EV Session drives a graceful EV-initiated stop from an act
     // PowerDelivery(Stop) -> SessionStop without any SECC Terminate notification.
     GIVEN("An AC-configured Session walked to an active AC_ChargeLoop") {
         SessionFixture fx{"EVTESTID01",
-                       ev::SessionTiming{5ms, 100ms},
-                       ev::DcChargeParams{},
-                       default_advertised_ac_app_protocols(),
-                       message_20::datatypes::ServiceCategory::AC,
-                       ac_seed_params()};
+                          ev::SessionTiming{5ms, 100ms},
+                          ev::DcChargeParams{},
+                          default_advertised_ac_app_protocols(),
+                          message_20::datatypes::ServiceCategory::AC,
+                          ac_seed_params()};
         const auto sid = walk_to_ac_charge_loop(fx);
 
         WHEN("a StopCharging control event is delivered and the next OK loop response arrives") {
