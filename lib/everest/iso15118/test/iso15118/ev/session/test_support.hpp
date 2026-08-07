@@ -87,7 +87,7 @@ inline message_20::Variant decode_frame(const std::vector<uint8_t>& frame) {
 // budget elapses. Returns the final predicate value.
 template <typename Predicate>
 bool run_reactor_until(everest::lib::io::event::fd_event_handler& reactor, Predicate predicate,
-                std::chrono::milliseconds budget) {
+                       std::chrono::milliseconds budget) {
     const auto deadline = std::chrono::steady_clock::now() + budget;
     while (not predicate() and std::chrono::steady_clock::now() < deadline) {
         reactor.poll(std::chrono::milliseconds{1});
@@ -112,8 +112,8 @@ public:
         AcChargeParams ac_seed = AcChargeParams{}) :
         dc_params(std::move(params)),
         ac_params(std::move(ac_seed)),
-        session(make_callbacks(), make_send(), reactor, timing, std::move(evcc_id), std::move(protocols),
-                &dc_params, &ac_params, energy_service) {
+        session(make_callbacks(), make_send(), reactor, timing, std::move(evcc_id), std::move(protocols), &dc_params,
+                &ac_params, energy_service) {
     }
 
     everest::lib::io::event::fd_event_handler reactor;
