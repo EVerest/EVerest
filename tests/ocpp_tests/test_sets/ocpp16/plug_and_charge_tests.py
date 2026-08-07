@@ -42,8 +42,13 @@ class TestPlugAndCharge:
 
     @pytest.mark.asyncio
     @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
+    @parametrize_secc_config(
+        "everest-config-sil-iso.yaml",
+        "everest-config-sil-iso-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_01(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system_v16: CentralSystem,
@@ -130,8 +135,13 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
+    @parametrize_secc_config(
+        "everest-config-sil-iso.yaml",
+        "everest-config-sil-iso-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_02(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system_v16: CentralSystem,
@@ -193,8 +203,13 @@ class TestPlugAndCharge:
 
     @pytest.mark.asyncio
     @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
+    @parametrize_secc_config(
+        "everest-config-sil-iso.yaml",
+        "everest-config-sil-iso-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_03(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system_v16: CentralSystem,
@@ -292,8 +307,13 @@ class TestPlugAndCharge:
 
     @pytest.mark.asyncio
     @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
+    @parametrize_secc_config(
+        "everest-config-sil-iso.yaml",
+        "everest-config-sil-iso-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_04(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system_v16: CentralSystem,
@@ -356,8 +376,13 @@ class TestPlugAndCharge:
 
     @pytest.mark.asyncio
     @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
+    @parametrize_secc_config(
+        "everest-config-sil-iso.yaml",
+        "everest-config-sil-iso-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_04(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system_v16: CentralSystem,
@@ -419,8 +444,13 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
+    @parametrize_secc_config(
+        "everest-config-sil-iso.yaml",
+        "everest-config-sil-iso-evsev2g.yaml",
+    )
     async def test_eim_01(
         self,
+        secc_config,
         test_config,
         charge_point_v16: ChargePoint16,
         test_controller: TestController,
@@ -477,11 +507,13 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.everest_core_config(
-        get_everest_config_path_str("everest-config-sil-iso no-tls.yaml")
+    @parametrize_secc_config(
+        "everest-config-sil-iso no-tls.yaml",
+        "everest-config-sil-iso no-tls-evsev2g.yaml",
     )
     async def test_eim_02(
         self,
+        secc_config,
         charge_point_v16: ChargePoint16,
         test_controller: TestController,
         test_utility: TestUtility,
@@ -533,8 +565,13 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
+    @parametrize_secc_config(
+        "everest-config-sil-iso.yaml",
+        "everest-config-sil-iso-evsev2g.yaml",
+    )
     async def test_pnc_reject(
         self,
+        secc_config,
         exi_generator,
         test_config,
         central_system_v16: CentralSystem,
