@@ -2,7 +2,13 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+#include <atomic>
+#include <cerrno>
+#include <chrono>
 #include <cstring>
+#include <thread>
+#include <vector>
 
 #include <dirent.h>
 #include <netinet/in.h>
@@ -74,4 +80,80 @@ TEST_CASE("socket_helper: create_tcp_listen_socket closes the fd when setup fail
     const auto fds_after = count_open_fds();
 
     REQUIRE(fds_after - fds_before <= NOISE_ALLOWANCE);
+}
+
+TEST_CASE("socket_helper: write_all completes a backpressured write once the peer drains") {
+    int fds[2];
+    REQUIRE(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fds) == 0);
+
+    // Shrink the send buffer so a multi-buffer payload reliably hits EAGAIN mid-write.
+    int sndbuf = 4096;
+    REQUIRE(setsockopt(fds[0], SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)) == 0);
+
+    constexpr size_t PAYLOAD_SIZE = 1024 * 1024;
+    std::vector<uint8_t> payload(PAYLOAD_SIZE, 0xa5);
+
+    std::atomic<size_t> drained{0};
+    std::thread reader([&]() {
+        std::array<uint8_t, 65536> buf{};
+        while (drained.load() < PAYLOAD_SIZE) {
+            const auto r = ::read(fds[1], buf.data(), buf.size());
+            if (r > 0) {
+                drained.fetch_add(static_cast<size_t>(r));
+            } else if (r == -1 and (errno == EAGAIN or errno == EWOULDBLOCK)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            } else {
+                break;
+            }
+        }
+    });
+
+    const auto ok = iso15118::io::write_all(fds[0], payload.data(), payload.size(), /*timeout_ms=*/5000);
+    reader.join();
+
+    CHECK(ok);
+    CHECK(drained.load() == PAYLOAD_SIZE);
+
+    close(fds[0]);
+    close(fds[1]);
+}
+
+TEST_CASE("socket_helper: write_all fails with ETIMEDOUT when the peer never drains") {
+    int fds[2];
+    REQUIRE(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fds) == 0);
+
+    int sndbuf = 4096;
+    REQUIRE(setsockopt(fds[0], SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)) == 0);
+
+    // Larger than send + receive buffer together, so the write can never complete.
+    std::vector<uint8_t> payload(1024 * 1024, 0xa5);
+
+    errno = 0;
+    const auto ok = iso15118::io::write_all(fds[0], payload.data(), payload.size(), /*timeout_ms=*/100);
+
+    CHECK_FALSE(ok);
+    CHECK(errno == ETIMEDOUT);
+
+    close(fds[0]);
+    close(fds[1]);
+}
+
+TEST_CASE("socket_helper: write_all surfaces a closed peer as EPIPE instead of raising SIGPIPE") {
+    int fds[2];
+    REQUIRE(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fds) == 0);
+    close(fds[1]);
+
+    // Two writes: the first may be swallowed by the send buffer before the kernel notices the
+    // closed peer; the second reliably fails.
+    std::array<uint8_t, 16> payload{};
+    errno = 0;
+    bool ok = iso15118::io::write_all(fds[0], payload.data(), payload.size(), /*timeout_ms=*/100);
+    if (ok) {
+        ok = iso15118::io::write_all(fds[0], payload.data(), payload.size(), /*timeout_ms=*/100);
+    }
+
+    CHECK_FALSE(ok);
+    CHECK(errno == EPIPE);
+
+    close(fds[0]);
 }
