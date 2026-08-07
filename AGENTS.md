@@ -84,7 +84,8 @@ cd build && ctest -R <regex>
 
 `ctest -R` matches **registered test names, not build targets**, and the two often differ
 in case and spelling. List with `ctest -N` first. Coverage targets exist only under
-`-DEVEREST_ENABLE_COVERAGE=ON`.
+`-DEVEREST_ENABLE_COVERAGE=ON`; build `everest-core_create_coverage` and the HTML report
+lands at `build/everest-core_create_coverage/index.html`.
 
 Integration tests use pytest; the virtualenv is `build/venv`:
 
@@ -96,7 +97,7 @@ cd tests && pytest --everest-prefix ../build/dist core_tests/ framework_tests/
 
 OCPP tests also need certificate and per-EVSE component-config fixtures in the prefix.
 `tests/run-tests.sh` handles this; calling pytest directly means re-running the fixture
-scripts after any `ninja install` that touches the prefix:
+scripts after any `ninja install` that touches the prefix. From the repo root:
 
 ```bash
 cmake --build build --target everestpy_pip_install_dist
@@ -143,7 +144,7 @@ Adding a config key to a manifest means regenerating, not editing the struct.
 
 ```bash
 . build/venv/bin/activate
-ev-cli mod update <Category>/<Name> --work-dir . --build-dir build -f
+ev-cli mod update <Category>/<Name> --work-dir . --build-dir build --disable-clang-format -f
 cmake -S . -B build     # codegen for build/generated/ runs at configure time
 ```
 
@@ -154,8 +155,13 @@ Traps:
 - Regeneration is decided by mtime, not content. A target newer than its manifest is
   skipped with `Skipping <name> (up-to-date)`, so a recent edit makes ev-cli silently
   under-generate. Preview with `-d`, force with `-f`, and confirm the change landed.
-- `--clang-format-file` takes a directory, not a file, and formatting through ev-cli
-  bypasses the version CI uses. Prefer `--disable-clang-format`.
+- `--disable-clang-format` is in the command above because formatting through ev-cli runs
+  whatever clang-format is on `PATH`, not the version CI uses. Format afterwards, see Code
+  style. `--clang-format-file`, if you do use it, takes a directory, not a file.
+- Editing `types/*.yaml` or `interfaces/*.yaml` fails the ctest
+  `everest-core_API_serialize_tests` until the sha256 pins in
+  `lib/everest/everest_api_types/tests/expected_types_file_hashes.csv` and
+  `expected_interfaces_file_hashes.csv` are updated.
 
 `ev-cli --help` lists the available actions; `--only which` lists the files an action
 would touch.
@@ -165,7 +171,18 @@ would touch.
 Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
 
 - clang-format, LLVM base, 4-space indent, 120 columns (`.clang-format`). CI enforces it
-  over `.hpp` and `.cpp` via `.github/workflows/job_lint.yml`.
+  over `.hpp` and `.cpp` via `.github/workflows/job_lint.yml`. Format changed files with
+  the version CI uses:
+
+  ```bash
+  git diff --name-only --diff-filter=ACMR origin/main -- '*.cpp' '*.hpp' | \
+    docker run --rm -i -v "$PWD:/source" -w /source \
+      ghcr.io/everest/everest-ci/build-env-base:v1.6.0 xargs clang-format -i
+  ```
+
+  The tag tracks `ref_everest_ci` in `.github/workflows/on_pr.yaml`. A locally installed
+  clang-format also works, but different versions produce differing results, so the
+  container is what matches CI exactly.
 - PascalCase for classes and structs, `snake_case` for functions and methods,
   `m_`-prefixed `snake_case` for member variables, `snake_case` for library file names.
   No camelCase.
@@ -181,7 +198,7 @@ Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
 | OCPP 1.6 module | `modules/EVSE/OCPP/` | not `OCPP16/` |
 | OCPP 2.0.1 and 2.1 | `modules/EVSE/OCPP201/` | one module serves both versions |
 | API module | `modules/API/API/` | directory name is doubled |
-| libocpp | `lib/everest/ocpp/` | vendored |
+| libocpp | `lib/everest/ocpp/` | in-tree |
 
 ## Invariants
 
@@ -192,7 +209,7 @@ Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
 - Never use `std::cout` or `fprintf` for logging.
 - Never call `mod->r_*->call_*()` inside `init()`. Command calls belong in `ready()` or
   later.
-- Never skip formatting before proposing C++ changes. CI fails on it.
+- Never skip formatting before proposing C++ changes. CI fails on it, see Code style.
 
 ## Contributing essentials
 

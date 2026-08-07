@@ -10,8 +10,8 @@ Project guidance lives in `AGENTS.md`, imported above, so that every coding agen
 the same instructions. Put project-wide changes there rather than here.
 
 Personal, uncommitted instructions belong in `CLAUDE.local.md` at the repository root.
-It is gitignored and loads after this file.
-
-If you work across several git worktrees of this repository, note that a gitignored
-`CLAUDE.local.md` exists only in the worktree where you created it. Keep per-user
-preferences in `~/.claude/rules/` instead, which is not per-checkout.
+It is gitignored and loads after this file. Being gitignored, it exists only in the
+worktree where you created it, so it does not follow you across several worktrees of
+this repository. The stable place for per-user preferences is your home directory:
+`~/.claude/CLAUDE.md` for general instructions, `~/.claude/rules/` for scoped rule
+files. Neither is per-checkout.
