@@ -70,9 +70,16 @@ LD_LIBRARY_PATH=<prefix>/<libdir>:$LD_LIBRARY_PATH \
 an extensionless name, looked up in the installed config directory. `--check` validates
 a config and exits 0 on success.
 
-Log verbosity is per module in the deployed
-`build/dist/share/everest/modules/<Module>/logging.ini` (template
-`cmake/assets/logging.ini`). Severities: DEBG, INFO, WARN, ERRO, CRIT.
+Logging is one Boost.Log config for the whole system, not per module: the manager reads
+`<prefix>/etc/everest/default_logging.cfg` (`cmake/assets/logging.ini` renamed at
+install; `--log_config` overrides). Per-module verbosity is a filter in that file:
+
+```ini
+Filter="(%Process% contains OCPP201 and %Severity% >= DEBG) or %Severity% >= INFO"
+```
+
+Without the `or` clause, other modules go silent. Severities: DEBG, INFO, WARN, ERRO,
+CRIT.
 
 ## Testing
 
@@ -114,12 +121,14 @@ requires in `manifest.yaml`, is wired to other modules by a configuration YAML u
 `config/`, and communicates only over MQTT through `everest-framework`. Contracts are
 the source of truth for wiring: read `interfaces/*.yaml`, `types/*.yaml` and
 `errors/*.yaml` before the C++. Lifecycle is `init()` then `ready()`, implemented per
-provided interface in `*Impl.cpp`. Generated headers land under `build/generated/`.
+provided interface in `*Impl.cpp`: subscribe in `init()`; call commands in `ready()` or
+later. Generated headers land under `build/generated/`.
 
 ```cpp
-mod->r_evse_manager->subscribe_session_event(...);   // required interface, init() ok
-mod->p_main->publish_ready(true);                    // provided interface
-auto result = mod->r_auth->call_validate_token(tok); // command: ready() or later only
+// modules/EVSE/EvseManager
+r_bsp->subscribe_event([this](auto ev) { ... });  // subscribe: init()
+p_evse->publish_ready(true);                      // publish on a provided interface
+r_bsp->call_enable(true);                         // commands: ready() or later only
 ```
 
 In a configuration YAML, a `connections` entry maps a requirement ID from the consuming
