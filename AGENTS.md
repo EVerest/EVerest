@@ -83,9 +83,9 @@ cd build && ctest -R <regex>
 ```
 
 `ctest -R` matches **registered test names, not build targets**, and the two often differ
-in case and spelling. List with `ctest -N` first. Coverage targets exist only under
-`-DEVEREST_ENABLE_COVERAGE=ON`; build `everest-core_create_coverage` and the HTML report
-lands at `build/everest-core_create_coverage/index.html`.
+in case and spelling. List with `ctest -N` first. Coverage needs
+`-DEVEREST_ENABLE_COVERAGE=ON`; the `everest-core_create_coverage` target writes
+`build/everest-core_create_coverage/index.html`.
 
 Integration tests use pytest; the virtualenv is `build/venv`:
 
@@ -155,13 +155,13 @@ Traps:
 - Regeneration is decided by mtime, not content. A target newer than its manifest is
   skipped with `Skipping <name> (up-to-date)`, so a recent edit makes ev-cli silently
   under-generate. Preview with `-d`, force with `-f`, and confirm the change landed.
-- `--disable-clang-format` is in the command above because formatting through ev-cli runs
-  whatever clang-format is on `PATH`, not the version CI uses. Format afterwards, see Code
-  style. `--clang-format-file`, if you do use it, takes a directory, not a file.
-- Editing `types/*.yaml` or `interfaces/*.yaml` fails the ctest
-  `everest-core_API_serialize_tests` until the sha256 pins in
-  `lib/everest/everest_api_types/tests/expected_types_file_hashes.csv` and
-  `expected_interfaces_file_hashes.csv` are updated.
+- `--disable-clang-format` (used above): ev-cli formats with whatever clang-format is on
+  `PATH`, not the version CI uses. Format afterwards (see Code style).
+  `--clang-format-file` takes a directory, not a file.
+- Editing `types/*.yaml` or `interfaces/*.yaml` fails `everest-core_API_serialize_tests`
+  until the sha256 pins in
+  `lib/everest/everest_api_types/tests/expected_{types,interfaces}_file_hashes.csv`
+  are updated.
 
 `ev-cli --help` lists the available actions; `--only which` lists the files an action
 would touch.
@@ -180,9 +180,8 @@ Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
       ghcr.io/everest/everest-ci/build-env-base:v1.6.0 xargs clang-format -i
   ```
 
-  The tag tracks `ref_everest_ci` in `.github/workflows/on_pr.yaml`. A locally installed
-  clang-format also works, but different versions produce differing results, so the
-  container is what matches CI exactly.
+  The tag tracks `ref_everest_ci` in `.github/workflows/on_pr.yaml`. A local clang-format
+  also works, but versions differ in output; the container matches CI.
 - PascalCase for classes and structs, `snake_case` for functions and methods,
   `m_`-prefixed `snake_case` for member variables, `snake_case` for library file names.
   No camelCase.
