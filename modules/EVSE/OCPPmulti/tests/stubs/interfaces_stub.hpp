@@ -262,6 +262,8 @@ struct ocppImplStub : public ocppImplBase {
                 (types::ocpp::ChangeAvailabilityRequest & request), (override));
     MOCK_METHOD(void, handle_monitor_variables, (std::vector<types::ocpp::ComponentVariable> & component_variables),
                 (override));
+    MOCK_METHOD(std::vector<types::ocpp::GetVariableResult>, handle_monitor_and_get_variables,
+                (std::vector<types::ocpp::ComponentVariable> & component_variables), (override));
 };
 
 struct session_costImplStub : public session_costImplBase {

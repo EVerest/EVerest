@@ -103,6 +103,8 @@ struct GenericOcppInterface {
     virtual types::ocpp::ChangeAvailabilityResponse
     handle_change_availability(const types::ocpp::ChangeAvailabilityRequest& request) = 0;
     virtual void handle_monitor_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) = 0;
+    virtual std::vector<types::ocpp::GetVariableResult>
+    handle_monitor_and_get_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) = 0;
     // session cost
 };
 
@@ -261,6 +263,8 @@ public:
     types::ocpp::ChangeAvailabilityResponse
     handle_change_availability(const types::ocpp::ChangeAvailabilityRequest& request) override;
     void handle_monitor_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) override;
+    std::vector<types::ocpp::GetVariableResult>
+    handle_monitor_and_get_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) override;
 
     // ------------------------------------------------------------------------
     // startup

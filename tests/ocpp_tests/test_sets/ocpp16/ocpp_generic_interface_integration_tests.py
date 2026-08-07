@@ -807,6 +807,163 @@ class TestOCPP16GenericInterfaceIntegration:
             ),
         )
 
+    @pytest.mark.ocpp_legacy_only
+    async def test_command_monitor_and_get_variables_legacy(self, _env):
+        """Test the combined monitor + get command: monitors are registered
+        like monitor_variables and the current values are returned in the
+        reply with get_variables semantics (key-form echo in the legacy
+        module, request order preserved)."""
+
+        async def change_var(key: str, value: str):
+            res = await _env.charge_point.change_configuration_req(key=key, value=value)
+            assert res.status == "Accepted"
+
+        event_data_subscription_mock = Mock()
+        _env.probe_module.subscribe_variable(
+            "ocpp", "event_data", event_data_subscription_mock
+        )
+
+        await change_var("HeartbeatInterval", "1")
+
+        # assert no event before monitoring is enabled
+        await asyncio.sleep(0.1)
+        event_data_subscription_mock.assert_not_called()
+
+        # enable monitoring and read the current values in one call
+        res = await _env.probe_module.call_command(
+            "ocpp",
+            "monitor_and_get_variables",
+            {
+                "component_variables": [
+                    {
+                        "component": {"name": "IGNORED"},
+                        "variable": {"name": "HeartbeatInterval"},
+                    },
+                    {
+                        "component": {"name": ""},
+                        "variable": {"name": "MeterValuesAlignedData"},
+                    },
+                    {
+                        "component": {"name": ""},
+                        "variable": {"name": "UNKNOWN"},
+                    },
+                ]
+            },
+        )
+        assert isinstance(res, list) and len(res) == 3
+        # results follow this module's get_variables semantics: key-form echo
+        assert res[0]["component_variable"] == {
+            "component": {"name": ""},
+            "variable": {"name": "HeartbeatInterval"},
+        }
+        assert res[0]["status"] == "Accepted"
+        assert res[0]["value"] == "1"
+        assert res[1]["component_variable"]["variable"]["name"] == "MeterValuesAlignedData"
+        assert res[1]["status"] == "Accepted"
+        assert res[2]["component_variable"]["variable"]["name"] == "UNKNOWN"
+        assert res[2]["status"] == "UnknownVariable"
+
+        # verify the monitors were registered: events echo the requested form
+        await change_var("HeartbeatInterval", "42")
+        await wait_for_mock_called(
+            event_data_subscription_mock,
+            mock_call(
+                {
+                    "actual_value": "42",
+                    "component_variable": {
+                        "component": {"name": "IGNORED"},
+                        "variable": {"name": "HeartbeatInterval"},
+                    },
+                    "event_id": ANY,
+                    "event_notification_type": "CustomMonitor",
+                    "timestamp": ANY,
+                    "trigger": "Alerting",
+                }
+            ),
+        )
+
+    @pytest.mark.ocpp_multi_only
+    async def test_command_monitor_and_get_variables_multi(self, _env):
+        """Test the combined monitor + get command with OCPPmulti: canonical
+        addressing, results and events echo the requested form, request
+        order preserved."""
+
+        async def change_var(key: str, value: str):
+            res = await _env.charge_point.change_configuration_req(key=key, value=value)
+            assert res.status == "Accepted"
+
+        event_data_subscription_mock = Mock()
+        _env.probe_module.subscribe_variable(
+            "ocpp", "event_data", event_data_subscription_mock
+        )
+
+        await change_var("HeartbeatInterval", "1")
+
+        # assert no event before monitoring is enabled
+        await asyncio.sleep(0.1)
+        event_data_subscription_mock.assert_not_called()
+
+        # enable monitoring and read the current values in one call; the
+        # deprecated empty-component key form is still accepted, unknown keys
+        # are skipped for monitoring but still get a result
+        res = await _env.probe_module.call_command(
+            "ocpp",
+            "monitor_and_get_variables",
+            {
+                "component_variables": [
+                    {
+                        "component": {"name": "OCPPCommCtrlr"},
+                        "variable": {"name": "HeartbeatInterval"},
+                    },
+                    {
+                        "component": {"name": ""},
+                        "variable": {"name": "MeterValuesAlignedData"},
+                    },
+                    {
+                        "component": {"name": ""},
+                        "variable": {"name": "UNKNOWN"},
+                    },
+                ]
+            },
+        )
+        assert isinstance(res, list) and len(res) == 3
+        # results echo the requested addressing form
+        assert res[0]["component_variable"] == {
+            "component": {"name": "OCPPCommCtrlr"},
+            "variable": {"name": "HeartbeatInterval"},
+        }
+        assert res[0]["status"] == "Accepted"
+        assert res[0]["value"] == "1"
+        assert res[1]["component_variable"] == {
+            "component": {"name": ""},
+            "variable": {"name": "MeterValuesAlignedData"},
+        }
+        assert res[1]["status"] == "Accepted"
+        assert res[2]["component_variable"] == {
+            "component": {"name": ""},
+            "variable": {"name": "UNKNOWN"},
+        }
+        assert res[2]["status"] == "UnknownVariable"
+
+        # verify the monitors were registered: events echo the requested form
+        await change_var("HeartbeatInterval", "42")
+        await wait_for_mock_called(
+            event_data_subscription_mock,
+            mock_call(
+                {
+                    "actual_value": "42",
+                    "component_variable": {
+                        "component": {"name": "OCPPCommCtrlr"},
+                        "variable": {"name": "HeartbeatInterval"},
+                    },
+                    "event_id": ANY,
+                    "event_notification_type": "CustomMonitor",
+                    "timestamp": ANY,
+                    "trigger": "Alerting",
+                }
+            ),
+        )
+
     async def test_subscribe_charging_schedules(self, _env):
         subscription_mock = Mock()
         _env.probe_module.subscribe_variable(

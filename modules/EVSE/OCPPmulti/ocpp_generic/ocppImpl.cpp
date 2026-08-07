@@ -43,5 +43,10 @@ void ocppImpl::handle_monitor_variables(std::vector<types::ocpp::ComponentVariab
     mod->m_ocpp.handle_monitor_variables(component_variables);
 }
 
+std::vector<types::ocpp::GetVariableResult>
+ocppImpl::handle_monitor_and_get_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) {
+    return mod->m_ocpp.handle_monitor_and_get_variables(component_variables);
+}
+
 } // namespace ocpp_generic
 } // namespace module
