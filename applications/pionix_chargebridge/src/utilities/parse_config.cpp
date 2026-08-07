@@ -316,6 +316,7 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
             get_node(cfg.cb_config.can, "can_0");
         }
         get_node(cfg.cb_config.plc_powersaving_mode, "plc", "powersaving_mode");
+        get_node_or_default(cfg.cb_config.station_id, "plc", "station_id", -1);
 
         // Optional: forward the MCU's debug-UART (printf) output to this host over UDP. Off by
         // default; the bridge logs each received line to the console prefixed with "[MCU]".
