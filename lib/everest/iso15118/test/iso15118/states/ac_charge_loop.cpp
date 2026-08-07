@@ -5,6 +5,7 @@
 #include <iso15118/detail/d20/state/ac_charge_loop.hpp>
 
 #include <iso15118/d20/config.hpp>
+#include <iso15118/session/config.hpp>
 
 using namespace iso15118;
 
@@ -44,20 +45,20 @@ SCENARIO("AC charge loop state handling") {
         {dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc},
         {dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedBySecc}};
 
-    const d20::EvseSetupConfig evse_setup{evse_id,
-                                          supported_energy_services,
-                                          auth_services,
-                                          vas_services,
-                                          cert_install,
-                                          dc_limits,
-                                          ac_limits,
-                                          std::nullopt,
-                                          control_mobility_modes,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          powersupply_limits};
+    const session::EvseSetupConfig evse_setup{evse_id,
+                                              supported_energy_services,
+                                              auth_services,
+                                              vas_services,
+                                              cert_install,
+                                              dc_limits,
+                                              ac_limits,
+                                              std::nullopt,
+                                              control_mobility_modes,
+                                              std::nullopt,
+                                              std::nullopt,
+                                              std::nullopt,
+                                              std::nullopt,
+                                              powersupply_limits};
 
     GIVEN("Bad case - Unknown session") {
         d20::Session session = d20::Session();
