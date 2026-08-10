@@ -460,12 +460,8 @@ void ChargePointV2::init(init_args_t& args) {
         args.v2_device_model_config_path);
 
     // initialise composed device model, this will be provided to the ChargePoint constructor
-    auto composed_device_model_storage = std::make_unique<module::device_model::ComposedDeviceModelStorage>();
-
-    // register both device model storages
-    // note - this processing causes a slight delay, scope for performance tuning
-    composed_device_model_storage->register_device_model_storage("OCPP", std::move(libocpp_device_model_storage));
-    composed_device_model_storage->register_device_model_storage("EVEREST", args.everest_device_model);
+    auto composed_device_model_storage = module::device_model::make_composed_device_model_storage(
+        std::move(libocpp_device_model_storage), args.everest_device_model);
 
     const auto ocpp_share_path = args.share_path / "OCPP201";
     const auto sql_init_path = ocpp_share_path / SQL_CORE_MIGRATIONS;

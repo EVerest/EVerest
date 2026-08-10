@@ -4,6 +4,7 @@
 #include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
 
 static constexpr auto VARIABLE_SOURCE_OCPP = "OCPP";
+static constexpr auto VARIABLE_SOURCE_EVEREST = "EVEREST";
 
 namespace ocpp_module_common::device_model {
 
@@ -158,6 +159,22 @@ ocpp_module_common::device_model::ComposedDeviceModelStorage::get_variable_sourc
         return VARIABLE_SOURCE_OCPP; // default source
     }
     return variable_map.at(variable);
+}
+
+std::unique_ptr<ComposedDeviceModelStorage>
+make_composed_device_model_storage(std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> ocpp_storage,
+                                   std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> everest_storage) {
+    auto composed_device_model_storage = std::make_unique<ComposedDeviceModelStorage>();
+    // note - registration snapshots get_device_model(), which causes a slight delay; scope for performance tuning
+    composed_device_model_storage->register_device_model_storage(VARIABLE_SOURCE_OCPP, std::move(ocpp_storage));
+    if (everest_storage != nullptr) {
+        composed_device_model_storage->register_device_model_storage(VARIABLE_SOURCE_EVEREST,
+                                                                     std::move(everest_storage));
+    } else {
+        EVLOG_warning << "No EVerest device model storage provided; composed device model contains only the "
+                         "OCPP source";
+    }
+    return composed_device_model_storage;
 }
 
 } // namespace ocpp_module_common::device_model

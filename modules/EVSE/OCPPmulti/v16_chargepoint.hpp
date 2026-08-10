@@ -53,6 +53,9 @@ private:
         std::string device_model_config_mappings;
         std::int32_t ocpp16_network_config_slot;
         bool enable_legacy_config_migration;
+        // Registered as source "EVEREST" in the composed device model storage, next to the SQLite-backed
+        // "OCPP" source; same composition as the OCPP 2.x path.
+        std::shared_ptr<ocpp_module_common::device_model::EverestDeviceModelStorage> everest_device_model;
     };
 
     void check_configured(const std::string_view& fn);

@@ -554,7 +554,7 @@ void ChargePointV16::configure_data_model(const config_info_t& config) {
     };
 
     auto factory_result = module::config_factory_v16::create_charge_point_configuration(
-        ocpp_share_path, params, static_cast<int32_t>(config.number_of_connectors));
+        ocpp_share_path, params, static_cast<int32_t>(config.number_of_connectors), config.everest_device_model);
     m_charge_point_configuration = std::move(factory_result.configuration);
     m_custom_mappings = std::move(factory_result.custom_mappings);
 
@@ -615,6 +615,7 @@ void ChargePointV16::init(init_args_t& args) {
         args.v16_device_model_config_mappings,
         args.v16_ocpp16_network_config_slot,
         args.v16_enable_legacy_config_migration,
+        args.everest_device_model,
     };
 
     configure_data_model(config);

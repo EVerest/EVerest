@@ -59,4 +59,14 @@ private:
     ///
     std::string get_variable_source(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
 };
+
+/// \brief Builds the module-standard composed device model storage: \p ocpp_storage registered under
+/// source id "OCPP" (the default source) and \p everest_storage under "EVEREST".
+/// \param ocpp_storage     Must be non-null with a fully seeded backing database, because registration
+///                         snapshots get_device_model() to build the per-variable source map.
+/// \param everest_storage  Registered under "EVEREST"; a null pointer is skipped with a warning.
+/// \return The composed storage with both sources registered.
+std::unique_ptr<ComposedDeviceModelStorage>
+make_composed_device_model_storage(std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> ocpp_storage,
+                                   std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> everest_storage);
 } // namespace ocpp_module_common::device_model
