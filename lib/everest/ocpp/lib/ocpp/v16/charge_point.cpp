@@ -387,6 +387,15 @@ void ChargePoint::register_generic_configuration_key_changed_callback(
     this->charge_point->register_generic_configuration_key_changed_callback(callback);
 }
 
+void ChargePoint::register_custom_key_validation_callback(
+    const std::function<bool(const std::string& key, const std::string& value)>& callback) {
+    this->charge_point->register_custom_key_validation_callback(callback);
+}
+
+ConfigurationStatus ChargePoint::set_custom_key_forced(const CiString<50>& key, const CiString<500>& value) {
+    return this->charge_point->set_custom_key_forced(key, value);
+}
+
 void ChargePoint::register_security_event_callback(
     const std::function<void(const std::string& type, const std::string& tech_info)>& callback) {
     this->charge_point->register_security_event_callback(callback);
