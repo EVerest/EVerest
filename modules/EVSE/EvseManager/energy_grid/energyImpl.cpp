@@ -175,6 +175,9 @@ types::energy::EvseState to_energy_evse_state(const Charger::EvseState charger_s
     case Charger::EvseState::SwitchPhases:
         return types::energy::EvseState::Charging;
         break;
+    case Charger::EvseState::WaitingForReplug:
+        return types::energy::EvseState::Finished;
+        break;
     }
     return types::energy::EvseState::Disabled;
 }

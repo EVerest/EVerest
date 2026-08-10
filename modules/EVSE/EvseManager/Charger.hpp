@@ -79,7 +79,8 @@ public:
         Finished,
         T_step_EF,
         T_step_X1,
-        SwitchPhases
+        SwitchPhases,
+        WaitingForReplug
     };
 
     enum class HlcTerminatePause {
@@ -106,7 +107,7 @@ public:
                const std::string switch_3ph1ph_cp_state, const int soft_over_current_timeout_ms,
                const int _state_F_after_fault_ms, const bool fail_on_powermeter_errors, const bool raise_mrec9,
                const int sleep_before_enabling_pwm_hlc_mode_ms, const utils::SessionIdType session_id_type,
-               const int hlc_charge_loop_without_energy_timeout_s);
+               const int hlc_charge_loop_without_energy_timeout_s, const int replug_timeout_s);
 
     void enable_disable_initial_state_publish();
     bool enable_disable(int connector_id, const types::evse_manager::EnableDisableSource& source);
@@ -274,8 +275,6 @@ private:
     bool start_transaction();
     void stop_transaction();
 
-    void process_event(CPEvent event);
-
     void set_state(EvseState s);
 
     // This mutex locks all variables related to the state machine
@@ -387,6 +386,9 @@ private:
         // Timeout in seconds that defines for how long the EVSE allows the ISO charge loop (AC: ChargingStatus, DC:
         // CurrentDemand)
         int hlc_charge_loop_without_energy_timeout_s{300};
+        // Grace period in seconds to continue an active transaction after the EV was unplugged.
+        // 0 disables the grace period and finishes the transaction immediately on unplug.
+        int replug_timeout_s{0};
     } config_context;
 
     // Used by different threads, but requires no complete state machine locking
@@ -500,8 +502,15 @@ private:
 protected:
     // provide access for unit tests
     void run_state_machine();
+    void process_event(CPEvent event);
     constexpr auto& get_shared_context() {
         return shared_context;
+    }
+    constexpr auto& get_config_context() {
+        return config_context;
+    }
+    constexpr auto& get_internal_context() {
+        return internal_context;
     }
     constexpr const auto& get_enable_disable_source_table() const {
         return enable_disable_source_table;

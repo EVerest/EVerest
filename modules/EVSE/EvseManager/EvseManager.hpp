@@ -126,6 +126,7 @@ struct Conf {
     std::string bpt_grid_code_island_method;
     int hlc_charge_loop_without_energy_timeout_s;
     int dc_ramp_ampere_per_second;
+    int replug_timeout_s;
 };
 
 class EvseManager : public Everest::ModuleBase {
