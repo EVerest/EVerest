@@ -817,7 +817,7 @@ void WebsocketLibwebsockets::thread_websocket_client_loop(std::shared_ptr<Connec
                     processing = (!local_data->is_interupted()) &&
                                  (state != EConnectionState::FINALIZED && state != EConnectionState::ERROR);
 
-                    if (processing && !message_queue.empty()) {
+                    if (processing && !send_message_queue.empty()) {
                         lws_callback_on_writable(local_data->get_conn());
                     }
                 } while (n >= 0 && processing);
@@ -902,7 +902,7 @@ void WebsocketLibwebsockets::thread_websocket_client_loop(std::shared_ptr<Connec
 }
 
 void WebsocketLibwebsockets::clear_all_queues() {
-    this->message_queue.clear();
+    this->send_message_queue.clear();
     this->recv_buffered_message.clear();
     this->recv_message_queue.clear();
 }
@@ -1181,12 +1181,12 @@ void WebsocketLibwebsockets::poll_message(const std::shared_ptr<WebsocketMessage
     }
 
     EVLOG_debug << "Queueing message: " << msg->payload;
-    message_queue.push(msg);
+    send_message_queue.push(msg);
 
     // Request a write callback
     request_write();
 
-    message_queue.wait_on_custom_event([&] { return (true == msg->message_sent); },
+    send_message_queue.wait_on_custom_event([&] { return (true == msg->message_sent); },
                                        this->connection_options.message_timeout);
 
     if (msg->message_sent) {
@@ -1418,7 +1418,7 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
 
     case LWS_CALLBACK_CLIENT_WRITEABLE:
         on_conn_writable();
-        if (false == message_queue.empty()) {
+        if (false == send_message_queue.empty()) {
             lws_callback_on_writable(wsi);
         }
         break;
@@ -1427,7 +1427,7 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
         // Clear the ping when we receive the pong
         ping_cleared.store(true);
 
-        if (false == message_queue.empty()) {
+        if (false == send_message_queue.empty()) {
             lws_callback_on_writable(data->get_conn());
         }
     } break;
@@ -1442,13 +1442,13 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
             recv_buffered_message.clear();
         }
 
-        if (false == message_queue.empty()) {
+        if (false == send_message_queue.empty()) {
             lws_callback_on_writable(data->get_conn());
         }
         break;
 
     case LWS_CALLBACK_EVENT_WAIT_CANCELLED: {
-        if (false == message_queue.empty()) {
+        if (false == send_message_queue.empty()) {
             lws_callback_on_writable(data->get_conn());
         }
     } break;
@@ -1693,11 +1693,11 @@ void WebsocketLibwebsockets::on_conn_writable() {
     // Execute while we have messages that were polled
     while (true) {
         // Break if we have en empty queue
-        if (message_queue.empty()) {
+        if (send_message_queue.empty()) {
             break;
         }
 
-        auto message = message_queue.front();
+        auto message = send_message_queue.front();
 
         if (message == nullptr) {
             EVLOG_AND_THROW(std::runtime_error("Null message in queue, fatal error!"));
@@ -1710,7 +1710,7 @@ void WebsocketLibwebsockets::on_conn_writable() {
             // If we have written all bytes to libwebsockets it means that if we received
             // this writable callback everything is sent over the wire, mark it as sent and remove
             message->message_sent = true;
-            message_queue.pop();
+            send_message_queue.pop();
         } else {
             // If the message was not polled, we reached the first unpolled and break
             break;
@@ -1720,11 +1720,11 @@ void WebsocketLibwebsockets::on_conn_writable() {
     // If we still have message ONLY poll a single one that can be processed in the invoke of the function
     // libwebsockets is designed so that when a message is sent to the wire from the internal buffer it
     // will invoke 'on_conn_writable' again and we can execute the code above
-    if (!message_queue.empty()) {
+    if (!send_message_queue.empty()) {
         // Poll a single message
         EVLOG_debug << "Client writable, sending message part!";
 
-        auto message = message_queue.front();
+        auto message = send_message_queue.front();
 
         if (message == nullptr) {
             EVLOG_AND_THROW(std::runtime_error("Null message in queue, fatal error!"));
