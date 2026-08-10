@@ -446,6 +446,14 @@ config:
       Maximum ampere per second limit for up/down ramping of current in charging loop.
     type: integer
     default: 25
+  replug_timeout_s:
+    description: >-
+      Grace period in seconds to continue an active transaction after the EV was unplugged.
+      If the EV is plugged in again within this period, the charging session and transaction
+      continue without a new authorization. When the period expires, the transaction is
+      finished as usual. Set to 0 to finish the transaction immediately on unplug.
+    type: integer
+    default: 0
 provides:
   evse:
     interface: evse_manager

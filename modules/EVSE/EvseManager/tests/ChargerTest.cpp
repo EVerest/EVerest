@@ -18,8 +18,11 @@ using namespace types::evse_manager;
 // class that provides access to internal state from the Charger class
 struct ChargerDerived : public Charger {
     using Charger::Charger;
+    using Charger::get_config_context;
     using Charger::get_enable_disable_source_table;
+    using Charger::get_internal_context;
     using Charger::get_shared_context;
+    using Charger::process_event;
     using Charger::run_state_machine;
 
     // updated when a non-zero connector is used to enable_disable()
@@ -46,6 +49,7 @@ struct ChargerTest : public testing::Test {
     std::unique_ptr<IECStateMachine> charger_bsp;
     std::unique_ptr<ErrorHandling> charger_error_handling;
     std::vector<std::unique_ptr<powermeterIntf>> charger_powermeter_billing;
+    std::vector<std::unique_ptr<kvsIntf>> charger_kvs;
     std::unique_ptr<PersistentStore> charger_store;
 
     // error handling requirements
@@ -71,6 +75,7 @@ struct ChargerTest : public testing::Test {
 
     void SetUp() override {
         reset_last_event();
+        charger_store = std::make_unique<PersistentStore>(charger_kvs, "EVSETEST");
         charger = std::make_unique<ChargerDerived>(
             charger_bsp, charger_error_handling, charger_powermeter_billing, charger_store,
             types::evse_board_support::Connector_type::IEC62196Type2Socket, "EVSETEST");
@@ -83,6 +88,18 @@ struct ChargerTest : public testing::Test {
 
     void session_event(SessionEventEnum event) {
         last_event = event;
+    }
+
+    // Simulate the situation right after an unplug during an active transaction:
+    // all charging states funnel into StoppingCharging and the contactors have opened.
+    void simulate_unplug_during_transaction() {
+        auto& ctx = charger->get_shared_context();
+        ctx.current_state = Charger::EvseState::StoppingCharging;
+        ctx.flag_transaction_active = true;
+        ctx.session_active = true;
+        ctx.flag_authorized = true;
+        ctx.contactor_open = true;
+        ctx.flag_ev_plugged_in = false;
     }
 
     static constexpr SessionEventEnum default_event{SessionEventEnum::SessionFinished};
@@ -758,6 +775,137 @@ TEST_F(ChargerTest, DisableDuringIdle) {
 
     // Must immediately transition to Disabled
     EXPECT_EQ(ctx.current_state, Charger::EvseState::Disabled);
+    EXPECT_EQ(last_event, SessionEventEnum::Disabled);
+}
+
+// ----------------------------------------------------------------------------
+// tests for the replug grace period (WaitingForReplug)
+
+TEST_F(ChargerTest, UnplugWithoutReplugTimeoutFinishesImmediately) {
+    auto& ctx = charger->get_shared_context();
+    simulate_unplug_during_transaction();
+
+    charger->run_state_machine();
+
+    // With replug_timeout_s = 0 (default) the session is torn down as before:
+    // StoppingCharging -> Finished -> Idle
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Idle);
+    EXPECT_FALSE(ctx.flag_transaction_active);
+    EXPECT_FALSE(ctx.session_active);
+    EXPECT_EQ(last_event, SessionEventEnum::SessionFinished);
+    EXPECT_EQ(ctx.last_stop_transaction_reason, StopTransactionReason::EVDisconnected);
+}
+
+TEST_F(ChargerTest, UnplugWithReplugTimeoutEntersWaitingForReplug) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().replug_timeout_s = 30;
+    simulate_unplug_during_transaction();
+
+    charger->run_state_machine();
+
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::WaitingForReplug);
+    // Session, transaction and authorization stay untouched during the grace period
+    EXPECT_TRUE(ctx.flag_transaction_active);
+    EXPECT_TRUE(ctx.session_active);
+    EXPECT_TRUE(ctx.flag_authorized);
+}
+
+TEST_F(ChargerTest, ReplugWithinTimeoutContinuesSession) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().replug_timeout_s = 30;
+    charger->get_config_context().ac_hlc_enabled = false;
+    simulate_unplug_during_transaction();
+    ctx.session_uuid = "SESSION_UNDER_TEST";
+
+    charger->run_state_machine();
+    ASSERT_EQ(ctx.current_state, Charger::EvseState::WaitingForReplug);
+
+    charger->process_event(CPEvent::CarPluggedIn);
+
+    // Authorization and transaction are still valid, so the state machine proceeds
+    // through WaitingForAuthentication without starting a new session or transaction.
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::WaitingForAuthentication);
+    EXPECT_TRUE(ctx.flag_ev_plugged_in);
+    EXPECT_TRUE(ctx.flag_transaction_active);
+    EXPECT_TRUE(ctx.session_active);
+    EXPECT_TRUE(ctx.flag_authorized);
+    EXPECT_EQ(ctx.session_uuid, "SESSION_UNDER_TEST");
+}
+
+TEST_F(ChargerTest, ReplugTimeoutExpiryFinishesSession) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().replug_timeout_s = 30;
+    simulate_unplug_during_transaction();
+
+    charger->run_state_machine();
+    ASSERT_EQ(ctx.current_state, Charger::EvseState::WaitingForReplug);
+
+    // Simulate the expiry of the grace period
+    charger->get_internal_context().current_state_started -= std::chrono::seconds(31);
+    charger->run_state_machine();
+
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Idle);
+    EXPECT_FALSE(ctx.flag_transaction_active);
+    EXPECT_FALSE(ctx.session_active);
+    EXPECT_EQ(last_event, SessionEventEnum::SessionFinished);
+    EXPECT_EQ(ctx.last_stop_transaction_reason, StopTransactionReason::EVDisconnected);
+}
+
+TEST_F(ChargerTest, AuthorizeFalseDuringReplugGraceFinishesSession) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().replug_timeout_s = 30;
+    simulate_unplug_during_transaction();
+
+    charger->run_state_machine();
+    ASSERT_EQ(ctx.current_state, Charger::EvseState::WaitingForReplug);
+
+    // Deauthorization stops the session right away, no replug grace period applies
+    types::authorization::ProvidedIdToken token;
+    types::authorization::ValidationResult validation_result;
+    charger->authorize(false, token, validation_result);
+    charger->run_state_machine();
+
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Idle);
+    EXPECT_FALSE(ctx.flag_transaction_active);
+    EXPECT_FALSE(ctx.session_active);
+}
+
+TEST_F(ChargerTest, CancelTransactionDuringReplugGraceFinishesSession) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().replug_timeout_s = 30;
+    simulate_unplug_during_transaction();
+
+    charger->run_state_machine();
+    ASSERT_EQ(ctx.current_state, Charger::EvseState::WaitingForReplug);
+
+    types::evse_manager::StopTransactionRequest stop_request;
+    stop_request.reason = StopTransactionReason::Remote;
+    EXPECT_TRUE(charger->cancel_transaction(stop_request));
+    charger->run_state_machine();
+
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Idle);
+    EXPECT_FALSE(ctx.flag_transaction_active);
+    EXPECT_FALSE(ctx.session_active);
+    EXPECT_EQ(ctx.last_stop_transaction_reason, StopTransactionReason::Remote);
+}
+
+TEST_F(ChargerTest, DisableDuringReplugGraceGoesToDisabled) {
+    constexpr EnableDisableSource disable_source{Enable_source::CSMS, Enable_state::Disable, 100};
+
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().replug_timeout_s = 30;
+    simulate_unplug_during_transaction();
+
+    charger->run_state_machine();
+    ASSERT_EQ(ctx.current_state, Charger::EvseState::WaitingForReplug);
+
+    // enable_disable calls run_state_machine synchronously:
+    // WaitingForReplug -> Finished -> Disabled
+    EXPECT_FALSE(charger->enable_disable(1, disable_source));
+
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Disabled);
+    EXPECT_FALSE(ctx.flag_transaction_active);
+    EXPECT_FALSE(ctx.session_active);
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
 }
 
