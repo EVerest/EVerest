@@ -10,6 +10,7 @@
 #include <everest/external_energy_limits/external_energy_limits.hpp>
 #include <everest/ocpp_module_common/conversions.hpp>
 #include <ld-ev.hpp>
+#include <ocpp/v2/component_state_manager.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 
 #include <thread>
@@ -325,7 +326,15 @@ GenericOcpp::handle_change_availability(const types::ocpp::ChangeAvailabilityReq
 
     if (mv_started.load()) {
         const auto ocpp_request = to_ocpp_change_availability_request(request);
-        result = mv_charge_point.on_change_availability(ocpp_request);
+        try {
+            result = mv_charge_point.on_change_availability(ocpp_request);
+        } catch (const ocpp::v2::EvseOutOfRangeException& e) {
+            result.status = ChangeAvailabilityStatusEnum::Rejected;
+            result.statusInfo = ocpp::v2::StatusInfo{"InvalidInput", e.what()};
+        } catch (const ocpp::v2::ConnectorOutOfRangeException& e) {
+            result.status = ChangeAvailabilityStatusEnum::Rejected;
+            result.statusInfo = ocpp::v2::StatusInfo{"InvalidInput", e.what()};
+        }
     } else {
         EVLOG_warning << "ChargePoint not initialized, cannot handle change availability command";
     }
