@@ -1156,6 +1156,7 @@ components:
       description: |
         Signals that the bridge module serving this API as well as the underlying OCPP module are alive and ready.
         It may take a while after EVerest startup for the first heartbeat from this module to arrive.
+        Requests sent before a heartbeat is sent may be rejected or silently have no effect.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/HeartBeatId'
