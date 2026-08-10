@@ -1187,7 +1187,7 @@ void WebsocketLibwebsockets::poll_message(const std::shared_ptr<WebsocketMessage
     request_write();
 
     send_message_queue.wait_on_custom_event([&] { return (true == msg->message_sent); },
-                                       this->connection_options.message_timeout);
+                                            this->connection_options.message_timeout);
 
     if (msg->message_sent) {
         EVLOG_debug << "Successfully sent last message!";
