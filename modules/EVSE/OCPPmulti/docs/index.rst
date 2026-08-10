@@ -209,6 +209,19 @@ The module composes two device model storages behind libocpp's ``DeviceModelStor
 The ``ComposedDeviceModelStorage`` routes each variable access to its owning storage by the variable's ``source``
 field, which defaults to ``OCPP``.
 
+The composed storage backs **both** protocol paths: in OCPP 2.x it is the device model of the libocpp
+``ChargePoint``, and in OCPP 1.6 it backs the device-model-based charge point configuration. Variables of both
+sources are therefore visible and settable through the EVerest ``ocpp`` interface (``get_variables`` /
+``set_variables``, e.g. via the ``ocpp_consumer_API`` module) regardless of the active protocol version. Note that
+an OCPP 1.6 **CSMS** still cannot address EVerest device model variables directly: ``GetConfiguration`` /
+``ChangeConfiguration`` are key-based, and only keys with a device model mapping (built-in or via
+``DeviceModelConfigMappings``) reach the device model. Also note that variables of source ``EVEREST`` are updated
+by the module at runtime directly in the ``EverestDeviceModelStorage``; such updates do not trigger
+``monitor_variables`` events on the ``ocpp`` interface (in either protocol version) — only writes performed through
+the OCPP stack or the ``ocpp`` interface do. If a component/variable is defined in both storages, the EVerest
+device model takes precedence for that variable and a warning is logged at startup; the integrator is
+responsible for avoiding such overlaps.
+
 .. mermaid::
 
    classDiagram
