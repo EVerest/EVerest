@@ -48,30 +48,6 @@ template <typename T> std::optional<T> get(ocpp::v16::ChargePoint& charge_point,
     return result;
 }
 
-std::int32_t get_ocpp_connector_id(const ocpp_multi::GenericChargePointInterface::ConnectorStructureV16& mapping,
-                                   const std::optional<ocpp::v2::EVSE>& evse) {
-    std::int32_t result{0};
-
-    // evse not present then use connector 0 - i.e. the whole charging station
-
-    if (evse) {
-        try {
-            const auto evse_id = evse->id;
-            const auto connector = evse->connectorId.value();
-            result = mapping.at(evse_id).at(connector);
-        } catch (const std::bad_optional_access&) {
-            EVLOG_warning << "No connectorId provided for evse " << evse->id << "; cannot map to an OCPP1.6 connector";
-            result = -1;
-        } catch (const std::out_of_range&) {
-            EVLOG_warning << "No OCPP1.6 connector mapping for evse " << evse->id << ", connector "
-                          << (evse->connectorId ? std::to_string(evse->connectorId.value()) : "<none>");
-            result = -1;
-        }
-    }
-
-    return result;
-}
-
 inline std::int32_t ocpp_connector_id(const ocpp_multi::GenericChargePointInterface::ConnectorStructureV16& mapping,
                                       std::int32_t evse_id, std::optional<int32_t> connector_id) {
     const auto everest_connector_id = connector_id.value_or(1);
@@ -83,6 +59,41 @@ inline std::int32_t ocpp_connector_id(const ocpp_multi::GenericChargePointInterf
 namespace ocpp_multi {
 
 using namespace v16_conversions;
+
+std::int32_t get_ocpp_connector_id(const GenericChargePointInterface::ConnectorStructureV16& mapping,
+                                   const std::optional<ocpp::v2::EVSE>& evse) {
+    // no EVSE addresses the whole charging station, which is connector 0 in OCPP 1.6
+    if (not evse) {
+        return 0;
+    }
+
+    const auto connectors = mapping.find(evse->id);
+    if (connectors == mapping.end() or connectors->second.empty()) {
+        EVLOG_warning << "No OCPP1.6 connector mapping for evse " << evse->id;
+        return -1;
+    }
+
+    if (not evse->connectorId.has_value()) {
+        // 2.x semantics: an EVSE without a connectorId addresses the whole EVSE. With a
+        // single connector that is exactly that connector; more than one has no OCPP 1.6
+        // equivalent, since a connector id there addresses one connector and 0 the whole
+        // charging station.
+        if (connectors->second.size() == 1) {
+            return connectors->second.begin()->second;
+        }
+        EVLOG_warning << "No connectorId provided for evse " << evse->id << " with " << connectors->second.size()
+                      << " connectors; OCPP1.6 cannot address a whole multi-connector EVSE";
+        return -1;
+    }
+
+    const auto connector = connectors->second.find(evse->connectorId.value());
+    if (connector == connectors->second.end()) {
+        EVLOG_warning << "No OCPP1.6 connector mapping for evse " << evse->id << ", connector "
+                      << evse->connectorId.value();
+        return -1;
+    }
+    return connector->second;
+}
 
 // ----------------------------------------------------------------------------
 // OCPP 1.6 ChargePoint

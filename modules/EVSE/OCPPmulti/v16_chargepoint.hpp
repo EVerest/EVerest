@@ -16,6 +16,16 @@
 
 namespace ocpp_multi {
 
+/// \brief Maps a 2.x EVSE address to the flat OCPP 1.6 connector id via \p mapping.
+///
+/// No EVSE addresses the whole charging station (connector 0). An EVSE without a
+/// connectorId addresses the whole EVSE (2.x semantics); with a single connector that is
+/// that connector's 1.6 id. Returns -1 when the address cannot be mapped: unknown EVSE or
+/// connector, or a missing connectorId on a multi-connector EVSE, which OCPP 1.6 cannot
+/// address as a unit.
+std::int32_t get_ocpp_connector_id(const GenericChargePointInterface::ConnectorStructureV16& mapping,
+                                   const std::optional<ocpp::v2::EVSE>& evse);
+
 class ChargePointV16 : public GenericChargePointInterface {
 private:
     std::shared_ptr<EvseSecurity> m_evse_security;
