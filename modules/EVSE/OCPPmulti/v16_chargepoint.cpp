@@ -673,7 +673,8 @@ void ChargePointV16::stop() {
 std::optional<ocpp::v2::DataTransferResponse>
 ChargePointV16::data_transfer_req(const ocpp::v2::DataTransferRequest& request) {
     check_configured("data_transfer_req");
-    const auto res = m_charge_point->data_transfer(request.vendorId, request.messageId, request.data);
+    const auto res =
+        m_charge_point->data_transfer(request.vendorId, request.messageId, to_v16_data_string(request.data));
     std::optional<ocpp::v2::DataTransferResponse> result;
     if (res) {
         ocpp::v2::DataTransferResponse response;

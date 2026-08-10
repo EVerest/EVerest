@@ -100,16 +100,27 @@ ocpp::v2::DataTransferResponse to_ocpp_data_transfer_response(types::ocpp::DataT
     ocpp::v2::DataTransferResponse ocpp_response;
     ocpp_response.status = conversions::to_ocpp_data_transfer_status_enum(response.status);
     if (response.data.has_value()) {
-        ocpp_response.data = json::parse(response.data.value());
+        try {
+            ocpp_response.data = json::parse(response.data.value());
+        } catch (const json::exception&) {
+            // Modules may answer with plain text; pass it on as a json string instead of dropping it.
+            ocpp_response.data = json(response.data.value());
+        }
     }
     if (response.custom_data.has_value()) {
         auto custom_data = response.custom_data.value();
-        json custom_data_json = json::parse(custom_data.data);
-        if (not custom_data_json.contains("vendorId")) {
-            EVLOG_warning << "DataTransferResponse custom_data.data does not contain vendorId, automatically adding it";
-            custom_data_json["vendorId"] = custom_data.vendor_id;
+        try {
+            json custom_data_json = json::parse(custom_data.data);
+            if (not custom_data_json.contains("vendorId")) {
+                EVLOG_warning
+                    << "DataTransferResponse custom_data.data does not contain vendorId, automatically adding it";
+                custom_data_json["vendorId"] = custom_data.vendor_id;
+            }
+            ocpp_response.customData = custom_data_json;
+        } catch (const json::exception& e) {
+            EVLOG_error << "Parsing of data transfer response custom_data json failed because: "
+                        << "(" << e.what() << ")";
         }
-        ocpp_response.customData = custom_data_json;
     }
     return ocpp_response;
 }

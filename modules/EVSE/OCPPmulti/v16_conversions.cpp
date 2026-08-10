@@ -121,8 +121,15 @@ ocpp::v16::DataTransferResponse convert(const ocpp::v2::DataTransferResponse& va
         result.status = ocpp::v16::DataTransferStatus::UnknownVendorId;
         break;
     }
-    result.data = value.data;
+    result.data = to_v16_data_string(value.data);
     return result;
+}
+
+std::optional<std::string> to_v16_data_string(const std::optional<nlohmann::json>& data) {
+    if (!data.has_value()) {
+        return std::nullopt;
+    }
+    return data->is_string() ? data->get<std::string>() : data->dump();
 }
 
 ocpp::v2::DataTransferStatusEnum convert(ocpp::v16::DataTransferStatus value) {
