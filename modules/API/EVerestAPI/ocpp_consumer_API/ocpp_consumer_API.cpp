@@ -34,7 +34,7 @@ void ocpp_consumer_API::init() {
 
     // setup var forwarding before modules start publishing
     generate_api_var_security_event();
-    generate_api_var_is_connected();
+    generate_api_var_connection_status();
     generate_api_var_boot_notification_response();
     generate_api_var_ocpp_transaction_event();
     generate_api_var_event_data();
@@ -164,8 +164,15 @@ void ocpp_consumer_API::generate_api_var_security_event() {
     r_ocpp->subscribe_security_event(forward_and_cache_api_var("security_event"));
 }
 
-void ocpp_consumer_API::generate_api_var_is_connected() {
-    r_ocpp->subscribe_is_connected(forward_and_cache_api_var("is_connected"));
+void ocpp_consumer_API::generate_api_var_connection_status() {
+    auto forward_connection_status = forward_and_cache_api_var("connection_status");
+    auto forward_is_connected = forward_and_cache_api_var("is_connected");
+    r_ocpp->subscribe_connection_status([forward_connection_status, forward_is_connected](auto const& status) {
+        forward_connection_status(status);
+        // deprecated: is_connected is kept for backwards compatibility and reports the
+        // connected property of the connection status as a plain boolean
+        forward_is_connected(status.connected);
+    });
 }
 
 void ocpp_consumer_API::generate_api_var_boot_notification_response() {

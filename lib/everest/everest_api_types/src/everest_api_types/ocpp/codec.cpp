@@ -63,6 +63,7 @@ create_serialize_impl(V2XSignalWattPointCurve);
 create_serialize_impl(V2XFreqWattPointType);
 create_serialize_impl(MessageDirection);
 create_serialize_impl(Message);
+create_serialize_impl(ConnectionStatus);
 
 #undef create_serialize_impl
 

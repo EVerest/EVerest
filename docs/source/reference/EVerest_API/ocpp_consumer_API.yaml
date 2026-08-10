@@ -112,6 +112,21 @@ channels:
     messages:
       receive_is_connected:
         $ref: '#/components/messages/receive_is_connected'
+  receive_connection_status:
+    address: 'e2m/connection_status'
+    messages:
+      receive_connection_status:
+        $ref: '#/components/messages/receive_connection_status'
+  send_request_get_connection_status:
+    address: 'm2e/connection_status/get'
+    messages:
+      send_request_get_connection_status:
+        $ref: '#/components/messages/send_request_get_connection_status'
+  receive_reply_get_connection_status:
+    address: null
+    messages:
+      receive_reply_get_connection_status:
+        $ref: '#/components/messages/receive_reply_get_connection_status'
   receive_security_event:
     address: 'e2m/security_event'
     messages:
@@ -321,6 +336,14 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_is_connected'
+    description: >-
+      Deprecated: use receive_connection_status instead, which reports the same
+      connection state in its connected property together with the connection details.
+  receive_connection_status:
+    title: 'Receive connection status'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_connection_status'
   receive_security_event:
     title: 'Receive security event'
     action: receive
@@ -423,6 +446,7 @@ operations:
     channel:
       $ref: '#/channels/send_request_get_is_connected'
     description: >-
+      Deprecated: use send_request_get_connection_status instead.
       Request the most recently published (latched) Is Connected.
       The reply will be sent to the replyTo address specified in the message headers.
       If no latched value is available yet, a null payload will be sent.
@@ -436,6 +460,25 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_reply_get_is_connected'
+  send_request_get_connection_status:
+    title: 'Request current Connection Status'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_connection_status'
+    description: >-
+      Request the most recently published (latched) Connection Status.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_connection_status'
+  receive_reply_get_connection_status:
+    title: 'Reply to get Connection Status request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_connection_status'
   send_request_get_charging_schedules:
     title: 'Request current Charging Schedules'
     action: send
@@ -812,10 +855,22 @@ components:
     receive_is_connected:
       name: receive_is_connected
       title: 'Receive is connected'
-      summary: Indicates if chargepoint is connected to CSMS
+      summary: >-
+        Deprecated: use receive_connection_status instead.
+        Indicates if chargepoint is connected to CSMS
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ConnectedStatus'
+    receive_connection_status:
+      name: receive_connection_status
+      title: 'Receive connection status'
+      summary: >-
+        Indicates if the chargepoint is connected to the CSMS and reports the details of
+        the connection the status refers to. Published on every connect and disconnect,
+        replacing the deprecated is_connected variable.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ConnectionStatus'
     receive_security_event:
       name: receive_security_event
       title: 'Receive security event'
@@ -955,7 +1010,9 @@ components:
     send_request_get_is_connected:
       name: send_request_get_is_connected
       title: 'Request current Is Connected'
-      summary: 'Request the most recently published (latched) Is Connected.'
+      summary: >-
+        Deprecated: use send_request_get_connection_status instead.
+        Request the most recently published (latched) Is Connected.
       contentType: application/json
       payload:
         type: object
@@ -978,11 +1035,45 @@ components:
     receive_reply_get_is_connected:
       name: receive_reply_get_is_connected
       title: 'Reply to get Is Connected request'
-      summary: 'The most recently published Is Connected.'
+      summary: >-
+        Deprecated: use receive_reply_get_connection_status instead.
+        The most recently published Is Connected.
       contentType: application/json
       payload:
         oneOf:
           - $ref: '#/components/schemas/ConnectedStatus'
+          - type: 'null'
+    send_request_get_connection_status:
+      name: send_request_get_connection_status
+      title: 'Request current Connection Status'
+      summary: 'Request the most recently published (latched) Connection Status.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_connection_status:
+      name: receive_reply_get_connection_status
+      title: 'Reply to get Connection Status request'
+      summary: 'The most recently published Connection Status.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/ConnectionStatus'
           - type: 'null'
     send_request_get_charging_schedules:
       name: send_request_get_charging_schedules
@@ -1491,8 +1582,56 @@ components:
           type: object
           $ref: '#/components/schemas/Variable'
     ConnectedStatus:
-      description: Indicates if chargepoint is connected to CSMS
+      description: >-
+        Deprecated: use ConnectionStatus (connection_status) instead.
+        Indicates if chargepoint is connected to CSMS
       type: boolean
+    ConnectionStatus:
+      description: >-
+        Status of the connection of the chargepoint to the CSMS, including the details
+        of the connection the status refers to. While connected, the details describe
+        the active connection; while disconnected, they describe the connection that
+        has just been lost or whose connection attempt has just failed. Details that
+        are not available for the active OCPP version are omitted.
+      type: object
+      additionalProperties: false
+      required:
+        - connected
+      properties:
+        connected:
+          description: Indicates if the chargepoint is connected to the CSMS
+          type: boolean
+        csms_url:
+          description: >-
+            CSMS endpoint URL of the connection. OCPP2.x reports ocppCsmsUrl of the
+            network connection profile, OCPP1.6 the CentralSystemURI configuration key.
+          type: string
+        identity:
+          description: >-
+            Identity the chargepoint uses towards the CSMS. OCPP2.x reports identity of
+            the network connection profile, OCPP1.6 the ChargePointId.
+          type: string
+        security_profile:
+          description: >-
+            OCPP security profile of the connection. OCPP2.x reports securityProfile of
+            the network connection profile, OCPP1.6 the SecurityProfile configuration key.
+          type: integer
+        configuration_slot:
+          description: >-
+            Configuration slot of the network connection profile the connection uses.
+          type: integer
+        ocpp_interface:
+          description: >-
+            Network interface of the network connection profile the connection uses
+          type: string
+        ocpp_transport:
+          description: >-
+            Transport of the network connection profile the connection uses
+          type: string
+        ocpp_version:
+          description: >-
+            OCPP protocol version in use on the connection (e.g. 1.6, 2.0.1 or 2.1)
+          type: string
     CustomData:
       description: Custom data extension
       required:

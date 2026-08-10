@@ -288,4 +288,15 @@ struct Message {
     std::optional<std::string> version;
 };
 
+struct ConnectionStatus {
+    bool connected;
+    std::optional<std::string> csms_url;
+    std::optional<std::string> identity;
+    std::optional<int32_t> security_profile;
+    std::optional<int32_t> configuration_slot;
+    std::optional<std::string> ocpp_interface;
+    std::optional<std::string> ocpp_transport;
+    std::optional<std::string> ocpp_version;
+};
+
 } // namespace everest::lib::API::V1_0::types::ocpp

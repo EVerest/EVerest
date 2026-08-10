@@ -612,9 +612,9 @@ void API::init() {
     std::string var_ocpp_schedule = this->api_base + "ocpp/var/charging_schedules";
 
     if (this->r_ocpp.size() == 1) {
-        this->r_ocpp.at(0)->subscribe_is_connected([this](bool is_connected) {
+        this->r_ocpp.at(0)->subscribe_connection_status([this](const types::ocpp::ConnectionStatus& connection_status) {
             std::scoped_lock lock(ocpp_data_mutex);
-            if (is_connected) {
+            if (connection_status.connected) {
                 this->ocpp_connection_status = "connected";
             } else {
                 this->ocpp_connection_status = "disconnected";

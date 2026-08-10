@@ -868,4 +868,30 @@ Message_External to_external_api(Message_Internal const& val) {
     return result;
 }
 
+ConnectionStatus_Internal to_internal_api(ConnectionStatus_External const& val) {
+    ConnectionStatus_Internal result;
+    result.connected = val.connected;
+    result.csms_url = val.csms_url;
+    result.identity = val.identity;
+    result.security_profile = val.security_profile;
+    result.configuration_slot = val.configuration_slot;
+    result.ocpp_interface = val.ocpp_interface;
+    result.ocpp_transport = val.ocpp_transport;
+    result.ocpp_version = val.ocpp_version;
+    return result;
+}
+
+ConnectionStatus_External to_external_api(ConnectionStatus_Internal const& val) {
+    ConnectionStatus_External result;
+    result.connected = val.connected;
+    result.csms_url = val.csms_url;
+    result.identity = val.identity;
+    result.security_profile = val.security_profile;
+    result.configuration_slot = val.configuration_slot;
+    result.ocpp_interface = val.ocpp_interface;
+    result.ocpp_transport = val.ocpp_transport;
+    result.ocpp_version = val.ocpp_version;
+    return result;
+}
+
 } // namespace everest::lib::API::V1_0::types::ocpp

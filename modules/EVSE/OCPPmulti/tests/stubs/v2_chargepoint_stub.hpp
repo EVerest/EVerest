@@ -134,7 +134,8 @@ struct GenericChargePointCallbacksMock : public ocpp_multi::GenericChargePointCa
     MOCK_METHOD(bool, cb_connector_effective_operative_status,
                 (std::int32_t evse_id, std::int32_t connector_id, ocpp::v2::OperationalStatusEnum new_status),
                 (override));
-    MOCK_METHOD(void, cb_connection_state_changed, (bool is_connected, ocpp::OcppProtocolVersion protocol_version),
+    MOCK_METHOD(void, cb_connection_state_changed,
+                (const types::ocpp::ConnectionStatus& connection_status, ocpp::OcppProtocolVersion protocol_version),
                 (override));
     MOCK_METHOD(ocpp::v2::DataTransferResponse, cb_data_transfer, (const ocpp::v2::DataTransferRequest& request),
                 (override));

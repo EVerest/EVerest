@@ -12,6 +12,7 @@
 #include <generated/types/evse_board_support.hpp>
 #include <generated/types/evse_manager.hpp>
 #include <generated/types/iso15118.hpp>
+#include <generated/types/ocpp.hpp>
 #include <generated/types/powermeter.hpp>
 #include <generated/types/reservation.hpp>
 #include <generated/types/session_cost.hpp>
@@ -83,7 +84,8 @@ struct GenericChargePointCallbacks {
                                             const ocpp::v2::NetworkConnectionProfile& network_connection_profile) = 0;
     virtual bool cb_connector_effective_operative_status(std::int32_t evse_id, std::int32_t connector_id,
                                                          ocpp::v2::OperationalStatusEnum new_status) = 0;
-    virtual void cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version) = 0;
+    virtual void cb_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status,
+                                             ocpp::OcppProtocolVersion protocol_version) = 0;
     virtual ocpp::v2::DataTransferResponse cb_data_transfer(const ocpp::v2::DataTransferRequest& request) = 0;
     virtual void cb_default_price(const types::session_cost::DefaultPrice& messages) = 0;
     /// \brief Carries the full set of currently-active DER controls, emitted after every accepted transition.

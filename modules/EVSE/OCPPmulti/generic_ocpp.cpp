@@ -1019,13 +1019,14 @@ bool GenericOcpp::cb_connector_effective_operative_status(std::int32_t evse_id, 
     return result;
 }
 
-void GenericOcpp::cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version) {
-    if (is_connected) {
+void GenericOcpp::cb_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status,
+                                              ocpp::OcppProtocolVersion protocol_version) {
+    if (connection_status.connected) {
         mv_ocpp_protocol_version = protocol_version;
     } else {
         mv_ocpp_protocol_version = ocpp::OcppProtocolVersion::Unknown;
     }
-    mv_provides.ocpp_generic.publish_is_connected(is_connected);
+    mv_provides.ocpp_generic.publish_connection_status(connection_status);
 }
 
 ocpp::v2::DataTransferResponse GenericOcpp::cb_data_transfer(const ocpp::v2::DataTransferRequest& request) {

@@ -994,21 +994,46 @@ TEST_F(GenericOcppProvidesTester, publishChargingSchedules) {
         "duration":600,"evse":1,"start_schedule":"2026-06-05T13:37:36.409Z"}]})"_json);
 }
 
-TEST_F(GenericOcppProvidesTester, publishIsConnected) {
-    // publish_is_connected() called from cb_connection_state_changed
+TEST_F(GenericOcppProvidesTester, publishConnectionStatus) {
+    // publish_connection_status() called from cb_connection_state_changed
 
     using ocpp::OcppProtocolVersion;
+    using types::ocpp::ConnectionStatus;
 
     std::vector<json> received;
-    interfaces->subscribe_var("ocpp_generic", "is_connected",
+    interfaces->subscribe_var("ocpp_generic", "connection_status",
                               [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp->cb_connection_state_changed(true, OcppProtocolVersion::v201);
-    ocpp->cb_connection_state_changed(false, OcppProtocolVersion::v16);
+    ConnectionStatus connected;
+    connected.connected = true;
+    connected.csms_url = "ws://localhost:9000";
+    connected.identity = "cp001";
+    connected.security_profile = 1;
+    connected.configuration_slot = 2;
+    connected.ocpp_interface = "Wired0";
+    connected.ocpp_transport = "JSON";
+    connected.ocpp_version = "2.0.1";
 
-    ASSERT_EQ(received.size(), 2);
-    EXPECT_EQ(received[0], R"(true)"_json);
-    EXPECT_EQ(received[1], R"(false)"_json);
+    // the details of the connection that was just lost are reported unchanged
+    auto disconnected = connected;
+    disconnected.connected = false;
+
+    // details that are unavailable are omitted, not defaulted
+    ConnectionStatus without_details;
+    without_details.connected = false;
+
+    ocpp->cb_connection_state_changed(connected, OcppProtocolVersion::v201);
+    ocpp->cb_connection_state_changed(disconnected, OcppProtocolVersion::v201);
+    ocpp->cb_connection_state_changed(without_details, OcppProtocolVersion::v16);
+
+    ASSERT_EQ(received.size(), 3);
+    EXPECT_EQ(received[0], R"({"configuration_slot":2,"connected":true,"csms_url":"ws://localhost:9000",
+        "identity":"cp001","ocpp_interface":"Wired0","ocpp_transport":"JSON","ocpp_version":"2.0.1",
+        "security_profile":1})"_json);
+    EXPECT_EQ(received[1], R"({"configuration_slot":2,"connected":false,"csms_url":"ws://localhost:9000",
+        "identity":"cp001","ocpp_interface":"Wired0","ocpp_transport":"JSON","ocpp_version":"2.0.1",
+        "security_profile":1})"_json);
+    EXPECT_EQ(received[2], R"({"connected":false})"_json);
 }
 
 TEST_F(GenericOcppProvidesTester, publishSecurityEvent) {
@@ -1157,7 +1182,9 @@ TEST_F(GenericOcppProvidesTester, publishOcppMessage) {
     interfaces->subscribe_var("ocpp_generic", "ocpp_message",
                               [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp->cb_connection_state_changed(true, OcppProtocolVersion::v16);
+    types::ocpp::ConnectionStatus connection_status;
+    connection_status.connected = true;
+    ocpp->cb_connection_state_changed(connection_status, OcppProtocolVersion::v16);
     ocpp->cb_ocpp_messages(R"({"message": 1})", MessageDirection::ChargingStationToCSMS);
     ocpp->cb_ocpp_messages(R"({"message": 2})", MessageDirection::CSMSToChargingStation);
 

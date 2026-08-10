@@ -87,7 +87,7 @@ private:
     void generate_api_cmd_security_event();
 
     void generate_api_var_security_event();
-    void generate_api_var_is_connected();
+    void generate_api_var_connection_status();
     void generate_api_var_boot_notification_response();
     void generate_api_var_ocpp_transaction_event();
     void generate_api_var_event_data();

@@ -21,6 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -176,6 +177,47 @@ TEST_F(ChargePointConnectivityTest, DestructionDisarmsConnectionCallbacks) {
 
     EXPECT_CALL(*this->connectivity_manager, disarm_connection_callbacks()).Times(1);
     charge_point.reset();
+}
+
+// The connection state callback reports which of the configured network connection slots the CSMS connection
+// uses, alongside the profile behind that slot, for both the connect and the disconnect direction.
+TEST_F(ChargePointConnectivityTest, ConnectionStateChangedCallbackReportsConfigurationSlot) {
+    ON_CALL(*this->connectivity_manager, is_websocket_connected()).WillByDefault(Return(false));
+
+    constexpr int CONFIGURATION_SLOT = 7;
+    constexpr std::int32_t SECURITY_PROFILE = 1;
+
+    ocpp::v2::NetworkConnectionProfile profile;
+    profile.securityProfile = SECURITY_PROFILE;
+
+    struct Report {
+        bool is_connected;
+        int configuration_slot;
+        std::int32_t security_profile;
+    };
+    std::vector<Report> reports;
+
+    auto charge_point = make_charge_point();
+    charge_point->register_connection_state_changed_callback(
+        [&reports](const bool is_connected, const int configuration_slot,
+                   const ocpp::v2::NetworkConnectionProfile& network_connection_profile) {
+            reports.push_back({is_connected, configuration_slot, network_connection_profile.securityProfile});
+        });
+
+    charge_point->start({}, BootReasonEnum::PowerUp, {});
+
+    charge_point->on_websocket_connected(CONFIGURATION_SLOT, profile, ocpp::OcppProtocolVersion::v16);
+    charge_point->on_websocket_disconnected(CONFIGURATION_SLOT, profile);
+
+    ASSERT_EQ(reports.size(), 2);
+    EXPECT_TRUE(reports.at(0).is_connected);
+    EXPECT_EQ(reports.at(0).configuration_slot, CONFIGURATION_SLOT);
+    EXPECT_EQ(reports.at(0).security_profile, SECURITY_PROFILE);
+    EXPECT_FALSE(reports.at(1).is_connected);
+    EXPECT_EQ(reports.at(1).configuration_slot, CONFIGURATION_SLOT);
+    EXPECT_EQ(reports.at(1).security_profile, SECURITY_PROFILE);
+
+    charge_point->stop();
 }
 
 // Once the charge point observes a successful connection (connected callback -> message queue resume), queued
