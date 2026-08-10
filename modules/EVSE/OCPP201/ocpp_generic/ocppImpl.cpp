@@ -3,6 +3,7 @@
 
 #include "ocppImpl.hpp"
 #include "everest/conversions/ocpp/evse_security_ocpp.hpp"
+#include "ocpp/v2/component_state_manager.hpp"
 #include "ocpp/v2/ocpp_types.hpp"
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/ocpp_module_common/conversions.hpp>
@@ -124,7 +125,15 @@ ocppImpl::handle_change_availability(types::ocpp::ChangeAvailabilityRequest& req
         EVLOG_warning << "ChargePoint not initialized, cannot handle change availability command";
     } else {
         const auto ocpp_request = conversions::to_ocpp_change_availability_request(request);
-        result = mod->charge_point->on_change_availability(ocpp_request);
+        try {
+            result = mod->charge_point->on_change_availability(ocpp_request);
+        } catch (const ocpp::v2::EvseOutOfRangeException& e) {
+            result.status = ChangeAvailabilityStatusEnum::Rejected;
+            result.statusInfo = ocpp::v2::StatusInfo{"InvalidInput", e.what()};
+        } catch (const ocpp::v2::ConnectorOutOfRangeException& e) {
+            result.status = ChangeAvailabilityStatusEnum::Rejected;
+            result.statusInfo = ocpp::v2::StatusInfo{"InvalidInput", e.what()};
+        }
     }
 
     return conversions::to_everest_change_availability_response(result);
