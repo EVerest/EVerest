@@ -9,6 +9,7 @@
 #include <optional>
 
 #include "everest/logging.hpp"
+#include "ocpp/v2/component_state_manager.hpp"
 #include "ocpp/v2/ocpp_types.hpp"
 #include "stubs/generic_ocpp_stub.hpp"
 
@@ -17,6 +18,7 @@ using namespace stubs;
 using ::testing::_;
 using ::testing::InSequence;
 using ::testing::Return;
+using ::testing::Throw;
 
 TEST(SteadyTimer, StartStop) {
     GTEST_SKIP() << "Unreliable - consider using a different timer";
@@ -663,6 +665,40 @@ TEST_F(GenericOcppProvidesTester, changeAvailabilityRejected) {
 
     const auto result = ocpp->handle_change_availability(request);
     EXPECT_EQ(result.status, ChangeAvailabilityStatusEnumType::Rejected);
+}
+
+TEST_F(GenericOcppProvidesTester, changeAvailabilityEvseOutOfRange) {
+    using types::ocpp::ChangeAvailabilityRequest;
+    using types::ocpp::ChangeAvailabilityStatusEnumType;
+    using types::ocpp::EVSE;
+    using types::ocpp::OperationalStatusEnumType;
+
+    const EVSE evse{0};
+    const ChangeAvailabilityRequest request{OperationalStatusEnumType::Inoperative, evse};
+
+    EXPECT_CALL(chargepoint, on_change_availability(_)).WillOnce(Throw(ocpp::v2::EvseOutOfRangeException(0)));
+
+    const auto result = ocpp->handle_change_availability(request);
+    EXPECT_EQ(result.status, ChangeAvailabilityStatusEnumType::Rejected);
+    ASSERT_TRUE(result.status_info.has_value());
+    EXPECT_EQ(result.status_info.value().reason_code, "InvalidInput");
+}
+
+TEST_F(GenericOcppProvidesTester, changeAvailabilityConnectorOutOfRange) {
+    using types::ocpp::ChangeAvailabilityRequest;
+    using types::ocpp::ChangeAvailabilityStatusEnumType;
+    using types::ocpp::EVSE;
+    using types::ocpp::OperationalStatusEnumType;
+
+    const EVSE evse{1, 5};
+    const ChangeAvailabilityRequest request{OperationalStatusEnumType::Inoperative, evse};
+
+    EXPECT_CALL(chargepoint, on_change_availability(_)).WillOnce(Throw(ocpp::v2::ConnectorOutOfRangeException(5, 1)));
+
+    const auto result = ocpp->handle_change_availability(request);
+    EXPECT_EQ(result.status, ChangeAvailabilityStatusEnumType::Rejected);
+    ASSERT_TRUE(result.status_info.has_value());
+    EXPECT_EQ(result.status_info.value().reason_code, "InvalidInput");
 }
 
 bool contains(const ocpp_multi::GenericOcpp::MonitorList& list, const std::string& component,
