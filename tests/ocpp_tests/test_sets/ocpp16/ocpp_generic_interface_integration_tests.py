@@ -723,10 +723,11 @@ class TestOCPP16GenericInterfaceIntegration:
         _env.probe_module.subscribe_variable(
             "ocpp", "is_connected", subscription_mock)
 
+        # Await the disconnect before restarting
         assert await _env.probe_module.call_command("ocpp", "stop", None)
-        assert await _env.probe_module.call_command("ocpp", "restart", None)
-
         await wait_for_mock_called(subscription_mock, mock_call(False))
+
+        assert await _env.probe_module.call_command("ocpp", "restart", None)
         await wait_for_mock_called(subscription_mock, mock_call(True))
 
     @pytest.mark.parametrize(

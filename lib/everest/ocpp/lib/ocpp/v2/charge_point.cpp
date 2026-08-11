@@ -107,6 +107,8 @@ ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connec
 ChargePoint::~ChargePoint() = default;
 
 void ChargePoint::start(BootReasonEnum bootreason, bool start_connecting) {
+    // Lift the suppression a preceding stop() put in place, so the connection state is reported again.
+    this->connectivity_manager->arm_connection_callbacks();
     this->connectivity_manager->set_message_callback(
         std::bind(&ChargePoint::message_callback, this, std::placeholders::_1));
     this->message_queue->start();
