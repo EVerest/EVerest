@@ -12,4 +12,8 @@ void TestErrorHandling::ready() {
     invoke_ready(*p_main);
 }
 
+void TestErrorHandling::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

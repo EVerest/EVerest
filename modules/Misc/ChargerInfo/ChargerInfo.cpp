@@ -12,4 +12,8 @@ void ChargerInfo::ready() {
     invoke_ready(*p_main);
 }
 
+void ChargerInfo::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

@@ -324,4 +324,11 @@ void Huawei_V100R023C10::update_vendor_errors() {
     raised_errors = new_error_set;
 }
 
+void Huawei_V100R023C10::shutdown() {
+    invoke_shutdown(*p_connector_1);
+    invoke_shutdown(*p_connector_2);
+    invoke_shutdown(*p_connector_3);
+    invoke_shutdown(*p_connector_4);
+}
+
 } // namespace module

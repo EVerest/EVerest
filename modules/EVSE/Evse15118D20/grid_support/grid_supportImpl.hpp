@@ -5,22 +5,28 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/grid_support/Implementation.hpp>
 
 #include "../Evse15118D20.hpp"
 
-// ev@9d65c5b8-78c2-4208-95b5-ed872434a08d:v1
+// ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
 #include <mutex>
-// ev@9d65c5b8-78c2-4208-95b5-ed872434a08d:v1
+// ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
 namespace grid_support {
 
-struct Conf {};
+struct RwConf {};
+
+struct Conf {
+
+    Conf() = default;
+    Conf(const RwConf&){};
+};
 
 class grid_supportImpl : public grid_supportImplBase {
 public:
@@ -28,18 +34,18 @@ public:
     grid_supportImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<Evse15118D20>& mod, Conf& config) :
         grid_supportImplBase(ev, "grid_support"), mod(mod), config(config){};
 
-    // ev@ce703c19-c14d-4f4b-8056-2ad0f5dd0070:v1
+    // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
     // insert your public definitions here
-    // ev@ce703c19-c14d-4f4b-8056-2ad0f5dd0070:v1
+    // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
 
 protected:
     // command handler functions (virtual)
     virtual types::grid_support::SetDirectivesResponse
     handle_set_active_directives(types::grid_support::ActiveDirectiveSet& directives) override;
 
-    // ev@d37d73a2-baca-45a7-9089-521171267dd9:v1
+    // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
     // insert your protected definitions here
-    // ev@d37d73a2-baca-45a7-9089-521171267dd9:v1
+    // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
 
 private:
     const Everest::PtrContainer<Evse15118D20>& mod;
@@ -47,18 +53,19 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
-    // ev@d014281f-feb6-4c48-8134-117ade18f2ba:v1
+    // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here
     // Logged once when the first non-empty directive set arrives: directives are relayed to the EV
     // at the next V2G session (next-session-dynamic), not applied mid-session.
     std::once_flag directive_relay_log_flag;
-    // ev@d014281f-feb6-4c48-8134-117ade18f2ba:v1
+    // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
-// ev@e05d7d33-4bca-4f9f-bc15-b2d61d72b99f:v1
+// ev@3d7da0ad-02c2-493d-9920-0bbbd56b9876:v1
 // insert other definitions here
-// ev@e05d7d33-4bca-4f9f-bc15-b2d61d72b99f:v1
+// ev@3d7da0ad-02c2-493d-9920-0bbbd56b9876:v1
 
 } // namespace grid_support
 } // namespace module

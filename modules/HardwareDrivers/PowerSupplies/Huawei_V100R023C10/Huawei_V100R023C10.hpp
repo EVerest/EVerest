@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -29,6 +29,8 @@
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     std::string ethernet_interface;
     std::string psu_ip;
@@ -46,6 +48,9 @@ struct Conf {
     bool verify_secure_goose;
     std::string upstream_voltage_source;
     std::string telemetry_topic_prefix;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class Huawei_V100R023C10 : public Everest::ModuleBase {
@@ -121,6 +126,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

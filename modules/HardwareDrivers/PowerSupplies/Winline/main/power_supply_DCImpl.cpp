@@ -129,6 +129,9 @@ void power_supply_DCImpl::init() {
 void power_supply_DCImpl::ready() {
 }
 
+void power_supply_DCImpl::shutdown() {
+}
+
 void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
                                          types::power_supply_DC::ChargingPhase& phase) {
     EVLOG_info << "Set mode via CAN: " << mode << " with phase " << phase;

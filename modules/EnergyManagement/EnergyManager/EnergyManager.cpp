@@ -53,4 +53,8 @@ void EnergyManager::ready() {
     this->impl->start();
 }
 
+void EnergyManager::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

@@ -17,6 +17,9 @@ void isolation_monitorImpl::init() {
 void isolation_monitorImpl::ready() {
 }
 
+void isolation_monitorImpl::shutdown() {
+}
+
 void isolation_monitorImpl::handle_start() {
     mod->mqtt_v.publish(mod->helper.get_topics().everest_to_extern("start"), "{}");
 }

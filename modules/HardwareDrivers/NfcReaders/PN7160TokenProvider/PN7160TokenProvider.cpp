@@ -12,4 +12,8 @@ void PN7160TokenProvider::ready() {
     invoke_ready(*p_main);
 }
 
+void PN7160TokenProvider::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

@@ -123,4 +123,8 @@ void Linux_Systemd_Rauc::install_firmware_bundle(const std::string& filename, in
     this->rauc.install_bundle(filename, request_id);
 }
 
+void Linux_Systemd_Rauc::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

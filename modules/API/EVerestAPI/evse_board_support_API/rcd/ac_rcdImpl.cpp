@@ -23,6 +23,9 @@ void ac_rcdImpl::init() {
 void ac_rcdImpl::ready() {
 }
 
+void ac_rcdImpl::shutdown() {
+}
+
 template <class T, class ReqT>
 auto ac_rcdImpl::generic_request_reply(T const& default_value, ReqT const& request, std::string const& topic) {
     using namespace API_types_ext;

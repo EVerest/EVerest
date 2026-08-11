@@ -129,4 +129,12 @@ void OCPPmulti::ready() {
     m_ocpp.ready(module::get_config_service_client());
 }
 
+void OCPPmulti::shutdown() {
+    invoke_shutdown(*p_auth_validator);
+    invoke_shutdown(*p_auth_provider);
+    invoke_shutdown(*p_data_transfer);
+    invoke_shutdown(*p_ocpp_generic);
+    invoke_shutdown(*p_session_cost);
+}
+
 } // namespace module

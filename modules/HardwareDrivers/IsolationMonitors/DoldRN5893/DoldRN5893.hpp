@@ -6,7 +6,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -22,6 +22,8 @@
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
+
+struct RwConf {};
 
 struct Conf {
     int device_id;
@@ -40,6 +42,9 @@ struct Conf {
     std::string indicator_relay_k1_function;
     std::string indicator_relay_k2_function;
     bool automatic_self_test;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class DoldRN5893 : public Everest::ModuleBase {
@@ -66,6 +71,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

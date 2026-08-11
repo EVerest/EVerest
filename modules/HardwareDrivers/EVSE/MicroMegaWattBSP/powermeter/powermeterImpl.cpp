@@ -12,6 +12,9 @@ void powermeterImpl::init() {
 void powermeterImpl::ready() {
 }
 
+void powermeterImpl::shutdown() {
+}
+
 types::powermeter::TransactionStartResponse
 powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& value) {
     // your code for cmd start_transaction goes here

@@ -44,6 +44,9 @@ void systemImpl::init() {
 void systemImpl::ready() {
 }
 
+void systemImpl::shutdown() {
+}
+
 types::system::UpdateFirmwareResponse
 systemImpl::handle_update_firmware(types::system::FirmwareUpdateRequest& firmware_update_request) {
     // FIXME: implement planned updates at a specific time

@@ -73,4 +73,8 @@ void system_API::generate_api_var_configure_network_status() {
     });
 }
 
+void system_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

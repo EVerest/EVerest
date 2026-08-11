@@ -21,6 +21,9 @@ void ocpp_data_transferImpl::init() {
 void ocpp_data_transferImpl::ready() {
 }
 
+void ocpp_data_transferImpl::shutdown() {
+}
+
 template <class T, class ReqT>
 auto ocpp_data_transferImpl::generic_request_reply(T const& default_value, ReqT const& request,
                                                    std::string const& topic) {

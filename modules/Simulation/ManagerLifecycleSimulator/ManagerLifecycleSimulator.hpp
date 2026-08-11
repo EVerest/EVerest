@@ -16,14 +16,19 @@
 
 namespace module {
 
-struct Conf {};
+struct RwConf {};
+
+struct Conf {
+
+    Conf() = default;
+    Conf(const RwConf&){};
+};
 
 class ManagerLifecycleSimulator : public Everest::ModuleBase {
 public:
     ManagerLifecycleSimulator() = delete;
     ManagerLifecycleSimulator(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider, Conf& config) :
-        ModuleBase(info), mqtt(mqtt_provider), config(config) {
-    }
+        ModuleBase(info), mqtt(mqtt_provider), config(config){};
 
     Everest::MqttProvider& mqtt;
     const Conf& config;

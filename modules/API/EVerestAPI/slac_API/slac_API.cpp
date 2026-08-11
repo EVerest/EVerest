@@ -118,4 +118,8 @@ std::string slac_API::make_error_string(API_generic::Error const& error) {
     return result;
 }
 
+void slac_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

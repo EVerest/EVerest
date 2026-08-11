@@ -56,6 +56,9 @@ void powermeterImpl::init() {
 void powermeterImpl::ready() {
 }
 
+void powermeterImpl::shutdown() {
+}
+
 types::powermeter::TransactionStopResponse powermeterImpl::handle_stop_transaction(std::string& transaction_id) {
     return {types::powermeter::TransactionRequestStatus::NOT_SUPPORTED,
             {},

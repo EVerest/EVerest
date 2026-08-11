@@ -112,6 +112,9 @@ void temperature_sensorImpl::init() {
 void temperature_sensorImpl::ready() {
 }
 
+void temperature_sensorImpl::shutdown() {
+}
+
 void temperature_sensorImpl::publish_worker() {
     while (true) {
         if (publish_thread_handle.shouldExit()) {

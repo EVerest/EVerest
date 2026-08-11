@@ -31,6 +31,9 @@ void evse_board_supportImpl::ready() {
     publish_capabilities(default_capabilities);
 }
 
+void evse_board_supportImpl::shutdown() {
+}
+
 void evse_board_supportImpl::handle_enable(bool& value) {
     auto& current_state = mod->module_state->current_state;
     if (value) {

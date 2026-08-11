@@ -163,4 +163,13 @@ void PhyVersoBSP::everest_config_to_verso_config() {
     verso_config.conf.conn2_dc = this->config.conn2_dc;
 }
 
+void PhyVersoBSP::shutdown() {
+    invoke_shutdown(*p_connector_1);
+    invoke_shutdown(*p_connector_2);
+    invoke_shutdown(*p_rcd_1);
+    invoke_shutdown(*p_rcd_2);
+    invoke_shutdown(*p_connector_lock_1);
+    invoke_shutdown(*p_connector_lock_2);
+}
+
 } // namespace module

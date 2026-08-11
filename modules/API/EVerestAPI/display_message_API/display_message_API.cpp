@@ -39,4 +39,9 @@ void display_message_API::ready() {
     helper.publish_ready_beacon();
 }
 
+void display_message_API::shutdown() {
+    invoke_shutdown(*p_main);
+    invoke_shutdown(*p_generic_error);
+}
+
 } // namespace module

@@ -12,6 +12,9 @@ void powermeterImpl::init() {
 void powermeterImpl::ready() {
 }
 
+void powermeterImpl::shutdown() {
+}
+
 types::powermeter::TransactionStartResponse
 powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& value) {
     return {types::powermeter::TransactionRequestStatus::NOT_SUPPORTED,

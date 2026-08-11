@@ -17,6 +17,9 @@ void evse_managerImpl::ready() {
     publish_waiting_for_external_ready(true);
 }
 
+void evse_managerImpl::shutdown() {
+}
+
 types::evse_manager::Evse evse_managerImpl::handle_get_evse() {
     types::evse_manager::Evse evse;
     evse.id = 1;

@@ -13,4 +13,8 @@ void AST_DC650::ready() {
     invoke_ready(*p_main);
 }
 
+void AST_DC650::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

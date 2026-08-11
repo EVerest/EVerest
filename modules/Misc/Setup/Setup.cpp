@@ -704,4 +704,7 @@ std::string Setup::get_hostname() {
     return "";
 }
 
+void Setup::shutdown() {
+}
+
 } // namespace module

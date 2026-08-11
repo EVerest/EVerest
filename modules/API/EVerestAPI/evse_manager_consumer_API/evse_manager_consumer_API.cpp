@@ -360,4 +360,8 @@ void evse_manager_consumer_API::generate_api_var_session_info() {
         [this](std::string const& protocol) { session_info.handle()->update_selected_protocol(protocol); });
 }
 
+void evse_manager_consumer_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

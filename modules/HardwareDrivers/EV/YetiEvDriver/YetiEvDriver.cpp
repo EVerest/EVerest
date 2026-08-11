@@ -81,4 +81,8 @@ void YetiEvDriver::ready() {
     invoke_ready(*p_ev_board_support);
 }
 
+void YetiEvDriver::shutdown() {
+    invoke_shutdown(*p_ev_board_support);
+}
+
 } // namespace module

@@ -12,4 +12,8 @@ void Iso15118InternetVas::ready() {
     invoke_ready(*p_iso15118_vas);
 }
 
+void Iso15118InternetVas::shutdown() {
+    invoke_shutdown(*p_iso15118_vas);
+}
+
 } // namespace module

@@ -12,4 +12,8 @@ void DummyTokenProvider::ready() {
     invoke_ready(*p_main);
 }
 
+void DummyTokenProvider::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

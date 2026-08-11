@@ -92,4 +92,10 @@ void TIDA010939::error_handling(ErrorFlags e) {
     last_error_flags = e;
 }
 
+void TIDA010939::shutdown() {
+    invoke_shutdown(*p_board_support);
+    invoke_shutdown(*p_rcd);
+    invoke_shutdown(*p_connector_lock);
+}
+
 } // namespace module

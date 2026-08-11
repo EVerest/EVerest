@@ -1,0 +1,98 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+#pragma once
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <string>
+#include <utils/config/storage_types.hpp>
+#include <vector>
+
+namespace everest::db::sqlite {
+class ConnectionInterface;
+} // namespace everest::db::sqlite
+
+namespace everest::config {
+
+struct DuplicateSlotResult {
+    bool success{false};
+    std::optional<int> slot_id;
+};
+
+struct SlotInfo {
+    int id;
+    std::string last_updated;
+    std::optional<std::string> config_file_path;
+    std::optional<std::string> description;
+};
+
+using StoredSlotInfo = SlotInfo;
+
+/// \brief Manages configuration slots (add, update, list, delete, duplicate, boot selection)
+/// persisted in a SQLite database.
+class SqliteConfigSlotManager {
+public:
+    static constexpr int DEFAULT_SLOT_ID{0};
+
+    /// \brief Opens its own Connection and applies migrations.
+    SqliteConfigSlotManager(const std::filesystem::path& db_path, const std::filesystem::path& migrations_path);
+
+    /// \brief Shares an already-migrated Connection.
+    /// Calls open_connection() on the shared connection; the destructor calls close_connection().
+    /// \param connection Shared database connection (already migrated)
+    explicit SqliteConfigSlotManager(std::shared_ptr<everest::db::sqlite::ConnectionInterface> connection);
+
+    ~SqliteConfigSlotManager();
+
+    /// \brief Checks whether a configuration slot with \p slot_id exists.
+    bool exists(int slot_id);
+    /// \brief Returns the next available slot ID (MAX(ID) + 1, or 0 if no slots exist).
+    int next_slot_id();
+    /// \brief Writes a new configuration slot
+    /// \param slot_id Id of the new slot; must not exist yet
+    /// \param config_dump JSON dump of the config file that was used to create the configuration
+    /// \param config_file_path Path to the config file that was used to create the configuration
+    /// \param description Arbitrary text
+    GenericResponseStatus write_config_slot(int slot_id, const std::string& config_dump,
+                                            const std::optional<std::filesystem::path>& config_file_path,
+                                            const std::optional<std::string>& description);
+    /// \brief Updates an existing configuration slot
+    /// Optionals without a value will set the corresponding value to NULL in the DB
+    /// \param slot_id Id of the slot; must not exist yet
+    /// \param config_dump JSON dump of the config file that was used to create the configuration
+    /// \param config_file_path Path to the config file that was used to create the configuration
+    /// \param description Arbitrary text
+    GenericResponseStatus update_config_slot(int slot_id, const std::string& config_dump,
+                                             const std::optional<std::filesystem::path>& config_file_path,
+                                             const std::optional<std::string>& description);
+    /// \brief Updates an existing configuration slot's description
+    /// Optionals without a value will set the corresponding value to NULL in the DB
+    /// \param slot_id Id of the slot; must not exist yet
+    /// \param description Arbitrary text
+    GenericResponseStatus update_description(int slot_id, const std::optional<std::string>& description);
+
+    /// \brief Returns metadata for all stored configuration slots.
+    std::vector<SlotInfo> list_slots();
+    /// \brief Deletes the configuration slot with \p slot_id.
+    /// Deleting a non-existing slot is a no-op and returns OK.
+    GenericResponseStatus delete_slot(int slot_id);
+
+    /// \brief Duplicates all data belonging to \p source_slot_id into a new slot.
+    /// \returns DuplicateSlotResult with the new slot_id on success.
+    DuplicateSlotResult duplicate_slot(int source_slot_id, std::optional<std::string> description = std::nullopt);
+
+    /// \brief Returns the slot ID that will be used on the next boot (from the BOOT_CONFIG table).
+    int get_next_boot_slot_id();
+
+    /// \brief Persists \p slot_id as the next boot slot in the BOOT_CONFIG table.
+    /// \returns Failed if \p slot_id does not exist in the CONFIG table.
+    GenericResponseStatus set_next_boot_slot_id(int slot_id);
+
+private:
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> m_db;
+
+    // a conservative maximum slot_id value, compatible with sqlite but more than big enough for practical usage
+    const int m_max_slot_id{(2 << 16) - 1};
+};
+
+} // namespace everest::config

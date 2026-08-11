@@ -13,8 +13,11 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 
 target_sources(${TEST_TARGET_NAME} PRIVATE
     test_config.cpp
+    test_config_service.cpp
+    test_config_service_core.cpp
     test_config_sqlite.cpp
     test_conversions.cpp
+    test_database_migration_files.cpp
     test_filesystem_helpers.cpp
     test_helpers.cpp
     test_message_handler.cpp
@@ -31,6 +34,7 @@ target_compile_definitions(${TEST_TARGET_NAME}
         EVEREST_FRAMEWORK_EXPECTED_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD=${EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD}
 )
 
+add_subdirectory(api)
 add_subdirectory(controller)
 
 target_link_libraries(${TEST_TARGET_NAME}
@@ -90,10 +94,17 @@ setup_test_directory(
 )
 
 setup_test_directory(
-    two_module_test 
-    CONFIG two_modules.yaml 
+    two_module_test
+    CONFIG two_modules.yaml
     MODULES TESTModuleA TESTModuleB
     INTERFACE_FILES test_interface test_interface_cmd_var
+)
+
+setup_test_directory(
+    config_service_test
+    CONFIG config_service_config.yaml
+    MODULES TESTCSTarget TESTValidManifest
+    INTERFACE_FILES test_interface
 )
 
 file(COPY ${PROJECT_SOURCE_DIR}/schemas/migrations
@@ -109,7 +120,7 @@ if(EVEREST_ENABLE_COVERAGE)
         append_coverage_compiler_flags_to_target(controller)
     endif()
 
-    # set(GCOVR_ADDITIONAL_ARGS "--gcov-ignore-errors=all")
+    set(GCOVR_ADDITIONAL_ARGS "--gcov-ignore-errors=all")
     setup_target_for_coverage_gcovr_html(
         NAME ${PROJECT_NAME}_gcovr_coverage
         EXECUTABLE ctest --output-on-failure

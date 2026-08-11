@@ -120,6 +120,9 @@ void slacImpl::ready() {
     }
 }
 
+void slacImpl::shutdown() {
+}
+
 void slacImpl::handle_reset(bool& enable) {
     if (not fsm_ctrl) {
         return;

@@ -117,4 +117,8 @@ std::string power_supply_DC_API::make_error_string(API_types_ext::Error const& e
     return result;
 }
 
+void power_supply_DC_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

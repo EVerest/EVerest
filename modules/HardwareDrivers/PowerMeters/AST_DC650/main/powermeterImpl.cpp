@@ -127,6 +127,9 @@ void powermeterImpl::ready() {
     }
 }
 
+void powermeterImpl::shutdown() {
+}
+
 void powermeterImpl::set_device_time() {
     std::chrono::time_point<std::chrono::system_clock> timepoint = std::chrono::system_clock::now();
     int8_t gmt_offset_quarters_of_an_hour = app_layer.get_utc_offset_in_quarter_hours(timepoint);

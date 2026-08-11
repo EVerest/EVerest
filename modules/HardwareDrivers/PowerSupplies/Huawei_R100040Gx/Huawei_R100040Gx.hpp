@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -19,11 +19,16 @@
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     std::string can_device;
     std::string module_addresses;
     int max_export_current_A;
     int max_export_power_W;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class Huawei_R100040Gx : public Everest::ModuleBase {
@@ -48,6 +53,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

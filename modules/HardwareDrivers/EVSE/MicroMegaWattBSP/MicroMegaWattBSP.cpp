@@ -48,4 +48,10 @@ void MicroMegaWattBSP::ready() {
     }
 }
 
+void MicroMegaWattBSP::shutdown() {
+    invoke_shutdown(*p_dc_supply);
+    invoke_shutdown(*p_powermeter);
+    invoke_shutdown(*p_board_support);
+}
+
 } // namespace module

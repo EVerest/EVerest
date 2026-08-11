@@ -401,6 +401,9 @@ void evse_managerImpl::ready() {
     });
 }
 
+void evse_managerImpl::shutdown() {
+}
+
 types::evse_manager::Evse evse_managerImpl::handle_get_evse() {
     types::evse_manager::Evse evse;
     evse.id = this->mod->config.connector_id;

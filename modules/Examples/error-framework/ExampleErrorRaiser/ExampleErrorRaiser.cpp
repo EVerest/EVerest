@@ -12,4 +12,8 @@ void ExampleErrorRaiser::ready() {
     invoke_ready(*p_example_raiser);
 }
 
+void ExampleErrorRaiser::shutdown() {
+    invoke_shutdown(*p_example_raiser);
+}
+
 } // namespace module

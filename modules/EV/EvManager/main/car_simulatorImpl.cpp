@@ -57,6 +57,9 @@ void car_simulatorImpl::ready() {
     }
 }
 
+void car_simulatorImpl::shutdown() {
+}
+
 void car_simulatorImpl::handle_enable(bool& value) {
     if (enabled == value) {
         // ignore if value is the same

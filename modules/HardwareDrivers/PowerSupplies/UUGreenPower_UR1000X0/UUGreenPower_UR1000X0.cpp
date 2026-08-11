@@ -46,4 +46,8 @@ void UUGreenPower_UR1000X0::ready() {
     invoke_ready(*p_main);
 }
 
+void UUGreenPower_UR1000X0::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

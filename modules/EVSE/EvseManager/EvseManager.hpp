@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -54,6 +54,8 @@
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
+
+struct RwConf {};
 
 struct Conf {
     int connector_id;
@@ -126,6 +128,9 @@ struct Conf {
     std::string bpt_grid_code_island_method;
     int hlc_charge_loop_without_energy_timeout_s;
     int dc_ramp_ampere_per_second;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class EvseManager : public Everest::ModuleBase {
@@ -309,6 +314,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

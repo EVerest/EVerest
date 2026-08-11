@@ -12,6 +12,9 @@ void ISO15118_chargerImpl::init() {
 void ISO15118_chargerImpl::ready() {
 }
 
+void ISO15118_chargerImpl::shutdown() {
+}
+
 void ISO15118_chargerImpl::handle_setup(types::iso15118::EVSEID& evse_id,
                                         types::iso15118::SaeJ2847BidiMode& sae_j2847_mode, bool& debug_mode) {
     // your code for cmd setup goes here

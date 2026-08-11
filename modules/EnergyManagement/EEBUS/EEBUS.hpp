@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -29,6 +29,8 @@
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     bool manage_eebus_grpc_api_binary;
     int eebus_service_port;
@@ -46,6 +48,9 @@ struct Conf {
     int max_nominal_power_W;
     int restart_delay_s;
     int reconnect_delay_s;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class EEBUS : public Everest::ModuleBase {
@@ -70,6 +75,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     /// \brief run and supervise the eebus_grpc_api sidecar, restarting it on exit

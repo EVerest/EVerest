@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/ev_slac/Implementation.hpp>
@@ -19,9 +19,14 @@
 namespace module {
 namespace main {
 
+struct RwConf {};
+
 struct Conf {
     std::string device;
     int set_key_timeout_ms;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class ev_slacImpl : public ev_slacImplBase {
@@ -49,6 +54,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here

@@ -251,4 +251,7 @@ void BUPowerSupplyDC::ready() {
     screen.Loop(main_renderer);
 }
 
+void BUPowerSupplyDC::shutdown() {
+}
+
 } // namespace module

@@ -66,4 +66,8 @@ void dc_external_derate_consumer_API::generate_api_cmd_set_external_derating() {
     });
 }
 
+void dc_external_derate_consumer_API::shutdown() {
+    invoke_shutdown(*p_generic_error);
+}
+
 } // namespace module

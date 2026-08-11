@@ -17,4 +17,8 @@ void InfyPower::ready() {
     invoke_ready(*p_main);
 }
 
+void InfyPower::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

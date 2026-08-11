@@ -12,4 +12,8 @@ void EvseSecurity::ready() {
     invoke_ready(*p_main);
 }
 
+void EvseSecurity::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

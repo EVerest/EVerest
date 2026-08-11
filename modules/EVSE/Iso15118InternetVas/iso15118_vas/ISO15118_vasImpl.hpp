@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/ISO15118_vas/Implementation.hpp>
@@ -19,7 +19,13 @@
 namespace module {
 namespace iso15118_vas {
 
-struct Conf {};
+struct RwConf {};
+
+struct Conf {
+
+    Conf() = default;
+    Conf(const RwConf&){};
+};
 
 class ISO15118_vasImpl : public ISO15118_vasImplBase {
 public:
@@ -47,6 +53,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     void start_script(const std::string& script_name, const std::vector<std::string>& args);

@@ -73,4 +73,8 @@ void generic_error_raiser_API::generate_api_var_clear_error() {
     });
 }
 
+void generic_error_raiser_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

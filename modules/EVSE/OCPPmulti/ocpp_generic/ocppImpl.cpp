@@ -12,6 +12,9 @@ void ocppImpl::init() {
 void ocppImpl::ready() {
 }
 
+void ocppImpl::shutdown() {
+}
+
 bool ocppImpl::handle_stop() {
     return mod->m_ocpp.handle_stop();
 }

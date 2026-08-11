@@ -26,5 +26,8 @@ void example_error_frameworkImpl::test_state_monitor() {
 void example_error_frameworkImpl::ready() {
 }
 
+void example_error_frameworkImpl::shutdown() {
+}
+
 } // namespace example_global_subscriber
 } // namespace module

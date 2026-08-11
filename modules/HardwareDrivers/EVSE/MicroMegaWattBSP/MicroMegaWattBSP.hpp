@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -22,6 +22,8 @@
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     std::string serial_port;
     int baud_rate;
@@ -29,6 +31,9 @@ struct Conf {
     int reset_gpio;
     int dc_max_voltage;
     int connector_id;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class MicroMegaWattBSP : public Everest::ModuleBase {
@@ -65,6 +70,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

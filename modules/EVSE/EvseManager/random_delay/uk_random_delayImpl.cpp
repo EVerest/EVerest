@@ -12,6 +12,9 @@ void uk_random_delayImpl::init() {
 void uk_random_delayImpl::ready() {
 }
 
+void uk_random_delayImpl::shutdown() {
+}
+
 void uk_random_delayImpl::handle_enable() {
     mod->random_delay_running = false;
     mod->random_delay_enabled = true;

@@ -23,6 +23,9 @@ void powermeterImpl::ready() {
     t.detach();
 }
 
+void powermeterImpl::shutdown() {
+}
+
 types::powermeter::TransactionStartResponse
 powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& value) {
     types::powermeter::TransactionStartResponse r;

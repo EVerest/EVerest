@@ -62,5 +62,8 @@ void example_error_frameworkImpl::ready() {
     check_conditions();
 }
 
+void example_error_frameworkImpl::shutdown() {
+}
+
 } // namespace example_subscriber
 } // namespace module

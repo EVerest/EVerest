@@ -13,4 +13,8 @@ void DoldRN5893::ready() {
     invoke_ready(*p_main);
 }
 
+void DoldRN5893::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

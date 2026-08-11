@@ -160,6 +160,9 @@ void isolation_monitorImpl::ready() {
     }
 }
 
+void isolation_monitorImpl::shutdown() {
+}
+
 void isolation_monitorImpl::handle_start() {
     publish_enabled = true;
     if (not update_control_word1()) {

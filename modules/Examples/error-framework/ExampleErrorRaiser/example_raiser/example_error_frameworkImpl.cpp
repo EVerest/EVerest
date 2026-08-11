@@ -90,5 +90,8 @@ void example_error_frameworkImpl::ready() {
     std::this_thread::sleep_for(std::chrono::seconds(2));
 }
 
+void example_error_frameworkImpl::shutdown() {
+}
+
 } // namespace example_raiser
 } // namespace module

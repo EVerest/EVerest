@@ -188,4 +188,9 @@ void ocpp_consumer_API::generate_api_var_ocpp_message() {
     r_ocpp->subscribe_ocpp_message(forward_and_cache_api_var("ocpp_message"));
 }
 
+void ocpp_consumer_API::shutdown() {
+    invoke_shutdown(*p_main);
+    invoke_shutdown(*p_generic_error);
+}
+
 } // namespace module

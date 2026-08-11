@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -74,6 +74,8 @@ public:
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     std::string ChargePointConfigPath;
     int CompositeScheduleIntervalS;
@@ -86,17 +88,20 @@ struct Conf {
     std::string DeviceModelDatabaseMigrationPath;
     bool EnableLegacyConfigMigration;
     std::string DeviceModelConfigMappings;
-    int Ocpp16NetworkConfigSlot;
     bool EnableExternalWebsocketControl;
     std::string EverestDeviceModelDatabasePath;
+    int GridSupportHeartbeatS;
     std::string MessageLogPath;
     int MessageQueueResumeDelay;
+    std::string Mode;
+    int Ocpp16NetworkConfigSlot;
     int RequestCompositeScheduleDurationS;
     std::string RequestCompositeScheduleUnit;
     int ResetStopDelay;
     std::string UserConfigPath;
-    std::string Mode;
-    int GridSupportHeartbeatS;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class OCPPmulti : public Everest::ModuleBase {
@@ -182,6 +187,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

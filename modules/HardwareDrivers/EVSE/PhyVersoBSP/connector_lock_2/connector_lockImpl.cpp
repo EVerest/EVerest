@@ -12,6 +12,9 @@ void connector_lockImpl::init() {
 void connector_lockImpl::ready() {
 }
 
+void connector_lockImpl::shutdown() {
+}
+
 void connector_lockImpl::handle_lock() {
     EVLOG_info << "Locking connector 2";
     mod->serial.lock(2, true);

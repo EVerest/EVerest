@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/auth_token_provider/Implementation.hpp>
@@ -19,8 +19,13 @@
 namespace module {
 namespace main {
 
+struct RwConf {};
+
 struct Conf {
     std::string mqtt_topic;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class auth_token_providerImpl : public auth_token_providerImplBase {
@@ -47,6 +52,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here

@@ -12,4 +12,8 @@ void OVMSimulator::ready() {
     invoke_ready(*p_main);
 }
 
+void OVMSimulator::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

@@ -12,4 +12,8 @@ void ExampleErrorSubscriber::ready() {
     invoke_ready(*p_example_subscriber);
 }
 
+void ExampleErrorSubscriber::shutdown() {
+    invoke_shutdown(*p_example_subscriber);
+}
+
 } // namespace module

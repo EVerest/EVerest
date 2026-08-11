@@ -12,6 +12,9 @@ void ac_rcdImpl::init() {
 void ac_rcdImpl::ready() {
 }
 
+void ac_rcdImpl::shutdown() {
+}
+
 void ac_rcdImpl::handle_self_test() {
     // your code for cmd self_test goes here
 }

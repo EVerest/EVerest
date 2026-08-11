@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -100,6 +100,8 @@ void to_json(json& j, const ApplicationInfo& k);
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     bool setup_wifi;
     bool localization;
@@ -109,6 +111,9 @@ struct Conf {
     std::string release_metadata_file;
     std::string ap_interface;
     std::string ap_ipv4;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class Setup : public Everest::ModuleBase {
@@ -135,6 +140,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

@@ -158,6 +158,9 @@ void powermeterImpl::ready() {
         }).detach();
     }
 }
+
+void powermeterImpl::shutdown() {
+}
 void powermeterImpl::time_sync() {
     get_device_time();
 

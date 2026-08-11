@@ -60,4 +60,8 @@ void session_cost_consumer_API::generate_api_var_default_price() {
     r_session_cost->subscribe_default_price(forward_and_cache_api_var("default_price"));
 }
 
+void session_cost_consumer_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

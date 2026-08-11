@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -22,6 +22,8 @@
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
+
+struct RwConf {};
 
 struct Conf {
     std::string serial_port;
@@ -65,6 +67,9 @@ struct Conf {
     bool conn2_feedback_active_low;
     int conn1_feedback_pull;
     int conn2_feedback_pull;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class PhyVersoBSP : public Everest::ModuleBase {
@@ -110,6 +115,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

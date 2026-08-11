@@ -16,4 +16,9 @@ void DCSupplySimulator::ready() {
     invoke_ready(*p_powermeter);
 }
 
+void DCSupplySimulator::shutdown() {
+    invoke_shutdown(*p_main);
+    invoke_shutdown(*p_powermeter);
+}
+
 } // namespace module

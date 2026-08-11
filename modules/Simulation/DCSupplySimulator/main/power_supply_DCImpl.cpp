@@ -55,6 +55,9 @@ void power_supply_DCImpl::ready() {
     publish_capabilities(get_capabilities_from_config(config));
 }
 
+void power_supply_DCImpl::shutdown() {
+}
+
 void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& _mode,
                                          types::power_supply_DC::ChargingPhase& phase) {
     mode = _mode;
