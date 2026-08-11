@@ -432,6 +432,7 @@ void to_json(json& j, HardwareCapabilities const& k) noexcept {
         {"max_phase_count_export", k.max_phase_count_export},
         {"min_phase_count_export", k.min_phase_count_export},
         {"supports_changing_phases_during_charging", k.supports_changing_phases_during_charging},
+        {"supports_cp_state_E", k.supports_cp_state_E},
         {"connector_type", k.connector_type},
     };
     if (k.max_plug_temperature_C) {
@@ -449,6 +450,7 @@ void from_json(json const& j, HardwareCapabilities& k) {
     k.max_phase_count_export = j.at("max_phase_count_export");
     k.min_phase_count_export = j.at("min_phase_count_export");
     k.supports_changing_phases_during_charging = j.at("supports_changing_phases_during_charging");
+    k.supports_cp_state_E = j.at("supports_cp_state_E");
     k.connector_type = j.at("connector_type");
 
     if (j.contains("max_plug_temperature_C")) {
