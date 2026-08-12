@@ -428,8 +428,15 @@ TokenValidationStatusMessage_Internal to_internal_api(TokenValidationStatusMessa
     TokenValidationStatusMessage_Internal result;
     result.token = to_internal_api(val.token);
     result.status = to_internal_api(val.status);
-    if (val.messages) {
-        result.messages = vecToInternal(val.messages.value());
+    if (val.validation_results) {
+        result.validation_results = vecToInternal(val.validation_results.value());
+    } else if (val.messages) {
+        // Legacy producers only set the deprecated `messages` field; carry the
+        // messages as a single validation result of unknown status.
+        ValidationResult_Internal legacy;
+        legacy.authorization_status = AuthorizationStatus_Internal::Unknown;
+        legacy.tariff_messages = vecToInternal(val.messages.value());
+        result.validation_results = std::vector<ValidationResult_Internal>{legacy};
     }
     return result;
 }
@@ -438,8 +445,16 @@ TokenValidationStatusMessage_External to_external_api(TokenValidationStatusMessa
     TokenValidationStatusMessage_External result;
     result.token = to_external_api(val.token);
     result.status = to_external_api(val.status);
-    if (val.messages) {
-        result.messages = vecToExternal(val.messages.value());
+    if (val.validation_results) {
+        result.validation_results = vecToExternal(val.validation_results.value());
+        // Mirror the tariff messages into the deprecated `messages` field so
+        // legacy consumers keep working until the field is removed.
+        std::vector<text_message::MessageContent> messages;
+        for (auto const& validation_result : result.validation_results.value()) {
+            messages.insert(messages.end(), validation_result.tariff_messages.begin(),
+                            validation_result.tariff_messages.end());
+        }
+        result.messages = std::move(messages);
     }
     return result;
 }
