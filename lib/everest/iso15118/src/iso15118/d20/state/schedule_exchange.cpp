@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
-#include <ctime>
-
 #include <iso15118/d20/state/dc_cable_check.hpp>
 #include <iso15118/d20/state/power_delivery.hpp>
 #include <iso15118/d20/state/schedule_exchange.hpp>
+
+#include <optional>
+#include <variant>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/schedule_exchange.hpp>
@@ -25,8 +26,7 @@ namespace {
 auto create_default_scheduled_control_mode(const dt::RationalNumber& max_power) {
     dt::ScheduleTuple schedule;
     schedule.schedule_tuple_id = 1;
-    schedule.charging_schedule.power_schedule.time_anchor =
-        static_cast<uint64_t>(std::time(nullptr)); // PowerSchedule is now active
+    schedule.charging_schedule.power_schedule.time_anchor = secc_time_ms(); // [V2G20-310] PowerSchedule is now active
 
     dt::PowerScheduleEntry power_schedule;
     power_schedule.power = max_power;
@@ -42,12 +42,12 @@ auto create_default_scheduled_control_mode(const dt::RationalNumber& max_power) 
 }
 
 namespace {
-void set_dynamic_parameters_in_res(DynamicResControlMode& res_mode, const UpdateDynamicModeParameters& parameters,
-                                   uint64_t header_timestamp) {
+void set_dynamic_parameters_in_res(DynamicResControlMode& res_mode, const UpdateDynamicModeParameters& parameters) {
     if (parameters.departure_time) {
         const auto departure_time = static_cast<uint64_t>(parameters.departure_time.value());
-        if (departure_time > header_timestamp) {
-            res_mode.departure_time = static_cast<uint32_t>(departure_time - header_timestamp);
+        const auto now = secc_time_s();
+        if (departure_time > now) {
+            res_mode.departure_time = static_cast<uint32_t>(departure_time - now);
         }
     }
     res_mode.target_soc = parameters.target_soc;
@@ -94,7 +94,7 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
         auto& mode = res.control_mode.emplace<DynamicResControlMode>();
 
         if (selected_mobility_needs_mode == dt::MobilityNeedsMode::ProvidedBySecc) {
-            set_dynamic_parameters_in_res(mode, dynamic_parameters, res.header.timestamp);
+            set_dynamic_parameters_in_res(mode, dynamic_parameters);
         }
 
     } else {
