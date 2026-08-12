@@ -2,6 +2,7 @@
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
 
 #include "comparators.hpp"
+#include "connectivity_manager_mock.hpp"
 #include "device_model_test_helper.hpp"
 #include "everest/logging.hpp"
 #include "evse_security_mock.hpp"
@@ -1002,5 +1003,29 @@ TEST_F(ChargePointConstructorTestFixtureV2, DerBlock_NotBuiltAtBoot_WhenNoEnable
                                        create_message_queue(database_handler), "/tmp", evse_security, callbacks);
 
     EXPECT_EQ(this->der_active_directives_emit_count, 0);
+}
+
+// stop() disarms the connection callbacks so a late websocket-thread callback cannot reach a charge point
+// being torn down. A restart calls start() again on the same ConnectivityManager, so start() must arm them
+// again; otherwise the connection state stays suppressed after the first stop().
+TEST_F(ChargePointConstructorTestFixtureV2, StartArmsConnectionCallbacks) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+
+    const ::testing::InSequence seq;
+    EXPECT_CALL(*connectivity_manager, arm_connection_callbacks()).Times(1);
+    EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(1);
+    EXPECT_CALL(*connectivity_manager, arm_connection_callbacks()).Times(1);
+    EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(1);
+
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                       connectivity_manager, "/tmp", callbacks);
+
+    charge_point.start(BootReasonEnum::PowerUp);
+    charge_point.stop();
+    charge_point.start(BootReasonEnum::ApplicationReset);
+    charge_point.stop();
 }
 } // namespace ocpp::v2
