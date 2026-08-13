@@ -38,6 +38,7 @@ set(EVEREST_LIB_SUBDIRS
     iso15118
     log
     ocpp
+    phase_rotation
     ocpp_module_common
     run_application
     slac
@@ -68,6 +69,7 @@ set(EVEREST_LIB_DEPS_slac "tls;fsm")
 # Tier 3 (framework-coupled)
 set(EVEREST_LIB_DEPS_helpers "tls;framework")
 set(EVEREST_LIB_DEPS_external_energy_limits "framework")
+set(EVEREST_LIB_DEPS_phase_rotation "framework")
 set(EVEREST_LIB_DEPS_everest_api_types "")
 set(EVEREST_LIB_DEPS_conversions "framework;evse_security")
 set(EVEREST_LIB_DEPS_ocpp_module_common "ocpp;conversions;framework")

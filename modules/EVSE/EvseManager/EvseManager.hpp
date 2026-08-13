@@ -127,6 +127,7 @@ struct Conf {
     int hlc_charge_loop_without_energy_timeout_s;
     int dc_ramp_ampere_per_second;
     bool enable_nodered_interface;
+    std::string phase_rotation_grid_side;
 };
 
 class EvseManager : public Everest::ModuleBase {

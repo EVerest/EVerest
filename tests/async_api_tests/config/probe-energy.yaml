@@ -1,0 +1,42 @@
+active_modules:
+  probe:
+    module: ProbeModule
+    connections:
+      energy_observer:
+        - module_id: energy_node
+          implementation_id: energy_grid
+  energy_node:
+    module: EnergyNode
+    config_module:
+      fuse_limit_A: 32
+      phase_count: 3
+      nominal_voltage_V: 230
+      enhance_external_schedule: false
+      phase_rotation: 'TRS'
+    connections:
+      energy_consumer:
+        - module_id: probe
+          implementation_id: energy_consumer_probe
+        - module_id: connector_1
+          implementation_id: energy_grid
+      powermeter:
+        - module_id: probe
+          implementation_id: powermeter_probe
+  connector_1:
+    module: EvseManager
+    config_module:
+      connector_id: 1
+      phase_rotation_grid_side: 'TRS'
+    connections:
+      bsp:
+        - module_id: probe
+          implementation_id: bsp_probe
+      powermeter_grid_side:
+        - module_id: probe
+          implementation_id: powermeter_grid_side_probe
+  energy_manager:
+    module: EnergyManager
+    connections:
+      energy_trunk:
+        - module_id: energy_node
+          implementation_id: energy_grid
