@@ -76,6 +76,16 @@ private:
 void process_schedule_with_limits(std::vector<types::energy::ScheduleReqEntry>& schedule, const std::string& source,
                                   double fuse_limit_A, int phase_count, double nominal_voltage_V,
                                   bool enhance_with_current_limits);
+
+// Standalone function that merges an updated child EnergyFlowRequest \p e into \p children , replacing the
+// existing entry for that child's uuid if present, or appending it otherwise (used by tests)
+void merge_child_energy_flow_request(std::vector<types::energy::EnergyFlowRequest>& children,
+                                     types::energy::EnergyFlowRequest e);
+
+// Standalone function that applies the configured phase rotation to a raw powermeter reading before it is used
+// as the root node's own energy usage in the energy flow request (used by tests)
+types::powermeter::Powermeter build_rotated_root_usage(const types::powermeter::Powermeter& powermeter,
+                                                       const std::string& phase_rotation);
 // ev@3d7da0ad-02c2-493d-9920-0bbbd56b9876:v1
 
 } // namespace energy_grid

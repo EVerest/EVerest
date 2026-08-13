@@ -29,6 +29,7 @@ target_link_libraries(${MODULE_NAME}
         everest::everest_api_types
         everest::helpers
         everest::util
+        everest::phase_rotation
         Pal::Sigslot
         pugixml::pugixml
 )

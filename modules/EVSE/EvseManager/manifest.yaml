@@ -446,6 +446,20 @@ config:
       Maximum ampere per second limit for up/down ramping of current in charging loop.
     type: integer
     default: 25
+  phase_rotation_grid_side:
+    description: >-
+      Corrects for a physical L1/L2/L3 wiring rotation at the grid side powermeter
+      by remapping its per-phase voltage/current/power/energy/VAR values before
+      they are used in energy_flow_request.energy_usage_root. RST means no rotation,
+      i.e. reported L1/L2/L3 already matches grid L1/L2/L3. SRT means reported L1 is
+      grid L2, reported L2 is grid L3, reported L3 is grid L1. TRS means reported L1
+      is grid L3, reported L2 is grid L1, reported L3 is grid L2.
+    type: string
+    enum:
+      - 'RST'
+      - 'TRS'
+      - 'STR'
+    default: 'RST'
 provides:
   evse:
     interface: evse_manager
