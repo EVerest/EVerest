@@ -30,6 +30,14 @@ config:
     description: Nominal AC voltage between phase and neutral in Volt
     type: number
     default: 230
+  ac_nominal_frequency:
+    description: >-
+      Nominal AC grid frequency in Hz, normally 50 or 60. Passed to the HLC stack as the reference for
+      the ISO 15118-20 AC DER frequency-trip and frequency-droop grid code, so a wrong value makes the
+      SECC declare its trip thresholds against the wrong reference.
+    type: number
+    minimum: 1
+    default: 50
   ac_max_reactive_power:
     description: Maximum EVSE reactive power in var; passed to the HLC stack as the AC_DER_IEC de-normalization base. 0 means the EVSE has no reactive-power capability.
     type: number

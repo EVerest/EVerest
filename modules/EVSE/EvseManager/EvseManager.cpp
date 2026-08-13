@@ -1883,10 +1883,14 @@ void EvseManager::update_hlc_ac_parameters() {
     if (hw_caps.max_phase_count_import == 3) {
         ac_connectors.push_back(types::iso15118::Connector::ThreePhase);
     }
-    r_hlc[0]->call_update_ac_parameters(
-        {50, static_cast<float>(config.ac_nominal_voltage), ac_connectors, std::nullopt, std::nullopt,
-         config.ac_max_reactive_power > 0 ? std::make_optional(static_cast<float>(config.ac_max_reactive_power))
-                                          : std::nullopt}); // TODO(sl): Getting nominal frequency
+    types::iso15118::AcParameters ac_parameters{};
+    ac_parameters.nominal_frequency = static_cast<float>(config.ac_nominal_frequency);
+    ac_parameters.nominal_voltage = static_cast<float>(config.ac_nominal_voltage);
+    ac_parameters.connectors = ac_connectors;
+    if (config.ac_max_reactive_power > 0) {
+        ac_parameters.evse_max_reactive_power = static_cast<float>(config.ac_max_reactive_power);
+    }
+    r_hlc[0]->call_update_ac_parameters(ac_parameters);
 }
 
 void EvseManager::log_v2g_message(types::iso15118::V2gMessages const& v2g_messages) {

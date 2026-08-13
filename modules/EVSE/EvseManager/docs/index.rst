@@ -365,6 +365,18 @@ one per session.
 
 The command returns ``NoHlc`` when no HLC is enabled for the EVSE (and does nothing), and ``Accepted`` otherwise.
 
+Nominal grid frequency
+----------------------
+
+``ac_nominal_frequency`` (default ``50``) is passed to the HLC stack on every AC parameters update. For plain
+AC and ``AC_BPT`` it is informational, but for AC DER it is the reference against which the frequency-trip
+curves and the frequency-droop function are specified, and those are declared to the EV as normative grid code
+at ChargeParameterDiscovery. A 60 Hz installation that leaves this at the default therefore advertises trip
+thresholds specified against the wrong reference. Set it to match the installation.
+
+It is also load-bearing for the feature working at all: the SAE DER limits are only derived once a positive
+nominal frequency has arrived, as described above.
+
 Error Handling
 ==============
 
