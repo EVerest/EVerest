@@ -121,14 +121,16 @@ requires in `manifest.yaml`, is wired to other modules by a configuration YAML u
 `config/`, and communicates only over MQTT through `everest-framework`. Contracts are
 the source of truth for wiring: read `interfaces/*.yaml`, `types/*.yaml` and
 `errors/*.yaml` before the C++. Lifecycle is `init()` then `ready()`, implemented per
-provided interface in `*Impl.cpp`: subscribe in `init()`; call commands in `ready()` or
-later. Generated headers land under `build/generated/`.
+provided interface in `*Impl.cpp`: subscribe in `init()`; call commands and publish in
+`ready()` or later. Generated headers land under `build/generated/`.
 
 ```cpp
 // modules/EVSE/EvseManager
-r_bsp->subscribe_event([this](auto ev) { ... });  // subscribe: init()
-p_evse->publish_ready(true);                      // publish on a provided interface
-r_bsp->call_enable(true);                         // commands: ready() or later only
+r_bsp->subscribe_event([this](auto ev) {   // subscribe: init()
+    p_evse->publish_ready(true);           // publishing from the callback: fine
+});
+p_evse->publish_ready(true);               // at init() top level: never
+r_bsp->call_enable(true);                  // commands: ready() or later only
 ```
 
 In a configuration YAML, a `connections` entry maps a requirement ID from the consuming
@@ -211,6 +213,8 @@ Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
 - Never use `std::cout` or `fprintf` for logging.
 - Never call `mod->r_*->call_*()` inside `init()`. Command calls belong in `ready()` or
   later.
+- Never `publish_*()` or raise an error inside `init()` either. Neither is retained, so
+  subscribers still in their own `init()` miss it.
 - Never skip formatting before proposing C++ changes. CI fails on it, see Code style.
 
 ## Contributing essentials
