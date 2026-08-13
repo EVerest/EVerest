@@ -7,6 +7,7 @@
 #include "nlohmann/json.hpp"
 #include "utilities/constants.hpp"
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 
@@ -273,104 +274,104 @@ std::ostream& operator<<(std::ostream& os, CommandAck const& val) {
     return os;
 }
 
-template <> FsmState deserialize(std::string const& val) {
-    return json::parse(val);
+template <> FsmState deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> ChargeMode deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ChargeMode deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> PaymentOption deserialize(std::string const& val) {
-    return json::parse(val);
+template <> PaymentOption deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> FaultType deserialize(std::string const& val) {
-    return json::parse(val);
+template <> FaultType deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> ScenarioName deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ScenarioName deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> IsoSessionEventKind deserialize(std::string const& val) {
-    return json::parse(val);
+template <> IsoSessionEventKind deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> CommandAckStatus deserialize(std::string const& val) {
-    return json::parse(val);
+template <> CommandAckStatus deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> BspEventKind deserialize(std::string const& val) {
-    return json::parse(val);
+template <> BspEventKind deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> SlacStateKind deserialize(std::string const& val) {
-    return json::parse(val);
+template <> SlacStateKind deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> BptParams deserialize(std::string const& val) {
-    return json::parse(val);
+template <> BptParams deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> CurvePoint deserialize(std::string const& val) {
-    return json::parse(val);
+template <> CurvePoint deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> ChargingCurve deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ChargingCurve deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> SessionConfigParams deserialize(std::string const& val) {
-    return json::parse(val);
+template <> SessionConfigParams deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> SetChargingCurrentParams deserialize(std::string const& val) {
-    return json::parse(val);
+template <> SetChargingCurrentParams deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> SetSocParams deserialize(std::string const& val) {
-    return json::parse(val);
+template <> SetSocParams deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> BcbToggleParams deserialize(std::string const& val) {
-    return json::parse(val);
+template <> BcbToggleParams deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> InjectFaultParams deserialize(std::string const& val) {
-    return json::parse(val);
+template <> InjectFaultParams deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> ScenarioTimingOverrides deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ScenarioTimingOverrides deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> RunScenarioParams deserialize(std::string const& val) {
-    return json::parse(val);
+template <> RunScenarioParams deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> EvInfo deserialize(std::string const& val) {
-    return json::parse(val);
+template <> EvInfo deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> IsoSessionEvent deserialize(std::string const& val) {
-    return json::parse(val);
+template <> IsoSessionEvent deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> BspEvent deserialize(std::string const& val) {
-    return json::parse(val);
+template <> BspEvent deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> SlacState deserialize(std::string const& val) {
-    return json::parse(val);
+template <> SlacState deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> FaultReport deserialize(std::string const& val) {
-    return json::parse(val);
+template <> FaultReport deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
-template <> CommandAck deserialize(std::string const& val) {
-    return json::parse(val);
+template <> CommandAck deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
 }
 
 } // namespace everest::lib::API::V1_0::types::ev_simulator
