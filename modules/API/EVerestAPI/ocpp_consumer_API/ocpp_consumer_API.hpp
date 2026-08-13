@@ -20,8 +20,6 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
-#include <mutex>
-
 #include <everest_api_module_helpers/ApiHelper.hpp>
 #include <everest_api_types/entrypoint/API.hpp>
 
@@ -90,18 +88,12 @@ private:
 
     void generate_api_var_security_event();
     void generate_api_var_connection_status();
+    void generate_api_var_implementation_ready();
     void generate_api_var_boot_notification_response();
     void generate_api_var_ocpp_transaction_event();
     void generate_api_var_event_data();
     void generate_api_var_charging_schedules();
     void generate_api_var_ocpp_message();
-
-    void start_communication_monitoring();
-
-    std::mutex comm_start_mutex;
-    bool bridge_setup_done{false};
-    bool implementation_ready{false};
-    bool comm_monitoring_started{false};
 
     ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
                                                                ev_API::bridge_connection_lost_message, p_generic_error};

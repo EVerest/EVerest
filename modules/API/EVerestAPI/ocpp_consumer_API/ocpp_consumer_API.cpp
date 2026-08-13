@@ -35,17 +35,12 @@ void ocpp_consumer_API::init() {
     // setup var forwarding before modules start publishing
     generate_api_var_security_event();
     generate_api_var_connection_status();
+    generate_api_var_implementation_ready();
     generate_api_var_boot_notification_response();
     generate_api_var_ocpp_transaction_event();
     generate_api_var_event_data();
     generate_api_var_charging_schedules();
     generate_api_var_ocpp_message();
-
-    r_ocpp->subscribe_ready([this](bool val) {
-        std::lock_guard<std::mutex> lock(comm_start_mutex);
-        implementation_ready = implementation_ready || val;
-        start_communication_monitoring();
-    });
 }
 
 void ocpp_consumer_API::ready() {
@@ -61,22 +56,9 @@ void ocpp_consumer_API::ready() {
     generate_api_cmd_security_event();
 
     helper.generate_api_var_communication_check(&comm_check);
-    helper.publish_ready_beacon();
-
-    {
-        std::lock_guard<std::mutex> lock(comm_start_mutex);
-        bridge_setup_done = true;
-        start_communication_monitoring();
-    }
-}
-
-void ocpp_consumer_API::start_communication_monitoring() {
-    if (not bridge_setup_done || not implementation_ready || comm_monitoring_started) {
-        return;
-    }
-    comm_monitoring_started = true;
     comm_check.start(config.cfg_communication_check_to_s);
     helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
+    helper.publish_ready_beacon();
 }
 
 auto ocpp_consumer_API::forward_and_cache_api_var(std::string const& var) {
@@ -192,6 +174,13 @@ void ocpp_consumer_API::generate_api_var_connection_status() {
         // connected property of the connection status as a plain boolean
         forward_is_connected(status.connected);
     });
+}
+
+void ocpp_consumer_API::generate_api_var_implementation_ready() {
+    r_ocpp->subscribe_ready(forward_and_cache_api_var("implementation_ready"));
+    // seed the value: the OCPP implementation only publishes once it is up, so without this a
+    // client querying implementation_ready/get before that would receive null instead of false
+    helper.publish_initial_api_var("implementation_ready", API_generic::serialize(false), config.latch_variable_values);
 }
 
 void ocpp_consumer_API::generate_api_var_boot_notification_response() {
