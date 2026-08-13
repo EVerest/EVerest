@@ -129,6 +129,9 @@ public:
     bool getVerifyCsmsAllowWildcards() override;
     void setVerifyCsmsAllowWildcards(bool verify_csms_allow_wildcards) override;
     KeyValue getVerifyCsmsAllowWildcardsKeyValue() override;
+    bool getReportSuspendedEVSEReasonChange() override;
+    void setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) override;
+    KeyValue getReportSuspendedEVSEReasonChangeKeyValue() override;
     bool getUseTPM() override;
     KeyValue getUseTPMKeyValue() override;
     bool getUseTPMSeccLeafCertificate() override;

@@ -251,6 +251,9 @@ private:
                              const std::optional<CiString<255>>& vendor_id = std::nullopt,
                              const std::optional<CiString<50>>& vendor_error_code = std::nullopt,
                              bool initiated_by_trigger_message = false);
+    /// \brief Answers a TriggerMessage(StatusNotification) for \p connector . An active error owns the info field; in
+    /// its absence a suspended connector reports its suspend reason if ReportSuspendedEVSEReasonChange is set.
+    void triggered_status_notification(const std::int32_t connector);
     void diagnostic_status_notification(DiagnosticsStatus status, bool initiated_by_trigger_message = false);
     void firmware_status_notification(FirmwareStatus status, bool initiated_by_trigger_message = false,
                                       bool disable_connectors_during_install = true);
@@ -668,6 +671,8 @@ public:
     void on_suspend_charging_ev(std::int32_t connector, const std::optional<CiString<50>> info = std::nullopt);
 
     /// \brief This function should be called when EVSE indicates that it suspends charging on the given \p connector
+    /// . The \p info is always forwarded verbatim, but unless ReportSuspendedEVSEReasonChange is set a suspend on an
+    /// already suspended connector is discarded.
     /// \param connector
     /// \param info
     void on_suspend_charging_evse(std::int32_t connector, const std::optional<CiString<50>> info = std::nullopt);

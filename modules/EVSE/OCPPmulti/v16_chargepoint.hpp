@@ -205,6 +205,8 @@ public:
     ocpp::v2::AuthorizeResponse validate_token(const types::authorization::ProvidedIdToken& provided_token) override;
 
     static bool default_is_fault(const Everest::error::Error& error);
+    static std::optional<ocpp::CiString<50>>
+    encode_pause_reasons(const std::optional<types::evse_manager::ChargingPausedEVSEReasons>& reasons);
     static std::string default_vendor_error_code(const Everest::error::Error& error);
 };
 

@@ -97,6 +97,7 @@ namespace ocpp::v16::keys {
     mapping(UseSslDefaultVerifyPaths, UseSslDefaultVerifyPaths) \
     mapping(VerifyCsmsCommonName, VerifyCsmsCommonName) \
     mapping(VerifyCsmsAllowWildcards, VerifyCsmsAllowWildcards) \
+    mapping(ReportSuspendedEVSEReasonChange, ReportSuspendedEVSEReasonChange) \
     mapping(OcspRequestInterval, OcspRequestInterval) \
     mapping(SeccLeafSubjectCommonName, ISO15118CtrlrSeccId) \
     mapping(SeccLeafSubjectCountry, ISO15118CtrlrCountryName) \
@@ -284,6 +285,7 @@ namespace ocpp::v16::keys {
     key(Internal, RejectRemoteStartTransactionWithoutConnectorId) \
     key(Internal, RemoteStartTransactionWithoutConnectorIdFindFirst) \
     key(Internal, ReportClearedErrors) \
+    key(Internal, ReportSuspendedEVSEReasonChange) \
     key(Internal, RetryBackoffRandomRange) \
     key(Internal, RetryBackoffRepeatTimes) \
     key(Internal, RetryBackoffWaitMinimum) \

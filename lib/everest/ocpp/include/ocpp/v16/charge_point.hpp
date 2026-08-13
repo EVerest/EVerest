@@ -338,8 +338,10 @@ public:
     void on_suspend_charging_ev(std::int32_t connector, const std::optional<CiString<50>> info = std::nullopt);
 
     /// \brief This function should be called when EVSE indicates that it suspends charging on the given \p connector
+    /// . The \p info is always forwarded verbatim, but unless ReportSuspendedEVSEReasonChange is set a suspend on an
+    /// already suspended connector is discarded.
     /// \param connector
-    /// \param reason
+    /// \param info
     void on_suspend_charging_evse(std::int32_t connector, const std::optional<CiString<50>> info = std::nullopt);
 
     /// \brief This function should be called when charging resumes on the given \p connector

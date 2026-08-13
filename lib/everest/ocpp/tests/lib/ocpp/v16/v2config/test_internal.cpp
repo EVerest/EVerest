@@ -548,6 +548,24 @@ TEST_P(ConfigurationFull, RemoteStartTransactionWithoutConnectorIdFindFirst) {
     EXPECT_EQ(get()->getRemoteStartTransactionWithoutConnectorIdFindFirst().value(), true);
 }
 
+TEST_P(Configuration, ReportSuspendedEVSEReasonChange) {
+    ASSERT_NE(get(), nullptr);
+
+    get()->setReportSuspendedEVSEReasonChange(true);
+    EXPECT_TRUE(get()->getReportSuspendedEVSEReasonChange());
+    auto kv = get()->getReportSuspendedEVSEReasonChangeKeyValue();
+    EXPECT_EQ(kv.key, "ReportSuspendedEVSEReasonChange");
+    EXPECT_EQ(kv.value, "true");
+    EXPECT_FALSE(kv.readonly);
+
+    get()->setReportSuspendedEVSEReasonChange(false);
+    EXPECT_FALSE(get()->getReportSuspendedEVSEReasonChange());
+    kv = get()->getReportSuspendedEVSEReasonChangeKeyValue();
+    EXPECT_EQ(kv.key, "ReportSuspendedEVSEReasonChange");
+    EXPECT_EQ(kv.value, "false");
+    EXPECT_FALSE(kv.readonly);
+}
+
 TEST_P(Configuration, UseSslDefaultVerifyPaths) {
     ASSERT_NE(get(), nullptr);
     // initial values are from the JSON unit test config files

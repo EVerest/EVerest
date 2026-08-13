@@ -561,6 +561,11 @@ ChargePointConfigurationDeviceModel::setInternalRemoteStartTransactionWithoutCon
 }
 
 ChargePointConfigurationDeviceModel::SetResult
+ChargePointConfigurationDeviceModel::setInternalReportSuspendedEVSEReasonChange(const std::string& value) {
+    return set_value(isBool, *storage, keys::valid_keys::ReportSuspendedEVSEReasonChange, value);
+}
+
+ChargePointConfigurationDeviceModel::SetResult
 ChargePointConfigurationDeviceModel::setInternalCentralSystemURI(const std::string& value) {
     namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
     const auto cv = NC::get_component_variable(get_active_network_slot(*storage), NC::OcppCsmsUrl);
@@ -1862,6 +1867,10 @@ bool ChargePointConfigurationDeviceModel::getLogRotationDateSuffix() {
     return get_value<bool>(*storage, keys::valid_keys::LogRotationDateSuffix);
 }
 
+bool ChargePointConfigurationDeviceModel::getReportSuspendedEVSEReasonChange() {
+    return get_value<bool>(*storage, keys::valid_keys::ReportSuspendedEVSEReasonChange);
+}
+
 bool ChargePointConfigurationDeviceModel::getStopTransactionIfUnlockNotSupported() {
     return get_value<bool>(*storage, keys::valid_keys::StopTransactionIfUnlockNotSupported);
 }
@@ -2204,6 +2213,10 @@ KeyValue ChargePointConfigurationDeviceModel::getVerifyCsmsAllowWildcardsKeyValu
     return get_key_value(*storage, keys::valid_keys::VerifyCsmsAllowWildcards);
 }
 
+KeyValue ChargePointConfigurationDeviceModel::getReportSuspendedEVSEReasonChangeKeyValue() {
+    return get_key_value(*storage, keys::valid_keys::ReportSuspendedEVSEReasonChange);
+}
+
 KeyValue ChargePointConfigurationDeviceModel::getWaitForStopTransactionsOnResetTimeoutKeyValue() {
     return get_key_value(*storage, keys::valid_keys::WaitForStopTransactionsOnResetTimeout);
 }
@@ -2450,6 +2463,10 @@ void ChargePointConfigurationDeviceModel::setSwitchSecurityProfileConnectionTime
 
 void ChargePointConfigurationDeviceModel::setVerifyCsmsAllowWildcards(bool verify_csms_allow_wildcards) {
     setInternalVerifyCsmsAllowWildcards(to_string(verify_csms_allow_wildcards));
+}
+
+void ChargePointConfigurationDeviceModel::setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) {
+    setInternalReportSuspendedEVSEReasonChange(to_string(report_suspended_evse_reason_change));
 }
 
 void ChargePointConfigurationDeviceModel::setWaitForStopTransactionsOnResetTimeout(
@@ -3576,6 +3593,9 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
             break;
         case keys::valid_keys::RemoteStartTransactionWithoutConnectorIdFindFirst:
             result = convert(setInternalRemoteStartTransactionWithoutConnectorIdFindFirst(value_str));
+            break;
+        case keys::valid_keys::ReportSuspendedEVSEReasonChange:
+            result = convert(setInternalReportSuspendedEVSEReasonChange(value_str));
             break;
         case keys::valid_keys::RetryBackoffRandomRange:
             result = convert(setInternalRetryBackoffRandomRange(value_str));

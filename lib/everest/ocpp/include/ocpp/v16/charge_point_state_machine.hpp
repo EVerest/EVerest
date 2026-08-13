@@ -82,6 +82,9 @@ public:
     FSMState get_state();
     std::optional<ErrorInfo> get_latest_error();
 
+    /// \brief The info of the transition that put the connector into SuspendedEVSE, empty in any other state
+    std::optional<CiString<50>> get_suspend_reason() const;
+
 private:
     StatusNotificationCallback status_notification_callback;
     // track current state
@@ -89,8 +92,14 @@ private:
     FSMState state;
     std::unordered_map<std::string, ErrorInfo> active_errors;
     const bool report_cleared_errors;
+    std::optional<CiString<50>> last_emitted_info;
+    std::optional<CiString<50>> suspend_reason;
 
     bool is_faulted();
+    void emit_status_notification(FSMState reported_state, ChargePointErrorCode error_code,
+                                  const ocpp::DateTime& timestamp, const std::optional<CiString<50>>& info,
+                                  const std::optional<CiString<255>>& vendor_id,
+                                  const std::optional<CiString<50>>& vendor_error_code);
 };
 
 class ChargePointStates {
@@ -112,6 +121,9 @@ public:
 
     ChargePointStatus get_state(int connector_id);
     std::optional<ErrorInfo> get_latest_error(int connector_id);
+
+    /// \brief The info of the transition that put \p connector_id into SuspendedEVSE, empty in any other state
+    std::optional<CiString<50>> get_suspend_reason(int connector_id);
 
 private:
     ConnectorStatusCallback connector_status_callback;

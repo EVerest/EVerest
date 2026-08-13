@@ -243,6 +243,163 @@ TEST_F(ChargePointStateMachineTest, HandleErrorCleared__ResolvedErrorInfoTruncat
     state_machine->handle_error_cleared(error_info.uuid);
 }
 
+TEST_F(ChargePointStateMachineTest, SuspendedEVSE__ReasonChangeEmits) {
+    create_state_machine(false);
+    const std::optional<ocpp::CiString<50>> first_reason("NoEnergy");
+    const std::optional<ocpp::CiString<50>> second_reason("Error,NoEnergy");
+
+    EXPECT_CALL(mock_callback, Call(_, _, _, _, _, _)).Times(0);
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::NoError, _, first_reason, _, _));
+        EXPECT_CALL(mock_callback,
+                    Call(FSMState::SuspendedEVSE, ChargePointErrorCode::NoError, _, second_reason, _, _));
+    }
+
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), first_reason));
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), second_reason));
+    EXPECT_EQ(state_machine->get_state(), FSMState::SuspendedEVSE);
+}
+
+TEST_F(ChargePointStateMachineTest, SuspendedEVSE__IdenticalReasonSuppressed) {
+    create_state_machine(false);
+    const std::optional<ocpp::CiString<50>> reason("NoEnergy");
+
+    EXPECT_CALL(mock_callback, Call(_, _, _, _, _, _)).Times(0);
+    EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::NoError, _, reason, _, _)).Times(1);
+
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), reason));
+    EXPECT_FALSE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), reason));
+}
+
+TEST_F(ChargePointStateMachineTest, SuspendedEVSE__NulloptRepeatSuppressed) {
+    create_state_machine(false);
+
+    EXPECT_CALL(mock_callback, Call(_, _, _, _, _, _)).Times(0);
+    EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::NoError, _,
+                                    std::optional<ocpp::CiString<50>>(), _, _))
+        .Times(1);
+
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), std::nullopt));
+    EXPECT_FALSE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), std::nullopt));
+}
+
+TEST_F(ChargePointStateMachineTest, SuspendedEVSE__InterleavedErrorThenIdenticalReasonEmits) {
+    create_state_machine(false);
+    const std::optional<ocpp::CiString<50>> reason("NoEnergy");
+    const ErrorInfo error_info("uuid1", ChargePointErrorCode::OtherError, false, "SomeError");
+
+    EXPECT_CALL(mock_callback, Call(_, _, _, _, _, _)).Times(0);
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::NoError, _, reason, _, _));
+        EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::OtherError, _,
+                                        std::optional<ocpp::CiString<50>>("SomeError"), _, _));
+        EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::OtherError, _, reason, _, _));
+    }
+
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), reason));
+    EXPECT_TRUE(state_machine->handle_error(error_info));
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), reason));
+}
+
+// A connector that leaves SuspendedEVSE and is suspended again for the same reason must report the re-entry. The
+// self-transition guard must stay narrow enough to let this through.
+TEST_F(ChargePointStateMachineTest, SuspendedEVSE__SameReasonAfterChargingEmits) {
+    create_state_machine(false);
+    const std::optional<ocpp::CiString<50>> reason("NoEnergy");
+
+    EXPECT_CALL(mock_callback, Call(_, _, _, _, _, _)).Times(0);
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::NoError, _, reason, _, _));
+        EXPECT_CALL(mock_callback, Call(FSMState::Charging, ChargePointErrorCode::NoError, _,
+                                        std::optional<ocpp::CiString<50>>(), _, _));
+        EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::NoError, _, reason, _, _));
+    }
+
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), reason));
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::StartCharging, ocpp::DateTime(), std::nullopt));
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), reason));
+    EXPECT_EQ(state_machine->get_state(), FSMState::SuspendedEVSE);
+    EXPECT_EQ(state_machine->get_suspend_reason(), reason);
+}
+
+TEST_F(ChargePointStateMachineTest, Finishing__PauseChargingEVSERejected) {
+    create_state_machine(false);
+    const std::optional<ocpp::CiString<50>> reason("NoEnergy");
+
+    EXPECT_CALL(mock_callback, Call(_, _, _, _, _, _)).Times(0);
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::NoError, _, reason, _, _));
+        EXPECT_CALL(mock_callback, Call(FSMState::Finishing, ChargePointErrorCode::NoError, _, _, _, _));
+    }
+
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), reason));
+    EXPECT_TRUE(
+        state_machine->handle_event(FSMEvent::TransactionStoppedAndUserActionRequired, ocpp::DateTime(), std::nullopt));
+    EXPECT_FALSE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), reason));
+    EXPECT_EQ(state_machine->get_state(), FSMState::Finishing);
+}
+
+TEST_F(ChargePointStateMachineTest, SuspendedEVSE__NoEmitWhileFaulted) {
+    create_state_machine(false);
+    const std::optional<ocpp::CiString<50>> reason("NoEnergy");
+    const std::optional<ocpp::CiString<50>> changed_reason("Error,NoEnergy");
+    const ErrorInfo fault("uuid1", ChargePointErrorCode::GroundFailure, true);
+
+    EXPECT_CALL(mock_callback, Call(_, _, _, _, _, _)).Times(0);
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::NoError, _, reason, _, _));
+        EXPECT_CALL(mock_callback, Call(FSMState::Faulted, ChargePointErrorCode::GroundFailure, _, _, _, _));
+    }
+
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), reason));
+    EXPECT_TRUE(state_machine->handle_error(fault));
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), changed_reason));
+    EXPECT_EQ(state_machine->get_state(), FSMState::Faulted);
+}
+
+// ChargePointFSM::trigger_status_notification drives the per-connector StatusNotification.req burst that follows an
+// accepted BootNotification and a reconnect. It reports error state only: without an active error the burst carries no
+// info, whatever info the last transition happened to carry.
+TEST_F(ChargePointStateMachineTest, StatusNotificationBurst__NoInfoWithoutActiveError) {
+    create_state_machine(false);
+    const std::optional<ocpp::CiString<50>> reason("NoEnergy");
+
+    EXPECT_CALL(mock_callback, Call(_, _, _, _, _, _)).Times(0);
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::NoError, _, reason, _, _));
+        EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::NoError, _,
+                                        std::optional<ocpp::CiString<50>>(), _, _));
+    }
+
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), reason));
+    state_machine->trigger_status_notification();
+}
+
+TEST_F(ChargePointStateMachineTest, StatusNotificationBurst__ReportsActiveErrorInfo) {
+    create_state_machine(false);
+    const std::optional<ocpp::CiString<50>> reason("NoEnergy");
+    const ErrorInfo error_info("uuid1", ChargePointErrorCode::OtherError, false, "SomeError");
+
+    EXPECT_CALL(mock_callback, Call(_, _, _, _, _, _)).Times(0);
+    {
+        InSequence seq;
+        EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::NoError, _, reason, _, _));
+        EXPECT_CALL(mock_callback, Call(FSMState::SuspendedEVSE, ChargePointErrorCode::OtherError, _,
+                                        std::optional<ocpp::CiString<50>>("SomeError"), _, _))
+            .Times(2);
+    }
+
+    EXPECT_TRUE(state_machine->handle_event(FSMEvent::PauseChargingEVSE, ocpp::DateTime(), reason));
+    EXPECT_TRUE(state_machine->handle_error(error_info));
+    state_machine->trigger_status_notification();
+}
+
 TEST_F(ChargePointStateMachineTest, HandleErrorCleared__NonFault__StillActive__Disabled__ReportsLatestRemainingInfo) {
     create_state_machine(false);
     ErrorInfo error_info_1("uuid1", ChargePointErrorCode::ConnectorLockFailure, false, "Info1", "VendorA", "VE1");

@@ -50,6 +50,7 @@ static const FSMDefinition FSM_DEF = {
          {FSMEvent::BecomeAvailable, FSMState::Available},
          {FSMEvent::StartCharging, FSMState::Charging},
          {FSMEvent::PauseChargingEV, FSMState::SuspendedEV},
+         {FSMEvent::PauseChargingEVSE, FSMState::SuspendedEVSE},
          {FSMEvent::TransactionStoppedAndUserActionRequired, FSMState::Finishing},
          {FSMEvent::ChangeAvailabilityToUnavailable, FSMState::Unavailable},
      }},
@@ -158,6 +159,10 @@ bool ChargePointFSM::is_faulted() {
            this->active_errors.end();
 }
 
+std::optional<CiString<50>> ChargePointFSM::get_suspend_reason() const {
+    return this->suspend_reason;
+}
+
 std::optional<ErrorInfo> ChargePointFSM::get_latest_error() {
     if (this->active_errors.empty()) {
         return std::nullopt;
@@ -172,6 +177,14 @@ std::optional<ErrorInfo> ChargePointFSM::get_latest_error() {
     return latest_error;
 }
 
+void ChargePointFSM::emit_status_notification(FSMState reported_state, ChargePointErrorCode error_code,
+                                              const ocpp::DateTime& timestamp, const std::optional<CiString<50>>& info,
+                                              const std::optional<CiString<255>>& vendor_id,
+                                              const std::optional<CiString<50>>& vendor_error_code) {
+    this->last_emitted_info = info;
+    this->status_notification_callback(reported_state, error_code, timestamp, info, vendor_id, vendor_error_code);
+}
+
 bool ChargePointFSM::handle_event(FSMEvent event, const ocpp::DateTime timestamp,
                                   const std::optional<CiString<50>>& info) {
     const auto& transitions = FSM_DEF.at(state);
@@ -182,15 +195,22 @@ bool ChargePointFSM::handle_event(FSMEvent event, const ocpp::DateTime timestamp
         return false;
     }
 
+    // a self transition only carries new information if the reported info changed
+    if (dest_state_it->second == this->state and info == this->last_emitted_info) {
+        return false;
+    }
+
     // fall through: transition found
     state = dest_state_it->second;
 
     const auto error_info = this->get_latest_error().value_or(ErrorInfo("", ChargePointErrorCode::NoError, false));
 
+    this->suspend_reason = (state == FSMState::SuspendedEVSE) ? info : std::nullopt;
+
     // only send a StatusNotification.req with the updated state if not in faulted
     if (!this->is_faulted()) {
-        status_notification_callback(state, error_info.error_code, timestamp, info, error_info.vendor_id,
-                                     error_info.vendor_error_code);
+        this->emit_status_notification(state, error_info.error_code, timestamp, info, error_info.vendor_id,
+                                       error_info.vendor_error_code);
     }
 
     return true;
@@ -205,11 +225,11 @@ bool ChargePointFSM::handle_error(const ErrorInfo& error_info) {
     this->active_errors.insert({error_info.uuid, error_info});
 
     if (!this->is_faulted()) {
-        status_notification_callback(this->state, error_info.error_code, error_info.timestamp, error_info.info,
-                                     error_info.vendor_id, error_info.vendor_error_code);
+        this->emit_status_notification(this->state, error_info.error_code, error_info.timestamp, error_info.info,
+                                       error_info.vendor_id, error_info.vendor_error_code);
     } else {
-        status_notification_callback(FSMState::Faulted, error_info.error_code, error_info.timestamp, error_info.info,
-                                     error_info.vendor_id, error_info.vendor_error_code);
+        this->emit_status_notification(FSMState::Faulted, error_info.error_code, error_info.timestamp, error_info.info,
+                                       error_info.vendor_id, error_info.vendor_error_code);
     }
     return true;
 }
@@ -263,15 +283,15 @@ bool ChargePointFSM::handle_error_cleared(const std::string uuid) {
     }
 
     // Send a StatusNotification.req
-    status_notification_callback(state, error_code, DateTime(), info, vendor_id, vendor_error_code);
+    this->emit_status_notification(state, error_code, DateTime(), info, vendor_id, vendor_error_code);
 
     return true;
 }
 
 bool ChargePointFSM::handle_all_errors_cleared() {
     this->active_errors.clear();
-    status_notification_callback(this->state, ChargePointErrorCode::NoError, DateTime(), std::nullopt, std::nullopt,
-                                 std::nullopt);
+    this->emit_status_notification(this->state, ChargePointErrorCode::NoError, DateTime(), std::nullopt, std::nullopt,
+                                   std::nullopt);
     return true;
 }
 
@@ -279,11 +299,11 @@ void ChargePointFSM::trigger_status_notification() {
     // get latest error or report NoError
     const auto error_info = this->get_latest_error().value_or(ErrorInfo("", ChargePointErrorCode::NoError, false));
     if (!this->is_faulted()) {
-        status_notification_callback(this->state, error_info.error_code, error_info.timestamp, error_info.info,
-                                     error_info.vendor_id, error_info.vendor_error_code);
+        this->emit_status_notification(this->state, error_info.error_code, error_info.timestamp, error_info.info,
+                                       error_info.vendor_id, error_info.vendor_error_code);
     } else {
-        status_notification_callback(FSMState::Faulted, error_info.error_code, error_info.timestamp, error_info.info,
-                                     error_info.vendor_id, error_info.vendor_error_code);
+        this->emit_status_notification(FSMState::Faulted, error_info.error_code, error_info.timestamp, error_info.info,
+                                       error_info.vendor_id, error_info.vendor_error_code);
     }
 }
 
@@ -400,6 +420,14 @@ std::optional<ErrorInfo> ChargePointStates::get_latest_error(int connector_id) {
         return state_machines.at(connector_id - 1).get_latest_error();
     }
     return state_machine_connector_zero->get_latest_error();
+}
+
+std::optional<CiString<50>> ChargePointStates::get_suspend_reason(int connector_id) {
+    const std::lock_guard<std::mutex> lck(state_machines_mutex);
+    if (connector_id > 0 && static_cast<size_t>(connector_id) <= this->state_machines.size()) {
+        return state_machines.at(connector_id - 1).get_suspend_reason();
+    }
+    return state_machine_connector_zero->get_suspend_reason();
 }
 
 } // namespace v16

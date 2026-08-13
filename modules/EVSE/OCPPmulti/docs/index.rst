@@ -520,6 +520,9 @@ OCPP 1.6 limitations: individual errors cannot be cleared selectively via **Stat
 from MREC, simultaneous errors are reported in one message per error instead of a single semicolon-separated
 message, because of the field length limits.
 
+The ``info`` field has a second, unrelated use: reporting why a connector is suspended. See
+:ref:`suspend reason reporting <handwritten_ocppmulti_suspend-reason-reporting>` below.
+
 OCPP 2.x
 ^^^^^^^^
 
@@ -533,6 +536,37 @@ status **Faulted** for the Inoperative case above). All other errors are reporte
 
 The variable is constantly set to **Problem** for now; a more fine-grained mapping of errors to component-variable
 combinations may be added in the future.
+
+.. _handwritten_ocppmulti_suspend-reason-reporting:
+
+Suspend reason reporting in OCPP 1.6
+====================================
+
+While a connector sits in **SuspendedEVSE**, the reason can change without the status changing: a user pause during an
+energy shortage, or a fault raised on an already suspended connector. OCPP 1.6 has no field for that, so the reason set
+is reported in the free-text ``info`` field of a further **StatusNotification.req**, reusing the field the error path
+above writes.
+
+The feature is off by default. Set the ``InternalCtrlr`` variable ``ReportSuspendedEVSEReasonChange`` (boolean,
+ReadWrite, default ``false``) to enable it. It doubles as an OCPP 1.6 configuration key of the same name and is read on
+every suspend event, so **ChangeConfiguration** takes effect without a restart.
+
+With it enabled, a reason change on an already suspended connector emits one **StatusNotification.req** with ``status``
+unchanged at **SuspendedEVSE**, ``errorCode`` **NoError** (or the most recent active error's code), and the reasons in
+``info``: ``UserPause``, ``Error`` and/or ``NoEnergy``, comma joined. Repeats are suppressed, and an empty set omits
+``info`` rather than sending an empty string. **TriggerMessage(StatusNotification)** reports the current reason when
+no error is active.
+
+Limitations:
+
+* All energy-related causes collapse into the single ``NoEnergy`` value. A schedule limit, load balancing and a
+  missing PV surplus are not distinguishable at the CSMS.
+* ``SwitchingPhases`` shares the ``info`` field with the pause reasons, so a phase switch followed by a pause
+  alternates between the two, one message per cycle.
+* When a fault clears while the connector is paused, the notification carries the cleared error's ``info`` rather than
+  the live pause reason; a **TriggerMessage(StatusNotification)** recovers it.
+* Turning the variable off at runtime does not clear a reason already reported; the CSMS holds it until the connector
+  leaves **SuspendedEVSE**.
 
 Energy management and smart charging
 ====================================

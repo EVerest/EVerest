@@ -245,6 +245,12 @@ const ComponentVariable VerifyCsmsAllowWildcards = {
         "VerifyCsmsAllowWildcards",
     }),
 };
+const ComponentVariable ReportSuspendedEVSEReasonChange = {
+    ControllerComponents::InternalCtrlr,
+    std::optional<Variable>({
+        "ReportSuspendedEVSEReasonChange",
+    }),
+};
 const ComponentVariable IFace = {
     ControllerComponents::InternalCtrlr,
     std::optional<Variable>({
