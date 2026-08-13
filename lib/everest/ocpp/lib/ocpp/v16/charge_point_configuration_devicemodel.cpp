@@ -150,6 +150,16 @@ inline std::optional<bool> isReadOnly(DeviceModelInterface& storage, const v2::R
     return isReadOnly(storage, component, variable, attribute);
 }
 
+/// readonly when the device model mutability is ReadOnly (or unknown)
+bool isReadOnly(DeviceModelInterface& storage, v16::keys::valid_keys key) {
+    const auto cv = v16::keys::convert_v2(key);
+    if (cv) {
+        const auto mutability = storage.get_mutability(cv->first, cv->second, v2::AttributeEnum::Actual);
+        return mutability.value_or(v2::MutabilityEnum::ReadOnly) == v2::MutabilityEnum::ReadOnly;
+    }
+    return true;
+}
+
 inline bool is_same(const ocpp::v2::RequiredComponentVariable& var, const ocpp::v2::Component& component,
                     const ocpp::v2::Variable& variable) {
     return ((var.component == component) && (var.variable == variable));
@@ -280,7 +290,7 @@ std::optional<v16::KeyValue> get_key_value_optional(DeviceModelInterface& storag
     if (get_result) {
         v16::KeyValue kv;
         kv.key = std::move(std::string{v16::keys::convert(key)});
-        kv.readonly = v16::keys::is_readonly(key);
+        kv.readonly = v16::keys::is_readonly(key) || isReadOnly(storage, key);
         kv.value = std::move(get_result.value());
         result = kv;
     }
@@ -558,6 +568,15 @@ ChargePointConfigurationDeviceModel::setInternalRemoteStartTransactionWithoutCon
         return SetResult::Rejected;
     }
     return set_value_check(*storage, keys::valid_keys::RemoteStartTransactionWithoutConnectorIdFindFirst, value);
+}
+
+ChargePointConfigurationDeviceModel::SetResult
+ChargePointConfigurationDeviceModel::setInternalCustomDisplayCostAndPrice(const std::string& value) {
+    if (not isBool(value)) {
+        return SetResult::Rejected;
+    }
+    // the configured device model mutability is enforced by set_value()
+    return set_value_check(*storage, keys::valid_keys::CustomDisplayCostAndPrice, value);
 }
 
 ChargePointConfigurationDeviceModel::SetResult
@@ -3296,8 +3315,8 @@ std::optional<std::uint32_t> ChargePointConfigurationDeviceModel::getPriceNumber
     return get_optional<std::int32_t>(*storage, keys::valid_keys::NumberOfDecimalsForCostValues);
 }
 
-KeyValue ChargePointConfigurationDeviceModel::getCustomDisplayCostAndPriceEnabledKeyValue() {
-    return get_key_value(*storage, keys::valid_keys::CustomDisplayCostAndPrice);
+std::optional<KeyValue> ChargePointConfigurationDeviceModel::getCustomDisplayCostAndPriceEnabledKeyValue() {
+    return get_key_value_optional(*storage, keys::valid_keys::CustomDisplayCostAndPrice);
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getDefaultPriceTextKeyValue(const std::string& language) {
@@ -3565,6 +3584,9 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::ConnectorEvseIds:
             result = convert(setInternalConnectorEvseIds(value_str));
             break;
+        case keys::valid_keys::CustomDisplayCostAndPrice:
+            result = convert(setInternalCustomDisplayCostAndPrice(value_str));
+            break;
         case keys::valid_keys::IgnoredProfilePurposesOffline:
             result = convert(setInternalIgnoredProfilePurposesOffline(value_str));
             break;
@@ -3777,7 +3799,6 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::StopTxnSampledDataMaxLength:
         case keys::valid_keys::SupportedFeatureProfiles:
         case keys::valid_keys::SupportedFeatureProfilesMaxLength:
-        case keys::valid_keys::CustomDisplayCostAndPrice:
         case keys::valid_keys::CustomMultiLanguageMessages:
         case keys::valid_keys::NumberOfDecimalsForCostValues:
         case keys::valid_keys::SupportedLanguages:

@@ -38,6 +38,7 @@ protected:
     SetResult setInternalCompositeScheduleDefaultLimitWatts(const std::string& value);
     SetResult setInternalCompositeScheduleDefaultNumberPhases(const std::string& value);
     SetResult setInternalConnectorEvseIds(const std::string& value);
+    SetResult setInternalCustomDisplayCostAndPrice(const std::string& value);
     SetResult setInternalIgnoredProfilePurposesOffline(const std::string& value);
     SetResult setInternalOcspRequestInterval(const std::string& value);
     SetResult setInternalRejectRemoteStartTransactionWithoutConnectorId(const std::string& value);
@@ -491,7 +492,7 @@ public:
     std::optional<std::int32_t> getWaitForSetUserPriceTimeout() override;
     std::optional<std::uint32_t> getPriceNumberOfDecimalsForCostValues() override;
 
-    KeyValue getCustomDisplayCostAndPriceEnabledKeyValue() override;
+    std::optional<KeyValue> getCustomDisplayCostAndPriceEnabledKeyValue() override;
     KeyValue getDefaultPriceTextKeyValue(const std::string& language) override;
 
     std::optional<KeyValue> getCustomIdleFeeAfterStopKeyValue() override;
