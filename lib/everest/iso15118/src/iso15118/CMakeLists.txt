@@ -75,11 +75,12 @@ target_sources(iso15118
         message/ac_der_sae_charge_loop.cpp
         message/ac_der_sae_types.cpp
 
-        message/din/variant.cpp
-        message/din/msg_data_types.cpp
-        message/din/contract_authentication.cpp
-        message/din/service_discovery.cpp
-        message/din/service_payment_selection.cpp
+    message/din/variant.cpp
+    message/din/msg_data_types.cpp
+    message/din/charge_parameter_discovery.cpp
+    message/din/contract_authentication.cpp
+    message/din/service_discovery.cpp
+    message/din/service_payment_selection.cpp
 
         tbd_controller.cpp    
 )
