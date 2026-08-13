@@ -7,6 +7,7 @@
 #include <variant>
 
 #include <ocpp/v2/message_handler.hpp>
+#include <ocpp/v2/ocpp_types.hpp>
 #include <ocpp/v2/ocsp_updater.hpp>
 
 namespace ocpp {
@@ -113,8 +114,8 @@ private:
 
     /// \brief Helper function to determine if a certificate installation should be allowed
     /// \param cert_type is the certificate type to be checked
-    /// \return true if it should be allowed
-    bool should_allow_certificate_install(InstallCertificateUseEnum cert_type) const;
+    /// \return std::nullopt if it should be allowed, otherwise the StatusInfo describing why it was refused
+    std::optional<StatusInfo> check_certificate_install_allowed(InstallCertificateUseEnum cert_type) const;
     void scheduled_check_client_certificate_expiration();
     void scheduled_check_v2g_certificate_expiration();
 };
