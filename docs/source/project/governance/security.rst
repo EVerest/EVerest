@@ -36,11 +36,11 @@ Under `Regulation (EU) 2024/2847
 organisations currently act as open-source software stewards for EVerest, in
 distinct roles:
 
-* **The Linux Foundation Europe** (Belgium) as legal entitiy representing LF Energy, for project governance, hosting and development
+* **The Linux Foundation Europe** (Belgium) as legal entity representing LF Energy, for project governance, hosting and development
   infrastructure.
 * **Pionix GmbH** (Germany), for the engineering work it contributes, including
   employed maintainers, code review and merge rights, and preparation of
-  security fixes.
+  security fixes. Coordinating CSIRT: BSI and CERT-Bund.
 
 Both maintain a cybersecurity policy under `Article 24(1)
 <https://eur-lex.europa.eu/eli/reg/2024/2847/oj>`_ of the Regulation.
