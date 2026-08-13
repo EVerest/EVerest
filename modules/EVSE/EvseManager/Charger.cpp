@@ -1037,6 +1037,15 @@ void Charger::run_state_machine() {
                 break;
             }
 
+            // If the only stop reason is the unplug and a replug timeout is configured, give the
+            // user a grace period to replug and continue the still active transaction.
+            if (not shared_context.flag_ev_plugged_in and config_context.replug_timeout_s > 0 and
+                shared_context.flag_transaction_active and shared_context.flag_authorized and
+                not shared_context.flag_disable_requested and shared_context.shutdown_type == ShutdownType::None) {
+                set_state(EvseState::WaitingForReplug);
+                break;
+            }
+
             // Those are fatal, so we can not recover without replugging.
             if (not shared_context.flag_transaction_active or not shared_context.flag_ev_plugged_in or
                 not shared_context.flag_authorized or shared_context.flag_disable_requested) {
@@ -1053,6 +1062,50 @@ void Charger::run_state_machine() {
             } else {
                 // If the reason was not the EVSE, go to paused by EV
                 set_state(EvseState::ChargingPausedEV);
+            }
+            break;
+
+        // Grace period after the EV was unplugged while the transaction was otherwise still
+        // intact. If the EV is replugged within replug_timeout_s, the session and transaction
+        // continue (via WaitingForAuthentication, see process_cp_events_state). Otherwise the
+        // session is torn down in Finished as if the grace period did not exist.
+        case EvseState::WaitingForReplug:
+            if (initialize_state) {
+                session_log.evse(false, fmt::format("Waiting {} s for replug to continue the session",
+                                                    config_context.replug_timeout_s));
+                // Reset all state related to the previous car connection, similar to Idle,
+                // but keep the session, transaction and authorization untouched.
+                bcb_toggle_reset();
+                shared_context.iec_allow_close_contactor = false;
+                if (config_context.charge_mode == ChargeMode::AC) {
+                    shared_context.hlc_charging_active = false;
+                } else {
+                    shared_context.hlc_charging_active = true;
+                }
+                shared_context.hlc_allow_close_contactor = false;
+                // A different cable may be used on replug, force a re-read of the PP ampacity
+                shared_context.max_current_cable.reset();
+                shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Unknown;
+                shared_context.legacy_wakeup_done = false;
+                shared_context.hlc_d20_active = false;
+                cp_state_X1();
+                clear_errors_on_unplug();
+            }
+
+            // The same conditions that route StoppingCharging to Finished, except the unplug itself
+            {
+                const bool fatal_error = stop_charging_on_fatal_error_internal();
+                if (fatal_error or not shared_context.flag_transaction_active or not shared_context.flag_authorized or
+                    shared_context.flag_disable_requested) {
+                    session_log.evse(false, fmt::format("Stop waiting for replug: {}", stop_reason_flags(fatal_error)));
+                    set_state(EvseState::Finished);
+                    break;
+                }
+            }
+
+            if (time_in_current_state >= config_context.replug_timeout_s * 1000) {
+                session_log.evse(false, "Replug timeout expired, finishing session");
+                set_state(EvseState::Finished);
             }
             break;
 
@@ -1186,6 +1239,17 @@ void Charger::process_cp_events_state(CPEvent cp_event) {
             } else if (cp_event == CPEvent::CarRequestedStopPower) {
                 bcb_toggle_detect_stop_pulse();
             }
+        }
+        break;
+
+    case EvseState::WaitingForReplug:
+        if (cp_event == CPEvent::CarPluggedIn) {
+            session_log.evse(false, "EV replugged within grace period, continuing session");
+            shared_context.flag_ev_plugged_in = true;
+            // Authorization and transaction are still active, so WaitingForAuthentication
+            // will directly proceed to PrepareCharging with the proper PWM/t_step handling
+            // and re-read the PP ampacity for socket type connectors.
+            shared_context.current_state = EvseState::WaitingForAuthentication;
         }
         break;
 
@@ -1551,7 +1615,7 @@ void Charger::setup(bool has_ventilation, const ChargeMode _charge_mode, bool _a
                     const int _soft_over_current_timeout_ms, const int _state_F_after_fault_ms,
                     const bool fail_on_powermeter_errors, const bool raise_mrec9,
                     const int sleep_before_enabling_pwm_hlc_mode_ms, const utils::SessionIdType session_id_type,
-                    const int hlc_charge_loop_without_energy_timeout_s) {
+                    const int hlc_charge_loop_without_energy_timeout_s, const int replug_timeout_s) {
     // set up board support package
     bsp->setup(has_ventilation);
 
@@ -1576,6 +1640,7 @@ void Charger::setup(bool has_ventilation, const ChargeMode _charge_mode, bool _a
     config_context.sleep_before_enabling_pwm_hlc_mode_ms = sleep_before_enabling_pwm_hlc_mode_ms;
     config_context.session_id_type = session_id_type;
     config_context.hlc_charge_loop_without_energy_timeout_s = hlc_charge_loop_without_energy_timeout_s;
+    config_context.replug_timeout_s = replug_timeout_s;
 
     if (config_context.charge_mode == ChargeMode::AC and config_context.ac_hlc_enabled)
         EVLOG_info << "AC HLC mode enabled.";
@@ -1905,6 +1970,9 @@ std::string Charger::evse_state_to_string(EvseState s) {
         break;
     case EvseState::SwitchPhases:
         return ("SwitchPhases");
+        break;
+    case EvseState::WaitingForReplug:
+        return ("Wait for Replug");
         break;
     }
     return "Invalid";

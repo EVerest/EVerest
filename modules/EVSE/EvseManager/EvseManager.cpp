@@ -1360,7 +1360,7 @@ void EvseManager::ready() {
                        config.state_F_after_fault_ms, config.fail_on_powermeter_errors, config.raise_mrec9,
                        config.sleep_before_enabling_pwm_hlc_mode_ms,
                        utils::get_session_id_type_from_string(config.session_id_type),
-                       config.hlc_charge_loop_without_energy_timeout_s);
+                       config.hlc_charge_loop_without_energy_timeout_s, config.replug_timeout_s);
     }
 
     telemetryThreadHandle = std::thread([this]() {
@@ -1549,7 +1549,7 @@ void EvseManager::setup_fake_DC_mode() {
                    config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms, config.state_F_after_fault_ms,
                    config.fail_on_powermeter_errors, config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms,
                    utils::get_session_id_type_from_string(config.session_id_type),
-                   config.hlc_charge_loop_without_energy_timeout_s);
+                   config.hlc_charge_loop_without_energy_timeout_s, config.replug_timeout_s);
 
     types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 
@@ -1592,7 +1592,7 @@ void EvseManager::setup_AC_mode() {
                    config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms, config.state_F_after_fault_ms,
                    config.fail_on_powermeter_errors, config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms,
                    utils::get_session_id_type_from_string(config.session_id_type),
-                   config.hlc_charge_loop_without_energy_timeout_s);
+                   config.hlc_charge_loop_without_energy_timeout_s, config.replug_timeout_s);
 
     types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 
@@ -2540,12 +2540,13 @@ void EvseManager::fail_cable_check(const std::string& reason) {
     }
     // Raising a cable check fault should not happen if:
     // - a cancel_transaction (DeAuthorized) is triggered during cable check
-    // - the car has already been unplugged (Idle/Finished), which prevents a race condition
+    // - the car has already been unplugged (Idle/Finished/WaitingForReplug), which prevents a race condition
     //   where the detached cable check thread raises an error after clear_errors_on_unplug()
     //   has already run, leaving the charger permanently inoperative (see GitHub issue #1392)
     const auto current_state = charger->get_current_state();
     const auto last_stop_transaction_reason = charger->get_last_stop_transaction_reason();
-    if (current_state == Charger::EvseState::Idle || current_state == Charger::EvseState::Finished) {
+    if (current_state == Charger::EvseState::Idle || current_state == Charger::EvseState::Finished ||
+        current_state == Charger::EvseState::WaitingForReplug) {
         EVLOG_info << "Cable check failed due to: " << reason
                    << ", but session already ended (car unplugged). Not raising cable check fault error.";
     } else if (not last_stop_transaction_reason.has_value() or

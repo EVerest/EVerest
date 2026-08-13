@@ -133,6 +133,11 @@ Charging State Machine
        %% Post-Stop logic
        StoppingCharging --> ChargingPausedEV : EV-initiated pause
 
+       %% Replug grace period (replug_timeout_s > 0)
+       StoppingCharging --> WaitingForReplug : EV unplugged, transaction still active
+       WaitingForReplug --> WaitingForAuthentication : EV replugged in time
+       WaitingForReplug --> Finished : Timeout, deauth, disable or fatal error
+
 State Transitions
 -----------------
 
@@ -151,6 +156,17 @@ State Transitions
 * ``ChargingPausedEV`` -> ``ChargingPausedEVSE``: No power available (AC BASIC only).
 * ``ChargingPausedEVSE`` -> ``PrepareCharging``: Power available, no EVSE pause and errors cleared.
 * ``StoppingCharging`` -> ``ChargingPausedEV``: EV-initiated pause after stop sequence.
+
+**Replug Grace Period**
+
+Only active when the ``replug_timeout_s`` config option is greater than 0.
+
+* ``StoppingCharging`` -> ``WaitingForReplug``: EV unplugged while transaction and authorization
+  are otherwise still intact. The transaction stays open during the grace period.
+* ``WaitingForReplug`` -> ``WaitingForAuthentication``: EV replugged within ``replug_timeout_s``;
+  the session and transaction continue without a new authorization.
+* ``WaitingForReplug`` -> ``Finished``: ``replug_timeout_s`` expired, deauthorization, disable
+  request or fatal error.
 
 **Stop Conditions**
 
