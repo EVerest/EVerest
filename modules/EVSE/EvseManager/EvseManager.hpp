@@ -63,6 +63,7 @@ struct Conf {
     bool payment_enable_eim;
     bool payment_enable_contract;
     double ac_nominal_voltage;
+    double ac_nominal_frequency;
     double ac_max_reactive_power;
     bool ev_receipt_required;
     bool session_logging;
