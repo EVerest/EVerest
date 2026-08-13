@@ -12,4 +12,8 @@ void DummyTokenValidator::ready() {
     invoke_ready(*p_main);
 }
 
+void DummyTokenValidator::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

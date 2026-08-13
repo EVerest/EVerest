@@ -19,6 +19,9 @@ void charger_informationImpl::ready() {
     EVLOG_debug << "ChargerInformation: " << info.dump();
 }
 
+void charger_informationImpl::shutdown() {
+}
+
 std::string charger_informationImpl::load_fw_version_from_file(const std::string& fn) {
     std::ifstream fw_version_file(fn);
     std::string first_line;

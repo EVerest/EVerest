@@ -33,4 +33,9 @@ void SlacSimulator::run() {
     }
 };
 
+void SlacSimulator::shutdown() {
+    invoke_shutdown(*p_evse);
+    invoke_shutdown(*p_ev);
+}
+
 } // namespace module

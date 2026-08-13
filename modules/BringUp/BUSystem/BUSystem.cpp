@@ -199,4 +199,7 @@ void BUSystem::ready() {
     screen.Loop(main_renderer);
 }
 
+void BUSystem::shutdown() {
+}
+
 } // namespace module

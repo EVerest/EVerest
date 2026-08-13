@@ -12,4 +12,8 @@ void TerminalDisplayMessage::ready() {
     invoke_ready(*p_display_message);
 }
 
+void TerminalDisplayMessage::shutdown() {
+    invoke_shutdown(*p_display_message);
+}
+
 } // namespace module

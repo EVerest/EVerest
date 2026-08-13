@@ -12,4 +12,8 @@ void LocalAllowlistTokenValidator::ready() {
     invoke_ready(*p_token_validator);
 }
 
+void LocalAllowlistTokenValidator::shutdown() {
+    invoke_shutdown(*p_token_validator);
+}
+
 } // namespace module

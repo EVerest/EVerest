@@ -78,6 +78,9 @@ void power_supply_DCImpl::ready() {
     publish_capabilities(caps);
 }
 
+void power_supply_DCImpl::shutdown() {
+}
+
 void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
                                          types::power_supply_DC::ChargingPhase& phase) {
     // your code for cmd setMode goes here

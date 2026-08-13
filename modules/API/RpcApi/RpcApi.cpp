@@ -451,4 +451,7 @@ bool RpcApi::check_evse_mapping() {
     }
     return true;
 }
+void RpcApi::shutdown() {
+}
+
 } // namespace module

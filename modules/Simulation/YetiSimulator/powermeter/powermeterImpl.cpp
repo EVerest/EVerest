@@ -15,6 +15,9 @@ void powermeterImpl::ready() {
     this->publish_public_key_ocmf("TESTPUBLICKEY" + std::to_string(this->mod->config.connector_id));
 }
 
+void powermeterImpl::shutdown() {
+}
+
 types::units_signed::SignedMeterValue format_signed_meter_value(const std::string& blob) {
     types::units_signed::SignedMeterValue value;
     value.signed_meter_data = blob;

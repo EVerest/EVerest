@@ -12,4 +12,8 @@ void LemDCBM400600::ready() {
     invoke_ready(*p_main);
 }
 
+void LemDCBM400600::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

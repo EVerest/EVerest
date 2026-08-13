@@ -15,6 +15,9 @@ void ev_slacImpl::ready() {
     publish_state(state);
 }
 
+void ev_slacImpl::shutdown() {
+}
+
 void ev_slacImpl::handle_reset() {
     if (state != State::UNMATCHED) {
         state = State::UNMATCHED;

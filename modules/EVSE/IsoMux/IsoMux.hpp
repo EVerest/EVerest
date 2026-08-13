@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -27,6 +27,8 @@
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     std::string device;
     std::string tls_security;
@@ -35,6 +37,9 @@ struct Conf {
     int proxy_port_iso2;
     int proxy_port_iso20;
     std::string proxy_device;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class IsoMux : public Everest::ModuleBase {
@@ -78,6 +83,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

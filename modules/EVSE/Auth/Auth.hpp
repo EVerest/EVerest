@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -57,6 +57,8 @@ struct EventQueueState {
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     std::string selection_algorithm;
     int connection_timeout;
@@ -65,6 +67,9 @@ struct Conf {
     bool ignore_connector_faults;
     bool plug_in_timeout_enabled;
     bool stop_transaction_on_reswipe;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class Auth : public Everest::ModuleBase {
@@ -123,6 +128,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

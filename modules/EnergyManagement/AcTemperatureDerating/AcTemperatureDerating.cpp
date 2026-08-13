@@ -219,4 +219,7 @@ void AcTemperatureDerating::apply_external_limit(double limit_A) {
     r_energy_node->call_set_external_limits(external_limits);
 }
 
+void AcTemperatureDerating::shutdown() {
+}
+
 } // namespace module

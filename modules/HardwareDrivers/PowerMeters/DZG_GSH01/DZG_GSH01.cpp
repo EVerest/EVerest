@@ -12,4 +12,8 @@ void DZG_GSH01::ready() {
     invoke_ready(*p_main);
 }
 
+void DZG_GSH01::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

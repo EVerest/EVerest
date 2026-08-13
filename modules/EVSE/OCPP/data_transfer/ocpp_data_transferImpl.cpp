@@ -12,6 +12,9 @@ void ocpp_data_transferImpl::init() {
 void ocpp_data_transferImpl::ready() {
 }
 
+void ocpp_data_transferImpl::shutdown() {
+}
+
 types::ocpp::DataTransferStatus to_everest(ocpp::v16::DataTransferStatus status) {
     switch (status) {
     case ocpp::v16::DataTransferStatus::Accepted:

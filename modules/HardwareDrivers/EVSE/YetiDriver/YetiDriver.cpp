@@ -169,4 +169,11 @@ void YetiDriver::error_handling(ErrorFlags e) {
     last_error_flags = e;
 }
 
+void YetiDriver::shutdown() {
+    invoke_shutdown(*p_powermeter);
+    invoke_shutdown(*p_board_support);
+    invoke_shutdown(*p_rcd);
+    invoke_shutdown(*p_connector_lock);
+}
+
 } // namespace module

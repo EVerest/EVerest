@@ -92,4 +92,8 @@ void evse_security_consumer_API::generate_api_cmd_get_verify_location() {
     });
 }
 
+void evse_security_consumer_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

@@ -48,4 +48,8 @@ void auth_token_validator_API::generate_api_var_validation_result_update() {
     });
 }
 
+void auth_token_validator_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

@@ -181,4 +181,7 @@ void EEBUS::ready() {
     m_event_handler_thread = std::thread([this]() { m_event_handler.run(m_running_flag); });
 }
 
+void EEBUS::shutdown() {
+}
+
 } // namespace module

@@ -2703,4 +2703,12 @@ void EvseManager::set_external_derating(types::dc_external_derate::ExternalDerat
     dc_external_derate = d;
 }
 
+void EvseManager::shutdown() {
+    invoke_shutdown(*p_evse);
+    invoke_shutdown(*p_energy_grid);
+    invoke_shutdown(*p_token_provider);
+    invoke_shutdown(*p_random_delay);
+    invoke_shutdown(*p_dc_external_derate);
+}
+
 } // namespace module

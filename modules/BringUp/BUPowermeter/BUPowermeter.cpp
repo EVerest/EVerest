@@ -323,4 +323,7 @@ void BUPowermeter::ready() {
     screen.Loop(main_renderer);
 }
 
+void BUPowermeter::shutdown() {
+}
+
 } // namespace module

@@ -12,5 +12,8 @@ void ev_managerImpl::init() {
 void ev_managerImpl::ready() {
 }
 
+void ev_managerImpl::shutdown() {
+}
+
 } // namespace ev_manager
 } // namespace module

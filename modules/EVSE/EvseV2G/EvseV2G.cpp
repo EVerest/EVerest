@@ -212,4 +212,9 @@ EvseV2G::~EvseV2G() {
     v2g_ctx_free(v2g_ctx);
 }
 
+void EvseV2G::shutdown() {
+    invoke_shutdown(*p_charger);
+    invoke_shutdown(*p_extensions);
+}
+
 } // namespace module

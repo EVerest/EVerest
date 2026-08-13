@@ -48,4 +48,8 @@ void auth_token_provider_API::generate_api_var_provided_token() {
     });
 }
 
+void auth_token_provider_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

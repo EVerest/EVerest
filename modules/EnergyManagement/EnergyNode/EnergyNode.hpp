@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -26,11 +26,16 @@
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     double fuse_limit_A;
     int phase_count;
     double nominal_voltage_V;
     bool enhance_external_schedule;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class EnergyNode : public Everest::ModuleBase {
@@ -70,6 +75,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

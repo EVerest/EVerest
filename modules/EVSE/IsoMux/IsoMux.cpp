@@ -123,4 +123,9 @@ bool IsoMux::selected_iso20() {
     return v2g_ctx->selected_iso20;
 }
 
+void IsoMux::shutdown() {
+    invoke_shutdown(*p_charger);
+    invoke_shutdown(*p_extensions);
+}
+
 } // namespace module

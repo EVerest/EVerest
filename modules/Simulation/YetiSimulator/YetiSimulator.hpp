@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -25,6 +25,8 @@
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     int connector_id;
     bool reset_powermeter_on_session_start;
@@ -32,6 +34,9 @@ struct Conf {
     std::string dummy_meter_value_blob_start;
     std::string dummy_meter_value_blob_stop;
     double ac_nominal_voltage;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class YetiSimulator : public Everest::ModuleBase {
@@ -96,6 +101,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     void run_telemetry_slow() const;

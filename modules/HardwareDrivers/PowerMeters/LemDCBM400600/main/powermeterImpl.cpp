@@ -95,6 +95,9 @@ void powermeterImpl::ready() {
     });
 }
 
+void powermeterImpl::shutdown() {
+}
+
 types::powermeter::TransactionStartResponse
 powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& value) {
     if (!this->controller->is_initialized()) {

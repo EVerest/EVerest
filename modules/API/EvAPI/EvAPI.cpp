@@ -91,4 +91,7 @@ void EvAPI::init() {
 void EvAPI::ready() {
 }
 
+void EvAPI::shutdown() {
+}
+
 } // namespace module

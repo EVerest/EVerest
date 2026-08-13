@@ -15,4 +15,9 @@ void EvManager::ready() {
     invoke_ready(*p_ev_manager);
 }
 
+void EvManager::shutdown() {
+    invoke_shutdown(*p_main);
+    invoke_shutdown(*p_ev_manager);
+}
+
 } // namespace module

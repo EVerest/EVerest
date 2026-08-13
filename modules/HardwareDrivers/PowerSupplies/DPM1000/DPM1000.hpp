@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -19,6 +19,8 @@
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     std::string device;
     int device_address;
@@ -30,6 +32,9 @@ struct Conf {
     int discharge_gpio_line;
     bool discharge_gpio_polarity;
     bool debug_print_all_telemetry;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class DPM1000 : public Everest::ModuleBase {
@@ -54,6 +59,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

@@ -43,7 +43,7 @@ done
 tmux new-session -d -s EVerest
 tmux set -g mouse on
 
-tmux send -t EVerest:0.0 "$PREFIX/bin/manager --prefix $PREFIX" SPACE "--config " $EVEREST_CONFIG_FILE ENTER
+tmux send -t EVerest:0.0 "$PREFIX/bin/manager --prefix $PREFIX" SPACE "--reset-from-yaml --config " $EVEREST_CONFIG_FILE ENTER
 LEN=${#NAMES[@]}
 
 for (( j=0; j<$LEN; j++ ));

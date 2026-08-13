@@ -164,4 +164,7 @@ void BUOverVoltageMonitor::ready() {
     screen.Loop(main_renderer);
 }
 
+void BUOverVoltageMonitor::shutdown() {
+}
+
 } // namespace module

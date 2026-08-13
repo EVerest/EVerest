@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/error_history/Implementation.hpp>
@@ -19,8 +19,13 @@
 namespace module {
 namespace error_history {
 
+struct RwConf {};
+
 struct Conf {
     std::string database_path;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class error_historyImpl : public error_historyImplBase {
@@ -48,6 +53,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here

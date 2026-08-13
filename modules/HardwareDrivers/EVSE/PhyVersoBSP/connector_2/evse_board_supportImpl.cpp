@@ -118,6 +118,9 @@ void evse_board_supportImpl::ready() {
     }
 }
 
+void evse_board_supportImpl::shutdown() {
+}
+
 void evse_board_supportImpl::handle_enable(bool& value) {
     enabled = value;
     if (enabled) {

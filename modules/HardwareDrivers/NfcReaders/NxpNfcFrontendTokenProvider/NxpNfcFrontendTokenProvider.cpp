@@ -13,4 +13,8 @@ void NxpNfcFrontendTokenProvider::ready() {
     invoke_ready(*p_main);
 }
 
+void NxpNfcFrontendTokenProvider::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

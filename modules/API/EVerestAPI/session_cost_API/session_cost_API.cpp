@@ -62,4 +62,9 @@ void session_cost_API::generate_api_var_session_cost() {
     });
 }
 
+void session_cost_API::shutdown() {
+    invoke_shutdown(*p_main);
+    invoke_shutdown(*p_generic_error);
+}
+
 } // namespace module

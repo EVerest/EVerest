@@ -12,4 +12,8 @@ void DPM1000::ready() {
     invoke_ready(*p_main);
 }
 
+void DPM1000::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

@@ -523,6 +523,9 @@ void ISO15118_chargerImpl::init() {
 void ISO15118_chargerImpl::ready() {
 }
 
+void ISO15118_chargerImpl::shutdown() {
+}
+
 std::optional<types::iso15118::SupportedAppProtocols>
 ISO15118_chargerImpl::merge_supported_app_protocols(const types::iso15118::SupportedAppProtocols& value,
                                                     ProtocolSource source) {

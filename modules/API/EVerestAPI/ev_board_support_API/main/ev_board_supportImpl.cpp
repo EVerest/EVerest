@@ -30,6 +30,9 @@ void ev_board_supportImpl::init() {
 void ev_board_supportImpl::ready() {
 }
 
+void ev_board_supportImpl::shutdown() {
+}
+
 void ev_board_supportImpl::handle_enable(bool& value) {
     static const auto topic = mod->helper.get_topics().everest_to_extern("enable");
     const auto data = generic::serialize(value);

@@ -29,6 +29,9 @@ void iso15118_extensionsImpl::init() {
 void iso15118_extensionsImpl::ready() {
 }
 
+void iso15118_extensionsImpl::shutdown() {
+}
+
 void iso15118_extensionsImpl::handle_set_get_certificate_response(
     types::iso15118::ResponseExiStreamStatus& certificate_response) {
     if (mod->selected_iso20()) {

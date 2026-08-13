@@ -116,4 +116,8 @@ std::string ev_board_support_API::make_error_string(API_types::generic::Error co
     return result;
 }
 
+void ev_board_support_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -28,6 +28,8 @@
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     std::string device;
     bool supported_DIN70121;
@@ -42,6 +44,9 @@ struct Conf {
     int auth_timeout_eim;
     bool enable_sdp_server;
     bool publish_telemetry_only_on_change;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class EvseV2G : public Everest::ModuleBase {
@@ -79,6 +84,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

@@ -13,4 +13,8 @@ void Acrel_DJSF1352_RN::ready() {
     invoke_ready(*p_main);
 }
 
+void Acrel_DJSF1352_RN::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

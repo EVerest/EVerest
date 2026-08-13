@@ -12,4 +12,8 @@ void DummySessionCostProvider::ready() {
     invoke_ready(*p_main);
 }
 
+void DummySessionCostProvider::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

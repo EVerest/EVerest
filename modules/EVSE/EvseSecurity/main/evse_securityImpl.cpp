@@ -32,6 +32,9 @@ void evse_securityImpl::ready() {
     publish_cert_telemetry();
 }
 
+void evse_securityImpl::shutdown() {
+}
+
 types::evse_security::InstallCertificateResult
 evse_securityImpl::handle_install_ca_certificate(std::string& certificate,
                                                  types::evse_security::CaCertificateType& certificate_type) {

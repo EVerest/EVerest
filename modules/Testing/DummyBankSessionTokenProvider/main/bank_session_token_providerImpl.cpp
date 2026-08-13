@@ -14,6 +14,9 @@ void bank_session_token_providerImpl::init() {
 void bank_session_token_providerImpl::ready() {
 }
 
+void bank_session_token_providerImpl::shutdown() {
+}
+
 types::payment_terminal::BankSessionToken bank_session_token_providerImpl::handle_get_bank_session_token() {
     types::payment_terminal::BankSessionToken bank_session_token;
     bank_session_token.token = config.token;

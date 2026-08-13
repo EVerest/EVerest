@@ -61,4 +61,8 @@ void external_energy_limits_consumer_API::generate_api_cmd_set_external_limits()
     });
 }
 
+void external_energy_limits_consumer_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

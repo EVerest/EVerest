@@ -63,4 +63,8 @@ void powermeter_API::generate_api_var_public_key_ocmf() {
     });
 }
 
+void powermeter_API::shutdown() {
+    invoke_shutdown(*p_main);
+}
+
 } // namespace module

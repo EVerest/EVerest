@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -27,9 +27,14 @@ namespace API_types_ext = API_types::isolation_monitor;
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     int cfg_communication_check_to_s;
     int cfg_heartbeat_interval_ms;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class isolation_monitor_API : public Everest::ModuleBase {
@@ -58,6 +63,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

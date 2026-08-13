@@ -137,6 +137,9 @@ void evse_board_supportImpl::ready() {
     }
 }
 
+void evse_board_supportImpl::shutdown() {
+}
+
 void evse_board_supportImpl::wait_for_caps() {
     // Wait for caps to be received at least once
     int i;

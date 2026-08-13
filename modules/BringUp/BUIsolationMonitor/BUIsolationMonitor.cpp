@@ -129,4 +129,7 @@ void BUIsolationMonitor::ready() {
     screen.Loop(main_renderer);
 }
 
+void BUIsolationMonitor::shutdown() {
+}
+
 } // namespace module

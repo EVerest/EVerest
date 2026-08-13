@@ -211,6 +211,9 @@ void isolation_monitorImpl::ready() {
     }
 }
 
+void isolation_monitorImpl::shutdown() {
+}
+
 void isolation_monitorImpl::handle_start() {
     enable_publishing = true;
     if (config.disable_device_on_stop) {

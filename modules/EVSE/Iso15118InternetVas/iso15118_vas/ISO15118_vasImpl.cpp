@@ -49,6 +49,9 @@ void ISO15118_vasImpl::ready() {
     this->publish_offered_vas({{{InternetAccessServiceIdD2}}});
 }
 
+void ISO15118_vasImpl::shutdown() {
+}
+
 std::vector<types::iso15118_vas::ParameterSet> ISO15118_vasImpl::handle_get_service_parameters(int& service_id) {
     std::vector<types::iso15118_vas::ParameterSet> ret{};
     if (service_id == InternetAccessServiceIdD2) {

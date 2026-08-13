@@ -12,5 +12,8 @@ void generic_errorImpl::init() {
 void generic_errorImpl::ready() {
 }
 
+void generic_errorImpl::shutdown() {
+}
+
 } // namespace generic_error
 } // namespace module

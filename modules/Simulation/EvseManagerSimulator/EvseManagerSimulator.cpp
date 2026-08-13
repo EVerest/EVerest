@@ -14,4 +14,9 @@ void EvseManagerSimulator::ready() {
     invoke_ready(*p_energy_grid);
 }
 
+void EvseManagerSimulator::shutdown() {
+    invoke_shutdown(*p_evse);
+    invoke_shutdown(*p_energy_grid);
+}
+
 } // namespace module

@@ -93,6 +93,9 @@ void serial_communication_hubImpl::init() {
 void serial_communication_hubImpl::ready() {
 }
 
+void serial_communication_hubImpl::shutdown() {
+}
+
 types::serial_comm_hub_requests::Result
 serial_communication_hubImpl::perform_modbus_request(uint8_t device_address, tiny_modbus::FunctionCode function,
                                                      uint16_t first_register_address, uint16_t register_quantity,
