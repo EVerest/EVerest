@@ -8,14 +8,24 @@
 #include <everest/tls/openssl_util.hpp>
 
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <everest/tls/tls.hpp>
 #include <gtest/gtest.h>
 #include <memory>
 #include <openssl/ssl.h>
 #include <thread>
+#include <tuple>
 #include <unistd.h>
+
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <sys/socket.h>
 
 #include <everest/util/enum/EnumFlags.hpp>
 
@@ -152,6 +162,120 @@ inline void handler(tls::Server::ConnectionPtr&& con) {
 
 inline void run_server(tls::Server& server) {
     server.serve(&handler);
+}
+
+// ----------------------------------------------------------------------------
+// Socket helpers shared by the wrap_accepted_fd / wrap_connecting_fd tests.
+// They return error values rather than assert, because ASSERT_* requires a void
+// return type; callers assert at the call site.
+
+// Test-owned loopback listen socket on an ephemeral port; fd is -1 on failure.
+struct LoopbackListener {
+    int fd{-1};
+    std::uint16_t port{0};
+};
+
+inline LoopbackListener make_loopback_listener() {
+    LoopbackListener listener;
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return listener;
+    }
+    int reuse = 1;
+    std::ignore = ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+
+    sockaddr_in bound{};
+    socklen_t bound_len = sizeof(bound);
+    if ((::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) || (::listen(fd, 1) != 0) ||
+        (::getsockname(fd, reinterpret_cast<sockaddr*>(&bound), &bound_len) != 0)) {
+        std::ignore = ::close(fd);
+        return listener;
+    }
+    listener.fd = fd;
+    listener.port = ntohs(bound.sin_port);
+    return listener;
+}
+
+// Returns nullptr when accept(2), name resolution, or the wrap fails.
+inline tls::Server::ConnectionPtr accept_and_wrap(tls::Server& server, int listen_fd) {
+    sockaddr_in peer_addr{};
+    socklen_t peer_len = sizeof(peer_addr);
+    const int accepted_fd = ::accept(listen_fd, reinterpret_cast<sockaddr*>(&peer_addr), &peer_len);
+    if (accepted_fd < 0) {
+        return nullptr;
+    }
+    char ip_buf[INET_ADDRSTRLEN]{};
+    char service_buf[NI_MAXSERV]{};
+    if (::getnameinfo(reinterpret_cast<sockaddr*>(&peer_addr), peer_len, ip_buf, sizeof(ip_buf), service_buf,
+                      sizeof(service_buf), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
+        std::ignore = ::close(accepted_fd);
+        return nullptr;
+    }
+    return server.wrap_accepted_fd(accepted_fd, ip_buf, service_buf);
+}
+
+// Polls out an in-flight EINPROGRESS connect. Returns -1 on failure.
+inline int connect_loopback_nonblocking(std::uint16_t port) {
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    const int flags = ::fcntl(fd, F_GETFL, 0);
+    if ((flags == -1) || (::fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0)) {
+        std::ignore = ::close(fd);
+        return -1;
+    }
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(port);
+    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+        if (errno != EINPROGRESS) {
+            std::ignore = ::close(fd);
+            return -1;
+        }
+        pollfd pfd{fd, POLLOUT, 0};
+        int err = 0;
+        socklen_t err_len = sizeof(err);
+        if ((::poll(&pfd, 1, 2000) <= 0) || (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &err_len) != 0) ||
+            (err != 0)) {
+            std::ignore = ::close(fd);
+            return -1;
+        }
+    }
+    return fd;
+}
+
+struct HandshakeDrive {
+    tls::Connection::result_t result{tls::Connection::result_t::timeout};
+    int want_read{0};
+    int want_write{0};
+};
+
+// Polls for socket readiness whenever connect() reports want_read / want_write.
+inline HandshakeDrive drive_client_handshake(tls::ClientConnection& conn, int fd, int connect_timeout_ms = 1000,
+                                             int max_attempts = 50, int poll_timeout_ms = 1000) {
+    using result_t = tls::Connection::result_t;
+    HandshakeDrive drive;
+    for (int i = 0; i < max_attempts && drive.result != result_t::success && drive.result != result_t::closed; ++i) {
+        drive.result = conn.connect(connect_timeout_ms);
+        if (drive.result == result_t::want_read) {
+            ++drive.want_read;
+            pollfd pfd{fd, POLLIN, 0};
+            std::ignore = ::poll(&pfd, 1, poll_timeout_ms);
+        } else if (drive.result == result_t::want_write) {
+            ++drive.want_write;
+            pollfd pfd{fd, POLLOUT, 0};
+            std::ignore = ::poll(&pfd, 1, poll_timeout_ms);
+        }
+    }
+    return drive;
 }
 
 class TlsTest : public testing::Test {
