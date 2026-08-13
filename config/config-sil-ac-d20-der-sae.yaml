@@ -1,0 +1,210 @@
+# SIL config: ISO 15118-20 AC DER, SAE flavor (AMD1 Annex M).
+#
+# Exercises the SECC side advertising AC_DER_SAE. Counterpart:
+# config-sil-ac-d20-der-iec.yaml.
+#
+# AC_DER_* is only advertised once DER availability has been asserted for the EVSE
+# and the EVSE is export-capable. Availability normally arrives from OCPP, driven by
+# a grid_support capability publish, so with this config alone it is never asserted
+# and no AC_DER_* mode is offered. To assert it manually, call set_der_available on
+# the EvseManager after boot but before the EV plugs in (auto_exec_commands below
+# leaves a 20 s window):
+#
+#   topic:   everest/modules/evse_manager/impl/evse/cmd/set_der_available
+#   payload: {"msg_type":"Cmd","data":{"id":"1","args":{"available":true},
+#             "origin":"manual"}}
+#
+# The reply arrives on the same topic suffixed /response/manual and should carry
+# retval "Accepted".
+#
+# Expected result: the log contains
+#   AC_DER_SAE advertised with the inert default grid code configuration ...
+# and does NOT contain
+#   Removing AC_DER_SAE from the supported_energy_transfer list!
+#
+# Check for the positive line, not just the absence of the second one. Without
+# asserting availability the second line is also absent, because AC_DER_SAE never
+# enters the list at all.
+#
+# A full AC DER session cannot be negotiated here: PyEvJosev supports only
+# DC, DC_BPT, AC and AC_BPT, so the EV selects AC_BPT. This validates SECC
+# advertising only.
+active_modules:
+  iso15118_charger:
+    module: Evse15118D20
+    config_module:
+      device: auto
+    connections:
+      security:
+        - module_id: evse_security
+          implementation_id: main
+  iso15118_car:
+    module: PyEvJosev
+    config_module:
+      device: auto
+      supported_DIN70121: false
+      supported_ISO15118_2: false
+      supported_ISO15118_20_DC: false
+      supported_ISO15118_20_AC: true
+      supported_d20_energy_services: "AC_BPT,AC"
+      tls_active: true
+      enable_tls_1_3: true
+  evse_manager:
+    module: EvseManager
+    config_module:
+      ac_enforce_hlc: false
+      ac_hlc_enabled: true
+      ac_hlc_use_5percent: false
+      ac_max_reactive_power: 5000.0
+      ac_nominal_voltage: 230
+      supported_iso_ac_bpt: true
+      charge_mode: AC
+      connector_id: 1
+      ev_receipt_required: false
+      evse_id: DE*PNX*E12345*1
+      has_ventilation: true
+      iso15118_der_flavor: SAE
+      payment_enable_contract: false
+      payment_enable_eim: true
+      session_logging: true
+      session_logging_path: /tmp/everest-logs
+      session_logging_xml: false
+      switch_3ph1ph_delay_s: 5
+      switch_3ph1ph_cp_state: X1
+      bpt_channel: Unified
+      bpt_generator_mode: GridFollowing
+      bpt_grid_code_island_method: Passive
+    connections:
+      bsp:
+        - module_id: connector_1_powerpath
+          implementation_id: board_support
+      hlc:
+        - module_id: iso15118_charger
+          implementation_id: charger
+      powermeter_car_side:
+        - module_id: connector_1_powerpath
+          implementation_id: powermeter
+      slac:
+        - module_id: slac
+          implementation_id: evse
+      ac_rcd:
+        - implementation_id: rcd
+          module_id: connector_1_powerpath
+      connector_lock:
+        - implementation_id: connector_lock
+          module_id: connector_1_powerpath
+  connector_1_powerpath:
+    config_module:
+      connector_id: 1
+    connections: {}
+    module: YetiSimulator
+    telemetry:
+      id: 1
+  slac:
+    module: SlacSimulator
+  ev_manager:
+    module: EvManager
+    config_module:
+      connector_id: 1
+      auto_enable: true
+      auto_exec: true
+      auto_exec_commands: sleep 20;iso_wait_slac_matched;iso_start_v2g_session AC;iso_wait_pwr_ready;iso_draw_power_regulated 16,3;iso_wait_for_stop 20;iso_wait_v2g_session_stopped;unplug
+    connections:
+      ev_board_support:
+        - module_id: connector_1_powerpath
+          implementation_id: ev_board_support
+      ev:
+        - module_id: iso15118_car
+          implementation_id: ev
+      slac:
+        - module_id: slac
+          implementation_id: ev
+  auth:
+    module: Auth
+    config_module:
+      connection_timeout: 10
+      selection_algorithm: FindFirst
+    connections:
+      token_provider:
+        - module_id: token_provider
+          implementation_id: main
+      token_validator:
+        - module_id: token_validator
+          implementation_id: main
+      evse_manager:
+        - module_id: evse_manager
+          implementation_id: evse
+  token_provider:
+    module: DummyTokenProvider
+    config_implementation:
+      main:
+        timeout: 10
+        token: DEADBEEF
+    connections:
+      evse:
+        - module_id: evse_manager
+          implementation_id: evse
+  token_validator:
+    module: DummyTokenValidator
+    config_implementation:
+      main:
+        validation_result: Accepted
+        validation_reason: Token seems valid
+        sleep: 0.25
+  evse_security:
+    module: EvseSecurity
+    config_module:
+      private_key_password: "123456"
+  energy_manager:
+    module: EnergyManager
+    config_module:
+      schedule_total_duration: 1
+      schedule_interval_duration: 60
+      debug: false
+    connections:
+      energy_trunk:
+        - module_id: grid_connection_point
+          implementation_id: energy_grid
+  grid_connection_point:
+    module: EnergyNode
+    config_module:
+      fuse_limit_A: 40.0
+      phase_count: 3
+    connections:
+      price_information: []
+      energy_consumer:
+        - module_id: api_sink
+          implementation_id: energy_grid
+      powermeter:
+        - module_id: connector_1_powerpath
+          implementation_id: powermeter
+  api_sink:
+    module: EnergyNode
+    mapping:
+      module:
+        evse: 1
+    config_module:
+      fuse_limit_A: 32.0
+      phase_count: 3
+    connections:
+      energy_consumer:
+        - module_id: evse_manager
+          implementation_id: energy_grid
+  api:
+    module: API
+    connections:
+      evse_manager:
+        - module_id: evse_manager
+          implementation_id: evse
+      error_history:
+        - module_id: error_history
+          implementation_id: error_history
+      evse_energy_sink:
+        - module_id: api_sink
+          implementation_id: external_limits
+  error_history:
+    module: ErrorHistory
+    config_implementation:
+      error_history:
+        database_path: /tmp/error_history.db
+x-module-layout: {}
