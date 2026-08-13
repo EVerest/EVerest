@@ -353,6 +353,12 @@
             "type": "boolean",
             "readOnly": true
         },
+        "ReportSuspendedEVSEReasonChange": {
+            "$comment": "Resend StatusNotification when the SuspendedEVSE reason changes while the status stays SuspendedEVSE",
+            "type": "boolean",
+            "readOnly": false,
+            "default": false
+        },
         "MessageTypesDiscardForQueueing": {
             "$comment": "Comma seperated list of message types that shall not be queued (when offline) even in case QueueAllMessages is true. If QueueAllMessages is false, the configuration of this paramater has no effect.",
             "type": "string",

@@ -457,6 +457,22 @@
         "default": false,
         "type": "boolean"
       },
+      "ReportSuspendedEVSEReasonChange": {
+        "variable_name": "ReportSuspendedEVSEReasonChange",
+        "characteristics": {
+            "supportsMonitoring": false,
+            "dataType": "boolean"
+        },
+        "attributes": [
+            {
+                "type": "Actual",
+                "mutability": "ReadWrite"
+            }
+        ],
+        "description": "Resend StatusNotification when the SuspendedEVSE reason changes while the status stays SuspendedEVSE. OCPP 1.6 only.",
+        "default": false,
+        "type": "boolean"
+      },
       "IFace": {
         "variable_name": "IFace",
         "characteristics": {

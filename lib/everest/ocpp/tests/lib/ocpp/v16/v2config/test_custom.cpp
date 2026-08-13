@@ -38,6 +38,7 @@ const std::map<std::string, std::string> expected_key_value = {
     {"MaxCompositeScheduleDuration", "31536000"},
     {"MaxMessageSize", "65000"},
     {"OcspRequestInterval", "604800"},
+    {"ReportSuspendedEVSEReasonChange", "false"},
     {"RetryBackoffRandomRange", "10"},
     {"RetryBackoffRepeatTimes", "3"},
     {"RetryBackoffWaitMinimum", "3"},
@@ -205,6 +206,35 @@ TEST_P(Configuration, Set) {
     EXPECT_EQ(get()->getTLSKeylogFile(), "/tmp/ocpp_tls_keylog.txt");
 
     // custom key (none defined)
+}
+
+TEST_P(Configuration, SetGetReportSuspendedEVSEReasonChange) {
+    using ConfigurationStatus = ocpp::v16::ConfigurationStatus;
+    ASSERT_NE(get(), nullptr);
+
+    auto kv = get()->get("ReportSuspendedEVSEReasonChange");
+    ASSERT_TRUE(kv);
+    EXPECT_EQ(kv.value().key, "ReportSuspendedEVSEReasonChange");
+    EXPECT_EQ(kv.value().value, "false");
+    EXPECT_FALSE(kv.value().readonly);
+
+    EXPECT_EQ(get()->set("ReportSuspendedEVSEReasonChange", "true"), ConfigurationStatus::Accepted);
+    kv = get()->get("ReportSuspendedEVSEReasonChange");
+    ASSERT_TRUE(kv);
+    EXPECT_EQ(kv.value().key, "ReportSuspendedEVSEReasonChange");
+    EXPECT_EQ(kv.value().value, "true");
+    EXPECT_FALSE(kv.value().readonly);
+
+    EXPECT_EQ(get()->set("ReportSuspendedEVSEReasonChange", "NotABool"), ConfigurationStatus::Rejected);
+    kv = get()->get("ReportSuspendedEVSEReasonChange");
+    ASSERT_TRUE(kv);
+    EXPECT_EQ(kv.value().value, "true");
+
+    // restore the default, the JSON backend persists to the user config
+    EXPECT_EQ(get()->set("ReportSuspendedEVSEReasonChange", "false"), ConfigurationStatus::Accepted);
+    kv = get()->get("ReportSuspendedEVSEReasonChange");
+    ASSERT_TRUE(kv);
+    EXPECT_EQ(kv.value().value, "false");
 }
 
 TEST_P(Configuration, GetAllKeyValue) {

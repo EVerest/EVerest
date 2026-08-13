@@ -140,6 +140,7 @@ extern const ComponentVariable VerifyCsmsCommonName;
 extern const ComponentVariable UseTPM;
 extern const ComponentVariable UseTPMSeccLeafCertificate;
 extern const ComponentVariable VerifyCsmsAllowWildcards;
+extern const ComponentVariable ReportSuspendedEVSEReasonChange;
 extern const ComponentVariable IFace;
 extern const ComponentVariable EnableTLSKeylog;
 extern const ComponentVariable TLSKeylogFile;

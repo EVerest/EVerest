@@ -536,6 +536,15 @@ void ChargePointConfiguration::setVerifyCsmsAllowWildcards(bool verify_csms_allo
     this->setInUserConfig("Internal", "VerifyCsmsAllowWildcards", verify_csms_allow_wildcards);
 }
 
+bool ChargePointConfiguration::getReportSuspendedEVSEReasonChange() {
+    return this->config["Internal"]["ReportSuspendedEVSEReasonChange"];
+}
+
+void ChargePointConfiguration::setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) {
+    this->config["Internal"]["ReportSuspendedEVSEReasonChange"] = report_suspended_evse_reason_change;
+    this->setInUserConfig("Internal", "ReportSuspendedEVSEReasonChange", report_suspended_evse_reason_change);
+}
+
 std::string ChargePointConfiguration::getSupportedMeasurands() {
     return this->config["Internal"]["SupportedMeasurands"];
 }
@@ -798,6 +807,14 @@ KeyValue ChargePointConfiguration::getVerifyCsmsAllowWildcardsKeyValue() {
     kv.key = "VerifyCsmsAllowWildcards";
     kv.readonly = true;
     kv.value.emplace(ocpp::conversions::bool_to_string(this->getVerifyCsmsAllowWildcards()));
+    return kv;
+}
+
+KeyValue ChargePointConfiguration::getReportSuspendedEVSEReasonChangeKeyValue() {
+    KeyValue kv;
+    kv.key = "ReportSuspendedEVSEReasonChange";
+    kv.readonly = false;
+    kv.value.emplace(ocpp::conversions::bool_to_string(this->getReportSuspendedEVSEReasonChange()));
     return kv;
 }
 
@@ -3337,6 +3354,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     if (key == "VerifyCsmsAllowWildcards") {
         return this->getVerifyCsmsAllowWildcardsKeyValue();
     }
+    if (key == "ReportSuspendedEVSEReasonChange") {
+        return this->getReportSuspendedEVSEReasonChangeKeyValue();
+    }
     if (key == "OcspRequestInterval") {
         return this->getOcspRequestIntervalKeyValue();
     }
@@ -4143,6 +4163,12 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
     } else if (key == "VerifyCsmsAllowWildcards") {
         if (isBool(value.get())) {
             this->setVerifyCsmsAllowWildcards(ocpp::conversions::string_to_bool(value.get()));
+        } else {
+            return ConfigurationStatus::Rejected;
+        }
+    } else if (key == "ReportSuspendedEVSEReasonChange") {
+        if (isBool(value.get())) {
+            this->setReportSuspendedEVSEReasonChange(ocpp::conversions::string_to_bool(value.get()));
         } else {
             return ConfigurationStatus::Rejected;
         }

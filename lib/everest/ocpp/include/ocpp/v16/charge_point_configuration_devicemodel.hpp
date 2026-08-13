@@ -42,6 +42,7 @@ protected:
     SetResult setInternalOcspRequestInterval(const std::string& value);
     SetResult setInternalRejectRemoteStartTransactionWithoutConnectorId(const std::string& value);
     SetResult setInternalRemoteStartTransactionWithoutConnectorIdFindFirst(const std::string& value);
+    SetResult setInternalReportSuspendedEVSEReasonChange(const std::string& value);
     SetResult setInternalRetryBackoffRandomRange(const std::string& value);
     SetResult setInternalRetryBackoffRepeatTimes(const std::string& value);
     SetResult setInternalRetryBackoffWaitMinimum(const std::string& value);
@@ -162,6 +163,7 @@ public:
     bool getLogMessagesRaw() override;
     bool getLogRotation() override;
     bool getLogRotationDateSuffix() override;
+    bool getReportSuspendedEVSEReasonChange() override;
     bool getStopTransactionIfUnlockNotSupported() override;
     bool getUseSslDefaultVerifyPaths() override;
     bool getUseTPM() override;
@@ -224,6 +226,7 @@ public:
     KeyValue getMaxCompositeScheduleDurationKeyValue() override;
     KeyValue getMaxMessageSizeKeyValue() override;
     KeyValue getOcspRequestIntervalKeyValue() override;
+    KeyValue getReportSuspendedEVSEReasonChangeKeyValue() override;
     KeyValue getRetryBackoffRandomRangeKeyValue() override;
     KeyValue getRetryBackoffRepeatTimesKeyValue() override;
     KeyValue getRetryBackoffWaitMinimumKeyValue() override;
@@ -275,6 +278,7 @@ public:
     void setOcspRequestInterval(std::int32_t ocsp_request_interval) override;
     void setRejectRemoteStartTransactionWithoutConnectorId(bool reject) override;
     void setRemoteStartTransactionWithoutConnectorIdFindFirst(bool find_first) override;
+    void setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) override;
     void setRetryBackoffRandomRange(std::int32_t retry_backoff_random_range) override;
     void setRetryBackoffRepeatTimes(std::int32_t retry_backoff_repeat_times) override;
     void setRetryBackoffWaitMinimum(std::int32_t retry_backoff_wait_minimum) override;
