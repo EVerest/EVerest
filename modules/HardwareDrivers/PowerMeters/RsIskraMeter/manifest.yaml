@@ -53,6 +53,9 @@ config:
     minimum: 1000
 provides:
   meter:
+    description: Implementation of the driver functionality - deprecated.
+    interface: powermeter
+  main:
     description: Implementation of the driver functionality
     interface: powermeter
 requires:

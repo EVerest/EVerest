@@ -145,6 +145,24 @@ TEST_F(ChargePointConnectivityTest, StopDisarmsConnectionCallbacksAfterDisconnec
     charge_point->stop();
 }
 
+// A restart reuses the same ConnectivityManager, so start() must arm the connection callbacks that the
+// preceding stop() disarmed. Otherwise the connection state stays suppressed after the first stop().
+TEST_F(ChargePointConnectivityTest, RestartArmsConnectionCallbacksAgain) {
+    ON_CALL(*this->connectivity_manager, is_websocket_connected()).WillByDefault(Return(false));
+
+    const ::testing::InSequence seq;
+    EXPECT_CALL(*this->connectivity_manager, arm_connection_callbacks()).Times(1);
+    EXPECT_CALL(*this->connectivity_manager, disarm_connection_callbacks()).Times(1);
+    EXPECT_CALL(*this->connectivity_manager, arm_connection_callbacks()).Times(1);
+    EXPECT_CALL(*this->connectivity_manager, disarm_connection_callbacks()).Times(1);
+
+    auto charge_point = make_charge_point();
+    charge_point->start({}, BootReasonEnum::PowerUp, {});
+    charge_point->stop();
+    EXPECT_TRUE(charge_point->restart({}, BootReasonEnum::ApplicationReset));
+    charge_point->stop();
+}
+
 // Once the charge point observes a successful connection (connected callback -> message queue resume), queued
 // outgoing OCPP messages such as the BootNotification.req are handed to the websocket via send_to_websocket().
 TEST_F(ChargePointConnectivityTest, OutgoingMessageGoesToSendToWebsocket) {
