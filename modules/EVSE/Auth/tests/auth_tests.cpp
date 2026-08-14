@@ -390,6 +390,54 @@ TEST_F(AuthTest, test_stop_transaction) {
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
 }
 
+/// \brief Test that a BankCard token that started a transaction stops it when presented again, without invoking the
+/// validators a second time (a second validation would reserve money from the card again)
+TEST_F(AuthTest, test_stop_transaction_with_bank_card) {
+    int validate_calls = 0;
+    this->auth_handler->register_validate_token_callback([&validate_calls](const ProvidedIdToken&) {
+        validate_calls++;
+        ValidationResult result;
+        result.authorization_status = AuthorizationStatus::Accepted;
+        return std::vector<ValidationResult>{result};
+    });
+
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_1, connectors);
+    provided_token.authorization_type = types::authorization::AuthorizationType::BankCard;
+
+    SessionEvent session_event1 = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    SessionEvent session_event2 = get_transaction_started_event(provided_token);
+
+    this->auth_handler->handle_session_event(1, session_event1);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing))
+        .Times(2);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted))
+        .Times(1);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStart))
+        .Times(1);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStop))
+        .Times(1);
+    EXPECT_CALL(mock_stop_transaction_callback, Call(0, _)).Times(1);
+
+    auto result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+    ASSERT_EQ(validate_calls, 1);
+
+    this->auth_handler->handle_session_event(1, session_event2);
+
+    // second presentation of the same bank card stops the transaction without another validation
+    result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_STOP_TRANSACTION);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+    ASSERT_EQ(validate_calls, 1);
+}
+
 /// \brief Test that a transaction is not stopped when an id_token is swiped twice and stop_transaction_on_reswipe is
 /// false. Instead, UsedToReauthorize shall be published on every reswipe
 TEST_F(AuthTest, test_reswipe_publishes_used_to_reauthorize) {

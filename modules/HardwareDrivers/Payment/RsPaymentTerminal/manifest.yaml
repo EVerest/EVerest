@@ -46,6 +46,19 @@ config:
       force the payment terminals to run them regularly. Defaults to one day.
     default: 86400
     type: integer
+  card_reading_control:
+    description: >-
+      The ZVT card reading control (Tlv tag 0x1f15) used when polling for
+      cards. The default 208 (0xd0) detects cards without sending commands to
+      them; the token of a bank card is then taken from the
+      `bank_session_token` interface. The value 192 (0xc0) fully reads the
+      card: slower, but the token is then derived from the physical card,
+      which allows stopping a session by presenting the same card again. With
+      192 the `bank_session_token` interface is not used and the caller of
+      `token_validator` must deliver the invoice token in `parent_id_token` -
+      validation is rejected otherwise.
+    default: 208
+    type: integer
 requires:
     session:
       interface: session_cost
@@ -64,7 +77,10 @@ provides:
     description: Provides an authentication token from the Feig terminal.
   token_validator:
     interface: auth_token_validator
-    description: Reserves the `pre_authorization_amount` from a bank card.  
+    description: >-
+      Reserves the `pre_authorization_amount` from a bank card. The caller may
+      deliver the invoice token in the `parent_id_token` field of the provided
+      token; if unset, the token id itself is used as the invoice token.
   payment_terminal:
     interface: payment_terminal
     description: Provides all the commands specific for bank cards handling
