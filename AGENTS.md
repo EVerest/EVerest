@@ -23,8 +23,15 @@ behavior, docs describe intent. Say so when you find the two diverging.
 Docs are rendered at <https://everest.github.io>, starting with the
 [Getting Started Guides](https://everest.github.io/nightly/how-to-guides/getting-started/index.html).
 Sphinx sources are under `docs/source/`: `explanation/` for concepts, `how-to-guides/`
-for recipes. Per-module docs are at `modules/<Category>/<Module>/docs/index.rst`; update
-them when a module's public behavior changes.
+for recipes. Per-module docs are at `modules/<Category>/<Module>/docs/index.rst`.
+
+Docs are updated in the same change as the code they describe. After changing a
+module's public behavior (interface or type YAML, config keys, state machines, error
+semantics), check the module's `docs/index.rst` and any `docs/source/` page describing
+that behavior, and fix what went stale. Libraries document themselves in
+`lib/everest/<lib>/README.md` and their own doc trees (`docs/` usually, `doc/` in
+libocpp); internal library changes count too when they touch documented behavior. A
+change to build, run, test or codegen mechanics means updating this file as well.
 
 ## Build
 
