@@ -48,6 +48,10 @@ public:
     template <class T> auto& get_queue_for_test(T& wrapper) {
         return wrapper.m_queue;
     }
+
+    template <class T> bool is_shutdown_signaled_for_test(T& wrapper) const {
+        return wrapper.m_done;
+    }
 };
 } // namespace everest::lib::util::testing_interface
 
@@ -203,22 +207,32 @@ TEST_F(AsyncWrapperTest, DestructorShutdownPolicies) {
     EXPECT_EQ(wait_result, 1);
 
     // Setup 2: Test FastQuitPolicy (Drops queued task, joins quickly)
+    // The worker is occupied by a blocking task until shutdown is signaled, so the second task is
+    // provably still queued when the destructor runs. Without that, whether the worker has already
+    // popped the task is a race and the assertion below is a coin flip.
     int fast_result = 0;
     {
         async_wrapper_guarded_fast<Counter> wrapper(0);
 
-        // Push a task that runs briefly. If the task starts, the destructor must wait.
-        // We rely on the race condition being won by the destructor for EXPECT_EQ(0) to pass.
-        wrapper.run([&fast_result](Counter& c) {
-            std::this_thread::sleep_for(std::chrono::microseconds(100)); // Very fast sleep
-            fast_result = 2; // Should not reach here if the task is aborted while queued
+        std::promise<void> worker_occupied;
+        wrapper.run([&](Counter&) {
+            worker_occupied.set_value();
+            while (not is_shutdown_signaled_for_test(wrapper)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            fast_result = 1;
         });
+        worker_occupied.get_future().wait();
 
-        // Destructor runs here (FastQuitPolicy::shutdown), should join quickly.
+        // Queued behind the blocking task, so it cannot have started.
+        wrapper.run([&fast_result](Counter&) { fast_result = 2; });
+
+        // Destructor runs here (FastQuitPolicy::shutdown): sets the done flag, the blocking task
+        // returns, and the worker loop exits without popping the queued task.
     }
-    // If fast_result == 0, the task was aborted while queued.
-    // If fast_result == 2, the task started and the destructor waited for it to finish.
-    EXPECT_EQ(fast_result, 0);
+    // fast_result == 1: the running task ran to completion and the queued task was dropped.
+    // fast_result == 2: the queued task started and the destructor waited for it to finish.
+    EXPECT_EQ(fast_result, 1);
 }
 
 // Test 6: Verify Worker's internal catch block works correctly
