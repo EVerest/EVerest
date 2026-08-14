@@ -206,7 +206,7 @@ evse_board_support_API::ErrorHandler evse_board_support_API::make_error_handler(
     case ErrorEnum::Selftest:
     case ErrorEnum::DC:
     case ErrorEnum::AC:
-        error_id = "acd_rcd/" + error_str;
+        error_id = "ac_rcd/" + error_str;
         result.raiser = [this, sub_type_str, message_str, error_id]() {
             auto ev_error =
                 p_rcd->error_factory->create_error(error_id, sub_type_str, message_str, Everest::error::Severity::High);
