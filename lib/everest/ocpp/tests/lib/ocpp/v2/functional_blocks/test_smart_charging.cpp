@@ -5,6 +5,7 @@
 #include "date/tz.h"
 #include "everest/logging.hpp"
 #include "lib/ocpp/common/database_testing_utils.hpp"
+#include "lib/ocpp/test_temp_paths.hpp"
 #include "message_dispatcher_mock.hpp"
 #include "ocpp/common/types.hpp"
 #include "ocpp/v2/ctrlr_component_variables.hpp"
@@ -83,7 +84,7 @@ protected:
 
     TestSmartCharging create_smart_charging(const std::optional<std::string> ac_phase_switching_supported = "true") {
         std::unique_ptr<everest::db::sqlite::Connection> database_connection =
-            std::make_unique<everest::db::sqlite::Connection>(fs::path("/tmp/ocpp201") / "cp.db");
+            std::make_unique<everest::db::sqlite::Connection>(libocpp_test::unique_temp_path("ocpp201_cp", ".db"));
         database_handler =
             std::make_shared<DatabaseHandler>(std::move(database_connection), MIGRATION_FILES_LOCATION_V2);
         database_handler->open_connection();

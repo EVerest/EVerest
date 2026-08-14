@@ -36,6 +36,7 @@
 #include <ocpp/v2/messages/SetNetworkProfile.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 #include <ocsp_updater_mock.hpp>
+#include <test_temp_paths.hpp>
 
 using json = nlohmann::json;
 
@@ -1822,7 +1823,7 @@ protected:
 
     void SetUp() override {
         const std::string unique = ::testing::UnitTest::GetInstance()->current_test_info()->name();
-        db_path = std::filesystem::temp_directory_path() / ("libocpp_no_prune_" + unique + ".db");
+        db_path = libocpp_test::unique_temp_path("libocpp_no_prune_" + unique, ".db");
         std::error_code ec;
         std::filesystem::remove(db_path, ec);
     }

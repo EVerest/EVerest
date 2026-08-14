@@ -3,6 +3,7 @@
 
 #include <ocpp/v2/device_model.hpp>
 #include <smart_charging_test_utils.hpp>
+#include <test_temp_paths.hpp>
 
 #include "ocpp/v2/ctrlr_component_variables.hpp"
 
@@ -472,7 +473,7 @@ std::unique_ptr<TestSmartCharging>
 CompositeScheduleTestFixtureV2::create_smart_charging_handler(const OcppProtocolVersion ocpp_version) {
     this->ocpp_version = ocpp_version;
     std::unique_ptr<everest::db::sqlite::Connection> database_connection =
-        std::make_unique<everest::db::sqlite::Connection>(fs::path("/tmp/ocpp201") / "cp.db");
+        std::make_unique<everest::db::sqlite::Connection>(libocpp_test::unique_temp_path("ocpp201_cp", ".db"));
     this->database_handler =
         std::make_unique<DatabaseHandlerFake>(std::move(database_connection), MIGRATION_FILES_LOCATION_V2);
     database_handler->open_connection();

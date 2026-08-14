@@ -23,6 +23,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
+#include <test_temp_paths.hpp>
 
 #include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/v16/charge_point_configuration.hpp>
@@ -55,9 +56,7 @@ protected:
             std::make_unique<ChargePointConfiguration>(config_file, CONFIG_DIR_V16, USER_CONFIG_FILE_LOCATION_V16);
 
         // Each test gets its own temporary directory so the on-disk sqlite db and message logs do not collide.
-        this->tmp_dir = fs::temp_directory_path() /
-                        ("ocpp_v16_connectivity_test_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)));
-        fs::create_directories(this->tmp_dir);
+        this->tmp_dir = libocpp_test::unique_temp_directory("ocpp_v16_connectivity_test");
     }
 
     void TearDown() override {
