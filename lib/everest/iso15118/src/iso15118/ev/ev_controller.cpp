@@ -23,7 +23,7 @@ void EvController::start_session() {
 
     std::optional<io::SdpResponse> sdp_response{std::nullopt};
 
-    everest::lib::io::udp::udp_client sdp_client(SDP_SERVER_ADDRESS, SDP_SERVER_PORT, 1000);
+    everest::lib::io::udp::udp_client sdp_client(SDP_SERVER_ADDRESS, SDP_SERVER_PORT);
     sdp_client.set_error_handler(
         [](int error, const std::string& message) { logf_error("SDP client error (%d): %s", error, message.c_str()); });
     sdp_client.set_rx_handler([&sdp_response, &running](const everest::lib::io::udp::udp_payload& payload,
