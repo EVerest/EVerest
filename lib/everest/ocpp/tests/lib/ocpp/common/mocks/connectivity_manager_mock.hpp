@@ -30,7 +30,7 @@ public:
     MOCK_METHOD(std::chrono::time_point<std::chrono::steady_clock>, get_time_disconnected, (), (const));
     MOCK_METHOD(void, connect, (std::optional<std::int32_t> network_profile_slot));
     MOCK_METHOD(void, disconnect, ());
-    MOCK_METHOD(void, disarm_connection_callbacks, ());
+    MOCK_METHOD(bool, disarm_connection_callbacks, ());
     MOCK_METHOD(void, arm_connection_callbacks, ());
     MOCK_METHOD(void, suppress_reconnect, ());
     MOCK_METHOD(bool, send_to_websocket, (const std::string& message));

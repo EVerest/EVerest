@@ -424,6 +424,12 @@ public:
                                 const ocpp::OcppProtocolVersion ocpp_version);
     void on_websocket_disconnected(const int configuration_slot,
                                    const ocpp::v2::NetworkConnectionProfile& network_connection_profile);
+
+    /// \brief Report a "disconnected" connection state to the consumer, without the rest of the
+    ///        on_websocket_disconnected() teardown (timers, message queue). Used by stop(), where
+    ///        the websocket-thread notification is suppressed by disarm_connection_callbacks().
+    void notify_connection_state_changed_disconnected();
+
     void on_websocket_connection_failed(ocpp::ConnectionFailedReason reason);
 
     /// \brief The main entrypoint for libOCPP for OCPP 1.6

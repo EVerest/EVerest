@@ -608,6 +608,12 @@ public:
                                 const OcppProtocolVersion ocpp_version) override;
     void on_websocket_disconnected(const int configuration_slot,
                                    const NetworkConnectionProfile& network_connection_profile) override;
+
+    /// \brief Report a "disconnected" connection state to the consumer, without the rest of the
+    ///        on_websocket_disconnected() teardown (timers, message queue). Used by stop(), where
+    ///        the websocket-thread notification is suppressed by disarm_connection_callbacks().
+    void notify_connection_state_changed_disconnected();
+
     void on_websocket_connection_failed(ConnectionFailedReason reason) override;
     void on_network_disconnected(OCPPInterfaceEnum ocpp_interface) override;
 

@@ -332,6 +332,12 @@ void ChargePointImpl::on_websocket_connected(const int /*configuration_slot*/,
     }
 }
 
+void ChargePointImpl::notify_connection_state_changed_disconnected() {
+    if (this->connection_state_changed_callback != nullptr) {
+        this->connection_state_changed_callback(false);
+    }
+}
+
 void ChargePointImpl::on_websocket_disconnected(
     const int /*configuration_slot*/, const ocpp::v2::NetworkConnectionProfile& /*network_connection_profile*/) {
     if (this->connection_state_changed_callback != nullptr) {
@@ -1302,7 +1308,11 @@ bool ChargePointImpl::stop() {
         this->connectivity_manager->disconnect();
         // Disarm before tearing down the message queue: a late websocket-thread disconnect callback
         // must not reach into members being destroyed.
-        this->connectivity_manager->disarm_connection_callbacks();
+        // Because the callbacks are disarmed, the disconnected notification does not get sent, so we dispatch it from
+        // here
+        if (this->connectivity_manager->disarm_connection_callbacks()) {
+            this->notify_connection_state_changed_disconnected();
+        }
         this->message_queue->stop();
 
         this->stopped = true;

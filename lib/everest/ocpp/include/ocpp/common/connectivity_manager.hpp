@@ -159,7 +159,9 @@ public:
     /// Called during teardown after disconnect(). A late websocket-thread callback would otherwise
     /// reach into a ChargePoint whose members are already being destroyed (use-after-free). This
     /// blocks until any in-flight callback returns, then suppresses all further ones.
-    virtual void disarm_connection_callbacks() = 0;
+    ///
+    /// \return whether the caller still needs to dispatch a final disconnected notification.
+    virtual bool disarm_connection_callbacks() = 0;
 
     /// \brief Resume delivering connected/disconnected notifications to the registered callbacks.
     ///
@@ -244,6 +246,9 @@ private:
     // While disarmed, the callbacks are suppressed.
     std::mutex connection_callbacks_mutex;
     bool connection_callbacks_disarmed{false};
+    // Tracks whether consumers have been told told if the connector has been connected or disconnected.
+    // Used to determine if a disconnected notification still has to be sent.
+    bool reported_as_connected{false};
     // Written from the OCPP message-handler thread (suppress_reconnect/disconnect) and read from the
     // websocket callback and websocket_timer threads, so it must be atomic.
     std::atomic<bool> wants_to_be_connected;
@@ -305,7 +310,7 @@ public:
     std::chrono::time_point<std::chrono::steady_clock> get_time_disconnected() const override;
     void connect(std::optional<std::int32_t> network_profile_slot = std::nullopt) override;
     void disconnect() override;
-    void disarm_connection_callbacks() override;
+    bool disarm_connection_callbacks() override;
     void arm_connection_callbacks() override;
     void suppress_reconnect() override;
     bool send_to_websocket(const std::string& message) override;
