@@ -4,6 +4,7 @@
 #pragma once
 
 #include <optional>
+#include <variant>
 
 #include <ocpp/v2/message_handler.hpp>
 #include <ocpp/v2/ocsp_updater.hpp>
@@ -36,6 +37,9 @@ public:
                                                  const std::optional<DateTime>& timestamp = std::nullopt) = 0;
     virtual void sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
                                       const bool initiated_by_trigger_message = false) = 0;
+    /// \brief Why a SignCertificate.req would not be sent if requested now, or std::nullopt when it would be.
+    virtual std::optional<StatusInfo>
+    is_sign_certificate_possible(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const = 0;
     virtual void stop_certificate_signed_timer() = 0;
     virtual void init_certificate_expiration_check_timers() = 0;
     virtual void stop_certificate_expiration_check_timers() = 0;
@@ -62,8 +66,24 @@ public:
                                          const std::optional<DateTime>& timestamp = std::nullopt) override;
     void sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
                               const bool initiated_by_trigger_message = false) override;
+    std::optional<StatusInfo>
+    is_sign_certificate_possible(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const override;
 
 private:
+    /// \brief CSR device-model inputs, read together at a single point (see \ref get_csr_inputs).
+    struct CsrInputs {
+        std::string common_name;
+        std::string organization;
+        std::string country;
+    };
+
+    /// \brief Reads all CSR device model inputs, or names every missing one.
+    std::variant<CsrInputs, StatusInfo>
+    get_csr_inputs(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const;
+
+    /// \brief Stops awaiting a CertificateSigned.req, which the retry timer would otherwise be the only thing to do.
+    void reset_certificate_signing_state();
+
     // Members
     const FunctionalBlockContext& context;
     MessageLogging& logging;

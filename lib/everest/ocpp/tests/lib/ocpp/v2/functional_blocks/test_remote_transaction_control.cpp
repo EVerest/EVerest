@@ -18,6 +18,7 @@
 
 #include <ocpp/v2/messages/Get15118EVCertificate.hpp>
 #include <ocpp/v2/messages/RequestStartTransaction.hpp>
+#include <ocpp/v2/messages/TriggerMessage.hpp>
 #include <ocpp/v2/messages/UnlockConnector.hpp>
 
 #include "component_state_manager_mock.hpp"
@@ -62,6 +63,8 @@ public:
                  const std::optional<ocpp::DateTime>&),
                 (override));
     MOCK_METHOD(void, sign_certificate_req, (const ocpp::CertificateSigningUseEnum&, bool), (override));
+    MOCK_METHOD(std::optional<StatusInfo>, is_sign_certificate_possible, (const ocpp::CertificateSigningUseEnum&),
+                (const, override));
     MOCK_METHOD(void, stop_certificate_signed_timer, (), (override));
     MOCK_METHOD(void, init_certificate_expiration_check_timers, (), (override));
     MOCK_METHOD(void, stop_certificate_expiration_check_timers, (), (override));
@@ -239,6 +242,46 @@ protected: // Functions
             EXPECT_EQ(response.status, status);
         }));
     }
+
+    ocpp::EnhancedMessage<MessageType> create_trigger_message_request(const MessageTriggerEnum requested_message) {
+        TriggerMessageRequest request;
+        request.requestedMessage = requested_message;
+
+        ocpp::Call<TriggerMessageRequest> call(request);
+        ocpp::EnhancedMessage<MessageType> enhanced_message;
+        enhanced_message.messageType = MessageType::TriggerMessage;
+        enhanced_message.message = call;
+        return enhanced_message;
+    }
+
+    void expect_trigger_message_status(const TriggerMessageStatusEnum status) {
+        EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([status](const json& call_result) {
+            const auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<TriggerMessageResponse>();
+            EXPECT_EQ(response.status, status);
+        }));
+    }
+
+    /// \brief Expects a TriggerMessageResponse with \p status and \p reason_code reported in statusInfo.
+    void expect_trigger_message_rejection(const std::string& reason_code) {
+        EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([reason_code](const json& call_result) {
+            const auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<TriggerMessageResponse>();
+            EXPECT_EQ(response.status, TriggerMessageStatusEnum::Rejected);
+            ASSERT_TRUE(response.statusInfo.has_value());
+            EXPECT_EQ(response.statusInfo->reasonCode.get(), reason_code);
+        }));
+    }
+
+    static StatusInfo make_rejection(const std::string& reason_code) {
+        StatusInfo status_info;
+        status_info.reasonCode = reason_code;
+        return status_info;
+    }
+
+    void set_v2g_certificate_installation_enabled(const bool enabled) {
+        const auto& cv = ControllerComponentVariables::V2GCertificateInstallationEnabled;
+        this->device_model->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual,
+                                      enabled ? "true" : "false", "test", true);
+    }
 };
 
 TEST_F(RemoteTransactionControlTest, RemoteStartWithoutEvseIdAcceptedWhenEvseAvailable) {
@@ -314,4 +357,62 @@ TEST_F(RemoteTransactionControlTest, RemoteStartWithEvseIdAcceptedForSpecificEvs
     expect_response_status(RequestStartStopStatusEnum::Accepted);
 
     remote_transaction_control->handle_message(create_remote_start_request(2));
+}
+
+TEST_F(RemoteTransactionControlTest, TriggerSignChargingStationCertificateRejectedWhenCannotSend) {
+    // F06.FR.10: a message marked Accepted must be sent. When the CSR inputs are unset the request can never be
+    // generated, so the trigger must be rejected instead of accepted and then silently dropped.
+    EXPECT_CALL(security, is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::ChargingStationCertificate))
+        .WillOnce(Return(make_rejection("MissingDevModelInfo")));
+    EXPECT_CALL(security, sign_certificate_req(_, _)).Times(0);
+    // The reason must reach the CSMS, not just the log.
+    expect_trigger_message_rejection("MissingDevModelInfo");
+
+    remote_transaction_control->handle_message(
+        create_trigger_message_request(MessageTriggerEnum::SignChargingStationCertificate));
+}
+
+TEST_F(RemoteTransactionControlTest, TriggerSignChargingStationCertificateAcceptedWhenCanSend) {
+    EXPECT_CALL(security, is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::ChargingStationCertificate))
+        .WillOnce(Return(std::nullopt));
+    EXPECT_CALL(security, sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate, true));
+    expect_trigger_message_status(TriggerMessageStatusEnum::Accepted);
+
+    remote_transaction_control->handle_message(
+        create_trigger_message_request(MessageTriggerEnum::SignChargingStationCertificate));
+}
+
+TEST_F(RemoteTransactionControlTest, TriggerSignV2GCertificateRejectedWhenCannotSend) {
+    // Installation is enabled, so the CSR gate is what must reject here.
+    set_v2g_certificate_installation_enabled(true);
+
+    EXPECT_CALL(security, is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::V2GCertificate))
+        .WillOnce(Return(make_rejection("Unspecified")));
+    EXPECT_CALL(security, sign_certificate_req(_, _)).Times(0);
+    expect_trigger_message_rejection("Unspecified");
+
+    remote_transaction_control->handle_message(create_trigger_message_request(MessageTriggerEnum::SignV2GCertificate));
+}
+
+TEST_F(RemoteTransactionControlTest, TriggerSignV2GCertificateRejectedWhenInstallationDisabled) {
+    // Regression test for the pre-existing V2GCertificateInstallationEnabled check. It short-circuits, so the CSR
+    // gate must not even be consulted.
+    set_v2g_certificate_installation_enabled(false);
+
+    EXPECT_CALL(security, is_sign_certificate_possible(_)).Times(0);
+    EXPECT_CALL(security, sign_certificate_req(_, _)).Times(0);
+    expect_trigger_message_rejection("NotEnabled");
+
+    remote_transaction_control->handle_message(create_trigger_message_request(MessageTriggerEnum::SignV2GCertificate));
+}
+
+TEST_F(RemoteTransactionControlTest, TriggerSignV2GCertificateAcceptedWhenEnabledAndCanSend) {
+    set_v2g_certificate_installation_enabled(true);
+
+    EXPECT_CALL(security, is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::V2GCertificate))
+        .WillOnce(Return(std::nullopt));
+    EXPECT_CALL(security, sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate, true));
+    expect_trigger_message_status(TriggerMessageStatusEnum::Accepted);
+
+    remote_transaction_control->handle_message(create_trigger_message_request(MessageTriggerEnum::SignV2GCertificate));
 }
