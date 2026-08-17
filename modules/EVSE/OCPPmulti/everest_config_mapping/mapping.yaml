@@ -1,0 +1,71 @@
+# For a functioning mapping, the OCPPmulti module needs access to the mapped modules via config access.
+# Example:
+# access:
+#   config:
+#     modules:
+#       auth:
+#         allow_read: true
+#         allow_write: true
+#         allow_set_read_only: true
+#       evse_manager_1:
+#         allow_read: true
+#         allow_write: true
+#         allow_set_read_only: true
+
+mappings:
+  - ocpp: # This ocpp component variable can be either EVerest storage or libocpp storage.
+      component:
+        name: "TxCtrlr"
+      variable:
+        name: "EVConnectionTimeOut"
+    everest:
+      module_id: "auth"
+      configuration_parameter_name: "connection_timeout" # reboot not needed, determined by Auth module
+      # module_implementation_id: "!module" # optional
+
+  - ocpp:
+      component:
+        name: "AuthCtrlr"
+      variable:
+        name: "MasterPassGroupId"
+    everest:
+      module_id: "auth"
+      configuration_parameter_name: "master_pass_group_id" # reboot not needed, determined by Auth module
+
+  - ocpp:
+      component:
+        name: "ISO15118Ctrlr"
+      variable:
+        name: "PnCEnabled"
+    everest:
+      module_id: "evse_manager_1"
+      configuration_parameter_name: "payment_enable_contract" # reboot needed, determined by EvseManager module
+
+  - ocpp:
+      component:
+        name: "ISO15118Ctrlr"
+      variable:
+        name: "CentralContractValidationAllowed"
+    everest:
+      module_id: "evse_manager_1"
+      configuration_parameter_name: "central_contract_validation_allowed" # reboot needed, determined by EvseManager module
+
+  - ocpp:
+      component:
+        name: "ISO15118Ctrlr"
+      variable:
+        name: "ContractCertificateInstallationEnabled"
+    everest:
+      module_id: "evse_manager_1"
+      configuration_parameter_name: "contract_certificate_installation_enabled" # reboot needed, determined by EvseManager module
+
+  - ocpp:
+      component:
+        name: "EVSE"
+        evse:
+          id: 1
+      variable:
+        name: "ISO15118EvseId"
+    everest:
+      module_id: "evse_manager_1"
+      configuration_parameter_name: "evse_id"

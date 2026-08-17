@@ -1380,4 +1380,42 @@ TEST_F(InitDeviceModelDbTest, ocpp16_values_protected_from_default_overwrite) {
               "OCPP16Config");
 }
 
+TEST_F(InitDeviceModelDbTest, remove_components_from_db_removes_matching_components_and_variables) {
+    ComponentKey synthetic_component;
+    synthetic_component.name = "OCPPmulti";
+    synthetic_component.instance = "ocpp";
+
+    DeviceModelVariable synthetic_variable;
+    synthetic_variable.name = "ChargePointConfigPath";
+    synthetic_variable.source = "EVEREST";
+    synthetic_variable.characteristics.dataType = DataEnum::string;
+    synthetic_variable.characteristics.supportsMonitoring = false;
+
+    VariableAttribute synthetic_attribute;
+    synthetic_attribute.type = AttributeEnum::Actual;
+    synthetic_attribute.mutability = MutabilityEnum::ReadOnly;
+    synthetic_attribute.value = "ocpp-config.json";
+
+    DbVariableAttribute synthetic_db_attribute;
+    synthetic_db_attribute.variable_attribute = synthetic_attribute;
+    synthetic_variable.attributes.push_back(synthetic_db_attribute);
+
+    const std::map<ComponentKey, std::vector<DeviceModelVariable>> synthetic_components{
+        {synthetic_component, {synthetic_variable}}};
+
+    InitDeviceModelDb db(DATABASE_PATH, MIGRATION_FILES_PATH);
+    db.database_exists = false;
+    ASSERT_NO_THROW(db.initialize_database(synthetic_components, true, false));
+
+    ASSERT_TRUE(component_exists("OCPPmulti", "ocpp", std::nullopt, std::nullopt));
+    ASSERT_TRUE(variable_exists("OCPPmulti", "ocpp", std::nullopt, std::nullopt, "ChargePointConfigPath", std::nullopt,
+                                "EVEREST"));
+
+    ASSERT_NO_THROW(db.remove_components_from_db(synthetic_components));
+
+    EXPECT_FALSE(component_exists("OCPPmulti", "ocpp", std::nullopt, std::nullopt));
+    EXPECT_FALSE(variable_exists("OCPPmulti", "ocpp", std::nullopt, std::nullopt, "ChargePointConfigPath", std::nullopt,
+                                 "EVEREST"));
+}
+
 } // namespace ocpp::v2

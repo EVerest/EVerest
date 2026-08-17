@@ -459,7 +459,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
             mv_requires.evse_manager, mv_requires.extensions_15118, m_evse_hardware_capabilities_map,
             m_evse_supported_energy_transfer_modes, m_evse_service_renegotiation_supported,
             /*with_der_components=*/true, everest_device_model_database_path, device_model_database_migration_path,
-            client);
+            client, mv_config.getExposeFullEverestConfigInDeviceModel());
     }
 
     // clang-format off
@@ -473,6 +473,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
         device_model_config_path,
         device_model_database_migration_path,
         device_model_database_path,
+        mv_config.getLogDeviceModel(),
         std::move(evse_connector_structure),
         std::move(connector_mapping),
         m_everest_device_model_storage,

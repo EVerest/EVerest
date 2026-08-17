@@ -5,6 +5,25 @@
 
 static constexpr auto VARIABLE_SOURCE_OCPP = "OCPP";
 
+void log_device_model_variables(const std::string& storage_name, const ocpp::v2::DeviceModelMap& device_model_map) {
+    EVLOG_debug << "Composed Device Model:";
+    for (const auto& [component, variable_map] : device_model_map) {
+        for (const auto& [variable, variable_meta_data] : variable_map) {
+            EVLOG_debug << "storage_name [" << storage_name << "] component=" << component.name
+                        << ", component_instance="
+                        << (component.instance.has_value() ? component.instance.value().get() : "-") << ", evse_id="
+                        << (component.evse.has_value() ? std::to_string(component.evse.value().id) : "-")
+                        << ", connector_id="
+                        << (component.evse.has_value() && component.evse.value().connectorId.has_value()
+                                ? std::to_string(component.evse.value().connectorId.value())
+                                : "-")
+                        << ", variable=" << variable.name << ", variable_instance="
+                        << (variable.instance.has_value() ? variable.instance.value().get() : "-")
+                        << ", source=" << variable_meta_data.source.value_or(VARIABLE_SOURCE_OCPP);
+        }
+    }
+}
+
 namespace ocpp_module_common::device_model {
 
 bool ComposedDeviceModelStorage::register_device_model_storage(
@@ -17,17 +36,15 @@ bool ComposedDeviceModelStorage::register_device_model_storage(
     // store the sources of each variable to be able to lookup requests to the device model storage
     for (const auto& [component, variable_map] : device_model_map) {
         for (const auto& [variable, variable_meta] : variable_map) {
+            const ocpp::v2::ComponentVariable key{component, variable};
             // check if component variable source is already exist in the map
-            if (this->component_variable_source_map.find(component) != this->component_variable_source_map.end() &&
-                this->component_variable_source_map.at(component).find(variable) !=
-                    this->component_variable_source_map.at(component).end()) {
+            if (this->component_variable_source_map.find(key) != this->component_variable_source_map.end()) {
                 EVLOG_warning << "Component variable source already exists for component: " << component.name
                               << ", variable: " << variable.name << ". Fix your device model configuration.";
             }
 
             // Note: Source should not be optional, should be changed in libocpp
-            this->component_variable_source_map[component][variable] =
-                variable_meta.source.value_or(VARIABLE_SOURCE_OCPP);
+            this->component_variable_source_map[key] = variable_meta.source.value_or(VARIABLE_SOURCE_OCPP);
         }
     }
 
@@ -38,7 +55,25 @@ bool ComposedDeviceModelStorage::register_device_model_storage(
 ocpp::v2::DeviceModelMap ComposedDeviceModelStorage::get_device_model() {
     ocpp::v2::DeviceModelMap device_model_map;
     for (const auto& [name, device_model_storage] : this->device_model_storages) {
-        device_model_map.merge(device_model_storage->get_device_model());
+        const auto& partial_device_model = device_model_storage->get_device_model();
+
+        if (this->log_device_model_verbose) {
+            log_device_model_variables(name, partial_device_model);
+        }
+
+        for (const auto& [component, variable_map] : partial_device_model) {
+            auto& existing_variable_map = device_model_map[component]; // Inserts if not present
+            // Merge variable_map into existing_variable_map
+            for (const auto& [variable, variable_meta_data] : variable_map) {
+                if (existing_variable_map.find(variable) != existing_variable_map.end()) {
+                    EVLOG_warning << "Variable " << variable.name << " already exists in component " << component.name
+                                  << " but is also defined in device model storage: " << name;
+                    EVLOG_AND_THROW(std::runtime_error(
+                        "Variable already exists in component. Fix your device model configuration."));
+                }
+                existing_variable_map[variable] = variable_meta_data; // Overwrite or insert
+            }
+        }
     }
     return device_model_map;
 }
@@ -70,13 +105,24 @@ ComposedDeviceModelStorage::get_variable_attributes(const ocpp::v2::Component& c
 ocpp::v2::SetVariableStatusEnum ComposedDeviceModelStorage::set_variable_attribute_value(
     const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
     const ocpp::v2::AttributeEnum& attribute_enum, const std::string& value, const std::string& source) {
-    // the "source" parameter is the VALUE_SOURCE
+
     const auto variable_source = get_variable_source(component_id, variable_id);
-    if (this->device_model_storages.find(variable_source) == this->device_model_storages.end()) {
+    const auto storage_it = this->device_model_storages.find(variable_source);
+    if (storage_it == this->device_model_storages.end()) {
+        EVLOG_debug << "Setting composed device model storage: no storage for resolved variable_source="
+                    << variable_source;
         return ocpp::v2::SetVariableStatusEnum::Rejected;
     }
-    return this->device_model_storages.at(variable_source)
-        ->set_variable_attribute_value(component_id, variable_id, attribute_enum, value, source);
+
+    // this calls set_variable_attribute_value of libocpp device model storage or everest device model storage
+    auto result =
+        storage_it->second->set_variable_attribute_value(component_id, variable_id, attribute_enum, value, source);
+
+    if (result != ocpp::v2::SetVariableStatusEnum::Accepted) {
+        EVLOG_debug << "Failed to set variable attribute value for component '" << component_id.name << "', variable '"
+                    << variable_id.name << "' in source '" << variable_source << "' with status: " << result;
+    }
+    return result;
 }
 
 std::optional<ocpp::v2::VariableMonitoringMeta>
@@ -150,14 +196,11 @@ bool ComposedDeviceModelStorage::create_network_configuration_slot_from_default_
 std::string
 ocpp_module_common::device_model::ComposedDeviceModelStorage::get_variable_source(const ocpp::v2::Component& component,
                                                                                   const ocpp::v2::Variable& variable) {
-    if (this->component_variable_source_map.find(component) == this->component_variable_source_map.end()) {
+    const ocpp::v2::ComponentVariable key{component, variable};
+    if (this->component_variable_source_map.find(key) == this->component_variable_source_map.end()) {
         return VARIABLE_SOURCE_OCPP; // default source
     }
-    const auto& variable_map = this->component_variable_source_map.at(component);
-    if (variable_map.find(variable) == variable_map.end()) {
-        return VARIABLE_SOURCE_OCPP; // default source
-    }
-    return variable_map.at(variable);
+    return component_variable_source_map.at(key);
 }
 
 } // namespace ocpp_module_common::device_model

@@ -9,15 +9,18 @@
 
 namespace ocpp_module_common::device_model {
 
-using ComponentVariableSourceMap = std::map<ocpp::v2::Component, std::map<ocpp::v2::Variable, std::string>>;
+using ComponentVariableSourceMap = std::map<ocpp::v2::ComponentVariable, std::string>;
 class ComposedDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
 private:
     std::map<std::string, std::shared_ptr<ocpp::v2::DeviceModelStorageInterface>>
         device_model_storages; // key is identifier for the device model storage
     ComponentVariableSourceMap component_variable_source_map;
+    const bool log_device_model_verbose;
 
 public:
-    ComposedDeviceModelStorage() = default;
+    explicit ComposedDeviceModelStorage(bool log_device_model_verbose = false) :
+        log_device_model_verbose(log_device_model_verbose) {
+    }
 
     /// \brief Register a device model storage.
     /// \param device_model_storage_id   The id of the device model storage. Component variable combinations can be

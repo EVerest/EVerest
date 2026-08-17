@@ -460,7 +460,8 @@ void ChargePointV2::init(init_args_t& args) {
         args.v2_device_model_config_path);
 
     // initialise composed device model, this will be provided to the ChargePoint constructor
-    auto composed_device_model_storage = std::make_unique<module::device_model::ComposedDeviceModelStorage>();
+    auto composed_device_model_storage =
+        std::make_unique<module::device_model::ComposedDeviceModelStorage>(args.log_device_model);
 
     // register both device model storages
     // note - this processing causes a slight delay, scope for performance tuning

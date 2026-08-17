@@ -401,9 +401,13 @@ SetVariableStatusEnum DeviceModel::set_value(const Component& component, const V
     return result;
 };
 
+void DeviceModel::refresh_device_model_map() {
+    this->device_model_map = this->device_model->get_device_model();
+}
+
 DeviceModel::DeviceModel(std::unique_ptr<DeviceModelStorageInterface> device_model_storage_interface) :
     device_model{std::move(device_model_storage_interface)} {
-    this->device_model_map = this->device_model->get_device_model();
+    this->refresh_device_model_map();
 }
 
 bool DeviceModel::create_network_configuration_slot_from_default_schema(std::int32_t new_slot) {
@@ -494,6 +498,8 @@ std::optional<VariableMetaData> DeviceModel::get_variable_meta_data(const Compon
 
 std::vector<ReportData> DeviceModel::get_base_report_data(const ReportBaseEnum& report_base) {
     std::lock_guard<std::recursive_mutex> lock(this->mutex);
+
+    this->refresh_device_model_map();
     std::vector<ReportData> report_data_vec;
 
     for (const auto& [component, variable_map] : this->device_model_map) {
@@ -540,6 +546,8 @@ std::vector<ReportData>
 DeviceModel::get_custom_report_data(const std::optional<std::vector<ComponentVariable>>& component_variables,
                                     const std::optional<std::vector<ComponentCriterionEnum>>& component_criteria) {
     std::lock_guard<std::recursive_mutex> lock(this->mutex);
+
+    this->refresh_device_model_map();
     std::vector<ReportData> report_data_vec;
 
     for (const auto& [component, variable_map] : this->device_model_map) {

@@ -73,6 +73,12 @@ config:
       If false (default), the device model is initialized only from the component configs (DeviceModelConfigPath).
     type: boolean
     default: false
+  ExposeFullEverestConfigInDeviceModel:
+    description: >-
+      OCPP 2.0.1
+      If true, EVerest module configuration parameters are exposed as synthetic device-model variables.
+    type: boolean
+    default: false
   DeviceModelConfigMappings:
     description: >-
       OCPP 1.6
@@ -99,6 +105,15 @@ config:
     description: Interval (seconds) at which the current active DER directive set is republished per EVSE. 0 disables the heartbeat.
     type: integer
     default: 60
+  LogDeviceModel:
+    description: Logs the device model storages for debugging purposes
+    type: boolean
+    default: false
+  MappingFilePath:
+    description: >-
+      Path to the mapping file that contains the mapping between OCPP variables and Everest configuration parameters.
+    type: string
+    default: mapping.yaml
   MessageLogPath:
     description: >-
       OCPP 1.6

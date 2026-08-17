@@ -44,6 +44,9 @@ bool ConfigAccess::getEnableExternalWebsocketControl() const {
 bool ConfigAccess::getEnableLegacyConfigMigration() const {
     return m_config.EnableLegacyConfigMigration;
 }
+bool ConfigAccess::getExposeFullEverestConfigInDeviceModel() const {
+    return m_config.ExposeFullEverestConfigInDeviceModel;
+}
 std::string ConfigAccess::getEverestDeviceModelDatabasePath() const {
     return m_config.EverestDeviceModelDatabasePath;
 }
@@ -52,6 +55,9 @@ int ConfigAccess::getOcpp16NetworkConfigSlot() const {
 }
 int ConfigAccess::getGridSupportHeartbeatS() const {
     return m_config.GridSupportHeartbeatS;
+}
+bool ConfigAccess::getLogDeviceModel() const {
+    return m_config.LogDeviceModel;
 }
 std::string ConfigAccess::getMessageLogPath() const {
     return m_config.MessageLogPath;
