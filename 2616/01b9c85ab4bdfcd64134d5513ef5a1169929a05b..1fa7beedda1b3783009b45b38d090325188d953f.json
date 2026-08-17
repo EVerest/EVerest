@@ -4,113 +4,123 @@
   "pullNumber": 2616,
   "sections": [
     {
-      "id": "08a86099d37a9425",
-      "title": "lib/everest/ocpp/include/ocpp/common, 4 files",
+      "id": "0f4a88820bb0c49f",
+      "title": "Track whether a disconnect notification is owed",
       "prose": [
-        "4 files, 47 changed lines."
+        "The new `reported_as_connected` flag in `ConnectivityManager` is the exactly-once token for the final 'disconnected' notification. It is set when the websocket connects and cleared by whichever path reports the disconnect first: either the websocket thread or the `disarm_connection_callbacks()` caller.",
+        "The hand-off is race-free because both paths take the same `connection_callbacks_mutex`. The flag is only set once a 'connected' notification was delivered, so `disarm_connection_callbacks()` can tell 'still reported as connected' (a final 'disconnected' notification is owed) apart from 'never connected' and from 'disconnect already reported'."
       ],
       "regions": [
         {
           "path": "lib/everest/ocpp/include/ocpp/common/connectivity_manager.hpp",
-          "start": 159,
-          "endInclusive": 175,
-          "role": "review"
-        },
-        {
-          "path": "lib/everest/ocpp/include/ocpp/common/connectivity_manager.hpp",
-          "start": 254,
-          "endInclusive": 264,
-          "role": "review"
-        },
-        {
-          "path": "lib/everest/ocpp/include/ocpp/common/connectivity_manager.hpp",
-          "start": 320,
-          "endInclusive": 326,
-          "role": "review"
-        },
-        {
-          "path": "lib/everest/ocpp/include/ocpp/v16/charge_point_impl.hpp",
-          "start": 424,
-          "endInclusive": 435,
+          "start": 257,
+          "endInclusive": 261,
           "role": "review"
         },
         {
           "path": "lib/everest/ocpp/lib/ocpp/common/connectivity_manager.cpp",
-          "start": 231,
-          "endInclusive": 246,
+          "start": 236,
+          "endInclusive": 243,
           "role": "review"
         },
         {
           "path": "lib/everest/ocpp/lib/ocpp/common/connectivity_manager.cpp",
-          "start": 532,
-          "endInclusive": 538,
-          "role": "review"
-        },
-        {
-          "path": "lib/everest/ocpp/lib/ocpp/common/connectivity_manager.cpp",
-          "start": 567,
-          "endInclusive": 573,
-          "role": "review"
-        },
-        {
-          "path": "lib/everest/ocpp/lib/ocpp/v16/charge_point_impl.cpp",
-          "start": 332,
-          "endInclusive": 343,
-          "role": "review"
-        },
-        {
-          "path": "lib/everest/ocpp/lib/ocpp/v16/charge_point_impl.cpp",
-          "start": 1307,
-          "endInclusive": 1320,
+          "start": 535,
+          "endInclusive": 570,
           "role": "review"
         }
       ],
-      "by": "extracted"
+      "by": "model"
     },
     {
-      "id": "c4a46b41768891f2",
-      "title": "lib/everest/ocpp/include/ocpp/v2, 2 files",
+      "id": "5a1cf8cb30e13e56",
+      "title": "`disarm_connection_callbacks()` now returns whether to replay the disconnect",
       "prose": [
-        "2 files, 31 changed lines."
+        "The method was changed from `void` to `bool` to return whether a final 'disconnected' notification is owed. The return value is computed under the same lock that suppresses the callbacks, so the obligation is handed to exactly one of the two paths even if the websocket thread is reporting the disconnect concurrently."
+      ],
+      "regions": [
+        {
+          "path": "lib/everest/ocpp/include/ocpp/common/connectivity_manager.hpp",
+          "start": 162,
+          "endInclusive": 323,
+          "role": "review"
+        },
+        {
+          "path": "lib/everest/ocpp/lib/ocpp/common/connectivity_manager.cpp",
+          "start": 234,
+          "endInclusive": 243,
+          "role": "review"
+        },
+        {
+          "path": "lib/everest/ocpp/tests/lib/ocpp/common/mocks/connectivity_manager_mock.hpp",
+          "start": 33,
+          "endInclusive": 33,
+          "role": "review"
+        }
+      ],
+      "by": "model"
+    },
+    {
+      "id": "e8cf0fce834523f4",
+      "title": "OCPP v1.6 replays the disconnect notification in `stop()`",
+      "prose": [
+        "`stop()` now calls `disarm_connection_callbacks()` and, if it returns true, replays the 'disconnected' notification. The replay is minimal: it only notifies consumers, not the rest of `on_websocket_disconnected()` teardown, because the timers and message queue it would touch are already torn down by `stop()`."
+      ],
+      "regions": [
+        {
+          "path": "lib/everest/ocpp/include/ocpp/v16/charge_point_impl.hpp",
+          "start": 427,
+          "endInclusive": 432,
+          "role": "review"
+        },
+        {
+          "path": "lib/everest/ocpp/lib/ocpp/v16/charge_point_impl.cpp",
+          "start": 335,
+          "endInclusive": 340,
+          "role": "review"
+        },
+        {
+          "path": "lib/everest/ocpp/lib/ocpp/v16/charge_point_impl.cpp",
+          "start": 1310,
+          "endInclusive": 1317,
+          "role": "review"
+        }
+      ],
+      "by": "model"
+    },
+    {
+      "id": "2868957700aedc4d",
+      "title": "OCPP v2.0 replays the disconnect notification in `stop()`",
+      "prose": [
+        "The change is identical to OCPP v1.6: `stop()` now calls `disarm_connection_callbacks()` and, if it returns true, replays the 'disconnected' notification. The replay is minimal and only notifies consumers, not the rest of `on_websocket_disconnected()` teardown."
       ],
       "regions": [
         {
           "path": "lib/everest/ocpp/include/ocpp/v2/charge_point.hpp",
-          "start": 608,
-          "endInclusive": 619,
+          "start": 611,
+          "endInclusive": 616,
           "role": "review"
         },
         {
           "path": "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp",
-          "start": 165,
-          "endInclusive": 178,
+          "start": 1272,
+          "endInclusive": 1288,
           "role": "review"
         },
         {
           "path": "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp",
-          "start": 1269,
-          "endInclusive": 1291,
+          "start": 168,
+          "endInclusive": 175,
           "role": "review"
         }
       ],
-      "by": "extracted"
-    },
-    {
-      "id": "676c163ddd703e29",
-      "title": "lib/everest/ocpp/tests/lib/ocpp/common/mocks/connectivity_manager_mock.hpp (test)",
-      "prose": [
-        "1 file, 1 changed line."
-      ],
-      "regions": [
-        {
-          "path": "lib/everest/ocpp/tests/lib/ocpp/common/mocks/connectivity_manager_mock.hpp",
-          "start": 30,
-          "endInclusive": 36,
-          "role": "review"
-        }
-      ],
-      "by": "extracted"
+      "by": "model"
     }
+  ],
+  "overview": [
+    "The change makes `disarm_connection_callbacks()` return a boolean to indicate whether a final 'disconnected' notification is owed to consumers, and adds a new method `notify_connection_state_changed_disconnected()` to deliver it. This fixes a race where `stop()` would suppress the websocket-thread notification but never replay it, leaving consumers unaware the connection went away.",
+    "The core of the fix is in `ConnectivityManager`, where a new `reported_as_connected` flag tracks whether a 'connected' notification was delivered without its matching 'disconnected' one. The flag is set when the websocket connects and cleared by whichever path reports the disconnect first: either the websocket thread or the `disarm_connection_callbacks()` caller. The hand-off is race-free because both paths take the same lock.",
+    "OCPP v1.6 and v2.0 are updated identically: `stop()` now calls `disarm_connection_callbacks()` and, if it returns true, replays the 'disconnected' notification. The replay is minimal: it only notifies consumers, not the rest of `on_websocket_disconnected()` teardown, because the timers and message queue it would touch are already torn down by `stop()`."
   ],
   "checks": {
     "total": 13,
