@@ -26,7 +26,7 @@ enum class sync_status {
 };
 
 /**
- * Interface for classes implementing default syncing (E/POLLIN only)for fd_event_handler
+ * Interface for classes implementing syncing (E/POLLIN only) for fd_event_handler
  */
 class fd_event_sync_interface {
 public:
@@ -61,20 +61,26 @@ public:
 
     /**
      * @brief Register with an existing event handler
-     * @details The default registers \ref get_poll_fd for read (E/POLLIN) and calls \ref sync
+     * @details Registers \ref get_poll_fd for read (E/POLLIN) and calls \ref sync
      * on notification. Handler and descriptor are recorded, so the registration can be removed
      * without asking this object again. Only one registration is recorded at a time.
+     * @note \ref register_events and \ref unregister_events are not virtual by design. Registration
+     * installs a callback bound to this object, so an override that skipped the recording would
+     * leave the destructor unable to remove it and the handler calling \ref sync on a destroyed
+     * object, a use after free rather than a leaked registration. Customize \ref get_poll_fd and
+     * \ref sync instead, or implement \ref fd_event_register_interface for a registration of a
+     * different shape, such as several descriptors or write events.
      * @param[in] handler The event handler to register with
      * @return true on success, false otherwise
      */
-    virtual bool register_events(fd_event_handler& handler);
+    bool register_events(fd_event_handler& handler);
 
     /**
      * @brief Unregister from an existing event handler
      * @param[in] handler The event handler passed to \ref register_events
      * @return true if a registration was removed, false otherwise
      */
-    virtual bool unregister_events(fd_event_handler& handler);
+    bool unregister_events(fd_event_handler& handler);
 
 protected:
     /**
