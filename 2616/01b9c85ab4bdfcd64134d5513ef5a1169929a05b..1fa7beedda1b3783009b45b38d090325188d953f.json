@@ -4,77 +4,18 @@
   "pullNumber": 2616,
   "sections": [
     {
-      "id": "b74dc6b86ecd4108",
-      "title": "Updating connection callback management types",
+      "id": "08a86099d37a9425",
+      "title": "lib/everest/ocpp/include/ocpp/common, 4 files",
       "prose": [
-        "In `ConnectivityManager`'s header, I have modified the signature of `disarm_connection_callbacks()` to return a boolean. The documentation update explains that this return value signals whether the caller is responsible for sending the final 'disconnected' notification because one was previously signaled as connected but not disconnected."
+        "4 files, 47 changed lines."
       ],
       "regions": [
         {
           "path": "lib/everest/ocpp/include/ocpp/common/connectivity_manager.hpp",
-          "start": 162,
-          "endInclusive": 172,
-          "role": "review"
-        }
-      ],
-      "question": {
-        "ask": "The comment added above `disarm_connection_callbacks()` now has a very detailed description of what the return value means. Does this level of documentation detail warrant its inclusion directly before a virtual function signature, or would it be better placed in an accompanying Doxygen block that is less invasive to the public API view?",
-        "answer": "Given the complexity explained (handling race conditions and who owns reporting the final state), retaining it above the declaration seems appropriate for immediate context, but I'm open if a formal change in documentation structure is preferred."
-      },
-      "by": "model"
-    },
-    {
-      "id": "9f2661c61f3f96ad",
-      "title": "Updating the mock for testing connectivity",
-      "prose": [
-        "The corresponding mock in `connectivity_manager_mock.hpp` is updated to reflect that `disarm_connection_callbacks` now returns a boolean, allowing tests to assert on the manual report obligation."
-      ],
-      "regions": [
-        {
-          "path": "lib/everest/ocpp/tests/lib/ocpp/common/mocks/connectivity_manager_mock.hpp",
-          "start": 33,
-          "endInclusive": 33,
-          "role": "review"
-        }
-      ],
-      "by": "model"
-    },
-    {
-      "id": "c4a46b41768891f2",
-      "title": "lib/everest/ocpp/include/ocpp/v2, 2 files",
-      "prose": [
-        "2 files, 31 changed lines."
-      ],
-      "regions": [
-        {
-          "path": "lib/everest/ocpp/include/ocpp/v2/charge_point.hpp",
-          "start": 608,
-          "endInclusive": 619,
+          "start": 159,
+          "endInclusive": 175,
           "role": "review"
         },
-        {
-          "path": "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp",
-          "start": 165,
-          "endInclusive": 178,
-          "role": "review"
-        },
-        {
-          "path": "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp",
-          "start": 1269,
-          "endInclusive": 1291,
-          "role": "review"
-        }
-      ],
-      "by": "extracted"
-    },
-    {
-      "id": "1071828d3ae2660d",
-      "title": "Also changed in lib/everest/ocpp (4 files)",
-      "prose": [
-        "4 files, 36 changed lines the story above does not show.",
-        "`lib/everest/ocpp/include/ocpp/common/connectivity_manager.hpp`, `lib/everest/ocpp/include/ocpp/v16/charge_point_impl.hpp`, `lib/everest/ocpp/lib/ocpp/common/connectivity_manager.cpp`, `lib/everest/ocpp/lib/ocpp/v16/charge_point_impl.cpp`."
-      ],
-      "regions": [
         {
           "path": "lib/everest/ocpp/include/ocpp/common/connectivity_manager.hpp",
           "start": 254,
@@ -125,12 +66,51 @@
         }
       ],
       "by": "extracted"
+    },
+    {
+      "id": "c4a46b41768891f2",
+      "title": "lib/everest/ocpp/include/ocpp/v2, 2 files",
+      "prose": [
+        "2 files, 31 changed lines."
+      ],
+      "regions": [
+        {
+          "path": "lib/everest/ocpp/include/ocpp/v2/charge_point.hpp",
+          "start": 608,
+          "endInclusive": 619,
+          "role": "review"
+        },
+        {
+          "path": "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp",
+          "start": 165,
+          "endInclusive": 178,
+          "role": "review"
+        },
+        {
+          "path": "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp",
+          "start": 1269,
+          "endInclusive": 1291,
+          "role": "review"
+        }
+      ],
+      "by": "extracted"
+    },
+    {
+      "id": "676c163ddd703e29",
+      "title": "lib/everest/ocpp/tests/lib/ocpp/common/mocks/connectivity_manager_mock.hpp (test)",
+      "prose": [
+        "1 file, 1 changed line."
+      ],
+      "regions": [
+        {
+          "path": "lib/everest/ocpp/tests/lib/ocpp/common/mocks/connectivity_manager_mock.hpp",
+          "start": 30,
+          "endInclusive": 36,
+          "role": "review"
+        }
+      ],
+      "by": "extracted"
     }
-  ],
-  "overview": [
-    "This change modifies how connection callbacks are managed and tested.",
-    "The story begins by showing the update to `ConnectivityManager`'s header regarding the return type of `disarm_connection_callbacks()`.",
-    "It concludes with the necessary adjustment to the mock in `connectivity_manager_mock.hpp` to support this new boolean return value."
   ],
   "checks": {
     "total": 13,
@@ -164,5 +144,15 @@
   "unshown": {
     "total": 0,
     "paths": []
-  }
+  },
+  "receiptQuestions": [
+    {
+      "id": "asked:3a36ab181d4b2fde",
+      "ask": "How did you verify that the stop command does not trigger unintended disconnection reports during an active session?",
+      "ranges": [
+        "lib/everest/ocpp/lib/ocpp/v16/charge_point_impl.cpp",
+        "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp"
+      ]
+    }
+  ]
 }
