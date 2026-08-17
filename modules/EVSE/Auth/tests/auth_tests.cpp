@@ -753,8 +753,10 @@ TEST_F(AuthTest, test_two_plugins_with_invalid_rfid) {
 
     SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
 
-    std::thread t1([this, session_event]() { this->auth_handler->handle_session_event(1, session_event); });
-    std::thread t2([this, session_event]() { this->auth_handler->handle_session_event(2, session_event); });
+    // PlugEvents authorizes the earliest plug in, so racing the two events leaves it undefined which
+    // evse the valid token starts. Plug in sequentially so the order is deterministic.
+    this->auth_handler->handle_session_event(1, session_event);
+    this->auth_handler->handle_session_event(2, session_event);
 
     std::vector<int32_t> connectors{1, 2};
     ProvidedIdToken provided_token_1 = get_provided_token(VALID_TOKEN_1, connectors);
@@ -771,8 +773,6 @@ TEST_F(AuthTest, test_two_plugins_with_invalid_rfid) {
                 Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::UsedToStart));
     EXPECT_CALL(mock_publish_token_validation_status_callback,
                 Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Rejected));
-    t1.join();
-    t2.join();
     std::thread t3([this, provided_token_1, &result1]() { result1 = this->auth_handler->on_token(provided_token_1); });
     t3.join();
 
