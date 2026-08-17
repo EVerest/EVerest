@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
+#include <ctime>
+
 #include <iso15118/detail/d20/state/dc_charge_loop.hpp>
 
 #include <iso15118/d20/config.hpp>
