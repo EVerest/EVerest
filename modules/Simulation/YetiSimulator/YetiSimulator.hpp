@@ -32,6 +32,7 @@ struct Conf {
     std::string dummy_meter_value_blob_start;
     std::string dummy_meter_value_blob_stop;
     double ac_nominal_voltage;
+    double ac_nominal_frequency;
 };
 
 class YetiSimulator : public Everest::ModuleBase {
@@ -79,6 +80,16 @@ public:
         new_state->powermeter_data.vrmsL1 = nominal_voltage;
         new_state->powermeter_data.vrmsL2 = nominal_voltage;
         new_state->powermeter_data.vrmsL3 = nominal_voltage;
+        const auto nominal_frequency = config.ac_nominal_frequency;
+        new_state->simdata_setting.frequencies.L1 = nominal_frequency;
+        new_state->simdata_setting.frequencies.L2 = nominal_frequency;
+        new_state->simdata_setting.frequencies.L3 = nominal_frequency;
+        new_state->simulation_data.frequencies.L1 = nominal_frequency;
+        new_state->simulation_data.frequencies.L2 = nominal_frequency;
+        new_state->simulation_data.frequencies.L3 = nominal_frequency;
+        new_state->powermeter_data.freqL1 = nominal_frequency;
+        new_state->powermeter_data.freqL2 = nominal_frequency;
+        new_state->powermeter_data.freqL3 = nominal_frequency;
         module_state = std::move(new_state);
     }
 
