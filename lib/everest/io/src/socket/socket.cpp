@@ -89,6 +89,22 @@ namespace {
     throw_error(msg, error);
 }
 
+// getaddrinfo reports through its return value and leaves errno meaningful only
+// for EAI_SYSTEM, so the result is mapped instead of read off errno. The resolver
+// verdicts reachable here (EAI_NONAME, EAI_AGAIN, EAI_FAIL, EAI_SERVICE and the
+// like) name no errno of their own and become EHOSTUNREACH: an unresolvable
+// endpoint is an unreachable one. A zero errno on the EAI_SYSTEM leg says nothing
+// a caller can act on and would fail the descriptor guard in tcp_socket::open, so
+// it takes the same fallback.
+// Untested: EAI_SYSTEM is the only leg that yields a value other than
+// EHOSTUNREACH and cannot be forced without fault injection. The
+// open_udp_server_socket resolver leg has no forceable failure mode either.
+[[noreturn]] void throw_resolver_error(int result) {
+    const int sys_errno = errno;
+    const int error = (result == EAI_SYSTEM and sys_errno != 0) ? sys_errno : EHOSTUNREACH;
+    throw socket_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(result)), error);
+}
+
 // Returns true when SO_BINDTODEVICE succeeded. Returns false on EPERM/EACCES
 // (caller decides on a fallback). Throws on any other failure.
 bool apply_so_bindtodevice(int fd, std::string const& device) {
@@ -235,8 +251,8 @@ event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& d
 
     const auto err = getaddrinfo(nullptr, std::to_string(port).c_str(), &hints, &servinfo);
     if (err) {
-        throw std::runtime_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(err)));
-    };
+        throw_resolver_error(err);
+    }
 
     handle_disposer<addrinfo, freeaddrinfo> addrinfo_disposer(servinfo);
 
@@ -275,8 +291,8 @@ event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t p
 
     const auto err = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &servinfo);
     if (err) {
-        throw std::runtime_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(err)));
-    };
+        throw_resolver_error(err);
+    }
 
     handle_disposer<addrinfo, freeaddrinfo> addrinfo_disposer(servinfo);
 
@@ -321,8 +337,8 @@ event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint
 
     const auto err = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &servinfo);
     if (err) {
-        throw std::runtime_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(err)));
-    };
+        throw_resolver_error(err);
+    }
 
     handle_disposer<addrinfo, freeaddrinfo> addrinfo_disposer(servinfo);
 
@@ -366,8 +382,8 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, co
 
     const auto err = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &servinfo);
     if (err) {
-        throw std::runtime_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(err)));
-    };
+        throw_resolver_error(err);
+    }
 
     handle_disposer<addrinfo, freeaddrinfo> addrinfo_disposer(servinfo);
 

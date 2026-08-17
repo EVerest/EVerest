@@ -5,6 +5,7 @@
 
 #include <everest/io/event/unique_fd.hpp>
 #include <everest/io/mdns/mdns_socket.hpp>
+#include <everest/io/socket/socket.hpp>
 #include <everest/io/tcp/tcp_socket.hpp>
 #include <everest/io/udp/udp_socket.hpp>
 
@@ -12,17 +13,21 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <functional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
 
 #include <gtest/gtest.h>
+
+namespace socket_api = everest::lib::io::socket;
 
 using everest::lib::io::event::unique_fd;
 using everest::lib::io::mdns::mdns_socket;
@@ -44,8 +49,36 @@ constexpr int max_reconnect_delay_ms = 1000;
 // runner is root, and bind_socket_to_device never reaches its fallbacks.
 constexpr char unusable_device[] = "nosuchdev0";
 
-// Discard port, never contacted: the device bind fails first.
+// Discard port, never contacted: the device bind or the name resolve fails first,
+// depending on the case.
 constexpr std::uint16_t unused_remote_port = 9;
+
+// A DNS label may hold at most 63 octets (RFC 1035 2.3.1), so a 64 octet label is
+// rejected by the resolver's own parsing: getaddrinfo answers EAI_NONAME without
+// issuing a query, which keeps this file free of DNS. An unregistered name such as
+// "nonexistent.invalid" would not do: it costs a real lookup, and returns EAI_AGAIN
+// on a host with no reachable resolver.
+constexpr std::string::size_type oversized_label_length = 64;
+static_assert(oversized_label_length > 63, "a label of 63 octets or less is a live DNS query, not a local reject");
+
+std::string unresolvable_host() {
+    return std::string(oversized_label_length, 'a');
+}
+
+/// The resolver's own verdict on \p host for \p socktype, so a test can assert the
+/// precondition it rests on instead of assuming it. The socktype is explicit because
+/// the TCP and UDP entry points resolve with different ones.
+int resolve_result(std::string const& host, int socktype) {
+    addrinfo hints{};
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = socktype;
+    addrinfo* info = nullptr;
+    const int result = ::getaddrinfo(host.c_str(), std::to_string(unused_remote_port).c_str(), &hints, &info);
+    if (info != nullptr) {
+        ::freeaddrinfo(info);
+    }
+    return result;
+}
 
 // Let the kernel choose. A server bound to a nonexistent device never reaches
 // bind(), and open_udp_server_socket sets SO_REUSEADDR, so a duplicate bind is
@@ -470,6 +503,93 @@ TEST(client_connect_error_test, mdns_failed_open_reports_failure_instead_of_thro
 
     const int err = sock.get_error();
     EXPECT_NE(err, 0) << "a failed open left get_error() at 0, which reads as healthy and suppresses the client reset";
+}
+
+// A name that does not resolve is a failure like any other and has to reach the
+// caller as one. getaddrinfo leaves errno meaningful only for EAI_SYSTEM, so the
+// resolver result has to be mapped rather than read off errno.
+TEST(client_connect_error_test, unresolvable_host_throws_socket_error_carrying_resolver_reason) {
+    const auto host = unresolvable_host();
+    // Both socktypes, because the entry points below cover both. The specific code
+    // is claimed here for the gai_strerror() assertion at the end.
+    ASSERT_EQ(resolve_result(host, SOCK_STREAM), EAI_NONAME)
+        << "the fixture host no longer fails resolution locally, so this test would depend on DNS";
+    ASSERT_EQ(resolve_result(host, SOCK_DGRAM), EAI_NONAME)
+        << "the fixture host no longer fails resolution locally, so this test would depend on DNS";
+
+    // Every entry point that resolves a hostname, so the expectation covers all of
+    // them and not whichever one happened to be fixed.
+    const std::vector<std::pair<char const*, std::function<void()>>> resolving_opens{
+        {"open_tcp_socket", [&] { socket_api::open_tcp_socket(host, unused_remote_port); }},
+        {"open_tcp_socket_with_timeout",
+         [&] { socket_api::open_tcp_socket_with_timeout(host, unused_remote_port, 1000); }},
+        {"open_udp_client_socket", [&] { socket_api::open_udp_client_socket(host, unused_remote_port); }},
+    };
+
+    for (auto const& [name, open_call] : resolving_opens) {
+        SCOPED_TRACE(name);
+        try {
+            open_call();
+            ADD_FAILURE() << "opening a socket to an unresolvable host reported success";
+        } catch (socket_api::socket_error const& e) {
+            const int err = e.error();
+            EXPECT_NE(err, 0) << "a failed resolve carried errno 0, which reads as healthy";
+            // EAI_NONAME, asserted above, so errno holds nothing meaningful and the
+            // fixed unreachable-host mapping applies.
+            EXPECT_EQ(err, EHOSTUNREACH) << "a failed resolve carried errno " << err << " (" << ::strerror(err)
+                                         << ") instead of EHOSTUNREACH";
+            EXPECT_NE(std::string(e.what()).find(::gai_strerror(EAI_NONAME)), std::string::npos)
+                << "the resolver's own reason is missing from the message: " << e.what();
+        } catch (std::exception const& e) {
+            ADD_FAILURE() << "threw a plain exception instead of socket_error, so the reason cannot be recorded "
+                             "and the caller falls back to probing a descriptor it never got: "
+                          << e.what();
+        }
+    }
+}
+
+// The same failure seen through the policy that fd_event_client actually drives.
+// get_error() is what decides whether the client resets and reconnects, so the
+// resolver failure has to arrive there rather than as get_error()'s own EBADF
+// fallback for a descriptor that was never assigned.
+TEST(client_connect_error_test, tcp_unresolvable_host_open_reports_resolver_failure) {
+    const auto host = unresolvable_host();
+    // Any nonzero code will do: everything but EAI_SYSTEM maps to the same value,
+    // and a resolver stack such as nss-resolve may answer EAI_AGAIN instead.
+    ASSERT_NE(resolve_result(host, SOCK_STREAM), 0)
+        << "the fixture host no longer fails resolution locally, so this test would depend on DNS";
+
+    tcp_socket sock;
+    ASSERT_FALSE(sock.open(host, unused_remote_port)) << "open of an unresolvable host reported success";
+    EXPECT_FALSE(sock.is_open()) << "a failed open kept a descriptor the caller was told does not exist";
+
+    const int err = sock.get_error();
+    EXPECT_NE(err, EBADF) << "a failed open reported EBADF, which describes get_error()'s own probe of "
+                             "an unassigned descriptor rather than why the open failed";
+    EXPECT_NE(err, 0) << "a failed open left get_error() at 0, which reads as healthy and suppresses the client reset";
+    EXPECT_EQ(err, EHOSTUNREACH) << "a failed open reported errno " << err << " (" << ::strerror(err)
+                                 << ") instead of EHOSTUNREACH";
+}
+
+// The UDP mirror. udp_client_socket::open reaches open_udp_client_socket, a
+// separate getaddrinfo leg from the TCP one.
+TEST(client_connect_error_test, udp_unresolvable_host_open_reports_resolver_failure) {
+    const auto host = unresolvable_host();
+    // Any nonzero code will do: everything but EAI_SYSTEM maps to the same value,
+    // and a resolver stack such as nss-resolve may answer EAI_AGAIN instead.
+    ASSERT_NE(resolve_result(host, SOCK_DGRAM), 0)
+        << "the fixture host no longer fails resolution locally, so this test would depend on DNS";
+
+    udp_client_socket sock;
+    ASSERT_FALSE(sock.open(host, unused_remote_port)) << "open of an unresolvable host reported success";
+    EXPECT_FALSE(sock.is_open()) << "a failed open kept a descriptor the caller was told does not exist";
+
+    const int err = sock.get_error();
+    EXPECT_NE(err, EBADF) << "a failed open reported EBADF, which describes get_error()'s own probe of "
+                             "an unassigned descriptor rather than why the open failed";
+    EXPECT_NE(err, 0) << "a failed open left get_error() at 0, which reads as healthy and suppresses the client reset";
+    EXPECT_EQ(err, EHOSTUNREACH) << "a failed open reported errno " << err << " (" << ::strerror(err)
+                                 << ") instead of EHOSTUNREACH";
 }
 
 TEST(client_connect_error_test, udp_failed_connect_latency_ignores_connect_timeout) {

@@ -59,7 +59,8 @@ constexpr int reconnect_delay_ms{100};
  * @param[in] device Optional interface name (e.g. "eth0"). When non-empty the socket is bound
  * to that device via SO_BINDTODEVICE. Requires CAP_NET_RAW or root.
  * @return The managed file descriptor of the socket
- * @throws std::runtime_error if the operation fails.
+ * @throws socket_error if the operation fails. Catch it rather than
+ * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& device = {});
 
@@ -70,7 +71,8 @@ event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& d
  * @param[in] device Optional interface name (e.g. "eth0"). When non-empty the socket is bound
  * to that device via SO_BINDTODEVICE before connect. Requires CAP_NET_RAW or root.
  * @return The managed file descriptor of the socket
- * @throws std::runtime_error if the operation fails.
+ * @throws socket_error if the operation fails. Catch it rather than
+ * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t port, std::string const& device = {});
 
@@ -155,7 +157,8 @@ event::unique_fd open_mdns_socket6(std::string const& interface_name);
  * @param[in] host The host to connect to
  * @param[in] port The port to listen to
  * @return The managed file descriptor of the socket
- * @throws std::runtime_error if the operation fails.
+ * @throws socket_error if the operation fails. Catch it rather than
+ * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, const std::string& device = {});
 
@@ -168,7 +171,8 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, co
  * to that device via SO_BINDTODEVICE before connect. If the caller lacks CAP_NET_RAW, falls back
  * to source-IP bind using the interface's IPv4 address (no privilege needed).
  * @return The managed file descriptor of the socket
- * @throws std::runtime_error if the operation fails.
+ * @throws socket_error if the operation fails. Catch it rather than
+ * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms,
                                               const std::string& device = {});
