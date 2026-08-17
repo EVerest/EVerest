@@ -92,6 +92,11 @@ private:
     int device_connection_timeout_s{0};
     OperatingMode operating_mode{OperatingMode::FIXED_ADDRESS};
 
+    /// In OperatingMode::FIXED_ADDRESS, this contains the configured module addresses.
+    std::vector<uint8_t> module_addresses;
+
+    /// List of currently active module addresses based on received telemetry. Updated dynamically as modules go
+    /// offline/online.
     std::vector<uint8_t> active_module_addresses;
     std::mutex active_modules_mutex;
 
@@ -102,6 +107,9 @@ private:
     void handle_module_count_packet(const std::vector<uint8_t>& payload);
     void handle_simple_telemetry_update(uint8_t source_address, const std::vector<uint8_t>& payload,
                                         uint8_t command_number);
+
+    /// (Re-)add a configured module to the active set in FIXED_ADDRESS mode after receiving telemetry from it.
+    void mark_module_active(uint8_t source_address);
     void check_and_signal_error_status_change(uint8_t source_address,
                                               const can_packet_acdc::PowerModuleStatus& new_status,
                                               const can_packet_acdc::PowerModuleStatus& old_status);
