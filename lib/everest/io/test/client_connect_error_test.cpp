@@ -441,7 +441,7 @@ TEST(client_connect_error_test, tcp_successful_open_clears_recorded_connect_erro
 // to a nonexistent device is the deterministic way to fail it.
 TEST(client_connect_error_test, udp_failed_connect_reports_enodev) {
     udp_client_socket sock;
-    ASSERT_TRUE(sock.setup("127.0.0.1", unused_remote_port, 1000, unusable_device));
+    ASSERT_TRUE(sock.setup("127.0.0.1", unused_remote_port, unusable_device));
 
     const auto outcome = drive_connect(sock);
 
@@ -592,23 +592,17 @@ TEST(client_connect_error_test, udp_unresolvable_host_open_reports_resolver_fail
                                  << ") instead of EHOSTUNREACH";
 }
 
-TEST(client_connect_error_test, udp_failed_connect_latency_ignores_connect_timeout) {
-    constexpr int short_timeout_ms = 200;
-    constexpr int long_timeout_ms = 2000;
-
+// A UDP connect never touches the network, so its failure latency is only the
+// reconnect delay. There is no connect timeout to charge it: udp_client_socket
+// takes none, which is what keeps the TCP differential test's property from
+// needing a UDP counterpart.
+TEST(client_connect_error_test, udp_failed_connect_costs_only_the_reconnect_delay) {
     udp_client_socket sock;
-    ASSERT_TRUE(sock.setup("127.0.0.1", unused_remote_port, short_timeout_ms, unusable_device));
-    const auto short_run = drive_connect(sock);
-    ASSERT_FALSE(short_run.ok) << "connect bound to a nonexistent device reported success";
+    ASSERT_TRUE(sock.setup("127.0.0.1", unused_remote_port, unusable_device));
 
-    ASSERT_TRUE(sock.setup("127.0.0.1", unused_remote_port, long_timeout_ms, unusable_device));
-    const auto long_run = drive_connect(sock);
-    ASSERT_FALSE(long_run.ok) << "connect bound to a nonexistent device reported success";
+    const auto outcome = drive_connect(sock);
 
-    EXPECT_LT(short_run.elapsed_ms, max_reconnect_delay_ms)
-        << "a connect that failed before touching the network took " << short_run.elapsed_ms << "ms";
-    EXPECT_LT(long_run.elapsed_ms - short_run.elapsed_ms, jitter_slack_ms)
-        << "raising the connect timeout from " << short_timeout_ms << "ms to " << long_timeout_ms << "ms moved failure "
-        << "latency from " << short_run.elapsed_ms << "ms to " << long_run.elapsed_ms
-        << "ms, so a connect that never touched the network is charged the connect timeout";
+    ASSERT_FALSE(outcome.ok) << "connect bound to a nonexistent device reported success";
+    EXPECT_LT(outcome.elapsed_ms, max_reconnect_delay_ms)
+        << "a connect that failed before touching the network took " << outcome.elapsed_ms << "ms";
 }

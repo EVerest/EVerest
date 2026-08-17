@@ -10,10 +10,6 @@
 #include <memory>
 #include <protocol/cb_can_message.h>
 
-namespace {
-const int default_udp_timeout_ms = 1000;
-}
-
 namespace charge_bridge {
 using namespace std::chrono_literals;
 
@@ -116,7 +112,7 @@ can_bridge::can_bridge(can_bridge_config const& config, everest::lib::io::event:
 }
 
 void can_bridge::create_udp_client(std::string const& remote, uint16_t remote_port) {
-    m_udp = std::make_unique<everest::lib::io::udp::udp_client>(remote, remote_port, default_udp_timeout_ms);
+    m_udp = std::make_unique<everest::lib::io::udp::udp_client>(remote, remote_port);
     m_udp->set_rx_handler([this](auto const& data, auto&) {
         // The MCU may omit trailing data bytes (see cb_can_message: "data bytes at the end may be
         // omitted"), so the datagram can be shorter than the full struct but must at least cover the

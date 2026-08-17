@@ -140,10 +140,9 @@ std::optional<udp_info> udp_socket_base::rx_impl(void* buffer, size_t buffer_siz
 
 /////////////////////////////////////////////////
 
-bool udp_client_socket::setup(std::string const& remote, uint16_t port, int timeout_ms, std::string const& device) {
+bool udp_client_socket::setup(std::string const& remote, uint16_t port, std::string const& device) {
     m_remote = remote;
     m_port = port;
-    m_timeout_ms = timeout_ms;
     m_device = device;
     discard();
     return true;

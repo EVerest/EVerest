@@ -6,10 +6,6 @@
 #include <everest/io/udp/udp_payload.hpp>
 #include <iostream>
 
-namespace {
-const int default_udp_timeout_ms = 1000;
-} // namespace
-
 namespace charge_bridge {
 
 plc_bridge::plc_bridge(plc_bridge_config const& config, everest::lib::io::event::event_fd& ready_notify) :
@@ -51,7 +47,7 @@ plc_bridge::plc_bridge(plc_bridge_config const& config, everest::lib::io::event:
 }
 
 void plc_bridge::create_udp_client(std::string const& remote, uint16_t remote_port, std::string const& identifier) {
-    m_udp = std::make_unique<everest::lib::io::udp::udp_client>(remote, remote_port, default_udp_timeout_ms);
+    m_udp = std::make_unique<everest::lib::io::udp::udp_client>(remote, remote_port);
     m_udp_ready = false;
     m_udp_on_error = false;
     m_udp->set_rx_handler([this](auto const& data, auto&) { m_tap.tx(data.buffer); });

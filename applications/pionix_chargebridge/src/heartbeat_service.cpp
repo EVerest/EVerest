@@ -12,7 +12,6 @@
 #include <protocol/cb_management.h>
 
 namespace {
-const int default_udp_timeout_ms = 1000;
 const std::uint16_t s_to_ms_factor = 1000;
 } // namespace
 
@@ -42,7 +41,7 @@ heartbeat_service::heartbeat_service(heartbeat_config const& config,
 }
 
 void heartbeat_service::create_udp_client(std::string const& remote, uint16_t remote_port) {
-    m_udp = std::make_unique<everest::lib::io::udp::udp_client>(remote, remote_port, default_udp_timeout_ms);
+    m_udp = std::make_unique<everest::lib::io::udp::udp_client>(remote, remote_port);
     m_udp_on_error = false;
     m_udp_ready = false;
     m_udp->set_rx_handler([this](auto const& data, auto&) { handle_udp_rx(data); });
