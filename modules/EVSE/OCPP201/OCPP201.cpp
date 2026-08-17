@@ -570,18 +570,17 @@ void OCPP201::ready() {
 
     callbacks.connector_effective_operative_status_changed_callback =
         [this](const int32_t evse_id, const int32_t connector_id, const ocpp::v2::OperationalStatusEnum new_status) {
-            if (new_status == ocpp::v2::OperationalStatusEnum::Operative) {
-                if (this->r_evse_manager.at(evse_id - 1)
-                        ->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
-                                                             types::evse_manager::Enable_state::Enable, 5000})) {
-                    this->charge_point->on_enabled(evse_id, connector_id);
-                }
+            const auto enable_state = (new_status == ocpp::v2::OperationalStatusEnum::Operative)
+                                          ? types::evse_manager::Enable_state::Enable
+                                          : types::evse_manager::Enable_state::Disable;
+            // returns the effective enabled state across all sources, not a success flag
+            const bool is_enabled =
+                this->r_evse_manager.at(evse_id - 1)
+                    ->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS, enable_state, 5000});
+            if (is_enabled) {
+                this->charge_point->on_enabled(evse_id, connector_id);
             } else {
-                if (this->r_evse_manager.at(evse_id - 1)
-                        ->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
-                                                             types::evse_manager::Enable_state::Disable, 5000})) {
-                    this->charge_point->on_unavailable(evse_id, connector_id);
-                }
+                this->charge_point->on_unavailable(evse_id, connector_id);
             }
         };
 

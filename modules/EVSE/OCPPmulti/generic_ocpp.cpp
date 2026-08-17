@@ -1049,20 +1049,21 @@ bool GenericOcpp::cb_connector_effective_operative_status(std::int32_t evse_id, 
 
     if (evse_id > 0) {
         auto& evse = mv_requires.evse_manager.at(evse_id - 1);
+        const bool enable_requested = new_status == ocpp::v2::OperationalStatusEnum::Operative;
+        const auto enable_state =
+            enable_requested ? types::evse_manager::Enable_state::Enable : types::evse_manager::Enable_state::Disable;
 
-        if (new_status == ocpp::v2::OperationalStatusEnum::Operative) {
-            if (evse->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
-                                                         types::evse_manager::Enable_state::Enable, 5000})) {
-                mv_charge_point.on_enabled(evse_id, connector_id);
-                result = true;
-            }
+        // returns the effective enabled state across all sources, not a success flag
+        const bool is_enabled =
+            evse->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS, enable_state, 5000});
+
+        if (is_enabled) {
+            mv_charge_point.on_enabled(evse_id, connector_id);
         } else {
-            if (evse->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
-                                                         types::evse_manager::Enable_state::Disable, 5000})) {
-                mv_charge_point.on_unavailable(evse_id, connector_id);
-                result = true;
-            }
+            mv_charge_point.on_unavailable(evse_id, connector_id);
         }
+
+        result = is_enabled == enable_requested;
     } else {
         EVLOG_warning << "cb_connector_effective_operative_status: invalid evse_id: " << evse_id;
     }
