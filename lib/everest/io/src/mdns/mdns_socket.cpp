@@ -27,23 +27,35 @@ namespace everest::lib::io::mdns {
 bool mdns_socket::open(std::string const& interface, int family) {
     // "family not available on this interface" is an expected condition with
     // dual-stack discovery, so socket setup failures map to a false return.
+    int error = 0;
     try {
         if (family == AF_INET6) {
             auto socket = socket::open_mdns_socket6(interface);
-            m_owned_udp_fd = std::move(socket);
+            adopt(std::move(socket));
             // the endpoint resolves the interface to sin6_scope_id, required
             // to send to the link-scoped group
             m_target = udp::endpoint(mdns_multicast_ipv6, mdns_port, interface);
         } else {
             auto socket = socket::open_mdns_socket(interface);
-            m_owned_udp_fd = std::move(socket);
+            adopt(std::move(socket));
             m_target = udp::endpoint(mdns_multicast_ipv4, mdns_port);
         }
-    } catch (std::exception const&) {
-        return false;
-    }
 
-    return socket::get_pending_error(m_owned_udp_fd) == 0;
+        // SO_ERROR is read-and-clear. The pending error is read once and kept, so a
+        // false return still carries the reason instead of a value already consumed.
+        error = socket::get_pending_error(get_fd());
+        if (error == 0) {
+            return true;
+        }
+    } catch (socket::socket_error const& e) {
+        error = e.error();
+    } catch (...) {
+        // An unusable interface fails the address lookup, which carries no errno.
+        // get_error() then falls through to probing an unassigned descriptor, which
+        // is nonzero, so the client still resets.
+    }
+    record_connect_failure(error);
+    return false;
 }
 
 bool mdns_socket::tx(PayloadT const& payload) {

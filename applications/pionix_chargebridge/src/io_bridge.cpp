@@ -24,7 +24,6 @@ using namespace std::chrono_literals;
 namespace mqtt = everest::lib::io::mqtt;
 
 namespace {
-const int default_udp_timeout_ms = 1000;
 const int mqtt_reconnect_timeout_ms = 1000;
 } // namespace
 
@@ -95,7 +94,7 @@ io_bridge::io_bridge(io_config const& config, everest::lib::io::event::event_fd&
 }
 
 void io_bridge::create_udp_client(std::string const& remote, uint16_t remote_port) {
-    m_udp = std::make_unique<everest::lib::io::udp::udp_client>(remote, remote_port, default_udp_timeout_ms);
+    m_udp = std::make_unique<everest::lib::io::udp::udp_client>(remote, remote_port);
     m_udp_ready = false;
     m_udp_on_error = false;
     m_udp->set_rx_handler([this](auto const& data, auto&) { handle_udp_rx(data); });

@@ -77,6 +77,34 @@ namespace socket {
 //
 
 namespace {
+[[noreturn]] void throw_error(std::string const& msg, int error) {
+    std::stringstream str;
+    str << msg << ": " << strerror(error) << " (" << error << ")";
+    throw socket_error(str.str(), error);
+}
+
+// Capture errno before the unwind, where cleanup may overwrite it.
+[[noreturn]] void throw_errno(std::string const& msg) {
+    const int error = errno;
+    throw_error(msg, error);
+}
+
+// getaddrinfo reports through its return value and leaves errno meaningful only
+// for EAI_SYSTEM, so the result is mapped instead of read off errno. The resolver
+// verdicts reachable here (EAI_NONAME, EAI_AGAIN, EAI_FAIL, EAI_SERVICE and the
+// like) name no errno of their own and become EHOSTUNREACH: an unresolvable
+// endpoint is an unreachable one. A zero errno on the EAI_SYSTEM leg says nothing
+// a caller can act on and would fail the descriptor guard in tcp_socket::open, so
+// it takes the same fallback.
+// Untested: EAI_SYSTEM is the only leg that yields a value other than
+// EHOSTUNREACH and cannot be forced without fault injection. The
+// open_udp_server_socket resolver leg has no forceable failure mode either.
+[[noreturn]] void throw_resolver_error(int result) {
+    const int sys_errno = errno;
+    const int error = (result == EAI_SYSTEM and sys_errno != 0) ? sys_errno : EHOSTUNREACH;
+    throw socket_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(result)), error);
+}
+
 // Returns true when SO_BINDTODEVICE succeeded. Returns false on EPERM/EACCES
 // (caller decides on a fallback). Throws on any other failure.
 bool apply_so_bindtodevice(int fd, std::string const& device) {
@@ -86,7 +114,7 @@ bool apply_so_bindtodevice(int fd, std::string const& device) {
     if (errno == EPERM || errno == EACCES) {
         return false;
     }
-    throw std::runtime_error(build_errno_string("Failed to bind socket to device " + device));
+    throw_errno("Failed to bind socket to device " + device);
 }
 
 // True when the string is an IPv6 link-local (fe80::/10) literal without %scope suffix.
@@ -113,7 +141,7 @@ sa_family_t get_socket_family(int fd) {
 bool apply_unicast_if(int fd, std::string const& device) {
     unsigned int ifindex = if_nametoindex(device.c_str());
     if (ifindex == 0) {
-        throw std::runtime_error(build_errno_string("if_nametoindex(\"" + device + "\") failed"));
+        throw_errno("if_nametoindex(\"" + device + "\") failed");
     }
     sa_family_t family = get_socket_family(fd);
     if (family == AF_INET) {
@@ -121,14 +149,14 @@ bool apply_unicast_if(int fd, std::string const& device) {
         if (setsockopt(fd, IPPROTO_IP, IP_UNICAST_IF, &opt, sizeof(opt)) == 0) {
             return true;
         }
-        throw std::runtime_error(build_errno_string("setsockopt(IP_UNICAST_IF, " + device + ") failed"));
+        throw_errno("setsockopt(IP_UNICAST_IF, " + device + ") failed");
     }
     if (family == AF_INET6) {
         int opt = static_cast<int>(ifindex);
         if (setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_IF, &opt, sizeof(opt)) == 0) {
             return true;
         }
-        throw std::runtime_error(build_errno_string("setsockopt(IPV6_UNICAST_IF, " + device + ") failed"));
+        throw_errno("setsockopt(IPV6_UNICAST_IF, " + device + ") failed");
     }
     return false;
 }
@@ -151,10 +179,10 @@ void set_multicast_if(int fd, std::string const& device, struct sockaddr* ai_add
         }
         unsigned int ifindex = if_nametoindex(device.c_str());
         if (ifindex == 0) {
-            throw std::runtime_error(build_errno_string("if_nametoindex(\"" + device + "\") failed"));
+            throw_errno("if_nametoindex(\"" + device + "\") failed");
         }
         if (setsockopt(fd, IPPROTO_IPV6, IPV6_MULTICAST_IF, &ifindex, sizeof(ifindex)) != 0) {
-            throw std::runtime_error(build_errno_string("setsockopt(IPV6_MULTICAST_IF, " + device + ") failed"));
+            throw_errno("setsockopt(IPV6_MULTICAST_IF, " + device + ") failed");
         }
         sin6->sin6_scope_id = ifindex;
         return;
@@ -166,12 +194,12 @@ void set_multicast_if(int fd, std::string const& device, struct sockaddr* ai_add
         }
         unsigned int ifindex = if_nametoindex(device.c_str());
         if (ifindex == 0) {
-            throw std::runtime_error(build_errno_string("if_nametoindex(\"" + device + "\") failed"));
+            throw_errno("if_nametoindex(\"" + device + "\") failed");
         }
         struct ip_mreqn mreq {};
         mreq.imr_ifindex = static_cast<int>(ifindex);
         if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, &mreq, sizeof(mreq)) != 0) {
-            throw std::runtime_error(build_errno_string("setsockopt(IP_MULTICAST_IF, " + device + ") failed"));
+            throw_errno("setsockopt(IP_MULTICAST_IF, " + device + ") failed");
         }
     }
 }
@@ -191,8 +219,7 @@ void bind_socket_to_interface_address(int fd, std::string const& device, std::ui
         throw std::runtime_error("Failed to parse interface address " + ip);
     }
     if (::bind(fd, reinterpret_cast<struct sockaddr*>(&local), sizeof(local)) < 0) {
-        throw std::runtime_error(build_errno_string("Fallback bind to interface " + device + " (" + ip + ":" +
-                                                    std::to_string(port) + ") failed"));
+        throw_errno("Fallback bind to interface " + device + " (" + ip + ":" + std::to_string(port) + ") failed");
     }
 }
 } // namespace
@@ -224,8 +251,8 @@ event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& d
 
     const auto err = getaddrinfo(nullptr, std::to_string(port).c_str(), &hints, &servinfo);
     if (err) {
-        throw std::runtime_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(err)));
-    };
+        throw_resolver_error(err);
+    }
 
     handle_disposer<addrinfo, freeaddrinfo> addrinfo_disposer(servinfo);
 
@@ -264,17 +291,20 @@ event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t p
 
     const auto err = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &servinfo);
     if (err) {
-        throw std::runtime_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(err)));
-    };
+        throw_resolver_error(err);
+    }
 
     handle_disposer<addrinfo, freeaddrinfo> addrinfo_disposer(servinfo);
 
     // open the first possible socket
+    int last_error = 0;
     for (auto* p = servinfo; p != NULL; p = p->ai_next) {
         const auto socket_fd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
 
-        if (socket_fd == -1)
+        if (socket_fd == -1) {
+            last_error = errno;
             continue;
+        }
 
         try {
             bind_socket_to_device(socket_fd, device);
@@ -285,6 +315,8 @@ event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t p
         }
 
         if (-1 == ::connect(socket_fd, p->ai_addr, p->ai_addrlen)) {
+            // Read before close(), which may overwrite errno.
+            last_error = errno;
             close(socket_fd);
             continue;
         }
@@ -292,7 +324,7 @@ event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t p
         return event::unique_fd{socket_fd};
     }
 
-    throw std::runtime_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port));
+    throw_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port), last_error);
 }
 
 event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms,
@@ -305,17 +337,20 @@ event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint
 
     const auto err = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &servinfo);
     if (err) {
-        throw std::runtime_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(err)));
-    };
+        throw_resolver_error(err);
+    }
 
     handle_disposer<addrinfo, freeaddrinfo> addrinfo_disposer(servinfo);
 
     // open the first possible socket
+    int last_error = 0;
     for (auto* p = servinfo; p != NULL; p = p->ai_next) {
         const auto socket_fd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
 
-        if (socket_fd == -1)
+        if (socket_fd == -1) {
+            last_error = errno;
             continue;
+        }
 
         try {
             bind_socket_to_device(socket_fd, device);
@@ -325,6 +360,9 @@ event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint
         }
 
         if (-1 == connect_with_timeout(socket_fd, p->ai_addr, p->ai_addrlen, timeout_ms)) {
+            // connect_with_timeout forwards the genuine errno; read it before
+            // close(), which may overwrite it.
+            last_error = errno;
             close(socket_fd);
             continue;
         }
@@ -332,7 +370,7 @@ event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint
         return event::unique_fd{socket_fd};
     }
 
-    throw std::runtime_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port));
+    throw_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port), last_error);
 }
 
 event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, const std::string& device) {
@@ -344,8 +382,8 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, co
 
     const auto err = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &servinfo);
     if (err) {
-        throw std::runtime_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(err)));
-    };
+        throw_resolver_error(err);
+    }
 
     handle_disposer<addrinfo, freeaddrinfo> addrinfo_disposer(servinfo);
 

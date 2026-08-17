@@ -9,8 +9,6 @@
 #include <protocol/evse_bsp_host_to_cb.h>
 
 namespace {
-const int default_udp_timeout_ms = 1000;
-
 const char* cp_state_to_string(CpState state) {
     switch (state) {
     case CpState_A:
@@ -65,7 +63,7 @@ bsp_bridge::bsp_bridge(bsp_bridge_config const& config, everest::lib::io::event:
 }
 
 void bsp_bridge::create_udp_client(std::string const& remote, uint16_t remote_port, std::string const& identifier) {
-    m_udp = std::make_unique<everest::lib::io::udp::udp_client>(remote, remote_port, default_udp_timeout_ms);
+    m_udp = std::make_unique<everest::lib::io::udp::udp_client>(remote, remote_port);
     m_udp_ready = false;
     m_udp_on_error = false;
     m_udp->set_rx_handler([this](auto const& data, auto&) {

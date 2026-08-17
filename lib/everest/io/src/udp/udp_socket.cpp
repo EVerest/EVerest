@@ -19,22 +19,57 @@
 
 namespace everest::lib::io::udp {
 
+void udp_socket_base::adopt(event::unique_fd&& fd) {
+    m_owned_udp_fd = std::move(fd);
+    m_connect_error = 0;
+}
+
+void udp_socket_base::record_connect_failure(int error) {
+    m_owned_udp_fd.close();
+    m_connect_error = error;
+}
+
+void udp_socket_base::discard() {
+    m_owned_udp_fd.close();
+    m_connect_error = 0;
+}
+
 bool udp_socket_base::open_as_client(std::string const& remote, uint16_t port, std::string const& device) {
+    int error = 0;
     try {
         auto socket = socket::open_udp_client_socket(remote, port, device);
         socket::set_non_blocking(socket);
-        m_owned_udp_fd = std::move(socket);
-        return socket::get_pending_error(m_owned_udp_fd) == 0;
+        adopt(std::move(socket));
+        // SO_ERROR is read-and-clear. The pending error is read once and kept, so a
+        // false return still carries the reason instead of a value already consumed.
+        error = socket::get_pending_error(m_owned_udp_fd);
+        if (error == 0) {
+            return true;
+        }
+    } catch (socket::socket_error const& e) {
+        error = e.error();
     } catch (...) {
     }
+    record_connect_failure(error);
     return false;
 }
 
 bool udp_socket_base::open_as_server(uint16_t port, std::string const& device) {
-    auto socket = socket::open_udp_server_socket(port, device);
-    socket::set_non_blocking(socket);
-    m_owned_udp_fd = std::move(socket);
-    return socket::get_pending_error(m_owned_udp_fd) == 0;
+    int error = 0;
+    try {
+        auto socket = socket::open_udp_server_socket(port, device);
+        socket::set_non_blocking(socket);
+        adopt(std::move(socket));
+        error = socket::get_pending_error(m_owned_udp_fd);
+        if (error == 0) {
+            return true;
+        }
+    } catch (socket::socket_error const& e) {
+        error = e.error();
+    } catch (...) {
+    }
+    record_connect_failure(error);
+    return false;
 }
 
 bool udp_socket_base::is_open() {
@@ -42,7 +77,7 @@ bool udp_socket_base::is_open() {
 }
 
 void udp_socket_base::close() {
-    m_owned_udp_fd.close();
+    discard();
 }
 
 int udp_socket_base::get_fd() const {
@@ -50,6 +85,12 @@ int udp_socket_base::get_fd() const {
 }
 
 int udp_socket_base::get_error() const {
+    // Zero means "nothing recorded", not "healthy": falling through to the probe of
+    // an unassigned descriptor yields EBADF, and that nonzero value is what makes
+    // the client reset and reconnect. Reporting zero here would read as healthy.
+    if (not m_owned_udp_fd.is_fd() and m_connect_error != 0) {
+        return m_connect_error;
+    }
     return socket::get_pending_error(m_owned_udp_fd);
 }
 
@@ -99,25 +140,30 @@ std::optional<udp_info> udp_socket_base::rx_impl(void* buffer, size_t buffer_siz
 
 /////////////////////////////////////////////////
 
-bool udp_client_socket::setup(std::string const& remote, uint16_t port, int timeout_ms, std::string const& device) {
+bool udp_client_socket::setup(std::string const& remote, uint16_t port, std::string const& device) {
     m_remote = remote;
     m_port = port;
-    m_timeout_ms = timeout_ms;
     m_device = device;
-    m_owned_udp_fd.close();
+    discard();
     return true;
 }
 
 void udp_client_socket::connect(std::function<void(bool, int)> const& setup_cb) {
+    int error = 0;
     try {
         auto socket = socket::open_udp_client_socket(m_remote, m_port, m_device);
         socket::set_non_blocking(socket);
-        setup_cb(true, socket);
-        m_owned_udp_fd = std::move(socket);
+        const auto fd = static_cast<int>(socket);
+        adopt(std::move(socket));
+        setup_cb(true, fd);
+        return;
+    } catch (socket::socket_error const& e) {
+        error = e.error();
     } catch (...) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(m_timeout_ms));
-        setup_cb(false, -1);
     }
+    record_connect_failure(error);
+    std::this_thread::sleep_for(std::chrono::milliseconds(socket::reconnect_delay_ms));
+    setup_cb(false, -1);
 }
 
 bool udp_client_socket::open(std::string const& remote, uint16_t port, std::string const& device) {

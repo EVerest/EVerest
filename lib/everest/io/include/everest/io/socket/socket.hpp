@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -15,12 +16,51 @@
 namespace everest::lib::io::socket {
 
 /**
+ * @brief A failed socket operation, carrying the errno that caused it.
+ * @details Thrown instead of a bare std::runtime_error wherever the cause is an
+ * errno: `errno` itself does not survive the unwind, because cleanup on the way
+ * out (close(), freeaddrinfo()) may overwrite it. The value is captured at the
+ * failure site.
+ */
+class socket_error : public std::runtime_error {
+public:
+    /**
+     * @param[in] what Human readable description.
+     * @param[in] error The errno captured at the failure site.
+     */
+    socket_error(std::string const& what, int error) : std::runtime_error(what), m_error(error) {
+    }
+
+    /**
+     * @brief The errno captured at the failure site.
+     */
+    int error() const {
+        return m_error;
+    }
+
+private:
+    int m_error;
+};
+
+/**
+ * @var reconnect_delay_ms
+ * @brief Throttle applied by a client between failed connect attempts.
+ * @details Deliberately independent of the connect timeout. A connect can fail
+ * without spending any of that timeout (refused peer, local bind failure), and
+ * consumers reset from the error handler, so without a throttle a client spins
+ * against the peer. Charging the connect timeout instead would double failure
+ * latency for the leg that did spend it.
+ */
+constexpr int reconnect_delay_ms{100};
+
+/**
  * @brief Open a UDP socket in server mode
  * @param[in] port The port to listen to
  * @param[in] device Optional interface name (e.g. "eth0"). When non-empty the socket is bound
  * to that device via SO_BINDTODEVICE. Requires CAP_NET_RAW or root.
  * @return The managed file descriptor of the socket
- * @throws std::runtime_error if the operation fails.
+ * @throws socket_error if the operation fails. Catch it rather than
+ * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& device = {});
 
@@ -31,7 +71,8 @@ event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& d
  * @param[in] device Optional interface name (e.g. "eth0"). When non-empty the socket is bound
  * to that device via SO_BINDTODEVICE before connect. Requires CAP_NET_RAW or root.
  * @return The managed file descriptor of the socket
- * @throws std::runtime_error if the operation fails.
+ * @throws socket_error if the operation fails. Catch it rather than
+ * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t port, std::string const& device = {});
 
@@ -116,7 +157,8 @@ event::unique_fd open_mdns_socket6(std::string const& interface_name);
  * @param[in] host The host to connect to
  * @param[in] port The port to listen to
  * @return The managed file descriptor of the socket
- * @throws std::runtime_error if the operation fails.
+ * @throws socket_error if the operation fails. Catch it rather than
+ * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, const std::string& device = {});
 
@@ -129,7 +171,8 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, co
  * to that device via SO_BINDTODEVICE before connect. If the caller lacks CAP_NET_RAW, falls back
  * to source-IP bind using the interface's IPv4 address (no privilege needed).
  * @return The managed file descriptor of the socket
- * @throws std::runtime_error if the operation fails.
+ * @throws socket_error if the operation fails. Catch it rather than
+ * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms,
                                               const std::string& device = {});

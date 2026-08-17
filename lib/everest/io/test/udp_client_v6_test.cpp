@@ -84,7 +84,7 @@ private:
 TEST(udp_client_v6_test, connected_roundtrip_over_ipv6_loopback) {
     v6_echo echo;
 
-    udp_client client("::1", echo.port(), 1000);
+    udp_client client("::1", echo.port());
 
     std::atomic<bool> got{false};
     udp_payload received;

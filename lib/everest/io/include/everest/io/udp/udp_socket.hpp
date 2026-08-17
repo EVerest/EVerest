@@ -82,7 +82,12 @@ public:
     int get_fd() const;
     /**
      * @brief Get pending errors on the socket.
-     * @details Implementation for \p ClientPolicy
+     * @details Implementation for \p ClientPolicy. With no socket owned, the errno
+     * of the last failed open or \ref udp_client_socket::connect is reported:
+     * SO_ERROR cannot be probed because no descriptor was assigned. That value is
+     * cached, so repeated calls report the same cause. It is dropped whenever a
+     * descriptor is gained or released, so it cannot outlive the attempt it
+     * describes.
      * @return The current errno of the socket. Zero with no pending error.
      */
     int get_error() const;
@@ -131,7 +136,28 @@ protected:
      */
     std::optional<udp_info> rx_impl(void* buffer, size_t buffer_size, ssize_t& payload_size);
 
+    /**
+     * @brief Take ownership of \p fd and clear the recorded failure reason.
+     * @details The descriptor and the reason there is no descriptor move together,
+     * so a socket that owns a descriptor never carries a stale reason. Subclasses
+     * must gain a descriptor through here, never by assignment.
+     */
+    void adopt(event::unique_fd&& fd);
+
+    /**
+     * @brief Drop the descriptor and record \p error as the reason there is none.
+     */
+    void record_connect_failure(int error);
+
+    /**
+     * @brief Drop the descriptor and clear the recorded failure reason.
+     */
+    void discard();
+
+private:
     event::unique_fd m_owned_udp_fd;
+    /** errno of the last failed open or connect, reported while no socket is owned */
+    int m_connect_error{0};
 };
 /**
  * A basic <a href="https://man7.org/linux/man-pages/man7/udp.7.html">UDP</a> client.
@@ -168,11 +194,10 @@ public:
      * @details Implementation for \p ClientPolicy
      * @param[in] remote The host to connect to
      * @param[in] port The port on host
-     * @param[in] timeout_ms Timeout for connecting to the remote
      * @param[in] device Optional interface name to bind to via SO_BINDTODEVICE. Empty = no binding.
      * @return True on success, false otherwise.
      */
-    bool setup(std::string const& remote, uint16_t port, int timeout_ms, std::string const& device = {});
+    bool setup(std::string const& remote, uint16_t port, std::string const& device = {});
 
     /**
      * @brief Long running part of the UDP connection process
@@ -199,7 +224,6 @@ public:
 private:
     std::string m_remote;
     uint16_t m_port{0};
-    int m_timeout_ms{0};
     std::string m_device;
 
     std::array<uint8_t, udp_payload::max_size> rx_buffer;
