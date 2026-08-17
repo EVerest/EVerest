@@ -9,6 +9,7 @@
 #include <everest/io/event/event_fd.hpp>
 #include <everest/io/event/fd_event_client.hpp>
 #include <everest/io/event/fd_event_register_interface.hpp>
+#include <everest/io/event/handler_liveness.hpp>
 #include <everest/util/queue/thread_safe_queue.hpp>
 
 #include <atomic>
@@ -55,6 +56,9 @@ class generic_fd_event_client_impl;
  * be registered together with a list of the events of interest and a callback.
  * This class provides itself a filedescriptor that can be added to other event handlers. This way
  * concerns may be separated and event handlers nested.
+ *
+ * Registration, removal and \ref poll must all run on one thread. \ref add_action is the only
+ * member safe to call from another thread.
  */
 class fd_event_handler {
 public:
@@ -155,7 +159,8 @@ public:
     /**
      * @brief Register a client implementing \ref fd_event_sync_interface for event handling
      * @details On notification from the file descriptor of the client, its sync method is called
-     * If manual handling is necessary use \ref fd_event_client filedescriptor directly
+     * If manual handling is necessary use \ref fd_event_client filedescriptor directly.
+     * The client records this handler and removes its registration when destroyed.
      * @param[in] obj The object to be registerd for event handling
      * @return True on success, false otherwise
      */
@@ -187,16 +192,16 @@ public:
 
     /**
      * @brief Unregister object implementing \ref fd_event_sync_interface from event handling
+     * @details Removes the descriptor recorded at registration time, not the current get_poll_fd.
      * @param[in] obj The object to be removed from event handling
-     * @return True on success, false otherwise
+     * @return True if a registration with this handler was removed, false otherwise
      */
-
     bool unregister_event_handler(fd_event_sync_interface* obj);
 
     /**
      * @brief Unregister timer_fd from event handling
      * @param[in] obj The timer to be removed
-     * @return True on success, false otherwise
+     * @return True if a registration with this handler was removed, false otherwise
      */
     bool unregister_event_handler(timer_fd* obj);
 
@@ -244,6 +249,22 @@ public:
      * @return True on success, false otherwise
      */
     bool remove_event_handler(int fd);
+
+    /**
+     * @brief Check whether a file descriptor has a registered handler
+     * @details Reports the handler map only, so it stays meaningful for an already closed descriptor.
+     * @param[in] fd The file descriptor
+     * @return True if \p fd has a registered handler, false otherwise
+     */
+    bool is_registered(int fd) const;
+
+    /**
+     * @brief The block a registration with this handler is recorded against
+     * @details Cleared in \ref ~fd_event_handler before any member is destroyed. A recorder keeps a
+     * \p std::weak_ptr to it and drops its registration only while the block still names a handler.
+     * @return The liveness block of this handler
+     */
+    std::shared_ptr<handler_liveness> liveness() const;
     /**
      * @}
      */
@@ -315,7 +336,11 @@ private:
      * \return false in case of timeout, true otherwise
      */
     bool poll_impl(int timeout_ms);
+
+    // Not shared_ptr: EventHandlerMap owns the epoll descriptor, and a registrant outliving this
+    // handler must not keep it open.
     std::unique_ptr<EventHandlerMap> m_handlers{nullptr};
+    std::shared_ptr<handler_liveness> m_liveness;
     util::thread_safe_queue<task> task_pool;
     event_fd m_action_event;
 };

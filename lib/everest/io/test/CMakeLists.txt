@@ -6,6 +6,7 @@ add_executable(everest_io_tests
   udp_dualstack_server_socket_test.cpp
   fd_event_client_async_test.cpp
   client_connect_error_test.cpp
+  fd_event_handler_test.cpp
 )
 
 target_link_libraries(everest_io_tests
