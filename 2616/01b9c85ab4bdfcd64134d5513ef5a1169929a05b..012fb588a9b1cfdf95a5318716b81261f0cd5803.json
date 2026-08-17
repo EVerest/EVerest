@@ -1,0 +1,177 @@
+{
+  "version": 5,
+  "headSha": "012fb588a9b1cfdf95a5318716b81261f0cd5803",
+  "pullNumber": 2616,
+  "sections": [
+    {
+      "id": "60f183cbfdc9d3ff",
+      "title": "Why the disconnect state must be tracked",
+      "prose": [
+        "The new field `reported_as_connected` ensures a 'disconnected' notification is sent exactly once when the websocket is closed or callbacks are disarmed.",
+        "Without it, the charge point would not know if the last state sent was 'connected', leaving consumers unaware of the disconnection."
+      ],
+      "regions": [
+        {
+          "path": "lib/everest/ocpp/include/ocpp/common/connectivity_manager.hpp",
+          "start": 249,
+          "endInclusive": 251,
+          "role": "review"
+        },
+        {
+          "path": "lib/everest/ocpp/lib/ocpp/common/connectivity_manager.cpp",
+          "start": 531,
+          "endInclusive": 566,
+          "role": "review"
+        }
+      ],
+      "question": {
+        "ask": "Is the rationale for tracking the disconnect state now clearer?",
+        "answer": "The section now explains why the field exists, not just what it does."
+      },
+      "by": "model"
+    },
+    {
+      "id": "4ee8cbc1d6398953",
+      "title": "When the charge point must send a disconnect",
+      "prose": [
+        "`disarm_connection_callbacks()` returns `true` if the last state sent was 'connected' and no notification was dispatched yet.",
+        "This signals the charge point to send a 'disconnected' notification, as the websocket thread will not."
+      ],
+      "regions": [
+        {
+          "path": "lib/everest/ocpp/include/ocpp/common/connectivity_manager.hpp",
+          "start": 162,
+          "endInclusive": 164,
+          "role": "review"
+        },
+        {
+          "path": "lib/everest/ocpp/lib/ocpp/common/connectivity_manager.cpp",
+          "start": 236,
+          "endInclusive": 239,
+          "role": "review"
+        }
+      ],
+      "question": {
+        "ask": "Does the section now focus on the caller's responsibility?",
+        "answer": "The prose clarifies when the charge point must act, not just the mechanics of the return value."
+      },
+      "by": "model"
+    },
+    {
+      "id": "64680a038325aadc",
+      "title": "Add a minimal disconnected-notification helper",
+      "prose": [
+        "The new method `notify_connection_state_changed_disconnected()` sends only the 'disconnected' state to consumers, without the rest of the websocket teardown (timers, message queue).",
+        "It is used in `stop()` when `disarm_connection_callbacks()` reports that a notification is still needed."
+      ],
+      "regions": [
+        {
+          "path": "lib/everest/ocpp/include/ocpp/v16/charge_point_impl.hpp",
+          "start": 427,
+          "endInclusive": 432,
+          "role": "review"
+        },
+        {
+          "path": "lib/everest/ocpp/lib/ocpp/v16/charge_point_impl.cpp",
+          "start": 335,
+          "endInclusive": 340,
+          "role": "review"
+        },
+        {
+          "path": "lib/everest/ocpp/include/ocpp/v2/charge_point.hpp",
+          "start": 611,
+          "endInclusive": 616,
+          "role": "review"
+        },
+        {
+          "path": "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp",
+          "start": 1269,
+          "endInclusive": 1293,
+          "role": "review"
+        }
+      ],
+      "by": "model"
+    },
+    {
+      "id": "470077783314b386",
+      "title": "Dispatch the notification in stop",
+      "prose": [
+        "In `stop()`, after `disarm_connection_callbacks()` returns `true`, the charge point calls `notify_connection_state_changed_disconnected()` to send the final 'disconnected' state to consumers.",
+        "This ensures that consumers always see the transition, even when the websocket thread is torn down first."
+      ],
+      "regions": [
+        {
+          "path": "lib/everest/ocpp/lib/ocpp/v16/charge_point_impl.cpp",
+          "start": 1311,
+          "endInclusive": 1314,
+          "role": "review"
+        },
+        {
+          "path": "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp",
+          "start": 169,
+          "endInclusive": 172,
+          "role": "review"
+        }
+      ],
+      "by": "model"
+    },
+    {
+      "id": "ff3ab332d3db52a7",
+      "title": "Update the mock for tests",
+      "prose": [
+        "The mock in the test suite is updated to match the new return type of `disarm_connection_callbacks()`."
+      ],
+      "regions": [
+        {
+          "path": "lib/everest/ocpp/tests/lib/ocpp/common/mocks/connectivity_manager_mock.hpp",
+          "start": 33,
+          "endInclusive": 33,
+          "role": "review"
+        }
+      ],
+      "by": "model"
+    },
+    {
+      "id": "4503a84e13057424",
+      "title": "Also changed in lib/everest/ocpp (2 files)",
+      "prose": [
+        "2 files, 2 changed lines the story above does not show.",
+        "`lib/everest/ocpp/include/ocpp/common/connectivity_manager.hpp`, `lib/everest/ocpp/lib/ocpp/common/connectivity_manager.cpp`."
+      ],
+      "regions": [
+        {
+          "path": "lib/everest/ocpp/include/ocpp/common/connectivity_manager.hpp",
+          "start": 310,
+          "endInclusive": 316,
+          "role": "review"
+        },
+        {
+          "path": "lib/everest/ocpp/lib/ocpp/common/connectivity_manager.cpp",
+          "start": 231,
+          "endInclusive": 237,
+          "role": "review"
+        }
+      ],
+      "by": "extracted"
+    }
+  ],
+  "overview": [
+    "This change ensures that OCPP charge points report a 'disconnected' state to consumers when they are stopped, even if the websocket thread is torn down first.",
+    "The core problem is that `disarm_connection_callbacks()` used to suppress all connection-state notifications, including the final 'disconnected' one that consumers expect when the charge point stops.",
+    "The fix adds a state-tracking field in `ConnectivityManager` and makes `disarm_connection_callbacks()` return whether a notification is still needed. Callers then dispatch it manually."
+  ],
+  "checks": {
+    "total": 9,
+    "passing": 1,
+    "failing": 0,
+    "running": 8,
+    "annotations": {
+      "items": [],
+      "omitted": 0
+    }
+  },
+  "unshown": {
+    "total": 0,
+    "paths": []
+  }
+}
