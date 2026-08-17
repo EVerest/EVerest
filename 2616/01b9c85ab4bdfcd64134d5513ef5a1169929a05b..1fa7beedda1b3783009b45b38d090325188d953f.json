@@ -144,33 +144,5 @@
   "unshown": {
     "total": 0,
     "paths": []
-  },
-  "receiptQuestions": [
-    {
-      "id": "asked:8cab09de72574117",
-      "ask": "Which specific OCPP disconnect scenarios did you manually verify to ensure the stop report is triggered correctly (e.g., network loss, charger reboot, intentional stop command)?",
-      "ranges": [
-        "lib/everest/ocpp/lib/ocpp/common/connectivity_manager.cpp",
-        "lib/everest/ocpp/lib/ocpp/v16/charge_point_impl.cpp",
-        "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp"
-      ]
-    },
-    {
-      "id": "asked:02ae763fddd14c2c",
-      "ask": "Did you test against a real OCPP central system or simulator to observe the backend's reaction to the disconnected state report?",
-      "ranges": [
-        "lib/everest/ocpp/lib/ocpp/common/connectivity_manager.cpp",
-        "lib/everest/ocpp/lib/ocpp/v16/charge_point_impl.cpp",
-        "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp"
-      ]
-    },
-    {
-      "id": "asked:3c58085fab95c201",
-      "ask": "Are there any edge cases regarding concurrent charging transactions that you intentionally left untested due to time constraints?",
-      "ranges": [
-        "lib/everest/ocpp/lib/ocpp/v16/charge_point_impl.cpp",
-        "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp"
-      ]
-    }
-  ]
+  }
 }
