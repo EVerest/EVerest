@@ -80,6 +80,7 @@ target_sources(iso15118
         message/din/contract_authentication.cpp
         message/din/service_discovery.cpp
         message/din/service_payment_selection.cpp
+        message/din/session_stop.cpp
 
         tbd_controller.cpp    
 )
