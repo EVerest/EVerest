@@ -147,11 +147,11 @@
   },
   "receiptQuestions": [
     {
-      "id": "asked:3a36ab181d4b2fde",
-      "ask": "How did you verify that the stop command does not trigger unintended disconnection reports during an active session?",
+      "id": "asked:39817583cf8d2842",
+      "ask": "How did you verify that the disconnect report doesn't trigger a race condition if a stop command arrives at the same time as the network drop?",
       "ranges": [
-        "lib/everest/ocpp/lib/ocpp/v16/charge_point_impl.cpp",
-        "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp"
+        "lib/everest/ocpp/lib/ocpp/v2/charge_point.cpp",
+        "lib/everest/ocpp/lib/ocpp/v16/charge_point_impl.cpp"
       ]
     }
   ]
