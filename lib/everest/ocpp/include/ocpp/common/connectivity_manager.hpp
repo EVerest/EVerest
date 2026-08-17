@@ -154,19 +154,14 @@ public:
     ///
     virtual void disconnect() = 0;
 
-    /// \brief Stop delivering connected/disconnected notifications to the registered callbacks.
+    /// \brief Permanently suppress the connected/disconnected callbacks.
     ///
-    /// Called during teardown after disconnect(). A late websocket-thread callback would otherwise
-    /// reach into a ChargePoint whose members are already being destroyed (use-after-free). This
-    /// blocks until any in-flight callback returns, then suppresses all further ones.
+    /// Called from the ChargePoint destructor: the websocket delivers these from a deferred thread, so
+    /// one can be in flight while members are destroyed (use-after-free). Blocks on an in-flight call.
+    ///
+    /// One-way by design, never call it on the stop()/restart() path: the owner is still entitled to
+    /// the connection state there.
     virtual void disarm_connection_callbacks() = 0;
-
-    /// \brief Resume delivering connected/disconnected notifications to the registered callbacks.
-    ///
-    /// Counterpart of disarm_connection_callbacks(), called from ChargePoint::start(). A restart
-    /// reuses the same ConnectivityManager, so the suppression set up by the preceding stop() has
-    /// to be lifted before the connection state can be reported again.
-    virtual void arm_connection_callbacks() = 0;
 
     /// \brief Suppress automatic reconnection without closing the current websocket.
     ///
@@ -239,9 +234,8 @@ private:
 
     Everest::SteadyTimer websocket_timer;
 
-    // Serializes invocation of the connected/disconnected callbacks (websocket thread) with
-    // disarm_connection_callbacks() (teardown thread) and arm_connection_callbacks() (start thread).
-    // While disarmed, the callbacks are suppressed.
+    // Serializes the connected/disconnected callbacks (websocket deferred thread) with
+    // disarm_connection_callbacks() (destroying thread). Disarming is permanent.
     std::mutex connection_callbacks_mutex;
     bool connection_callbacks_disarmed{false};
     // Written from the OCPP message-handler thread (suppress_reconnect/disconnect) and read from the
@@ -306,7 +300,6 @@ public:
     void connect(std::optional<std::int32_t> network_profile_slot = std::nullopt) override;
     void disconnect() override;
     void disarm_connection_callbacks() override;
-    void arm_connection_callbacks() override;
     void suppress_reconnect() override;
     bool send_to_websocket(const std::string& message) override;
     void on_network_disconnected(ocpp::v2::OCPPInterfaceEnum ocpp_interface) override;

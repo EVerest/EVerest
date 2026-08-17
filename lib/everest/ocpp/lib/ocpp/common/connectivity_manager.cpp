@@ -236,11 +236,6 @@ void ConnectivityManager::disarm_connection_callbacks() {
     this->connection_callbacks_disarmed = true;
 }
 
-void ConnectivityManager::arm_connection_callbacks() {
-    std::lock_guard<std::mutex> lock(this->connection_callbacks_mutex);
-    this->connection_callbacks_disarmed = false;
-}
-
 void ConnectivityManager::suppress_reconnect() {
     // Like disconnect() this clears the connect intent and cancels any pending reconnect timer, but
     // leaves the live socket open so queued messages can still flush. The websocket's own internal

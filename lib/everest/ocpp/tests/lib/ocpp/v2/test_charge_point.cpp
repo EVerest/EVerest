@@ -1005,20 +1005,16 @@ TEST_F(ChargePointConstructorTestFixtureV2, DerBlock_NotBuiltAtBoot_WhenNoEnable
     EXPECT_EQ(this->der_active_directives_emit_count, 0);
 }
 
-// stop() disarms the connection callbacks so a late websocket-thread callback cannot reach a charge point
-// being torn down. A restart calls start() again on the same ConnectivityManager, so start() must arm them
-// again; otherwise the connection state stays suppressed after the first stop().
-TEST_F(ChargePointConstructorTestFixtureV2, StartArmsConnectionCallbacks) {
+// stop() is the external "stop OCPP communication" control, not destruction: the charge point stays alive
+// and restartable, and its owner still gets the disconnect notification. Disarming here raced the deferred
+// delivery of that notification and swallowed it.
+TEST_F(ChargePointConstructorTestFixtureV2, StopKeepsConnectionCallbacksArmed) {
     configure_callbacks_with_mocks();
 
     auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
     ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
 
-    const ::testing::InSequence seq;
-    EXPECT_CALL(*connectivity_manager, arm_connection_callbacks()).Times(1);
-    EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(1);
-    EXPECT_CALL(*connectivity_manager, arm_connection_callbacks()).Times(1);
-    EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(1);
+    EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(0);
 
     ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
                                        connectivity_manager, "/tmp", callbacks);
@@ -1027,5 +1023,26 @@ TEST_F(ChargePointConstructorTestFixtureV2, StartArmsConnectionCallbacks) {
     charge_point.stop();
     charge_point.start(BootReasonEnum::ApplicationReset);
     charge_point.stop();
+
+    // Verify while still alive: destruction is the only disarm site.
+    ::testing::Mock::VerifyAndClearExpectations(connectivity_manager.get());
+}
+
+// The use-after-free is at destruction: a deferred callback landing while members are destroyed. The
+// destructor body runs before any member is gone and blocks on an in-flight callback.
+TEST_F(ChargePointConstructorTestFixtureV2, DestructionDisarmsConnectionCallbacks) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+
+    {
+        ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                           connectivity_manager, "/tmp", callbacks);
+        charge_point.start(BootReasonEnum::PowerUp);
+        charge_point.stop();
+
+        EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(1);
+    }
 }
 } // namespace ocpp::v2

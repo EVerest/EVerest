@@ -260,6 +260,11 @@ ChargePointImpl::ChargePointImpl(
     this->connectivity_manager->set_logging(this->logging);
 }
 
+ChargePointImpl::~ChargePointImpl() {
+    // Suppress deferred websocket callbacks before any member is destroyed.
+    this->connectivity_manager->disarm_connection_callbacks();
+}
+
 std::unique_ptr<ocpp::MessageQueue<v16::MessageType>> ChargePointImpl::create_message_queue() {
 
     // The StartTransaction.conf handler attempts to get the transaction based on the message id. The message id changes
@@ -1155,8 +1160,6 @@ bool ChargePointImpl::start(const std::map<int, ChargePointStatus>& connector_st
         init(connector_status_map, resuming_session_ids);
     }
     this->bootreason = bootreason;
-    // Lift the suppression a preceding stop() put in place, so the connection state is reported again.
-    this->connectivity_manager->arm_connection_callbacks();
     // Publish the initial default price before connecting (offline state at startup).
     this->publish_default_price(true);
     this->connectivity_manager->set_message_callback(
@@ -1299,10 +1302,9 @@ bool ChargePointImpl::stop() {
         this->stop_all_transactions();
 
         this->database_handler->close_connection();
+        // Callbacks stay armed: this only queues the disconnected notification the owner waits for.
+        // ~ChargePointImpl() disarms.
         this->connectivity_manager->disconnect();
-        // Disarm before tearing down the message queue: a late websocket-thread disconnect callback
-        // must not reach into members being destroyed.
-        this->connectivity_manager->disarm_connection_callbacks();
         this->message_queue->stop();
 
         this->stopped = true;

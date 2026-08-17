@@ -457,7 +457,9 @@ public:
         const std::optional<SecurityConfiguration>& security_configuration,
         const std::function<void(const std::string& message, MessageDirection direction)>& message_callback);
 
-    virtual ~ChargePointImpl() override = default;
+    /// \brief Disarms the connection callbacks so a deferred websocket callback cannot reach a
+    /// partly destroyed charge point.
+    virtual ~ChargePointImpl() override;
 
     /// \brief Allow to update the ChargePoint core information which will be sent in BootNotification.req
     void update_chargepoint_information(const std::string& vendor, const std::string& model,
