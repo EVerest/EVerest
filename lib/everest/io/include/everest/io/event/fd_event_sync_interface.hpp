@@ -5,9 +5,7 @@
 
 #pragma once
 
-#include <everest/io/event/handler_liveness.hpp>
-
-#include <memory>
+#include <everest/io/event/registration_record.hpp>
 
 namespace everest::lib::io::event {
 
@@ -94,11 +92,7 @@ protected:
     bool unregister_recorded_events();
 
 private:
-    /// True while a recorded registration is still in place with a live handler
-    bool has_recorded_registration() const;
-
-    std::weak_ptr<handler_liveness> m_registered_handler;
-    int m_registered_fd{-1};
+    registration_record m_record;
 };
 
 } // namespace everest::lib::io::event

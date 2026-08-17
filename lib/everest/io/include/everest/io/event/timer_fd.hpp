@@ -6,7 +6,7 @@
 #pragma once
 
 #include "unique_fd.hpp"
-#include <everest/io/event/handler_liveness.hpp>
+#include <everest/io/event/registration_record.hpp>
 
 #include <chrono>
 #include <memory>
@@ -150,8 +150,7 @@ private:
     unique_fd m_fd;
     long long m_to_ns{0};
     bool m_single_shot{false};
-    std::weak_ptr<handler_liveness> m_registered_handler;
-    int m_registered_fd{-1};
+    registration_record m_record;
 };
 
 } // namespace everest::lib::io::event

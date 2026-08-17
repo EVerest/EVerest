@@ -2,7 +2,6 @@
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
 
 #include <ctime>
-#include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/event/timer_fd.hpp>
 #include <stdexcept>
 #include <sys/timerfd.h>
@@ -79,31 +78,20 @@ bool timer_fd::set_timeout_ns(long long to) {
     return ::timerfd_settime(m_fd, 0, &timer, nullptr) == 0;
 }
 
-// Compares against the handler map rather than the record alone: a registration dropped by
-// descriptor leaves a record naming a live handler, and that must not block a new one.
 bool timer_fd::has_recorded_registration() const {
-    auto const live = m_registered_handler.lock();
-    return live and live->handler and live->handler->is_registered(m_registered_fd);
+    return m_record.active();
 }
 
 void timer_fd::record_registration(std::shared_ptr<handler_liveness> handler, int fd) {
-    m_registered_handler = std::move(handler);
-    m_registered_fd = fd;
+    m_record.record(std::move(handler), fd);
 }
 
 bool timer_fd::unregister_recorded_events(std::shared_ptr<handler_liveness> const& handler) {
-    if (m_registered_handler.lock() != handler) {
-        return false;
-    }
-    return unregister_recorded_events();
+    return m_record.drop_if(handler);
 }
 
 bool timer_fd::unregister_recorded_events() {
-    auto const live = m_registered_handler.lock();
-    auto const fd = m_registered_fd;
-    m_registered_handler.reset();
-    m_registered_fd = -1;
-    return live and live->handler and live->handler->remove_event_handler(fd);
+    return m_record.drop();
 }
 
 } // namespace everest::lib::io::event

@@ -12,6 +12,7 @@ target_sources(everest_io
     PRIVATE
         event/fd_event_handler.cpp
         event/fd_event_sync_interface.cpp
+        event/registration_record.cpp
         event/unique_fd.cpp
         event/event_fd.cpp
         event/timer_fd.cpp
