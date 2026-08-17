@@ -1064,6 +1064,8 @@ public:
                 (const CiString<50>&, const std::optional<CiString<255>>&, bool, bool, const std::optional<DateTime>&),
                 (override));
     MOCK_METHOD(void, sign_certificate_req, (const ocpp::CertificateSigningUseEnum&, bool), (override));
+    MOCK_METHOD(std::optional<StatusInfo>, is_sign_certificate_possible, (const ocpp::CertificateSigningUseEnum&),
+                (const, override));
     MOCK_METHOD(void, stop_certificate_signed_timer, (), (override));
     MOCK_METHOD(void, init_certificate_expiration_check_timers, (), (override));
     MOCK_METHOD(void, stop_certificate_expiration_check_timers, (), (override));
