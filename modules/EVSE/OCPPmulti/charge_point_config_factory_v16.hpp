@@ -11,6 +11,7 @@
 #include <everest/logging.hpp>
 
 #include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
+#include <ocpp/v2/device_model_storage_interface.hpp>
 #include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
 
 namespace module::config_factory_v16 {
@@ -48,11 +49,18 @@ struct config_factory_result_t {
 /// Initializes the device model database from the component configs, optionally performing a one-time
 /// migration from the legacy OCPP 1.6 JSON config on the first startup (see \ref Ocpp16DeviceModelParams),
 /// then returns a device-model-backed configuration after an integrity check.
+/// The returned configuration is backed by the composed device model storage: the SQLite device model
+/// database as source "OCPP" and \p everest_device_model as source "EVEREST" — the same composition the
+/// OCPP 2.x path provides to its ChargePoint.
 /// \param ocpp_share_path The share path of the OCPP module, used to resolve relative paths in the config.
 /// \param config The OCPP 1.6 device-model configuration parameters.
 /// \param n_evse The number of EVSEs, used for the device model integrity check.
+/// \param everest_device_model Registered as source "EVEREST" in the composed device model storage; must be
+///        fully constructed (components/variables created) before this call.
 /// \return The configuration and the custom config mappings it uses.
-config_factory_result_t create_charge_point_configuration(const std::filesystem::path& ocpp_share_path,
-                                                          const Ocpp16DeviceModelParams& config, std::int32_t n_evse);
+config_factory_result_t
+create_charge_point_configuration(const std::filesystem::path& ocpp_share_path, const Ocpp16DeviceModelParams& config,
+                                  std::int32_t n_evse,
+                                  std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> everest_device_model);
 
 } // namespace module::config_factory_v16
