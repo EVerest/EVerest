@@ -439,6 +439,7 @@ components:
             "min_phase_count_export": 1
             "supports_changing_phases_during_charging": true
             "max_plug_temperature_C": 80
+            "supports_cp_state_E": true
             "connector_type": "IEC62196Type2Cable"
     send_ac_pp_ampacity:
       name: send_ac_pp_ampacity
@@ -476,7 +477,8 @@ components:
     receive_request_reset:
       name: receive_request_reset
       title: 'Request to reset RCD'
-      summary: 'Reply to provided topic.'
+      summary: >-
+        Resets the RCD after a trigger. May not be supported by actual hardware.
       contentType: application/json
       payload:
         type: object
@@ -495,8 +497,7 @@ components:
     send_reply_reset:
       name: send_reply_reset
       title: 'Reply to request for RCD reset'
-      summary: >-
-        Resets the RCD after a trigger. May not be supported by actual hardware.
+      summary: 'Reply to provided topic.'
       contentType: application/json
       payload:
         $ref: '#/components/schemas/Success'
@@ -611,10 +612,6 @@ components:
     Current:
       description: Electrical current in milliampere (mA)
       type: number
-    Duration:
-      description: Duration in milliseconds (ms)
-      type: integer
-      minimum: 0
     Enabled:
       description: 'True: enabled. False: disabled.'
       type: boolean
@@ -632,6 +629,7 @@ components:
         - max_phase_count_export
         - min_phase_count_export
         - supports_changing_phases_during_charging
+        - supports_cp_state_E
         - connector_type
       properties:
         max_current_A_import:
@@ -677,6 +675,10 @@ components:
           type: boolean
         max_plug_temperature_C:
           type: number
+        supports_cp_state_E:
+          description: >-
+            Indicates whether setting Control Pilot to state E is supported (true) or not
+          type: boolean
         connector_type:
           description: Type of charging connector available at this EVSE
           type: string
