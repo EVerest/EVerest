@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ModDefOrg and Contributors to EVerest
+
+[package]
+name = "RsModDefMeter"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+everestrs-build = { workspace = true }
+
+[dependencies]
+everestrs = { workspace = true }
+# ModDef runtime: profile loading, the Device facade, run_command and the
+# Transport trait we bridge onto the serial_communication_hub.
+moddef-core = { git = "https://github.com/ModDefOrg/moddef-rs" }
+# Minimal futures executor: drives moddef-core's async Device/Transport methods
+# to completion synchronously on the calling thread (all awaits complete without
+# a reactor because the transport and delay are blocking).
+pollster = "0.3"
+anyhow = "1.0"
+log = "0.4"
+chrono = "0.4"
+# Optional, mirrors RsIskraMeter: the everestrs-generated code gates its mock
+# publisher behind these, so declaring them keeps `cfg(feature = "mockall")`
+# known (no warnings) and enables mock-based unit tests.
+mockall = { version = "0.12.1", optional = true }
+mockall_double = { version = "0.3.1", optional = true }
+
+[features]
+default = ["mockall", "mockall_double"]
