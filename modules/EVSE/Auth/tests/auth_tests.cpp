@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <chrono>
+#include <future>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <iostream>
@@ -1292,6 +1293,9 @@ TEST_F(AuthTest, test_reservation_with_authorization_global_reservations) {
     std::vector<int32_t> connectors{1, 2};
     ProvidedIdToken provided_token_1 = get_provided_token(VALID_TOKEN_1, connectors);
 
+    // Setup a promise to control execution order between threads (token shall be processed)
+    std::promise<void> token_accepted;
+
     // In general the token gets accepted but the connector that was picked up by the user is the only one that has
     // the correct connector for the reservation so it can not be used as it has to be available for the one who
     // reserved it.
@@ -1299,7 +1303,8 @@ TEST_F(AuthTest, test_reservation_with_authorization_global_reservations) {
                 Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Processing));
 
     EXPECT_CALL(mock_publish_token_validation_status_callback,
-                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Accepted));
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Accepted))
+        .WillOnce([&token_accepted](const ProvidedIdToken&, TokenValidationStatus) { token_accepted.set_value(); });
 
     EXPECT_CALL(mock_publish_token_validation_status_callback,
                 Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Rejected));
@@ -1307,7 +1312,14 @@ TEST_F(AuthTest, test_reservation_with_authorization_global_reservations) {
     // this token is not valid for the reservation
     std::thread t2([this, provided_token_1, &result]() { result = this->auth_handler->on_token(provided_token_1); });
     SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
-    std::thread t3([this, session_event]() { this->auth_handler->handle_session_event(2, session_event); });
+    std::thread t3([this, session_event, &token_accepted]() {
+        // Bounded wait so a regression fails the test instead of hanging it.
+        if (token_accepted.get_future().wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            ADD_FAILURE() << "Token was never accepted, not sending the plug in event";
+            return;
+        }
+        this->auth_handler->handle_session_event(2, session_event);
+    });
 
     t2.join();
     t3.join();
