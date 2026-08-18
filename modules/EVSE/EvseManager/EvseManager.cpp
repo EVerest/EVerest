@@ -342,25 +342,13 @@ void EvseManager::ready() {
         // Set up EVSE ID
         types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 
-        // Set up auth options for HLC
-        std::vector<types::iso15118::PaymentOption> payment_options;
-        // if pnc is disabled, disable contract installation and central contract validation
-        bool _contract_certificate_installation_enabled =
-            pnc_enabled ? contract_certificate_installation_enabled.load() : false;
-        bool _central_contract_validation_allowed = pnc_enabled ? central_contract_validation_allowed.load() : false;
-
-        if (config.payment_enable_eim) {
-            payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
-        }
-        if (pnc_enabled) {
-            payment_options.push_back(types::iso15118::PaymentOption::Contract);
-        }
-        if (!config.payment_enable_eim and !pnc_enabled) {
-            EVLOG_warning << "Both payment options are disabled! ExternalPayment is nevertheless enabled in this case.";
-            payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
-        }
-        r_hlc[0]->call_session_setup(payment_options, _contract_certificate_installation_enabled,
-                                     _central_contract_validation_allowed);
+        const bool include_contract_payment = true;
+        const bool pnc_is_enabled = pnc_enabled;
+        const bool supported_certificate_service = pnc_is_enabled and contract_certificate_installation_enabled;
+        const bool central_contract_validation = pnc_is_enabled and central_contract_validation_allowed;
+        const bool force_external_payment = false;
+        update_hlc_session_setup(include_contract_payment, supported_certificate_service, central_contract_validation,
+                                 force_external_payment);
 
         r_hlc[0]->subscribe_hlc_session_failed([this](types::evse_manager::HlcSessionFailedReasonEnum reason) {
             types::evse_manager::HlcSessionFailedEvent ev;
@@ -1266,8 +1254,8 @@ void EvseManager::ready() {
         }
     });
 
-    charger->signal_simple_event.connect([this](types::evse_manager::SessionEventEnum s) {
-        if (s == types::evse_manager::SessionEventEnum::SessionFinished) {
+    charger->signal_simple_event.connect([this](types::evse_manager::SessionEventEnum session_event) {
+        if (session_event == types::evse_manager::SessionEventEnum::SessionFinished) {
             // Reset EV information on Session start and end
             ev_info = types::evse_manager::EVInfo();
             p_evse->publish_ev_info(ev_info);
@@ -1277,35 +1265,22 @@ void EvseManager::ready() {
             return;
         }
 
-        if (s != types::evse_manager::SessionEventEnum::Authorized and
-            s != types::evse_manager::SessionEventEnum::SessionFinished) {
+        // Only Authorized and SessionFinished require an HLC payment option update.
+        if (session_event != types::evse_manager::SessionEventEnum::Authorized and
+            session_event != types::evse_manager::SessionEventEnum::SessionFinished) {
             return;
         }
 
-        std::vector<types::iso15118::PaymentOption> payment_options;
-        // if pnc is disabled, disable contract installation and central contract validation
-        bool _contract_certificate_installation_enabled =
-            pnc_enabled ? contract_certificate_installation_enabled.load() : false;
-        bool _central_contract_validation_allowed = pnc_enabled ? central_contract_validation_allowed.load() : false;
-
-        if (config.payment_enable_eim) {
-            payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
-        }
-        if (pnc_enabled and s == types::evse_manager::SessionEventEnum::SessionFinished) {
-            // PnC is enabled and this is a SessionFinished event -> enable Contract payment option
-            payment_options.push_back(types::iso15118::PaymentOption::Contract);
-        } else {
-            // We dont add contract if this is an Authorized event, as in this case the ISO15118 stack
-            // should not offer the contract option and certifiate installation service.
-            _contract_certificate_installation_enabled = false;
-        }
-
-        if (config.payment_enable_eim == false and pnc_enabled == false) {
-            EVLOG_warning << "Both payment options are disabled! ExternalPayment is nevertheless enabled in this case.";
-            payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
-        }
-        r_hlc[0]->call_session_setup(payment_options, _contract_certificate_installation_enabled,
-                                     _central_contract_validation_allowed);
+        // Offer Contract payment only when PnC is enabled and this is a SessionFinished event.
+        // For an Authorized event, do not offer Contract payment or the certificate installation service.
+        const bool include_contract_payment = session_event == types::evse_manager::SessionEventEnum::SessionFinished;
+        const bool pnc_is_enabled = pnc_enabled;
+        const bool supported_certificate_service =
+            include_contract_payment and pnc_is_enabled and contract_certificate_installation_enabled;
+        const bool central_contract_validation = pnc_is_enabled and central_contract_validation_allowed;
+        const bool force_external_payment = false;
+        update_hlc_session_setup(include_contract_payment, supported_certificate_service, central_contract_validation,
+                                 force_external_payment);
     });
 
     charger->signal_session_started_event.connect(
@@ -1319,29 +1294,24 @@ void EvseManager::ready() {
                 return;
             }
 
-            std::vector<types::iso15118::PaymentOption> payment_options;
-            // if pnc is disabled, disable contract installation and central contract validation
-            bool _contract_certificate_installation_enabled =
-                pnc_enabled ? contract_certificate_installation_enabled.load() : false;
-            bool _central_contract_validation_allowed =
-                pnc_enabled ? central_contract_validation_allowed.load() : false;
-
             if (start_reason == types::evse_manager::StartSessionReason::Authorized) {
                 // Session is already authorized, only use ExternalPayment in PaymentOptions
-                payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
-                _contract_certificate_installation_enabled = false;
-                _central_contract_validation_allowed = false;
+                const bool include_contract_payment = false;
+                const bool supported_certificate_service = false;
+                const bool central_contract_validation = false;
+                const bool force_external_payment = true;
+                update_hlc_session_setup(include_contract_payment, supported_certificate_service,
+                                         central_contract_validation, force_external_payment);
             } else {
                 // Set payment options according to configuration
-                if (config.payment_enable_eim) {
-                    payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
-                }
-                if (pnc_enabled) {
-                    payment_options.push_back(types::iso15118::PaymentOption::Contract);
-                }
+                const bool include_contract_payment = true;
+                const bool pnc_is_enabled = pnc_enabled;
+                const bool supported_certificate_service = pnc_is_enabled and contract_certificate_installation_enabled;
+                const bool central_contract_validation = pnc_is_enabled and central_contract_validation_allowed;
+                const bool force_external_payment = false;
+                update_hlc_session_setup(include_contract_payment, supported_certificate_service,
+                                         central_contract_validation, force_external_payment);
             }
-            r_hlc[0]->call_session_setup(payment_options, _contract_certificate_installation_enabled,
-                                         _central_contract_validation_allowed);
         });
 
     invoke_ready(*p_evse);
@@ -1352,15 +1322,8 @@ void EvseManager::ready() {
     if (config.ac_with_soc) {
         setup_fake_DC_mode();
     } else {
-        charger->setup(config.has_ventilation,
-                       (config.charge_mode == "DC" ? Charger::ChargeMode::DC : Charger::ChargeMode::AC), hlc_enabled,
-                       config.ac_hlc_use_5percent, config.ac_enforce_hlc, false,
-                       config.soft_over_current_tolerance_percent, config.soft_over_current_measurement_noise_A,
-                       config.switch_3ph1ph_delay_s, config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms,
-                       config.state_F_after_fault_ms, config.fail_on_powermeter_errors, config.raise_mrec9,
-                       config.sleep_before_enabling_pwm_hlc_mode_ms,
-                       utils::get_session_id_type_from_string(config.session_id_type),
-                       config.hlc_charge_loop_without_energy_timeout_s);
+        const auto charge_mode = config.charge_mode == "DC" ? Charger::ChargeMode::DC : Charger::ChargeMode::AC;
+        charger->setup(get_charger_setup_config(charge_mode, false));
     }
 
     telemetryThreadHandle = std::thread([this]() {
@@ -1540,16 +1503,56 @@ void EvseManager::switch_AC_mode() {
     setup_AC_mode();
 }
 
+void EvseManager::update_hlc_session_setup(bool include_contract_payment, bool supported_certificate_service,
+                                           bool central_contract_validation, bool force_external_payment) {
+    // Callers must disable the certificate service and central contract validation when PnC is disabled.
+    if (not hlc_enabled or r_hlc.empty()) {
+        return;
+    }
+
+    std::vector<types::iso15118::PaymentOption> payment_options;
+
+    if (force_external_payment or config.payment_enable_eim) {
+        payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
+    }
+
+    if (include_contract_payment and pnc_enabled) {
+        payment_options.push_back(types::iso15118::PaymentOption::Contract);
+    }
+
+    if (not force_external_payment and not config.payment_enable_eim and not pnc_enabled) {
+        EVLOG_warning << "Both payment options are disabled! ExternalPayment is nevertheless enabled in this case.";
+        payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
+    }
+
+    r_hlc[0]->call_session_setup(payment_options, supported_certificate_service, central_contract_validation);
+}
+
+Charger::SetupConfig EvseManager::get_charger_setup_config(Charger::ChargeMode charge_mode,
+                                                           bool ac_with_soc_timeout) const {
+    return {config.has_ventilation,
+            charge_mode,
+            hlc_enabled,
+            config.ac_hlc_use_5percent,
+            config.ac_enforce_hlc,
+            ac_with_soc_timeout,
+            config.soft_over_current_tolerance_percent,
+            config.soft_over_current_measurement_noise_A,
+            config.switch_3ph1ph_delay_s,
+            config.switch_3ph1ph_cp_state,
+            config.soft_over_current_timeout_ms,
+            config.state_F_after_fault_ms,
+            config.fail_on_powermeter_errors,
+            config.raise_mrec9,
+            config.sleep_before_enabling_pwm_hlc_mode_ms,
+            utils::get_session_id_type_from_string(config.session_id_type),
+            config.hlc_charge_loop_without_energy_timeout_s};
+}
+
 // This sets up a fake DC mode that is just supposed to work until we get the SoC.
 // It is only used for AC<>DC<>AC<>DC mode to get AC charging with SoC.
 void EvseManager::setup_fake_DC_mode() {
-    charger->setup(config.has_ventilation, Charger::ChargeMode::DC, hlc_enabled, config.ac_hlc_use_5percent,
-                   config.ac_enforce_hlc, false, config.soft_over_current_tolerance_percent,
-                   config.soft_over_current_measurement_noise_A, config.switch_3ph1ph_delay_s,
-                   config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms, config.state_F_after_fault_ms,
-                   config.fail_on_powermeter_errors, config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms,
-                   utils::get_session_id_type_from_string(config.session_id_type),
-                   config.hlc_charge_loop_without_energy_timeout_s);
+    charger->setup(get_charger_setup_config(Charger::ChargeMode::DC, false));
 
     types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 
@@ -1586,13 +1589,7 @@ void EvseManager::setup_fake_DC_mode() {
 }
 
 void EvseManager::setup_AC_mode() {
-    charger->setup(config.has_ventilation, Charger::ChargeMode::AC, hlc_enabled, config.ac_hlc_use_5percent,
-                   config.ac_enforce_hlc, true, config.soft_over_current_tolerance_percent,
-                   config.soft_over_current_measurement_noise_A, config.switch_3ph1ph_delay_s,
-                   config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms, config.state_F_after_fault_ms,
-                   config.fail_on_powermeter_errors, config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms,
-                   utils::get_session_id_type_from_string(config.session_id_type),
-                   config.hlc_charge_loop_without_energy_timeout_s);
+    charger->setup(get_charger_setup_config(Charger::ChargeMode::AC, true));
 
     types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 

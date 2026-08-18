@@ -1544,38 +1544,31 @@ bool Charger::switch_three_phases_while_charging(bool n) {
     return true;
 }
 
-void Charger::setup(bool has_ventilation, const ChargeMode _charge_mode, bool _ac_hlc_enabled,
-                    bool _ac_hlc_use_5percent, bool _ac_enforce_hlc, bool _ac_with_soc_timeout,
-                    float _soft_over_current_tolerance_percent, float _soft_over_current_measurement_noise_A,
-                    const int _switch_3ph1ph_delay_s, const std::string _switch_3ph1ph_cp_state,
-                    const int _soft_over_current_timeout_ms, const int _state_F_after_fault_ms,
-                    const bool fail_on_powermeter_errors, const bool raise_mrec9,
-                    const int sleep_before_enabling_pwm_hlc_mode_ms, const utils::SessionIdType session_id_type,
-                    const int hlc_charge_loop_without_energy_timeout_s) {
+void Charger::setup(const SetupConfig& config) {
     // set up board support package
-    bsp->setup(has_ventilation);
+    bsp->setup(config.has_ventilation);
 
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_setup);
     // cache our config variables
-    config_context.charge_mode = _charge_mode;
-    ac_hlc_enabled_current_session = config_context.ac_hlc_enabled = _ac_hlc_enabled;
-    config_context.ac_hlc_use_5percent = _ac_hlc_use_5percent;
-    config_context.ac_enforce_hlc = _ac_enforce_hlc;
-    config_context.soft_over_current_timeout_ms = _soft_over_current_timeout_ms;
-    shared_context.ac_with_soc_timeout = _ac_with_soc_timeout;
+    config_context.charge_mode = config.charge_mode;
+    ac_hlc_enabled_current_session = config_context.ac_hlc_enabled = config.ac_hlc_enabled;
+    config_context.ac_hlc_use_5percent = config.ac_hlc_use_5percent;
+    config_context.ac_enforce_hlc = config.ac_enforce_hlc;
+    config_context.soft_over_current_timeout_ms = config.soft_over_current_timeout_ms;
+    shared_context.ac_with_soc_timeout = config.ac_with_soc_timeout;
     shared_context.ac_with_soc_timer = 3600000;
-    soft_over_current_tolerance_percent = _soft_over_current_tolerance_percent;
-    soft_over_current_measurement_noise_A = _soft_over_current_measurement_noise_A;
+    soft_over_current_tolerance_percent = config.soft_over_current_tolerance_percent;
+    soft_over_current_measurement_noise_A = config.soft_over_current_measurement_noise_A;
 
-    config_context.switch_3ph1ph_delay_s = _switch_3ph1ph_delay_s;
-    config_context.switch_3ph1ph_cp_state_F = _switch_3ph1ph_cp_state == "F";
+    config_context.switch_3ph1ph_delay_s = config.switch_3ph1ph_delay_s;
+    config_context.switch_3ph1ph_cp_state_F = config.switch_3ph1ph_cp_state == "F";
 
-    config_context.state_F_after_fault_ms = _state_F_after_fault_ms;
-    config_context.fail_on_powermeter_errors = fail_on_powermeter_errors;
-    config_context.raise_mrec9 = raise_mrec9;
-    config_context.sleep_before_enabling_pwm_hlc_mode_ms = sleep_before_enabling_pwm_hlc_mode_ms;
-    config_context.session_id_type = session_id_type;
-    config_context.hlc_charge_loop_without_energy_timeout_s = hlc_charge_loop_without_energy_timeout_s;
+    config_context.state_F_after_fault_ms = config.state_F_after_fault_ms;
+    config_context.fail_on_powermeter_errors = config.fail_on_powermeter_errors;
+    config_context.raise_mrec9 = config.raise_mrec9;
+    config_context.sleep_before_enabling_pwm_hlc_mode_ms = config.sleep_before_enabling_pwm_hlc_mode_ms;
+    config_context.session_id_type = config.session_id_type;
+    config_context.hlc_charge_loop_without_energy_timeout_s = config.hlc_charge_loop_without_energy_timeout_s;
 
     if (config_context.charge_mode == ChargeMode::AC and config_context.ac_hlc_enabled)
         EVLOG_info << "AC HLC mode enabled.";
