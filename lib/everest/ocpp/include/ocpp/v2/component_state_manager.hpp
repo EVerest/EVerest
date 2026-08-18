@@ -54,11 +54,6 @@ struct FullConnectorStatus {
     bool occupied;
     /// \brief True if the connector is explicitly set to unavailable
     bool unavailable;
-
-    /// \brief Translates the individual state to an Available/Unavailable/Occupied/Reserved/Faulted state
-    /// This does NOT take into account the state of the EVSE or CS,
-    /// and is intended to be used internally by the ComponentStateManagerInterface.
-    ConnectorStatusEnum to_connector_status() const;
 };
 
 class ComponentStateManagerInterface {
