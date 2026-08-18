@@ -87,6 +87,9 @@ Charger::~Charger() {
     cp_state_F();
     // need to send an event to wake up processing
     error_handling_event_queue.push(ErrorHandlingEvents::ForceEmergencyShutdown);
+    // The event above may already be consumed when stop() sets the exit signal below, leaving
+    // the error thread blocked in wait() forever with stop() never joining it.
+    error_handling_event_queue.stop();
     error_thread_handle.stop();
 }
 
@@ -120,9 +123,7 @@ void Charger::main_thread() {
 
 void Charger::error_thread() {
     for (;;) {
-        if (error_thread_handle.shouldExit()) {
-            break;
-        }
+        // blocks until an event is pushed or the queue is stopped
         auto events = error_handling_event_queue.wait();
         if (!events.empty()) {
             Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_signal_loop);
@@ -146,6 +147,12 @@ void Charger::error_thread() {
                     break;
                 }
             }
+        }
+
+        // checked after processing so events queued before the shutdown are still handled, and
+        // via is_stopped() too because shouldExit() may still be false when wait() is re-entered
+        if (error_thread_handle.shouldExit() or error_handling_event_queue.is_stopped()) {
+            break;
         }
     }
 }
