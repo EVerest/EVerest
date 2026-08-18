@@ -1,4 +1,5 @@
 generate_config_run_script(CONFIG sil)
+generate_config_run_script(CONFIG sil-ac-soc)
 generate_config_run_script(CONFIG sil-rpcapi)
 generate_config_run_script(CONFIG sil-two-evse)
 generate_config_run_script(CONFIG sil-two-evse-rpcapi)
