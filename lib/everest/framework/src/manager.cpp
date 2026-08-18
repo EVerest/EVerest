@@ -28,6 +28,10 @@
 #include <framework/everest.hpp>
 #include <framework/runtime.hpp>
 #include <utils/config.hpp>
+#include <utils/config/config_service_core.hpp>
+#include <utils/config/slot_manager.hpp>
+#include <utils/config/storage_userconfig.hpp>
+#include <utils/date.hpp>
 #include <utils/mqtt_abstraction.hpp>
 #include <utils/status_fifo.hpp>
 
@@ -281,11 +285,13 @@ void Manager::publish_startup_metadata(const RuntimeContext& ctx) const {
         interface_names.push_back(interface_definition.key());
     }
 
-    MqttMessagePayload payload{MqttMessageType::GetConfigResponse, interface_names};
+    MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, interface_names};
+
     mqtt_abstraction.publish(fmt::format("{}interfaces", ms.mqtt_settings.everest_prefix), payload, QOS::QOS2, true);
 
     for (const auto& interface_definition : interface_definitions.items()) {
-        MqttMessagePayload interface_definition_payload{MqttMessageType::GetConfigResponse,
+
+        MqttMessagePayload interface_definition_payload{MqttMessageType::ConfigurationResponse,
                                                         interface_definition.value()};
         mqtt_abstraction.publish(
             fmt::format("{}interface_definitions/{}", ms.mqtt_settings.everest_prefix, interface_definition.key()),
@@ -298,11 +304,14 @@ void Manager::publish_startup_metadata(const RuntimeContext& ctx) const {
         type_names.push_back(type_definition.key());
     }
 
-    MqttMessagePayload type_names_payload{MqttMessageType::GetConfigResponse, type_names};
+    MqttMessagePayload type_names_payload{MqttMessageType::ConfigurationResponse, type_names};
+
     mqtt_abstraction.publish(fmt::format("{}types", ms.mqtt_settings.everest_prefix), type_names_payload, QOS::QOS2,
                              true);
     for (const auto& type_definition : type_definitions.items()) {
-        MqttMessagePayload type_definition_payload{MqttMessageType::GetConfigResponse, type_definition.value()};
+
+        MqttMessagePayload type_definition_payload{MqttMessageType::ConfigurationResponse, type_definition.value()};
+
         // type_definition keys already start with a / so omit it in the topic name
         mqtt_abstraction.publish(
             fmt::format("{}type_definitions{}", ms.mqtt_settings.everest_prefix, type_definition.key()),
@@ -310,13 +319,17 @@ void Manager::publish_startup_metadata(const RuntimeContext& ctx) const {
     }
 
     const auto settings = config.get_settings();
-    MqttMessagePayload settings_payload{MqttMessageType::GetConfigResponse, settings};
+
+    MqttMessagePayload settings_payload{MqttMessageType::ConfigurationResponse, settings};
+
     mqtt_abstraction.publish(fmt::format("{}settings", ms.mqtt_settings.everest_prefix), settings_payload, QOS::QOS2,
                              true);
 
     if (ms.runtime_settings.validate_schema) {
         const auto schemas = config.get_schemas();
-        MqttMessagePayload schemas_payload{MqttMessageType::GetConfigResponse, schemas};
+
+        MqttMessagePayload schemas_payload{MqttMessageType::ConfigurationResponse, schemas};
+
         mqtt_abstraction.publish(fmt::format("{}schemas", ms.mqtt_settings.everest_prefix), schemas_payload, QOS::QOS2,
                                  true);
     }
@@ -325,19 +338,23 @@ void Manager::publish_startup_metadata(const RuntimeContext& ctx) const {
     for (const auto& manifest : manifests.items()) {
         auto manifest_copy = manifest.value();
         manifest_copy.erase("config");
-        MqttMessagePayload manifest_payload{MqttMessageType::GetConfigResponse, manifest_copy};
+
+        MqttMessagePayload manifest_payload{MqttMessageType::ConfigurationResponse, manifest_copy};
+
         mqtt_abstraction.publish(fmt::format("{}manifests/{}", ms.mqtt_settings.everest_prefix, manifest.key()),
                                  manifest_payload, QOS::QOS2, true);
     }
 
     const auto module_names = config.get_module_names();
-    MqttMessagePayload module_names_payload{MqttMessageType::GetConfigResponse, module_names};
+
+    MqttMessagePayload module_names_payload{MqttMessageType::ConfigurationResponse, module_names};
+
     mqtt_abstraction.publish(fmt::format("{}module_names", ms.mqtt_settings.everest_prefix), module_names_payload,
                              QOS::QOS2, true);
 }
 
 /// \brief Unregister all module ready handlers and clear tracked ready state.
-void Manager::unregister_module_ready_handlers(ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
+void Manager::unregister_module_ready_handlers(const ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
     ModulesReadyType modules_ready_moved;
     {
         const std::lock_guard<std::mutex> lck(modules_ready_mutex_);
@@ -358,13 +375,13 @@ void Manager::unregister_module_ready_handlers(ManagerConfig& config, MQTTAbstra
     }
 }
 
-void Manager::cleanup_modules_state(ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
+void Manager::cleanup_modules_state(const ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
     unregister_module_ready_handlers(config, mqtt_abstraction);
     mqtt_abstraction.clear_retained_topics();
 }
 
 /// \brief Stop all remaining module processes, escalating SIGTERM to SIGKILL.
-void Manager::shutdown_modules(const std::map<pid_t, std::string>& modules, ManagerConfig& config,
+void Manager::shutdown_modules(const std::map<pid_t, std::string>& modules, const ManagerConfig& config,
                                MQTTAbstraction& mqtt_abstraction) {
 
     unregister_module_ready_handlers(config, mqtt_abstraction);
@@ -391,30 +408,6 @@ void Manager::shutdown_modules(const std::map<pid_t, std::string>& modules, Mana
 }
 
 namespace {
-
-/// \brief Select configuration boot mode from CLI options.
-ConfigBootMode parse_config_boot_mode(const std::string& config_opt, const std::string& db_opt, const bool db_init) {
-    if (config_opt.empty() and db_opt.empty()) {
-        // no config or db option given, use default
-        return ConfigBootMode::YamlFile;
-    }
-    if (!config_opt.empty() && !db_opt.empty()) {
-        if (db_init == false) {
-            throw BootException("Both --config and --db options are set, but no --db-init option is given. "
-                                "This is not allowed.");
-        }
-        return ConfigBootMode::DatabaseInit;
-    }
-    if (!config_opt.empty()) {
-        // only config option given, use yaml file
-        return ConfigBootMode::YamlFile;
-    }
-    if (!db_opt.empty()) {
-        // only db option given, use database
-        return ConfigBootMode::Database;
-    }
-    throw std::logic_error("Could not parse config boot source, this should never happen.");
-}
 
 /// \brief Disconnect MQTT before the manager process exits (after controller shutdown).
 void disconnect_mqtt(MQTTAbstraction& mqtt_abstraction) {
@@ -509,16 +502,51 @@ int Manager::transition_to_exiting_after_shutdown(RuntimeContext& ctx, ManagerAd
     return exit_code;
 }
 
-void Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
+Manager::RestartOutcome Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
     // Cleanup with the OLD config before the reload below. Required because this function is also
     // called from advance_lifecycle_state_if_ready() (crash-with-restart path) which does not go
     // through handle_finish_* finalize functions.
-    cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
+    // ctx.config is null when the boot never produced a valid configuration (run() leaves its local
+    // shared_ptr empty and RuntimeContext holds a reference to it), which is reachable from here via
+    // an admin restart requested while idle.
+    if (ctx.config != nullptr) {
+        cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
+    }
 
-    ctx.config = std::make_shared<ManagerConfig>(ctx.ms);
-    module_handles_ = handle_start_modules(ctx);
+    // The drain is complete and the restart intent is being acted on now, so the shutdown
+    // bookkeeping has served its purpose - on BOTH outcomes. Leaving shutdown_cause_ == Restart on
+    // the failure path made advance_lifecycle_state_if_ready() re-enter this function on every
+    // main-loop iteration (its transition_to(Idle) is then a no-op self-transition that still
+    // reported TransitionApplied), starving handle_controller_ipc_poll() and handle_signal_poll():
+    // 100% CPU and SIGINT/SIGTERM ignored. handle_finish_crash_recovery() already clears it; this is
+    // that missing symmetry. Deliberately not reset: unexpected_module_exit_count_, which must keep
+    // bounding crash recovery.
     reset_shutdown_state();
-    EVLOG_info << "Modules restart initiated with reloaded configuration.";
+
+    if (reload_and_update_context(ctx)) {
+        if (not ctx.config->get_module_configurations().empty()) {
+            module_handles_ = handle_start_modules(ctx);
+            EVLOG_info << "Modules restart initiated with reloaded configuration.";
+            return RestartOutcome::Restarted;
+        }
+        // An empty module list is never a valid start condition (consistent with the boot-time
+        // rule), so a reload that yields no modules is a failed restart.
+        EVLOG_error << "Reloaded configuration contains no modules.";
+    }
+
+    if (not idle_on_failure_) {
+        EVLOG_error << "Failed to reload a startable configuration; manager is exiting. Pass --idle-on-failure to "
+                       "keep it running in Idle instead.";
+        return RestartOutcome::ExitFailure;
+    }
+
+    EVLOG_error << "Failed to reload a startable configuration. Manager stays idle; load a corrected "
+                   "configuration and request another restart.";
+    transition_to(ManagerState::Idle);
+    // After the transition: the Idle branch of the state-transition handler settles a transitional
+    // status but preserves FailedToStart, so the order is not load-bearing - it just reads correctly.
+    config_service_core_->notice_cfg_validation_failed();
+    return RestartOutcome::StayedIdle;
 }
 
 std::optional<int> Manager::handle_finish_normal_shutdown(RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
@@ -537,6 +565,12 @@ std::optional<int> Manager::handle_finish_normal_shutdown(RuntimeContext& ctx, M
         return transition_to_exiting_after_shutdown(ctx, admin_panel, EXIT_SUCCESS, true);
     }
 
+    // A Normal-cause drain that finishes without SIGINT/SIGTERM stays alive in Idle
+    // UNCONDITIONALLY - deliberately not gated by --idle-on-failure, which covers failure
+    // outcomes only. Currently unreachable (ShutdownCause::Normal is only set together with
+    // sigint_received_ in handle_signal()), but a future explicit "stop modules" command
+    // (controller IPC / Configuration API) is a requested stop, not a failure, and must land
+    // here and keep the manager and its Configuration API available.
     if (!bad_modules.empty()) {
         EVLOG_warning << "Modules that did not shut down cleanly:" << bad_modules;
     }
@@ -561,10 +595,15 @@ std::optional<int> Manager::handle_finish_crash_recovery(RuntimeContext& ctx, Ma
     }
 
     cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
-    reset_shutdown_state();
+    shutdown_info_.clear();
+    shutdown_start_time_ = std::nullopt;
+    shutdown_cause_ = ShutdownCause::None;
+    force_terminate_start_time_ = std::nullopt;
+    force_kill_sent_ = false;
 
-    // Stay idle only when the user has not requested a stop via SIGINT/SIGTERM.
-    if (recover_module_crashes_ && !sigint_received_) {
+    // Stay idle only when --idle-on-failure asks for it and the user has not requested a stop via
+    // SIGINT/SIGTERM.
+    if (recover_module_crashes_ && idle_on_failure_ && !sigint_received_) {
         return transition_to_idle_after_shutdown(
             "Crash recovery completed, manager is idle after module shutdown. Send SIGINT/SIGTERM to stop.");
     }
@@ -579,7 +618,9 @@ std::optional<int> Manager::handle_finalize_shutdown_transition(RuntimeContext& 
         return handle_finish_crash_recovery(ctx, admin_panel);
     }
     if (restart_requested) {
-        handle_restart_modules_after_shutdown(ctx);
+        if (handle_restart_modules_after_shutdown(ctx) == RestartOutcome::ExitFailure) {
+            return transition_to_exiting_after_shutdown(ctx, admin_panel, EXIT_FAILURE, false);
+        }
         return std::nullopt;
     }
     return handle_finish_normal_shutdown(ctx, admin_panel);
@@ -605,12 +646,57 @@ void Manager::handle_initiate_graceful_shutdown(const std::chrono::steady_clock:
     }
 }
 
+bool Manager::reload_and_update_context(RuntimeContext& ctx) {
+    config_service_core_->reinitialize_from_db();
+    auto module_cfg_ptr = config_service_core_->get_active_module_configurations();
+    // create a copy, because load_and_validate_config below will take ownership
+    everest::config::ModuleConfigurations module_cfg = *module_cfg_ptr;
+
+    std::shared_ptr<const ManagerConfig> config;
+    try {
+        config = load_and_validate_config(ctx.ms, module_cfg);
+    } catch (const std::exception& e) {
+        EVLOG_error << "Failed to load and validate the module configuration: " << e.what();
+        return false;
+    } catch (...) {
+        EVLOG_error << "Failed to load and validate the module configuration (unknown error).";
+        return false;
+    }
+
+    ctx.standalone_modules = collect_standalone_modules(*config);
+    ctx.ignored_modules = collect_ignored_modules();
+    ctx.config = config;
+
+    return true;
+}
+
 // ---- Core run loop ----------------------------------------------------------
+
+namespace {
+// Dump the validated module configurations and manifests as JSON files into dump_path.
+void dump_config_and_manifests(const Everest::ManagerConfig& config, const fs::path& dump_path) {
+    EVLOG_debug << fmt::format("Dumping validated config and manifests into '{}'", dump_path.string());
+
+    const auto config_dump_path = dump_path / "config.json";
+    std::ofstream output_config_stream(config_dump_path);
+    output_config_stream << json(config.get_module_configurations()).dump(DUMP_INDENT);
+
+    const auto manifests = config.get_manifests();
+    for (const auto& module : manifests.items()) {
+        const std::string filename = module.key() + ".json";
+        const auto module_output_path = dump_path / filename;
+        std::ofstream output_stream(module_output_path);
+
+        output_stream << module.value().dump(DUMP_INDENT);
+    }
+}
+} // namespace
 
 int Manager::run() {
     const bool check = (vm_.count("check") != 0);
     auto status_fifo = StatusFifo::create_from_path(vm_["status-fifo"].as<std::string>());
     status_fifo_ = &status_fifo;
+    const bool boot_into_idle = vm_.count("into-idle") != 0;
     sigint_received_ = false;
     shutdown_cause_ = ShutdownCause::None;
     transition_to(ManagerState::Initializing);
@@ -624,8 +710,7 @@ int Manager::run() {
     const auto config_opt = parse_string_option(vm_, "config");
     const auto conf_opt = parse_string_option(vm_, "conf");
     const auto db_opt = parse_string_option(vm_, "db");
-    const auto db_init = vm_.count("db-init") != 0;
-    ConfigBootMode boot_mode = parse_config_boot_mode(config_opt, db_opt, db_init);
+    const bool reset_from_yaml = (vm_.count("reset-from-yaml") != 0);
 
     // --conf is a deprecated alias for --config; using both at once is ambiguous, so reject it.
     if (vm_.count("conf") != 0) {
@@ -638,21 +723,14 @@ int Manager::run() {
     // Resolve the deprecated alias: fall back to --conf when --config is not given.
     const auto config_path = config_opt.empty() ? conf_opt : config_opt;
 
-    ManagerSettings ms;
+    const bool have_config = not config_path.empty();
+    const auto boot_source = resolve_boot_source(config_path, db_opt, reset_from_yaml, vm_.count("db-init") != 0);
 
-    switch (boot_mode) {
-    case ConfigBootMode::YamlFile:
-        ms = ManagerSettings(prefix_opt, config_path);
-        break;
-    case ConfigBootMode::Database:
-        ms = ManagerSettings(prefix_opt, db_opt, DatabaseTag{});
-        break;
-    case ConfigBootMode::DatabaseInit:
-        ms = ManagerSettings(prefix_opt, config_path, db_opt);
-        break;
-    default:
-        throw BootException(fmt::format("Invalid boot source: {}", static_cast<int>(boot_mode)));
-    }
+    // DatabaseOnly runs on built-in defaults (no default.yaml fallback); the other modes resolve
+    // the config file, falling back to the default config lookup when no --config was given.
+    ManagerSettings ms = boot_source.mode == BootMode::DatabaseOnly
+                             ? ManagerSettings(ManagerSettings::WithoutConfig{}, prefix_opt, boot_source.db_path)
+                             : ManagerSettings(prefix_opt, boot_source.config_path, boot_source.db_path);
 
     // CLI override for mqtt_everest_prefix (e.g. for parallel test execution).
     if (vm_.count("mqtt_everest_prefix") != 0) {
@@ -708,59 +786,154 @@ int Manager::run() {
         return EXIT_SUCCESS;
     }
 
-    const bool retain_topics = (vm_.count("retain-topics") != 0);
-
-    std::shared_ptr<ManagerConfig> config; // TODO: maybe this can stay unique when we re-work start_modules()
-    try {
-        config = load_and_validate_config(ms);
-    } catch (...) {
-        return EXIT_FAILURE;
-    }
-
-    // dump config if requested
-    if (vm_.count("dump")) {
-        const auto dump_path = fs::path(vm_["dump"].as<std::string>());
-        EVLOG_debug << fmt::format("Dumping validated config and manifests into '{}'", dump_path.string());
-
-        const auto config_dump_path = dump_path / "config.json";
-
-        std::ofstream output_config_stream(config_dump_path);
-
-        output_config_stream << json(config->get_module_configurations()).dump(DUMP_INDENT);
-
-        const auto manifests = config->get_manifests();
-
-        for (const auto& module : manifests.items()) {
-            const std::string filename = module.key() + ".json";
-            const auto module_output_path = dump_path / filename;
-            std::ofstream output_stream(module_output_path);
-
-            output_stream << module.value().dump(DUMP_INDENT);
-        }
-    }
-
-    // only config check (and or config dumping) was requested, log check result and exit
+    // --check validates the YAML given via --config and exits. It must run before any database
+    // access: checking a config is a read-only diagnostic and must neither seed the database nor
+    // be overridden by an existing database slot (nor require an MQTT broker).
     if (check) {
-        EVLOG_debug << "Config is valid, terminating as requested";
+        if (not have_config) {
+            EVLOG_error << "--check requires --config; there is no YAML to validate.";
+            return EXIT_FAILURE;
+        }
+        try {
+            const ManagerConfig validated_config(ms);
+            if (vm_.count("dump")) {
+                dump_config_and_manifests(validated_config, fs::path(vm_["dump"].as<std::string>()));
+            }
+        } catch (const std::exception& e) {
+            EVLOG_error << "Config is invalid: " << e.what();
+            return EXIT_FAILURE;
+        }
+        EVLOG_info << "Config is valid, terminating as requested";
         return EXIT_SUCCESS;
     }
 
-    std::vector<std::string> standalone_modules = collect_standalone_modules(*config);
-    std::vector<std::string> ignored_modules = collect_ignored_modules();
+    {
+        auto bs = init_database_bootstrap(ms, reset_from_yaml);
+        db_connection_ = std::move(bs.db_connection);
+        if (not bs.module_configs_initialized) {
+            // no valid database entry AND it's impossible to write one
+            // it would be brave to continue here
+            EVLOG_critical << "Couldn't initialize the configuration database!";
+            return EXIT_FAILURE;
+        }
+    }
 
-    auto mqtt_abstraction = create_and_connect_mqtt(ms);
+    // Without --db the database is in-memory and dies with the process; runtime configuration
+    // writes are then additionally persisted to the user-config YAML, which the config parser
+    // merges back into the config on the next start (the pre-database write behavior).
+    std::unique_ptr<everest::config::StorageInterface> persistence_mirror;
+    if (boot_source.mode == BootMode::YamlWithInMemoryDb) {
+        const auto user_config_path = ms.config_file.parent_path() / "user-config" / ms.config_file.filename();
+        persistence_mirror = std::make_unique<everest::config::UserConfigStorage>(user_config_path);
+    }
+    config_service_core_ =
+        std::make_unique<config::ConfigServiceCore>(ms, db_connection_, std::move(persistence_mirror));
+
+    std::unique_ptr<MQTTAbstraction> mqtt_abstraction = create_and_connect_mqtt(ms);
     if (!mqtt_abstraction) {
         return EXIT_FAILURE;
     }
 
-    auto config_service = std::make_unique<config::ConfigService>(*mqtt_abstraction, config);
+    const bool retain_topics = (vm_.count("retain-topics") != 0);
+
+    std::shared_ptr<const Everest::ManagerConfig> config;
+    std::vector<std::string> standalone_modules;
+    std::vector<std::string> ignored_modules;
 
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
                                ms,     status_fifo,       retain_topics};
-    if (vm_.count("into-idle") == 0) {
-        module_handles_ = handle_start_modules(runtime_ctx);
-    } else {
+
+    bool runtime_ctx_has_valid_config = reload_and_update_context(runtime_ctx);
+
+    if (vm_.count("dump")) {
+        if (not runtime_ctx_has_valid_config) {
+            // runtime_ctx.config is null in this case; there is nothing to dump.
+            EVLOG_error << "Cannot dump config: no valid module configuration is available.";
+            return EXIT_FAILURE;
+        }
+        dump_config_and_manifests(*runtime_ctx.config, fs::path(vm_["dump"].as<std::string>()));
+    }
+
+    auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core_);
+
+    config_service_core_->register_set_runtime_parameter_handler(
+        [&config_service](const everest::config::ConfigurationParameterIdentifier& cfg_param_id,
+                          const std::string& value) {
+            const auto result = config_service->cmd_set_cfg_param(cfg_param_id, value);
+            if (result) {
+                if (result->status == Everest::config::SetResponseStatus::Accepted) {
+                    return Everest::config::SetParameterResponse::ModuleReplied_Applied;
+                } else if (result->status == Everest::config::SetResponseStatus::RebootRequired) {
+                    return Everest::config::SetParameterResponse::ModuleReplied_RequiresRestart;
+                } else {
+                    return Everest::config::SetParameterResponse::ModuleReplied_Rejected;
+                }
+            } else {
+                return Everest::config::SetParameterResponse::SetCallFailed;
+            }
+        });
+
+    // The callback above captures run()-locals (config_service, transitively mqtt_abstraction),
+    // but config_service_core_ is a member and outlives them: clear the registration on every
+    // exit path of run() before those locals die.
+    const struct ClearSetParamForwarder {
+        config::ConfigServiceCore& core;
+        ~ClearSetParamForwarder() {
+            core.register_set_runtime_parameter_handler(nullptr);
+        }
+    } clear_set_param_forwarder{*config_service_core_};
+
+    // Report the lifecycle phase to the config service. The status follows from the destination
+    // state alone; module_status_action_for() documents the mapping and is unit tested.
+    register_state_transition_handler([this]([[maybe_unused]] ManagerState from, ManagerState to) {
+        if (config_service_core_ == nullptr) {
+            // Defensive: the handler is registered after the core exists, but a future reordering of
+            // run() must not turn a state transition into a null dereference.
+            return;
+        }
+        switch (module_status_action_for(to)) {
+        case ModuleStatusAction::Starting:
+            config_service_core_->set_modules_starting();
+            break;
+        case ModuleStatusAction::Running:
+            config_service_core_->set_modules_running();
+            break;
+        case ModuleStatusAction::Stopping:
+            config_service_core_->set_modules_stopping();
+            break;
+        case ModuleStatusAction::Stopped:
+            config_service_core_->set_modules_stopped();
+            break;
+        case ModuleStatusAction::AtRest:
+            config_service_core_->set_modules_at_rest();
+            break;
+        case ModuleStatusAction::RestartTriggered:
+            config_service_core_->notice_module_restart_triggered();
+            break;
+        }
+    });
+
+    if (boot_into_idle) {
+        EVLOG_info << "Requested by command-line-parameter -> entering Idle";
         transition_to(ManagerState::Idle);
+    } else if (not runtime_ctx_has_valid_config) {
+        EVLOG_error << "Failed to load and validate config!";
+        return transition_to_exiting_after_shutdown(runtime_ctx, admin_panel, EXIT_FAILURE, false);
+    } else if (runtime_ctx.config->get_module_configurations().empty()) {
+        if (idle_on_failure_) {
+            EVLOG_error << "Module configuration contains no modules (empty or missing active_modules). Manager "
+                           "stays idle; load a startable configuration and request a restart.";
+            transition_to(ManagerState::Idle);
+            // After the transition: the Idle branch of the state-transition handler settles a transitional
+            // status but preserves FailedToStart, so the order is not load-bearing - it just reads correctly.
+            config_service_core_->notice_cfg_validation_failed();
+        } else {
+            EVLOG_error << "Module configuration contains no modules (empty or missing active_modules) -> exiting. "
+                           "Pass --idle-on-failure (or --into-idle) to keep the manager running without modules.";
+            return transition_to_exiting_after_shutdown(runtime_ctx, admin_panel, EXIT_FAILURE, false);
+        }
+    } else {
+        module_handles_ = handle_start_modules(runtime_ctx);
     }
 
     if (const auto err_set_user = ManagerAdminPanel::switch_manager_user_if_needed(runtime_ctx.ms)) {
@@ -821,16 +994,19 @@ std::string_view Manager::state_to_string(ManagerState state) const {
         return "Idle";
     case ManagerState::Exiting:
         return "Exiting";
-    default:
-        return "Unknown";
     }
+    // No default label above, so that a newly added ManagerState shows up as a -Wswitch diagnostic
+    // instead of silently rendering as "Unknown".
+    return "Unknown";
 }
 
-std::shared_ptr<ManagerConfig> Manager::load_and_validate_config(const ManagerSettings& ms) const {
+std::shared_ptr<const ManagerConfig>
+Manager::load_and_validate_config(const ManagerSettings& ms,
+                                  everest::config::ModuleConfigurations& preloaded_module_configs) const {
     const auto start_time = std::chrono::steady_clock::now();
-    std::shared_ptr<ManagerConfig> config;
+    std::shared_ptr<const ManagerConfig> config;
     try {
-        config = std::make_shared<ManagerConfig>(ms);
+        config = std::make_shared<const ManagerConfig>(ms, std::move(preloaded_module_configs));
     } catch (EverestInternalError& e) {
         EVLOG_error << fmt::format("Failed to load and validate config!\n{}", boost::diagnostic_information(e, true));
         throw;
@@ -868,11 +1044,19 @@ std::unique_ptr<MQTTAbstraction> Manager::create_and_connect_mqtt(const ManagerS
 
 std::vector<std::string> Manager::collect_standalone_modules(const ManagerConfig& config) const {
     std::vector<std::string> standalone_modules;
+    const auto& module_configurations = config.get_module_configurations();
+
     if (vm_.count("standalone")) {
-        standalone_modules = vm_["standalone"].as<std::vector<std::string>>();
+        // Make sure to only list existing modules and each only once
+        for (const auto& module_id : vm_["standalone"].as<std::vector<std::string>>()) {
+            if (module_configurations.find(module_id) != module_configurations.end() &&
+                std::find(standalone_modules.begin(), standalone_modules.end(), module_id) ==
+                    standalone_modules.end()) {
+                standalone_modules.push_back(module_id);
+            }
+        }
     }
 
-    const auto& module_configurations = config.get_module_configurations();
     for (const auto& [module_id, module_config] : module_configurations) {
         if (!module_config.standalone) {
             continue;
@@ -932,8 +1116,8 @@ void Manager::notify_status_fifo_for_state(ManagerState state) {
     case ManagerState::Exiting:
         notify_status_fifo(StatusFifo::MANAGER_EXITING);
         break;
-    default:
-        break;
+        // No default label, so that a newly added ManagerState shows up as a -Wswitch diagnostic
+        // instead of silently emitting no status update at all.
     }
 }
 
@@ -948,7 +1132,11 @@ void Manager::transition_to_unlocked(ManagerState new_state) {
     }
     EVLOG_info << "Manager state transition: " << state_to_string(current_state) << " -> "
                << state_to_string(new_state);
+    ManagerState old_state = state_;
     state_ = new_state;
+    for (const auto& handler : state_transition_handlers_) {
+        handler(old_state, new_state);
+    }
     notify_status_fifo_for_state(new_state);
 }
 
@@ -968,10 +1156,15 @@ bool Manager::is_in_shutdown_flow_state_unlocked() const {
            (s == ManagerState::ShutdownFinalizing);
 }
 
+void Manager::register_state_transition_handler(std::function<void(ManagerState, ManagerState)> handler) {
+    state_transition_handlers_.push_back(std::move(handler));
+}
+
 Manager::Manager(const po::variables_map& vm) :
     vm_(vm),
     recover_module_crashes_(vm.count("recover-module-crashes") != 0),
-    graceful_shutdown_enabled_(vm.count("graceful-shutdown") != 0) {
+    graceful_shutdown_enabled_(vm.count("graceful-shutdown") != 0),
+    idle_on_failure_(vm.count("idle-on-failure") != 0) {
 }
 
 // ---- State predicates -------------------------------------------------------
@@ -998,16 +1191,50 @@ bool Manager::is_idle() const {
 
 // ---- Event loop dispatch handlers ------------------------------------------
 
+bool Manager::transition_to_running_and_announce(MQTTAbstraction& mqtt_abstraction, StatusFifo& status_fifo,
+                                                 const std::string& mqtt_everest_prefix, bool retain_topics) {
+    if (not retain_topics) {
+        EVLOG_info << "Clearing retained topics published by manager during startup";
+        mqtt_abstraction.clear_retained_topics();
+    } else {
+        EVLOG_info << "Keeping retained topics published by manager during startup for inspection";
+    }
+    const auto complete_end_time = std::chrono::steady_clock::now();
+    EVLOG_info << fmt::format(
+        TERMINAL_STYLE_OK, "🚙🚙🚙 All modules are initialized. EVerest up and running [{}ms] 🚙🚙🚙",
+        std::chrono::duration_cast<std::chrono::milliseconds>(complete_end_time - module_startup_start_time_).count());
+
+    bool goto_running_transition = true;
+    {
+        const std::lock_guard<std::mutex> state_lock(state_transition_mutex_);
+        if (sigint_received_ || is_in_shutdown_flow_state_unlocked()) {
+            EVLOG_info << "All modules reported ready while shutdown is already in progress. "
+                          "Skipping transition to Running.";
+            goto_running_transition = false;
+        } else {
+            transition_to_unlocked(ManagerState::Running);
+        }
+    }
+    if (goto_running_transition) {
+        status_fifo.update(StatusFifo::ALL_MODULES_STARTED);
+        MqttMessagePayload payload{MqttMessageType::GlobalReady, nlohmann::json(true)};
+        mqtt_abstraction.publish(fmt::format("{}ready", mqtt_everest_prefix), payload);
+    }
+
+    return goto_running_transition;
+}
+
 /// \brief Handle module startup by publishing metadata, registering handlers, and spawning module processes.
 std::map<pid_t, std::string> Manager::handle_start_modules(const RuntimeContext& ctx) {
     BOOST_LOG_FUNCTION();
     module_startup_start_time_ = std::chrono::steady_clock::now();
     auto& config = *ctx.config;
     const auto& module_configurations = config.get_module_configurations();
-    if (module_configurations.size() == 0) {
-        EVLOG_info << "List of modules to start is empty";
-        transition_to(ManagerState::Idle);
-        return {};
+    // An empty module list never reaches this point: boot exits (or idles with --into-idle or
+    // --idle-on-failure) and a restart reload treats it as a failed restart. Starting zero modules
+    // would hang the manager in StartingModules because no ready handler would ever fire.
+    if (module_configurations.empty()) {
+        throw std::logic_error("handle_start_modules() called with an empty module list");
     }
     transition_to(ManagerState::StartingModules);
     auto& mqtt_abstraction = ctx.mqtt_abstraction;
@@ -1049,7 +1276,7 @@ std::map<pid_t, std::string> Manager::handle_start_modules(const RuntimeContext&
                                       fmt::join(capabilities.begin(), capabilities.end(), " "));
         }
 
-        const Handler module_ready_handler = [this, module_id, &mqtt_abstraction, &config, standalone_modules,
+        const Handler module_ready_handler = [this, module_id, &mqtt_abstraction, standalone_modules,
                                               mqtt_everest_prefix = ms.mqtt_settings.everest_prefix, &status_fifo,
                                               retain_topics](const std::string&, const nlohmann::json& json) {
             EVLOG_debug << fmt::format("received module ready signal for module: {}({})", module_id, json.dump());
@@ -1084,38 +1311,7 @@ std::map<pid_t, std::string> Manager::handle_start_modules(const RuntimeContext&
             }();
 
             if (all_modules_ready) {
-                const auto complete_end_time = std::chrono::steady_clock::now();
-                if (not retain_topics) {
-                    EVLOG_info << "Clearing retained topics published by manager during startup";
-                    mqtt_abstraction.clear_retained_topics();
-                } else {
-                    EVLOG_info << "Keeping retained topics published by manager during startup for inspection";
-                }
-                EVLOG_info << fmt::format(TERMINAL_STYLE_OK,
-                                          "🚙🚙🚙 All modules are initialized. EVerest up and running [{}ms] 🚙🚙🚙",
-                                          std::chrono::duration_cast<std::chrono::milliseconds>(
-                                              complete_end_time - module_startup_start_time_)
-                                              .count());
-
-                bool skip_running_transition = false;
-                {
-                    const std::lock_guard<std::mutex> state_lock(state_transition_mutex_);
-                    if (sigint_received_ || is_in_shutdown_flow_state_unlocked()) {
-                        EVLOG_info << "All modules reported ready while shutdown is already in progress. "
-                                      "Skipping transition to Running.";
-                        skip_running_transition = true;
-                    } else {
-                        transition_to_unlocked(ManagerState::Running);
-                    }
-                }
-                if (skip_running_transition) {
-                    return;
-                }
-
-                status_fifo.update(StatusFifo::ALL_MODULES_STARTED);
-                MqttMessagePayload payload{MqttMessageType::GlobalReady, nlohmann::json(true)};
-
-                mqtt_abstraction.publish(fmt::format("{}ready", mqtt_everest_prefix), payload);
+                transition_to_running_and_announce(mqtt_abstraction, status_fifo, mqtt_everest_prefix, retain_topics);
             } else if (!standalone_modules.empty()) {
                 if (modules_spawned == modules_ready_count - standalone_modules.size()) {
                     EVLOG_info << fmt::format(fg(fmt::terminal_color::green),
@@ -1204,8 +1400,18 @@ Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(Runtim
                 "modules.",
                 unexpected_module_exit_count_, MAX_UNEXPECTED_MODULE_RESTARTS);
             notify_crash_recovery_attempt(unexpected_module_exit_count_, MAX_UNEXPECTED_MODULE_RESTARTS);
-            handle_restart_modules_after_shutdown(ctx);
-            return {LifecycleAdvanceResult::Status::TransitionApplied, std::nullopt};
+            switch (handle_restart_modules_after_shutdown(ctx)) {
+            case RestartOutcome::Restarted:
+                return {LifecycleAdvanceResult::Status::TransitionApplied, std::nullopt};
+            case RestartOutcome::ExitFailure:
+                return {LifecycleAdvanceResult::Status::ExitRequested,
+                        transition_to_exiting_after_shutdown(ctx, admin_panel, EXIT_FAILURE, false)};
+            case RestartOutcome::StayedIdle:
+                break;
+            }
+            // See the restart path below: a failed reload settles into Idle without applying a
+            // transition, so the main loop must still service controller IPC and signals.
+            return {LifecycleAdvanceResult::Status::NoTransition, std::nullopt};
         }
         if (crash_in_progress && unexpected_module_exit_count_ > MAX_UNEXPECTED_MODULE_RESTARTS) {
             EVLOG_error << fmt::format("Reached maximum unexpected module exit recovery attempts ({}/{}). "
@@ -1223,8 +1429,20 @@ Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(Runtim
     // Admin restart can mark restart_modules while modules are still draining.
     // If all children are gone, restart immediately with reloaded config.
     if (restart_requested && module_handles_.empty()) {
-        handle_restart_modules_after_shutdown(ctx);
-        return {LifecycleAdvanceResult::Status::TransitionApplied, std::nullopt};
+        switch (handle_restart_modules_after_shutdown(ctx)) {
+        case RestartOutcome::Restarted:
+            return {LifecycleAdvanceResult::Status::TransitionApplied, std::nullopt};
+        case RestartOutcome::ExitFailure:
+            return {LifecycleAdvanceResult::Status::ExitRequested,
+                    transition_to_exiting_after_shutdown(ctx, admin_panel, EXIT_FAILURE, false)};
+        case RestartOutcome::StayedIdle:
+            break;
+        }
+        // The restart failed and the manager settled into Idle. Report NoTransition so the main loop
+        // still services controller IPC and signals on this iteration: a "transition applied" that
+        // changes nothing makes run() continue past both polls, which is what would turn a failed
+        // restart into an unresponsive manager.
+        return {LifecycleAdvanceResult::Status::NoTransition, std::nullopt};
     }
 
     return {LifecycleAdvanceResult::Status::NoTransition, std::nullopt};
@@ -1470,12 +1688,29 @@ int main(int argc, char* argv[]) {
     desc.add_options()("dontvalidateschema", "Don't validate json schema on every message");
     desc.add_options()("config", po::value<std::string>(),
                        "Full path to a config file.  If the file does not exist and has no extension, it will be "
-                       "looked up in the default config directory");
+                       "looked up in the default config directory. Optional: defaults to the default config file in "
+                       "the default config directory. Without --db, the config is loaded from YAML on every start "
+                       "and runtime configuration changes are persisted to user-config/<config-name>.yaml.");
     desc.add_options()("conf", po::value<std::string>(), "Deprecated: Same as --config. Do not use both.");
-    desc.add_options()("db", po::value<std::string>(), "Full path to the configuration database file");
-    desc.add_options()("db-init", "Indicator to initialize the database if it does not contain a valid configuration. "
-                                  "Requires --config and --db to be set.");
-    desc.add_options()("into-idle", "Boot into idle state (no modules are started)");
+    desc.add_options()("db", po::value<std::string>(),
+                       "Full path to the configuration database file. Optional: without --db an in-memory database "
+                       "is used and the YAML config is authoritative on every start. With --db and --config, the "
+                       "database wins when it holds a valid configuration; otherwise it is seeded from the YAML "
+                       "config.");
+    desc.add_options()("db-init",
+                       "Deprecated, no effect: seeding the database from YAML when it holds no valid configuration "
+                       "is now the default. Ignored unless both --config and --db are given. Use --reset-from-yaml "
+                       "to force re-seeding.");
+    desc.add_options()("reset-from-yaml", "Discard the existing database slot and re-seed from the YAML config file. "
+                                          "Intended for development use when you want to reset to a known YAML state. "
+                                          "Requires --config.");
+    desc.add_options()("into-idle", "Boot into idle state (no modules are started). Also enters Idle instead of "
+                                    "exiting when the configuration is invalid, missing or contains no modules.");
+    desc.add_options()("idle-on-failure",
+                       "When there is nothing startable (the boot configuration contains no modules, crash recovery "
+                       "is exhausted with --recover-module-crashes, or a configuration reload fails during a module "
+                       "restart), keep the manager alive in Idle so the configuration API stays available. Default: "
+                       "exit with an error.");
     desc.add_options()("recover-module-crashes",
                        "After unexpected module exit, reload config and restart modules (bounded by an internal retry "
                        "limit). Default: shut down all modules and exit the manager.");

@@ -3,11 +3,19 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <string_view>
+#include <unordered_map>
 
-#include <utils/config.hpp>
+#include <utils/config/types.hpp>
 #include <utils/mqtt_abstraction.hpp>
+
 namespace Everest {
 namespace config {
+
+class ConfigServiceInterface; // defined in config_service_interface.hpp
 
 constexpr auto MODULE_IMPLEMENTATION_ID = "!module";
 inline constexpr std::size_t mqtt_get_config_retries = 1;
@@ -115,8 +123,27 @@ struct ModuleIdType {
     bool operator<(const ModuleIdType& rhs) const;
 };
 
+struct ConfigChangeResult {
+    SetResponseStatus status;
+    std::string reason; ///< only meaningful when status == Rejected
+
+    static ConfigChangeResult Accepted() {
+        return {SetResponseStatus::Accepted, {}};
+    }
+
+    static ConfigChangeResult AcceptedRebootRequired() {
+        return {SetResponseStatus::RebootRequired, {}};
+    }
+
+    static ConfigChangeResult Rejected(const std::string& reason) {
+        return {SetResponseStatus::Rejected, reason};
+    }
+};
+
 class ConfigServiceClient {
 public:
+    using ConfigChangeHandler = std::function<ConfigChangeResult(const std::string& new_value)>;
+
     /// \brief ConfigService client using the provided \p mqtt_abstraction for the module identified by \p module_id
     /// \p module_names is a mapping of all module ids to module names/types for usage in get_module_configs()
     ConfigServiceClient(std::shared_ptr<MQTTAbstraction> mqtt_abstraction, const std::string& module_id,
@@ -137,25 +164,55 @@ public:
     /// \returns a result containing the configuration item or an error
     GetConfigResult get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier);
 
+    void register_config_change_handler(const std::string& impl_id, const std::string_view param_name,
+                                        ConfigChangeHandler handler);
+
 private:
     std::shared_ptr<MQTTAbstraction> mqtt_abstraction;
     std::string origin;
     std::map<std::string, std::string, std::less<>> module_names;
+    // a key-value (parameter-name to handler) store for each implementation_id
+    std::map<std::string, std::map<std::string, ConfigChangeHandler>> change_callbacks;
+    // Guards change_callbacks: register_config_change_handler() may be called from any module
+    // thread (e.g. from Python at runtime) while the MQTT dispatch thread reads the map in
+    // mqtt_set_request().
+    std::mutex change_callbacks_mutex;
+
+    void mqtt_set_request(const nlohmann::json& data);
 };
 
-class ConfigService {
+class MqttConfigServiceHandler {
 public:
-    /// \brief ConfigService using the provided \p mqtt_abstraction to distribute relevant parts of the given \p config
-    /// when another module requests them and has appropriate access rights to them
-    ConfigService(MQTTAbstraction& mqtt_abstraction, std::shared_ptr<ManagerConfig> config);
+    /// \brief MQTT adapter that distributes relevant parts of the active configuration to modules that request them
+    /// and have appropriate access rights. Access control is enforced using the Access rules embedded in each
+    /// module's configuration (from the active config slot).
+    /// \param mqtt_abstraction  MQTT transport for pub/sub and module-to-module set forwarding.
+    /// \param config_svc        All domain operations — reads (via get_active_module_configurations) and writes
+    ///                          (via set_config_parameters) are routed through this interface.
+    MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstraction, ConfigServiceInterface& config_svc);
+
+    /// \brief This class provides an MQTT interface to modules and uses the ConfigServiceInterface to fulfill incoming
+    /// requests. This function allows to request a config parameter change from a module. This function skips
+    /// validating module_ids and characteristics on purpose. It should only be called with inputs known to work.
+    /// \param cfg_param_id  The identifier for the parameter to be changed
+    /// \param value         The new configuration parameter value as string
+    std::optional<Everest::config::SetResponse>
+    cmd_set_cfg_param(const everest::config::ConfigurationParameterIdentifier& cfg_param_id, const std::string& value);
 
 private:
     MQTTAbstraction& mqtt_abstraction;
     std::shared_ptr<TypedHandler> get_config_token;
-    std::shared_ptr<ManagerConfig> config;
+    ConfigServiceInterface& config_svc;
 };
 
 namespace conversions {
+
+// strings should already be valid
+template <typename T> T ConfigFromString(const std::string& value) = delete;
+template <> bool ConfigFromString<bool>(const std::string& value);
+template <> int ConfigFromString<int>(const std::string& value);
+template <> double ConfigFromString<double>(const std::string& value);
+
 std::string type_to_string(Type type);
 
 Type string_to_type(const std::string& type);
@@ -202,6 +259,18 @@ void from_json(const nlohmann::json& j, Request& r);
 void to_json(nlohmann::json& j, const Response& r);
 
 void from_json(const nlohmann::json& j, Response& r);
+
+void to_json(nlohmann::json& j, const SetConfigResult& r);
+
+void from_json(const nlohmann::json& j, SetConfigResult& r);
+
+void to_json(nlohmann::json& j, const GetConfigResult& r);
+
+void from_json(const nlohmann::json& j, GetConfigResult& r);
+
+void to_json(nlohmann::json& j, const ConfigChangeResult& r);
+
+void from_json(const nlohmann::json& j, ConfigChangeResult& r);
 } // namespace config
 } // namespace Everest
 

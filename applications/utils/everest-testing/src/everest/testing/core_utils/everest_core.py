@@ -193,6 +193,7 @@ class EverestCore:
                 temp_everest_config_file.name).parent / 'user-config'
             self.everest_core_user_config_path.mkdir(parents=True, exist_ok=True)
             self._status_fifo_path = temp_dir / "status.fifo"
+            self._db_path = temp_dir / "everest.db"
         else:
             config_dir = tmp_path / "everest_config"
             config_dir.mkdir()
@@ -200,6 +201,7 @@ class EverestCore:
             self.everest_core_user_config_path.mkdir()
             self.everest_config_path = config_dir / "everest_config.yaml"
             self._status_fifo_path = tmp_path / "status.fifo"
+            self._db_path = tmp_path / "everest.db"
 
         self.prefix_path = prefix_path
         self.etc_path = Path('/etc/everest') if prefix_path == '/usr' else prefix_path / 'etc/everest'
@@ -249,18 +251,27 @@ class EverestCore:
         everest_configuration_adjustment_strategies.append(
             EverestMqttConfigurationAdjustmentStrategy(everest_uuid=self.everest_uuid,
                                                        mqtt_external_prefix=self.mqtt_external_prefix))
-        everest_config = yaml.safe_load(template_config_path.read_text())
+        # An empty config file (or one that is only comments/whitespace) parses to None; normalize
+        # to a mapping with an empty active_modules so the adjustment strategies below (which assume
+        # that key exists) can operate on it.
+        everest_config = yaml.safe_load(template_config_path.read_text()) or {}
+        everest_config.setdefault("active_modules", {})
         for strategy in everest_configuration_adjustment_strategies:
             everest_config = strategy.adjust_everest_configuration(everest_config)
         with self.everest_config_path.open("w") as f:
             yaml.dump(everest_config, f)
 
-    def start(self, standalone_module: Optional[Union[str, List[str]]] = None, test_connections: Connections = None):
+    def start(self, standalone_module: Optional[Union[str, List[str]]] = None, test_connections: Connections = None,
+              expected_status: Optional[str] = None):
         """Starts EVerest in a subprocess
 
         Args:
             standalone_module (str, optional): If set, a submodule can be started separately. EVerest will then wait for the submodule to be started.
              Defaults to None.
+            expected_status (str, optional): Status-fifo message to wait for instead of the default
+             ALL_MODULES_STARTED / WAITING_FOR_STANDALONE_MODULES, e.g. ManagerStatusFifo.MANAGER_IDLE
+             when the manager is expected to boot into Idle (empty config with --idle-on-failure or
+             --into-idle).
         """
 
         standalone_module = standalone_module if standalone_module is not None else self._standalone_module
@@ -275,7 +286,11 @@ class EverestCore:
 
         logging.info(self._status_fifo_path)
 
-        args = [str(manager_path.resolve()), '--config', str(self.everest_config_path),
+        # With --db, the per-test database is seeded from YAML + user-config on the first start and
+        # wins on later starts of the same instance, so runtime config writes (e.g. OCPP SetVariables
+        # answered RebootRequired) survive restarts. Tests that instead need strict "YAML wins on
+        # every start" semantics opt in via @pytest.mark.everest_manager_args("--reset-from-yaml").
+        args = [str(manager_path.resolve()), '--config', str(self.everest_config_path), '--db', str(self._db_path),
                 '--status-fifo', str(self._status_fifo_path), '--prefix', str(self.prefix_path.resolve())]
 
         if standalone_module:
@@ -305,7 +320,8 @@ class EverestCore:
         self.log_reader_thread = Thread(target=self.read_everest_log)
         self.log_reader_thread.start()
 
-        expected_status = ManagerStatusFifo.ALL_MODULES_STARTED if standalone_module == None else ManagerStatusFifo.WAITING_FOR_STANDALONE_MODULES
+        if expected_status is None:
+            expected_status = ManagerStatusFifo.ALL_MODULES_STARTED if standalone_module == None else ManagerStatusFifo.WAITING_FOR_STANDALONE_MODULES
 
         status = self.status_listener.wait_for_status(STARTUP_TIMEOUT, [expected_status])
         if not status:

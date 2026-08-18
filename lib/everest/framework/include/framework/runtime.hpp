@@ -84,6 +84,11 @@ inline constexpr auto INTERFACES_DIR = "interfaces";
 inline constexpr auto SCHEMAS_DIR = "schemas";
 inline constexpr auto CONFIG_NAME = "default.yaml";
 inline constexpr auto LOGGING_CONFIG_NAME = "default_logging.cfg";
+inline constexpr auto DB_FILE_NAME = "everest.db";
+// Used when no --db is given: the config database lives in process-private memory (SQLite
+// shared-cache memory databases are never visible to other processes), so the YAML config is
+// re-seeded on every start and nothing is persisted to disk.
+inline constexpr auto IN_MEMORY_DB_URI = "file:everest-config?mode=memory&cache=shared";
 
 inline constexpr auto WWW_DIR = "www";
 

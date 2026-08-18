@@ -24,26 +24,11 @@ UserConfigStorage::UserConfigStorage(const fs::path& user_config_path) : user_co
 GenericResponseStatus UserConfigStorage::write_module_configs(const ModuleConfigurations& /*module_configs*/) {
     return GenericResponseStatus::Failed;
 }
-GenericResponseStatus UserConfigStorage::write_settings(const Everest::ManagerSettings& /*manager_settings*/) {
+GenericResponseStatus UserConfigStorage::replace_module_configs(const ModuleConfigurations& /*module_configs*/) {
     return GenericResponseStatus::Failed;
-}
-GenericResponseStatus UserConfigStorage::wipe() {
-    try {
-        this->user_config = nlohmann::json::object();
-        Everest::save_yaml(this->user_config, this->user_config_path);
-    } catch (const std::exception& e) {
-        EVLOG_error << "Could not save user-config to " << this->user_config_path.string() << ": " << e.what();
-        return GenericResponseStatus::Failed;
-    }
-    return GenericResponseStatus::OK;
 }
 GetModuleConfigsResponse UserConfigStorage::get_module_configs() {
     GetModuleConfigsResponse response;
-    response.status = GenericResponseStatus::Failed;
-    return response;
-}
-GetSettingsResponse UserConfigStorage::get_settings() {
-    GetSettingsResponse response;
     response.status = GenericResponseStatus::Failed;
     return response;
 }
