@@ -210,10 +210,23 @@ void MQTTAbstractionImpl::subscribe(const std::string& topic, QOS qos) {
         break;
     }
 
+<<<<<<< HEAD
     this->subscribed_topics.insert(topic);
 
     mqtt_subscribe(&this->mqtt_client, topic.c_str(), max_qos_level);
     notify_write_data();
+=======
+    this->ev_handler.add_action([this, topic, max_qos_level]() {
+        const auto result = this->mqtt_client->subscribe(
+            topic,
+            [this, topic]([[maybe_unused]] everest::lib::io::mqtt::mosquitto_cpp& client,
+                          everest::lib::io::mqtt::mosquitto_cpp::message const& message) {
+                this->message_queue.emplace(message.topic, message.payload);
+                this->new_message_event.notify();
+            },
+            max_qos_level);
+    });
+>>>>>>> a22c7e1 (Fix topic reference in MQTT subscription callback (#2537))
 }
 
 void MQTTAbstractionImpl::unsubscribe(const std::string& topic) {
