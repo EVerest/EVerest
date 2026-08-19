@@ -71,6 +71,8 @@ While a component is experimental:
   changes (see :ref:`project-breaking-changes`).
 - It does **not** need to be listed in the :doc:`Active Deprecation Index
   <deprecation-index>`, and its removal does not require a preceding deprecation.
+  Experimental components are instead tracked in the
+  :ref:`Experimental Feature Index <project-experimental-index>`.
 
 Examples of components that may be introduced as experimental include a new
 EVerest module, an AsyncAPI channel or operation, a JSON RPC method, or a

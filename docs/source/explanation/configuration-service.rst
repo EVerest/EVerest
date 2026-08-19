@@ -58,6 +58,14 @@ Configuration slot
   configuration slot translates this concept to the internal database, allowing
   it to store and swap multiple alternative configurations seamlessly.
 
+.. warning::
+
+   The options ``--reset-from-yaml``, ``--into-idle`` and ``--idle-on-failure``
+   used on this page are :ref:`experimental <project-experimental-components>`:
+   they are exempt from the EVerest stability guarantees and may change or be
+   removed in any release. The manager logs a warning at startup when one of
+   them is used. See :ref:`reference-manager-cli` for the full option reference.
+
 *******************
 Configuration Slots
 *******************
@@ -101,9 +109,9 @@ options. There are three cases.
 
 Related options:
 
-- ``--reset-from-yaml`` discards the existing database slot and re-seeds from
-  the YAML config file. Intended for development use, when you want to reset to
-  a known YAML state. Requires ``--config``.
+- ``--reset-from-yaml`` (experimental) discards the existing database slot and
+  re-seeds from the YAML config file. Intended for development use, when you
+  want to reset to a known YAML state. Requires ``--config``.
 - ``--db-init`` is deprecated and has no effect. Seeding the database from YAML
   when it holds no valid configuration is now the default; use
   ``--reset-from-yaml`` to force re-seeding.

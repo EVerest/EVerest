@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include <cstdlib>
 #include <errno.h>
@@ -690,6 +694,34 @@ void dump_config_and_manifests(const Everest::ManagerConfig& config, const fs::p
         output_stream << module.value().dump(DUMP_INDENT);
     }
 }
+
+/// Manager options that are experimental per the EVerest deprecation policy: they are part of the
+/// public surface but exempt from the stability guarantees, and may change or be removed in any
+/// release. Keep in sync with docs/source/project/releases/experimental-index.rst.
+constexpr std::array<std::string_view, 5> EXPERIMENTAL_OPTIONS{
+    "graceful-shutdown", "into-idle", "recover-module-crashes", "reset-from-yaml", "idle-on-failure"};
+
+/// Emit a single warning naming the experimental options that were actually passed, so an operator
+/// sees at startup that this run depends on unstable surface. Emits nothing when none are used.
+void warn_about_experimental_options(const po::variables_map& vm) {
+    std::vector<std::string> used;
+    for (const auto& option : EXPERIMENTAL_OPTIONS) {
+        const std::string name{option};
+        if (vm.count(name) != 0) {
+            used.push_back("--" + name);
+        }
+    }
+
+    if (used.empty()) {
+        return;
+    }
+
+    EVLOG_warning << fmt::format(
+        "Experimental manager options in use: {}. Experimental options are exempt from the EVerest "
+        "stability guarantees and may change or be removed in any release. See the Experimental "
+        "Components section of the EVerest deprecation policy.",
+        fmt::join(used, ", "));
+}
 } // namespace
 
 int Manager::run() {
@@ -711,6 +743,8 @@ int Manager::run() {
     const auto conf_opt = parse_string_option(m_vm, "conf");
     const auto db_opt = parse_string_option(m_vm, "db");
     const bool reset_from_yaml = (m_vm.count("reset-from-yaml") != 0);
+
+    warn_about_experimental_options(m_vm);
 
     // --conf is a deprecated alias for --config; using both at once is ambiguous, so reject it.
     if (m_vm.count("conf") != 0) {
@@ -1702,23 +1736,26 @@ int main(int argc, char* argv[]) {
                        "Deprecated, no effect: seeding the database from YAML when it holds no valid configuration "
                        "is now the default. Ignored unless both --config and --db are given. Use --reset-from-yaml "
                        "to force re-seeding.");
-    desc.add_options()("reset-from-yaml", "Discard the existing database slot and re-seed from the YAML config file. "
-                                          "Intended for development use when you want to reset to a known YAML state. "
-                                          "Requires --config.");
-    desc.add_options()("into-idle", "Boot into idle state (no modules are started). Also enters Idle instead of "
-                                    "exiting when the configuration is invalid, missing or contains no modules.");
-    desc.add_options()("idle-on-failure",
-                       "When there is nothing startable (the boot configuration contains no modules, crash recovery "
-                       "is exhausted with --recover-module-crashes, or a configuration reload fails during a module "
-                       "restart), keep the manager alive in Idle so the configuration API stays available. Default: "
-                       "exit with an error.");
+    desc.add_options()("reset-from-yaml",
+                       "Experimental: Discard the existing database slot and re-seed from the YAML config file. "
+                       "Intended for development use when you want to reset to a known YAML state. "
+                       "Requires --config.");
+    desc.add_options()("into-idle",
+                       "Experimental: Boot into idle state (no modules are started). Also enters Idle instead of "
+                       "exiting when the configuration is invalid, missing or contains no modules.");
+    desc.add_options()(
+        "idle-on-failure",
+        "Experimental: When there is nothing startable (the boot configuration contains no modules, crash "
+        "recovery is exhausted with --recover-module-crashes, or a configuration reload fails during a "
+        "module restart), keep the manager alive in Idle so the configuration API stays available. "
+        "Default: exit with an error.");
     desc.add_options()("recover-module-crashes",
-                       "After unexpected module exit, reload config and restart modules (bounded by an internal retry "
-                       "limit). Default: shut down all modules and exit the manager.");
+                       "Experimental: After unexpected module exit, reload config and restart modules (bounded by an "
+                       "internal retry limit). Default: shut down all modules and exit the manager.");
     desc.add_options()("graceful-shutdown",
-                       "On shutdown/restart, publish the shutdown signal via MQTT so modules can run their shutdown "
-                       "handlers, and force-terminate stragglers only after a timeout. Default: terminate module "
-                       "processes immediately (SIGTERM, escalating to SIGKILL).");
+                       "Experimental: On shutdown/restart, publish the shutdown signal via MQTT so modules can run "
+                       "their shutdown handlers, and force-terminate stragglers only after a timeout. Default: "
+                       "terminate module processes immediately (SIGTERM, escalating to SIGKILL).");
     desc.add_options()("status-fifo", po::value<std::string>()->default_value(""),
                        "Path to a named pipe, that shall be used for status updates from the manager");
     desc.add_options()("retain-topics", "Retain configuration MQTT topics setup by manager for inspection, by default "

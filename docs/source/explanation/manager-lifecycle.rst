@@ -36,6 +36,15 @@ Timeouts and limits that drive transitions are defined in
 — for example the graceful shutdown duration before ``ForceTerminating``, and
 the cap on automatic crash restarts.
 
+.. warning::
+
+   The options ``--graceful-shutdown``, ``--into-idle``, ``--idle-on-failure``
+   and ``--recover-module-crashes`` used on this page are
+   :ref:`experimental <project-experimental-components>`: they are exempt from
+   the EVerest stability guarantees and may change or be removed in any release.
+   The manager logs a warning at startup when one of them is used. See
+   :ref:`reference-manager-cli` for the full option reference.
+
 *********************
 State Machine Diagram
 *********************
