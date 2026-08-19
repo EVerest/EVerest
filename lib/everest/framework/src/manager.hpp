@@ -53,8 +53,9 @@ struct ModuleShutdownInfo {
 /// states (for example through `ForceTerminating` / `ShutdownFinalizing`) so the next step can
 /// distinguish normal stop, admin-driven restart, and crash recovery.
 ///
-/// The full lifecycle description lives in `lib/everest/framework/docs/ManagerLifecycle.md`,
-/// the state machine diagram in `lib/everest/framework/docs/ManagerLifecycleStateMachine.mmd`.
+/// The full lifecycle description lives in `docs/source/explanation/manager-lifecycle.rst`,
+/// the state machine diagram in
+/// `docs/source/explanation/images/manager_lifecycle_state_machine.mmd`.
 /// Timeouts and limits that drive transitions are defined in `manager.cpp`.
 
 /// \brief Why the current shutdown / drain was started (persists across some ManagerState values).

@@ -1,329 +1,132 @@
-# EVerest Configuration Service
+# EVerest Configuration Service — implementation notes
 
-The EVerest ConfigServiceCore runs as part of the existing EVerest manager process. The manager exposes stable Async
-APIs over MQTT and manages the full lifecycle of EVerest modules — starting, stopping, and restarting them as needed.
-The manager process stays alive independently of the module lifecycle, serving the Configuration API and Lifecycle API
-at all times.
+**The explanation of what the Configuration Service *does* lives in the EVerest manual**, under
+*Explanation -> Configuration Service*
+([`docs/source/explanation/configuration-service.rst`](../../../../docs/source/explanation/configuration-service.rst)):
+terminology, configuration slots, boot sources and the `--config` / `--db` options, the startup
+sequence, slot switching and module restart, deployment, and the read/write semantics including
+every per-parameter outcome. The six sequence diagrams are in
+[`docs/source/explanation/images/`](../../../../docs/source/explanation/images/) and are rendered
+on that page.
 
-## Terminology
+This document deliberately does **not** repeat any of that. It covers only what the manual leaves
+out on purpose: where the code lives, the threading model, the exact C++ types behind the
+documented behavior, the wire-level message names, and the invariants that are easy to break when
+changing this code.
 
-- **ConfigServiceCore**: The core C++ component within the EVerest manager responsible for managing EVerest
-  configurations in-memory and persisting them to storage. It implements the `ConfigServiceInterface`
-  (`lib/everest/framework/include/utils/config_service_interface.hpp`) and is defined in
-  `lib/everest/framework/include/utils/config/config_service_core.hpp` / implemented in
-  `lib/everest/framework/lib/config/config_service_core.cpp`. It is a single-writer actor: every operation is
-  serialized on one internal worker thread, while readers get the active configuration as an immutable snapshot
-  (`get_active_module_configurations()`) without blocking that thread.
-- **Configuration API**: Stable Async API exposed by the manager over MQTT to access configuration data and
-  functionality. Used only by external applications, not directly by EVerest modules. Part of the set of public
-  EVerest APIs.
-- **Lifecycle API**: Stable Async API exposed by the manager over MQTT to handle module lifecycles (e.g., start, stop,
-  restart).
-- **Configuration API Client**: Any application or component that uses the Configuration API. This includes external
-  applications (e.g. Cloud, UI, Backend).
-- **EVerest Manager**: Long-lived process that hosts the ConfigServiceCore, manages the module lifecycle, and exposes
-  the Configuration API and Lifecycle API. The manager is always running — it starts before modules and can remain
-  available after modules are stopped or terminated.
-- **EVerest Internal API**: Existing MQTT-based communication mechanism between the manager and EVerest modules,
-  defined in `lib/everest/framework/include/utils/mqtt_config_service.hpp` and implemented in
-  `lib/everest/framework/lib/mqtt_config_service.cpp`. Used for configuration handling and distribution at startup as
-  well as runtime queries and updates of parameters. Read requests to the `MqttConfigServiceHandler` are answered from
-  the immutable active-configuration snapshot it obtains from `ConfigServiceCore`
-  (`get_active_module_configurations()`); write requests are forwarded to `ConfigServiceCore`
-  (`set_config_parameters()`), always targeting the active slot. Access control is enforced by the handler using the
-  `Access` rules embedded in each module's configuration. Modules use the `ConfigServiceClient` class to interface with
-  the `MqttConfigServiceHandler`. Internal EVerest modules always use this Internal API.
-- **Configuration slot**: A mechanism for managing and switching between different EVerest module configurations 
-  (i.e., specific sets of connected modules and their parameters). While configurations are traditionally loaded 
-  from a YAML file, a `Configuration Slot` translates this concept to the internal database, allowing it to store 
-  and swap multiple alternative configurations seamlessly.
+## Where the code lives
 
-## Configuration API
-The Configuration API offers a stable Async API over MQTT to access configuration data and functionality. It is used
-by external applications.
+All paths relative to `lib/everest/framework/`.
 
-On a high-level it offers the following operations:
+| Concern | Files |
+| --- | --- |
+| Service interface (the public in-process contract) | `include/utils/config_service_interface.hpp` |
+| `ConfigServiceCore` | `include/utils/config/config_service_core.hpp`, `lib/config/config_service_core.cpp` |
+| `MqttConfigServiceHandler`, `ConfigServiceClient` (EVerest Internal API) | `include/utils/mqtt_config_service.hpp`, `lib/mqtt_config_service.cpp` |
+| Config value types, `Mutability`, `Access`, `validate_config_value()` | `include/utils/config/types.hpp` |
+| Boot source and database bootstrap | `include/utils/config/settings.hpp`, `lib/runtime.cpp` |
+| User-config YAML persistence mirror (`UserConfigStorage`) | `include/utils/config.hpp`, `include/utils/config/storage_userconfig.hpp` |
+| Manager wiring | `src/manager.cpp` |
+| `everest-config-tool` (note: source file is `everest-config.cpp`) | `src/everest-config.cpp` |
+| Tests | `tests/test_config_service_core.cpp`, `tests/test_config_userconfig.cpp`, `tests/test_config.cpp` |
 
-- Read module configuration
-- Write module configuration
-- Write configuration slots (from a YAML config)
-- List configuration slots and duplicate them / set their description
-- Notify on configuration changes
-- Notify on active-slot and module-status changes
-- Delete configuration slots
-- Select configuration slot to boot from
+Wire-level MQTT topics and payloads of the Internal API are documented separately in
+[MQTT Communication](MQTTCommunication.md). Startup distribution is described in
+[MQTT Config distribution](MQTTConfigDistribution.md).
 
-*(Note: Starting, stopping, and restarting EVerest modules is handled by the Lifecycle API)*
+## Threading model
 
-What the Configuration API is NOT covering:
+`ConfigServiceCore` is a single-writer actor. `m_worker_thread` drains `m_command_queue`
+(a `thread_safe_queue<std::function<void()>>`) one task at a time; every mutating operation is
+posted through `post_to_actor()`. Readers do not touch that thread: they take an immutable
+snapshot via `get_active_module_configurations()`, which returns a
+`shared_ptr<const ModuleConfigurations>`.
 
-- Adding a module
-- Deleting a module
-- Renaming a module
-- Connecting a module to another module
+`post_to_actor()` detects re-entrancy by comparing `std::this_thread::get_id()` against
+`m_worker_thread.get_id()` and executes inline in that case. Consequences for callers, spelled out
+at `config_service_core.hpp:74-83`:
 
-All the above can be achieve however by “uploading” a new YAML configuration with those changes.
+- Update handlers run **on the actor thread** as part of the mutating operation and block all
+  further config-service processing while they run. Keep them short.
+- Calling back into public `ConfigServiceCore` methods from inside a handler is safe (it executes
+  inline).
+- Never block a handler on anything that itself waits for the config service.
 
-## Communication of ConfigServiceCore with modules and external applications
-There are two communication paths in this architecture, both over MQTT:
+## C++ types behind the documented behavior
 
-- **Configuration API**: The public Async API exposed by the manager. External applications (Cloud, UI, Backend) use
-  this interface for all configuration operations: reading and writing configuration, managing slots, and subscribing
-  to change notifications.
-- **EVerest Internal API**: The existing MQTT-based interface between the manager and EVerest modules. The manager
-  already uses this for distributing module configuration at startup. For runtime configuration parameter changes
-  targeting the active slot, the ConfigServiceCore uses this same interface to deliver changes to the target module via
-  a `set_request` and receive the module's verdict via a `set_response`. Modules use `ConfigServiceClient` to request
-  configuration operations (read, write) through the EVerest Internal API via `GetRequest` and `SetRequest`. The
-  concrete MQTT topics and message payloads of this interface are documented in
-  [MQTT Communication](MQTTCommunication.md).
+| Manual concept | Type / values |
+| --- | --- |
+| Per-parameter write outcome | `SetConfigParameterResultEnum` — `Applied`, `WillApplyOnRestart`, `DoesNotExist`, `RetryLater`, `AccessDenied`, `Rejected` |
+| Request-level write status | `SetConfigParameterStatus` — `Ok`, `Error`, `ModulesInTransientState`. `Error` is the default-initialized value |
+| Module's verdict on a runtime change (Internal API) | `SetResponseStatus` — `Accepted`, `Rejected`, `RebootRequired` (`mqtt_config_service.hpp:75`) |
+| Result of forwarding a runtime change | `SetParameterResponse` — `SetCallFailed`, `ModuleReplied_Applied`, `ModuleReplied_RequiresRestart`, `ModuleReplied_Rejected` |
+| Slot / module status | `ActiveSlotStatus` — `Running`, `Stopped`, `Starting`, `Stopping`, `FailedToStart`, `RestartTriggered`, with the `modules_are_down()` and `modules_in_transient_state()` predicates |
+| Runtime mutability | `Mutability` — `ReadOnly`, `ReadWrite`, `WriteOnly` |
+| Access control | `Access` -> `ConfigAccess` -> `ModuleConfigAccess`, including `allow_set_read_only`; enforced by `access_allowed()`, applied by `update_mutability()` |
+| Notifications | `ActiveSlotUpdate`, `ConfigurationUpdate`, `ConfigParameterUpdateNotice`, `Origin` |
+| Boot source | `BootMode` — `YamlWithInMemoryDb`, `DatabaseOnly`, `DatabaseWithYamlSeed`; resolved by `resolve_boot_source()`, database prepared by `init_database_bootstrap()` returning `DatabaseBootstrap` |
 
-### Manager startup
+Watch out for two near-duplicate enums with the same value names but different types:
+`SetResponseStatus` (`mqtt_config_service.hpp`, used by the Internal API `SetResponse`) and
+`everest::config::SetConfigStatus` (`config/types.hpp:278`, used by `SetConfigResult`). They are
+not interchangeable.
 
-The configuration boot source is resolved from the command line options (``resolve_boot_source``):
+`resolve_boot_source()` and `init_database_bootstrap()` are **free functions** in
+`settings.hpp` / `runtime.cpp`, not members of `ConfigServiceCore`. `init_database_bootstrap()`
+runs before the core is constructed. `resolve_boot_source()` is unit-tested in
+`tests/test_config.cpp` (`SCENARIO("Check resolve_boot_source")`).
 
-- **No ``--db`` (with ``--config`` or the default config lookup)**: The YAML config is authoritative. It is parsed
-  (including the ``user-config/<config-name>.yaml`` merge) and seeded into a process-private **in-memory** database on
-  every start; nothing is persisted to disk except runtime configuration writes, which go to the user-config YAML.
-- **``--db`` only**: The database file is the only configuration source; manager settings come from built-in defaults.
-- **``--config`` and ``--db``**: The database wins when it holds a valid boot slot (the YAML is ignored); otherwise
-  the database is seeded from the YAML config. ``--reset-from-yaml`` forces re-seeding from YAML. The deprecated
-  ``--db-init`` flag is accepted (warning only) and has no effect, since this seeding behavior is now the default.
+## `ConfigServiceCore` entry points
 
-Startup then proceeds:
+| Member | Purpose |
+| --- | --- |
+| `get_active_module_configurations()` | immutable snapshot for readers; does not touch the actor thread |
+| `set_config_parameters(slot_id, updates, origin)` | the whole write path |
+| `mark_active_slot(slot_id)` | records the next boot slot only; does not stop modules |
+| `reinitialize_from_db(force_reload)` | reloads the marked slot; **not** part of `ConfigServiceInterface` |
+| `set_modules_at_rest()` | settles a transitional status while deliberately preserving a recorded `FailedToStart` |
+| `register_set_runtime_parameter_handler(cb)` | installs the runtime-parameter forwarder |
+| `register_active_slot_update_handler(cb)`, `register_config_update_handler(cb)` | push-event subscriptions; see the threading rules above |
 
-1. Populate the ``ManagerSettings``: from the YAML file (``--config``/default lookup) or built-in defaults
-   (``--db`` only).
-2. Initialize the database (``init_database_bootstrap``) according to the resolved boot source above.
-3. Initialize the ``ConfigServiceCore`` (relies on existence of a valid database, guaranteed by steps 1 and 2).
-   Opens the database and loads the configuration slot marked for the next reboot. Without ``--db``, a persistence
-   mirror routes active-slot parameter writes to the user-config YAML in addition to the in-memory slot storage.
-4. Connect to the MQTT broker, set up the EVerest Internal API (`MqttConfigServiceHandler`) and register it with the
-   `ConfigServiceCore` as the runtime-parameter forwarder. Expose APIs giving access to configuration and module lifecycle handling.
-5. Start the modules. Exceptions: with ``--into-idle`` the manager enters Idle without starting modules; a
-   configuration that fails to load/validate or contains **no modules** makes the manager **exit with an error**
-   unless ``--into-idle`` is given. With ``--idle-on-failure`` the **no-modules** case enters Idle instead
-   (reported as ``FailedToStart``); invalid configurations still exit.
-6. The EVerest modules use the internal API to request their own configuration.
+Manager wiring, in `src/manager.cpp`: the `UserConfigStorage` persistence mirror is created for
+`BootMode::YamlWithInMemoryDb` (~L827), then `ConfigServiceCore`, then
+`MqttConfigServiceHandler`, then `register_set_runtime_parameter_handler()` (~L859) mapping
+`SetResponseStatus::Accepted` to `ModuleReplied_Applied`, `RebootRequired` to
+`ModuleReplied_RequiresRestart`, anything else to `ModuleReplied_Rejected`, and `SetCallFailed`
+when the round trip returns nothing. Lifecycle status is pushed in via
+`register_state_transition_handler()` (~L888). The forwarder is deregistered with
+`register_set_runtime_parameter_handler(nullptr)` (~L882).
 
-Note on slots without ``--db``: the in-memory database is a complete multi-slot database, so all slot operations of
-the Configuration API work at runtime (list, duplicate, load-from-yaml, mark-active, delete). They are ephemeral:
-on the next start a fresh in-memory database is seeded from YAML + user-config, so slots and the next-boot-slot
-selection do not survive a restart, and only active-slot parameter writes are persisted (via the user-config
-mirror). The ``everest-config-tool`` cannot inspect an in-memory database.
+## Internal API message names
 
-```mermaid
-sequenceDiagram
-    participant Manager as EVerest Manager + ConfigServiceCore
-    participant Modules as EVerest Modules
- 
-    Note over Manager: Manager starts
-    Manager->Manager: Initialize ConfigServiceCore (SQLite)
-    Manager->Manager: Load boot_slot configuration
-    Manager->Manager: Validate configuration
-    Manager->>Modules: Spawn modules
-    loop For every module
-        Modules->>Manager: [Internal API] GetRequest(type: Module)
-        Manager-->>Modules: [Internal API] GetResponse(data)
-        Modules->Modules: init()
-        Modules-->>Manager: [Internal API] Ready
-    end
-    Note over Manager: All modules ready
-    Manager->>Modules: [Internal API] Global ready signal
-```
+`GetRequest` / `GetResponse` and `SetRequest` / `SetResponse` on the shared request topic
+`{everest_prefix}config/request`; the manager forwards a runtime change to the target module on
+`{everest_prefix}modules/{module_id}/config/set_request` and reads the verdict from
+`{everest_prefix}modules/{module_id}/config/set_response`. All at QOS2. Payload structures are in
+[MQTT Communication](MQTTCommunication.md).
 
-### Module stop / restart
-The manager can stop and restart modules without itself restarting. This enables runtime configuration changes that
-require a module restart and switching to a different configuration slot — all without losing the Configuration API.
+Modules reach this through `ConfigServiceClient`; read requests are answered by
+`MqttConfigServiceHandler` from the `ConfigServiceCore` snapshot, writes are forwarded to
+`set_config_parameters()` and always target the active slot.
 
-Marking a slot (`mark_active_slot`) only records it as the **next boot slot** and answers immediately; it does not
-stop any module. The switch takes effect on the next module restart, which must be requested separately.
-The manager reloads the marked slot (`reinitialize_from_db`) only while the modules are at rest — a reload is
-skipped while modules are running or mid-transition, so the running processes can never desynchronize from the
-in-memory configuration.
+## Invariants to preserve
 
-```mermaid
-sequenceDiagram
-    participant Client as Configuration API Client
-    participant Manager as EVerest Manager + ConfigServiceCore
-    participant Modules as EVerest Modules
+These orderings are load-bearing and cheap to break; each has test coverage.
 
-    Client->>Manager: [Configuration API] MarkActiveSlotRequest(slot_id)
-    Manager->Manager: Persist next_boot_slot change
-    Manager-->>Client: [Configuration API] MarkActiveSlotResult(Success)
-    Manager-->>Client: [Configuration API] ActiveSlotUpdate(active, next_boot, status)
-    Client->>Manager: [Lifecycle API] RestartModulesRequest
-    Note over Manager,Modules: with --graceful-shutdown the MQTT shutdown signal is published first
-    Manager->>Modules: Terminate module processes (SIGTERM, escalating to SIGKILL)
-    Note over Modules: Modules stopped
-    Note over Manager: Configuration API still available
-    Manager->Manager: Load new slot configuration (reinitialize_from_db)
-    Manager->Manager: Validate configuration
-    Manager->>Modules: Spawn modules with new config
-    Note over Modules: Modules running
-    Manager-->>Client: [Configuration API] ActiveSlotUpdate(status: Running)
-```
-
-If the reloaded configuration is invalid or contains no modules, the restart fails: the manager exits with an
-error, or — with ``--idle-on-failure`` — stays in Idle and reports ``FailedToStart``.
-
-### Manager Unavailability
-Since the ConfigServiceCore is part of the manager process, if the manager crashes, the Configuration API is
-unavailable and modules are also down. On restart, the manager reinitializes the ConfigServiceCore, loads the
-boot_slot and starts the modules.
-
-### Deployment
-The manager is the single long-lived process. It is started by the system init (e.g. via systemd), but does not
-depend on systemd for module lifecycle management. Systemd only ensures the manager itself starts on boot.
-
-No special tooling for production and development deployments is required. Running
-`./manager --config my_config.yaml` starts the manager with the YAML as the authoritative configuration (in-memory
-database, re-seeded on every start). For database-backed deployments, `./manager --config my_config.yaml --db
-everest.db` uses the database once it holds a valid configuration and seeds it from the YAML otherwise; add
-`--reset-from-yaml` to force re-importing the YAML. There is no distinction between development and production
-process architecture — the developer experience and the production deployment use the same single-process model as
-known from previous versions.
-
-## Read Operation by Configuration API Client
-A Configuration API Client sends a Get request to the manager via the Configuration API. The ConfigServiceCore
-validates the request and returns the requested configuration data. This works regardless of whether modules are
-running.
-
-```mermaid
-sequenceDiagram
-    participant Client as Configuration API Client
-    participant Manager as EVerest Manager + ConfigServiceCore
- 
-    Client->>Manager: [Configuration API] GetConfigurationRequest(request)
-    Manager->Manager: Validate request, Access control
-    Manager->Manager: Read from memory (active slot) or from the database<br/>(other slots, or force_read_from_db)
-    Manager-->>Client: [Configuration API] GetConfigurationResult(result, data)
-```
-
-## Read Operation by EVerest module
-An EVerest module sends a Get request to the manager via the internal API (`GetRequest`). The ConfigServiceCore
-validates the request and returns the requested configuration data (`GetResponse`).
-
-```mermaid
-sequenceDiagram
-    participant Client as EVerest Module
-    participant Manager as MqttConfigServiceHandler + ConfigServiceCore
- 
-    Client->>Manager: [Internal API] GetRequest(identifier)
-    Manager->Manager: Validate request, Access control
-    Manager->Manager: Read from memory
-    Manager-->>Client: [Internal API] GetResponse(data)
-```
-
-## Write Operation by Configuration API Client
-A Configuration API Client sends a Write request to the manager via the Configuration API. Every value is first
-validated against the parameter's datatype; a value that would fail to parse on the next boot is rejected
-(`Rejected`) before anything is persisted. Writes to the **active** slot are refused while the modules are
-mid-transition (starting, stopping, restart triggered): the whole request then reports
-`ModulesInTransientState` / `RetryLater` and nothing is persisted.
-If the target is an inactive slot, the ConfigServiceCore validates the request and persists the change directly to the
-database. The change will be applied when EVerest boots from that slot.
-If the target is the active slot, the ConfigServiceCore first persists the change to the database, marking it to be
-applied on the next restart. Then, if the module is running and the parameter is mutable at runtime (`ReadWrite`),
-the MqttConfigServiceHandler delivers the change to the target module via the EVerest Internal API (`set_request`)
-and waits for the module's verdict (`set_response`).
-- If the module applies the change immediately (`Applied`), the in-memory configuration is updated.
-- If the module requires a restart (`RequiresRestart`), the change is already persisted and will be loaded on the
-  next boot.
-- If the module rejects the runtime change (`Rejected`), it will still be applied on the next boot because it has
-  already been persisted.
-- If no runtime-change forwarding is set up in the manager, the change is not delivered to the module; it has
-  already been persisted and simply applies on the next restart (`WillApplyOnRestart`).
-When the manager runs without ``--db``, the user-config YAML mirror is written *before* the in-memory database: a
-failed mirror write rejects the update (`Rejected`), because the mirror is then the only persistence that survives a
-restart.
-Finally, the ConfigServiceCore sends a notification about the configuration change (only if at least one parameter
-was written) and returns a detailed result to the client for each parameter. The request-level status is `Ok` unless
-the write hits the transient-state case above (`ModulesInTransientState`); the outcome of every individual parameter
-(`Applied`, `WillApplyOnRestart`, `DoesNotExist`, `Rejected`, `RetryLater`) is reported per parameter together with a
-`status_info` explanation.
-
-```mermaid
-sequenceDiagram
-    participant Client as Configuration API Client
-    participant Manager as EVerest Manager + ConfigServiceCore
-    participant TargetModule as EVerestModule (target)
- 
-    Client->>Manager: [Configuration API] SetConfigParameters(slot_id, updates[])
-    Manager->Manager: Validate request, Access control
-    alt is invalid or not allowed
-      Manager-->>Client: [Configuration API] SetConfigParameterResult(status, [Rejected, ...])
-    else slot_id is active slot AND modules are mid-transition
-      Manager-->>Client: [Configuration API] SetConfigParameterResult(ModulesInTransientState, [RetryLater, ...])
-    else is valid and allowed
-      loop for every update in updates
-        alt slot_id is active slot
-            Manager->Manager: Validate value against the parameter datatype
-            Manager->Manager: Persist change (user-config mirror, then database)
-            note right of Manager: Default result: WillApplyOnRestart
-            opt modules are running AND param is ReadWrite
-                Manager->>TargetModule: [Internal API] set_request(identifier, value)
-                alt Module replies Applied
-                    TargetModule-->>Manager: [Internal API] set_response(Accepted)
-                    Manager->Manager: Update in-memory config
-                    note right of Manager: Final result for param: Applied
-                else Module replies RequiresRestart
-                    TargetModule-->>Manager: [Internal API] set_response(RebootRequired)
-                    note right of Manager: Final result for param: WillApplyOnRestart
-                else Module replies Rejected
-                    TargetModule-->>Manager: [Internal API] set_response(Rejected)
-                    note right of Manager: Final result for param: WillApplyOnRestart<br/>(runtime change rejected)
-                end
-            end
-        else slot_id is not active
-            Manager->Manager: Validate value against the parameter datatype
-            Manager->Manager: Persist change to the slot's storage
-            note right of Manager: Final result for param: WillApplyOnRestart
-        end
-      end
-      Manager->Manager: publish ConfigurationUpdate (if anything was written)
-      Manager-->>Client: [Configuration API] SetConfigParameterResult(status, [Applied, WillApplyOnRestart, ...])
-    end
-```
-
-## Write Operation by EVerest Module
-An EVerest module (e.g. OCPP) sends a Write request to the manager via the EVerest internal API (`SetRequest`).
-Unlike the Configuration API, modules update a single parameter at a time and always target the active slot. The
-`MqttConfigServiceHandler` routes the request to `ConfigServiceCore`. The core first persists the change to the
-database, guaranteeing it will be active after a restart. If the parameter is mutable at runtime, it is then
-forwarded to the target module to be applied immediately. The final status (`Accepted`, `RebootRequired`, or
-`Rejected`) is returned to the calling module via a `SetResponse`. A value that does not match the parameter's
-datatype, and any write attempted while the modules are mid-transition, is answered with `Rejected`; the
-`status_info` field carries the reason (e.g. the module's runtime veto).
-
-```mermaid
-sequenceDiagram
-    participant Client as EVerest Module
-    participant Manager as MqttConfigServiceHandler + ConfigServiceCore
-    participant TargetModule as EVerest Module (target)
- 
-    Client->>Manager: [Internal API] SetRequest(identifier, value)
-    Manager->Manager: Validate request, Access control
-    alt is invalid or not allowed
-      Manager-->>Client: [Internal API] SetResponse(status: Rejected)
-    else is valid and allowed
-      Manager->Manager: Persist change to database
-      note right of Manager: Default result: RebootRequired
-      alt Target module is running AND param is ReadWrite
-          Manager->>TargetModule: [Internal API] set_request(identifier, value)
-          alt Module replies Accepted
-              TargetModule-->>Manager: [Internal API] set_response(Accepted)
-              Manager->Manager: Update in-memory config
-              note right of Manager: Final result: Accepted
-          else Module replies RebootRequired
-              TargetModule-->>Manager: [Internal API] set_response(RebootRequired)
-              note right of Manager: Final result: RebootRequired
-          else Module replies Rejected
-              TargetModule-->>Manager: [Internal API] set_response(Rejected)
-              note right of Manager: Final result: RebootRequired<br/>(runtime change rejected)
-          end
-      end
-      Manager->Manager: publish ConfigurationUpdate
-      Manager-->>Client: [Internal API] SetResponse(status)
-    end
-```
+1. **Validate before persisting.** `validate_config_value()` runs first, so a value that would
+   fail to parse on the next boot never reaches the database
+   (`config_service_core.cpp:512-519`, `:618-625`). Datatype only — no min/max range check at
+   this layer.
+2. **Mirror before database.** Without `--db` the user-config YAML mirror is written *before* the
+   in-memory database, and a failed mirror write rejects the update, because the mirror is the
+   only persistence that survives a restart (`config_service_core.cpp:522-539`).
+3. **Persist before consulting the module.** A successful database write sets
+   `WillApplyOnRestart`; only then is the runtime path entered, and only when mutability is
+   `ReadWrite` and the modules are running (`:541-552`). With no forwarder registered the value is
+   already persisted and `status_info` says so (`:554-560`).
+4. **Transient state fails the whole request.** `ModulesInTransientState` fills *every*
+   per-parameter result with `RetryLater` and persists nothing (`:467-471`).
+5. **Notify only when something was written** — guarded by `if (not event.updates.empty())`
+   (`:478`).
+6. **Reload only at rest.** `reinitialize_from_db()` is skipped while modules are running or
+   mid-transition, so running processes cannot desynchronize from the in-memory configuration.
