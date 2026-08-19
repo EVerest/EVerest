@@ -32,11 +32,12 @@ enum class poll_events {
     hungup = 4,
 };
 
-// event/fd_event_client.hpp declares poll_events opaquely to break the include cycle with this
-// header. That declaration is compatible only while the definition keeps its implicit type.
+// event/fd_event_client.hpp and socket/socket.hpp declare poll_events opaquely to break the
+// include cycle with this header. Those declarations are compatible only while the definition
+// keeps its implicit type.
 static_assert(std::is_same_v<std::underlying_type_t<poll_events>, int>,
-              "poll_events must keep its implicit underlying type: event/fd_event_client.hpp "
-              "declares it without one");
+              "poll_events must keep its implicit underlying type: event/fd_event_client.hpp and "
+              "socket/socket.hpp declare it without one");
 
 std::set<poll_events> operator|(poll_events lhs, poll_events rhs);
 std::set<poll_events>& operator|(std::set<poll_events>& lhs, poll_events rhs);
