@@ -243,7 +243,8 @@ void EvseManager::init() {
 
     if (config.charge_mode == "DC" and not r_powermeter_car_side.empty()) {
         // The car side power meter may restrict the minimum current (e.g. it is only precise above a
-        // minimum current according to calibration law). Applied on top of the power supply capabilities.
+        // minimum current according to calibration law). Merged into the limits advertised to the EV
+        // via HLC; internal power supply control is unaffected.
         r_powermeter_car_side[0]->subscribe_capabilities(
             [this](const types::powermeter::Capabilities& caps) { update_powermeter_capabilities(caps); });
     }
@@ -2703,10 +2704,11 @@ types::power_supply_DC::Capabilities EvseManager::get_powersupply_capabilities()
     caps.max_export_power_W = min_optional(caps.max_export_power_W, derate.max_export_power_W);
     caps.max_import_power_W = min_optional(caps.max_import_power_W, derate.max_import_power_W);
 
-    // Raise minimum current limits according to power meter capabilities
-    caps = apply_powermeter_limits(caps);
-
     return caps;
+}
+
+types::power_supply_DC::Capabilities EvseManager::get_powersupply_capabilities_for_hlc() {
+    return apply_powermeter_limits(get_powersupply_capabilities());
 }
 
 types::power_supply_DC::Capabilities EvseManager::apply_powermeter_limits(types::power_supply_DC::Capabilities caps,

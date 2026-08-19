@@ -187,6 +187,29 @@ TEST(PowermeterLimitsTest, zero_max_export_still_clamps_minimum) {
     EXPECT_FLOAT_EQ(result.min_export_current_A, 0.0f);
 }
 
+TEST(PowermeterLimitsTest, only_minimum_fields_are_modified) {
+    // Callers rely on the merge touching nothing but the (nominal) minimum currents, e.g. the
+    // energy limits path uses the merged view for its maximum limit calculations as well.
+    auto caps = make_psu_caps();
+    caps.max_import_voltage_V = 900.0f;
+    caps.min_import_voltage_V = 150.0f;
+    caps.max_import_current_A = 200.0f;
+    caps.min_import_current_A = 4.0f;
+    caps.max_import_power_W = 150000.0f;
+    caps.nominal_max_export_current_A = 190.0f;
+    caps.nominal_max_import_current_A = 190.0f;
+    caps.conversion_efficiency_import = 0.95f;
+    caps.conversion_efficiency_export = 0.95f;
+
+    auto result = module::apply_powermeter_limits(caps, make_meter_caps(10.0f, 12.0f));
+
+    result.min_export_current_A = caps.min_export_current_A;
+    result.nominal_min_export_current_A = caps.nominal_min_export_current_A;
+    result.min_import_current_A = caps.min_import_current_A;
+    result.nominal_min_import_current_A = caps.nominal_min_import_current_A;
+    EXPECT_EQ(result, caps);
+}
+
 TEST(PowermeterLimitsTest, both_directions_applied_independently) {
     auto caps = make_psu_caps();
     caps.max_import_current_A = 200.0f;

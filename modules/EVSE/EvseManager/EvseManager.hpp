@@ -259,7 +259,17 @@ public:
     bool session_is_iso_d20_ac_bpt();
     bool session_is_iso_d20_dc_bpt();
 
+    /// \brief Capabilities of the DC power supply (including external derating) for internal
+    ///        power supply control. Excludes power meter minimum-current constraints.
     types::power_supply_DC::Capabilities get_powersupply_capabilities();
+
+    /// \brief DC limits as offered to the EV via HLC (ISO 15118): power supply capabilities
+    ///        (including external derating) with minimum currents raised to the car side power
+    ///        meter's minimum measurable currents (e.g. calibration law accuracy limits).
+    ///        Do NOT use for internal power supply control (setpoint clamping, cable check,
+    ///        precharge, over-voltage thresholds) - use get_powersupply_capabilities() there.
+    types::power_supply_DC::Capabilities get_powersupply_capabilities_for_hlc();
+
     void set_external_derating(types::dc_external_derate::ExternalDerating d);
 
     void update_powersupply_capabilities(types::power_supply_DC::Capabilities caps);
