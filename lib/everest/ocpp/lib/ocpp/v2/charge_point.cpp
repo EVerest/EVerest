@@ -104,11 +104,12 @@ ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connec
                 ocpp_main_path, core_database_path, sql_init_path, message_log_path, evse_security, callbacks) {
 }
 
-ChargePoint::~ChargePoint() = default;
+ChargePoint::~ChargePoint() {
+    // Suppress deferred websocket callbacks before any member is destroyed.
+    this->connectivity_manager->disarm_connection_callbacks();
+}
 
 void ChargePoint::start(BootReasonEnum bootreason, bool start_connecting) {
-    // Lift the suppression a preceding stop() put in place, so the connection state is reported again.
-    this->connectivity_manager->arm_connection_callbacks();
     this->connectivity_manager->set_message_callback(
         std::bind(&ChargePoint::message_callback, this, std::placeholders::_1));
     this->message_queue->start();
@@ -163,10 +164,9 @@ void ChargePoint::stop() {
     this->ocsp_updater.stop();
     this->availability->stop_heartbeat_timer();
     this->provisioning->stop_bootnotification_timer();
+    // Callbacks stay armed: this only queues the disconnected notification the owner waits for.
+    // ~ChargePoint() disarms.
     this->connectivity_manager->disconnect();
-    // Disarm before tearing down the message queue: a late websocket-thread disconnect callback
-    // must not reach into members being destroyed.
-    this->connectivity_manager->disarm_connection_callbacks();
     this->security->stop_certificate_expiration_check_timers();
     this->diagnostics->stop_monitoring();
     this->message_queue->stop();
