@@ -18,10 +18,17 @@ struct ResetState : public FSMSimpleState {
     void enter() final;
     CallbackReturnType callback() final;
 
-    // for now returns true if CM_SET_KEY_CNF is received
+    // returns true if a CM_SET_KEY_CNF reporting success is received
     bool handle_slac_message(slac::messages::HomeplugMessage&);
 
-    bool setup_has_been_send{false};
+    // number of CM_SET_KEY.REQ messages sent so far in this reset cycle
+    int set_key_attempts{0};
+    // time the last CM_SET_KEY.REQ was sent, used to space out retries
+    std::chrono::steady_clock::time_point last_attempt_time{};
+
+    // Candidate NMK currently being programmed into the modem.
+    // Promoted to slac_config.session_nmk when CM_SET_KEY.CNF succeeds, or else we continue with the old key.
+    uint8_t pending_nmk[slac::defs::NMK_LEN]{};
 };
 
 struct ResetChipState : public FSMSimpleState {
@@ -93,6 +100,7 @@ struct WaitForLinkState : public FSMSimpleState {
 struct InitState : public FSMSimpleState {
     using FSMSimpleState::FSMSimpleState;
 
+    void enter() final;
     HandleEventReturnType handle_event(AllocatorType&, Event) final;
 
     CallbackReturnType callback() final;
