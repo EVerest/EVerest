@@ -2687,18 +2687,23 @@ bool EvseManager::session_is_iso_d20_dc_bpt() {
 
 types::power_supply_DC::Capabilities EvseManager::get_powersupply_capabilities() {
     types::power_supply_DC::Capabilities caps;
-    types::dc_external_derate::ExternalDerating derate;
 
     {
         std::scoped_lock lock(powersupply_capabilities_mutex);
         caps = powersupply_capabilities;
     }
+
+    return apply_external_derating(std::move(caps));
+}
+
+types::power_supply_DC::Capabilities
+EvseManager::apply_external_derating(types::power_supply_DC::Capabilities caps) {
+    types::dc_external_derate::ExternalDerating derate;
     {
         std::scoped_lock lock(dc_external_derate_mutex);
         derate = get_dc_external_derate(this->ev_info.present_voltage, dc_external_derate);
     }
 
-    // Apply external derating if set
     caps.max_export_current_A = min_optional(caps.max_export_current_A, derate.max_export_current_A);
     caps.max_import_current_A = min_optional(caps.max_import_current_A, derate.max_import_current_A);
     caps.max_export_power_W = min_optional(caps.max_export_power_W, derate.max_export_power_W);
@@ -2755,9 +2760,11 @@ void EvseManager::update_powermeter_capabilities(const types::powermeter::Capabi
 }
 
 void EvseManager::push_powersupply_capabilities_to_hlc() {
-    // Hold the lock across merge and send so concurrent pushes cannot reach HLC out of order
+    // Hold the lock across merge and send so concurrent pushes cannot reach HLC out of order.
+    // Derating is applied before the power meter limits so that a meter minimum above a derated
+    // maximum is clamped consistently with the enforce_limits path.
     std::scoped_lock lock(powersupply_capabilities_mutex);
-    const auto caps = apply_powermeter_limits(powersupply_capabilities, true);
+    const auto caps = apply_powermeter_limits(apply_external_derating(powersupply_capabilities), true);
 
     if (not last_hlc_capabilities.has_value() or caps != last_hlc_capabilities.value()) {
         r_hlc[0]->call_set_powersupply_capabilities(caps);
@@ -2786,8 +2793,17 @@ void EvseManager::push_powersupply_capabilities_to_hlc() {
 }
 
 void EvseManager::set_external_derating(types::dc_external_derate::ExternalDerating d) {
-    std::scoped_lock lock(dc_external_derate_mutex);
-    dc_external_derate = d;
+    {
+        std::scoped_lock lock(dc_external_derate_mutex);
+        if (dc_external_derate == d) {
+            return;
+        }
+        dc_external_derate = d;
+    }
+
+    if (hlc_enabled and config.charge_mode == "DC") {
+        push_powersupply_capabilities_to_hlc();
+    }
 }
 
 } // namespace module

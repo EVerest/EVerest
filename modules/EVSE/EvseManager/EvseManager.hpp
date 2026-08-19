@@ -308,6 +308,7 @@ private:
     // update paths pass true so clamp warnings appear once per actual change
     types::power_supply_DC::Capabilities apply_powermeter_limits(types::power_supply_DC::Capabilities caps,
                                                                  bool log_warnings = false);
+    types::power_supply_DC::Capabilities apply_external_derating(types::power_supply_DC::Capabilities caps);
     void push_powersupply_capabilities_to_hlc();
 
     Everest::timed_mutex_traceable power_mutex;
