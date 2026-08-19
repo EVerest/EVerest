@@ -3,11 +3,24 @@
 
 #include <everest/io/event/event_fd.hpp>
 #include <everest/io/event/fd_event_client.hpp>
+#include <everest/io/tcp/tcp_client.hpp>
+#include <everest/io/udp/udp_client.hpp>
 #include <everest/io/utilities/event_client_async_policy.hpp>
+#include <everest/io/utilities/generic_error_state.hpp>
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -24,6 +37,7 @@ using namespace everest::lib::io;
 
 using everest::lib::io::event::event_fd;
 using everest::lib::io::event::fd_event_client;
+using everest::lib::io::event::semaphore_fd;
 using everest::lib::io::utilities::event_client_async_policy_v;
 
 namespace {
@@ -201,22 +215,83 @@ template <class Client> void pump_for(Client& client, std::chrono::milliseconds 
     }
 }
 
+// Stands for "written by a policy that has no connect attempt of its own".
+constexpr std::size_t no_attempt{std::numeric_limits<std::size_t>::max()};
+
+// Records what a policy actually handed to the wire, shared across the policy instances a
+// client creates on every reset.
+struct tx_record {
+    std::vector<int> values;
+    // The connect attempt the policy instance that wrote each value belongs to, so a payload can
+    // be attributed to a peer rather than only to the wire.
+    std::vector<std::size_t> attempts;
+
+    void add(int value, std::size_t attempt) {
+        values.push_back(value);
+        attempts.push_back(attempt);
+    }
+
+    std::vector<std::size_t> attempts_of(int value) const {
+        std::vector<std::size_t> result;
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            if (values[i] == value) {
+                result.push_back(attempts[i]);
+            }
+        }
+        return result;
+    }
+};
+
+// A payload source the test makes readable on demand. The descriptor lives here rather than in
+// the policy, so it survives the policy instances a client replaces on every reset. A semaphore
+// descriptor keeps the counter equal to pending, so a read can never consume more than one push
+// and leave a later read blocking on an empty descriptor.
+struct rx_source {
+    semaphore_fd ready;
+    std::atomic<int> pending{0};
+    int value{0};
+
+    void push(int item) {
+        value = item;
+        ++pending;
+        ready.notify();
+    }
+
+    bool take(int& out) {
+        if (pending.load() <= 0) {
+            return false;
+        }
+        --pending;
+        ready.read();
+        out = value;
+        return true;
+    }
+};
+
 class deterministic_async_policy {
 public:
     using PayloadT = int;
+
+    // Stands in for a payload that survives a replay, so it asks for the pre-connect buffer.
+    static constexpr bool buffer_tx_before_connect{true};
 
     deterministic_async_policy() = default;
     explicit deterministic_async_policy(std::shared_ptr<async_connect_control> control) :
         m_control(std::move(control)) {
     }
     ~deterministic_async_policy() {
-        if (m_control and m_attempt != std::numeric_limits<std::size_t>::max()) {
+        if (m_control and m_attempt != no_attempt) {
             m_control->mark_policy_destroyed(m_attempt);
         }
     }
 
-    bool setup(std::shared_ptr<async_connect_control> control) {
+    // The source is optional. Without one the policy keeps its own descriptor, which never becomes
+    // readable, so a client built without a source behaves exactly as before.
+    bool setup(std::shared_ptr<async_connect_control> control, std::shared_ptr<tx_record> record = nullptr,
+               std::shared_ptr<rx_source> source = nullptr) {
         m_control = std::move(control);
+        m_tx_record = std::move(record);
+        m_source = std::move(source);
         return static_cast<bool>(m_control);
     }
 
@@ -232,12 +307,67 @@ public:
         m_attempt = attempt;
         m_last_error = m_control->error_code(attempt);
         m_control->wait_for_release(attempt);
-        cb(ok, ok ? m_ready_event.get_raw_fd() : -1);
+        cb(ok, ok ? get_fd() : -1);
         m_control->mark_completed(attempt);
     }
 
-    bool tx(PayloadT const&) {
-        return false;
+    bool tx(PayloadT const& payload) {
+        if (not m_tx_record) {
+            return false;
+        }
+        m_tx_record->add(payload, m_attempt);
+        return true;
+    }
+
+    bool rx(PayloadT& data) {
+        return m_source and m_source->take(data);
+    }
+
+    int get_fd() const {
+        return m_source ? m_source->ready.get_raw_fd() : m_ready_event.get_raw_fd();
+    }
+
+    int get_error() const {
+        return m_last_error;
+    }
+
+    // The connect attempt this instance belongs to. A client replaces the instance on every reset,
+    // so this is the identity of the peer a read was served from.
+    std::size_t attempt() const {
+        return m_attempt;
+    }
+
+private:
+    std::shared_ptr<async_connect_control> m_control;
+    std::shared_ptr<tx_record> m_tx_record;
+    std::shared_ptr<rx_source> m_source;
+    event_fd m_ready_event;
+    int m_last_error{0};
+    std::size_t m_attempt{no_attempt};
+};
+
+static_assert(event_client_async_policy_v<deterministic_async_policy>);
+
+// Stands in for the seven aliases that resolve open() synchronously and must keep rejecting
+// until they are up.
+class deterministic_sync_policy {
+public:
+    using PayloadT = int;
+
+    deterministic_sync_policy() = default;
+
+    bool open(std::shared_ptr<tx_record> record) {
+        m_tx_record = std::move(record);
+        return static_cast<bool>(m_tx_record);
+    }
+
+    bool tx(PayloadT const& payload) {
+        if (not m_tx_record) {
+            return false;
+        }
+        // A synchronous policy has no connect attempt to attribute the payload to.
+        m_tx_record->add(payload, no_attempt);
+        return true;
     }
 
     bool rx(PayloadT&) {
@@ -249,21 +379,228 @@ public:
     }
 
     int get_error() const {
-        return m_last_error;
+        return 0;
     }
 
 private:
-    std::shared_ptr<async_connect_control> m_control;
+    std::shared_ptr<tx_record> m_tx_record;
     event_fd m_ready_event;
-    int m_last_error{0};
-    std::size_t m_attempt{std::numeric_limits<std::size_t>::max()};
 };
 
-static_assert(event_client_async_policy_v<deterministic_async_policy>);
+static_assert(not event_client_async_policy_v<deterministic_sync_policy>);
+
+// Synchronous open() plus a working rx, so a reset can be queued in the same poll cycle as a
+// successful receive.
+class rx_capable_sync_policy {
+public:
+    using PayloadT = int;
+
+    rx_capable_sync_policy() = default;
+
+    bool open(std::shared_ptr<tx_record> record, std::shared_ptr<rx_source> source) {
+        m_tx_record = std::move(record);
+        m_source = std::move(source);
+        return static_cast<bool>(m_tx_record) and static_cast<bool>(m_source);
+    }
+
+    bool tx(PayloadT const& payload) {
+        if (not m_tx_record) {
+            return false;
+        }
+        // A synchronous policy has no connect attempt to attribute the payload to.
+        m_tx_record->add(payload, no_attempt);
+        return true;
+    }
+
+    bool rx(PayloadT& data) {
+        return m_source and m_source->take(data);
+    }
+
+    int get_fd() const {
+        return m_source ? m_source->ready.get_raw_fd() : -1;
+    }
+
+    int get_error() const {
+        return 0;
+    }
+
+private:
+    std::shared_ptr<tx_record> m_tx_record;
+    std::shared_ptr<rx_source> m_source;
+};
+
+static_assert(not event_client_async_policy_v<rx_capable_sync_policy>);
+
+// Steers a read that fails on a readable descriptor and the errno the policy then reports for it.
+struct rx_fault_plan {
+    bool rx_fails{false};
+    int error_code{0};
+};
+
+// Synchronous open() whose read can be made to fail while the descriptor is readable, with an
+// errno of the test's choosing. rx_capable_sync_policy cannot express this: its rx only fails on
+// an empty source and its get_error is hardwired to 0, so nothing there reaches the route that
+// turns a dead socket into a reported error.
+class faulting_rx_sync_policy {
+public:
+    using PayloadT = int;
+
+    faulting_rx_sync_policy() = default;
+
+    bool open(std::shared_ptr<rx_source> source, std::shared_ptr<rx_fault_plan> fault) {
+        m_source = std::move(source);
+        m_fault = std::move(fault);
+        return static_cast<bool>(m_source) and static_cast<bool>(m_fault);
+    }
+
+    bool tx(PayloadT const&) {
+        return true;
+    }
+
+    bool rx(PayloadT& data) {
+        int value{0};
+        if (not m_source or not m_source->take(value)) {
+            return false;
+        }
+        // The readiness is taken either way. A socket read that fails has consumed its event too,
+        // so leaving the descriptor readable would spin the poll loop instead.
+        if (m_fault and m_fault->rx_fails) {
+            return false;
+        }
+        data = value;
+        return true;
+    }
+
+    int get_fd() const {
+        return m_source ? m_source->ready.get_raw_fd() : -1;
+    }
+
+    int get_error() const {
+        return m_fault ? m_fault->error_code : 0;
+    }
+
+private:
+    std::shared_ptr<rx_source> m_source;
+    std::shared_ptr<rx_fault_plan> m_fault;
+};
+
+static_assert(not event_client_async_policy_v<faulting_rx_sync_policy>);
+
+// A loopback listener whose accept queue is full. Further connects stay unfinished instead of
+// being refused, and nothing is ever accepted.
+class unreachable_peer {
+public:
+    unreachable_peer() = default;
+    unreachable_peer(unreachable_peer const&) = delete;
+    unreachable_peer& operator=(unreachable_peer const&) = delete;
+
+    ~unreachable_peer() {
+        for (auto fd : m_pending) {
+            ::close(fd);
+        }
+        if (m_listen_fd >= 0) {
+            ::close(m_listen_fd);
+        }
+    }
+
+    bool start() {
+        m_listen_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (m_listen_fd < 0) {
+            return false;
+        }
+        auto addr = loopback_address(0);
+        if (::bind(m_listen_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+            return false;
+        }
+        if (::listen(m_listen_fd, 1) != 0) {
+            return false;
+        }
+        socklen_t len = sizeof(addr);
+        if (::getsockname(m_listen_fd, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
+            return false;
+        }
+        m_port = ::ntohs(addr.sin_port);
+
+        for (std::size_t i = 0; i < backlog_fill; ++i) {
+            auto fd = connect_without_waiting();
+            if (fd < 0) {
+                return false;
+            }
+            m_pending.push_back(fd);
+        }
+        return is_saturated();
+    }
+
+    std::uint16_t port() const {
+        return m_port;
+    }
+
+private:
+    static constexpr std::size_t backlog_fill{32};
+    static constexpr int saturation_probe_ms{200};
+
+    static sockaddr_in loopback_address(std::uint16_t port) {
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = ::htonl(INADDR_LOOPBACK);
+        addr.sin_port = ::htons(port);
+        return addr;
+    }
+
+    int connect_without_waiting() const {
+        auto fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+        if (fd < 0) {
+            return -1;
+        }
+        auto addr = loopback_address(m_port);
+        if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 and errno != EINPROGRESS) {
+            ::close(fd);
+            return -1;
+        }
+        return fd;
+    }
+
+    // A saturated queue leaves a fresh connect unfinished for the whole probe window.
+    bool is_saturated() {
+        auto fd = connect_without_waiting();
+        if (fd < 0) {
+            return false;
+        }
+        m_pending.push_back(fd);
+        pollfd item{fd, POLLOUT, 0};
+        return ::poll(&item, 1, saturation_probe_ms) == 0;
+    }
+
+    int m_listen_fd{-1};
+    std::uint16_t m_port{0};
+    std::vector<int> m_pending;
+};
+
+class error_state_probe : public utilities::generic_error_state {
+public:
+    using generic_error_state::current_connection_state;
+    using generic_error_state::on_error;
+    using generic_error_state::set_error_status;
+};
+
+char const* state_name(utilities::connection_state state) {
+    switch (state) {
+    case utilities::connection_state::fresh:
+        return "fresh";
+    case utilities::connection_state::connected:
+        return "connected";
+    case utilities::connection_state::failed:
+        return "failed";
+    }
+    return "unknown";
+}
 
 } // namespace
 
 using deterministic_async_client = fd_event_client<deterministic_async_policy>::type;
+using deterministic_sync_client = fd_event_client<deterministic_sync_policy>::type;
+using rx_capable_sync_client = fd_event_client<rx_capable_sync_policy>::type;
+using faulting_rx_sync_client = fd_event_client<faulting_rx_sync_policy>::type;
 
 // Verify reset and sync do not block when an async connect callback is still
 // pending, protecting against deadlocks in the connect/reset path.
@@ -411,4 +748,732 @@ TEST(fd_event_client_async_test, stale_connected_notification_is_not_observed) {
     EXPECT_EQ(ready_calls.load(), 0);
 
     ASSERT_TRUE(control->wait_for_attempt_completed(1, 300ms));
+}
+
+// A client that has never connected must be distinguishable from one whose connection
+// failed. on_error() keeps covering both as "not up".
+TEST(connection_state_test, a_never_connected_state_is_fresh) {
+    error_state_probe state;
+
+    EXPECT_TRUE(state.on_error());
+    EXPECT_EQ(state.current_connection_state(), utilities::connection_state::fresh)
+        << "a state that never saw a connection attempt reports " << state_name(state.current_connection_state());
+}
+
+TEST(connection_state_test, a_clean_status_reports_connected) {
+    error_state_probe state;
+
+    state.set_error_status(0);
+
+    EXPECT_FALSE(state.on_error());
+    EXPECT_EQ(state.current_connection_state(), utilities::connection_state::connected)
+        << "a state with no pending error reports " << state_name(state.current_connection_state());
+}
+
+TEST(connection_state_test, an_error_status_reports_failed) {
+    error_state_probe state;
+
+    state.set_error_status(ECONNREFUSED);
+
+    EXPECT_TRUE(state.on_error());
+    EXPECT_EQ(state.current_connection_state(), utilities::connection_state::failed)
+        << "a state with a pending error reports " << state_name(state.current_connection_state());
+}
+
+// The live case behind the tri-state: the writer is ready while the async connect is still
+// in flight, so an early payload has to survive instead of being dropped without a
+// diagnostic.
+TEST(fd_event_client_tx_test, tx_while_the_connect_is_pending_is_buffered_and_delivered) {
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, 0}});
+    auto record = std::make_shared<tx_record>();
+    deterministic_async_client client(control, record);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    ASSERT_TRUE(client.on_error()) << "the connect already resolved, so there is no pending window to test";
+
+    EXPECT_TRUE(client.tx(7)) << "a payload sent while the async connect was pending was rejected";
+    EXPECT_TRUE(record->values.empty()) << "a payload was written before the client was up";
+
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); }));
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return record->values == std::vector<int>{7}; }))
+        << "the buffered payload was not delivered after the connect completed, " << record->values.size()
+        << " payloads reached the wire";
+}
+
+// The window opens at construction, before the queued connect action has run at all.
+TEST(fd_event_client_tx_test, tx_before_the_first_sync_is_not_silently_dropped) {
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, 0}});
+    auto record = std::make_shared<tx_record>();
+    deterministic_async_client client(control, record);
+
+    EXPECT_TRUE(client.tx(11)) << "a payload sent before the first sync was rejected";
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); }));
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return record->values == std::vector<int>{11}; }))
+        << "tx() reported success and the payload never reached the wire, " << record->values.size()
+        << " payloads delivered";
+}
+
+// A failed connect keeps rejecting: there is no peer to buffer for.
+TEST(fd_event_client_tx_test, tx_on_a_failed_client_is_rejected) {
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{false, ECONNREFUSED}});
+    auto record = std::make_shared<tx_record>();
+    deterministic_async_client client(control, record);
+
+    std::atomic<int> error_calls{0};
+    client.set_error_handler([&](int code, std::string const&) {
+        if (code != 0) {
+            ++error_calls;
+        }
+    });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return error_calls.load() == 1; }));
+    ASSERT_TRUE(client.on_error());
+
+    EXPECT_FALSE(client.tx(13)) << "a payload was accepted after the connect failed";
+    EXPECT_TRUE(record->values.empty());
+
+    control->release_all();
+}
+
+// A reset returns the client to fresh, so the buffering window opens on every reconnect and not
+// only on the first attempt. Retrying against a peer that is not up yet is the normal startup
+// path, so a client stuck in failed drops every payload for the rest of its life.
+TEST(fd_event_client_tx_test, a_reset_after_a_failure_buffers_again) {
+    auto control =
+        std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{false, ECONNREFUSED}, {true, 0}});
+    auto record = std::make_shared<tx_record>();
+    deterministic_async_client client(control, record);
+
+    std::atomic<int> error_calls{0};
+    client.set_error_handler([&](int code, std::string const&) {
+        if (code != 0) {
+            ++error_calls;
+        }
+    });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return error_calls.load() == 1; }));
+    ASSERT_FALSE(client.tx(23)) << "the failed client accepted a payload, so the reset below proves nothing";
+
+    // Attempt 1 stays pending, so the payload below is written inside the reconnect window.
+    client.reset();
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 2; }));
+    EXPECT_TRUE(client.tx(29)) << "a payload was rejected while the reconnect was still pending";
+    EXPECT_TRUE(record->values.empty()) << "a payload was written before the reconnect completed";
+
+    control->release(1);
+    ASSERT_TRUE(control->wait_for_attempt_completed(1, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); }));
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return record->values == std::vector<int>{29}; }))
+        << "the buffered payload never reached the reconnected peer, " << record->values.size() << " delivered";
+}
+
+// A reset opens another peer, so a payload written for the previous one is stale and may not be
+// replayed onto the new connection.
+TEST(fd_event_client_tx_test, a_reset_discards_what_was_buffered_for_the_previous_peer) {
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, 0}, {true, 0}});
+    auto record = std::make_shared<tx_record>();
+    deterministic_async_client client(control, record);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    ASSERT_TRUE(client.tx(31)) << "the payload under test was not buffered, so the reset below proves nothing";
+
+    client.reset();
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 2; }));
+    control->release_all();
+    ASSERT_TRUE(control->wait_for_attempt_completed(1, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); }));
+
+    // A payload the reconnected client does write proves the wire is live, so a missing 31 is a
+    // discard and not a client that never wrote anything at all.
+    ASSERT_TRUE(client.tx(37));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not record->values.empty(); }))
+        << "the reconnected client never wrote anything";
+    pump_for(client, 100ms);
+    EXPECT_EQ(record->values, std::vector<int>{37}) << "a payload buffered for the previous peer was replayed";
+}
+
+// The reconnect window has to open when reset() returns, not when its queued action runs. A
+// payload written in between belongs to the peer the reset opens, so it may be neither discarded
+// with the old connection nor written to it.
+TEST(fd_event_client_tx_test, a_reset_from_a_connected_client_buffers_for_the_new_peer) {
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, 0}, {true, 0}});
+    auto record = std::make_shared<tx_record>();
+    deterministic_async_client client(control, record);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came up";
+
+    client.reset();
+    EXPECT_TRUE(client.tx(41)) << "a payload written right after reset() was rejected";
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 2; }));
+    control->release(1);
+    ASSERT_TRUE(control->wait_for_attempt_completed(1, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); }));
+
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return record->values == std::vector<int>{41}; }))
+        << "the payload written after reset() never reached the wire, " << record->values.size() << " delivered";
+    EXPECT_EQ(record->attempts_of(41), std::vector<std::size_t>{1})
+        << "the payload was written to the peer the reset replaced";
+}
+
+// The old handle is still live and still registered for writing when reset() returns, so the
+// flush path has to stay shut until the new connection is up. Otherwise the very payload the
+// reconnect window accepted is written to the peer it was buffered away from.
+TEST(fd_event_client_tx_test, a_reset_does_not_flush_the_new_payload_to_the_old_peer) {
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, 0}, {true, 0}});
+    auto record = std::make_shared<tx_record>();
+    deterministic_async_client client(control, record);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came up";
+
+    // One payload out and one still queued leaves the old descriptor registered for writing, so
+    // the next poll pass reaches the flush path before any queued action runs.
+    ASSERT_TRUE(client.tx(51));
+    ASSERT_TRUE(client.tx(53));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return record->values.size() == 1; }));
+    ASSERT_EQ(record->values, std::vector<int>{51});
+
+    client.reset();
+    ASSERT_TRUE(client.tx(59));
+    client.sync(1ms); // The pass where the old descriptor is still writable.
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 2; }));
+    control->release(1);
+    ASSERT_TRUE(control->wait_for_attempt_completed(1, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); }));
+
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return record->attempts_of(59) == std::vector<std::size_t>{1}; }))
+        << "the payload written after reset() did not reach the new peer exactly once";
+    pump_for(client, 100ms);
+    EXPECT_EQ(record->values, (std::vector<int>{51, 59}))
+        << "a payload buffered for the previous peer was written after the reset";
+}
+
+// The read and the write branch of one descriptor are dispatched in the same pass. A read that
+// succeeds reports the connection as up, which happens after the rx callback has already retired
+// it, so the flush path may not take that report for the identity of the handle it is about to
+// write to.
+TEST(fd_event_client_tx_test, a_reset_from_the_rx_callback_does_not_flush_to_the_old_peer) {
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, 0}, {true, 0}});
+    auto record = std::make_shared<tx_record>();
+    auto source = std::make_shared<rx_source>();
+    deterministic_async_client client(control, record, source);
+
+    std::atomic<int> rx_calls{0};
+    std::atomic<bool> tx_accepted{false};
+    client.set_rx_handler([&](int const&, auto&) {
+        if (++rx_calls == 1) {
+            client.reset();
+            tx_accepted.store(client.tx(73));
+        }
+    });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came up";
+
+    // Nothing is readable yet, so this pass only arms write interest on the live descriptor. The
+    // payload stays queued and the next pass reports the descriptor readable and writable at once.
+    ASSERT_TRUE(client.tx(71));
+    client.sync(1ms);
+    ASSERT_TRUE(record->values.empty()) << "the queued payload drained before the read pass";
+
+    source->push(5);
+    client.sync(1ms); // The pass that reports read and write together.
+
+    ASSERT_EQ(rx_calls.load(), 1) << "the read under test never reached the callback";
+    ASSERT_TRUE(tx_accepted.load()) << "the payload written from the rx callback was rejected";
+    EXPECT_TRUE(record->attempts_of(73).empty())
+        << "the payload buffered by the rx callback was written to the peer the reset retired";
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 2; }));
+    control->release(1);
+    ASSERT_TRUE(control->wait_for_attempt_completed(1, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); }));
+
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return record->attempts_of(73) == std::vector<std::size_t>{1}; }))
+        << "the payload did not reach the peer the reset opened exactly once";
+    pump_for(client, 100ms);
+    EXPECT_EQ(record->values, std::vector<int>{73}) << "a payload buffered for the retired peer reached the wire";
+}
+
+// Resetting from inside the error callback and sending straight away is the natural consumer
+// shape for reconnect handling, so the buffering window has to be open by the time the callback
+// returns from reset().
+TEST(fd_event_client_tx_test, a_reset_inside_the_error_callback_accepts_tx_at_once) {
+    auto control =
+        std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{false, ECONNREFUSED}, {true, 0}});
+    auto record = std::make_shared<tx_record>();
+    deterministic_async_client client(control, record);
+
+    std::atomic<int> error_calls{0};
+    std::atomic<bool> tx_accepted{false};
+    client.set_error_handler([&](int code, std::string const&) {
+        if (code == 0) {
+            return;
+        }
+        if (++error_calls == 1) {
+            client.reset();
+            tx_accepted.store(client.tx(61));
+        }
+    });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return error_calls.load() == 1; })) << "the connect never failed";
+
+    EXPECT_TRUE(tx_accepted.load()) << "a payload written right after reset() inside the error callback was rejected";
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 2; }));
+    control->release(1);
+    ASSERT_TRUE(control->wait_for_attempt_completed(1, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); }));
+
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return record->values == std::vector<int>{61}; }))
+        << "the payload never reached the reconnected peer, " << record->values.size() << " delivered";
+    EXPECT_EQ(record->attempts_of(61), std::vector<std::size_t>{1});
+}
+
+// The error status handler and the socket are dispatched in the same poll pass, error status
+// first. A reset issued from the error callback retires the handle before the read branch of that
+// pass runs, so the inbound direction has to close with the outbound one. Otherwise the consumer
+// is handed one more payload from the peer it just abandoned, which a control plane consumer can
+// mistake for a response on the connection it is now waiting on.
+TEST(fd_event_client_rx_test, a_reset_from_the_error_callback_drops_the_retired_peers_read) {
+    // Attempt 0 connects and reports an errno at once, so the pass that registers the socket also
+    // reports the failure. That is what puts the error status event ahead of the socket in the
+    // next batch.
+    auto control =
+        std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, ECONNRESET}, {true, 0}});
+    auto record = std::make_shared<tx_record>();
+    auto source = std::make_shared<rx_source>();
+    deterministic_async_client client(control, record, source);
+
+    // Readable before the descriptor joins the poll set, so it is ready the moment the connected
+    // handler registers it, in the same pass that notifies the error status event.
+    source->push(5);
+
+    std::vector<std::size_t> rx_attempts;
+    std::vector<std::size_t> retired_attempts;
+    client.set_error_handler([&](int code, std::string const&) {
+        if (code == 0 or not retired_attempts.empty()) {
+            return;
+        }
+        auto const& handle = client.get_raw_handler();
+        retired_attempts.push_back(handle ? handle->attempt() : no_attempt);
+        client.reset();
+    });
+    client.set_rx_handler([&](int const&, auto&) {
+        auto const& handle = client.get_raw_handler();
+        rx_attempts.push_back(handle ? handle->attempt() : no_attempt);
+    });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not retired_attempts.empty(); }))
+        << "the failing connect never reached the error callback";
+    ASSERT_EQ(retired_attempts, std::vector<std::size_t>{0});
+
+    EXPECT_EQ(std::count(rx_attempts.begin(), rx_attempts.end(), std::size_t{0}), 0)
+        << "the rx handler was handed a payload from the peer the error callback retired";
+
+    // The skipped read must not wedge the client: it comes back up and serves reads from the
+    // connection the reset opened. How many reads arrive is not asserted. This double keeps the
+    // descriptor and the pending payload in rx_source, which outlives the policy instances, so the
+    // payload pushed before the reset survives it here. A real socket is closed by the reset and
+    // its unread payload goes with it, so that redelivery is an artifact of the double rather than
+    // a guarantee of the client.
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 2; }));
+    control->release(1);
+    ASSERT_TRUE(control->wait_for_attempt_completed(1, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came back up";
+
+    source->push(6);
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not rx_attempts.empty(); }))
+        << "no read reached the rx handler after the reset reopened the client";
+    EXPECT_TRUE(std::all_of(rx_attempts.begin(), rx_attempts.end(), [](std::size_t a) { return a == 1; }))
+        << "a read was attributed to a connection other than the one the reset opened";
+}
+
+// Buffering a peer that never comes up must not grow without limit. tx_attempts is the
+// upper bound the cap has to stay below, not the cap itself.
+TEST(fd_event_client_tx_test, the_tx_buffer_is_bounded_while_the_peer_never_connects) {
+    constexpr std::size_t tx_attempts{100000};
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, 0}});
+    auto record = std::make_shared<tx_record>();
+    deterministic_async_client client(control, record);
+
+    // Attempt 0 is never released, so the peer stays unreachable for the whole test.
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    ASSERT_TRUE(client.on_error());
+
+    std::size_t accepted{0};
+    bool rejected{false};
+    for (std::size_t i = 0; i < tx_attempts; ++i) {
+        if (client.tx(static_cast<int>(i))) {
+            ++accepted;
+            continue;
+        }
+        rejected = true;
+        break;
+    }
+
+    EXPECT_GT(accepted, 0u) << "no payload was buffered while the peer was unreachable";
+    EXPECT_TRUE(rejected) << "the buffer accepted all " << tx_attempts << " payloads, so it is unbounded";
+    EXPECT_TRUE(record->values.empty()) << "payloads reached the wire without a connected peer";
+}
+
+// A reset from the rx callback has to reopen the client just like one issued from outside a
+// callback, so a payload written once that reopen is confirmed reaches the wire.
+TEST(fd_event_client_tx_test, a_reset_from_the_rx_callback_reopens_the_client) {
+    auto record = std::make_shared<tx_record>();
+    auto source = std::make_shared<rx_source>();
+    rx_capable_sync_client client(record, source);
+
+    std::atomic<int> rx_calls{0};
+    client.set_rx_handler([&](int const&, auto&) {
+        if (++rx_calls == 1) {
+            client.reset();
+        }
+    });
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came up";
+
+    source->push(3);
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return rx_calls.load() == 1; })) << "the read under test never ran";
+
+    EXPECT_TRUE(pump_until(client, 500ms, [&] {
+        return client.get_raw_handler() != nullptr and not client.on_error();
+    })) << "the client never came back up after the reset from the rx callback";
+    EXPECT_TRUE(client.tx(83)) << "a payload was rejected after the reset from the rx callback";
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return record->values == std::vector<int>{83}; }))
+        << "the payload never reached the wire, " << record->values.size() << " payloads delivered";
+}
+
+// Buffering is scoped to async connect policies. A synchronous open() client keeps rejecting
+// until it is up, because replaying a stale control plane payload is worse than dropping it.
+TEST(fd_event_client_tx_test, a_synchronous_client_rejects_tx_before_it_is_up) {
+    auto record = std::make_shared<tx_record>();
+    deterministic_sync_client client(record);
+
+    ASSERT_TRUE(client.on_error()) << "the client reports itself up before its first sync";
+    EXPECT_FALSE(client.tx(17)) << "a synchronous open() client accepted a payload before it was up";
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); }));
+    EXPECT_TRUE(client.tx(19));
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return record->values == std::vector<int>{19}; }))
+        << "the payload sent while up was not delivered, " << record->values.size() << " payloads reached the wire";
+}
+
+// The reconnect window is an async policy feature. A synchronous client is fresh between reset()
+// and the reopen its queued action performs, and fresh rejects, so the window is closed for it.
+TEST(fd_event_client_tx_test, a_synchronous_client_rejects_tx_in_the_reset_window) {
+    auto record = std::make_shared<tx_record>();
+    deterministic_sync_client client(record);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came up";
+    ASSERT_TRUE(client.tx(101));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return record->values == std::vector<int>{101}; }));
+
+    client.reset();
+    EXPECT_TRUE(client.on_error()) << "a synchronous client reports itself up inside the reset window";
+    EXPECT_FALSE(client.tx(103)) << "a synchronous client accepted a payload inside the reset window";
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came back up";
+    EXPECT_TRUE(client.tx(107)) << "a payload was rejected after the reset completed";
+    EXPECT_TRUE(pump_until(client, 500ms, [&] {
+        return record->values == (std::vector<int>{101, 107});
+    })) << "the payload sent after the reset never reached the wire";
+}
+
+// Buffering is requested, never inherited from a transport that connects asynchronously.
+TEST(fd_event_client_tx_test, a_tcp_client_rejects_tx_while_its_connect_is_pending_by_default) {
+    unreachable_peer peer;
+    ASSERT_TRUE(peer.start()) << "could not saturate a loopback accept queue, "
+                                 "so the connect under test would not stay pending";
+
+    constexpr int connect_timeout_ms{500};
+    tcp::tcp_client client("127.0.0.1", peer.port(), connect_timeout_ms);
+
+    pump_for(client, 100ms);
+    ASSERT_TRUE(client.on_error()) << "the connect resolved against an unreachable peer";
+
+    EXPECT_FALSE(client.tx(std::vector<std::uint8_t>{1, 2, 3}))
+        << "a payload was buffered while the TCP connect was still pending, "
+           "although buffering was never requested";
+}
+
+// A UDP client resolves its connect on the first sync, so its window is everything the caller
+// does between construction and that sync.
+TEST(fd_event_client_tx_test, a_udp_client_rejects_tx_before_its_connect_runs_by_default) {
+    constexpr std::uint16_t unused_remote_port{47500};
+    udp::udp_client client("127.0.0.1", unused_remote_port);
+
+    ASSERT_TRUE(client.on_error()) << "the client reports itself up before its first sync";
+
+    EXPECT_FALSE(client.tx(udp::udp_payload{"early"}))
+        << "a payload was buffered before the UDP connect ran, although buffering was never requested";
+}
+
+TEST(fd_event_client_tx_test, a_tcp_client_asked_to_buffer_accepts_tx_while_its_connect_is_pending) {
+    unreachable_peer peer;
+    ASSERT_TRUE(peer.start()) << "could not saturate a loopback accept queue, "
+                                 "so the connect under test would not stay pending";
+
+    constexpr int connect_timeout_ms{500};
+    tcp::tcp_client client(utilities::tx_buffering::buffer, "127.0.0.1", peer.port(), connect_timeout_ms);
+
+    pump_for(client, 100ms);
+    ASSERT_TRUE(client.on_error()) << "the connect resolved against an unreachable peer";
+
+    EXPECT_TRUE(client.tx(std::vector<std::uint8_t>{1, 2, 3}))
+        << "a payload was rejected while the TCP connect was pending, although buffering was requested";
+}
+
+// Naming discard explicitly rejects just like naming nothing at all.
+TEST(fd_event_client_tx_test, a_tcp_client_asked_to_discard_rejects_tx_while_its_connect_is_pending) {
+    unreachable_peer peer;
+    ASSERT_TRUE(peer.start()) << "could not saturate a loopback accept queue, "
+                                 "so the connect under test would not stay pending";
+
+    constexpr int connect_timeout_ms{500};
+    tcp::tcp_client client(utilities::tx_buffering::discard, "127.0.0.1", peer.port(), connect_timeout_ms);
+
+    pump_for(client, 100ms);
+    ASSERT_TRUE(client.on_error()) << "the connect resolved against an unreachable peer";
+
+    EXPECT_FALSE(client.tx(std::vector<std::uint8_t>{1, 2, 3}))
+        << "a payload was buffered while the TCP connect was pending, although discard was requested";
+}
+
+TEST(fd_event_client_tx_test, an_instance_can_discard_although_its_policy_declares_buffering) {
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, 0}});
+    auto record = std::make_shared<tx_record>();
+    deterministic_async_client client(utilities::tx_buffering::discard, control, record);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    ASSERT_TRUE(client.on_error()) << "the connect already resolved, so there is no pending window to test";
+
+    EXPECT_FALSE(client.tx(41)) << "a payload was buffered while the connect was pending, although the instance "
+                                   "asked to discard and only its policy asked to buffer";
+
+    control->release_all();
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came up";
+    EXPECT_TRUE(client.tx(43)) << "a payload was rejected once the client was up";
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return record->values == std::vector<int>{43}; }))
+        << "the discarded payload was delivered too, " << record->values.size() << " payloads reached the wire";
+}
+
+// A synchronous policy has no pre-connect window, so asking for the buffer cannot open one.
+TEST(fd_event_client_tx_test, a_synchronous_client_asked_to_buffer_still_rejects_tx_before_it_is_up) {
+    auto record = std::make_shared<tx_record>();
+    deterministic_sync_client client(utilities::tx_buffering::buffer, record);
+
+    ASSERT_TRUE(client.on_error()) << "the client reports itself up before its first sync";
+    EXPECT_FALSE(client.tx(47)) << "a synchronous open() client buffered a payload before it was up, "
+                                   "although it has no pre-connect window to buffer for";
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came up";
+    EXPECT_TRUE(client.tx(53)) << "a payload was rejected once the client was up";
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return record->values == std::vector<int>{53}; }))
+        << "the payload sent while up was not delivered, " << record->values.size() << " payloads reached the wire";
+}
+
+// The trait is the declaration side of the default. Absent means off.
+TEST(fd_event_client_tx_test, the_buffering_trait_is_off_unless_a_policy_declares_it) {
+    static_assert(not utilities::policy_buffers_tx_before_connect_v<tcp::tcp_socket>,
+                  "tcp_socket declares no buffer_tx_before_connect, so it must not buffer");
+    static_assert(not utilities::policy_buffers_tx_before_connect_v<deterministic_sync_policy>,
+                  "a policy that declares nothing must not buffer");
+    static_assert(utilities::policy_buffers_tx_before_connect_v<deterministic_async_policy>,
+                  "a policy that declares buffer_tx_before_connect true must buffer");
+
+    EXPECT_FALSE(utilities::policy_buffers_tx_before_connect_v<tcp::tcp_socket>)
+        << "an async transport gained buffering without asking for it";
+    EXPECT_TRUE(utilities::policy_buffers_tx_before_connect_v<deterministic_async_policy>)
+        << "a declared opt in was not read off the policy";
+}
+
+// A completed rx notifies the error status event, which is only observed on the next poll cycle,
+// after a reset queued in the same cycle has already moved the client to fresh. Reading fresh as a
+// failure tears the client down without reopening it, and nothing reaches the wire afterwards.
+TEST(fd_event_client_tx_test, a_reset_racing_a_completed_rx_keeps_the_client_open) {
+    auto record = std::make_shared<tx_record>();
+    auto source = std::make_shared<rx_source>();
+    rx_capable_sync_client client(record, source);
+
+    std::atomic<int> rx_calls{0};
+    client.set_rx_handler([&](int const&, auto&) { ++rx_calls; });
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came up";
+    ASSERT_NE(client.get_raw_handler(), nullptr);
+
+    source->push(5);
+    client.reset();
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return rx_calls.load() == 1; })) << "the rx under test never completed";
+    pump_for(client, 100ms);
+
+    EXPECT_NE(client.get_raw_handler(), nullptr) << "the client was torn down and never reopened";
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); }))
+        << "the client never came back up after the reset";
+    EXPECT_TRUE(client.tx(23)) << "a payload was rejected after the reset";
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return record->values == std::vector<int>{23}; }))
+        << "the payload never reached the wire, " << record->values.size() << " payloads delivered";
+}
+
+// Code 0 is an up-edge on the connection, not merely "an error you saw is gone". A client that
+// never reported a failure still signals the connection it just established.
+TEST(fd_event_client_error_signal_test, a_first_successful_connect_reports_code_zero_once) {
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, 0}});
+    deterministic_async_client client(control);
+
+    std::vector<int> codes;
+    client.set_error_handler([&](int code, std::string const&) { codes.push_back(code); });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came up";
+
+    pump_for(client, 100ms);
+    EXPECT_EQ(codes, std::vector<int>{0})
+        << "a first connect that never failed did not report its up-edge exactly once";
+}
+
+// A reset on a healthy client reports the connection it opens, even though no failure was ever
+// observed on the one it replaced.
+TEST(fd_event_client_error_signal_test, a_clean_reset_reports_code_zero_once_per_reconnect) {
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, 0}, {true, 0}});
+    deterministic_async_client client(control);
+
+    std::vector<int> codes;
+    client.set_error_handler([&](int code, std::string const&) { codes.push_back(code); });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    // The status event is only observed on the poll pass after the state moves, so the callback
+    // trails on_error() by one cycle.
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return codes == std::vector<int>{0}; }))
+        << "the first connect did not report its up-edge";
+
+    client.reset();
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 2; }));
+    control->release(1);
+    ASSERT_TRUE(control->wait_for_attempt_completed(1, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came back up";
+
+    pump_for(client, 100ms);
+    EXPECT_EQ(codes, (std::vector<int>{0, 0})) << "a clean reset did not report the reconnect exactly once";
+}
+
+// A successful read reports code 0 through the same path a successful connect does. It is not an
+// up-edge on a connection, so interleaving reads with a reset may not add one.
+TEST(fd_event_client_error_signal_test, a_read_interleaved_with_a_reset_reports_one_up_edge_per_connect) {
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, 0}, {true, 0}});
+    auto record = std::make_shared<tx_record>();
+    auto source = std::make_shared<rx_source>();
+    deterministic_async_client client(control, record, source);
+
+    std::vector<int> codes;
+    std::atomic<int> rx_calls{0};
+    client.set_error_handler([&](int code, std::string const&) { codes.push_back(code); });
+    client.set_rx_handler([&](int const&, auto&) {
+        if (++rx_calls == 1) {
+            client.reset();
+            client.tx(89);
+        }
+    });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return codes == std::vector<int>{0}; }))
+        << "the first connect did not report its up-edge";
+
+    // Same shape as the flush test: one pass arms write interest, the next reports read and write
+    // together, so the read lands on a connection the callback has already retired.
+    ASSERT_TRUE(client.tx(87));
+    client.sync(1ms);
+    ASSERT_TRUE(record->values.empty()) << "the queued payload drained before the read pass";
+    source->push(5);
+    client.sync(1ms);
+    ASSERT_EQ(rx_calls.load(), 1) << "the read under test never reached the callback";
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 2; }));
+    control->release(1);
+    ASSERT_TRUE(control->wait_for_attempt_completed(1, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came back up";
+
+    pump_for(client, 100ms);
+    EXPECT_EQ(codes, (std::vector<int>{0, 0})) << "a successful read added an up-edge of its own";
+}
+
+// The failure the caller has to act on stays visible, and the reconnect that follows is reported
+// once, so a consumer can pair the two.
+TEST(fd_event_client_error_signal_test, a_failure_then_a_reset_reports_the_error_then_code_zero) {
+    auto control =
+        std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{false, ECONNREFUSED}, {true, 0}});
+    deterministic_async_client client(control);
+
+    std::vector<int> codes;
+    client.set_error_handler([&](int code, std::string const&) { codes.push_back(code); });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return codes == std::vector<int>{ECONNREFUSED}; }))
+        << "the failed connect did not report its error";
+
+    client.reset();
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 2; }));
+    control->release(1);
+    ASSERT_TRUE(control->wait_for_attempt_completed(1, 500ms));
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return not client.on_error(); })) << "the client never came up";
+
+    pump_for(client, 100ms);
+    EXPECT_EQ(codes, (std::vector<int>{ECONNREFUSED, 0})) << "the reconnect after a failure was not reported once";
+}
+
+// A read that fails on an established connection is the only route that turns a dead socket into a
+// reported errno. Folding the read status into the guard that suppresses a retired handle would
+// report nothing instead, which leaves the client wedged while it still claims to be up.
+TEST(fd_event_client_error_signal_test, a_failed_read_reports_the_socket_error) {
+    auto source = std::make_shared<rx_source>();
+    auto fault = std::make_shared<rx_fault_plan>();
+    faulting_rx_sync_client client(source, fault);
+
+    std::vector<int> codes;
+    client.set_error_handler([&](int code, std::string const&) { codes.push_back(code); });
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return codes == std::vector<int>{0}; }))
+        << "the client never reported its up-edge";
+
+    fault->rx_fails = true;
+    fault->error_code = ECONNRESET;
+    source->push(7);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return codes.size() > 1; }))
+        << "a read that failed on an established connection reported nothing";
+    EXPECT_EQ(codes, (std::vector<int>{0, ECONNRESET})) << "the failed read did not report the socket error";
+    EXPECT_TRUE(client.on_error()) << "the client still reports itself up after a failed read";
 }
