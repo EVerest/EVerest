@@ -39,6 +39,8 @@ serial_bridge::serial_bridge(serial_bridge_config const& config, everest::lib::i
 }
 
 void serial_bridge::create_tcp_client(std::string const& remote, uint16_t remote_port) {
+    // Dedup latch is per client instance.
+    m_tcp_tx_rejected = false;
     m_tcp = std::make_unique<everest::lib::io::tcp::tcp_client>(remote, remote_port, default_udp_timeout_ms);
     m_tcp->set_on_ready_action([this]() {
         m_tcp->get_raw_handler()->set_keep_alive(3, 1, 1);
@@ -46,9 +48,14 @@ void serial_bridge::create_tcp_client(std::string const& remote, uint16_t remote
     });
 
     m_pty.set_data_handler([this](auto const& data, auto&) {
-        if (m_tcp) {
-            m_tcp->tx(data);
+        if (not m_tcp) {
+            return;
         }
+        auto accepted = m_tcp->tx(data);
+        if (not accepted and not m_tcp_tx_rejected) {
+            utilities::print_error(m_identifier, "SERIAL/TCP", -1) << "Dropped serial data, tx rejected" << std::endl;
+        }
+        m_tcp_tx_rejected = not accepted;
     });
     m_tcp->set_rx_handler([this](auto const& data, auto&) { m_pty.tx(data); });
     m_tcp->set_error_handler([this](auto id, auto const& msg) {
