@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 /** \file */
 
@@ -33,8 +33,8 @@ class generic_error_state {
 public:
     /**
      * @var cb_error
-     * @brief Prototype for an on_error handler callback. It receives the current errno
-     * and its string representation
+     * @brief Prototype for an on_error handler callback. It receives the stored error code
+     * and a description of it
      */
     using cb_error = std::function<void(int error, std::string const& msg)>;
     virtual ~generic_error_state() = default;
@@ -99,10 +99,14 @@ protected:
     int current_error() const;
 
     /**
-     * @brief Call the error handler with current errno, if registered.
+     * @brief Call the error handler with the stored error code, if registered.
+     * @details The reported error is never 0. Clearing an error is signaled through
+     *          \ref clear_error_handler instead.
      * @param[in] handler The handler to be called
+     * @param[in] msg Description of the error. An empty string selects the description
+     *            of the stored error code.
      */
-    void call_error_handler(cb_error& handler) const;
+    void call_error_handler(cb_error& handler, std::string const& msg = {}) const;
 
     /**
      * @brief Report a connection up-edge by calling the handler with errno=0 (success)

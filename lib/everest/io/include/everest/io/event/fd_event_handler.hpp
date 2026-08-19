@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 /** \file */
 
@@ -16,6 +16,7 @@
 #include <functional>
 #include <memory>
 #include <set>
+#include <type_traits>
 
 namespace everest::lib::io::event {
 
@@ -30,6 +31,12 @@ enum class poll_events {
     error = 3,
     hungup = 4,
 };
+
+// event/fd_event_client.hpp declares poll_events opaquely to break the include cycle with this
+// header. That declaration is compatible only while the definition keeps its implicit type.
+static_assert(std::is_same_v<std::underlying_type_t<poll_events>, int>,
+              "poll_events must keep its implicit underlying type: event/fd_event_client.hpp "
+              "declares it without one");
 
 std::set<poll_events> operator|(poll_events lhs, poll_events rhs);
 std::set<poll_events>& operator|(std::set<poll_events>& lhs, poll_events rhs);
@@ -144,7 +151,9 @@ public:
     /**
      * @brief Register an \ref timer_fd for event handling
      * @details Reading from the event happens internally to acknowledge event handling.
-     * If manual handling is necessary use \ref timer_fd filedecriptor directly
+     * If manual handling is necessary use \ref timer_fd filedecriptor directly.
+     * \p handler is not called for an expiry that a rearm or a disarm retired since its poll
+     * batch was harvested: rearming a timer from another handler suppresses its pending tick.
      * @param[in] obj The object to be registerd for event handling
      * @param[in] handler Callback for handling the events on \p obj
      * @return True on success, false otherwise

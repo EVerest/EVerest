@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <memory>
+#include <thread>
 #include <type_traits>
 
 #include <unistd.h>
@@ -485,4 +486,72 @@ TEST(fd_event_handler_test, unregistering_a_timer_from_another_handler_reports_f
 
     EXPECT_TRUE(owner.unregister_event_handler(&timer));
     EXPECT_FALSE(owner.is_registered(raw));
+}
+
+TEST(fd_event_handler_test, registered_single_shot_timer_fires_once_with_no_mutation) {
+    fd_event_handler handler;
+    timer_fd timer;
+
+    int timer_fired = 0;
+    ASSERT_TRUE(handler.register_event_handler(&timer, [&]() { ++timer_fired; }));
+
+    timer.set_single_shot(true);
+    ASSERT_TRUE(timer.set_timeout(5ms));
+
+    std::this_thread::sleep_for(20ms);
+    EXPECT_TRUE(handler.poll(0ms));
+
+    EXPECT_EQ(timer_fired, 1);
+}
+
+// One epoll_wait harvests a whole batch before dispatching any of it, so a handler early in the
+// batch can retire a timer whose expiry is already in that same batch. disarm() calls
+// timerfd_settime, which clears the expiration counter, so the dispatch wrapper's read finds
+// nothing and recognizes the harvested expiry as stale.
+// Linux appends to the epoll ready list in the order descriptors become ready. Do not reorder the
+// notify/sleep/poll sequence below: it is what makes the race deterministic instead of racy.
+TEST(fd_event_handler_test, disarming_a_timer_from_another_handler_in_the_same_batch_suppresses_its_dispatch) {
+    fd_event_handler handler;
+    event_fd trigger;
+    timer_fd timer;
+
+    int timer_fired = 0;
+    ASSERT_TRUE(handler.register_event_handler(&trigger, [&]() { timer.disarm(); }));
+    ASSERT_TRUE(handler.register_event_handler(&timer, [&]() { ++timer_fired; }));
+
+    timer.set_single_shot(true);
+    ASSERT_TRUE(timer.set_timeout(5ms));
+
+    // Ready first, so epoll places it ahead of the timer in the batch.
+    trigger.notify();
+    // Ready second: sleep past the timeout.
+    std::this_thread::sleep_for(20ms);
+
+    handler.poll(0ms);
+
+    EXPECT_EQ(timer_fired, 0);
+}
+
+// Same defect via a rearm instead of a disarm: a handler pushes a timer's deadline out from under
+// an expiry that already occurred. set_timeout resets the expiration counter just like disarm().
+TEST(fd_event_handler_test, rearming_a_timer_from_another_handler_in_the_same_batch_suppresses_its_dispatch) {
+    fd_event_handler handler;
+    event_fd trigger;
+    timer_fd timer;
+
+    int timer_fired = 0;
+    ASSERT_TRUE(handler.register_event_handler(&trigger, [&]() { timer.set_timeout(10s); }));
+    ASSERT_TRUE(handler.register_event_handler(&timer, [&]() { ++timer_fired; }));
+
+    timer.set_single_shot(true);
+    ASSERT_TRUE(timer.set_timeout(5ms));
+
+    // Ready first, so epoll places it ahead of the timer in the batch.
+    trigger.notify();
+    // Ready second: sleep past the timeout.
+    std::this_thread::sleep_for(20ms);
+
+    handler.poll(0ms);
+
+    EXPECT_EQ(timer_fired, 0);
 }

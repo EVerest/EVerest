@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include <everest/io/utilities/generic_error_state.hpp>
+
+#include <cerrno>
 #include <string.h>
 
 namespace everest::lib::io::utilities {
@@ -36,9 +38,12 @@ int generic_error_state::current_error() const {
     return m_current_error;
 }
 
-void generic_error_state::call_error_handler(cb_error& handler) const {
+void generic_error_state::call_error_handler(cb_error& handler, std::string const& msg) const {
     if (handler) {
-        handler(m_current_error, strerror(m_current_error));
+        // The callback must never see 0: consumers branch on 'code != 0', so a 0 report would be
+        // dropped while the state stays failed. Unreachable today, kept as a backstop.
+        auto error = m_current_error != 0 ? m_current_error : ECONNRESET;
+        handler(error, msg.empty() ? std::string{strerror(error)} : msg);
     }
 }
 
