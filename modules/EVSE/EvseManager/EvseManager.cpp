@@ -2696,8 +2696,7 @@ types::power_supply_DC::Capabilities EvseManager::get_powersupply_capabilities()
     return apply_external_derating(std::move(caps));
 }
 
-types::power_supply_DC::Capabilities
-EvseManager::apply_external_derating(types::power_supply_DC::Capabilities caps) {
+types::power_supply_DC::Capabilities EvseManager::apply_external_derating(types::power_supply_DC::Capabilities caps) {
     types::dc_external_derate::ExternalDerating derate;
     {
         std::scoped_lock lock(dc_external_derate_mutex);
