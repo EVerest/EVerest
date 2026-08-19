@@ -13,12 +13,24 @@
 //! ## Bank card handling
 //!
 //! In case a bank card is presented, the module will also issue a token on the
-//! `auth_token_provider` interface. The token-id must be provided by the
+//! `auth_token_provider` interface. The token-id is derived from the physical
+//! card if the terminal reports its identity (see the `read_card_control`
+//! config), so presenting the same card again allows consumers to stop the
+//! running session. Otherwise the token-id must be provided by the
 //! `bank_session_token` interface. In order to block the
 //! `pre_authorization_amount`, the user must call the `auth_token_validator`
 //! interface of the module. The modile commits (and releases the surplus from
 //! the pre-authorized amount) once it receives the same a token-id on its
 //! `session_cost` interface.
+//!
+//! Towards the payment backend a transaction is identified by an invoice
+//! token. When the token-id is derived from the physical card (see the
+//! `read_card_control` config), the caller of the `auth_token_validator`
+//! interface must deliver the invoice token in the `parent_id_token` field
+//! of the provided token - the validation is rejected otherwise. Without a
+//! card derived token-id the token-id itself is the invoice token. The
+//! module keeps the mapping from token-id to invoice token for the lifetime
+//! of the transaction.
 //!
 //! ## Implementation details
 //!
@@ -201,9 +213,9 @@ mod sync_feig {
             }
         }
 
-        pub fn read_card(&self) -> Result<CardInfo> {
+        pub fn read_card(&self, read_card_control: u8) -> Result<CardInfo> {
             let mut inner = self.inner.lock().unwrap();
-            self.rt.block_on(inner.read_card())
+            self.rt.block_on(inner.read_card(read_card_control))
         }
 
         pub fn begin_transaction(&self, token: &str, amount: usize) -> Result<()> {
@@ -345,9 +357,27 @@ pub struct PaymentTerminalModule {
 
     /// The configurable pre-auth.
     pre_authorization_amount: Mutex<usize>,
+
+    /// Maps the token-id of an ongoing bank card transaction to its invoice
+    /// token. Entries are added when a transaction begins and removed once it
+    /// is successfully committed.
+    bank_transactions: Mutex<HashMap<String, String>>,
+
+    /// The ZVT card reading control (Tlv tag 0x1f15) used when polling for
+    /// cards.
+    read_card_control: u8,
 }
 
 impl PaymentTerminalModule {
+    /// True if the configured `read_card_control` performs a full card
+    /// read: the terminal then reports the card identification item.
+    fn card_id_expected(&self) -> bool {
+        // Bit 0x10 of Tlv tag 0x1f15 selects 'Detect Card', which does not
+        // send commands to payment cards and thus cannot report the card
+        // identification item.
+        self.read_card_control & 0x10 == 0
+    }
+
     /// Waits for a card and generates an auth token.
     ///
     /// Regardless of the card type we don't flag the token as pre-validated to
@@ -383,8 +413,10 @@ impl PaymentTerminalModule {
                         .map_or(true, |v| !v.is_empty())
                 };
 
-                // Attempting to get an invoice token
-                if token.is_none() && bank_cards_enabled {
+                // Attempting to get an invoice token. Not needed if we
+                // expect the card id: the invoice token then arrives
+                // through `parent_id_token` in the validation.
+                if token.is_none() && bank_cards_enabled && !self.card_id_expected() {
                     if let Some(publisher) = publishers.bank_session_token_slots.get(0) {
                         if bank_token_backoff.is_ready() {
                             token = publisher.get_bank_session_token().map_or(None, |v| v.token);
@@ -398,7 +430,7 @@ impl PaymentTerminalModule {
                     }
                 }
 
-                match self.feig.read_card() {
+                match self.feig.read_card(self.read_card_control) {
                     Ok(card_info) => return card_info,
                     Err(e) => {
                         if let Some(Error::NoCardPresented) = e.downcast_ref::<Error>() {
@@ -418,11 +450,10 @@ impl PaymentTerminalModule {
         let mut map_guard = self.card_type_to_connector.lock().unwrap();
 
         let provided_token = match card_info {
-            CardInfo::Bank => ProvidedIdToken::new(
-                // If we don't have a valid token, still issue the token but
-                // reject it in the validation - so e.x. display can still
-                // react to cards being read.
-                token.unwrap_or(INVALID_BANK_TOKEN.to_string()),
+            CardInfo::Bank(card_id) => ProvidedIdToken::new(
+                // Prefer the id of the physical card: presenting the same
+                // card again can then stop a running transaction.
+                card_id.or(token).unwrap_or(INVALID_BANK_TOKEN.to_string()),
                 AuthorizationType::BankCard,
                 map_guard
                     .entry(AuthorizationType::BankCard)
@@ -468,16 +499,33 @@ impl PaymentTerminalModule {
                 acc + chunk.cost.unwrap_or(MoneyAmount { value: 0 }).value
             });
 
+        // Hold the lock across the commit: the same card may otherwise start
+        // a new transaction in between and insert a new mapping, which the
+        // `remove` below would then wrongly delete.
+        let mut bank_transactions = self.bank_transactions.lock().unwrap();
+        let invoice_token = bank_transactions
+            .get(&id_tag.id_token.value)
+            .cloned()
+            .ok_or(anyhow::anyhow!(format!(
+                "Unknown token {}",
+                id_tag.id_token.value
+            )))?;
+
         let res = self
             .feig
-            .commit_transaction(&id_tag.id_token.value, total_cost as u64)?;
+            .commit_transaction(&invoice_token, total_cost as u64)?;
+
+        // Only forget the mapping after a successful commit - failed commits
+        // remain pending in the Feig driver and may be retried.
+        bank_transactions.remove(&id_tag.id_token.value);
+        drop(bank_transactions);
 
         context
             .publisher
             .payment_terminal
             .bank_transaction_summary(BankTransactionSummary {
                 session_token: Some(BankSessionToken {
-                    token: Some(id_tag.id_token.value.clone()),
+                    token: Some(invoice_token),
                 }),
                 transaction_data: Some(format!("{:06}", res.trace_number.unwrap_or_default())),
             })?;
@@ -531,13 +579,34 @@ impl AuthTokenValidatorServiceSubscriber for PaymentTerminalModule {
             return Ok(AuthorizationStatus::Invalid.into());
         }
 
-        if &provided_token.id_token.value == INVALID_BANK_TOKEN {
+        // The invoice token identifies the transaction towards the payment
+        // backend. It may differ from the id token - see the module
+        // documentation.
+        let invoice_token = if self.card_id_expected() {
+            match provided_token.parent_id_token.as_ref() {
+                Some(parent_id_token) => parent_id_token.value.clone(),
+                None => {
+                    // The id token is derived from the physical card: without an
+                    // invoice token the payment backend could not match the
+                    // transaction to an invoice.
+                    log::warn!(
+                        "Validating a `BankCard` without an invoice token in `parent_id_token`"
+                    );
+                    return Ok(AuthorizationStatus::Invalid.into());
+                }
+            }
+        } else {
+            // The legacy contract.
+            provided_token.id_token.value.clone()
+        };
+
+        if &invoice_token == INVALID_BANK_TOKEN {
             log::warn!("Validating a `BankCard` without an invoice token");
             return Ok(AuthorizationStatus::Invalid.into());
         }
 
         if let Err(err) = self.feig.begin_transaction(
-            &provided_token.id_token.value,
+            &invoice_token,
             *self.pre_authorization_amount.lock().unwrap(),
         ) {
             log::warn!("Failed to start a transaction: {err:?}");
@@ -553,6 +622,11 @@ impl AuthTokenValidatorServiceSubscriber for PaymentTerminalModule {
                 }
             };
         }
+
+        self.bank_transactions
+            .lock()
+            .unwrap()
+            .insert(provided_token.id_token.value.clone(), invoice_token);
 
         Ok(AuthorizationStatus::Accepted.into())
     }
@@ -609,6 +683,7 @@ fn main(module: &Module) -> Result<()> {
             read_card_timeout: config.read_card_timeout as u8,
             password: config.password as usize,
             end_of_day_max_interval: config.end_of_day_max_interval as u64,
+            ..FeigConfig::default()
         },
         transactions_max_num: config.transactions_max_num as usize,
     };
@@ -620,6 +695,8 @@ fn main(module: &Module) -> Result<()> {
         feig: SyncFeig::new(pt_config),
         card_type_to_connector: Mutex::new(default_card_type_to_connector()),
         pre_authorization_amount: Mutex::new(config.pre_authorization_amount as usize),
+        bank_transactions: Mutex::new(HashMap::new()),
+        read_card_control: config.read_card_control as u8,
     });
 
     let _publishers = module.start(
@@ -638,7 +715,7 @@ fn main(module: &Module) -> Result<()> {
         let res = pt_module.read_card(&publishers);
         match res {
             Ok(()) => {
-                log::info!("Started a transaction");
+                log::info!("Read a card - sleeping {read_card_debounce:?}");
                 std::thread::sleep(read_card_debounce);
             }
             Err(err) => log::error!("Failed to start a transaction {err:?}"),
@@ -666,6 +743,8 @@ mod tests {
                 feig: feig_mock,
                 card_type_to_connector: Mutex::new(default_card_type_to_connector()),
                 pre_authorization_amount: Mutex::new(11),
+                bank_transactions: Mutex::new(HashMap::new()),
+                read_card_control: 0xd0,
             }
         }
     }
@@ -684,7 +763,7 @@ mod tests {
     fn payment_terminal__read_card__get_bank_session_token_failed() {
         let PARAMETERS = [
             (
-                CardInfo::Bank,
+                CardInfo::Bank(None),
                 AuthorizationType::BankCard,
                 INVALID_BANK_TOKEN,
             ),
@@ -701,7 +780,7 @@ mod tests {
             feig_mock
                 .expect_read_card()
                 .times(1)
-                .return_once(|| Ok(card_info));
+                .return_once(|_| Ok(card_info));
 
             let mut everest_mock = ModulePublisher::default();
             everest_mock
@@ -737,7 +816,7 @@ mod tests {
     fn payment_terminal__read_card__no_bank_session_token() {
         let PARAMETERS = [
             (
-                CardInfo::Bank,
+                CardInfo::Bank(None),
                 AuthorizationType::BankCard,
                 INVALID_BANK_TOKEN,
             ),
@@ -754,7 +833,7 @@ mod tests {
             feig_mock
                 .expect_read_card()
                 .times(1)
-                .return_once(|| Ok(card_info));
+                .return_once(|_| Ok(card_info));
 
             let mut everest_mock = ModulePublisher::default();
 
@@ -786,7 +865,7 @@ mod tests {
         feig_mock
             .expect_read_card()
             .times(1)
-            .return_once(|| Ok(CardInfo::Bank));
+            .return_once(|_| Ok(CardInfo::Bank(None)));
 
         let mut everest_mock = ModulePublisher::default();
         everest_mock
@@ -827,6 +906,8 @@ mod tests {
                 (AuthorizationType::RFID, None),
             ])),
             pre_authorization_amount: Mutex::new(11),
+            bank_transactions: Mutex::new(HashMap::new()),
+            read_card_control: 0xd0,
         };
 
         assert!(pt_module.read_card(&everest_mock).is_ok());
@@ -836,7 +917,7 @@ mod tests {
     fn payment_terminal__read_card__success() {
         let PARAMETERS = [
             (
-                CardInfo::Bank,
+                CardInfo::Bank(None),
                 AuthorizationType::BankCard,
                 "some bank token",
                 "some bank token",
@@ -856,7 +937,8 @@ mod tests {
             feig_mock
                 .expect_read_card()
                 .times(1)
-                .return_once(|| Ok(card_info));
+                .with(eq(0xd0))
+                .return_once(|_| Ok(card_info));
 
             let mut everest_mock = ModulePublisher::default();
             everest_mock
@@ -891,6 +973,57 @@ mod tests {
 
             let pt_module: PaymentTerminalModule = feig_mock.into();
 
+            assert!(pt_module.read_card(&everest_mock).is_ok());
+        }
+    }
+
+    #[test]
+    /// Test the full card read: the token is the id of the physical card and
+    /// the `bank_session_token` interface must not be used at all.
+    fn payment_terminal__read_card__full_read() {
+        let PARAMETERS = [
+            (Some("some card id".to_string()), "some card id"),
+            // Without a card id we issue the invalid token - the validation
+            // will reject it.
+            (None, INVALID_BANK_TOKEN),
+        ];
+
+        for (card_id, id_token) in PARAMETERS {
+            let mut feig_mock = SyncFeig::default();
+            feig_mock.expect_configure().times(1).return_once(|| Ok(()));
+            feig_mock
+                .expect_read_card()
+                .times(1)
+                .with(eq(0xc0))
+                .return_once(|_| Ok(CardInfo::Bank(card_id)));
+
+            let mut everest_mock = ModulePublisher::default();
+            everest_mock
+                .bank_session_token_slots
+                .push(BankSessionTokenProviderClientPublisher::default());
+
+            everest_mock.bank_session_token_slots[0]
+                .expect_get_bank_session_token()
+                .times(0);
+
+            everest_mock
+                .token_provider
+                .expect_provided_token()
+                .times(1)
+                .withf(move |arg| {
+                    &arg.id_token.value == id_token
+                        && arg.authorization_type == AuthorizationType::BankCard
+                })
+                .return_once(|_| Ok(()));
+
+            everest_mock
+                .payment_terminal
+                .expect_clear_all_errors()
+                .times(1)
+                .return_once(|| ());
+
+            let mut pt_module: PaymentTerminalModule = feig_mock.into();
+            pt_module.read_card_control = 0xc0;
             assert!(pt_module.read_card(&everest_mock).is_ok());
         }
     }
@@ -995,11 +1128,49 @@ mod tests {
                     })
                 });
             let pt_module: PaymentTerminalModule = feig.into();
+            // The mapping the validation inserts under the legacy contract.
+            pt_module
+                .bank_transactions
+                .lock()
+                .unwrap()
+                .insert("token".to_string(), "token".to_string());
 
             assert!(pt_module
                 .on_session_cost_impl(&(&everest_mock).into(), session_cost)
                 .is_ok());
         }
+    }
+
+    #[test]
+    /// We test that we don't commit anything for unknown tokens.
+    fn payment_terminal__on_session_cost_impl__unknown_token() {
+        let session_cost = SessionCost {
+            cost_chunks: None,
+            currency: Currency {
+                code: Some(CurrencyCode::EUR),
+                decimals: None,
+            },
+            id_tag: Some(ProvidedIdToken::new(
+                "token".to_string(),
+                AuthorizationType::BankCard,
+                None,
+            )),
+            status: SessionStatus::Finished,
+            session_id: String::new(),
+            idle_price: None,
+            charging_price: None,
+            next_period: None,
+            message: None,
+            qr_code: None,
+        };
+
+        let everest_mock = ModulePublisher::default();
+        let feig = SyncFeig::default();
+        let pt_module: PaymentTerminalModule = feig.into();
+
+        assert!(pt_module
+            .on_session_cost_impl(&(&everest_mock).into(), session_cost)
+            .is_err());
     }
 
     #[test]
@@ -1058,8 +1229,13 @@ mod tests {
 
         let pt_module: PaymentTerminalModule = feig_mock.into();
 
-        let provided_token =
+        let mut provided_token =
             ProvidedIdToken::new("valid_token".to_string(), AuthorizationType::BankCard, None);
+        provided_token.parent_id_token = Some(IdToken {
+            value: "some_other_token".to_string(),
+            r#type: IdTokenType::Local,
+            additional_info: None,
+        });
         let everest_mock = ModulePublisher::default();
 
         let result = pt_module.validate_token(&(&everest_mock).into(), provided_token);
@@ -1068,6 +1244,198 @@ mod tests {
         assert_eq!(
             validation_result.authorization_status,
             AuthorizationStatus::Accepted
+        );
+        assert_eq!(
+            pt_module
+                .bank_transactions
+                .lock()
+                .unwrap()
+                .get("valid_token"),
+            Some(&"valid_token".to_string())
+        );
+    }
+
+    #[test]
+    /// Without a parent_id_token the validation must fail without reserving
+    /// any money.
+    fn payment_terminal__validate_token__full_read__no_parent_token() {
+        let everest_mock = ModulePublisher::default();
+        let mut feig_mock = SyncFeig::default();
+        feig_mock.expect_begin_transaction().times(0);
+        let mut pt_module: PaymentTerminalModule = feig_mock.into();
+        pt_module.read_card_control = 0xc0;
+        let provided_token = ProvidedIdToken::new(
+            "some card id".to_string(),
+            AuthorizationType::BankCard,
+            None,
+        );
+
+        let result = pt_module.validate_token(&(&everest_mock).into(), provided_token);
+
+        assert_eq!(
+            result.unwrap().authorization_status,
+            AuthorizationStatus::Invalid
+        );
+        assert!(pt_module.bank_transactions.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    /// Test validate_token with successful transaction when we configure the
+    /// payment terminal to have full card read enabled.
+    fn payment_terminal__validate_token__full_read__success() {
+        let everest_mock = ModulePublisher::default();
+        let mut feig_mock = SyncFeig::default();
+        feig_mock
+            .expect_begin_transaction()
+            .times(1)
+            .with(eq("invoice_token"), eq(11))
+            .returning(|_, _| Ok(()));
+        let mut pt_module: PaymentTerminalModule = feig_mock.into();
+        pt_module.read_card_control = 0xc0;
+        let mut provided_token = ProvidedIdToken::new(
+            "some card id".to_string(),
+            AuthorizationType::BankCard,
+            None,
+        );
+        provided_token.parent_id_token = Some(IdToken {
+            value: "invoice_token".to_string(),
+            r#type: IdTokenType::Local,
+            additional_info: None,
+        });
+
+        let result = pt_module.validate_token(&(&everest_mock).into(), provided_token);
+
+        assert_eq!(
+            result.unwrap().authorization_status,
+            AuthorizationStatus::Accepted
+        );
+        assert_eq!(
+            pt_module
+                .bank_transactions
+                .lock()
+                .unwrap()
+                .get("some card id"),
+            Some(&"invoice_token".to_string())
+        );
+    }
+
+    #[test]
+    /// Test that on_session_cost commits with the stored invoice token and
+    /// removes the mapping on success.
+    fn payment_terminal__on_session_cost_impl__uses_mapped_invoice_token() {
+        let session_cost = SessionCost {
+            cost_chunks: Some(vec![SessionCostChunk {
+                category: None,
+                cost: Some(MoneyAmount { value: 3 }),
+                timestamp_from: None,
+                timestamp_to: None,
+                metervalue_from: None,
+                metervalue_to: None,
+            }]),
+            currency: Currency {
+                code: Some(CurrencyCode::EUR),
+                decimals: None,
+            },
+            id_tag: Some(ProvidedIdToken::new(
+                "card_token".to_string(),
+                AuthorizationType::BankCard,
+                None,
+            )),
+            status: SessionStatus::Finished,
+            session_id: String::new(),
+            idle_price: None,
+            charging_price: None,
+            next_period: None,
+            message: None,
+            qr_code: None,
+        };
+
+        let mut everest_mock = ModulePublisher::default();
+        everest_mock
+            .payment_terminal
+            .expect_bank_transaction_summary()
+            .times(1)
+            .withf(|summary| {
+                summary.session_token
+                    == Some(BankSessionToken {
+                        token: Some("invoice_token".to_string()),
+                    })
+            })
+            .returning(|_| Ok(()));
+
+        let mut feig = SyncFeig::default();
+        feig.expect_commit_transaction()
+            .times(1)
+            .with(eq("invoice_token"), eq(3))
+            .returning(|_, _| {
+                Ok(TransactionSummary {
+                    terminal_id: None,
+                    amount: None,
+                    trace_number: None,
+                    date: None,
+                    time: None,
+                })
+            });
+        let pt_module: PaymentTerminalModule = feig.into();
+        pt_module
+            .bank_transactions
+            .lock()
+            .unwrap()
+            .insert("card_token".to_string(), "invoice_token".to_string());
+
+        assert!(pt_module
+            .on_session_cost_impl(&(&everest_mock).into(), session_cost)
+            .is_ok());
+        assert!(pt_module.bank_transactions.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    /// Test that the mapping is kept when the commit fails so that a retry can
+    /// still resolve the invoice token.
+    fn payment_terminal__on_session_cost_impl__keeps_mapping_on_failure() {
+        let session_cost = SessionCost {
+            cost_chunks: None,
+            currency: Currency {
+                code: Some(CurrencyCode::EUR),
+                decimals: None,
+            },
+            id_tag: Some(ProvidedIdToken::new(
+                "card_token".to_string(),
+                AuthorizationType::BankCard,
+                None,
+            )),
+            status: SessionStatus::Finished,
+            session_id: String::new(),
+            idle_price: None,
+            charging_price: None,
+            next_period: None,
+            message: None,
+            qr_code: None,
+        };
+
+        let everest_mock = ModulePublisher::default();
+        let mut feig = SyncFeig::default();
+        feig.expect_commit_transaction()
+            .times(1)
+            .with(eq("invoice_token"), eq(0))
+            .returning(|_, _| Err(anyhow::anyhow!("commit failed")));
+        let pt_module: PaymentTerminalModule = feig.into();
+        pt_module
+            .bank_transactions
+            .lock()
+            .unwrap()
+            .insert("card_token".to_string(), "invoice_token".to_string());
+
+        assert!(pt_module
+            .on_session_cost_impl(&(&everest_mock).into(), session_cost)
+            .is_err());
+        assert_eq!(
+            pt_module
+                .bank_transactions
+                .lock()
+                .unwrap()
+                .get("card_token"),
+            Some(&"invoice_token".to_string())
         );
     }
 
@@ -1274,6 +1642,8 @@ mod tests {
                 feig: feig_mock,
                 card_type_to_connector: Mutex::new(initial_map),
                 pre_authorization_amount: Mutex::new(50),
+                bank_transactions: Mutex::new(HashMap::new()),
+                read_card_control: 0xd0,
             };
 
             let everest_mock = ModulePublisher::default();
