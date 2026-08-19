@@ -199,6 +199,9 @@ Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
   No camelCase.
 - `#pragma once` for include guards.
 - `EVLOG_debug`, `EVLOG_info`, `EVLOG_warning`, `EVLOG_error` for logging.
+- Comments are rare, short, and state only what the code cannot: a constraint, a spec
+  reference, a non-obvious why. If the code can say it, let the code say it; prefer a
+  better name or a smaller function over a comment.
 - Return values and `std::optional` over exceptions for expected conditions.
 - JavaScript and YAML: prettier, 2-space indent, single quotes (`.prettierrc.yaml`).
 
@@ -222,6 +225,9 @@ Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
   later.
 - Never `publish_*()` or raise an error inside `init()` either. Neither is retained, so
   subscribers still in their own `init()` miss it.
+- Never leak change context into comments: no plan or phase labels, no review or prompt
+  references, no "new"/"now"/"previously" phrasing. Comments describe the code as it is,
+  timelessly.
 - Never skip formatting before proposing C++ changes. CI fails on it, see Code style.
 
 ## Contributing essentials
