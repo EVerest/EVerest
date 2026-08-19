@@ -6,26 +6,9 @@
 #include <algorithm>
 
 #include <everest/logging.hpp>
+#include <everest/util/math/comparison.hpp>
 
 namespace module {
-
-namespace {
-
-std::optional<float> max_optional(std::optional<float> const& a, std::optional<float> const& b) {
-    // if both a and b have values, return the bigger one.
-    if (a.has_value() and b.has_value()) {
-        return (b.value() > a.value() ? b.value() : a.value());
-    }
-    // if a has a value, return that one.
-    if (a.has_value()) {
-        return a;
-    }
-
-    // else return b. It is either the only value or empty.
-    return b;
-}
-
-} // namespace
 
 types::power_supply_DC::Capabilities
 apply_powermeter_limits(types::power_supply_DC::Capabilities caps,
@@ -61,7 +44,7 @@ apply_powermeter_limits(types::power_supply_DC::Capabilities caps,
 
     if (meter.min_export_current_A.has_value()) {
         const float meter_min = meter.min_export_current_A.value();
-        caps.min_import_current_A = max_optional(caps.min_import_current_A, meter_min);
+        caps.min_import_current_A = everest::lib::util::max_optional(caps.min_import_current_A, meter_min);
         if (caps.nominal_min_import_current_A.has_value()) {
             caps.nominal_min_import_current_A = std::max(caps.nominal_min_import_current_A.value(), meter_min);
         }
