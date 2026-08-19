@@ -406,6 +406,13 @@ channels:
       receive_reply_get_random_delay_countdown:
         $ref: '#/components/messages/receive_reply_get_random_delay_countdown'
 
+  ########## ISO15118_charger
+  send_set_free_service:
+    address: 'm2e/set_free_service'
+    messages:
+      send_set_free_service:
+        $ref: '#/components/messages/send_set_free_service'
+
 
   receive_heartbeat:
     address: 'e2m/heartbeat'
@@ -1008,6 +1015,14 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_reply_get_random_delay_countdown'
+
+  ########## ISO15118_charger
+  send_set_free_service:
+    title: 'Set whether the EVCharging service is offered free of charge'
+    action: send
+    channel:
+      $ref: '#/channels/send_set_free_service'
+    description: 'Direction: Module to EVerest'
 
 
   receive_heartbeat:
@@ -1962,6 +1977,20 @@ components:
           payload:
             42
 
+    send_set_free_service:
+      name: send_set_free_service
+      title: 'Send set free service'
+      summary: >-
+        Set whether the EVCharging service is offered free of charge (the FreeService flag in
+        ServiceDiscoveryRes). The module defaults to false, so only a call with true marks the
+        service as free.
+      payload:
+        $ref: '#/components/schemas/FreeService'
+      examples:
+        - summary: ""
+          payload:
+            true
+
     receive_random_delay_countdown:
       name: receive_random_delay_countdown
       title: 'Countdown of the currently running random delay'
@@ -2475,6 +2504,9 @@ components:
           maximum: 100
     ForceUnlockReply:
       description: "Returns true if unlocking sequence was successfully executed"
+      type: boolean
+    FreeService:
+      description: "Set to true when the EVCharging service is offered free of charge"
       type: boolean
     ForceUnlockRequest:
       description: "Specifies the ID of the connector that should be unlocked"
