@@ -24,6 +24,7 @@ struct Conf {
     int port;
     std::string interface;
     std::string meter_tls_certificate;
+    bool http_connection_reuse;
     std::string ntp_server_1_ip_addr;
     int ntp_server_1_port;
     std::string ntp_server_2_ip_addr;
@@ -45,6 +46,8 @@ struct Conf {
     double temperature_hysteresis_K;
     int temperature_min_time_as_valid_ms;
     int command_timeout_ms;
+    int poll_interval_ms;
+    int transaction_ocmf_fetch_interval_s;
 };
 
 class LemDCBM400600 : public Everest::ModuleBase {
