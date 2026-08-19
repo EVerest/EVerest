@@ -2723,7 +2723,8 @@ types::power_supply_DC::Capabilities EvseManager::apply_powermeter_limits(types:
 void EvseManager::update_powersupply_capabilities(types::power_supply_DC::Capabilities caps) {
     {
         std::scoped_lock lock(powersupply_capabilities_mutex);
-        if (powersupply_capabilities == caps) {
+        if (powersupply_capabilities == caps and last_hlc_capabilities.has_value()) {
+            // unchanged and already pushed at least once
             return;
         }
         powersupply_capabilities = caps;
