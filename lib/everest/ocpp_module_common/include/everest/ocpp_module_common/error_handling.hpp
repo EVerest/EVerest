@@ -30,7 +30,8 @@ MREC_ERROR_MAP_TYPE load_mrec_error_map_overrides(const std::filesystem::path& f
 ocpp::v2::Component get_component_from_error(const Everest::error::Error& error);
 
 /// \brief Derives the EventData from the given \p error, \p cleared and \p event_id parameters. The
-/// techCode is looked up in \p error_map, falling back to \c error.type when no entry is present.
+/// techCode is looked up in \p error_map, falling back to \c error.type when no entry is present. The given
+/// \p component is reported as the source of the event.
 ocpp::v2::EventData get_event_data(const Everest::error::Error& error, bool cleared, int32_t event_id,
-                                   const MREC_ERROR_MAP_TYPE& error_map);
+                                   const MREC_ERROR_MAP_TYPE& error_map, const ocpp::v2::Component& component);
 } // namespace ocpp_module_common

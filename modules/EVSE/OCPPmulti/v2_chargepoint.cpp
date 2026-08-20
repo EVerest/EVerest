@@ -582,7 +582,8 @@ void ChargePointV2::on_event(const EventInfo& event) {
     check_configured("on_event");
     if (event.error) {
         // TODO(james-ctc): needs tidying up. MREC error map is in generic_ocpp
-        auto event_data = module::get_event_data(event.error.value(), event.event_cleared, event.event_id, {});
+        auto event_data = module::get_event_data(event.error.value(), event.event_cleared, event.event_id, {},
+                                                 module::get_component_from_error(event.error.value()));
         std::string updated;
         m_callbacks_ptr->map_error(event.error->type, updated);
         event_data.techCode = std::move(updated);
