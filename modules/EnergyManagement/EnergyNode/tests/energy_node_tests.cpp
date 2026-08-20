@@ -1,15 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include <algorithm>
-
 #include <generated/types/energy.hpp>
-#include <generated/types/powermeter.hpp>
 
 #include <gtest/gtest.h>
 
 // Include the utility header
-#include "../energy_grid/energyImpl.hpp"
 #include "../energy_grid/energy_schedule_utils.hpp"
 
 // Helper function to create test schedule entries
@@ -229,75 +225,4 @@ TEST_F(EnergyNodeTest, TestConfigurableVoltage240V) {
 
     EXPECT_TRUE(schedule[0].limits_to_root.ac_max_current_A.has_value());
     EXPECT_EQ(schedule[0].limits_to_root.ac_max_current_A->value, expected_current);
-}
-
-// Phase rotation math itself is covered by lib/everest/phase_rotation/tests/phase_rotation_utils_test.cpp.
-// The tests below cover EnergyNode's own wiring: that a raw powermeter reading is rotated before being stored
-// as energy_usage_root, and that a child's energy_flow_request is correctly merged into the parent's children.
-
-/// build_rotated_root_usage must apply the configured rotation to the incoming powermeter reading
-TEST_F(EnergyNodeTest, BuildRotatedRootUsageAppliesConfiguredRotation) {
-    types::powermeter::Powermeter pm;
-    pm.timestamp = "2024-01-01T00:00:00Z";
-    pm.energy_Wh_import = types::units::Energy{0.0f};
-    pm.voltage_V = types::units::Voltage{std::nullopt, 231.0f, 232.0f, 233.0f};
-
-    const auto rotated = module::energy_grid::build_rotated_root_usage(pm, "TRS");
-
-    EXPECT_FLOAT_EQ(*rotated.voltage_V->L1, 233.0f);
-    EXPECT_FLOAT_EQ(*rotated.voltage_V->L2, 231.0f);
-    EXPECT_FLOAT_EQ(*rotated.voltage_V->L3, 232.0f);
-}
-
-/// build_rotated_root_usage must leave the reading untouched for the default "RST" rotation
-TEST_F(EnergyNodeTest, BuildRotatedRootUsageIsNoOpForIdentityRotation) {
-    types::powermeter::Powermeter pm;
-    pm.timestamp = "2024-01-01T00:00:00Z";
-    pm.energy_Wh_import = types::units::Energy{0.0f};
-    pm.voltage_V = types::units::Voltage{std::nullopt, 231.0f, 232.0f, 233.0f};
-
-    const auto rotated = module::energy_grid::build_rotated_root_usage(pm, "RST");
-
-    EXPECT_FLOAT_EQ(*rotated.voltage_V->L1, 231.0f);
-    EXPECT_FLOAT_EQ(*rotated.voltage_V->L2, 232.0f);
-    EXPECT_FLOAT_EQ(*rotated.voltage_V->L3, 233.0f);
-}
-
-/// A first energy_flow_request from a child with a new uuid must be appended to children
-TEST_F(EnergyNodeTest, MergeChildEnergyFlowRequestAppendsNewChild) {
-    std::vector<types::energy::EnergyFlowRequest> children;
-
-    types::energy::EnergyFlowRequest child_a;
-    child_a.uuid = "child-a";
-    child_a.node_type = types::energy::NodeType::Generic;
-
-    module::energy_grid::merge_child_energy_flow_request(children, child_a);
-
-    ASSERT_EQ(children.size(), 1);
-    EXPECT_EQ(children[0].uuid, "child-a");
-}
-
-/// A subsequent energy_flow_request from an already-known child uuid must replace, not duplicate, its entry
-TEST_F(EnergyNodeTest, MergeChildEnergyFlowRequestUpdatesExistingChildInPlace) {
-    std::vector<types::energy::EnergyFlowRequest> children;
-
-    types::energy::EnergyFlowRequest child_a_v1;
-    child_a_v1.uuid = "child-a";
-    child_a_v1.node_type = types::energy::NodeType::Generic;
-    module::energy_grid::merge_child_energy_flow_request(children, child_a_v1);
-
-    types::energy::EnergyFlowRequest child_b;
-    child_b.uuid = "child-b";
-    child_b.node_type = types::energy::NodeType::Generic;
-    module::energy_grid::merge_child_energy_flow_request(children, child_b);
-
-    types::energy::EnergyFlowRequest child_a_v2;
-    child_a_v2.uuid = "child-a";
-    child_a_v2.node_type = types::energy::NodeType::Evse;
-    module::energy_grid::merge_child_energy_flow_request(children, child_a_v2);
-
-    ASSERT_EQ(children.size(), 2);
-    auto child_a_it = std::find_if(children.begin(), children.end(), [](const auto& c) { return c.uuid == "child-a"; });
-    ASSERT_NE(child_a_it, children.end());
-    EXPECT_EQ(child_a_it->node_type, types::energy::NodeType::Evse);
 }

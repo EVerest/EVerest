@@ -47,9 +47,3 @@ alias(
     actual = "//lib/everest/util:util",
     visibility = ["//visibility:public"],
 )
-
-alias(
-    name = "phase_rotation",
-    actual = "//lib/everest/phase_rotation:phase_rotation",
-    visibility = ["//visibility:public"],
-)
