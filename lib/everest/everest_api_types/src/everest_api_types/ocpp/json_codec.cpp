@@ -753,4 +753,28 @@ void from_json(const json& j, Message& k) {
     set_obj_optional(version);
 }
 
+void to_json(json& j, ConnectionStatus const& k) noexcept {
+    j = json{
+        {"connected", k.connected},
+    };
+    set_json_optional(csms_url);
+    set_json_optional(identity);
+    set_json_optional(security_profile);
+    set_json_optional(configuration_slot);
+    set_json_optional(ocpp_interface);
+    set_json_optional(ocpp_transport);
+    set_json_optional(ocpp_version);
+}
+
+void from_json(const json& j, ConnectionStatus& k) {
+    set_obj(connected);
+    set_obj_optional(csms_url);
+    set_obj_optional(identity);
+    set_obj_optional(security_profile);
+    set_obj_optional(configuration_slot);
+    set_obj_optional(ocpp_interface);
+    set_obj_optional(ocpp_transport);
+    set_obj_optional(ocpp_version);
+}
+
 } // namespace everest::lib::API::V1_0::types::ocpp

@@ -56,6 +56,7 @@ create_serialize_interface(V2XSignalWattPointCurve);
 create_serialize_interface(V2XFreqWattPointType);
 create_serialize_interface(MessageDirection);
 create_serialize_interface(Message);
+create_serialize_interface(ConnectionStatus);
 
 #undef create_serialize_interface
 

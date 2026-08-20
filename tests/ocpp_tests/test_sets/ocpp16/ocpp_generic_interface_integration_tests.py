@@ -85,6 +85,27 @@ async def wait_for_mock_called(mock, call=None, timeout=10):
     await asyncio.wait_for(_await_called(), timeout=timeout)
 
 
+async def wait_for_mock_call_matching(mock, predicate, timeout=10):
+    """Waits for a call whose single argument satisfies predicate and returns that argument."""
+
+    def _matching_argument():
+        return next(
+            (
+                call.args[0]
+                for call in mock.mock_calls
+                if call.args and predicate(call.args[0])
+            ),
+            None,
+        )
+
+    async def _await_called():
+        while _matching_argument() is None:
+            await asyncio.sleep(0.1)
+
+    await asyncio.wait_for(_await_called(), timeout=timeout)
+    return _matching_argument()
+
+
 async def wait_for_connection_state(csms_connection, connected, timeout=15):
     async def _await_state():
         while csms_connection.is_connected != connected:
@@ -718,17 +739,31 @@ class TestOCPP16GenericInterfaceIntegration:
             ),
         )
 
-    async def test_subscribe_is_connected(self, _env):
+    async def test_subscribe_connection_status(self, _env):
         subscription_mock = Mock()
         _env.probe_module.subscribe_variable(
-            "ocpp", "is_connected", subscription_mock)
+            "ocpp", "connection_status", subscription_mock)
 
         # Await the disconnect before restarting
         assert await _env.probe_module.call_command("ocpp", "stop", None)
-        await wait_for_mock_called(subscription_mock, mock_call(False))
+        disconnected = await wait_for_mock_call_matching(
+            subscription_mock, lambda status: status["connected"] is False
+        )
 
         assert await _env.probe_module.call_command("ocpp", "restart", None)
-        await wait_for_mock_called(subscription_mock, mock_call(True))
+        connected = await wait_for_mock_call_matching(
+            subscription_mock, lambda status: status["connected"] is True
+        )
+
+
+        for status in (connected, disconnected):
+            assert status["csms_url"]
+            assert status["identity"]
+            assert isinstance(status["security_profile"], int)
+            assert status["ocpp_version"] == "1.6"
+            assert isinstance(status["configuration_slot"], int)
+            assert status["ocpp_interface"]
+            assert status["ocpp_transport"]
 
     @pytest.mark.parametrize(
         "overwrite_implementation",

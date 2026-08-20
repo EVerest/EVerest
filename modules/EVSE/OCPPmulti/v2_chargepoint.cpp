@@ -427,9 +427,14 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
     };
     callbacks.set_running_cost_callback = [this](auto&&... args) { m_callbacks_ptr->cb_set_running_cost(args...); };
     callbacks.data_transfer_callback = [this](auto&&... args) { return m_callbacks_ptr->cb_data_transfer(args...); };
-    callbacks.connection_state_changed_callback =
-        [this](auto is_connected, auto /*configuration_slot*/, const auto& /*network_connection_profile*/,
-               auto protocol_version) { m_callbacks_ptr->cb_connection_state_changed(is_connected, protocol_version); };
+    callbacks.connection_state_changed_callback = [this](auto is_connected, auto configuration_slot,
+                                                         const auto& network_connection_profile,
+                                                         auto protocol_version) {
+        m_callbacks_ptr->cb_connection_state_changed(
+            module::conversions::to_everest_connection_status(is_connected, configuration_slot,
+                                                              network_connection_profile, protocol_version),
+            protocol_version);
+    };
     callbacks.security_event_callback = [this](const auto& event_type, const auto& tech_info) {
         m_callbacks_ptr->cb_security_event(event_type, tech_info);
     };

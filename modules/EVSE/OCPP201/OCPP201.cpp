@@ -883,15 +883,16 @@ void OCPP201::ready() {
     }
 
     callbacks.connection_state_changed_callback =
-        [this](const bool is_connected, const int /*configuration_slot*/,
-               const ocpp::v2::NetworkConnectionProfile& /*network_connection_profile*/,
+        [this](const bool is_connected, const int configuration_slot,
+               const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
                const ocpp::OcppProtocolVersion protocol_version) {
             if (is_connected) {
                 ocpp_protocol_version = protocol_version;
             } else {
                 ocpp_protocol_version = ocpp::OcppProtocolVersion::Unknown;
             }
-            this->p_ocpp_generic->publish_is_connected(is_connected);
+            this->p_ocpp_generic->publish_connection_status(conversions::to_everest_connection_status(
+                is_connected, configuration_slot, network_connection_profile, protocol_version));
         };
 
     callbacks.security_event_callback = [this](const ocpp::CiString<50>& event_type,

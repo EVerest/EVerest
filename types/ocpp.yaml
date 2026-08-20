@@ -799,3 +799,50 @@ types:
       version:
         description: OCPP version of the serialized message
         type: string
+  ConnectionStatus:
+    description: >-
+      Status of the connection of the chargepoint to the CSMS, including the details
+      of the connection the status refers to. While connected, the details describe
+      the active connection; while disconnected, they describe the connection that
+      has just been lost or whose connection attempt has just failed. Details that
+      are not available for the active OCPP version are omitted.
+    type: object
+    additionalProperties: false
+    required:
+      - connected
+    properties:
+      connected:
+        description: Indicates if the chargepoint is connected to the CSMS
+        type: boolean
+      csms_url:
+        description: >-
+          CSMS endpoint URL of the connection. OCPP2.x reports ocppCsmsUrl of the
+          network connection profile, OCPP1.6 the CentralSystemURI configuration key.
+        type: string
+      identity:
+        description: >-
+          Identity the chargepoint uses towards the CSMS. OCPP2.x reports identity of
+          the network connection profile, OCPP1.6 the ChargePointId.
+        type: string
+      security_profile:
+        description: >-
+          OCPP security profile of the connection. OCPP2.x reports securityProfile of
+          the network connection profile, OCPP1.6 the SecurityProfile configuration key.
+        type: integer
+      configuration_slot:
+        description: >-
+          Configuration slot of the network connection profile the connection uses.
+        type: integer
+      ocpp_interface:
+        description: >-
+          Network interface of the network connection profile the connection uses
+        type: string
+      ocpp_transport:
+        description: >-
+          Transport of the network connection profile the connection uses
+        type: string
+      ocpp_version:
+        description: >-
+          OCPP protocol version in use on the connection (e.g. ocpp1.6, ocpp2.0.1 or
+          ocpp2.1)
+        type: string

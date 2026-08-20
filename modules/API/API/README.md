@@ -148,7 +148,7 @@ of the EVSE.
 ### everest_api/ocpp/var/connection_status
 This variable is published every second and contains the connection
 status of the OCPP module.
-If the OCPP module has not yet published its "is_connected" status or
+If the OCPP module has not yet published its "connection_status" or
 no OCPP module is configured "unknown" is published. Otherwise "connected"
 or "disconnected" are published.
 

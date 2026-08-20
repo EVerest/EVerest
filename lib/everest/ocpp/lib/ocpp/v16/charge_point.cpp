@@ -347,7 +347,9 @@ void ChargePoint::register_signal_set_charging_profiles_callback(const std::func
     this->charge_point->register_signal_set_charging_profiles_callback(callback);
 }
 
-void ChargePoint::register_connection_state_changed_callback(const std::function<void(bool is_connected)>& callback) {
+void ChargePoint::register_connection_state_changed_callback(
+    const std::function<void(const bool is_connected, const int configuration_slot,
+                             const ocpp::v2::NetworkConnectionProfile& network_connection_profile)>& callback) {
     this->charge_point->register_connection_state_changed_callback(callback);
 }
 

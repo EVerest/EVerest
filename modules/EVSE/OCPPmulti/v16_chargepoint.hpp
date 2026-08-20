@@ -64,7 +64,8 @@ private:
     std::optional<evse_connector_t> evse_from_ocpp_connector(std::int32_t ocpp_connector_id) const;
 
     void cb_boot_notification_response(const ocpp::v16::BootNotificationResponse& boot_notification_response);
-    void cb_connection_state_changed(bool is_connected);
+    void cb_connection_state_changed(bool is_connected, int configuration_slot,
+                                     const ocpp::v2::NetworkConnectionProfile& network_connection_profile);
     ocpp::v16::DataTransferResponse cb_data_transfer(const ocpp::v16::DataTransferRequest& request);
     void cb_default_price(const ocpp::TariffMessage& message);
     bool cb_disable_evse(std::int32_t ocpp_connector_id);
