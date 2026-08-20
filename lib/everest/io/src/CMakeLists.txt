@@ -125,17 +125,56 @@ install(TARGETS everest_io
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
+# The tls headers are excluded unconditionally: they include libtls headers, and libtls is
+# reachable only through BUILD_INTERFACE below, so an installed consumer could not compile
+# them. Shipping them would offer an interface that cannot be used.
 if(EVEREST_IO_WITH_MQTT)
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../include/everest
         DESTINATION include
         FILES_MATCHING PATTERN "*.hpp"
+        PATTERN "tls" EXCLUDE
     )
 else()
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../include/everest
         DESTINATION include
         FILES_MATCHING PATTERN "*.hpp"
         PATTERN "mqtt" EXCLUDE
+        PATTERN "tls" EXCLUDE
     )
+endif()
+
+option(EVEREST_IO_ENABLE_TLS "Build TLS client/server adapters in everest_io (requires everest::tls)" ON)
+
+if(EVEREST_IO_ENABLE_TLS)
+    target_sources(everest_io
+        PRIVATE
+            tls/tls_socket_base.cpp
+            tls/tls_endpoint_base.cpp
+            tls/tls_server_socket.cpp
+            tls/tls_server.cpp
+            tls/tls_listener.cpp
+            tls/tls_client_socket.cpp
+    )
+    target_link_libraries(everest_io PRIVATE $<BUILD_INTERFACE:tls>)
+    # libtls is not installed as part of everest-core's export set, so its
+    # public include directories are propagated to in-tree consumers only via
+    # BUILD_INTERFACE. Mirrors libtls's own PUBLIC include directories.
+    target_include_directories(everest_io
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/lib/everest/tls>
+            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/lib/everest/tls/include>
+    )
+
+    # No everest_io link: its BUILD_INTERFACE carries the libtls includes above, which would make
+    # the guard vacuous.
+    add_library(everest_io_tls_header_guard OBJECT tls/tls_public_header_guard.cpp)
+    target_include_directories(everest_io_tls_header_guard
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+    target_link_libraries(everest_io_tls_header_guard PRIVATE $<BUILD_INTERFACE:everest_util>)
+    target_compile_features(everest_io_tls_header_guard PRIVATE cxx_std_17)
+    add_dependencies(everest_io everest_io_tls_header_guard)
 endif()
 
 if(DISABLE_EDM)

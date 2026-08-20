@@ -9,8 +9,9 @@ Currently there are clients for
  - PTY
  - TCP
  - TAP
+ - TLS (enabled via `EVEREST_IO_ENABLE_TLS=ON`, default ON)
 
-The clients are single threaded and epoll based. Utilities for file descriptor based event handling are provided and used.
+The clients are driven from a single event loop and are epoll based; the async connect path uses a short-lived detached thread for the blocking connect. Utilities for file descriptor based event handling are provided and used.
 
 ## Client tx contract
 
@@ -45,3 +46,80 @@ time: `on_error()` reports `true` from the call until the reopen.
 
 `tx()` and `reset()` are loop-thread only: call them from the thread that drives `sync()`, or from
 a callback that thread dispatches.
+## TLS
+
+Drives the libtls (`everest::tls`) `Server` and `Client` through the same
+`fd_event_handler` pattern as the other clients. Disable with
+`-DEVEREST_IO_ENABLE_TLS=OFF` when libtls / OpenSSL are unavailable.
+
+### Server side
+
+`tls_listener` owns the listen socket and an embedded `tls::Server`. For each
+accepted connection it yields a `std::unique_ptr<tls::tls_server>` to the accept
+callback. Register it on the same `fd_event_handler` with
+`register_event_handler(conn.get())`, which makes the loop drive the handshake and
+rx/tx, and keep it alive for the connection's lifetime.
+
+Dropping the `unique_ptr` tears the connection down and unregisters its fds.
+
+`tls_server::tx()` buffers and returns a `bool`. Check it: a rejection is
+backpressure, not a failure, but ignoring it turns a stalled peer into silently
+dropped payloads.
+
+`tls_listener::set_error_handler` is the only way to observe a failed accept, and
+is never called with code `0`. Descriptor exhaustion is reported as `EMFILE` or
+`ENFILE` and costs the queued connection; serving resumes by itself once
+descriptors are available.
+
+### Client side
+
+`tls_client` is an alias for `event::fd_event_client<tls_client_socket>::type`,
+not a class. `tls_client_interface` names the second parameter of the rx callback
+without naming the concrete type.
+
+The client is an `fd_event_sync_interface` nesting its own `fd_event_handler`:
+`register_event_handler(&client)` resolves to the sync-interface overload, and the
+outer handler polls `get_poll_fd()` and calls `sync()`. Only the blocking TCP
+connect runs off-loop, on the generic client's short-lived detached thread; the TLS
+handshake is driven loop-side through the handshake trait of `tls_client_socket`, so
+user code wires no handshake hooks or `desired_events`.
+
+`unregister_event_handler(&client)` is the explicit way to leave the handler, but
+the destructor drops the registration anyway.
+
+What is required is the ordering. The `fd_event_handler` **must outlive** every
+endpoint registered on it, client and server alike, because the endpoint's
+destructor reaches into the handler to unregister. Declare the handler first, so it
+is destroyed last.
+
+`tx()` accepts payloads from the start: those queued before the connect completes
+and during the handshake are held and flushed in order once the connection is up
+(`tls_client_socket` declares `buffer_tx_before_connect`, see "Client tx contract"
+above). The on-ready action signals there is a connection to send on.
+
+A connect or handshake that keeps failing goes inert: the error handler fires and
+the client tears down, but it does not reconnect on its own, only a consumer
+`reset()` reopens it. The error callback also reports a cleared error as code `0`,
+so gate consumer logic on `err != 0`.
+
+A DNS `host_for_sni` is sent in the TLS SNI extension, an IP literal is not (RFC
+6066). `tls.verify_subject_name = true` additionally pins the peer certificate to
+`host_for_sni` (a DNS name via RFC-6125 SAN/CN matching, an IP literal via IP-SAN
+matching), not to the TCP connect target. Pinning is only enforced when
+`tls.verify_server` is also true; with an IP-literal target and no matching SAN,
+leave `verify_subject_name` at its default `false`.
+
+### Threading and signals
+
+`tx()` wakes the loop through an internal `event_fd`. Its queue is not
+synchronized, so call `tx()` only from the loop thread (the rx handler or the
+on-ready action), never from another thread.
+
+OpenSSL drives its socket BIO through `write()` without `MSG_NOSIGNAL`, so a write
+to a peer-reset connection raises `SIGPIPE`. Processes using this layer must
+install `signal(SIGPIPE, SIG_IGN)` or a peer reset during `tx()` aborts the
+process.
+
+Example binaries in `lib/everest/io/examples/`:
+ - `test_tls_server`: `tls_listener` + `tls_server` echo demo
+ - `test_tls_client`: event-loop-driven `tls_client` demo

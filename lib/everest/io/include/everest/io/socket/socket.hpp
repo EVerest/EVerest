@@ -13,6 +13,13 @@
 #include <everest/io/event/unique_fd.hpp>
 #include <everest/io/udp/endpoint.hpp>
 
+namespace everest::lib::io::event {
+// Declared opaquely, and without an underlying type, to keep this header out of an include cycle:
+// event/fd_event_handler.hpp defines poll_events with its implicit type and
+// event/fd_event_client.hpp already includes this header.
+enum class poll_events;
+} // namespace everest::lib::io::event
+
 namespace everest::lib::io::socket {
 
 /**
@@ -178,6 +185,18 @@ event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint
                                               const std::string& device = {});
 
 /**
+ * @brief Open a TCP socket in server mode (bound and listening).
+ * @details Non-blocking, close-on-exec, with SO_REUSEADDR and SO_REUSEPORT set. The family is
+ * AF_INET6 when @p ipv6_only is set or @p bind_addr contains a ':', otherwise AF_INET.
+ * @param[in] bind_addr Numeric bind address (e.g. "0.0.0.0", "127.0.0.1", "::", "::1").
+ * @param[in] port The port to listen on (0 for an ephemeral port).
+ * @param[in] ipv6_only When true, force an IPv6 socket and set IPV6_V6ONLY.
+ * @return The managed file descriptor of the listening socket.
+ * @throws std::runtime_error if any step (socket, setsockopt, inet_pton, bind, listen) fails.
+ */
+event::unique_fd open_tcp_server_socket(std::string const& bind_addr, std::uint16_t port, bool ipv6_only);
+
+/**
  * @brief Bind a socket to a specific network interface.
  * @details Tries SO_BINDTODEVICE first (needs CAP_NET_RAW). On EPERM/EACCES, falls back to:
  *   - IP_UNICAST_IF (AF_INET) or IPV6_UNICAST_IF (AF_INET6) to restrict the outgoing
@@ -282,6 +301,16 @@ void set_socket_send_buffer_to_min(int fd);
  * @return Description
  */
 int get_pending_error(int fd);
+
+/**
+ * @brief Resolve the error behind an error or hangup notification on a descriptor
+ * @details Reads <a href="https://man7.org/linux/man-pages/man7/socket.7.html">SO_ERROR</a>, which
+ * clears it, so only the first call for a given failure can answer with the real code. Descriptors
+ * that are not sockets (pty, tun/tap) fail getsockopt outright and resolve to @p fallback, or, when
+ * that is 0, to a code derived from @p kind: ENOTCONN for a hangup, EIO for an error.
+ * @return A nonzero error code
+ */
+int consume_poll_error(int fd, event::poll_events kind, int fallback);
 
 /**
  * @brief Checks if a TCP socket is still connected and operational without consuming any incoming data.

@@ -3,9 +3,9 @@
 
 #include <everest/io/event/fd_event_client.hpp>
 #include <everest/io/event/fd_event_handler.hpp>
+#include <everest/io/socket/socket.hpp>
 
 #include <cerrno>
-#include <sys/socket.h>
 #include <utility>
 
 namespace everest::lib::io::event {
@@ -303,15 +303,10 @@ int generic_fd_event_client_impl::consume_poll_error(int fd, poll_events kind) {
     if (error != 0) {
         return error;
     }
-    int so_error = 0;
-    socklen_t len = sizeof(so_error);
-    // Consumes the pending socket error. Non sockets (serial, tun/tap) fail and fall through.
-    if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &len) == 0 and so_error != 0) {
-        return so_error;
-    }
-    // No code available: a network errno would misdiagnose the serial and tun/tap devices this
-    // client also drives.
-    return kind == poll_events::hungup ? ENOTCONN : EIO;
+    // With no code to read back, the fallback describes the notification rather than naming a
+    // cause: this client also drives serial lines and tun/tap devices, where ECONNRESET would
+    // invent a peer that reset nothing.
+    return socket::consume_poll_error(fd, kind, kind == poll_events::hungup ? ENOTCONN : EIO);
 }
 
 bool generic_fd_event_client_impl::monitor_for(int fd, poll_events desired) {
