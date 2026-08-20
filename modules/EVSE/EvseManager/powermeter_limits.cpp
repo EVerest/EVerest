@@ -31,8 +31,9 @@ apply_powermeter_limits(types::power_supply_DC::Capabilities caps,
         if (caps.min_export_current_A > caps.max_export_current_A) {
             if (log_warnings) {
                 EVLOG_warning << "Power meter minimum current in charging direction (" << meter_min
-                              << " A) exceeds power supply maximum (" << caps.max_export_current_A
-                              << " A), clamping minimum to maximum";
+                              << " A) exceeds the currently available power supply maximum ("
+                              << caps.max_export_current_A
+                              << " A, possibly reduced by an active external derating), clamping minimum to maximum";
             }
             caps.min_export_current_A = caps.max_export_current_A;
         }
@@ -53,8 +54,9 @@ apply_powermeter_limits(types::power_supply_DC::Capabilities caps,
             caps.min_import_current_A.value() > caps.max_import_current_A.value()) {
             if (log_warnings) {
                 EVLOG_warning << "Power meter minimum current in discharge direction (" << meter_min
-                              << " A) exceeds power supply maximum (" << caps.max_import_current_A.value()
-                              << " A), clamping minimum to maximum";
+                              << " A) exceeds the currently available power supply maximum ("
+                              << caps.max_import_current_A.value()
+                              << " A, possibly reduced by an active external derating), clamping minimum to maximum";
             }
             caps.min_import_current_A = caps.max_import_current_A;
         }
