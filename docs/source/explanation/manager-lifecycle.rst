@@ -79,7 +79,7 @@ skipped and the force-terminate escalation happens immediately.
 Startup (Happy Path)
 ********************
 
-- ``Idle`` (initial C++ object state) → ``Initializing`` when ``run()`` begins.
+- ``Idle``→ ``Initializing`` when ``run()`` begins.
 - ``Initializing`` → ``StartingModules`` when ``handle_start_modules()`` begins;
   publishing the startup metadata, registering the MQTT ready handlers and
   spawning the module processes all happen in that state. Calling it with an
@@ -92,7 +92,7 @@ Startup (Happy Path)
   transition to ``Running`` is **skipped** on purpose.
 - On the transition to ``Running`` the manager clears the retained startup
   topics (unless ``--retain-topics``) and publishes the global ready signal on
-  ``<mqtt_everest_prefix>ready`` (``transition_to_running_and_announce()``).
+  ``<mqtt_everest_prefix>ready``.
 
 ***************
 Startup Failure

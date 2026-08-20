@@ -75,7 +75,7 @@ modules, their parameters and their connections. The database can hold several
 slots side by side, and exactly one of them is the **active** slot — the one the
 running modules were started from.
 
-Marking a different slot does not switch anything immediately. It records that
+Marking a different slot active does not switch anything immediately. It records that
 slot as the **next boot slot**; the switch takes effect the next time the
 modules are restarted. This is what keeps the running module processes from ever
 desynchronizing from the in-memory configuration.
