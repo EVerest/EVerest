@@ -607,6 +607,7 @@ void MonitoringUpdater::process_monitors_internal(bool allow_periodics, bool all
 
         if (((allow_periodics == false) && (updater_monitor_meta.type == UpdateMonitorMetaType::PERIODIC)) ||
             ((allow_trigger == false) && (updater_monitor_meta.type == UpdateMonitorMetaType::TRIGGER))) {
+            ++it;
             continue;
         }
 
@@ -635,9 +636,10 @@ void MonitoringUpdater::process_monitors_internal(bool allow_periodics, bool all
             if (updater_monitor_meta.type == UpdateMonitorMetaType::TRIGGER) {
                 // The triggers that are not active, should simply pe discarded
                 it = updater_monitors_meta.erase(it);
-            } else if (updater_monitor_meta.type == UpdateMonitorMetaType::PERIODIC) {
+            } else {
                 // Just clear the events, since we don't require them cached
                 updater_monitor_meta.generated_monitor_events.clear();
+                ++it;
             }
 
             continue;
