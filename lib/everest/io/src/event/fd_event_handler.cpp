@@ -230,8 +230,14 @@ bool fd_event_handler::register_event_handler(timer_fd* fd, event_handler_type c
     auto const registered = register_event_handler(
         raw,
         [handler, fd](event_list const& e) {
-            fd->read();
-            handler(e);
+            // A poll batch is harvested before any of it is dispatched, so a rearm or disarm by an
+            // earlier handler retires an expiry still queued here. timerfd_settime clears the tick
+            // counter, the only identity an expiry carries, so a read of 0 marks it stale.
+            // The event_fd overload keeps its unconditional read: an eventfd is blocking and counts
+            // notifications rather than identifying an arm.
+            if (fd->read() > 0) {
+                handler(e);
+            }
         },
         poll_events::read);
     if (registered) {

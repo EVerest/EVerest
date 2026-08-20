@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 /** \file */
 
@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <everest/io/event/event_fd.hpp>
 #include <everest/io/event/fd_event_sync_interface.hpp>
+#include <everest/io/event/timer_fd.hpp>
 #include <everest/io/event/unique_fd.hpp>
 #include <everest/io/socket/socket.hpp>
 #include <everest/io/utilities/event_client_async_policy.hpp>
@@ -20,11 +21,16 @@
 #include <future>
 #include <memory>
 #include <queue>
+#include <string>
 #include <thread>
 #include <type_traits>
 
 namespace everest::lib::io::event {
 class fd_event_handler;
+
+// Opaque: event/fd_event_handler.hpp defines poll_events and includes this header, so including
+// it back would close a cycle.
+enum class poll_events;
 
 /**
  * @enum action_status
@@ -74,6 +80,38 @@ public:
      * @brief Prototype for error_status
      */
     using error_status = std::function<int()>;
+
+    /**
+     * @var handshake_status
+     * @brief Prototype for the query whether the handshake is still pending
+     */
+    using handshake_status = std::function<bool()>;
+
+    /**
+     * @var handshake_events
+     * @brief Prototype for the query which single event the handshake waits for
+     */
+    using handshake_events = std::function<poll_events()>;
+
+    /**
+     * @var handshake_timeout
+     * @brief Prototype for the query how long the handshake may stay pending
+     */
+    using handshake_timeout = std::function<std::chrono::milliseconds()>;
+
+    /**
+     * @var error_text
+     * @brief Prototype for an error description supplied by the client policy
+     */
+    using error_text = std::function<std::string()>;
+
+    /**
+     * @var default_handshake_timeout
+     * @brief Upper bound of a protocol handshake when the client policy states none.
+     * @details Retransmission with a doubling timeout lets a healthy negotiation over a lossy
+     * link take seconds. Past this the peer stopped talking, and the client reports ETIMEDOUT.
+     */
+    static constexpr std::chrono::milliseconds default_handshake_timeout{10000};
 
     /**
      * @var ready_action
@@ -149,9 +187,9 @@ public:
 
     /**
      * @brief Register a function, that is called once the client is ready
-     * @details This callback is performed immediately, if the client is in a ready state
-     *          or the client is ready. The action is persistent and called whenever the client
-     *          is ready after reset.
+     * @details Registration is deferred to the event loop. Called once per connection, so also
+     *          again after a reset, and immediately when the client is already ready. A client
+     *          policy with a handshake phase counts as ready once the handshake is complete.
      * @param[in] item The callback
      */
     void set_on_ready_action(std::function<void()>&& item);
@@ -160,9 +198,18 @@ protected:
     /**
      * @brief Constructor.
      * @details Functionality passed in by functors
+     * @param[in] drive_handshake One handshake step. 'success' to continue, 'fail' on a handshake
+     *            error, 'empty' once the handshake is complete
+     * @param[in] handshake_desired_events The single event the handshake waits for after a step
+     * @param[in] get_handshake_timeout Upper bound of the whole handshake. A non positive value
+     *            selects \ref default_handshake_timeout
+     * @param[in] get_error_string Error description of the client policy. An empty string selects
+     *            the description of the stored error code
      */
     generic_fd_event_client_impl(action const& send_one, action const& receive_one, action const& reset_client,
-                                 error_status const& get_error);
+                                 error_status const& get_error, handshake_status const& handshake_pending,
+                                 action const& drive_handshake, handshake_events const& handshake_desired_events,
+                                 handshake_timeout const& get_handshake_timeout, error_text const& get_error_string);
     ~generic_fd_event_client_impl();
 
     /**
@@ -188,9 +235,95 @@ protected:
     void error_handler();
 
     /**
+     * @brief Perform a single step of the protocol handshake.
+     * @details While the handshake is pending, io events on \p fd are routed here instead of to
+     *          \ref rx_handler / \ref tx_handler. On completion \p fd is monitored for reading
+     *          and the on_ready action is released.
+     * @param[in] fd The file descriptor of the client's socket
+     */
+    void drive_handshake(int fd);
+
+    /**
+     * @brief Monitor \p fd for exactly one of reading or writing.
+     * @details Error and hangup notifications are unconditional and stay untouched.
+     * @param[in] fd The file descriptor
+     * @param[in] desired Anything but reading or writing is rejected: \p fd would end up monitored
+     *            for nothing.
+     * @return True if \p fd is monitored for \p desired afterwards, false otherwise
+     */
+    bool monitor_for(int fd, poll_events desired);
+
+    /**
+     * @brief Mark the connection as failed and report the error of the client policy.
+     */
+    void fail_connection();
+
+    /**
+     * @brief Mark the connection as failed and report \p error_code.
+     * @param[in] error_code The error to report. A 0 is replaced, so the report is never read
+     *            as a cleared error.
+     */
+    void fail_connection(int error_code);
+
+    /**
+     * @brief Mark the connection as failed and report \p error_code described by \p text.
+     * @details For a failure the client itself diagnosed: the client policy would describe an
+     *          error it did not produce.
+     * @param[in] error_code The error to report. A 0 is replaced, so the report is never read
+     *            as a cleared error.
+     * @param[in] text Description of the failure, reported to the error handler
+     */
+    void fail_connection(int error_code, std::string text);
+
+    /**
+     * @brief The description of the pending failure, for the error handler.
+     * @details A description set by \ref fail_connection belongs to that one failure and is
+     *          consumed here. Otherwise the client policy describes the error.
+     * @return The description, empty to select the description of the stored error code
+     */
+    std::string take_error_text();
+
+    /**
+     * @brief Start the handshake deadline, on the first handshake step of a connection.
+     * @details The deadline covers the whole handshake, not a single step. One that cannot be
+     *          armed fails the connection: proceeding would leave the handshake unbounded.
+     * @return True if the deadline is in force, false if the connection was failed
+     */
+    bool start_handshake_deadline();
+
+    void handshake_deadline_expired();
+
+    /**
+     * @brief Disarm the handshake deadline a reset abandons.
+     * @details The generation guard in \ref handshake_deadline_expired already rejects a retired
+     *          expiry; this keeps the invariant local to the reset instead of resting on it alone.
+     */
+    void retire_handshake_deadline();
+
+    /**
+     * @brief Consume the error code of an error or hangup notification on \p fd.
+     * @details Prefers the error of the client policy, then SO_ERROR, then the notification kind
+     *          itself (ENOTCONN for a hangup, EIO otherwise) for a descriptor that is not a
+     *          socket. Never resolves to 0, which would read as a cleared error. Reading SO_ERROR
+     *          clears it, so call this exactly once per connection.
+     * @param[in] fd The file descriptor the notification arrived on
+     * @param[in] kind poll_events::hungup for a hangup, poll_events::error otherwise
+     * @return A nonzero error code
+     */
+    int consume_poll_error(int fd, poll_events kind);
+
+    static poll_events default_desired_events();
+
+    /**
+     * @brief Release the on_ready action, at most once per connection.
+     */
+    void maybe_fire_ready();
+
+    /**
      * @brief Setup io event handling.
      * @details This registers a generic event handler for reading, writing and error handling.
-     *          Errors and reading will be handled continuously, writing on demand.
+     *          Reading is handled continuously, writing on demand. An error or hangup
+     *          notification is terminal and reported once per connection.
      * @param[in] fd Filedescriptor to be monitored.
      */
     void setup_io_event_handler(int fd);
@@ -260,15 +393,28 @@ protected:
     event::event_fd m_io_event_fd;
     event::event_fd m_error_status_event_fd;
     event::event_fd m_connected_event_fd;
+    event::timer_fd m_handshake_timer;
 
     cb_error m_error;
     action m_send_one;
     action m_receive_one;
     action m_reset_client;
     error_status m_get_error;
+    handshake_status m_handshake_pending;
+    action m_drive_handshake;
+    handshake_events m_handshake_desired_events;
+    handshake_timeout m_get_handshake_timeout;
+    error_text m_get_error_string;
+    std::string m_local_error_text;
     util::monitor<client_status_internal> m_client_status;
     ready_action m_on_ready_action;
     std::atomic_uint64_t m_connected_generation{0};
+    bool m_connection_failed{false};
+    // Every connection attempt pre-increments the generation, so 0 cannot match a connection.
+    std::uint64_t m_ready_fired_generation{0};
+    std::uint64_t m_handshake_deadline_generation{0};
+    // 0 means the deadline is registered; nonzero is the errno that stopped it.
+    int m_handshake_deadline_register_error{0};
     /// @endcond
 };
 
@@ -300,6 +446,20 @@ public:
      */
     using ClientPayloadT = typename ClientPolicy::PayloadT;
 
+    // A partial trio would silently disable the handshake and release the on_ready action on a
+    // socket that never negotiated anything.
+    static_assert(utilities::event_client_handshake_policy_v<ClientPolicy> or
+                      utilities::event_client_has_no_handshake_trio_v<ClientPolicy>,
+                  "ClientPolicy must provide all of handshake_complete(), handshake_step() and "
+                  "desired_events(), or none of them");
+
+    // handshake_timeout() bounds the phase the trio implements, so on its own it is read by nothing.
+    static_assert(not utilities::has_member_handshake_timeout_v<ClientPolicy> or
+                      utilities::event_client_handshake_policy_v<ClientPolicy>,
+                  "ClientPolicy provides handshake_timeout() but no handshake to bound: either add "
+                  "handshake_complete(), handshake_step() and desired_events(), or remove "
+                  "handshake_timeout()");
+
     /**
      * @var max_buffered_tx_payloads
      * @brief Upper bound of payloads held in the tx buffer.
@@ -328,18 +488,20 @@ public:
      */
     template <class... ArgsT>
     generic_fd_event_client(utilities::tx_buffering mode, ArgsT... args) :
-        generic_fd_event_client_impl([this]() { return send_one(); }, [this]() { return receive_one(); },
-                                     [this]() { return reset_client(); },
-                                     // A retired handle carries the errno of the peer it served,
-                                     // which is not the errno of the connection replacing it. The
-                                     // EPOLLERR branch reads this without knowing which handle is
-                                     // behind it.
-                                     [this]() { return handle_is_current() ? m_handle->get_error() : 0; }) {
+        generic_fd_event_client_impl(
+            [this]() { return send_one(); }, [this]() { return receive_one(); }, [this]() { return reset_client(); },
+            // A retired handle carries the errno of the peer it served, which is not the errno of
+            // the connection replacing it. The EPOLLERR branch reads this without knowing which
+            // handle is behind it.
+            [this]() { return handle_is_current() ? m_handle->get_error() : 0; },
+            [this]() { return handshake_pending(); }, [this]() { return handshake_step(); },
+            [this]() { return handshake_desired_events(); }, [this]() { return handshake_timeout(); },
+            [this]() { return policy_error_string(); }) {
         m_buffer_tx_before_connect = mode == utilities::tx_buffering::buffer;
         m_async_connect_state = std::make_shared<async_connect_state>();
         register_async_connect_event_handler(&m_async_connect_state->ready_event,
                                              [this]() { process_async_connect_results(); });
-        init<ClientPolicy>(args...);
+        init(args...);
     }
 
     ~generic_fd_event_client() override {
@@ -359,8 +521,9 @@ public:
      * @brief Send data
      * @details This buffers the incoming data and notifies. It will be send as soon as the file descriptor
      * is ready for transmission (POLLOUT / EPOLLOUT). Buffering before the connection is up is opt in,
-     * see \ref utilities::tx_buffering. Must be called from the thread that drives \ref sync: the
-     * buffer is not synchronized.
+     * see \ref utilities::tx_buffering. A handshake phase runs past that window, so a policy with one
+     * buffers across it whatever the mode, and flushes in order once it completes. Must be called from
+     * the thread that drives \ref sync: the buffer is not synchronized.
      * @param[in] payload The data to be transmitted.
      * @return True if the payload was buffered. False if the buffer already holds
      * \ref max_buffered_tx_payloads payloads, if the client is in
@@ -456,55 +619,54 @@ private:
         return state == utilities::connection_state::connected;
     }
 
-    template <class T, class... ArgsT> std::enable_if_t<utilities::event_client_async_policy_v<T>> init(ArgsT... args) {
-        m_open_device = [this, args...]() {
-            auto setup_ok = m_handle->setup(args...);
-            if (setup_ok) {
-                auto connect_generation = m_connect_generation.load();
-                auto state = m_async_connect_state;
-                auto handle = std::move(m_handle);
-                // The usage of a detached thread is intentional to avoid blocking the event_handler.
-                std::thread([state = std::move(state), handle = std::move(handle), connect_generation]() mutable {
-                    bool ok = false;
-                    int fd = -1;
-                    try {
-                        handle->connect([&](bool result_ok, int result_fd) {
-                            ok = result_ok;
-                            fd = result_fd;
-                        });
-                    } catch (...) {
-                        ok = false;
-                        fd = -1;
-                    }
+    template <class... ArgsT> void init(ArgsT... args) {
+        if constexpr (utilities::event_client_async_policy_v<ClientPolicy>) {
+            m_open_device = [this, args...]() {
+                auto setup_ok = m_handle->setup(args...);
+                if (setup_ok) {
+                    auto connect_generation = m_connect_generation.load();
+                    auto state = m_async_connect_state;
+                    auto handle = std::move(m_handle);
+                    // The usage of a detached thread is intentional to avoid blocking the event_handler.
+                    std::thread([state = std::move(state), handle = std::move(handle), connect_generation]() mutable {
+                        bool ok = false;
+                        int fd = -1;
+                        try {
+                            handle->connect([&](bool result_ok, int result_fd) {
+                                ok = result_ok;
+                                fd = result_fd;
+                            });
+                        } catch (...) {
+                            ok = false;
+                            fd = -1;
+                        }
 
-                    if (not state or not state->active.load()) {
-                        return;
-                    }
+                        if (not state or not state->active.load()) {
+                            return;
+                        }
 
-                    auto inserted = state->connect_results.emplace(
-                        async_connect_result{connect_generation, ok, fd, std::move(handle)});
-                    if (inserted != 0) {
-                        state->ready_event.notify();
-                    }
-                }).detach();
-            } else {
+                        auto inserted = state->connect_results.emplace(
+                            async_connect_result{connect_generation, ok, fd, std::move(handle)});
+                        if (inserted != 0) {
+                            state->ready_event.notify();
+                        }
+                    }).detach();
+                } else {
+                    auto generation = m_connect_generation.load();
+                    on_client_ready(generation, false, -1);
+                }
+            };
+            // The initial open has no previous peer, so a payload buffered before this action runs
+            // belongs to the connection it opens.
+            schedule_reset();
+        } else {
+            m_open_device = [this, args...]() {
+                auto result = m_handle->open(args...);
                 auto generation = m_connect_generation.load();
-                on_client_ready(generation, false, -1);
-            }
-        };
-        // The initial open has no previous peer, so a payload buffered before this action runs
-        // belongs to the connection it opens.
-        schedule_reset();
-    }
-
-    template <class T, class... ArgsT>
-    std::enable_if_t<not utilities::event_client_async_policy_v<T>> init(ArgsT... args) {
-        m_open_device = [this, args...]() {
-            auto result = m_handle->open(args...);
-            auto generation = m_connect_generation.load();
-            on_client_ready(generation, result, m_handle->get_fd());
-        };
-        reset_impl();
+                on_client_ready(generation, result, m_handle->get_fd());
+            };
+            reset_impl();
+        }
     }
 
     void schedule_reset() {
@@ -517,6 +679,7 @@ private:
         // reset already flipped the state, but an event dispatched since may have moved it back
         // to connected, which the device opened below has not earned yet.
         reset_connection_state();
+        retire_handshake_deadline();
         reset_client();
         setup_error_event_handler();
         init_device();
@@ -574,6 +737,66 @@ private:
         // handed up; what is dropped is its status, which says nothing about the connection
         // replacing this one.
         return handle_is_current() ? result : action_status::empty;
+    }
+
+    bool handshake_pending() {
+        if constexpr (utilities::event_client_handshake_policy_v<ClientPolicy>) {
+            return m_handle and not m_handle->handshake_complete();
+        } else {
+            return false;
+        }
+    }
+
+    action_status handshake_step() {
+        if constexpr (utilities::event_client_handshake_policy_v<ClientPolicy>) {
+            if (not m_handle) {
+                // 'empty' would read as a completed handshake and release the on_ready action
+                // for a client that does not exist.
+                return action_status::fail;
+            }
+            if (not m_handle->handshake_step()) {
+                return action_status::fail;
+            }
+            if (m_handle->handshake_complete()) {
+                // Payloads queued during the handshake consumed their one-shot tx notification
+                // while its handler declined to monitor writing. Notify again to flush the queue.
+                if (not m_tx_buffer.empty()) {
+                    m_io_event_fd.notify();
+                }
+                return action_status::empty;
+            }
+            return action_status::success;
+        } else {
+            return action_status::empty;
+        }
+    }
+
+    poll_events handshake_desired_events() {
+        if constexpr (utilities::event_client_handshake_policy_v<ClientPolicy>) {
+            if (m_handle) {
+                return m_handle->desired_events();
+            }
+        }
+        // poll_events is only forward declared here, so the fallback is named via the implementation.
+        return default_desired_events();
+    }
+
+    std::chrono::milliseconds handshake_timeout() {
+        if constexpr (utilities::has_member_handshake_timeout_v<ClientPolicy>) {
+            if (m_handle) {
+                return m_handle->handshake_timeout();
+            }
+        }
+        return default_handshake_timeout;
+    }
+
+    std::string policy_error_string() {
+        if constexpr (utilities::has_member_get_error_string_v<ClientPolicy>) {
+            if (m_handle) {
+                return m_handle->get_error_string();
+            }
+        }
+        return {};
     }
 
     action_status reset_client() {
@@ -693,6 +916,26 @@ private:
  *                                    // Return true on success, false otherwise
  *   int get_fd();                    // returns the file discriptor to be monitored
  *   int get_error();                 // return the current error, 0 with no error.
+ *   bool handshake_complete();       // [optional] False while a protocol handshake is outstanding.
+ *   bool handshake_step();           // [optional] One non blocking handshake step. True while it makes
+ *                                    // progress, false on failure. Called once at connect time, before
+ *                                    // any readiness event, because the client owes the first protocol
+ *                                    // message; afterwards only for the event desired_events() asked
+ *                                    // for. A wakeup may be spurious, so a step that cannot progress
+ *                                    // returns true and requests its event again.
+ *   poll_events desired_events();    // [optional] The single event the handshake waits for, queried
+ *                                    // after every step that neither failed nor completed it. Anything
+ *                                    // but reading or writing fails the handshake.
+ *                                    // The three functions above are only used together. Until the
+ *                                    // handshake completes the on_ready action is deferred and payloads
+ *                                    // passed to tx are buffered.
+ *   std::chrono::milliseconds handshake_timeout(); // [optional, rejected without the three functions
+ *                                    // above] Upper bound of the whole handshake, read when it starts.
+ *                                    // A non positive value, or no such function, selects
+ *                                    // generic_fd_event_client_impl::default_handshake_timeout.
+ *   std::string get_error_string();  // [optional] Description of the current error, a const reference
+ *                                    // is fine too. An empty string selects the description of the
+ *                                    // stored error code.
  * };
  * // ClientPolicy owns the file descriptor
  * \endcode

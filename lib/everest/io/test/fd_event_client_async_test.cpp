@@ -3,12 +3,14 @@
 
 #include <everest/io/event/event_fd.hpp>
 #include <everest/io/event/fd_event_client.hpp>
+#include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/tcp/tcp_client.hpp>
 #include <everest/io/udp/udp_client.hpp>
 #include <everest/io/utilities/event_client_async_policy.hpp>
 #include <everest/io/utilities/generic_error_state.hpp>
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
@@ -21,10 +23,12 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -37,8 +41,12 @@ using namespace everest::lib::io;
 
 using everest::lib::io::event::event_fd;
 using everest::lib::io::event::fd_event_client;
+using everest::lib::io::event::poll_events;
 using everest::lib::io::event::semaphore_fd;
 using everest::lib::io::utilities::event_client_async_policy_v;
+using everest::lib::io::utilities::event_client_handshake_policy_v;
+using everest::lib::io::utilities::has_member_get_error_string_v;
+using everest::lib::io::utilities::has_member_handshake_timeout_v;
 
 namespace {
 
@@ -595,12 +603,383 @@ char const* state_name(utilities::connection_state state) {
     return "unknown";
 }
 
+static_assert(not event_client_handshake_policy_v<deterministic_async_policy>);
+static_assert(not has_member_get_error_string_v<deterministic_async_policy>);
+
+enum class handshake_step_result {
+    want_read,
+    want_write,
+    want_invalid,
+    complete,
+    fail
+};
+
+class handshake_script {
+public:
+    explicit handshake_script(std::vector<handshake_step_result> steps, int fail_error_code = 0,
+                              std::chrono::milliseconds handshake_timeout = 5s) :
+        m_steps{std::move(steps)}, m_fail_error_code{fail_error_code}, m_handshake_timeout{handshake_timeout} {
+        int fds[2]{-1, -1};
+        if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fds) == 0) {
+            m_local_fd = fds[0];
+            m_peer_fd = fds[1];
+        }
+    }
+
+    handshake_script(handshake_script const&) = delete;
+    handshake_script& operator=(handshake_script const&) = delete;
+    handshake_script(handshake_script&&) = delete;
+    handshake_script& operator=(handshake_script&&) = delete;
+
+    ~handshake_script() {
+        if (m_local_fd >= 0) {
+            ::close(m_local_fd);
+        }
+        if (m_peer_fd >= 0) {
+            ::close(m_peer_fd);
+        }
+    }
+
+    int local_fd() const {
+        return m_local_fd;
+    }
+
+    int fail_error_code() const {
+        return m_fail_error_code;
+    }
+
+    std::chrono::milliseconds handshake_timeout() const {
+        return m_handshake_timeout;
+    }
+
+    void deliver_peer_record() const {
+        deliver_byte(1);
+    }
+
+    void deliver_byte(char value) const {
+        (void)::send(m_peer_fd, &value, 1, MSG_DONTWAIT);
+    }
+
+    void close_peer() {
+        if (m_peer_fd >= 0) {
+            ::close(m_peer_fd);
+            m_peer_fd = -1;
+        }
+    }
+
+    // Without this a want_read state keeps refiring on the record the step already reacted to.
+    void consume_pending_record() const {
+        char byte{0};
+        (void)::recv(m_local_fd, &byte, 1, MSG_DONTWAIT);
+    }
+
+    handshake_step_result advance() {
+        ++m_step_count;
+        auto const result = m_steps[m_cursor];
+        if (m_cursor + 1 < m_steps.size()) {
+            ++m_cursor;
+        }
+        return result;
+    }
+
+    std::size_t step_count() const {
+        return m_step_count;
+    }
+
+    void register_connect() {
+        ++m_connect_count;
+    }
+
+    std::size_t connect_count() const {
+        return m_connect_count.load();
+    }
+
+    void record_tx(int payload) {
+        m_tx_payloads.push_back(payload);
+    }
+
+    std::vector<int> const& tx_payloads() const {
+        return m_tx_payloads;
+    }
+
+private:
+    std::vector<handshake_step_result> m_steps;
+    int m_fail_error_code{0};
+    std::chrono::milliseconds m_handshake_timeout{5s};
+    std::size_t m_cursor{0};
+    std::size_t m_step_count{0};
+    std::atomic<std::size_t> m_connect_count{0};
+    std::vector<int> m_tx_payloads;
+    int m_local_fd{-1};
+    int m_peer_fd{-1};
+};
+
+class scripted_handshake_policy {
+public:
+    using PayloadT = int;
+
+    scripted_handshake_policy() = default;
+
+    bool setup(std::shared_ptr<handshake_script> script) {
+        m_script = std::move(script);
+        return static_cast<bool>(m_script) and m_script->local_fd() >= 0;
+    }
+
+    void connect(std::function<void(bool, int)> const& cb) {
+        if (not m_script) {
+            cb(false, -1);
+            return;
+        }
+        m_script->register_connect();
+        cb(true, m_script->local_fd());
+    }
+
+    bool handshake_complete() const {
+        return m_complete;
+    }
+
+    bool handshake_step() {
+        if (not m_script) {
+            return false;
+        }
+        m_script->consume_pending_record();
+        switch (m_script->advance()) {
+        case handshake_step_result::want_read:
+            m_desired = poll_events::read;
+            return true;
+        case handshake_step_result::want_write:
+            m_desired = poll_events::write;
+            return true;
+        case handshake_step_result::want_invalid:
+            m_desired = poll_events::priority;
+            return true;
+        case handshake_step_result::complete:
+            m_complete = true;
+            // Poisoned: a completed handshake is monitored for reading, never from this request.
+            m_desired = poll_events::write;
+            return true;
+        case handshake_step_result::fail:
+        default:
+            m_error = m_script->fail_error_code();
+            m_error_string = "scripted handshake failure";
+            return false;
+        }
+    }
+
+    poll_events desired_events() const {
+        return m_desired;
+    }
+
+    std::chrono::milliseconds handshake_timeout() const {
+        return m_script ? m_script->handshake_timeout() : std::chrono::milliseconds{5s};
+    }
+
+    bool tx(PayloadT const& payload) {
+        if (not m_script) {
+            return false;
+        }
+        m_script->record_tx(payload);
+        return true;
+    }
+
+    bool rx(PayloadT& data) {
+        if (not m_script) {
+            return false;
+        }
+        char byte{0};
+        if (::recv(m_script->local_fd(), &byte, 1, MSG_DONTWAIT) != 1) {
+            return false;
+        }
+        data = static_cast<int>(byte);
+        return true;
+    }
+
+    int get_fd() const {
+        return m_script ? m_script->local_fd() : -1;
+    }
+
+    int get_error() const {
+        return m_error;
+    }
+
+    std::string const& get_error_string() const {
+        return m_error_string;
+    }
+
+private:
+    std::shared_ptr<handshake_script> m_script;
+    poll_events m_desired{poll_events::read};
+    bool m_complete{false};
+    int m_error{0};
+    std::string m_error_string;
+};
+
+static_assert(event_client_async_policy_v<scripted_handshake_policy>);
+static_assert(event_client_handshake_policy_v<scripted_handshake_policy>);
+static_assert(has_member_get_error_string_v<scripted_handshake_policy>);
+// The true side of the trait the handshake_timeout() static_assert keys on. Its false side is
+// what that assert lets through, which no compiling translation unit can pin.
+static_assert(has_member_handshake_timeout_v<scripted_handshake_policy>);
+
+class poll_error_script {
+public:
+    explicit poll_error_script(int fd) : m_fd{fd} {
+    }
+
+    poll_error_script(poll_error_script const&) = delete;
+    poll_error_script& operator=(poll_error_script const&) = delete;
+
+    ~poll_error_script() {
+        if (m_fd >= 0) {
+            ::close(m_fd);
+        }
+    }
+
+    int fd() const {
+        return m_fd;
+    }
+
+    void set_policy_error(int code) {
+        m_policy_error.store(code);
+    }
+
+    int policy_error() const {
+        return m_policy_error.load();
+    }
+
+private:
+    int m_fd{-1};
+    std::atomic<int> m_policy_error{0};
+};
+
+class poll_error_policy {
+public:
+    using PayloadT = int;
+
+    poll_error_policy() = default;
+
+    bool setup(std::shared_ptr<poll_error_script> script) {
+        m_script = std::move(script);
+        return static_cast<bool>(m_script) and m_script->fd() >= 0;
+    }
+
+    void connect(std::function<void(bool, int)> const& cb) {
+        if (not m_script) {
+            cb(false, -1);
+            return;
+        }
+        cb(true, m_script->fd());
+    }
+
+    bool tx(PayloadT const&) {
+        return false;
+    }
+
+    bool rx(PayloadT&) {
+        return false;
+    }
+
+    int get_fd() const {
+        return m_script ? m_script->fd() : -1;
+    }
+
+    int get_error() const {
+        return m_script ? m_script->policy_error() : 0;
+    }
+
+private:
+    std::shared_ptr<poll_error_script> m_script;
+};
+
+static_assert(event_client_async_policy_v<poll_error_policy>);
+static_assert(not event_client_handshake_policy_v<poll_error_policy>);
+
+// The port is bound and released so nothing listens on it. poll() does not consume SO_ERROR, so
+// ECONNREFUSED is left unread for the client to resolve.
+int make_refused_tcp_fd() {
+    int probe = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (probe < 0) {
+        return -1;
+    }
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = ::inet_addr("127.0.0.1");
+    addr.sin_port = 0;
+    socklen_t addr_len = sizeof(addr);
+    if (::bind(probe, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 or
+        ::getsockname(probe, reinterpret_cast<sockaddr*>(&addr), &addr_len) != 0) {
+        ::close(probe);
+        return -1;
+    }
+    ::close(probe);
+
+    int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) {
+        // Something claimed the released port in the meantime.
+        ::close(fd);
+        return -1;
+    }
+    pollfd pfd{fd, POLLOUT, 0};
+    if (::poll(&pfd, 1, 2000) != 1 or (pfd.revents & POLLERR) == 0) {
+        ::close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+int make_hungup_pipe_read_fd() {
+    int fds[2]{-1, -1};
+    if (::pipe2(fds, O_NONBLOCK) != 0) {
+        return -1;
+    }
+    ::close(fds[1]);
+    return fds[0];
+}
+
+int make_errored_pipe_write_fd() {
+    int fds[2]{-1, -1};
+    if (::pipe2(fds, O_NONBLOCK) != 0) {
+        return -1;
+    }
+    ::close(fds[0]);
+    return fds[1];
+}
+
 } // namespace
 
 using deterministic_async_client = fd_event_client<deterministic_async_policy>::type;
 using deterministic_sync_client = fd_event_client<deterministic_sync_policy>::type;
 using rx_capable_sync_client = fd_event_client<rx_capable_sync_policy>::type;
 using faulting_rx_sync_client = fd_event_client<faulting_rx_sync_policy>::type;
+using scripted_handshake_client = fd_event_client<scripted_handshake_policy>::type;
+using poll_error_client = fd_event_client<poll_error_policy>::type;
+
+namespace {
+
+std::string describe_codes(std::vector<int> const& codes) {
+    std::string result;
+    for (auto code : codes) {
+        if (not result.empty()) {
+            result += ", ";
+        }
+        result += std::to_string(code) + " (" + std::strerror(code) + ")";
+    }
+    return result.empty() ? std::string{"none"} : result;
+}
+
+// The handler runs on the loop thread, which is the thread pumping in the tests below.
+template <class Client> void collect_error_codes(Client& client, std::vector<int>& codes) {
+    client.set_error_handler([&codes](int code, std::string const&) {
+        if (code != 0) {
+            codes.push_back(code);
+        }
+    });
+}
+
+} // namespace
 
 // Verify reset and sync do not block when an async connect callback is still
 // pending, protecting against deadlocks in the connect/reset path.
@@ -1476,4 +1855,560 @@ TEST(fd_event_client_error_signal_test, a_failed_read_reports_the_socket_error) 
         << "a read that failed on an established connection reported nothing";
     EXPECT_EQ(codes, (std::vector<int>{0, ECONNRESET})) << "the failed read did not report the socket error";
     EXPECT_TRUE(client.on_error()) << "the client still reports itself up after a failed read";
+}
+
+// Without a handshake phase the client is ready the moment the transport connects, so a
+// registration landing in the publish window and the connected handler would each release.
+TEST(fd_event_client_async_test, ready_action_registered_in_publish_window_fires_once) {
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, 0}});
+    deterministic_async_client client(control);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(control->wait_for_attempt_completed(0, 500ms));
+    // Settle without pumping, so the published result is queued but not yet observed.
+    std::this_thread::sleep_for(50ms);
+
+    std::atomic<int> ready_calls{0};
+    client.set_on_ready_action([&] { ++ready_calls; });
+
+    pump_for(client, 200ms);
+    EXPECT_EQ(ready_calls.load(), 1) << "on_ready was delivered more than once for one connection";
+}
+
+TEST(fd_event_client_async_test, ready_action_registered_after_ready_fires_immediately) {
+    auto control = std::make_shared<async_connect_control>(std::vector<connect_attempt_plan>{{true, 0}});
+    deterministic_async_client client(control);
+
+    std::atomic<int> first_calls{0};
+    client.set_on_ready_action([&] { ++first_calls; });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return control->attempt_count() >= 1; }));
+    control->release(0);
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return first_calls.load() >= 1; }));
+
+    std::atomic<int> second_calls{0};
+    client.set_on_ready_action([&] { ++second_calls; });
+
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return second_calls.load() >= 1; }))
+        << "the late registration was dropped on an already ready connection";
+    pump_for(client, 30ms);
+    EXPECT_EQ(second_calls.load(), 1);
+}
+
+TEST(fd_event_client_handshake_test, first_handshake_step_runs_without_fd_readiness) {
+    auto script = std::make_shared<handshake_script>(
+        std::vector<handshake_step_result>{handshake_step_result::want_read, handshake_step_result::complete});
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    client.set_on_ready_action([&] { ++ready_calls; });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return script->step_count() >= 1; }));
+    pump_for(client, 30ms);
+    EXPECT_EQ(script->step_count(), 1u) << "handshake must not advance without a peer record";
+    EXPECT_EQ(ready_calls.load(), 0);
+
+    script->deliver_peer_record();
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return ready_calls.load() == 1; }));
+    EXPECT_EQ(script->step_count(), 2u);
+    EXPECT_FALSE(client.on_error());
+}
+
+TEST(fd_event_client_handshake_test, handshake_completing_on_first_step_fires_ready) {
+    auto script =
+        std::make_shared<handshake_script>(std::vector<handshake_step_result>{handshake_step_result::complete});
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    client.set_on_ready_action([&] { ++ready_calls; });
+
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return ready_calls.load() == 1; }));
+    EXPECT_EQ(script->step_count(), 1u);
+    EXPECT_EQ(script->connect_count(), 1u);
+}
+
+TEST(fd_event_client_handshake_test, on_ready_action_waits_for_handshake_completion) {
+    auto script = std::make_shared<handshake_script>(std::vector<handshake_step_result>{
+        handshake_step_result::want_read, handshake_step_result::want_read, handshake_step_result::complete});
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    client.set_on_ready_action([&] { ++ready_calls; });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return script->step_count() >= 1; }));
+    EXPECT_EQ(ready_calls.load(), 0);
+
+    script->deliver_peer_record();
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return script->step_count() >= 2; }));
+    pump_for(client, 30ms);
+    EXPECT_EQ(ready_calls.load(), 0) << "on_ready fired before the handshake completed";
+
+    script->deliver_peer_record();
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return ready_calls.load() == 1; }));
+    EXPECT_EQ(script->step_count(), 3u) << "the handshake was stepped for an event it did not ask for";
+}
+
+TEST(fd_event_client_handshake_test, payloads_queued_during_handshake_flush_in_order) {
+    auto script = std::make_shared<handshake_script>(
+        std::vector<handshake_step_result>{handshake_step_result::want_read, handshake_step_result::complete});
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    client.set_on_ready_action([&] { ++ready_calls; });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return script->step_count() >= 1; }));
+    ASSERT_EQ(ready_calls.load(), 0);
+
+    EXPECT_TRUE(client.tx(1));
+    EXPECT_TRUE(client.tx(2));
+    EXPECT_TRUE(client.tx(3));
+    pump_for(client, 30ms);
+    EXPECT_TRUE(script->tx_payloads().empty()) << "payloads must not be written during the handshake";
+    EXPECT_EQ(script->step_count(), 1u) << "a queued payload must not drive a handshake step";
+
+    script->deliver_peer_record();
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return script->tx_payloads().size() == 3; }));
+    EXPECT_EQ(script->tx_payloads(), std::vector<int>({1, 2, 3}));
+    EXPECT_EQ(ready_calls.load(), 1);
+}
+
+TEST(fd_event_client_handshake_test, the_tx_buffer_is_bounded_during_the_handshake) {
+    auto script = std::make_shared<handshake_script>(
+        std::vector<handshake_step_result>{handshake_step_result::want_read, handshake_step_result::complete});
+    scripted_handshake_client client(script);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return script->step_count() >= 1; }));
+
+    constexpr auto cap = scripted_handshake_client::max_buffered_tx_payloads;
+    std::size_t accepted{0};
+    for (std::size_t i = 0; i < cap + 100; ++i) {
+        if (not client.tx(static_cast<int>(i))) {
+            break;
+        }
+        ++accepted;
+    }
+
+    EXPECT_EQ(accepted, cap) << "the handshake buffered " << accepted << " payloads against a cap of " << cap;
+    EXPECT_FALSE(client.tx(0)) << "the buffer accepted a payload past its cap";
+
+    // tx only notifies: without a loop pass the pending handshake is never asked to hold back.
+    pump_for(client, 100ms);
+    EXPECT_EQ(script->step_count(), 1u) << "a buffered payload stepped the handshake";
+    EXPECT_TRUE(script->tx_payloads().empty()) << "payloads must not be written during the handshake";
+}
+
+// The policy reports errno 0 here (a protocol level failure), so the client has to substitute a
+// code that consumers filtering on 'code != 0' actually see. The cleared-error callback is
+// recorded too: 'error cleared' after a fatal failure passes a dead connection off as healthy.
+TEST(fd_event_client_handshake_test, handshake_failure_reports_one_nonzero_error) {
+    auto script = std::make_shared<handshake_script>(
+        std::vector<handshake_step_result>{handshake_step_result::want_read, handshake_step_result::fail}, 0);
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    std::vector<std::pair<int, std::string>> error_reports;
+    client.set_on_ready_action([&] { ++ready_calls; });
+    client.set_error_handler([&](int code, std::string const& msg) { error_reports.emplace_back(code, msg); });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return script->step_count() >= 1; }));
+
+    // The failing step consumes one, so the fd stays readable and would step a dead handshake.
+    script->deliver_peer_record();
+    script->deliver_peer_record();
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return error_reports.size() >= 2; }));
+    pump_for(client, 50ms);
+
+    ASSERT_EQ(error_reports.size(), 2u);
+    EXPECT_EQ(error_reports[0].first, 0);
+    EXPECT_EQ(error_reports[1].first, ECONNRESET);
+    EXPECT_EQ(error_reports[1].second, "scripted handshake failure");
+    EXPECT_EQ(ready_calls.load(), 0);
+    EXPECT_TRUE(client.on_error());
+}
+
+// A socketpair is always writable, so a want_write state advances with no peer record and a
+// want_read state must not. That only holds if monitoring one event removes the other.
+TEST(fd_event_client_handshake_test, handshake_monitors_write_and_read_exclusively) {
+    auto script = std::make_shared<handshake_script>(std::vector<handshake_step_result>{
+        handshake_step_result::want_write, handshake_step_result::want_read, handshake_step_result::complete});
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    client.set_on_ready_action([&] { ++ready_calls; });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return script->step_count() >= 2; }));
+
+    pump_for(client, 30ms);
+    EXPECT_EQ(script->step_count(), 2u) << "writing is still monitored while the handshake waits for reading";
+    EXPECT_EQ(ready_calls.load(), 0);
+
+    script->deliver_peer_record();
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return ready_calls.load() == 1; }));
+    EXPECT_EQ(script->step_count(), 3u);
+}
+
+TEST(fd_event_client_handshake_test, ready_action_registered_mid_handshake_waits_for_completion) {
+    auto script = std::make_shared<handshake_script>(
+        std::vector<handshake_step_result>{handshake_step_result::want_read, handshake_step_result::complete});
+    scripted_handshake_client client(script);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return script->step_count() >= 1; }));
+
+    std::atomic<int> ready_calls{0};
+    client.set_on_ready_action([&] { ++ready_calls; });
+
+    pump_for(client, 30ms);
+    EXPECT_EQ(ready_calls.load(), 0) << "on_ready fired on a connection whose handshake is still pending";
+
+    script->deliver_peer_record();
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return ready_calls.load() >= 1; }));
+    pump_for(client, 30ms);
+    EXPECT_EQ(ready_calls.load(), 1) << "on_ready was delivered more than once for one connection";
+}
+
+TEST(fd_event_client_handshake_test, completed_handshake_delivers_application_payloads) {
+    auto script = std::make_shared<handshake_script>(
+        std::vector<handshake_step_result>{handshake_step_result::want_write, handshake_step_result::complete});
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    std::atomic<int> rx_calls{0};
+    std::atomic<int> last_payload{0};
+    client.set_on_ready_action([&] { ++ready_calls; });
+    client.set_rx_handler([&](int const& payload, auto&) {
+        ++rx_calls;
+        last_payload = payload;
+    });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return ready_calls.load() == 1; }));
+    ASSERT_EQ(script->step_count(), 2u);
+    ASSERT_EQ(rx_calls.load(), 0);
+
+    script->deliver_byte(7);
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return rx_calls.load() >= 1; }))
+        << "the completed handshake left the connection unmonitored for reading";
+    EXPECT_EQ(last_payload.load(), 7);
+}
+
+TEST(fd_event_client_handshake_test, ready_action_fires_again_after_reset) {
+    auto script =
+        std::make_shared<handshake_script>(std::vector<handshake_step_result>{handshake_step_result::complete});
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    client.set_on_ready_action([&] { ++ready_calls; });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return ready_calls.load() == 1; }));
+
+    ASSERT_TRUE(client.reset());
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return ready_calls.load() >= 2; }))
+        << "the ready action stayed set from the previous connection";
+    pump_for(client, 30ms);
+    EXPECT_EQ(ready_calls.load(), 2);
+    EXPECT_GE(script->connect_count(), 2u);
+}
+
+TEST(fd_event_client_handshake_test, unsupported_desired_event_fails_the_handshake) {
+    auto script = std::make_shared<handshake_script>(
+        std::vector<handshake_step_result>{handshake_step_result::want_invalid}, ECONNREFUSED);
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    std::atomic<int> error_calls{0};
+    int last_code{0};
+    std::string last_message;
+    client.set_on_ready_action([&] { ++ready_calls; });
+    client.set_error_handler([&](int code, std::string const& msg) {
+        if (code != 0) {
+            ++error_calls;
+            last_code = code;
+            last_message = msg;
+        }
+    });
+
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return error_calls.load() >= 1; }));
+    pump_for(client, 30ms);
+    EXPECT_EQ(error_calls.load(), 1);
+    EXPECT_EQ(last_code, EPROTO) << "a local policy error was reported as " << std::strerror(last_code);
+    EXPECT_EQ(last_message, "handshake policy requested an event that is neither read nor write");
+    EXPECT_EQ(ready_calls.load(), 0);
+    EXPECT_TRUE(client.on_error());
+}
+
+TEST(fd_event_client_handshake_test, handshake_failure_keeps_the_policy_error_code) {
+    auto script = std::make_shared<handshake_script>(
+        std::vector<handshake_step_result>{handshake_step_result::want_read, handshake_step_result::fail},
+        ECONNREFUSED);
+    scripted_handshake_client client(script);
+
+    std::atomic<int> error_calls{0};
+    std::atomic<int> last_code{0};
+    std::string last_message;
+    client.set_error_handler([&](int code, std::string const& msg) {
+        if (code != 0) {
+            ++error_calls;
+            last_code = code;
+            last_message = msg;
+        }
+    });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return script->step_count() >= 1; }));
+    script->deliver_peer_record();
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return error_calls.load() >= 1; }));
+
+    EXPECT_EQ(last_code.load(), ECONNREFUSED);
+    EXPECT_EQ(last_message, "scripted handshake failure");
+}
+
+TEST(fd_event_client_handshake_test, reset_after_handshake_failure_steps_again) {
+    auto script = std::make_shared<handshake_script>(
+        std::vector<handshake_step_result>{handshake_step_result::want_read, handshake_step_result::fail},
+        ECONNREFUSED);
+    scripted_handshake_client client(script);
+
+    std::atomic<int> error_calls{0};
+    client.set_error_handler([&](int code, std::string const&) {
+        if (code != 0) {
+            ++error_calls;
+        }
+    });
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return script->step_count() >= 1; }));
+    script->deliver_peer_record();
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return error_calls.load() >= 1; }));
+    auto const steps_before_reset = script->step_count();
+
+    ASSERT_TRUE(client.reset());
+    EXPECT_TRUE(pump_until(client, 500ms,
+                           [&] { return script->connect_count() >= 2 and script->step_count() > steps_before_reset; }));
+    EXPECT_GE(script->connect_count(), 2u);
+    EXPECT_GT(script->step_count(), steps_before_reset) << "the handshake stayed dead across reset";
+}
+
+TEST(fd_event_client_handshake_test, ready_action_registered_after_ready_fires_immediately) {
+    auto script =
+        std::make_shared<handshake_script>(std::vector<handshake_step_result>{handshake_step_result::complete});
+    scripted_handshake_client client(script);
+
+    std::atomic<int> first_calls{0};
+    client.set_on_ready_action([&] { ++first_calls; });
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return first_calls.load() == 1; }));
+
+    std::atomic<int> second_calls{0};
+    client.set_on_ready_action([&] { ++second_calls; });
+
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return second_calls.load() >= 1; }))
+        << "the late registration was dropped on an already ready connection";
+    pump_for(client, 30ms);
+    EXPECT_EQ(second_calls.load(), 1);
+    EXPECT_EQ(first_calls.load(), 1);
+}
+
+// The connected status of a failed connection survives until the queued teardown runs.
+TEST(fd_event_client_handshake_test, ready_action_registered_after_failure_stays_silent) {
+    auto script =
+        std::make_shared<handshake_script>(std::vector<handshake_step_result>{handshake_step_result::complete});
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    client.set_on_ready_action([&] { ++ready_calls; });
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return ready_calls.load() == 1; }));
+
+    // Recorded by the fd handler, which runs before the registration queued below.
+    script->close_peer();
+    std::atomic<int> late_calls{0};
+    client.set_on_ready_action([&] { ++late_calls; });
+
+    pump_for(client, 100ms);
+    EXPECT_EQ(late_calls.load(), 0) << "a failed connection released the ready action";
+    EXPECT_TRUE(client.on_error());
+}
+
+// A peer that connects and then goes silent produces no notification of any kind, so only a
+// deadline turns that into something the consumer can act on.
+TEST(fd_event_client_handshake_test, a_stalled_handshake_fails_on_its_deadline) {
+    auto script = std::make_shared<handshake_script>(
+        std::vector<handshake_step_result>{handshake_step_result::want_read}, 0, 60ms);
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    std::vector<int> codes;
+    client.set_on_ready_action([&] { ++ready_calls; });
+    collect_error_codes(client, codes);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return script->step_count() >= 1; }));
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return not codes.empty(); }))
+        << "the stalled handshake was never reported";
+    pump_for(client, 50ms);
+
+    ASSERT_EQ(codes.size(), 1u) << "reported: " << describe_codes(codes);
+    EXPECT_EQ(codes[0], ETIMEDOUT) << "the stalled handshake was reported as " << std::strerror(codes[0]);
+    EXPECT_EQ(ready_calls.load(), 0) << "a client that never negotiated anything was published as ready";
+    EXPECT_EQ(script->step_count(), 1u) << "the handshake was stepped past its deadline";
+    EXPECT_TRUE(client.on_error());
+
+    // A client bounding only its first handshake leaves every reconnect unbounded.
+    ASSERT_TRUE(client.reset());
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return codes.size() >= 2; }))
+        << "the handshake after reset was never bounded, reported: " << describe_codes(codes);
+
+    ASSERT_EQ(codes.size(), 2u) << "reported: " << describe_codes(codes);
+    EXPECT_EQ(codes[1], ETIMEDOUT) << "the stalled handshake after reset was reported as " << std::strerror(codes[1]);
+    EXPECT_EQ(ready_calls.load(), 0) << "a client that never negotiated anything was published as ready";
+}
+
+TEST(fd_event_client_handshake_test, a_dribbling_handshake_fails_on_its_first_deadline) {
+    auto script = std::make_shared<handshake_script>(
+        std::vector<handshake_step_result>{handshake_step_result::want_read, handshake_step_result::want_read,
+                                           handshake_step_result::want_read},
+        0, 200ms);
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    std::vector<int> codes;
+    client.set_on_ready_action([&] { ++ready_calls; });
+    collect_error_codes(client, codes);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return script->step_count() >= 1; }));
+
+    // Stepping every 40ms inside a 200ms bound, for longer than that bound: a deadline restarted
+    // per step would never expire while this runs.
+    auto const stop = std::chrono::steady_clock::now() + 700ms;
+    while (std::chrono::steady_clock::now() < stop and codes.empty()) {
+        script->deliver_peer_record();
+        pump_for(client, 40ms);
+    }
+
+    ASSERT_FALSE(codes.empty()) << "a handshake still stepping was never bounded, after " << script->step_count()
+                                << " steps";
+    ASSERT_EQ(codes.size(), 1u) << "reported: " << describe_codes(codes);
+    EXPECT_EQ(codes[0], ETIMEDOUT) << "the unfinished handshake was reported as " << std::strerror(codes[0]);
+    EXPECT_GT(script->step_count(), 1u) << "the handshake never took a second step, so nothing bounded it";
+    EXPECT_EQ(ready_calls.load(), 0) << "a client that never negotiated anything was published as ready";
+    EXPECT_TRUE(client.on_error());
+}
+
+// The terminal notification arrives on the same descriptor the pending handshake waits on.
+// Handling the handshake first steps a dead connection over and over and reports nothing.
+TEST(fd_event_client_handshake_test, a_peer_drop_during_the_handshake_is_reported_once) {
+    auto script =
+        std::make_shared<handshake_script>(std::vector<handshake_step_result>{handshake_step_result::want_read});
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    std::vector<int> codes;
+    client.set_on_ready_action([&] { ++ready_calls; });
+    collect_error_codes(client, codes);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return script->step_count() >= 1; }));
+    auto const steps_before_drop = script->step_count();
+
+    script->close_peer();
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return not codes.empty(); }))
+        << "the peer drop was never reported, the handshake was stepped " << script->step_count() << " times";
+    pump_for(client, 50ms);
+
+    ASSERT_EQ(codes.size(), 1u) << "reported: " << describe_codes(codes);
+    EXPECT_EQ(codes[0], ENOTCONN) << "the dropped peer was reported as " << std::strerror(codes[0]);
+    EXPECT_EQ(script->step_count(), steps_before_drop) << "the handshake was stepped after the peer was gone";
+    EXPECT_EQ(ready_calls.load(), 0) << "a client whose peer dropped mid handshake was published as ready";
+    EXPECT_TRUE(client.on_error());
+}
+
+TEST(fd_event_client_handshake_test, a_completed_handshake_outlives_its_deadline) {
+    auto script = std::make_shared<handshake_script>(
+        std::vector<handshake_step_result>{handshake_step_result::complete}, 0, 60ms);
+    scripted_handshake_client client(script);
+
+    std::atomic<int> ready_calls{0};
+    std::vector<int> codes;
+    client.set_on_ready_action([&] { ++ready_calls; });
+    collect_error_codes(client, codes);
+
+    ASSERT_TRUE(pump_until(client, 500ms, [&] { return ready_calls.load() == 1; }));
+    pump_for(client, 250ms);
+
+    EXPECT_TRUE(codes.empty()) << "the deadline of the finished handshake failed the connection: "
+                               << describe_codes(codes);
+    EXPECT_FALSE(client.on_error());
+    EXPECT_EQ(ready_calls.load(), 1);
+}
+
+// A terminal notification is level triggered: the descriptor keeps notifying until the queued
+// teardown removes it. Resolving the code reads SO_ERROR, which consumes it, so a re-dispatch
+// would replace the real reason with the fallback.
+TEST(fd_event_client_poll_error_test, socket_error_is_reported_once_and_not_overwritten) {
+    const int fd = make_refused_tcp_fd();
+    ASSERT_GE(fd, 0) << "could not produce a refused loopback connect";
+    auto script = std::make_shared<poll_error_script>(fd);
+    poll_error_client client(script);
+
+    std::vector<int> codes;
+    collect_error_codes(client, codes);
+
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return not codes.empty(); }));
+    pump_for(client, 50ms);
+
+    ASSERT_FALSE(codes.empty()) << "the terminal notification was never reported";
+    EXPECT_EQ(codes[0], ECONNREFUSED) << "the socket error was consumed and then reported as "
+                                      << std::strerror(codes[0]);
+    EXPECT_EQ(codes.size(), 1u) << "the terminal notification was reported more than once: " << describe_codes(codes);
+    EXPECT_TRUE(client.on_error());
+}
+
+// Injected from the ready action, which runs after the descriptor is monitored and before the
+// loop can dispatch it, so the connect path itself stays clean.
+TEST(fd_event_client_poll_error_test, policy_error_wins_over_the_socket_error) {
+    const int fd = make_refused_tcp_fd();
+    ASSERT_GE(fd, 0) << "could not produce a refused loopback connect";
+    auto script = std::make_shared<poll_error_script>(fd);
+    poll_error_client client(script);
+
+    std::vector<int> codes;
+    collect_error_codes(client, codes);
+    client.set_on_ready_action([&script] { script->set_policy_error(ETIMEDOUT); });
+
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return not codes.empty(); }));
+    pump_for(client, 50ms);
+
+    ASSERT_FALSE(codes.empty()) << "the terminal notification was never reported";
+    EXPECT_EQ(codes[0], ETIMEDOUT) << "the policy error was discarded in favor of " << std::strerror(codes[0]);
+    EXPECT_EQ(codes.size(), 1u) << "the terminal notification was reported more than once: " << describe_codes(codes);
+}
+
+// A hangup on something that is not a socket has no code to read back: getsockopt fails on a
+// pipe, a serial line and a tun/tap device alike.
+TEST(fd_event_client_poll_error_test, hangup_without_a_code_reports_not_connected) {
+    const int fd = make_hungup_pipe_read_fd();
+    ASSERT_GE(fd, 0) << "could not produce a hung up pipe";
+    auto script = std::make_shared<poll_error_script>(fd);
+    poll_error_client client(script);
+
+    std::vector<int> codes;
+    collect_error_codes(client, codes);
+
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return not codes.empty(); }));
+    pump_for(client, 50ms);
+
+    ASSERT_FALSE(codes.empty()) << "the terminal notification was never reported";
+    EXPECT_EQ(codes[0], ENOTCONN) << "a bare hangup was reported as " << std::strerror(codes[0]);
+    EXPECT_EQ(codes.size(), 1u) << "the terminal notification was reported more than once: " << describe_codes(codes);
+}
+
+TEST(fd_event_client_poll_error_test, error_without_a_code_reports_io_failure) {
+    const int fd = make_errored_pipe_write_fd();
+    ASSERT_GE(fd, 0) << "could not produce an errored pipe";
+    auto script = std::make_shared<poll_error_script>(fd);
+    poll_error_client client(script);
+
+    std::vector<int> codes;
+    collect_error_codes(client, codes);
+
+    EXPECT_TRUE(pump_until(client, 500ms, [&] { return not codes.empty(); }));
+    pump_for(client, 50ms);
+
+    ASSERT_FALSE(codes.empty()) << "the terminal notification was never reported";
+    EXPECT_EQ(codes[0], EIO) << "a bare error notification was reported as " << std::strerror(codes[0]);
+    EXPECT_EQ(codes.size(), 1u) << "the terminal notification was reported more than once: " << describe_codes(codes);
 }
