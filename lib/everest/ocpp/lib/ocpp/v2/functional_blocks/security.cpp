@@ -28,6 +28,7 @@ namespace ocpp::v2 {
 namespace {
 const CiString<20> reason_code_missing_device_model_info{"MissingDevModelInfo"};
 const CiString<20> reason_code_unspecified{"Unspecified"};
+const CiString<20> reason_code_unsupported_request{"UnsupportedRequest"};
 
 StatusInfo make_status_info(const CiString<20>& reason_code, const std::string& additional_info) {
     StatusInfo status_info;
@@ -441,11 +442,9 @@ void Security::handle_install_certificate_req(Call<InstallCertificateRequest> ca
     const auto msg = call.msg;
     InstallCertificateResponse response;
 
-    if (!should_allow_certificate_install(msg.certificateType)) {
+    if (auto refusal = check_certificate_install_allowed(msg.certificateType); refusal.has_value()) {
         response.status = InstallCertificateStatusEnum::Rejected;
-        response.statusInfo = StatusInfo();
-        response.statusInfo->reasonCode = "UnsecureConnection";
-        response.statusInfo->additionalInfo = "CertificateInstallationNotAllowedWithUnsecureConnection";
+        response.statusInfo = std::move(refusal);
     } else {
         const auto result = this->context.evse_security.install_ca_certificate(
             msg.certificate.get(), ocpp::evse_security_conversions::from_ocpp_v2(msg.certificateType));
@@ -486,31 +485,45 @@ void Security::handle_delete_certificate_req(Call<DeleteCertificateRequest> call
     this->context.message_dispatcher.dispatch_call_result(call_result);
 }
 
-bool Security::should_allow_certificate_install(InstallCertificateUseEnum cert_type) const {
+std::optional<StatusInfo> Security::check_certificate_install_allowed(InstallCertificateUseEnum cert_type) const {
+    if (cert_type == InstallCertificateUseEnum::OEMRootCertificate) {
+        // FIXME: Implement OEMRootCertificate. Refused independently of the security profile, because the conversion
+        // towards evse_security has no OEM equivalent and throws.
+        return make_status_info(reason_code_unsupported_request, "OEMRootCertificateInstallationNotSupported");
+    }
+
     const int security_profile =
         this->context.device_model.get_value<int>(ControllerComponentVariables::SecurityProfile);
 
     if (security_profile > 1) {
-        return true;
+        return std::nullopt;
     }
+
     switch (cert_type) {
     case InstallCertificateUseEnum::CSMSRootCertificate:
-        return this->context.device_model
-            .get_optional_value<bool>(ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection)
-            .value_or(true);
-
+        if (!this->context.device_model
+                 .get_optional_value<bool>(ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection)
+                 .value_or(true)) {
+            return make_status_info(reason_code_unspecified,
+                                    "CSMSRootCertificateInstallationNotAllowedWithUnsecureConnection");
+        }
+        return std::nullopt;
     case InstallCertificateUseEnum::ManufacturerRootCertificate:
-        return this->context.device_model
-            .get_optional_value<bool>(ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection)
-            .value_or(true);
+        if (!this->context.device_model
+                 .get_optional_value<bool>(ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection)
+                 .value_or(true)) {
+            return make_status_info(reason_code_unspecified,
+                                    "ManufacturerRootCertificateInstallationNotAllowedWithUnsecureConnection");
+        }
+        return std::nullopt;
     case InstallCertificateUseEnum::MORootCertificate:
     case InstallCertificateUseEnum::V2GRootCertificate:
-        return true;
+        return std::nullopt;
     case InstallCertificateUseEnum::OEMRootCertificate:
-        // FIXME: Implement OEMRootCertificate
-        return false;
+        break; // handled above
     }
-    return false;
+    // Unknown certificate types stay refused, as they were before.
+    return make_status_info(reason_code_unsupported_request, "CertificateTypeNotSupported");
 }
 
 void Security::scheduled_check_client_certificate_expiration() {
