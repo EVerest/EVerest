@@ -44,7 +44,7 @@ snapshot via `get_active_module_configurations()`, which returns a
 
 `post_to_actor()` detects re-entrancy by comparing `std::this_thread::get_id()` against
 `m_worker_thread.get_id()` and executes inline in that case. Consequences for callers, spelled out
-at `config_service_core.hpp:74-83`:
+at `config_service_core.hpp:`:
 
 - Update handlers run **on the actor thread** as part of the mutating operation and block all
   further config-service processing while they run. Keep them short.
@@ -58,7 +58,7 @@ at `config_service_core.hpp:74-83`:
 | --- | --- |
 | Per-parameter write outcome | `SetConfigParameterResultEnum` — `Applied`, `WillApplyOnRestart`, `DoesNotExist`, `RetryLater`, `AccessDenied`, `Rejected` |
 | Request-level write status | `SetConfigParameterStatus` — `Ok`, `Error`, `ModulesInTransientState`. `Error` is the default-initialized value |
-| Module's verdict on a runtime change (Internal API) | `SetResponseStatus` — `Accepted`, `Rejected`, `RebootRequired` (`mqtt_config_service.hpp:75`) |
+| Module's verdict on a runtime change (Internal API) | `SetResponseStatus` — `Accepted`, `Rejected`, `RebootRequired` (`mqtt_config_service.hpp`) |
 | Result of forwarding a runtime change | `SetParameterResponse` — `SetCallFailed`, `ModuleReplied_Applied`, `ModuleReplied_RequiresRestart`, `ModuleReplied_Rejected` |
 | Slot / module status | `ActiveSlotStatus` — `Running`, `Stopped`, `Starting`, `Stopping`, `FailedToStart`, `RestartTriggered`, with the `modules_are_down()` and `modules_in_transient_state()` predicates |
 | Runtime mutability | `Mutability` — `ReadOnly`, `ReadWrite`, `WriteOnly` |
@@ -68,7 +68,7 @@ at `config_service_core.hpp:74-83`:
 
 Watch out for two near-duplicate enums with the same value names but different types:
 `SetResponseStatus` (`mqtt_config_service.hpp`, used by the Internal API `SetResponse`) and
-`everest::config::SetConfigStatus` (`config/types.hpp:278`, used by `SetConfigResult`). They are
+`everest::config::SetConfigStatus` (`config/types.hpp`, used by `SetConfigResult`). They are
 not interchangeable.
 
 `resolve_boot_source()` and `init_database_bootstrap()` are **free functions** in
@@ -89,13 +89,12 @@ runs before the core is constructed. `resolve_boot_source()` is unit-tested in
 | `register_active_slot_update_handler(cb)`, `register_config_update_handler(cb)` | push-event subscriptions; see the threading rules above |
 
 Manager wiring, in `src/manager.cpp`: the `UserConfigStorage` persistence mirror is created for
-`BootMode::YamlWithInMemoryDb` (~L827), then `ConfigServiceCore`, then
-`MqttConfigServiceHandler`, then `register_set_runtime_parameter_handler()` (~L859) mapping
+`BootMode::YamlWithInMemoryDb`, then `ConfigServiceCore`, then
+`MqttConfigServiceHandler`, then `register_set_runtime_parameter_handler()` mapping
 `SetResponseStatus::Accepted` to `ModuleReplied_Applied`, `RebootRequired` to
 `ModuleReplied_RequiresRestart`, anything else to `ModuleReplied_Rejected`, and `SetCallFailed`
 when the round trip returns nothing. Lifecycle status is pushed in via
-`register_state_transition_handler()` (~L888). The forwarder is deregistered with
-`register_set_runtime_parameter_handler(nullptr)` (~L882).
+`register_state_transition_handler()`.
 
 ## Internal API message names
 
@@ -115,18 +114,17 @@ These orderings are load-bearing and cheap to break; each has test coverage.
 
 1. **Validate before persisting.** `validate_config_value()` runs first, so a value that would
    fail to parse on the next boot never reaches the database
-   (`config_service_core.cpp:512-519`, `:618-625`). Datatype only — no min/max range check at
+   (`config_service_core.cpp`). Datatype only — no min/max range check at
    this layer.
 2. **Mirror before database.** Without `--db` the user-config YAML mirror is written *before* the
    in-memory database, and a failed mirror write rejects the update, because the mirror is the
-   only persistence that survives a restart (`config_service_core.cpp:522-539`).
+   only persistence that survives a restart (`config_service_core.cpp`).
 3. **Persist before consulting the module.** A successful database write sets
    `WillApplyOnRestart`; only then is the runtime path entered, and only when mutability is
-   `ReadWrite` and the modules are running (`:541-552`). With no forwarder registered the value is
-   already persisted and `status_info` says so (`:554-560`).
+   `ReadWrite` and the modules are running. With no forwarder registered the value is
+   already persisted and `status_info` says so.
 4. **Transient state fails the whole request.** `ModulesInTransientState` fills *every*
-   per-parameter result with `RetryLater` and persists nothing (`:467-471`).
-5. **Notify only when something was written** — guarded by `if (not event.updates.empty())`
-   (`:478`).
+   per-parameter result with `RetryLater` and persists nothing.
+5. **Notify only when something was written** — guarded by `if (not event.updates.empty())`.
 6. **Reload only at rest.** `reinitialize_from_db()` is skipped while modules are running or
    mid-transition, so running processes cannot desynchronize from the in-memory configuration.
