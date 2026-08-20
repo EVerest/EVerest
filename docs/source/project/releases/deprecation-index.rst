@@ -30,6 +30,12 @@ to the corresponding migration guide.
      - 2026.10.0
      - 2027.04.0
      - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`
+   * - `messages` field of the `token_validation_status` variable
+       (`auth` interface), superseded by `validation_results`
+     - 2026.10.0
+     - 2027.04.0
+     - Read the `tariff_messages` of each entry in `validation_results`
+       instead of the top-level `messages`.
    * - The `RsIskraMeter` deprecates its `meter` implementation_id in favor of `main`.
      - 2026.10.0
      - 2027.04.0

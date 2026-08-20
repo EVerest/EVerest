@@ -563,8 +563,14 @@ void to_json(json& j, TokenValidationStatusMessage const& k) noexcept {
     };
     if (k.messages) {
         j["messages"] = json::array();
-        for (auto val : k.messages.value()) {
+        for (auto const& val : k.messages.value()) {
             j["messages"].push_back(val);
+        }
+    }
+    if (k.validation_results) {
+        j["validation_results"] = json::array();
+        for (auto const& val : k.validation_results.value()) {
+            j["validation_results"].push_back(val);
         }
     }
 }
@@ -579,6 +585,14 @@ void from_json(const json& j, TokenValidationStatusMessage& k) {
             vec.push_back(val);
         }
         k.messages.emplace(vec);
+    }
+    if (j.contains("validation_results")) {
+        json arr = j.at("validation_results");
+        std::vector<ValidationResult> vec;
+        for (auto val : arr) {
+            vec.push_back(val);
+        }
+        k.validation_results.emplace(vec);
     }
 }
 
