@@ -41,6 +41,7 @@ private:
     utilities::symlink m_symlink;
     std::string m_identifier;
     int m_tcp_last_error_id = -1;
+    bool m_tcp_tx_rejected{false};
     std::uint16_t m_tcp_port{0};
     std::string m_tcp_remote;
     bool m_tcp_ready{false};
