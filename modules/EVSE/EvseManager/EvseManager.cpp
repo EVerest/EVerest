@@ -552,7 +552,9 @@ void EvseManager::ready() {
             }
 
             const auto caps = get_powersupply_capabilities();
-            update_powersupply_capabilities(caps);
+            // Push directly: update_powersupply_capabilities() would store an active derate as
+            // raw PSU capabilities.
+            push_powersupply_capabilities_to_hlc();
 
             if (caps.bidirectional) {
                 if (connector_type.has_value() and
