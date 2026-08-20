@@ -125,10 +125,18 @@ cmds:
       (same canonical component/variable addressing, changes published on the
       event_data var, consecutive calls extend and never override existing
       monitors) and additionally returns the current value of each requested
-      variable. This allows integrators to register monitors at startup and
-      obtain the initial values in a single call without a race between the
-      first read and the monitor registration. The returned values are the
-      Actual attribute values; result order, addressing echo and status
+      variable. The monitors are registered before the values are read, so no
+      update can be lost: every change from registration on is published on
+      event_data, and the returned value reflects the variable's state at some
+      point after registration. This does not order the result against the
+      event stream: a change around the call may be reported both in the
+      result and as an event, and an event may reach the subscriber before
+      the result does. Clients must treat event_data as authoritative for a
+      variable once its first event arrived and use the returned value only
+      until then. This allows integrators to register monitors at startup and
+      obtain the initial values in a single call without losing an update
+      between the first read and the monitor registration. The returned values
+      are the Actual attribute values; result order, addressing echo and status
       semantics are identical to a get_variables call with one request per
       given ComponentVariable and no attribute_type.
     arguments:
