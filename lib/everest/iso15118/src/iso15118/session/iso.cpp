@@ -238,7 +238,8 @@ TimePoint const& Session::poll() {
 
         message_exchange.set_request(make_variant_from_packet(packet));
 
-        packet = {}; // reset the packet
+        packet = {};            // reset the packet
+        state.new_data = false; // reset new_data flag
 
         const auto request_msg_type = ctx.peek_request_type();
 
