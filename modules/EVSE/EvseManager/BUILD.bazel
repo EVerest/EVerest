@@ -14,21 +14,20 @@ IMPLS = [
 
 cc_everest_module(
     name = "EvseManager",
-    deps = [
-        "//lib/everest/everest_api_types:everest_api_types",
-        "//lib/everest/helpers",
-        "//lib/everest/util",
-        "//lib/everest/phase_rotation",
-        "@pugixml//:pugixml",
-        "@sigslot//:sigslot",
-    ],
-    impls = IMPLS,
     srcs = glob(
         [
             "*.cpp",
             "*.hpp",
         ],
     ),
+    impls = IMPLS,
+    deps = [
+        "//lib/everest/everest_api_types:everest_api_types",
+        "//lib/everest/helpers",
+        "//lib/everest/util",
+        "@pugixml",
+        "@sigslot",
+    ],
 )
 
 cc_test(

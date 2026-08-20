@@ -1,7 +1,6 @@
 *build*
 !lib/everest/*/cmake/*-build.cmake
 !applications/*/cmake/*-build.cmake
-!**/BUILD.bazel
 *dist
 .cache/
 workspace.yaml

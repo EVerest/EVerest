@@ -3,7 +3,7 @@
 
 #include "energyImpl.hpp"
 #include "energy_schedule_utils.hpp"
-#include <everest/phase_rotation/phase_rotation_utils.hpp>
+#include <everest/helpers/helpers.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -14,25 +14,6 @@
 
 namespace module {
 namespace energy_grid {
-
-void merge_child_energy_flow_request(std::vector<types::energy::EnergyFlowRequest>& children,
-                                     types::energy::EnergyFlowRequest e) {
-    auto children_it = std::find_if(children.begin(), children.end(), [&e](const auto& child) {
-        return std::string_view{child.uuid} == std::string_view{e.uuid};
-    });
-    if (children_it != children.end()) {
-        *children_it = std::move(e);
-    } else {
-        children.push_back(std::move(e));
-    }
-}
-
-types::powermeter::Powermeter build_rotated_root_usage(const types::powermeter::Powermeter& powermeter,
-                                                       const std::string& phase_rotation) {
-    auto rotated = powermeter;
-    everest::phase_rotation::apply_phase_rotation(rotated, phase_rotation);
-    return rotated;
-}
 
 void energyImpl::init() {
     auto energy_state_handle = energy_state.handle();
@@ -51,7 +32,15 @@ void energyImpl::init() {
             // Received new energy_flow_request object from a child. Update in the cached object and republish.
             auto energy_state_handle = energy_state.handle();
 
-            merge_child_energy_flow_request(energy_state_handle->energy_flow_request.children, e);
+            auto& children = energy_state_handle->energy_flow_request.children;
+            auto children_it = std::find_if(children.begin(), children.end(), [&e](const auto& child) {
+                return std::string_view{child.uuid} == std::string_view{e.uuid};
+            });
+            if (children_it != children.end()) {
+                *children_it = e;
+            } else {
+                children.push_back(std::move(e));
+            }
 
             publish_complete_energy_object(*energy_state_handle);
         });
@@ -62,7 +51,7 @@ void energyImpl::init() {
             EVLOG_debug << "Incoming powermeter readings: " << p;
             auto energy_state_handle = energy_state.handle();
             energy_state_handle->energy_flow_request.energy_usage_root =
-                build_rotated_root_usage(p, mod->config.phase_rotation);
+                everest::helpers::apply_phase_rotation(p, mod->config.phase_rotation);
             publish_complete_energy_object(*energy_state_handle);
         });
     }
