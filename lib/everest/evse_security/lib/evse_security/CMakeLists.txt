@@ -12,6 +12,8 @@ target_sources(evse_security
         certificate/x509_wrapper.cpp
 
         utils/evse_filesystem.cpp
+        utils/enforce_certificate_rules.cpp
+
 
         crypto/interface/crypto_supplier.cpp
         crypto/interface/crypto_types.cpp

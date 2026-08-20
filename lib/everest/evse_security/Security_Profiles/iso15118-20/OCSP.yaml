@@ -1,0 +1,91 @@
+OCSP:
+  stand:
+    - nid: 14 # Issuer Country
+      mustExist: "true"
+      target: Issuer
+
+    - nid: 17 # Issuer Organization
+      mustExist: "true"
+      target: Issuer
+
+    - nid: 18 # Issuer Organization Unit
+      mustExist: "true"
+      target: Issuer
+
+    - nid: 13 # Issuer Common Name
+      mustExist: "true"
+      target: Issuer
+
+    - nid: 25 # Issuer Domain Component
+      mustExist: "true"
+      target: Issuer
+      data: "Optional"
+
+    - nid: 14 # Subject Country
+      mustExist: "false"
+      target: Subject
+
+    - nid: 17 # Subject Organization
+      mustExist: "true"
+      target: Subject
+
+    - nid: 18 # Subject Organization Unit
+      mustExist: "true"
+      target: Subject
+
+    - nid: 13 # Subject Common Name
+      mustExist: "true"
+      target: Subject
+
+    - nid: 25 # Subject Domain Component
+      mustExist: "true"
+      target: Subject
+      data: "Optional"
+
+    - nid: 102 # IssuerUniqueID
+      mustExist: "false"
+      target: Issuer
+
+    - nid: 90 # Authority Key Identifier
+      mustExist: "true"
+      target: Subject
+
+    - nid: 82 # Subject Key Identifier
+      mustExist: "true"
+      target: Subject
+
+    - nid: 103 # CRL Distribution Point
+      mustExist: "false"
+      target: Subject
+
+
+  key_usage:
+    - keyUsageBit: 0 # Digital Signature
+      mustExist: "false"
+
+    - keyUsageBit: 1 # Non Repudiation
+      mustExist: "true"
+
+    - keyUsageBit: 2 # Key Encipherment
+      mustExist: "false"
+
+    - keyUsageBit: 3 # Data Encipherment
+      mustExist: "false"
+
+    - keyUsageBit: 4 # Key Agreement
+      mustExist: "false"
+
+    - keyUsageBit: 5 # Encipher Only
+      mustExist: "true"
+
+    - keyUsageBit: 6 # Decipher Only
+      mustExist: "true"
+
+  basic_constraints:
+    - value: CA
+      mustExist: true
+      data: false
+
+    - value: path_length
+      mustExist: false
+      data: 0

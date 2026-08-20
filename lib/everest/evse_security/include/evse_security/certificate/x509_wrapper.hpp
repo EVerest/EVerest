@@ -5,7 +5,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
-
+#include <openssl/x509.h>
 #include <evse_security/crypto/interface/crypto_types.hpp>
 #include <evse_security/evse_types.hpp>
 #include <evse_security/utils/evse_filesystem_types.hpp>
@@ -45,7 +45,7 @@ public:
     inline X509Handle* get() const {
         return x509.get();
     }
-
+    X509* get_x509_raw() const;
     /// @brief Gets valid_in
     /// @return seconds until certificate is valid; if > 0 cert is not yet valid
     int64_t get_valid_in() const;
