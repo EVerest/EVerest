@@ -749,9 +749,17 @@ components:
         Consecutive calls of this operation will not override but extend the
         existing monitors. Additionally the reply contains the current (Actual)
         value of every requested variable, with the same order, addressing echo
-        and status semantics as get_variables. This allows registering monitors
-        at startup and obtaining the initial values in a single call without a
-        race between the first read and the monitor registration.
+        and status semantics as get_variables. The monitors are registered
+        before the values are read, so no update can be lost: every change from
+        registration on is published on the event_data channel, and the reply
+        reflects each variable's state at some point after registration. The
+        reply is not ordered against the event stream, however: a change around
+        the call may be reported both in the reply and as an event, and an
+        event may arrive before the reply does. Treat event_data as
+        authoritative for a variable once its first event arrived; use the
+        reply value only until then. This allows registering monitors at
+        startup and obtaining the initial values in a single call without
+        losing an update between the first read and the monitor registration.
 
         See the OCPPmulti module documentation ("Configuration access" and
         "Migration from OCPP 1.6 key addressing") for examples and the migration guide.

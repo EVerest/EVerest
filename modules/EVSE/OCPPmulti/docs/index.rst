@@ -643,9 +643,17 @@ Registrations are additive across calls.
 
 ``monitor_and_get_variables`` takes the same request, registers the same
 monitors and additionally returns the current values in the reply (same result
-shape, order and echo semantics as ``get_variables``). Use it at startup to
-register monitors and obtain the initial values in a single call, without a
-race between the first read and the monitor registration.
+shape, order and echo semantics as ``get_variables``). The monitors are
+registered before the values are read, so no update is lost: every change from
+registration on is published as ``event_data``, and the returned value
+reflects the variable's state at some point after registration. The reply is
+not ordered against the event stream, however: a change around the call may
+show up both in the reply and as an event, and an event may arrive before the
+reply does. Treat ``event_data`` as authoritative for a variable once its
+first event arrived; use the returned value only until then. Use the command
+at startup to register monitors and obtain the initial values in a single
+call, without losing an update between the first read and the monitor
+registration.
 
 Migration from OCPP 1.6 key addressing
 ======================================
