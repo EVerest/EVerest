@@ -36,11 +36,15 @@ sync_status generic_fd_event_client_impl::sync_impl(int timeout_ms) {
 
 bool generic_fd_event_client_impl::setup_error_event_handler() {
     return m_event_handler->register_event_handler(&m_error_status_event_fd, [this](auto) {
-        if (on_error()) {
+        // A fresh client has no failure to report and no error to clear, so it stays inert here.
+        // Tearing it down would be unpaired: error_handler does not reopen the device.
+        auto const state = current_connection_state();
+        if (state == utilities::connection_state::failed) {
             error_handler();
             call_error_handler(m_error);
             return sync_status::error;
-        } else if (clear_error_pending()) {
+        }
+        if (state == utilities::connection_state::connected and clear_error_pending()) {
             clear_error_handler(m_error);
         }
         return sync_status::ok;
@@ -92,6 +96,12 @@ bool generic_fd_event_client_impl::set_error_status_and_notify(int error_code) {
 
 bool generic_fd_event_client_impl::rx_handler() {
     auto status = m_receive_one();
+    if (status == action_status::empty) {
+        // The read belongs to a connection that has been retired. Reporting a result on it would
+        // put the state back to connected, or its errno to failed, for the connection replacing
+        // it. Returning false also keeps the write branch of this dispatch shut.
+        return false;
+    }
     auto error_code = status == action_status::success ? 0 : m_get_error();
     auto result = set_error_status_and_notify(error_code);
     return result;

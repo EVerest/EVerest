@@ -57,4 +57,56 @@ struct event_client_async_policy
  */
 template <typename T> inline constexpr bool event_client_async_policy_v = event_client_async_policy<T>::value;
 
+/**
+ * @brief Primary template for the trait to check for the existence of a member
+ * 'buffer_tx_before_connect'.
+ * @tparam T The type to check.
+ */
+template <typename T, typename V = void> struct has_member_buffer_tx_before_connect : std::false_type {};
+
+/**
+ * @brief Specialization of has_member_buffer_tx_before_connect.
+ * This checks for existence and accessibility of a static member 'buffer_tx_before_connect'.
+ * @tparam T The type to check.
+ */
+template <typename T>
+struct has_member_buffer_tx_before_connect<T, std::void_t<decltype(T::buffer_tx_before_connect)>> : std::true_type {};
+
+/**
+ * @brief Primary template for the trait carrying the tx buffering default a policy declares.
+ * A policy that declares no 'buffer_tx_before_connect' does not buffer, see \ref tx_buffering.
+ * @tparam T The type to check.
+ */
+template <typename T, typename V = void> struct policy_buffers_tx_before_connect : std::false_type {};
+
+/**
+ * @brief Specialization of policy_buffers_tx_before_connect for a policy that declares
+ * 'static constexpr bool buffer_tx_before_connect'. It carries the declared value.
+ * @tparam T The type to check.
+ */
+template <typename T>
+struct policy_buffers_tx_before_connect<T, std::enable_if_t<has_member_buffer_tx_before_connect<T>::value>>
+    : std::integral_constant<bool, T::buffer_tx_before_connect> {};
+
+/**
+ * @brief Convenience variable template for the policy_buffers_tx_before_connect trait's value.
+ * @tparam T The type to check.
+ */
+template <typename T>
+inline constexpr bool policy_buffers_tx_before_connect_v = policy_buffers_tx_before_connect<T>::value;
+
+/**
+ * @enum tx_buffering
+ * @brief Whether a client holds payloads written before its connection is up.
+ * @details Selected per instance at construction, defaulting to what the policy declares through
+ * \ref policy_buffers_tx_before_connect. Only a policy that connects asynchronously has a
+ * pre-connect window, see \ref event_client_async_policy.
+ */
+enum class tx_buffering {
+    /** Reject tx() until the connection is up. */
+    discard,
+    /** Accept while the connection is fresh, hold in the bounded buffer, deliver once it is up. */
+    buffer
+};
+
 } // namespace everest::lib::io::utilities

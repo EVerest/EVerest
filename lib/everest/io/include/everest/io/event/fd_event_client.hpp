@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <everest/io/event/event_fd.hpp>
 #include <everest/io/event/fd_event_sync_interface.hpp>
@@ -123,7 +124,25 @@ public:
 
     /**
      * @brief Register an error handler
-     * @details The error handler is called when an error occurs or is cleared
+     * @details The handler is called with the failing errno when a connection attempt or an
+     * established connection fails, and with code 0 exactly once per successful (re)connect.
+     * Code 0 is an up-edge on the connection rather than the clearing of an error the caller
+     * has necessarily seen: a first connect and a reset that never reported a failure both
+     * report it. A read or a write that succeeds while the connection is already up reports
+     * nothing, so ordinary traffic adds no up-edge. A consumer that only wants failures filters
+     * on a nonzero code.
+     *
+     * A nonzero code tears the device down and does not open it again. A consumer that does not
+     * call reset() from this handler is left with a client that has no device.
+     *
+     * One gap the handler cannot be relied on to close: a read or a write that succeeds while the
+     * client is in \ref utilities::connection_state::failed puts the state back to connected and
+     * arms another code 0. Where in the poll pass that success lands decides what the caller sees.
+     * Before this handler observes the failure, the failure is never reported at all. After it,
+     * the teardown it queued still runs while the state has already flipped back, which ends with
+     * the device gone, no reopen, a last signal of code 0, and tx() still accepting into a buffer
+     * nothing drains. A code 0 is therefore a report that a connection came up, not proof that
+     * the client has one.
      * @param[in] handler The callback to be used as error handler
      */
     void set_error_handler(cb_error const& handler);
@@ -282,14 +301,41 @@ public:
     using ClientPayloadT = typename ClientPolicy::PayloadT;
 
     /**
+     * @var max_buffered_tx_payloads
+     * @brief Upper bound of payloads held in the tx buffer.
+     * @details \ref tx rejects once the buffer holds this many payloads. The bound counts
+     * payloads, not bytes, so the memory ceiling is this many times the size of a payload the
+     * caller writes.
+     * For the socket policies, whose \p PayloadT is a `std::vector<std::uint8_t>`, that size is
+     * whatever the caller passes.
+     */
+    static constexpr std::size_t max_buffered_tx_payloads{1024};
+
+    /**
      * @brief Construction of the generic event handler
-     * @details All parameters will be forwarded to the open(...) function of the \p ClientPolicy
+     * @details All parameters will be forwarded to the open(...) function of the \p ClientPolicy.
+     * Pre-connect tx buffering follows \ref utilities::policy_buffers_tx_before_connect.
      */
     template <class... ArgsT>
-    generic_fd_event_client(ArgsT... args) :
+    generic_fd_event_client(ArgsT... args) : generic_fd_event_client(policy_default_tx_buffering, args...) {
+    }
+
+    /**
+     * @brief Construction of the generic event handler, selecting pre-connect tx buffering
+     * @details All parameters following \p mode will be forwarded to the open(...) function of the
+     * \p ClientPolicy. \p mode overrides the policy default in both directions, see \ref tx.
+     * @param[in] mode Whether \ref tx accepts before the connection is up.
+     */
+    template <class... ArgsT>
+    generic_fd_event_client(utilities::tx_buffering mode, ArgsT... args) :
         generic_fd_event_client_impl([this]() { return send_one(); }, [this]() { return receive_one(); },
                                      [this]() { return reset_client(); },
-                                     [this]() { return m_handle ? m_handle->get_error() : 0; }) {
+                                     // A retired handle carries the errno of the peer it served,
+                                     // which is not the errno of the connection replacing it. The
+                                     // EPOLLERR branch reads this without knowing which handle is
+                                     // behind it.
+                                     [this]() { return handle_is_current() ? m_handle->get_error() : 0; }) {
+        m_buffer_tx_before_connect = mode == utilities::tx_buffering::buffer;
         m_async_connect_state = std::make_shared<async_connect_state>();
         register_async_connect_event_handler(&m_async_connect_state->ready_event,
                                              [this]() { process_async_connect_results(); });
@@ -312,12 +358,22 @@ public:
     /**
      * @brief Send data
      * @details This buffers the incoming data and notifies. It will be send as soon as the file descriptor
-     * is ready for transmission (POLLOUT / EPOLLOUT)
+     * is ready for transmission (POLLOUT / EPOLLOUT). Buffering before the connection is up is opt in,
+     * see \ref utilities::tx_buffering. Must be called from the thread that drives \ref sync: the
+     * buffer is not synchronized.
      * @param[in] payload The data to be transmitted.
-     * @return False if client is \ref on_error. False otherwise
+     * @return True if the payload was buffered. False if the buffer already holds
+     * \ref max_buffered_tx_payloads payloads, if the client is in
+     * \ref utilities::connection_state::failed, or if it is in
+     * \ref utilities::connection_state::fresh without \ref utilities::tx_buffering::buffer. A
+     * \p ClientPolicy that connects synchronously has no pre-connect window and rejects in
+     * \ref utilities::connection_state::fresh whatever the mode.
      */
     bool tx(ClientPayloadT const& payload) override {
-        if (on_error()) {
+        if (not connection_accepts_tx()) {
+            return false;
+        }
+        if (m_tx_buffer.size() >= max_buffered_tx_payloads) {
             return false;
         }
         m_tx_buffer.emplace(payload);
@@ -329,12 +385,41 @@ public:
      * @brief Reset the client.
      * @details Use this function to reset the client if on error or any other reason.
      * This destructs the client as defined by \p ClientPolicy and opens it again.
-     * @return True if the client could be successfully created. False otherwise
+     * The connection state moves to \ref utilities::connection_state::fresh and the payloads
+     * buffered for the previous peer are dropped before this returns. Tearing the device down and
+     * opening it again runs as a queued action, and \ref sync polls before it runs its actions:
+     * at the end of the current \ref sync when reset is called from a callback that sync
+     * dispatches, on the next one otherwise.
+     *
+     * A \ref tx in that window follows the mode, see \ref utilities::tx_buffering: a client that
+     * buffers accepts for the connection this reset opens, one that does not rejects until the
+     * reopen has completed. The buffer is cleared in either mode, so a true from \ref tx after
+     * this returns always means buffered for the connection this reset opens.
+     *
+     * The drop is silent: up to \ref max_buffered_tx_payloads payloads that \ref tx accepted are
+     * destroyed here without a count, a callback or a log entry.
+     *
+     * Unread data on the retired connection is lost with it, because tearing the device down
+     * closes its descriptor. A read this poll pass had already queued against the retired handle
+     * is skipped rather than presented as data from the connection this reset opens.
+     *
+     * Shares the threading contract of \ref tx. Must be called from the thread that drives
+     * \ref sync, either directly or from a callback that thread dispatches.
+     * @return Always true. A failed reopen is reported through the error handler, except when the
+     * policy throws while being constructed or opened: the action queue swallows that exception,
+     * so nothing is reported. Constructing it throwing leaves the client without a device; opening
+     * it throwing can leave the handle in place. What is missing either way is
+     * \ref prepare_io_event_handler, so nothing observes the connection and the client never comes
+     * up again.
      */
     bool reset() {
-        auto generation = ++m_connect_generation;
-        set_connected_generation(generation);
-        add_action([this]() { reset_impl(); });
+        // A payload written for the previous peer is stale once another one is opened.
+        m_tx_buffer = {};
+        // Another device is on its way, so the state of the previous connection may not be read
+        // as the state of the new one. Flipping it here rather than in the queued action is what
+        // makes the tx below land in the window this reset opens.
+        reset_connection_state();
+        schedule_reset();
         return true;
     }
 
@@ -357,6 +442,20 @@ public:
     }
 
 private:
+    static constexpr utilities::tx_buffering policy_default_tx_buffering{
+        utilities::policy_buffers_tx_before_connect_v<ClientPolicy> ? utilities::tx_buffering::buffer
+                                                                    : utilities::tx_buffering::discard};
+
+    bool connection_accepts_tx() const {
+        auto const state = current_connection_state();
+        if constexpr (utilities::event_client_async_policy_v<ClientPolicy>) {
+            if (m_buffer_tx_before_connect) {
+                return state != utilities::connection_state::failed;
+            }
+        }
+        return state == utilities::connection_state::connected;
+    }
+
     template <class T, class... ArgsT> std::enable_if_t<utilities::event_client_async_policy_v<T>> init(ArgsT... args) {
         m_open_device = [this, args...]() {
             auto setup_ok = m_handle->setup(args...);
@@ -393,7 +492,9 @@ private:
                 on_client_ready(generation, false, -1);
             }
         };
-        reset();
+        // The initial open has no previous peer, so a payload buffered before this action runs
+        // belongs to the connection it opens.
+        schedule_reset();
     }
 
     template <class T, class... ArgsT>
@@ -406,15 +507,42 @@ private:
         reset_impl();
     }
 
+    void schedule_reset() {
+        auto generation = ++m_connect_generation;
+        set_connected_generation(generation);
+        add_action([this]() { reset_impl(); });
+    }
+
     void reset_impl() {
+        // reset already flipped the state, but an event dispatched since may have moved it back
+        // to connected, which the device opened below has not earned yet.
+        reset_connection_state();
         reset_client();
         setup_error_event_handler();
         init_device();
-        m_tx_buffer = {};
         prepare_io_event_handler();
+        if (not m_tx_buffer.empty()) {
+            // reset_client unregistered the notification, so a payload buffered before it ran has
+            // no pending write event left to arm the new connection with.
+            m_io_event_fd.notify();
+        }
+    }
+
+    // Whether m_handle is the connection the client currently stands for. Generations are bumped
+    // whenever a connection is retired, so a handle that outlives its own generation is the old
+    // peer even while it is still open and still registered. The connection state cannot answer
+    // this: without the guards below a successful read would report code 0 and put a retired
+    // connection back to connected.
+    bool handle_is_current() const {
+        return m_handle != nullptr and m_handle_generation == m_connect_generation.load();
     }
 
     action_status send_one() {
+        // The previous handle stays live and registered for writing until reset_impl runs, so a
+        // buffer filled for the next connection may only be written once that one is up.
+        if (not handle_is_current() or current_connection_state() != utilities::connection_state::connected) {
+            return action_status::empty;
+        }
         if (m_tx_buffer.empty()) {
             return action_status::empty;
         }
@@ -428,12 +556,24 @@ private:
     }
 
     action_status receive_one() {
+        // A reset dispatched earlier in this poll pass has already retired the handle below, so
+        // reading it would hand the consumer one more payload from the peer that reset abandoned.
+        // The read is skipped and that payload is lost with the connection, which is intended:
+        // data from a peer the client has abandoned must not be presented as data from its
+        // replacement.
+        if (not handle_is_current()) {
+            return action_status::empty;
+        }
         auto status = m_handle->rx(m_data);
+        auto result = action_status::fail;
         if (status and m_rx) {
             m_rx(m_data, *this);
-            return action_status::success;
+            result = action_status::success;
         }
-        return action_status::fail;
+        // The callback above may have retired this connection. The read itself was completed and
+        // handed up; what is dropped is its status, which says nothing about the connection
+        // replacing this one.
+        return handle_is_current() ? result : action_status::empty;
     }
 
     action_status reset_client() {
@@ -481,6 +621,7 @@ private:
     }
 
     bool init_device() {
+        m_handle_generation = m_connect_generation.load();
         m_handle = std::make_unique<ClientPolicy>();
         m_open_device();
         return true;
@@ -505,7 +646,12 @@ private:
     std::function<void()> m_open_device;
     std::queue<ClientPayloadT> m_tx_buffer;
     ClientPayloadT m_data;
+    bool m_buffer_tx_before_connect{false};
     std::atomic_uint64_t m_connect_generation{0};
+    // The generation m_handle was opened for. Written and read on the thread that drives sync
+    // only, so it needs no synchronization of its own. Generations start at 1, so the initial
+    // value matches no handle.
+    std::uint64_t m_handle_generation{0};
 };
 
 /**
@@ -521,6 +667,10 @@ private:
  *   // callback = std::function<void(bool success, int filedescriptor)>
  *   using PayloadT = [type of data]  // the type of the payload
  *   ClientPolicy();                  // must be default contructiable
+ *   static constexpr bool buffer_tx_before_connect; // [optional] tx() holds payloads written before the
+ *                                    // connection is up instead of rejecting them. Absent means it does not.
+ *                                    // Read only for a policy that offers setup/connect. Overridable per
+ *                                    // instance, see utilities::tx_buffering
  *   bool open(ArgsT... args);        // Opens the device. Parameters given by fd_event_client's constructor.
  *                                    // Return true on success, false otherwise
  *   bool setup(ArgsT... args);       // [optional] Setup the device. Parameters given by fd_event_client's constructor.
