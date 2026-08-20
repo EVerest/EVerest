@@ -33,13 +33,13 @@
 /modules/API/ @hikinggrass @pietfried @corneliusclaussen @djchhp @SebaLukas @james-ctc @cburandt @florinmihut
 /modules/API/RpcApi/ @FaHaGit @barsnick @corneliusclaussen @hikinggrass @pietfried @SebaLukas @mlitre
 /modules/EnergyManagement/EEBUS/ @mlitre @andistorm @hikinggrass @pietfried
-/modules/EnergyManagement/EnergyManager/ @corneliusclaussen @hikinggrass @pietfried
-/modules/EnergyManagement/EnergyNode/ @corneliusclaussen @hikinggrass @pietfried
+/modules/EnergyManagement/EnergyManager/ @corneliusclaussen @hikinggrass @pietfried @djchhp
+/modules/EnergyManagement/EnergyNode/ @corneliusclaussen @hikinggrass @pietfried @djchhp
 /modules/EV/EvManager/ @SebaLukas @pietfried @james-ctc @mlitre
 /modules/EV/PyEvJosev/ @SebaLukas @corneliusclaussen @pietfried @james-ctc @mlitre
 /modules/EVSE/Auth/ @pietfried @corneliusclaussen @hikinggrass @mlitre
 /modules/EVSE/Evse15118D20/ @SebaLukas @a-w50 @corneliusclaussen @pietfried @hikinggrass @james-ctc @mlitre
-/modules/EVSE/EvseManager/ @corneliusclaussen @SebaLukas @hikinggrass @pietfried @mlitre
+/modules/EVSE/EvseManager/ @corneliusclaussen @SebaLukas @hikinggrass @pietfried @mlitre @djchhp
 /modules/EVSE/EvseSecurity/ @pietfried @hikinggrass @james-ctc @mlitre @SebaLukas
 /modules/EVSE/EvseSlac/ @a-w50 @corneliusclaussen @SebaLukas @pietfried @hikinggrass
 /modules/EVSE/EvseV2G/ @corneliusclaussen @SebaLukas @james-ctc @pietfried @hikinggrass @james-ctc @mlitre @barsnick @FaHaGit
