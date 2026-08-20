@@ -63,7 +63,9 @@ target_include_directories(${CHARGER_TEST_TARGET_NAME} PRIVATE
 
 target_sources(${CHARGER_TEST_TARGET_NAME} PRIVATE
     ChargerTest.cpp
+    DcHlcLimitsTest.cpp
     ../Charger.cpp
+    ../dc_hlc_limits.cpp
 )
 
 target_compile_definitions(${CHARGER_TEST_TARGET_NAME} PRIVATE

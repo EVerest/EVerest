@@ -761,6 +761,29 @@ TEST_F(ChargerTest, DisableDuringIdle) {
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
 }
 
+// Regression test: an HLC session may restart without unplugging (EV wake-up from
+// ChargingPausedEV after D-LINK_TERMINATE goes straight to PrepareCharging, never
+// passing through Idle). Entering PrepareCharging must reset the Terminate latch so
+// that DC HLC limit updates resume for the new session.
+TEST_F(ChargerTest, HlcTerminateLatchIsResetOnPrepareCharging) {
+    auto& ctx = charger->get_shared_context();
+
+    // Simulate a plugged-in EV whose previous session ended with D-LINK_TERMINATE
+    ctx.hlc_charging_terminate_pause = Charger::HlcTerminatePause::Terminate;
+    ctx.flag_ev_plugged_in = true;
+    ctx.flag_transaction_active = true;
+    ctx.session_active = true;
+    ctx.flag_authorized = true;
+
+    EXPECT_EQ(charger->get_hlc_terminate_pause(), Charger::HlcTerminatePause::Terminate);
+
+    // EV wakes up and a new session enters PrepareCharging
+    ctx.current_state = Charger::EvseState::PrepareCharging;
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->get_hlc_terminate_pause(), Charger::HlcTerminatePause::Unknown);
+}
+
 } // namespace
 
 // ----------------------------------------------------------------------------

@@ -1273,6 +1273,16 @@ void EvseManager::ready() {
             p_evse->publish_ev_info(ev_info);
         }
 
+        if (s == types::evse_manager::SessionEventEnum::PrepareCharging) {
+            // An HLC session may restart here without crossing a session boundary (e.g. EV wake-up
+            // from ChargingPausedEV after D-LINK_TERMINATE). Drop the previous HLC session's targets,
+            // the EV communicates new ones in PreCharge/CurrentDemand.
+            Everest::scoped_lock_timeout lock(ev_info_mutex, Everest::MutexDescription::EVSE_set_ev_info);
+            ev_info.target_voltage.reset();
+            ev_info.target_current.reset();
+            p_evse->publish_ev_info(ev_info);
+        }
+
         if (not hlc_enabled) {
             return;
         }
