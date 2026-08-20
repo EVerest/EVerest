@@ -51,6 +51,10 @@ struct client_status_internal {
 /**
  * Implements the type independant part of the fd_event_client. This includes all event handling
  * with \ref fd_event_handler. Not to be used on its own.
+ *
+ * Ownership: the client and an outer \ref fd_event_handler may be destroyed in either order, the
+ * registration record holds only a weak reference. Destroy the client on the handler's thread, and
+ * never from a callback that handler is dispatching: it erases that callback while it runs.
  */
 class generic_fd_event_client_impl : public fd_event_sync_interface, protected utilities::generic_error_state {
 public:

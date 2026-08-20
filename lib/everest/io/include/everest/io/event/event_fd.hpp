@@ -6,6 +6,7 @@
 #pragma once
 
 #include "unique_fd.hpp"
+
 #include <cstdint>
 #include <optional>
 
@@ -30,11 +31,12 @@ public:
      */
     virtual ~event_fd_base() = default;
 
+    // fd_event_handler installs a lambda capturing this, so a moved object leaves it reading the old address.
     event_fd_base(const event_fd_base&) = delete;
     event_fd_base& operator=(const event_fd_base&) = delete;
 
-    event_fd_base(event_fd_base&&) = default;
-    event_fd_base& operator=(event_fd_base&&) = default;
+    event_fd_base(event_fd_base&&) = delete;
+    event_fd_base& operator=(event_fd_base&&) = delete;
 
     /**
      * @brief Explicit conversion to file descriptor
