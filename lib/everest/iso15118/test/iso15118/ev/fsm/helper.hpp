@@ -45,9 +45,8 @@ public:
     }
 
     template <typename ResponseType> void handle_response(const ResponseType& response) {
-        // Mirror the Session: by the time a response arrives, the request the current
-        // state queued in enter() has already been transmitted (the single request
-        // slot emptied). Take it here so the next state's enter() finds a free slot.
+        // Mirrors the Session: the request slot is empty by the time a response
+        // arrives, so drain it here for the next state's enter().
         while (msg_exch.has_request()) {
             msg_exch.take_request();
         }
@@ -101,9 +100,8 @@ private:
     ev::d20::Context ctx;
 };
 
-// The EV's pending requests, decoded the way the Session transmits them: each is popped
-// via MessageExchange::take_request() and its EXI bytes round-trip-decoded. Asserting
-// on a decoded request proves it actually serializes, not that a retained copy matches.
+// Pending requests, EXI round-trip-decoded the way the Session transmits them;
+// proves a request actually serializes, not just that a retained copy matches.
 class DecodedRequests {
 public:
     // First pending request (FIFO order) decodable as Msg; nullopt if none match.
@@ -144,11 +142,9 @@ DecodedRequests take_all_requests(ev::d20::MessageExchange& msg_exch);
 // A no-op context seed: the default for states that only need the primed session id.
 inline const auto no_seed = [](FsmStateHelper&) {};
 
-// A primed FSM fixture: owns the state helper, primes the session id to SESSION_HEADER
-// (so response echoes line up), runs `seed(helper)` for per-state context (auth
-// services, DcChargeParams, cert hashes) BEFORE the state is entered, then enters
-// State with any forwarded ctor args. Access the FSM/context/exchange via the public
-// members; the entry request queued by State::enter() is already pending.
+// A primed FSM fixture: primes the session id to SESSION_HEADER (so response echoes
+// line up), runs `seed(helper)` before the state is entered, then enters State. The
+// entry request queued by State::enter() is already pending.
 template <typename State> struct PrimedState {
     template <typename Seed, typename... Args>
     PrimedState(const ev::feedback::Callbacks& callbacks, Seed seed, Args&&... args) :
@@ -179,24 +175,36 @@ private:
     }
 };
 
-// The three structurally-identical rejection checks shared by every response-consuming
-// state: it stops the session (and stays put) on a FAILED response code, on a
-// wrong-variant response, and on a response whose session id does not echo the EV's.
-// `make_fsm(helper)` seeds a freshly constructed helper and returns the entered FSM;
-// `make_ok(header)` builds the state's otherwise-valid OK response for a given header
-// (its response_code is overwritten to FAILED for that case). Sections keep per-case
-// failure granularity.
+// Feed `response` and assert the stop tail every negative path shares: no
+// transition, still `expected_id`, session stop requested. For tests needing a
+// non-default FsmStateHelper ctor, so can't use PrimedState.
+template <typename ResponseType>
+void expect_stops_session(FsmStateHelper& helper, fsm::v2::FSM<ev::d20::StateBase>& fsm, const ResponseType& response,
+                          ev::d20::StateID expected_id) {
+    helper.handle_response(response);
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(fsm.get_current_state_id() == expected_id);
+    REQUIRE(helper.get_context().is_session_stopped() == true);
+}
+
+// Same stop tail, driven through a PrimedState.
+template <typename Primed, typename ResponseType>
+void expect_stops_session(Primed& primed, const ResponseType& response, ev::d20::StateID expected_id) {
+    expect_stops_session(primed.helper, primed.fsm, response, expected_id);
+}
+
+// The three rejection checks shared by every response-consuming state: FAILED
+// response code, wrong-variant response, and a non-echoed session id.
+// `make_fsm(helper)` builds the entered FSM; `make_ok(header)` builds the state's
+// otherwise-valid OK response.
 template <typename MakeFsm, typename MakeOk, typename WrongVariant>
 void check_rejection_paths(const ev::feedback::Callbacks& callbacks, ev::d20::StateID expected_id, MakeFsm make_fsm,
                            MakeOk make_ok, const WrongVariant& wrong_variant) {
     const auto run = [&](const auto& response) {
         FsmStateHelper helper{callbacks};
         auto fsm = make_fsm(helper);
-        helper.handle_response(response);
-        const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
-        REQUIRE(result.transitioned() == false);
-        REQUIRE(fsm.get_current_state_id() == expected_id);
-        REQUIRE(helper.get_context().is_session_stopped() == true);
+        expect_stops_session(helper, fsm, response, expected_id);
     };
 
     SECTION("stops the session on a FAILED response code") {

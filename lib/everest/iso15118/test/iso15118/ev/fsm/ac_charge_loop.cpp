@@ -128,9 +128,9 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop fires ac_target_power on a Dynamic respon
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
 }
 
-SCENARIO("ISO15118-20 EV AC_ChargeLoop reports the dictated target as its present power") {
-    // Nothing feeds a measured present power yet, so the request approximates it with the
-    // target the SECC dictated rather than putting a zero on the wire.
+SCENARIO("ISO15118-20 EV AC_ChargeLoop does not substitute the dictated target for a measurement") {
+    // present_active_power carries the module's measurement only; reporting the
+    // SECC-dictated target would be indistinguishable from it on the wire.
     StopObserver obs;
     const auto seed_limits_only = [](FsmStateHelper& helper) {
         ev::AcChargeParams p{};
@@ -140,7 +140,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop reports the dictated target as its presen
     };
     PrimedState<ev::d20::state::AC_ChargeLoop> primed{obs.callbacks, seed_limits_only};
 
-    // No target has been dictated at loop entry, so the first request reports no power.
+    // Unfed, so nothing to report.
     const auto first = primed.take_requests();
     const auto first_request = first.get<message_20::AC_ChargeLoopRequest>();
     REQUIRE(first_request.has_value());
@@ -154,7 +154,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop reports the dictated target as its presen
     const auto request_message = requests.get<message_20::AC_ChargeLoopRequest>();
     REQUIRE(request_message.has_value());
     const auto& mode = std::get<message_20::datatypes::Dynamic_AC_CLReqControlMode>(request_message->control_mode);
-    REQUIRE(message_20::datatypes::from_RationalNumber(mode.present_active_power) == Catch::Approx(7000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.present_active_power) == Catch::Approx(0.0f));
 }
 
 SCENARIO("ISO15118-20 EV AC_ChargeLoop stays and re-emits a request on a non-Terminate response") {
@@ -258,12 +258,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop stops the session on a Scheduled control-
 
     auto res = make_res(SESSION_HEADER, ResponseCode::OK);
     res.control_mode = message_20::datatypes::Scheduled_AC_CLResControlMode{};
-    primed.handle_response(res);
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, res, ev::d20::StateID::AC_ChargeLoop);
     REQUIRE(fired == false);
 }
 
@@ -275,12 +270,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop stops the session on a BPT_Dynamic contro
 
     auto res = make_res(SESSION_HEADER, ResponseCode::OK);
     res.control_mode = message_20::datatypes::BPT_Dynamic_AC_CLResControlMode{};
-    primed.handle_response(res);
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, res, ev::d20::StateID::AC_ChargeLoop);
     REQUIRE(fired == false);
 }
 
@@ -334,12 +324,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop stops a BPT session on a plain Dynamic re
     callbacks.ac_target_power = [&](const message_20::datatypes::Dynamic_AC_CLResControlMode&) { fired = true; };
     PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, seed_bpt_present_5000};
 
-    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, make_res(SESSION_HEADER, ResponseCode::OK), ev::d20::StateID::AC_ChargeLoop);
     REQUIRE(fired == false);
 }
 
@@ -351,12 +336,7 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop stops a BPT session on a Scheduled reply 
 
     auto res = make_bpt_res(SESSION_HEADER, ResponseCode::OK);
     res.control_mode = message_20::datatypes::Scheduled_AC_CLResControlMode{};
-    primed.handle_response(res);
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, res, ev::d20::StateID::AC_ChargeLoop);
     REQUIRE(fired == false);
 }
 
@@ -408,6 +388,24 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop honors a stop request set before the stat
     const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
     REQUIRE(pd_request.has_value());
     REQUIRE(pd_request->charge_progress == message_20::datatypes::Progress::Stop);
+}
+
+SCENARIO("ISO15118-20 EV AC_ChargeLoop stops the session on a FAILED response mid-loop") {
+    StopObserver obs;
+    PrimedState<ev::d20::state::AC_ChargeLoop> primed{obs.callbacks, seed_present_5000};
+
+    // One accepted iteration first, so the rejection below happens mid-loop and not on entry.
+    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
+    REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned() == false);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+    REQUIRE(primed.take_requests().get<message_20::AC_ChargeLoopRequest>().has_value());
+    obs.ac_target_fired = false;
+
+    expect_stops_session(primed, make_res(SESSION_HEADER, ResponseCode::FAILED_SequenceError),
+                         ev::d20::StateID::AC_ChargeLoop);
+    REQUIRE(obs.fired == false);
+    REQUIRE(obs.ac_target_fired == false);
+    REQUIRE(primed.take_requests().empty());
 }
 
 SCENARIO("ISO15118-20 EV AC_ChargeLoop rejects malformed responses") {
