@@ -190,7 +190,8 @@ auto get_default_mcs_bpt_parameter_list(const std::vector<ControlMobilityNeedsMo
 }
 
 // Trip curves carry the duration on x and the voltage or frequency on y per M.2.2.1.10 and M.2.2.1.11,
-// which is the reverse of the IEEE 2030.5 DERCurve axis order.
+// which is the reverse of the IEEE 2030.5 DERCurve axis order. Points are ordered by ascending
+// duration; an EV validating monotonic x values rejects the reverse order.
 // Each curve point list carries two points because the schema's minimum list length is two.
 sae::VoltageTrip get_default_voltage_trip() {
     sae::VoltageTrip voltage_trip{};
@@ -199,7 +200,7 @@ sae::VoltageTrip get_default_voltage_trip() {
     voltage_trip.over_voltage_must_trip_curve.priority = std::nullopt;
     voltage_trip.over_voltage_must_trip_curve.x_unit = sae::DERUnit::s;
     voltage_trip.over_voltage_must_trip_curve.y_unit = sae::DERUnit::PercentageV;
-    voltage_trip.over_voltage_must_trip_curve.curve_data_points = {{2.0f, 110.0f}, {0.16f, 120.0f}};
+    voltage_trip.over_voltage_must_trip_curve.curve_data_points = {{0.16f, 120.0f}, {2.0f, 110.0f}};
     voltage_trip.over_voltage_must_trip_curve.curve_data_points_L2 = std::nullopt;
     voltage_trip.over_voltage_must_trip_curve.curve_data_points_L3 = std::nullopt;
 
@@ -207,7 +208,7 @@ sae::VoltageTrip get_default_voltage_trip() {
     voltage_trip.under_voltage_must_trip_curve.priority = std::nullopt;
     voltage_trip.under_voltage_must_trip_curve.x_unit = sae::DERUnit::s;
     voltage_trip.under_voltage_must_trip_curve.y_unit = sae::DERUnit::PercentageV;
-    voltage_trip.under_voltage_must_trip_curve.curve_data_points = {{2.0f, 88.0f}, {0.16f, 50.0f}};
+    voltage_trip.under_voltage_must_trip_curve.curve_data_points = {{0.16f, 50.0f}, {2.0f, 88.0f}};
     voltage_trip.under_voltage_must_trip_curve.curve_data_points_L2 = std::nullopt;
     voltage_trip.under_voltage_must_trip_curve.curve_data_points_L3 = std::nullopt;
 
@@ -227,7 +228,7 @@ sae::FrequencyTrip get_default_frequency_trip() {
     frequency_trip.over_frequency_must_trip_curve.priority = std::nullopt;
     frequency_trip.over_frequency_must_trip_curve.x_unit = sae::DERUnit::s;
     frequency_trip.over_frequency_must_trip_curve.y_unit = sae::DERUnit::Hz;
-    frequency_trip.over_frequency_must_trip_curve.curve_data_points = {{300.0f, 51.5f}, {0.16f, 52.0f}};
+    frequency_trip.over_frequency_must_trip_curve.curve_data_points = {{0.16f, 52.0f}, {300.0f, 51.5f}};
     frequency_trip.over_frequency_must_trip_curve.curve_data_points_L2 = std::nullopt;
     frequency_trip.over_frequency_must_trip_curve.curve_data_points_L3 = std::nullopt;
 
@@ -235,7 +236,7 @@ sae::FrequencyTrip get_default_frequency_trip() {
     frequency_trip.under_frequency_must_trip_curve.priority = std::nullopt;
     frequency_trip.under_frequency_must_trip_curve.x_unit = sae::DERUnit::s;
     frequency_trip.under_frequency_must_trip_curve.y_unit = sae::DERUnit::Hz;
-    frequency_trip.under_frequency_must_trip_curve.curve_data_points = {{300.0f, 47.5f}, {0.16f, 47.0f}};
+    frequency_trip.under_frequency_must_trip_curve.curve_data_points = {{0.16f, 47.0f}, {300.0f, 47.5f}};
     frequency_trip.under_frequency_must_trip_curve.curve_data_points_L2 = std::nullopt;
     frequency_trip.under_frequency_must_trip_curve.curve_data_points_L3 = std::nullopt;
 

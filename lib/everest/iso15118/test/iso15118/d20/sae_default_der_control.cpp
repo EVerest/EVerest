@@ -64,30 +64,31 @@ SCENARIO("Default SAE DER control is inert") {
                     sae::DERUnit::PercentageEVMaximumConfiguredActivePower);
         }
 
-        THEN("The trip curve thresholds and clearing times match the expected defaults") {
+        THEN("The trip curve thresholds and clearing times match the expected defaults, ordered by "
+             "ascending duration") {
             const auto& over_voltage = der_control.voltage_trip.over_voltage_must_trip_curve.curve_data_points;
-            REQUIRE(over_voltage[0].x_value == 2.0f);
-            REQUIRE(over_voltage[0].y_value == 110.0f);
-            REQUIRE(over_voltage[1].x_value == 0.16f);
-            REQUIRE(over_voltage[1].y_value == 120.0f);
+            REQUIRE(over_voltage[0].x_value == 0.16f);
+            REQUIRE(over_voltage[0].y_value == 120.0f);
+            REQUIRE(over_voltage[1].x_value == 2.0f);
+            REQUIRE(over_voltage[1].y_value == 110.0f);
 
             const auto& under_voltage = der_control.voltage_trip.under_voltage_must_trip_curve.curve_data_points;
-            REQUIRE(under_voltage[0].x_value == 2.0f);
-            REQUIRE(under_voltage[0].y_value == 88.0f);
-            REQUIRE(under_voltage[1].x_value == 0.16f);
-            REQUIRE(under_voltage[1].y_value == 50.0f);
+            REQUIRE(under_voltage[0].x_value == 0.16f);
+            REQUIRE(under_voltage[0].y_value == 50.0f);
+            REQUIRE(under_voltage[1].x_value == 2.0f);
+            REQUIRE(under_voltage[1].y_value == 88.0f);
 
             const auto& over_frequency = der_control.frequency_trip.over_frequency_must_trip_curve.curve_data_points;
-            REQUIRE(over_frequency[0].x_value == 300.0f);
-            REQUIRE(over_frequency[0].y_value == 51.5f);
-            REQUIRE(over_frequency[1].x_value == 0.16f);
-            REQUIRE(over_frequency[1].y_value == 52.0f);
+            REQUIRE(over_frequency[0].x_value == 0.16f);
+            REQUIRE(over_frequency[0].y_value == 52.0f);
+            REQUIRE(over_frequency[1].x_value == 300.0f);
+            REQUIRE(over_frequency[1].y_value == 51.5f);
 
             const auto& under_frequency = der_control.frequency_trip.under_frequency_must_trip_curve.curve_data_points;
-            REQUIRE(under_frequency[0].x_value == 300.0f);
-            REQUIRE(under_frequency[0].y_value == 47.5f);
-            REQUIRE(under_frequency[1].x_value == 0.16f);
-            REQUIRE(under_frequency[1].y_value == 47.0f);
+            REQUIRE(under_frequency[0].x_value == 0.16f);
+            REQUIRE(under_frequency[0].y_value == 47.0f);
+            REQUIRE(under_frequency[1].x_value == 300.0f);
+            REQUIRE(under_frequency[1].y_value == 47.5f);
         }
 
         THEN("The enter service thresholds and setpoints match the expected defaults") {

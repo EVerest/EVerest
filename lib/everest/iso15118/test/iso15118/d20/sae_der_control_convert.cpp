@@ -76,20 +76,22 @@ SCENARIO("The default SAE DER control converts onto the wire") {
             REQUIRE(out.frequency_trip.under_frequency_must_trip_curve.curve_data_points.size() == 2);
         }
 
-        THEN("The over voltage trip curve points survive the rational number conversion") {
+        THEN("The over voltage trip curve points survive the rational number conversion, ordered by "
+             "ascending duration") {
             const auto& points = out.voltage_trip.over_voltage_must_trip_curve.curve_data_points;
-            REQUIRE_THAT(value_of(points[0].x_value), WithinAbs(2.0f, TOLERANCE));
-            REQUIRE_THAT(value_of(points[0].y_value), WithinAbs(110.0f, TOLERANCE));
-            REQUIRE_THAT(value_of(points[1].x_value), WithinAbs(0.16f, TOLERANCE));
-            REQUIRE_THAT(value_of(points[1].y_value), WithinAbs(120.0f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[0].x_value), WithinAbs(0.16f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[0].y_value), WithinAbs(120.0f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[1].x_value), WithinAbs(2.0f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[1].y_value), WithinAbs(110.0f, TOLERANCE));
         }
 
-        THEN("The over frequency trip curve points survive the rational number conversion") {
+        THEN("The over frequency trip curve points survive the rational number conversion, ordered by "
+             "ascending duration") {
             const auto& points = out.frequency_trip.over_frequency_must_trip_curve.curve_data_points;
-            REQUIRE_THAT(value_of(points[0].x_value), WithinAbs(300.0f, TOLERANCE));
-            REQUIRE_THAT(value_of(points[0].y_value), WithinAbs(51.5f, TOLERANCE));
-            REQUIRE_THAT(value_of(points[1].x_value), WithinAbs(0.16f, TOLERANCE));
-            REQUIRE_THAT(value_of(points[1].y_value), WithinAbs(52.0f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[0].x_value), WithinAbs(0.16f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[0].y_value), WithinAbs(52.0f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[1].x_value), WithinAbs(300.0f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[1].y_value), WithinAbs(51.5f, TOLERANCE));
         }
 
         THEN("The curve units survive the conversion") {
