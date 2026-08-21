@@ -29,11 +29,11 @@
               {
                   "type": "Actual",
                   "mutability": "ReadWrite",
-                  "value": "[{\"configurationSlot\": 1, \"connectionData\": {\"messageTimeout\": 30, \"ocppCsmsUrl\": \"ws://localhost:9000\", \"ocppInterface\": \"Wired0\", \"ocppTransport\": \"JSON\", \"ocppVersion\": \"OCPP20\", \"securityProfile\": 1}}]"
+                  "value": "[{\"configurationSlot\": 1, \"connectionData\": {\"messageTimeout\": 60, \"ocppCsmsUrl\": \"ws://localhost:9000\", \"ocppInterface\": \"Wired0\", \"ocppTransport\": \"JSON\", \"ocppVersion\": \"OCPP20\", \"securityProfile\": 1}}]"
               }
           ],
           "description": "List of NetworkConnectionProfiles that define the functional and technical parameters of a communication link. Must be a (JSON) string with the format of SetNetworkProfileRequest",
-          "default": "[{\\\"configurationSlot\\\": 1, \\\"connectionData\\\": {\\\"messageTimeout\\\": 30, \\\"ocppCsmsUrl\\\": \\\"ws://localhost:9000/cp001\\\", \\\"ocppInterface\\\": \\\"Wired0\\\", \\\"ocppTransport\\\": \\\"JSON\\\", \\\"ocppVersion\\\": \\\"OCPP20\\\", \\\"securityProfile\\\": 1}}]\n",
+          "default": "[{\\\"configurationSlot\\\": 1, \\\"connectionData\\\": {\\\"messageTimeout\\\": 60, \\\"ocppCsmsUrl\\\": \\\"ws://localhost:9000/cp001\\\", \\\"ocppInterface\\\": \\\"Wired0\\\", \\\"ocppTransport\\\": \\\"JSON\\\", \\\"ocppVersion\\\": \\\"OCPP20\\\", \\\"securityProfile\\\": 1}}]\n",
           "type": "string"
       },
       "ChargeBoxSerialNumber": {

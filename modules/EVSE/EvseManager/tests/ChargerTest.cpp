@@ -18,6 +18,7 @@ using namespace types::evse_manager;
 // class that provides access to internal state from the Charger class
 struct ChargerDerived : public Charger {
     using Charger::Charger;
+    using Charger::get_config_context;
     using Charger::get_enable_disable_source_table;
     using Charger::get_shared_context;
     using Charger::run_state_machine;
@@ -75,6 +76,7 @@ struct ChargerTest : public testing::Test {
             charger_bsp, charger_error_handling, charger_powermeter_billing, charger_store,
             types::evse_board_support::Connector_type::IEC62196Type2Socket, "EVSETEST");
         charger->signal_simple_event.connect(&ChargerTest::session_event, this);
+        charger->signal_transaction_finished_event.connect(&ChargerTest::transaction_finished_event, this);
     }
 
     void TearDown() override {
@@ -85,13 +87,20 @@ struct ChargerTest : public testing::Test {
         last_event = event;
     }
 
+    void transaction_finished_event(StopTransactionReason reason,
+                                    std::optional<types::authorization::ProvidedIdToken> /*token*/) {
+        last_transaction_finished_reason = reason;
+    }
+
     static constexpr SessionEventEnum default_event{SessionEventEnum::SessionFinished};
     static constexpr EnableDisableSource default_source{Enable_source::Unspecified, Enable_state::Unassigned, 10000};
 
     SessionEventEnum last_event{default_event};
+    std::optional<StopTransactionReason> last_transaction_finished_reason;
 
-    constexpr void reset_last_event() {
+    void reset_last_event() {
         last_event = default_event;
+        last_transaction_finished_reason.reset();
     }
 };
 
@@ -759,6 +768,87 @@ TEST_F(ChargerTest, DisableDuringIdle) {
     // Must immediately transition to Disabled
     EXPECT_EQ(ctx.current_state, Charger::EvseState::Disabled);
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
+}
+
+// tests for deauthorize() and the Timeout stop on connect timeout
+
+// Authorization was granted but the EV never connected before the connection timeout.
+// A deauthorization in the authorized, not-yet-plugged-in idle state must surface
+// StopTransactionReason::Timeout, not a generic stop.
+TEST_F(ChargerTest, ConnectTimeoutAfterAuthorizationStopsWithTimeout) {
+    auto& ctx = charger->get_shared_context();
+
+    // Authorized first, no plug-in, no local transaction started yet.
+    ctx.current_state = Charger::EvseState::Idle;
+    ctx.session_active = true;
+    ctx.flag_authorized = true;
+    ctx.flag_ev_plugged_in = false;
+    ctx.flag_transaction_active = false;
+
+    reset_last_event();
+    EXPECT_TRUE(charger->deauthorize());
+
+    ASSERT_TRUE(last_transaction_finished_reason.has_value());
+    EXPECT_EQ(last_transaction_finished_reason.value(), StopTransactionReason::Timeout);
+    EXPECT_FALSE(ctx.flag_authorized);
+    EXPECT_FALSE(ctx.session_active);
+}
+
+// The EV is already plugged in, so this is not the connect-timeout case: the generic
+// deauthorized flow applies and no Timeout transaction-finished event may be emitted.
+TEST_F(ChargerTest, DeauthorizeWhilePluggedInIdleDoesNotStopWithTimeout) {
+    auto& ctx = charger->get_shared_context();
+
+    ctx.current_state = Charger::EvseState::Idle;
+    ctx.session_active = true;
+    ctx.flag_authorized = true;
+    ctx.flag_ev_plugged_in = true;
+    ctx.flag_transaction_active = false;
+
+    reset_last_event();
+    EXPECT_TRUE(charger->deauthorize());
+
+    EXPECT_FALSE(last_transaction_finished_reason.has_value());
+    EXPECT_FALSE(ctx.flag_authorized);
+    EXPECT_FALSE(ctx.session_active);
+}
+
+// The EV is plugged in (WaitingForAuthentication is only entered via CarPluggedIn), so a
+// deauthorization here is outside the idle connect-timeout case: no transaction-finished
+// event with reason Timeout may be emitted, the generic path applies.
+TEST_F(ChargerTest, DeauthorizeWhilePluggedInDoesNotStopWithTimeout) {
+    auto& ctx = charger->get_shared_context();
+
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    ctx.session_active = true;
+    ctx.flag_ev_plugged_in = true;
+    ctx.flag_authorized = true;
+    ctx.flag_transaction_active = false;
+
+    reset_last_event();
+    EXPECT_TRUE(charger->deauthorize());
+
+    EXPECT_FALSE(last_transaction_finished_reason.has_value());
+    EXPECT_FALSE(ctx.flag_authorized);
+    EXPECT_FALSE(ctx.session_active);
+}
+
+// No authorization was ever granted: deauthorize() must keep emitting a PluginTimeout event
+// and must not emit a transaction-finished event.
+TEST_F(ChargerTest, ConnectTimeoutWithoutAuthorizationRaisesPluginTimeout) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().raise_mrec9 = false;
+
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    ctx.session_active = true;
+    ctx.flag_authorized = false;
+    ctx.flag_transaction_active = false;
+
+    reset_last_event();
+    EXPECT_FALSE(charger->deauthorize());
+
+    EXPECT_EQ(last_event, SessionEventEnum::PluginTimeout);
+    EXPECT_FALSE(last_transaction_finished_reason.has_value());
 }
 
 } // namespace

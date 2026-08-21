@@ -503,6 +503,9 @@ protected:
     constexpr auto& get_shared_context() {
         return shared_context;
     }
+    constexpr auto& get_config_context() {
+        return config_context;
+    }
     constexpr const auto& get_enable_disable_source_table() const {
         return enable_disable_source_table;
     }
