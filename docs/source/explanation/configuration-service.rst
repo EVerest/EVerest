@@ -193,9 +193,9 @@ own configuration.
 
 Step 5 has exceptions. With ``--into-idle`` the manager enters ``Idle`` without
 starting modules. A configuration that fails to load or validate, or that
-contains no modules, makes the manager exit with an error unless ``--into-idle``
-is given; with ``--idle-on-failure`` the no-modules case enters ``Idle`` instead
-and is reported as ``FailedToStart``, while invalid configurations still exit.
+contains no modules, makes the manager exit with an error; ``--into-idle`` and
+``--idle-on-failure`` both keep it in ``Idle`` instead, which is reported as
+``FailedToStart``.
 See the startup-failure behavior in :ref:`exp-manager-lifecycle` for the full
 set of outcomes.
 

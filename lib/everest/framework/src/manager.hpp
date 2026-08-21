@@ -147,6 +147,10 @@ private:
     /// \note MQTT must still be connected; call before any disconnect.
     void cleanup_modules_state(const Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
 
+    /// \brief cleanup_modules_state() for paths that can also run without a configuration: does
+    /// nothing when ctx.config is null, the state a boot with no valid configuration leaves behind.
+    void cleanup_modules_state_if_configured(const RuntimeContext& ctx);
+
     /// \brief Terminate remaining module processes (SIGTERM, then SIGKILL fallback).
     void shutdown_modules(const std::map<pid_t, std::string>& modules, const Everest::ManagerConfig& config,
                           Everest::MQTTAbstraction& mqtt_abstraction);
@@ -200,6 +204,10 @@ private:
     /// \return Mapping of spawned child pid to module id.
     std::map<pid_t, std::string> handle_start_modules(const RuntimeContext& ctx);
 
+    /// \brief Settle into Idle after a failed start or reload, logging \p reason and reporting
+    /// FailedToStart to the Configuration API. Shared by the boot and restart paths.
+    void settle_into_idle_after_failed_start(std::string_view reason);
+
     /// \brief Run the "EVerest is up and running" completion sequence: clear retained startup topics,
     /// log readiness, transition to Running and announce readiness via the status fifo and global
     /// ready topic. Called from the module-ready handler once all modules report ready.
@@ -227,8 +235,8 @@ private:
     /// \brief Outcome of a module restart after a completed drain.
     enum class RestartOutcome {
         Restarted,  ///< Configuration reloaded and modules started again.
-        StayedIdle, ///< Reload failed or yielded no modules; --idle-on-failure keeps the manager in Idle.
-        ExitFailure ///< Reload failed or yielded no modules; the caller must exit with EXIT_FAILURE (default).
+        StayedIdle, ///< Nothing startable; --idle-on-failure keeps the manager in Idle.
+        ExitFailure ///< Nothing startable; the caller must exit with EXIT_FAILURE (default).
     };
 
     /// \brief Reload the configuration and start the modules again after a completed drain.
@@ -336,9 +344,9 @@ private:
     // SHUTDOWN_TIMEOUT_MS to exit on their own. Default (false): terminate module processes
     // immediately (SIGTERM, escalating to SIGKILL after FORCE_KILL_GRACE_TIMEOUT_MS).
     bool m_graceful_shutdown_enabled{false};
-    // Opt-in via --idle-on-failure: stay alive in Idle when module startup fails after boot
-    // (crash recovery exhausted, failed config reload during a restart) so the config API stays
-    // available. Default (false): exit with an error.
+    // Opt-in via --idle-on-failure: stay alive in Idle whenever there is nothing startable (an
+    // invalid or empty boot configuration, crash recovery exhausted, a failed config reload during a
+    // restart) so the config API stays available. Default (false): exit with an error.
     bool m_idle_on_failure{false};
     // m_state is atomic because the module-ready handler runs on the MQTT thread; transitions are
     // serialized with m_state_transition_mutex (main loop and ready handler).

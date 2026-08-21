@@ -391,3 +391,60 @@ def test_manager_enters_idle_on_empty_module_config_with_idle_on_failure(everest
     everest_core.assert_no_manager_status(ManagerStatusFifo.ALL_MODULES_STARTED, timeout_s=1.0)
     everest_core.assert_no_manager_status(ManagerStatusFifo.MANAGER_EXITING, timeout_s=5.0)
     everest_core.stop()
+
+
+def start_core_in_thread(everest_core: EverestCore):
+    """Call everest_core.start() off the main thread, so a manager that exits during startup (and
+    therefore never reports the status start() waits for) does not block the assertions.
+
+    :return: the started thread and a list that collects the exception start() raised, if any.
+    """
+    start_exception = []
+
+    def start_core():
+        try:
+            everest_core.start()
+        except Exception as exc:
+            start_exception.append(exc)
+
+    starter_thread = threading.Thread(target=start_core)
+    starter_thread.start()
+    return starter_thread, start_exception
+
+
+@pytest.mark.everest_core_config("config-test-invalid-module-config.yaml")
+def test_manager_exits_on_invalid_module_config(everest_core: EverestCore):
+    """A configuration that fails validation must make the manager exit with a failure code."""
+    starter_thread, start_exception = start_core_in_thread(everest_core)
+
+    everest_core.assert_no_manager_status(ManagerStatusFifo.ALL_MODULES_STARTED, timeout_s=1.0)
+    everest_core.assert_no_manager_status(ManagerStatusFifo.MANAGER_IDLE, timeout_s=1.0)
+    assert everest_core.process.wait(timeout=60.0) != 0
+
+    starter_thread.join(timeout=60.0)
+    assert not starter_thread.is_alive(), "Startup thread did not exit."
+    assert start_exception, "Expected start() to fail because the manager exits on an invalid config."
+
+
+@pytest.mark.everest_core_config("config-test-invalid-module-config.yaml")
+@pytest.mark.everest_manager_args("--idle-on-failure")
+def test_manager_enters_idle_on_invalid_module_config_with_idle_on_failure(everest_core: EverestCore):
+    """--idle-on-failure keeps the manager alive in Idle for a configuration that fails validation.
+    The boot then continues with no active configuration slot, so it reaches the lifecycle with no
+    modules and the Configuration API stays available to push a corrected configuration."""
+    everest_core.start(expected_status=ManagerStatusFifo.MANAGER_IDLE)
+
+    everest_core.assert_no_manager_status(ManagerStatusFifo.ALL_MODULES_STARTED, timeout_s=1.0)
+    everest_core.assert_no_manager_status(ManagerStatusFifo.MANAGER_EXITING, timeout_s=5.0)
+    everest_core.stop()
+
+
+@pytest.mark.everest_core_config("config-test-invalid-module-config.yaml")
+@pytest.mark.everest_manager_args("--into-idle")
+def test_manager_enters_idle_on_invalid_module_config_with_into_idle(everest_core: EverestCore):
+    """--into-idle keeps the manager alive in Idle for a configuration that fails validation, which
+    is what its documented "whatever the config is" behavior promises."""
+    everest_core.start(expected_status=ManagerStatusFifo.MANAGER_IDLE)
+
+    everest_core.assert_no_manager_status(ManagerStatusFifo.MANAGER_EXITING, timeout_s=5.0)
+    everest_core.stop()

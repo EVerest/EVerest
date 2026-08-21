@@ -384,6 +384,14 @@ void Manager::cleanup_modules_state(const ManagerConfig& config, MQTTAbstraction
     mqtt_abstraction.clear_retained_topics();
 }
 
+void Manager::cleanup_modules_state_if_configured(const RuntimeContext& ctx) {
+    if (ctx.config == nullptr) {
+        // No configuration was ever loaded, so no ready handlers or retained topics exist.
+        return;
+    }
+    cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
+}
+
 /// \brief Stop all remaining module processes, escalating SIGTERM to SIGKILL.
 void Manager::shutdown_modules(const std::map<pid_t, std::string>& modules, const ManagerConfig& config,
                                MQTTAbstraction& mqtt_abstraction) {
@@ -510,12 +518,7 @@ Manager::RestartOutcome Manager::handle_restart_modules_after_shutdown(RuntimeCo
     // Cleanup with the OLD config before the reload below. Required because this function is also
     // called from advance_lifecycle_state_if_ready() (crash-with-restart path) which does not go
     // through handle_finish_* finalize functions.
-    // ctx.config is null when the boot never produced a valid configuration (run() leaves its local
-    // shared_ptr empty and RuntimeContext holds a reference to it), which is reachable from here via
-    // an admin restart requested while idle.
-    if (ctx.config != nullptr) {
-        cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
-    }
+    cleanup_modules_state_if_configured(ctx);
 
     // The drain is complete and the restart intent is being acted on now, so the shutdown
     // bookkeeping has served its purpose - on BOTH outcomes. Leaving m_shutdown_cause == Restart on
@@ -544,19 +547,23 @@ Manager::RestartOutcome Manager::handle_restart_modules_after_shutdown(RuntimeCo
         return RestartOutcome::ExitFailure;
     }
 
-    EVLOG_error << "Failed to reload a startable configuration. Manager stays idle; load a corrected "
-                   "configuration and request another restart.";
+    settle_into_idle_after_failed_start("Failed to reload a startable configuration. Manager stays idle; load a "
+                                        "corrected configuration and request another restart.");
+    return RestartOutcome::StayedIdle;
+}
+
+void Manager::settle_into_idle_after_failed_start(std::string_view reason) {
+    EVLOG_error << reason;
     transition_to(ManagerState::Idle);
     // After the transition: the Idle branch of the state-transition handler settles a transitional
     // status but preserves FailedToStart, so the order is not load-bearing - it just reads correctly.
     m_config_service_core->notice_cfg_validation_failed();
-    return RestartOutcome::StayedIdle;
 }
 
 std::optional<int> Manager::handle_finish_normal_shutdown(RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
     const std::string bad_modules = format_unclean_exits();
     // Cleanup module state while MQTT is still connected (must be before disconnect_mqtt() in Exiting path).
-    cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
+    cleanup_modules_state_if_configured(ctx);
     if (m_sigint_received) {
         if (bad_modules.empty()) {
             notify_status_fifo(StatusFifo::ALL_MODULES_STOPPED_CLEAN);
@@ -598,7 +605,7 @@ std::optional<int> Manager::handle_finish_crash_recovery(RuntimeContext& ctx, Ma
             bad_modules);
     }
 
-    cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
+    cleanup_modules_state_if_configured(ctx);
     m_shutdown_info.clear();
     m_shutdown_start_time = std::nullopt;
     m_shutdown_cause = ShutdownCause::None;
@@ -651,13 +658,15 @@ void Manager::handle_initiate_graceful_shutdown(const std::chrono::steady_clock:
 }
 
 bool Manager::reload_and_update_context(RuntimeContext& ctx) {
-    m_config_service_core->reinitialize_from_db();
-    auto module_cfg_ptr = m_config_service_core->get_active_module_configurations();
-    // create a copy, because load_and_validate_config below will take ownership
-    everest::config::ModuleConfigurations module_cfg = *module_cfg_ptr;
-
     std::shared_ptr<const ManagerConfig> config;
+    // The database access belongs inside the try: a throw from reinitialize_from_db() (a corrupt or
+    // unreadable database) is a failed reload, not an exception for run()'s uncaught main loop.
     try {
+        m_config_service_core->reinitialize_from_db();
+        auto module_cfg_ptr = m_config_service_core->get_active_module_configurations();
+        // create a copy, because load_and_validate_config below will take ownership
+        everest::config::ModuleConfigurations module_cfg = *module_cfg_ptr;
+
         config = load_and_validate_config(ctx.ms, module_cfg);
     } catch (const std::exception& e) {
         EVLOG_error << "Failed to load and validate the module configuration: " << e.what();
@@ -845,10 +854,16 @@ int Manager::run() {
         auto bs = init_database_bootstrap(ms, reset_from_yaml);
         m_db_connection = std::move(bs.db_connection);
         if (not bs.module_configs_initialized) {
-            // no valid database entry AND it's impossible to write one
-            // it would be brave to continue here
-            EVLOG_critical << "Couldn't initialize the configuration database!";
-            return EXIT_FAILURE;
+            // No valid database entry and it is impossible to write one, so exiting is the default.
+            // --idle-on-failure / --into-idle continue into the lifecycle instead, where the
+            // Configuration API can be used to push a corrected configuration. The database is left
+            // untouched (no empty slot is seeded), so the boot arrives below with no modules.
+            if (not m_idle_on_failure and not boot_into_idle) {
+                EVLOG_critical << "Couldn't initialize the configuration database!";
+                return EXIT_FAILURE;
+            }
+            EVLOG_warning << "Couldn't initialize the configuration database; continuing without a configuration "
+                             "because --idle-on-failure or --into-idle was given. No modules will be started.";
         }
     }
 
@@ -950,22 +965,22 @@ int Manager::run() {
     if (boot_into_idle) {
         EVLOG_info << "Requested by command-line-parameter -> entering Idle";
         transition_to(ManagerState::Idle);
-    } else if (not runtime_ctx_has_valid_config) {
-        EVLOG_error << "Failed to load and validate config!";
-        return transition_to_exiting_after_shutdown(runtime_ctx, admin_panel, EXIT_FAILURE, false);
-    } else if (runtime_ctx.config->get_module_configurations().empty()) {
-        if (m_idle_on_failure) {
-            EVLOG_error << "Module configuration contains no modules (empty or missing active_modules). Manager "
-                           "stays idle; load a startable configuration and request a restart.";
-            transition_to(ManagerState::Idle);
-            // After the transition: the Idle branch of the state-transition handler settles a transitional
-            // status but preserves FailedToStart, so the order is not load-bearing - it just reads correctly.
-            m_config_service_core->notice_cfg_validation_failed();
-        } else {
-            EVLOG_error << "Module configuration contains no modules (empty or missing active_modules) -> exiting. "
-                           "Pass --idle-on-failure (or --into-idle) to keep the manager running without modules.";
+    } else if (not runtime_ctx_has_valid_config or runtime_ctx.config->get_module_configurations().empty()) {
+        // Both "nothing startable at boot" outcomes - a configuration that does not load or validate,
+        // and one without modules - share one decision: exit by default, or stay in Idle and report
+        // FailedToStart with --idle-on-failure so a corrected configuration can be pushed.
+        // The emptiness check must stay behind the short circuit: config is null when the load failed.
+        const std::string_view failure_reason =
+            runtime_ctx_has_valid_config ? "Module configuration contains no modules (empty or missing active_modules)."
+                                         : "Failed to load and validate config!";
+        if (not m_idle_on_failure) {
+            EVLOG_error << failure_reason;
+            EVLOG_error << "Manager is exiting. Pass --idle-on-failure (or --into-idle) to keep the manager "
+                           "running in Idle without modules instead.";
             return transition_to_exiting_after_shutdown(runtime_ctx, admin_panel, EXIT_FAILURE, false);
         }
+        settle_into_idle_after_failed_start(fmt::format(
+            "{} Manager stays idle; load a startable configuration and request a restart.", failure_reason));
     } else {
         m_module_handles = handle_start_modules(runtime_ctx);
     }
@@ -1745,10 +1760,10 @@ int main(int argc, char* argv[]) {
                        "exiting when the configuration is invalid, missing or contains no modules.");
     desc.add_options()(
         "idle-on-failure",
-        "Experimental: When there is nothing startable (the boot configuration contains no modules, crash "
-        "recovery is exhausted with --recover-module-crashes, or a configuration reload fails during a "
-        "module restart), keep the manager alive in Idle so the configuration API stays available. "
-        "Default: exit with an error.");
+        "Experimental: When there is nothing startable (the boot configuration is invalid or contains no "
+        "modules, crash recovery is exhausted with --recover-module-crashes, or a configuration reload "
+        "fails during a module restart), keep the manager alive in Idle so the configuration API stays "
+        "available. Default: exit with an error.");
     desc.add_options()("recover-module-crashes",
                        "Experimental: After unexpected module exit, reload config and restart modules (bounded by an "
                        "internal retry limit). Default: shut down all modules and exit the manager.");

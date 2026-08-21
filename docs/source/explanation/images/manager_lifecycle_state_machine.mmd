@@ -51,14 +51,16 @@ stateDiagram-v2
     ShutdownFinalizing --> Exiting : unexpected module exit, crash cap exceeded\nor failed / empty reload (default, failure)
 
     %% Boot-time outcome (before StartingModules)
-    Initializing --> Idle : --into-idle (whatever the config is),\nor no modules (--idle-on-failure)
-    Initializing --> Exiting : invalid config or no modules\n(failure, unless --into-idle)\nno-modules also idles with --idle-on-failure
+    Initializing --> Idle : --into-idle (whatever the config is),\nor invalid config / no modules (--idle-on-failure)
+    Initializing --> Exiting : invalid config or no modules\n(failure, unless --into-idle or --idle-on-failure)
 
     note right of Running
         Last MQTT ready while shutdown in progress: skip Running
         (and skip ALL_MODULES_STARTED / the global ready publish).
         Database and MQTT connect failures abort startup directly,
-        without entering Exiting.
+        without entering Exiting. An invalid YAML config does not:
+        with --idle-on-failure / --into-idle an empty slot is seeded,
+        so the boot reaches the lifecycle with no modules.
     end note
 
     note right of ForceTerminating

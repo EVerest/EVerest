@@ -139,10 +139,9 @@ Startup Failure
 - A configuration that fails to load or validate, or that contains **no
   modules** (empty or missing ``active_modules``, empty database slot), makes
   the manager go to ``Exiting`` with a failure exit code.
-- With ``--idle-on-failure`` the **no modules** case enters ``Idle`` instead and
-  reports *FailedToStart* to the Configuration API (matching a failed restart
-  reload), so a startable configuration can be loaded and a restart requested.
-  Invalid configurations still exit.
+- With ``--idle-on-failure`` both cases enter ``Idle`` instead and report
+  *FailedToStart* to the Configuration API (matching a failed restart reload),
+  so a startable configuration can be loaded and a restart requested.
 - ``--into-idle`` is evaluated **before** the configuration is inspected, so the
   manager enters ``Idle`` unconditionally (valid, invalid or empty
   configuration; no modules are started) so the Configuration API stays
@@ -150,7 +149,11 @@ Startup Failure
 - Failures that happen before the lifecycle exists — a configuration database
   that cannot be initialized, or a failed MQTT broker connection — abort the
   startup directly with a failure exit code, **without** a transition to
-  ``Exiting`` and therefore without a ``MANAGER_EXITING`` status event.
+  ``Exiting`` and therefore without a ``MANAGER_EXITING`` status event. With
+  ``--idle-on-failure`` or ``--into-idle`` a database that holds no usable
+  configuration is not one of these cases: instead of aborting, the boot
+  continues with no active configuration slot — the database is left untouched —
+  so it reaches the lifecycle with no modules and the rules above apply.
 
 ***********************************
 Normal Shutdown (SIGINT or SIGTERM)

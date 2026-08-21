@@ -87,8 +87,8 @@ Module Lifecycle
   no modules.
 
 ``--idle-on-failure``
-  **Experimental.** When there is nothing startable — the boot configuration
-  contains no modules, crash recovery is exhausted with
+  **Experimental.** When there is nothing startable — the boot configuration is
+  invalid or contains no modules, crash recovery is exhausted with
   ``--recover-module-crashes``, or a configuration reload fails during a module
   restart — keep the manager alive in Idle so the configuration API stays
   available. Default: exit with an error.
