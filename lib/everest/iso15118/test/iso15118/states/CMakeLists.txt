@@ -11,6 +11,7 @@ function(create_states_test_target NAME)
 endfunction()
 
 create_states_test_target(ac_charge_loop)
+create_states_test_target(ac_der_sae_charge_loop)
 create_states_test_target(ac_charge_parameter_discovery)
 create_states_test_target(authorization_setup)
 create_states_test_target(authorization)

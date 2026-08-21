@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/session/iso.hpp>
 
 #include <cassert>
@@ -193,7 +193,7 @@ TimePoint const& Session::poll() {
         if (const auto control_data = ctx.get_control_event<d20::DcTransferLimits>()) {
             ctx.session_config.dc_limits = *control_data;
         } else if (const auto control_data = ctx.get_control_event<d20::EnergyServices>()) {
-            ctx.session_config.supported_energy_transfer_services = *control_data;
+            ctx.session_config.set_supported_energy_transfer_services(*control_data);
         } else if (const auto control_data = ctx.get_control_event<d20::SupportedVASs>()) {
             ctx.session_config.supported_vas_services = *control_data;
         } else if (const auto control_data = ctx.get_control_event<d20::AcTransferLimits>()) {

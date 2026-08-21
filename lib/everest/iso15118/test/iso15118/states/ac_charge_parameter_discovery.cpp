@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
 #include <iso15118/detail/d20/state/ac_charge_parameter_discovery.hpp>
@@ -14,36 +14,44 @@ using BPT_AC_ModeReq = dt::BPT_AC_CPDReqEnergyTransferMode;
 using AC_ModeRes = dt::AC_CPDResEnergyTransferMode;
 using BPT_AC_ModeRes = dt::BPT_AC_CPDResEnergyTransferMode;
 
+namespace {
+
+// All five scenarios below share the same setup, so a single factory serves them.
+d20::EvseSetupConfig make_evse_setup() {
+    const auto evse_id = std::string("everest se");
+    const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::AC};
+    const auto cert_install{false};
+    const std::vector<dt::Authorization> auth_services = {dt::Authorization::EIM};
+    const std::vector<uint16_t> vas_services{};
+    const d20::DcTransferLimits dc_limits;
+    const d20::AcTransferLimits ac_limits;
+    const d20::DcTransferLimits powersupply_limits;
+    const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
+        {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
+
+    d20::EvseSetupConfig setup{};
+    setup.evse_id = evse_id;
+    setup.supported_energy_services = supported_energy_services;
+    setup.authorization_services = auth_services;
+    setup.supported_vas_services = vas_services;
+    setup.enable_certificate_install_service = cert_install;
+    setup.dc_limits = dc_limits;
+    setup.ac_limits = ac_limits;
+    setup.der_iec_limits = std::nullopt;
+    setup.der_sae_limits = std::nullopt;
+    setup.control_mobility_modes = control_mobility_modes;
+    setup.powersupply_limits = powersupply_limits;
+    return setup;
+}
+
+} // namespace
+
 SCENARIO("AC charge parameter discovery state handling") {
     GIVEN("Bad Case - Unknown session") {
 
         auto session = d20::Session();
 
-        const auto evse_id = std::string("everest se");
-        const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::AC};
-        const auto cert_install{false};
-        const std::vector<dt::Authorization> auth_services = {dt::Authorization::EIM};
-        const std::vector<uint16_t> vas_services{};
-        const d20::DcTransferLimits dc_limits;
-        const d20::AcTransferLimits ac_limits;
-        const d20::DcTransferLimits powersupply_limits;
-        const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
-            {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
-
-        const d20::EvseSetupConfig evse_setup{evse_id,
-                                              supported_energy_services,
-                                              auth_services,
-                                              vas_services,
-                                              cert_install,
-                                              dc_limits,
-                                              ac_limits,
-                                              std::nullopt,
-                                              control_mobility_modes,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              powersupply_limits};
+        const auto evse_setup = make_evse_setup();
 
         message_20::AC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
@@ -74,31 +82,7 @@ SCENARIO("AC charge parameter discovery state handling") {
             dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, dt::BptChannel::Unified,
             dt::GeneratorMode::GridFollowing, 230, dt::GridCodeIslandingDetectionMethod::Passive);
 
-        const auto evse_id = std::string("everest se");
-        const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::AC};
-        const auto cert_install{false};
-        const std::vector<dt::Authorization> auth_services = {dt::Authorization::EIM};
-        const std::vector<uint16_t> vas_services{};
-        const d20::DcTransferLimits dc_limits;
-        const d20::AcTransferLimits ac_limits;
-        const d20::DcTransferLimits powersupply_limits;
-        const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
-            {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
-
-        const d20::EvseSetupConfig evse_setup{evse_id,
-                                              supported_energy_services,
-                                              auth_services,
-                                              vas_services,
-                                              cert_install,
-                                              dc_limits,
-                                              ac_limits,
-                                              std::nullopt,
-                                              control_mobility_modes,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              powersupply_limits};
+        const auto evse_setup = make_evse_setup();
 
         auto session = d20::Session(service_parameters);
 
@@ -130,31 +114,7 @@ SCENARIO("AC charge parameter discovery state handling") {
             dt::ServiceCategory::AC, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
             dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230);
 
-        const auto evse_id = std::string("everest se");
-        const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::AC};
-        const auto cert_install{false};
-        const std::vector<dt::Authorization> auth_services = {dt::Authorization::EIM};
-        const std::vector<uint16_t> vas_services{};
-        const d20::DcTransferLimits dc_limits;
-        const d20::AcTransferLimits ac_limits;
-        const d20::DcTransferLimits powersupply_limits;
-        const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
-            {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
-
-        const d20::EvseSetupConfig evse_setup{evse_id,
-                                              supported_energy_services,
-                                              auth_services,
-                                              vas_services,
-                                              cert_install,
-                                              dc_limits,
-                                              ac_limits,
-                                              std::nullopt,
-                                              control_mobility_modes,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              powersupply_limits};
+        const auto evse_setup = make_evse_setup();
 
         auto session = d20::Session(service_parameters);
 
@@ -190,31 +150,7 @@ SCENARIO("AC charge parameter discovery state handling") {
 
         auto session = d20::Session(service_parameters);
 
-        const auto evse_id = std::string("everest se");
-        const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::AC};
-        const auto cert_install{false};
-        const std::vector<dt::Authorization> auth_services = {dt::Authorization::EIM};
-        const std::vector<uint16_t> vas_services{};
-        const d20::DcTransferLimits dc_limits;
-        const d20::AcTransferLimits ac_limits;
-        const d20::DcTransferLimits powersupply_limits;
-        const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
-            {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
-
-        const d20::EvseSetupConfig evse_setup{evse_id,
-                                              supported_energy_services,
-                                              auth_services,
-                                              vas_services,
-                                              cert_install,
-                                              dc_limits,
-                                              ac_limits,
-                                              std::nullopt,
-                                              control_mobility_modes,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              powersupply_limits};
+        const auto evse_setup = make_evse_setup();
 
         d20::SessionConfig config = d20::SessionConfig(evse_setup);
 
@@ -261,31 +197,7 @@ SCENARIO("AC charge parameter discovery state handling") {
 
         auto session = d20::Session(service_parameters);
 
-        const auto evse_id = std::string("everest se");
-        const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::AC};
-        const auto cert_install{false};
-        const std::vector<dt::Authorization> auth_services = {dt::Authorization::EIM};
-        const std::vector<uint16_t> vas_services{};
-        const d20::DcTransferLimits dc_limits;
-        const d20::AcTransferLimits ac_limits;
-        const d20::DcTransferLimits powersupply_limits;
-        const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
-            {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
-
-        const d20::EvseSetupConfig evse_setup{evse_id,
-                                              supported_energy_services,
-                                              auth_services,
-                                              vas_services,
-                                              cert_install,
-                                              dc_limits,
-                                              ac_limits,
-                                              std::nullopt,
-                                              control_mobility_modes,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              powersupply_limits};
+        const auto evse_setup = make_evse_setup();
 
         auto config = d20::SessionConfig(evse_setup);
 

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/service_detail.hpp>
 
 #include <algorithm>
+#include <cstdint>
 
 #include <iso15118/d20/state/service_selection.hpp>
 
@@ -127,6 +128,13 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
             session.offered_services.ac_der_iec_parameter_list[id] = parameter_set;
             res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
         }
+    } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::AC_DER_SAE)) {
+        res.service = message_20::to_underlying_value(dt::ServiceCategory::AC_DER_SAE);
+        // Using AC parameter list
+        for (auto& parameter_set : config.ac_parameter_list) {
+            session.offered_services.ac_parameter_list[id] = parameter_set;
+            res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
+        }
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::DC)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::DC);
         for (auto& parameter_set : config.dc_parameter_list) {
@@ -201,16 +209,13 @@ Result ServiceDetail::feed(Event ev) {
         logf_info("Requested info about ServiceID: %d", req->service);
 
         using Service = dt::ServiceCategory;
-        const std::vector<uint16_t> energy_services{message_20::to_underlying_value(Service::AC),
-                                                    message_20::to_underlying_value(Service::DC),
-                                                    message_20::to_underlying_value(Service::WPT),
-                                                    message_20::to_underlying_value(Service::DC_ACDP),
-                                                    message_20::to_underlying_value(Service::AC_BPT),
-                                                    message_20::to_underlying_value(Service::DC_BPT),
-                                                    message_20::to_underlying_value(Service::DC_ACDP_BPT),
-                                                    message_20::to_underlying_value(Service::MCS),
-                                                    message_20::to_underlying_value(Service::MCS_BPT),
-                                                    message_20::to_underlying_value(Service::AC_DER_IEC)};
+        const std::vector<std::uint16_t> energy_services{
+            message_20::to_underlying_value(Service::AC),          message_20::to_underlying_value(Service::DC),
+            message_20::to_underlying_value(Service::WPT),         message_20::to_underlying_value(Service::DC_ACDP),
+            message_20::to_underlying_value(Service::AC_BPT),      message_20::to_underlying_value(Service::DC_BPT),
+            message_20::to_underlying_value(Service::DC_ACDP_BPT), message_20::to_underlying_value(Service::MCS),
+            message_20::to_underlying_value(Service::MCS_BPT),     message_20::to_underlying_value(Service::AC_DER_IEC),
+            message_20::to_underlying_value(Service::AC_DER_SAE)};
 
         std::optional<dt::ServiceParameterList> custom_vas_parameters{std::nullopt};
 

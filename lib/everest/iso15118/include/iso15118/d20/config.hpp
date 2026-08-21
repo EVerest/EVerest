@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <cstdint>
+#include <ctime>
 #include <map>
 #include <optional>
 #include <vector>
@@ -35,6 +36,34 @@ struct DerIecSetupConfig {
     iec::GridConnectionMode grid_connection_mode;
 };
 
+/// \brief Complete but deliberately inert default SAE grid code configuration.
+///
+/// Every enable and permit_service is false, so it does nothing. Values stay schema conformant, and every
+/// mandatory curve carries the two data points the schema requires as a minimum. This is not a real grid
+/// code: a deployment needing actual grid-code behavior must supply its own configuration.
+sae::DERControl get_default_sae_der_control();
+
+struct DerSaeSetupConfig {
+    explicit DerSaeSetupConfig(sae::DERControl der_control_, sae::RequiredDEROperatingMode op_mode,
+                               sae::GridConnectionMode conn_mode) :
+        der_control(std::move(der_control_)),
+        required_der_operating_mode(op_mode),
+        grid_connection_mode(conn_mode),
+        der_control_update_time(static_cast<std::uint64_t>(std::time(nullptr))) {
+    }
+
+    /// Installs the inert default grid code, which is not a real one and must not be treated as one.
+    DerSaeSetupConfig() :
+        DerSaeSetupConfig(get_default_sae_der_control(), sae::RequiredDEROperatingMode::GridFollowing,
+                          sae::GridConnectionMode::GridConnected) {
+    }
+
+    sae::DERControl der_control{};
+    sae::RequiredDEROperatingMode required_der_operating_mode{sae::RequiredDEROperatingMode::GridFollowing};
+    sae::GridConnectionMode grid_connection_mode{sae::GridConnectionMode::GridConnected};
+    std::uint64_t der_control_update_time{0}; // SECC time
+};
+
 struct EvseSetupConfig {
     std::string evse_id;
     std::vector<message_20::datatypes::ServiceCategory> supported_energy_services;
@@ -43,12 +72,14 @@ struct EvseSetupConfig {
     bool enable_certificate_install_service;
     d20::DcTransferLimits dc_limits;
     d20::AcTransferLimits ac_limits;
-    std::optional<d20::IecDerTransferLimits> der_limits;
+    std::optional<d20::IecDerTransferLimits> der_iec_limits;
+    std::optional<d20::SaeDerTransferLimits> der_sae_limits;
     std::vector<ControlMobilityNeedsModes> control_mobility_modes;
     std::optional<std::string> custom_protocol{std::nullopt};
     std::optional<AcSetupConfig> ac_setup_config{std::nullopt};
     std::optional<BptSetupConfig> bpt_setup_config{std::nullopt};
     std::optional<DerIecSetupConfig> der_iec_setup_config{std::nullopt};
+    std::optional<DerSaeSetupConfig> der_sae_setup_config{std::nullopt};
     d20::DcTransferLimits powersupply_limits;
     bool selecting_sap_based_on_energy_service{false};
 };
@@ -56,6 +87,12 @@ struct EvseSetupConfig {
 // This should only have EVSE information
 struct SessionConfig {
     explicit SessionConfig(EvseSetupConfig);
+
+    /// \brief Replaces the offered energy services.
+    ///
+    /// Every replacement runs the same AC_DER_SAE offer rules as the constructor, so a non-conformant
+    /// AC_DER_SAE cannot re-enter the offer through a mid session service update.
+    void set_supported_energy_transfer_services(std::vector<message_20::datatypes::ServiceCategory> services);
 
     std::string evse_id;
 
@@ -81,7 +118,10 @@ struct SessionConfig {
     AcTransferLimits ac_limits;
 
     DerIecSetupConfig der_iec_setup_config;
-    std::optional<IecDerTransferLimits> der_limits;
+    std::optional<IecDerTransferLimits> der_iec_limits;
+
+    std::optional<DerSaeSetupConfig> der_sae_setup_config;
+    std::optional<SaeDerTransferLimits> der_sae_limits;
 
     DcTransferLimits powersupply_limits;
 
