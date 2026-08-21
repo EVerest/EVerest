@@ -3,17 +3,17 @@ active_modules:
     module: RpcApi
     connections:
       evse_manager:
-        - module_id: evse_manager_1
-          implementation_id: evse
-        - module_id: evse_manager_2
-          implementation_id: evse
+      - module_id: evse_manager_1
+        implementation_id: evse
+      - module_id: evse_manager_2
+        implementation_id: evse
       evse_energy_sink:
-        - module_id: grid_connection_point
-          implementation_id: external_limits
-        - module_id: evse_manager_1_api_sink
-          implementation_id: external_limits
-        - module_id: evse_manager_2_api_sink
-          implementation_id: external_limits
+      - module_id: grid_connection_point
+        implementation_id: external_limits
+      - module_id: evse_manager_1_api_sink
+        implementation_id: external_limits
+      - module_id: evse_manager_2_api_sink
+        implementation_id: external_limits
   iso15118_charger:
     module: EvseV2G
     config_module:
@@ -21,8 +21,8 @@ active_modules:
       tls_security: allow
     connections:
       security:
-        - module_id: evse_security
-          implementation_id: main
+      - module_id: evse_security
+        implementation_id: main
   iso15118_car:
     module: PyEvJosev
     config_module:
@@ -44,17 +44,17 @@ active_modules:
       ac_enforce_hlc: false
     connections:
       bsp:
-        - module_id: yeti_driver_1
-          implementation_id: board_support
+      - module_id: yeti_driver_1
+        implementation_id: board_support
       powermeter_grid_side:
-        - module_id: yeti_driver_1
-          implementation_id: powermeter
+      - module_id: yeti_driver_1
+        implementation_id: powermeter
       slac:
-        - module_id: slac
-          implementation_id: evse
+      - module_id: slac
+        implementation_id: evse
       hlc:
-        - module_id: iso15118_charger
-          implementation_id: charger
+      - module_id: iso15118_charger
+        implementation_id: charger
   evse_manager_2:
     module: EvseManager
     mapping:
@@ -71,11 +71,11 @@ active_modules:
       ac_enforce_hlc: false
     connections:
       bsp:
-        - module_id: yeti_driver_2
-          implementation_id: board_support
+      - module_id: yeti_driver_2
+        implementation_id: board_support
       powermeter_grid_side:
-        - module_id: yeti_driver_2
-          implementation_id: powermeter
+      - module_id: yeti_driver_2
+        implementation_id: powermeter
   evse_manager_1_api_sink:
     module: EnergyNode
     mapping:
@@ -86,8 +86,8 @@ active_modules:
       phase_count: 3
     connections:
       energy_consumer:
-        - module_id: evse_manager_1
-          implementation_id: energy_grid
+      - module_id: evse_manager_1
+        implementation_id: energy_grid
   evse_manager_2_api_sink:
     module: EnergyNode
     mapping:
@@ -98,8 +98,8 @@ active_modules:
       phase_count: 3
     connections:
       energy_consumer:
-        - module_id: evse_manager_2
-          implementation_id: energy_grid
+      - module_id: evse_manager_2
+        implementation_id: energy_grid
   yeti_driver_1:
     module: YetiSimulator
     mapping:
@@ -117,32 +117,27 @@ active_modules:
   slac:
     module: SlacSimulator
   ev_manager_1:
-    module: EvManager
+    module: EvSimulator
     config_module:
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
     connections:
       ev_board_support:
-        - module_id: yeti_driver_1
-          implementation_id: ev_board_support
+      - module_id: yeti_driver_1
+        implementation_id: ev_board_support
       ev:
-        - module_id: iso15118_car
-          implementation_id: ev
+      - module_id: iso15118_car
+        implementation_id: ev
       slac:
-        - module_id: slac
-          implementation_id: ev
+      - module_id: slac
+        implementation_id: ev
   ev_manager_2:
-    module: EvManager
+    module: EvSimulator
     config_module:
       connector_id: 2
-      auto_enable: true
-      auto_exec: false
     connections:
       ev_board_support:
-        - module_id: yeti_driver_2
-          implementation_id: ev_board_support
+      - module_id: yeti_driver_2
+        implementation_id: ev_board_support
   auth:
     module: Auth
     config_module:
@@ -150,16 +145,16 @@ active_modules:
       selection_algorithm: FindFirst
     connections:
       token_provider:
-        - module_id: token_provider_1
-          implementation_id: main
+      - module_id: token_provider_1
+        implementation_id: main
       token_validator:
-        - module_id: token_validator
-          implementation_id: main
+      - module_id: token_validator
+        implementation_id: main
       evse_manager:
-        - module_id: evse_manager_1
-          implementation_id: evse
-        - module_id: evse_manager_2
-          implementation_id: evse
+      - module_id: evse_manager_1
+        implementation_id: evse
+      - module_id: evse_manager_2
+        implementation_id: evse
   evse_security:
     module: EvseSecurity
     config_module:
@@ -180,8 +175,8 @@ active_modules:
     module: EnergyManager
     connections:
       energy_trunk:
-        - module_id: grid_connection_point
-          implementation_id: energy_grid
+      - module_id: grid_connection_point
+        implementation_id: energy_grid
   grid_connection_point:
     module: EnergyNode
     mapping:
@@ -193,13 +188,13 @@ active_modules:
     connections:
       price_information: []
       energy_consumer:
-        - module_id: evse_manager_1_api_sink
-          implementation_id: energy_grid
-        - module_id: evse_manager_2_api_sink
-          implementation_id: energy_grid
+      - module_id: evse_manager_1_api_sink
+        implementation_id: energy_grid
+      - module_id: evse_manager_2_api_sink
+        implementation_id: energy_grid
       powermeter:
-        - module_id: yeti_driver_1
-          implementation_id: powermeter
+      - module_id: yeti_driver_1
+        implementation_id: powermeter
   error_history:
     module: ErrorHistory
     config_implementation:

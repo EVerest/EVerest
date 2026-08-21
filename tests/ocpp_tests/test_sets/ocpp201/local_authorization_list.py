@@ -623,8 +623,15 @@ async def test_C13(
 
     await asyncio.sleep(2)
 
+    # Serialize the two swipes before plug. The auth path uses detached
+    # threads that race to claim the EVSE, so the "unknown" token must be
+    # the last fully-processed swipe before plug_in() makes the connector
+    # available. Without these settle points the wrong token (125) can win
+    # the race and no "unknown" Started event is emitted. Do not remove.
     test_controller.swipe(id_token_125.id_token)
+    await asyncio.sleep(1)
     test_controller.swipe("unknown")
+    await asyncio.sleep(1)
     test_controller.plug_in()
 
     await asyncio.sleep(5)

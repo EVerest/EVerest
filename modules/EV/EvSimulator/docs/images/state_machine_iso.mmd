@@ -1,0 +1,38 @@
+stateDiagram-v2
+    direction TB
+
+    [*] --> Plugged
+
+    Plugged --> SlacMatching : BeginSession, latched ISO mode (AcIso2 / AcIsoD20 / DcIso2 / DcIsoD20)
+
+    SlacMatching --> V2GNegotiating : SlacState=MATCHED
+    SlacMatching --> Faulted : StateDeadline (30s, SlacTimeout)
+
+    V2GNegotiating --> Charging : IsoPowerReady (AC)
+    V2GNegotiating --> Charging : IsoDcPowerOn / dc_power_on (DC)
+    V2GNegotiating --> V2GNegotiating : IsoPowerReady (DC, CP=C + power-on, await dc_power_on)
+    V2GNegotiating --> Stopping : IsoStopFromCharger / Unplug
+    V2GNegotiating --> Faulted : StateDeadline (60s, V2GTimeout)
+
+    Charging --> Paused : PauseSession / IsoPauseFromCharger
+    Charging --> Stopping : StopSession / IsoStopFromCharger
+    Charging --> Faulted : InjectFault
+
+    Paused --> BcbToggling : ResumeSession (no live ISO session, seeds bcb_remaining=6)
+    Paused --> Paused : ResumeSession (ISO session live, defer + arm 15s fallback)
+    Paused --> BcbToggling : IsoV2GFinished (release deferred resume)
+    Paused --> BcbToggling : StateDeadline (15s deferred-resume fallback)
+    Paused --> Stopping : Unplug / StateDeadline (1h watchdog)
+    Paused --> Faulted : InjectFault
+
+    BcbToggling --> V2GNegotiating : 6x StateDeadline (link kept, DC D-LINK_PAUSE)
+    BcbToggling --> SlacMatching : 6x StateDeadline + slac_unmatched (re-match)
+    BcbToggling --> Faulted : InjectFault
+
+    Stopping --> [*] : IsoV2GFinished / StateDeadline (10s)
+    Stopping --> Faulted : InjectFault
+
+    note right of Paused
+        CP held at C while an ISO session is still
+        tearing down, lowered to B on IsoV2GFinished.
+    end note
