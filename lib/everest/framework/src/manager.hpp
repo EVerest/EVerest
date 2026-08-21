@@ -44,6 +44,12 @@ struct ModuleShutdownInfo {
     int wstatus;
 };
 
+// Data structure to keep MQTT Last-Will-and-Testament related items together
+struct LwtCfg {
+    std::string topic;
+    std::string data;
+};
+
 /// @file manager.hpp
 ///
 /// `ManagerState` is the **phase** of the main-loop (what the manager is doing right now). It lives
@@ -64,6 +70,16 @@ enum class ShutdownCause {
     Normal,
     Restart,
     Crash
+};
+
+/// \brief Deferred lifecycle-API intent recorded on the MQTT thread and consumed by the main loop.
+///
+/// The LifecycleAPI stop/restart command handlers run on an MQTT worker thread. Stop/Restart
+/// are mutually exclusive, so a single atomic with last-writer-wins semantics is sufficient.
+enum class LifecycleApiRequest {
+    None,
+    Stop,
+    Restart
 };
 
 class Manager {
@@ -122,8 +138,10 @@ private:
 
     /// \brief Create MQTT abstraction, connect, and spawn its main loop thread.
     /// \param ms Fully resolved manager settings for this run.
+    /// \param lwt_cfg Optional Last-Will-and-Testament
     /// \return Connected MQTT abstraction, or nullptr on connection failure.
-    std::unique_ptr<Everest::MQTTAbstraction> create_and_connect_mqtt(const Everest::ManagerSettings& ms) const;
+    std::unique_ptr<Everest::MQTTAbstraction> create_and_connect_mqtt(const Everest::ManagerSettings& ms,
+                                                                      std::optional<LwtCfg> lwt_cfg) const;
 
     /// \brief Collect standalone module ids from config plus CLI overrides.
     /// \param config Validated manager configuration for this run.
@@ -334,8 +352,21 @@ private:
     ///        needs polling, long otherwise (SIGINT/SIGTERM/SIGCHLD wake the poll immediately).
     int signal_poll_timeout_ms() const;
 
+    /// \brief True when --lifecycle-api was given, i.e. the lifecycle status topic is in use.
+    ///
+    /// Recomputed from m_vm rather than cached: the last-will registration, the LifecycleAPI
+    /// construction and the final shutdown status must all agree on this predicate.
+    bool lifecycle_api_active() const;
+
     /// \brief Register a callback invoked on every state transition with (old_state, new_state).
     void register_state_transition_handler(std::function<void(ManagerState, ManagerState)> handler);
+
+    /// \brief Wake the main-loop poll after recording a lifecycle-API request (MQTT-thread safe).
+    void poke_lifecycle_wakeup();
+
+    /// \brief Consume a deferred lifecycle-API stop/restart request on the main loop.
+    /// \param ctx Runtime dependencies for the current run.
+    void handle_lifecycle_api_request(RuntimeContext& ctx);
 
     const boost::program_options::variables_map& m_vm;
     Everest::StatusFifo* m_status_fifo{nullptr};
@@ -353,6 +384,15 @@ private:
     std::atomic<ManagerState> m_state{ManagerState::Idle};
     ShutdownCause m_shutdown_cause{ShutdownCause::None};
     std::atomic<bool> m_sigint_received{false};
+    // Deferred lifecycle-API intent: set on the MQTT worker thread by the stop/restart command
+    // handlers, consumed on the main loop by handle_lifecycle_api_request(). Keeps all mutation of
+    // m_module_handles/shutdown_* on the main thread. Last-writer-wins (Stop/Restart exclusive).
+    std::atomic<LifecycleApiRequest> m_lifecycle_api_request{LifecycleApiRequest::None};
+    // eventfd owned by run(): the MQTT stop/restart handlers write to it after setting
+    // m_lifecycle_api_request to wake up the main-loop poll() immediately.
+    // -1 when not yet created / after run() returns. Atomic because the MQTT worker thread reads it
+    // in poke_lifecycle_wakeup() while the main thread creates/closes it in run().
+    std::atomic<int> m_lifecycle_wakeup_fd{-1};
     // Unexpected-exit recovery attempts for this manager process lifetime (current config).
     // Not cleared on transition to Running; resets when run() starts (future: also on config change).
     std::uint8_t m_unexpected_module_exit_count{0};

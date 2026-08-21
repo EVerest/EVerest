@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -17,6 +18,7 @@
 #include <fcntl.h>
 #include <pwd.h>
 #include <signal.h>
+#include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -28,9 +30,11 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
+#include <configuration_api.hpp>
 #include <everest/logging.hpp>
 #include <framework/everest.hpp>
 #include <framework/runtime.hpp>
+#include <lifecycle_api.hpp>
 #include <utils/config.hpp>
 #include <utils/config/config_service_core.hpp>
 #include <utils/config/slot_manager.hpp>
@@ -430,8 +434,20 @@ void Manager::shutdown_modules(const std::map<pid_t, std::string>& modules, cons
 
 namespace {
 
-/// \brief Disconnect MQTT before the manager process exits (after controller shutdown).
-void disconnect_mqtt(MQTTAbstraction& mqtt_abstraction) {
+/// \brief Publish the final lifecycle status and disconnect MQTT before the manager process exits
+///        (after controller shutdown).
+///
+/// The publish must happen here, immediately before the disconnect: see
+/// LifecycleAPI::publish_shutdown_status() for why that ordering is load-bearing. Doing it in here
+/// rather than at the call sites means no exit path can forget it; and since only exit paths call
+/// this - module restarts keep the connection - it cannot fire on a restart.
+///
+/// \param lifecycle_api_active Whether --lifecycle-api was given. Without the gate, a run without
+///        the lifecycle API would create that retained topic out of nowhere on exit.
+void disconnect_mqtt(MQTTAbstraction& mqtt_abstraction, bool lifecycle_api_active) {
+    if (lifecycle_api_active) {
+        Everest::api::lifecycle::LifecycleAPI::publish_shutdown_status(mqtt_abstraction);
+    }
     mqtt_abstraction.disconnect();
 }
 
@@ -515,7 +531,7 @@ std::optional<int> Manager::transition_to_idle_after_shutdown(std::string_view l
 int Manager::transition_to_exiting_after_shutdown(RuntimeContext& ctx, ManagerAdminPanel& admin_panel, int exit_code,
                                                   bool reset_state) {
     admin_panel.shutdown_controller();
-    disconnect_mqtt(ctx.mqtt_abstraction);
+    disconnect_mqtt(ctx.mqtt_abstraction, lifecycle_api_active());
     if (reset_state) {
         reset_shutdown_state();
     }
@@ -666,6 +682,76 @@ void Manager::handle_initiate_graceful_shutdown(const std::chrono::steady_clock:
     }
 }
 
+void Manager::poke_lifecycle_wakeup() {
+    // Called from the MQTT worker thread after storing m_lifecycle_api_request. The store (seq_cst)
+    // is sequenced before this write() syscall (a full barrier), so the flag is visible to the main
+    // loop before the eventfd becomes readable.
+    const int fd = m_lifecycle_wakeup_fd.load();
+    if (fd != -1) {
+        const uint64_t one = 1;
+        if (write(fd, &one, sizeof(one)) != static_cast<ssize_t>(sizeof(one))) {
+            // A failed poke only costs latency: the request is still serviced on the next poll tick.
+            EVLOG_warning << fmt::format("Failed to poke lifecycle wakeup eventfd ({})", strerror(errno));
+        }
+    }
+}
+
+void Manager::handle_lifecycle_api_request(RuntimeContext& ctx) {
+    // Runs on the main loop. Consumes the intent recorded by the MQTT-thread stop/restart handlers
+    // and performs the actual action here, so all m_module_handles/shutdown_* mutation stays on the
+    // main thread. Live state is re-checked because it may have changed since the reply was sent.
+    const auto req = m_lifecycle_api_request.exchange(LifecycleApiRequest::None);
+    if (req == LifecycleApiRequest::None) {
+        return;
+    }
+
+    // The reply ("Stopping"/"Restarting"/"Starting") already went out from the MQTT thread, so every
+    // (intent x state) combination is handled deliberately below. Where we do nothing, the concurrent
+    // crash/recovery flow owns the lifecycle status topic and narrates the real outcome; publishing
+    // from here would contradict it.
+    if (req == LifecycleApiRequest::Stop) {
+        if (are_modules_started()) {
+            handle_initiate_graceful_shutdown(std::chrono::steady_clock::now(), false,
+                                              "LifecycleAPI requested stopping the modules.", ctx.mqtt_abstraction,
+                                              ctx.ms);
+        } else {
+            // A Stop asks for "modules not running", which is either already true (Idle) or actively
+            // being reached (a shutdown flow is draining them), so dropping it breaks no promise.
+            EVLOG_info << "LifecycleAPI Stop request obsolete on consume (state="
+                       << state_to_string(current_state_unlocked()) << "); modules are already stopped or stopping.";
+        }
+        return;
+    }
+
+    // req == LifecycleApiRequest::Restart
+    if (are_modules_started()) {
+        // Also covers a Restart accepted while Idle ("Starting") that raced with the modules coming up.
+        m_shutdown_cause = ShutdownCause::Restart;
+        m_config_service_core->notice_module_restart_triggered();
+        handle_initiate_graceful_shutdown(std::chrono::steady_clock::now(), false,
+                                          "LifecycleAPI requested restart of the modules.", ctx.mqtt_abstraction,
+                                          ctx.ms);
+    } else if (is_idle()) {
+        // Also fulfils a Restart accepted while Running ("Restarting") that a crash-to-idle recovery
+        // overtook. On validation failure notice_cfg_validation_failed() publishes FailedToStart.
+        if (reload_and_update_context(ctx)) {
+            m_module_handles = handle_start_modules(ctx);
+            EVLOG_info << "Modules restart initiated with reloaded configuration.";
+        } else {
+            m_config_service_core->notice_cfg_validation_failed();
+            EVLOG_error << "Failed to reload the configuration, staying in Idle.";
+        }
+    } else {
+        // A transition (typically a module crash) moved us into the shutdown/recovery flow, which owns
+        // all module-lifecycle mutation, so the intent is dropped. Not FailedToStart: the recovery flow
+        // will publish the actual outcome (Starting -> Running, or NotRunning). Warn so it is not silent.
+        EVLOG_warning << "LifecycleAPI Restart request dropped: manager state changed to "
+                      << state_to_string(current_state_unlocked())
+                      << " before it could be serviced (likely a module crash/recovery). The lifecycle "
+                         "status stream reflects the actual outcome.";
+    }
+}
+
 bool Manager::reload_and_update_context(RuntimeContext& ctx) {
     std::shared_ptr<const ManagerConfig> config;
     // The database access belongs inside the try: a throw from reinitialize_from_db() (a corrupt or
@@ -747,6 +833,8 @@ int Manager::run() {
     auto status_fifo = StatusFifo::create_from_path(m_vm["status-fifo"].as<std::string>());
     m_status_fifo = &status_fifo;
     const bool boot_into_idle = m_vm.count("into-idle") != 0;
+    const bool cfg_api_active = m_vm.count("configuration-api") != 0;
+    const bool lfc_api_active = lifecycle_api_active();
     m_sigint_received = false;
     m_shutdown_cause = ShutdownCause::None;
     transition_to(ManagerState::Initializing);
@@ -754,6 +842,9 @@ int Manager::run() {
     m_shutdown_start_time = std::nullopt;
     m_force_terminate_start_time = std::nullopt;
     m_force_kill_sent = false;
+    // Reset before the LifecycleAPI is constructed below so no stop/restart request can be lost. The
+    // eventfd wakeup is created before the LifecycleAPI too, so a handler can never observe fd == -1.
+    m_lifecycle_api_request.store(LifecycleApiRequest::None);
     auto signal_polling = system::SignalPolling();
 
     const auto prefix_opt = parse_string_option(m_vm, "prefix");
@@ -887,7 +978,23 @@ int Manager::run() {
     m_config_service_core =
         std::make_unique<config::ConfigServiceCore>(ms, m_db_connection, std::move(persistence_mirror));
 
-    std::unique_ptr<MQTTAbstraction> mqtt_abstraction = create_and_connect_mqtt(ms);
+    // Teardown-ordering constraint: mqtt_abstraction is declared before config_service, configuration_api
+    // and lifecycle_api below, so on any return from run() those objects are destroyed first while
+    // mqtt_abstraction (and its MessageHandler worker threads, joined only in ~MQTTAbstractionImpl) still
+    // live. Those workers dispatch external-MQTT requests into handlers that capture the API objects and
+    // config_service. The ApiTeardownGuard declared after them (see below) stops message handling before
+    // they are destroyed, so no handler can fire into freed memory.
+    std::unique_ptr<MQTTAbstraction> mqtt_abstraction;
+    if (lfc_api_active) {
+        // Covers an unclean death only; a manager that reaches disconnect_mqtt() publishes the same
+        // payload itself (see LifecycleAPI::publish_shutdown_status()).
+        LwtCfg lwt_cfg;
+        lwt_cfg.topic = Everest::api::lifecycle::LifecycleAPI::Lwt::get_topic();
+        lwt_cfg.data = Everest::api::lifecycle::LifecycleAPI::Lwt::get_data();
+        mqtt_abstraction = create_and_connect_mqtt(ms, std::optional<LwtCfg>{lwt_cfg});
+    } else {
+        mqtt_abstraction = create_and_connect_mqtt(ms, std::nullopt);
+    }
     if (!mqtt_abstraction) {
         return EXIT_FAILURE;
     }
@@ -971,6 +1078,117 @@ int Manager::run() {
         }
     });
 
+    bool cfg_api_rw = false;
+    std::unique_ptr<Everest::api::configuration::ConfigurationAPI> configuration_api;
+    if (cfg_api_active) {
+        const auto cfg_api_value = m_vm["configuration-api"].as<std::string>();
+        if (cfg_api_value != "ro" && cfg_api_value != "rw") {
+            EVLOG_error << "Invalid value for --configuration-api: '" << cfg_api_value << "'; expected 'ro' or 'rw'.";
+            return EXIT_FAILURE;
+        }
+        cfg_api_rw = cfg_api_value == "rw";
+        if (cfg_api_rw) {
+            EVLOG_info << "Starting ConfigurationAPI in read-write mode";
+        } else {
+            EVLOG_info << "Starting ConfigurationAPI in read-only mode";
+        }
+        configuration_api = std::make_unique<Everest::api::configuration::ConfigurationAPI>(
+            *mqtt_abstraction, *m_config_service_core, not cfg_api_rw);
+    }
+
+    // eventfd the MQTT lifecycle-API handlers poke so the main-loop poll wakes immediately instead
+    // of waiting for the idle timeout. Created before the LifecycleAPI below so a stop/restart handler
+    // (live on the MQTT thread as soon as the API is constructed) can never observe fd == -1.
+    const int lifecycle_wakeup_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    if (lifecycle_wakeup_fd == -1) {
+        EVLOG_error << fmt::format(
+            "Failed to create lifecycle wakeup eventfd ({}); lifecycle-API stop/restart requests "
+            "will only be serviced on the next poll timeout tick.",
+            strerror(errno));
+    }
+    m_lifecycle_wakeup_fd.store(lifecycle_wakeup_fd);
+    // RAII guard for the m_lifecycle_wakeup_fd
+    struct LifecycleWakeupFdGuard {
+        std::atomic<int>& fd;
+        ~LifecycleWakeupFdGuard() {
+            // Exchange to -1 before close() so a concurrent poke reads either the valid fd or -1,
+            // never the fd value after it has been closed. A small TOCTOU window remains (a poke may
+            // have read the fd just before this exchange); MQTT handler teardown before this guard is
+            // destroyed is what actually prevents a write() to the closed fd (separate commit).
+            const int old = fd.exchange(-1);
+            if (old != -1) {
+                close(old);
+            }
+        }
+    } lifecycle_wakeup_fd_guard{m_lifecycle_wakeup_fd};
+
+    bool lfc_api_rw = false;
+    std::unique_ptr<Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
+    if (lfc_api_active) {
+        const auto lfc_api_value = m_vm["lifecycle-api"].as<std::string>();
+        if (lfc_api_value != "ro" && lfc_api_value != "rw") {
+            EVLOG_error << "Invalid value for --lifecycle-api: '" << lfc_api_value << "'; expected 'ro' or 'rw'.";
+            return EXIT_FAILURE;
+        }
+        lfc_api_rw = lfc_api_value == "rw";
+        if (lfc_api_rw) {
+            EVLOG_info << "Starting LifecycleAPI in read-write mode";
+        } else {
+            EVLOG_info << "Starting LifecycleAPI in read-only mode";
+        }
+        lifecycle_api = std::make_unique<Everest::api::lifecycle::LifecycleAPI>(
+            *mqtt_abstraction, *m_config_service_core,
+            configuration_api ? (cfg_api_rw ? Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW
+                                            : Everest::api::lifecycle::ConfigurationApiStatus::AvailableRO)
+                              : Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
+            not lfc_api_rw,
+            [this]() {
+                // Runs on the MQTT worker thread. Decide the reply from thread-safe state predicates here
+                // and record the intent; the main loop performs the actual shutdown in handle_lifecycle_api_request().
+                Everest::api::lifecycle::StopModulesResult ret = Everest::api::lifecycle::StopModulesResult::Rejected;
+                if (is_idle()) {
+                    ret = Everest::api::lifecycle::StopModulesResult::NoModulesToStop;
+                } else if (are_modules_started()) {
+                    m_lifecycle_api_request.store(LifecycleApiRequest::Stop);
+                    poke_lifecycle_wakeup();
+                    ret = Everest::api::lifecycle::StopModulesResult::Stopping;
+                }
+                return ret;
+            },
+            [this]() {
+                // Runs on the MQTT worker thread. Decide the reply and record the  intent;
+                // the main loop performs the actual restart in handle_lifecycle_api_request().
+                Everest::api::lifecycle::RestartModulesResult ret =
+                    Everest::api::lifecycle::RestartModulesResult::Rejected;
+                if (are_modules_started()) {
+                    m_lifecycle_api_request.store(LifecycleApiRequest::Restart);
+                    poke_lifecycle_wakeup();
+                    ret = Everest::api::lifecycle::RestartModulesResult::Restarting;
+                } else if (is_idle()) {
+                    m_lifecycle_api_request.store(LifecycleApiRequest::Restart);
+                    poke_lifecycle_wakeup();
+                    ret = Everest::api::lifecycle::RestartModulesResult::Starting;
+                }
+                return ret;
+            });
+    }
+
+    // Establishes the teardown-ordering guarantee documented at mqtt_abstraction above. Declared last of
+    // the API-related locals so it is destroyed first on any return from run(): stop_message_handling()
+    // joins the MQTT worker threads, after which no registered handler can run, so the subsequently
+    // destroyed lifecycle_api, lifecycle_wakeup_fd_guard, configuration_api and config_service can no
+    // longer be reached by a handler. Resetting the set-runtime-parameter handler drops the by-reference
+    // capture of config_service held by m_config_service_core (a member that outlives run()) before
+    // config_service is destroyed.
+    struct ApiTeardownGuard {
+        MQTTAbstraction& mqtt_abstraction;
+        config::ConfigServiceCore& config_service_core;
+        ~ApiTeardownGuard() {
+            mqtt_abstraction.stop_message_handling();
+            config_service_core.register_set_runtime_parameter_handler(config::ConfigServiceCore::SetParamCallback{});
+        }
+    } api_teardown_guard{*mqtt_abstraction, *m_config_service_core};
+
     if (boot_into_idle) {
         EVLOG_info << "Requested by command-line-parameter -> entering Idle";
         transition_to(ManagerState::Idle);
@@ -1018,6 +1236,10 @@ int Manager::run() {
         if (const auto exit_from_panel = handle_controller_ipc_poll(runtime_ctx, admin_panel, prefix_opt)) {
             return *exit_from_panel;
         }
+
+        // Consume any deferred LifecycleAPI stop/restart request
+        handle_lifecycle_api_request(runtime_ctx);
+
         if (const auto exit_from_signal = handle_signal_poll(signal_polling, runtime_ctx, admin_panel)) {
             return *exit_from_signal;
         }
@@ -1083,8 +1305,12 @@ Manager::load_and_validate_config(const ManagerSettings& ms,
     return config;
 }
 
-std::unique_ptr<MQTTAbstraction> Manager::create_and_connect_mqtt(const ManagerSettings& ms) const {
+std::unique_ptr<MQTTAbstraction> Manager::create_and_connect_mqtt(const ManagerSettings& ms,
+                                                                  std::optional<LwtCfg> lwt_cfg) const {
     auto mqtt_abstraction = make_mqtt_abstraction(ms.mqtt_settings);
+    if (lwt_cfg.has_value()) {
+        mqtt_abstraction->set_lwt(lwt_cfg.value().topic, lwt_cfg.value().data);
+    }
     if (!mqtt_abstraction->connect()) {
         if (not ms.mqtt_settings.uses_socket()) {
             EVLOG_error << fmt::format("Cannot connect to MQTT broker at {}:{}", ms.mqtt_settings.broker_host,
@@ -1582,7 +1808,7 @@ std::optional<int> Manager::handle_signal(int signo, RuntimeContext& ctx, Manage
         if (m_module_handles.empty()) {
             print_shutdown_message(m_shutdown_start_time);
             admin_panel.shutdown_controller();
-            disconnect_mqtt(ctx.mqtt_abstraction);
+            disconnect_mqtt(ctx.mqtt_abstraction, lifecycle_api_active());
             transition_to(ManagerState::Exiting);
             return EXIT_SUCCESS;
         }
@@ -1717,12 +1943,29 @@ int Manager::signal_poll_timeout_ms() const {
     return IDLE_SIGNAL_POLL_TIMEOUT_MS;
 }
 
+bool Manager::lifecycle_api_active() const {
+    return m_vm.count("lifecycle-api") != 0;
+}
+
 std::optional<int> Manager::handle_signal_poll(system::SignalPolling& signal_polling, RuntimeContext& ctx,
                                                ManagerAdminPanel& admin_panel) {
-    // a readable controller IPC socket also ends the poll, so controller requests are serviced
-    // promptly on the next loop iteration even during a long idle poll
-    const auto signal_received =
-        signal_polling.poll_signal(signal_poll_timeout_ms(), admin_panel.controller_ipc_fd().value_or(-1));
+    // A readable controller IPC socket or lifecycle wakeup eventfd also ends the poll, so controller
+    // requests and LifecycleAPI stop/restart requests are serviced promptly on the next loop
+    // iteration even during a long idle poll.
+    const int lifecycle_wakeup_fd = m_lifecycle_wakeup_fd.load();
+    const auto signal_received = signal_polling.poll_signal(
+        signal_poll_timeout_ms(), admin_panel.controller_ipc_fd().value_or(-1), lifecycle_wakeup_fd);
+
+    // Drain the lifecycle wakeup eventfd (non-blocking): one read returns and zeroes the whole
+    // accumulated counter. The read() is a full barrier so the subsequent exchange in
+    // handle_lifecycle_api_request() observes the flag stored by the MQTT thread.
+    if (lifecycle_wakeup_fd != -1) {
+        uint64_t drained;
+        while (read(lifecycle_wakeup_fd, &drained, sizeof(drained)) == static_cast<ssize_t>(sizeof(drained))) {
+            // loop until EAGAIN
+        }
+    }
+
     if (!signal_received.has_value()) {
         return std::nullopt;
     }
@@ -1752,6 +1995,10 @@ int main(int argc, char* argv[]) {
                        "the default config directory. Without --db, the config is loaded from YAML on every start "
                        "and runtime configuration changes are persisted to user-config/<config-name>.yaml.");
     desc.add_options()("conf", po::value<std::string>(), "Deprecated: Same as --config. Do not use both.");
+    desc.add_options()("configuration-api", po::value<std::string>()->implicit_value("ro"),
+                       "Start the ConfigurationAPI. Value must be 'ro' (default) or 'rw' (e.g. '=rw' for read-write)");
+    desc.add_options()("lifecycle-api", po::value<std::string>()->implicit_value("ro"),
+                       "Start the lifecycle_API. Value must be 'ro' (default) or 'rw' (e.g. '=rw' for read-write)");
     desc.add_options()("db", po::value<std::string>(),
                        "Full path to the configuration database file. Optional: without --db an in-memory database "
                        "is used and the YAML config is authoritative on every start. With --db and --config, the "
