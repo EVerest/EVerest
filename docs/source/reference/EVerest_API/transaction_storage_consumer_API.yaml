@@ -73,18 +73,22 @@ channels:
 
 operations:
   send_request_get_transactions:
-    title: 'Send request to transmit all stored transaction records'
+    title: 'Send request to transmit one page of stored transaction records'
     action: send
     channel:
       $ref: '#/channels/send_request_get_transactions'
-    description: 'Direction: Module to EVerest'
+    description: >-
+      Direction: Module to EVerest.
+      Request one page of stored transaction records, oldest first. Iterate by
+      passing the continuation_token of a reply into the next request until a
+      reply carries no token.
     reply:
       address:
         location: "$message.header#/replyTo"
       channel:
         $ref: '#/channels/receive_reply_get_transactions'
   receive_reply_get_transactions:
-    title: 'Receive reply with all stored transaction records'
+    title: 'Receive reply with one page of stored transaction records'
     action: receive
     description: 'Direction: EVerest to Module'
     channel:
@@ -151,8 +155,8 @@ components:
   messages:
     send_request_get_transactions:
       name: send_request_get_transactions
-      title: 'Request all stored transaction records'
-      summary: 'Request all stored transaction records.'
+      title: 'Request one page of stored transaction records'
+      summary: 'Request one page of stored transaction records.'
       contentType: application/json
       payload:
         type: object
@@ -167,15 +171,28 @@ components:
               replyTo:  # Address for the request to reply to
                 type: string
                 description: Address to send the response to.
+          payload:
+            $ref: '#/components/schemas/GetTransactionsRequest'
       examples:
-        - summary: "Request all stored transactions"
+        - summary: "Request the first page of all stored transactions"
           payload:
             headers:
               replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+            payload: {}
+        - summary: "Request the next page of the finished transactions of EVSE 1"
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+            payload:
+              limit: 100
+              continuation_token: 5f2a9c31d4e8b0a7:184
+              filter:
+                state: Finished
+                evse_id: 1
     receive_reply_get_transactions:
       name: receive_reply_get_transactions
-      title: 'All stored transaction records'
-      summary: 'Reply to the request to send all stored transaction records'
+      title: 'One page of stored transaction records'
+      summary: 'Reply to the request to send one page of stored transaction records'
       contentType: application/json
       payload:
         $ref: '#/components/schemas/TransactionList'
@@ -273,8 +290,50 @@ components:
 
 
   schemas:
+    TransactionFilter:
+      description: Criteria a transaction record must match to be returned
+      type: object
+      additionalProperties: true
+      properties:
+        state:
+          description: Only records in this lifecycle state
+          type: string
+          $ref: '#/components/schemas/TransactionState'
+        evse_id:
+          description: Only records of the EVSE with this numeric id
+          type: integer
+          minimum: 1
+        started_after:
+          description: >-
+            Only records whose transaction started strictly after this point in
+            time, in RFC3339 format
+          type: string
+          format: date-time
+    GetTransactionsRequest:
+      description: >-
+        Page request for stored transaction records. An empty object requests the
+        first page of all records with the default page size.
+      type: object
+      additionalProperties: true
+      properties:
+        limit:
+          description: >-
+            Maximum number of records in the reply. EVerest may return fewer, and
+            clamps the value to its supported maximum.
+          type: integer
+          minimum: 1
+        continuation_token:
+          description: >-
+            Opaque token from a previous reply to continue the iteration. Omit to
+            start from the oldest record. An invalid or outdated token starts the
+            iteration from the beginning.
+          type: string
+        filter:
+          description: Criteria the returned records must match
+          type: object
+          $ref: '#/components/schemas/TransactionFilter'
     TransactionList:
-      description: A list of stored transaction records
+      description: One page of stored transaction records
       type: object
       additionalProperties: true
       required:
@@ -282,11 +341,17 @@ components:
       properties:
         transactions:
           description: >-
-            All stored transaction records, in the order they were stored, oldest
-            first. Empty if nothing is stored.
+            The records of this page, in the order they were stored, oldest first.
+            Empty if no more records match.
           type: array
           items:
             $ref: '#/components/schemas/Transaction'
+        continuation_token:
+          description: >-
+            Present if there may be more matching records. Pass it in the next
+            request to continue the iteration; a reply without it means the
+            iteration is complete.
+          type: string
     Transaction:
       description: >-
         One persistently stored transaction record. A record is created when the
@@ -301,7 +366,7 @@ components:
         - connector_id
         - state
         - timestamp_start
-        - meter_value_start
+        - energy_Wh_import_start
       properties:
         session_id:
           description: >-
@@ -369,23 +434,33 @@ components:
             Open, and absent on Stale records.
           type: string
           format: date-time
-        meter_value_start:
+        energy_Wh_import_start:
           description: >-
-            Meter reading taken when the transaction started. The signed variants of the
-            measurements (energy_Wh_import_signed and the other *_signed members, plus
-            signed_meter_value) are only populated when the module is configured to
-            store signed meter values via its store_signed_meter_values config option.
-            Be aware that the signed data typically embeds the raw id token (OCMF ID
-            field), so enabling the option persists raw tokens.
-          type: object
-          $ref: 'powermeter_API.yaml#/components/schemas/Powermeter'
-        meter_value_stop:
+            Total imported energy reading taken when the transaction started, in Wh
+          type: number
+        energy_Wh_import_stop:
           description: >-
-            Meter reading taken when the transaction finished, with the same config gate
-            on signed measurements as meter_value_start. Absent while the record is
-            Open, and absent on Stale records.
+            Total imported energy reading taken when the transaction finished, in Wh.
+            Absent while the record is Open, and absent on Stale records.
+          type: number
+        signed_meter_value_start:
+          description: >-
+            Signed meter value (e.g. an OCMF record) captured when the transaction
+            started. Only populated when the module is configured to store signed meter
+            values via its store_signed_meter_values config option. Be aware that the
+            signed data typically embeds the raw id token (OCMF ID field), so enabling
+            the option persists raw tokens. May only become available when the
+            transaction finishes, in which case it is completed at that point.
           type: object
-          $ref: 'powermeter_API.yaml#/components/schemas/Powermeter'
+          $ref: 'powermeter_API.yaml#/components/schemas/units_signed/types/SignedMeterValue'
+        signed_meter_value_stop:
+          description: >-
+            Signed meter value (e.g. an OCMF record) captured when the transaction
+            finished, with the same config gate and raw-token caveat as
+            signed_meter_value_start. Absent while the record is Open, and absent on
+            Stale records.
+          type: object
+          $ref: 'powermeter_API.yaml#/components/schemas/units_signed/types/SignedMeterValue'
         start_reason:
           description: Why the session that this transaction belongs to was started
           type: string
