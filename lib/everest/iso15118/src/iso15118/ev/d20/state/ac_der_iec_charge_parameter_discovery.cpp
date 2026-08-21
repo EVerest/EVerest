@@ -20,22 +20,12 @@ void AC_DER_IEC_ChargeParameterDiscovery::enter() {
     mode.min_charge_power = dt::from_float(p.min_charge_power);
     mode.max_discharge_power = dt::from_float(p.max_charge_power);
     mode.min_discharge_power = dt::from_float(p.min_charge_power);
-    if (p.three_phase) {
-        mode.max_charge_power_L2 = mode.max_charge_power;
-        mode.max_charge_power_L3 = mode.max_charge_power;
-        mode.min_charge_power_L2 = mode.min_charge_power;
-        mode.min_charge_power_L3 = mode.min_charge_power;
-        mode.max_discharge_power_L2 = mode.max_discharge_power;
-        mode.max_discharge_power_L3 = mode.max_discharge_power;
-        mode.min_discharge_power_L2 = mode.min_discharge_power;
-        mode.min_discharge_power_L3 = mode.min_discharge_power;
-    }
     mode.processing = dt::Processing::Finished;
 
     message_20::DER_AC_ChargeParameterDiscoveryRequest req;
     setup_header(req.header, m_ctx.get_session());
     req.transfer_mode = mode;
-    m_ctx.respond(req);
+    m_ctx.send_request(req);
 }
 
 Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {

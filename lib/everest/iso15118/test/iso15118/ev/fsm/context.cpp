@@ -10,6 +10,7 @@
 
 #include <iso15118/d20/der_functions.hpp>
 #include <iso15118/ev/ac_charge_params.hpp>
+#include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/der_control_functions.hpp>
 
 using namespace iso15118;
@@ -24,7 +25,8 @@ SCENARIO("ISO15118-20 EV Context returns a locked-copy snapshot of the seeded AC
         ev::AcChargeParams params{};
         params.max_charge_power = 11000.0f;
         params.min_charge_power = 1000.0f;
-        params.three_phase = true;
+        params.max_discharge_power = 9000.0f;
+        params.min_discharge_power = 500.0f;
         params.present_active_power = 5000.0f;
         helper.set_ac_params(params);
 
@@ -37,7 +39,8 @@ SCENARIO("ISO15118-20 EV Context returns a locked-copy snapshot of the seeded AC
             THEN("Every field matches the seeded params") {
                 REQUIRE(snapshot.max_charge_power == params.max_charge_power);
                 REQUIRE(snapshot.min_charge_power == params.min_charge_power);
-                REQUIRE(snapshot.three_phase == params.three_phase);
+                REQUIRE(snapshot.max_discharge_power == params.max_discharge_power);
+                REQUIRE(snapshot.min_discharge_power == params.min_discharge_power);
                 REQUIRE(snapshot.present_active_power == params.present_active_power);
             }
         }
@@ -54,8 +57,40 @@ SCENARIO("ISO15118-20 EV Context returns a locked-copy snapshot of the seeded AC
 
                 AND_THEN("The static fields are unchanged") {
                     REQUIRE(snapshot.max_charge_power == params.max_charge_power);
-                    REQUIRE(snapshot.three_phase == params.three_phase);
+                    REQUIRE(snapshot.min_charge_power == params.min_charge_power);
                 }
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Context returns a locked-copy snapshot of the seeded DC discharge params") {
+
+    GIVEN("An EV d20 Context with a seeded DcChargeParams monitor carrying discharge limits") {
+
+        const ev::feedback::Callbacks callbacks{};
+        FsmStateHelper helper{callbacks};
+
+        ev::DcChargeParams params{};
+        params.max_charge_power = 150000.0f;
+        params.max_charge_current = 200.0f;
+        params.max_discharge_power = 120000.0f;
+        params.min_discharge_power = 1000.0f;
+        params.max_discharge_current = 180.0f;
+        helper.set_dc_params(params);
+
+        auto& ctx = helper.get_context();
+
+        WHEN("The DC params are read back through the Context getter") {
+
+            const auto snapshot = ctx.get_dc_params();
+
+            THEN("The discharge fields match the seeded params") {
+                REQUIRE(snapshot.max_charge_power == params.max_charge_power);
+                REQUIRE(snapshot.max_charge_current == params.max_charge_current);
+                REQUIRE(snapshot.max_discharge_power == params.max_discharge_power);
+                REQUIRE(snapshot.min_discharge_power == params.min_discharge_power);
+                REQUIRE(snapshot.max_discharge_current == params.max_discharge_current);
             }
         }
     }
@@ -175,10 +210,10 @@ SCENARIO("ISO15118-20 EV Context encodes a request that round-trips back to the 
         auto& ctx = helper.get_context();
         auto& mx = helper.get_message_exchange();
 
-        WHEN("The Context responds with a SessionSetupRequest") {
+        WHEN("The Context sends a SessionSetupRequest") {
 
             message_20::SessionSetupRequest req{message_20::Header{}, "EVTESTID01"};
-            ctx.respond(req);
+            ctx.send_request(req);
 
             THEN("The MessageExchange holds a pending request") {
                 REQUIRE(mx.has_request());

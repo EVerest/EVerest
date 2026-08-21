@@ -32,7 +32,7 @@ message_20::ScheduleExchangeRequest make_request(const SessionId& session) {
 
 void ScheduleExchange::enter() {
     logf_debug("Enter state: ScheduleExchange");
-    m_ctx.respond(make_request(m_ctx.get_session()));
+    m_ctx.send_request(make_request(m_ctx.get_session()));
 }
 
 Result ScheduleExchange::feed(Event ev) {
@@ -51,6 +51,7 @@ Result ScheduleExchange::feed(Event ev) {
         m_ctx.feedback.ev_power_ready();
         const auto service = m_ctx.selected_service();
         if (service == message_20::datatypes::ServiceCategory::AC or
+            service == message_20::datatypes::ServiceCategory::AC_BPT or
             service == message_20::datatypes::ServiceCategory::AC_DER_IEC) {
             return m_ctx.create_state<PowerDelivery>(message_20::datatypes::Progress::Start);
         }
@@ -58,7 +59,7 @@ Result ScheduleExchange::feed(Event ev) {
     }
 
     // Processing::Ongoing: re-send the request and stay.
-    m_ctx.respond(make_request(m_ctx.get_session()));
+    m_ctx.send_request(make_request(m_ctx.get_session()));
     return {};
 }
 

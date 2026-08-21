@@ -13,30 +13,47 @@ namespace {
 
 namespace dt = message_20::datatypes;
 
-message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const AcChargeParams& params) {
-    message_20::AC_ChargeLoopRequest req;
-    setup_header(req.header, session);
-    req.meter_info_requested = false;
-    req.display_parameters = std::nullopt;
+// Approximation, not a measurement: the EV has no power measurement feeding the stack yet
+// and the field is mandatory on the wire, where a zero reads as a measured zero. Prefer a
+// module-fed value, else the target the SECC dictated and the EV is expected to follow.
+float approximate_present_active_power(const AcChargeParams& params, std::optional<float> target_dictated_by_evse) {
+    if (params.present_active_power != 0.0f) {
+        return params.present_active_power;
+    }
+    return target_dictated_by_evse.value_or(0.0f);
+}
 
-    dt::Dynamic_AC_CLReqControlMode mode;
+void fill_dynamic_charge(dt::Dynamic_AC_CLReqControlMode& mode, const AcChargeParams& params,
+                         std::optional<float> target_dictated_by_evse) {
     mode.departure_time = std::nullopt;
     mode.target_energy_request = {0, 0};
     mode.max_energy_request = {0, 0};
     mode.min_energy_request = {0, 0};
     mode.max_charge_power = dt::from_float(params.max_charge_power);
     mode.min_charge_power = dt::from_float(params.min_charge_power);
-    mode.present_active_power = dt::from_float(params.present_active_power);
+    mode.present_active_power = dt::from_float(approximate_present_active_power(params, target_dictated_by_evse));
     mode.present_reactive_power = {0, 0};
-    if (params.three_phase) {
-        mode.max_charge_power_L2 = mode.max_charge_power;
-        mode.max_charge_power_L3 = mode.max_charge_power;
-        mode.min_charge_power_L2 = mode.min_charge_power;
-        mode.min_charge_power_L3 = mode.min_charge_power;
-        mode.present_active_power_L2 = mode.present_active_power;
-        mode.present_active_power_L3 = mode.present_active_power;
+}
+
+message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const AcChargeParams& params,
+                                              dt::ServiceCategory service,
+                                              std::optional<float> target_dictated_by_evse) {
+    message_20::AC_ChargeLoopRequest req;
+    setup_header(req.header, session);
+    req.meter_info_requested = false;
+    req.display_parameters = std::nullopt;
+
+    if (service == dt::ServiceCategory::AC_BPT) {
+        dt::BPT_Dynamic_AC_CLReqControlMode mode;
+        fill_dynamic_charge(mode, params, target_dictated_by_evse);
+        mode.max_discharge_power = dt::from_float(params.max_discharge_power);
+        mode.min_discharge_power = dt::from_float(params.min_discharge_power);
+        req.control_mode = mode;
+    } else {
+        dt::Dynamic_AC_CLReqControlMode mode;
+        fill_dynamic_charge(mode, params, target_dictated_by_evse);
+        req.control_mode = mode;
     }
-    req.control_mode = mode;
 
     return req;
 }
@@ -45,7 +62,8 @@ message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const Ac
 
 void AC_ChargeLoop::enter() {
     logf_debug("Enter state: AC_ChargeLoop");
-    m_ctx.respond(make_request(m_ctx.get_session(), m_ctx.get_ac_params()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service(),
+                                    m_ctx.evse_target_active_power()));
 }
 
 Result AC_ChargeLoop::feed(Event ev) {
@@ -60,7 +78,10 @@ Result AC_ChargeLoop::feed(Event ev) {
         return {};
     }
 
-    const auto* mode = std::get_if<dt::Dynamic_AC_CLResControlMode>(&res->control_mode);
+    const dt::Dynamic_AC_CLResControlMode* mode =
+        (m_ctx.selected_service() == dt::ServiceCategory::AC_BPT)
+            ? std::get_if<dt::BPT_Dynamic_AC_CLResControlMode>(&res->control_mode)
+            : std::get_if<dt::Dynamic_AC_CLResControlMode>(&res->control_mode);
     if (mode == nullptr) {
         logf_error("AC_ChargeLoopResponse offers a control mode the EV did not request");
         m_ctx.stop_session();
@@ -78,7 +99,9 @@ Result AC_ChargeLoop::feed(Event ev) {
     }
 
     m_ctx.feedback.ac_target_power(*mode);
-    m_ctx.respond(make_request(m_ctx.get_session(), m_ctx.get_ac_params()));
+    m_ctx.set_evse_target_active_power(dt::from_RationalNumber(mode->target_active_power));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service(),
+                                    m_ctx.evse_target_active_power()));
     return {};
 }
 

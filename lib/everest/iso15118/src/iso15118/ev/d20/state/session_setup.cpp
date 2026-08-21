@@ -50,7 +50,7 @@ void SessionSetup::enter() {
     message_20::SessionSetupRequest req{};
     setup_header(req.header, m_ctx.get_session());
     req.evccid = m_ctx.get_evcc_id();
-    m_ctx.respond(req);
+    m_ctx.send_request(req);
 }
 
 Result SessionSetup::feed(Event ev) {

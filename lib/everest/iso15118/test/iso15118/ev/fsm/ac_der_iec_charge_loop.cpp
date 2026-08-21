@@ -34,10 +34,14 @@ message_20::DER_AC_ChargeLoopResponse make_res(const message_20::Header& header,
     return res;
 }
 
+// Discharge limits differ from the charge limits so a request that substitutes one for the
+// other fails rather than passing by coincidence.
 const auto seed_present_5000 = [](FsmStateHelper& helper) {
     ev::AcChargeParams p{};
     p.max_charge_power = 11000.0f;
     p.min_charge_power = 1000.0f;
+    p.max_discharge_power = 9000.0f;
+    p.min_discharge_power = 800.0f;
     p.present_active_power = 5000.0f;
     helper.set_ac_params(p);
 };
@@ -59,15 +63,7 @@ struct StopObserver {
 
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop emits a Dynamic DER_AC_ChargeLoopRequest on enter") {
     const ev::feedback::Callbacks callbacks{};
-    const auto seed_single = [](FsmStateHelper& helper) {
-        ev::AcChargeParams p{};
-        p.max_charge_power = 11000.0f;
-        p.min_charge_power = 1000.0f;
-        p.present_active_power = 5000.0f;
-        p.three_phase = false;
-        helper.set_ac_params(p);
-    };
-    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{callbacks, seed_single};
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{callbacks, seed_present_5000};
 
     const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::DER_AC_ChargeLoopRequest>();
@@ -82,56 +78,21 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop emits a Dynamic DER_AC_ChargeLoop
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_charge_power) == Catch::Approx(1000.0f));
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.present_active_power) == Catch::Approx(5000.0f));
     // Discharge capability advertised on every loop request.
-    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_discharge_power) == Catch::Approx(11000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_discharge_power) == Catch::Approx(1000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_discharge_power) == Catch::Approx(9000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_discharge_power) == Catch::Approx(800.0f));
     // No grid event asserted by the EV.
     REQUIRE(mode.grid_event_condition == 0);
-}
-
-SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop emits per-phase charge and discharge limits when three_phase") {
-    const ev::feedback::Callbacks callbacks{};
-    const auto seed_three_phase = [](FsmStateHelper& helper) {
-        ev::AcChargeParams p{};
-        p.max_charge_power = 11000.0f;
-        p.min_charge_power = 1000.0f;
-        p.present_active_power = 5000.0f;
-        p.three_phase = true;
-        helper.set_ac_params(p);
-    };
-    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{callbacks, seed_three_phase};
-
-    const auto requests = primed.take_requests();
-    const auto request_message = requests.get<message_20::DER_AC_ChargeLoopRequest>();
-    REQUIRE(request_message.has_value());
-    REQUIRE(
-        std::holds_alternative<message_20::datatypes::DER_Dynamic_AC_CLReqControlMode>(request_message->control_mode));
-    const auto& mode = std::get<message_20::datatypes::DER_Dynamic_AC_CLReqControlMode>(request_message->control_mode);
-
-    // Per-phase charge limits mirror the aggregate on L2 and L3.
-    REQUIRE(mode.max_charge_power_L2.has_value());
-    REQUIRE(mode.max_charge_power_L3.has_value());
-    REQUIRE(mode.min_charge_power_L2.has_value());
-    REQUIRE(mode.min_charge_power_L3.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_charge_power_L2) == Catch::Approx(11000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_charge_power_L3) == Catch::Approx(11000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_charge_power_L2) == Catch::Approx(1000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_charge_power_L3) == Catch::Approx(1000.0f));
-
-    // Present active power is reported per phase.
-    REQUIRE(mode.present_active_power_L2.has_value());
-    REQUIRE(mode.present_active_power_L3.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.present_active_power_L2) == Catch::Approx(5000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.present_active_power_L3) == Catch::Approx(5000.0f));
-
-    // Discharge capability is advertised per phase as well.
-    REQUIRE(mode.max_discharge_power_L2.has_value());
-    REQUIRE(mode.max_discharge_power_L3.has_value());
-    REQUIRE(mode.min_discharge_power_L2.has_value());
-    REQUIRE(mode.min_discharge_power_L3.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_discharge_power_L2) == Catch::Approx(11000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_discharge_power_L3) == Catch::Approx(11000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_discharge_power_L2) == Catch::Approx(1000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_discharge_power_L3) == Catch::Approx(1000.0f));
+    // The power limits are three-phase totals: no per-phase field is advertised.
+    REQUIRE_FALSE(mode.max_charge_power_L2.has_value());
+    REQUIRE_FALSE(mode.max_charge_power_L3.has_value());
+    REQUIRE_FALSE(mode.min_charge_power_L2.has_value());
+    REQUIRE_FALSE(mode.min_charge_power_L3.has_value());
+    REQUIRE_FALSE(mode.present_active_power_L2.has_value());
+    REQUIRE_FALSE(mode.present_active_power_L3.has_value());
+    REQUIRE_FALSE(mode.max_discharge_power_L2.has_value());
+    REQUIRE_FALSE(mode.max_discharge_power_L3.has_value());
+    REQUIRE_FALSE(mode.min_discharge_power_L2.has_value());
+    REQUIRE_FALSE(mode.min_discharge_power_L3.has_value());
 }
 
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop fires der_control on a Dynamic response") {
@@ -171,6 +132,34 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop stays and re-emits a request on a
     const auto requests = primed.take_requests();
     REQUIRE(requests.get<message_20::DER_AC_ChargeLoopRequest>().has_value());
     REQUIRE_FALSE(requests.get<message_20::PowerDeliveryRequest>().has_value());
+}
+
+SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop reports the dictated target as its present power") {
+    const ev::feedback::Callbacks callbacks{};
+    // No module-fed present power, so the approximation has to supply the mandatory field.
+    const auto seed_unfed_present = [](FsmStateHelper& helper) {
+        ev::AcChargeParams p{};
+        p.max_charge_power = 11000.0f;
+        p.min_charge_power = 1000.0f;
+        p.max_discharge_power = 9000.0f;
+        p.min_discharge_power = 800.0f;
+        helper.set_ac_params(p);
+    };
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{callbacks, seed_unfed_present};
+
+    // Nothing has been dictated yet, so the first request has no better value than zero.
+    const auto first = primed.take_requests().get<message_20::DER_AC_ChargeLoopRequest>();
+    REQUIRE(first.has_value());
+    const auto& first_mode = std::get<message_20::datatypes::DER_Dynamic_AC_CLReqControlMode>(first->control_mode);
+    REQUIRE(message_20::datatypes::from_RationalNumber(first_mode.present_active_power) == Catch::Approx(0.0f));
+
+    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
+    primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    const auto second = primed.take_requests().get<message_20::DER_AC_ChargeLoopRequest>();
+    REQUIRE(second.has_value());
+    const auto& second_mode = std::get<message_20::datatypes::DER_Dynamic_AC_CLReqControlMode>(second->control_mode);
+    REQUIRE(message_20::datatypes::from_RationalNumber(second_mode.present_active_power) == Catch::Approx(7000.0f));
 }
 
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop fires stop_from_charger and drives PowerDelivery(Stop) on Terminate") {
@@ -227,6 +216,8 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop honors a stop request set before 
         ev::AcChargeParams p{};
         p.max_charge_power = 11000.0f;
         p.min_charge_power = 1000.0f;
+        p.max_discharge_power = 9000.0f;
+        p.min_discharge_power = 800.0f;
         p.present_active_power = 5000.0f;
         helper.set_ac_params(p);
         helper.get_context().set_stop_charging_requested(true);
