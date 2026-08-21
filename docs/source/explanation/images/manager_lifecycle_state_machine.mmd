@@ -1,0 +1,92 @@
+%% EVerest manager — manager lifecycle state machine
+%% Narrative: docs/source/explanation/manager-lifecycle.rst
+
+stateDiagram-v2
+    direction TB
+
+    state "Startup" as G_BOOT {
+        [*] --> Idle : manager process starts
+        Idle --> Initializing : read configuration
+        Initializing --> StartingModules : publish metadata,\nspawn module processes
+        StartingModules --> Running : all non-ignored modules ready\n(skipped if shutdown already started)
+    }
+
+    state "Shutdown / drain" as G_DRAIN {
+        ShutdownRequested --> ForceTerminating : drain deadline exceeded\n(immediately without --graceful-shutdown)
+        CrashShutdownInProgress --> ForceTerminating : drain deadline exceeded\n(immediately without --graceful-shutdown)
+        RestartRequested --> ForceTerminating : drain deadline exceeded\n(immediately without --graceful-shutdown)
+        ShutdownRequested --> CrashShutdownInProgress : crash path
+        CrashShutdownInProgress --> ShutdownRequested : first SIGINT/SIGTERM during drain\n(crash reason is kept)
+        RestartRequested --> ShutdownRequested : first SIGINT/SIGTERM during drain\n(restart intent is dropped)
+    }
+
+    state "Finalize" as G_END {
+        ShutdownFinalizing --> Exiting : shutdown after SIGINT finished\n(cleanup, success)
+        Exiting --> [*] : process exit
+    }
+
+    %% Cross-region: signals and IPC while starting or running
+    Running --> ShutdownRequested : first SIGINT/SIGTERM,\nnormal stop,\nMQTT shutdown published\n(--graceful-shutdown only)
+    StartingModules --> ShutdownRequested : first SIGINT/SIGTERM,\nnormal stop
+
+    Running --> CrashShutdownInProgress : unexpected module exit
+    StartingModules --> CrashShutdownInProgress : unexpected module exit
+
+    Running --> RestartRequested : admin restart request
+    StartingModules --> RestartRequested : admin restart request
+    Idle --> RestartRequested : admin restart request while idle,\nnothing to drain
+
+    Idle --> Exiting : first SIGINT/SIGTERM, no modules running\n(cleanup, success, no drain)
+    ShutdownRequested --> Exiting : second SIGINT/SIGTERM\n(user abort, failure)\nsame from any other drain state
+
+    %% Drain complete → finalize
+    ShutdownRequested --> ShutdownFinalizing : all modules gone
+    CrashShutdownInProgress --> ShutdownFinalizing : all modules gone
+    RestartRequested --> ShutdownFinalizing : all modules gone
+    ForceTerminating --> ShutdownFinalizing : all modules gone
+
+    %% Finalize outcomes
+    ShutdownFinalizing --> StartingModules : reload config and start again\n(admin restart, or --recover-module-crashes\nwithin the restart cap and no SIGINT)
+    ShutdownFinalizing --> Idle : normal stop without SIGINT,\nor crash cap exceeded / failed or empty reload\n(--idle-on-failure)
+    ShutdownFinalizing --> Exiting : unexpected module exit, crash cap exceeded\nor failed / empty reload (default, failure)
+
+    %% Boot-time outcome (before StartingModules)
+    Initializing --> Idle : --into-idle (whatever the config is),\nor invalid config / no modules (--idle-on-failure)
+    Initializing --> Exiting : invalid config or no modules\n(failure, unless --into-idle or --idle-on-failure)
+
+    note right of Running
+        Last MQTT ready while shutdown in progress: skip Running
+        (and skip ALL_MODULES_STARTED / the global ready publish).
+        Database and MQTT connect failures abort startup directly,
+        without entering Exiting. An invalid YAML config does not:
+        with --idle-on-failure / --into-idle an empty slot is seeded,
+        so the boot reaches the lifecycle with no modules.
+    end note
+
+    note right of ForceTerminating
+        SIGTERM, then SIGKILL after a short grace period.
+        Outcome at finalize follows the shutdown reason:
+        exit, restart, or crash recovery.
+    end note
+
+    classDef idle fill:#64748b,color:#f8fafc
+    classDef init fill:#818cf8,color:#f8fafc
+    classDef starting fill:#4f46e5,color:#f8fafc
+    classDef running fill:#3730a3,color:#f8fafc
+    classDef shutdownReq fill:#ca8a04,color:#f8fafc
+    classDef crash fill:#ea580c,color:#f8fafc
+    classDef restart fill:#c2410c,color:#f8fafc
+    classDef force fill:#9a3412,color:#f8fafc
+    classDef finalize fill:#047857,color:#f8fafc
+    classDef exiting fill:#dc2626,color:#f8fafc
+
+    class Idle idle
+    class Initializing init
+    class StartingModules starting
+    class Running running
+    class ShutdownRequested shutdownReq
+    class CrashShutdownInProgress crash
+    class RestartRequested restart
+    class ForceTerminating force
+    class ShutdownFinalizing finalize
+    class Exiting exiting

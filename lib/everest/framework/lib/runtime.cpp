@@ -187,7 +187,7 @@ ManagerSettings::ManagerSettings(WithoutConfig, const std::string& prefix, const
     init_prefix_and_data_dir(prefix);
     init_no_config();
     // parse_settings({}) yields all-nullopt Settings, so init_settings() uses the compiled-in defaults.
-    const auto settings = everest::config::parse_settings(this->config.value("settings", json::object()));
+    const auto settings = everest::config::parse_settings(config.value("settings", json::object()));
     init_settings(settings);
 
     if (db_path.length() != 0) {
@@ -198,17 +198,17 @@ ManagerSettings::ManagerSettings(WithoutConfig, const std::string& prefix, const
 }
 
 void ManagerSettings::init_settings(const everest::config::Settings& settings) {
-    if (this->runtime_settings.prefix.empty()) {
+    if (runtime_settings.prefix.empty()) {
         throw std::runtime_error(
             "Prefix must be set before initializing the settings. Please call init_prefix_and_data_dir() first.");
     }
-    if (this->runtime_settings.data_dir.empty()) {
+    if (runtime_settings.data_dir.empty()) {
         throw std::runtime_error("Data directory must be set before initializing the settings. Please call "
                                  "init_prefix_and_data_dir() first.");
     }
 
-    const auto prefix = this->runtime_settings.prefix;
-    const auto data_dir = this->runtime_settings.data_dir;
+    const auto prefix = runtime_settings.prefix;
+    const auto data_dir = runtime_settings.data_dir;
     fs::path etc_dir;
     {
         // etc directory
@@ -390,9 +390,9 @@ void ManagerSettings::init_settings(const everest::config::Settings& settings) {
     }
 
     if (not mqtt_broker_socket_path.empty()) {
-        populate_mqtt_settings(this->mqtt_settings, mqtt_broker_socket_path, mqtt_everest_prefix, mqtt_external_prefix);
+        populate_mqtt_settings(mqtt_settings, mqtt_broker_socket_path, mqtt_everest_prefix, mqtt_external_prefix);
     } else {
-        populate_mqtt_settings(this->mqtt_settings, mqtt_broker_host, mqtt_broker_port, mqtt_everest_prefix,
+        populate_mqtt_settings(mqtt_settings, mqtt_broker_host, mqtt_broker_port, mqtt_everest_prefix,
                                mqtt_external_prefix);
     }
 
@@ -439,7 +439,7 @@ void ManagerSettings::init_settings(const everest::config::Settings& settings) {
         forward_exceptions = defaults::FORWARD_EXCEPTIONS;
     }
 
-    populate_runtime_settings(this->runtime_settings, prefix, etc_dir, data_dir, modules_dir, logging_config_file,
+    populate_runtime_settings(runtime_settings, prefix, etc_dir, data_dir, modules_dir, logging_config_file,
                               telemetry_prefix, telemetry_enabled, validate_schema, forward_exceptions);
     this->modules_dir = modules_dir;
     this->validate_schema = validate_schema;
@@ -460,7 +460,7 @@ void ManagerSettings::init_prefix_and_data_dir(const std::string& prefix_) {
 }
 
 void ManagerSettings::init_config_file(const std::string& config_) {
-    if (this->runtime_settings.prefix.empty()) {
+    if (runtime_settings.prefix.empty()) {
         throw std::runtime_error(
             "Prefix must be set before initializing the config file. Please call init_prefix_and_data_dir() first.");
     }
@@ -478,7 +478,7 @@ void ManagerSettings::init_config_file(const std::string& config_) {
     }
 
     if (config_file.empty()) {
-        auto config_file_prefix = this->runtime_settings.prefix;
+        auto config_file_prefix = runtime_settings.prefix;
         if (config_file_prefix.empty()) {
             config_file_prefix = assert_dir(defaults::PREFIX, "Default prefix");
         }
@@ -520,7 +520,7 @@ void ManagerSettings::init_config_file(const std::string& config_) {
 }
 
 void ManagerSettings::init_no_config() {
-    if (this->runtime_settings.prefix.empty()) {
+    if (runtime_settings.prefix.empty()) {
         throw std::runtime_error(
             "Prefix must be set before initializing the config. Please call init_prefix_and_data_dir() first.");
     }
@@ -544,48 +544,50 @@ ModuleCallbacks::ModuleCallbacks(
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): pass-through of argc and argv from main()
 ModuleLoader::ModuleLoader(int argc, char* argv[], ModuleCallbacks callbacks, VersionInformation version_information) :
-    runtime_settings(nullptr), callbacks(std::move(callbacks)), version_information(std::move(version_information)) {
+    m_runtime_settings(nullptr),
+    m_callbacks(std::move(callbacks)),
+    m_version_information(std::move(version_information)) {
     try {
-        if (!this->parse_command_line(argc, argv)) {
-            this->should_exit = true;
+        if (!parse_command_line(argc, argv)) {
+            m_should_exit = true;
         }
     } catch (std::exception& e) {
         std::cout << "Error during command line parsing: " << e.what() << "\n";
-        this->should_exit = true;
+        m_should_exit = true;
     }
 }
 
 int ModuleLoader::initialize() {
-    if (this->should_exit) {
+    if (m_should_exit) {
         return EXIT_FAILURE;
     }
-    Logging::init(this->logging_config_file.string(), this->module_id);
+    Logging::init(m_logging_config_file.string(), m_module_id);
 
     Date::preload_tzdb();
 
     const auto start_time = std::chrono::steady_clock::now();
 
-    this->mqtt = std::shared_ptr<MQTTAbstraction>(make_mqtt_abstraction(this->mqtt_settings));
-    this->mqtt->connect();
-    this->mqtt->spawn_main_loop_thread();
+    m_mqtt = std::shared_ptr<MQTTAbstraction>(make_mqtt_abstraction(m_mqtt_settings));
+    m_mqtt->connect();
+    m_mqtt->spawn_main_loop_thread();
 
-    const auto result = get_module_config(this->mqtt, this->module_id);
+    const auto result = get_module_config(m_mqtt, m_module_id);
     const auto get_config_time = std::chrono::steady_clock::now();
-    EVLOG_debug << "Module " << fmt::format(TERMINAL_STYLE_OK, "{}", module_id) << " get_config() ["
+    EVLOG_debug << "Module " << fmt::format(TERMINAL_STYLE_OK, "{}", m_module_id) << " get_config() ["
                 << std::chrono::duration_cast<std::chrono::milliseconds>(get_config_time - start_time).count() << "ms]";
 
     RuntimeSettings result_settings = result.at("settings");
-    this->runtime_settings = std::make_unique<RuntimeSettings>(std::move(result_settings));
+    m_runtime_settings = std::make_unique<RuntimeSettings>(std::move(result_settings));
 
-    if (!this->runtime_settings) {
+    if (!m_runtime_settings) {
         return 0;
     }
 
-    const auto& rs = this->runtime_settings;
+    const auto& rs = m_runtime_settings;
     const auto shutdown_mqtt = [this]() {
-        if (this->mqtt) {
+        if (m_mqtt) {
             try {
-                this->mqtt->disconnect();
+                m_mqtt->disconnect();
             } catch (const std::exception& e) {
                 EVLOG_critical << fmt::format("MQTT disconnect in exception path failed: {}", e.what());
             }
@@ -593,47 +595,47 @@ int ModuleLoader::initialize() {
     };
 
     try {
-        const auto config = Config(this->mqtt_settings, result);
+        const auto config = Config(m_mqtt_settings, result);
         const auto config_instantiation_time = std::chrono::steady_clock::now();
         EVLOG_debug
-            << "Module " << fmt::format(TERMINAL_STYLE_OK, "{}", module_id) << " after Config() instantiation ["
+            << "Module " << fmt::format(TERMINAL_STYLE_OK, "{}", m_module_id) << " after Config() instantiation ["
             << std::chrono::duration_cast<std::chrono::milliseconds>(config_instantiation_time - start_time).count()
             << "ms]";
 
-        if (!config.contains(this->module_id)) {
-            EVLOG_error << fmt::format("Module id '{}' not found in config!", this->module_id);
+        if (!config.contains(m_module_id)) {
+            EVLOG_error << fmt::format("Module id '{}' not found in config!", m_module_id);
             return 2;
         }
 
-        const std::string module_identifier = config.printable_identifier(this->module_id);
-        const auto module_name = config.get_module_name(this->module_id);
-        if ((this->application_name != module_name) and (this->application_name != module_identifier)) {
+        const std::string module_identifier = config.printable_identifier(m_module_id);
+        const auto module_name = config.get_module_name(m_module_id);
+        if ((m_application_name != module_name) and (m_application_name != module_identifier)) {
             EVLOG_error << fmt::format(
-                "Module id '{}': Expected a '{}' module, but it looks like you started a '{}' module.", this->module_id,
-                module_name, this->application_name);
+                "Module id '{}': Expected a '{}' module, but it looks like you started a '{}' module.", m_module_id,
+                module_name, m_application_name);
         }
         EVLOG_debug << fmt::format("Initializing framework for module {}...", module_identifier);
         EVLOG_verbose << fmt::format("Setting process name to: '{}'...", module_identifier);
         const int prctl_return = prctl(PR_SET_NAME, module_identifier.c_str());
         if (prctl_return == 1) {
             EVLOG_warning << fmt::format("Could not set process name to '{}', it remains '{}'", module_identifier,
-                                         this->original_process_name);
+                                         m_original_process_name);
         }
         Logging::update_process_name(module_identifier);
 
-        auto everest = Everest(this->module_id, config, rs->validate_schema, this->mqtt, rs->telemetry_prefix,
+        auto everest = Everest(m_module_id, config, rs->validate_schema, m_mqtt, rs->telemetry_prefix,
                                rs->telemetry_enabled, rs->forward_exceptions);
 
         // module import
         EVLOG_debug << fmt::format("Initializing module {}...", module_identifier);
 
         if (!everest.connect()) {
-            if (this->mqtt_settings.broker_socket_path.empty()) {
-                EVLOG_error << fmt::format("Cannot connect to MQTT broker at {}:{}", this->mqtt_settings.broker_host,
-                                           this->mqtt_settings.broker_port);
+            if (m_mqtt_settings.broker_socket_path.empty()) {
+                EVLOG_error << fmt::format("Cannot connect to MQTT broker at {}:{}", m_mqtt_settings.broker_host,
+                                           m_mqtt_settings.broker_port);
             } else {
                 EVLOG_error << fmt::format("Cannot connect to MQTT broker socket at {}",
-                                           this->mqtt_settings.broker_socket_path);
+                                           m_mqtt_settings.broker_socket_path);
             }
             return 1;
         }
@@ -702,18 +704,17 @@ int ModuleLoader::initialize() {
 
         module_adapter.get_mapping = [&everest]() { return everest.get_3_tier_model_mapping(); };
 
-        this->callbacks.register_module_adapter(module_adapter);
+        m_callbacks.register_module_adapter(module_adapter);
 
         // FIXME (aw): would be nice to move this config related thing toward the module_init function
-        const std::vector<cmd> cmds =
-            this->callbacks.everest_register(config.get_requirement_initialization(this->module_id));
+        const std::vector<cmd> cmds = m_callbacks.everest_register(config.get_requirement_initialization(m_module_id));
 
         for (const auto& command : cmds) {
             everest.provide_cmd(command);
         }
 
-        const auto module_configs = config.get_module_configs(this->module_id);
-        auto module_info = config.get_module_info(this->module_id);
+        const auto module_configs = config.get_module_configs(m_module_id);
+        auto module_info = config.get_module_info(m_module_id);
         populate_module_info_path_from_runtime_settings(module_info, *rs);
         module_info.telemetry_enabled = everest.is_telemetry_enabled();
         const auto module_mappings = everest.get_3_tier_model_mapping();
@@ -721,23 +722,23 @@ int ModuleLoader::initialize() {
             module_info.mapping = module_mappings.value().module;
         }
 
-        this->callbacks.init(module_configs, module_info);
+        m_callbacks.init(module_configs, module_info);
 
         everest.spawn_main_loop_thread();
 
         // register the modules ready handler with the framework.
         // this handler gets called when the global ready signal is received.
-        everest.register_on_ready_handler(this->callbacks.ready);
+        everest.register_on_ready_handler(m_callbacks.ready);
 
         // Register the module shutdown handler with the framework.
         // This handler is called when the global shutdown signal is received.
-        everest.register_on_shutdown_handler(this->callbacks.shutdown);
+        everest.register_on_shutdown_handler(m_callbacks.shutdown);
 
         // the module should now be ready
         everest.signal_ready();
 
         const auto end_time = std::chrono::steady_clock::now();
-        EVLOG_info << "Module " << fmt::format(TERMINAL_STYLE_BLUE, "{}", module_id) << " initialized ["
+        EVLOG_info << "Module " << fmt::format(TERMINAL_STYLE_BLUE, "{}", m_module_id) << " initialized ["
                    << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms]";
 
         everest.wait_for_main_loop_end();
@@ -778,7 +779,7 @@ bool ModuleLoader::parse_command_line(int argc, char* argv[]) {
     if (argc > 0) {
         argv0 = *argv;
         if (not argv0.empty()) {
-            this->application_name = fs::path(argv0).stem().string();
+            m_application_name = fs::path(argv0).stem().string();
         }
     }
 
@@ -788,9 +789,8 @@ bool ModuleLoader::parse_command_line(int argc, char* argv[]) {
     }
 
     if (vm.count("version") != 0) {
-        std::cout << argv0 << " (" << this->version_information.project_name << " "
-                  << this->version_information.project_version << " " << this->version_information.git_version << ")"
-                  << std::endl;
+        std::cout << argv0 << " (" << m_version_information.project_name << " " << m_version_information.project_version
+                  << " " << m_version_information.git_version << ")" << std::endl;
         return false;
     }
 
@@ -876,16 +876,15 @@ bool ModuleLoader::parse_command_line(int argc, char* argv[]) {
     }
 
     if (not mqtt_broker_socket_path.empty()) {
-        populate_mqtt_settings(this->mqtt_settings, mqtt_broker_socket_path, mqtt_everest_prefix, mqtt_external_prefix);
+        populate_mqtt_settings(m_mqtt_settings, mqtt_broker_socket_path, mqtt_everest_prefix, mqtt_external_prefix);
     } else {
-        populate_mqtt_settings(this->mqtt_settings, mqtt_broker_host, mqtt_broker_port, mqtt_everest_prefix,
+        populate_mqtt_settings(m_mqtt_settings, mqtt_broker_host, mqtt_broker_port, mqtt_everest_prefix,
                                mqtt_external_prefix);
     }
 
     if (vm.count("log_config") != 0) {
         auto command_line_logging_config_file = vm["log_config"].as<std::string>();
-        this->logging_config_file =
-            assert_file(command_line_logging_config_file, "Command line provided logging config");
+        m_logging_config_file = assert_file(command_line_logging_config_file, "Command line provided logging config");
 
     } else {
         auto default_logging_config_file =
@@ -896,13 +895,13 @@ bool ModuleLoader::parse_command_line(int argc, char* argv[]) {
         } else {
             default_logging_config_file = fs::path("/") / default_logging_config_file;
         }
-        this->logging_config_file = assert_file(default_logging_config_file, "Default logging config");
+        m_logging_config_file = assert_file(default_logging_config_file, "Default logging config");
     }
 
-    this->original_process_name = argv0;
+    m_original_process_name = argv0;
 
     if (vm.count("module") != 0) {
-        this->module_id = vm["module"].as<std::string>();
+        m_module_id = vm["module"].as<std::string>();
     } else {
         EVTHROW(EVEXCEPTION(EverestApiError, "--module parameter is required"));
     }

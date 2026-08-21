@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -86,17 +86,17 @@ struct Conf {
     std::string DeviceModelDatabaseMigrationPath;
     bool EnableLegacyConfigMigration;
     std::string DeviceModelConfigMappings;
-    int Ocpp16NetworkConfigSlot;
     bool EnableExternalWebsocketControl;
     std::string EverestDeviceModelDatabasePath;
+    int GridSupportHeartbeatS;
     std::string MessageLogPath;
     int MessageQueueResumeDelay;
+    std::string Mode;
+    int Ocpp16NetworkConfigSlot;
     int RequestCompositeScheduleDurationS;
     std::string RequestCompositeScheduleUnit;
     int ResetStopDelay;
     std::string UserConfigPath;
-    std::string Mode;
-    int GridSupportHeartbeatS;
 };
 
 class OCPPmulti : public Everest::ModuleBase {
