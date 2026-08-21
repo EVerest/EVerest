@@ -3,8 +3,18 @@
 
 #include "energy_schedule_utils.hpp"
 
+#include <algorithm>
+
 namespace module {
 namespace energy_grid {
+
+bool energy_flow_request_contains_uuid(const types::energy::EnergyFlowRequest& request, std::string_view uuid) {
+    if (std::string_view{request.uuid} == uuid) {
+        return true;
+    }
+    return std::any_of(request.children.begin(), request.children.end(),
+                       [uuid](const auto& child) { return energy_flow_request_contains_uuid(child, uuid); });
+}
 
 void process_schedule_with_limits(std::vector<types::energy::ScheduleReqEntry>& schedule, const std::string& source,
                                   double fuse_limit_A, int phase_count, double nominal_voltage_V,
