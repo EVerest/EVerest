@@ -6,8 +6,10 @@
 #include <cmath>
 #include <utility>
 
+#include <everest/logging.hpp>
 #include <iso15118/d20/der_functions.hpp>
 #include <iso15118/message/common_types.hpp>
+#include <iso15118/sae_modes.hpp>
 
 #include "conversions.hpp"
 
@@ -154,6 +156,90 @@ types::iso15118::DERChargingParameters to_der_charging_parameters(const dt::DER_
 
     // supported-DER-control bitmap is in ServiceDetail, not CPDReq; the caller fills
     // ev_supported_dercontrol via map_ev_supported_der_controls, so it is left unset here.
+
+    return params;
+}
+
+types::iso15118::DERChargingParameters
+to_der_charging_parameters(const dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode& ev) {
+    using DT = types::grid_support::DirectiveType;
+    using iso15118::sae::DerBitMapFunctions;
+    using iso15118::sae::sae_function_bit;
+
+    types::iso15118::DERChargingParameters params{};
+
+    // SAE function bit -> grid_support DirectiveType. Over-excited constant power factor is var
+    // injection (FixedPFInject), under-excited is var absorption (FixedPFAbsorb).
+    static constexpr std::pair<DerBitMapFunctions, DT> table[] = {
+        {DerBitMapFunctions::EnterService, DT::EnterService},
+        {DerBitMapFunctions::ConstantPowerFactorUnderExcitedFunction, DT::FixedPFAbsorb},
+        {DerBitMapFunctions::ConstantPowerFactorOverExcitedFunction, DT::FixedPFInject},
+        {DerBitMapFunctions::ConstantReactivePowerFunction, DT::FixedVar},
+        {DerBitMapFunctions::FrequencyDroopFunction, DT::FreqDroop},
+        {DerBitMapFunctions::HighFrequencyMayTripFunction, DT::HFMayTrip},
+        {DerBitMapFunctions::HighFrequencyMustTripFunction, DT::HFMustTrip},
+        {DerBitMapFunctions::HighVoltageMayTripFunction, DT::HVMayTrip},
+        {DerBitMapFunctions::HighVoltageMomentaryCessationFunction, DT::HVMomCess},
+        {DerBitMapFunctions::HighVoltageMustTripFunction, DT::HVMustTrip},
+        {DerBitMapFunctions::LowFrequencyMustTripFunction, DT::LFMustTrip},
+        {DerBitMapFunctions::LowVoltageMayTripFunction, DT::LVMayTrip},
+        {DerBitMapFunctions::LowVoltageMomentaryCessationFunction, DT::LVMomCess},
+        {DerBitMapFunctions::LowVoltageMustTripFunction, DT::LVMustTrip},
+        {DerBitMapFunctions::LimitMaximumActiveDischargePowerFunction, DT::LimitMaxDischarge},
+        {DerBitMapFunctions::VoltVarFunction, DT::VoltVar},
+        {DerBitMapFunctions::VoltWattFunction, DT::VoltWatt},
+        {DerBitMapFunctions::WattVarFunction, DT::WattVar},
+    };
+
+    // Reserved bits are outside the SAE bitmap: a non-conforming EV or a scrambled codec.
+    const auto reserved = ev.supported_modes & ~iso15118::sae::SAE_MODE_BITMAP_MASK;
+    if (reserved != 0) {
+        EVLOG_warning << "SAE DER supported-modes bitmap carries reserved bits, ignoring them: " << std::hex
+                      << std::showbase << reserved;
+    }
+
+    std::vector<DT> supported;
+    std::uint32_t mapped_mask = 0;
+    for (const auto& [function, directive] : table) {
+        if ((ev.supported_modes & sae_function_bit(function)) != 0) {
+            supported.push_back(directive);
+        }
+        mapped_mask |= sae_function_bit(function);
+    }
+
+    // Bits with no DirectiveType counterpart are dropped. The never-enableable ones (charge,
+    // discharge, charge loop target powers) are set by every conforming EV, so they only get a
+    // debug line; the genuinely informative drops stay at info.
+    const auto dropped = ev.supported_modes & iso15118::sae::SAE_MODE_BITMAP_MASK & ~mapped_mask;
+    const auto expected_drops = dropped & iso15118::sae::SAE_NOT_ENABLEABLE_MASK;
+    const auto informative_drops = dropped & ~iso15118::sae::SAE_NOT_ENABLEABLE_MASK;
+    if (expected_drops != 0) {
+        EVLOG_debug << "SAE DER functions without a grid_support DirectiveType counterpart dropped from "
+                       "ev_supported_dercontrol: "
+                    << iso15118::sae::sae_function_names(expected_drops);
+    }
+    if (informative_drops != 0) {
+        EVLOG_info << "SAE DER functions without a grid_support DirectiveType counterpart dropped from "
+                      "ev_supported_dercontrol: "
+                   << iso15118::sae::sae_function_names(informative_drops);
+    }
+
+    if (not supported.empty()) {
+        // ev_supported_dercontrol has minItems:1, so the empty case stays unset.
+        params.ev_supported_dercontrol = std::move(supported);
+    }
+
+    params.ev_over_excited_power_factor =
+        dt::from_RationalNumber(ev.excitation_limits.specified_over_excited_power_factor);
+    params.ev_over_excited_max_discharge_power =
+        dt::from_RationalNumber(ev.excitation_limits.specified_over_excited_discharge_power);
+    params.ev_under_excited_power_factor =
+        dt::from_RationalNumber(ev.excitation_limits.specified_under_excited_power_factor);
+    params.ev_under_excited_max_discharge_power =
+        dt::from_RationalNumber(ev.excitation_limits.specified_under_excited_discharge_power);
+
+    params.ev_session_total_discharge_energy_available =
+        charger::convert_from_optional(ev.session_total_discharge_energy_available);
 
     return params;
 }

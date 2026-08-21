@@ -12,6 +12,7 @@
 #include <iso15118/d20/config.hpp>
 #include <iso15118/d20/limits.hpp>
 #include <iso15118/message/ac_der_iec_charge_parameter_discovery.hpp>
+#include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/message/common_types.hpp>
 
 namespace module {
@@ -119,6 +120,19 @@ DerApplyTransitions apply_derivation(const DerLimitsDerivation& derived, DerAppl
 /// Pure and session-free.
 types::iso15118::DERChargingParameters
 to_der_charging_parameters(const iso15118::message_20::datatypes::DER_AC_CPDReqEnergyTransferMode& ev);
+
+/// \brief Map an AC_DER_SAE EV's ChargeParameterDiscovery request onto the OCPP-bound DERChargingParameters.
+///
+/// ev_supported_dercontrol comes from the request's SupportedModes bitmap ([V2G20-3409]); each SAE
+/// function bit maps onto the matching grid_support DirectiveType. Bits without a counterpart are
+/// dropped: the never-enableable ones (charge, discharge, charge loop target powers), which every
+/// conforming EV sets, are logged at debug; the rest (constant watt, under frequency may trip) at
+/// info. Reserved bits outside the SAE bitmap are warned about and ignored. The four excitation
+/// fields and the optional session total discharge energy available pass through one-to-one.
+/// The reactive-power limits are not mapped: SAE var absorption/injection semantics differ from
+/// the IEC charge/discharge reactive fields.
+types::iso15118::DERChargingParameters
+to_der_charging_parameters(const iso15118::message_20::datatypes::sae::DER_SAE_AC_CPDReqEnergyTransferMode& ev);
 
 /// \brief Map the EV's negotiated DER control-function bitset onto the grid_support DirectiveTypes it
 /// supports, for DERChargingParameters.ev_supported_dercontrol.

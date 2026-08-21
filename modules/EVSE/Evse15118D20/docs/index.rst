@@ -37,10 +37,12 @@ session's charge parameter discovery derive from ``ac_limits``.
 This module does not publish DER ``capability``; an empty one is expected for
 AC_DER_IEC.
 
-The DER control functions the EV negotiates during service selection are surfaced
-in ``ChargingNeeds.der_charging_parameters.ev_supported_dercontrol``, so the
-backend learns what the EV supports without the EVSE guessing. AC_DER_IEC only; a
-SAE session publishes no ``ChargingNeeds``, see "Known gaps".
+The DER control functions the EV supports are surfaced in
+``ChargingNeeds.der_charging_parameters.ev_supported_dercontrol``, so the backend
+learns what the EV supports without the EVSE guessing. For AC_DER_IEC they come
+from what the EV negotiates during service selection; for AC_DER_SAE from the
+``SupportedModes`` bitmap in the charge parameter discovery request
+([V2G20-3409]). See "Known gaps" for what a SAE session leaves out.
 
 Discharge power limits follow ISO 15118-20 8.3.5.2.1: negative when the
 ``negative_bidirectional_limits`` config key is set, with nominal discharge power
@@ -152,10 +154,11 @@ Known gaps
 - No SAE ``der_relay`` exists, so ``grid_support`` directives cannot reach a SAE
   session. In practice nothing changes the configuration mid-session, so the four
   optional ``DERControlCLRes`` blocks are not currently emitted.
-- A SAE session publishes no ``ChargingNeeds`` at all. The module returns early
-  with an info-level log, because the SAE ``EVApparentPowerLimits``,
-  ``EVReactivePowerLimits`` and ``EVExcitationLimits`` have no
-  ``types::iso15118::DERChargingParameters`` counterpart yet.
+- A SAE session's ``ChargingNeeds`` omits the reactive-power limits. SAE var
+  absorption and injection do not map onto the IEC charge and discharge reactive
+  fields of ``types::iso15118::DERChargingParameters``, so those are left unset.
+  The supported-modes bitmap, the four excitation fields and the optional session
+  total discharge energy available do pass through.
 - ``required_der_operating_mode`` and ``grid_connection_mode`` are dictated at the
   charge parameter discovery only. [V2G20-3358] to [V2G20-3361] require the SECC to
   re-send each one in the charge loop when it changes; that is not implemented, and
