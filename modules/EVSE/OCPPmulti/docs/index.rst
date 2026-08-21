@@ -431,8 +431,12 @@ The module maintains a per-EVSE snapshot of the DER directives currently applied
 EVSE's connection through the **set_active_directives** command. When libocpp applies, schedules, clears, supersedes, or
 expires a DER control, the snapshot is rebuilt and re-sent for every registered EVSE on its own connection.
 
-At startup the module pre-provisions an ``ACDERCtrlr`` or ``DCDERCtrlr`` device-model component (chosen by the EVSE's
-energy-transfer modes) for every DER-capable EVSE, so no static device-model JSON is required for the DER controllers.
+At startup the module pre-provisions an ``ACDERCtrlr`` or ``DCDERCtrlr`` device-model component for every EVSE, so no
+static device-model JSON is required for the DER controllers. Which of the two an EVSE gets follows the serving
+EvseManager's static ``charge_mode`` configuration, read through the config service. It is deliberately not derived
+from the EVSE's supported energy-transfer modes: those are published asynchronously and are not waited on before the
+device model is built, so an EVSE whose modes had not arrived in time received no DER controller at all for the
+lifetime of the process and answered every DER message ``UnknownComponent``.
 Any EVSE without a wired grid_support connection has its DER controller forced to ``Available="false"`` (preserving a
 CSMS-written ``"false"`` and its source), so the CSMS does not see DER as available after the wiring is removed.
 

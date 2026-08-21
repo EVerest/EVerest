@@ -19,18 +19,32 @@
 
 namespace ocpp_module_common::device_model {
 
-/// \brief Builds the DER controller component config for a single EVSE from its supported energy transfer modes.
+/// \brief Which DER controller component an EVSE gets, if any.
 ///
-/// DER-capable if it advertises a DER/bidirectional mode: AC_DER_IEC/AC_DER_SAE/AC_BPT_DER for AC, DC_BPT/DC_ACDP_BPT
-/// for DC. AC vs DC is chosen from the presence of any DC_* mode. The component is provisioned with Available "true"
-/// (ReadOnly, marking static presence) and Enabled "true" (ReadWrite, the CSMS runtime control) with empty
-/// ModesSupported.
+/// Resolved per EVSE inside the constructor from the serving evse_manager module's static charge_mode
+/// configuration, joined by requirement (the module_id the requirement was fulfilled with) rather than by
+/// tier mapping, since mappings are optional and absent from the shipped DC configurations.
 ///
-/// \returns The (ComponentKey, variables) pair for a DCDERCtrlr/ACDERCtrlr component, or std::nullopt if
-///          the EVSE is not DER-capable.
+/// Deliberately decided by the caller from static configuration rather than from an EVSE's supported energy
+/// transfer modes. Those modes are published asynchronously, so deriving the component set from them races
+/// the device model build: an EVSE whose modes had not arrived yet got no DER component at all, for the
+/// lifetime of the process, and every DER message answered UnknownComponent.
+enum class DerControllerFlavor {
+    None, ///< no DER controller component for this EVSE
+    Dc,   ///< DCDERCtrlr
+    Ac,   ///< ACDERCtrlr
+};
+
+/// \brief Builds the DER controller component config for a single EVSE.
+///
+/// The component is provisioned with Available "true" (ReadOnly, marking static presence) and Enabled "true"
+/// (ReadWrite, the CSMS runtime control) with empty ModesSupported. An EVSE that has no grid_support provider
+/// wired is force-disabled afterwards by disable_der(), so provisioning here does not assert that DER is usable.
+///
+/// \returns The (ComponentKey, variables) pair for a DCDERCtrlr/ACDERCtrlr component, or std::nullopt for
+///          DerControllerFlavor::None.
 std::optional<std::pair<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>>
-build_der_ctrlr_component_config(
-    int32_t evse_id, const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes);
+build_der_ctrlr_component_config(int32_t evse_id, DerControllerFlavor flavor);
 
 /// \brief Builds the device-model SetVariableData vector that configures (but does not enable) the DER
 ///        controller for a given DER \p capability on EVSE \p evse_id.

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <string_view>
+
 #include <algorithm>
 #include <everest/logging.hpp>
 
@@ -389,35 +391,51 @@ ocpp::v2::SetVariableData make_set_variable_data(const ocpp::v2::ComponentVariab
     return data;
 }
 
+/// The EvseManager config key naming an EVSE's charging mode. Pinned here rather than inlined so the
+/// coupling to that manifest has one home; EvseManagerStillDeclaresChargeMode asserts it still exists.
+constexpr std::string_view CHARGE_MODE_KEY = "charge_mode";
+
+/// Which DER controller component the EVSE served by \p evse_manager_module_id gets.
+///
+/// Read from static configuration rather than from the EVSE's supported energy transfer modes: those are
+/// published asynchronously and are not waited on before this device model is built, so deriving the
+/// component set from them meant an EVSE whose modes had not arrived yet got no DER controller for the
+/// lifetime of the process, and answered every DER message UnknownComponent.
+///
+/// Joined by requirement module id, not by tier mapping: mappings are optional and the shipped DC
+/// configurations do not declare one. Falls back to the Ac flavor, which is charge_mode's own manifest
+/// default, because provisioning nothing is the failure being fixed.
+DerControllerFlavor resolve_der_controller_flavor(Everest::config::ConfigServiceClient& client,
+                                                  const std::string& evse_manager_module_id) {
+    everest::config::ConfigurationParameterIdentifier identifier;
+    identifier.module_id = evse_manager_module_id;
+    identifier.configuration_parameter_name = std::string{CHARGE_MODE_KEY};
+    identifier.module_implementation_id = Everest::config::MODULE_IMPLEMENTATION_ID;
+
+    const auto result = client.get_config_value(identifier);
+    if (result.status != Everest::config::ResponseStatus::Ok) {
+        EVLOG_error << "Could not read " << CHARGE_MODE_KEY << " from module " << evse_manager_module_id << " (status "
+                    << static_cast<int>(result.status) << ": " << result.status_info
+                    << "); provisioning the AC DER controller, which is that key's default. A DER controller "
+                       "for a DC EVSE will be missing until config access is granted.";
+        return DerControllerFlavor::Ac;
+    }
+
+    const auto charge_mode = everest::config::config_entry_to_string(result.configuration_parameter.value);
+    return charge_mode == "DC" ? DerControllerFlavor::Dc : DerControllerFlavor::Ac;
+}
+
 } // anonymous namespace
 
-std::optional<std::pair<ocpp::v2::ComponentKey, std::vector<DeviceModelVariable>>> build_der_ctrlr_component_config(
-    int32_t evse_id, const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) {
-    const auto supports_mode = [&](const types::iso15118::EnergyTransferMode mode) {
-        return std::find(supported_energy_transfer_modes.cbegin(), supported_energy_transfer_modes.cend(), mode) !=
-               supported_energy_transfer_modes.cend();
-    };
-    const bool is_dc_evse =
-        std::any_of(supported_energy_transfer_modes.cbegin(), supported_energy_transfer_modes.cend(),
-                    [](const types::iso15118::EnergyTransferMode& mode) {
-                        return mode == types::iso15118::EnergyTransferMode::DC_core or
-                               mode == types::iso15118::EnergyTransferMode::DC_extended or
-                               mode == types::iso15118::EnergyTransferMode::DC_combo_core or
-                               mode == types::iso15118::EnergyTransferMode::DC_unique or
-                               mode == types::iso15118::EnergyTransferMode::DC or
-                               mode == types::iso15118::EnergyTransferMode::DC_BPT or
-                               mode == types::iso15118::EnergyTransferMode::DC_ACDP or
-                               mode == types::iso15118::EnergyTransferMode::DC_ACDP_BPT;
-                    });
-    const bool dc_der_capable = supports_mode(types::iso15118::EnergyTransferMode::DC_BPT) or
-                                supports_mode(types::iso15118::EnergyTransferMode::DC_ACDP_BPT);
-    const bool ac_der_capable = supports_mode(types::iso15118::EnergyTransferMode::AC_DER_IEC) or
-                                supports_mode(types::iso15118::EnergyTransferMode::AC_DER_SAE) or
-                                supports_mode(types::iso15118::EnergyTransferMode::AC_BPT_DER);
-    if (is_dc_evse and dc_der_capable) {
+std::optional<std::pair<ocpp::v2::ComponentKey, std::vector<DeviceModelVariable>>>
+build_der_ctrlr_component_config(int32_t evse_id, DerControllerFlavor flavor) {
+    switch (flavor) {
+    case DerControllerFlavor::Dc:
         return std::make_pair(get_dc_der_ctrlr_component_key(evse_id), build_dc_der_ctrlr_variables());
-    } else if (ac_der_capable) {
+    case DerControllerFlavor::Ac:
         return std::make_pair(get_ac_der_ctrlr_component_key(evse_id), build_ac_der_ctrlr_variables());
+    case DerControllerFlavor::None:
+        break;
     }
     return std::nullopt;
 }
@@ -587,7 +605,8 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
         component_configs[connected_ev_component_key] = build_connected_ev_variables();
 
         if (with_der_components) {
-            auto der_ctrlr_config = build_der_ctrlr_component_config(evse_info.id, supported_energy_transfer_modes);
+            const auto der_flavor = resolve_der_controller_flavor(*config_service_client, evse_manager->module_id);
+            auto der_ctrlr_config = build_der_ctrlr_component_config(evse_info.id, der_flavor);
             if (der_ctrlr_config.has_value()) {
                 component_configs[der_ctrlr_config->first] = std::move(der_ctrlr_config->second);
             }
