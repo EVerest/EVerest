@@ -34,7 +34,7 @@
 /modules/API/RpcApi/ @FaHaGit @barsnick @corneliusclaussen @hikinggrass @pietfried @SebaLukas @mlitre
 /modules/EnergyManagement/EEBUS/ @mlitre @andistorm @hikinggrass @pietfried
 /modules/EnergyManagement/EnergyManager/ @corneliusclaussen @hikinggrass @pietfried @mlitre
-/modules/EnergyManagement/EnergyNode/ @corneliusclaussen @hikinggrass @pietfried
+/modules/EnergyManagement/EnergyNode/ @corneliusclaussen @hikinggrass @pietfried @mlitre
 /modules/EV/EvManager/ @SebaLukas @pietfried @james-ctc @mlitre
 /modules/EV/PyEvJosev/ @SebaLukas @corneliusclaussen @pietfried @james-ctc @mlitre
 /modules/EVSE/Auth/ @pietfried @corneliusclaussen @hikinggrass @mlitre
