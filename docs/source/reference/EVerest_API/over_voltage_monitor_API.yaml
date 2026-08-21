@@ -321,7 +321,10 @@ components:
           description: The severity of the error
           $ref: '#/components/schemas/ErrorSeverityEnum'
         message:
-          description: Addition information about the error
+          description: |-
+            Optional additional information about the error
+            OCPP 1.6: Sets `info` on MREC errors and `vendorId` otherwise
+            OCPP 2.x: Sets `techInfo`
           type: string
     ErrorEnum:
       description: |
