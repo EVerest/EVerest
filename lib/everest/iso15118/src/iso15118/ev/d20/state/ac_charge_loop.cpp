@@ -86,14 +86,14 @@ void AC_ChargeLoop::enter() {
 
 Result AC_ChargeLoop::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::AC_ChargeLoopResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
     }
 
     const dt::Dynamic_AC_CLResControlMode* mode =
@@ -104,7 +104,7 @@ Result AC_ChargeLoop::feed(Event ev) {
         logf_error("AC_ChargeLoopResponse offers a control mode the EV did not request");
         m_ctx.stop_session();
         // no transition; the session finishes on the stop flag
-        return {};
+        return Result::stopping();
     }
 
     if (res->status.has_value() and res->status->notification == dt::EvseNotification::Terminate) {
@@ -119,7 +119,7 @@ Result AC_ChargeLoop::feed(Event ev) {
     m_ctx.feedback.ac_target_power(*mode);
     m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service(),
                                     m_ctx.selected_ac_connector().value_or(dt::AcConnector::SinglePhase)));
-    return {};
+    return Result::awaiting();
 }
 
 } // namespace iso15118::ev::d20::state

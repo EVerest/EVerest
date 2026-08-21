@@ -22,14 +22,14 @@ void ServiceSelection::enter() {
 
 Result ServiceSelection::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::ServiceSelectionResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
     }
 
     const auto service = m_ctx.selected_service();
@@ -50,7 +50,7 @@ Result ServiceSelection::feed(Event ev) {
 
     logf_error("selected service category is not supported by the EV");
     m_ctx.stop_session();
-    return {};
+    return Result::stopping();
 }
 
 } // namespace iso15118::ev::d20::state
