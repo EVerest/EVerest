@@ -78,6 +78,55 @@ SCENARIO("ISO15118-20 EV splits an advertised AC total across the selected conne
         }
     }
 
+    GIVEN("A two-phase EV advertising a 7360 W total") {
+        // Two-phase EVs are real hardware, and phase_count is the EV's own line count rather
+        // than a property of the connector, so the total has to reach the lines the EV can
+        // actually draw on.
+        constexpr float total = 7360.0f;
+        constexpr uint8_t phase_count = 2;
+
+        WHEN("the selected parameter set is SinglePhase") {
+            const auto split = ev::split_ac_limit(total, phase_count, dt::AcConnector::SinglePhase);
+
+            THEN("only the base element is emitted, carrying what one line can draw") {
+                REQUIRE(split.base == 3680.0f);
+                REQUIRE_FALSE(split.l2.has_value());
+                REQUIRE_FALSE(split.l3.has_value());
+            }
+        }
+
+        WHEN("the selected parameter set is ThreePhase") {
+            const auto split = ev::split_ac_limit(total, phase_count, dt::AcConnector::ThreePhase);
+
+            THEN("the two lines the EV draws on carry the total and the third is zero") {
+                REQUIRE(split.base == 3680.0f);
+                REQUIRE(split.l2.has_value());
+                REQUIRE(split.l3.has_value());
+                REQUIRE(*split.l2 == 3680.0f);
+                REQUIRE(*split.l3 == 0.0f);
+            }
+
+            THEN("the lines sum back to the advertised total") {
+                REQUIRE(split.base + *split.l2 + *split.l3 == total);
+            }
+        }
+    }
+
+    GIVEN("A line count above three, which no AC connector provides") {
+        constexpr float total = 11040.0f;
+
+        WHEN("the total is split across a ThreePhase connector") {
+            const auto split = ev::split_ac_limit(total, 4, dt::AcConnector::ThreePhase);
+
+            THEN("the count is clamped to three so the lines still sum to the total") {
+                REQUIRE(split.base == 3680.0f);
+                REQUIRE(*split.l2 == 3680.0f);
+                REQUIRE(*split.l3 == 3680.0f);
+                REQUIRE(split.base + *split.l2 + *split.l3 == total);
+            }
+        }
+    }
+
     GIVEN("A zero limit") {
         WHEN("split across three phases") {
             const auto split = ev::split_ac_limit(0.0f, 3, dt::AcConnector::ThreePhase);

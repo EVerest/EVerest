@@ -17,7 +17,8 @@ namespace iso15118::ev {
  *
  * - SinglePhase: only the base element may be used, and it is that one line's value.
  * - ThreePhase without peers: the base element is the sum of all three lines, evenly distributed.
- * - ThreePhase with peers: the base element is the L1 value alone.
+ * - ThreePhase with peers: the base element is the L1 value alone, so every line the EV draws
+ *   on has to carry its own share or the advertised total is understated.
  *
  * Emitting peers is therefore the only way to describe an unevenly loaded three-phase connector,
  * and the only correct way for a single-phase EV plugged into one.
@@ -32,7 +33,8 @@ struct AcPhaseLimits {
  * Split an advertised AC total across the connector the EV selected.
  *
  * \param total       the EV's advertised limit, as a total across its own \p phase_count lines
- * \param phase_count the EV's own line count; 0 is treated as 1 rather than dividing by zero
+ * \param phase_count the EV's own line count, clamped to 1..3: no AC connector offers more
+ *                    lines, and 0 would divide by zero
  * \param connector   the AC connector of the parameter set the EV selected
  */
 AcPhaseLimits split_ac_limit(float total, uint8_t phase_count, message_20::datatypes::AcConnector connector);
