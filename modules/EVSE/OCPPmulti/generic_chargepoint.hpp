@@ -57,6 +57,7 @@ public:
     void start(ocpp::v2::BootReasonEnum bootreason, const std::set<std::string>& resuming_session_ids,
                bool start_connecting) override;
     void stop() override;
+    bool is_message_queue_idle() override;
 
     std::optional<ocpp::v2::DataTransferResponse>
     data_transfer_req(const ocpp::v2::DataTransferRequest& request) override;
