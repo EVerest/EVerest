@@ -31,6 +31,7 @@ EVSEStateEnum evse_manager_session_event_to_evse_state(types::evse_manager::Sess
     case Event::ChargingPausedEVSE:
         return EVSEStateEnum::ChargingPausedEVSE;
     case Event::ChargingFinished:
+    case Event::StoppingTransaction:
         return EVSEStateEnum::Finished;
     case Event::StoppingCharging:
         return EVSEStateEnum::FinishedEV;

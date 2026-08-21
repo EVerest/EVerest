@@ -66,6 +66,11 @@ void SessionInfo::update_state(const types::evse_manager::SessionEvent& session_
         case Event::StoppingCharging:
             this->ext.state = EvseStateEnum::FinishedEV;
             break;
+        case Event::StoppingTransaction:
+            // Relais/contactor confirmed open, transaction is really ending. No dedicated high-level
+            // state for this (still reflected as FinishedEV from the preceding StoppingCharging event),
+            // but still re-publish session_info so consumers see the updated timestamp.
+            break;
         case Event::TransactionFinished: {
             this->handle_transaction_finished(session_event);
             break;
