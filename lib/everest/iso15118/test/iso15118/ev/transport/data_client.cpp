@@ -97,7 +97,7 @@ Ipv6EndPoint loopback_endpoint(uint16_t port) {
 
 } // namespace
 
-SCENARIO("DataClient connects and exchanges raw V2GTP frames over IPv6 loopback") {
+SCENARIO("ISO15118-20 EV DataClient connects and exchanges raw V2GTP frames over IPv6 loopback") {
     GIVEN("a listening socket on [::1] and a DataClient bound to a reactor") {
         LoopbackListener listener;
         fd_event_handler handler;
@@ -118,7 +118,7 @@ SCENARIO("DataClient connects and exchanges raw V2GTP frames over IPv6 loopback"
             loopback_endpoint(listener.port()), "", [&]() { ++connected_count; }, [&]() { ++failed_count; });
 
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        const auto pump_until = [&](auto&& predicate) {
+        const auto run_reactor_until = [&](auto&& predicate) {
             while (not predicate() and std::chrono::steady_clock::now() < deadline) {
                 handler.poll(std::chrono::milliseconds(50));
                 handler.run_actions();
@@ -127,8 +127,8 @@ SCENARIO("DataClient connects and exchanges raw V2GTP frames over IPv6 loopback"
             return predicate();
         };
 
-        WHEN("the reactor is pumped until the connection is established") {
-            const auto connected = pump_until([&]() { return connected_count > 0 and listener.peer() >= 0; });
+        WHEN("the reactor is run until the connection is established") {
+            const auto connected = run_reactor_until([&]() { return connected_count > 0 and listener.peer() >= 0; });
 
             THEN("the on-connected callback fired exactly once and on_failed did not fire") {
                 REQUIRE(connected);
@@ -196,14 +196,14 @@ SCENARIO("DataClient connects and exchanges raw V2GTP frames over IPv6 loopback"
                 const std::vector<uint8_t> reply{0xca, 0xfe, 0xba, 0xbe, 0x10};
                 REQUIRE(::send(listener.peer(), reply.data(), reply.size(), 0) == static_cast<ssize_t>(reply.size()));
 
-                pump_until([&]() { return received_on_client.size() >= reply.size(); });
+                run_reactor_until([&]() { return received_on_client.size() >= reply.size(); });
                 REQUIRE(received_on_client == reply);
             }
         }
     }
 }
 
-SCENARIO("DataClient surfaces a failed connect via on_failed") {
+SCENARIO("ISO15118-20 EV DataClient surfaces a failed connect via on_failed") {
     GIVEN("a closed port that nothing is listening on") {
         // Bind+listen to learn a free port, then let the listener close so the
         // connect is refused. libio's connect failure path sleeps for the full
@@ -223,7 +223,7 @@ SCENARIO("DataClient surfaces a failed connect via on_failed") {
         client.connect(
             loopback_endpoint(closed_port), "", [&]() { ++connected_count; }, [&]() { ++failed_count; });
 
-        WHEN("the reactor is pumped until the connect fails") {
+        WHEN("the reactor is run until the connect fails") {
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
             while (failed_count == 0 and std::chrono::steady_clock::now() < deadline) {
                 handler.poll(std::chrono::milliseconds(50));
@@ -236,7 +236,7 @@ SCENARIO("DataClient surfaces a failed connect via on_failed") {
             }
 
             THEN("a second connect to the same closed port re-registers and surfaces its own failure") {
-                // Drain the first connect's failure so the second is unambiguous.
+                // Consume the first connect's failure so the second is unambiguous.
                 while (failed_count == 0 and std::chrono::steady_clock::now() < deadline) {
                     handler.poll(std::chrono::milliseconds(50));
                     handler.run_actions();
