@@ -453,10 +453,10 @@ SCENARIO("Enableable function bits render as names for the log lines") {
         }
     }
 
-    GIVEN("A bitmap holding only bits the SECC never enables") {
-        THEN("It renders as none") {
+    GIVEN("A bitmap holding a bit the SECC never enables") {
+        THEN("It still renders by name, callers pre-mask what they log") {
             REQUIRE(iso15118::d20::state::sae_function_names(bit_of(sae::DerBitMapFunctions::ChargeFunction)) ==
-                    "none");
+                    "charge");
         }
     }
 }
