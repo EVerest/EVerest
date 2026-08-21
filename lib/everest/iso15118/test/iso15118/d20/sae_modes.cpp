@@ -61,6 +61,11 @@ SCENARIO("SAE function names parse to bitmap functions") {
             CHECK(parse_sae_function_name("frequency watt") == std::nullopt);
             CHECK(parse_sae_function_name("") == std::nullopt);
         }
+
+        THEN("The lookup is case sensitive and does not trim") {
+            CHECK(parse_sae_function_name("Charge") == std::nullopt);
+            CHECK(parse_sae_function_name("charge ") == std::nullopt);
+        }
     }
 }
 
@@ -109,6 +114,11 @@ SCENARIO("SAE bitmap masks match the specified bit layout") {
         THEN("The bits without an Enable in DERControlCPDRes are clear") {
             constexpr std::uint32_t not_enableable_bits = (1U << 0) | (1U << 1) | (1U << 21) | (1U << 22);
             CHECK((SAE_ENABLED_MODE_MASK & not_enableable_bits) == 0);
+        }
+
+        THEN("Every other used bit is set") {
+            constexpr std::uint32_t not_enableable_bits = (1U << 0) | (1U << 1) | (1U << 21) | (1U << 22);
+            CHECK(SAE_ENABLED_MODE_MASK == (SAE_MODE_BITMAP_MASK & ~not_enableable_bits));
         }
     }
 }
