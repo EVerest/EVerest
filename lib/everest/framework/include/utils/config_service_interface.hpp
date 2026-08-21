@@ -112,6 +112,18 @@ constexpr std::string_view to_string(ActiveSlotStatus status) {
     return "Unknown";
 }
 
+/// \brief What produced an ActiveSlotUpdate - the axis consumers must discriminate on.
+///
+/// A SlotInfo event reports a new active/next-boot slot and repeats the current module status
+/// unchanged, so a status-only consumer must ignore it. A ModuleStatus event is always meaningful
+/// even when it repeats the previous status: a second failed start reports FailedToStart again, and
+/// a second restart request reports RestartTriggered again. Comparing status values cannot tell the
+/// two apart, which is why the cause is carried explicitly.
+enum class ActiveSlotUpdateCause {
+    ModuleStatus,
+    SlotInfo
+};
+
 // ---------------------------------------------------------------------------
 // Compound result types
 // ---------------------------------------------------------------------------
@@ -138,6 +150,9 @@ struct ActiveSlotUpdate {
     int active_slot_id;
     std::optional<int> next_boot_slot_id;
     ActiveSlotStatus status;
+    // Defaulted so a default-constructed update (test helpers) reads as a status event; every
+    // production event gets its cause explicitly from publish_active_slot_update().
+    ActiveSlotUpdateCause cause{ActiveSlotUpdateCause::ModuleStatus};
 };
 
 struct ConfigParameterUpdateNotice {

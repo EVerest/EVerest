@@ -57,7 +57,8 @@ public:
         auto data = json.dump();
         publish(topic, data);
     }
-    void publish(const std::string& topic, const json& json, QOS qos, bool retain = false) override {
+    void publish(const std::string& topic, const json& json, QOS qos, bool retain = false,
+                 bool record_retained = true) override {
         publish(topic, json);
     }
     void publish(const std::string& topic, const std::string& data) override {
@@ -65,7 +66,8 @@ public:
         std::printf("publish(%s) %s\n", topic.c_str(), data.c_str());
         publish_log.push_back({topic, data});
     }
-    void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false) override {
+    void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false,
+                 bool record_retained = true) override {
         publish(topic, data);
     }
     void subscribe(const std::string& topic) override {

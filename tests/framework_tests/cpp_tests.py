@@ -809,7 +809,7 @@ class TestConfigService:
 
         # set ReadWrite param whose handler vetoes the change at runtime. Under the persist-first
         # contract the value is still persisted for the next boot, so the veto surfaces as
-        # RebootRequired rather than a hard rejection.
+        # RebootRequired rather than a hard rejection; the module's veto is reflected in status_info.
         result = await probe_module.set_config_value(
             module_id="test_config_target",
             param_name="rw_reject_param",

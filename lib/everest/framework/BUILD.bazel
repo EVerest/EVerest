@@ -142,6 +142,20 @@ cc_binary(
     ],
 )
 
+cc_library(
+    name = "management_api",
+    srcs = glob(["src/management_api/*.cpp"]),
+    hdrs = glob(["src/management_api/include/*.hpp"]),
+    cxxopts = ["-std=c++17"],
+    strip_include_prefix = "src/management_api/include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":framework",
+        "//lib/everest/everest_api_types:everest_api_types",
+        "//lib/everest/log:liblog",
+    ],
+)
+
 cc_binary(
     name = "manager",
     srcs = glob(
@@ -158,6 +172,7 @@ cc_binary(
     deps = [
         ":controller-ipc",
         ":framework",
+        ":management_api",
         "//lib/everest/log:liblog",
         "@boost.program_options",
         "@com_github_fmtlib_fmt//:fmt",
