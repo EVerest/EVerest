@@ -334,8 +334,10 @@ TEST(DerSetupTest, trip_fractions_match_the_library_default_must_trip_curves) {
     ASSERT_FALSE(over.curve_data_points.empty());
     ASSERT_FALSE(under.curve_data_points.empty());
 
-    EXPECT_FLOAT_EQ(module::OVER_VOLTAGE_TRIP_FRACTION * 100.0f, over.curve_data_points.front().y_value);
-    EXPECT_FLOAT_EQ(module::UNDER_VOLTAGE_TRIP_FRACTION * 100.0f, under.curve_data_points.front().y_value);
+    // Curve points are ordered by ascending duration, so the continuous-operation threshold that the
+    // advertised window mirrors is the longest-duration point.
+    EXPECT_FLOAT_EQ(module::OVER_VOLTAGE_TRIP_FRACTION * 100.0f, over.curve_data_points.back().y_value);
+    EXPECT_FLOAT_EQ(module::UNDER_VOLTAGE_TRIP_FRACTION * 100.0f, under.curve_data_points.back().y_value);
 }
 
 TEST(DerSetupTest, derive_both_der_services_yields_both_limits) {
