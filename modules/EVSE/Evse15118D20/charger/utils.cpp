@@ -367,6 +367,40 @@ types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::DER_Dynamic_A
     return limits;
 }
 
+types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode& mode) {
+    // The apparent, reactive and excitation limits have no AcEvPowerLimits counterpart and are not surfaced.
+    types::iso15118::AcEvPowerLimits limits;
+    limits.max_charge_power = make_ac_power(mode.max_charge_power, mode.max_charge_power_L2, mode.max_charge_power_L3);
+    limits.min_charge_power = make_ac_power(mode.min_charge_power, mode.min_charge_power_L2, mode.min_charge_power_L3);
+    limits.max_discharge_power =
+        make_ac_power(mode.maximum_discharge_power, mode.maximum_discharge_power_L2, mode.maximum_discharge_power_L3);
+    limits.min_discharge_power =
+        make_ac_power(mode.minimum_discharge_power, mode.minimum_discharge_power_L2, mode.minimum_discharge_power_L3);
+    return limits;
+}
+
+types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::sae::DER_Scheduled_AC_CLReqControlMode& mode) {
+    types::iso15118::AcEvPowerLimits limits;
+    limits.max_charge_power = make_ac_power(mode.max_charge_power, mode.max_charge_power_L2, mode.max_charge_power_L3);
+    limits.min_charge_power = make_ac_power(mode.min_charge_power, mode.min_charge_power_L2, mode.min_charge_power_L3);
+    limits.max_discharge_power =
+        make_ac_power(mode.maximum_discharge_power, mode.maximum_discharge_power_L2, mode.maximum_discharge_power_L3);
+    limits.min_discharge_power =
+        make_ac_power(mode.minimum_discharge_power, mode.minimum_discharge_power_L2, mode.minimum_discharge_power_L3);
+    return limits;
+}
+
+types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::sae::DER_Dynamic_AC_CLReqControlMode& mode) {
+    types::iso15118::AcEvPowerLimits limits;
+    limits.max_charge_power = make_ac_power(mode.max_charge_power, mode.max_charge_power_L2, mode.max_charge_power_L3);
+    limits.min_charge_power = make_ac_power(mode.min_charge_power, mode.min_charge_power_L2, mode.min_charge_power_L3);
+    limits.max_discharge_power =
+        make_ac_power(mode.maximum_discharge_power, mode.maximum_discharge_power_L2, mode.maximum_discharge_power_L3);
+    limits.min_discharge_power =
+        make_ac_power(mode.minimum_discharge_power, mode.minimum_discharge_power_L2, mode.minimum_discharge_power_L3);
+    return limits;
+}
+
 types::iso15118::AcEvPresentPowerValues fill_ac_ev_present_power_values(const dt::Dynamic_AC_CLReqControlMode& mode) {
     types::iso15118::AcEvPresentPowerValues present_values{};
 

@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <cstring>
+#include <ctime>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -20,12 +23,18 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <iso15118/d20/config.hpp>
+#include <iso15118/d20/control_event.hpp>
+#include <iso15118/d20/limits.hpp>
 #include <iso15118/io/logging.hpp>
 #include <iso15118/io/sdp.hpp>
 #include <iso15118/io/sdp_packet.hpp>
 #include <iso15118/io/stream_view.hpp>
+#include <iso15118/message/authorization.hpp>
+#include <iso15118/message/authorization_setup.hpp>
+#include <iso15118/message/service_discovery.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
+#include <iso15118/message/type.hpp>
 #include <iso15118/message/variant.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/iso.hpp>
@@ -33,11 +42,13 @@
 
 namespace {
 
-iso15118::TbdController make_controller(bool enable_sdp_server,
-                                        const iso15118::session::feedback::Callbacks& callbacks) {
+namespace dt = iso15118::message_20::datatypes;
+
+iso15118::TbdController make_controller(bool enable_sdp_server, const iso15118::session::feedback::Callbacks& callbacks,
+                                        iso15118::d20::EvseSetupConfig setup = {}) {
     return iso15118::TbdController{
         iso15118::TbdConfig{{}, "lo", iso15118::config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER, enable_sdp_server},
-        callbacks, iso15118::d20::EvseSetupConfig{}};
+        callbacks, std::move(setup)};
 }
 
 std::array<int, 2> make_nonblocking_socketpair() {
@@ -222,6 +233,142 @@ Response require_response(const std::optional<std::vector<uint8_t>>& response,
     return variant.get<Response>();
 }
 
+// Encodes a -20 request and wraps it in a V2GTP frame ready to be written to the socket.
+template <typename Request> std::vector<std::uint8_t> make_request_frame(const Request& request) {
+    std::array<std::uint8_t, 1024> buffer{};
+    const iso15118::io::StreamOutputView view{buffer.data(), buffer.size()};
+    const auto payload_len = iso15118::message_20::serialize(request, view);
+    return make_v2gtp_frame(iso15118::io::v2gtp::PayloadType::Part20Main, buffer.data(), payload_len);
+}
+
+// Decodes a received V2GTP frame, or returns nullopt when the frame is missing, undecodable or of
+// another message type.
+template <typename Response>
+std::optional<Response> decode_response(const std::optional<std::vector<std::uint8_t>>& frame) {
+    constexpr std::size_t header_size = iso15118::io::SdpPacket::V2GTP_HEADER_SIZE;
+
+    if (not frame.has_value() or frame->size() <= header_size) {
+        return std::nullopt;
+    }
+
+    const iso15118::io::StreamInputView view{frame->data() + header_size, frame->size() - header_size};
+    const iso15118::message_20::Variant variant(iso15118::io::v2gtp::PayloadType::Part20Main, view);
+
+    if (const auto* message = variant.get_if<Response>()) {
+        return *message;
+    }
+    return std::nullopt;
+}
+
+struct ServiceDiscoveryRunResult {
+    iso15118::StartSessionResult ok{};
+    bool timed_out{false};
+    std::optional<iso15118::message_20::SessionSetupResponse> session_setup_res;
+    std::optional<iso15118::message_20::AuthorizationSetupResponse> authorization_setup_res;
+    std::optional<iso15118::message_20::AuthorizationResponse> authorization_res;
+    std::optional<iso15118::message_20::ServiceDiscoveryResponse> service_discovery_res;
+};
+
+// Drives one session from SessionSetup through AuthorizationSetup and Authorization up to
+// ServiceDiscovery, so assertions can be made on the ServiceDiscoveryRes that actually reaches the
+// wire rather than on internal configuration state. EIM authorization is granted by the caller from
+// the REQUIRE_AUTH_EIM feedback signal.
+ServiceDiscoveryRunResult run_service_discovery_round_trip(iso15118::TbdController& controller,
+                                                           std::array<int, 2>& fds) {
+    ServiceDiscoveryRunResult result;
+
+    auto start_options = iso15118::StartSessionOptions{};
+    start_options.skip_app_protocol_negotiation = true;
+
+    std::thread start_session_thread([&] { result.ok = controller.start_session(fds.at(0), start_options); });
+
+    SessionWatchdog watchdog(controller, std::chrono::seconds(20));
+
+    const auto exchange = [&fds](const std::vector<std::uint8_t>& frame) {
+        ::write(fds.at(1), frame.data(), frame.size());
+        return read_v2gtp_frame(fds.at(1), std::chrono::seconds(5));
+    };
+
+    const auto now = [] { return static_cast<std::uint64_t>(std::time(nullptr)); };
+
+    result.session_setup_res = decode_response<iso15118::message_20::SessionSetupResponse>(exchange(
+        make_v2gtp_frame(iso15118::io::v2gtp::PayloadType::Part20Main, session_setup_req, sizeof(session_setup_req))));
+
+    dt::SessionId session_id{};
+    if (result.session_setup_res.has_value()) {
+        session_id = result.session_setup_res->header.session_id;
+
+        iso15118::message_20::AuthorizationSetupRequest request;
+        request.header.session_id = session_id;
+        request.header.timestamp = now();
+
+        result.authorization_setup_res =
+            decode_response<iso15118::message_20::AuthorizationSetupResponse>(exchange(make_request_frame(request)));
+    }
+
+    if (result.authorization_setup_res.has_value()) {
+        iso15118::message_20::AuthorizationRequest request;
+        request.header.session_id = session_id;
+        request.header.timestamp = now();
+        request.selected_authorization_service = dt::Authorization::EIM;
+        request.authorization_mode.emplace<dt::EIM_ASReqAuthorizationMode>();
+
+        result.authorization_res =
+            decode_response<iso15118::message_20::AuthorizationResponse>(exchange(make_request_frame(request)));
+    }
+
+    if (result.authorization_res.has_value() and
+        result.authorization_res->evse_processing == dt::Processing::Finished) {
+        iso15118::message_20::ServiceDiscoveryRequest request;
+        request.header.session_id = session_id;
+        request.header.timestamp = now();
+
+        result.service_discovery_res =
+            decode_response<iso15118::message_20::ServiceDiscoveryResponse>(exchange(make_request_frame(request)));
+    }
+
+    close(fds.at(1));
+    controller.shutdown();
+    start_session_thread.join();
+
+    result.timed_out = watchdog.timed_out();
+    return result;
+}
+
+// EVSE setup that offers AC_DER_SAE but carries no SAE DER limits. Without a preceding
+// update_der_sae_limits the offer rules strip the service, which is exactly the contract under test.
+iso15118::d20::EvseSetupConfig make_ac_der_sae_setup() {
+    iso15118::d20::EvseSetupConfig setup{};
+    setup.evse_id = "everest se";
+    setup.supported_energy_services = {dt::ServiceCategory::AC, dt::ServiceCategory::AC_DER_SAE};
+    setup.authorization_services = {dt::Authorization::EIM};
+    setup.enable_certificate_install_service = false;
+    setup.control_mobility_modes = {{dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
+    return setup;
+}
+
+// Grants EIM authorization as soon as the SECC asks for it, so a session can be driven past the
+// Authorization state up to ServiceDiscovery. The controller is set after construction because it
+// needs the callbacks the other way round.
+struct AutoEimAuthorizer {
+    iso15118::TbdController* controller{nullptr};
+
+    iso15118::session::feedback::Callbacks callbacks() {
+        iso15118::session::feedback::Callbacks cb;
+        cb.signal = [this](iso15118::session::feedback::Signal signal) {
+            if (signal == iso15118::session::feedback::Signal::REQUIRE_AUTH_EIM and controller != nullptr) {
+                controller->send_control_event(iso15118::d20::AuthorizationResponse{true});
+            }
+        };
+        return cb;
+    }
+};
+
+bool offers(const iso15118::message_20::datatypes::ServiceList& services, dt::ServiceCategory service) {
+    return std::any_of(services.begin(), services.end(),
+                       [service](const auto& offered) { return offered.service_id == service; });
+}
+
 } // namespace
 
 SCENARIO("session_start guard check - invalid/closed fd") {
@@ -351,6 +498,54 @@ SCENARIO("session_start functionality - skip sap") {
             REQUIRE(result.ok == iso15118::StartSessionResult::SessionComplete);
             REQUIRE_FALSE(controller.has_active_session());
             REQUIRE_FALSE(fd_is_open(fds.at(0)));
+        }
+    }
+}
+
+// The SAE DER limits are read when the SessionConfig is built, so update_der_sae_limits governs the
+// offer made by the NEXT session. These two scenarios pin that contract on the ServiceDiscoveryRes
+// payload that actually reaches the wire.
+SCENARIO("update_der_sae_limits before start_session puts AC_DER_SAE into the offer") {
+    AutoEimAuthorizer authorizer;
+
+    auto controller = make_controller(false, authorizer.callbacks(), make_ac_der_sae_setup());
+    authorizer.controller = &controller;
+
+    auto fds = make_nonblocking_socketpair();
+
+    WHEN("valid SAE DER limits and setup config are supplied before the session starts") {
+        controller.update_der_sae_limits(iso15118::d20::SaeDerTransferLimits{}, iso15118::d20::DerSaeSetupConfig{});
+
+        const auto result = run_service_discovery_round_trip(controller, fds);
+
+        THEN("the ServiceDiscoveryRes offers AC_DER_SAE") {
+            REQUIRE_FALSE(result.timed_out);
+            REQUIRE(result.service_discovery_res.has_value());
+            REQUIRE(result.service_discovery_res->response_code == dt::ResponseCode::OK);
+            REQUIRE(
+                offers(result.service_discovery_res->energy_transfer_service_list, dt::ServiceCategory::AC_DER_SAE));
+        }
+    }
+}
+
+SCENARIO("without update_der_sae_limits AC_DER_SAE is kept out of the offer") {
+    AutoEimAuthorizer authorizer;
+
+    auto controller = make_controller(false, authorizer.callbacks(), make_ac_der_sae_setup());
+    authorizer.controller = &controller;
+
+    auto fds = make_nonblocking_socketpair();
+
+    WHEN("the session starts without any SAE DER limits") {
+        const auto result = run_service_discovery_round_trip(controller, fds);
+
+        THEN("the ServiceDiscoveryRes offers AC but not AC_DER_SAE") {
+            REQUIRE_FALSE(result.timed_out);
+            REQUIRE(result.service_discovery_res.has_value());
+            REQUIRE(result.service_discovery_res->response_code == dt::ResponseCode::OK);
+            REQUIRE(offers(result.service_discovery_res->energy_transfer_service_list, dt::ServiceCategory::AC));
+            REQUIRE_FALSE(
+                offers(result.service_discovery_res->energy_transfer_service_list, dt::ServiceCategory::AC_DER_SAE));
         }
     }
 }
