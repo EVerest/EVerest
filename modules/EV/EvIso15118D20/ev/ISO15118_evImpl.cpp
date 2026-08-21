@@ -72,6 +72,7 @@ void ISO15118_evImpl::check_config() {
     };
 
     iso15118::ev::AcChargeParams ac_params;
+    ac_params.phase_count = static_cast<uint8_t>(mod->config.ac_phase_count);
     ac_params.max_charge_power = static_cast<float>(mod->config.ac_max_charge_power_w);
     ac_params.min_charge_power = static_cast<float>(mod->config.ac_min_charge_power_w);
     ac_params.max_discharge_power = static_cast<float>(mod->config.ac_max_discharge_power_w);
@@ -97,7 +98,8 @@ void ISO15118_evImpl::ready() {
     worker = std::thread([this] { session_worker(); });
 }
 
-ISO15118_evImpl::~ISO15118_evImpl() {
+// Idempotent, so the destructor still tears down cleanly if the framework never calls this.
+void ISO15118_evImpl::shutdown() {
     {
         auto h = session.handle();
         (*h).shutting_down = true;
@@ -109,6 +111,10 @@ ISO15118_evImpl::~ISO15118_evImpl() {
     if (worker.joinable()) {
         worker.join();
     }
+}
+
+ISO15118_evImpl::~ISO15118_evImpl() {
+    shutdown();
 }
 
 iso15118::ev::EvConfig
@@ -343,6 +349,7 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
         const bool is_ac = energy_service == dt::ServiceCategory::AC || energy_service == dt::ServiceCategory::AC_BPT ||
                            energy_service == dt::ServiceCategory::AC_DER_IEC;
         if (is_ac) {
+            (*h).ac_params.phase_count = static_cast<uint8_t>(mod->config.ac_phase_count);
             (*h).ac_params.max_charge_power = static_cast<float>(mod->config.ac_max_charge_power_w);
             (*h).ac_params.min_charge_power = static_cast<float>(mod->config.ac_min_charge_power_w);
         }

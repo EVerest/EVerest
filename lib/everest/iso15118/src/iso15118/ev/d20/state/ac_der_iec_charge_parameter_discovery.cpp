@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/ev/ac_phase_split.hpp>
 #include <iso15118/ev/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
@@ -14,12 +15,34 @@ void AC_DER_IEC_ChargeParameterDiscovery::enter() {
     logf_debug("Enter state: AC_DER_IEC_ChargeParameterDiscovery");
 
     const auto p = m_ctx.get_ac_params();
+    const auto connector = m_ctx.selected_ac_connector().value_or(dt::AcConnector::SinglePhase);
+
+    const auto assign = [](std::optional<dt::RationalNumber>& out, const std::optional<float>& value) {
+        out = value.has_value() ? std::make_optional(dt::from_float(*value)) : std::nullopt;
+    };
 
     dt::DER_AC_CPDReqEnergyTransferMode mode{};
-    mode.max_charge_power = dt::from_float(p.max_charge_power);
-    mode.min_charge_power = dt::from_float(p.min_charge_power);
-    mode.max_discharge_power = dt::from_float(p.max_charge_power);
-    mode.min_discharge_power = dt::from_float(p.min_charge_power);
+
+    const auto max = split_ac_limit(p.max_charge_power, p.phase_count, connector);
+    mode.max_charge_power = dt::from_float(max.base);
+    assign(mode.max_charge_power_L2, max.l2);
+    assign(mode.max_charge_power_L3, max.l3);
+
+    const auto min = split_ac_limit(p.min_charge_power, p.phase_count, connector);
+    mode.min_charge_power = dt::from_float(min.base);
+    assign(mode.min_charge_power_L2, min.l2);
+    assign(mode.min_charge_power_L3, min.l3);
+
+    // NOTE: the discharge limits are derived from the CHARGE parameters, which predates this
+    // change and looks like a copy-paste defect; preserved here so the split does not also
+    // alter which value is advertised.
+    mode.max_discharge_power = dt::from_float(max.base);
+    assign(mode.max_discharge_power_L2, max.l2);
+    assign(mode.max_discharge_power_L3, max.l3);
+
+    mode.min_discharge_power = dt::from_float(min.base);
+    assign(mode.min_discharge_power_L2, min.l2);
+    assign(mode.min_discharge_power_L3, min.l3);
     mode.processing = dt::Processing::Finished;
 
     message_20::DER_AC_ChargeParameterDiscoveryRequest req;

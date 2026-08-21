@@ -12,4 +12,8 @@ void EvIso15118D20::ready() {
     invoke_ready(*p_ev);
 }
 
+void EvIso15118D20::shutdown() {
+    invoke_shutdown(*p_ev);
+}
+
 } // namespace module
