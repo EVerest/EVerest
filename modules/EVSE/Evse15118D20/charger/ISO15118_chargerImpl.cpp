@@ -580,12 +580,13 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
                 charging_needs.der_charging_parameters = to_der_charging_parameters(*der_ac_ev_limits);
                 charging_needs.der_charging_parameters->ev_supported_dercontrol =
                     map_ev_supported_der_controls(ev_selected_der_control_functions);
-            } else if (std::holds_alternative<dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode>(ev_limits)) {
-                // Expected on every AC_DER_SAE session: the SAE apparent-power, reactive-power and
-                // excitation limits have no DERChargingParameters counterpart yet.
-                EVLOG_info << "'ChargingNeeds' does not yet carry the SAE DER charging parameters; not sending it "
-                              "for this AC_DER_SAE session.";
-                return;
+            } else if (const auto* sae_ac_ev_limits =
+                           std::get_if<dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode>(&ev_limits)) {
+                // AC_DER_SAE: reuse the AC base-class slice for v2x params; the SAE request itself
+                // carries the supported-modes bitmap and excitation limits for der_charging_parameters.
+                fill_v2x_charging_parameters(v2x_charging_parameters, *ac_evse_limits,
+                                             static_cast<const dt::AC_CPDReqEnergyTransferMode&>(*sae_ac_ev_limits));
+                charging_needs.der_charging_parameters = to_der_charging_parameters(*sae_ac_ev_limits);
             } else {
                 EVLOG_error << "Invalid type received for EV limits! Not sending 'ChargingNeeds'.";
                 return;
