@@ -7,6 +7,7 @@
 #include <fstream>
 
 #include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
+#include <test_temp_paths.hpp>
 
 namespace ocpp::v2 {
 
@@ -15,8 +16,7 @@ protected:
     std::filesystem::path test_dir;
 
     void SetUp() override {
-        test_dir = std::filesystem::temp_directory_path() / "ocpp16_custom_mapping_tests";
-        std::filesystem::create_directories(test_dir);
+        test_dir = libocpp_test::unique_temp_directory("ocpp16_custom_mapping_tests");
     }
 
     void TearDown() override {

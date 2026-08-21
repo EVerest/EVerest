@@ -19,6 +19,7 @@
 #include "ocpp/v21/messages/NotifyDERAlarm.hpp"
 #include "ocpp/v21/messages/SetDERControl.hpp"
 #include "smart_charging_test_utils.hpp"
+#include "test_temp_paths.hpp"
 
 #include "gmock/gmock.h"
 #include <boost/uuid/uuid_generators.hpp>
@@ -29,7 +30,7 @@
 
 static const ocpp::v2::AddChargingProfileSource DEFAULT_REQUEST_TO_ADD_PROFILE_SOURCE =
     ocpp::v2::AddChargingProfileSource::SetChargingProfile;
-static const std::string TEMP_OUTPUT_PATH = "/tmp/ocpp201";
+static const std::string TEMP_OUTPUT_PATH = libocpp_test::unique_temp_directory("ocpp201_message_log").string();
 static const std::string DEFAULT_TX_ID = "10c75ff7-74f5-44f5-9d01-f649f3ac7b78";
 
 namespace ocpp::v2 {
@@ -151,7 +152,7 @@ public:
 
     std::shared_ptr<DatabaseHandler> create_database_handler() {
         auto database_connection =
-            std::make_unique<everest::db::sqlite::Connection>(fs::path("/tmp/ocpp201") / "cp.db");
+            std::make_unique<everest::db::sqlite::Connection>(libocpp_test::unique_temp_path("ocpp201_cp", ".db"));
         return std::make_shared<DatabaseHandler>(std::move(database_connection), MIGRATION_FILES_LOCATION_V2);
     }
 

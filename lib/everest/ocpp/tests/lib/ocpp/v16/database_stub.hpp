@@ -6,6 +6,8 @@
 
 #include <gtest/gtest.h>
 
+#include <test_temp_paths.hpp>
+
 #include <ocpp/v16/charge_point_configuration.hpp>
 #include <ocpp/v16/connector.hpp>
 #include <ocpp/v16/database_handler.hpp>
@@ -143,9 +145,8 @@ struct DatabaseConnectionTest : public ConnectionInterface {
 class DbTestBase : public testing::Test {
 protected:
     const std::string chargepoint_id = "12345678";
-    const fs::path database_path = "/tmp/";
     const fs::path init_script_path = "./core_migrations";
-    const fs::path db_filename = database_path / (chargepoint_id + ".db");
+    const fs::path db_filename = libocpp_test::unique_temp_path("ocpp16_" + chargepoint_id, ".db");
 
     std::map<std::int32_t, std::shared_ptr<Connector>> connectors;
     std::shared_ptr<stubs::DatabaseHandlerTest> database_handler;
