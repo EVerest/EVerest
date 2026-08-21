@@ -12,6 +12,7 @@ target_sources(iso15118
         misc/helper.cpp
         misc/cb_exi.cpp
 
+
         io/connection_plain.cpp
         io/logging.cpp
         io/poll_manager.cpp
@@ -77,12 +78,36 @@ target_sources(iso15118
         tbd_controller.cpp    
 )
 
+
+# The EV side is opt-in: consumers that only implement a charger (the SECC) should not pay to
+# build or link it. everest-core turns it on for the EvIso15118D20 module.
+if(ISO15118_BUILD_EV_SIDE)
+    target_sources(iso15118
+        PRIVATE
+        ev/d20/context.cpp
+        ev/d20/context_helper.cpp
+        ev/d20/state/session_setup.cpp
+        ev/d20/state/authorization_setup.cpp
+        ev/d20/state/authorization.cpp
+        ev/d20/state/dc_charge_parameter_discovery.cpp
+        ev/d20/state/dc_cable_check.cpp
+        ev/d20/state/dc_pre_charge.cpp
+        ev/d20/state/power_delivery.cpp
+        ev/d20/state/dc_welding_detection.cpp
+        ev/d20/state/session_stop.cpp
+        ev/session/feedback.cpp
+        ev/io/sdp_client.cpp
+        ev/ev_controller.cpp
+    )
+endif()
+
 target_link_libraries(iso15118
     PUBLIC
         # FIXME (aw): would be nice if we could make this private!
         cbv2g::tp
         cbv2g::iso20
         everest::util
+        everest::io
     PRIVATE
         Threads::Threads
 )
