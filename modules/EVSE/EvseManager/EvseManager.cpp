@@ -1252,8 +1252,12 @@ void EvseManager::ready() {
                 return;
             }
 
+            // The AC DER flavors carry the same AC target values: a DER charge loop that never
+            // receives one advertises a zero target for the whole session rather than omitting it.
             if (selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC or
-                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_BPT) {
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_BPT or
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_DER_IEC or
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_DER_SAE) {
 
                 types::units::Power target_power = {ampere * static_cast<float>(config.ac_nominal_voltage) *
                                                     hw_capabilities.handle()->max_phase_count_import};
