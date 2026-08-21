@@ -1,71 +1,70 @@
-%% EVerest manager — ManagerState lifecycle state machine
+%% EVerest manager — manager lifecycle state machine
 %% Narrative: docs/source/explanation/manager-lifecycle.rst
-%% ManagerState enum: lib/everest/framework/src/manager_module_status.hpp
-%% Transitions / timeouts: lib/everest/framework/src/manager.cpp
 
 stateDiagram-v2
     direction TB
 
     state "Startup" as G_BOOT {
-        [*] --> Idle : construct
-        Idle --> Initializing : run()
-        Initializing --> StartingModules : handle_start_modules()\nmetadata publish, MQTT ready handlers, spawn
-        StartingModules --> Running : all non-ignored modules ready\n(skip if shutdown already started)
+        [*] --> Idle : manager process starts
+        Idle --> Initializing : read configuration
+        Initializing --> StartingModules : publish metadata,\nspawn module processes
+        StartingModules --> Running : all non-ignored modules ready\n(skipped if shutdown already started)
     }
 
     state "Shutdown / drain" as G_DRAIN {
-        ShutdownRequested --> ForceTerminating : drain deadline exceeded\n(SHUTDOWN_TIMEOUT_MS with --graceful-shutdown,\nimmediate otherwise)
-        CrashShutdownInProgress --> ForceTerminating : drain deadline exceeded\n(SHUTDOWN_TIMEOUT_MS with --graceful-shutdown,\nimmediate otherwise)
-        RestartRequested --> ForceTerminating : drain deadline exceeded\n(SHUTDOWN_TIMEOUT_MS with --graceful-shutdown,\nimmediate otherwise)
-        ShutdownRequested --> CrashShutdownInProgress : crash path\n(immediate after MQTT shutdown)
-        CrashShutdownInProgress --> ShutdownRequested : first SIGINT/SIGTERM during drain\n(ShutdownCause Crash is kept)
-        RestartRequested --> ShutdownRequested : first SIGINT/SIGTERM during drain\n(ShutdownCause Restart downgraded to Normal)
+        ShutdownRequested --> ForceTerminating : drain deadline exceeded\n(immediately without --graceful-shutdown)
+        CrashShutdownInProgress --> ForceTerminating : drain deadline exceeded\n(immediately without --graceful-shutdown)
+        RestartRequested --> ForceTerminating : drain deadline exceeded\n(immediately without --graceful-shutdown)
+        ShutdownRequested --> CrashShutdownInProgress : crash path
+        CrashShutdownInProgress --> ShutdownRequested : first SIGINT/SIGTERM during drain\n(crash reason is kept)
+        RestartRequested --> ShutdownRequested : first SIGINT/SIGTERM during drain\n(restart intent is dropped)
     }
 
     state "Finalize" as G_END {
-        ShutdownFinalizing --> Exiting : SIGINT shutdown finish\n(cleanup, EXIT_SUCCESS)
+        ShutdownFinalizing --> Exiting : shutdown after SIGINT finished\n(cleanup, success)
         Exiting --> [*] : process exit
     }
 
     %% Cross-region: signals and IPC while starting or running
-    Running --> ShutdownRequested : first SIGINT/SIGTERM,\nShutdownCause Normal,\nMQTT shutdown published\n(--graceful-shutdown only)
-    StartingModules --> ShutdownRequested : first SIGINT/SIGTERM,\nShutdownCause Normal
+    Running --> ShutdownRequested : first SIGINT/SIGTERM,\nnormal stop,\nMQTT shutdown published\n(--graceful-shutdown only)
+    StartingModules --> ShutdownRequested : first SIGINT/SIGTERM,\nnormal stop
 
-    Running --> CrashShutdownInProgress : unexpected module exit,\nShutdownCause Crash
-    StartingModules --> CrashShutdownInProgress : unexpected module exit,\nShutdownCause Crash
+    Running --> CrashShutdownInProgress : unexpected module exit
+    StartingModules --> CrashShutdownInProgress : unexpected module exit
 
-    Running --> RestartRequested : IPC restart_modules,\nShutdownCause Restart
-    StartingModules --> RestartRequested : IPC restart_modules,\nShutdownCause Restart
-    Idle --> RestartRequested : IPC restart_modules while idle,\nShutdownCause Restart, nothing to drain
+    Running --> RestartRequested : admin restart request
+    StartingModules --> RestartRequested : admin restart request
+    Idle --> RestartRequested : admin restart request while idle,\nnothing to drain
 
-    Idle --> Exiting : first SIGINT/SIGTERM, no module PIDs\n(cleanup, EXIT_SUCCESS, no drain)
-    ShutdownRequested --> Exiting : second SIGINT/SIGTERM\n(sigint_received_ already true, EXIT_FAILURE)\nsame from any other drain state
+    Idle --> Exiting : first SIGINT/SIGTERM, no modules running\n(cleanup, success, no drain)
+    ShutdownRequested --> Exiting : second SIGINT/SIGTERM\n(user abort, failure)\nsame from any other drain state
 
-    %% Drain complete → finalize (when module_handles_ is empty)
-    ShutdownRequested --> ShutdownFinalizing : all module PIDs gone
-    CrashShutdownInProgress --> ShutdownFinalizing : all module PIDs gone
-    RestartRequested --> ShutdownFinalizing : all module PIDs gone
-    ForceTerminating --> ShutdownFinalizing : all module PIDs gone
+    %% Drain complete → finalize
+    ShutdownRequested --> ShutdownFinalizing : all modules gone
+    CrashShutdownInProgress --> ShutdownFinalizing : all modules gone
+    RestartRequested --> ShutdownFinalizing : all modules gone
+    ForceTerminating --> ShutdownFinalizing : all modules gone
 
     %% Finalize outcomes
-    ShutdownFinalizing --> StartingModules : reload config and start again\n(admin restart, or --recover-module-crashes\nunder max restarts and no SIGINT)
-    ShutdownFinalizing --> Idle : Normal cause without SIGINT (unconditional),\nor crash cap exceeded / failed or empty reload\n(--idle-on-failure)
-    ShutdownFinalizing --> Exiting : unexpected module exit, crash cap exceeded\nor failed/empty reload (default, EXIT_FAILURE)
+    ShutdownFinalizing --> StartingModules : reload config and start again\n(admin restart, or --recover-module-crashes\nwithin the restart cap and no SIGINT)
+    ShutdownFinalizing --> Idle : normal stop without SIGINT,\nor crash cap exceeded / failed or empty reload\n(--idle-on-failure)
+    ShutdownFinalizing --> Exiting : unexpected module exit, crash cap exceeded\nor failed / empty reload (default, failure)
 
     %% Boot-time outcome (before StartingModules)
     Initializing --> Idle : --into-idle (whatever the config is),\nor no modules (--idle-on-failure)
-    Initializing --> Exiting : invalid config or no modules\n(EXIT_FAILURE, unless --into-idle)\nno-modules also idles with --idle-on-failure
+    Initializing --> Exiting : invalid config or no modules\n(failure, unless --into-idle)\nno-modules also idles with --idle-on-failure
 
     note right of Running
         Last MQTT ready while shutdown in progress: skip Running
         (and skip ALL_MODULES_STARTED / the global ready publish).
-        Database bootstrap and MQTT connect failures return EXIT_FAILURE
-        directly from run(), without entering Exiting.
+        Database and MQTT connect failures abort startup directly,
+        without entering Exiting.
     end note
 
     note right of ForceTerminating
-        SIGTERM then SIGKILL after FORCE_KILL_GRACE_TIMEOUT_MS.
-        ShutdownCause at finalize: Normal exit, Restart, or Crash recovery.
+        SIGTERM, then SIGKILL after a short grace period.
+        Outcome at finalize follows the shutdown reason:
+        exit, restart, or crash recovery.
     end note
 
     classDef idle fill:#64748b,color:#f8fafc

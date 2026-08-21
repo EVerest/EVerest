@@ -9,32 +9,20 @@ processes; see :doc:`detail-module-concept` for the module concept itself. This
 page explains the manager's own lifecycle: how it starts modules, how it drains,
 restarts or force-kills them, and how it reports what it is doing.
 
-``ManagerState`` (defined in
-``lib/everest/framework/src/manager_module_status.hpp``) is the **phase** of the
-main loop — what the manager is doing right now. ``ShutdownCause`` (defined in
-``lib/everest/framework/src/manager.hpp``) records **why** a shutdown or drain
-was started; it is kept across transient states (for example through
-``ForceTerminating`` and ``ShutdownFinalizing``) so the next step can
-distinguish a normal stop, an admin-driven restart and crash recovery.
+Two independent pieces of information drive the lifecycle:
 
-Every transition also reports a module status to the
-:ref:`Configuration API <exp-configuration-service>`. The mapping is the total
-function ``module_status_action_for(ManagerState)`` in
-`manager_module_status.hpp <https://github.com/EVerest/EVerest/blob/main/lib/everest/framework/src/manager_module_status.hpp>`_.
-It is derived from the **destination** state alone:
+- The **state** — what the manager is doing right now. It is what the state
+  machine below transitions between, and what the manager reports to the
+  outside world.
+- The **shutdown reason** — why a shutdown or drain was started: a normal stop,
+  an administrative restart, or crash recovery. It is remembered for the whole
+  duration of the drain, so that once all modules are gone the manager knows
+  whether to exit, to go back to idle, or to start the modules again.
 
-- ``StartingModules`` → ``Starting``
-- ``Running`` → ``Running``
-- ``ShutdownRequested``, ``CrashShutdownInProgress``, ``ForceTerminating`` →
-  ``Stopping``
-- ``RestartRequested`` → ``RestartTriggered``
-- ``ShutdownFinalizing`` → ``Stopped``
-- ``Initializing``, ``Idle``, ``Exiting`` → ``AtRest``
-
-Timeouts and limits that drive transitions are defined in
-`manager.cpp <https://github.com/EVerest/EVerest/blob/main/lib/everest/framework/src/manager.cpp>`_
-— for example the graceful shutdown duration before ``ForceTerminating``, and
-the cap on automatic crash restarts.
+This page describes observable behavior. Timeouts and limits (the graceful
+shutdown duration, the grace period before ``SIGKILL``, the cap on automatic
+crash restarts) are compile-time constants of the manager and are not
+configurable at runtime.
 
 .. warning::
 
@@ -44,6 +32,56 @@ the cap on automatic crash restarts.
    the EVerest stability guarantees and may change or be removed in any release.
    The manager logs a warning at startup when one of them is used. See
    :ref:`reference-manager-cli` for the full option reference.
+
+******
+States
+******
+
+``Idle``
+  The manager is alive but no modules are running — before startup, after
+  booting with ``--into-idle``, or after modules were stopped without exiting
+  the process.
+
+``Initializing``
+  The manager has started and is preparing the run: reading the configuration
+  and setting up its infrastructure.
+
+``StartingModules``
+  Startup metadata is published, MQTT ready handlers are registered and the
+  module processes are spawned. The manager stays here until every module has
+  reported ready.
+
+``Running``
+  All non-ignored modules are ready and the system is operational.
+
+``ShutdownRequested``
+  A normal stop was requested (``SIGINT``/``SIGTERM``) and the modules are
+  being drained.
+
+``CrashShutdownInProgress``
+  A module exited unexpectedly and the remaining modules are being drained.
+
+``RestartRequested``
+  An administrative restart was requested and the modules are being drained.
+
+``ForceTerminating``
+  Modules did not exit within the drain deadline and are being terminated by
+  signal.
+
+``ShutdownFinalizing``
+  No module processes are left. The manager now decides — based on the shutdown
+  reason — whether to exit, return to ``Idle``, or start the modules again.
+
+``Exiting``
+  Final cleanup before the manager process returns.
+
+Every state transition is reported to the
+:ref:`Configuration API <exp-configuration-service>` as a module status, derived
+from the destination state alone: ``StartingModules`` reports *Starting*,
+``Running`` reports *Running*, the three drain states and ``ForceTerminating``
+report *Stopping*, ``RestartRequested`` reports *RestartTriggered*,
+``ShutdownFinalizing`` reports *Stopped*, and ``Initializing``, ``Idle`` and
+``Exiting`` report *AtRest*.
 
 *********************
 State Machine Diagram
@@ -66,10 +104,10 @@ yet shut down cleanly.
 With ``--graceful-shutdown``, the manager first publishes the MQTT shutdown
 signal (``<mqtt_everest_prefix>shutdown``, payload ``true``, QOS2, not retained)
 so modules can run their registered shutdown handlers and exit by themselves,
-and only escalates to ``ForceTerminating`` after the graceful shutdown timeout
-(``SHUTDOWN_TIMEOUT_MS``). The state machine is identical in both modes; without
-the flag the drain deadline is simply zero and the ``FORCE_SHUTDOWN_TIMEOUT``
-status event is not emitted (immediate termination is expected, not a timeout).
+and only escalates to ``ForceTerminating`` after the graceful shutdown timeout.
+The state machine is identical in both modes; without the flag the drain
+deadline is simply zero and the ``FORCE_SHUTDOWN_TIMEOUT`` status event is not
+emitted (immediate termination is expected, not a timeout).
 
 All remaining sections of this page describe the graceful
 (``--graceful-shutdown``) flow. In default mode the MQTT shutdown publish is
@@ -79,20 +117,20 @@ skipped and the force-terminate escalation happens immediately.
 Startup (Happy Path)
 ********************
 
-- ``Idle``→ ``Initializing`` when ``run()`` begins.
-- ``Initializing`` → ``StartingModules`` when ``handle_start_modules()`` begins;
-  publishing the startup metadata, registering the MQTT ready handlers and
-  spawning the module processes all happen in that state. Calling it with an
-  empty module list is a ``std::logic_error`` — the boot and restart paths
-  reject that case before it gets here, because zero modules would hang the
-  manager in ``StartingModules`` forever (no ready handler would ever fire).
-- ``StartingModules`` → ``Running`` when every non-ignored module has published
-  **ready** on MQTT (and standalone handling rules are satisfied). If
-  ``SIGINT``/shutdown is already in progress when the last ready arrives, the
-  transition to ``Running`` is **skipped** on purpose.
-- On the transition to ``Running`` the manager clears the retained startup
-  topics (unless ``--retain-topics``) and publishes the global ready signal on
-  ``<mqtt_everest_prefix>ready``.
+``Idle`` → ``Initializing`` → ``StartingModules`` → ``Running``.
+
+The manager publishes its startup metadata, subscribes to the module ready
+topics and spawns the module processes. It reaches ``Running`` once every
+non-ignored module has published **ready** on MQTT and the standalone handling
+rules are satisfied; it then clears the retained startup topics (unless
+``--retain-topics``) and publishes the global ready signal on
+``<mqtt_everest_prefix>ready``.
+
+If a shutdown is already in progress when the last ready message arrives, the
+transition to ``Running`` is **skipped** on purpose — and with it the global
+ready publish. A configuration with no modules never reaches ``StartingModules``
+in the first place, because nothing would ever report ready and the manager
+would wait forever; see the next section.
 
 ***************
 Startup Failure
@@ -100,96 +138,76 @@ Startup Failure
 
 - A configuration that fails to load or validate, or that contains **no
   modules** (empty or missing ``active_modules``, empty database slot), makes
-  the manager go to ``Exiting`` with ``EXIT_FAILURE``.
+  the manager go to ``Exiting`` with a failure exit code.
 - With ``--idle-on-failure`` the **no modules** case enters ``Idle`` instead and
-  reports ``FailedToStart`` to the Configuration API (matching a failed restart
+  reports *FailedToStart* to the Configuration API (matching a failed restart
   reload), so a startable configuration can be loaded and a restart requested.
   Invalid configurations still exit.
 - ``--into-idle`` is evaluated **before** the configuration is inspected, so the
   manager enters ``Idle`` unconditionally (valid, invalid or empty
   configuration; no modules are started) so the Configuration API stays
   available for loading a corrected configuration and requesting a restart.
-- Boot failures that happen before the configuration and lifecycle bookkeeping
-  exists return ``EXIT_FAILURE`` straight out of ``run()`` **without** a
-  transition to ``Exiting`` (and therefore without a ``MANAGER_EXITING`` status
-  event): a configuration database that cannot be initialized, and a failed MQTT
-  broker connection.
+- Failures that happen before the lifecycle exists — a configuration database
+  that cannot be initialized, or a failed MQTT broker connection — abort the
+  startup directly with a failure exit code, **without** a transition to
+  ``Exiting`` and therefore without a ``MANAGER_EXITING`` status event.
 
 ***********************************
 Normal Shutdown (SIGINT or SIGTERM)
 ***********************************
 
-- First signal (no module children, for example in ``Idle``): controller
+- First signal with no modules running (for example in ``Idle``): controller
   shutdown, MQTT disconnect and → ``Exiting`` with success — no drain.
-- First signal (modules running): ``shutdown_cause`` = ``Normal``, →
-  ``ShutdownRequested``, MQTT shutdown is published; modules run their shutdown
-  handlers and return so the process can exit; child exits are collected while
-  draining (see :ref:`Module Process Exit <exp-manager-lifecycle-module-exit>`).
-- When **all** module children have exited while still in a shutdown-flow state,
-  the manager goes to ``ShutdownFinalizing``, then typically
-  ``handle_finish_normal_shutdown()``:
-
-  - If this shutdown was due to the first ``SIGINT``/``SIGTERM``
-    (``sigint_received_``): → ``Exiting`` with success after cleanup.
-  - Otherwise the manager returns to ``Idle`` unconditionally (not gated by
-    ``--idle-on-failure``: a requested stop is not a failure). Modules are down,
-    the manager loop keeps running and another ``SIGINT``/``SIGTERM`` is
-    required to exit the process.
-
-- A **second** ``SIGINT``/``SIGTERM`` after the first was already handled is
-  treated as "terminate now" → ``Exiting`` with failure (user abort). The
-  controller is shut down, but MQTT is not disconnected explicitly on this path.
+- First signal with modules running: the shutdown reason becomes *normal stop*,
+  the manager goes to ``ShutdownRequested`` and publishes the MQTT shutdown
+  signal; modules run their shutdown handlers and exit (see
+  :ref:`Module Process Exit <exp-manager-lifecycle-module-exit>`).
+- Once **all** module processes are gone, the manager goes to
+  ``ShutdownFinalizing`` and from there to ``Exiting`` with success.
+- A **second** ``SIGINT``/``SIGTERM`` is treated as "terminate now" →
+  ``Exiting`` with a failure exit code (user abort).
 - A **first** ``SIGINT``/``SIGTERM`` that arrives while a crash or restart drain
-  is already running re-enters ``ShutdownRequested`` (re-arming the drain
-  deadline). It overrides a pending ``ShutdownCause::Restart`` with ``Normal`` —
-  so the restart intent is dropped and the manager stops — but a
-  ``ShutdownCause::Crash`` is deliberately **kept**, so the process still exits
-  with failure.
+  is already running re-enters ``ShutdownRequested`` and re-arms the drain
+  deadline. It overrides a pending restart — the restart intent is dropped and
+  the manager stops — but a pending crash reason is deliberately **kept**, so
+  the process still exits with failure.
 
 .. note::
 
-   The "return to ``Idle``" branch above is currently unreachable, because
-   ``ShutdownCause::Normal`` is only ever set together with
-   ``sigint_received_``. It exists for a future explicit "stop modules" command.
+   ``ShutdownFinalizing`` can also settle back into ``Idle`` for a *normal stop*
+   that did not come from a signal: modules are down, the manager loop keeps
+   running, and another ``SIGINT``/``SIGTERM`` is needed to exit the process.
+   No caller triggers this today; it exists for a future explicit "stop modules"
+   command.
 
 ***********************************
 Unexpected Module Exit (Crash Path)
 ***********************************
 
-- While in ``StartingModules`` or ``Running``, if a **module** child exits
-  unexpectedly: ``shutdown_cause`` = ``Crash``; graceful shutdown is initiated
-  (MQTT shutdown publish) → first ``ShutdownRequested``, then immediately →
-  ``CrashShutdownInProgress`` for that path.
-- The same drain, timeout and force-terminate machinery as for a normal shutdown
-  applies while children remain.
-- When all children are gone: → ``ShutdownFinalizing``. If
-  ``--recover-module-crashes`` was passed on the command line, no
-  ``SIGINT``/``SIGTERM`` was received in the meantime (a signal during a crash
-  drain means the user wants to stop, so no auto-restart happens), and crash
-  recovery is still allowed (see ``MAX_UNEXPECTED_MODULE_RESTARTS`` in
-  ``lib/everest/framework/src/manager.cpp``), the manager reloads the
-  configuration and goes back to ``StartingModules`` via
-  ``handle_restart_modules_after_shutdown()``. If the restart cap is exceeded
-  with recovery enabled, it finishes crash cleanup and **exits with failure** —
-  unless ``--idle-on-failure`` was also passed, in which case it stays alive in
-  ``Idle``. Without ``--recover-module-crashes`` (the default), the manager
-  shuts down remaining modules gracefully and then **exits** the process.
+- While in ``StartingModules`` or ``Running``, a module process that exits
+  unexpectedly sets the shutdown reason to *crash* and starts the drain via
+  ``ShutdownRequested`` → ``CrashShutdownInProgress``.
+- The same drain, timeout and force-terminate machinery as for a normal
+  shutdown applies while modules remain.
+- When all modules are gone the manager goes to ``ShutdownFinalizing`` and, by
+  default, **exits** with a failure exit code.
+- With ``--recover-module-crashes`` it instead reloads the configuration and
+  goes back to ``StartingModules`` — provided no ``SIGINT``/``SIGTERM`` was
+  received in the meantime (a signal during a crash drain means the user wants
+  to stop) and the internal cap on automatic restarts is not yet exhausted.
+  Once the cap is exceeded the manager exits with failure, or stays alive in
+  ``Idle`` if ``--idle-on-failure`` was also passed.
 
 *****************************
 Administrative Module Restart
 *****************************
 
-- Controller IPC (the ``restart_modules`` method; only compiled in with
-  ``ENABLE_ADMIN_PANEL`` and only answered while the controller process runs)
-  can request a restart while modules are still running. The manager then goes
-  to ``RestartRequested`` and sets ``shutdown_cause`` = ``Restart``. MQTT
-  shutdown is used to drain modules; when all module children have exited,
-  ``advance_lifecycle_state_if_ready()`` goes to ``ShutdownFinalizing`` and
-  ``handle_restart_modules_after_shutdown()`` reloads the configuration and
-  returns to ``StartingModules``. (``advance_lifecycle_state_if_ready()`` has a
-  second, defensive restart branch for a ``Restart`` cause outside a
-  shutdown-flow state; ``RestartRequested`` is itself a shutdown-flow state, so
-  the finalizing path is the one that normally runs.)
+- A restart requested over the controller IPC (only available with the admin
+  panel enabled and while the controller process runs) while modules are
+  running sets the shutdown reason to *restart* and goes to
+  ``RestartRequested``. The modules are drained; when they are all gone, the
+  manager reloads the configuration in ``ShutdownFinalizing`` and returns to
+  ``StartingModules``.
 - A restart can also be requested while the manager is ``Idle`` (no modules
   running, for example after ``--into-idle`` or a previously failed start).
   There is nothing to drain, so ``Idle`` → ``RestartRequested`` →
@@ -197,9 +215,9 @@ Administrative Module Restart
   This is the :ref:`Configuration API <exp-configuration-service>` workflow:
   load a configuration, then request a restart.
 - A reload that fails or yields a configuration with **no modules** is a failed
-  restart: the manager goes to ``Exiting`` with ``EXIT_FAILURE``, unless
+  restart: the manager goes to ``Exiting`` with a failure exit code, unless
   ``--idle-on-failure`` was passed, in which case it settles into ``Idle`` and
-  reports ``FailedToStart`` (load a corrected configuration and request another
+  reports *FailedToStart* (load a corrected configuration and request another
   restart).
 
 .. _exp-manager-lifecycle-force-kill:
@@ -208,44 +226,23 @@ Administrative Module Restart
 Shutdown Timeout and Forced Kill
 ********************************
 
-- From ``ShutdownRequested``, ``CrashShutdownInProgress`` or
-  ``RestartRequested``, if the shutdown lasts longer than the configured
-  graceful timeout, the manager goes to ``ForceTerminating`` and sends
-  ``SIGTERM`` to the remaining module children, then ``SIGKILL`` to whatever is
-  still alive ``FORCE_KILL_GRACE_TIMEOUT_MS`` later (once;
-  ``force_kill_sent_``).
-- When all tracked children are gone (including after ``ECHILD`` bookkeeping
-  recovery), the flow continues to ``ShutdownFinalizing`` and the same
-  ``ShutdownCause``-driven finalization as above.
-
-***********************************************
-``ForceTerminating`` and ``ShutdownFinalizing``
-***********************************************
-
-- ``ForceTerminating``: in-flight forced teardown of stubborn module processes.
-- ``ShutdownFinalizing``: all module PIDs are gone; the manager decides exit vs.
-  idle vs. restart based on ``ShutdownCause`` and ``sigint_received_`` as
-  described above.
+If a drain — from ``ShutdownRequested``, ``CrashShutdownInProgress`` or
+``RestartRequested`` — lasts longer than the graceful shutdown timeout, the
+manager goes to ``ForceTerminating``, sends ``SIGTERM`` to the remaining module
+processes and, after a short grace period, ``SIGKILL`` to whatever is still
+alive. Once all module processes are gone the flow continues to
+``ShutdownFinalizing`` and to the same outcome the shutdown reason would have
+produced without the escalation.
 
 ************************************
 Expected vs. Exceptional Transitions
 ************************************
 
-**Expected:** linear startup; clean idle shutdown after ``SIGINT``; controlled
+**Expected:** linear startup; clean shutdown after ``SIGINT``; controlled
 restart after an admin request; optional bounded crash recovery restart loop
 when ``--recover-module-crashes`` is set; manager exit after an unexpected
 module exit when that flag is omitted; timeout escalation only when modules miss
 their shutdown deadline.
-
-.. note::
-
-   Almost all transitions are applied from the main loop (``waitpid``, lifecycle
-   advance, controller IPC, signal polling, shutdown timer). The exception is
-   the transition to ``Running``, which is applied from the module-ready MQTT
-   handler on the message-dispatch thread. ``state_`` is therefore atomic and
-   all transitions are serialized with ``state_transition_mutex_``; the "do not
-   go to ``Running`` if shutdown already started" check and the transition
-   itself are taken under that lock so the gate cannot race with the main loop.
 
 .. _exp-manager-lifecycle-module-exit:
 
@@ -254,28 +251,21 @@ Module Process Exit
 *******************
 
 When the manager publishes the global MQTT shutdown signal
-(``<mqtt_everest_prefix>shutdown``), each module's
-``Everest::handle_shutdown()`` runs the registered shutdown callback (the
-generated ``LdEverest::shutdown()`` for C++ modules), then disconnects MQTT.
-Repeated shutdown signals are ignored (``shutdown_received``), and a module
-without a registered handler logs a warning ("No shutdown handler registered for
-module …") and still disconnects. Disconnecting stops the module's main loop;
-``main()`` returns and the child process exits normally. Module authors should
-tear down threads and resources in ``shutdown()`` and **return** promptly — the
-framework does not call ``exit()`` from module base classes.
+(``<mqtt_everest_prefix>shutdown``), each module runs its registered shutdown
+callback and then disconnects from MQTT. Repeated shutdown signals are ignored.
+Disconnecting stops the module's main loop, so the module's ``main()`` returns
+and the child process exits normally.
 
-If a module does not implement ``shutdown()`` on an interface implementation,
-``ImplementationBase::shutdown()`` logs a debug message and returns; the process
-still exits once the MQTT disconnect completes.
+Module authors should tear down threads and resources in the generated
+``shutdown()`` hook and **return** promptly — the framework does not call
+``exit()`` from the module base classes. Modules or interface implementations
+without a shutdown hook (for example generated code that predates the shutdown
+template) simply log a debug message and still exit once the MQTT disconnect
+completes.
 
-Legacy module headers that predate the shutdown template may omit a module-level
-``shutdown()`` entirely; in that case ``ModuleBase::shutdown()`` logs a debug
-message and returns (no implementation hooks run until the module is
-regenerated).
-
-If a module blocks in ``shutdown()`` or keeps other threads running, the manager
-escalates after the graceful shutdown timeout (``SHUTDOWN_TIMEOUT_MS``) to
-``SIGTERM`` and, if needed, ``SIGKILL`` (see
+If a module blocks in its shutdown hook or keeps other threads running, the
+manager escalates after the graceful shutdown timeout to ``SIGTERM`` and, if
+needed, ``SIGKILL`` (see
 :ref:`Shutdown Timeout and Forced Kill <exp-manager-lifecycle-force-kill>`).
 
 *******************************
@@ -286,13 +276,11 @@ When a path is passed to ``--status-fifo``, the manager writes single-line
 messages (each terminated with ``\n``) for lifecycle state transitions and
 selected semantic events. Tests and tooling can wait on these lines instead of
 parsing manager logs. The FIFO must already exist (``mkfifo``) and be open for
-reading, otherwise ``StatusFifo::create_from_path()`` throws at startup; if a
-later write fails the FIFO is silently disabled for the rest of the run.
-Self-transitions are dropped by ``transition_to_unlocked()``, so no duplicate
-line is written for them.
+reading, otherwise the manager fails at startup; if a later write fails the FIFO
+is silently disabled for the rest of the run. Self-transitions are not reported,
+so no duplicate line is written for them.
 
-**State notifications** (one per ``ManagerState`` transition, constants in
-``lib/everest/framework/include/utils/status_fifo.hpp``):
+**State notifications** (one per state transition):
 
 - ``MANAGER_INITIALIZING``, ``MANAGER_STARTING_MODULES``, ``MANAGER_RUNNING``,
   ``MANAGER_RESTART_REQUESTED``, ``MANAGER_CRASH_SHUTDOWN_IN_PROGRESS``,
@@ -308,9 +296,7 @@ line is written for them.
 - ``WAITING_FOR_STANDALONE_MODULES`` — manager-spawned modules are ready;
   standalone modules are still pending.
 
-**Semantic events** (not always paired one-to-one with a state name; these are
-not all ``StatusFifo`` constants — ``CRASH_RECOVERY_ATTEMPT`` is formatted in
-``Manager::notify_crash_recovery_attempt()``):
+**Semantic events** (not always paired one-to-one with a state):
 
 - ``SIGINT_RECEIVED`` — first ``SIGINT``/``SIGTERM`` handled by the manager.
 - ``ALL_MODULES_STOPPED_CLEAN`` — normal shutdown after ``SIGINT`` with no
@@ -324,6 +310,3 @@ not all ``StatusFifo`` constants — ``CRASH_RECOVERY_ATTEMPT`` is formatted in
 - ``CRASH_RECOVERY_EXHAUSTED`` — recovery cap exceeded; the manager exits with
   failure after shutdown (or stays idle with ``--idle-on-failure``).
 
-Python helpers live in ``everest.testing.core_utils.everest_core``
-(``ManagerStatusFifo``, ``EverestCore.wait_for_manager_status``,
-``EverestCore.assert_no_manager_status``).
