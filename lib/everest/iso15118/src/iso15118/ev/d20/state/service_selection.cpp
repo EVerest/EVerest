@@ -3,6 +3,7 @@
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/ac_charge_parameter_discovery.hpp>
+#include <iso15118/ev/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/dc_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/service_selection.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
@@ -35,6 +36,10 @@ Result ServiceSelection::feed(Event ev) {
 
     if (service == message_20::datatypes::ServiceCategory::AC) {
         return m_ctx.create_state<AC_ChargeParameterDiscovery>();
+    }
+
+    if (service == message_20::datatypes::ServiceCategory::AC_DER_IEC) {
+        return m_ctx.create_state<AC_DER_IEC_ChargeParameterDiscovery>();
     }
 
     return m_ctx.create_state<DC_ChargeParameterDiscovery>();
