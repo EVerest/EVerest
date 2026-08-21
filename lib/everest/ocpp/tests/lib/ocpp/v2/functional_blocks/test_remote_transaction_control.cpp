@@ -101,6 +101,7 @@ public:
     MOCK_METHOD(void, on_firmware_update_status_notification, (std::int32_t, const FirmwareStatusEnum&, const bool),
                 (override));
     MOCK_METHOD(void, on_firmware_status_notification_request, (), (override));
+    MOCK_METHOD(void, on_transaction_finished, (), (override));
 };
 
 class ProvisioningMock : public ProvisioningInterface {

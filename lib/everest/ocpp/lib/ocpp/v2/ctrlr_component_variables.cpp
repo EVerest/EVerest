@@ -359,6 +359,12 @@ const ComponentVariable AllowSecurityLevelZeroConnections = {
         "AllowSecurityLevelZeroConnections",
     }),
 };
+const ComponentVariable DeferFirmwareDownloadDuringTransaction = {
+    ControllerComponents::InternalCtrlr,
+    std::optional<Variable>({
+        "DeferFirmwareDownloadDuringTransaction",
+    }),
+};
 const RequiredComponentVariable SupportedOcppVersions = {
     ControllerComponents::InternalCtrlr,
     std::optional<Variable>({"SupportedOcppVersions"}),
@@ -497,7 +503,7 @@ const ComponentVariable OfflineTxForUnknownIdEnabled = {
 };
 const ComponentVariable AllowNewSessionsPendingFirmwareUpdate = {
     ControllerComponents::ChargingStation,
-    std::optional<Variable>({"AllowNewSessionsPendingFirmwareUpdate", "BytesPerMessage"}),
+    std::optional<Variable>({"AllowNewSessionsPendingFirmwareUpdate"}),
 };
 const RequiredComponentVariable ChargingStationAvailabilityState = {
     ControllerComponents::ChargingStation,

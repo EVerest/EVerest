@@ -3,16 +3,16 @@
 
 #pragma once
 
+#include <everest/util/async/monitor.hpp>
+
 #include <ocpp/v2/message_handler.hpp>
+#include <ocpp/v2/messages/UpdateFirmware.hpp>
 
 namespace ocpp::v2 {
 // Formward declarations.
 struct FunctionalBlockContext;
 class AvailabilityInterface;
 class SecurityInterface;
-
-struct UpdateFirmwareRequest;
-struct UpdateFirmwareResponse;
 
 // Typedef
 using UpdateFirmwareRequestCallback = std::function<UpdateFirmwareResponse(const UpdateFirmwareRequest& request)>;
@@ -26,6 +26,7 @@ public:
                                                         const FirmwareStatusEnum& firmware_update_status,
                                                         const bool disable_connectors_during_install = true) = 0;
     virtual void on_firmware_status_notification_request() = 0;
+    virtual void on_transaction_finished() = 0;
 };
 
 class FirmwareUpdate : public FirmwareUpdateInterface {
@@ -42,6 +43,11 @@ private: // Members
     std::optional<std::int32_t> firmware_status_id;
     // The last firmware status which will be posted before the firmware is installed.
     FirmwareStatusEnum firmware_status_before_installing = FirmwareStatusEnum::SignatureVerified;
+    // Download deferred until the last transaction ends (L01.FR.13). This is memory-only and does
+    // not survive a restart: after a reboot while in DownloadScheduled the CSMS must re-send
+    // UpdateFirmware. Written from the message handler thread and read/cleared from the module event
+    // thread, so all access goes through the monitor handle.
+    everest::lib::util::monitor<std::optional<UpdateFirmwareRequest>> deferred_update_firmware_request;
 
 public:
     FirmwareUpdate(const FunctionalBlockContext& functional_block_context, AvailabilityInterface& availability,
@@ -52,10 +58,15 @@ public:
                                                 const FirmwareStatusEnum& firmware_update_status,
                                                 bool disable_connectors_during_install = true) override;
     void on_firmware_status_notification_request() override;
+    void on_transaction_finished() override;
 
 private: // Functions
     // Functional Block L: Firmware management
     void handle_firmware_update_req(Call<UpdateFirmwareRequest> call);
+
+    /// \brief True if the download shall wait until the last transaction ends (L01.FR.13, gated by
+    /// DeferFirmwareDownloadDuringTransaction)
+    bool is_download_deferral_required() const;
 
     /// \brief Changes all unoccupied connectors to unavailable. If a transaction is running schedule an availabilty
     /// change
