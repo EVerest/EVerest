@@ -432,8 +432,10 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
 
         // apply watt limit
         if (value.limits_root_side.total_power_W.has_value()) {
-            mod->mqtt.publish(fmt::format("everest_external/nodered/{}/state/max_watt", mod->config.connector_id),
-                              value.limits_root_side.total_power_W.value().value);
+            if (mod->config.enable_nodered_interface) {
+                mod->mqtt.publish(fmt::format("everest_external/nodered/{}/state/max_watt", mod->config.connector_id),
+                                  value.limits_root_side.total_power_W.value().value);
+            }
             // watt limit converted to current limit
             const float current_limit_power = value.limits_root_side.total_power_W.value().value /
                                               mod->config.ac_nominal_voltage / mod->ac_nr_phases_active;
