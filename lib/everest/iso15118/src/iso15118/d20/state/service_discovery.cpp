@@ -70,9 +70,6 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     res.service_renegotiation_supported = false;
     session.service_renegotiation_supported = false;
 
-    // Reset default value
-    res.energy_transfer_service_list.clear();
-
     std::vector<dt::Service> energy_services_list;
     std::vector<dt::VasService> vas_services_list;
 
@@ -104,6 +101,17 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
             vas_services_list.push_back({vas_service, false});
         }
     }
+
+    // EnergyTransferServiceList is mandatory, so an offer of nothing cannot be expressed: the
+    // encoder rejects the empty list and the session dies on an encode error rather than the EV
+    // receiving a response it can act on. Report the mismatch instead, keeping the default list so
+    // the failure itself stays encodable.
+    if (energy_services_list.empty()) {
+        return response_with_code(res, dt::ResponseCode::FAILED_ServiceIDInvalid);
+    }
+
+    // Reset default value
+    res.energy_transfer_service_list.clear();
 
     for (auto& conf_energy_service : energy_services_list) {
         auto& energy_service = res.energy_transfer_service_list.emplace_back();

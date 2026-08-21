@@ -13,6 +13,7 @@ target_sources(${MODULE_NAME}
     PRIVATE
         Charger.cpp
         energy_transfer_modes.cpp
+        hlc_power_clamp.cpp
         SessionLog.cpp
         v2gMessage.cpp
         CarManufacturer.cpp
