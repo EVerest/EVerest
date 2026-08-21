@@ -91,4 +91,28 @@ using CapabilityLimits_External = CapabilityLimits;
 CapabilityLimits_Internal to_internal_api(CapabilityLimits_External const& val);
 CapabilityLimits_External to_external_api(CapabilityLimits_Internal const& val);
 
+using NodeType_Internal = ::types::energy::NodeType;
+using NodeType_External = NodeType;
+
+NodeType_Internal to_internal_api(NodeType_External const& val);
+NodeType_External to_external_api(NodeType_Internal const& val);
+
+using EvseState_Internal = ::types::energy::EvseState;
+using EvseState_External = EvseState;
+
+EvseState_Internal to_internal_api(EvseState_External const& val);
+EvseState_External to_external_api(EvseState_Internal const& val);
+
+using OptimizerTarget_Internal = ::types::energy::OptimizerTarget;
+using OptimizerTarget_External = OptimizerTarget;
+
+OptimizerTarget_Internal to_internal_api(OptimizerTarget_External const& val);
+OptimizerTarget_External to_external_api(OptimizerTarget_Internal const& val);
+
+using EnergyFlowRequest_Internal = ::types::energy::EnergyFlowRequest;
+using EnergyFlowRequest_External = EnergyFlowRequest;
+
+EnergyFlowRequest_Internal to_internal_api(EnergyFlowRequest_External const& val);
+EnergyFlowRequest_External to_external_api(EnergyFlowRequest_Internal const& val);
+
 } // namespace everest::lib::API::V1_0::types::energy

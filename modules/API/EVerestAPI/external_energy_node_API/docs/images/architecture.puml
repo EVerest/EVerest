@@ -1,0 +1,41 @@
+@startuml
+title external_energy_node_API / external_energy_node_client_API architecture
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam ArrowColor #444444
+skinparam componentBackgroundColor #EFEFEF
+
+package "Remote process" {
+  [Remote EnergyManager] as remote_em
+  [external_energy_node_client_API\n(client)] as client
+}
+
+package "Local process" {
+  [external_energy_node_API\n(server)] as server
+  [Internal EnergyManager\n(local fallback)] as internal_em
+  [EnergyNode 1] as node1
+  [EnergyNode 2] as node2
+}
+
+remote_em -down-> client : enforce_limits
+client -up-> remote_em : energy_flow_request\n(aggregate)
+
+client .down.> server : MQTT m2e/enforce_limits
+server .up.> client : MQTT e2m/energy_flow_request
+
+server -down-> node1 : enforce_limits
+server -down-> node2 : enforce_limits
+node1 -up-> server : energy_flow_request
+node2 -up-> server : energy_flow_request
+
+internal_em -right-> server : enforce_limits\n(energy_grid)
+
+note bottom of internal_em
+  Only takes over once the external
+  EnergyManager has been silent for
+  longer than **timeout_s**.
+end note
+
+@enduml

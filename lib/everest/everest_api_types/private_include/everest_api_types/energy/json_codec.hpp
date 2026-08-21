@@ -49,4 +49,16 @@ void from_json(const json& j, EnforcedLimits& k);
 void to_json(json& j, CapabilityLimits const& k) noexcept;
 void from_json(const json& j, CapabilityLimits& k);
 
+void to_json(json& j, NodeType const& k) noexcept;
+void from_json(const json& j, NodeType& k);
+
+void to_json(json& j, EvseState const& k) noexcept;
+void from_json(const json& j, EvseState& k);
+
+void to_json(json& j, OptimizerTarget const& k) noexcept;
+void from_json(const json& j, OptimizerTarget& k);
+
+void to_json(json& j, EnergyFlowRequest const& k) noexcept;
+void from_json(const json& j, EnergyFlowRequest& k);
+
 } // namespace everest::lib::API::V1_0::types::energy
