@@ -42,6 +42,7 @@ async def test_start_config_sil_gen_pm(everest_core: EverestCore):
     everest_core.start()
 
 
+@pytest.mark.use_temporary_persistent_store
 class TestConfigsInDirectory:
     @pytest.fixture(params=pytest.everest_configs['params'], ids=pytest.everest_configs['ids'])
     def core_config(self, request) -> EverestEnvironmentCoreConfiguration:
