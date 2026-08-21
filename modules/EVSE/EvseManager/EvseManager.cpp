@@ -448,8 +448,8 @@ void EvseManager::ready() {
             setup_physical_values.ac_nominal_voltage = config.ac_nominal_voltage;
             r_hlc[0]->call_set_charging_parameters(setup_physical_values);
 
-            const auto hw_caps = *hw_capabilities.handle();
-            initial_energy_transfers = get_supported_ac_energy_transfers(hw_caps, config.supported_iso_ac_bpt, false);
+            // The AC list is recomputed from the live der_available flag right before call_setup;
+            // initial_energy_transfers only feeds the DC/MCS arm.
 
             r_hlc[0]->subscribe_ac_eamount([this](double e) {
                 // FIXME send only on change / throttle messages
@@ -970,7 +970,13 @@ void EvseManager::ready() {
 
         r_hlc[0]->call_receipt_is_required(config.ev_receipt_required);
 
-        this->update_supported_energy_transfers(initial_energy_transfers);
+        if (config.charge_mode == "AC") {
+            // Recompute from the live der_available flag: a set_der_available landing before this
+            // point must not be clobbered by a list built when der_available was still false.
+            this->recompute_and_publish_supported_ac_energy_transfers();
+        } else {
+            this->update_supported_energy_transfers(initial_energy_transfers);
+        }
         r_hlc[0]->call_setup(evseid, sae_mode, config.session_logging);
         this->publish_and_update_supported_energy_transfers();
 
@@ -1246,8 +1252,12 @@ void EvseManager::ready() {
                 return;
             }
 
+            // The AC DER flavors carry the same AC target values: a DER charge loop that never
+            // receives one advertises a zero target for the whole session rather than omitting it.
             if (selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC or
-                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_BPT) {
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_BPT or
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_DER_IEC or
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_DER_SAE) {
 
                 types::units::Power target_power = {ampere * static_cast<float>(config.ac_nominal_voltage) *
                                                     hw_capabilities.handle()->max_phase_count_import};
