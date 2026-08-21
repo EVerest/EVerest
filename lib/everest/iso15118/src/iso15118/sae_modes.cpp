@@ -152,7 +152,7 @@ std::uint32_t derive_enabled_modes(const dt_sae::DERControlCLRes& res) {
 
 std::string sae_function_names(std::uint32_t bitmap) {
     std::string names;
-    for (const auto& entry : SAE_ENABLEABLE_FUNCTIONS) {
+    for (const auto& entry : SAE_FUNCTION_NAMES) {
         if ((bitmap & sae_function_bit(entry.function)) == 0) {
             continue;
         }
