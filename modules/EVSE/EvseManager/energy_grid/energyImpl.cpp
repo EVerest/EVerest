@@ -2,6 +2,9 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "energyImpl.hpp"
+
+#include <everest/helpers/phase_rotation.hpp>
+
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -47,7 +50,11 @@ void energyImpl::init() {
         mod->r_powermeter_grid_side[0]->subscribe_powermeter([this](types::powermeter::Powermeter p) {
             // Received new power meter values, update our energy object.
             std::lock_guard<std::mutex> lock(this->energy_mutex);
-            energy_flow_request.energy_usage_root = p;
+
+            const auto phase_rotation =
+                everest::helpers::phase_rotation_from_string(mod->config.phase_rotation_grid_side);
+
+            energy_flow_request.energy_usage_root = everest::helpers::apply_phase_rotation(p, phase_rotation);
         });
     }
 }
