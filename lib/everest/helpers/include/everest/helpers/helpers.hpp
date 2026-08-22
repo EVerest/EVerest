@@ -13,10 +13,6 @@ struct ProvidedIdToken;
 struct IdToken;
 } // namespace types::authorization
 
-namespace types::powermeter {
-struct Powermeter;
-} // namespace types::powermeter
-
 namespace everest::helpers {
 
 /// \brief Redacts a provided \p token by hashing it
@@ -56,15 +52,6 @@ std::string get_base64_uuid();
 /// \brief Provide a base64 encoded ID
 /// \returns a base64 encoded ID string. This ID is 16 characters long
 std::string get_base64_id();
-
-/// \brief Remaps the per-phase (L1/L2/L3) members of \p powermeter according to \p phase_rotation , to correct
-/// for a physical wiring rotation between the meter and the grid.
-/// Uses OCPP-style notation: "RST" is the identity, "TRS" means the reported L1/L2/L3 are grid L3/L1/L2 and
-/// "STR" means they are grid L2/L3/L1. Unknown values are treated as "RST".
-/// Members that are invariant under a rotation (total, DC, N, frequency) are left untouched.
-/// \returns the rotated powermeter reading
-types::powermeter::Powermeter apply_phase_rotation(types::powermeter::Powermeter powermeter,
-                                                   const std::string& phase_rotation);
 
 } // namespace everest::helpers
 
