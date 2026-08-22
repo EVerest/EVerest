@@ -17,6 +17,8 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     power_boost_tests.cpp
     measurement_tracking_tests.cpp
     powermeter_aggregator_tests.cpp
+    phase_allocation_tests.cpp
+    per_phase_trading_tests.cpp
     JsonDefinedEnergyManagerTest.cpp
     ../Broker.cpp
     ../BrokerFastCharging.cpp
@@ -25,6 +27,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     ../Market.cpp
     ../MeasurementTrackingState.cpp
     ../PowerMeterAggregator.cpp
+    ../PhaseAllocation.cpp
     ../Offer.cpp
 )
 

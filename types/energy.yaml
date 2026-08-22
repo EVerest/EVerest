@@ -13,6 +13,27 @@ types:
       source:
         description: Source of the value
         type: string
+  NumberWithSourcePerPhase:
+    description: >-
+      Per phase numbers with source information. Each phase is optional: a phase that is
+      omitted is not limited by this object. Used where a limit differs between L1, L2 and
+      L3, in addition to the symmetric ac_max_current_A which applies the same value to
+      every phase.
+    type: object
+    additionalProperties: false
+    properties:
+      L1:
+        description: Value for AC phase L1
+        type: object
+        $ref: /energy#/NumberWithSource
+      L2:
+        description: Value for AC phase L2
+        type: object
+        $ref: /energy#/NumberWithSource
+      L3:
+        description: Value for AC phase L3
+        type: object
+        $ref: /energy#/NumberWithSource
   IntegerWithSource:
     description: Simple number type with source information
     type: object
@@ -61,6 +82,15 @@ types:
         description: Max current limit (per phase) in Ampere. AC only. Positive number.
         type: object
         $ref: /energy#/NumberWithSource
+      ac_max_current_per_phase_A:
+        description: >-
+          Max current limit per individual phase in Ampere. AC only. Positive numbers.
+          Optional: when omitted, ac_max_current_A applies symmetrically to all phases.
+          When both are present, the effective limit on a phase is the smaller of the two.
+          A node that limits its phases independently (for example a cluster with an
+          unbalanced load, or a single phase EVSE) sets this.
+        type: object
+        $ref: /energy#/NumberWithSourcePerPhase
       ac_min_current_A:
         description: >-
           Min AC current limit per phase in Ampere. Values below that value indicate the
@@ -101,6 +131,17 @@ types:
         description: Max current limit (per phase) in Ampere. AC only. Negative numbers mean export to grid direction.
         type: object
         $ref: /energy#/NumberWithSource
+      ac_max_current_per_phase_A:
+        description: >-
+          Enforced max current limit per individual phase in Ampere. AC only.
+          Optional: when omitted, ac_max_current_A applies symmetrically to all phases.
+          Set by the EnergyManager whenever the allocation was made through the per phase
+          trading path (i.e. some node in the tree declared per phase limits), including
+          when the resulting allocation happens to be balanced. ac_max_current_A always
+          carries the most heavily loaded phase, so consumers that do not understand per
+          phase limits keep working from it.
+        type: object
+        $ref: /energy#/NumberWithSourcePerPhase
       ac_max_phase_count:
         description: Limit to number of phases. Omit if number of phases are not limited.
         type: object

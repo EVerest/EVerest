@@ -31,6 +31,8 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             {"boost_threshold_W", config.boost_threshold_W},
             {"boost_step_A", config.boost_step_A},
             {"boost_hysteresis_cycles", config.boost_hysteresis_cycles},
+            {"phase_symmetry_enabled", config.phase_symmetry_enabled},
+            {"max_phase_imbalance_A", config.max_phase_imbalance_A},
         };
     }
     static module::EnergyManagerConfig from_json(const json& j) {
@@ -54,6 +56,8 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             j.value("boost_threshold_W", 500.0),
             j.value("boost_step_A", 2.0),
             j.value("boost_hysteresis_cycles", 3),
+            j.value("phase_symmetry_enabled", false),
+            j.value("max_phase_imbalance_A", 16.0),
         };
     }
 };

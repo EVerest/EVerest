@@ -28,6 +28,9 @@ namespace module {
 
 struct Conf {
     double fuse_limit_A;
+    double fuse_limit_L1_A;
+    double fuse_limit_L2_A;
+    double fuse_limit_L3_A;
     int phase_count;
     double nominal_voltage_V;
     bool enhance_external_schedule;

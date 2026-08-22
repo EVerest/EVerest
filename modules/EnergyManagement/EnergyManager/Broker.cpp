@@ -2,6 +2,11 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "Broker.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 #include <everest/logging.hpp>
 #include <fmt/core.h>
 
@@ -130,11 +135,128 @@ bool Broker::buy_watt_export(int index, float watt, bool allow_less) {
     return buy_watt(offer->export_offer[index], index, watt, allow_less, false);
 }
 
+bool Broker::offer_has_per_phase_limits(const types::energy::ScheduleReqEntry& entry) const {
+    return entry.limits_to_root.ac_max_current_per_phase_A.has_value();
+}
+
+PhaseAllocation Broker::phases_in_use(float ampere, int number_of_phases) const {
+    PhaseAllocation allocation;
+    for (int p = 1; p <= 3; p++) {
+        allocation.phase(p) = (p <= number_of_phases) ? ampere : 0.f;
+    }
+    return allocation;
+}
+
+void Broker::buy_ampere_per_phase_unchecked(int index, const PhaseAllocation& allocation, const std::string& source,
+                                            types::energy::IntegerWithSource number_of_phases) {
+    trading[index].limits_to_root.ac_max_current_per_phase_A = to_per_phase_limit(allocation, source);
+    // Keep the symmetric field populated with the most heavily loaded phase - by magnitude,
+    // since export allocations are negative and their most loaded phase is the minimum - so
+    // consumers that do not understand per phase limits still see a limit they can honour.
+    const auto most_loaded =
+        std::abs(allocation.min()) > std::abs(allocation.max()) ? allocation.min() : allocation.max();
+    trading[index].limits_to_root.ac_max_current_A = {most_loaded, source};
+    trading[index].limits_to_root.ac_max_phase_count = number_of_phases;
+    traded = true;
+    first_trade[index] = false;
+}
+
+PhaseAllocation Broker::symmetry_capped(int index, const PhaseAllocation& wanted) {
+    if (not config.phase_symmetry_enabled) {
+        return wanted;
+    }
+
+    // Symmetry is a property of the grid connection, so evaluate it at the root of the tree.
+    const auto already_sold = local_market.get_root()->get_sold_per_phase_A(index);
+    const auto projected = already_sold + wanted;
+
+    if (is_within_symmetry(projected, config.max_phase_imbalance_A)) {
+        return wanted;
+    }
+
+    // The least loaded phase sets the ceiling: no phase may exceed it by more than the
+    // allowed imbalance. Only reduce offending phases, never raise any.
+    const float ceiling_A = projected.min() + config.max_phase_imbalance_A;
+
+    PhaseAllocation capped = wanted;
+    for (int p = 1; p <= 3; p++) {
+        if (projected.phase(p) > ceiling_A) {
+            capped.phase(p) = std::max(0.f, std::min(wanted.phase(p), ceiling_A - already_sold.phase(p)));
+        }
+    }
+
+    return capped;
+}
+
 bool Broker::buy_ampere(const types::energy::ScheduleReqEntry& _offer, int index, float ampere, bool allow_less,
                         bool import, types::energy::IntegerWithSource number_of_phases) {
     // make this more readable
     auto& max_current = _offer.limits_to_root.ac_max_current_A;
     auto& total_power = _offer.limits_to_root.total_power_W;
+
+    // Per phase path: the connector has one current setpoint (a single PWM duty cycle), so
+    // the weakest phase it occupies governs how much it can take, and the grant is applied
+    // equally to each occupied phase.
+    if (offer_has_per_phase_limits(_offer)) {
+        const int phase_count = std::max(1, number_of_phases.value);
+        const auto available = effective_per_phase_limit(_offer.limits_to_root, phase_count);
+
+        float headroom_A = std::numeric_limits<float>::max();
+        for (int p = 1; p <= phase_count; p++) {
+            headroom_A = std::min(headroom_A, available.phase(p));
+        }
+        headroom_A = std::max(0.f, headroom_A);
+
+        float grant_A = std::min(ampere, headroom_A);
+
+        // A watt limit, if present, still applies to the sum over the occupied phases.
+        if (total_power.has_value()) {
+            if (total_power.value().value <= 0.f) {
+                return false;
+            }
+            const float watt_per_ampere = static_cast<float>(phase_count) * local_market.nominal_ac_voltage();
+            grant_A = std::min(grant_A, total_power.value().value / watt_per_ampere);
+        }
+
+        // Symmetry is evaluated on the projected allocation, so it must be applied before the
+        // allow_less contract is checked below. It only applies to import: the root's sold
+        // totals are import currents, so projecting a positive export grant onto them would
+        // compare quantities with opposite signs and throttle exports for no physical reason.
+        if (import) {
+            const auto symmetric_grant = symmetry_capped(index, phases_in_use(grant_A, phase_count));
+            float symmetric_A = std::numeric_limits<float>::max();
+            for (int p = 1; p <= phase_count; p++) {
+                symmetric_A = std::min(symmetric_A, symmetric_grant.phase(p));
+            }
+            grant_A = std::max(0.f, std::min(grant_A, symmetric_A));
+        }
+
+        // Respect the caller's contract: a minimum current purchase (allow_less == false)
+        // must be refused outright rather than silently reduced, so BrokerFastCharging can
+        // fall back to single phase mode or leave the connector unallocated. Signalling a
+        // current below ac_min_current_A is not something an EVSE can do.
+        constexpr float EPSILON_A = 1e-3f;
+        if (grant_A + EPSILON_A < ampere and not allow_less) {
+            return false;
+        }
+
+        if (grant_A <= 0.f) {
+            return false;
+        }
+
+        const auto source = max_current.has_value() ? max_current.value().source : std::string("Broker_PerPhase");
+        const auto granted = phases_in_use((import ? +1.f : -1.f) * grant_A, phase_count);
+
+        buy_ampere_per_phase_unchecked(index, granted, source, number_of_phases);
+
+        if (total_power.has_value()) {
+            buy_watt_unchecked(index, {(import ? +1.f : -1.f) * grant_A * static_cast<float>(phase_count) *
+                                           local_market.nominal_ac_voltage(),
+                                       total_power.value().source});
+        }
+
+        return true;
+    }
 
     if (!max_current.has_value()) {
         // no ampere limit set, cannot do anything here.

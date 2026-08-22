@@ -43,6 +43,8 @@ inline EnergyManagerConfig make_default_config() {
     c.boost_threshold_W = 500.0;
     c.boost_step_A = 2.0;
     c.boost_hysteresis_cycles = 3;
+    c.phase_symmetry_enabled = false;
+    c.max_phase_imbalance_A = 16.0;
     return c;
 }
 

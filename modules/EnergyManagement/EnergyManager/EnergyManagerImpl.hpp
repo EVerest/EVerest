@@ -38,6 +38,8 @@ struct EnergyManagerConfig {
     double boost_threshold_W;
     double boost_step_A;
     int boost_hysteresis_cycles;
+    bool phase_symmetry_enabled;
+    double max_phase_imbalance_A;
 };
 
 class EnergyManagerImpl {
