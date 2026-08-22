@@ -12,6 +12,7 @@ ev_setup_cpp_module()
 target_sources(${MODULE_NAME}
     PRIVATE
         Market.cpp
+        MeasurementTrackingState.cpp
         PowerMeterAggregator.cpp
         Broker.cpp
         Offer.cpp

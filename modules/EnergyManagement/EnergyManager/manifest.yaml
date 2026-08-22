@@ -109,6 +109,36 @@ config:
     type: integer
     default: 5
     minimum: 0
+  boost_threshold_W:
+    description: >-
+      Sensitivity of the measurement based boosting and of the power_can_be_reduced
+      flag [W]. Boosting starts when the grid connection has more than this much
+      unused capacity; power_can_be_reduced is published as true when the enforced
+      allocation exceeds the measured consumption by more than this much.
+      Only effective when use_power_meter_tracking is enabled.
+      Note for the power_can_be_reduced flag: with measurement tracking active the
+      allocation exceeds consumption by roughly the number of charging connectors
+      multiplied by power_meter_tracking_margin_W, so this value must be set above
+      that product for the flag to carry information. The 500W default suits one or
+      two connectors at the default 200W margin; larger clusters need a larger value.
+    type: number
+    default: 500.0
+  boost_step_A:
+    description: >-
+      Amount by which the tracking limit is widened per boost step [A per phase].
+      The same amount is released again per cycle once the headroom disappears.
+      Set to 0 to disable boosting entirely.
+    type: number
+    default: 2.0
+    minimum: 0.0
+  boost_hysteresis_cycles:
+    description: >-
+      Number of consecutive optimizer cycles the grid headroom must persist before
+      the tracking limit is widened by boost_step_A. Prevents the allocation from
+      oscillating on short measurement transients.
+    type: integer
+    default: 3
+    minimum: 1
 provides:
   main:
     description: Main interface of the energy manager

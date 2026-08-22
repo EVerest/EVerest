@@ -11,6 +11,7 @@
 #include <mutex>
 
 #include <Broker.hpp>
+#include <MeasurementTrackingState.hpp>
 #include <PowerMeterAggregator.hpp>
 
 #include <memory>
@@ -34,6 +35,9 @@ struct EnergyManagerConfig {
     double power_meter_tracking_initial_current_A;
     double power_meter_tracking_margin_W;
     int power_meter_aggregation_window_s;
+    double boost_threshold_W;
+    double boost_step_A;
+    int boost_hysteresis_cycles;
 };
 
 class EnergyManagerImpl {
@@ -41,7 +45,8 @@ class EnergyManagerImpl {
 public:
     EnergyManagerImpl(
         const EnergyManagerConfig& config,
-        const std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)>& enforced_limits_callback);
+        const std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)>& enforced_limits_callback,
+        const std::function<void(bool)>& power_can_be_reduced_callback = nullptr);
 
     /// \brief Starts and detaches worker thread that runs run_optimizer periodically or when energy flow request is
     /// updated
@@ -67,6 +72,14 @@ public:
     /// data race for any external caller.
     PowerMeterAggregator::AggregateResult get_leaf_aggregate() const;
 
+    /// \brief True when the enforced allocation exceeds the measured consumption by more
+    /// than boost_threshold_W, i.e. allocation could be released without curtailing charging.
+    bool get_power_can_be_reduced() const;
+
+    /// \brief Current widening of the tracking limit granted by the boosting state machine
+    /// [A per phase]. Zero when boosting is inactive.
+    float get_boost_offset_A() const;
+
 private:
     EnergyManagerConfig config;
     std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)> enforced_limits_callback;
@@ -83,6 +96,16 @@ private:
     // Aggregates the leaf power meter readings of the tree. Rebuilt on every optimizer run.
     std::unique_ptr<PowerMeterAggregator> leaf_aggregator;
     PowerMeterAggregator::AggregateResult leaf_aggregate;
+
+    std::function<void(bool)> power_can_be_reduced_callback;
+
+    // Boosting state that must survive between optimizer runs.
+    MeasurementTrackingState tracking_state;
+    // Total power handed out by the previous optimizer run, used to decide reducibility.
+    float last_allocated_W{0.f};
+    // Last value handed to power_can_be_reduced_callback. Unset until the first publish,
+    // so the initial value is always published even when it is false.
+    std::optional<bool> last_published_power_can_be_reduced;
 };
 
 } // namespace module

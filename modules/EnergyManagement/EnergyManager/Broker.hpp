@@ -67,6 +67,9 @@ public:
         bool use_power_meter_tracking{false};
         float tracking_initial_current_A{16.f};
         float tracking_margin_W{200.f};
+        // Widening of the tracking limit granted by the boosting state machine for this
+        // optimizer run [A per phase]. Set per run, not from static configuration.
+        float boost_offset_A{0.f};
     };
 
     Broker(Market& market, BrokerContext& context, EnergyManagerConfig config);
