@@ -28,6 +28,7 @@ void EnergyManager::init() {
     energy_manager_config.use_power_meter_tracking = config.use_power_meter_tracking;
     energy_manager_config.power_meter_tracking_initial_current_A = config.power_meter_tracking_initial_current_A;
     energy_manager_config.power_meter_tracking_margin_W = config.power_meter_tracking_margin_W;
+    energy_manager_config.power_meter_aggregation_window_s = config.power_meter_aggregation_window_s;
 
     const auto enforce_limits_callback = [this](const std::vector<types::energy::EnforcedLimits>& limits) {
         const types::energy::NumberWithSource nonumber = {-9999.0};
