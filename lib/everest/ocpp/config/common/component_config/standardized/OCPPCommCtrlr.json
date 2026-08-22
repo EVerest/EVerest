@@ -226,6 +226,22 @@
       "description": "Comma seperated list of message types that shall not be queued (when offline) even in case QueueAllMessages is true. If QueueAllMessages is false, the configuration of this paramater has no effect.",
       "type": "string"
     },
+    "QueueNotifyEventMessages": {
+      "variable_name": "QueueNotifyEventMessages",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "boolean"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite",
+          "value": false
+        }
+      ],
+      "description": "When this variable is set to true, NotifyEventRequest messages generated before the CSMS accepted the BootNotification are queued and sent once registration is accepted, instead of being discarded.",
+      "type": "boolean"
+    },
     "ResetRetries": {
       "variable_name": "ResetRetries",
       "characteristics": {
