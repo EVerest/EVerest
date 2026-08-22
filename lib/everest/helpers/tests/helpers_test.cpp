@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include <everest/helpers/helpers.hpp>
+#include <everest/helpers/phase_rotation.hpp>
 
 #include <generated/types/powermeter.hpp>
 
@@ -67,7 +68,7 @@ TEST(HelpersTest, phase_rotation_no_op_values) {
     for (const auto* phase_rotation : {"RST", "", "garbage"}) {
         SCOPED_TRACE(phase_rotation);
 
-        const auto rotated = apply_phase_rotation(pm, phase_rotation);
+        const auto rotated = apply_phase_rotation(pm, phase_rotation_from_string(phase_rotation));
 
         EXPECT_EQ(rotated.voltage_V->L1, pm.voltage_V->L1);
         EXPECT_EQ(rotated.voltage_V->L2, pm.voltage_V->L2);
@@ -77,7 +78,7 @@ TEST(HelpersTest, phase_rotation_no_op_values) {
 
 /// "TRS": reported L1 is grid L3, reported L2 is grid L1, reported L3 is grid L2
 TEST(HelpersTest, phase_rotation_TRS) {
-    const auto rotated = apply_phase_rotation(create_test_powermeter(), "TRS");
+    const auto rotated = apply_phase_rotation(create_test_powermeter(), PhaseRotation::TRS);
 
     EXPECT_FLOAT_EQ(*rotated.voltage_V->L1, 232.0f);
     EXPECT_FLOAT_EQ(*rotated.voltage_V->L2, 233.0f);
@@ -105,7 +106,7 @@ TEST(HelpersTest, phase_rotation_TRS) {
 
 /// "STR": reported L1 is grid L2, reported L2 is grid L3, reported L3 is grid L1
 TEST(HelpersTest, phase_rotation_STR) {
-    const auto rotated = apply_phase_rotation(create_test_powermeter(), "STR");
+    const auto rotated = apply_phase_rotation(create_test_powermeter(), PhaseRotation::STR);
 
     EXPECT_FLOAT_EQ(*rotated.voltage_V->L1, 233.0f);
     EXPECT_FLOAT_EQ(*rotated.voltage_V->L2, 231.0f);
@@ -118,7 +119,7 @@ TEST(HelpersTest, phase_rotation_handles_missing_optional_fields) {
     pm.timestamp = "2024-01-01T00:00:00Z";
     pm.energy_Wh_import = types::units::Energy{0.0f};
 
-    const auto rotated = apply_phase_rotation(pm, "TRS");
+    const auto rotated = apply_phase_rotation(pm, PhaseRotation::TRS);
 
     EXPECT_FALSE(rotated.voltage_V.has_value());
     EXPECT_FALSE(rotated.current_A.has_value());
@@ -176,7 +177,7 @@ TEST(HelpersTest, phase_rotation_covers_every_per_phase_member) {
     pm.current_A_signed = types::units_signed::Current{std::nullopt, signed_value("L1"), signed_value("L2"),
                                                        signed_value("L3"), std::nullopt};
 
-    const auto rotated = apply_phase_rotation(pm, "TRS");
+    const auto rotated = apply_phase_rotation(pm, PhaseRotation::TRS);
 
     expect_rotated("energy_Wh_import", rotated.energy_Wh_import);
     expect_rotated("energy_Wh_export", *rotated.energy_Wh_export);
