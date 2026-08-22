@@ -8,6 +8,7 @@
 
 #include "Broker.hpp"
 #include "BrokerFastCharging.hpp"
+#include "BrokerMeasurementTracking.hpp"
 #include "Market.hpp"
 
 namespace module {
@@ -40,6 +41,9 @@ static BrokerFastCharging::EnergyManagerConfig to_broker_fast_charging_config(co
     broker_conf.switch_1ph_3ph_mode = to_switch_1ph3ph_mode(config.switch_3ph1ph_while_charging_mode);
     broker_conf.time_hysteresis_s = config.switch_3ph1ph_time_hysteresis_s;
     broker_conf.stickyness = to_stickyness(config.switch_3ph1ph_switch_limit_stickyness);
+    broker_conf.use_power_meter_tracking = config.use_power_meter_tracking;
+    broker_conf.tracking_initial_current_A = static_cast<float>(config.power_meter_tracking_initial_current_A);
+    broker_conf.tracking_margin_W = static_cast<float>(config.power_meter_tracking_margin_W);
 
     return broker_conf;
 }
@@ -131,9 +135,13 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
         }
 
         // FIXME: check for actual optimizer_targets and create correct broker for this evse
-        // For now always create simple FastCharging broker
-        brokers.push_back(std::make_shared<BrokerFastCharging>(*m, contexts[m->energy_flow_request.uuid],
-                                                               to_broker_fast_charging_config(config)));
+        if (config.use_power_meter_tracking) {
+            brokers.push_back(std::make_shared<BrokerMeasurementTracking>(*m, contexts[m->energy_flow_request.uuid],
+                                                                          to_broker_fast_charging_config(config)));
+        } else {
+            brokers.push_back(std::make_shared<BrokerFastCharging>(*m, contexts[m->energy_flow_request.uuid],
+                                                                   to_broker_fast_charging_config(config)));
+        }
         // EVLOG_info << fmt::format("Created broker for {}", m->energy_flow_request.uuid);
     }
 

@@ -24,11 +24,21 @@ struct BrokerContext {
         number_1ph3ph_cycles = 0;
         last_ac_number_of_active_phases_import = 0;
         ts_1ph_optimal = date::utc_clock::now();
+        tracking_active = false;
+        tracking_warned_no_measurement = false;
     };
 
     int number_1ph3ph_cycles;
     int last_ac_number_of_active_phases_import;
     std::chrono::time_point<date::utc_clock> ts_1ph_optimal;
+
+    // True once the measurement tracking broker has issued its initial current request
+    // for the current charging session. Reset by clear() on unplug.
+    bool tracking_active;
+
+    // True once the missing-measurement warning has been logged for this session, so a
+    // meterless connector warns once instead of once per optimizer run.
+    bool tracking_warned_no_measurement;
 };
 
 // base class for different Brokers
@@ -54,6 +64,9 @@ public:
         int max_nr_of_switches_per_session{0};
         int power_hysteresis_W{200};
         int time_hysteresis_s{600};
+        bool use_power_meter_tracking{false};
+        float tracking_initial_current_A{16.f};
+        float tracking_margin_W{200.f};
     };
 
     Broker(Market& market, BrokerContext& context, EnergyManagerConfig config);
