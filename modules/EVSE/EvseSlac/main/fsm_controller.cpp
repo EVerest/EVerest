@@ -42,6 +42,16 @@ bool FSMController::signal_simple_event(slac::fsm::evse::Event ev) {
     return event_result == fsm::HandleEventResult::SUCCESS;
 }
 
+void FSMController::quit() {
+    {
+        const std::lock_guard<std::mutex> feed_lck(feed_mtx);
+        quit_requested = true;
+        new_event = true;
+    }
+
+    new_event_cv.notify_all();
+}
+
 void FSMController::run() {
     ctx.log_info("Starting the SLAC state machine");
 
@@ -51,7 +61,7 @@ void FSMController::run() {
 
     running = true;
 
-    while (true) {
+    while (not quit_requested) {
         auto feed_result = fsm.feed();
 
         if (feed_result.transition()) {
@@ -65,10 +75,11 @@ void FSMController::run() {
                 // call feed directly again
                 continue;
             }
-            new_event_cv.wait_for(feed_lck, std::chrono::milliseconds(timeout), [this] { return new_event; });
+            new_event_cv.wait_for(feed_lck, std::chrono::milliseconds(timeout),
+                                  [this] { return new_event or quit_requested; });
         } else {
             // nothing happened, no return value -> wait for new event
-            new_event_cv.wait(feed_lck, [this] { return new_event; });
+            new_event_cv.wait(feed_lck, [this] { return new_event or quit_requested; });
         }
 
         if (new_event) {
@@ -76,4 +87,8 @@ void FSMController::run() {
             new_event = false;
         }
     }
+
+    running = false;
+
+    ctx.log_info("Stopped the SLAC state machine");
 }

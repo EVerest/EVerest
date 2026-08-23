@@ -120,6 +120,15 @@ void slacImpl::ready() {
     }
 }
 
+void slacImpl::shutdown() {
+    // The SLAC I/O loop feeds the state machine, so it has to be stopped first.
+    slac_io.quit();
+
+    if (fsm_ctrl) {
+        fsm_ctrl->quit();
+    }
+}
+
 void slacImpl::handle_reset(bool& enable) {
     if (not fsm_ctrl) {
         return;
