@@ -311,6 +311,9 @@ void ISO15118_chargerImpl::ready() {
     }
 }
 
+void ISO15118_chargerImpl::shutdown() {
+}
+
 iso15118::config::SSLConfig ISO15118_chargerImpl::build_base_ssl_config() {
     iso15118::config::SSLConfig cfg{};
     cfg.backend = iso15118::config::CertificateBackend::EVEREST_LAYOUT;
