@@ -103,6 +103,10 @@ void ocppImpl::init() {
 void ocppImpl::ready() {
 }
 
+void ocppImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
+}
+
 bool ocppImpl::handle_stop() {
     if (this->mod->charge_point == nullptr) {
         EVLOG_warning << "ChargePoint not initialized, cannot handle stop command";
