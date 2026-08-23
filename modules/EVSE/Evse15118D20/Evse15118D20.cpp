@@ -17,6 +17,12 @@ void Evse15118D20::ready() {
     invoke_ready(*p_charger);
 }
 
+void Evse15118D20::shutdown() {
+    invoke_shutdown(*p_charger);
+    invoke_shutdown(*p_extensions);
+    invoke_shutdown(*p_grid_support);
+}
+
 void Evse15118D20::set_active_der_directives(const types::grid_support::ActiveDirectiveSet& directives) {
     *active_der_directives.handle() = directives;
 }
