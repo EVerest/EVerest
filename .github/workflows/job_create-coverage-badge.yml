@@ -38,13 +38,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Checkout local github actions
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.repository_owner }}/everest-ci
           ref: ${{ inputs.ref_everest_ci }}
           path: everest-ci
       - name: Download xml coverage report
-        uses: actions/download-artifact@v5.0.0
+        uses: actions/download-artifact@v8.0.1
         with:
           if-no-files-found: error
           name: ${{ inputs.coverage_xml_artifact_name }}
@@ -76,7 +76,7 @@ jobs:
           artifact_directory: ${{ github.workspace }}/coverage-badge/
           deploy_global_artifact: true
       - name: Download html coverage report
-        uses: actions/download-artifact@v5.0.0
+        uses: actions/download-artifact@v8.0.1
         with:
           if-no-files-found: error
           name: ${{ inputs.coverage_report_artifact_name }}

@@ -14,16 +14,16 @@ jobs:
     steps:
       - run: echo branch name is ${{ github.ref }}
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Mount bazel repo cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: "~/.cache/bazel-repo-cache"
           key: ${{ runner.os }}-bazel-repo-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
           restore-keys: |
             ${{ runner.os }}-bazel-repo-
       - name: Mount bazel disk cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: "~/.cache/bazel-disk-cache"
           key: ${{ runner.os }}-bazel-disk-native-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
