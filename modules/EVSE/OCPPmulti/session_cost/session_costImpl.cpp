@@ -12,5 +12,9 @@ void session_costImpl::init() {
 void session_costImpl::ready() {
 }
 
+void session_costImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
+}
+
 } // namespace session_cost
 } // namespace module
