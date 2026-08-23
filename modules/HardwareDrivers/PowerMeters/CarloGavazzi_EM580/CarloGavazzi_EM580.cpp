@@ -15,4 +15,9 @@ void CarloGavazzi_EM580::ready() {
     invoke_ready(*p_temperature_sensor);
 }
 
+void CarloGavazzi_EM580::shutdown() {
+    invoke_shutdown(*p_main);
+    invoke_shutdown(*p_temperature_sensor);
+}
+
 } // namespace module
