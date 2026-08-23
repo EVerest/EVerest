@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/powermeter/Implementation.hpp>
@@ -44,12 +44,11 @@ public:
     powermeterImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<CarloGavazzi_EM580>& mod, Conf& config) :
         powermeterImplBase(ev, "main"), mod(mod), config(config){};
 
+    // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
     // Marker used to append the transaction id to the tariff text (TT field).
     // Format: "<tariff_text><=><transaction_id>"
     static constexpr std::string_view TARIFF_TEXT_TRANSACTION_ID_MARKER = "<=>";
 
-    // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
-    // insert your public definitions here
     ~powermeterImpl() override;
     // Test-only access helpers (used by unit tests to avoid spinning up the full
     // EVerest runtime). These are intentionally narrow: inject transport + tweak
@@ -116,6 +115,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     std::unique_ptr<transport::AbstractModbusTransport> p_modbus_transport;
