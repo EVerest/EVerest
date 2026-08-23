@@ -12,6 +12,10 @@ void auth_token_validatorImpl::init() {
 void auth_token_validatorImpl::ready() {
 }
 
+void auth_token_validatorImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
+}
+
 types::authorization::ValidationResult
 auth_token_validatorImpl::handle_validate_token(types::authorization::ProvidedIdToken& provided_token) {
     return mod->m_ocpp.handle_validate_token(provided_token);
