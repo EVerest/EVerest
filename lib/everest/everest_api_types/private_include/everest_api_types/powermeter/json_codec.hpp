@@ -79,4 +79,7 @@ void to_json(json& j, const ReplyStopTransaction& k) noexcept;
 void from_json(const json& j, RequestStartTransaction& k);
 void to_json(json& j, const RequestStartTransaction& k) noexcept;
 
+void from_json(const json& j, Capabilities& k);
+void to_json(json& j, const Capabilities& k) noexcept;
+
 } // namespace everest::lib::API::V1_0::types::powermeter

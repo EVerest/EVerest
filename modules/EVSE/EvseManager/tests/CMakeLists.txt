@@ -20,6 +20,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     ErrorHandlingTest.cpp
     IECStateMachineTest.cpp
     OverVoltageMonitorTest.cpp
+    PowermeterLimitsTest.cpp
     SessionLogTest.cpp
     VoltagePlausibilityMonitorTest.cpp
     ../ErrorHandling.cpp
@@ -27,6 +28,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     ../SessionLog.cpp
     ../backtrace.cpp
     ../energy_transfer_modes.cpp
+    ../powermeter_limits.cpp
     ../over_voltage/OverVoltageMonitor.cpp
     ../voltage_plausibility/VoltagePlausibilityMonitor.cpp
     ../v2gMessage.cpp

@@ -112,7 +112,7 @@ void energyImpl::clear_request_schedules() {
 
 void energyImpl::ready() {
     hw_caps = mod->get_hw_capabilities();
-    last_powersupply_capabilities = mod->get_powersupply_capabilities();
+    last_powersupply_capabilities = mod->get_powersupply_capabilities_for_hlc();
     clear_request_schedules();
 
     // request energy now
@@ -544,7 +544,9 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
                 float actual_voltage = ev_info.present_voltage.value_or(0.);
 
                 bool values_changed = true;
-                auto powersupply_capabilities = mod->get_powersupply_capabilities();
+                // Use the HLC view here: these capabilities are turned into limits for the EV below,
+                // so the power meter minimum currents must be included.
+                auto powersupply_capabilities = mod->get_powersupply_capabilities_for_hlc();
 
                 // did the values change since the last call?
                 if (almost_eq(last_enforced_limits_watt, watt_leave_side) and
