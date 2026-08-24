@@ -8,6 +8,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <memory>
 
 namespace module::main {
@@ -218,6 +219,40 @@ TEST_F(LemDCBM400600ControllerTest, test_start_transaction) {
         int(delta.count() / 1E9 / 60),
         48 * 60 -
             3); // delta of max and min stopping time should be 48 hours - 2 minutes wait time and 1 minute safety time
+}
+
+/// \brief Test fallback OCMF is fetched immediately after start and then throttled
+TEST_F(LemDCBM400600ControllerTest, test_fallback_ocmf_fetch_is_immediate_then_throttled) {
+    testing::Sequence seq;
+    EXPECT_CALL(*this->time_sync_helper, sync(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, post("/v1/legal", this->expected_start_transaction_request_body))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{201, R"({"running": true})"}));
+    EXPECT_CALL(*this->time_sync_helper, sync_if_deadline_expired(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, get("/v1/livemeasure"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, this->livemeasure_response}));
+    EXPECT_CALL(*this->http_client, get("/v1/ocmf?transactionId=mock_transaction_id"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, "mock_ocmf_string"}));
+    EXPECT_CALL(*this->time_sync_helper, sync_if_deadline_expired(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, get("/v1/livemeasure"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, this->livemeasure_response}));
+
+    const LemDCBM400600Controller::Conf throttled_controller_config{
+        0, 0, 1, 0, 0, 0, {}, {}, 0, {}, {}, -1, 0, std::numeric_limits<int>::max()};
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       throttled_controller_config);
+
+    EXPECT_EQ(controller.start_transaction(this->transaction_request).status,
+              types::powermeter::TransactionRequestStatus::OK);
+    controller.get_powermeter();
+    controller.get_powermeter();
 }
 
 // \brief Test a failed start transaction with the DCBM returning an invalid response

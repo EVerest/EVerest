@@ -7,6 +7,8 @@
 #include "http_client_interface.hpp"
 #include "lem_dcbm_time_sync_helper.hpp"
 #include <chrono>
+#include <cstdint>
+#include <everest/util/async/monitor.hpp>
 #include <functional>
 #include <generated/interfaces/powermeter/Implementation.hpp>
 #include <string>
@@ -97,6 +99,11 @@ public:
     void update_lem_status();
 
 private:
+    struct OCMFFetchState {
+        std::chrono::steady_clock::time_point last_fetch{};
+        std::uint64_t transaction_generation = 0;
+    };
+
     const std::unique_ptr<HttpClientInterface> http_client;
     std::string meter_id;
     std::string public_key;
@@ -106,8 +113,7 @@ private:
     bool need_to_stop_transaction = false;
     std::string current_transaction_id;
     types::units_signed::SignedMeterValue current_signed_meter_value;
-    // when the fallback OCMF record was last fetched; epoch value forces a fetch on the next poll
-    std::chrono::steady_clock::time_point last_ocmf_fetch{};
+    everest::lib::util::monitor<OCMFFetchState> ocmf_fetch_state;
     std::unique_ptr<LemDCBMTimeSyncHelper> time_sync_helper;
     Conf config;
 
