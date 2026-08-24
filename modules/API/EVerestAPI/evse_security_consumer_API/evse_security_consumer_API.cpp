@@ -48,11 +48,6 @@ void evse_security_consumer_API::generate_api_cmd_is_ca_certificate_installed() 
         if (deserialize_request(data, reply_to, payload)) {
             bool response = r_evse_security->call_is_ca_certificate_installed(to_internal_api(payload));
             mqtt_v.publish(reply_to, response);
-            if (response) {
-                mqtt_v.publish(reply_to, "true");
-            } else {
-                mqtt_v.publish(reply_to, "false");
-            }
             return true;
         }
         return false;
