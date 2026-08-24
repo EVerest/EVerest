@@ -93,6 +93,12 @@ private:
         REGISTER_TYPE_UNDEFINED
     };
 
+    enum class RegisterReadResult {
+        SUCCESS,
+        FAILED,
+        TIMED_OUT
+    };
+
     struct RegisterData {
         float multiplier;
         PowermeterRegisters type;
@@ -112,6 +118,9 @@ private:
     /// @brief Remember whether we already logged the meter's unavailability.
     bool meter_is_unavailable{false};
 
+    /// @brief Number of consecutive read cycles in which at least one register could not be read.
+    uint32_t failed_read_cycles{0};
+
     void init_default_values();
     void init_register_assignments(const json& loaded_registers);
     bool assign_register_data(const json& registers, const PowermeterRegisters register_type,
@@ -121,7 +130,8 @@ private:
                                        const uint8_t offset);
     powermeterImpl::ModbusFunctionType select_modbus_function(const uint8_t function_code);
     void read_powermeter_values();
-    bool read_register(const RegisterData& register_config);
+    void update_communication_fault(bool read_cycle_successful);
+    RegisterReadResult read_register(const RegisterData& register_config);
     bool process_response(
         const RegisterData& register_data, const types::serial_comm_hub_requests::Result& register_message,
         std::optional<std::reference_wrapper<const types::serial_comm_hub_requests::Result>> exponent_message);
