@@ -257,38 +257,21 @@ public:
     bool session_is_iso_d20_ac_bpt();
     bool session_is_iso_d20_dc_bpt();
 
+    /// \brief Capabilities of the DC power supply (including external derating) for internal
+    ///        power supply control. Excludes power meter minimum-current constraints.
     types::power_supply_DC::Capabilities get_powersupply_capabilities();
+
+    /// \brief DC limits as offered to the EV via HLC (ISO 15118): power supply capabilities
+    ///        (including external derating) with minimum currents raised to the car side power
+    ///        meter's minimum measurable currents (e.g. calibration law accuracy limits).
+    ///        Do NOT use for internal power supply control (setpoint clamping, cable check,
+    ///        precharge, over-voltage thresholds) - use get_powersupply_capabilities() there.
+    types::power_supply_DC::Capabilities get_powersupply_capabilities_for_hlc();
+
     void set_external_derating(types::dc_external_derate::ExternalDerating d);
 
-    void update_powersupply_capabilities(types::power_supply_DC::Capabilities caps) {
-        std::scoped_lock lock(powersupply_capabilities_mutex);
-
-        if (caps != powersupply_capabilities) {
-            r_hlc[0]->call_set_powersupply_capabilities(caps);
-        }
-
-        powersupply_capabilities = caps;
-
-        // Inform HLC layer about update of physical values
-        types::iso15118::SetupPhysicalValues setup_physical_values;
-        setup_physical_values.dc_current_regulation_tolerance = powersupply_capabilities.current_regulation_tolerance_A;
-        setup_physical_values.dc_peak_current_ripple = powersupply_capabilities.peak_current_ripple_A;
-        setup_physical_values.dc_energy_to_be_delivered = 10000;
-        r_hlc[0]->call_set_charging_parameters(setup_physical_values);
-
-        types::iso15118::DcEvseMinimumLimits evse_min_limits;
-        evse_min_limits.evse_minimum_current_limit = powersupply_capabilities.min_export_current_A;
-        evse_min_limits.evse_minimum_voltage_limit = powersupply_capabilities.min_export_voltage_V;
-        evse_min_limits.evse_minimum_power_limit =
-            evse_min_limits.evse_minimum_current_limit * evse_min_limits.evse_minimum_voltage_limit;
-        r_hlc[0]->call_update_dc_minimum_limits(evse_min_limits);
-
-        // HLC layer will also get new maximum current/voltage/watt limits etc, but those will need to run through
-        // energy management first. Those limits will be applied in energy_grid implementation when requesting
-        // energy, so it is enough to set the powersupply_capabilities here.
-        // FIXME: this is not implemented yet: enforce_limits uses the enforced limits to tell HLC, but capabilities
-        // limits are not yet included in request.
-    }
+    void update_powersupply_capabilities(types::power_supply_DC::Capabilities caps);
+    void update_powermeter_capabilities(const types::powermeter::Capabilities& caps);
     std::atomic_int ac_nr_phases_active{0};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
@@ -306,8 +289,19 @@ private:
     // insert your private definitions here
     std::mutex powersupply_capabilities_mutex;
     types::power_supply_DC::Capabilities powersupply_capabilities;
+    std::optional<types::power_supply_DC::Capabilities> last_hlc_capabilities;
     std::mutex dc_external_derate_mutex;
     types::dc_external_derate::ExternalDerating dc_external_derate;
+    std::mutex powermeter_capabilities_mutex;
+    // Capabilities of the car side power meter. Only set in DC charge mode.
+    std::optional<types::powermeter::Capabilities> powermeter_capabilities;
+
+    // log_warnings defaults to off since this runs in hot paths; the deduplicated capability
+    // update paths pass true so clamp warnings appear once per actual change
+    types::power_supply_DC::Capabilities apply_powermeter_limits(types::power_supply_DC::Capabilities caps,
+                                                                 bool log_warnings = false);
+    types::power_supply_DC::Capabilities apply_external_derating(types::power_supply_DC::Capabilities caps);
+    void push_powersupply_capabilities_to_hlc();
 
     Everest::timed_mutex_traceable power_mutex;
     types::powermeter::Powermeter latest_powermeter_data_billing;

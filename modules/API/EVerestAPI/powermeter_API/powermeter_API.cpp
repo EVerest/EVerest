@@ -32,6 +32,7 @@ void powermeter_API::ready() {
 
     generate_api_var_powermeter_values();
     generate_api_var_public_key_ocmf();
+    generate_api_var_capabilities();
 
     generate_api_var_communication_check();
 
@@ -44,6 +45,17 @@ void powermeter_API::generate_api_var_powermeter_values() {
         API_types_ext::PowermeterValues payload;
         if (deserialize(data, payload)) {
             p_main->publish_powermeter(to_internal_api(payload));
+            return true;
+        }
+        return false;
+    });
+}
+
+void powermeter_API::generate_api_var_capabilities() {
+    subscribe_api_topic("capabilities", [this](std::string const& data) {
+        API_types_ext::Capabilities payload;
+        if (deserialize(data, payload)) {
+            p_main->publish_capabilities(to_internal_api(payload));
             return true;
         }
         return false;
