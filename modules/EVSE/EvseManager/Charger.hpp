@@ -352,9 +352,9 @@ private:
         uint32_t current_drawn_by_vehicle_identical_count{0};
         ShutdownType shutdown_type{ShutdownType::None};
         ShutdownType last_shutdown_type{ShutdownType::None};
-        int ac_with_soc_timer;
+        int ac_with_soc_timer{3600000};
         // non standard compliant option: time out after a while and switch back to DC to get SoC update
-        bool ac_with_soc_timeout;
+        bool ac_with_soc_timeout{false};
         bool contactor_welded{false};
         bool switch_3ph1ph_threephase{false};
         bool switch_3ph1ph_threephase_ongoing{false};
