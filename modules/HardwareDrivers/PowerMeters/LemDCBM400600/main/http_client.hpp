@@ -6,10 +6,9 @@
 
 #include "fmt/format.h"
 #include "http_client_interface.hpp"
-#include <array>
 #include <curl/curl.h>
 #include <everest/logging.hpp>
-#include <mutex>
+#include <everest/util/async/monitor.hpp>
 #include <regex>
 #include <stdexcept>
 #include <string>
@@ -65,6 +64,8 @@ public:
     [[nodiscard]] HttpResponse post(const std::string& path, const std::string& body) const override;
 
 private:
+    struct RequestExecutionGuard {};
+
     std::string host;
     int port;
     bool tls_enabled;
@@ -74,17 +75,10 @@ private:
 
     // Shared connection/SSL-session/DNS caches, so consecutive requests reuse the TCP (and TLS)
     // connection instead of reconnecting per request. nullptr if connection reuse is disabled.
-    // The mutexes make the share usable from concurrent requests (poll thread + command handlers).
+    // Requests are serialized because libcurl does not support sharing the connection cache between
+    // concurrent transfers.
     CURLSH* share = nullptr;
-    mutable std::array<std::mutex, CURL_LOCK_DATA_LAST> share_mutexes;
-
-    static void share_lock_cb(CURL* /*handle*/, curl_lock_data data, curl_lock_access /*access*/, void* userptr) {
-        static_cast<HttpClient*>(userptr)->share_mutexes[data].lock();
-    }
-
-    static void share_unlock_cb(CURL* /*handle*/, curl_lock_data data, void* userptr) {
-        static_cast<HttpClient*>(userptr)->share_mutexes[data].unlock();
-    }
+    mutable everest::lib::util::monitor<RequestExecutionGuard> request_execution_guard;
 
     void setup_share() {
         share = curl_share_init();
@@ -92,9 +86,6 @@ private:
             EVLOG_warning << "curl_share_init() failed - falling back to one connection per request";
             return;
         }
-        curl_share_setopt(share, CURLSHOPT_LOCKFUNC, share_lock_cb);
-        curl_share_setopt(share, CURLSHOPT_UNLOCKFUNC, share_unlock_cb);
-        curl_share_setopt(share, CURLSHOPT_USERDATA, this);
         curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
         curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
         curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);

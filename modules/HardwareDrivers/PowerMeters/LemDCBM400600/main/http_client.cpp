@@ -164,6 +164,7 @@ CURL* HttpClient::create_curl_handle_and_setup_url(const std::string& path) cons
 }
 
 HttpResponse HttpClient::get(const std::string& path) const {
+    const auto request_execution_handle = this->request_execution_guard.handle();
     CURL* connection = this->create_curl_handle_and_setup_url(path);
 
     if (curl_easy_setopt(connection, CURLOPT_HTTPGET, 1) != CURLE_OK) {
@@ -185,6 +186,7 @@ HttpResponse HttpClient::get(const std::string& path) const {
 }
 
 HttpResponse HttpClient::put(const std::string& path, const std::string& body) const {
+    const auto request_execution_handle = this->request_execution_guard.handle();
     CURL* connection = this->create_curl_handle_and_setup_url(path);
 
     curl_easy_setopt(connection, CURLOPT_UPLOAD, 1);
@@ -202,6 +204,7 @@ HttpResponse HttpClient::put(const std::string& path, const std::string& body) c
 }
 
 HttpResponse HttpClient::post(const std::string& path, const std::string& body) const {
+    const auto request_execution_handle = this->request_execution_guard.handle();
     CURL* connection = this->create_curl_handle_and_setup_url(path);
 
     if (curl_easy_setopt(connection, CURLOPT_POST, 1) != CURLE_OK) {
