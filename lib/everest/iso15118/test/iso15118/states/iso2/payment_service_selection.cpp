@@ -107,3 +107,45 @@ SCENARIO("ISO 15118-2 SECC PaymentServiceSelection handling") {
         }
     }
 }
+
+SCENARIO("ISO 15118-2 SECC PaymentServiceSelection with external VAS") {
+    const dt::SessionId id{};
+    dt::ServiceList offered;
+    dt::Service vas;
+    vas.service_id = 42;
+    vas.service_category = dt::ServiceCategory::OtherCustom;
+    vas.free_service = true;
+    offered.push_back(vas);
+
+    GIVEN("The charge service plus an offered VAS are selected") {
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::ExternalPayment;
+        req.selected_service_list.push_back(dt::SelectedService{1, std::nullopt});
+        req.selected_service_list.push_back(dt::SelectedService{42, 7});
+        const auto res = d2::state::handle_request(req, id, 1, true, false, false, std::nullopt, offered);
+        THEN("OK") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+        }
+    }
+
+    GIVEN("The charge service plus a VAS that was not offered are selected") {
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::ExternalPayment;
+        req.selected_service_list.push_back(dt::SelectedService{1, std::nullopt});
+        req.selected_service_list.push_back(dt::SelectedService{43, std::nullopt});
+        const auto res = d2::state::handle_request(req, id, 1, true, false, false, std::nullopt, offered);
+        THEN("FAILED_ServiceSelectionInvalid [V2G2-467]") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+        }
+    }
+
+    GIVEN("Only the offered VAS is selected, without the charge service") {
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::ExternalPayment;
+        req.selected_service_list.push_back(dt::SelectedService{42, std::nullopt});
+        const auto res = d2::state::handle_request(req, id, 1, true, false, false, std::nullopt, offered);
+        THEN("FAILED_NoChargeServiceSelected keeps precedence [V2G2-804]") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_NoChargeServiceSelected);
+        }
+    }
+}
