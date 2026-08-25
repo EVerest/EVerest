@@ -15,16 +15,8 @@
 
 #include <framework/runtime.hpp>
 #include <utils/types.hpp>
-#include <generated/version_information.hpp>
-#ifndef PROJECT_NAME
-#define PROJECT_NAME "undefined project"
-#endif
-#ifndef PROJECT_VERSION
-#define PROJECT_VERSION "undefined version"
-#endif
-#ifndef GIT_VERSION
-#define GIT_VERSION "undefined git version"
-#endif
+
+#include <everest/project_info.hpp>
 
 {% if info.enable_global_errors %}
 #include <utils/error/error_manager_req_global.hpp>
@@ -250,7 +242,8 @@ int main(int argc, char* argv[]) {
     auto module_loader = Everest::ModuleLoader(argc, argv, Everest::ModuleCallbacks(
         module::register_module_adapter, module::everest_register,
         module::LdEverest::init, module::LdEverest::ready, module::LdEverest::shutdown),
-        {PROJECT_NAME, PROJECT_VERSION, GIT_VERSION});
+        {std::string{everest::project_info::name()}, std::string{everest::project_info::version()},
+         std::string{everest::project_info::git_commit()}});
 
     return module_loader.initialize();
 }

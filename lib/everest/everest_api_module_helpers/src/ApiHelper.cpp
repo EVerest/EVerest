@@ -14,7 +14,6 @@
 #include <everest_api_types/generic/string.hpp>
 
 #include <everest/logging.hpp>
-#include <generated/version_information.hpp>
 
 namespace {
 inline bool ends_with(std::string_view str, std::string_view suffix) {
