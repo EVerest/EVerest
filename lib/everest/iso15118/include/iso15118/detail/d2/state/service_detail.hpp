@@ -11,6 +11,8 @@ namespace dt = message_2::datatypes;
 
 message_2::ServiceDetailResponse handle_request(const message_2::ServiceDetailRequest& req,
                                                 const dt::SessionId& session_id, uint16_t charge_service_id,
-                                                bool cert_service_offered = false);
+                                                bool cert_service_offered = false,
+                                                const std::optional<dt::ServiceParameterList>& vas_parameters = {},
+                                                bool vas_offered = false);
 
 } // namespace iso15118::d2::state
