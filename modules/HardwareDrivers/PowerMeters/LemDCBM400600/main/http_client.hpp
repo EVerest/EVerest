@@ -78,6 +78,8 @@ private:
     // Requests are serialized because libcurl does not support sharing the connection cache between
     // concurrent transfers.
     CURLSH* share = nullptr;
+    // Held for the duration of a request. Note that this is not recursive: a request must never be
+    // issued from within another request on the same client.
     mutable everest::lib::util::monitor<RequestExecutionGuard> request_execution_guard;
 
     void setup_share() {
@@ -86,9 +88,21 @@ private:
             EVLOG_warning << "curl_share_init() failed - falling back to one connection per request";
             return;
         }
-        curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
-        curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
-        curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+        // No CURLSHOPT_LOCKFUNC/UNLOCKFUNC is registered: all transfers using this share are serialized
+        // by request_execution_guard, so the shared caches are never accessed concurrently. Locking
+        // callbacks would not be sufficient on their own anyway, since libcurl does not support using a
+        // shared connection cache from concurrent transfers at all.
+        for (const auto data : {CURL_LOCK_DATA_CONNECT, CURL_LOCK_DATA_SSL_SESSION, CURL_LOCK_DATA_DNS}) {
+            if (curl_share_setopt(share, CURLSHOPT_SHARE, data) != CURLSHE_OK) {
+                // Without the shared caches there is nothing to reuse, and the connection of a handle
+                // would just be discarded when the handle is cleaned up after the request. Drop the share
+                // so that CURLOPT_FORBID_REUSE is set again and the previous behavior is restored.
+                EVLOG_warning << "curl_share_setopt() failed - falling back to one connection per request";
+                curl_share_cleanup(share);
+                share = nullptr;
+                return;
+            }
+        }
     }
 
     [[nodiscard]] CURL* create_curl_handle_and_setup_url(const std::string& path) const;
