@@ -159,7 +159,7 @@ public:
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): pass-through of argc and argv from main()
     explicit ModuleLoader(int argc, char* argv[], ModuleCallbacks callbacks) :
         ModuleLoader(argc, argv, std::move(callbacks),
-                     {"undefined project", "undefined version", "undefined git version"}) {};
+                     {"undefined project", "undefined version", "undefined git version"}){};
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): pass-through of argc and argv from main()
     explicit ModuleLoader(int argc, char* argv[], ModuleCallbacks callbacks, VersionInformation version_information);
 
