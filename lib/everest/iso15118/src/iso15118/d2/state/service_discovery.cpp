@@ -11,12 +11,11 @@
 
 namespace iso15118::d2::state {
 
-message_2::ServiceDiscoveryResponse
-handle_request([[maybe_unused]] const message_2::ServiceDiscoveryRequest& req, const dt::SessionId& session_id,
-               uint16_t charge_service_id,
-               const everest::lib::util::fixed_vector<dt::EnergyTransferMode, 6>& supported_modes, bool offer_eim,
-               bool offer_contract, bool cert_service_offered,
-               const std::optional<dt::PaymentOption>& resumed_payment_option) {
+message_2::ServiceDiscoveryResponse handle_request(
+    [[maybe_unused]] const message_2::ServiceDiscoveryRequest& req, const dt::SessionId& session_id,
+    uint16_t charge_service_id, const everest::lib::util::fixed_vector<dt::EnergyTransferMode, 6>& supported_modes,
+    bool offer_eim, bool offer_contract, bool cert_service_offered,
+    const std::optional<dt::PaymentOption>& resumed_payment_option, const dt::ServiceList& offered_vas_services) {
     message_2::ServiceDiscoveryResponse res;
     res.header.session_id = session_id;
     res.response_code = dt::ResponseCode::OK;
@@ -48,6 +47,18 @@ handle_request([[maybe_unused]] const message_2::ServiceDiscoveryRequest& req, c
         cert_service.service_category = dt::ServiceCategory::ContractCertificate;
         cert_service.free_service = true;
         service_list.push_back(cert_service);
+    }
+
+    // External value-added services (Table 105), already filtered and sized by make_d2_config so that
+    // they fit next to the Certificate service.
+    for (const auto& vas : offered_vas_services) {
+        if (not res.service_list.has_value()) {
+            res.service_list.emplace();
+        }
+        if (res.service_list->try_emplace_back(vas) == nullptr) {
+            logf_warning("ServiceList full; dropping VAS ServiceID %u", vas.service_id);
+            break;
+        }
     }
 
     auto& charge_service = res.charge_service;
@@ -112,9 +123,10 @@ Result ServiceDiscovery::feed(Event ev) {
         }
     }
 
-    const auto res = handle_request(*req, m_ctx.get_session_id(), m_ctx.session_config.charge_service_id,
-                                    m_ctx.session_config.supported_energy_transfer_modes, offer_eim, offer_contract,
-                                    cert_service_offered, resumed_payment_option);
+    const auto res =
+        handle_request(*req, m_ctx.get_session_id(), m_ctx.session_config.charge_service_id,
+                       m_ctx.session_config.supported_energy_transfer_modes, offer_eim, offer_contract,
+                       cert_service_offered, resumed_payment_option, m_ctx.session_config.offered_vas_services);
     m_ctx.respond(res);
 
     return m_ctx.create_state<ServiceDetail>();
