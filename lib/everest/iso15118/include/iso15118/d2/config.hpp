@@ -8,6 +8,7 @@
 
 #include <iso15118/d20/control_event.hpp>
 #include <iso15118/message_2/common_types.hpp>
+#include <iso15118/message_2/service_discovery.hpp>
 
 #include <everest/util/vector/fixed_vector.hpp>
 
@@ -24,6 +25,12 @@ struct SessionConfig {
     // Advertised in the ServiceDiscoveryRes ChargeService.
     uint16_t charge_service_id{1};
     everest::lib::util::fixed_vector<dt::EnergyTransferMode, 6> supported_energy_transfer_modes{};
+
+    // Value-added services of external providers, advertised in the ServiceDiscoveryRes ServiceList
+    // (Table 105) after the built-in Certificate service. Their parameter sets (ServiceDetailRes) and the
+    // EV's selection (PaymentServiceSelectionReq) go through feedback.get_vas_parameters /
+    // selected_vas_services. Filtered by make_d2_config: never ServiceID 1 (charging) or 2 (Certificate).
+    dt::ServiceList offered_vas_services{};
 
     // The limits come in two flavours (EvseV2G parity): ChargeParameterDiscoveryRes advertises the
     // maximum the EVSE could ever deliver (hardware capabilities, independent of what energy management

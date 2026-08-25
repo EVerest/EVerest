@@ -57,4 +57,38 @@ SCENARIO("ISO 15118-2 SECC ServiceDetail handling") {
             REQUIRE(res.response_code == dt::ResponseCode::FAILED_ServiceIDInvalid);
         }
     }
+
+    GIVEN("A request for an offered external VAS") {
+        message_2::ServiceDetailRequest req;
+        req.service_id = 42;
+
+        WHEN("the provider returned parameter sets") {
+            dt::ServiceParameterList parameters;
+            auto& set = parameters.emplace_back();
+            set.parameter_set_id = 7;
+            auto& param = set.parameter.emplace_back();
+            param.name = "Slot";
+            param.int_value = 3;
+            const auto res =
+                d2::state::handle_request(req, id, charge_service_id, false, parameters, /*vas_offered=*/true);
+            THEN("OK with the provider's ServiceParameterList [V2G2-549]") {
+                REQUIRE(res.response_code == dt::ResponseCode::OK);
+                REQUIRE(res.service_id == 42);
+                REQUIRE(res.service_parameter_list.has_value());
+                REQUIRE(res.service_parameter_list->size() == 1);
+                REQUIRE(res.service_parameter_list->front().parameter_set_id == 7);
+                REQUIRE(res.service_parameter_list->front().parameter.front().name == "Slot");
+                REQUIRE(res.service_parameter_list->front().parameter.front().int_value == 3);
+            }
+        }
+
+        WHEN("the provider has no parameter sets") {
+            const auto res =
+                d2::state::handle_request(req, id, charge_service_id, false, std::nullopt, /*vas_offered=*/true);
+            THEN("OK without a ServiceParameterList") {
+                REQUIRE(res.response_code == dt::ResponseCode::OK);
+                REQUIRE_FALSE(res.service_parameter_list.has_value());
+            }
+        }
+    }
 }
