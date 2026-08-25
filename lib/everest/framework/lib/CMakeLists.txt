@@ -109,14 +109,14 @@ target_compile_definitions(framework
 
 
 if (CMAKE_INSTALL_PREFIX)
-    set_source_files_properties(runtime.cpp PROPERTIES
-        COMPILE_DEFINITIONS "EVEREST_INSTALL_PREFIX=\"${CMAKE_INSTALL_PREFIX}\""
+    set_property(SOURCE runtime.cpp APPEND PROPERTY
+        COMPILE_DEFINITIONS EVEREST_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}"
     )
 endif()
 
 if (CMAKE_INSTALL_LIBDIR)
-    set_source_files_properties(runtime.cpp PROPERTIES
-        COMPILE_DEFINITIONS "EVEREST_INSTALL_LIBDIR=\"${CMAKE_INSTALL_LIBDIR}\""
+    set_property(SOURCE runtime.cpp APPEND PROPERTY
+        COMPILE_DEFINITIONS EVEREST_INSTALL_LIBDIR="${CMAKE_INSTALL_LIBDIR}"
     )
 endif()
 
