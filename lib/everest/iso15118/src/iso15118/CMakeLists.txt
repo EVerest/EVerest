@@ -52,6 +52,7 @@ target_sources(iso15118
         d20/timeout.cpp
 
         d2/context.cpp
+        d2/vas.cpp
 
         # d2 (ISO 15118-2) SECC state machine
         d2/crypto.cpp
