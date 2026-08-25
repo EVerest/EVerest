@@ -38,6 +38,9 @@ public:
     std::optional<ValueT> create(std::string const& topic_id, json payload = json()) {
         using namespace std::literals::chrono_literals;
         using weak_promise = std::weak_ptr<std::promise<ValueT>>;
+        // thread_local: constructing the generator seeds it from the entropy
+        // source, which is too expensive to repeat for every request
+        static thread_local boost::uuids::random_generator uuid_create;
         auto reply_topic = topic_generator.reply_to_everest(boost::uuids::to_string(uuid_create()));
         auto value_prom = std::make_shared<std::promise<ValueT>>();
         auto value_fut = value_prom->get_future();
@@ -61,7 +64,7 @@ public:
         json req;
         req["headers"]["replyTo"] = reply_topic;
         if (not payload.empty()) {
-            req["payload"] = payload;
+            req["payload"] = std::move(payload);
         }
         mqtt.publish(topic_generator.everest_to_extern(topic_id), req.dump());
 
@@ -77,7 +80,6 @@ private:
     Mqtt::MqttProviderInterface& mqtt;
     Topics const& topic_generator;
     std::chrono::seconds timeout;
-    boost::uuids::random_generator uuid_create;
 };
 
 template <class ReplyT, class ReqT>
