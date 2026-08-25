@@ -1062,6 +1062,100 @@ SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
     }
 }
 
+SCENARIO("ISO 15118-2 SECC external VAS providers") {
+    namespace m20dt = message_20::datatypes;
+
+    auto config = make_config(dt::EnergyTransferMode::DC_extended);
+    dt::Service vas;
+    vas.service_id = 42;
+    vas.service_name = "Parking";
+    vas.service_category = dt::ServiceCategory::OtherCustom;
+    vas.free_service = true;
+    config.offered_vas_services.push_back(vas);
+
+    std::vector<uint16_t> detail_requests;
+    std::optional<m20dt::VasSelectedServiceList> selected;
+    session::feedback::Callbacks callbacks;
+    callbacks.get_vas_parameters = [&](uint16_t service_id) -> std::optional<m20dt::ServiceParameterList> {
+        detail_requests.push_back(service_id);
+        m20dt::ServiceParameterList list;
+        auto& set = list.emplace_back();
+        set.id = 7;
+        set.parameter.push_back({"Slot", static_cast<int32_t>(3)});
+        set.parameter.push_back({"Name", m20dt::Name{"Lot A"}});
+        set.parameter.push_back({"Fee", m20dt::from_float(1.5f)});
+        return list;
+    };
+    callbacks.selected_vas_services = [&](const m20dt::VasSelectedServiceList& list) { selected = list; };
+
+    GIVEN("A session with one external VAS offered") {
+        Secc secc(config, std::move(callbacks));
+        to_service_detail(secc);
+
+        THEN("ServiceDiscoveryRes lists the service") {
+            const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
+            REQUIRE(res.has_value());
+            REQUIRE(res->service_list.has_value());
+            REQUIRE(res->service_list->size() == 1);
+            REQUIRE(res->service_list->front().service_id == 42);
+            REQUIRE(res->service_list->front().service_name == "Parking");
+        }
+
+        WHEN("The EV asks for its details") {
+            message_2::ServiceDetailRequest req;
+            req.service_id = 42;
+            secc.drive(req);
+
+            THEN("The provider is asked and its parameter sets are translated into the response") {
+                REQUIRE(detail_requests == std::vector<uint16_t>{42});
+                const auto res = secc.fsm.response<message_2::ServiceDetailResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                REQUIRE(res->service_parameter_list.has_value());
+                const auto& set = res->service_parameter_list->front();
+                REQUIRE(set.parameter_set_id == 7);
+                REQUIRE(set.parameter.size() == 3);
+                REQUIRE(set.parameter[0].int_value == 3);
+                REQUIRE(set.parameter[1].string_value == "Lot A");
+                REQUIRE(set.parameter[2].physical_value.has_value());
+                REQUIRE(set.parameter[2].physical_value->unit == dt::Unit::W);
+                REQUIRE(secc.fsm.state() == StateID::ServiceDetail);
+            }
+
+            AND_WHEN("The EV selects the charge service and the VAS with parameter set 7") {
+                auto selection = payment_selection_req();
+                selection.selected_service_list.push_back({42, 7});
+                secc.drive(selection);
+
+                THEN("OK, the provider is told about the selection and the machine moves on") {
+                    const auto res = secc.fsm.response<message_2::PaymentServiceSelectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(selected.has_value());
+                    REQUIRE(selected->size() == 1);
+                    REQUIRE(selected->front().service_id == 42);
+                    REQUIRE(selected->front().parameter_set_id == 7);
+                    REQUIRE(secc.fsm.state() == StateID::Authorization);
+                }
+            }
+        }
+
+        WHEN("The EV selects a VAS that was never offered") {
+            auto selection = payment_selection_req();
+            selection.selected_service_list.push_back({43, std::nullopt});
+            secc.drive(selection);
+
+            THEN("FAILED_ServiceSelectionInvalid, no provider callback, session stopped") {
+                const auto res = secc.fsm.response<message_2::PaymentServiceSelectionResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+                REQUIRE_FALSE(selected.has_value());
+                REQUIRE(secc.fsm.context().session_stopped);
+            }
+        }
+    }
+}
+
 SCENARIO("ISO 15118-2 SECC charger stop and shutdown paths") {
     Secc secc;
 
