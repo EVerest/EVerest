@@ -39,7 +39,6 @@ set(EVEREST_LIB_SUBDIRS
     log
     ocpp
     ocpp_module_common
-    project_info
     run_application
     slac
     sqlite
