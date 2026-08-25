@@ -10,6 +10,7 @@
 
 #include <iso15118/detail/d2/state/payment_service_selection.hpp>
 #include <iso15118/detail/d2/state/sequence_error.hpp>
+#include <iso15118/detail/d2/vas.hpp>
 #include <iso15118/detail/helper.hpp>
 
 namespace iso15118::d2::state {
@@ -17,7 +18,8 @@ namespace iso15118::d2::state {
 message_2::PaymentServiceSelectionResponse
 handle_request(const message_2::PaymentServiceSelectionRequest& req, const dt::SessionId& session_id,
                uint16_t charge_service_id, bool eim_allowed, bool contract_allowed, bool cert_service_offered,
-               const std::optional<dt::PaymentOption>& resumed_payment_option) {
+               const std::optional<dt::PaymentOption>& resumed_payment_option,
+               const dt::ServiceList& offered_vas_services) {
     message_2::PaymentServiceSelectionResponse res;
     res.header.session_id = session_id;
 
@@ -59,12 +61,13 @@ handle_request(const message_2::PaymentServiceSelectionRequest& req, const dt::S
     }
 
     // Every selected ServiceID must have been offered in ServiceDiscoveryRes [V2G2-433/467]: the charge
-    // service (always) and the Certificate service (only when advertised over a PnC/TLS session). The
-    // charge service is guaranteed present here (checked above), so this catches any extra unoffered
-    // service (TC PaymentServiceSelection_006).
+    // service (always), the Certificate service (only when advertised over a PnC/TLS session) and the
+    // external VAS entries. The charge service is guaranteed present here (checked above), so this catches
+    // any extra unoffered service (TC PaymentServiceSelection_006).
     for (const auto& s : list) {
         const bool offered = (s.service_id == charge_service_id) or
-                             (cert_service_offered and s.service_id == dt::CERTIFICATE_SERVICE_ID);
+                             (cert_service_offered and s.service_id == dt::CERTIFICATE_SERVICE_ID) or
+                             is_offered_vas(offered_vas_services, s.service_id);
         if (not offered) {
             res.response_code = dt::ResponseCode::FAILED_ServiceSelectionInvalid;
             return res;
@@ -125,8 +128,9 @@ Result PaymentServiceSelection::feed(Event ev) {
         }
     }
 
-    const auto res = handle_request(*req, m_ctx.get_session_id(), m_ctx.session_config.charge_service_id, allow_eim,
-                                    allow_contract, cert_service_offered, resumed_payment_option);
+    const auto res =
+        handle_request(*req, m_ctx.get_session_id(), m_ctx.session_config.charge_service_id, allow_eim, allow_contract,
+                       cert_service_offered, resumed_payment_option, m_ctx.session_config.offered_vas_services);
     m_ctx.respond(res);
 
     if (res.response_code >= dt::ResponseCode::FAILED) {
@@ -138,6 +142,14 @@ Result PaymentServiceSelection::feed(Event ev) {
     // handler (iso_server.cpp:1020): only for a selection that was offered and accepted, never for a
     // rejected one.
     m_ctx.feedback.selected_payment_option(req->selected_payment_option);
+
+    // Tell the VAS providers (through the module) which of their services and parameter sets the EV
+    // selected; only once the whole selection has been validated.
+    const auto selected_vas =
+        selected_vas_services(req->selected_service_list, m_ctx.session_config.offered_vas_services);
+    if (not selected_vas.empty()) {
+        m_ctx.feedback.selected_vas_services(selected_vas);
+    }
 
     // Record which certificate exchange(s) the EV selected (ISO 15118-2 Table 106): ParameterSetID 1 =
     // Installation, 2 = Update; a certificate SelectedService without a ParameterSetID permits either.

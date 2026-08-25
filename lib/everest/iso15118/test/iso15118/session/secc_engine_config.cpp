@@ -387,6 +387,55 @@ SCENARIO("ISO 15118-2 SECC config mapping") {
     }
 }
 
+SCENARIO("ISO 15118-2 SECC external VAS offers") {
+    session::EvseSetupConfig setup{};
+    setup.evse_id = "DE*PNX*E12345*1";
+
+    GIVEN("Providers offering the Internet service, a custom service and the reserved ids") {
+        setup.pre20_vas_services = {
+            {1, "Charging", std::nullopt, true},      {2, "Certificate", std::nullopt, true},
+            {3, std::nullopt, "some scope", false},   {42, "Parking", std::nullopt, true},
+            {42, "ParkingAgain", std::nullopt, true},
+        };
+        const auto cfg = make_d2_config(session::SessionConfig(setup), false);
+
+        THEN("ids 1 and 2 and the duplicate are dropped; 3 is Internet, 42 OtherCustom") {
+            REQUIRE(cfg.offered_vas_services.size() == 2);
+            REQUIRE(cfg.offered_vas_services[0].service_id == 3);
+            REQUIRE(cfg.offered_vas_services[0].service_category == message_2::datatypes::ServiceCategory::Internet);
+            REQUIRE(cfg.offered_vas_services[0].service_name == "InternetAccess");
+            REQUIRE(cfg.offered_vas_services[0].service_scope == "some scope");
+            REQUIRE(cfg.offered_vas_services[0].free_service == false);
+            REQUIRE(cfg.offered_vas_services[1].service_id == 42);
+            REQUIRE(cfg.offered_vas_services[1].service_category == message_2::datatypes::ServiceCategory::OtherCustom);
+            REQUIRE(cfg.offered_vas_services[1].service_name == "Parking");
+        }
+    }
+
+    GIVEN("A name longer than the 32 characters ISO 15118-2 allows") {
+        setup.pre20_vas_services = {{42, std::string(40, 'x'), std::string(70, 'y'), true}};
+        const auto cfg = make_d2_config(session::SessionConfig(setup), false);
+        THEN("name and scope are truncated to 32 / 64") {
+            REQUIRE(cfg.offered_vas_services.size() == 1);
+            REQUIRE(cfg.offered_vas_services[0].service_name->size() == 32);
+            REQUIRE(cfg.offered_vas_services[0].service_scope->size() == 64);
+        }
+    }
+
+    GIVEN("More external services than the ServiceList can hold next to the Certificate service") {
+        setup.enable_certificate_install_service = true;
+        for (uint16_t id = 10; id < 20; ++id) {
+            setup.pre20_vas_services.push_back({id, std::nullopt, std::nullopt, true});
+        }
+        const auto cfg = make_d2_config(session::SessionConfig(setup), false);
+        THEN("seven are kept, leaving one slot for the Certificate service") {
+            REQUIRE(cfg.cert_install_service);
+            REQUIRE(cfg.offered_vas_services.size() == 7);
+            REQUIRE(cfg.offered_vas_services.back().service_id == 16);
+        }
+    }
+}
+
 SCENARIO("Authorization Ongoing timeouts") {
     session::EvseSetupConfig setup{};
     setup.evse_id = "DE*EVR*E12345*1";

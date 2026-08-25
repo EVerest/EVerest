@@ -26,6 +26,14 @@ namespace dt = message_20::datatypes;
 // and DIN SPEC 70121 SECC engines as well, so they live in the protocol-neutral iso15118::session
 // namespace.
 
+// A value-added service offered by an external VAS provider, as ISO 15118-2 describes it (Table 105).
+struct VasService {
+    uint16_t id{0};
+    std::optional<std::string> name{std::nullopt};  // ServiceName, max 32 characters
+    std::optional<std::string> scope{std::nullopt}; // ServiceScope, max 64 characters
+    bool free_service{true};
+};
+
 // Session-independent EVSE setup configuration
 struct EvseSetupConfig {
     std::string evse_id;
@@ -40,7 +48,7 @@ struct EvseSetupConfig {
     std::optional<std::string> custom_protocol{std::nullopt};
     std::optional<d20::AcSetupConfig> ac_setup_config{std::nullopt};
     std::optional<d20::BptSetupConfig> bpt_setup_config{std::nullopt};
-    std::optional<d20::DerSetupConfig> der_setup_config{std::nullopt};
+    std::optional<d20::DerIecSetupConfig> der_iec_setup_config{std::nullopt};
     d20::DcTransferLimits powersupply_limits;
     bool selecting_sap_based_on_energy_service{false};
 
@@ -79,6 +87,12 @@ struct EvseSetupConfig {
     // loses e.g. the DC_core/DC_extended distinction); the ISO 15118-2 and DIN SPEC 70121 engines
     // advertise these instead when the module provided them. Applied at session start.
     std::vector<shared_datatypes::EnergyTransferMode> pre20_energy_transfer_modes{};
+    // Value-added services offered by external VAS providers, advertised in the ISO 15118-2
+    // ServiceDiscoveryRes ServiceList. supported_vas_services above is the -20 view (ids only, since a -20
+    // ServiceID is its category); ISO 15118-2 additionally needs name, scope and the free-of-charge flag
+    // per service. Parameter sets and selections travel through the (protocol-neutral) feedback
+    // callbacks get_vas_parameters / selected_vas_services. Applied at session start.
+    std::vector<VasService> pre20_vas_services{};
 
     // How long the SECC keeps answering EVSEProcessing=Ongoing while waiting for the authorization
     // result before it fails the session, in SECONDS; 0 means wait indefinitely. Defaults are EvseV2G's
@@ -121,7 +135,7 @@ struct SessionConfig {
     d20::DcTransferLimits dc_limits;
     d20::AcTransferLimits ac_limits;
 
-    d20::DerSetupConfig der_setup_config;
+    d20::DerIecSetupConfig der_iec_setup_config;
     std::optional<d20::IecDerTransferLimits> der_limits;
 
     d20::DcTransferLimits powersupply_limits;
@@ -151,6 +165,8 @@ struct SessionConfig {
     d20::NoEnergyPauseMode no_energy_pause{d20::NoEnergyPauseMode::None};
     // See EvseSetupConfig::pre20_energy_transfer_modes.
     std::vector<shared_datatypes::EnergyTransferMode> pre20_energy_transfer_modes{};
+    // See EvseSetupConfig::pre20_vas_services.
+    std::vector<VasService> pre20_vas_services{};
     // See EvseSetupConfig::auth_timeout_eim_s / auth_timeout_pnc_s (seconds, 0 = indefinitely).
     uint32_t auth_timeout_eim_s{300};
     uint32_t auth_timeout_pnc_s{55};
