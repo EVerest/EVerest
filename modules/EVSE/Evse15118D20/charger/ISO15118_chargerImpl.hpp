@@ -127,6 +127,8 @@ private:
     std::optional<float> evse_max_reactive_power;
 
     std::vector<iso15118::d20::SupportedVASs> supported_vas_services_per_provider;
+    // The full offers (name, scope, free flag) for the ISO 15118-2 ServiceList; same index as above.
+    std::vector<std::vector<types::iso15118_vas::OfferedService>> offered_vas_per_provider;
     std::mutex vas_mutex;
 
     void update_supported_vas_services();

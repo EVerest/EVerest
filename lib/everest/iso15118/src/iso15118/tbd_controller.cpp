@@ -374,6 +374,10 @@ void TbdController::update_pre20_energy_transfer_modes(const std::vector<shared_
     evse_setup.handle()->pre20_energy_transfer_modes = modes;
 }
 
+void TbdController::update_pre20_vas_services(const std::vector<session::VasService>& services) {
+    evse_setup.handle()->pre20_vas_services = services;
+}
+
 void TbdController::update_supported_protocols(const std::vector<ProtocolId>& protocols) {
     evse_setup.handle()->supported_protocols = protocols;
 }

@@ -6,6 +6,7 @@
 
 #include <iso15118/message_2/common_types.hpp>
 #include <iso15118/message_2/payment_service_selection.hpp>
+#include <iso15118/message_2/service_discovery.hpp>
 
 namespace iso15118::d2::state {
 
@@ -17,6 +18,7 @@ namespace dt = message_2::datatypes;
 message_2::PaymentServiceSelectionResponse
 handle_request(const message_2::PaymentServiceSelectionRequest& req, const dt::SessionId& session_id,
                uint16_t charge_service_id, bool eim_allowed, bool contract_allowed, bool cert_service_offered = false,
-               const std::optional<dt::PaymentOption>& resumed_payment_option = std::nullopt);
+               const std::optional<dt::PaymentOption>& resumed_payment_option = std::nullopt,
+               const dt::ServiceList& offered_vas_services = {});
 
 } // namespace iso15118::d2::state

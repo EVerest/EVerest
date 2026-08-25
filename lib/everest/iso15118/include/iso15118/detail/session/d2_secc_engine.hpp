@@ -2,6 +2,8 @@
 // Copyright 2025 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <vector>
+
 #include <iso15118/d2/config.hpp>
 #include <iso15118/d20/control_event.hpp>
 #include <iso15118/d20/limits.hpp>
@@ -27,6 +29,11 @@ void apply_dc_capabilities(d2::SessionConfig& out, const d20::DcTransferLimits& 
 // values when the module reports none; the other two are optional and stay absent. The AC max current is
 // derived from the nominal voltage by the caller, not here.
 void apply_physical_values(d2::SessionConfig& out, const d20::PhysicalValues& values);
+
+// Maps the external VAS offers onto ISO 15118-2 Service entries: refuses the reserved ServiceIDs 1 and 2,
+// deduplicates, truncates over-long names/scopes and fits the result into the ServiceList next to the
+// Certificate service. Category: ServiceID 3 -> Internet, anything else -> OtherCustom.
+void apply_vas_services(d2::SessionConfig& out, const std::vector<session::VasService>& services);
 
 // Builds the SECC-side ISO 15118-2 config from the protocol-neutral session config: EVSEID (falling back
 // to the default when shorter than the schema minimum), the advertised energy transfer modes, DC/AC limits,

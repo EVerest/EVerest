@@ -7,13 +7,16 @@
 
 #include <iso15118/detail/d2/state/sequence_error.hpp>
 #include <iso15118/detail/d2/state/service_detail.hpp>
+#include <iso15118/detail/d2/vas.hpp>
 #include <iso15118/detail/helper.hpp>
 
 namespace iso15118::d2::state {
 
 message_2::ServiceDetailResponse handle_request(const message_2::ServiceDetailRequest& req,
                                                 const dt::SessionId& session_id, uint16_t charge_service_id,
-                                                bool cert_service_offered) {
+                                                bool cert_service_offered,
+                                                const std::optional<dt::ServiceParameterList>& vas_parameters,
+                                                bool vas_offered) {
     message_2::ServiceDetailResponse res;
     res.header.session_id = session_id;
     res.service_id = req.service_id;
@@ -38,6 +41,10 @@ message_2::ServiceDetailResponse handle_request(const message_2::ServiceDetailRe
         auto& update_param = update_set.parameter.emplace_back();
         update_param.name = "Service";
         update_param.string_value = "Update";
+    } else if (vas_offered) {
+        // External VAS [V2G2-549]: the provider's parameter sets, or none when it has nothing to detail.
+        res.response_code = dt::ResponseCode::OK;
+        res.service_parameter_list = vas_parameters;
     } else {
         res.response_code = dt::ResponseCode::FAILED_ServiceIDInvalid;
     }
@@ -77,8 +84,19 @@ Result ServiceDetail::feed(Event ev) {
     // when the SECC actually provides certificate installation/update.
     const bool cert_service_offered = m_ctx.session_config.pnc_enabled and m_ctx.session_config.tls_active and
                                       m_ctx.session_config.cert_install_service;
-    const auto res =
-        handle_request(req, m_ctx.get_session_id(), m_ctx.session_config.charge_service_id, cert_service_offered);
+
+    // External VAS: ask the provider (through the module) for the parameter sets of the requested service.
+    const bool vas_offered = is_offered_vas(m_ctx.session_config.offered_vas_services, req.service_id);
+    std::optional<dt::ServiceParameterList> vas_parameters;
+    if (vas_offered) {
+        const auto provider_parameters = m_ctx.feedback.get_vas_parameters(req.service_id);
+        if (provider_parameters.has_value()) {
+            vas_parameters = to_iso2_parameter_list(provider_parameters.value());
+        }
+    }
+
+    const auto res = handle_request(req, m_ctx.get_session_id(), m_ctx.session_config.charge_service_id,
+                                    cert_service_offered, vas_parameters, vas_offered);
     m_ctx.respond(res);
 
     if (res.response_code >= dt::ResponseCode::FAILED) {
