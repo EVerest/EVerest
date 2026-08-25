@@ -81,6 +81,43 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
         }
     }
 
+    WHEN("external VAS providers offer services") {
+        dt::ServiceList vas;
+        dt::Service internet;
+        internet.service_id = 3;
+        internet.service_name = "InternetAccess";
+        internet.service_category = dt::ServiceCategory::Internet;
+        internet.free_service = true;
+        vas.push_back(internet);
+        dt::Service custom;
+        custom.service_id = 42;
+        custom.service_name = "Parking";
+        custom.service_category = dt::ServiceCategory::OtherCustom;
+        custom.free_service = false;
+        vas.push_back(custom);
+
+        THEN("they are listed after the Certificate service on a PnC session") {
+            const auto res = d2::state::handle_request(req, id, 1, modes, true, true, /*cert_service_offered=*/true,
+                                                       std::nullopt, vas);
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.service_list.has_value());
+            REQUIRE(res.service_list->size() == 3);
+            REQUIRE((*res.service_list)[0].service_id == dt::CERTIFICATE_SERVICE_ID);
+            REQUIRE((*res.service_list)[1].service_id == 3);
+            REQUIRE((*res.service_list)[1].service_category == dt::ServiceCategory::Internet);
+            REQUIRE((*res.service_list)[2].service_id == 42);
+            REQUIRE((*res.service_list)[2].service_name == "Parking");
+            REQUIRE((*res.service_list)[2].free_service == false);
+        }
+
+        THEN("they are the whole ServiceList on an EIM-only session") {
+            const auto res = d2::state::handle_request(req, id, 1, modes, true, false, /*cert_service_offered=*/false,
+                                                       std::nullopt, vas);
+            REQUIRE(res.service_list.has_value());
+            REQUIRE(res.service_list->size() == 2);
+            REQUIRE(res.service_list->front().service_id == 3);
+        }
+    }
     WHEN("Only Contract is configured (PnC-only SECC over TLS)") {
         const auto res = d2::state::handle_request(req, id, 1, modes, /*offer_eim=*/false, /*offer_contract=*/true,
                                                    /*cert_service_offered=*/false);

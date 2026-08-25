@@ -257,6 +257,8 @@ void ISO15118_chargerImpl::init() {
 
     supported_vas_services_per_provider.reserve(mod->r_iso15118_vas.size());
 
+    offered_vas_per_provider.resize(mod->r_iso15118_vas.size());
+
     for (size_t i = 0; i < mod->r_iso15118_vas.size(); i++) {
         supported_vas_services_per_provider.emplace_back();
 
@@ -269,6 +271,9 @@ void ISO15118_chargerImpl::init() {
                 for (const auto& item : offered_services.services) {
                     service_ids.push_back(item.service_id);
                 }
+                // ISO 15118-2 advertises name, scope and the free flag per service (the -20 list above
+                // carries ids only), so keep the full offer as well.
+                offered_vas_per_provider[i] = offered_services.services;
 
                 EVLOG_verbose << fmt::format("Updated Supported VAS services for provider #{} ({} service{})", i,
                                              offered_services.services.size(),
@@ -591,9 +596,29 @@ void ISO15118_chargerImpl::update_supported_vas_services() {
         }
     }
 
+    // The same offers for the ISO 15118-2 ServiceList, with the per-service details the -20 view drops.
+    // The library refuses the reserved ids (1 charging, 2 Certificate) and applies the -2 size limits.
+    std::vector<iso15118::session::VasService> pre20_vas_services;
+    for (const auto& provider_offers : offered_vas_per_provider) {
+        for (const auto& offer : provider_offers) {
+            const auto service_id = static_cast<uint16_t>(offer.service_id);
+            if (std::find(supported_vas_services.begin(), supported_vas_services.end(), service_id) ==
+                supported_vas_services.end()) {
+                continue; // duplicate, already reported above
+            }
+            iso15118::session::VasService service;
+            service.id = service_id;
+            service.name = offer.service_name;
+            service.scope = offer.service_scope;
+            service.free_service = offer.free_service.value_or(true);
+            pre20_vas_services.push_back(std::move(service));
+        }
+    }
+
     if (this->controller) {
         EVLOG_verbose << fmt::format("Updated controller VAS list: {}", fmt::join(supported_vas_services, ","));
         this->controller->update_supported_vas_services(supported_vas_services);
+        this->controller->update_pre20_vas_services(pre20_vas_services);
     } else {
         EVLOG_verbose << "Controller not initialized, skipping setting supported VAS services.";
     }

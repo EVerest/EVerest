@@ -91,6 +91,9 @@ public:
     // The pre-20 (ISO 15118-2 / DIN SPEC 70121) energy transfer modes, verbatim. Applied to the next
     // session; the -20 service categories above stay the ISO 15118-20 view.
     void update_pre20_energy_transfer_modes(const std::vector<shared_datatypes::EnergyTransferMode>&);
+    // The value-added services external providers offer, for the ISO 15118-2 ServiceList (name, scope,
+    // free flag per service; the -20 view stays update_supported_vas_services). Applied to the next session.
+    void update_pre20_vas_services(const std::vector<session::VasService>&);
     // Narrows the protocol generations offered in the SupportedAppProtocol handshake. Applied to the next
     // session (the handshake reads the session config); priority order is kept.
     void update_supported_protocols(const std::vector<ProtocolId>&);

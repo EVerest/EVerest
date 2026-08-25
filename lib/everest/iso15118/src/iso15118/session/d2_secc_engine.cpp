@@ -10,6 +10,7 @@
 
 #include <everest/util/misc/container.hpp>
 
+#include <iso15118/detail/d2/vas.hpp>
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/detail/session/d2_secc_engine.hpp>
 #include <iso15118/message/common_types.hpp>
@@ -151,7 +152,60 @@ d2::SessionConfig make_d2_config(const session::SessionConfig& config, bool tls_
     out.auth_timeout_eim_ms = session::auth_timeout_to_ms(config.auth_timeout_eim_s);
     out.auth_timeout_pnc_ms = session::auth_timeout_to_ms(config.auth_timeout_pnc_s);
 
+    apply_vas_services(out, config.pre20_vas_services);
+
     return out;
+}
+
+// The external VAS offers as ISO 15118-2 Service entries (Table 105). ServiceID 1 is the charging service
+// and ServiceID 2 the library's own Certificate service, so both are refused here; ServiceID 3 is the
+// Internet access service. The ServiceList carries eight entries and the Certificate service takes one of
+// them whenever it can be offered, so seven external services fit at most.
+void apply_vas_services(d2::SessionConfig& out, const std::vector<session::VasService>& services) {
+    static constexpr size_t NAME_MAX_LEN = 32;
+    static constexpr size_t SCOPE_MAX_LEN = 64;
+    static constexpr uint16_t INTERNET_SERVICE_ID = 3;
+
+    const size_t capacity = out.offered_vas_services.max_size() - (out.cert_install_service ? 1 : 0);
+
+    for (const auto& service : services) {
+        if (service.id == out.charge_service_id or service.id == m2dt::CERTIFICATE_SERVICE_ID) {
+            logf_warning("Ignoring external VAS with reserved ServiceID %u (charging / Certificate service)",
+                         service.id);
+            continue;
+        }
+        if (d2::is_offered_vas(out.offered_vas_services, service.id)) {
+            logf_warning("Ignoring duplicate external VAS ServiceID %u", service.id);
+            continue;
+        }
+        if (out.offered_vas_services.size() >= capacity) {
+            logf_warning("ISO 15118-2 ServiceList is full (%zu external services); dropping VAS ServiceID %u", capacity,
+                         service.id);
+            continue;
+        }
+
+        m2dt::Service entry;
+        entry.service_id = service.id;
+        entry.free_service = service.free_service;
+        if (service.id == INTERNET_SERVICE_ID) {
+            entry.service_category = m2dt::ServiceCategory::Internet;
+            entry.service_name = "InternetAccess";
+        } else {
+            entry.service_category = m2dt::ServiceCategory::OtherCustom;
+            entry.service_name = service.name;
+        }
+        entry.service_scope = service.scope;
+
+        if (entry.service_name.has_value() and entry.service_name->size() > NAME_MAX_LEN) {
+            logf_warning("ServiceName of VAS %u exceeds %zu characters; truncated", service.id, NAME_MAX_LEN);
+            entry.service_name->resize(NAME_MAX_LEN);
+        }
+        if (entry.service_scope.has_value() and entry.service_scope->size() > SCOPE_MAX_LEN) {
+            logf_warning("ServiceScope of VAS %u exceeds %zu characters; truncated", service.id, SCOPE_MAX_LEN);
+            entry.service_scope->resize(SCOPE_MAX_LEN);
+        }
+        out.offered_vas_services.push_back(std::move(entry));
+    }
 }
 
 void apply_dc_limits(d2::SessionConfig& out, const d20::DcTransferLimits& dc) {
