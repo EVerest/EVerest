@@ -140,12 +140,7 @@ LemDCBM400600Controller::start_transaction(const types::powermeter::TransactionR
         this->current_transaction_id = value.transaction_id;
         this->need_to_stop_transaction = true;
         // make sure the fallback OCMF record for this transaction is fetched on the next poll
-        {
-            auto ocmf_fetch_state = this->ocmf_fetch_state.handle();
-            ocmf_fetch_state->last_fetch =
-                std::chrono::steady_clock::now() - std::chrono::seconds(this->config.transaction_ocmf_fetch_interval_s);
-            ++ocmf_fetch_state->transaction_generation;
-        }
+        this->ocmf_fetch_state.handle()->fetch_due = true;
     } catch (DCBMUnexpectedResponseException& error) {
         const std::string error_message =
             fmt::format("Failed to start transaction {}: {}", value.transaction_id, error.what());
@@ -300,40 +295,46 @@ types::powermeter::Powermeter LemDCBM400600Controller::get_powermeter() {
     } catch (json::exception& json_error) {
         throw UnexpectedDCBMResponseBody(endpoint, fmt::format("Json error '{}'", json_error.what()));
     }
-    const auto now = std::chrono::steady_clock::now();
-    bool should_fetch_ocmf = false;
-    std::uint64_t transaction_generation = 0;
-    if (this->need_to_stop_transaction) {
-        auto ocmf_fetch_state = this->ocmf_fetch_state.handle();
-        should_fetch_ocmf =
-            now - ocmf_fetch_state->last_fetch >= std::chrono::seconds(this->config.transaction_ocmf_fetch_interval_s);
-        transaction_generation = ocmf_fetch_state->transaction_generation;
-    }
-    if (should_fetch_ocmf) {
-        // if there is no ongoing transaction, we do need to fetch the signed meter value to have it available
-        // for the upper layers, otherwise we will not have the OCMF value if we lose connection to the device
-        try {
-            current_signed_meter_value =
-                types::units_signed::SignedMeterValue{fetch_ocmf_result(current_transaction_id), "", "OCMF"};
-            current_signed_meter_value.public_key.emplace(public_key_ocmf);
-            current_signed_meter_value.timestamp.emplace(powermeter_result.timestamp);
-            {
-                auto ocmf_fetch_state = this->ocmf_fetch_state.handle();
-                if (ocmf_fetch_state->transaction_generation == transaction_generation) {
-                    ocmf_fetch_state->last_fetch = now;
-                }
-            }
-        } catch (UnexpectedDCBMResponseCode& error) {
-            EVLOG_error << "LEM DCBM 400/600: Could not get the OCMF value: " << error.what();
-        } catch (UnexpectedDCBMResponseBody& error) {
-            EVLOG_error << "LEM DCBM 400/600: Invalid OCMF value: " << error.what();
-        } catch (HttpClientError& error) {
-            std::string error_message = fmt::format("Failed get the OCMF field {} - connection to device failed: {}",
-                                                    current_transaction_id, error.what());
-            EVLOG_error << error_message;
-        }
-    }
     return powermeter_result;
+}
+
+void LemDCBM400600Controller::update_transaction_fallback_ocmf(const std::string& timestamp) {
+    if (not this->need_to_stop_transaction) {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    {
+        auto ocmf_fetch_state = this->ocmf_fetch_state.handle();
+        const bool should_fetch_ocmf =
+            ocmf_fetch_state->fetch_due or
+            now - ocmf_fetch_state->last_fetch >= std::chrono::seconds(this->config.transaction_ocmf_fetch_interval_s);
+        if (not should_fetch_ocmf) {
+            return;
+        }
+        // Record the attempt up front, regardless of its outcome. A failing or slow OCMF endpoint must
+        // not bypass the throttle and be retried on every single poll - that is precisely when the
+        // device can least afford the extra request. A transaction started while this fetch is still in
+        // flight sets fetch_due again, so the new transaction is still served on the next poll.
+        ocmf_fetch_state->last_fetch = now;
+        ocmf_fetch_state->fetch_due = false;
+    }
+
+    // The signed meter value is only consumed if the device is unreachable when the transaction is
+    // stopped, so this is a pure fallback and must never delay the publication of the live measurements.
+    try {
+        current_signed_meter_value =
+            types::units_signed::SignedMeterValue{fetch_ocmf_result(current_transaction_id), "", "OCMF"};
+        current_signed_meter_value.public_key.emplace(public_key_ocmf);
+        current_signed_meter_value.timestamp.emplace(timestamp);
+    } catch (UnexpectedDCBMResponseCode& error) {
+        EVLOG_error << "LEM DCBM 400/600: Could not get the OCMF value: " << error.what();
+    } catch (UnexpectedDCBMResponseBody& error) {
+        EVLOG_error << "LEM DCBM 400/600: Invalid OCMF value: " << error.what();
+    } catch (HttpClientError& error) {
+        EVLOG_error << fmt::format("Failed get the OCMF field {} - connection to device failed: {}",
+                                   current_transaction_id, error.what());
+    }
 }
 
 types::powermeter::Powermeter

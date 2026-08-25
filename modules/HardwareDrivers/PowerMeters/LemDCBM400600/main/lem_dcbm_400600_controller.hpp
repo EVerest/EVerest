@@ -7,7 +7,6 @@
 #include "http_client_interface.hpp"
 #include "lem_dcbm_time_sync_helper.hpp"
 #include <chrono>
-#include <cstdint>
 #include <everest/util/async/monitor.hpp>
 #include <functional>
 #include <generated/interfaces/powermeter/Implementation.hpp>
@@ -101,7 +100,10 @@ public:
 private:
     struct OCMFFetchState {
         std::chrono::steady_clock::time_point last_fetch{};
-        std::uint64_t transaction_generation = 0;
+        // Explicit "no fetch has happened yet" state, so the first fetch of a transaction does not
+        // depend on the process uptime having exceeded the configured interval. Set on start up and
+        // whenever a transaction is started.
+        bool fetch_due = true;
     };
 
     const std::unique_ptr<HttpClientInterface> http_client;
@@ -169,6 +171,14 @@ public:
     types::powermeter::TransactionStartResponse start_transaction(const types::powermeter::TransactionReq& value);
     types::powermeter::TransactionStopResponse stop_transaction(const std::string& transaction_id);
     types::powermeter::Powermeter get_powermeter();
+    /// \brief Refreshes the fallback OCMF record of the running transaction, subject to the configured
+    /// throttle interval. No-op if no transaction is active.
+    ///
+    /// This is deliberately separate from get_powermeter() so that the caller can publish the live
+    /// measurements first: the fallback record is only ever read if the device is unreachable at
+    /// transaction stop, so its round trip must not be added to the interval between two publications.
+    /// \param timestamp the device timestamp of the live measurements this fallback record accompanies
+    void update_transaction_fallback_ocmf(const std::string& timestamp);
     inline bool is_initialized() {
         return ("" != meter_id);
     }
