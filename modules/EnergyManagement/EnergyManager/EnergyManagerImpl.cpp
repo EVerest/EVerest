@@ -8,7 +8,7 @@
 
 #include "Broker.hpp"
 #include "BrokerFastCharging.hpp"
-#include "BrokerMeasurementTracking.hpp"
+#include "BrokerPowerRedistribution.hpp"
 #include "Market.hpp"
 
 namespace module {
@@ -47,7 +47,7 @@ static std::shared_ptr<Broker> make_broker(BrokerStrategy strategy, Market& mark
                                            const Broker::EnergyManagerConfig& broker_config) {
     switch (strategy) {
     case BrokerStrategy::PowerRedistribution:
-        return std::make_shared<BrokerMeasurementTracking>(market, context, broker_config);
+        return std::make_shared<BrokerPowerRedistribution>(market, context, broker_config);
     case BrokerStrategy::FastCharging:
     default:
         return std::make_shared<BrokerFastCharging>(market, context, broker_config);

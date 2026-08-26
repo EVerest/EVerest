@@ -18,7 +18,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     JsonDefinedEnergyManagerTest.cpp
     ../Broker.cpp
     ../BrokerFastCharging.cpp
-    ../BrokerMeasurementTracking.cpp
+    ../BrokerPowerRedistribution.cpp
     ../EnergyManagerImpl.cpp
     ../Market.cpp
     ../Offer.cpp

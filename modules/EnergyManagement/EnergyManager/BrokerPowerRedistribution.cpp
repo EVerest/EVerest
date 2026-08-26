@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include "BrokerMeasurementTracking.hpp"
+#include "BrokerPowerRedistribution.hpp"
 
 #include <everest/logging.hpp>
 
@@ -31,13 +31,13 @@ types::units::Current get_measured_current_A(const types::energy::EnergyFlowRequ
     return {};
 }
 
-BrokerMeasurementTracking::BrokerMeasurementTracking(Market& market, BrokerContext& context,
+BrokerPowerRedistribution::BrokerPowerRedistribution(Market& market, BrokerContext& context,
                                                      EnergyManagerConfig config) :
     BrokerFastCharging(market, context, config) {
     observe_measurement();
 }
 
-void BrokerMeasurementTracking::observe_measurement() {
+void BrokerPowerRedistribution::observe_measurement() {
     const auto& request = local_market.energy_flow_request;
 
     // Only sessions have a consumption worth observing. The optimizer runs continuously
