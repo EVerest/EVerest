@@ -31,8 +31,6 @@ inline EnergyManagerConfig make_default_config() {
     c.switch_3ph1ph_power_hysteresis_W = 200;
     c.switch_3ph1ph_time_hysteresis_s = 0;
     c.use_power_meter_tracking = false;
-    c.power_meter_tracking_initial_current_A = 16.0;
-    c.power_meter_tracking_margin_W = 200.0;
     return c;
 }
 
@@ -90,6 +88,26 @@ inline void set_measurement(types::energy::EnergyFlowRequest& node, float power_
     types::units::Power power;
     power.total = power_W;
     p.power_W = power;
+    node.energy_usage_leaves = p;
+}
+
+// Attach a leaves-side per-phase current measurement. Merges into an existing
+// leaves powermeter so power and current can be set independently.
+inline void set_measurement_current(types::energy::EnergyFlowRequest& node, std::optional<float> l1,
+                                    std::optional<float> l2, std::optional<float> l3,
+                                    const std::string& timestamp = "2026-08-04T12:00:00.000Z") {
+    types::powermeter::Powermeter p;
+    if (node.energy_usage_leaves.has_value()) {
+        p = node.energy_usage_leaves.value();
+    } else {
+        p.timestamp = timestamp;
+        p.energy_Wh_import.total = 0.0f;
+    }
+    types::units::Current current;
+    current.L1 = l1;
+    current.L2 = l2;
+    current.L3 = l3;
+    p.current_A = current;
     node.energy_usage_leaves = p;
 }
 

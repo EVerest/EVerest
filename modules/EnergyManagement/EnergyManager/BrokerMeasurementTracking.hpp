@@ -8,43 +8,41 @@
 
 namespace module {
 
-/// \brief Extracts the total imported power measurement from a node of the energy tree.
+/// \brief Extracts the imported power measurement from a node of the energy tree.
 /// Prefers the leaves side measurement (what EvseManager reports for an EVSE) and falls
 /// back to the root side measurement.
 /// The reading's own timestamp is not checked here: staleness handling of aggregated
-/// measurements is WP1.b's PowerMeterAggregator's job, and a per-connector broker
-/// tracking a frozen value converges to that value plus the margin, which is safe.
-/// \returns measured power in Watt, or std::nullopt if the node carries no power measurement
-std::optional<float> get_measured_power_W(const types::energy::EnergyFlowRequest& node);
+/// measurements is WP1.b's PowerMeterAggregator's job.
+/// \returns measured power in Watt (total, plus per-phase L1/L2/L3 when the meter reports
+/// them), or std::nullopt if the node carries no power measurement
+std::optional<types::units::Power> get_measured_power_W(const types::energy::EnergyFlowRequest& node);
 
-/// \brief A broker that follows live power meter measurements instead of relying purely on
-/// the static fuse limits.
+/// \brief Extracts the per-phase current measurement (L1/L2/L3) from a node of the energy
+/// tree. Prefers the leaves side measurement and falls back to the root side, like
+/// get_measured_power_W(). Phases the meter does not report stay nullopt (a single-phase
+/// meter reports only L1) - they must not be read as zero.
+/// Per-phase values are the basis for WP1.b (trade per measured phase) and the asymmetric
+/// load handling of WP3.a, whose threshold is defined in ampere per phase.
+/// \returns measured current per phase in Ampere; all phases nullopt if no current measurement
+types::units::Current get_measured_current_A(const types::energy::EnergyFlowRequest& node);
+
+/// \brief A broker that trades exactly like BrokerFastCharging and additionally observes
+/// the live power meter measurement of its connector.
 ///
-/// On the first optimizer run of a charging session it requests
-/// config.tracking_initial_current_A. On every later run it limits its request to the
-/// measured power plus config.tracking_margin_W, floored at the power needed for the EVSE's
-/// minimum current so a session is never starved below what it can signal.
-///
-/// The limit is a budget for the whole optimizer run. Because tradeImpl() is called once per
-/// trading round against a fresh Offer, it applies the budget minus what this connector has
-/// already bought during the run, and then delegates to BrokerFastCharging::tradeImpl() so
-/// that phase count handling, hysteresis and existing limits behave exactly as before.
+/// It never modifies the allocation: trading is delegated unchanged to the base class.
+/// Once per optimizer run (EnergyManagerImpl builds a fresh broker for every run) it reads
+/// the connector's measurement and logs the actual usage. A connector in an active session
+/// that reports no measurement is warned about once per session.
 ///
 /// Operates on a single connector: the measurement is read from this broker's own market node.
 class BrokerMeasurementTracking : public BrokerFastCharging {
 public:
     BrokerMeasurementTracking(Market& market, BrokerContext& context, EnergyManagerConfig config);
 
-    void tradeImpl() override;
-
-protected:
-    /// \brief Computes the power budget for this optimizer run.
-    /// Called exactly once, from the constructor - never per trading round.
-    /// \returns the budget in Watt, or std::nullopt to leave the static limits untouched
-    virtual std::optional<float> compute_tracking_limit_W();
-
 private:
-    std::optional<float> tracking_limit_W;
+    // Reads and logs the connector's measurement. Called exactly once, from the
+    // constructor - tradeImpl() runs once per trading round and would log repeatedly.
+    void observe_measurement();
 };
 
 } // namespace module

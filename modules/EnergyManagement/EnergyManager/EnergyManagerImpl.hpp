@@ -28,8 +28,6 @@ struct EnergyManagerConfig {
     int switch_3ph1ph_power_hysteresis_W;
     int switch_3ph1ph_time_hysteresis_s;
     bool use_power_meter_tracking;
-    double power_meter_tracking_initial_current_A;
-    double power_meter_tracking_margin_W;
 };
 
 class EnergyManagerImpl {
@@ -54,6 +52,12 @@ public:
     std::vector<types::energy::EnforcedLimits> run_optimizer(const types::energy::EnergyFlowRequest& request,
                                                              date::utc_clock::time_point start_time,
                                                              const std::string& test_name = "");
+
+    /// \brief Returns the reading the measurement tracking broker last observed for
+    /// connector \p uuid: total power [W] and per-phase current [A] (L1/L2/L3). Values
+    /// without a measurement are std::nullopt (all of them if tracking is disabled, no
+    /// measurement is available, or no active session).
+    ObservedMeasurement get_observed_measurement(const std::string& uuid);
 
 private:
     EnergyManagerConfig config;

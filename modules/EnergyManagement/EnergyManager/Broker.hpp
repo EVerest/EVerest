@@ -3,6 +3,8 @@
 #ifndef BROKER_HPP
 #define BROKER_HPP
 
+#include <optional>
+
 #include "Market.hpp"
 #include "Offer.hpp"
 
@@ -12,6 +14,20 @@ enum class SlotType {
     Import,
     Export,
     Undecided
+};
+
+// Snapshot of the power meter reading last observed by the measurement tracking broker
+// for one connector, refreshed on every optimizer run during an active session.
+// Values the meter does not report are nullopt, never zero (a single-phase meter reports
+// only current_A.L1). Per-phase current is the basis for WP1.b per-phase trading and
+// WP3.a asymmetry limits.
+struct ObservedMeasurement {
+    // Imported power [W] (types::units::Power): total plus optional per-phase L1/L2/L3.
+    // nullopt while the meter reports no power at all.
+    std::optional<types::units::Power> power_W;
+
+    // Per-phase current [A] with named L1/L2/L3 properties (types::units::Current).
+    types::units::Current current_A;
 };
 
 // All context data that is stored in between optimization runs
@@ -24,21 +40,21 @@ struct BrokerContext {
         number_1ph3ph_cycles = 0;
         last_ac_number_of_active_phases_import = 0;
         ts_1ph_optimal = date::utc_clock::now();
-        tracking_active = false;
         tracking_warned_no_measurement = false;
+        last_observed_measurement = {};
     };
 
     int number_1ph3ph_cycles;
     int last_ac_number_of_active_phases_import;
     std::chrono::time_point<date::utc_clock> ts_1ph_optimal;
 
-    // True once the measurement tracking broker has issued its initial current request
-    // for the current charging session. Reset by clear() on unplug.
-    bool tracking_active;
-
     // True once the missing-measurement warning has been logged for this session, so a
     // meterless connector warns once instead of once per optimizer run.
     bool tracking_warned_no_measurement;
+
+    // Reading last observed by the measurement tracking broker for this connector.
+    // Empty (all nullopt) while no measurement is available. Reset by clear() on unplug.
+    ObservedMeasurement last_observed_measurement;
 };
 
 // base class for different Brokers
@@ -64,9 +80,6 @@ public:
         int max_nr_of_switches_per_session{0};
         int power_hysteresis_W{200};
         int time_hysteresis_s{600};
-        bool use_power_meter_tracking{false};
-        float tracking_initial_current_A{16.f};
-        float tracking_margin_W{200.f};
     };
 
     Broker(Market& market, BrokerContext& context, EnergyManagerConfig config);

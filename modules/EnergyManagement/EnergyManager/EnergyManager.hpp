@@ -37,8 +37,6 @@ struct Conf {
     int switch_3ph1ph_power_hysteresis_W;
     int switch_3ph1ph_time_hysteresis_s;
     bool use_power_meter_tracking;
-    double power_meter_tracking_initial_current_A;
-    double power_meter_tracking_margin_W;
 };
 
 class EnergyManager : public Everest::ModuleBase {

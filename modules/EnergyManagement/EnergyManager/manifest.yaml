@@ -78,27 +78,12 @@ config:
     default: 600
   use_power_meter_tracking:
     description: >-
-      If true, use a broker that tracks live power meter measurements instead of
-      relying purely on the static fuse limits. The broker requests
-      power_meter_tracking_initial_current_A on the first optimizer run of a
-      session and afterwards limits its request to the measured power plus
-      power_meter_tracking_margin_W, floored at the minimum current the EVSE can
-      signal. Applies per connector.
-      If false (default) the static limit behaviour is used unchanged.
+      If true, use a broker that trades identically to the default fast charging
+      broker and additionally observes the live power meter measurement of each
+      connector, logging the actual consumption. Allocations are not modified.
+      If false (default) the plain fast charging broker is used.
     type: boolean
     default: false
-  power_meter_tracking_initial_current_A:
-    description: >-
-      Current per phase requested on the first optimizer run of a charging session
-      when use_power_meter_tracking is enabled [A].
-    type: number
-    default: 16.0
-  power_meter_tracking_margin_W:
-    description: >-
-      Margin added to the measured power to form the tracking limit when
-      use_power_meter_tracking is enabled [W].
-    type: number
-    default: 200.0
 provides:
   main:
     description: Main interface of the energy manager
