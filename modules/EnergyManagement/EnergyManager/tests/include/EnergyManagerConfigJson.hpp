@@ -27,6 +27,7 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             {"use_power_meter_tracking", config.use_power_meter_tracking},
             {"power_meter_tracking_initial_current_A", config.power_meter_tracking_initial_current_A},
             {"power_meter_tracking_margin_W", config.power_meter_tracking_margin_W},
+            {"power_meter_aggregation_window_s", config.power_meter_aggregation_window_s},
         };
     }
     static module::EnergyManagerConfig from_json(const json& j) {
@@ -46,6 +47,7 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             j.value("use_power_meter_tracking", false),
             j.value("power_meter_tracking_initial_current_A", 16.0),
             j.value("power_meter_tracking_margin_W", 200.0),
+            j.value("power_meter_aggregation_window_s", 5),
         };
     }
 };

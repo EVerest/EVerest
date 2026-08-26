@@ -99,6 +99,16 @@ config:
       use_power_meter_tracking is enabled [W].
     type: number
     default: 200.0
+  power_meter_aggregation_window_s:
+    description: >-
+      Validity window for power meter readings when aggregating multiple meters [s].
+      Power meters in the energy tree report at different times; a reading whose own
+      measurement timestamp is older than this window is excluded from the aggregated
+      sum instead of contributing a stale value. Set to 0 to disable the staleness
+      filter and always include the last reading of every meter.
+    type: integer
+    default: 5
+    minimum: 0
 provides:
   main:
     description: Main interface of the energy manager
