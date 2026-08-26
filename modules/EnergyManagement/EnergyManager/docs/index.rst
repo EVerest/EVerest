@@ -15,7 +15,6 @@ Please see :doc:`Energy Management in EVerest </explanation/energymanagement/ind
 for a detailed explanation of the concepts behind this module.
 
 Aggregating multiple power meters
-=================================
 
 Power meters in the energy tree publish independently of each other and of the
 optimizer cycle, so at any instant the last reading of each meter has a different age.
@@ -93,6 +92,80 @@ Three properties of the implementation are worth knowing when reading the code:
 The tracking limit is applied as an additional watt limit on top of the existing
 limits -- it can only ever lower the allocation, never raise it above a static or
 external limit.
+=======
+Per phase trading and phase symmetry
+====================================
+
+Historically the optimizer worked with a single current limit that applied identically to
+all three phases: ``ac_max_current_A`` is documented as "per phase", meaning the same
+value on L1, L2 and L3. An unbalanced installation could therefore not be modelled, and a
+node protected differently on one phase was effectively averaged away.
+
+The energy types now carry an optional ``ac_max_current_per_phase_A`` alongside the
+symmetric limit, on both ``LimitsReq`` and ``LimitsRes``. When a node declares it, the
+EnergyManager tracks availability and allocation on each phase independently: capacity
+freed on one phase is offered to other connectors on that same phase, within the same
+optimizer cycle.
+
+Backwards compatibility is strict. When no node in the tree declares per phase limits,
+nothing changes: the field never appears in a request or a result, and the allocation is
+identical to before. Where only one side of a comparison carries per phase data, the
+missing side is derived from the symmetric limit, and neither side may ever widen the
+other -- the effective limit on a phase is always the smaller of the two.
+
+The enforced result always populates the symmetric ``ac_max_current_A`` as well, set to
+the most heavily loaded phase — by magnitude, since export allocations are negative — so
+a consumer that does not understand per phase limits still receives a limit it can
+safely honour. The field is present whenever the allocation went through the per phase
+trading path, including when the result happens to be perfectly balanced.
+
+The phase model
+---------------
+
+The energy types say how *many* phases a connector uses
+(``ac_number_of_active_phases``, ``ac_max_phase_count``) but never *which* ones. A
+connector charging on ``n`` phases is therefore modelled as occupying L1..Ln, with two
+consequences stated plainly:
+
+* **Within one connector the allocation is symmetric.** An EVSE has a single PWM duty
+  cycle -- one current setpoint for all its phases -- so it cannot be given 32 A on L1 and
+  10 A on L2. The binding constraint for a connector is the *minimum* available current
+  across the phases it occupies, applied equally to each. Per phase differentiation exists
+  between connectors and between nodes, never inside a single connector.
+* **Two single phase connectors are both modelled on L1.** That is conservative: it can
+  under-allocate, never overload. Spreading single phase connectors across phases needs a
+  per connector phase assignment, which is new interface surface and is not attempted here.
+
+The concrete win is that unbalanced node limits are honoured -- a cluster fuse or building
+load constraining only L2/L3 now caps allocations -- and a single phase connector stops
+consuming budget on the two phases it never touches at every ancestor node.
+
+Phase symmetry
+--------------
+
+Large imbalance between phases is undesirable and in some jurisdictions not permitted.
+Setting ``phase_symmetry_enabled`` to ``true`` caps the spread: no two phases of the grid
+connection may differ by more than ``max_phase_imbalance_A``.
+
+The constraint is applied *before* each purchase rather than by trimming allocations
+afterwards, so the market's view of sold capacity always matches what is actually
+enforced. It is evaluated against the whole installation at the root of the energy tree,
+not per connector -- symmetry is a property of the grid connection. Legacy trades that
+carry no per phase field still count: their declared ``ac_max_phase_count`` books them
+on L1..Ln, so a plain single phase EVSE's imbalance is visible to the constraint. The
+constraint governs import only; export grants are neither counted against it nor
+throttled by it. A remaining violation
+after trading is logged at ``WARN``; with the pre trade cap in place this should be
+unreachable, so a warning indicates a real problem worth investigating.
+
+Note that symmetry enforcement can prevent a session from *starting*: if the ceiling
+cannot accommodate a connector's ``ac_min_current_A``, the purchase is refused rather than
+granting a current the EVSE cannot signal. That is intended -- it is a hard electrical
+constraint, not a preference.
+
+Phase identity is assumed consistent throughout the tree: L1 at a connector is assumed to
+be L1 at the grid connection. Mapping physically rotated phases is handled separately by
+the power meter driver's phase rotation map.
 
 .. list-table::
    :header-rows: 1
@@ -115,7 +188,6 @@ external limit.
      - Margin added to the measured power to form the tracking limit.
 
 Measurement based boosting
-==========================
 
 With ``use_power_meter_tracking`` enabled, each connector is capped at its measured
 consumption plus ``power_meter_tracking_margin_W``. That converges the allocation down
@@ -193,3 +265,16 @@ against the grid limit, which does not scale with connector count.
    * - ``boost_hysteresis_cycles``
      - ``3``
      - Consecutive cycles the grid headroom must persist before the limit is widened.
+=======
+   * - ``phase_symmetry_enabled``
+     - ``false``
+     - Enforce a maximum current imbalance between the three phases.
+   * - ``max_phase_imbalance_A``
+     - ``16.0``
+     - Maximum allowed difference between the currents of any two phases [A].
+
+``EnergyNode`` gains ``fuse_limit_L1_A``, ``fuse_limit_L2_A`` and ``fuse_limit_L3_A``.
+A negative value (the default) means the phase is not configured individually and
+``fuse_limit_A`` applies; a configured phase is still bounded by ``fuse_limit_A``, which
+protects the node as a whole. Per phase limits are published only when at least one of the
+three is set, so a node with a symmetric fuse keeps its request byte identical.

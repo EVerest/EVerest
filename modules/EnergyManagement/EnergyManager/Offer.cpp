@@ -59,6 +59,21 @@ template <class T> void apply_one_limit_if_greater(std::optional<T>& a, const st
     }
 }
 
+static void apply_per_phase_limit_if_smaller(std::optional<types::energy::NumberWithSourcePerPhase>& a,
+                                             const std::optional<types::energy::NumberWithSourcePerPhase>& b) {
+    if (not b.has_value()) {
+        return;
+    }
+    if (not a.has_value()) {
+        a = b.value();
+        return;
+    }
+    // Reuses the existing per-value merge so source concatenation behaves identically.
+    apply_one_limit_if_smaller(a.value().L1, b.value().L1);
+    apply_one_limit_if_smaller(a.value().L2, b.value().L2);
+    apply_one_limit_if_smaller(a.value().L3, b.value().L3);
+}
+
 static void apply_limits(ScheduleReq& a, const ScheduleReq& b) {
     if (a.size() != b.size()) {
         EVLOG_error << fmt::format("apply_limits: a({}) and b({}) do not have the same size.", a.size(), b.size());
@@ -67,6 +82,10 @@ static void apply_limits(ScheduleReq& a, const ScheduleReq& b) {
     for (ScheduleReq::size_type i = 0; i < a.size(); i++) {
         // limits to leave are already merged to the root side, so we dont use them here
         apply_one_limit_if_smaller(a[i].limits_to_root.ac_max_current_A, b[i].limits_to_root.ac_max_current_A);
+        // Another explicit field list: without this the per phase limit never reaches the
+        // broker's offer, and the whole per phase trading path is dead code.
+        apply_per_phase_limit_if_smaller(a[i].limits_to_root.ac_max_current_per_phase_A,
+                                         b[i].limits_to_root.ac_max_current_per_phase_A);
         apply_one_limit_if_smaller(a[i].limits_to_root.ac_max_phase_count, b[i].limits_to_root.ac_max_phase_count);
         apply_one_limit_if_smaller(a[i].limits_to_root.total_power_W, b[i].limits_to_root.total_power_W);
         apply_one_limit_if_greater(a[i].limits_to_root.ac_min_phase_count, b[i].limits_to_root.ac_min_phase_count);

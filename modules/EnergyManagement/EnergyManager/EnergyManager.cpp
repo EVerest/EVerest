@@ -32,6 +32,8 @@ void EnergyManager::init() {
     energy_manager_config.boost_threshold_W = config.boost_threshold_W;
     energy_manager_config.boost_step_A = config.boost_step_A;
     energy_manager_config.boost_hysteresis_cycles = config.boost_hysteresis_cycles;
+    energy_manager_config.phase_symmetry_enabled = config.phase_symmetry_enabled;
+    energy_manager_config.max_phase_imbalance_A = config.max_phase_imbalance_A;
 
     const auto enforce_limits_callback = [this](const std::vector<types::energy::EnforcedLimits>& limits) {
         const types::energy::NumberWithSource nonumber = {-9999.0};

@@ -139,6 +139,20 @@ config:
     type: integer
     default: 3
     minimum: 1
+  phase_symmetry_enabled:
+    description: >-
+      If true, enforce a maximum current imbalance between the three phases when
+      allocating energy. Requires nodes that publish per phase limits to have any effect
+      beyond the symmetric case. Default false keeps the pre per phase behaviour.
+    type: boolean
+    default: false
+  max_phase_imbalance_A:
+    description: >-
+      Maximum allowed difference between the currents allocated to any two phases [A].
+      Only effective when phase_symmetry_enabled is true.
+    type: number
+    default: 16.0
+    minimum: 0.0
 provides:
   main:
     description: Main interface of the energy manager

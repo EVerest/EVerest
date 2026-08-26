@@ -14,6 +14,7 @@ target_sources(${MODULE_NAME}
         Market.cpp
         MeasurementTrackingState.cpp
         PowerMeterAggregator.cpp
+        PhaseAllocation.cpp
         Broker.cpp
         Offer.cpp
         BrokerFastCharging.cpp

@@ -5,6 +5,7 @@
 
 #include "Market.hpp"
 #include "Offer.hpp"
+#include "PhaseAllocation.hpp"
 
 namespace module {
 
@@ -70,6 +71,8 @@ public:
         // Widening of the tracking limit granted by the boosting state machine for this
         // optimizer run [A per phase]. Set per run, not from static configuration.
         float boost_offset_A{0.f};
+        bool phase_symmetry_enabled{false};
+        float max_phase_imbalance_A{16.f};
     };
 
     Broker(Market& market, BrokerContext& context, EnergyManagerConfig config);
@@ -101,6 +104,25 @@ protected:
     bool buy_watt_import(int index, float watt, bool allow_less);
     bool buy_watt_export(int index, float watt, bool allow_less);
     bool buy_watt(const types::energy::ScheduleReqEntry& _offer, int index, float watt, bool allow_less, bool import);
+
+    /// \brief True when this offer entry carries per phase limits, so the per phase trading
+    /// path must be used. Takes the entry rather than reading the import offer directly, so
+    /// it is correct for export buys too.
+    bool offer_has_per_phase_limits(const types::energy::ScheduleReqEntry& entry) const;
+
+    /// \brief The phases a connector occupies when charging on \p number_of_phases phases,
+    /// each carrying \p ampere. Phases count from L1, matching ac_number_of_active_phases.
+    PhaseAllocation phases_in_use(float ampere, int number_of_phases) const;
+
+    /// \brief Records a per phase purchase, alongside the symmetric value so consumers that
+    /// do not understand per phase limits still see a usable limit.
+    void buy_ampere_per_phase_unchecked(int index, const PhaseAllocation& allocation, const std::string& source,
+                                        types::energy::IntegerWithSource number_of_phases);
+
+    /// \brief Reduces \p wanted so that, added to what the root has already sold, no two
+    /// phases differ by more than config.max_phase_imbalance_A. Returns \p wanted unchanged
+    /// when symmetry enforcement is disabled.
+    PhaseAllocation symmetry_capped(int index, const PhaseAllocation& wanted);
 
     date::utc_clock::time_point to_timestamp(const types::energy::ScheduleReqEntry& entry);
     bool time_slot_active(const int i, const ScheduleReq& offer);
