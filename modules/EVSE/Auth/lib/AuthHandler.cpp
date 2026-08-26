@@ -21,6 +21,21 @@ std::vector<int> intersect(std::vector<int>& a, std::vector<int>& b) {
     return result;
 }
 
+/// \brief Replaces every character that is not allowed in a kvs key by '_'. The kvs interface restricts keys to
+/// ^[A-Za-z0-9_.]*$, so characters that are perfectly valid in a module id (like '-') would make every store and load
+/// fail silently.
+static std::string sanitize_kvs_key(const std::string& key) {
+    std::string sanitized = key;
+    std::replace_if(
+        sanitized.begin(), sanitized.end(),
+        [](const char c) {
+            return not((c >= 'A' and c <= 'Z') or (c >= 'a' and c <= 'z') or (c >= '0' and c <= '9') or c == '_' or
+                       c == '.');
+        },
+        '_');
+    return sanitized;
+}
+
 namespace conversions {
 std::string token_handling_result_to_string(const TokenHandlingResult& result) {
     switch (result) {
@@ -55,7 +70,9 @@ AuthHandler::AuthHandler(const SelectionAlgorithm& selection_algorithm, const in
     prioritize_authorization_over_stopping_transaction(prioritize_authorization_over_stopping_transaction),
     ignore_faults(ignore_faults),
     stop_transaction_on_reswipe(stop_transaction_on_reswipe),
-    reservation_handler(evses, id, store) {
+    reservation_handler(evses, id, store),
+    store(store),
+    active_transaction_key_prefix(sanitize_kvs_key("active_transaction_" + id)) {
 }
 
 AuthHandler::~AuthHandler() {
@@ -856,23 +873,37 @@ void AuthHandler::handle_session_event(const int evse_id, const SessionEvent& ev
         }
     } break;
     case SessionEventEnum::TransactionStarted: {
-        this->evses.at(evse_id)->plugged_in = true;
-        this->evses.at(evse_id)->transaction_active = true;
+        auto& evse = this->evses.at(evse_id);
+        evse->plugged_in = true;
+        evse->transaction_active = true;
+        // notify_evse() already deposited the identifier merged with the validation result (which is the only source
+        // of the parent id token). Only fall back to the token from the event if no identifier is present, e.g. for
+        // token flows that start a transaction without passing through notify_evse().
+        if (not evse->identifier.has_value() and event.transaction_started.has_value()) {
+            const auto& provided_token = event.transaction_started.value().id_tag;
+            evse->identifier = Identifier{provided_token.id_token, provided_token.authorization_type, std::nullopt,
+                                          std::nullopt, provided_token.parent_id_token};
+        }
+        if (evse->identifier.has_value()) {
+            this->persist_active_identifier(evse_id, evse->identifier.value());
+        }
         this->submit_event_for_connector(evse_id, connector_id, ConnectorEvent::TRANSACTION_STARTED);
         // wait for potentially running timeout task to finish execution
-        this->cv.wait(lk, [&evse = this->evses.at(evse_id)]() { return !evse->timeout_in_progress.load(); });
-        this->evses.at(evse_id)->timeout_timer.stop();
+        this->cv.wait(lk, [&evse]() { return !evse->timeout_in_progress.load(); });
+        evse->timeout_timer.stop();
         check_reservations = true;
         break;
     }
     case SessionEventEnum::TransactionFinished:
         this->evses.at(evse_id)->transaction_active = false;
         this->evses.at(evse_id)->identifier.reset();
+        this->clear_active_identifier(evse_id);
         break;
     case SessionEventEnum::SessionFinished: {
         this->evses.at(evse_id)->plugged_in = false;
         this->evses.at(evse_id)->plug_in_timeout = false;
         this->evses.at(evse_id)->identifier.reset();
+        this->clear_active_identifier(evse_id);
         this->submit_event_for_connector(evse_id, connector_id, ConnectorEvent::SESSION_FINISHED);
         // wait for potentially running timeout task to finish execution
         this->cv.wait(lk, [&evse = this->evses.at(evse_id)]() { return !evse->timeout_in_progress.load(); });
@@ -903,6 +934,19 @@ void AuthHandler::handle_session_event(const int evse_id, const SessionEvent& ev
         }
         break;
     }
+    case SessionEventEnum::SessionResumed: {
+        auto& evse = this->evses.at(evse_id);
+        evse->plugged_in = true;
+        evse->transaction_active = true;
+        if (auto identifier = this->load_active_identifier(evse_id); identifier.has_value()) {
+            evse->identifier = std::move(identifier);
+        } else {
+            EVLOG_warning << "Resumed transaction for evse#" << evse_id << " has no persisted authorization identifier";
+        }
+        this->submit_event_for_connector(evse_id, connector_id, ConnectorEvent::TRANSACTION_STARTED);
+        check_reservations = true;
+        break;
+    }
     /// explicitly fall through all the SessionEventEnum values we are not handling
     case SessionEventEnum::Authorized:
         [[fallthrough]];
@@ -923,8 +967,6 @@ void AuthHandler::handle_session_event(const int evse_id, const SessionEvent& ev
     case SessionEventEnum::PluginTimeout:
         [[fallthrough]];
     case SessionEventEnum::SwitchingPhases:
-        [[fallthrough]];
-    case SessionEventEnum::SessionResumed:
         break;
     }
 
@@ -932,6 +974,48 @@ void AuthHandler::handle_session_event(const int evse_id, const SessionEvent& ev
     // send 'reserved' notifications to the evse manager accordingly if needed.
     if (check_reservations) {
         this->check_evse_reserved_and_send_updates();
+    }
+}
+
+std::string AuthHandler::get_active_identifier_key(int evse_id) const {
+    return this->active_transaction_key_prefix + "_" + std::to_string(evse_id);
+}
+
+void AuthHandler::persist_active_identifier(int evse_id, const Identifier& identifier) {
+    if (this->store == nullptr) {
+        return;
+    }
+    try {
+        const json serialized = identifier;
+        this->store->call_store(this->get_active_identifier_key(evse_id), serialized.get<Object>());
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Could not persist active authorization identifier for evse#" << evse_id << ": " << e.what();
+    }
+}
+
+std::optional<Identifier> AuthHandler::load_active_identifier(int evse_id) {
+    if (this->store == nullptr) {
+        return std::nullopt;
+    }
+    try {
+        const auto stored = this->store->call_load(this->get_active_identifier_key(evse_id));
+        if (const auto object = std::get_if<Object>(&stored); object != nullptr) {
+            return json(*object).get<Identifier>();
+        }
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Could not restore active authorization identifier for evse#" << evse_id << ": " << e.what();
+    }
+    return std::nullopt;
+}
+
+void AuthHandler::clear_active_identifier(int evse_id) {
+    if (this->store == nullptr) {
+        return;
+    }
+    try {
+        this->store->call_delete(this->get_active_identifier_key(evse_id));
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Could not clear active authorization identifier for evse#" << evse_id << ": " << e.what();
     }
 }
 

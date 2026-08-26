@@ -98,16 +98,46 @@ void Charger::main_thread() {
     // Enable CP output
     bsp->enable(true);
 
+    // Start the recovery timeout only after the BSP has been enabled. In
+    // external-ready configurations prepare_transaction_recovery() can run a
+    // long time before the charger thread is started.
+    {
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_mainloop);
+        if (transaction_recovery.pending) {
+            transaction_recovery.started = std::chrono::steady_clock::now();
+        }
+    }
+
     // publish initial values
     signal_max_current(get_max_current_internal());
-    signal_state(shared_context.current_state);
+    bool recovery_pending;
+    {
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_mainloop);
+        recovery_pending = transaction_recovery.pending;
+    }
+    if (not recovery_pending) {
+        signal_state(shared_context.current_state);
+    }
 
     while (!main_thread_handle.shouldExit()) {
 
         const auto events = bsp_event_queue.wait_for(MAINLOOP_UPDATE_RATE);
 
-        for (const auto& event : events) {
-            process_event(event);
+        {
+            Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_mainloop);
+            recovery_pending = transaction_recovery.pending;
+            if (recovery_pending) {
+                transaction_recovery.deferred_events.insert(transaction_recovery.deferred_events.end(), events.begin(),
+                                                            events.end());
+            }
+        }
+
+        if (recovery_pending) {
+            process_transaction_recovery();
+        } else {
+            for (const auto& event : events) {
+                process_event(event);
+            }
         }
 
         {
@@ -158,6 +188,14 @@ void Charger::error_thread() {
 }
 
 void Charger::run_state_machine() {
+
+    if (transaction_recovery.pending) {
+        return;
+    }
+
+    if (transaction_recovery.recovered_in_cp_state_b and shared_context.current_state != EvseState::ChargingPausedEV) {
+        transaction_recovery.recovered_in_cp_state_b = false;
+    }
 
     constexpr int max_mainloop_runs = 10;
     int mainloop_runs = 0;
@@ -927,13 +965,18 @@ void Charger::run_state_machine() {
 
             } else {
                 // This is for BASIC charging only
-                if (not power_available()) {
+                // A recovered CP-B snapshot establishes that the EV is the
+                // side currently pausing. Do not overwrite that fact merely
+                // because EnergyManager/PP data has not arrived after boot.
+                if (not transaction_recovery.recovered_in_cp_state_b and not power_available()) {
                     shared_context.current_state = EvseState::ChargingPausedEVSE;
                     break;
                 }
 
                 // update PWM if it has changed and 5 seconds have passed since last update
-                update_pwm_max_every_5seconds_ampere(get_max_current_internal());
+                if (not transaction_recovery.recovered_in_cp_state_b or transaction_recovery.energy_budget_received) {
+                    update_pwm_max_every_5seconds_ampere(get_max_current_internal());
+                }
             }
             break;
 
@@ -1310,7 +1353,8 @@ float Charger::ampere_to_duty_cycle(float ampere) {
     return duty_cycle;
 }
 
-bool Charger::set_max_current(float c, std::chrono::time_point<std::chrono::steady_clock> validUntil) {
+bool Charger::set_max_current(float c, std::chrono::time_point<std::chrono::steady_clock> validUntil,
+                              bool is_energy_manager_budget) {
     float c_abs{std::fabs(c)};
 
     // is it still valid?
@@ -1319,6 +1363,10 @@ bool Charger::set_max_current(float c, std::chrono::time_point<std::chrono::stea
             Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_set_max_current);
             shared_context.max_current = c_abs;
             shared_context.max_current_valid_until = validUntil;
+            if ((transaction_recovery.pending or transaction_recovery.recovered_in_cp_state_b) and
+                is_energy_manager_budget) {
+                transaction_recovery.energy_budget_received = true;
+            }
         }
         // now after max_current is updated with c_abs we can update c_abs with the internal max current which
         // considers the cable limit as well
@@ -1486,27 +1534,7 @@ void Charger::cleanup_transactions_on_startup() {
     // See if we have an open transaction in persistent storage
     auto session_uuid = store->get_session();
     if (not session_uuid.empty()) {
-        EVLOG_info << "Cleaning up transaction with UUID " << session_uuid << " on start up";
-        store->clear_session();
-
-        // If yes, try to close nicely with the ID we remember and trigger a transaction finished event on success
-        for (const auto& meter : r_powermeter_billing) {
-            const auto response = meter->call_stop_transaction(session_uuid);
-            // If we fail to stop the transaction, it was probably just not active anymore
-            if (response.status == types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR) {
-                EVLOG_warning << "Failed to stop a transaction on the power meter " << response.error.value_or("");
-                break;
-            } else if (response.status == types::powermeter::TransactionRequestStatus::OK) {
-                // Fill in OCMF from the recovered transaction
-                shared_context.start_signed_meter_value = response.start_signed_meter_value;
-                shared_context.stop_signed_meter_value = response.signed_meter_value;
-                break;
-            }
-        }
-
-        // Send out event to inform OCPP et al
-        std::optional<types::authorization::ProvidedIdToken> id_token;
-        signal_transaction_finished_event(types::evse_manager::StopTransactionReason::PowerLoss, id_token);
+        cleanup_transaction_on_startup(session_uuid);
     }
 
     // Now we did what we could to clean up, so if there are still transactions going on in the power meter close them
@@ -1516,6 +1544,199 @@ void Charger::cleanup_transactions_on_startup() {
     for (const auto& meter : r_powermeter_billing) {
         meter->call_stop_transaction("");
     }
+}
+
+void Charger::cleanup_transaction_on_startup(const std::string& session_uuid) {
+    EVLOG_info << "Cleaning up transaction with UUID " << session_uuid << " on start up";
+    store->clear_session();
+
+    std::optional<types::units_signed::SignedMeterValue> start_signed_meter_value;
+    std::optional<types::units_signed::SignedMeterValue> stop_signed_meter_value;
+
+    // The powermeter calls may block while other modules are still starting up,
+    // so they must not run while holding state_machine_mutex.
+    for (const auto& meter : r_powermeter_billing) {
+        const auto response = meter->call_stop_transaction(session_uuid);
+        if (response.status == types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR) {
+            EVLOG_warning << "Failed to stop a transaction on the power meter " << response.error.value_or("");
+            break;
+        } else if (response.status == types::powermeter::TransactionRequestStatus::OK) {
+            start_signed_meter_value = response.start_signed_meter_value;
+            stop_signed_meter_value = response.signed_meter_value;
+            break;
+        }
+    }
+
+    {
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_mainloop);
+        shared_context.start_signed_meter_value = start_signed_meter_value;
+        shared_context.stop_signed_meter_value = stop_signed_meter_value;
+        // Consumers read the session id from get_session_id() while the events
+        // below are emitted. It must match the uuid announced by SessionResumed.
+        shared_context.session_uuid = session_uuid;
+    }
+
+    std::optional<types::authorization::ProvidedIdToken> id_token;
+    signal_transaction_finished_event(types::evse_manager::StopTransactionReason::PowerLoss, id_token);
+    // SessionResumed was published for the persisted session before the recovery
+    // outcome was known. Consumers only leave the occupied state again on
+    // SessionFinished, so the stale session has to be closed explicitly here.
+    signal_simple_event(types::evse_manager::SessionEventEnum::SessionFinished);
+
+    {
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_mainloop);
+        shared_context.session_uuid.clear();
+    }
+}
+
+void Charger::prepare_transaction_recovery(const std::string& session_uuid) {
+    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_disable);
+    transaction_recovery.session_uuid = session_uuid;
+    transaction_recovery.started.reset();
+    transaction_recovery.deferred_events.clear();
+    transaction_recovery.energy_budget_received = false;
+    transaction_recovery.recovered_in_cp_state_b = false;
+    transaction_recovery.cable_limit_read = false;
+    transaction_recovery.pending = not session_uuid.empty();
+}
+
+Charger::TransactionRecoveryResult Charger::reconcile_transaction_on_startup(std::optional<RawCPState> cp_state,
+                                                                             std::optional<bool> relais_on,
+                                                                             bool timed_out) {
+    if (not transaction_recovery.pending) {
+        return TransactionRecoveryResult::Cleanup;
+    }
+
+    // A DC HLC session cannot survive a process restart. Do not infer that it
+    // is active from CP/contactor state alone.
+    const bool resumable_mode = config_context.charge_mode == ChargeMode::AC;
+    const bool cp_state_can_recover =
+        cp_state.has_value() and
+        (cp_state.value() == RawCPState::B or cp_state.value() == RawCPState::C or cp_state.value() == RawCPState::D);
+    const bool waiting_for_cp_state = not cp_state.has_value();
+    const bool cp_requests_power = cp_state_can_recover and cp_state.value() != RawCPState::B;
+    const bool waiting_for_relais_state = cp_requests_power and not relais_on.has_value();
+    const bool cable_limit_known = connector_type != types::evse_board_support::Connector_type::IEC62196Type2Socket or
+                                   shared_context.max_current_cable.has_value();
+    // CP B means the EV is connected but is not requesting power. Recovering
+    // that state does not depend on a power budget or a PP cable limit; those
+    // inputs are only needed to decide whether CP C/D can resume charging.
+    const bool waiting_for_energy_budget =
+        cp_requests_power and (not transaction_recovery.energy_budget_received or not cable_limit_known);
+    if (resumable_mode and not shared_context.flag_disable_requested and not timed_out and
+        (waiting_for_cp_state or waiting_for_relais_state or waiting_for_energy_budget)) {
+        return TransactionRecoveryResult::Pending;
+    }
+
+    // CP B/C/D is sufficient to preserve the persisted transaction. Relay
+    // feedback is used to distinguish Charging from SuspendedEVSE, but lack of
+    // a relay transition after a host-only restart must not destroy the
+    // transaction.
+    const bool ev_connected = resumable_mode and cp_state_can_recover;
+    if (not ev_connected or shared_context.flag_disable_requested) {
+        transaction_recovery.pending = false;
+        return TransactionRecoveryResult::Cleanup;
+    }
+
+    shared_context.session_uuid = transaction_recovery.session_uuid;
+    shared_context.session_active = true;
+    shared_context.flag_transaction_active = true;
+    // The BSP call attached to flag_authorized is made after releasing the
+    // charger state mutex in process_transaction_recovery().
+    shared_context.flag_authorized.set_without_signal(true);
+    shared_context.flag_ev_plugged_in = true;
+    shared_context.contactor_open = not relais_on.value_or(false);
+    shared_context.iec_allow_close_contactor = cp_state.value() == RawCPState::C or cp_state.value() == RawCPState::D;
+
+    const bool budget_is_current = shared_context.max_current_valid_until >= std::chrono::steady_clock::now();
+    const auto cable_limit = static_cast<float>(shared_context.max_current_cable.value_or(shared_context.max_current));
+    const bool power_budget_available = transaction_recovery.energy_budget_received and budget_is_current and
+                                        std::min(shared_context.max_current, cable_limit) > 5.9F;
+
+    if (cp_state.value() == RawCPState::B) {
+        shared_context.current_state = EvseState::ChargingPausedEV;
+        transaction_recovery.recovered_in_cp_state_b = true;
+    } else if (not relais_on.value_or(false) or not power_budget_available) {
+        shared_context.current_state = EvseState::ChargingPausedEVSE;
+    } else {
+        shared_context.current_state = EvseState::Charging;
+    }
+
+    transaction_recovery.pending = false;
+    EVLOG_info << "Recovered transaction with UUID " << shared_context.session_uuid << " in state "
+               << evse_state_to_string(shared_context.current_state);
+    return TransactionRecoveryResult::Recovered;
+}
+
+bool Charger::process_transaction_recovery() {
+    // IEC snapshots take their own mutex and may call into a remote BSP. Read
+    // them before acquiring the charger state mutex.
+    const auto cp_state = bsp->get_cp_state();
+    const auto relais_on = bsp->get_relais_state();
+    // The cable limit cannot change while the recovery window is open, so stop
+    // polling the BSP once it is known.
+    const auto pp_ampacity = (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket and
+                              not transaction_recovery.cable_limit_read)
+                                 ? bsp->read_pp_ampacity()
+                                 : std::nullopt;
+
+    TransactionRecoveryResult result = TransactionRecoveryResult::Pending;
+    std::vector<CPEvent> deferred_events;
+    {
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_mainloop);
+        if (not transaction_recovery.pending) {
+            return false;
+        }
+        if (pp_ampacity.has_value()) {
+            shared_context.max_current_cable = pp_ampacity;
+            transaction_recovery.cable_limit_read = true;
+        }
+        const bool timed_out =
+            transaction_recovery.started.has_value() and
+            std::chrono::steady_clock::now() - transaction_recovery.started.value() >= TRANSACTION_RECOVERY_TIMEOUT;
+        result = reconcile_transaction_on_startup(cp_state, relais_on, timed_out);
+        if (result != TransactionRecoveryResult::Pending) {
+            deferred_events.swap(transaction_recovery.deferred_events);
+        }
+        if (result == TransactionRecoveryResult::Recovered) {
+            // Must happen in the same lock scope that cleared the pending flag:
+            // a concurrent enable_disable() would otherwise run the recovered
+            // state's entry actions before the initial Enabled/Disabled event.
+            publish_initial_enable_disable_state();
+        }
+    }
+
+    if (result == TransactionRecoveryResult::Pending) {
+        return true;
+    }
+
+    if (result == TransactionRecoveryResult::Cleanup) {
+        // Powermeter RPCs may block while hardware modules are still starting.
+        // They must not run while holding state_machine_mutex.
+        cleanup_transactions_on_startup();
+        {
+            Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_mainloop);
+            publish_initial_enable_disable_state();
+            signal_state(shared_context.current_state);
+        }
+
+        // CP events are edge triggered. Replay every event observed during the
+        // recovery window so a connected EV cannot remain stranded in Idle.
+        for (const auto event : deferred_events) {
+            process_event(event);
+        }
+        return false;
+    }
+
+    // Restore authorization in the BSP outside the state mutex, then let the
+    // normal state entry execute. This reasserts PWM and power-on commands and
+    // emits exactly the recovered charging state after Enabled/Disabled.
+    bsp->set_authorized(true);
+    {
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_mainloop);
+        run_state_machine();
+    }
+    return false;
 }
 
 std::optional<types::units_signed::SignedMeterValue> Charger::get_stop_signed_meter_value() {
@@ -1691,21 +1912,45 @@ bool Charger::deauthorize_internal() {
 
 void Charger::enable_disable_initial_state_publish() {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_disable);
-    types::evse_manager::EnableDisableSource source{types::evse_manager::Enable_source::Unspecified,
-                                                    types::evse_manager::Enable_state::Unassigned, 10000};
+    if (transaction_recovery.pending) {
+        return;
+    }
+    publish_initial_enable_disable_state();
+}
 
-    // check the startup state and publish it
-    if (shared_context.current_state == EvseState::Disabled) {
-        signal_simple_event(types::evse_manager::SessionEventEnum::Disabled);
-        source.enable_state = types::evse_manager::Enable_state::Disable;
-    } else {
-        signal_simple_event(types::evse_manager::SessionEventEnum::Enabled);
-        source.enable_state = types::evse_manager::Enable_state::Enable;
+void Charger::publish_initial_enable_disable_state() {
+    if (initial_enable_disable_state_published) {
+        return;
     }
 
-    // ensure the state is in the table
-    enable_disable_source_table_update(source);
-    active_enable_disable_source = source;
+    const bool has_explicit_source = not enable_disable_source_table.empty();
+    types::evse_manager::EnableDisableSource source =
+        has_explicit_source
+            ? active_enable_disable_source
+            : types::evse_manager::EnableDisableSource{types::evse_manager::Enable_source::Unspecified,
+                                                       types::evse_manager::Enable_state::Unassigned, 10000};
+
+    // check the startup state and publish it
+    if (shared_context.current_state == EvseState::Disabled or shared_context.flag_disable_requested or
+        not shared_context.connector_enabled) {
+        signal_simple_event(types::evse_manager::SessionEventEnum::Disabled);
+        if (not has_explicit_source) {
+            source.enable_state = types::evse_manager::Enable_state::Disable;
+        }
+    } else {
+        signal_simple_event(types::evse_manager::SessionEventEnum::Enabled);
+        if (not has_explicit_source) {
+            source.enable_state = types::evse_manager::Enable_state::Enable;
+        }
+    }
+
+    // Only synthesize the default source when no real availability request
+    // arrived during recovery. Never overwrite the CSMS/firmware source.
+    if (not has_explicit_source) {
+        enable_disable_source_table_update(source);
+        active_enable_disable_source = source;
+    }
+    initial_enable_disable_state_published = true;
 }
 
 bool Charger::enable_disable(int connector_id, const types::evse_manager::EnableDisableSource& source) {
@@ -1730,10 +1975,17 @@ bool Charger::enable_disable(int connector_id, const types::evse_manager::Enable
         shared_context.connector_enabled = is_enabled;
     }
 
+    // Keep the teardown latch synchronized with the effective availability,
+    // even while transaction recovery prevents the state machine from
+    // running. In particular, a Disable followed by an effective Enable must
+    // cancel the pending teardown before recovery is reconciled.
+    // An enable on connector 0 does not lift a connector specific disable, so
+    // both the global table result and the connector state must agree.
+    shared_context.flag_disable_requested = not(is_enabled and shared_context.connector_enabled);
+
     if (shared_context.current_state == EvseState::Disabled && shared_context.connector_enabled) {
-        // When re-enabling, clear the disable flag and re-enable the BSP before
-        // the state machine sees Idle for the first time.
-        shared_context.flag_disable_requested = false;
+        // When re-enabling, re-enable the BSP before the state machine sees
+        // Idle for the first time.
         bsp->enable(true);
         shared_context.current_state = EvseState::Idle;
     }
@@ -1769,7 +2021,6 @@ bool Charger::enable_disable(int connector_id, const types::evse_manager::Enable
             // or Finished. The Idle state transitions directly to Disabled.
             // cp_state_F() and bsp->enable(false) are called from the Disabled state
             // handler to guarantee correct ordering.
-            shared_context.flag_disable_requested = true;
             shared_context.last_stop_transaction_reason = StopTransactionReason::EVSEDisabled;
         }
         // Drive the state machine synchronously so callers see the resulting

@@ -5,6 +5,45 @@
 
 namespace module {
 
+void to_json(json& j, const Identifier& k) {
+    // the required parts of the type
+    j = json{
+        {"id_token", k.id_token},
+        {"type", types::authorization::authorization_type_to_string_view(k.type)},
+    };
+    // the optional parts of the type
+    if (k.authorization_status.has_value()) {
+        j["authorization_status"] =
+            types::authorization::authorization_status_to_string_view(k.authorization_status.value());
+    }
+    if (k.expiry_time.has_value()) {
+        j["expiry_time"] = k.expiry_time.value();
+    }
+    if (k.parent_id_token.has_value()) {
+        j["parent_id_token"] = k.parent_id_token.value();
+    }
+}
+
+void from_json(const json& j, Identifier& k) {
+    // the required parts of the type
+    k.id_token = j.at("id_token").get<types::authorization::IdToken>();
+    k.type = types::authorization::string_to_authorization_type(j.at("type"));
+
+    // the optional parts of the type
+    k.authorization_status.reset();
+    k.expiry_time.reset();
+    k.parent_id_token.reset();
+    if (const auto it = j.find("authorization_status"); it != j.end() and not it->is_null()) {
+        k.authorization_status = types::authorization::string_to_authorization_status(*it);
+    }
+    if (const auto it = j.find("expiry_time"); it != j.end() and not it->is_null()) {
+        k.expiry_time = it->get<std::string>();
+    }
+    if (const auto it = j.find("parent_id_token"); it != j.end() and not it->is_null()) {
+        k.parent_id_token = it->get<types::authorization::IdToken>();
+    }
+}
+
 void Connector::submit_event(ConnectorEvent event) {
     state_machine.handle_event(event);
 }

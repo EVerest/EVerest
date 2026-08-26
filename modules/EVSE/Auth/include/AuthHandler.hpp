@@ -356,6 +356,18 @@ private:
      * This will check the reservation status of the evse's and send the statusses to the evse manager.
      */
     void check_evse_reserved_and_send_updates();
+
+    /// \brief Persists the given \p identifier of the active transaction at \p evse_id so that it can be restored
+    /// when a session is resumed after a restart. The full (merged) identifier is persisted, not just the token that
+    /// was provided by the charger, because the parent id token is only known after validation and is required to
+    /// stop a transaction with a sibling card of the same group.
+    void persist_active_identifier(int evse_id, const Identifier& identifier);
+    std::optional<Identifier> load_active_identifier(int evse_id);
+    void clear_active_identifier(int evse_id);
+    std::string get_active_identifier_key(int evse_id) const;
+
+    kvsIntf* store;
+    const std::string active_transaction_key_prefix;
 };
 
 } // namespace module

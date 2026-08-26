@@ -25,6 +25,12 @@ struct Identifier {
     std::optional<types::authorization::IdToken> parent_id_token; ///< Parent id token of the identifier
 };
 
+/// \brief Conversion from a given Identifier \p k to a given json object \p j
+void to_json(json& j, const Identifier& k);
+
+/// \brief Conversion from a given json object \p j to a given Identifier \p k
+void from_json(const json& j, Identifier& k);
+
 struct Connector {
     explicit Connector(
         int id, const types::evse_manager::ConnectorTypeEnum type = types::evse_manager::ConnectorTypeEnum::Unknown) :
