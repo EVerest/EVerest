@@ -41,9 +41,6 @@ static BrokerFastCharging::EnergyManagerConfig to_broker_fast_charging_config(co
     broker_conf.switch_1ph_3ph_mode = to_switch_1ph3ph_mode(config.switch_3ph1ph_while_charging_mode);
     broker_conf.time_hysteresis_s = config.switch_3ph1ph_time_hysteresis_s;
     broker_conf.stickyness = to_stickyness(config.switch_3ph1ph_switch_limit_stickyness);
-    broker_conf.use_power_meter_tracking = config.use_power_meter_tracking;
-    broker_conf.tracking_initial_current_A = static_cast<float>(config.power_meter_tracking_initial_current_A);
-    broker_conf.tracking_margin_W = static_cast<float>(config.power_meter_tracking_margin_W);
 
     return broker_conf;
 }
@@ -97,6 +94,16 @@ void EnergyManagerImpl::on_energy_flow_request(const types::energy::EnergyFlowRe
         // trigger optimization now
         mainloop_sleep_condvar.notify_all();
     }
+}
+
+ObservedMeasurement EnergyManagerImpl::get_observed_measurement(const std::string& uuid) {
+    std::scoped_lock lock(energy_mutex);
+
+    const auto it = contexts.find(uuid);
+    if (it == contexts.end()) {
+        return {};
+    }
+    return it->second.last_observed_measurement;
 }
 
 std::vector<types::energy::EnforcedLimits>

@@ -25,8 +25,6 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             {"switch_3ph1ph_power_hysteresis_W", config.switch_3ph1ph_power_hysteresis_W},
             {"switch_3ph1ph_time_hysteresis_s", config.switch_3ph1ph_time_hysteresis_s},
             {"use_power_meter_tracking", config.use_power_meter_tracking},
-            {"power_meter_tracking_initial_current_A", config.power_meter_tracking_initial_current_A},
-            {"power_meter_tracking_margin_W", config.power_meter_tracking_margin_W},
         };
     }
     static module::EnergyManagerConfig from_json(const json& j) {
@@ -44,8 +42,6 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             j.at("switch_3ph1ph_power_hysteresis_W"),
             j.at("switch_3ph1ph_time_hysteresis_s"),
             j.value("use_power_meter_tracking", false),
-            j.value("power_meter_tracking_initial_current_A", 16.0),
-            j.value("power_meter_tracking_margin_W", 200.0),
         };
     }
 };
