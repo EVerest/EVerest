@@ -26,8 +26,9 @@ std::optional<types::units::Power> get_measured_power_W(const types::energy::Ene
 /// \returns measured current per phase in Ampere; all phases nullopt if no current measurement
 types::units::Current get_measured_current_A(const types::energy::EnergyFlowRequest& node);
 
-/// \brief A broker that trades exactly like BrokerFastCharging and additionally observes
-/// the live power meter measurement of its connector.
+/// \brief Broker of the PowerRedistribution strategy. In this stage it trades exactly like
+/// BrokerFastCharging and additionally observes the live power meter measurement of its
+/// connector; redistributing energy based on that observation is future work.
 ///
 /// It never modifies the allocation: trading is delegated unchanged to the base class.
 /// Once per optimizer run (EnergyManagerImpl builds a fresh broker for every run) it reads
@@ -35,9 +36,9 @@ types::units::Current get_measured_current_A(const types::energy::EnergyFlowRequ
 /// that reports no measurement is warned about once per session.
 ///
 /// Operates on a single connector: the measurement is read from this broker's own market node.
-class BrokerMeasurementTracking : public BrokerFastCharging {
+class BrokerPowerRedistribution : public BrokerFastCharging {
 public:
-    BrokerMeasurementTracking(Market& market, BrokerContext& context, EnergyManagerConfig config);
+    BrokerPowerRedistribution(Market& market, BrokerContext& context, EnergyManagerConfig config);
 
 private:
     // Reads and logs the connector's measurement. Called exactly once, from the

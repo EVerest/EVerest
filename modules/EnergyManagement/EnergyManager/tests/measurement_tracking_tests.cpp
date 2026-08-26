@@ -5,7 +5,7 @@
 
 #include <utils/date.hpp>
 
-#include "BrokerMeasurementTracking.hpp"
+#include "BrokerPowerRedistribution.hpp"
 #include "EnergyManagerTestHelpers.hpp"
 
 namespace module {
