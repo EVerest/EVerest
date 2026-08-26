@@ -14,13 +14,16 @@ physical and logical components within the targeted energy system.
 Please see :doc:`Energy Management in EVerest </explanation/energymanagement/index>`
 for a detailed explanation of the concepts behind this module.
 
-Power meter measurement tracking
-================================
+Broker strategy and power meter observation
+===========================================
 
-Setting ``use_power_meter_tracking`` to ``true`` (default ``false``) switches each
-connector to a broker that trades identically to the default fast charging broker and
-additionally observes the connector's live power meter reading, logging the actual
-consumption once per optimizer run. Allocations are never modified by the observation.
+The ``broker_strategy`` option selects the broker that trades energy on behalf of each
+EVSE:
+
+- ``FastCharging`` (default): allocate as much as the limits allow.
+- ``PowerRedistribution``: currently trades identically to ``FastCharging`` and
+  additionally observes the connector's live power meter reading once per optimizer
+  run. Allocations are never modified by the observation.
 
 The measurement is taken from the EVSE's own power meter, reported through the
 ``energy_usage_leaves`` field of the energy flow request (with ``energy_usage_root``

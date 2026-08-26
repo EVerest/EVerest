@@ -33,6 +33,27 @@ static BrokerFastCharging::StickyNess to_stickyness(const std::string& m) {
     }
 }
 
+static BrokerStrategy to_broker_strategy(const std::string& s) {
+    if (s == "PowerRedistribution") {
+        return BrokerStrategy::PowerRedistribution;
+    }
+    // Default of the manifest option. An unknown value must not break energy distribution.
+    return BrokerStrategy::FastCharging;
+}
+
+// Creates the broker that trades on behalf of one EVSE. This is the single place that maps
+// the configured strategy to a broker class.
+static std::shared_ptr<Broker> make_broker(BrokerStrategy strategy, Market& market, BrokerContext& context,
+                                           const Broker::EnergyManagerConfig& broker_config) {
+    switch (strategy) {
+    case BrokerStrategy::PowerRedistribution:
+        return std::make_shared<BrokerMeasurementTracking>(market, context, broker_config);
+    case BrokerStrategy::FastCharging:
+    default:
+        return std::make_shared<BrokerFastCharging>(market, context, broker_config);
+    }
+}
+
 static BrokerFastCharging::EnergyManagerConfig to_broker_fast_charging_config(const EnergyManagerConfig& config) {
     BrokerFastCharging::EnergyManagerConfig broker_conf;
 
@@ -67,7 +88,9 @@ bool is_priority_request(const types::energy::EnergyFlowRequest& e) {
 EnergyManagerImpl::EnergyManagerImpl(
     const EnergyManagerConfig& config,
     const std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)>& enforced_limits_callback) :
-    config(config), enforced_limits_callback(enforced_limits_callback) {
+    config(config),
+    broker_strategy(to_broker_strategy(config.broker_strategy)),
+    enforced_limits_callback(enforced_limits_callback) {
     this->energy_flow_request.node_type = types::energy::NodeType::Undefined;
 }
 
@@ -141,14 +164,8 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
                 globals.start_time - std::chrono::seconds(config.switch_3ph1ph_time_hysteresis_s);
         }
 
-        // FIXME: check for actual optimizer_targets and create correct broker for this evse
-        if (config.use_power_meter_tracking) {
-            brokers.push_back(std::make_shared<BrokerMeasurementTracking>(*m, contexts[m->energy_flow_request.uuid],
-                                                                          to_broker_fast_charging_config(config)));
-        } else {
-            brokers.push_back(std::make_shared<BrokerFastCharging>(*m, contexts[m->energy_flow_request.uuid],
-                                                                   to_broker_fast_charging_config(config)));
-        }
+        brokers.push_back(make_broker(broker_strategy, *m, contexts[m->energy_flow_request.uuid],
+                                      to_broker_fast_charging_config(config)));
         // EVLOG_info << fmt::format("Created broker for {}", m->energy_flow_request.uuid);
     }
 
