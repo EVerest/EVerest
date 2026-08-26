@@ -33,6 +33,16 @@ inline EnergyManagerConfig make_default_config() {
     c.use_power_meter_tracking = false;
     c.power_meter_tracking_initial_current_A = 16.0;
     c.power_meter_tracking_margin_W = 200.0;
+    // WP1.b's field. It must be set here even though WP1.b introduced it: WP1.b never
+    // touches this helper (the file does not exist on its branch) and WP1.a's version
+    // predates the field, so after both merge it is the one config member nobody
+    // initialises. EnergyManagerConfig has no default member initialisers, so leaving it
+    // out means an indeterminate int reaches std::chrono::seconds and staleness becomes
+    // nondeterministic.
+    c.power_meter_aggregation_window_s = 5;
+    c.boost_threshold_W = 500.0;
+    c.boost_step_A = 2.0;
+    c.boost_hysteresis_cycles = 3;
     return c;
 }
 

@@ -40,6 +40,9 @@ struct Conf {
     double power_meter_tracking_initial_current_A;
     double power_meter_tracking_margin_W;
     int power_meter_aggregation_window_s;
+    double boost_threshold_W;
+    double boost_step_A;
+    int boost_hysteresis_cycles;
 };
 
 class EnergyManager : public Everest::ModuleBase {

@@ -1,2 +1,12 @@
 description: This interface defines the global EnergyManager
-vars: {}
+vars:
+  power_can_be_reduced:
+    description: >-
+      True when the aggregated power meter measurements show that the currently enforced
+      allocation exceeds the actual consumption by more than the configured
+      boost_threshold_W, i.e. the allocation can be reduced without curtailing any active
+      charging session. False when the allocation closely matches consumption, when no
+      allocation has been made yet, or when no power meter reading is fresh enough to
+      judge. Only meaningful when use_power_meter_tracking is enabled.
+      Published on change and at least once during start up.
+    type: boolean

@@ -29,6 +29,9 @@ void EnergyManager::init() {
     energy_manager_config.power_meter_tracking_initial_current_A = config.power_meter_tracking_initial_current_A;
     energy_manager_config.power_meter_tracking_margin_W = config.power_meter_tracking_margin_W;
     energy_manager_config.power_meter_aggregation_window_s = config.power_meter_aggregation_window_s;
+    energy_manager_config.boost_threshold_W = config.boost_threshold_W;
+    energy_manager_config.boost_step_A = config.boost_step_A;
+    energy_manager_config.boost_hysteresis_cycles = config.boost_hysteresis_cycles;
 
     const auto enforce_limits_callback = [this](const std::vector<types::energy::EnforcedLimits>& limits) {
         const types::energy::NumberWithSource nonumber = {-9999.0};
@@ -43,7 +46,15 @@ void EnergyManager::init() {
         }
     };
 
-    this->impl = std::make_unique<EnergyManagerImpl>(energy_manager_config, enforce_limits_callback);
+    const auto power_can_be_reduced_callback = [this](bool value) {
+        if (globals.debug) {
+            EVLOG_info << "Publishing power_can_be_reduced: " << std::boolalpha << value;
+        }
+        p_main->publish_power_can_be_reduced(value);
+    };
+
+    this->impl = std::make_unique<EnergyManagerImpl>(energy_manager_config, enforce_limits_callback,
+                                                     power_can_be_reduced_callback);
 
     r_energy_trunk->subscribe_energy_flow_request(
         [this](types::energy::EnergyFlowRequest const& e) { this->impl->on_energy_flow_request(e); });
