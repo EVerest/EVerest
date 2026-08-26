@@ -27,7 +27,13 @@ struct EnergyManagerConfig {
     std::string switch_3ph1ph_switch_limit_stickyness;
     int switch_3ph1ph_power_hysteresis_W;
     int switch_3ph1ph_time_hysteresis_s;
-    bool use_power_meter_tracking;
+    std::string broker_strategy;
+};
+
+/// \brief Broker selected by the broker_strategy config option (see manifest.yaml).
+enum class BrokerStrategy {
+    FastCharging,
+    PowerRedistribution,
 };
 
 class EnergyManagerImpl {
@@ -61,6 +67,7 @@ public:
 
 private:
     EnergyManagerConfig config;
+    BrokerStrategy broker_strategy;
     std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)> enforced_limits_callback;
 
     std::mutex energy_mutex;

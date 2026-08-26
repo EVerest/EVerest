@@ -36,7 +36,7 @@ struct Conf {
     std::string switch_3ph1ph_switch_limit_stickyness;
     int switch_3ph1ph_power_hysteresis_W;
     int switch_3ph1ph_time_hysteresis_s;
-    bool use_power_meter_tracking;
+    std::string broker_strategy;
 };
 
 class EnergyManager : public Everest::ModuleBase {

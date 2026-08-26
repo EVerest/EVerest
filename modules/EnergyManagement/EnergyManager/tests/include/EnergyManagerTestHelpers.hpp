@@ -30,7 +30,7 @@ inline EnergyManagerConfig make_default_config() {
     c.switch_3ph1ph_switch_limit_stickyness = "DontChange";
     c.switch_3ph1ph_power_hysteresis_W = 200;
     c.switch_3ph1ph_time_hysteresis_s = 0;
-    c.use_power_meter_tracking = false;
+    c.broker_strategy = "FastCharging";
     return c;
 }
 

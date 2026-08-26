@@ -24,7 +24,7 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             {"switch_3ph1ph_switch_limit_stickyness", config.switch_3ph1ph_switch_limit_stickyness},
             {"switch_3ph1ph_power_hysteresis_W", config.switch_3ph1ph_power_hysteresis_W},
             {"switch_3ph1ph_time_hysteresis_s", config.switch_3ph1ph_time_hysteresis_s},
-            {"use_power_meter_tracking", config.use_power_meter_tracking},
+            {"broker_strategy", config.broker_strategy},
         };
     }
     static module::EnergyManagerConfig from_json(const json& j) {
@@ -41,7 +41,7 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             j.at("switch_3ph1ph_switch_limit_stickyness"),
             j.at("switch_3ph1ph_power_hysteresis_W"),
             j.at("switch_3ph1ph_time_hysteresis_s"),
-            j.value("use_power_meter_tracking", false),
+            j.value("broker_strategy", std::string("FastCharging")),
         };
     }
 };

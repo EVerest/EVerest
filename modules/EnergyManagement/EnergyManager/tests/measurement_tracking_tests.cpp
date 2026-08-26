@@ -206,7 +206,7 @@ float run_and_get_current(EnergyManagerImpl& impl, const types::energy::EnergyFl
 
 EnergyManagerConfig make_tracking_config() {
     auto config = test::make_default_config();
-    config.use_power_meter_tracking = true;
+    config.broker_strategy = "PowerRedistribution";
     return config;
 }
 
@@ -424,9 +424,9 @@ TEST(MeasurementTrackingBroker, NoObservationWhenTrackingDisabled) {
     EXPECT_FALSE(impl.get_observed_measurement("evse1").power_W.has_value());
 }
 
-TEST(MeasurementTrackingBroker, DisabledFlagLeavesStaticBehaviourUnchanged) {
+TEST(MeasurementTrackingBroker, FastChargingStrategyLeavesStaticBehaviourUnchanged) {
     auto config = test::make_default_config();
-    config.use_power_meter_tracking = false;
+    config.broker_strategy = "FastCharging";
 
     auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
     auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
@@ -435,6 +435,24 @@ TEST(MeasurementTrackingBroker, DisabledFlagLeavesStaticBehaviourUnchanged) {
     EnergyManagerImpl impl(config, [](const std::vector<types::energy::EnforcedLimits>&) {});
 
     EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 32.0f, 0.01f);
+}
+
+// ---------------------------------------------------------------- strategy selection
+
+TEST(MeasurementTrackingBroker, UnknownStrategyFallsBackToFastCharging) {
+    // A misspelled or future strategy value must not break energy distribution: it behaves
+    // like the default FastCharging broker and observes nothing.
+    auto config = test::make_default_config();
+    config.broker_strategy = "NoSuchStrategy";
+
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4200.0f);
+
+    EnergyManagerImpl impl(config, [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 32.0f, 0.01f);
+    EXPECT_FALSE(impl.get_observed_measurement("evse1").power_W.has_value());
 }
 
 } // namespace module

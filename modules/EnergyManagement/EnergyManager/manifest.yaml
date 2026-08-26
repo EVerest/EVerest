@@ -76,14 +76,19 @@ config:
       Set to 0 to disable time based hysteresis.
     type: integer
     default: 600
-  use_power_meter_tracking:
+  broker_strategy:
     description: >-
-      If true, use a broker that trades identically to the default fast charging
-      broker and additionally observes the live power meter measurement of each
-      connector, logging the actual consumption. Allocations are not modified.
-      If false (default) the plain fast charging broker is used.
-    type: boolean
-    default: false
+      Selects the broker that trades energy on behalf of each EVSE:
+        - FastCharging: allocate as much as the limits allow (default)
+        - PowerRedistribution: currently trades identically to FastCharging and additionally
+          observes the live power meter measurement of each connector (total and per-phase
+          power, per-phase current) so under-consumption can be detected. Allocations are
+          not modified yet.
+    type: string
+    enum:
+      - FastCharging
+      - PowerRedistribution
+    default: FastCharging
 provides:
   main:
     description: Main interface of the energy manager
