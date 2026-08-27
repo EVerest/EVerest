@@ -147,6 +147,9 @@ void car_simulatorImpl::register_all_commands() {
     command_registry->register_command("sleep", 1, [this](const CmdArguments& arguments) {
         return this->car_simulation->sleep(arguments, loop_interval_ms);
     });
+    command_registry->register_command("cp_c_pulse", 1, [this](const CmdArguments& arguments) {
+        return this->car_simulation->cp_c_pulse(arguments, loop_interval_ms);
+    });
     command_registry->register_command("iec_wait_pwr_ready", 0, [this](const CmdArguments& arguments) {
         if (!mod->r_kvs.empty() and not plugged_in) {
             plugged_in = true;

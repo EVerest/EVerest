@@ -182,6 +182,28 @@ void CarSimulation::simulate_soc() {
     p_ev_manager->publish_ev_info(ev_info);
 }
 
+// Hold CP state C for the given number of seconds, then release back to B. On CCS this is a
+// (non-standard-length) state-C pulse; its real purpose is the MCS EV role, where the firmware
+// turns a readiness claim held while the EVSE idles in B0 into the IEC 61851-23-3 CC.5.2.4
+// wake-up toggle (S V3 pulses) - the way a mated EV asks a sleeping EVSE for a new session.
+// The firmware needs the claim to outlast its >= 1 s entry wait, so hold for at least 2 s;
+// 4 s spans the entry wait plus one full 2 s pulse.
+bool CarSimulation::cp_c_pulse(const CmdArguments& arguments, size_t loop_interval_ms) {
+    if (not sim_data.cp_c_pulse_ticks_left.has_value()) {
+        const auto hold_time_ms = std::stold(arguments[0]) * 1000;
+        sim_data.cp_c_pulse_ticks_left = static_cast<size_t>(hold_time_ms / loop_interval_ms) + 1;
+        r_ev_board_support->call_set_cp_state(types::ev_board_support::EvCpState::C);
+    }
+    auto& ticks_left = sim_data.cp_c_pulse_ticks_left.value();
+    ticks_left -= 1;
+    if (not(ticks_left > 0)) {
+        sim_data.cp_c_pulse_ticks_left.reset();
+        r_ev_board_support->call_set_cp_state(types::ev_board_support::EvCpState::B);
+        return true;
+    }
+    return false;
+}
+
 bool CarSimulation::sleep(const CmdArguments& arguments, size_t loop_interval_ms) {
     if (not sim_data.sleep_ticks_left.has_value()) {
         const auto sleep_time = std::stold(arguments[0]);

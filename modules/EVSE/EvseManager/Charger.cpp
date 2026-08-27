@@ -936,9 +936,14 @@ void Charger::run_state_machine() {
 
                 if (bcb_toggle_detected()) {
                     // The EV restarts the session: clear the ended-session marker and a pending
-                    // oscillator retain timer so PrepareCharging re-applies PWM again.
+                    // oscillator retain timer so PrepareCharging re-applies PWM again, and restart
+                    // matching - the previous session's dlink_terminate tore the data link down, so
+                    // the slac provider is waiting for a fresh enter_bcd. On PLC the EV's own SLAC
+                    // re-request papers over a missing one; on MCS (McsDataLink) nothing else can
+                    // provide it, and without it the SDP server stays deaf to the woken EV.
                     shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Unknown;
                     internal_context.session_stop_pwm_off_deadline.reset();
+                    signal_slac_start();
                     shared_context.current_state = EvseState::PrepareCharging;
                 }
 

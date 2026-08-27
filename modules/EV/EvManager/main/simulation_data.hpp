@@ -39,6 +39,7 @@ struct SimulationData {
     SimState last_state{SimState::UNDEFINED};
     types::slac::State slac_state{types::slac::State::UNMATCHED};
     std::optional<size_t> sleep_ticks_left{};
+    std::optional<size_t> cp_c_pulse_ticks_left{};
     // Countdown of the optional fallback timeout of iso_wait_pwm_is_running.
     std::optional<size_t> pwm_wait_ticks_left{};
 

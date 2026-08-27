@@ -151,6 +151,7 @@ public:
 
     void state_machine();
     bool sleep(const CmdArguments&, size_t);
+    bool cp_c_pulse(const CmdArguments&, size_t);
     bool iec_wait_pwr_ready(const CmdArguments&);
     bool iso_wait_pwm_is_running(const CmdArguments&, size_t loop_interval_ms);
     bool draw_power_regulated(const CmdArguments&);
