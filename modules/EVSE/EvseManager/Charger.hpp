@@ -345,11 +345,9 @@ private:
         types::evse_manager::StartSessionReason last_start_session_reason;
         float current_drawn_by_vehicle[3];
         // Diagnostics for stale power meter data: when current_drawn_by_vehicle was last updated
-        // (default-constructed until the first powermeter publication) and how many consecutive
-        // publications carried bit-identical L1/L2/L3 values. Only used for warnings, the values
-        // are still used as-is.
+        // (default-constructed until the first powermeter publication). Only used for warnings,
+        // the values are still used as-is.
         std::chrono::time_point<std::chrono::steady_clock> current_drawn_by_vehicle_last_update{};
-        uint32_t current_drawn_by_vehicle_identical_count{0};
         ShutdownType shutdown_type{ShutdownType::None};
         ShutdownType last_shutdown_type{ShutdownType::None};
         int ac_with_soc_timer{3600000};

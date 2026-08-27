@@ -1941,12 +1941,6 @@ float Charger::get_max_current_signalled_to_ev_internal() {
 void Charger::set_current_drawn_by_vehicle(float l1, float l2, float l3) {
     Everest::scoped_lock_timeout lock(state_machine_mutex,
                                       Everest::MutexDescription::Charger_set_current_drawn_by_vehicle);
-    if (l1 == shared_context.current_drawn_by_vehicle[0] and l2 == shared_context.current_drawn_by_vehicle[1] and
-        l3 == shared_context.current_drawn_by_vehicle[2]) {
-        shared_context.current_drawn_by_vehicle_identical_count++;
-    } else {
-        shared_context.current_drawn_by_vehicle_identical_count = 0;
-    }
     shared_context.current_drawn_by_vehicle[0] = l1;
     shared_context.current_drawn_by_vehicle[1] = l2;
     shared_context.current_drawn_by_vehicle[2] = l3;
@@ -1961,11 +1955,10 @@ void Charger::check_soft_over_current() {
 
     const auto now = std::chrono::steady_clock::now();
 
-    // Diagnose stale power meter data: values that have not been updated for a while or that repeat
-    // bit-identically over many publications indicate a frozen meter or a broken communication link.
+    // Diagnose stale power meter data: values that have not been updated for a while indicate a
+    // frozen meter or a broken communication link.
     // This is for debugging purposes only, the values are still used as-is.
     constexpr int64_t stale_data_age_warning_ms = 5000;
-    constexpr uint32_t stale_data_identical_count_warning = 5;
     constexpr int64_t stale_data_warning_interval_ms = 5000;
 
     std::string stale_info;
@@ -1973,11 +1966,8 @@ void Charger::check_soft_over_current() {
         const auto data_age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                      now - shared_context.current_drawn_by_vehicle_last_update)
                                      .count();
-        if (data_age_ms > stale_data_age_warning_ms or
-            shared_context.current_drawn_by_vehicle_identical_count >= stale_data_identical_count_warning) {
-            stale_info = fmt::format(" [power meter data may be stale: last update {}ms ago, "
-                                     "{} consecutive identical publications]",
-                                     data_age_ms, shared_context.current_drawn_by_vehicle_identical_count);
+        if (data_age_ms > stale_data_age_warning_ms) {
+            stale_info = fmt::format(" [power meter data may be stale: last update {}ms ago]", data_age_ms);
             if (std::chrono::duration_cast<std::chrono::milliseconds>(now -
                                                                       internal_context.last_stale_powermeter_warning)
                     .count() >= stale_data_warning_interval_ms) {
