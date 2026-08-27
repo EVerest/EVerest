@@ -8,6 +8,7 @@ IMPLS = [
     "token_provider",
     "random_delay",
     "dc_external_derate",
+    "cable_check",
     "over_voltage",
     "voltage_plausibility",
 ]
@@ -38,6 +39,7 @@ cc_test(
         "tests/ErrorHandlingTest.cpp",
         "tests/IECStateMachineTest.cpp",
         "tests/OverVoltageMonitorTest.cpp",
+        "tests/PowerSupplyMeasurementWaiterTest.cpp",
         "tests/VoltagePlausibilityMonitorTest.cpp",
         # Test stub headers
         "tests/evse_board_supportIntfStub.hpp",
@@ -46,11 +48,13 @@ cc_test(
         "ErrorHandling.cpp",
         "IECStateMachine.cpp",
         "backtrace.cpp",
+        "cable_check/PowerSupplyMeasurementWaiter.cpp",
         "over_voltage/OverVoltageMonitor.cpp",
         "voltage_plausibility/VoltagePlausibilityMonitor.cpp",
         # Module headers
     ] + glob([
         "*.hpp",
+        "cable_check/*.hpp",
         "over_voltage/*.hpp",
         "voltage_plausibility/*.hpp",
     ]) + [
