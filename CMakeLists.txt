@@ -100,6 +100,7 @@ if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TEST
     set(ocpp_BUILD_TESTING ON)
     set(LIBEVSE_SECURITY_BUILD_TESTING ON)
     set(everest-evse_security_BUILD_TESTING ON)
+    set(everest-opcp_BUILD_TESTING ON)
     set(everest-sqlite_BUILD_TESTING ON)
     set(everest-timer_BUILD_TESTING ON)
     set(everest-log_BUILD_TESTING ON)

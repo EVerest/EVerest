@@ -39,6 +39,7 @@ set(EVEREST_LIB_SUBDIRS
     log
     ocpp
     ocpp_module_common
+    opcp
     run_application
     slac
     sqlite
@@ -64,6 +65,7 @@ set(EVEREST_LIB_DEPS_ocpp "log;timer;evse_security;sqlite;util")
 set(EVEREST_LIB_DEPS_iso15118 "cbv2g;util;tls")
 set(EVEREST_LIB_DEPS_ieee2030_1_1 "util")
 set(EVEREST_LIB_DEPS_tls "util;evse_security")
+set(EVEREST_LIB_DEPS_opcp "evse_security")
 set(EVEREST_LIB_DEPS_slac "tls;fsm")
 # Tier 3 (framework-coupled)
 set(EVEREST_LIB_DEPS_helpers "tls;framework")
