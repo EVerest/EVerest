@@ -20,12 +20,12 @@ active_modules:
       module:
         evse: 1
   iso15118_car:
-    module: PyEvJosev
+    module: Ev15118
     config_module:
       device: auto
       supported_DIN70121: false
       supported_ISO15118_2: false
-      supported_ISO15118_20_DC: true
+      supported_d20_energy_services: "DC,DC_BPT"
       tls_active: true
   evse_manager:
     module: EvseManager

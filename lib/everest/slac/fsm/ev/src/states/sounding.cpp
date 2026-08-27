@@ -64,6 +64,13 @@ FSMSimpleState::HandleEventReturnType SoundingState::handle_event(AllocatorType&
             return sa.create_simple<MatchRequestState>(ctx, session_parameters);
         }
         return sa.HANDLED_INTERNALLY;
+    } else if (ev == Event::FAILED) {
+        // callback() raises FAILED once TT_EV_atten_results expires without a
+        // CM_ATTEN_CHAR.IND. Without this branch the event is passed on, ends up
+        // unhandled, and the controller re-feeds immediately -- a busy loop that
+        // spins at 100% CPU holding feed_mtx, so reset/trigger_matching can never
+        // be serviced again and the EV is stuck for good.
+        return sa.create_simple<FailedState>(ctx);
     } else if (ev == Event::RESET) {
         return sa.create_simple<ResetState>(ctx);
     }
@@ -129,10 +136,45 @@ bool SoundingState::handle_valid_atten_char_ind() {
     // correct message type
     const auto& atten_char = ctx.slac_message.get_payload<slac::messages::cm_atten_char_ind>();
 
+    // [V2G3-A09-35]: a CM_ATTEN_CHAR.IND whose content deviates from the MME
+    // definition in ISO 15118-3 Table A.4 is invalid and shall be ignored --
+    // silently, without a CM_ATTEN_CHAR.RSP. Every field the table pins to a
+    // fixed value is checked here; the variable ones (NumSounds, ATTEN_PROFILE)
+    // are covered by [V2G3-A09-36] below.
+    if (atten_char.application_type != 0x00 or atten_char.security_type != 0x00) {
+        ctx.log_info("Ignoring CM_ATTEN_CHAR.IND with an invalid SLAC payload header");
+        return false;
+    }
+
+    // Table A.4: SOURCE_ADDRESS is the MAC of the EV Host that initiated the
+    // matching process, i.e. our own.
+    if (memcmp(atten_char.source_address, ctx.ev_host_mac.data(), sizeof(atten_char.source_address)) != 0) {
+        ctx.log_info("Ignoring CM_ATTEN_CHAR.IND with a foreign SOURCE_ADDRESS");
+        return false;
+    }
+
     const auto run_id_match =
         (memcmp(session_parameters.run_id, atten_char.run_id, sizeof(session_parameters.run_id)) == 0);
 
     if (run_id_match == false) {
+        return false;
+    }
+
+    // Table A.4 fixes both station ids to all-zero.
+    const auto all_zero = [](const uint8_t* data, size_t len) {
+        return std::all_of(data, data + len, [](uint8_t byte) { return byte == 0; });
+    };
+    if (not all_zero(atten_char.source_id, sizeof(atten_char.source_id)) or
+        not all_zero(atten_char.resp_id, sizeof(atten_char.resp_id))) {
+        ctx.log_info("Ignoring CM_ATTEN_CHAR.IND with a non-zero SOURCE_ID/RESP_ID");
+        return false;
+    }
+
+    // [V2G3-A09-36]: with NUM_SOUNDS zero the ATTEN_PROFILE has no significance
+    // and the whole message shall be ignored. An empty profile is equally
+    // meaningless -- Table A.4 sizes it at C_atten_group_count groups.
+    if (atten_char.num_sounds == 0 or atten_char.attenuation_profile.num_groups != slac::defs::AAG_LIST_LEN) {
+        ctx.log_info("Ignoring CM_ATTEN_CHAR.IND with an unusable attenuation profile");
         return false;
     }
 

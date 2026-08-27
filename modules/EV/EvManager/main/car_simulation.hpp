@@ -29,7 +29,15 @@ public:
     ~CarSimulation() = default;
 
     void reset() {
+        // The control pilot is the outside world, not simulation state: resetting the vehicle does
+        // not change what the wire currently reads. Dropping the last measurement back to
+        // Disconnected here would make wait_for_real_plugin -- which is level-triggered on purpose,
+        // so a vehicle that comes up on an already-energized pilot still starts a session -- wait
+        // for an edge that has already happened and never comes again.
+        const auto measured_cp_state = sim_data.actual_bsp_event;
         sim_data = SimulationData();
+        sim_data.actual_bsp_event = measured_cp_state;
+        sim_data.last_logged_wait_event = measured_cp_state;
         sim_data.battery_capacity_wh = config.dc_energy_capacity;
         double soc = config.soc;
         sim_data.battery_charge_wh = config.dc_energy_capacity * (soc / 100.0);
@@ -58,6 +66,10 @@ public:
         sim_data.state = state;
     }
 
+    types::board_support_common::Event get_bsp_event() const {
+        return sim_data.actual_bsp_event;
+    }
+
     void set_bsp_event(types::board_support_common::Event event) {
         sim_data.actual_bsp_event = event;
     }
@@ -77,6 +89,18 @@ public:
     void set_slac_state(types::slac::State slac_state) {
         sim_data.slac_state = slac_state;
     }
+
+    types::slac::State get_slac_state() const {
+        return sim_data.slac_state;
+    }
+
+    /// Stop a running matching process and leave the stack unmatched
+    /// ([V2G3-A09-123]/[V2G3-A09-126]).
+    void stop_matching();
+
+    /// Whether the measured control pilot is in Bx/Cx/Dx, the only states in
+    /// which a matching process may run ([V2G3-M06-13]/[V2G3-A09-123]).
+    bool cp_state_allows_matching() const;
 
     void set_iso_pwr_ready(bool iso_pwr_ready) {
         sim_data.iso_pwr_ready = iso_pwr_ready;
@@ -98,6 +122,29 @@ public:
         sim_data.v2g_finished = v2g_finished;
     }
 
+    // The V2G session ended while the vehicle is still plugged in. On the happy path the
+    // PowerDelivery(Stop) exchange has already brought us back here, but a session that ends any
+    // other way -- fatal ResponseCode, message timeout, pre-charge timeout, a charger that just
+    // stops answering -- must not leave the contactor closed and the control pilot at C/D:
+    // [V2G2-526] / [V2G2-728] have the EVCC stop the charging process and fall back to State B.
+    // Going back to PLUGGED_IN makes the state machine do both.
+    void end_charging_session() {
+        switch (sim_data.state) {
+        case SimState::CHARGING_REGULATED:
+        case SimState::CHARGING_FIXED:
+        case SimState::ISO_POWER_READY:
+        case SimState::ISO_CHARGING_REGULATED:
+            EVLOG_info << "V2G session ended - opening the contactor and returning the control pilot to state B";
+            sim_data.dc_power_on = false;
+            sim_data.state = SimState::PLUGGED_IN;
+            break;
+        default:
+            // UNPLUGGED / PLUGGED_IN need nothing; ERROR_E, DIODE_FAIL and BCB_TOGGLE are
+            // deliberate pilot states the session end must not override.
+            break;
+        }
+    }
+
     void set_dc_power_on(bool dc_power_on) {
         sim_data.dc_power_on = dc_power_on;
     }
@@ -105,7 +152,7 @@ public:
     void state_machine();
     bool sleep(const CmdArguments&, size_t);
     bool iec_wait_pwr_ready(const CmdArguments&);
-    bool iso_wait_pwm_is_running(const CmdArguments&);
+    bool iso_wait_pwm_is_running(const CmdArguments&, size_t loop_interval_ms);
     bool draw_power_regulated(const CmdArguments&);
     bool draw_power_fixed(const CmdArguments&);
     bool pause(const CmdArguments&);

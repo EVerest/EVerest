@@ -10,6 +10,7 @@ target_include_directories(slac_fsm_ev
 target_sources(slac_fsm_ev
     PRIVATE
         src/context.cpp
+        src/misc.cpp
         src/states/others.cpp
         src/states/sounding.cpp
 )

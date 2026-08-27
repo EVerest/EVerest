@@ -130,6 +130,17 @@ class PyEVJosevModule():
     def _handler_pause_charging(self, args):
         self._es.Pause = True
 
+    def _handler_abort_charging(self, args):
+        # CP state E/F or a plug-out: [V2G2-025] / [V2G2-728] want the session
+        # gone immediately, without the SessionStop exchange. Josev exposes no
+        # such entry point, so this falls back to its regular stop.
+        self._es.StopCharging = True
+
+    def _handler_cp_state_changed(self, args):
+        # Josev derives the control pilot state from its own board support
+        # connection, so the pushed state is informational here.
+        pass
+
     def _handler_set_fault(self, args):
         pass
 

@@ -2,6 +2,7 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #include <iso15118/io/poll_manager.hpp>
 
+#include <cerrno>
 #include <type_traits>
 #include <vector>
 
@@ -55,6 +56,11 @@ void PollManager::poll(int timeout_ms) {
     const auto ret = ::poll(pollfds.data(), pollfds.size(), timeout_ms);
 
     if (ret == -1) {
+        // EINTR (a signal interrupted the syscall) is transient: report no events this round
+        // instead of killing the controller loop. Anything else is a genuine poll failure.
+        if (errno == EINTR) {
+            return;
+        }
         log_and_throw("Poll failed\n");
     }
 

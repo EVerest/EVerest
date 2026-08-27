@@ -16,6 +16,18 @@ struct ResetState : public FSMSimpleState {
 
     void enter() final;
     CallbackReturnType callback() final;
+
+private:
+    /// Leave the EVSE's AVLN by resetting the NMK to a fresh random key, per
+    /// [V2G3-A09-121] / [HPGP] "Leaving an AVLN". No-op unless we joined one.
+    void leave_logical_network();
+
+    /// Ask the local modem who made it, so link detection knows which vendor
+    /// MME to use later. Sent once per FSM lifetime.
+    void probe_modem_vendor();
+
+    /// Pick up the answer to probe_modem_vendor().
+    void handle_vendor_probe_cnf();
 };
 
 struct InitSlacState : public FSMSimpleState {
@@ -80,10 +92,16 @@ struct JoinNetworkState : public FSMSimpleState {
 struct MatchedState : public FSMSimpleState {
     using FSMSimpleState::FSMSimpleState;
 
-    void enter() final {
-        ctx.log_info("Entered matched state");
-        ctx.signal_state("MATCHED");
-    }
+    void enter() final;
+
+    CallbackReturnType callback() final;
+
+    /// Poll state for the vendor LINK_STATUS request while matched.
+    bool link_status_req_sent{false};
+    /// The data link takes a moment to come up after the match; only a link
+    /// that was up and then went away is a loss of communication.
+    bool link_was_up{false};
+    std::chrono::time_point<std::chrono::steady_clock> link_up_deadline;
 
     HandleEventReturnType handle_event(AllocatorType&, Event) final;
 };
@@ -91,11 +109,15 @@ struct MatchedState : public FSMSimpleState {
 struct FailedState : public FSMSimpleState {
     using FSMSimpleState::FSMSimpleState;
 
-    void enter() final {
-        ctx.log_info("Entered failed state");
-    }
+    void enter() final;
 
+    CallbackReturnType callback() final;
     HandleEventReturnType handle_event(AllocatorType&, Event) final;
+
+private:
+    // [V2G3-A09-124]: when to restart the matching process, TT_matching_rate
+    // after this state was entered.
+    std::chrono::steady_clock::time_point retry_at{};
 };
 
 } // namespace slac::fsm::ev

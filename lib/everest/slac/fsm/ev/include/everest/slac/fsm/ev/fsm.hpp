@@ -16,6 +16,9 @@ enum class Event {
 
     // internal events
     FAILED,
+    // [V2G3-A09-123]: a failed matching process restarts itself for as long as
+    // TT_matching_repetition is still running.
+    RETRY_MATCHING,
 };
 
 using FSMReturnType = int;

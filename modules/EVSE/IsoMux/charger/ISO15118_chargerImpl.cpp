@@ -411,6 +411,17 @@ void ISO15118_chargerImpl::init() {
         }
     });
 
+    mod->r_iso2->subscribe_session_stop_res_sent([this](const auto action) {
+        if (not mod->selected_iso20()) {
+            publish_session_stop_res_sent(action);
+        }
+    });
+    mod->r_iso20->subscribe_session_stop_res_sent([this](const auto action) {
+        if (mod->selected_iso20()) {
+            publish_session_stop_res_sent(action);
+        }
+    });
+
     mod->r_iso2->subscribe_dlink_error([this]() {
         if (not mod->selected_iso20()) {
             publish_dlink_error(nullptr);
@@ -588,6 +599,13 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
     } else {
         mod->r_iso2->call_ac_contactor_closed(status);
     }
+}
+
+void ISO15118_chargerImpl::handle_cp_state_changed(types::iso15118::CpState& cp_state) {
+    // CP state is physical-layer information: broadcast to both children so whichever stack owns
+    // the session has it (the selection may also not have happened yet at plug-in time).
+    mod->r_iso20->call_cp_state_changed(cp_state);
+    mod->r_iso2->call_cp_state_changed(cp_state);
 }
 
 void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {

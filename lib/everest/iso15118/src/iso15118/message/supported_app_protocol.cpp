@@ -27,6 +27,12 @@ template <> void convert(const struct appHand_supportedAppProtocolReq& in, Suppo
     }
 }
 
+template <> void convert(const struct appHand_supportedAppProtocolRes& in, SupportedAppProtocolResponse& out) {
+    cb_convert_enum(in.ResponseCode, out.response_code);
+
+    CB2CPP_ASSIGN_IF_USED(in.SchemaID, out.schema_id);
+}
+
 template <> void convert(const SupportedAppProtocolRequest& in, struct appHand_supportedAppProtocolReq& out) {
     init_appHand_supportedAppProtocolReq(&out);
 

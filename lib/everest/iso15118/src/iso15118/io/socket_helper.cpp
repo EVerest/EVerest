@@ -2,6 +2,7 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/io/socket_helper.hpp>
 
+#include <cerrno>
 #include <cstring>
 #include <utility>
 
@@ -192,6 +193,23 @@ int create_tcp_listen_socket(sockaddr_in6 address, uint16_t port, int backlog, c
     }
 
     return guard.release();
+}
+
+bool restrict_source_port_range(int fd) {
+// The IANA dynamic/ephemeral port range required for the EVCC source port [V2G2-077/124].
+#ifndef IP_LOCAL_PORT_RANGE
+#define IP_LOCAL_PORT_RANGE 51
+#endif
+    static constexpr uint16_t LOW_PORT = 49152;
+    static constexpr uint16_t HIGH_PORT = 65535;
+    // Kernel encoding: low 16 bits = lower bound, high 16 bits = upper bound.
+    const uint32_t port_range = (static_cast<uint32_t>(HIGH_PORT) << 16) | static_cast<uint32_t>(LOW_PORT);
+    if (setsockopt(fd, IPPROTO_IP, IP_LOCAL_PORT_RANGE, &port_range, sizeof(port_range)) == -1) {
+        logf_warning("Could not restrict source port to %u-%u (IP_LOCAL_PORT_RANGE unsupported?): %s", LOW_PORT,
+                     HIGH_PORT, strerror(errno));
+        return false;
+    }
+    return true;
 }
 
 std::unique_ptr<char[]> sockaddr_in6_to_name(const sockaddr_in6& address) {

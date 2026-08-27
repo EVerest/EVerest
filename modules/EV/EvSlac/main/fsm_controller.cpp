@@ -54,7 +54,15 @@ void FSMController::run() {
             // call immediately again
             continue;
         } else if (feed_result.internal_error() || feed_result.unhandled_event()) {
-            // FIXME (aw): would need to log here!
+            // Falling through here without waiting would re-feed immediately and,
+            // because the state that produced the event is still current, produce
+            // the same result again: a busy loop that pins a core AND holds
+            // feed_mtx, so signal_reset()/signal_trigger_matching() block forever
+            // and the SLAC stack can never be recovered. Report it and wait for a
+            // real event instead.
+            ctx.log_error(feed_result.internal_error() ? "SLAC FSM internal error"
+                                                       : "SLAC FSM produced an event no state handled");
+            new_event_cv.wait(feed_lck, [this] { return new_event; });
         } else if (feed_result.has_value() == true) {
             const auto timeout = *feed_result;
             if (timeout == 0) {
