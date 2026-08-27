@@ -1,0 +1,35 @@
+# Integration test config for OpcpCertificateManager: the test fixtures rewrite the certificate paths and the
+# OPCP endpoint to a per-test store and the mock OPCP server.
+active_modules:
+  evse_security:
+    module: EvseSecurity
+    config_module:
+      csms_ca_bundle: ca/csms/CSMS_ROOT_CA.pem
+      mf_ca_bundle: ca/mf/MF_ROOT_CA.pem
+      mo_ca_bundle: ca/mo/MO_ROOT_CA.pem
+      v2g_ca_bundle: ca/v2g/V2G_ROOT_CA.pem
+      csms_leaf_cert_directory: client/csms
+      csms_leaf_key_directory: client/csms
+      secc_leaf_cert_directory: client/cso
+      secc_leaf_key_directory: client/cso
+  opcp_certificate_manager:
+    module: OpcpCertificateManager
+    config_module:
+      environment: custom
+      api_base_url: https://127.0.0.1:1
+      manage_iso15118_2: true
+      manage_iso15118_20: true
+      common_name_iso2: "DE*PNX*E12345*1"
+      common_name_iso20: "DE-PNX-S-00000000000000000000000000000001-1"
+      organization: "EVerest Test"
+      country: DE
+      renewal_threshold_days: 30
+      initial_delay_s: 1
+      check_interval_s: 3600
+      retry_backoff_s: 20
+      root_sync_interval_s: 3600
+    connections:
+      security:
+        - module_id: evse_security
+          implementation_id: main
+x-module-layout: {}
