@@ -124,28 +124,3 @@ TEST(HelpersTest, phase_rotation_handles_missing_optional_fields) {
     EXPECT_FALSE(rotated.voltage_V.has_value());
     EXPECT_FALSE(rotated.current_A.has_value());
 }
-
-// Helper to create a signed meter value tagged with the phase it was originally measured on
-static types::units_signed::SignedMeterValue signed_value(const std::string& phase) {
-    types::units_signed::SignedMeterValue value;
-    value.signed_meter_data = phase;
-    value.signing_method = "ECDSA-secp256r1-SHA256";
-    value.encoding_method = "Base64";
-    return value;
-}
-
-// Asserts that a per-phase measurement holding 1/2/3 now holds 2/3/1, i.e. was corrected for "TRS" wiring
-template <typename T> static void expect_rotated(const std::string& member, const T& measurement) {
-    SCOPED_TRACE(member);
-    EXPECT_FLOAT_EQ(*measurement.L1, 2.0f);
-    EXPECT_FLOAT_EQ(*measurement.L2, 3.0f);
-    EXPECT_FLOAT_EQ(*measurement.L3, 1.0f);
-}
-
-// Same, for the signed measurements whose per-phase values are tagged "L1"/"L2"/"L3"
-template <typename T> static void expect_rotated_signed(const std::string& member, const T& measurement) {
-    SCOPED_TRACE(member);
-    EXPECT_EQ(measurement.L1->signed_meter_data, "L2");
-    EXPECT_EQ(measurement.L2->signed_meter_data, "L3");
-    EXPECT_EQ(measurement.L3->signed_meter_data, "L1");
-}
