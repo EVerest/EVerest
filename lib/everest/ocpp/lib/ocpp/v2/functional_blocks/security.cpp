@@ -265,6 +265,13 @@ void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certi
         should_use_tpm =
             this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::UseTPMSeccLeafCertificate)
                 .value_or(false);
+        if (this->context.ocpp_version == OcppProtocolVersion::v21) {
+            // A02.FR.27: name the PKI the SECC leaf shall be issued under (2.0.1 lacks the field)
+            const auto root_hash = this->get_secc_root_certificate_hash(certificate_signing_use);
+            if (root_hash.has_value()) {
+                req.hashRootCertificate = ocpp::evse_security_conversions::to_ocpp_v2(root_hash.value());
+            }
+        }
     }
 
     const auto result = this->context.evse_security.generate_certificate_signing_request(
@@ -305,7 +312,11 @@ void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call
     CertificateSignedResponse response;
     response.status = CertificateSignedStatusEnum::Rejected;
 
-    if (call.msg.requestId.has_value() and call.msg.requestId != this->awaited_sign_certificate_request_id) {
+    const auto awaited_certificate_signing_use = this->awaited_certificate_signing_use_enum;
+    const bool request_id_matches =
+        call.msg.requestId.has_value() and call.msg.requestId == this->awaited_sign_certificate_request_id;
+
+    if (call.msg.requestId.has_value() and not request_id_matches) {
         // A02.FR.26: a CertificateSigned.req with an unknown requestId is rejected. The outstanding request (if any)
         // stays outstanding, so the CSMS can still answer it.
         EVLOG_warning << "Rejecting CertificateSigned.req with unknown requestId " << call.msg.requestId.value()
@@ -325,13 +336,37 @@ void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call
     const auto certificate_chain = call.msg.certificateChain.get();
     ocpp::CertificateSigningUseEnum cert_signing_use; // NOLINT(cppcoreguidelines-init-variables): initialized below
 
-    if (!call.msg.certificateType.has_value() or
-        call.msg.certificateType.value() == CertificateSigningUseEnum::ChargingStationCertificate) {
+    if (!call.msg.certificateType.has_value()) {
+        // The CSMS is only recommended to echo the type (A02.FR.14). Without it, the certificate answers the
+        // SignCertificate.req we are waiting for; the spec's "used for both connections" fallback only applies when
+        // nothing is outstanding, and then the CSMS client certificate is the only leaf a chain could be for that
+        // was not requested with a type.
+        cert_signing_use =
+            awaited_certificate_signing_use.value_or(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+        if (awaited_certificate_signing_use.has_value()) {
+            EVLOG_info << "CertificateSigned.req without certificateType, installing as the awaited "
+                       << ocpp::conversions::certificate_signing_use_enum_to_string(cert_signing_use);
+        }
+    } else if (call.msg.certificateType.value() == CertificateSigningUseEnum::ChargingStationCertificate) {
         cert_signing_use = ocpp::CertificateSigningUseEnum::ChargingStationCertificate;
     } else if (call.msg.certificateType.value() == CertificateSigningUseEnum::V2G20Certificate) {
         cert_signing_use = ocpp::CertificateSigningUseEnum::V2G20Certificate;
     } else {
         cert_signing_use = ocpp::CertificateSigningUseEnum::V2GCertificate;
+    }
+
+    if (request_id_matches and awaited_certificate_signing_use.has_value() and
+        cert_signing_use != awaited_certificate_signing_use.value()) {
+        // A matching requestId proves which SignCertificate.req this answers, so its type wins over a
+        // contradicting certificateType
+        EVLOG_warning << "CertificateSigned.req with requestId " << call.msg.requestId.value()
+                      << " carries certificateType "
+                      << ocpp::conversions::certificate_signing_use_enum_to_string(cert_signing_use)
+                      << " but answers a SignCertificate.req for "
+                      << ocpp::conversions::certificate_signing_use_enum_to_string(
+                             awaited_certificate_signing_use.value())
+                      << ", installing as the latter";
+        cert_signing_use = awaited_certificate_signing_use.value();
     }
 
     const bool is_secc_leaf = (cert_signing_use == ocpp::CertificateSigningUseEnum::V2GCertificate) or
@@ -425,6 +460,38 @@ void Security::handle_sign_certificate_response(CallResult<SignCertificateRespon
         this->reset_certificate_signing_state();
         EVLOG_warning << "SignCertificate.req has not been accepted by CSMS";
     }
+}
+
+std::optional<ocpp::CertificateHashDataType>
+Security::get_secc_root_certificate_hash(const ocpp::CertificateSigningUseEnum& certificate_signing_use) {
+    const auto roots = this->context.evse_security.get_installed_certificates({CertificateType::V2GRootCertificate});
+    if (roots.empty()) {
+        return std::nullopt;
+    }
+
+    // Renewal: the leaf's chain identifies the root. The OCSP hash data of every chain element carries the hashes of
+    // its issuer's name and key; for the topmost element that is the root, and a self-signed root's own hash data
+    // holds the same two hashes.
+    const auto leaf = this->context.evse_security.get_leaf_certificate_info(certificate_signing_use, true);
+    if (leaf.status == GetCertificateInfoStatus::Accepted and leaf.info.has_value()) {
+        for (const auto& chain_element : leaf.info->ocsp) {
+            for (const auto& root : roots) {
+                if (root.certificateHashData.issuerNameHash == chain_element.hash.issuerNameHash and
+                    root.certificateHashData.issuerKeyHash == chain_element.hash.issuerKeyHash) {
+                    return root.certificateHashData;
+                }
+            }
+        }
+    }
+
+    // Initial provisioning (or a leaf under a root that is no longer installed): only unambiguous with one root
+    if (roots.size() == 1) {
+        return roots.front().certificateHashData;
+    }
+    EVLOG_info << roots.size() << " V2G roots installed and none identified as the issuer of the "
+               << ocpp::conversions::certificate_signing_use_enum_to_string(certificate_signing_use)
+               << " leaf, leaving the PKI choice to the CSMS (no hashRootCertificate)";
+    return std::nullopt;
 }
 
 void Security::reset_certificate_signing_state() {
