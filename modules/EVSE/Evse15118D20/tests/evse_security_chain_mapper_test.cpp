@@ -200,6 +200,12 @@ TEST(CertStoreUpdateFilter, RelevantForV2gLeaf) {
     ev.leaf_certificate_type = types::evse_security::LeafCertificateType::V2G;
     EXPECT_TRUE(module::charger::is_relevant_certificate_store_update(ev));
 }
+TEST(CertStoreUpdateFilter, RelevantForV2g20Leaf) {
+    types::evse_security::CertificateStoreUpdate ev{};
+    ev.leaf_certificate_type = types::evse_security::LeafCertificateType::V2G20;
+    EXPECT_TRUE(module::charger::is_relevant_certificate_store_update(ev));
+}
+
 TEST(CertStoreUpdateFilter, RelevantForV2gAndMoCa) {
     types::evse_security::CertificateStoreUpdate v2g{};
     v2g.ca_certificate_type = types::evse_security::CaCertificateType::V2G;

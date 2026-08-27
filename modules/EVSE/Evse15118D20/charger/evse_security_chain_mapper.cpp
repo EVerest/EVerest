@@ -35,7 +35,8 @@ map_valid_chains(const types::evse_security::GetCertificateFullInfoResult& resul
     }
 
     if (result.info.empty()) {
-        EVLOG_warning << "get_all_valid_certificates_info returned no certificate info";
+        // normal when only one of the two SECC leaf types (V2G / V2G20) is installed
+        EVLOG_debug << "get_all_valid_certificates_info returned no certificate info";
         return {};
     }
 
@@ -95,8 +96,10 @@ map_valid_chains(const types::evse_security::GetCertificateFullInfoResult& resul
 }
 
 bool is_relevant_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event) {
-    const bool relevant_leaf = event.leaf_certificate_type.has_value() &&
-                               event.leaf_certificate_type.value() == types::evse_security::LeafCertificateType::V2G;
+    const bool relevant_leaf =
+        event.leaf_certificate_type.has_value() &&
+        (event.leaf_certificate_type.value() == types::evse_security::LeafCertificateType::V2G ||
+         event.leaf_certificate_type.value() == types::evse_security::LeafCertificateType::V2G20);
     const bool relevant_ca = event.ca_certificate_type.has_value() &&
                              (event.ca_certificate_type.value() == types::evse_security::CaCertificateType::V2G ||
                               event.ca_certificate_type.value() == types::evse_security::CaCertificateType::MO);

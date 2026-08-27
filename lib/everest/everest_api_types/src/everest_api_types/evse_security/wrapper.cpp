@@ -94,6 +94,8 @@ LeafCertificateType_Internal to_internal_api(LeafCertificateType_External const&
         return TarT::MF;
     case SrcT::MO:
         return TarT::MO;
+    case SrcT::V2G20:
+        return TarT::V2G20;
     }
     throw std::out_of_range(
         "Unexpected value for everest::lib::API::V1_0::types::evse_security::LeafCertificateType_External");
@@ -111,6 +113,8 @@ LeafCertificateType_External to_external_api(LeafCertificateType_Internal const&
         return TarT::MF;
     case SrcT::MO:
         return TarT::MO;
+    case SrcT::V2G20:
+        return TarT::V2G20;
     }
     throw std::out_of_range(
         "Unexpected value for everest::lib::API::V1_0::types::evse_security::LeafCertificateType_Internal");
