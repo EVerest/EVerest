@@ -1,0 +1,142 @@
+# MCS ChargeBridge, EVSE side, FULL ISO 15118-20 SESSION stack (HLC-01).
+# The step up from config-bringup-mcs-evse.yaml: EvseManager + the -20 SECC replace the
+# button panels; the power train is simulated (DCSupplySimulator + IMDSimulator), so no
+# real power path is involved - but note that a session DOES assert allow_power_on toward
+# the ChargeBridge, which closes the (unloaded) relays. See TEST_PLAN.md PWR-01/EMG-03
+# for what is still review-gated before anything power-carrying.
+#
+# Companion pieces (see run-mcs-evse-session.sh, which starts all of it):
+#  - pionix_chargebridge with applications/pionix_chargebridge/config/config-CB-MCS-EVSE.yaml
+#    (charge_bridge.type EVSE, plc.carrier firmware, TAP "cb_plc", evse_bsp.module_id "cb_bsp")
+#  - the EV side runs as a second EVerest instance from config-session-mcs-ev.yaml inside the
+#    netns (run-mcs-ev-session-netns.sh) so SDP/TCP genuinely cross the SPE wire
+#
+# Auth is a dummy chain (TOKEN1 auto-accepted); certificates come from the dist's generated
+# test PKI (EvseSecurity defaults).
+settings:
+  telemetry_enabled: false
+active_modules:
+  cb_bsp:
+    module: evse_board_support_API
+    config_module:
+      cfg_communication_check_to_s: 0
+  mcs_datalink:
+    module: McsDataLink
+    config_implementation:
+      main:
+        device: cb_plc
+  iso15118_charger:
+    module: Evse15118D20
+    config_module:
+      # Bind the SDP server / TCP endpoint to the MCS TAP, not "auto": the bench host has
+      # other ipv6 interfaces and the EV must find us on the SPE link.
+      device: cb_plc
+    connections:
+      security:
+        - module_id: evse_security
+          implementation_id: main
+  evse_manager:
+    module: EvseManager
+    config_module:
+      connector_id: 1
+      evse_id: DE*PNX*E12345*1
+      evse_id_din: 49A80737A45678
+      connector_type: cMCS
+      charge_mode: DC
+      payment_enable_contract: false
+      session_logging: true
+      session_logging_xml: false
+      session_logging_path: /tmp/everest-logs
+    connections:
+      bsp:
+        - module_id: cb_bsp
+          implementation_id: main
+      powermeter_car_side:
+        - module_id: powersupply_dc
+          implementation_id: powermeter
+      slac:
+        - module_id: mcs_datalink
+          implementation_id: main
+      hlc:
+        - module_id: iso15118_charger
+          implementation_id: charger
+      powersupply_DC:
+        - module_id: powersupply_dc
+          implementation_id: main
+      imd:
+        - module_id: imd
+          implementation_id: main
+  powersupply_dc:
+    module: DCSupplySimulator
+  imd:
+    module: IMDSimulator
+    config_implementation:
+      main:
+        selftest_success: true
+  auth:
+    module: Auth
+    config_module:
+      connection_timeout: 60
+      selection_algorithm: FindFirst
+    connections:
+      token_provider:
+        - module_id: token_provider
+          implementation_id: main
+      token_validator:
+        - module_id: token_validator
+          implementation_id: main
+      evse_manager:
+        - module_id: evse_manager
+          implementation_id: evse
+  token_provider:
+    module: DummyTokenProvider
+    config_implementation:
+      main:
+        token: TOKEN1
+    connections:
+      evse:
+        - module_id: evse_manager
+          implementation_id: evse
+  token_validator:
+    module: DummyTokenValidator
+    config_implementation:
+      main:
+        validation_result: Accepted
+        validation_reason: Token seems valid
+        sleep: 0.25
+  evse_security:
+    module: EvseSecurity
+    config_module:
+      private_key_password: "123456"
+  energy_manager:
+    module: EnergyManager
+    config_module:
+      schedule_total_duration: 1
+      schedule_interval_duration: 60
+      debug: false
+    connections:
+      energy_trunk:
+        - module_id: grid_connection_point
+          implementation_id: energy_grid
+  grid_connection_point:
+    module: EnergyNode
+    config_module:
+      fuse_limit_A: 4000.0
+      phase_count: 3
+    connections:
+      price_information: []
+      energy_consumer:
+        - module_id: evse_energy_sink
+          implementation_id: energy_grid
+  evse_energy_sink:
+    module: EnergyNode
+    mapping:
+      module:
+        evse: 1
+    config_module:
+      fuse_limit_A: 4000.0
+      phase_count: 3
+    connections:
+      energy_consumer:
+        - module_id: evse_manager
+          implementation_id: energy_grid

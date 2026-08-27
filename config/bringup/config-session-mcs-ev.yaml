@@ -1,0 +1,72 @@
+# MCS ChargeBridge, EV side, FULL ISO 15118-20 SESSION stack (HLC-01).
+# The step up from config-bringup-mcs-ev.yaml: EvManager + the C++ EVCC (Ev15118) replace
+# the button panels. Runs inside the network namespace (run-mcs-ev-session-netns.sh) so
+# SDP, TCP and neighbour discovery genuinely cross the SPE wire.
+#
+# Companion pieces:
+#  - pionix_chargebridge with applications/pionix_chargebridge/config/config-CB-MCS-EV.yaml
+#    (charge_bridge.type EV, TAP "cb_plc_ev", ev_bsp.module_id "ev_bsp")
+#  - the EVSE side runs from config-session-mcs-evse.yaml in the root namespace
+#
+# Driving the session: auto_exec true - the EV behaves like a real truck and fires the
+# session sequence itself a few seconds after its stack is up. This matters: the SECC arms
+# an 18 s V2G communication-setup window the moment the EV daemon's PHY comes up, and a
+# manual trigger reliably loses that race (bench-found 2026-08-27). One session runs per
+# EV-side manager start; for the next one, restart the manager pane.
+# Manual alternative (auto_exec false): EvManager subscribes the nodered-style EXTERNAL
+# topic (car_simulatorImpl::subscribe_to_external_mqtt, keyed on connector_id = 1):
+#   mosquitto_pub -t 'everest_external/nodered/1/carsim/cmd/execute_charging_session' \
+#     -m 'iso_wait_slac_matched;iso_start_v2g_session DC;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 30;iso_wait_v2g_session_stopped;unplug'
+# (inside the netns, add -h $MQTT_SERVER_ADDRESS - the broker sits on the veth there).
+# NOTE: "DC" here is EvManager's energy-mode word for the DC family; which -20 energy
+# service is actually requested comes from iso15118_car's supported_d20_energy_services
+# below (MCS first, plain DC as fallback while MCS service selection is fresh).
+settings:
+  telemetry_enabled: false
+  mqtt_everest_prefix: everest_mcs_ev
+active_modules:
+  ev_bsp:
+    module: ev_board_support_API
+    config_module:
+      cfg_communication_check_to_s: 0
+  mcs_ev_datalink:
+    module: McsEvDataLink
+    config_implementation:
+      main:
+        device: cb_plc_ev
+  iso15118_car:
+    module: Ev15118
+    config_module:
+      device: cb_plc_ev
+      supported_d20_energy_services: "MCS,DC"
+      supported_DIN70121: false
+      supported_ISO15118_2: false
+      tls_active: true
+      enable_tls_1_3: true
+      # Test PKI: the SECC's leaf is not anchored in a V2G root this EVCC ships with.
+      verify_server_certificate: false
+  ev_manager:
+    module: EvManager
+    config_module:
+      connector_id: 1
+      auto_enable: true
+      auto_exec: true
+      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session DC;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 30;iso_wait_v2g_session_stopped;unplug
+      dc_target_current: 20
+      dc_target_voltage: 400
+    connections:
+      ev_board_support:
+        - module_id: ev_bsp
+          implementation_id: main
+      ev:
+        - module_id: iso15118_car
+          implementation_id: ev
+      slac:
+        - module_id: mcs_ev_datalink
+          implementation_id: main
+  ev_api:
+    module: EvAPI
+    connections:
+      ev_manager:
+        - module_id: ev_manager
+          implementation_id: ev_manager

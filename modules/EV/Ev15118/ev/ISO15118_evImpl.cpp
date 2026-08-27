@@ -193,6 +193,12 @@ iso15118::message_20::datatypes::ServiceCategory parse_service_category(const st
     if (value == "DC_BPT") {
         return ServiceCategory::DC_BPT;
     }
+    if (value == "MCS") {
+        return ServiceCategory::MCS;
+    }
+    if (value == "MCS_BPT") {
+        return ServiceCategory::MCS_BPT;
+    }
     throw std::invalid_argument("Unsupported entry in supported_d20_energy_services: " + value);
 }
 

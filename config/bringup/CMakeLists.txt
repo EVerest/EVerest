@@ -41,6 +41,7 @@ install(
 # so they do not go through generate_config_tmux_run_script / run_tmux_helper.sh
 install(
     FILES "run-mcs-evse-bringup.sh" "run-mcs-ev-bringup.sh"
+          "run-mcs-evse-session.sh" "run-mcs-ev-session.sh"
     DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/everest"
     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )
