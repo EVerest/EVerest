@@ -418,6 +418,40 @@ TEST_F(EvseSecurityTestsDualAlgorithmLeaf, verify_v2g_and_v2g20_are_distinct_lea
     ASSERT_EQ(ocsp.ocsp_request_data_list.size(), 4);
 }
 
+TEST_F(EvseSecurityTests, verify_failed_csr_deletes_its_key) {
+    const auto csr_a =
+        this->evse_security->generate_certificate_signing_request(LeafCertificateType::V2G, "DE", "Pionix", "SECC-A");
+    const auto csr_b =
+        this->evse_security->generate_certificate_signing_request(LeafCertificateType::V2G20, "DE", "Pionix", "SECC-B");
+    ASSERT_EQ(csr_a.status, GetCertificateSignRequestStatus::Accepted);
+    ASSERT_EQ(csr_b.status, GetCertificateSignRequestStatus::Accepted);
+    ASSERT_EQ(this->evse_security->managed_csr.size(), 2);
+    std::vector<fs::path> keys;
+    for (const auto& [path, _] : this->evse_security->managed_csr) {
+        keys.push_back(path);
+        ASSERT_TRUE(fs::exists(path));
+    }
+
+    // Only the key belonging to the failed CSR goes away
+    this->evse_security->certificate_signing_request_failed(csr_a.csr.value(), LeafCertificateType::V2G);
+    ASSERT_EQ(this->evse_security->managed_csr.size(), 1);
+    int existing = 0;
+    for (const auto& key : keys) {
+        existing += fs::exists(key) ? 1 : 0;
+    }
+    ASSERT_EQ(existing, 1);
+    ASSERT_TRUE(fs::exists(this->evse_security->managed_csr.begin()->first));
+
+    // Unknown CSRs and garbage are ignored
+    this->evse_security->certificate_signing_request_failed("not a csr", LeafCertificateType::V2G);
+    ASSERT_EQ(this->evse_security->managed_csr.size(), 1);
+    this->evse_security->certificate_signing_request_failed(csr_a.csr.value(), LeafCertificateType::V2G);
+    ASSERT_EQ(this->evse_security->managed_csr.size(), 1);
+
+    this->evse_security->certificate_signing_request_failed(csr_b.csr.value(), LeafCertificateType::V2G20);
+    ASSERT_TRUE(this->evse_security->managed_csr.empty());
+}
+
 TEST_F(EvseSecurityTests, verify_v2g20_csr_uses_secp521r1) {
     // ISO 15118-20 mandates secp521r1 (or Ed448) for the SECC TLS leaf, so a V2G20 CSR carries a P-521 key
     const auto csr =

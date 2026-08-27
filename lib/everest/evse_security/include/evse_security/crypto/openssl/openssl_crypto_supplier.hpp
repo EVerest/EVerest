@@ -38,6 +38,8 @@ public:
                                   const std::optional<fs::path> dir_path, const std::optional<fs::path> file_path);
     static KeyValidationResult x509_check_private_key(X509Handle* handle, std::string private_key,
                                                       std::optional<std::string> password);
+    static KeyValidationResult x509_csr_check_private_key(const std::string& csr, std::string private_key,
+                                                          std::optional<std::string> password);
     static bool x509_verify_signature(X509Handle* handle, const std::vector<std::uint8_t>& signature,
                                       const std::vector<std::uint8_t>& data);
 

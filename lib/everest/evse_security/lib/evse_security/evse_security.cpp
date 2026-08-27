@@ -1256,7 +1256,25 @@ bool EvseSecurity::is_ca_certificate_installed_internal(CaCertificateType certif
 }
 
 void EvseSecurity::certificate_signing_request_failed(const std::string& csr, LeafCertificateType certificate_type) {
-    // TODO(ioan): delete the pairing key of the CSR
+    const std::lock_guard<std::mutex> guard(EvseSecurity::security_mutex);
+
+    // The key of an unanswered CSR is only known by path (managed_csr); find the one the CSR was built with
+    for (auto it = managed_csr.begin(); it != managed_csr.end(); ++it) {
+        std::string private_key;
+        if (false == filesystem_utils::read_from_file(it->first, private_key)) {
+            continue;
+        }
+        if (CryptoSupplier::x509_csr_check_private_key(csr, private_key, this->private_key_password) !=
+            KeyValidationResult::Valid) {
+            continue;
+        }
+        EVLOG_info << "Deleting private key of failed "
+                   << conversions::leaf_certificate_type_to_string(certificate_type) << " CSR: " << it->first;
+        filesystem_utils::delete_file(it->first);
+        managed_csr.erase(it);
+        return;
+    }
+    EVLOG_debug << "No managed private key found for the failed CSR";
 }
 
 GetCertificateSignRequestResult

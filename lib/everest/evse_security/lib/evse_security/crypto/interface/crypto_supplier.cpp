@@ -93,6 +93,12 @@ KeyValidationResult AbstractCryptoSupplier::x509_check_private_key(X509Handle* /
     default_crypto_supplier_usage_error() return KeyValidationResult::Unknown;
 }
 
+KeyValidationResult AbstractCryptoSupplier::x509_csr_check_private_key(const std::string& /*csr*/,
+                                                                       std::string /*private_key*/,
+                                                                       std::optional<std::string> /*password*/) {
+    default_crypto_supplier_usage_error() return KeyValidationResult::Unknown;
+}
+
 bool AbstractCryptoSupplier::x509_verify_signature(X509Handle* /*handle*/,
                                                    const std::vector<std::uint8_t>& /*signature*/,
                                                    const std::vector<std::uint8_t>& /*data*/) {

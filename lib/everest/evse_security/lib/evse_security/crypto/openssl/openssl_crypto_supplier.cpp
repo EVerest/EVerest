@@ -641,6 +641,32 @@ KeyValidationResult OpenSSLSupplier::x509_check_private_key(X509Handle* handle, 
     return result;
 }
 
+KeyValidationResult OpenSSLSupplier::x509_csr_check_private_key(const std::string& csr, std::string private_key,
+                                                                std::optional<std::string> password) {
+    const BIO_ptr csr_bio(BIO_new_mem_buf(csr.c_str(), -1));
+    const X509_REQ_ptr req(PEM_read_bio_X509_REQ(csr_bio.get(), nullptr, nullptr, nullptr));
+    if (!req) {
+        return KeyValidationResult::Unknown;
+    }
+    EVP_PKEY* csr_key = X509_REQ_get0_pubkey(req.get());
+    if (csr_key == nullptr) {
+        return KeyValidationResult::Unknown;
+    }
+
+    {
+        const OpenSSLProvider provider; // ensure providers are loaded
+    }
+
+    const BIO_ptr key_bio(BIO_new_mem_buf(private_key.c_str(), -1));
+    const EVP_PKEY_ptr evp_pkey(
+        PEM_read_bio_PrivateKey(key_bio.get(), nullptr, nullptr, (void*)password.value_or("").c_str()));
+    if (!evp_pkey) {
+        return KeyValidationResult::KeyLoadFailure;
+    }
+
+    return EVP_PKEY_eq(csr_key, evp_pkey.get()) == 1 ? KeyValidationResult::Valid : KeyValidationResult::Invalid;
+}
+
 bool OpenSSLSupplier::x509_verify_signature(X509Handle* handle, const std::vector<std::uint8_t>& signature,
                                             const std::vector<std::uint8_t>& data) {
     {

@@ -373,6 +373,7 @@ private:
     FRIEND_TEST(EvseSecurityTests, verify_full_filesystem);
     FRIEND_TEST(EvseSecurityTests, verify_expired_csr_deletion);
     FRIEND_TEST(EvseSecurityTests, verify_v2g20_csr_uses_secp521r1);
+    FRIEND_TEST(EvseSecurityTests, verify_failed_csr_deletes_its_key);
     FRIEND_TEST(EvseSecurityTests, verify_ocsp_garbage_collect);
     FRIEND_TEST(EvseSecurityTestsExpired, verify_expired_leaf_deletion);
 #endif

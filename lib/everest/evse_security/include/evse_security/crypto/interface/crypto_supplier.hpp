@@ -70,6 +70,10 @@ public:
     static KeyValidationResult x509_check_private_key(X509Handle* handle, std::string private_key,
                                                       std::optional<std::string> password);
 
+    /// @brief Checks if the PEM private key is the one the PEM certificate signing request was generated with
+    static KeyValidationResult x509_csr_check_private_key(const std::string& csr, std::string private_key,
+                                                          std::optional<std::string> password);
+
     /// @brief Verifies the signature with the certificate handle public key against the data
     static bool x509_verify_signature(X509Handle* handle, const std::vector<std::uint8_t>& signature,
                                       const std::vector<std::uint8_t>& data);
