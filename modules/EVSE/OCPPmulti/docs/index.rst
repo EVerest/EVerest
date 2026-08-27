@@ -626,9 +626,10 @@ checks whether these certificates are missing or expire within 30 days and, if s
 **SignCertificate.req** towards the CSMS (a missing certificate is requested the same way as an expiring one, which
 is how the initial certificate is provisioned). For the CSMS leaf certificate this is only done when security
 profile 3 is used; for the ISO 15118-2 SECC leaf only when Plug&Charge is enabled via
-**ISO15118Ctrlr.V2GCertificateInstallationEnabled**; for the ISO 15118-20 SECC leaf additionally only when
-**InternalCtrlr.V2G20CertificateInstallationEnabled** is set and the connection is OCPP 2.1 (a 2.0.1 CSMS does not
-know **V2G20Certificate**). Expiry is re-checked every 12 hours
+**ISO15118Ctrlr.V2GCertificateInstallationEnabled**; for the ISO 15118-20 SECC leaf additionally only when the
+connection is OCPP 2.1 (a 2.0.1 CSMS does not know **V2G20Certificate**) and
+**InternalCtrlr.V2G20CertificateInstallationEnabled** (default ``true``) has not been switched off for a 2.1 CSMS that
+does not support **V2G20Certificate**. Expiry is re-checked every 12 hours
 (``V2GCertificateExpireCheckIntervalSeconds``); the two SECC leafs are checked and renewed independently, and
 because only one **SignCertificate.req** may be outstanding, when both are due the -2 leaf is requested first and the
 -20 leaf on the next check. On OCPP 2.1 every **SignCertificate.req** carries a ``requestId`` and a

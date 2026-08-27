@@ -651,14 +651,15 @@ void Security::scheduled_check_client_certificate_expiration() {
 bool Security::v2g20_certificate_installation_enabled() const {
     // The ISO 15118-20 SECC leaf is a separate certificate (TLS 1.3, secp521r1) requested with the OCPP 2.1
     // certificateType V2G20Certificate. A 2.0.1 CSMS does not know that enum, so it is only maintained on an
-    // OCPP 2.1 connection, and only when explicitly enabled on top of V2GCertificateInstallationEnabled.
+    // OCPP 2.1 connection, on top of V2GCertificateInstallationEnabled, unless V2G20CertificateInstallationEnabled
+    // (default true, also when absent from the device model) is switched off for a CSMS that lacks the enum.
     return this->context.ocpp_version == OcppProtocolVersion::v21 and
            this->context.device_model
                .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
                .value_or(false) and
            this->context.device_model
                .get_optional_value<bool>(ControllerComponentVariables::V2G20CertificateInstallationEnabled)
-               .value_or(false);
+               .value_or(true);
 }
 
 bool Security::check_secc_certificate_expiration(const ocpp::CertificateSigningUseEnum& certificate_signing_use) {
