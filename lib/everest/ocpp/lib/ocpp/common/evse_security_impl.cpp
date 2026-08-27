@@ -385,6 +385,8 @@ evse_security::LeafCertificateType from_ocpp(LeafCertificateType other) {
         return evse_security::LeafCertificateType::CSMS;
     case LeafCertificateType::MF:
         return evse_security::LeafCertificateType::MF;
+    case LeafCertificateType::V2G20:
+        return evse_security::LeafCertificateType::V2G20;
     }
     throw EnumConversionException("Could not convert evse_security::CaCertificateType to CaCertificateType");
 }
@@ -398,9 +400,7 @@ evse_security::LeafCertificateType from_ocpp(CertificateSigningUseEnum other) {
     case CertificateSigningUseEnum::ManufacturerCertificate:
         return evse_security::LeafCertificateType::MF;
     case CertificateSigningUseEnum::V2G20Certificate:
-        // FIXME: Add V2G20Certificate to evse_security::LeafCertificateType
-        throw EnumConversionException(
-            "Could not convert CertificateSigningUseEnum::V2G20Certificate to evse_security::LeafCertificateType");
+        return evse_security::LeafCertificateType::V2G20;
     }
     throw EnumConversionException("Could not convert CertificateSigningUseEnum to evse_security::LeafCertificateType");
 }

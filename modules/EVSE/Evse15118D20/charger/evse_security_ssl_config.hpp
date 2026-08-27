@@ -42,7 +42,7 @@ map_valid_chains(const types::evse_security::GetCertificateFullInfoResult& resul
 iso15118::config::ChainTlsVersion classify_secc_leaf(const std::optional<std::string>& public_key_algorithm);
 
 /// \brief True when a certificate_store_update event affects the V2G SSL config:
-/// a V2G leaf event, or a V2G/MO CA event. False otherwise (incl. an event carrying
+/// a V2G / V2G20 leaf event, or a V2G/MO CA event. False otherwise (incl. an event carrying
 /// neither leaf nor CA type). Cheap gate evaluated before any evse_security RPC.
 bool is_relevant_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event);
 

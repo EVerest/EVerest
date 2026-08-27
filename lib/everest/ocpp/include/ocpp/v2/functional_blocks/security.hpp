@@ -42,6 +42,9 @@ public:
     virtual std::optional<StatusInfo>
     is_sign_certificate_possible(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const = 0;
     virtual void stop_certificate_signed_timer() = 0;
+    /// \brief Whether the ISO 15118-20 SECC leaf (OCPP 2.1 V2G20Certificate) is maintained next to the ISO 15118-2
+    /// one: OCPP 2.1 connection, V2GCertificateInstallationEnabled and V2G20CertificateInstallationEnabled
+    virtual bool v2g20_certificate_installation_enabled() const = 0;
     virtual void init_certificate_expiration_check_timers() = 0;
     virtual void stop_certificate_expiration_check_timers() = 0;
 
@@ -118,6 +121,14 @@ private:
     std::optional<StatusInfo> check_certificate_install_allowed(InstallCertificateUseEnum cert_type) const;
     void scheduled_check_client_certificate_expiration();
     void scheduled_check_v2g_certificate_expiration();
+
+    /// \brief Check one SECC leaf (V2GCertificate or V2G20Certificate) and request a new one when it is missing or
+    /// expires within 30 days
+    /// \return true when a SignCertificate.req was sent
+    bool check_secc_certificate_expiration(const ocpp::CertificateSigningUseEnum& certificate_signing_use);
+
+public:
+    bool v2g20_certificate_installation_enabled() const override;
 };
 } // namespace v2
 } // namespace ocpp

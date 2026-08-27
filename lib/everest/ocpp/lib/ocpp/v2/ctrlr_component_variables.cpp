@@ -239,6 +239,12 @@ const ComponentVariable UseTPMSeccLeafCertificate = {
         "UseTPMSeccLeafCertificate",
     }),
 };
+const ComponentVariable V2G20CertificateInstallationEnabled = {
+    ControllerComponents::InternalCtrlr,
+    std::optional<Variable>({
+        "V2G20CertificateInstallationEnabled",
+    }),
+};
 const ComponentVariable VerifyCsmsAllowWildcards = {
     ControllerComponents::InternalCtrlr,
     std::optional<Variable>({

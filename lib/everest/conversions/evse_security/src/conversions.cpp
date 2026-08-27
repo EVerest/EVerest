@@ -44,6 +44,8 @@ evse_security::LeafCertificateType from_everest(types::evse_security::LeafCertif
         return evse_security::LeafCertificateType::MF;
     case types::evse_security::LeafCertificateType::MO:
         return evse_security::LeafCertificateType::MO;
+    case types::evse_security::LeafCertificateType::V2G20:
+        return evse_security::LeafCertificateType::V2G20;
     }
     throw std::out_of_range(
         "Could not convert types::evse_security::LeafCertificateType to evse_security::LeafCertificateType");
@@ -240,6 +242,8 @@ types::evse_security::LeafCertificateType to_everest(evse_security::LeafCertific
         return types::evse_security::LeafCertificateType::MF;
     case evse_security::LeafCertificateType::MO:
         return types::evse_security::LeafCertificateType::MO;
+    case evse_security::LeafCertificateType::V2G20:
+        return types::evse_security::LeafCertificateType::V2G20;
     }
     throw std::out_of_range(
         "Could not convert evse_security::LeafCertificateType to types::evse_security::LeafCertificateType");
