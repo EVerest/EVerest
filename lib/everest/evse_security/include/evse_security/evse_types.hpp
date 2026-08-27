@@ -191,6 +191,11 @@ struct CertificateInfo {
                                          /// (the root is not taken into account because of the OCSP cache)
     std::optional<std::string> password; ///< Specifies the password for the private key if encrypted
     std::vector<CertificateOCSP> ocsp;   ///< The ordered list of OCSP certificate data based on the chain file order
+    /// Public key algorithm of the leaf, as reported by the crypto supplier: the named EC curve for EC keys
+    /// ("prime256v1", "secp384r1", "secp521r1", ...), otherwise the key type name ("ED448", "RSA", ...).
+    /// Empty when it could not be determined. ISO 15118-2 mandates prime256v1 for the SECC leaf, ISO 15118-20
+    /// mandates secp521r1 or ED448, so this is what tells the two apart when both are installed.
+    std::string public_key_algorithm;
 };
 
 struct GetCertificateInfoResult {
