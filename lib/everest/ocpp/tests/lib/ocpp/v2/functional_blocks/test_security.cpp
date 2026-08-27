@@ -1098,13 +1098,15 @@ TEST_F(SecurityTest, v2g20_certificate_installation_enabled_requires_v21_and_bot
                                       value ? "true" : "false", "test", true);
     };
     set_bool(ControllerComponentVariables::V2GCertificateInstallationEnabled, true);
-    set_bool(ControllerComponentVariables::V2G20CertificateInstallationEnabled, true);
 
     // A 2.0.1 CSMS does not know V2G20Certificate
     this->ocpp_version = ocpp::OcppProtocolVersion::v201;
     EXPECT_FALSE(security.v2g20_certificate_installation_enabled());
 
+    // V2G20CertificateInstallationEnabled defaults to true: enabled without touching it
     this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    EXPECT_TRUE(security.v2g20_certificate_installation_enabled());
+    set_bool(ControllerComponentVariables::V2G20CertificateInstallationEnabled, true);
     EXPECT_TRUE(security.v2g20_certificate_installation_enabled());
 
     set_bool(ControllerComponentVariables::V2G20CertificateInstallationEnabled, false);

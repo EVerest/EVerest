@@ -360,7 +360,7 @@ void RemoteTransactionControl::handle_trigger_message(Call<TriggerMessageRequest
         // The ISO 15118-20 SECC leaf (OCPP 2.1 only) is additionally gated by V2G20CertificateInstallationEnabled
         if (v2g20 and !this->security.v2g20_certificate_installation_enabled()) {
             EVLOG_warning << "CSMS requested SignV2G20Certificate but V2G20CertificateInstallationEnabled is "
-                             "configured as false (or the connection is not OCPP 2.1), so the TriggerMessage is "
+                             "configured as false or the connection is not OCPP 2.1, so the TriggerMessage is "
                              "rejected!";
             response.status = TriggerMessageStatusEnum::Rejected;
             StatusInfo status_info;
