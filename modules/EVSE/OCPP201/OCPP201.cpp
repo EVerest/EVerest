@@ -1088,6 +1088,7 @@ void OCPP201::ready() {
     // database and potentially triggers enable/disable callbacks at the evse.
     this->charge_point->start(boot_reason, false);
     this->started = true;
+    this->p_ocpp_generic->publish_ready(true);
 
     // Signal to EVSEs to start their internal state machines
     for (const auto& evse : this->r_evse_manager) {

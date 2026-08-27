@@ -1131,6 +1131,7 @@ void OCPP::ready() {
             queued_event.data);
     }
     this->started = true;
+    this->p_ocpp_generic->publish_ready(true);
 }
 
 int32_t OCPP::get_ocpp_connector_id(int32_t evse_id, int32_t connector_id) {

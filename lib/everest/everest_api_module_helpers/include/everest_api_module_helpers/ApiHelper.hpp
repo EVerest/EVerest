@@ -87,6 +87,13 @@ public:
         };
     }
 
+    // Publishes (and, if latched, caches) an initial value for an api var before the providing
+    // module has published anything. Used to seed variables whose "not yet published" state would
+    // otherwise be indistinguishable from an error when queried via <var>/get.
+    void publish_initial_api_var(std::string const& var, std::string const& payload, bool latch_value) {
+        publish_and_cache_variable(topics.everest_to_extern(var), payload, latch_value);
+    }
+
     template <typename CommCheckT> void setup_heartbeat_generator(CommCheckT* comm_check, int interval_ms) {
         auto topic = topics.everest_to_extern("heartbeat");
         auto action = [this, topic]() {
