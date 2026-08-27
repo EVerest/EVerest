@@ -88,6 +88,12 @@ private:
     /// \brief Stops awaiting a CertificateSigned.req, which the retry timer would otherwise be the only thing to do.
     void reset_certificate_signing_state();
 
+    /// \brief The V2G root the SECC leaf of \p certificate_signing_use is (or will be) issued under, for
+    /// SignCertificateRequest.hashRootCertificate (A02.FR.27): the root of the installed leaf if there is one,
+    /// otherwise the only installed V2G root. std::nullopt when this is ambiguous.
+    std::optional<ocpp::CertificateHashDataType>
+    get_secc_root_certificate_hash(const ocpp::CertificateSigningUseEnum& certificate_signing_use);
+
     // Members
     const FunctionalBlockContext& context;
     MessageLogging& logging;
