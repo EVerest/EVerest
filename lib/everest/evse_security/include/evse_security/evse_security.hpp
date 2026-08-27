@@ -239,6 +239,10 @@ public:
     /// will return:
     /// ROOT_V2G_Hubject->SUB_CA1->SUB_CA2->Leaf_Valid_B +
     /// ROOT_V2G_OtherProvider->SUB_CA_O1->SUB_CA_O2->Leav_Valid_A
+    /// Leafs under one root are further told apart by their public key algorithm (see
+    /// CertificateInfo::public_key_algorithm): the newest leaf is returned per (root, algorithm), so a
+    /// prime256v1 ISO 15118-2 SECC leaf and a secp521r1 ISO 15118-20 SECC leaf issued by the same V2G
+    /// root are both returned.
     /// Note: non self-signed roots and cross-signed certificates are not supported
     /// @param certificate_type type of leaf certificate that we start the search from
     /// @param encoding specifies PEM or DER format

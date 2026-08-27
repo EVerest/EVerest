@@ -17,6 +17,7 @@
 #include <bitset>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 #include <iso15118/message/v2g_message_type.hpp>
 
@@ -101,15 +102,6 @@ private:
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     iso15118::session::feedback::Callbacks create_callbacks();
 
-    // The SECC leaf certificate chain backing the TLS server.
-    struct TlsChain {
-        std::string path_chain; //!< resolved chain file (multi-cert chain, or the single certificate)
-        types::evse_security::CertificateInfo info;
-    };
-    // Fetch the V2G leaf from the security module. nullopt when none is installed: TLS is then simply
-    // not offered rather than being a startup failure -- ISO 15118-2 still runs unsecured (EIM only) and
-    // DIN SPEC 70121 never uses TLS. Only ISO 15118-20 ([V2G20-2677]) and ENFORCE_TLS need it.
-    std::optional<TlsChain> acquire_tls_chain();
     // ISO 15118-20 may actually be offered: configured AND a TLS chain exists, since -20 is TLS-only
     // ([V2G20-2677]). Decided once in ready() and honoured by handle_update_supported_app_protocols too,
     // so a runtime offer update cannot switch -20 back on when there is no certificate. Atomic: written

@@ -172,6 +172,29 @@ TEST(MapValidChains, RootlessChainIsStillMapped) {
     EXPECT_FALSE(chains[0].trust_anchor_pem.has_value());
 }
 
+TEST(MapValidChains, TlsVersionFollowsLeafKeyAlgorithm) {
+    using iso15118::config::ChainTlsVersion;
+    EXPECT_EQ(module::charger::classify_secc_leaf(std::nullopt), ChainTlsVersion::ANY);
+    EXPECT_EQ(module::charger::classify_secc_leaf("prime256v1"), ChainTlsVersion::TLS_1_2);
+    EXPECT_EQ(module::charger::classify_secc_leaf("secp521r1"), ChainTlsVersion::TLS_1_3);
+    EXPECT_EQ(module::charger::classify_secc_leaf("ED448"), ChainTlsVersion::TLS_1_3);
+    EXPECT_EQ(module::charger::classify_secc_leaf("secp384r1"), ChainTlsVersion::ANY);
+    EXPECT_EQ(module::charger::classify_secc_leaf("RSA"), ChainTlsVersion::ANY);
+
+    GetCertificateFullInfoResult result{};
+    result.status = GetCertificateInfoStatus::Accepted;
+    auto iso2 = make_cert_info("/certs/secc_2.pem", "/keys/secc_2.key", std::nullopt);
+    iso2.public_key_algorithm = "prime256v1";
+    auto iso20 = make_cert_info("/certs/secc_20.pem", "/keys/secc_20.key", std::nullopt);
+    iso20.public_key_algorithm = "secp521r1";
+    result.info = {iso2, iso20};
+
+    const auto chains = module::charger::map_valid_chains(result);
+    ASSERT_EQ(chains.size(), 2u);
+    EXPECT_EQ(chains[0].tls_version, ChainTlsVersion::TLS_1_2);
+    EXPECT_EQ(chains[1].tls_version, ChainTlsVersion::TLS_1_3);
+}
+
 TEST(CertStoreUpdateFilter, RelevantForV2gLeaf) {
     types::evse_security::CertificateStoreUpdate ev{};
     ev.leaf_certificate_type = types::evse_security::LeafCertificateType::V2G;

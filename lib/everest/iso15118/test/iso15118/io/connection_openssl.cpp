@@ -41,6 +41,9 @@ constexpr auto SERVER_PORT = 50000;
 constexpr auto DEFAULT_PW = "123456";
 constexpr auto SECC_CHAIN = "pki/certs/client/cso/CPO_CERT_CHAIN.pem";
 constexpr auto SECC_KEY = "pki/certs/client/cso/SECC_LEAF.key";
+// secp521r1 SECC leaf as ISO 15118-20 mandates for the TLS 1.3 server certificate, same CPO sub-CAs
+constexpr auto SECC_CHAIN_20 = "pki/certs/client/cso/CPO_CERT_CHAIN_20.pem";
+constexpr auto SECC_KEY_20 = "pki/certs/client/cso/SECC_LEAF_20.key";
 constexpr auto V2G_ROOT = "pki/certs/ca/v2g/V2G_ROOT_CA.pem";
 constexpr auto OEM_ROOT = "pki/certs/ca/oem/OEM_ROOT_CA.pem";
 constexpr auto VEHICLE_LEAF_PEM = "pki/certs/client/vehicle/VEHICLE_LEAF.pem";
@@ -105,6 +108,7 @@ struct ClientResult {
     std::string error;
     bool tls_1_3{false};
     std::string read_payload;
+    std::string server_key_group; //!< EC curve of the server leaf presented in the handshake
 };
 
 struct FdGuard {
@@ -212,6 +216,15 @@ ClientResult run_tls_client(const std::string& send_payload, std::size_t expect_
 
     result.handshake_ok = true;
     result.tls_1_3 = (SSL_version(ssl.get()) == TLS1_3_VERSION);
+    if (auto* peer = SSL_get0_peer_certificate(ssl.get()); peer != nullptr) {
+        if (auto* pkey = X509_get0_pubkey(peer); pkey != nullptr) {
+            std::array<char, 64> group{};
+            std::size_t group_len = 0;
+            if (EVP_PKEY_get_group_name(pkey, group.data(), group.size(), &group_len) == 1) {
+                result.server_key_group.assign(group.data(), group_len);
+            }
+        }
+    }
 
     // Send a payload
     if (not send_payload.empty()) {
@@ -601,5 +614,140 @@ SCENARIO("ConnectionSSL writes an SSLKEYLOGFILE-format keylog when enabled") {
         connection.close();
         std::error_code ec;
         std::filesystem::remove_all(keylog_dir, ec);
+    }
+}
+
+SCENARIO("ConnectionSSL presents the SECC leaf matching the negotiated TLS version") {
+
+    GIVEN("A ConnectionSSL with a prime256v1 chain for TLS 1.2 and a secp521r1 chain for TLS 1.3") {
+        iso15118::io::set_logging_callback([](iso15118::LogLevel, const std::string&) {});
+
+        // ISO 15118-2 and ISO 15118-20 prescribe different SECC leaf curves, so both leaves are
+        // installed side by side and tagged with the TLS version they are meant for.
+        std::vector<iso15118::config::ChainConfig> chains;
+        {
+            iso15118::config::ChainConfig chain{};
+            chain.path_certificate_chain = SECC_CHAIN;
+            chain.path_certificate_key = SECC_KEY;
+            chain.private_key_password = DEFAULT_PW;
+            chain.tls_version = iso15118::config::ChainTlsVersion::TLS_1_2;
+            chains.push_back(std::move(chain));
+        }
+        {
+            iso15118::config::ChainConfig chain{};
+            chain.path_certificate_chain = SECC_CHAIN_20;
+            chain.path_certificate_key = SECC_KEY_20;
+            chain.private_key_password = DEFAULT_PW;
+            chain.tls_version = iso15118::config::ChainTlsVersion::TLS_1_3;
+            chains.push_back(std::move(chain));
+        }
+        const iso15118::config::SSLConfig ssl_cfg{
+            iso15118::config::CertificateBackend::EVEREST_LAYOUT,
+            {},
+            std::move(chains),
+            V2G_ROOT,
+            OEM_ROOT,
+            false,
+            false,
+            false,
+            "/tmp",
+        };
+
+        iso15118::io::PollManager poll_manager;
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+
+        std::atomic<bool> handshake_open{false};
+        connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
+            if (event == iso15118::io::ConnectionEvent::OPEN) {
+                handshake_open.store(true);
+            }
+        });
+
+        WHEN("A TLS 1.2-only client (ISO 15118-2) connects") {
+            auto client_future =
+                std::async(std::launch::async, [&]() { return run_tls_client({}, 0, false, false, true); });
+            const bool got_open = poll_until(
+                poll_manager, [&]() { return handshake_open.load(); }, 5s);
+            const auto client_result = client_future.get();
+
+            THEN("It is presented the prime256v1 leaf") {
+                REQUIRE(client_result.error.empty());
+                REQUIRE(client_result.handshake_ok);
+                REQUIRE(got_open);
+                REQUIRE_FALSE(client_result.tls_1_3);
+                REQUIRE(client_result.server_key_group == "prime256v1");
+            }
+        }
+
+        WHEN("A TLS 1.3 client (ISO 15118-20) connects with its vehicle certificate") {
+            auto client_future =
+                std::async(std::launch::async, [&]() { return run_tls_client({}, 0, true, true, false); });
+            const bool got_open = poll_until(
+                poll_manager, [&]() { return handshake_open.load(); }, 5s);
+            const auto client_result = client_future.get();
+
+            THEN("It is presented the secp521r1 leaf") {
+                REQUIRE(client_result.error.empty());
+                REQUIRE(client_result.handshake_ok);
+                REQUIRE(got_open);
+                REQUIRE(client_result.tls_1_3);
+                REQUIRE(client_result.server_key_group == "secp521r1");
+            }
+        }
+
+        connection.close();
+    }
+
+    GIVEN("A ConnectionSSL with only a prime256v1 chain tagged for TLS 1.2") {
+        iso15118::io::set_logging_callback([](iso15118::LogLevel, const std::string&) {});
+
+        std::vector<iso15118::config::ChainConfig> chains;
+        {
+            iso15118::config::ChainConfig chain{};
+            chain.path_certificate_chain = SECC_CHAIN;
+            chain.path_certificate_key = SECC_KEY;
+            chain.private_key_password = DEFAULT_PW;
+            chain.tls_version = iso15118::config::ChainTlsVersion::TLS_1_2;
+            chains.push_back(std::move(chain));
+        }
+        const iso15118::config::SSLConfig ssl_cfg{
+            iso15118::config::CertificateBackend::EVEREST_LAYOUT,
+            {},
+            std::move(chains),
+            V2G_ROOT,
+            OEM_ROOT,
+            false,
+            false,
+            false,
+            "/tmp",
+        };
+
+        iso15118::io::PollManager poll_manager;
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+
+        std::atomic<bool> handshake_open{false};
+        connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
+            if (event == iso15118::io::ConnectionEvent::OPEN) {
+                handshake_open.store(true);
+            }
+        });
+
+        WHEN("A TLS 1.3 client connects") {
+            auto client_future =
+                std::async(std::launch::async, [&]() { return run_tls_client({}, 0, true, true, false); });
+            const bool got_open = poll_until(
+                poll_manager, [&]() { return handshake_open.load(); }, 5s);
+            const auto client_result = client_future.get();
+
+            THEN("The handshake still completes with the only leaf available (no matching tag, first chain wins)") {
+                REQUIRE(client_result.error.empty());
+                REQUIRE(client_result.handshake_ok);
+                REQUIRE(got_open);
+                REQUIRE(client_result.tls_1_3);
+                REQUIRE(client_result.server_key_group == "prime256v1");
+            }
+        }
+
+        connection.close();
     }
 }

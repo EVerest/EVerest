@@ -249,6 +249,13 @@ types:
           minimum: 0
           type: object
           $ref: /evse_security#/CertificateOCSP
+      public_key_algorithm:
+        description: >-
+          Public key algorithm of the leaf: the named EC curve for EC keys (prime256v1, secp384r1,
+          secp521r1, ...), otherwise the key type (ED448, RSA, ...). ISO 15118-2 mandates prime256v1
+          for the SECC leaf and ISO 15118-20 mandates secp521r1 or ED448, so this tells the two apart
+          when both are installed.
+        type: string
   GetCertificateInfoResult:
     description: Response to the command get_leaf_certificate_info
     type: object
