@@ -8,6 +8,7 @@
 // template version 2
 //
 
+#include "cable_check/PowerSupplyMeasurementWaiter.hpp"
 #include "ld-ev.hpp"
 
 // headers for provided interface implementations
@@ -83,6 +84,7 @@ struct Conf {
     bool cable_check_enable_imd_self_test_relays_open;
     int cable_check_relays_open_voltage_V;
     int cable_check_relays_closed_timeout_s;
+    int cable_check_measurement_timeout_s;
     bool cable_check_wait_below_60V_before_finish;
     bool hack_skoda_enyaq;
     int hack_present_current_offset;
@@ -383,8 +385,19 @@ private:
     std::atomic_bool powersupply_dc_is_on{false};
     bool powersupply_DC_set(double voltage, double current);
     void powersupply_DC_off();
-    bool wait_powersupply_DC_voltage_reached(double target_voltage);
-    bool wait_powersupply_DC_below_voltage(double target_voltage);
+    /// \brief Waits until the power supply measurements satisfy \p condition, or the timeout expires.
+    ///
+    /// Handles the cancellation side effects; see PowerSupplyMeasurementWaiter for the waiting rules.
+    PowerSupplyMeasurementWaiter::Result
+    wait_powersupply_DC_measurement(const PowerSupplyMeasurementWaiter::Condition& condition, const std::string& goal);
+
+    /// \brief Renders why a wait_powersupply_DC_measurement() call gave up, distinguishing a silent
+    /// measurement stream from a voltage that did not move.
+    static std::string describe_powersupply_wait_failure(const PowerSupplyMeasurementWaiter::Result& result,
+                                                         const std::string& goal);
+
+    PowerSupplyMeasurementWaiter::Result wait_powersupply_DC_voltage_reached(double target_voltage);
+    PowerSupplyMeasurementWaiter::Result wait_powersupply_DC_below_voltage(double target_voltage);
 
     bool cable_check_should_exit();
 
@@ -413,6 +426,13 @@ private:
     static constexpr double CABLECHECK_MCS_INSULATION_FAULT_RESISTANCE_OHM{125000.};
     static constexpr double CABLECHECK_SAFE_VOLTAGE{60.};
     static constexpr int CABLECHECK_SELFTEST_TIMEOUT{30};
+    /// Overall time budget for the power supply voltage to reach (or drop below) a target. Note that
+    /// this sits inside the CableCheck timeout of the EV, so it must not be raised carelessly.
+    static constexpr std::chrono::seconds CABLECHECK_VOLTAGE_TIMEOUT{10};
+    /// How close the measured voltage must be to the target to count as reached. This is a
+    /// convergence window for the power supply reaching its setpoint - it is not a tolerance
+    /// prescribed by any standard, unlike the target voltage itself (IEC 61851-23 (2023) CC.4.1.2).
+    static constexpr double CABLECHECK_VOLTAGE_REACHED_WINDOW_V{10.};
 
     std::atomic_bool current_demand_active{false};
     std::atomic_bool slac_unmatched{false};
