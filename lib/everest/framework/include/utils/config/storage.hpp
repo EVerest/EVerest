@@ -17,6 +17,7 @@ namespace everest::config {
 /// \brief EVerest Storage Interface providing read and write access to configurations
 class StorageInterface {
 public:
+    /// \brief Default virtual destructor
     virtual ~StorageInterface() = default;
 
     /// \brief Writes given EVerest \p module_configs to persistent storage

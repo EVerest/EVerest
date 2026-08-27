@@ -55,6 +55,7 @@ public:
     void reinitialize_from_db(bool force_reload = false);
 
     // --- Active-slot in-memory access (zero-copy) ---
+    /// \brief Returns the current lock-free in-memory snapshot of the active slot's module configurations.
     std::shared_ptr<const everest::config::ModuleConfigurations> get_active_module_configurations() const override;
 
     // --- Slot management ---
@@ -117,25 +118,25 @@ protected:
                             bool force_read_from_db) override;
 
 private:
-    everest::config::ModuleConfigurations module_configs_;
-    ConfigParseSettings parse_settings_;
-    everest::config::SqliteConfigSlotManager slot_manager_;
+    everest::config::ModuleConfigurations m_module_configs;
+    ConfigParseSettings m_parse_settings;
+    everest::config::SqliteConfigSlotManager m_slot_manager;
     /// \brief Keepalive for the shared connection
-    std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_;
-    std::shared_ptr<const everest::config::ModuleConfigurations> active_configs_ptr_;
-    int active_slot_id_{everest::config::SqliteStorage::DEFAULT_CONFIG_ID};
-    int next_boot_slot_id_{everest::config::SqliteStorage::DEFAULT_CONFIG_ID};
-    ActiveSlotStatus module_status_{ActiveSlotStatus::Stopped};
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> m_db;
+    std::shared_ptr<const everest::config::ModuleConfigurations> m_active_configs_ptr;
+    int m_active_slot_id{everest::config::SqliteStorage::DEFAULT_CONFIG_ID};
+    int m_next_boot_slot_id{everest::config::SqliteStorage::DEFAULT_CONFIG_ID};
+    ActiveSlotStatus m_module_status{ActiveSlotStatus::Stopped};
 
-    std::vector<std::function<void(const ActiveSlotUpdate&)>> active_slot_handlers_;
-    std::vector<std::function<void(const ConfigurationUpdate&)>> config_update_handlers_;
+    std::vector<std::function<void(const ActiveSlotUpdate&)>> m_active_slot_handlers;
+    std::vector<std::function<void(const ConfigurationUpdate&)>> m_config_update_handlers;
 
-    // Actor infrastructure: worker_thread_ drains command_queue_ one task at a
+    // Actor infrastructure: m_worker_thread drains m_command_queue one task at a
     // time, so all mutable state is touched by a single thread. See the
     // "Threading model" comment at the top of config_service_core.cpp.
-    everest::lib::util::thread_safe_queue<std::function<void()>> command_queue_;
-    std::thread worker_thread_;
-    std::atomic<bool> worker_thread_running_{false};
+    everest::lib::util::thread_safe_queue<std::function<void()>> m_command_queue;
+    std::thread m_worker_thread;
+    std::atomic<bool> m_worker_thread_running{false};
 
     void process_queue();
 
@@ -149,12 +150,12 @@ private:
         // calling back into a public method - execute inline: the actor is busy running the
         // very task that triggered the handler, so waiting on the queue would deadlock. Inline
         // execution preserves the single-writer model, since we already are the actor thread.
-        if (std::this_thread::get_id() == worker_thread_.get_id()) {
+        if (std::this_thread::get_id() == m_worker_thread.get_id()) {
             return f();
         }
         auto promise = std::make_shared<std::promise<ReturnType>>();
         auto future = promise->get_future();
-        command_queue_.push([promise, f = std::forward<Func>(f)]() mutable {
+        m_command_queue.push([promise, f = std::forward<Func>(f)]() mutable {
             try {
                 if constexpr (std::is_void_v<ReturnType>) {
                     f();
@@ -211,13 +212,13 @@ private:
     void publish_config_update(const ConfigurationUpdate& update);
 
     /// \brief Storage handle for the currently active slot, used to persist runtime config writes.
-    std::unique_ptr<everest::config::SqliteStorage> active_storage_;
+    std::unique_ptr<everest::config::SqliteStorage> m_active_storage;
 
     /// \brief Optional secondary persistence for active-slot parameter writes (e.g. the user-config
     /// YAML when the manager runs on an in-memory database). Never read from.
-    std::unique_ptr<everest::config::StorageInterface> persistence_mirror_;
+    std::unique_ptr<everest::config::StorageInterface> m_persistence_mirror;
 
-    SetParamCallback set_parameter_callback_;
+    SetParamCallback m_set_parameter_callback;
 };
 
 } // namespace Everest::config

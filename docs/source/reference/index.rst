@@ -7,6 +7,7 @@ Reference
 .. toctree::
     :maxdepth: 1
 
+    manager-cli.rst
     modules/index.rst
     interfaces_index.rst
     types_index.rst

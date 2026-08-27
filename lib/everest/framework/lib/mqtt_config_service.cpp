@@ -16,8 +16,7 @@ namespace Everest {
 namespace config {
 
 bool ModuleIdType::operator<(const ModuleIdType& rhs) const {
-    return (this->module_id < rhs.module_id ||
-            (this->module_id == rhs.module_id && this->module_type < rhs.module_type));
+    return (module_id < rhs.module_id || (module_id == rhs.module_id && module_type < rhs.module_type));
 }
 
 enum class AccessMethod {
@@ -291,23 +290,23 @@ Response handle_set_request(const SetRequest& set_request, const std::string& or
 ConfigServiceClient::ConfigServiceClient(std::shared_ptr<MQTTAbstraction> mqtt_abstraction,
                                          const std::string& module_id,
                                          const std::map<std::string, std::string, std::less<>>& module_names) :
-    mqtt_abstraction(mqtt_abstraction), origin(module_id), module_names(module_names) {
+    m_mqtt_abstraction(mqtt_abstraction), m_origin(module_id), m_module_names(module_names) {
 }
 
 std::map<ModuleIdType, everest::config::ModuleConfigurationParameters> ConfigServiceClient::get_module_configs() {
     Request get_request;
     get_request.type = Type::Get;
     get_request.request = GetRequest{GetType::All};
-    get_request.origin = this->origin;
+    get_request.origin = m_origin;
 
     MQTTRequest mqtt_request;
     mqtt_request.response_topic =
-        fmt::format("{}modules/{}/response", mqtt_abstraction->get_everest_prefix(), get_request.origin);
-    mqtt_request.request_topic = fmt::format("{}config/request", mqtt_abstraction->get_everest_prefix());
+        fmt::format("{}modules/{}/response", m_mqtt_abstraction->get_everest_prefix(), get_request.origin);
+    mqtt_request.request_topic = fmt::format("{}config/request", m_mqtt_abstraction->get_everest_prefix());
     mqtt_request.request_data = json(get_request).dump();
 
     try {
-        Response response = mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
+        Response response = m_mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
         if (response.status != ResponseStatus::Ok) {
             EVLOG_error << "Could not get module configs via MQTT";
             return {};
@@ -319,7 +318,7 @@ std::map<ModuleIdType, everest::config::ModuleConfigurationParameters> ConfigSer
         for (const auto& [module_id, config_maps] : get_response.data.items()) {
             ModuleIdType module_id_type;
             module_id_type.module_id = module_id;
-            module_id_type.module_type = module_names.at(module_id);
+            module_id_type.module_type = m_module_names.at(module_id);
             module_configs[module_id_type] = config_maps;
         }
 
@@ -334,16 +333,16 @@ std::map<std::string, ModuleTierMappings> ConfigServiceClient::get_mappings() {
     Request get_request;
     get_request.type = Type::Get;
     get_request.request = GetRequest{GetType::AllMappings};
-    get_request.origin = this->origin;
+    get_request.origin = m_origin;
 
     MQTTRequest mqtt_request;
     mqtt_request.response_topic =
-        fmt::format("{}modules/{}/response", mqtt_abstraction->get_everest_prefix(), get_request.origin);
-    mqtt_request.request_topic = fmt::format("{}config/request", mqtt_abstraction->get_everest_prefix());
+        fmt::format("{}modules/{}/response", m_mqtt_abstraction->get_everest_prefix(), get_request.origin);
+    mqtt_request.request_topic = fmt::format("{}config/request", m_mqtt_abstraction->get_everest_prefix());
     mqtt_request.request_data = json(get_request).dump();
 
     try {
-        Response response = mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
+        Response response = m_mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
         if (response.status != ResponseStatus::Ok) {
             EVLOG_error << "Could not get mappings configs via MQTT";
             return {};
@@ -369,7 +368,7 @@ ConfigServiceClient::set_config_value(const everest::config::ConfigurationParame
     SetConfigResult result;
     Request request;
     request.type = Type::Set;
-    request.origin = this->origin;
+    request.origin = m_origin;
     SetRequest set_request;
     set_request.identifier = identifier;
     set_request.value = value;
@@ -378,11 +377,11 @@ ConfigServiceClient::set_config_value(const everest::config::ConfigurationParame
     try {
         MQTTRequest mqtt_request;
         mqtt_request.response_topic =
-            fmt::format("{}modules/{}/response", mqtt_abstraction->get_everest_prefix(), request.origin);
-        mqtt_request.request_topic = fmt::format("{}config/request", mqtt_abstraction->get_everest_prefix());
+            fmt::format("{}modules/{}/response", m_mqtt_abstraction->get_everest_prefix(), request.origin);
+        mqtt_request.request_topic = fmt::format("{}config/request", m_mqtt_abstraction->get_everest_prefix());
         mqtt_request.request_data = json(request).dump();
 
-        const Response response = mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
+        const Response response = m_mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
         result.status = response.status;
         result.status_info = response.status_info;
         if (response.status == ResponseStatus::Ok) {
@@ -406,7 +405,7 @@ ConfigServiceClient::get_config_value(const everest::config::ConfigurationParame
     GetConfigResult result;
     Request request;
     request.type = Type::Get;
-    request.origin = this->origin;
+    request.origin = m_origin;
     GetRequest get_request;
     get_request.type = GetType::Value;
     get_request.identifier = identifier;
@@ -415,10 +414,10 @@ ConfigServiceClient::get_config_value(const everest::config::ConfigurationParame
     try {
         MQTTRequest mqtt_request;
         mqtt_request.response_topic =
-            fmt::format("{}modules/{}/response", mqtt_abstraction->get_everest_prefix(), request.origin);
-        mqtt_request.request_topic = fmt::format("{}config/request", mqtt_abstraction->get_everest_prefix());
+            fmt::format("{}modules/{}/response", m_mqtt_abstraction->get_everest_prefix(), request.origin);
+        mqtt_request.request_topic = fmt::format("{}config/request", m_mqtt_abstraction->get_everest_prefix());
         mqtt_request.request_data = json(request).dump();
-        const Response response = mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
+        const Response response = m_mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
         result.status = response.status;
         result.status_info = response.status_info;
         if (response.status == ResponseStatus::Ok) {
@@ -438,9 +437,9 @@ ConfigServiceClient::get_config_value(const everest::config::ConfigurationParame
 
 void ConfigServiceClient::register_config_change_handler(const std::string& impl_id, const std::string_view param_name,
                                                          ConfigChangeHandler handler) {
-    const std::lock_guard<std::mutex> lock(change_callbacks_mutex);
+    const std::lock_guard<std::mutex> lock(m_change_callbacks_mutex);
 
-    if (change_callbacks.empty()) {
+    if (m_change_callbacks.empty()) {
         // subscribe to the MQTT topic
         const auto mqtt_handler = [this](const std::string& /*topic*/, const nlohmann::json& data) {
             mqtt_set_request(data);
@@ -449,13 +448,13 @@ void ConfigServiceClient::register_config_change_handler(const std::string& impl
         auto change_token =
             std::make_shared<TypedHandler>(HandlerType::ConfigurationRequest, std::make_shared<Handler>(mqtt_handler));
         const auto topic =
-            fmt::format("{}modules/{}/config/set_request", mqtt_abstraction->get_everest_prefix(), origin);
+            fmt::format("{}modules/{}/config/set_request", m_mqtt_abstraction->get_everest_prefix(), m_origin);
 
-        mqtt_abstraction->register_handler(topic, change_token, QOS::QOS2);
+        m_mqtt_abstraction->register_handler(topic, change_token, QOS::QOS2);
     }
 
     // store handler
-    change_callbacks[impl_id].insert_or_assign(std::string(param_name), std::move(handler));
+    m_change_callbacks[impl_id].insert_or_assign(std::string(param_name), std::move(handler));
 }
 
 void ConfigServiceClient::mqtt_set_request(const nlohmann::json& data) {
@@ -472,10 +471,10 @@ void ConfigServiceClient::mqtt_set_request(const nlohmann::json& data) {
         // unregistered, so the copy stays valid.
         ConfigChangeHandler handler;
         {
-            const std::lock_guard<std::mutex> lock(change_callbacks_mutex);
+            const std::lock_guard<std::mutex> lock(m_change_callbacks_mutex);
             const auto impl_it =
-                change_callbacks.find(set_request.identifier.module_implementation_id.value_or("!module"));
-            if (impl_it != change_callbacks.end()) {
+                m_change_callbacks.find(set_request.identifier.module_implementation_id.value_or("!module"));
+            if (impl_it != m_change_callbacks.end()) {
                 const auto it = impl_it->second.find(name);
                 if (it != impl_it->second.end()) {
                     handler = it->second;
@@ -506,15 +505,15 @@ void ConfigServiceClient::mqtt_set_request(const nlohmann::json& data) {
 
     // Publish response back to manager using the existing Response type
     const std::string topic =
-        fmt::format("{}modules/{}/config/set_response", mqtt_abstraction->get_everest_prefix(), origin);
+        fmt::format("{}modules/{}/config/set_response", m_mqtt_abstraction->get_everest_prefix(), m_origin);
 
     MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, response};
-    mqtt_abstraction->publish(topic, payload, QOS::QOS2);
+    m_mqtt_abstraction->publish(topic, payload, QOS::QOS2);
 }
 
 MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstraction,
                                                    ConfigServiceInterface& config_svc) :
-    mqtt_abstraction(mqtt_abstraction), config_svc(config_svc) {
+    m_mqtt_abstraction(mqtt_abstraction), m_config_svc(config_svc) {
 
     // TODO: thread-safe?
 
@@ -584,9 +583,9 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
 
     const std::string global_config_request_topic =
         fmt::format("{}config/request", mqtt_abstraction.get_everest_prefix());
-    this->get_config_token = std::make_shared<TypedHandler>(HandlerType::ConfigurationRequest,
-                                                            std::make_shared<Handler>(global_config_request_handler));
-    mqtt_abstraction.register_handler(global_config_request_topic, this->get_config_token, QOS::QOS2);
+    m_get_config_token = std::make_shared<TypedHandler>(HandlerType::ConfigurationRequest,
+                                                        std::make_shared<Handler>(global_config_request_handler));
+    mqtt_abstraction.register_handler(global_config_request_topic, m_get_config_token, QOS::QOS2);
 }
 
 std::optional<Everest::config::SetResponse>
@@ -599,13 +598,13 @@ MqttConfigServiceHandler::cmd_set_cfg_param(const everest::config::Configuration
 
     // Forward set request to target module via MQTT and wait for its response.
     MQTTRequest mqtt_request;
-    mqtt_request.response_topic =
-        fmt::format("{}modules/{}/config/set_response", mqtt_abstraction.get_everest_prefix(), cfg_param_id.module_id);
+    mqtt_request.response_topic = fmt::format("{}modules/{}/config/set_response",
+                                              m_mqtt_abstraction.get_everest_prefix(), cfg_param_id.module_id);
     mqtt_request.request_topic =
-        fmt::format("{}modules/{}/config/set_request", mqtt_abstraction.get_everest_prefix(), cfg_param_id.module_id);
+        fmt::format("{}modules/{}/config/set_request", m_mqtt_abstraction.get_everest_prefix(), cfg_param_id.module_id);
     mqtt_request.request_data = nlohmann::json(set_request).dump();
 
-    const Response module_response = mqtt_abstraction.get(mqtt_request, mqtt_get_config_retries);
+    const Response module_response = m_mqtt_abstraction.get(mqtt_request, mqtt_get_config_retries);
 
     if (module_response.status == ResponseStatus::Ok && module_response.type == Type::Set) {
         response = std::get<SetResponse>(module_response.response);

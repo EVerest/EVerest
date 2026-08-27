@@ -12,8 +12,9 @@
 /// manager executable: it is a total function over an enum, which is exactly the kind of thing that
 /// silently rots when it is buried in a lambda.
 ///
-/// The full lifecycle description lives in `lib/everest/framework/docs/ManagerLifecycle.md`,
-/// the state machine diagram in `lib/everest/framework/docs/ManagerLifecycleStateMachine.mmd`.
+/// The full lifecycle description lives in `docs/source/explanation/manager-lifecycle.rst`,
+/// the state machine diagram in
+/// `docs/source/explanation/images/manager_lifecycle_state_machine.mmd`.
 /// Timeouts and limits that drive transitions are defined in `manager.cpp`.
 
 /// \brief Runtime phase of the manager main loop (see file-level state machine description).

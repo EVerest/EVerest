@@ -40,23 +40,43 @@ public:
     SqliteStorage(std::shared_ptr<everest::db::sqlite::ConnectionInterface> connection,
                   int config_id = DEFAULT_CONFIG_ID);
 
+    /// \brief Closes this instance's database connection via close_connection().
     ~SqliteStorage();
 
+    /// \brief Writes \p module_configs into this instance's config slot inside a single transaction.
+    /// The transaction is committed only if all writes succeed; on any failure it is left uncommitted and rolled back,
+    /// so a failed call leaves storage unchanged. Requires the config slot to already exist.
     GenericResponseStatus write_module_configs(const ModuleConfigurations& module_configs) override;
+
+    /// \brief Deletes the existing config items of this instance's slot and writes \p module_configs, inside a single
+    /// transaction. The transaction is committed only if both the delete and the write succeed; otherwise it is rolled
+    /// back and the previous config stays intact. Requires the config slot to already exist.
     GenericResponseStatus replace_module_configs(const ModuleConfigurations& module_configs) override;
+
+    /// \brief Reads all module configurations of this instance's config slot.
     GetModuleConfigsResponse get_module_configs() override;
+
+    /// \brief Reads the configuration of a single module in this instance's config slot.
     GetModuleConfigurationResponse get_module_config(const std::string& module_id) override;
+
+    /// \brief Reads a single configuration parameter identified by \p identifier from this instance's config slot.
     GetConfigurationParameterResponse
     get_configuration_parameter(const ConfigurationParameterIdentifier& identifier) override;
+
+    /// \brief Updates the value of an existing configuration parameter; returns NotFound if no matching parameter
+    /// exists.
     GetSetResponseStatus update_configuration_parameter(const ConfigurationParameterIdentifier& identifier,
                                                         const std::string& value) override;
+
+    /// \brief Inserts or replaces a configuration parameter including its characteristics; returns NotFound if the
+    /// target module does not exist in this instance's config slot.
     GetSetResponseStatus write_configuration_parameter(const ConfigurationParameterIdentifier& identifier,
                                                        const ConfigurationParameterCharacteristics characteristics,
                                                        const std::string& value) override;
 
 private:
-    std::shared_ptr<everest::db::sqlite::ConnectionInterface> db;
-    const int config_id_;
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> m_db;
+    const int m_config_id;
     GenericResponseStatus write_module_config_items(const ModuleConfigurations& module_configs);
     GenericResponseStatus write_module_data(const ModuleData& module_data);
     GenericResponseStatus write_module_fulfillment(const std::string& module_id, const Fulfillment& fulfillment);

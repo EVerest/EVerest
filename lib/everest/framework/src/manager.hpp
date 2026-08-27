@@ -53,8 +53,9 @@ struct ModuleShutdownInfo {
 /// states (for example through `ForceTerminating` / `ShutdownFinalizing`) so the next step can
 /// distinguish normal stop, admin-driven restart, and crash recovery.
 ///
-/// The full lifecycle description lives in `lib/everest/framework/docs/ManagerLifecycle.md`,
-/// the state machine diagram in `lib/everest/framework/docs/ManagerLifecycleStateMachine.mmd`.
+/// The full lifecycle description lives in `docs/source/explanation/manager-lifecycle.rst`,
+/// the state machine diagram in
+/// `docs/source/explanation/images/manager_lifecycle_state_machine.mmd`.
 /// Timeouts and limits that drive transitions are defined in `manager.cpp`.
 
 /// \brief Why the current shutdown / drain was started (persists across some ManagerState values).
@@ -146,6 +147,10 @@ private:
     /// \note MQTT must still be connected; call before any disconnect.
     void cleanup_modules_state(const Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
 
+    /// \brief cleanup_modules_state() for paths that can also run without a configuration: does
+    /// nothing when ctx.config is null, the state a boot with no valid configuration leaves behind.
+    void cleanup_modules_state_if_configured(const RuntimeContext& ctx);
+
     /// \brief Terminate remaining module processes (SIGTERM, then SIGKILL fallback).
     void shutdown_modules(const std::map<pid_t, std::string>& modules, const Everest::ManagerConfig& config,
                           Everest::MQTTAbstraction& mqtt_abstraction);
@@ -156,7 +161,7 @@ private:
     /// \brief Apply state transition with transition logging.
     void transition_to(ManagerState new_state);
 
-    /// \brief Like transition_to(); caller must hold state_transition_mutex_.
+    /// \brief Like transition_to(); caller must hold m_state_transition_mutex.
     void transition_to_unlocked(ManagerState new_state);
 
     /// \brief Write a status-fifo message when a fifo path was configured for this run.
@@ -168,10 +173,10 @@ private:
     /// \brief Write CRASH_RECOVERY_ATTEMPT:n/max to the status fifo.
     void notify_crash_recovery_attempt(std::uint8_t attempt, std::uint8_t max);
 
-    /// \brief Like is_in_shutdown_flow_state(); caller must hold state_transition_mutex_.
+    /// \brief Like is_in_shutdown_flow_state(); caller must hold m_state_transition_mutex.
     bool is_in_shutdown_flow_state_unlocked() const;
 
-    /// \brief Load current state; caller must hold state_transition_mutex_.
+    /// \brief Load current state; caller must hold m_state_transition_mutex.
     ManagerState current_state_unlocked() const;
     /// \brief Reload the configuration from the config_service_core class and update relevant fields in the context
     /// \return Updated context to a valid configuration
@@ -198,6 +203,10 @@ private:
     /// \param ctx Runtime dependencies for the current run.
     /// \return Mapping of spawned child pid to module id.
     std::map<pid_t, std::string> handle_start_modules(const RuntimeContext& ctx);
+
+    /// \brief Settle into Idle after a failed start or reload, logging \p reason and reporting
+    /// FailedToStart to the Configuration API. Shared by the boot and restart paths.
+    void settle_into_idle_after_failed_start(std::string_view reason);
 
     /// \brief Run the "EVerest is up and running" completion sequence: clear retained startup topics,
     /// log readiness, transition to Running and announce readiness via the status fifo and global
@@ -226,8 +235,8 @@ private:
     /// \brief Outcome of a module restart after a completed drain.
     enum class RestartOutcome {
         Restarted,  ///< Configuration reloaded and modules started again.
-        StayedIdle, ///< Reload failed or yielded no modules; --idle-on-failure keeps the manager in Idle.
-        ExitFailure ///< Reload failed or yielded no modules; the caller must exit with EXIT_FAILURE (default).
+        StayedIdle, ///< Nothing startable; --idle-on-failure keeps the manager in Idle.
+        ExitFailure ///< Nothing startable; the caller must exit with EXIT_FAILURE (default).
     };
 
     /// \brief Reload the configuration and start the modules again after a completed drain.
@@ -236,7 +245,7 @@ private:
     /// caller must terminate the manager with EXIT_FAILURE.
     RestartOutcome handle_restart_modules_after_shutdown(RuntimeContext& ctx);
 
-    /// \brief Format the entries of shutdown_info_ that did not exit cleanly for logging.
+    /// \brief Format the entries of m_shutdown_info that did not exit cleanly for logging.
     /// \return Space-separated "id (wait status)" list, empty when all modules exited cleanly.
     std::string format_unclean_exits() const;
 
@@ -328,35 +337,35 @@ private:
     /// \brief Register a callback invoked on every state transition with (old_state, new_state).
     void register_state_transition_handler(std::function<void(ManagerState, ManagerState)> handler);
 
-    const boost::program_options::variables_map& vm_;
-    Everest::StatusFifo* status_fifo_{nullptr};
-    bool recover_module_crashes_{false};
+    const boost::program_options::variables_map& m_vm;
+    Everest::StatusFifo* m_status_fifo{nullptr};
+    bool m_recover_module_crashes{false};
     // Opt-in via --graceful-shutdown: publish the MQTT shutdown signal and give modules
     // SHUTDOWN_TIMEOUT_MS to exit on their own. Default (false): terminate module processes
     // immediately (SIGTERM, escalating to SIGKILL after FORCE_KILL_GRACE_TIMEOUT_MS).
-    bool graceful_shutdown_enabled_{false};
-    // Opt-in via --idle-on-failure: stay alive in Idle when module startup fails after boot
-    // (crash recovery exhausted, failed config reload during a restart) so the config API stays
-    // available. Default (false): exit with an error.
-    bool idle_on_failure_{false};
-    // state_ is atomic because the module-ready handler runs on the MQTT thread; transitions are
-    // serialized with state_transition_mutex_ (main loop and ready handler).
-    std::atomic<ManagerState> state_{ManagerState::Idle};
-    ShutdownCause shutdown_cause_{ShutdownCause::None};
-    std::atomic<bool> sigint_received_{false};
+    bool m_graceful_shutdown_enabled{false};
+    // Opt-in via --idle-on-failure: stay alive in Idle whenever there is nothing startable (an
+    // invalid or empty boot configuration, crash recovery exhausted, a failed config reload during a
+    // restart) so the config API stays available. Default (false): exit with an error.
+    bool m_idle_on_failure{false};
+    // m_state is atomic because the module-ready handler runs on the MQTT thread; transitions are
+    // serialized with m_state_transition_mutex (main loop and ready handler).
+    std::atomic<ManagerState> m_state{ManagerState::Idle};
+    ShutdownCause m_shutdown_cause{ShutdownCause::None};
+    std::atomic<bool> m_sigint_received{false};
     // Unexpected-exit recovery attempts for this manager process lifetime (current config).
     // Not cleared on transition to Running; resets when run() starts (future: also on config change).
-    std::uint8_t unexpected_module_exit_count_{0};
-    std::chrono::steady_clock::time_point module_startup_start_time_{std::chrono::steady_clock::now()};
-    std::optional<std::chrono::steady_clock::time_point> shutdown_start_time_;
-    std::optional<std::chrono::steady_clock::time_point> force_terminate_start_time_;
-    bool force_kill_sent_{false};
-    std::map<pid_t, std::string> module_handles_;
-    std::vector<ModuleShutdownInfo> shutdown_info_;
-    ModulesReadyType modules_ready_; // guarded by modules_ready_mutex_
-    std::mutex modules_ready_mutex_;
-    mutable std::mutex state_transition_mutex_;
-    std::vector<std::function<void(ManagerState, ManagerState)>> state_transition_handlers_;
-    std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection_;
-    std::unique_ptr<Everest::config::ConfigServiceCore> config_service_core_{};
+    std::uint8_t m_unexpected_module_exit_count{0};
+    std::chrono::steady_clock::time_point m_module_startup_start_time{std::chrono::steady_clock::now()};
+    std::optional<std::chrono::steady_clock::time_point> m_shutdown_start_time;
+    std::optional<std::chrono::steady_clock::time_point> m_force_terminate_start_time;
+    bool m_force_kill_sent{false};
+    std::map<pid_t, std::string> m_module_handles;
+    std::vector<ModuleShutdownInfo> m_shutdown_info;
+    ModulesReadyType m_modules_ready; // guarded by m_modules_ready_mutex
+    std::mutex m_modules_ready_mutex;
+    mutable std::mutex m_state_transition_mutex;
+    std::vector<std::function<void(ManagerState, ManagerState)>> m_state_transition_handlers;
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> m_db_connection;
+    std::unique_ptr<Everest::config::ConfigServiceCore> m_config_service_core{};
 };
