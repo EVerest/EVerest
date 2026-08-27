@@ -38,6 +38,7 @@ void ocpp_consumer_API::init() {
     // setup var forwarding before modules start publishing
     generate_api_var_security_event();
     generate_api_var_connection_status();
+    generate_api_var_implementation_ready();
     generate_api_var_boot_notification_response();
     generate_api_var_ocpp_transaction_event();
     generate_api_var_event_data();
@@ -168,6 +169,13 @@ void ocpp_consumer_API::generate_api_var_connection_status() {
         // connected property of the connection status as a plain boolean
         forward_is_connected(status.connected);
     });
+}
+
+void ocpp_consumer_API::generate_api_var_implementation_ready() {
+    r_ocpp->subscribe_ready(forward_and_cache_api_var("implementation_ready"));
+    // seed the value: the OCPP implementation only publishes once it is up, so without this a
+    // client querying implementation_ready/get before that would receive null instead of false
+    helper.publish_initial_api_var("implementation_ready", API_generic::serialize(false), config.latch_variable_values);
 }
 
 void ocpp_consumer_API::generate_api_var_boot_notification_response() {

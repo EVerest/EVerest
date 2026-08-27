@@ -142,6 +142,12 @@ vars:
       the details are best effort and are omitted where the active OCPP version does not provide them.
     type: object
     $ref: /ocpp#/ConnectionStatus
+  ready:
+    description: >-
+      Indicates whether the OCPP service has finished its startup and accepts
+      commands on this interface. Published as true once the module is
+      operational. Unrelated to CSMS connectivity (see connection_status).
+    type: boolean
   security_event:
     description: Published when an internal security event occurred
     type: object

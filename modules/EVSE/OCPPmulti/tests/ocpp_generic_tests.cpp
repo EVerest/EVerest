@@ -1036,6 +1036,16 @@ TEST_F(GenericOcppProvidesTester, publishConnectionStatus) {
     EXPECT_EQ(received[2], R"({"connected":false})"_json);
 }
 
+TEST_F(GenericOcppProvidesTester, publishReady) {
+    // publish_ready() called from ready() once the module accepts commands
+    // (the publications were recorded by the fixture, see GenericOcppProvidesTester)
+
+    ASSERT_EQ(published_ready.size(), 1);
+    EXPECT_EQ(published_ready[0], R"(true)"_json);
+    // readiness is signalled independently of - and before - the CSMS connection attempt
+    EXPECT_EQ(published_ready_before_websocket, 1);
+}
+
 TEST_F(GenericOcppProvidesTester, publishSecurityEvent) {
     // publish_security_event() called from cb_security_event
 
