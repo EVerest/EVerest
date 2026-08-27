@@ -5,6 +5,7 @@
 #include <fmt/ranges.h>
 
 #include "der_setup.hpp"
+#include "evse_security_chain_mapper.hpp"
 #include "grid_event.hpp"
 #include "utils.hpp"
 
@@ -13,6 +14,7 @@
 #include <everest/util/misc/container.hpp>
 
 #include <iso15118/config.hpp>
+
 #include <iso15118/io/logging.hpp>
 
 namespace module {
@@ -473,36 +475,14 @@ void ISO15118_chargerImpl::ready() {
     // TODO(mlitre): Should be updated once libiso supports service renegotiation
     this->mod->p_extensions->publish_service_renegotiation_supported(false);
 
-    iso15118::config::SSLConfig ssl_for_controller{};
-    ssl_for_controller.backend = iso15118::config::CertificateBackend::EVEREST_LAYOUT;
-    ssl_for_controller.path_certificate_v2g_root = v2g_root_cert_path;
-    ssl_for_controller.path_certificate_mo_root = mo_root_cert_path;
-    ssl_for_controller.enable_ssl_logging = mod->config.enable_ssl_logging;
-    ssl_for_controller.enable_tls_key_logging = mod->config.enable_tls_key_logging;
-    ssl_for_controller.enforce_tls_1_3 = mod->config.enforce_tls_1_3;
-    ssl_for_controller.tls_key_logging_path = mod->config.tls_key_logging_path;
-    // Without a leaf certificate the TLS server has nothing to present, so no chain is configured and
-    // the controller only ever brings up plain endpoints (tls_strategy was forced to ENFORCE_NO_TLS
-    // above). The roots above are still set: they gate contract-certificate validation, not the server.
-    if (tls_available.has_value()) {
-        const auto& certificate_info = tls_available->info;
-        // Collect the leaf chain's OCSP response files (in chain order) so tls::Server can staple them
-        // (ISO 15118-2 [V2G2-071]). Sourced from EvseSecurity, mirroring EvseV2G's stapling path.
-        std::vector<std::string> ocsp_response_files;
-        if (certificate_info.ocsp.has_value()) {
-            for (const auto& ocsp : certificate_info.ocsp.value()) {
-                if (ocsp.ocsp_path.has_value()) {
-                    ocsp_response_files.push_back(ocsp.ocsp_path.value());
-                }
-            }
-        }
-
-        ssl_for_controller.chains.push_back(iso15118::config::ChainConfig{
-            tls_available->path_chain,
-            certificate_info.key,
-            certificate_info.password,
-            std::move(ocsp_response_files),
-        });
+    // The SSL config (roots, logging flags, and every valid V2G leaf chain from the security module) is
+    // built by the same path the certificate_store_update subscriber uses for live rotation below. Without
+    // a leaf certificate no chain is configured and the controller only ever brings up plain endpoints
+    // (tls_strategy was forced to ENFORCE_NO_TLS above; ENFORCE_TLS already refused to start).
+    auto ssl_for_controller = build_current_ssl_config();
+    if (ssl_for_controller.chains.empty() and tls_available.has_value()) {
+        EVLOG_warning << "Evse15118D20: a V2G leaf certificate exists but no usable chain could be mapped; TLS "
+                         "connection attempts will fail until certificates are provisioned";
     }
 
     iso15118::TbdConfig tbd_config = {
@@ -563,6 +543,16 @@ void ISO15118_chargerImpl::ready() {
         controller->send_control_event(event);
     };
 
+    mod->r_security->subscribe_certificate_store_update(
+        [this](const types::evse_security::CertificateStoreUpdate& event) { on_certificate_store_update(event); });
+
+    // Close the startup window: a V2G certificate install completing between the initial config
+    // build above and the subscription registration would otherwise be served only at the next
+    // store update. Rebuild+apply once through the same idempotent path.
+    module::charger::resync_ssl_config(
+        [this] { return build_current_ssl_config(); },
+        [this](iso15118::config::SSLConfig cfg) { controller->set_ssl_config(std::move(cfg)); });
+
     // if the vas providers report their supported vas services before the controller exists,
     // we need to update the controller with the supported vas services after instantiation
     {
@@ -577,6 +567,36 @@ void ISO15118_chargerImpl::ready() {
     } catch (const std::exception& e) {
         EVLOG_error << e.what();
     }
+}
+
+iso15118::config::SSLConfig ISO15118_chargerImpl::build_base_ssl_config() {
+    iso15118::config::SSLConfig cfg{};
+    cfg.backend = iso15118::config::CertificateBackend::EVEREST_LAYOUT;
+    cfg.path_certificate_v2g_root = mod->r_security->call_get_verify_file(types::evse_security::CaCertificateType::V2G);
+    cfg.path_certificate_mo_root = mod->r_security->call_get_verify_file(types::evse_security::CaCertificateType::MO);
+    cfg.enable_ssl_logging = mod->config.enable_ssl_logging;
+    cfg.enable_tls_key_logging = mod->config.enable_tls_key_logging;
+    cfg.enforce_tls_1_3 = mod->config.enforce_tls_1_3;
+    cfg.tls_key_logging_path = mod->config.tls_key_logging_path;
+    return cfg;
+}
+
+iso15118::config::SSLConfig ISO15118_chargerImpl::build_current_ssl_config() {
+    auto cfg = build_base_ssl_config();
+    const auto certs_result = mod->r_security->call_get_all_valid_certificates_info(
+        types::evse_security::LeafCertificateType::V2G, types::evse_security::EncodingFormat::PEM, true);
+    cfg.chains = map_valid_chains(certs_result);
+    return cfg;
+}
+
+void ISO15118_chargerImpl::on_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event) {
+    if (controller == nullptr) {
+        EVLOG_warning << "certificate_store_update received before controller ready; ignoring";
+        return;
+    }
+    module::charger::handle_certificate_store_update(
+        event, [this] { return build_current_ssl_config(); },
+        [this](iso15118::config::SSLConfig cfg) { controller->set_ssl_config(std::move(cfg)); });
 }
 
 void ISO15118_chargerImpl::update_supported_vas_services() {
