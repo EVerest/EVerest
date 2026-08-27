@@ -1,0 +1,27 @@
+description: >-
+  Control and status interface of a module that keeps the ISO 15118 SECC leaf certificates and the V2G/MO root
+  certificates of a charging station up to date via an OPCP (Open Plug&Charge Protocol) ecosystem, independent of
+  OCPP. Renewals authenticate towards the PKI with the still valid SECC leaf (RFC 7030 simplereenroll over TLS
+  client authentication); the initial enrollment is done out-of-band with the opcp-enroll tool.
+cmds:
+  renew_leaf_certificates:
+    description: >-
+      Triggers a renewal check now. With force set, the managed leaf certificates are renewed regardless of their
+      remaining validity. The work is done asynchronously; progress is published via the status variable.
+    arguments:
+      force:
+        description: Renew even if the certificates are not about to expire
+        type: boolean
+    result:
+      description: True if the check was scheduled, false if a renewal is already in progress
+      type: boolean
+  sync_root_certificates:
+    description: Downloads the configured root certificate types from the root certificate pool now
+    result:
+      description: True if the synchronisation was scheduled, false if one is already in progress
+      type: boolean
+vars:
+  status:
+    description: Current state of the managed certificates, published after every check or operation
+    type: object
+    $ref: /opcp_certificate_manager#/Status

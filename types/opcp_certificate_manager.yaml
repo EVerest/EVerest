@@ -1,0 +1,95 @@
+description: Types of the opcp_certificate_manager interface
+types:
+  OperationResult:
+    description: Outcome of the last operation on a certificate or the root pool
+    type: string
+    enum:
+      - NotYetRun
+      - Success
+      - Skipped
+      - Failed
+      - AuthRejected
+      - NoClientCertificate
+  LeafStatus:
+    description: State of one managed SECC leaf certificate
+    type: object
+    required:
+      - iso_version
+      - managed
+      - days_until_expiry
+      - last_result
+    properties:
+      iso_version:
+        description: ISO 15118 profile of the leaf ("ISO15118-2" or "ISO15118-20")
+        type: string
+      managed:
+        description: Whether the module renews this leaf
+        type: boolean
+      days_until_expiry:
+        description: Days until the newest installed leaf expires, 0 if none is installed
+        type: integer
+      last_result:
+        description: Result of the last renewal attempt
+        type: string
+        $ref: /opcp_certificate_manager#/OperationResult
+      last_error:
+        description: Human readable error of the last failed attempt
+        type: string
+      last_renewal:
+        description: Timestamp (RFC3339) of the last successful renewal since start
+        type: string
+        format: date-time
+      next_retry:
+        description: Timestamp (RFC3339) of the next automatic attempt after a failure
+        type: string
+        format: date-time
+  RootSyncStatus:
+    description: State of the root certificate synchronisation
+    type: object
+    required:
+      - enabled
+      - last_result
+    properties:
+      enabled:
+        description: Whether root synchronisation is configured
+        type: boolean
+      last_result:
+        description: Result of the last synchronisation
+        type: string
+        $ref: /opcp_certificate_manager#/OperationResult
+      last_error:
+        description: Human readable error of the last failed synchronisation
+        type: string
+      last_sync:
+        description: Timestamp (RFC3339) of the last successful synchronisation since start
+        type: string
+        format: date-time
+      installed_count:
+        description: Number of root certificates installed or refreshed in the last synchronisation
+        type: integer
+  Status:
+    description: Overall status published by the module
+    type: object
+    required:
+      - timestamp
+      - busy
+      - leafs
+      - roots
+    properties:
+      timestamp:
+        description: When this status was produced (RFC3339)
+        type: string
+        format: date-time
+      busy:
+        description: An operation is currently running
+        type: boolean
+      leafs:
+        description: One entry per ISO version
+        type: array
+        items:
+          type: object
+          $ref: /opcp_certificate_manager#/LeafStatus
+      roots:
+        description: Root synchronisation state
+        type: object
+        $ref: /opcp_certificate_manager#/RootSyncStatus

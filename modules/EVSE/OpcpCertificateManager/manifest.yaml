@@ -1,0 +1,126 @@
+description: >-
+  Keeps the ISO 15118 SECC leaf certificates (ISO 15118-2 and ISO 15118-20) and the V2G/MO root certificates of a
+  charging station current through an OPCP (Open Plug&Charge Protocol) ecosystem such as Hubject, without OCPP.
+  Renewals use RFC 7030 simplereenroll authenticated with the still valid SECC leaf as TLS client certificate, so no
+  OAuth2 secret is stored on the station; the first certificate is enrolled with the opcp-enroll tool.
+config:
+  environment:
+    description: >-
+      Ecosystem preset filling the endpoint URLs and paths. Use custom together with api_base_url (and optionally
+      est_base_url) for other deployments; explicitly set URLs override the preset in any case.
+    type: string
+    enum:
+      - hubject-eu-test
+      - hubject-eu-qa
+      - hubject-eu-prod
+      - hubject-us-test
+      - hubject-us-qa
+      - hubject-us-prod
+      - custom
+    default: hubject-eu-qa
+  api_base_url:
+    description: Base URL of the REST services (root certificate pool), e.g. https://eu.plugncharge-qa.hubject.com
+    type: string
+    default: ""
+  est_base_url:
+    description: Base URL of the EST endpoints; defaults to api_base_url
+    type: string
+    default: ""
+  simplereenroll_path:
+    description: >-
+      Path template of the re-enrollment endpoint. Placeholders {ca}, {iso} (ISO15118-2/ISO15118-20) and {iso_opt}
+      ("" for ISO 15118-2, "/ISO15118-20" otherwise). Empty keeps the preset's template.
+    type: string
+    default: ""
+  cacerts_path:
+    description: Path template of the CA certificates endpoint with placeholders {ca}, {iso}, {alg}. Empty keeps the preset's template.
+    type: string
+    default: ""
+  ca:
+    description: Sub-CA identifier used in the EST paths
+    type: string
+    default: cpo
+  server_ca_bundle:
+    description: PEM bundle used to verify the ecosystem's TLS server certificate; empty uses the system store
+    type: string
+    default: ""
+  manage_iso15118_2:
+    description: Renew the ISO 15118-2 SECC leaf (prime256v1, TLS 1.2)
+    type: boolean
+    default: true
+  manage_iso15118_20:
+    description: Renew the ISO 15118-20 SECC leaf (secp521r1, TLS 1.3)
+    type: boolean
+    default: false
+  common_name_iso2:
+    description: Common name (EVSEID) of the ISO 15118-2 leaf, must match the enrolled certificate
+    type: string
+    default: ""
+  common_name_iso20:
+    description: Common name (SECCID) of the ISO 15118-20 leaf; empty uses common_name_iso2
+    type: string
+    default: ""
+  organization:
+    description: Organization name (O) put into the certificate signing requests
+    type: string
+    default: ""
+  country:
+    description: Two letter country code (C) put into the certificate signing requests
+    type: string
+    default: DE
+  use_tpm:
+    description: Generate the new private keys in the TPM / custom OpenSSL provider
+    type: boolean
+    default: false
+  renewal_threshold_days:
+    description: Renew a leaf when it expires in fewer days than this
+    type: integer
+    default: 30
+    minimum: 1
+  check_interval_s:
+    description: Interval between expiry checks in seconds
+    type: integer
+    default: 43200
+    minimum: 60
+  initial_delay_s:
+    description: Delay of the first check after start in seconds
+    type: integer
+    default: 60
+    minimum: 0
+  retry_backoff_s:
+    description: Delay before retrying a failed renewal; doubles per consecutive failure up to 24 hours
+    type: integer
+    default: 600
+    minimum: 10
+  sync_root_certificates:
+    description: Periodically download the root certificates from the root certificate pool
+    type: boolean
+    default: true
+  root_types:
+    description: Comma separated root certificate types to install (v2g, mo). OEM roots have no store yet.
+    type: string
+    default: v2g,mo
+  root_sync_interval_s:
+    description: Interval between root certificate synchronisations in seconds
+    type: integer
+    default: 86400
+    minimum: 60
+  http_timeout_ms:
+    description: HTTP request timeout in milliseconds
+    type: integer
+    default: 30000
+    minimum: 1000
+provides:
+  main:
+    description: Control commands and status of the certificate management
+    interface: opcp_certificate_manager
+requires:
+  security:
+    interface: evse_security
+    min_connections: 1
+    max_connections: 1
+enable_telemetry: true
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Cornelius Claussen
