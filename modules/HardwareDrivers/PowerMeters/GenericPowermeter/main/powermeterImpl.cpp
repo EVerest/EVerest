@@ -332,7 +332,6 @@ powermeterImpl::ModbusFunctionType powermeterImpl::select_modbus_function(const 
 }
 
 void powermeterImpl::read_powermeter_values() {
-    static bool pm_values_are_complete{false};
     bool all_pm_registers_success{true};
     for (const auto& register_data : this->pm_configuration) {
         const auto result = this->read_register(register_data);
@@ -347,16 +346,21 @@ void powermeterImpl::read_powermeter_values() {
             break;
         }
     }
-    if (all_pm_registers_success) {
-        pm_values_are_complete = true;
-    }
-
+    // May clear pm_values_are_complete when communication is considered lost.
     this->update_communication_fault(all_pm_registers_success);
 
-    if (not pm_values_are_complete) {
-        EVLOG_warning << "No complete set of power meter values has been acquired yet. Not publishing.";
+    if (all_pm_registers_success) {
+        this->pm_values_are_complete = true;
+    }
+
+    if (not this->pm_values_are_complete) {
+        if (not this->publishing_suspended_logged) {
+            EVLOG_warning << "No complete set of power meter values available. Not publishing.";
+            this->publishing_suspended_logged = true;
+        }
         return;
     }
+    this->publishing_suspended_logged = false;
 
     this->pm_last_values.timestamp = Everest::Date::to_rfc3339(date::utc_clock::now());
     this->publish_powermeter(this->pm_last_values);
@@ -380,8 +384,15 @@ void powermeterImpl::update_communication_fault(bool read_cycle_successful) {
         this->failed_read_cycles++;
     }
 
-    if (this->failed_read_cycles >= communication_fault_debounce_cycles and
-        not this->error_state_monitor->is_error_active("powermeter/CommunicationFault", "CommunicationError")) {
+    if (this->failed_read_cycles < communication_fault_debounce_cycles) {
+        return;
+    }
+
+    // Communication is lost. Stop publishing the last known values: they would otherwise be republished with a
+    // fresh timestamp every cycle and look like current measurements to consumers.
+    this->pm_values_are_complete = false;
+
+    if (not this->error_state_monitor->is_error_active("powermeter/CommunicationFault", "CommunicationError")) {
         this->raise_error(this->error_factory->create_error(
             "powermeter/CommunicationFault", "CommunicationError",
             fmt::format("Lost communication with power meter (model '{}', device id {})", this->config.model,
