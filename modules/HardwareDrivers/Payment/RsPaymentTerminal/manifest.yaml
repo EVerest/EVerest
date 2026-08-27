@@ -32,14 +32,15 @@ config:
   read_card_control:
     description: >-
       The ZVT card reading control (Tlv tag 0x1f15) used when polling for
-      cards. The default 208 (0xd0) detects cards without sending commands to
+      cards.
+      The default 208 (0xd0) detects cards without sending commands to
       them; the token of a bank card is then taken from the
-      `bank_session_token` interface. The value 192 (0xc0) fully reads the
-      card: slower, but the token is then derived from the physical card,
-      which allows stopping a session by presenting the same card again. With
-      192 the `bank_session_token` interface is not used and the caller of
-      `token_validator` must deliver the invoice token in `parent_id_token` -
-      validation is rejected otherwise.
+      `bank_session_token` interface.
+      The value 192 (0xc0) fully reads the card: slower, but the token is then
+      derived from the physical card, which allows stopping a session by
+      presenting the same card again. With 192 the `bank_session_token`
+      interface is not used and the caller of `token_validator` must deliver the
+      invoice token in `parent_id_token` - validation is rejected otherwise.
     default: 208
     type: integer
   transactions_max_num:
