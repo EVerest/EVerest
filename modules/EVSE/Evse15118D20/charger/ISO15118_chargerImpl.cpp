@@ -10,6 +10,7 @@
 #include "utils.hpp"
 
 #include <algorithm>
+#include <iterator>
 
 #include <utils/date.hpp>
 
@@ -582,9 +583,16 @@ iso15118::config::SSLConfig ISO15118_chargerImpl::build_base_ssl_config() {
 
 iso15118::config::SSLConfig ISO15118_chargerImpl::build_current_ssl_config() {
     auto cfg = build_base_ssl_config();
-    const auto certs_result = mod->r_security->call_get_all_valid_certificates_info(
-        types::evse_security::LeafCertificateType::V2G, types::evse_security::EncodingFormat::PEM, true);
-    cfg.chains = map_valid_chains(certs_result);
+    // Both SECC leaf types: V2G is the ISO 15118-2 leaf (prime256v1, TLS 1.2), V2G20 the ISO 15118-20 leaf
+    // (secp521r1 / Ed448, TLS 1.3). Each query returns the newest valid leaf per issuing root of that profile,
+    // so a renewed leaf of either type is picked up by the same rebuild.
+    for (const auto leaf_type :
+         {types::evse_security::LeafCertificateType::V2G, types::evse_security::LeafCertificateType::V2G20}) {
+        const auto certs_result = mod->r_security->call_get_all_valid_certificates_info(
+            leaf_type, types::evse_security::EncodingFormat::PEM, true);
+        auto chains = map_valid_chains(certs_result);
+        std::move(chains.begin(), chains.end(), std::back_inserter(cfg.chains));
+    }
     return cfg;
 }
 

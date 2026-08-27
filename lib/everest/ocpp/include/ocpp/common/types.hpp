@@ -711,9 +711,10 @@ struct GetCertificateInfoResult {
 
 enum class LeafCertificateType {
     CSMS, // Charging Station Management System
-    V2G,  // Vehicle to grid
+    V2G,  // Vehicle to grid, ISO 15118-2 SECC leaf
     MF,   // Manufacturer
-    MO    // Mobility Operator
+    MO,   // Mobility Operator
+    V2G20 // Vehicle to grid, ISO 15118-20 SECC leaf (OCPP 2.1 V2G20Certificate)
 };
 
 namespace conversions {

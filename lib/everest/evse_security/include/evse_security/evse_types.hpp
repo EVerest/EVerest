@@ -32,9 +32,11 @@ enum class CaCertificateType {
 
 enum class LeafCertificateType {
     CSMS,
-    V2G,
+    V2G, ///< ISO 15118-2 SECC leaf (TLS 1.2, prime256v1). Shares the SECC store with V2G20; a SECC leaf is V2G
+         ///< unless its key is secp521r1 / ED448
     MF,
     MO,
+    V2G20, ///< ISO 15118-20 SECC leaf (TLS 1.3, secp521r1 / ED448), same directories and V2G root bundle as V2G
 };
 
 enum class CertificateType {

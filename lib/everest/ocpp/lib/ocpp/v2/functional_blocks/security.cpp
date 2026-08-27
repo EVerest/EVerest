@@ -255,7 +255,11 @@ void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certi
         should_use_tpm =
             this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::UseTPM).value_or(false);
     } else {
-        req.certificateType = ocpp::v2::CertificateSigningUseEnum::V2GCertificate;
+        // Both SECC leaf types (ISO 15118-2 V2GCertificate, ISO 15118-20 V2G20Certificate) share the SECC key
+        // store and hence the TPM setting
+        req.certificateType = (certificate_signing_use == ocpp::CertificateSigningUseEnum::V2G20Certificate)
+                                  ? ocpp::v2::CertificateSigningUseEnum::V2G20Certificate
+                                  : ocpp::v2::CertificateSigningUseEnum::V2GCertificate;
         should_use_tpm =
             this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::UseTPMSeccLeafCertificate)
                 .value_or(false);
@@ -297,16 +301,21 @@ void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call
     if (!call.msg.certificateType.has_value() or
         call.msg.certificateType.value() == CertificateSigningUseEnum::ChargingStationCertificate) {
         cert_signing_use = ocpp::CertificateSigningUseEnum::ChargingStationCertificate;
+    } else if (call.msg.certificateType.value() == CertificateSigningUseEnum::V2G20Certificate) {
+        cert_signing_use = ocpp::CertificateSigningUseEnum::V2G20Certificate;
     } else {
         cert_signing_use = ocpp::CertificateSigningUseEnum::V2GCertificate;
     }
+
+    const bool is_secc_leaf = (cert_signing_use == ocpp::CertificateSigningUseEnum::V2GCertificate) or
+                              (cert_signing_use == ocpp::CertificateSigningUseEnum::V2G20Certificate);
 
     const auto result = this->context.evse_security.update_leaf_certificate(certificate_chain, cert_signing_use);
 
     if (result == ocpp::InstallCertificateResult::Accepted) {
         response.status = CertificateSignedStatusEnum::Accepted;
-        // For V2G certificates, also trigger an OCSP cache update
-        if (cert_signing_use == ocpp::CertificateSigningUseEnum::V2GCertificate) {
+        // For SECC (V2G / V2G20) certificates, also trigger an OCSP cache update
+        if (is_secc_leaf) {
             this->ocsp_updater.trigger_ocsp_cache_update();
         }
     }
@@ -544,19 +553,44 @@ void Security::scheduled_check_client_certificate_expiration() {
             .value_or(12 * 60 * 60)));
 }
 
+bool Security::v2g20_certificate_installation_enabled() const {
+    // The ISO 15118-20 SECC leaf is a separate certificate (TLS 1.3, secp521r1) requested with the OCPP 2.1
+    // certificateType V2G20Certificate. A 2.0.1 CSMS does not know that enum, so it is only maintained on an
+    // OCPP 2.1 connection, and only when explicitly enabled on top of V2GCertificateInstallationEnabled.
+    return this->context.ocpp_version == OcppProtocolVersion::v21 and
+           this->context.device_model
+               .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
+               .value_or(false) and
+           this->context.device_model
+               .get_optional_value<bool>(ControllerComponentVariables::V2G20CertificateInstallationEnabled)
+               .value_or(false);
+}
+
+bool Security::check_secc_certificate_expiration(const ocpp::CertificateSigningUseEnum& certificate_signing_use) {
+    const auto name = ocpp::conversions::certificate_signing_use_enum_to_string(certificate_signing_use);
+    EVLOG_info << "Checking if " << name << " has expired";
+    // 0 also when no leaf of that type is installed yet, so the initial certificate is requested the same way
+    const int expiry_days_count = this->context.evse_security.get_leaf_expiry_days_count(certificate_signing_use);
+    if (expiry_days_count < 30) {
+        EVLOG_info << name << " is invalid in " << expiry_days_count
+                   << " days. Requesting new certificate with certificate signing request";
+        this->sign_certificate_req(certificate_signing_use);
+        return true;
+    }
+    EVLOG_info << name << " is still valid.";
+    return false;
+}
+
 void Security::scheduled_check_v2g_certificate_expiration() {
     if (this->context.device_model
             .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
             .value_or(false)) {
-        EVLOG_info << "Checking if V2GCertificate has expired";
-        const int expiry_days_count =
-            this->context.evse_security.get_leaf_expiry_days_count(ocpp::CertificateSigningUseEnum::V2GCertificate);
-        if (expiry_days_count < 30) {
-            EVLOG_info << "V2GCertificate is invalid in " << expiry_days_count
-                       << " days. Requesting new certificate with certificate signing request";
-            this->sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate);
-        } else {
-            EVLOG_info << "V2GCertificate is still valid.";
+        // The ISO 15118-2 and ISO 15118-20 SECC leafs are renewed independently. Only one SignCertificate.req
+        // can be outstanding at a time, so when both are due the -2 leaf goes first and the -20 leaf is
+        // requested on the next check (V2GCertificateExpireCheckIntervalSeconds).
+        const bool requested = this->check_secc_certificate_expiration(ocpp::CertificateSigningUseEnum::V2GCertificate);
+        if (this->v2g20_certificate_installation_enabled() and not requested) {
+            this->check_secc_certificate_expiration(ocpp::CertificateSigningUseEnum::V2G20Certificate);
         }
     } else {
         if (this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::PnCEnabled)

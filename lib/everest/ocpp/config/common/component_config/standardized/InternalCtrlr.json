@@ -442,6 +442,22 @@
         "default": false,
         "type": "boolean"
       },
+      "V2G20CertificateInstallationEnabled": {
+        "description": "If true (and ISO15118Ctrlr.V2GCertificateInstallationEnabled is true and the connection is OCPP 2.1), the charging station also maintains a second SECC leaf certificate for ISO 15118-20 (TLS 1.3, secp521r1 key, OCPP 2.1 certificateType V2G20Certificate): it requests one via SignCertificate.req when none is installed or the installed one expires within 30 days, installs the CertificateSigned.req chain and accepts TriggerMessage SignV2G20Certificate. The ISO 15118-2 SECC leaf (V2GCertificate) is maintained independently. Requires an OCPP 2.1 CSMS that supports V2G20Certificate.",
+        "variable_name": "V2G20CertificateInstallationEnabled",
+        "characteristics": {
+            "supportsMonitoring": false,
+            "dataType": "boolean"
+        },
+        "attributes": [
+            {
+                "type": "Actual",
+                "mutability": "ReadWrite"
+            }
+        ],
+        "default": false,
+        "type": "boolean"
+      },
       "VerifyCsmsAllowWildcards": {
         "variable_name": "VerifyCsmsAllowWildcards",
         "characteristics": {

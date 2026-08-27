@@ -195,6 +195,25 @@ TEST_F(SecurityTest, handle_message_certificate_signed_v2gcertificate) {
         create_example_certificate_signed_request("", ocpp::v2::CertificateSigningUseEnum::V2GCertificate));
 }
 
+TEST_F(SecurityTest, handle_message_certificate_signed_v2g20certificate) {
+    set_update_certificate_symlinks_enabled(this->device_model, true);
+
+    // The ISO 15118-20 leaf is installed as its own type ...
+    EXPECT_CALL(evse_security, update_leaf_certificate("", ocpp::CertificateSigningUseEnum::V2G20Certificate))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    // ... shares the SECC OCSP cache with the -2 leaf ...
+    EXPECT_CALL(ocsp_updater, trigger_ocsp_cache_update()).Times(1);
+    // ... but the legacy -2 symlinks are never repointed at it, even with symlink updates enabled
+    EXPECT_CALL(evse_security, update_certificate_links(_)).Times(0);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<CertificateSignedResponse>();
+        EXPECT_EQ(response.status, CertificateSignedStatusEnum::Accepted);
+    }));
+
+    security.handle_message(
+        create_example_certificate_signed_request("", ocpp::v2::CertificateSigningUseEnum::V2G20Certificate));
+}
+
 TEST_F(SecurityTest, handle_message_certificate_signed_v2gcertificate_symlinks_disabled) {
     set_update_certificate_symlinks_enabled(this->device_model, false);
 
@@ -755,6 +774,65 @@ TEST_F(SecurityTest, sign_certificate_request_v2g_accepted) {
     }));
 
     security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate, true);
+}
+
+TEST_F(SecurityTest, sign_certificate_request_v2g20_accepted) {
+    // The ISO 15118-20 SECC leaf uses the same ISO15118Ctrlr CSR inputs and TPM setting as the -2 leaf, but is
+    // requested with the OCPP 2.1 certificateType V2G20Certificate.
+    this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrSeccId.component,
+                                  ControllerComponentVariables::ISO15118CtrlrSeccId.variable.value(),
+                                  AttributeEnum::Actual, "iso_testcommonname", "test", true);
+    this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrOrganizationName.component,
+                                  ControllerComponentVariables::ISO15118CtrlrOrganizationName.variable.value(),
+                                  AttributeEnum::Actual, "iso_testOrganization", "test", true);
+    this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrCountryName.component,
+                                  ControllerComponentVariables::ISO15118CtrlrCountryName.variable.value(),
+                                  AttributeEnum::Actual, "iso_testCountry", "test", true);
+    this->device_model->set_value(ControllerComponentVariables::UseTPMSeccLeafCertificate.component,
+                                  ControllerComponentVariables::UseTPMSeccLeafCertificate.variable.value(),
+                                  AttributeEnum::Actual, "true", "test", true);
+
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr20";
+
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(
+                                         ocpp::CertificateSigningUseEnum::V2G20Certificate, "iso_testCountry",
+                                         "iso_testOrganization", "iso_testcommonname", true))
+        .WillOnce(Return(sign_request_result));
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillOnce(Invoke([](const json& call, bool triggered) {
+        auto request = call[ocpp::CALL_PAYLOAD].get<SignCertificateRequest>();
+        ASSERT_TRUE(request.certificateType.has_value());
+        EXPECT_EQ(request.certificateType.value(), ocpp::v2::CertificateSigningUseEnum::V2G20Certificate);
+        EXPECT_EQ(request.csr, "csr20");
+        EXPECT_FALSE(triggered);
+    }));
+
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2G20Certificate);
+}
+
+TEST_F(SecurityTest, v2g20_certificate_installation_enabled_requires_v21_and_both_flags) {
+    const auto set_bool = [this](const ComponentVariable& cv, const bool value) {
+        this->device_model->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual,
+                                      value ? "true" : "false", "test", true);
+    };
+    set_bool(ControllerComponentVariables::V2GCertificateInstallationEnabled, true);
+    set_bool(ControllerComponentVariables::V2G20CertificateInstallationEnabled, true);
+
+    // A 2.0.1 CSMS does not know V2G20Certificate
+    this->ocpp_version = ocpp::OcppProtocolVersion::v201;
+    EXPECT_FALSE(security.v2g20_certificate_installation_enabled());
+
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    EXPECT_TRUE(security.v2g20_certificate_installation_enabled());
+
+    set_bool(ControllerComponentVariables::V2G20CertificateInstallationEnabled, false);
+    EXPECT_FALSE(security.v2g20_certificate_installation_enabled());
+
+    set_bool(ControllerComponentVariables::V2G20CertificateInstallationEnabled, true);
+    set_bool(ControllerComponentVariables::V2GCertificateInstallationEnabled, false);
+    EXPECT_FALSE(security.v2g20_certificate_installation_enabled());
 }
 
 TEST_F(SecurityTest, sign_certificate_request_manufacturer_cert_accepted) {

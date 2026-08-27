@@ -125,6 +125,7 @@ bool s_generate_key(const KeyGenerationInfo& key_info, KeyHandle_ptr& out_key, E
     unsigned int bits = 0;
     std::string group_256 = "P-256";
     std::string group_384 = "P-384";
+    std::string group_521 = "P-521";
     char* group = nullptr;
     std::size_t group_sz = 0;
     int nid = NID_undef;
@@ -159,6 +160,11 @@ bool s_generate_key(const KeyGenerationInfo& key_info, KeyHandle_ptr& out_key, E
         group = group_256.data();
         group_sz = group_256.length();
         nid = NID_X9_62_prime256v1;
+        break;
+    case CryptoKeyType::EC_secp521r1:
+        group = group_521.data();
+        group_sz = group_521.length();
+        nid = NID_secp521r1;
         break;
     case CryptoKeyType::EC_secp384r1:
     default:
@@ -787,8 +793,10 @@ CertificateSignRequestResult OpenSSLSupplier::x509_generate_csr(const Certificat
         return CertificateSignRequestResult::ExtensionsError;
     }
 
-    // sign the certificate with the private key
-    const bool x509_signed = X509_REQ_sign(x509_req_ptr.get(), key, EVP_sha256()) != 0;
+    // sign the certificate with the private key. ISO 15118-20 pairs secp521r1 with SHA-512
+    // (ecdsa-with-SHA512); everything else keeps SHA-256
+    const EVP_MD* digest = (csr_info.key_info.key_type == CryptoKeyType::EC_secp521r1) ? EVP_sha512() : EVP_sha256();
+    const bool x509_signed = X509_REQ_sign(x509_req_ptr.get(), key, digest) != 0;
 
     if (x509_signed == false) {
         EVLOG_error << "Failed to sign csr with error!";

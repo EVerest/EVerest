@@ -25,15 +25,20 @@ served by one certificate:
 The TLS version and cipher follow whatever the EV offers in its ClientHello
 (unless ``enforce_tls_1_3`` pins TLS 1.3). To also present the right leaf,
 install both SECC leaf certificates (with their keys) in the ``EvseSecurity``
-SECC leaf directory. At startup the module fetches every valid V2G leaf --
-newest per issuing root and key algorithm -- and tags each chain by its key:
-``prime256v1`` leaves are presented on TLS 1.2 connections, ``secp521r1`` /
-``Ed448`` leaves on TLS 1.3 connections, anything else on both. When only one
-leaf is installed it is presented on every connection as before; a warning is
-logged at startup if a protocol is offered without a leaf on its mandated
-curve. The leaves are distinguished by key algorithm rather than by a separate
-storage slot because that is what the two standards themselves prescribe, so
-no additional configuration is needed.
+SECC leaf directory -- or let OCPP provision them (``V2GCertificate`` and, on
+OCPP 2.1, ``V2G20Certificate``; see the OCPP module documentation). The two
+are the ``EvseSecurity`` leaf types ``V2G`` (ISO 15118-2 profile) and ``V2G20``
+(ISO 15118-20 profile, ``secp521r1`` / ``Ed448`` key). The module fetches every
+valid leaf of both types -- newest per issuing root -- and tags each chain by
+its key: ``prime256v1`` leaves are presented on TLS 1.2 connections,
+``secp521r1`` / ``Ed448`` leaves on TLS 1.3 connections, anything else on both.
+Within a version the EV's advertised CA list (``certificate_authorities`` on
+TLS 1.3, ``trusted_ca_keys`` on TLS 1.2) picks among the chains, so the two
+leaves may chain to different sub-CAs or roots. When only one leaf is installed
+it is presented on every connection as before; a warning is logged at startup
+if a protocol is offered without a leaf on its mandated curve. The chain list
+is rebuilt on every ``certificate_store_update`` event, so a renewed leaf of
+either type is served from the next connection on without a restart.
 
 DER grid support
 ================
