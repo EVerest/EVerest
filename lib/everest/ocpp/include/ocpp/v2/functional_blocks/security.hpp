@@ -97,6 +97,10 @@ private:
 
     int csr_attempt;
     std::optional<ocpp::CertificateSigningUseEnum> awaited_certificate_signing_use_enum;
+    /// \brief requestId of the outstanding SignCertificate.req (OCPP 2.1, A02.FR.24). A CertificateSigned.req that
+    /// carries a different requestId is rejected (A02.FR.26). Not set on OCPP 2.0.1, whose schema lacks the field.
+    std::optional<std::int32_t> awaited_sign_certificate_request_id;
+    std::int32_t next_sign_certificate_request_id;
     Everest::SteadyTimer certificate_signed_timer;
     Everest::SteadyTimer client_certificate_expiration_check_timer;
     Everest::SteadyTimer v2g_certificate_expiration_check_timer;

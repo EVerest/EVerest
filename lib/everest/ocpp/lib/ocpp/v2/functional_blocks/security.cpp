@@ -4,6 +4,7 @@
 #include <ocpp/v2/functional_blocks/security.hpp>
 
 #include <boost/algorithm/string/join.hpp>
+#include <limits>
 
 #include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/common/constants.hpp>
@@ -45,6 +46,7 @@ Security::Security(const FunctionalBlockContext& functional_block_context, Messa
     ocsp_updater(ocsp_updater),
     security_event_callback(security_event_callback),
     csr_attempt(1),
+    next_sign_certificate_request_id(0),
     client_certificate_expiration_check_timer([this]() { this->scheduled_check_client_certificate_expiration(); }),
     v2g_certificate_expiration_check_timer([this]() { this->scheduled_check_v2g_certificate_expiration(); }) {
 }
@@ -282,18 +284,43 @@ void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certi
 
     req.csr = result.csr.value();
 
+    if (this->context.ocpp_version == OcppProtocolVersion::v21) {
+        // A02.FR.24: tag the request so the resulting CertificateSigned.req can be matched to it. The 2.0.1 schema
+        // does not know the field, so it is only sent on a 2.1 connection.
+        req.requestId = this->next_sign_certificate_request_id;
+        this->next_sign_certificate_request_id =
+            (this->next_sign_certificate_request_id == std::numeric_limits<std::int32_t>::max())
+                ? 0
+                : this->next_sign_certificate_request_id + 1;
+    }
+
     this->awaited_certificate_signing_use_enum = certificate_signing_use;
+    this->awaited_sign_certificate_request_id = req.requestId;
 
     const ocpp::Call<SignCertificateRequest> call(req);
     this->context.message_dispatcher.dispatch_call(call, initiated_by_trigger_message);
 }
 
 void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call) {
-    this->reset_certificate_signing_state();
-    this->certificate_signed_timer.stop();
-
     CertificateSignedResponse response;
     response.status = CertificateSignedStatusEnum::Rejected;
+
+    if (call.msg.requestId.has_value() and call.msg.requestId != this->awaited_sign_certificate_request_id) {
+        // A02.FR.26: a CertificateSigned.req with an unknown requestId is rejected. The outstanding request (if any)
+        // stays outstanding, so the CSMS can still answer it.
+        EVLOG_warning << "Rejecting CertificateSigned.req with unknown requestId " << call.msg.requestId.value()
+                      << (this->awaited_sign_certificate_request_id.has_value()
+                              ? ", awaiting requestId " +
+                                    std::to_string(this->awaited_sign_certificate_request_id.value())
+                              : ", no SignCertificate.req with a requestId is outstanding");
+        response.statusInfo = make_status_info(reason_code_unspecified, "Unknown requestId");
+        const ocpp::CallResult<CertificateSignedResponse> call_result(response, call.uniqueId);
+        this->context.message_dispatcher.dispatch_call_result(call_result);
+        return;
+    }
+
+    this->reset_certificate_signing_state();
+    this->certificate_signed_timer.stop();
 
     const auto certificate_chain = call.msg.certificateChain.get();
     ocpp::CertificateSigningUseEnum cert_signing_use; // NOLINT(cppcoreguidelines-init-variables): initialized below
@@ -402,6 +429,7 @@ void Security::handle_sign_certificate_response(CallResult<SignCertificateRespon
 
 void Security::reset_certificate_signing_state() {
     this->awaited_certificate_signing_use_enum = std::nullopt;
+    this->awaited_sign_certificate_request_id = std::nullopt;
     this->csr_attempt = 1;
 }
 

@@ -631,7 +631,9 @@ profile 3 is used; for the ISO 15118-2 SECC leaf only when Plug&Charge is enable
 know **V2G20Certificate**). Expiry is re-checked every 12 hours
 (``V2GCertificateExpireCheckIntervalSeconds``); the two SECC leafs are checked and renewed independently, and
 because only one **SignCertificate.req** may be outstanding, when both are due the -2 leaf is requested first and the
--20 leaf on the next check. The CSMS can also trigger either request via **TriggerMessage.req**
+-20 leaf on the next check. On OCPP 2.1 every **SignCertificate.req** carries a ``requestId`` and a
+**CertificateSigned.req** whose ``requestId`` does not belong to the outstanding request is rejected (A02.FR.24 /
+A02.FR.26). The CSMS can also trigger either request via **TriggerMessage.req**
 (``SignV2GCertificate`` / ``SignV2G20Certificate``). A newly installed SECC leaf is picked up by the
 ``Evse15118D20`` module without a restart via the ``certificate_store_update`` event. In OCPP 1.6, the equivalent
 functionality for the CSMS and ISO 15118-2 SECC certificates is provided via the OCPP 1.6 security whitepaper
