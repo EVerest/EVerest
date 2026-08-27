@@ -121,6 +121,13 @@ private:
     /// @brief Number of consecutive read cycles in which at least one register could not be read.
     uint32_t failed_read_cycles{0};
 
+    /// @brief Whether pm_last_values holds a set of values that may still be published. Set once the first read
+    /// cycle completes fully, cleared again when communication with the meter is considered lost.
+    bool pm_values_are_complete{false};
+
+    /// @brief Remember whether we already logged that publishing is suspended.
+    bool publishing_suspended_logged{false};
+
     void init_default_values();
     void init_register_assignments(const json& loaded_registers);
     bool assign_register_data(const json& registers, const PowermeterRegisters register_type,
