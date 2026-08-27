@@ -9,6 +9,21 @@
 
 namespace module::charger {
 
+iso15118::config::ChainTlsVersion classify_secc_leaf(const std::optional<std::string>& public_key_algorithm) {
+    using iso15118::config::ChainTlsVersion;
+    if (not public_key_algorithm.has_value()) {
+        return ChainTlsVersion::ANY;
+    }
+    const auto& alg = public_key_algorithm.value();
+    if (alg == "prime256v1") {
+        return ChainTlsVersion::TLS_1_2;
+    }
+    if (alg == "secp521r1" or alg == "ED448") {
+        return ChainTlsVersion::TLS_1_3;
+    }
+    return ChainTlsVersion::ANY;
+}
+
 std::vector<iso15118::config::ChainConfig>
 map_valid_chains(const types::evse_security::GetCertificateFullInfoResult& result) {
     using types::evse_security::GetCertificateInfoStatus;
@@ -61,6 +76,13 @@ map_valid_chains(const types::evse_security::GetCertificateFullInfoResult& resul
         chain_config.private_key_password = chain.password;
         chain_config.ocsp_response_files = std::move(ocsp_response_files);
         chain_config.trust_anchor_pem = chain.certificate_root; // inline PEM of the chain's V2G root
+        chain_config.tls_version = classify_secc_leaf(chain.public_key_algorithm);
+        EVLOG_info << "SECC leaf certificate " << chain_config.path_certificate_chain << " ("
+                   << chain.public_key_algorithm.value_or("unknown key algorithm") << ") is presented on "
+                   << (chain_config.tls_version == iso15118::config::ChainTlsVersion::TLS_1_2 ? "TLS 1.2 (ISO 15118-2)"
+                       : chain_config.tls_version == iso15118::config::ChainTlsVersion::TLS_1_3
+                           ? "TLS 1.3 (ISO 15118-20)"
+                           : "any TLS version");
         chains.push_back(std::move(chain_config));
     }
 

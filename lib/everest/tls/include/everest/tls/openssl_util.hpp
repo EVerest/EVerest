@@ -165,6 +165,9 @@ using chain_info_list_t = std::vector<chain_info_t>;
 struct chain_t {
     chain_info_t chain{{nullptr, nullptr}, {}, {}};
     pkey_ptr private_key{nullptr, nullptr};
+    /// negotiated TLS version this chain is meant for: 0 = any version,
+    /// otherwise TLS1_2_VERSION or TLS1_3_VERSION (see tls::Server::certificate_config_t::tls_version)
+    int tls_version{0};
 };
 
 using chain_list = std::vector<chain_t>;

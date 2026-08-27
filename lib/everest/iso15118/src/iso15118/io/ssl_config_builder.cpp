@@ -32,6 +32,18 @@ std::vector<tls::Server::certificate_config_t> build_chain_configs(const config:
             chain_cfg.trust_anchor_pem = src.trust_anchor_pem.value();
         }
         chain_cfg.ocsp_response_files = std::move(ocsp_items);
+        switch (src.tls_version) {
+        case config::ChainTlsVersion::TLS_1_2:
+            chain_cfg.tls_version = tls::Server::TlsVersion::tls_1_2;
+            break;
+        case config::ChainTlsVersion::TLS_1_3:
+            chain_cfg.tls_version = tls::Server::TlsVersion::tls_1_3;
+            break;
+        case config::ChainTlsVersion::ANY:
+        default:
+            chain_cfg.tls_version = tls::Server::TlsVersion::any;
+            break;
+        }
         chains.push_back(std::move(chain_cfg));
     }
 

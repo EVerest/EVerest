@@ -42,6 +42,10 @@ std::string AbstractCryptoSupplier::x509_get_key_hash(X509Handle* /*handle*/) {
     default_crypto_supplier_usage_error() return {};
 }
 
+std::string AbstractCryptoSupplier::x509_get_public_key_algorithm(X509Handle* /*handle*/) {
+    default_crypto_supplier_usage_error() return {};
+}
+
 std::string AbstractCryptoSupplier::x509_get_serial_number(X509Handle* /*handle*/) {
     default_crypto_supplier_usage_error() return {};
 }

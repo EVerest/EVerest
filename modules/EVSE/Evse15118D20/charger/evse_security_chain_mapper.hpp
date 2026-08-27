@@ -22,6 +22,8 @@ namespace module::charger {
 ///    verbatim (std::nullopt is preserved, marking "no OCSP staple for this position")
 ///  - trust_anchor_pem: chain.certificate_root (the self-signed V2G root PEM that issued this leaf;
 ///    drives TLS 1.3 / trusted_ca_keys chain selection)
+///  - tls_version: classify_secc_leaf(chain.public_key_algorithm), so the ISO 15118-2 and ISO 15118-20
+///    SECC leafs are each presented on their TLS version
 ///
 /// Returns an empty vector when:
 ///  - the result status is not Accepted, or
@@ -33,6 +35,11 @@ namespace module::charger {
 /// assembles those separately before forwarding to the controller.
 std::vector<iso15118::config::ChainConfig>
 map_valid_chains(const types::evse_security::GetCertificateFullInfoResult& result);
+
+/// \brief Which TLS version a SECC leaf is presented on, judged by the key algorithm the standards
+/// prescribe: ISO 15118-2 runs TLS 1.2 over a prime256v1 leaf, ISO 15118-20 runs TLS 1.3 over a
+/// secp521r1 or Ed448 leaf. Anything else (or an unknown algorithm) is offered on every version.
+iso15118::config::ChainTlsVersion classify_secc_leaf(const std::optional<std::string>& public_key_algorithm);
 
 /// \brief True when a certificate_store_update event affects the V2G SSL config:
 /// a V2G leaf event, or a V2G/MO CA event. False otherwise (incl. an event carrying

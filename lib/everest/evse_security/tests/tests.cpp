@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 #include <openssl/crypto.h>
 #include <regex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -99,6 +100,13 @@ class EvseSecurityTestsMultiLeaf : public EvseSecurityTests {
 protected:
     void install_certs() override {
         std::system("./generate_test_certs_leaf_multi.sh");
+    }
+};
+
+class EvseSecurityTestsDualAlgorithmLeaf : public EvseSecurityTests {
+protected:
+    void install_certs() override {
+        std::system("./generate_test_certs_leaf_dual_algorithm.sh");
     }
 };
 
@@ -343,6 +351,43 @@ TEST_F(EvseSecurityTestsMulti, verify_multi_root_leaf_retrieval) {
                 equal_certificate_strings(result.info[0].certificate_root.value(), root_grid));
     ASSERT_TRUE(equal_certificate_strings(result.info[1].certificate_root.value(), root_v2g) ||
                 equal_certificate_strings(result.info[1].certificate_root.value(), root_grid));
+}
+
+TEST_F(EvseSecurityTests, verify_leaf_public_key_algorithm) {
+    const auto result =
+        this->evse_security->get_leaf_certificate_info(LeafCertificateType::V2G, EncodingFormat::PEM, false);
+    ASSERT_EQ(result.status, GetCertificateInfoStatus::Accepted);
+    ASSERT_TRUE(result.info.has_value());
+    // generate_test_certs.sh creates all keys on prime256v1
+    ASSERT_EQ(result.info.value().public_key_algorithm, "prime256v1");
+}
+
+TEST_F(EvseSecurityTestsDualAlgorithmLeaf, verify_dual_algorithm_leaf_retrieval) {
+    // A prime256v1 (ISO 15118-2) and a secp521r1 (ISO 15118-20) SECC leaf under the SAME V2G root must
+    // both be returned: they are distinct deployments, not renewals of one another
+    const auto result =
+        this->evse_security->get_all_valid_certificates_info(LeafCertificateType::V2G, EncodingFormat::PEM, false);
+
+    ASSERT_EQ(result.status, GetCertificateInfoStatus::Accepted);
+    ASSERT_EQ(result.info.size(), 2);
+
+    std::set<std::string> algorithms;
+    for (const auto& info : result.info) {
+        ASSERT_TRUE(info.certificate_root.has_value());
+        algorithms.insert(info.public_key_algorithm);
+    }
+    ASSERT_EQ(algorithms, (std::set<std::string>{"prime256v1", "secp521r1"}));
+
+    const std::string root_v2g = read_file_to_string("certs/ca/v2g/V2G_ROOT_CA.pem");
+    ASSERT_TRUE(equal_certificate_strings(result.info[0].certificate_root.value(), root_v2g));
+    ASSERT_TRUE(equal_certificate_strings(result.info[1].certificate_root.value(), root_v2g));
+
+    // The single-leaf lookup still resolves to exactly one of them
+    const auto single =
+        this->evse_security->get_leaf_certificate_info(LeafCertificateType::V2G, EncodingFormat::PEM, false);
+    ASSERT_EQ(single.status, GetCertificateInfoStatus::Accepted);
+    ASSERT_TRUE(single.info.has_value());
+    ASSERT_TRUE(algorithms.count(single.info.value().public_key_algorithm) == 1);
 }
 
 TEST_F(EvseSecurityTestsMultiLeaf, verify_multi_leaf_retrieval) {

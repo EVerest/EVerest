@@ -353,6 +353,10 @@ bool chain_matches_dn_list(const chain_t& chain, const STACK_OF(X509_NAME) * nam
 } // namespace
 
 const chain_t* select_by_dn_list(const STACK_OF(X509_NAME) * names, const chain_list& chains) {
+    return select_by_dn_list(names, chains, 0);
+}
+
+const chain_t* select_by_dn_list(const STACK_OF(X509_NAME) * names, const chain_list& chains, int tls_version) {
     if (names == nullptr) {
         return nullptr;
     }
@@ -363,11 +367,51 @@ const chain_t* select_by_dn_list(const STACK_OF(X509_NAME) * names, const chain_
 
     bool warned_malformed{false};
     for (const auto& chain : chains) {
+        if ((tls_version != 0) && !compatible(chain, tls_version)) {
+            continue;
+        }
         if (chain_matches_dn_list(chain, names, name_count, warned_malformed)) {
             return &chain;
         }
     }
     return nullptr;
+}
+
+bool compatible(const chain_t& chain, int tls_version) {
+    return (chain.tls_version == 0) || (chain.tls_version == tls_version);
+}
+
+const chain_t* select(const trusted_ca_keys_t& extension, const chain_list& chains, int tls_version) {
+    const chain_t* result{nullptr};
+    for (const auto& chain : chains) {
+        if (compatible(chain, tls_version) && match(extension, chain)) {
+            result = &chain;
+            break;
+        }
+    }
+    return result;
+}
+
+const chain_t* select_by_version(const chain_list& chains, int tls_version) {
+    const chain_t* exact{nullptr};
+    const chain_t* untagged{nullptr};
+    bool any_tagged{false};
+    for (const auto& chain : chains) {
+        if (chain.tls_version == 0) {
+            if (untagged == nullptr) {
+                untagged = &chain;
+            }
+        } else {
+            any_tagged = true;
+            if ((chain.tls_version == tls_version) && (exact == nullptr)) {
+                exact = &chain;
+            }
+        }
+    }
+    if (!any_tagged) {
+        return nullptr;
+    }
+    return (exact != nullptr) ? exact : untagged;
 }
 
 int ServerTrustedCaKeys::s_index{-1};
@@ -403,6 +447,14 @@ void ServerTrustedCaKeys::update(chain_list&& new_chains) {
 
 const chain_t* ServerTrustedCaKeys::select(const trusted_ca_keys_t& extension) {
     return trusted_ca_keys::select(extension, m_chains);
+}
+
+const chain_t* ServerTrustedCaKeys::select(const trusted_ca_keys_t& extension, int tls_version) {
+    return trusted_ca_keys::select(extension, m_chains, tls_version);
+}
+
+const chain_t* ServerTrustedCaKeys::select_by_version(int tls_version) {
+    return trusted_ca_keys::select_by_version(m_chains, tls_version);
 }
 
 const chain_t* ServerTrustedCaKeys::select_default() {
@@ -506,35 +558,60 @@ int ServerTrustedCaKeys::handle_certificate_cb(SSL* ssl, void* arg) {
         return result;
     }
 
-    if (SSL_version(ssl) == TLS1_3_VERSION) {
-        // TLS 1.3: select chain based on the peer's certificate_authorities
-        // extension exposed via SSL_get0_peer_CA_list.
+    // prevent update() from changing pointers
+    std::lock_guard lock(tck_p->m_mux);
+
+    /*
+     * The certificate callback runs after the ClientHello has been processed,
+     * so the protocol version is already negotiated. ISO 15118-2 (TLS 1.2,
+     * secp256r1 leaf) and ISO 15118-20 (TLS 1.3, secp521r1/Ed448 leaf) need
+     * different SECC leaf certificates, hence chains can be tagged with the
+     * version they are meant for. Selection:
+     *
+     * 1. the peer's CA preference, restricted to chains compatible with the
+     *    negotiated version: certificate_authorities (TLS 1.3) or the legacy
+     *    trusted_ca_keys extension (TLS 1.2 and below)
+     * 2. otherwise the version tag alone (exact tag, then an untagged chain)
+     * 3. when nothing is tagged and the peer expressed no CA preference the
+     *    SSL_CTX default certificate is left as it is
+     */
+    const int tls_version = SSL_version(ssl);
+    const chain_t* selected{nullptr};
+    const char* context_label{"chain selection"};
+
+    if (tls_version == TLS1_3_VERSION) {
+        context_label = "certificate_authorities";
         const STACK_OF(X509_NAME)* names = SSL_get0_peer_CA_list(ssl);
         if (names != nullptr && sk_X509_NAME_num(names) > 0) {
-            std::lock_guard lock(tck_p->m_mux);
-            const auto* selected = select_by_dn_list(names, tck_p->m_chains);
+            selected = select_by_dn_list(names, tck_p->m_chains, tls_version);
             if (selected == nullptr) {
                 log_warning("certificate_authorities: no configured chain matched the peer's advertised CA names; "
                             "serving default chain");
             }
-            result = tck_p->apply_selection_locked(ssl, lock, selected, "certificate_authorities");
         } else {
             log_debug("certificate_authorities: peer sent no certificate_authorities; serving default chain");
         }
-        return result;
+    } else {
+        context_label = "trusted_ca_keys";
+        auto* keys_p = get_data(ssl);
+        if ((keys_p != nullptr) && (keys_p->flags.has_trusted_ca_keys())) {
+            selected = tck_p->select(keys_p->tck, tls_version);
+            if (selected == nullptr) {
+                log_warning("trusted_ca_keys: no configured chain matched the peer's trusted_ca_keys; "
+                            "serving default chain");
+            }
+        }
     }
 
-    // TLS 1.2 and below: legacy custom trusted_ca_keys extension path.
-    auto* keys_p = get_data(ssl);
-    if ((keys_p != nullptr) && (keys_p->flags.has_trusted_ca_keys())) {
-        std::lock_guard lock(tck_p->m_mux);
-        const auto* selected = tck_p->select(keys_p->tck);
-        if (selected == nullptr) {
-            log_warning("trusted_ca_keys: no configured chain matched the peer's trusted_ca_keys; "
-                        "serving default chain");
+    if (selected == nullptr) {
+        // nullptr when no chain carries a version tag: keep the SSL_CTX default
+        selected = tck_p->select_by_version(tls_version);
+        if (selected != nullptr) {
+            context_label = "tls_version";
         }
-        result = tck_p->apply_selection_locked(ssl, lock, selected, "trusted_ca_keys");
     }
+
+    result = tck_p->apply_selection_locked(ssl, lock, selected, context_label);
     return result;
 }
 

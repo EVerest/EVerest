@@ -1335,9 +1335,12 @@ GetCertificateFullInfoResult EvseSecurity::get_all_valid_certificates_info(LeafC
     GetCertificateFullInfoResult filtered_results;
     filtered_results.status = result.status;
 
-    // Filter the certificates to return only the ones that have a unique
-    // root, and from those that have a unique root, return only the newest
-    std::set<std::string> unique_roots;
+    // Filter the certificates to return only the newest leaf per (root, public key algorithm).
+    // Leafs under the same root but with different key algorithms are distinct deployments
+    // rather than renewals of one another -- ISO 15118-2 mandates a prime256v1 SECC leaf while
+    // ISO 15118-20 mandates secp521r1/ED448, and a SECC offering both protocols installs both
+    // under the same V2G root -- so each algorithm keeps its own newest leaf.
+    std::set<std::pair<std::string, std::string>> unique_root_algorithms;
 
     // The newest are the first, that's how 'get_leaf_certificate_info_internal'
     // returns them
@@ -1347,14 +1350,11 @@ GetCertificateFullInfoResult EvseSecurity::get_all_valid_certificates_info(LeafC
             continue;
         }
 
-        const std::string& root = chain.certificate_root.value();
+        const auto key = std::make_pair(chain.certificate_root.value(), chain.public_key_algorithm);
 
-        // If we don't contain the unique root yet, it is the newest leaf for that root
-        if (unique_roots.find(root) == unique_roots.end()) {
+        // If we don't contain the (root, algorithm) yet, it is the newest leaf for that pair
+        if (unique_root_algorithms.insert(key).second) {
             filtered_results.info.push_back(chain);
-
-            // Add it to the roots list, adding only unique roots
-            unique_roots.insert(root);
         }
     }
 
@@ -1629,6 +1629,7 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
             info.certificate_single = certificate_file;
             info.certificate_count = chain_len;
             info.password = this->private_key_password;
+            info.public_key_algorithm = certificate.get_public_key_algorithm();
 
             if (params.include_ocsp) {
                 info.ocsp = certificate_ocsp;
