@@ -7,12 +7,16 @@ get_target_property(GENERATED_INCLUDE_DIR generate_cpp_files EVEREST_GENERATED_I
 target_include_directories(${TEST_TARGET_NAME}
     PRIVATE
         "$<TARGET_PROPERTY:generate_cpp_files,EVEREST_GENERATED_INCLUDE_DIR>"
+        ${CMAKE_BINARY_DIR}/generated/modules/${MODULE_NAME}
+        ${PROJECT_SOURCE_DIR}/tests/include
 )
 
 target_sources(${TEST_TARGET_NAME}
     PRIVATE
+        CarSimulationTest.cpp
         CommandRegistryTest.cpp
         SimCommandTest.cpp
+        ../main/car_simulation.cpp
         ../main/simulation_command.cpp
 )
 
