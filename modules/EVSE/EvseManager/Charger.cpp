@@ -2120,7 +2120,15 @@ void Charger::dlink_pause() {
         return;
     }
     shared_context.hlc_allow_close_contactor = false;
-    cp_state_X1();
+    if (not internal_context.session_stop_pwm_off_deadline.has_value()) {
+        // [V2G-DC-968]: while the CP oscillator retain timer is armed the PWM must stay on -- the
+        // -2/-20 TCP teardown can deliver this signal milliseconds after SessionStopRes, long
+        // before the EV has left state C. Applying X1 here anyway opened S S3 under the EV's
+        // still-closed S V3 on MCS (CE state EC, an EVSE-initiated emergency per Table CC.103)
+        // and latched the EV's CC.114 C-exit fault on every clean session end. The global retain
+        // check applies X1 when the timer expires.
+        cp_state_X1();
+    }
     shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Pause;
 }
 
@@ -2132,7 +2140,10 @@ void Charger::dlink_terminate() {
         return;
     }
     shared_context.hlc_allow_close_contactor = false;
-    cp_state_X1();
+    if (not internal_context.session_stop_pwm_off_deadline.has_value()) {
+        // Same retain-timer guard as dlink_pause() above.
+        cp_state_X1();
+    }
     shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Terminate;
 }
 
