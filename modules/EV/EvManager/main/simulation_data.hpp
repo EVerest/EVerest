@@ -40,6 +40,9 @@ struct SimulationData {
     types::slac::State slac_state{types::slac::State::UNMATCHED};
     std::optional<size_t> sleep_ticks_left{};
     std::optional<size_t> cp_c_pulse_ticks_left{};
+    // Set once a stop has been requested (own timer or stop_from_charger): the pilot is held
+    // in C until v2g_finished, bounded by this countdown.
+    std::optional<size_t> stop_hold_ticks_left{};
     // Countdown of the optional fallback timeout of iso_wait_pwm_is_running.
     std::optional<size_t> pwm_wait_ticks_left{};
 
