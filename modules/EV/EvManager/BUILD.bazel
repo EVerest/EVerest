@@ -21,11 +21,21 @@ cc_test(
         ],
         exclude = [
             "main/car_simulatorImpl.*",
-            "main/car_simulation.*",
         ],
-    ),
-    includes = ["."],
+    ) + [
+        "EvManager.hpp",
+        # Generated ld-ev header only (not ld-ev.cpp which pulls in impl files)
+        "generated/modules/EvManager/ld-ev.hpp",
+    ],
+    copts = ["-std=c++17"],
+    includes = [
+        ".",
+        "generated/modules/EvManager",
+    ],
     deps = [
+        "//interfaces:interfaces_lib",
+        "//lib/everest/framework",
+        "//tests:module_adapter_stub",
         "@catch2//:catch2_main",
     ],
 )

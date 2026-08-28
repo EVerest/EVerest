@@ -10,4 +10,10 @@ static constexpr auto DC{"dc"};
 static constexpr auto AC_BPT{"ac_bpt"};
 static constexpr auto AC_DER{"ac_der"};
 static constexpr auto DC_BPT{"dc_bpt"};
+// How long a requested stop may hold the pilot in C while waiting for the V2G session to
+// wind down (PowerDelivery(stop) + SessionStop take well under 2 s when the link is healthy).
+static constexpr auto STOP_HOLD_BUDGET_MS{10000};
+// How long the pilot stays in B after the stop hold releases before the script goes on. Without
+// it a following unplug drops C straight to A, which the EVSE sees as an unplug, not a pause.
+static constexpr auto STOP_DWELL_MS{750};
 } // namespace constants
