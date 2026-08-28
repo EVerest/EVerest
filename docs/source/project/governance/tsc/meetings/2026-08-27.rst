@@ -1,0 +1,57 @@
+EVerest TSC Meeting - 27 August 2026
+======================================
+
+
+Attendance
+----------
+
+
+Voting Members
+~~~~~~~~~~~~~~
+
+- [x] (Chair) Marco Möller [Pionix]
+- [ ] Cornelius Claussen [Pionix] -> vote delegated to Marco
+- [ ] Kai-Uwe Hermann [Pionix]
+- [ ] Piet Gömpel [Pionix]
+- [x] Moritz Barsnick [Chargebyte]
+- [ ] Holger Rapp [Qwello]
+- [ ] S. Shankari [NREL]
+
+
+Other Attendees
+~~~~~~~~~~~~~~~
+- Robert de Leeuw
+- several others
+
+
+Agenda
+------
+
+- Highlights of the month
+- EVerest Development Updates
+- Community Proposals
+    - none
+- What Else
+    - Recap CPO Forum
+    - Upcoming Events
+    - Next TSC
+- Open discussion (not recorded)
+
+
+Action Items
+------------
+- Send out recording and slides to EVerest mailing list
+
+
+Recording:
+----------
+- `https://youtu.be/fs7npwweG5Y <https://youtu.be/fs7npwweG5Y>`_
+
+
+Notes
+-----
+Decisions:
+- none
+
+Other:
+- 
