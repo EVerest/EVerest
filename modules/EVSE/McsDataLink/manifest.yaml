@@ -1,0 +1,88 @@
+description: >-
+  MCS (Megawatt Charging System) data link supervision for ISO 15118-10:2025. Single-pair
+  ethernet (10BASE-T1S) replaces HomePlug PLC, so there is no SLAC matching procedure; the
+  D-LINK service primitives of ISO 15118-3 are reused unchanged, which is why this module
+  provides the existing `slac` interface and EvseManager needs no modification. The link
+  lifecycle is supervised through the network device carrier (rtnetlink IFF_LOWER_UP).
+provides:
+  main:
+    interface: slac
+    description: >-
+      D-LINK primitives for the MCS data link. Despite the interface name no SLAC is
+      performed - MATCHING means "waiting for the SPE link to come up".
+    config:
+      device:
+        description: >-
+          Network device carrying the MCS single-pair ethernet link. Any netdev works: a
+          Chargebridge TAP configured with `plc.carrier: firmware`, or a real SPE netdev.
+          The device does not have to exist at startup; the module waits for it to appear.
+        type: string
+        default: cb_plc
+      link_detect_timeout_ms:
+        description: >-
+          TT_EV_link_detect (ISO 15118-10 Table 8, max 4000 ms). Time the SPE link is given
+          to come up after the EV is detected by basic signalling (enter_bcd). On expiry the
+          communication initialization has FAILED (V2G10-054) and the state returns to
+          UNMATCHED.
+        type: integer
+        minimum: 100
+        maximum: 4000
+        default: 4000
+      sync_repetition_ms:
+        description: >-
+          TT_sync_repetition (ISO 15118-10 Table 8, max 4000 ms). Window opened when
+          communication initialization is triggered by enter_bcd, within which a FAILED
+          initialization is restarted while the EV is still present (V2G10-055 to -058).
+          Note the standard's own arithmetic: with both this and link_detect_timeout_ms at their
+          4000 ms maximum the window is already over when the first TT_EV_link_detect expires, so
+          no repetition happens unless link_detect_timeout_ms is shortened. 0 disables repetition.
+        type: integer
+        minimum: 0
+        maximum: 4000
+        default: 4000
+      conn_retry_max:
+        description: >-
+          C_conn_retry (ISO 15118-10 V2G10-037/-038, IEC 61851-23-3 CC.5.2.3.2 restart loop:
+          N <= 3, manufacturer may differ). Maximum number of automatic data link restarts
+          per EV connection, counting both link losses and D-LINK_ERROR requests. 0 disables
+          retrying entirely.
+        type: integer
+        minimum: 0
+        maximum: 10
+        default: 3
+      retry_wait_ms:
+        description: >-
+          Wait time before a restart attempt is requested from EvseManager after a
+          D-LINK_ERROR (IEC 61851-23-3 CC.5.2.3.2 requires >= 3 s with S S3 open between
+          attempts).
+        type: integer
+        minimum: 3000
+        default: 3000
+      neighbor_liveness:
+        description: >-
+          Additionally supervise the link through the kernel neighbor table (NUD) of the
+          configured device. A neighbor going NUD_FAILED with no other reachable neighbor
+          left counts as a detected link loss (V2G10-036), which the carrier alone cannot
+          see when the PHY reports itself operational but the EV is gone.
+        type: boolean
+        default: true
+      liveness_grace_ms:
+        description: >-
+          Debounce for neighbor_liveness. After the last neighbor of the device has gone
+          NUD_FAILED the link only counts as lost if no neighbor has become reachable again
+          within this time. Keeps a single failed probe of an address that re-resolves from
+          tearing down a healthy session. 0 acts immediately.
+        type: integer
+        minimum: 0
+        default: 1000
+      publish_ev_mac:
+        description: >-
+          Publish the EV MAC address (ev_mac_address) once a neighbor of the configured
+          device becomes reachable while the link is up. Enables Autocharge without HLC.
+        type: boolean
+        default: true
+metadata:
+  base_license: https://directory.fsf.org/wiki/License:BSD-3-Clause-Clear
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Jan Christoph Habig (Pionix GmbH)
