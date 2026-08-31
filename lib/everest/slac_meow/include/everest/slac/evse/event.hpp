@@ -21,6 +21,12 @@ struct EnterBcd {};
 /// Control pilot left state B, C or D.
 struct LeaveBcd {};
 
+/// An event rather than a setter so that, like every other input, it is stamped with a time and
+/// cannot race a feed() in progress.
+struct CountBc {
+    int count;
+};
+
 /// Borrowed for the duration of the feed() call and never stored: a state that needs to keep
 /// something out of it copies that something out.
 struct Message {
@@ -29,7 +35,8 @@ struct Message {
 
 } // namespace event
 
-using SlacEvent = std::variant<event::Reset, event::Update, event::EnterBcd, event::LeaveBcd, event::Message>;
+using SlacEvent =
+    std::variant<event::Reset, event::Update, event::EnterBcd, event::LeaveBcd, event::CountBc, event::Message>;
 
 /// The frame itself rather than the event wrapping it, or nullptr for any other event.
 inline messages::HomeplugMessage const* as_frame(SlacEvent const& ev) {

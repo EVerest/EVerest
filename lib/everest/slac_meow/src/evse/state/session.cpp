@@ -193,6 +193,10 @@ Result WaitSlacMatch::feed(SlacEvent const& ev) {
         if (m_deadline.expired(m_ctx.current_time)) {
             return m_ctx.create_state<Failed>(m_data);
         }
+        // A late request gets no answer: CmSlacMatch_003/004, cmValidate variant.
+        if (m_ctx.validation_done and m_ctx.validation_match_window.expired(m_ctx.current_time)) {
+            return m_ctx.create_state<Failed>(m_data);
+        }
         return {};
     }
 

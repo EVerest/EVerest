@@ -122,6 +122,14 @@ public:
     }
 
     Config slac_config{};
+    /// CM_VALIDATE takes a baseline and reads the delta as the number of BCB toggles.
+    int bc_transition_count{0};
+
+    /// After a CM_VALIDATE the match request must arrive within TT_match_sequence rather than the
+    /// whole match session: CmSlacMatch_003/004, cmValidate variant.
+    bool validation_done{false};
+    Timer validation_match_window{};
+
     Status status{};
 
     defs::ModemVendor modem_vendor{defs::ModemVendor::Unknown};
