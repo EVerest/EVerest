@@ -219,8 +219,6 @@ sae::VoltageTrip get_default_voltage_trip() {
 
     return voltage_trip;
 }
-
-// Each curve point list carries two points because the schema's minimum list length is two.
 sae::FrequencyTrip get_default_frequency_trip() {
     sae::FrequencyTrip frequency_trip{};
 
@@ -262,8 +260,6 @@ sae::EnterServiceCPDRes get_default_enter_service(float nominal_voltage_v) {
 
     return enter_service;
 }
-
-// Each curve point list carries two points because the schema's minimum list length is two.
 sae::ReactivePowerSupportCPDRes get_default_reactive_power_support(float nominal_voltage_v) {
     sae::ReactivePowerSupportCPDRes reactive_power_support{};
 
@@ -309,8 +305,6 @@ sae::ReactivePowerSupportCPDRes get_default_reactive_power_support(float nominal
 
     return reactive_power_support;
 }
-
-// Each curve point list carries two points because the schema's minimum list length is two.
 sae::ActivePowerSupportCPDRes get_default_active_power_support() {
     sae::ActivePowerSupportCPDRes active_power_support{};
 
