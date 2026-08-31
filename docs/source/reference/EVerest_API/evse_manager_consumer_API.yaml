@@ -423,7 +423,7 @@ channels:
 operations:
   ########## evse_manager
   send_request_get_evse:
-    title: 'Send request to get information about the EVSE including its connectors'
+    title: 'Send request to get information about the EVSE: its id according to the 3-tier model of OCPP, its connectors and the configured EVSE ID / DIN EVSE ID that uniquely identify it'
     action: send
     channel:
       $ref: '#/channels/send_request_get_evse'
@@ -670,6 +670,10 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_evse_id'
+    description: >-
+      The EVSE ID is published once on startup.
+      Deprecated: use the get_evse command instead, which also provides the
+      DIN 70121 EVSE ID (DIN SPEC 91286).
   send_request_get_evse_id:
     title: 'Request current EVSE ID'
     action: send
@@ -679,6 +683,8 @@ operations:
       Request the most recently published (latched) EVSE ID.
       The reply will be sent to the replyTo address specified in the message headers.
       If no latched value is available yet, a null payload will be sent.
+      Deprecated: use the get_evse command instead, which also provides the
+      DIN 70121 EVSE ID (DIN SPEC 91286).
     reply:
       address:
         location: "$message.header#/replyTo"
@@ -2391,7 +2397,9 @@ components:
         - connectors
       properties:
         id:
-          description: ID of the EVSE
+          description: >-
+            ID of this EVSE within the charging station, according to the 3-tier model 
+            (charging station > EVSE > connector)
           type: integer
           minimum: 1
           maximum: 128
@@ -2404,8 +2412,22 @@ components:
             $ref: '#/components/schemas/Connector'
           minItems: 1
           maxItems: 128
+        evse_id:
+          type: string
+          $ref: '#/components/schemas/EvseId'
+        evse_id_din:
+          description: >-
+            EVSE ID used for DIN 70121 sessions (format according to DIN SPEC 91286,
+            hexBinary-encoded), e.g. 49A80737A45678
+          type: string
     EvseId:
-      description: 'EVSE ID including the connector number, e.g. DE*PNX*E123456*1'
+      description: >-
+        EVSE ID that uniquely identifies this EVSE, e.g. DE*PNX*E123456*1. It has a special
+        format that includes the country code, the operator id and a power outlet id
+        (eMI3 format, normatively specified in ISO 15118-2 Annex H) and is sent as the
+        EVSEID field in ISO 15118 messages.
+        Not to be confused with the numeric id, which identifies this EVSE within the charging
+        station according to the 3-tier model.
       type: string
     EVInfo:
       description: Information about the connected EV if available

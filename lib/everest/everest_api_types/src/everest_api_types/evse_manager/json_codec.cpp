@@ -1155,12 +1155,25 @@ void to_json(json& j, Evse const& k) noexcept {
         {"id", k.id},
         {"connectors", k.connectors},
     };
+    if (k.evse_id) {
+        j["evse_id"] = k.evse_id.value();
+    }
+    if (k.evse_id_din) {
+        j["evse_id_din"] = k.evse_id_din.value();
+    }
 }
 
 void from_json(json const& j, Evse& k) {
     k.id = j.at("id");
     for (auto val : j.at("connectors")) {
         k.connectors.push_back(val);
+    }
+
+    if (j.contains("evse_id")) {
+        k.evse_id.emplace(j.at("evse_id"));
+    }
+    if (j.contains("evse_id_din")) {
+        k.evse_id_din.emplace(j.at("evse_id_din"));
     }
 }
 

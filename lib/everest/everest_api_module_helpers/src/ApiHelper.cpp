@@ -111,27 +111,32 @@ void ApiHelper::publish_ready_beacon() {
     }
 }
 
-void ApiHelper::subscribe_latched_value_request(std::string const& var, std::string const& topic) {
-    subscribe_api_topic(var + "/get", [this, topic](std::string const& data) {
-        std::string reply_to;
-        if (deserialize_request(data, reply_to)) {
-            std::optional<std::string> payload;
-            {
-                std::lock_guard<std::mutex> lock(serialized_variables_mutex);
-                auto it = serialized_variables_cache.find(topic);
-                if (it != serialized_variables_cache.end()) {
-                    payload = it->second;
+void ApiHelper::subscribe_latched_value_request(std::string const& var, std::string const& topic,
+                                                std::optional<std::string> deprecation_notice) {
+    subscribe_api_topic(
+        var + "/get", [this, var, topic, deprecation_notice = std::move(deprecation_notice)](std::string const& data) {
+            std::string reply_to;
+            if (deserialize_request(data, reply_to)) {
+                if (deprecation_notice.has_value()) {
+                    EVLOG_warning << "Deprecated request for var '" << var << "': " << deprecation_notice.value();
                 }
+                std::optional<std::string> payload;
+                {
+                    std::lock_guard<std::mutex> lock(serialized_variables_mutex);
+                    auto it = serialized_variables_cache.find(topic);
+                    if (it != serialized_variables_cache.end()) {
+                        payload = it->second;
+                    }
+                }
+                if (payload) {
+                    mqtt.publish(reply_to, *payload);
+                } else {
+                    mqtt.publish(reply_to, "null");
+                }
+                return true;
             }
-            if (payload) {
-                mqtt.publish(reply_to, *payload);
-            } else {
-                mqtt.publish(reply_to, "null");
-            }
-            return true;
-        }
-        return false;
-    });
+            return false;
+        });
 }
 
 void ApiHelper::log_forward_api_var_error(std::string const& topic, char const* what) {

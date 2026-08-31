@@ -3,7 +3,9 @@ description: >-
   charging kernel of one physical connector.
 cmds:
   get_evse:
-    description: Call to get information about the EVSE including its connectors
+    description: >-
+      Call to get information about the EVSE: its id according to the 3-tier model of OCPP,
+      its connectors and the configured EVSE ID / DIN EVSE ID that uniquely identify it
     result:
       description: Object that contains information of the EVSE including its connectors
       type: object
@@ -185,7 +187,13 @@ vars:
     description: Powermeter public key
     type: string
   evse_id:
-    description: EVSE ID including the connector number, e.g. DE*PNX*E123456*1
+    description: >-
+      EVSE ID that uniquely identifies this EVSE, e.g. DE*PNX*E123456*1. It has a special
+      format that includes the country code, the operator id and a power outlet id
+      (eMI3 format, normatively specified in ISO 15118-2 Annex H).
+      Published once on startup.
+      Deprecated: use the get_evse command instead, which also provides the
+      DIN 70121 EVSE ID (DIN SPEC 91286).
     type: string
   hw_capabilities:
     description: "Hardware capability/limits"

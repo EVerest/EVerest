@@ -47,6 +47,12 @@ void evse_managerImpl::update_control_telemetry(const std::function<void(Control
 }
 
 void evse_managerImpl::init() {
+    if (const auto mapping = get_mapping(); mapping.has_value() and mapping->evse != mod->config.connector_id) {
+        EVLOG_warning << "The 3-tier mapping of this EvseManager (" << mapping.value()
+                      << ") does not match its connector_id config parameter (" << mod->config.connector_id
+                      << "). Both identify the EVSE within the charging station and should be equal.";
+    }
+
     limits.nr_of_phases_available = 1;
     limits.max_current = 0.;
 
@@ -411,6 +417,8 @@ void evse_managerImpl::ready() {
 types::evse_manager::Evse evse_managerImpl::handle_get_evse() {
     types::evse_manager::Evse evse;
     evse.id = this->mod->config.connector_id;
+    evse.evse_id = this->mod->config.evse_id;
+    evse.evse_id_din = this->mod->config.evse_id_din;
 
     std::vector<types::evse_manager::Connector> connectors;
     types::evse_manager::Connector connector;
