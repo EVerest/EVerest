@@ -34,6 +34,22 @@ target_sources(slac_meow
     # shared by both machines
     src/status.cpp
 
+    # EVSE side
+    src/evse/states.cpp
+    src/evse/fsm.cpp
+    src/evse/config.cpp
+    src/evse/session_data.cpp
+    src/evse/link_status.cpp
+    src/evse/state/init.cpp
+    src/evse/state/reset.cpp
+    src/evse/state/reset_chip.cpp
+    src/evse/state/idle.cpp
+    src/evse/state/matching.cpp
+    src/evse/state/session.cpp
+    src/evse/state/wait_for_link.cpp
+    src/evse/state/matched.cpp
+    src/evse/state/failed.cpp
+
     # transport - not used by the state machines above
     src/io/socket.cpp
     src/io/event.cpp
