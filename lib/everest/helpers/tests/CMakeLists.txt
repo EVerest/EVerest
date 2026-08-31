@@ -4,11 +4,17 @@ add_executable(${TEST_TARGET_NAME}
 helpers_test.cpp
 )
 
+target_include_directories(${TEST_TARGET_NAME}
+    PRIVATE
+        "$<TARGET_PROPERTY:generate_cpp_files,EVEREST_GENERATED_INCLUDE_DIR>"
+)
+
 target_link_libraries(${TEST_TARGET_NAME}
     PRIVATE
         GTest::gmock_main
         GTest::gtest_main
         everest::helpers
+        nlohmann_json::nlohmann_json
 )
 
 include(GoogleTest)

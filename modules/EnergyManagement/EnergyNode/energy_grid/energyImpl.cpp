@@ -3,6 +3,8 @@
 
 #include "energyImpl.hpp"
 #include "energy_schedule_utils.hpp"
+#include <everest/helpers/phase_rotation.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <date/date.h>
@@ -47,8 +49,13 @@ void energyImpl::init() {
     if (!mod->r_powermeter.empty()) {
         mod->r_powermeter[0]->subscribe_powermeter([this](types::powermeter::Powermeter const& p) {
             EVLOG_debug << "Incoming powermeter readings: " << p;
+
             auto energy_state_handle = energy_state.handle();
-            energy_state_handle->energy_flow_request.energy_usage_root = p;
+            const auto phase_rotation = everest::helpers::phase_rotation_from_string(mod->config.phase_rotation);
+
+            energy_state_handle->energy_flow_request.energy_usage_root =
+                everest::helpers::apply_phase_rotation(p, phase_rotation);
+
             publish_complete_energy_object(*energy_state_handle);
         });
     }
