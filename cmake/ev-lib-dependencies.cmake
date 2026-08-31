@@ -47,6 +47,7 @@ set(EVEREST_LIB_SUBDIRS
     util
     yaml
     slac_neo
+    slac_meow
 )
 
 # --- Internal dependency map ---
@@ -67,6 +68,7 @@ set(EVEREST_LIB_DEPS_ieee2030_1_1 "util")
 set(EVEREST_LIB_DEPS_tls "util;evse_security")
 set(EVEREST_LIB_DEPS_slac "tls;fsm")
 set(EVEREST_LIB_DEPS_slac_neo "everest_api_types;io;tls")
+set(EVEREST_LIB_DEPS_slac_meow "everest_api_types;io;tls;util")
 # Tier 3 (framework-coupled)
 set(EVEREST_LIB_DEPS_helpers "tls;framework")
 set(EVEREST_LIB_DEPS_external_energy_limits "framework")
