@@ -10,6 +10,7 @@ cc_everest_module(
     impls = IMPLS,
     deps = [
         "@sigslot//:sigslot",
+        "//lib/everest/helpers",
     ],
     srcs = glob(
         [
