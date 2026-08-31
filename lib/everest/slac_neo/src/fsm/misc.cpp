@@ -2,53 +2,128 @@
 // Copyright 2023 - 2023 Pionix GmbH and Contributors to EVerest
 #include "misc.hpp"
 
-#include <net/ethernet.h>
-#include <everest/slac/slac.hpp>
-#include <stdexcept>
+#include <algorithm>
 
-std::string format_mac_addr(const uint8_t* mac) {
-    char string_buffer[ETH_ALEN * 2 + (ETH_ALEN - 1) + 1];
-    snprintf(string_buffer, sizeof(string_buffer), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
-             mac[4], mac[5]);
-    return string_buffer;
+namespace {
+
+constexpr char hex_chars[] = "0123456789ABCDEF";
+
+void append_hex_byte(std::string& out, uint8_t value) {
+    out.push_back(hex_chars[(value >> 4U) & 0x0FU]);
+    out.push_back(hex_chars[value & 0x0FU]);
 }
 
-bool parse_mac_addr(const std::string& mac_str, uint8_t* mac, size_t length) {
-    if (length < ETH_ALEN) {
-        return false;
+std::optional<uint8_t> parse_hex_nibble(char digit) {
+    if (digit >= '0' && digit <= '9') {
+        return static_cast<uint8_t>(digit - '0');
     }
-
-    if (mac_str.length() != 17) {
-        return false;
+    if (digit >= 'a' && digit <= 'f') {
+        return static_cast<uint8_t>(digit - 'a' + 10);
     }
-
-    // %hhx reads a hex value directly into the 1-byte unsigned char elements
-    int parsed = std::sscanf(mac_str.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
-                             &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]);
-
-    if (parsed != ETH_ALEN) {
-        return false;
+    if (digit >= 'A' && digit <= 'F') {
+        return static_cast<uint8_t>(digit - 'A' + 10);
     }
-
-    return true;
-}
-std::string format_nmk(const uint8_t* nmk) {
-    char string_buffer[everest::lib::slac::defs::NMK_LEN * 3];
-    for (int i = 0; i < everest::lib::slac::defs::NMK_LEN; i++) {
-        snprintf(string_buffer + (i * 3), sizeof(string_buffer) - (i * 3), "%02X:", nmk[i]);
-    }
-    return string_buffer;
+    return std::nullopt;
 }
 
-std::string format_run_id(const uint8_t* run_id) {
-    char string_buffer[2 * everest::lib::slac::defs::RUN_ID_LEN + 1];
-    snprintf(string_buffer, sizeof(string_buffer), "%02X%02X%02X%02X%02X%02X%02X%02X", run_id[0], run_id[1], run_id[2],
-             run_id[3], run_id[4], run_id[5], run_id[6], run_id[7]);
-    return string_buffer;
+std::optional<everest::lib::slac::MacAddress> parse_mac_addr_impl(std::string_view mac_str) {
+    if (mac_str.size() != 17) {
+        return std::nullopt;
+    }
+
+    everest::lib::slac::MacAddress mac{};
+    for (std::size_t i = 0; i < mac.size(); ++i) {
+        auto const hi = parse_hex_nibble(mac_str[i * 3U]);
+        auto const lo = parse_hex_nibble(mac_str[(i * 3U) + 1U]);
+        if (!hi || !lo) {
+            return std::nullopt;
+        }
+
+        if (i < mac.size() - 1U && mac_str[(i * 3U) + 2U] != ':') {
+            return std::nullopt;
+        }
+
+        mac[i] = static_cast<uint8_t>((*hi << 4U) | *lo);
+    }
+
+    return mac;
+}
+
+} // namespace
+
+std::string format_nmk(everest::lib::slac::Nmk const& nmk) {
+    std::string out;
+    out.reserve(nmk.size() * 3U);
+    for (auto const octet : nmk) {
+        append_hex_byte(out, octet);
+        out.push_back(':');
+    }
+    return out;
+}
+
+std::string format_mac_addr(everest::lib::slac::MacAddress const& mac) {
+    std::string out;
+    out.reserve(18U);
+    for (std::size_t i = 0; i < mac.size(); ++i) {
+        append_hex_byte(out, mac[i]);
+        if (i < mac.size() - 1U) {
+            out.push_back(':');
+        }
+    }
+    return out;
+}
+
+std::string format_run_id(everest::lib::slac::RunId const& run_id) {
+    std::string out;
+    out.reserve(run_id.size() * 2U);
+    for (auto const octet : run_id) {
+        append_hex_byte(out, octet);
+    }
+    return out;
 }
 
 std::string format_mmtype(const uint16_t mmtype) {
-    char string_buffer[2 + 2 * 2 + 1];
-    snprintf(string_buffer, sizeof(string_buffer), "0x%04hX", mmtype);
-    return string_buffer;
+    std::string out;
+    out.reserve(6U);
+    out.push_back('0');
+    out.push_back('x');
+    append_hex_byte(out, static_cast<uint8_t>(mmtype >> 8U));
+    append_hex_byte(out, static_cast<uint8_t>(mmtype));
+    return out;
+}
+
+std::string format_nmk(const uint8_t* nmk) {
+    everest::lib::slac::Nmk nmk_arr{};
+    std::copy_n(nmk, nmk_arr.size(), nmk_arr.begin());
+    return format_nmk(nmk_arr);
+}
+
+std::string format_mac_addr(const uint8_t* mac) {
+    everest::lib::slac::MacAddress mac_arr{};
+    std::copy_n(mac, mac_arr.size(), mac_arr.begin());
+    return format_mac_addr(mac_arr);
+}
+
+std::string format_run_id(const uint8_t* run_id) {
+    everest::lib::slac::RunId run_id_arr{};
+    std::copy_n(run_id, run_id_arr.size(), run_id_arr.begin());
+    return format_run_id(run_id_arr);
+}
+
+std::optional<everest::lib::slac::MacAddress> parse_mac_addr(std::string_view text) {
+    return parse_mac_addr_impl(text);
+}
+
+bool parse_mac_addr(const std::string& mac_str, uint8_t* mac, size_t length) {
+    if (mac == nullptr || length < everest::lib::slac::MacAddress{}.size()) {
+        return false;
+    }
+
+    auto const parsed = parse_mac_addr(std::string_view{mac_str});
+    if (!parsed) {
+        return false;
+    }
+
+    std::copy_n(parsed->begin(), parsed->size(), mac);
+    return true;
 }
