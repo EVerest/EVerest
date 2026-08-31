@@ -95,7 +95,7 @@ struct Context {
         ev_host_mac(byte_array_from_wire<MacAddress>(ev_host_mac_)), callbacks(callbacks_) {
     }
 
-    const MacAddress ev_host_mac{};
+    MacAddress ev_host_mac{};
     EvSlacConfig slac_config{};
 
     // event specific payloads

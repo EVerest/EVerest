@@ -40,7 +40,7 @@ private:
     std::string m_error_detail;
     HomeplugMessageHandler m_callback;
     HomeplugErrorHandler m_error_cb;
-    MacAddress m_mac_address;
+    MacAddress m_mac_address{};
     std::string m_if_name;
 };
 } // namespace everest::lib::slac

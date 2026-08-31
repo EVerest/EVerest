@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 - 2026 Pionix GmbH and Contributors to EVerest
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 
+#include <everest/slac/slac_event.hpp>
 #include <everest/slac/slac_types.hpp>
 
 #include "../src/fsm/misc.hpp"
@@ -83,8 +85,24 @@ bool test_parse_and_format_round_trip() {
 
 } // namespace
 
+bool test_slac_event_mac_is_zero_without_readable_interface() {
+    // The interface MAC lookup in SlacEvent's constructor is best-effort (the PLC device may
+    // enumerate after module start) and its failure is swallowed. The MAC member used to be
+    // default-initialized, so get_mac_addr() handed indeterminate bytes to the FSM context.
+    // Contract now: without a readable interface the MAC is deterministically all-zero, and the
+    // modules re-capture it from the I/O ready callback once the device is up.
+    const char* test_name = "test_slac_event_mac_is_zero_without_readable_interface";
+
+    SlacEvent event("noifc0");
+    auto const* mac = event.get_mac_addr();
+    const bool all_zero = std::all_of(mac, mac + 6, [](uint8_t byte) { return byte == 0; });
+    return assert_true(all_zero, test_name, "MAC for a missing interface is not all-zero");
+}
+
 int main() {
-    std::array<std::pair<const char*, bool (*)()>, 7> tests{{
+    std::array<std::pair<const char*, bool (*)()>, 8> tests{{
+        {"test_slac_event_mac_is_zero_without_readable_interface",
+         test_slac_event_mac_is_zero_without_readable_interface},
         {"test_format_mac_addr_known_value", test_format_mac_addr_known_value},
         {"test_parse_mac_addr_accepts_upper_and_lowercase", test_parse_mac_addr_accepts_upper_and_lowercase},
         {"test_parse_mac_addr_rejects_wrong_length", test_parse_mac_addr_rejects_wrong_length},

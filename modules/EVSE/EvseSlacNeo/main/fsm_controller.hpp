@@ -31,6 +31,7 @@ public:
 
     void init();
     void stop();
+    void teardown();
 
     bool register_events(io::event::fd_event_handler& handler) override;
     bool unregister_events(io::event::fd_event_handler& handler) override;

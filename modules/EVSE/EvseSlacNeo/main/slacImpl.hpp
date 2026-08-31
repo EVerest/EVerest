@@ -38,6 +38,8 @@ struct ContextCallbacks;
 #include <everest/io/event/event_fd.hpp>
 #include <everest/slac/fsm/context.hpp>
 #include <everest/util/async/monitor.hpp>
+
+#include "lifecycle_gate.hpp"
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -114,7 +116,6 @@ private:
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     void run();
-    bool wait_for_ready_or_shutdown();
     bool wait_for_startup_delay_or_shutdown();
     bool initialize_slac_io();
     void configure_callbacks();
@@ -124,6 +125,7 @@ private:
     void run_blocking_event_loop();
     void handle_slac_io_ready();
     void handle_slac_io_error(bool on_error, const std::string& detail);
+    void start_fsm_if_ready();
     FSMController* get_available_fsm_controller();
     void raise_communication_fault(const std::string& message);
     void clear_communication_fault();
@@ -131,14 +133,7 @@ private:
     std::atomic<bool> online{true};
     std::thread worker;
     everest::lib::io::event::event_fd exit_event;
-    struct LifecycleState {
-        bool ready_requested{false};
-        bool shutting_down{false};
-        bool slac_io_ready{false};
-        bool communication_fault_raised{false};
-        std::string communication_fault_message;
-        FSMController* fsm_ctrl{nullptr};
-    };
+    using LifecycleState = LifecycleStateT<FSMController>;
     everest::lib::util::monitor<LifecycleState> lifecycle_state;
     everest::lib::slac::fsm::evse::ContextCallbacks callbacks;
     std::unique_ptr<everest::lib::slac::fsm::evse::Context> fsm_ctx;

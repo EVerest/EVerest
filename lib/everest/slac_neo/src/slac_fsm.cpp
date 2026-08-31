@@ -185,6 +185,7 @@ struct FsmStateVisitor {
 
 struct slac_fsm::Impl {
     msm::SlacFSM fsm;
+    bool started{false};
     explicit Impl(fsm::evse::Context& ctx) : fsm(ctx) {
     }
 };
@@ -261,6 +262,10 @@ void slac_fsm::update() {
 }
 
 void slac_fsm::restart_fsm() {
+    if (impl->started) {
+        impl->fsm.stop();
+    }
+    impl->started = true;
     impl->fsm.start();
     event_post_processing();
 }
