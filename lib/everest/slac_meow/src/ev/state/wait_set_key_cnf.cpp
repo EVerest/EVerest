@@ -27,8 +27,8 @@ Result WaitSetKeyCnf::feed(SlacEvent const& ev) {
         return {};
     }
 
-    if (auto const* frame = as_frame(ev)) {
-        if (is_set_key_cnf(*frame)) {
+    if (auto const* message = get_if_message(ev)) {
+        if (is_set_key_cnf(*message)) {
             return m_ctx.create_state<Matched>();
         }
         return {};

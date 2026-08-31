@@ -133,9 +133,9 @@ Result Reset::feed(SlacEvent const& ev) {
         return handled();
     }
 
-    if (auto const* frame = as_frame(ev)) {
-        if (frame->is_valid() and frame->get_mmtype() == defs::MMTYPE_CM_SET_KEY_CNF) {
-            return handle_set_key_cnf(*frame);
+    if (auto const* message = get_if_message(ev)) {
+        if (message->is_valid() and message->get_mmtype() == defs::MMTYPE_CM_SET_KEY_CNF) {
+            return handle_set_key_cnf(*message);
         }
         return {};
     }

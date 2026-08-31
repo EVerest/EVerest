@@ -87,8 +87,8 @@ Result Init::feed(SlacEvent const& ev) {
         return {};
     }
 
-    if (auto const* frame = as_frame(ev)) {
-        latch_modem_vendor(*frame);
+    if (auto const* message = get_if_message(ev)) {
+        latch_modem_vendor(*message);
         return handled();
     }
 

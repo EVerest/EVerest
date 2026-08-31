@@ -80,11 +80,11 @@ Result WaitForLink::feed(SlacEvent const& ev) {
         return {};
     }
 
-    if (auto const* frame = as_frame(ev)) {
-        if (is_link_up(*frame, m_mode)) {
+    if (auto const* message = get_if_message(ev)) {
+        if (is_link_up(*message, m_mode)) {
             return m_ctx.create_state<Matched>();
         }
-        if (resend_cached_match_cnf(*frame)) {
+        if (resend_cached_match_cnf(*message)) {
             // this was an external self transition in boost::msm, so the poll timer restarts
             m_poll.rearm(m_ctx.current_time);
             return handled();

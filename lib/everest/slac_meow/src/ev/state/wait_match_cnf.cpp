@@ -55,11 +55,11 @@ Result WaitMatchCnf::feed(SlacEvent const& ev) {
         return handled();
     }
 
-    if (auto const* frame = as_frame(ev)) {
-        if (not is_slac_match_cnf(*frame, m_ctx.active_session.run_id, m_ctx.active_session.evse_mac)) {
+    if (auto const* message = get_if_message(ev)) {
+        if (not is_slac_match_cnf(*message, m_ctx.active_session.run_id, m_ctx.active_session.evse_mac)) {
             return {};
         }
-        store_match_cnf_and_send_set_key(m_ctx, *frame);
+        store_match_cnf_and_send_set_key(m_ctx, *message);
         return m_ctx.create_state<WaitSetKeyCnf>();
     }
 

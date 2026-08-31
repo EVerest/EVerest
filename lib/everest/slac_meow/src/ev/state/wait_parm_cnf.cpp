@@ -56,13 +56,13 @@ Result WaitParmCnf::feed(SlacEvent const& ev) {
         return handled();
     }
 
-    if (auto const* frame = as_frame(ev)) {
-        if (not is_slac_parm_cnf(*frame, m_ctx.active_session.run_id)) {
+    if (auto const* message = get_if_message(ev)) {
+        if (not is_slac_parm_cnf(*message, m_ctx.active_session.run_id)) {
             return {};
         }
-        // the capture can fail on a frame without a source MAC; the transition happens either way,
+        // the capture can fail on a message without a source MAC; the transition happens either way,
         // matching the boost::msm behaviour where a failed action does not veto the transition
-        capture_slac_parm_cnf(m_ctx, *frame);
+        capture_slac_parm_cnf(m_ctx, *message);
         return m_ctx.create_state<Sounding>();
     }
 

@@ -111,10 +111,10 @@ Result WaitStartAtten::feed(SlacEvent const& ev) {
         return {};
     }
 
-    if (auto const* frame = as_frame(ev)) {
+    if (auto const* message = get_if_message(ev)) {
         // A START that arrives in the same tick the state already timed out is too late: the
         // session fails on the next update rather than starting a sounding phase it cannot finish.
-        if (not m_deadline.expired(m_ctx.current_time) and is_start_atten_char(*frame, m_data)) {
+        if (not m_deadline.expired(m_ctx.current_time) and is_start_atten_char(*message, m_data)) {
             m_ctx.log_info(session_log_prefix(m_data) + "Received CM_START_ATTEN_CHAR.IND, MNBC sounding started");
             return m_ctx.create_state<Sounding>(m_data);
         }
@@ -135,9 +135,9 @@ Result Sounding::feed(SlacEvent const& ev) {
         return {};
     }
 
-    if (auto const* frame = as_frame(ev)) {
-        if (is_atten_profile_ind(*frame, m_data)) {
-            auto const msg = frame->payload_as<messages::cm_atten_profile_ind>();
+    if (auto const* message = get_if_message(ev)) {
+        if (is_atten_profile_ind(*message, m_data)) {
+            auto const msg = message->payload_as<messages::cm_atten_profile_ind>();
             if (msg.has_value()) {
                 for (int i = 0; i < defs::AAG_LIST_LEN; ++i) {
                     m_data.captured_aags[i] += msg->aag[i];
@@ -198,8 +198,8 @@ Result WaitAttenRsp::feed(SlacEvent const& ev) {
         return handled();
     }
 
-    if (auto const* frame = as_frame(ev)) {
-        if (is_atten_char_rsp(*frame, m_data)) {
+    if (auto const* message = get_if_message(ev)) {
+        if (is_atten_char_rsp(*message, m_data)) {
             m_ctx.log_info(session_log_prefix(m_data) + "Received CM_ATTEN_CHAR.RSP, waiting for CM_SLAC_MATCH.REQ");
             return m_ctx.create_state<WaitSlacMatch>(m_data);
         }
@@ -227,11 +227,11 @@ Result WaitSlacMatch::feed(SlacEvent const& ev) {
         return {};
     }
 
-    if (auto const* frame = as_frame(ev)) {
-        if (is_slac_match_req(*frame, m_data)) {
+    if (auto const* message = get_if_message(ev)) {
+        if (is_slac_match_req(*message, m_data)) {
             m_ctx.log_info(session_log_prefix(m_data) +
                            "Received CM_SLAC_MATCH.REQ, sending CM_SLAC_MATCH.CNF -> session complete");
-            send_match_cnf(m_ctx, m_data, *frame);
+            send_match_cnf(m_ctx, m_data, *message);
             return m_ctx.create_state<MatchComplete>(m_data);
         }
     }

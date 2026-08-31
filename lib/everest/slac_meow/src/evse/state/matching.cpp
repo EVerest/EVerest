@@ -230,14 +230,14 @@ Result Matching::feed(SlacEvent const& ev) {
         return handled();
     }
 
-    if (auto const* frame = as_frame(ev)) {
-        if (is_slac_parm_req(*frame)) {
-            add_session(*frame);
+    if (auto const* message = get_if_message(ev)) {
+        if (is_slac_parm_req(*message)) {
+            add_session(*message);
             return handled();
         }
-        if (is_validate_req(*frame)) {
+        if (is_validate_req(*message)) {
             // answered here and deliberately not forwarded to the sessions
-            handle_validate_req(*frame);
+            handle_validate_req(*message);
             return handled();
         }
         for (auto& session : m_sessions) {

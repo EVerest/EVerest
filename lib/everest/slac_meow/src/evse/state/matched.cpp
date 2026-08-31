@@ -93,25 +93,25 @@ Result Matched::feed(SlacEvent const& ev) {
         return handled();
     }
 
-    if (auto const* frame = as_frame(ev)) {
+    if (auto const* message = get_if_message(ev)) {
         // Answered whatever the supervision mode is. Applying the reduction is the modem's job.
-        if (is_amp_map_req(*frame)) {
+        if (is_amp_map_req(*message)) {
             messages::cm_amp_map_cnf reply{};
             reply.result = defs::CM_AMP_MAP_CNF_RESULT_SUCCESS;
-            if (not m_ctx.send_slac_message(frame->get_src_mac(), reply)) {
+            if (not m_ctx.send_slac_message(message->get_src_mac(), reply)) {
                 m_ctx.log_warn("Failed to send CM_AMP_MAP.CNF");
             }
             return handled();
         }
         // Any other result leaves the retransmission running: V2G3-A09-114, CmAmpMap_004.
-        if (m_amp_map_awaiting_cnf and frame->is_valid() and frame->get_mmtype() == defs::MMTYPE_CM_AMP_MAP_CNF) {
-            auto const cnf = frame->payload_as<messages::cm_amp_map_cnf>();
+        if (m_amp_map_awaiting_cnf and message->is_valid() and message->get_mmtype() == defs::MMTYPE_CM_AMP_MAP_CNF) {
+            auto const cnf = message->payload_as<messages::cm_amp_map_cnf>();
             if (cnf.has_value() and cnf->result == defs::CM_AMP_MAP_CNF_RESULT_SUCCESS) {
                 m_amp_map_awaiting_cnf = false;
                 return handled();
             }
         }
-        if (m_mode != LinkCheckMode::None and is_link_down(*frame, m_mode)) {
+        if (m_mode != LinkCheckMode::None and is_link_down(*message, m_mode)) {
             ++m_consecutive_neg;
             if (m_consecutive_neg < m_neg_threshold) {
                 m_ctx.log_warn("Negative LINK_STATUS while matched (" + std::to_string(m_consecutive_neg) + "/" +
@@ -123,7 +123,7 @@ Result Matched::feed(SlacEvent const& ev) {
             // Reset rather than Failed: start a fresh attempt instead of parking in a terminal state.
             return m_ctx.create_state<Reset>();
         }
-        if (m_mode != LinkCheckMode::None and is_link_up(*frame, m_mode) and m_consecutive_neg != 0) {
+        if (m_mode != LinkCheckMode::None and is_link_up(*message, m_mode) and m_consecutive_neg != 0) {
             m_consecutive_neg = 0;
             m_ctx.log_info("Positive LINK_STATUS, link recovered; debounce count cleared");
             return handled();

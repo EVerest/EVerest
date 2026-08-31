@@ -25,9 +25,9 @@ Result WaitAttenCharInd::feed(SlacEvent const& ev) {
         return {};
     }
 
-    if (auto const* frame = as_frame(ev)) {
-        if (m_ctx.all_sounding_messages_sent() and is_atten_char_ind_for_run(*frame, m_ctx.active_session.run_id)) {
-            send_atten_char_rsp_and_match_req(m_ctx, *frame);
+    if (auto const* message = get_if_message(ev)) {
+        if (m_ctx.all_sounding_messages_sent() and is_atten_char_ind_for_run(*message, m_ctx.active_session.run_id)) {
+            send_atten_char_rsp_and_match_req(m_ctx, *message);
             return m_ctx.create_state<WaitMatchCnf>();
         }
         return {};

@@ -83,15 +83,21 @@ Modelled on `iso15118/d20/states.hpp`, with two deliberate differences.
 Homeplug frame travels with the event:
 
 ```cpp
+// the EVSE side; the EV side has TriggerMatching in place of the pilot and count events
 using SlacEvent = std::variant<event::Reset, event::Update, event::EnterBcd,
-                               event::LeaveBcd, event::TriggerMatching, event::Message>;
-struct Message { messages::HomeplugMessage const& frame; };
+                               event::LeaveBcd, event::CountBc, event::Message>;
+using Message = std::reference_wrapper<messages::HomeplugMessage const>;
 ```
 
 libiso15118 parks the payload on the context and pulls it back out inside the state. Carrying it
 on the event keeps a state's inputs explicit, removes the temporal coupling of "write, feed,
-read back", and lets one frame reach every concurrent matching session without a copy. The frame
-is borrowed for the duration of the call and never stored.
+read back", and lets one message reach every concurrent matching session without a copy. The
+message is borrowed for the duration of the call and never stored, which is what the
+`reference_wrapper` says out loud.
+
+States do not unwrap it by hand: `get_if_message(ev)` returns the message itself, or `nullptr`
+for any other event, so the three tests in a `feed()` body read alike -
+`std::get_if<event::Update>(&ev)`, `get_if_message(ev)`, `std::get_if<event::Reset>(&ev)`.
 
 **`Result` can say "handled, no transition".** The reference implementation in the `fsm::v2`
 tests has that constructor; libiso15118 omits it and therefore reports every non-transitioning
