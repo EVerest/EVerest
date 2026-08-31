@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -23,12 +24,9 @@ public:
     template <typename MessageType> Variant(const MessageType& in) {
         static_assert(TypeTrait<MessageType>::type != Type::None, "Unhandled type!");
 
-        data = new MessageType;
-        *static_cast<MessageType*>(data) = in;
-        custom_deleter = [](void* ptr) { delete static_cast<MessageType*>(ptr); };
+        data = {new MessageType(in), [](void* ptr) { delete static_cast<MessageType*>(ptr); }};
         type = message_2::TypeTrait<MessageType>::type;
     }
-    ~Variant();
 
     Type get_type() const;
 
@@ -52,7 +50,7 @@ public:
             throw std::runtime_error("Illegal message type access");
         }
 
-        return *static_cast<T*>(data);
+        return *static_cast<T*>(data.get());
     }
 
     template <typename T> T const* get_if() const {
@@ -61,12 +59,14 @@ public:
             return nullptr;
         }
 
-        return static_cast<T*>(data);
+        return static_cast<T*>(data.get());
     }
 
 private:
-    CustomDeleter custom_deleter{nullptr};
-    void* data{nullptr};
+    // Owning handle: binds the message pointer and its deleter together, so the two can never
+    // fall out of sync and no hand-written destructor is needed. Being move-only, it also deletes
+    // the implicit copy operations, which previously would have double-freed the message.
+    std::unique_ptr<void, CustomDeleter> data{nullptr, nullptr};
     Type type{Type::None};
     datatypes::SessionId session_id{};
     std::string error;
