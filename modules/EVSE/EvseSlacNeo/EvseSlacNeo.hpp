@@ -15,6 +15,7 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
+#include <memory>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -34,6 +35,12 @@ public:
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
+    ~EvseSlacNeo() override;
+
+    // Preparation for future generated/framework shutdown logic: when a shutdown phase is added next to init()/ready(),
+    // that hook should call this helper directly. The destructor calls it today as a fallback for the current static
+    // module lifetime.
+    void shutdown();
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:

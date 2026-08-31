@@ -42,6 +42,7 @@ namespace main {
 struct Conf {
     std::string device;
     int set_key_timeout_ms;
+    int parm_req_attempts;
 };
 
 class ev_slacImpl : public ev_slacImplBase {

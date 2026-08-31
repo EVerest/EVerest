@@ -991,7 +991,7 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
         to.setDuration(std::chrono::milliseconds(ctx->slac_config.link_status.timeout_ms));
         to.reset();
         ctx->status.match_state = SlacState::WaitForLink;
-        ctx->status.d3_state = D3State::Unmatched;
+        ctx->status.d3_state = D3State::Matching;
     }
 
 

@@ -3,7 +3,6 @@
 
 #include <chrono>
 #include <everest/slac/timer.hpp>
-#include <thread>
 
 namespace everest::lib::slac {
 
@@ -41,31 +40,27 @@ void timer::setDurationSeconds(long long value) {
 }
 
 void timer::setDurationMinutes(long long value) {
-    setDuration(std::chrono::seconds(value));
+    setDuration(std::chrono::minutes(value));
+}
+
+timer::tick timer::remaining() const {
+    return std::chrono::duration_cast<tick>(target - clock::now());
 }
 
 long long timer::getRemainingMicroSeconds() const {
-    auto now = clock::now();
-    auto diff = std::chrono::duration_cast<std::chrono::microseconds>(target - now);
-    return diff.count();
+    return std::chrono::duration_cast<std::chrono::microseconds>(remaining()).count();
 }
 
 long long timer::getRemainingMilliSeconds() const {
-    auto now = clock::now();
-    auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(target - now);
-    return diff.count();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(remaining()).count();
 }
 
 long long timer::getRemainingSeconds() const {
-    auto now = clock::now();
-    auto diff = std::chrono::duration_cast<std::chrono::seconds>(target - now);
-    return diff.count();
+    return std::chrono::duration_cast<std::chrono::seconds>(remaining()).count();
 }
 
 long long timer::getRemainingMinutes() const {
-    auto now = clock::now();
-    auto diff = std::chrono::duration_cast<std::chrono::minutes>(target - now);
-    return diff.count();
+    return std::chrono::duration_cast<std::chrono::minutes>(remaining()).count();
 }
 
 void timer::setTimePoint(tp const& value) {
@@ -80,13 +75,7 @@ timer::tp timer::getTargetTime() const {
 }
 
 bool timer::timeout() const {
-    auto now = clock::now();
-    auto result = now > target;
-    return result;
-}
-
-void timer::wait() const {
-    std::this_thread::sleep_until(target);
+    return clock::now() > target;
 }
 
 } // namespace everest::lib::slac

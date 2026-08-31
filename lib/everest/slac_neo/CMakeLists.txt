@@ -36,3 +36,7 @@ target_link_libraries(slac_neo
         everest::everest_api_types
         nlohmann_json::nlohmann_json
 )
+
+if(BUILD_TESTING)
+    add_subdirectory(test)
+endif()
