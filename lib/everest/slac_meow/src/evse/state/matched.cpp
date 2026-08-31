@@ -3,7 +3,9 @@
 
 #include <everest/slac/evse/state/matched.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <string>
 
 #include <everest/slac/evse/state/failed.hpp>
 #include <everest/slac/evse/state/reset.hpp>
@@ -18,6 +20,9 @@ void Matched::enter() {
 
     m_mode = cfg.link_status.do_detect ? link_check_mode_for(m_ctx.modem_vendor) : LinkCheckMode::None;
     m_poll.arm(m_ctx.current_time, std::chrono::milliseconds(cfg.link_status.poll_in_matched_state_ms));
+
+    m_consecutive_neg = 0;
+    m_neg_threshold = std::max(1, cfg.link_status.debounce_count);
 
     m_ctx.status.match_state = SlacState::Matched;
     m_ctx.status.d3_state = D3State::Matched;
@@ -48,10 +53,21 @@ Result Matched::feed(SlacEvent const& ev) {
 
     if (auto const* frame = as_frame(ev)) {
         if (m_mode != LinkCheckMode::None and is_link_down(*frame, m_mode)) {
+            ++m_consecutive_neg;
+            if (m_consecutive_neg < m_neg_threshold) {
+                m_ctx.log_warn("Negative LINK_STATUS while matched (" + std::to_string(m_consecutive_neg) + "/" +
+                               std::to_string(m_neg_threshold) + "), keeping the link up while debouncing");
+                return handled();
+            }
             m_ctx.log_error("Connection lost in matched state");
             m_ctx.signal_error_routine_request();
             // Reset rather than Failed: start a fresh attempt instead of parking in a terminal state.
             return m_ctx.create_state<Reset>();
+        }
+        if (m_mode != LinkCheckMode::None and is_link_up(*frame, m_mode) and m_consecutive_neg != 0) {
+            m_consecutive_neg = 0;
+            m_ctx.log_info("Positive LINK_STATUS, link recovered; debounce count cleared");
+            return handled();
         }
         return {};
     }

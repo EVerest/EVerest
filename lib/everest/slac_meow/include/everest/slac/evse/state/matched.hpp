@@ -9,7 +9,8 @@
 namespace everest::slac::evse::state {
 
 // The data link is up and HLC can run. Without link supervision this state sits here until reset
-// from outside.
+// from outside; with it, debounce_count consecutive negative answers are needed to declare the link
+// lost, and any positive answer clears the count.
 struct Matched : public StateBase {
     explicit Matched(Context& ctx) : StateBase(ctx, StateID::Matched) {
     }
@@ -21,6 +22,8 @@ struct Matched : public StateBase {
 private:
     LinkCheckMode m_mode{LinkCheckMode::None};
     Timer m_poll;
+    int m_consecutive_neg{0};
+    int m_neg_threshold{1};
 };
 
 } // namespace everest::slac::evse::state
