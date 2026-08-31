@@ -94,8 +94,8 @@ public:
         sim_data.iso_charger_paused = iso_charger_paused;
     }
 
-    void set_v2g_finished(bool v2g_finished) {
-        sim_data.v2g_finished = v2g_finished;
+    void set_v2g_session_active(bool v2g_session_active) {
+        sim_data.v2g_session_active = v2g_session_active;
     }
 
     void set_dc_power_on(bool dc_power_on) {
@@ -147,4 +147,6 @@ private:
     const std::unique_ptr<ev_managerImplBase>& p_ev_manager;
 
     void simulate_soc();
+    void arm_resume_after_charger_pause();
+    void arm_restart_after_charger_stop();
 };
