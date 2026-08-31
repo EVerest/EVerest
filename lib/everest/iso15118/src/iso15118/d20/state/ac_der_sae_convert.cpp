@@ -227,10 +227,8 @@ void gate_optional_curve(std::optional<dt_sae::DERCurve>& curve, bool supported,
 // The SECC expresses itself only through the per-function Enable flags, so a function the EV does not
 // list in SupportedModes must not be enabled. This follows a semantics statement, not a numbered
 // requirement.
-// Masked bits without a gate: 0 and 1 (ChargeFunction, DischargeFunction) are inherent to the service,
-// 21 and 22 (EVSETargetReactivePowerFunction, EVSETargetActivePowerFunction) are charge loop targets
-// with no Enable in DERControlCPDRes. permit_service is an authorization rather than an Enable, where
-// false denies instead of failing to activate, so it is not gated either. See ADR-0023.
+// permit_service is not gated: an authorization, not an Enable, so false denies rather than fails to
+// activate. See ADR-0023.
 // The call order below follows the DERControlCPDRes declaration order so it can be audited side by side.
 void gate_enables_by_supported_modes(dt_sae::DERControlCPDRes& out, std::uint32_t supported_modes) {
     gate_function(out.voltage_trip, supported_modes);
