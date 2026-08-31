@@ -100,7 +100,7 @@ public:
         return m_callbacks.now();
     }
 
-    MacAddress const ev_host_mac{};
+    MacAddress ev_host_mac{};
     Config slac_config{};
 
     SessionParameters active_session{};

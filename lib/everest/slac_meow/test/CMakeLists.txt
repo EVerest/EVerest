@@ -19,6 +19,12 @@ target_link_libraries(slac_meow_status_test PRIVATE slac_meow nlohmann_json::nlo
 target_compile_features(slac_meow_status_test PRIVATE cxx_std_17)
 add_test(NAME slac_meow_status_test COMMAND slac_meow_status_test)
 
+# Covers the transport in io/, which the state machines never reach.
+add_executable(slac_meow_io_event_test io_event_test.cpp)
+target_link_libraries(slac_meow_io_event_test PRIVATE slac_meow)
+target_compile_features(slac_meow_io_event_test PRIVATE cxx_std_17)
+add_test(NAME slac_meow_io_event_test COMMAND slac_meow_io_event_test)
+
 add_executable(evse_slac_meow_set_key_test
     evse_set_key_test.cpp
     fsm_type_traits_test.cpp

@@ -114,6 +114,19 @@ struct __attribute__((packed)) cm_slac_match_cnf {
     std::uint8_t nmk[defs::NMK_LEN]; // private nmk of the EVSE
 };
 
+// CM_AMP_MAP (HomePlug GreenPHY, AV 2.0). The amplitude map reduces the transmit power of selected
+// OFDM carriers (ISO 15118-3 A.9.6). Only the leading am_len field is modelled here, for validation
+// and dispatch; the variable-length am_data (am_len packed 4-bit amplitudes) follows on the wire and
+// is framed directly by Context::send_amp_map_req.
+struct __attribute__((packed)) cm_amp_map_req {
+    std::uint16_t am_len; // number of amplitude-map entries (4-bit values); 0 is invalid
+    // std::uint8_t am_data[]; // ceil(am_len/2) bytes of packed 4-bit amplitudes follow
+};
+
+struct __attribute__((packed)) cm_amp_map_cnf {
+    std::uint8_t result; // 0x00 = success
+};
+
 struct __attribute__((packed)) cm_validate_req {
     std::uint8_t signal_type; // fixed to 0x00: PEV S2 toggles on control pilot line
     std::uint8_t timer;       // in the first request response exchange: should be set to 0x00
@@ -258,6 +271,8 @@ static_assert(std::is_trivially_copyable_v<cm_mnbc_sound_ind>);
 static_assert(std::is_trivially_copyable_v<cm_atten_profile_ind>);
 static_assert(std::is_trivially_copyable_v<cm_slac_match_req>);
 static_assert(std::is_trivially_copyable_v<cm_slac_match_cnf>);
+static_assert(std::is_trivially_copyable_v<cm_amp_map_req>);
+static_assert(std::is_trivially_copyable_v<cm_amp_map_cnf>);
 static_assert(std::is_trivially_copyable_v<cm_validate_req>);
 static_assert(std::is_trivially_copyable_v<cm_validate_cnf>);
 static_assert(std::is_trivially_copyable_v<cm_set_key_req>);

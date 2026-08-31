@@ -42,7 +42,11 @@ private:
     std::string m_error_detail;
     HomeplugMessageHandler m_callback;
     HomeplugErrorHandler m_error_cb;
-    MacAddress m_mac_address;
+    // The interface MAC lookup in the constructor is best effort - the PLC device may enumerate
+    // after module start - and its failure is swallowed. Without this initialiser get_mac_addr()
+    // hands indeterminate bytes to the state machine; the contract is that a missing interface
+    // yields an all-zero MAC, which the module re-captures from the I/O ready callback.
+    MacAddress m_mac_address{};
     std::string m_if_name;
 };
 } // namespace everest::slac::io

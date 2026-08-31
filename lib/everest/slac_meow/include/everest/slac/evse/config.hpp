@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include <everest/slac/protocol/defs.hpp>
 #include <everest/slac/protocol/types.hpp>
@@ -60,8 +61,12 @@ struct Config {
     struct LinkStatus {
         bool do_detect = false;
         int retry_ms = 100;
-        int poll_in_matched_state_ms = 1000;
+        // debounce_count * poll_in_matched_state_ms must stay well below TP_match_leave (1 s):
+        // PLCLinkStatus_005.
+        int poll_in_matched_state_ms = 200;
         int timeout_ms = 5000;
+        /// Consecutive negative LINK_STATUS answers needed to declare the link lost. Clamped to 1.
+        int debounce_count = 1;
         bool debug_simulate_failed_matching = false;
     } link_status;
 
@@ -80,6 +85,13 @@ struct Config {
     bool provide_telemetry{false};
 
     bool regenerate_key_on_reset{true};
+
+    /// CM_AMP_MAP transmit-power limitation, ISO 15118-3 A.9.6. amp_map_data holds amp_map_len
+    /// 4-bit entries, two per byte; an empty map disables the transmit direction whatever the flag
+    /// says. Answering an incoming CM_AMP_MAP.REQ does not depend on any of this.
+    bool initiate_amp_map{false};
+    std::uint16_t amp_map_len{0};
+    std::vector<std::uint8_t> amp_map_data{};
 };
 
 bool accepts_set_key_cnf_success_result(SetKeyCnfSuccessMode mode, std::uint8_t result);
