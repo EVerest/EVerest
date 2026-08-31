@@ -50,6 +50,21 @@ target_sources(slac_meow
     src/evse/state/matched.cpp
     src/evse/state/failed.cpp
 
+    # EV side
+    src/ev/states.cpp
+    src/ev/fsm.cpp
+    src/ev/actions.cpp
+    src/ev/guards.cpp
+    src/ev/state/reset.cpp
+    src/ev/state/idle.cpp
+    src/ev/state/wait_parm_cnf.cpp
+    src/ev/state/sounding.cpp
+    src/ev/state/wait_atten_char_ind.cpp
+    src/ev/state/wait_match_cnf.cpp
+    src/ev/state/wait_set_key_cnf.cpp
+    src/ev/state/matched.cpp
+    src/ev/state/failed.cpp
+
     # transport - not used by the state machines above
     src/io/socket.cpp
     src/io/event.cpp
