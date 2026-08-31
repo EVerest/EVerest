@@ -18,10 +18,8 @@ std::string session_log_prefix(SessionData const& data);
 struct SessionData {
     SessionData() = default;
     SessionData(MacAddress ev_mac, RunId run_id, MacAddress evse_mac);
-    SessionData(const uint8_t* ev_mac, const uint8_t* run_id, const uint8_t* evse_mac);
 
     bool matches_identity(MacAddress const& other_ev_mac, RunId const& other_run_id) const;
-    bool matches_identity(const uint8_t* other_ev_mac, const uint8_t* other_run_id) const;
 
     MacAddress evse_mac{};
 

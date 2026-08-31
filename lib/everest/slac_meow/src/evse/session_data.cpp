@@ -16,17 +16,8 @@ SessionData::SessionData(MacAddress ev_mac, RunId run_id, MacAddress evse_mac) :
     evse_mac(evse_mac), ev_mac(ev_mac), run_id(run_id) {
 }
 
-SessionData::SessionData(const uint8_t* ev_mac, const uint8_t* run_id, const uint8_t* evse_mac) :
-    SessionData(byte_array_from_wire<MacAddress>(ev_mac), byte_array_from_wire<RunId>(run_id),
-                byte_array_from_wire<MacAddress>(evse_mac)) {
-}
-
 bool SessionData::matches_identity(MacAddress const& other_ev_mac, RunId const& other_run_id) const {
     return ev_mac == other_ev_mac and run_id == other_run_id;
-}
-
-bool SessionData::matches_identity(const uint8_t* other_ev_mac, const uint8_t* other_run_id) const {
-    return matches_identity(byte_array_from_wire<MacAddress>(other_ev_mac), byte_array_from_wire<RunId>(other_run_id));
 }
 
 bool SessionData::validate_message(messages::cm_atten_char_rsp const& msg) const {
