@@ -419,6 +419,12 @@ vars:
       by the EV
     type: object
     $ref: /iso15118#/DcEvMaximumLimits
+  dc_evse_adjusted_maximum_limits:
+    description: >-
+      Adjusted maximum values (current, power and voltage) currently used by the EVSE
+      after applying protocol-side compatibility checks.
+    type: object
+    $ref: /iso15118#/DcEvseMaximumLimits
   dc_ev_remaining_time:
     description: Estimated or calculated time until bulk and full charge is complete
     type: object

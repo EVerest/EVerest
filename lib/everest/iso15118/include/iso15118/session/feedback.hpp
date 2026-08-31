@@ -76,6 +76,7 @@ struct Callbacks {
     std::function<void(float)> dc_pre_charge_target_voltage;
     std::function<void(const DcChargeLoopReq&)> dc_charge_loop_req;
     std::function<void(const DcMaximumLimits&)> dc_max_limits;
+    std::function<void(const d20::DcTransferLimits&)> dc_evse_adjusted_limits;
     std::function<void(const AcChargeLoopReq&)> ac_charge_loop_req;
     std::function<void(const message_20::Type&)> v2g_message;
     std::function<void(const std::string&)> evccid;
@@ -104,6 +105,7 @@ public:
     void dc_pre_charge_target_voltage(float) const;
     void dc_charge_loop_req(const feedback::DcChargeLoopReq&) const;
     void dc_max_limits(const feedback::DcMaximumLimits&) const;
+    void dc_evse_adjusted_limits(const d20::DcTransferLimits&) const;
     void ac_charge_loop_req(const feedback::AcChargeLoopReq&) const;
     void v2g_message(const message_20::Type&) const;
     void evcc_id(const std::string&) const;
