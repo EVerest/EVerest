@@ -13,6 +13,7 @@
 #include <everest/slac/evse/state/wait_for_link.hpp>
 #include <everest/slac/protocol/defs.hpp>
 #include <everest/slac/protocol/messages.hpp>
+#include <everest/slac/protocol/validation.hpp>
 
 namespace everest::slac::evse::state {
 
@@ -93,7 +94,7 @@ void Matching::add_session(messages::HomeplugMessage const& frame) {
     if (not msg.has_value()) {
         return;
     }
-    if (not SessionData::validate_message(*msg)) {
+    if (not protocol::validate_message(*msg)) {
         return;
     }
     // The confirmation is out but this state is only left on the next tick; in that window a fresh

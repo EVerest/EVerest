@@ -34,7 +34,6 @@ struct SessionData {
     bool validate_message(messages::cm_atten_char_rsp const& msg) const;
     bool validate_message(messages::cm_slac_match_req const& msg) const;
     bool validate_message(messages::cm_atten_profile_ind const& msg) const;
-    static bool validate_message(messages::cm_slac_parm_req const& msg);
     bool validate_message(messages::cm_start_atten_char_ind const& msg) const;
 
     messages::cm_slac_parm_cnf create_cm_slac_parm_cnf();

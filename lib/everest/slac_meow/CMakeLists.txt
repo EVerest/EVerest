@@ -28,6 +28,7 @@ target_sources(slac_meow
     src/protocol/messages.cpp
     src/protocol/homeplug_message.cpp
     src/protocol/utils.cpp
+    src/protocol/validation.cpp
     src/protocol/builders.cpp
     src/protocol/format.cpp
 
