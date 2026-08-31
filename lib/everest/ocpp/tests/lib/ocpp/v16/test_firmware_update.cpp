@@ -37,7 +37,11 @@
 #include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/common/types.hpp>
 #include <ocpp/v16/charge_point_configuration.hpp>
+
+#define private public // Make firmware_status accessible, so a reset of it can be asserted without the CSMS.
 #include <ocpp/v16/charge_point_impl.hpp>
+#undef private
+
 #include <ocpp/v16/charge_point_state_machine.hpp>
 
 #include "connectivity_manager_mock.hpp"
@@ -268,30 +272,6 @@ protected:
         this->message_callback(call.dump());
     }
 
-    /// \brief The payloads of all outgoing CALLs with the given \p action, in the order they were sent.
-    static std::vector<json> extract_call_payloads(const std::vector<std::string>& messages,
-                                                   const std::string& action) {
-        std::vector<json> payloads;
-        for (const auto& message : messages) {
-            const json parsed = json::parse(message, nullptr, false);
-            if (parsed.is_array() and parsed.size() > CALL_PAYLOAD and
-                parsed.at(MESSAGE_TYPE_ID) == static_cast<int>(MessageTypeId::CALL) and
-                parsed.at(CALL_ACTION) == action) {
-                payloads.push_back(parsed.at(CALL_PAYLOAD));
-            }
-        }
-        return payloads;
-    }
-
-    /// \brief Wait (bounded) until at least \p count outgoing CALLs with the given \p action have been handed to
-    /// send_to_websocket and return their payloads.
-    std::vector<json> wait_for_outgoing_calls(const std::string& action, std::size_t count) {
-        std::unique_lock<std::mutex> lock(this->mtx);
-        this->cv.wait_for(lock, std::chrono::seconds(5),
-                          [&]() { return extract_call_payloads(this->sent_messages, action).size() >= count; });
-        return extract_call_payloads(this->sent_messages, action);
-    }
-
     /// \brief A minimal, schema-valid UpdateFirmware.req payload.
     static json update_firmware_payload() {
         json payload = json::object();
@@ -453,11 +433,17 @@ TEST_F(ChargePointUpdateFirmwareRequestTest, InvalidCertificateSignedUpdateFirmw
     EXPECT_EQ(this->all_connectors_unavailable_count, 1);
 }
 
-// FAILS today - "reset on every firmware update request" has to cover the reported firmware status as well.
-// firmware_status is only put back to Idle on a terminal status, so after an update that aborts while Installing
-// a TriggerMessage(FirmwareStatusNotification) keeps reporting the dead update's status forever, even after the
-// CSMS has started a new one.
-TEST_F(ChargePointUpdateFirmwareRequestTest, NewUpdateFirmwareRequestResetsReportedFirmwareStatus) {
+// "Reset on every firmware update request" has to cover the reported firmware status as well: it is only put back to
+// Idle on a terminal status, so after an update that aborts while Installing a
+// TriggerMessage(FirmwareStatusNotification) would keep reporting the dead update's status, even after the CSMS has
+// started a new one.
+//
+// This asserts the reported status directly rather than the outgoing message it would end up in. A
+// FirmwareStatusNotification.req the charge point sends on its own initiative goes through
+// MessageQueue::push_call_async, which answers offline without ever handing it to the websocket while the queue is
+// paused, so it cannot be observed here. See handleTriggerMessageRequest,
+// MessageTrigger::FirmwareStatusNotification for what reads this status.
+TEST_F(ChargePointUpdateFirmwareRequestTest, NewUpdateFirmwareRequestResetsFirmwareStatusToIdle) {
     auto& charge_point = start_charge_point();
     charge_point.register_update_firmware_callback([](const UpdateFirmwareRequest&) {});
     boot_charge_point(charge_point);
@@ -465,22 +451,16 @@ TEST_F(ChargePointUpdateFirmwareRequestTest, NewUpdateFirmwareRequestResetsRepor
         return;
     }
 
-    // The update reaches Installing and then dies without reporting a terminal status.
+    // The update reaches Installing and then dies without ever reporting a terminal status, so this stays the status
+    // the charge point would report to the CSMS.
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::Installing, std::nullopt);
-    const auto before_trigger = wait_for_outgoing_calls("FirmwareStatusNotification", 1);
-    ASSERT_FALSE(before_trigger.empty()) << "the Installing FirmwareStatusNotification.req was not sent in time";
+    ASSERT_EQ(charge_point.firmware_status, FirmwareStatus::Installing);
 
-    // The CSMS starts a new update cycle ...
+    // The CSMS starts a new update cycle. The new cycle has not reported anything yet, so the leftover Installing of
+    // the dead cycle must not be what a TriggerMessage.req is answered with.
     send_call("UpdateFirmware", update_firmware_payload(), "update-firmware-after-abort");
 
-    // ... and asks for the current firmware status. The new cycle has not reported anything yet, so the answer must
-    // be Idle rather than the leftover Installing of the dead cycle.
-    send_call("TriggerMessage", json{{"requestedMessage", "FirmwareStatusNotification"}}, "trigger-fw-status");
-
-    const auto payloads = wait_for_outgoing_calls("FirmwareStatusNotification", before_trigger.size() + 1);
-    ASSERT_GT(payloads.size(), before_trigger.size())
-        << "the triggered FirmwareStatusNotification.req was not sent within the timeout";
-    EXPECT_EQ(payloads.back().at("status"), "Idle");
+    EXPECT_EQ(charge_point.firmware_status, FirmwareStatus::Idle);
 }
 
 } // namespace v16
