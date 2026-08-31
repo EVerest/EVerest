@@ -231,19 +231,6 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
                      "can lead to session shutdowns.");
     }
 
-    // const auto is_ac_der_sae_service = [](dt::ServiceCategory service) {
-    //     return service == dt::ServiceCategory::AC_DER_SAE;
-    // };
-    // const auto ac_der_sae_found = std::any_of(supported_energy_transfer_services.begin(),
-    //                                           supported_energy_transfer_services.end(), is_ac_der_sae_service);
-    // if (ac_der_sae_found and (not der_sae_limits.has_value() or not der_sae_setup_config.has_value())) {
-    //     auto sae_it = std::find(supported_energy_transfer_services.begin(), supported_energy_transfer_services.end(),
-    //                             dt::ServiceCategory::AC_DER_SAE);
-    //     supported_energy_transfer_services.erase(sae_it);
-    //     logf_error("The supported energy services contain AC_DER_SAE, but there is no sae der control and limits "
-    //                "defined. Removing AC_DER_SAE from the supported_energy_transfer list!");
-    // }
-
     if (supported_control_mobility_modes.empty()) {
         logf_warning("No control modes were provided, set to scheduled mode");
         supported_control_mobility_modes = {{dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
