@@ -25,4 +25,21 @@ messages::cm_set_key_req make_set_key_req(Nmk const& session_nmk) {
     return set_key_req;
 }
 
+// Note (aw): this function doesn't return by value in order to optimize for fewer copies
+void make_slac_match_cnf(messages::cm_slac_match_cnf& match_cnf, messages::cm_slac_match_req const& match_req,
+                         Nmk const& session_nmk) {
+    match_cnf.application_type = defs::COMMON_APPLICATION_TYPE;
+    match_cnf.security_type = defs::COMMON_SECURITY_TYPE;
+    match_cnf.mvf_length = htole16(defs::CM_SLAC_MATCH_CNF_MVF_LENGTH);
+    copy_wire(match_cnf.pev_id, match_req.pev_id);
+    copy_wire(match_cnf.pev_mac, match_req.pev_mac);
+    copy_wire(match_cnf.evse_id, match_req.evse_id);
+    copy_wire(match_cnf.evse_mac, match_req.evse_mac);
+    copy_wire(match_cnf.run_id, match_req.run_id);
+    zero_wire(match_cnf._rerserved);
+    match_cnf._reserved2 = 0;
+    utils::generate_nid_from_nmk(match_cnf.nid, session_nmk.data());
+    copy_to_wire(match_cnf.nmk, session_nmk);
+}
+
 } // namespace everest::slac::protocol

@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 
+#include <everest/slac/protocol/builders.hpp>
 #include <everest/slac/protocol/defs.hpp>
 #include <everest/slac/protocol/messages.hpp>
 
@@ -28,7 +29,7 @@ bool check_message(messages::HomeplugMessage const& frame, std::uint16_t expecte
     if (not msg.has_value()) {
         return false;
     }
-    return session_data.validate_message(*msg);
+    return validate_message(session_data, *msg);
 }
 
 bool is_start_atten_char(messages::HomeplugMessage const& frame, SessionData const& data) {
@@ -48,7 +49,7 @@ bool is_slac_match_req(messages::HomeplugMessage const& frame, SessionData const
 }
 
 void send_atten_char_ind(Context& ctx, SessionData& data) {
-    auto atten_char = data.create_cm_atten_char_ind(ctx.slac_config.sounding_atten_adjustment);
+    auto atten_char = make_atten_char_ind(data, ctx.slac_config.sounding_atten_adjustment);
     if (not ctx.send_slac_message(data.ev_mac, atten_char)) {
         ctx.log_warn("Failed to send CM_ATTEN_CHAR.IND");
     }
@@ -87,7 +88,7 @@ void send_match_cnf(Context& ctx, SessionData& data, messages::HomeplugMessage c
         session_nmk = &failed_match_session_nmk;
     }
 
-    data.create_cm_slac_match_cnf(reply, *msg, *session_nmk);
+    protocol::make_slac_match_cnf(reply, *msg, *session_nmk);
     if (not ctx.send_slac_message(data.ev_mac, reply)) {
         ctx.log_warn("Failed to send CM_SLAC_MATCH.CNF");
     }

@@ -125,7 +125,7 @@ void Matching::add_session(messages::HomeplugMessage const& frame) {
     }
 
     m_ctx.log_info(session_log_prefix(data) + "Received CM_SLAC_PARM.REQ, sending CM_SLAC_PARM.CNF");
-    auto param_confirm = data.create_cm_slac_parm_cnf();
+    auto param_confirm = make_slac_parm_cnf(data);
     if (not m_ctx.send_slac_message(data.ev_mac, param_confirm)) {
         m_ctx.log_warn("Failed to send CM_SLAC_PARM.CNF");
     }

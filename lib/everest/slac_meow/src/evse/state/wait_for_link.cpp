@@ -48,7 +48,7 @@ bool WaitForLink::resend_cached_match_cnf(messages::HomeplugMessage const& frame
         return false;
     }
     SessionData data(cache.ev_mac, cache.run_id, cache.evse_mac);
-    if (not data.validate_message(*msg)) {
+    if (not validate_message(data, *msg)) {
         return false;
     }
 

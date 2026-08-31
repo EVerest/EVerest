@@ -20,7 +20,7 @@ bool SessionData::matches_identity(MacAddress const& other_ev_mac, RunId const& 
     return ev_mac == other_ev_mac and run_id == other_run_id;
 }
 
-bool SessionData::validate_message(messages::cm_atten_char_rsp const& msg) const {
+bool validate_message(SessionData const& data, messages::cm_atten_char_rsp const& msg) {
     if (msg.application_type not_eq slac::defs::COMMON_APPLICATION_TYPE) {
         return false;
     }
@@ -39,19 +39,19 @@ bool SessionData::validate_message(messages::cm_atten_char_rsp const& msg) const
         return false;
     }
 
-    if (not wire_equal(msg.source_address, ev_mac)) {
+    if (not wire_equal(msg.source_address, data.ev_mac)) {
         return false;
     }
     // ISO 15118-3: the CM_ATTEN_CHAR.RSP must carry this session's runID. Without the check a
     // mismatched-runID RSP was accepted and the SECC stopped retransmitting
     // (AttenuationCharacterization_008).
-    if (not wire_equal(msg.run_id, run_id)) {
+    if (not wire_equal(msg.run_id, data.run_id)) {
         return false;
     }
     return true;
 }
 
-bool SessionData::validate_message(messages::cm_slac_match_req const& msg) const {
+bool validate_message(SessionData const& data, messages::cm_slac_match_req const& msg) {
     if (msg.application_type not_eq slac::defs::COMMON_APPLICATION_TYPE) {
         return false;
     }
@@ -73,22 +73,22 @@ bool SessionData::validate_message(messages::cm_slac_match_req const& msg) const
     }
 
     // PEV MAC TC_SECC_CMN_VTB_CmSlacMatch_015/016(?)
-    if (not wire_equal(msg.pev_mac, ev_mac)) {
+    if (not wire_equal(msg.pev_mac, data.ev_mac)) {
         return false;
     }
     // EVSE MAC TC_SECC_CMN_VTB_CmSlacMatch_019/020
-    if (not wire_equal(msg.evse_mac, evse_mac)) {
+    if (not wire_equal(msg.evse_mac, data.evse_mac)) {
         return false;
     }
     // RunID TC_SECC_CMN_VTB_CmSlacMatch_021/022
-    if (not wire_equal(msg.run_id, run_id)) {
+    if (not wire_equal(msg.run_id, data.run_id)) {
         return false;
     }
     return true;
 }
 
-bool SessionData::validate_message(messages::cm_atten_profile_ind const& msg) const {
-    if (not wire_equal(msg.pev_mac, ev_mac)) {
+bool validate_message(SessionData const& data, messages::cm_atten_profile_ind const& msg) {
+    if (not wire_equal(msg.pev_mac, data.ev_mac)) {
         return false;
     }
     if (msg.num_groups != slac::defs::AAG_LIST_LEN) {
@@ -97,7 +97,7 @@ bool SessionData::validate_message(messages::cm_atten_profile_ind const& msg) co
     return true;
 }
 
-bool SessionData::validate_message(messages::cm_start_atten_char_ind const& msg) const {
+bool validate_message(SessionData const& data, messages::cm_start_atten_char_ind const& msg) {
     if (msg.application_type not_eq slac::defs::COMMON_APPLICATION_TYPE) {
         return false;
     }
@@ -113,45 +113,45 @@ bool SessionData::validate_message(messages::cm_start_atten_char_ind const& msg)
     if (msg.resp_type not_eq slac::defs::CM_SLAC_PARM_CNF_RESP_TYPE) {
         return false;
     }
-    if (not wire_equal(msg.forwarding_sta, ev_mac)) {
+    if (not wire_equal(msg.forwarding_sta, data.ev_mac)) {
         return false;
     }
-    if (not wire_equal(msg.run_id, run_id)) {
+    if (not wire_equal(msg.run_id, data.run_id)) {
         return false;
     }
 
     return true;
 }
 
-messages::cm_slac_parm_cnf SessionData::create_cm_slac_parm_cnf() {
+messages::cm_slac_parm_cnf make_slac_parm_cnf(SessionData const& data) {
     messages::cm_slac_parm_cnf param_confirm{};
 
     copy_wire(param_confirm.m_sound_target, slac::defs::BROADCAST_MAC_ADDRESS);
     param_confirm.num_sounds = slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS;
     param_confirm.timeout = slac::defs::CM_SLAC_PARM_CNF_TIMEOUT;
     param_confirm.resp_type = slac::defs::CM_SLAC_PARM_CNF_RESP_TYPE;
-    copy_to_wire(param_confirm.forwarding_sta, ev_mac);
+    copy_to_wire(param_confirm.forwarding_sta, data.ev_mac);
     param_confirm.application_type = slac::defs::COMMON_APPLICATION_TYPE;
     param_confirm.security_type = slac::defs::COMMON_SECURITY_TYPE;
-    copy_to_wire(param_confirm.run_id, run_id);
+    copy_to_wire(param_confirm.run_id, data.run_id);
 
     return param_confirm;
 }
 
-messages::cm_atten_char_ind SessionData::create_cm_atten_char_ind(int atten_offset) {
+messages::cm_atten_char_ind make_atten_char_ind(SessionData const& data, int atten_offset) {
     messages::cm_atten_char_ind atten_char_ind{};
 
     atten_char_ind.application_type = slac::defs::COMMON_APPLICATION_TYPE;
     atten_char_ind.security_type = slac::defs::COMMON_SECURITY_TYPE;
-    copy_to_wire(atten_char_ind.source_address, ev_mac);
-    copy_to_wire(atten_char_ind.run_id, run_id);
+    copy_to_wire(atten_char_ind.source_address, data.ev_mac);
+    copy_to_wire(atten_char_ind.run_id, data.run_id);
     zero_wire(atten_char_ind.source_id);
     zero_wire(atten_char_ind.resp_id);
-    atten_char_ind.num_sounds = captured_sounds;
+    atten_char_ind.num_sounds = data.captured_sounds;
     atten_char_ind.attenuation_profile.num_groups = slac::defs::AAG_LIST_LEN;
-    if (captured_sounds != 0) {
+    if (data.captured_sounds != 0) {
         for (int i = 0; i < slac::defs::AAG_LIST_LEN; ++i) {
-            atten_char_ind.attenuation_profile.aag[i] = captured_aags[i] / captured_sounds + atten_offset;
+            atten_char_ind.attenuation_profile.aag[i] = data.captured_aags[i] / data.captured_sounds + atten_offset;
         }
     } else {
         // FIXME (aw): what to do here, if we didn't receive any sounds?
@@ -159,23 +159,6 @@ messages::cm_atten_char_ind SessionData::create_cm_atten_char_ind(int atten_offs
     }
 
     return atten_char_ind;
-}
-
-// Note (aw): this function doesn't return by value in order to optimize for fewer copies
-void SessionData::create_cm_slac_match_cnf(messages::cm_slac_match_cnf& match_cnf,
-                                           messages::cm_slac_match_req const& match_req, Nmk const& session_nmk) {
-    match_cnf.application_type = slac::defs::COMMON_APPLICATION_TYPE;
-    match_cnf.security_type = slac::defs::COMMON_SECURITY_TYPE;
-    match_cnf.mvf_length = htole16(slac::defs::CM_SLAC_MATCH_CNF_MVF_LENGTH);
-    copy_wire(match_cnf.pev_id, match_req.pev_id);
-    copy_wire(match_cnf.pev_mac, match_req.pev_mac);
-    copy_wire(match_cnf.evse_id, match_req.evse_id);
-    copy_wire(match_cnf.evse_mac, match_req.evse_mac);
-    copy_wire(match_cnf.run_id, match_req.run_id);
-    zero_wire(match_cnf._rerserved);
-    match_cnf._reserved2 = 0;
-    utils::generate_nid_from_nmk(match_cnf.nid, session_nmk.data());
-    copy_to_wire(match_cnf.nmk, session_nmk);
 }
 
 } // namespace everest::slac::evse

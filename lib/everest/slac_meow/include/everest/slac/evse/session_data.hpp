@@ -30,16 +30,15 @@ struct SessionData {
     int captured_aags[defs::AAG_LIST_LEN]{};
 
     int num_retries{0};
-
-    bool validate_message(messages::cm_atten_char_rsp const& msg) const;
-    bool validate_message(messages::cm_slac_match_req const& msg) const;
-    bool validate_message(messages::cm_atten_profile_ind const& msg) const;
-    bool validate_message(messages::cm_start_atten_char_ind const& msg) const;
-
-    messages::cm_slac_parm_cnf create_cm_slac_parm_cnf();
-    messages::cm_atten_char_ind create_cm_atten_char_ind(int atten_offset);
-    // Note (aw): this function doesn't return by value in order to optimize for fewer copies
-    void create_cm_slac_match_cnf(messages::cm_slac_match_cnf& match_cnf, messages::cm_slac_match_req const& match_req,
-                                  Nmk const& session_nmk);
 };
+
+/// Does this message belong to this session? A check needing no session lives in
+/// protocol/validation.hpp instead.
+bool validate_message(SessionData const& data, messages::cm_atten_char_rsp const& msg);
+bool validate_message(SessionData const& data, messages::cm_slac_match_req const& msg);
+bool validate_message(SessionData const& data, messages::cm_atten_profile_ind const& msg);
+bool validate_message(SessionData const& data, messages::cm_start_atten_char_ind const& msg);
+
+messages::cm_slac_parm_cnf make_slac_parm_cnf(SessionData const& data);
+messages::cm_atten_char_ind make_atten_char_ind(SessionData const& data, int atten_offset);
 } // namespace everest::slac::evse
