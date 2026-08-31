@@ -3,6 +3,7 @@
 
 #include <charge_bridge/heartbeat_service.hpp>
 #include <charge_bridge/utilities/logging.hpp>
+#include <charge_bridge/utilities/mcu_uptime.hpp>
 #include <charge_bridge/utilities/platform_utils.hpp>
 #include <chrono>
 #include <cstring>
@@ -20,10 +21,12 @@ using namespace std::chrono_literals;
 
 heartbeat_service::heartbeat_service(heartbeat_config const& config,
                                      std::function<void(bool)> const& publish_connection_status,
+                                     std::function<void(CbLinkStatusPacket const&)> const& publish_link_status,
                                      everest::lib::io::event::event_fd& ready_notify) :
     m_udp_port(config.cb_port),
     m_udp_remote(config.cb_remote),
     m_publish_connection_status(publish_connection_status),
+    m_publish_link_status(publish_link_status),
     m_ready_notify(ready_notify) {
 
     m_identifier = config.cb + "/" + config.item;
@@ -62,6 +65,23 @@ void heartbeat_service::disconnect_cb_endpoint() {
     m_udp_on_error = true;
     m_cb_connected = false;
     m_last_heartbeat_reply = std::chrono::steady_clock::time_point();
+    // Everything below describes the device that was on the other end. This is also the retarget path
+    // (connect_cb_endpoint goes through here), so the next endpoint may be a different ChargeBridge
+    // entirely: keeping any of it would let the dashboard attribute one device's state to another.
+    //
+    // The role and the technology drive a correctness claim about the configuration - the mismatch
+    // marker and its remedy - so a stale value there does not just look wrong, it accuses the wrong
+    // hardware. Back to "nothing reported yet" until the new endpoint says otherwise, and the
+    // once-per-boot mismatch report is re-armed so the new device gets its own.
+    m_latched_cb_type = cb_type_not_latched;
+    m_link_technology = CB_LINK_TECH_UNKNOWN;
+    m_role_mismatch_reported = false;
+    // Same class of staleness, same fix: a new device's uptime is unrelated to the old one's, and a
+    // lower first reading would otherwise be read as a reboot - inflating the reset count and firing
+    // the synthesized all-zero link status, which drops the tap carrier for a heartbeat. Zero makes
+    // the first reply from the new endpoint unable to look like a regression. The reset tally itself
+    // is deliberately kept: it counts what this session has seen.
+    m_mcu_timestamp = 0;
     if (m_udp) {
         m_udp->reset();
     }
@@ -138,6 +158,14 @@ int heartbeat_service::mcu_reset_count() const {
     return m_mcu_reset_count;
 }
 
+std::uint8_t heartbeat_service::latched_cb_type() const {
+    return m_latched_cb_type;
+}
+
+std::uint8_t heartbeat_service::link_technology() const {
+    return m_link_technology;
+}
+
 std::optional<utilities::chargebridge_telemetry> heartbeat_service::latest_telemetry() const {
     if (not m_have_telemetry) {
         return std::nullopt;
@@ -145,34 +173,93 @@ std::optional<utilities::chargebridge_telemetry> heartbeat_service::latest_telem
     return m_telemetry;
 }
 
+// Host and MCU always ship together, so this parser exists for exactly one reason: never let
+// unexpected bytes on the socket take the process down. The 2-byte type field decides first and the
+// size is checked per message type, so a datagram that is too short to even carry a type, one whose
+// type this build does not know, and one whose length does not match its type are all rejected with a
+// log line instead of a memcpy past the end of the buffer.
 void heartbeat_service::handle_udp_rx(everest::lib::io::udp::udp_payload const& payload) {
-    CbManagementPacket<CbHeartbeatReplyPacket> data;
-    if (payload.size() == sizeof(data)) {
-        std::memcpy(&data, payload.buffer.data(), sizeof(data));
-        m_last_heartbeat_reply = std::chrono::steady_clock::now();
-        auto mcu_current = static_cast<uint32_t>(data.data.uptime_ms);
-        if (mcu_current <= m_mcu_timestamp) {
-            m_mcu_reset_count++;
-            utilities::print_error(m_identifier, "HEARTBEAT/UDP", -1)
-                << "ChargeBridge reset count " << m_mcu_reset_count << std::endl;
-            m_ready_notify.notify();
-        }
-        m_mcu_timestamp = mcu_current;
+    CbStructType type;
+    if (payload.size() < sizeof(type)) {
+        utilities::print_error(m_identifier, "HEARTBEAT/UDP", -1)
+            << "TRUNCATED UDP RX of HEARTBEAT: " << payload.size() << " vs " << sizeof(type) << std::endl;
+        return;
+    }
+    std::memcpy(&type, payload.buffer.data(), sizeof(type));
 
-        // Snapshot the numeric telemetry for the interactive terminal UI (live readouts/sparklines).
-        // This runs on the event loop thread, the same thread that reads it via get_status().
-        m_telemetry.cp_hi_mV = data.data.cp_hi_mV;
-        m_telemetry.cp_lo_mV = data.data.cp_lo_mV;
-        m_telemetry.pp_mOhm = data.data.pp_mOhm;
-        m_telemetry.temperature_mcu_C = data.data.temperature_mcu_C;
-        m_telemetry.temperature_pcb_C = data.data.temperature_pcb_C;
-        m_telemetry.vdd_12V_mV = data.data.vdd_12V;
-        m_telemetry.vdd_N12V_mV = data.data.vdd_N12V;
-        m_telemetry.vdd_3v3_mV = data.data.vdd_3v3;
-        m_have_telemetry = true;
-    } else {
+    switch (type) {
+    case CbStructType::CST_CbToHost_Heartbeat:
+        handle_heartbeat_reply(payload);
+        return;
+    default:
+        utilities::print_error(m_identifier, "HEARTBEAT/UDP", -1)
+            << "UNEXPECTED MESSAGE TYPE in UDP RX of HEARTBEAT: " << static_cast<int>(type) << std::endl;
+        return;
+    }
+}
+
+void heartbeat_service::handle_heartbeat_reply(everest::lib::io::udp::udp_payload const& payload) {
+    CbManagementPacket<CbHeartbeatReplyPacket> data;
+    if (payload.size() not_eq sizeof(data)) {
         utilities::print_error(m_identifier, "HEARTBEAT/UDP", -1)
             << "INVALID DATA SIZE in UDP RX of HEARTBEAT: " << payload.size() << " vs " << sizeof(data) << std::endl;
+        return;
+    }
+    std::memcpy(&data, payload.buffer.data(), sizeof(data));
+    m_last_heartbeat_reply = std::chrono::steady_clock::now();
+    auto mcu_current = static_cast<uint32_t>(data.data.uptime_ms);
+    if (utilities::mcu_rebooted(m_mcu_timestamp, mcu_current)) {
+        m_mcu_reset_count++;
+        utilities::print_error(m_identifier, "HEARTBEAT/UDP", -1)
+            << "ChargeBridge reset count " << m_mcu_reset_count << std::endl;
+        m_ready_notify.notify();
+        // A rebooted MCU has no valid PHY state until it reports again, and its link-status
+        // transition counter restarted. Synthesize an all-zero report so a carrier consumer drops the
+        // link now instead of waiting for the next report or the connection timeout.
+        if (m_publish_link_status) {
+            m_publish_link_status(CbLinkStatusPacket{});
+        }
+        // A reboot is the only thing that can change the latched role, so it is also the only reason
+        // to say it again.
+        m_role_mismatch_reported = false;
+    }
+    m_mcu_timestamp = mcu_current;
+
+    // Snapshot the numeric telemetry for the interactive terminal UI (live readouts/sparklines).
+    // This runs on the event loop thread, the same thread that reads it via get_status().
+    m_telemetry.cp_hi_mV = data.data.cp_hi_mV;
+    m_telemetry.cp_lo_mV = data.data.cp_lo_mV;
+    m_telemetry.pp_mOhm = data.data.pp_mOhm;
+    m_telemetry.temperature_mcu_C = data.data.temperature_mcu_C;
+    m_telemetry.temperature_pcb_C = data.data.temperature_pcb_C;
+    m_telemetry.vdd_12V_mV = data.data.vdd_12V;
+    m_telemetry.vdd_N12V_mV = data.data.vdd_N12V;
+    m_telemetry.vdd_3v3_mV = data.data.vdd_3v3;
+    m_have_telemetry = true;
+
+    // The MCU's PHY state rides inside every reply, always populated and on every board. Published
+    // after the reboot check above so a reply that reports a restart drops the carrier through the
+    // synthesized all-zero report first and only then applies the fresh snapshot - the counters in it
+    // belong to the new boot, and forwarding them the other way round would leave a carrier raised
+    // from a stale state.
+    if (m_publish_link_status) {
+        m_publish_link_status(data.data.link_status);
+    }
+
+    // The role the MCU actually runs, and the technology that says who owns it. On an MCS board the
+    // role is latched from the first config after boot, so a reboot applies a changed type; on a CCS
+    // board (technology PLC) the straps decide and no reboot will ever change the answer, which makes
+    // the remedy different advice for the same symptom. An unconfigured type cannot disagree with
+    // anything, so it produces no report at all.
+    m_latched_cb_type = data.data.latched_cb_type;
+    m_link_technology = data.data.link_status.technology;
+    auto const configured = m_config_message.data.cb_type;
+    if (evaluate_role_latch(configured, m_latched_cb_type) == role_latch_state::mismatched and
+        not m_role_mismatch_reported) {
+        m_role_mismatch_reported = true;
+        utilities::print_error(m_identifier, "HEARTBEAT/ROLE", -1)
+            << "configured charge_bridge.type is " << cb_type_name(configured) << " but the ChargeBridge is running "
+            << cb_type_name(m_latched_cb_type) << ": " << role_mismatch_remedy(m_link_technology) << std::endl;
     }
 }
 

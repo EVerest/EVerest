@@ -169,8 +169,30 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         }
     };
 
+    // True when the key exists at all, which is what tells a configured value from an absent one:
+    // get_node_or_default cannot, because it hands back the fallback either way.
+    auto has_node = [&config](std::string const& main, std::string const& sub = "") {
+        auto [node_str, node] = find_node(config, main, sub);
+        (void)node_str;
+        return not node.invalid();
+    };
+
+    // Like get_node_or_default, except that a key which IS present must decode: get_node_or_default
+    // swallows a decode failure and hands back the fallback, which turns a broken value (a map or a
+    // sequence where a scalar belongs) into a silent default. Present-but-undecodable is a broken
+    // config, not an absent one.
+    auto get_node_if_present = [&get_node, &has_node](auto& data, std::string const& main, std::string const& sub,
+                                                      auto fallback) {
+        if (has_node(main, sub)) {
+            get_node(data, main, sub);
+        } else {
+            data = fallback;
+        }
+    };
+
     get_node(c.cb_name, "charge_bridge", "name");
     get_node(c.cb_remote, "charge_bridge", "ip");
+
     // accept the bracketed IPv6 spelling ("[fd00::1]"); sentinels (ANY_EVSE/ANY_EV)
     // and everything else pass through unchanged. Normalized here, before cb_remote
     // is copied into the per-bridge configs below.
@@ -178,6 +200,30 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         c.cb_remote = strip_brackets(c.cb_remote);
     }
     c.cb_port = g_cb_port_management;
+
+    // Optional: the role this ChargeBridge plays. An absent key stays absent all the way to the MCU
+    // rather than being turned into EVSE - a config that never mentions a role is not claiming to be
+    // an EVSE, and on a strapping-coded CCS board that distinction is what keeps a correctly
+    // configured EV station from raising a permanent role alarm. Read before the blocks below because
+    // it derives the plc.station_id default.
+    if (has_node("charge_bridge", "type")) {
+        // get_node, not get_node_or_default: a key that is present but cannot be decoded (a map or a
+        // sequence where a string belongs) is a broken config, not an absent one, and must not fall
+        // back to a silent default.
+        std::string type;
+        get_node(type, "charge_bridge", "type");
+        if (type == "EVSE") {
+            c.type = cb_role::evse;
+        } else if (type == "EV") {
+            c.type = cb_role::ev;
+        } else {
+            std::cerr << "Configuration error: charge_bridge::type must be 'EVSE' or 'EV', got '" << type << "'"
+                      << std::endl;
+            throw std::runtime_error("");
+        }
+    } else {
+        c.type = cb_role::unspecified;
+    }
 
     get_block("telemetry", c.telemetry, [&](auto& cfg, auto const& main) {
         get_node(cfg.mqtt_remote, main, "mqtt_remote");
@@ -219,6 +265,53 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         get_node(cfg.plc_mtu, main, "mtu");
         cfg.cb_port = g_cb_port_plc;
         cfg.cb_remote = c.cb_remote;
+
+        // Optional: how the tap device's carrier is driven. "none" (the default) never issues
+        // TUNSETCARRIER, which is today's behavior and the only correct setting for HomePlug - SLAC
+        // MMEs must cross the tap before any link exists. "firmware" mirrors the MCU's reported SPE
+        // PHY state onto the carrier (MCS) and opts the MCU into sending link-status reports.
+        std::string carrier;
+        get_node_if_present(carrier, main, "carrier", std::string("none"));
+        if (carrier == "none") {
+            cfg.carrier = carrier_mode::none;
+        } else if (carrier == "firmware") {
+            cfg.carrier = carrier_mode::firmware;
+        } else {
+            std::cerr << "Configuration error: plc::carrier must be 'none' or 'firmware', got '" << carrier << "'"
+                      << std::endl;
+            throw std::runtime_error("");
+        }
+
+        // Optional: what to do when the kernel has no TUNSETCARRIER (pre-5.0) in "firmware" mode.
+        // "fail" (the default) refuses to start the plc bridge, "warn" keeps bridging with the
+        // carrier permanently on and degraded supervision. Ignored in "none" mode.
+        std::string fallback;
+        get_node_if_present(fallback, main, "carrier_fallback", std::string("fail"));
+        if (fallback == "fail") {
+            cfg.carrier_fallback_policy = carrier_fallback::fail;
+        } else if (fallback == "warn") {
+            cfg.carrier_fallback_policy = carrier_fallback::warn;
+        } else {
+            std::cerr << "Configuration error: plc::carrier_fallback must be 'fail' or 'warn', got '" << fallback << "'"
+                      << std::endl;
+            throw std::runtime_error("");
+        }
+
+        // Optional: additionally gate the carrier on basic-signalling state. "none" (the default)
+        // keeps carrier: firmware's PHY-only rule. "ce_mated" holds the carrier down unless the BSP
+        // status reports a mated CE state, so the netdev's link exists exactly while a vehicle is
+        // physically present. Requires "firmware" mode and a BSP block (validated below).
+        std::string gate;
+        get_node_if_present(gate, main, "carrier_gate", std::string("none"));
+        if (gate == "none") {
+            cfg.gate = carrier_gate::none;
+        } else if (gate == "ce_mated") {
+            cfg.gate = carrier_gate::ce_mated;
+        } else {
+            std::cerr << "Configuration error: plc::carrier_gate must be 'none' or 'ce_mated', got '" << gate << "'"
+                      << std::endl;
+            throw std::runtime_error("");
+        }
     });
 
     {
@@ -316,7 +409,48 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
             get_node(cfg.cb_config.can, "can_0");
         }
         get_node(cfg.cb_config.plc_powersaving_mode, "plc", "powersaving_mode");
-        get_node_or_default(cfg.cb_config.station_id, "plc", "station_id", -1);
+
+        // The role the MCU latches from the first config heartbeat after it boots.
+        cfg.cb_config.cb_type = to_wire(c.type);
+
+        // charge_bridge.type derives the station_id default (EVSE is the PLCA coordinator, an EV the
+        // first follower). Read into an int rather than the int8_t on the wire so a value that is no
+        // node id at all can be recognised instead of silently wrapping.
+        std::optional<int> configured_station_id;
+        if (has_node("plc", "station_id")) {
+            int value = 0;
+            get_node(value, "plc", "station_id");
+            configured_station_id = value;
+        }
+        auto const station = decide_station_id(c.type, configured_station_id);
+        switch (station.issue) {
+        case station_id_issue::evse_not_coordinator:
+            // Fires for an explicit EVSE and for an absent type, which derives like one. Naming EVSE
+            // in both cases would repeat the absent-is-EVSE conflation this key exists to avoid, so
+            // the message says which of the two it actually is.
+            std::cerr << "Configuration warning: plc::station_id is " << station.station_id << " but charge_bridge::"
+                      << (c.type == cb_role::unspecified ? "type is not configured (defaults to EVSE)" : "type is EVSE")
+                      << ", which is the PLCA coordinator (station 0)" << std::endl;
+            break;
+        case station_id_issue::ev_is_coordinator:
+            std::cerr << "Configuration warning: plc::station_id 0 is the PLCA coordinator (the EVSE), "
+                         "but charge_bridge::type is EV"
+                      << std::endl;
+            break;
+        case station_id_issue::out_of_range:
+            // Refused rather than corrected: every fallback has to guess, and the guess for an EVSE
+            // would be station 0 - the coordinator seat, which is exactly what a typo must not be able
+            // to hand out silently.
+            std::cerr << "Configuration error: plc::station_id " << station.station_id
+                      << " is not a PLCA node id (0..7, or -1 for collision detection)" << std::endl;
+            break;
+        case station_id_issue::none:
+            break;
+        }
+        if (is_fatal(station.issue)) {
+            throw std::runtime_error("");
+        }
+        cfg.cb_config.station_id = static_cast<std::int8_t>(station.station_id);
 
         // Optional: forward the MCU's debug-UART (printf) output to this host over UDP. Off by
         // default; the bridge logs each received line to the console prefixed with "[MCU]".
@@ -326,6 +460,32 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
 
         cfg.cb_config.config_version = CB_CONFIG_VERSION;
     });
+
+    // The link status rides inside the heartbeat reply, and the carrier is gated on the
+    // heartbeat-verified connection state: without a heartbeat block there is no transport for the
+    // status and the carrier could never be raised at all. Reject the configuration instead of
+    // silently keeping the link down.
+    if (c.plc.has_value() and c.plc->carrier == carrier_mode::firmware and not c.heartbeat.has_value()) {
+        std::cerr << "Configuration error: plc::carrier: firmware requires an enabled 'heartbeat' block" << std::endl;
+        throw std::runtime_error("");
+    }
+
+    // The carrier gate's CE state rides in the BSP status packet the same way: without a BSP block
+    // there is no transport for it and the gate would hold the carrier down forever. And in carrier
+    // mode none there is no carrier being driven for the gate to act on - a configured gate that
+    // silently does nothing is a misconfiguration, not a default.
+    if (c.plc.has_value() and c.plc->gate not_eq carrier_gate::none) {
+        if (c.plc->carrier not_eq carrier_mode::firmware) {
+            std::cerr << "Configuration error: plc::carrier_gate requires plc::carrier: firmware" << std::endl;
+            throw std::runtime_error("");
+        }
+        if (not c.bsp.has_value()) {
+            std::cerr << "Configuration error: plc::carrier_gate: ce_mated requires an enabled 'evse_bsp' or "
+                         "'ev_bsp' block (the CE state rides in the BSP status packet)"
+                      << std::endl;
+            throw std::runtime_error("");
+        }
+    }
 
     get_node(c.firmware.fw_path, "charge_bridge", "fw_file");
     get_node(c.firmware.fw_update_on_start, "charge_bridge", "fw_update_on_start");

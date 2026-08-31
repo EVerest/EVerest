@@ -18,7 +18,17 @@ CB_STATIC_ASSERT((sizeof(CbFirmwarePacket) == 1 + 2 + 2 + 1024 && sizeof(CbFirmw
                  "Wrong CB type size!");
 CB_STATIC_ASSERT((sizeof(CbFirmwareEnd) == 4 + 1 + (128 + 1) && sizeof(CbFirmwareEnd) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");
-CB_STATIC_ASSERT((sizeof(CbHeartbeatPacket) == 225 && sizeof(CbHeartbeatPacket) <= CB_MAX_CB_STRUCT_SIZE),
+// The trailing +1 is CbConfig.cb_type (charge_bridge.type), CB_CONFIG_VERSION 6.
+CB_STATIC_ASSERT((sizeof(CbHeartbeatPacket) == 225 + 1 && sizeof(CbHeartbeatPacket) <= CB_MAX_CB_STRUCT_SIZE),
+                 "Wrong CB type size!");
+CB_STATIC_ASSERT(sizeof(CbConfig) == sizeof(CbHeartbeatPacket), "CbHeartbeatPacket is just a CbConfig!");
+CB_STATIC_ASSERT(sizeof(CbLinkTechnology) == 1, "Wrong CB type size!");
+CB_STATIC_ASSERT((sizeof(CbLinkStatusPacket) == 8 && sizeof(CbLinkStatusPacket) <= CB_MAX_CB_STRUCT_SIZE),
+                 "Wrong CB type size!");
+// 53 bytes of measurements + the embedded 8 byte CbLinkStatusPacket + 1 byte latched_cb_type
+CB_STATIC_ASSERT((sizeof(CbHeartbeatReplyPacket) == 53 + sizeof(CbLinkStatusPacket) + 1 &&
+                  sizeof(CbHeartbeatReplyPacket) == 62 &&
+                  sizeof(CbHeartbeatReplyPacket) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");
 CB_STATIC_ASSERT((sizeof(CbDebugUartLinePacket) == 2 + CB_DEBUG_UART_LINE_MAX &&
                   sizeof(CbDebugUartLinePacket) <= CB_MAX_CB_STRUCT_SIZE),

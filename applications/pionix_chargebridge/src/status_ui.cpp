@@ -123,18 +123,25 @@ struct series_desc {
 
 // Enumerate, in a stable order, every numeric value available for an instance: heartbeat
 // telemetry, ADC channels, GPIO lines and the unstructured IO telemetry entries.
+//
+// `mcs` relabels the rail rows for a CB-MCS board: the vdd_12V slot carries the +5 V
+// front-end rail there (firmware supply_rails.h), and -12 V does not exist (forced 0), so
+// its row is dropped rather than plotting a constant. The series key stays "vdd_12" so the
+// plot history survives the technology latching mid-session.
 std::vector<series_desc>
 collect_plottable_series(std::optional<charge_bridge::utilities::chargebridge_telemetry> const& telemetry,
                          std::optional<std::vector<int>> const& adc, std::optional<std::vector<int>> const& gpio,
-                         std::optional<std::vector<std::pair<std::string, int>>> const& io_telemetry) {
+                         std::optional<std::vector<std::pair<std::string, int>>> const& io_telemetry, bool mcs) {
     std::vector<series_desc> out;
     if (telemetry.has_value()) {
         out.push_back({"mcu_temp", "MCU temp", "degC", static_cast<double>(telemetry->temperature_mcu_C)});
         out.push_back({"cp_hi", "CP high", "mV", static_cast<double>(telemetry->cp_hi_mV)});
         out.push_back({"cp_lo", "CP low", "mV", static_cast<double>(telemetry->cp_lo_mV)});
         out.push_back({"pp", "PP", "mOhm", static_cast<double>(telemetry->pp_mOhm)});
-        out.push_back({"vdd_12", "VDD 12V", "mV", static_cast<double>(telemetry->vdd_12V_mV)});
-        out.push_back({"vdd_n12", "VDD -12V", "mV", static_cast<double>(telemetry->vdd_N12V_mV)});
+        out.push_back({"vdd_12", mcs ? "VDD 5V" : "VDD 12V", "mV", static_cast<double>(telemetry->vdd_12V_mV)});
+        if (!mcs) {
+            out.push_back({"vdd_n12", "VDD -12V", "mV", static_cast<double>(telemetry->vdd_N12V_mV)});
+        }
         out.push_back({"vdd_3v3", "VDD 3.3V", "mV", static_cast<double>(telemetry->vdd_3v3_mV)});
     }
     if (adc.has_value()) {
@@ -158,6 +165,19 @@ collect_plottable_series(std::optional<charge_bridge::utilities::chargebridge_te
 
 // The one series that is always plotted and cannot be toggled off.
 constexpr char const* k_always_plotted = "mcu_temp";
+
+// CbLinkTechnology as reported by the MCU. Kept as a plain int in the status contract, so the
+// spelling lives here.
+char const* technology_name(int technology) {
+    switch (technology) {
+    case 1:
+        return "PLC";
+    case 2:
+        return "SPE";
+    default:
+        return "unknown";
+    }
+}
 
 } // namespace
 
@@ -284,6 +304,11 @@ void status_ui::stop() {
     }
 }
 
+// True when the board latched SPE link technology, i.e. it is a CB-MCS board.
+static bool link_is_mcs(std::optional<utilities::chargebridge_link_status> const& link_status) {
+    return link_status.has_value() && link_status->have_report && link_status->technology == 2;
+}
+
 void status_ui::apply_status_row(utilities::chargebridge_status const& status) {
     auto row_it = m_cb_name_to_row.find(status.cb_name);
     if (row_it == m_cb_name_to_row.end()) {
@@ -304,13 +329,19 @@ void status_ui::apply_status_row(utilities::chargebridge_status const& status) {
     row.io = status.io;
     row.mcu_resets = status.mcu_resets;
     row.telemetry = status.telemetry;
+    row.link_status = status.link_status;
+    row.role = status.role;
     row.cp_state = status.cp_state;
+    row.ce_state = status.ce_state;
+    row.id_state = status.id_state;
+    row.lock_state = status.lock_state;
     row.gpio = status.gpio;
     row.adc = status.adc;
     row.io_telemetry = status.io_telemetry;
 
     // Record the latest value of every numeric series so any of them can be plotted on demand.
-    for (auto const& series : collect_plottable_series(row.telemetry, row.adc, row.gpio, row.io_telemetry)) {
+    for (auto const& series :
+         collect_plottable_series(row.telemetry, row.adc, row.gpio, row.io_telemetry, link_is_mcs(row.link_status))) {
         auto& history = row.history[series.key];
         history.push_back(static_cast<float>(series.value));
         while (history.size() > k_telemetry_history) {
@@ -552,13 +583,100 @@ void status_ui::run_terminal_loop() {
                                     : 0;
         auto const& row = m_status_rows[idx];
 
-        auto series = collect_plottable_series(row.telemetry, row.adc, row.gpio, row.io_telemetry);
+        auto series = collect_plottable_series(row.telemetry, row.adc, row.gpio, row.io_telemetry, link_is_mcs(row.link_status));
 
         Elements sections;
 
-        // CP state from the BSP bridge (if enabled).
+        // CP state from the BSP bridge (if enabled), plus the MCS basic-signalling states beside it
+        // when the board reports them. They share a line because CP is synthesized from CE: seeing
+        // them together is what makes a synthesis mismatch obvious.
         if (row.cp_state.has_value()) {
-            sections.push_back(hbox({text("CP state: ") | bold, styled(*row.cp_state, Color::Yellow, true)}));
+            Elements cp_line;
+            cp_line.push_back(text("CP state: ") | bold);
+            cp_line.push_back(styled(*row.cp_state, Color::Yellow, true));
+            if (row.ce_state.has_value()) {
+                cp_line.push_back(text("  CE: "));
+                cp_line.push_back(styled(*row.ce_state, Color::Cyan, true));
+            }
+            if (row.id_state.has_value()) {
+                cp_line.push_back(text("  ID: "));
+                cp_line.push_back(styled(*row.id_state, Color::Cyan, true));
+            }
+            if (row.lock_state.has_value()) {
+                cp_line.push_back(text("  lock: "));
+                cp_line.push_back(styled(*row.lock_state, Color::Cyan, false));
+            }
+            sections.push_back(hbox(std::move(cp_line)));
+            sections.push_back(separator());
+        }
+
+        // The role the MCU runs, and whether the configuration asked for it. A mismatch cannot be
+        // cleared from here, so the marker carries the remedy the bridge worked out for this board.
+        if (row.role.has_value()) {
+            auto const& role = *row.role;
+            Elements role_line;
+            if (role.not_configured) {
+                // No type was configured, so there is no "configured vs latched" to show - only what
+                // the MCU is running, and a note saying why nothing is being compared. This is the
+                // normal state of every config that does not mention a role.
+                role_line.push_back(text("Role: ") | bold);
+                role_line.push_back(styled(role.latched, Color::Cyan, false));
+                role_line.push_back(styled("  (type not configured)", Color::GrayDark, false) | dim);
+            } else {
+                role_line.push_back(text("Role: ") | bold);
+                role_line.push_back(styled(role.configured, Color::Cyan, true));
+                role_line.push_back(text("  latched: "));
+                // Three states, three colors: a mismatch needs an operator, a confirmed role is good,
+                // and "not yet latched" is neither - it is a waiting state that clears on the first
+                // accepted config, so it must not read as either a fault or a confirmation.
+                auto const latched_color =
+                    role.mismatch ? Color::Red : (role.awaiting_latch ? Color::Yellow : Color::Green);
+                role_line.push_back(styled(role.latched, latched_color, role.mismatch));
+                if (role.mismatch) {
+                    role_line.push_back(text("  "));
+                    role_line.push_back(styled("MISMATCH: " + role.remedy, Color::Red, true));
+                }
+            }
+            sections.push_back(hbox(std::move(role_line)));
+            sections.push_back(separator());
+        }
+
+        // PLC/SPE link state from the plc bridge (if enabled). The applied carrier is the bridge's own
+        // tracked state - a kernel query cannot see IFF_LOWER_UP and lags by up to a second.
+        if (row.link_status.has_value()) {
+            auto const& link = *row.link_status;
+            Elements link_line;
+            link_line.push_back(text("PLC link: ") | bold);
+            link_line.push_back(text("carrier=" + link.carrier_mode + "  "));
+            if (link.carrier_mode == "firmware") {
+                link_line.push_back(styled(link.carrier_applied ? "applied=UP" : "applied=DOWN",
+                                           link.carrier_applied ? Color::Green : Color::Red, true));
+                link_line.push_back(text("  "));
+                // Only when configured: a blocking gate is what makes "phy=1 but applied=DOWN"
+                // correct rather than alarming, so it must say so; a plain-PHY setup stays clean.
+                if (link.gate_active) {
+                    link_line.push_back(styled(link.gate_mated ? "gate=mated" : "gate=UNMATED",
+                                               link.gate_mated ? Color::Green : Color::Yellow, not link.gate_mated));
+                    link_line.push_back(text("  "));
+                }
+            }
+            if (link.have_report) {
+                link_line.push_back(text(std::string("tech=") + technology_name(link.technology) +
+                                         "  phy=" + (link.phy_operational ? "1" : "0") +
+                                         " plca=" + (link.plca_engaged ? "1" : "0") +
+                                         "  transitions=" + std::to_string(link.transition_count)));
+            } else {
+                link_line.push_back(styled("no report yet", Color::GrayDark, false) | dim);
+            }
+            if (link.carrier_unsupported) {
+                link_line.push_back(text("  "));
+                link_line.push_back(styled("TUNSETCARRIER unsupported: supervision DEGRADED", Color::Red, true));
+            }
+            if (link.technology_mismatch) {
+                link_line.push_back(text("  "));
+                link_line.push_back(styled("technology mismatch", Color::Red, true));
+            }
+            sections.push_back(hbox(std::move(link_line)));
             sections.push_back(separator());
         }
 
@@ -755,12 +873,9 @@ void status_ui::run_terminal_loop() {
     name_input_option.on_enter = [&] { commit_name(); };
     auto name_input = Input(name_input_option);
 
-    auto set_button = Button(
-        "Set", [&] { commit_name(); }, ButtonOption::Ascii());
-    auto cancel_button = Button(
-        "Cancel", [&] { m_name_modal_open = false; }, ButtonOption::Ascii());
-    auto open_button = Button(
-        "Set name prefix", [&] { open_name_modal(); }, ButtonOption::Ascii());
+    auto set_button = Button("Set", [&] { commit_name(); }, ButtonOption::Ascii());
+    auto cancel_button = Button("Cancel", [&] { m_name_modal_open = false; }, ButtonOption::Ascii());
+    auto open_button = Button("Set name prefix", [&] { open_name_modal(); }, ButtonOption::Ascii());
 
     auto modal_container = Container::Vertical({
         name_input,
