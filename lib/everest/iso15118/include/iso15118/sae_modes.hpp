@@ -34,9 +34,9 @@ inline constexpr std::uint32_t SAE_NOT_ENABLEABLE_MASK =
     sae_function_bit(DerBitMapFunctions::EVSETargetReactivePowerFunction) |
     sae_function_bit(DerBitMapFunctions::EVSETargetActivePowerFunction);
 
-// Every enumerator: charge, discharge and the charge loop target powers have no Enable in DERControlCPDRes
-// but a profile's supported_modes list must be able to name them. Names match the gate_enable call sites in
-// ac_der_sae_convert.cpp so table and gates can be audited side by side.
+// Every enumerator, including the four SAE_NOT_ENABLEABLE_MASK ones, since a profile's supported_modes list
+// must be able to name them. Names match the gate_enable call sites in ac_der_sae_convert.cpp so table and
+// gates can be audited side by side.
 inline constexpr std::array<SaeFunctionName, 24> SAE_FUNCTION_NAMES{{
     {DerBitMapFunctions::ChargeFunction, "charge"},
     {DerBitMapFunctions::DischargeFunction, "discharge"},
