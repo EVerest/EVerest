@@ -3,6 +3,7 @@
 
 #include "ev_slacImpl.hpp"
 
+#include <algorithm>
 #include <memory>
 
 #include <everest/io/event/fd_event_handler.hpp>
@@ -255,6 +256,14 @@ void ev_slacImpl::handle_slac_io_ready() {
             lifecycle->slac_fsm_started = true;
             should_start_fsm = true;
         }
+    }
+
+    // The interface MAC may not have been readable when SlacEvent was constructed (device
+    // enumerating late -> all-zero MAC), and SlacEvent refreshes its own copy when the socket
+    // recovers. Re-capture it on every ready event -- ahead of the FSM start below -- so
+    // CM_SLAC_PARM.REQ / MNBC sounds / CM_SLAC_MATCH.REQ never carry a stale or zero EV MAC.
+    if (slac_io && fsm_ctx) {
+        std::copy_n(slac_io->get_mac_addr(), fsm_ctx->ev_host_mac.size(), fsm_ctx->ev_host_mac.begin());
     }
 
     clear_communication_fault();

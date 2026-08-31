@@ -249,39 +249,7 @@ struct Session_def     : public state_machine_def<Session_def> {
     // States
     static constexpr auto FINALIZE_SOUNDING_DELAY_MS = 45;
     struct WaitStartAtten   : public timeout_ms_state<defs::TT_MATCH_SEQUENCE_MS> { };
-    struct Sounding         : public timeout_ms_state<defs::TT_EVSE_MATCH_MNBC_MS> {
-        struct update_session {
-            template <class Fsm, class SrcT, class TarT>
-            void operator()(message const& e, Fsm& fsm, SrcT&, TarT& ) {
-                auto const msg = e.payload.payload_as<slac::messages::cm_atten_profile_ind>();
-                if (not msg.has_value()) {
-                    return;
-                }
-                for (int i = 0; i < slac::defs::AAG_LIST_LEN; ++i) {
-                    fsm.session_data.captured_aags[i] += msg->aag[i];
-                }
-                fsm.session_data.captured_sounds++;
-                fsm.ctx->log_debug(session_log_prefix(fsm.session_data) + "Received CM_ATTEN_PROFILE.IND (" +
-                                   std::to_string(fsm.session_data.captured_sounds) + " of " +
-                                   std::to_string(slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS) + " sounds captured)");
-            }
-        };
-        struct is_atten_profile_ind {
-            template <class Fsm, class SrcT, class TarT>
-            bool operator()(message const& e, Fsm& fsm, SrcT&, TarT& ) {
-                auto mmtype = slac::defs::MMTYPE_CM_ATTEN_PROFILE | slac::defs::MMTYPE_MODE_IND;
-                return check_message<slac::messages::cm_atten_profile_ind>(e, mmtype, fsm.session_data);
-            }
-        };
-
-        struct internal_transition_table : boost::mpl::vector<
-            //        +---------+----------------+----------------------+
-            //        | Event   | Action         | Guard                |
-            //        +---------+----------------+----------------------+
-            Internal  < message , update_session , is_atten_profile_ind >
-            //        +---------+----------------+----------------------+
-            > {};
-    };
+    struct Sounding         : public timeout_ms_state<defs::TT_EVSE_MATCH_MNBC_MS> { };
     struct FinalizeSounding : public timeout_ms_state<FINALIZE_SOUNDING_DELAY_MS> { };
     struct WaitAttenRsp     : public timeout_ms_state<defs::TT_MATCH_RESPONSE_MS> { };
     struct WaitSlacMatch    : public timeout_ms_state<defs::TT_EVSE_MATCH_SESSION_MS> {  };
@@ -317,9 +285,25 @@ struct Session_def     : public state_machine_def<Session_def> {
         auto mmtype = slac::defs::MMTYPE_CM_SLAC_MATCH | slac::defs::MMTYPE_MODE_REQ;
         return check_message<slac::messages::cm_slac_match_req>(e, mmtype, session_data);
     }
-    bool enough_sounds(message const&) {
-        return session_data.captured_sounds >= slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS;
+    bool is_atten_profile_ind(message const& e) {
+        auto mmtype = slac::defs::MMTYPE_CM_ATTEN_PROFILE | slac::defs::MMTYPE_MODE_IND;
+        return check_message<slac::messages::cm_atten_profile_ind>(e, mmtype, session_data);
     }
+
+    struct sound_below_limit {
+        template <class Fsm, class SrcT, class TarT>
+        bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+            return fsm.session_data.captured_sounds + 1 < slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS and
+                   fsm.is_atten_profile_ind(e);
+        }
+    };
+    struct sound_completes_count {
+        template <class Fsm, class SrcT, class TarT>
+        bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+            return fsm.session_data.captured_sounds + 1 >= slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS and
+                   fsm.is_atten_profile_ind(e);
+        }
+    };
     // After a CM_VALIDATE process, the CM_SLAC_MATCH.REQ must arrive within TT_match_sequence (much
     // shorter than the overall TT_EVSE_match_session that bounds WaitSlacMatch otherwise). When that
     // shorter window elapses the matching has FAILED (ISO 15118-5 CmSlacMatch_003/004 cmValidate
@@ -333,21 +317,10 @@ struct Session_def     : public state_machine_def<Session_def> {
     struct retry_limit {
         template <class Fsm, class Evt, class SrcT, class TarT>
         bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
-            // CM_ATTEN_CHAR.IND retransmission is limited to C_EV_match_retry (2)
-            // retries after the initial IND (ISO 15118-3, C_EV_match_retry). Fail
-            // once num_retries reaches the limit (>=), matching EvseSlac which
-            // retransmits at num_retries 1 and 2 then fails; a strict '>' sent a
-            // third retransmission and failed AttenuationCharacterization_004..011.
             return fsm.session_data.num_retries >= slac::defs::C_EV_MATCH_RETRY;
         }
     };
-    // Accept CM_START_ATTEN_CHAR.IND only while WaitStartAtten is still within
-    // TT_match_sequence. The plain timeout->Failed transition only fires on the
-    // periodic update event, so a CM_START_ATTEN_CHAR.IND arriving after the
-    // deadline but before the next update tick would otherwise race past it and
-    // wrongly start sounding. Checking state_timeout() here as well drops such a
-    // late frame; the next update then fails the session and no CM_ATTEN_CHAR.IND
-    // is produced (ISO 15118-5 AttenuationCharacterization_012).
+
     struct start_atten_in_time {
         template <class Fsm, class SrcT, class TarT>
         bool operator()(message const& e, Fsm& fsm, SrcT& src, TarT&) {
@@ -363,8 +336,28 @@ struct Session_def     : public state_machine_def<Session_def> {
                               "Received CM_START_ATTEN_CHAR.IND, MNBC sounding started");
         }
     };
-    // Shared by finalize_snd and retry_snd: send the CM_ATTEN_CHAR.IND and log the averaged
-    // attenuation, matching EvseSlac's "Avg atten.: ..." session log line.
+    // Accumulate one CM_ATTEN_PROFILE.IND (see sound_below_limit / sound_completes_count).
+    struct capture_sound {
+        template <class Fsm, class SrcT, class TarT>
+        void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+            auto const msg = e.payload.payload_as<slac::messages::cm_atten_profile_ind>();
+            if (not msg.has_value()) {
+                return;
+            }
+            for (int i = 0; i < slac::defs::AAG_LIST_LEN; ++i) {
+                fsm.session_data.captured_aags[i] += msg->aag[i];
+            }
+            fsm.session_data.captured_sounds++;
+            fsm.ctx->log_debug(session_log_prefix(fsm.session_data) + "Received CM_ATTEN_PROFILE.IND (" +
+                               std::to_string(fsm.session_data.captured_sounds) + " of " +
+                               std::to_string(slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS) + " sounds captured)");
+            if (fsm.session_data.captured_sounds >= slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS) {
+                fsm.ctx->log_info(session_log_prefix(fsm.session_data) +
+                                  "Received all sounds, finalizing sounding");
+            }
+        }
+    };
+
     template <class Fsm> static void send_atten_char(Fsm& fsm) {
         auto atten_char = fsm.session_data.create_cm_atten_char_ind(fsm.ctx->slac_config.sounding_atten_adjustment);
         if (not fsm.ctx->send_slac_message(fsm.session_data.ev_mac, atten_char)) {
@@ -433,7 +426,6 @@ struct Session_def     : public state_machine_def<Session_def> {
         std::copy(std::begin(session_data.ev_mac), std::end(session_data.ev_mac), std::begin(ctx->status.ev_mac));
     }
 
-    // Failure logging: state why the session failed, so the log tells where matching stopped.
     template <char const* Reason> struct log_session_failed {
         template <class Fsm, class Evt, class SrcT, class TarT>
         void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
@@ -452,23 +444,28 @@ struct Session_def     : public state_machine_def<Session_def> {
     // Transitions
     using initial_state = WaitStartAtten;
     using p = Session_def;
-    using retry_timeout = And_<timeout, retry_limit>;
+    using retry_timeout         = And_<timeout, retry_limit>;
+    using log_no_start_atten    = log_session_failed<fail_no_start_atten>;
+    using log_no_atten_rsp      = log_session_failed<fail_no_atten_rsp>;
+    using log_no_slac_match     = log_session_failed<fail_no_slac_match>;
+    using log_validation_window = log_session_failed<fail_validation_window>;
     struct transition_table : boost::mpl::vector<
-        //    +------------------+---------+------------------+---------------+--------------------------+
-        //    | Source           | Event   | Target           | Action        | Guard                    |
-        //    +------------------+---------+------------------+---------------+--------------------------+
-        Row   < WaitStartAtten   , update  , Failed           , log_session_failed<fail_no_start_atten> , timeout >,
-        Row   < WaitStartAtten   , message , Sounding         , sounding_started , start_atten_in_time   >,
-        Row   < Sounding         , update  , FinalizeSounding , none          , timeout                  >,
-        g_row < Sounding         , message , FinalizeSounding /* none */      , &p::enough_sounds        >,
-        Row   < FinalizeSounding , update  , WaitAttenRsp     , finalize_snd  , timeout                  >,
-        Row   < WaitAttenRsp     , update  , WaitAttenRsp     , retry_snd     , timeout                  >,
-        Row   < WaitAttenRsp     , update  , Failed           , log_session_failed<fail_no_atten_rsp> , retry_timeout >,
-        row   < WaitAttenRsp     , message , WaitSlacMatch    , &p::on_atten_char_rsp , &p::is_atten_char_rsp >,
-        Row   < WaitSlacMatch    , update  , Failed           , log_session_failed<fail_no_slac_match> , timeout >,
-        Row   < WaitSlacMatch    , update  , Failed           , log_session_failed<fail_validation_window> , validation_window_expired>,
-        row   < WaitSlacMatch    , message , MatchComplete    , &p::match_cnf , &p::is_slac_match_req    >
-        //    +------------------+---------+------------------+---------------+--------------------------+
+        //    +------------------+---------+------------------+-----------------------+---------------------------+
+        //    | Source           | Event   | Target           | Action                | Guard                     |
+        //    +------------------+---------+------------------+-----------------------+---------------------------+
+        Row   < WaitStartAtten   , update  , Failed           , log_no_start_atten    , timeout                   >,
+        Row   < WaitStartAtten   , message , Sounding         , sounding_started      , start_atten_in_time       >,
+        Row   < Sounding         , update  , FinalizeSounding , none                  , timeout                   >,
+        Row   < Sounding         , message , none             , capture_sound         , sound_below_limit         >,
+        Row   < Sounding         , message , FinalizeSounding , capture_sound         , sound_completes_count     >,
+        Row   < FinalizeSounding , update  , WaitAttenRsp     , finalize_snd          , timeout                   >,
+        Row   < WaitAttenRsp     , update  , WaitAttenRsp     , retry_snd             , timeout                   >,
+        Row   < WaitAttenRsp     , update  , Failed           , log_no_atten_rsp      , retry_timeout             >,
+        row   < WaitAttenRsp     , message , WaitSlacMatch    , &p::on_atten_char_rsp , &p::is_atten_char_rsp     >,
+        Row   < WaitSlacMatch    , update  , Failed           , log_no_slac_match     , timeout                   >,
+        Row   < WaitSlacMatch    , update  , Failed           , log_validation_window , validation_window_expired >,
+        row   < WaitSlacMatch    , message , MatchComplete    , &p::match_cnf         , &p::is_slac_match_req     >
+        //    +------------------+---------+------------------+-----------------------+---------------------------+
         >{};
     template <class FSM,class Event>
     void no_transition(Event const&, FSM&, int) { }
@@ -512,8 +509,24 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         return true;
     }
     struct is_slac_param_req : public is_message_of_type<slac::defs::MMTYPE_CM_SLAC_PARAM | slac::defs::MMTYPE_MODE_REQ> { };
+    // A session in MatchComplete means CM_SLAC_MATCH.CNF is out, but Matching is only exited on the
+    // next update tick. In that window (and per ISO 15118-3 whenever an AVLN is up) a fresh
+    // CM_SLAC_PARM.REQ must get no CNF (TC_SECC_CMN_VTB_PLCLinkStatus_003) and must not restart the
+    // completed session.
+    struct has_matched_session {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            return fsm.is_matched(update{});
+        }
+    };
 
     //Actions
+    struct ignore_parm_req {
+        template <class Fsm, class SrcT, class TarT>
+        void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
+            fsm.ctx->log_info("Ignoring CM_SLAC_PARM.REQ, match already completed");
+        }
+    };
     struct pipe_event {
         template <class Fsm, class Evt, class SrcT, class TarT>
         void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT& ) {
@@ -727,21 +740,24 @@ struct Matching_def    : public state_machine_def<Matching_def> {
     using fail_matching = should_transition_to_failed_matching;
     using reset_matching = should_reset_instead_of_fail;
     using not_validate_req = Not_<is_validate_req>;
+    using new_parm_req = And_<is_slac_param_req, Not_<has_matched_session>>;
+    using late_parm_req = And_<is_slac_param_req, has_matched_session>;
     struct transition_table : boost::mpl::vector<
-        //    +--------+---------+---------+------------------------+-------------------+
-        //    | Source | Event   | Target  | Action                 | Guard             |
-        //    +--------+---------+---------+------------------------+-------------------+
-        g_row < Init   , update  , Matched /* none */               , &p::is_matched    >,
-        Row   < Init   , update  , Failed  , none                   , fail_matching     >,
-        Row   < Init   , update  , Init    , reset_matching_subfsm  , reset_matching    >,
-        //    +--------+---------+---------+------------------------+-------------------+
-        Row   < Listen , message , Listen  , add_session            , is_slac_param_req >,
-        Row   < Listen , message , Listen  , handle_validate_req    , is_validate_req   >,
-        Row   < Listen , update  , Listen  , validate_tick          , validate_needs_service >,
-        //    +--------+---------+---------+------------------------+-------------------+
-        Row   < Pipe   , message , none    , pipe_event             , not_validate_req  >,
-        Row   < Pipe   , update  , none    , pipe_event             , none              >
-        //    +--------+---------+---------+------------------------+-------------------+
+        //    +--------+---------+---------+-----------------------+------------------------+
+        //    | Source | Event   | Target  | Action                | Guard                  |
+        //    +--------+---------+---------+-----------------------+------------------------+
+        g_row < Init   , update  , Matched /* none */              , &p::is_matched         >,
+        Row   < Init   , update  , Failed  , none                  , fail_matching          >,
+        Row   < Init   , update  , Init    , reset_matching_subfsm , reset_matching         >,
+        //    +--------+---------+---------+-----------------------+------------------------+
+        Row   < Listen , message , Listen  , add_session           , new_parm_req           >,
+        Row   < Listen , message , Listen  , ignore_parm_req       , late_parm_req          >,
+        Row   < Listen , message , Listen  , handle_validate_req   , is_validate_req        >,
+        Row   < Listen , update  , Listen  , validate_tick         , validate_needs_service >,
+        //    +--------+---------+---------+-----------------------+------------------------+
+        Row   < Pipe   , message , none    , pipe_event            , not_validate_req       >,
+        Row   < Pipe   , update  , none    , pipe_event            , none                   >
+        //    +--------+---------+---------+-----------------------+------------------------+
         >{};
 
     template <class FSM,class Event>
@@ -1216,13 +1232,6 @@ struct Matched_def     : public state_machine_def<Matched_def> {
         //    +----------+---------+----------+-----------------------+--------------------------------+
         //    | Source   | Event   | Target   | Action                | Guard                          |
         //    +----------+---------+----------+-----------------------+--------------------------------+
-        // Route into the matched substate deterministically: with link detection on
-        // enter the vendor-specific LINK_STATUS-polling substate (Qualcomm/Lumissil),
-        // otherwise the passive NoDetect substate. The guards are mutually exclusive
-        // so there is no anonymous-transition ambiguity -- an earlier unconditional
-        // Init->Other row shadowed the polling routing, so a matched-state connection
-        // loss was never detected and the SECC never left the logical network
-        // (ISO 15118-5 PLCLinkStatus_005 / f_SECC_getPLCLinkTermination).
         Row   < Init     , none    , Lumissil , link_status_req       , And_<detect_link, is_lumissil> >,
         Row   < Init     , none    , Qualcomm , link_status_req       , And_<detect_link, is_qualcomm> >,
         Row   < Init     , none    , NoDetect , none                  , link_detection_off             >,
@@ -1243,11 +1252,6 @@ struct Matched_def     : public state_machine_def<Matched_def> {
         Row   < Qualcomm , message , Qualcomm , send_amp_map_cnf      , is_amp_map_req                 >,
         Row   < Qualcomm , message , Qualcomm , amp_map_cnf_ack       , is_amp_map_cnf_ok              >,
         //    +----------+---------+----------+-----------------------+--------------------------------+
-        // Respond to an incoming CM_AMP_MAP.REQ without leaving the matched state
-        // (ISO 15118-5 CmAmpMap responder, TC 001/006/007). The invalid am_len==0
-        // case is filtered by is_amp_map_req so no CNF is emitted (TC 005). Covered
-        // for the link-detection-off (NoDetect) and pre-detection (Other/Init)
-        // substates too so the responder works regardless of the matched substate.
         Row   < NoDetect , message , NoDetect , send_amp_map_cnf      , is_amp_map_req                 >,
         Row   < NoDetect , update  , NoDetect , retransmit_amp_map    , amp_map_retransmit_due         >,
         Row   < NoDetect , message , NoDetect , amp_map_cnf_ack       , is_amp_map_cnf_ok              >,
@@ -1595,19 +1599,16 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
         //  +-------------------+-----------+-------------+-----------------+-------------------+
         Row < WaitForLink       , update    , Failed      , none            , timeout           >,
         Row < WaitForLink       , reset     , Reset       , none            , none              >,
+        Row < WaitForLink       , leave_bcd , Reset       , none            , none              >,
         Row < WaitForLink_Fail  , none      , Failed      , none            , none              >,
         Row < WaitForLink_Match , message   , Matched     , none            , none              >,
         //  +-------------------+-----------+-------------+-----------------+-------------------+
         Row < Matched           , reset     , Reset       , none            , none              >,
-        // A connection loss detected while matched (negative LINK_STATUS) must make the
-        // SECC leave the logical network within TP_match_leave: go to Reset, which
-        // regenerates the session NMK and re-keys the modem (regenerate_key_on_reset),
-        // so the SUT's node drops out of the AVLN -- matching EvseSlac, which re-keys on
-        // ResetState entry (ISO 15118-3 D-LINK termination; ISO 15118-5 PLCLinkStatus_005).
-        // on_matched_fail still logs the loss and signals the error routine.
+        Row < Matched           , leave_bcd , Reset       , none            , none              >,
         Row < Matched_Fail      , message   , Reset       , on_matched_fail , none              >,
         //  +-------------------+-----------+-------------+-----------------+-------------------+
-        Row < Failed            , reset     , Reset       , none            , none              >
+        Row < Failed            , reset     , Reset       , none            , none              >,
+        Row < Failed            , leave_bcd , Reset       , none            , none              >
         //  +-------------------+-----------+-------------+-----------------+-------------------+
         > {};
     template <class FSM,class Event>

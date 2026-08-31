@@ -20,6 +20,13 @@ void FSMController::stop() {
     m_retrigger.disarm();
 }
 
+void FSMController::teardown() {
+    if (active.load()) {
+        fsm.reset();
+    }
+    stop();
+}
+
 void FSMController::signal_new_slac_message(slac::messages::HomeplugMessage const& msg) {
     if (!active.load()) {
         return;
