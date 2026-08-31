@@ -50,12 +50,17 @@ Result Matched::feed(SlacEvent const& ev) {
         if (m_mode != LinkCheckMode::None and is_link_down(*frame, m_mode)) {
             m_ctx.log_error("Connection lost in matched state");
             m_ctx.signal_error_routine_request();
-            return m_ctx.create_state<Failed>();
+            // Reset rather than Failed: start a fresh attempt instead of parking in a terminal state.
+            return m_ctx.create_state<Reset>();
         }
         return {};
     }
 
     if (std::get_if<event::Reset>(&ev)) {
+        return m_ctx.create_state<Reset>();
+    }
+
+    if (std::get_if<event::LeaveBcd>(&ev)) {
         return m_ctx.create_state<Reset>();
     }
 

@@ -46,6 +46,12 @@ bool SessionData::validate_message(messages::cm_atten_char_rsp const& msg) const
     if (not wire_equal(msg.source_address, ev_mac)) {
         return false;
     }
+    // ISO 15118-3: the CM_ATTEN_CHAR.RSP must carry this session's runID. Without the check a
+    // mismatched-runID RSP was accepted and the SECC stopped retransmitting
+    // (AttenuationCharacterization_008).
+    if (not wire_equal(msg.run_id, run_id)) {
+        return false;
+    }
     return true;
 }
 

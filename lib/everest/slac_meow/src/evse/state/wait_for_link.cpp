@@ -93,6 +93,10 @@ Result WaitForLink::feed(SlacEvent const& ev) {
         return m_ctx.create_state<Reset>();
     }
 
+    if (std::get_if<event::LeaveBcd>(&ev)) {
+        return m_ctx.create_state<Reset>();
+    }
+
     return {};
 }
 

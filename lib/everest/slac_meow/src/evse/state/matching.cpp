@@ -90,6 +90,12 @@ void Matching::add_session(messages::HomeplugMessage const& frame) {
     if (not SessionData::validate_message(*msg)) {
         return;
     }
+    // The confirmation is out but this state is only left on the next tick; in that window a fresh
+    // request must still get no answer. PLCLinkStatus_003.
+    if (any_session_matched()) {
+        m_ctx.log_info("Ignoring CM_SLAC_PARM.REQ, match already completed");
+        return;
+    }
 
     auto const ev_mac = byte_array_from_wire<MacAddress>(frame.get_src_mac());
     auto const run_id = byte_array_from_wire<RunId>(msg->run_id);

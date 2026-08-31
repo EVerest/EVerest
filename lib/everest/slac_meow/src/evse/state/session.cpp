@@ -99,7 +99,9 @@ Result WaitStartAtten::feed(SlacEvent const& ev) {
     }
 
     if (auto const* frame = as_frame(ev)) {
-        if (is_start_atten_char(*frame, m_data)) {
+        // A START that arrives in the same tick the state already timed out is too late: the
+        // session fails on the next update rather than starting a sounding phase it cannot finish.
+        if (not m_deadline.expired(m_ctx.current_time) and is_start_atten_char(*frame, m_data)) {
             return m_ctx.create_state<Sounding>(m_data);
         }
     }
@@ -164,7 +166,7 @@ Result WaitAttenRsp::feed(SlacEvent const& ev) {
         if (not m_deadline.expired(m_ctx.current_time)) {
             return {};
         }
-        if (m_data.num_retries > defs::C_EV_MATCH_RETRY) {
+        if (m_data.num_retries >= defs::C_EV_MATCH_RETRY) {
             return m_ctx.create_state<Failed>(m_data);
         }
         send_atten_char_ind(m_ctx, m_data);

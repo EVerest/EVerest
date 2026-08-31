@@ -329,6 +329,15 @@ bool wait_for(std::chrono::milliseconds timeout, slac_fsm& machine, Predicate&& 
     return predicate();
 }
 
+bool is_qualcomm_link_status_req(messages::HomeplugMessage const& msg) {
+    return msg.get_mmtype() == (defs::qualcomm::MMTYPE_LINK_STATUS | defs::MMTYPE_MODE_REQ);
+}
+
+std::size_t count_qualcomm_link_status_req(std::vector<SentMessage> const& messages) {
+    return std::count_if(messages.begin(), messages.end(),
+                         [](auto const& entry) { return is_qualcomm_link_status_req(entry.hp_message); });
+}
+
 bool wait_for_match_state(Context const& ctx, SlacState expected, slac_fsm& machine, int timeout_ms) {
     const auto state_match = [&ctx, expected]() { return ctx.status.match_state == expected; };
     return wait_for(std::chrono::milliseconds(timeout_ms), machine, state_match);
@@ -1569,9 +1578,14 @@ bool test_short_link_status_cnf_does_not_leave_matched_or_failed() {
         return false;
     }
 
+    // A full-length negative link-status CNF is a connection loss: the SECC must leave the AVLN, i.e.
+    // go to Reset (re-key with a fresh NMK), not linger in Matched (ISO 15118-5 PLCLinkStatus_005).
     machine.message(create_lumissil_link_status_cnf(modem_source, 0x00));
-    if (!wait_for_match_state(ctx, SlacState::Failed, machine, 200)) {
-        return assert_true(false, test_name, "did not transition to Failed on negative full-length link-status CNF");
+    auto left_matched = wait_for(std::chrono::milliseconds(200), machine, [&ctx]() {
+        return ctx.status.match_state == SlacState::Reset || ctx.status.match_state == SlacState::Idle;
+    });
+    if (!assert_true(left_matched, test_name, "did not transition to Reset on negative full-length link-status CNF")) {
+        return false;
     }
 
     return true;
@@ -1809,12 +1823,17 @@ bool test_matched_link_status_rejects_only_negative_cnf() {
         return false;
     }
 
+    // Connection loss while matched: leave the AVLN via Reset (fresh NMK re-key), not Failed
+    // (ISO 15118-5 PLCLinkStatus_005).
     machine.message(create_lumissil_link_status_cnf(modem_source, 0x00));
-    if (!wait_for_match_state(ctx, SlacState::Failed, machine, 200)) {
-        return assert_true(false, test_name, "did not transition to Failed on negative link-status CNF");
+    auto left_matched = wait_for(std::chrono::milliseconds(200), machine, [&ctx]() {
+        return ctx.status.match_state == SlacState::Reset || ctx.status.match_state == SlacState::Idle;
+    });
+    if (!assert_true(left_matched, test_name, "did not transition to Reset on negative link-status CNF")) {
+        return false;
     }
 
-    return assert_true(not ctx.match_confirm_cache.valid, test_name, "Failed retained cached CM_SLAC_MATCH.CNF");
+    return assert_true(not ctx.match_confirm_cache.valid, test_name, "Reset retained cached CM_SLAC_MATCH.CNF");
 }
 
 bool test_matched_qualcomm_link_status_rejects_only_negative_cnf() {
@@ -1862,9 +1881,14 @@ bool test_matched_qualcomm_link_status_rejects_only_negative_cnf() {
         return false;
     }
 
+    // Connection loss while matched: leave the AVLN via Reset (fresh NMK re-key), not Failed
+    // (ISO 15118-5 PLCLinkStatus_005).
     machine.message(create_qualcomm_link_status_cnf(modem_source, 0x00));
-    if (!wait_for_match_state(ctx, SlacState::Failed, machine, 200)) {
-        return assert_true(false, test_name, "did not transition to Failed on negative link-status CNF");
+    auto left_matched = wait_for(std::chrono::milliseconds(200), machine, [&ctx]() {
+        return ctx.status.match_state == SlacState::Reset || ctx.status.match_state == SlacState::Idle;
+    });
+    if (!assert_true(left_matched, test_name, "did not transition to Reset on negative link-status CNF")) {
+        return false;
     }
 
     return true;
@@ -1872,8 +1896,455 @@ bool test_matched_qualcomm_link_status_rejects_only_negative_cnf() {
 
 } // namespace
 
+bool test_atten_char_ind_sent_promptly_after_last_sound() {
+    // ISO 15118-3 / EvseSlac behavior: the sounding phase ends as soon as the
+    // CM_SLAC_PARM_CNF_NUM_SOUNDS'th CM_ATTEN_PROFILE.IND arrives, and the
+    // CM_ATTEN_CHAR.IND follows FINALIZE_SOUNDING_DELAY_MS (45 ms) later. It must
+    // NOT wait out the full TT_EVSE_MATCH_MNBC (600 ms) sounding window. A
+    // Sounding-internal transition used to consume every profile before the
+    // exit row's guard was evaluated, so the fast path was dead code.
+    const char* test_name = "test_atten_char_ind_sent_promptly_after_last_sound";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    TestContext ctx(callbacks);
+    configure_common(ctx);
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x01};
+    auto run_id = fill_run_id(0x71);
+
+    machine.message(create_cm_slac_parm_req(ev_mac, run_id));
+    if (!wait_for_parm_cnf_count(sent_messages, 1, machine, 100)) {
+        return assert_true(false, test_name, "did not emit CM_SLAC_PARM.CNF");
+    }
+
+    machine.message(create_cm_start_atten_char_ind(ev_mac, run_id));
+    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+        machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
+    }
+
+    // Well below TT_EVSE_MATCH_MNBC_MS (600 ms): only the last-sound fast path can make this.
+    const auto last_sound_time = std::chrono::steady_clock::now();
+    if (!wait_for_atten_char_ind_count(sent_messages, 1, machine, 300)) {
+        return assert_true(false, test_name,
+                           "CM_ATTEN_CHAR.IND not sent within 300 ms of the last sound (fast path dead, "
+                           "session waits out the full 600 ms TT_EVSE_MATCH_MNBC window)");
+    }
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - last_sound_time);
+    if (!assert_true(elapsed.count() < 300, test_name, "CM_ATTEN_CHAR.IND arrived too late after the last sound")) {
+        return false;
+    }
+
+    messages::cm_atten_char_ind atten_char;
+    if (!get_last_cm_atten_char_ind(sent_messages, atten_char)) {
+        return assert_true(false, test_name, "could not read CM_ATTEN_CHAR.IND");
+    }
+    return assert_true(atten_char.num_sounds == defs::CM_SLAC_PARM_CNF_NUM_SOUNDS, test_name,
+                       "CM_ATTEN_CHAR.IND num_sounds != CM_SLAC_PARM_CNF_NUM_SOUNDS");
+}
+
+bool test_atten_char_ind_ignores_sounds_beyond_num_sounds() {
+    // EvseSlac leaves the sounding sub-state on the 10th profile and rejects any
+    // further CM_ATTEN_PROFILE.IND, so num_sounds is never > CM_SLAC_PARM_CNF_NUM_SOUNDS
+    // and the average covers exactly the first 10 samples. Feeding 12 profiles must
+    // not produce num_sounds=12 or an average over 12 samples.
+    const char* test_name = "test_atten_char_ind_ignores_sounds_beyond_num_sounds";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    TestContext ctx(callbacks);
+    configure_common(ctx);
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x01};
+    auto run_id = fill_run_id(0x81);
+
+    machine.message(create_cm_slac_parm_req(ev_mac, run_id));
+    if (!wait_for_parm_cnf_count(sent_messages, 1, machine, 100)) {
+        return assert_true(false, test_name, "did not emit CM_SLAC_PARM.CNF");
+    }
+
+    machine.message(create_cm_start_atten_char_ind(ev_mac, run_id));
+    constexpr std::size_t excess_profiles = defs::CM_SLAC_PARM_CNF_NUM_SOUNDS + 2;
+    for (std::size_t i = 0; i < excess_profiles; ++i) {
+        machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
+    }
+
+    // Generous window: this test only checks the cap, not the fast-path timing.
+    if (!wait_for_atten_char_ind_count(sent_messages, 1, machine, 1000)) {
+        return assert_true(false, test_name, "did not emit CM_ATTEN_CHAR.IND");
+    }
+
+    messages::cm_atten_char_ind atten_char;
+    if (!get_last_cm_atten_char_ind(sent_messages, atten_char)) {
+        return assert_true(false, test_name, "could not read CM_ATTEN_CHAR.IND");
+    }
+    if (!assert_true(atten_char.num_sounds == defs::CM_SLAC_PARM_CNF_NUM_SOUNDS, test_name,
+                     "num_sounds exceeds CM_SLAC_PARM_CNF_NUM_SOUNDS (excess profiles were counted)")) {
+        return false;
+    }
+
+    const auto expected_aag =
+        calc_expected_aag(0xA0, defs::CM_SLAC_PARM_CNF_NUM_SOUNDS, ctx.slac_config.sounding_atten_adjustment);
+    for (std::size_t i = 0; i < defs::AAG_LIST_LEN; ++i) {
+        if (!assert_true(atten_char.attenuation_profile.aag[i] == expected_aag[i], test_name,
+                         "attenuation average includes profiles beyond CM_SLAC_PARM_CNF_NUM_SOUNDS")) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool test_matched_link_status_poll_interval_is_configurable() {
+    const char* test_name = "test_matched_link_status_poll_interval_is_configurable";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    TestContext ctx(callbacks);
+    configure_common(ctx);
+    ctx.slac_config.link_status.do_detect = true;
+    ctx.slac_config.link_status.retry_ms = 20;
+    ctx.slac_config.link_status.poll_in_matched_state_ms = 100;
+    ctx.slac_config.link_status.timeout_ms = 300;
+    ctx.modem_vendor = defs::ModemVendor::Qualcomm;
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0C};
+    auto run_id = fill_run_id(0x7B);
+    if (!perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::WaitForLink, 700)) {
+        return false;
+    }
+
+    EvMac modem_source = {0x00, 0xB0, 0x52, 0x00, 0x00, 0x02};
+    machine.message(create_qualcomm_link_status_cnf(modem_source, defs::D_LINK_STATUS_LINKED));
+    if (!wait_for_match_state(ctx, SlacState::Matched, machine, 200)) {
+        return assert_true(false, test_name, "did not transition to Matched on positive link-status CNF");
+    }
+
+    const auto polls_at_matched = count_qualcomm_link_status_req(sent_messages);
+    wait_for(std::chrono::milliseconds(550), machine, []() { return false; });
+    const auto polls = count_qualcomm_link_status_req(sent_messages) - polls_at_matched;
+
+    // 550 ms at a 100 ms cadence: ~5 polls. At the former 1000 ms default there would be none in
+    // this window; generous scheduling slack on both bounds.
+    if (!assert_true(polls >= 3, test_name, "matched-state poll cadence did not follow the configured interval")) {
+        return false;
+    }
+    return assert_true(polls <= 9, test_name, "matched-state polling runs faster than the configured interval");
+}
+
+bool test_parm_req_after_match_cnf_gets_no_cnf() {
+    const char* test_name = "test_parm_req_after_match_cnf_gets_no_cnf";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    TestContext ctx(callbacks);
+    configure_common(ctx);
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0B};
+    auto run_id = fill_run_id(0x78);
+
+    const auto initial_parm_count = count_slac_parm_cnf(sent_messages);
+    const auto initial_atten_count = count_cm_atten_char_ind(sent_messages);
+    machine.message(create_cm_slac_parm_req(ev_mac, run_id));
+    if (!wait_for_parm_cnf_count(sent_messages, initial_parm_count + 1, machine, 700)) {
+        return assert_true(false, test_name, "did not emit CM_SLAC_PARM.CNF");
+    }
+    machine.message(create_cm_start_atten_char_ind(ev_mac, run_id));
+    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+        machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
+    }
+    if (!wait_for_atten_char_ind_count(sent_messages, initial_atten_count + 1, machine, 700)) {
+        return assert_true(false, test_name, "did not emit CM_ATTEN_CHAR.IND");
+    }
+    machine.message(create_cm_atten_char_rsp(ev_mac, run_id));
+    machine.message(create_cm_slac_match_req(ev_mac, run_id, evse_mac));
+
+    if (!assert_true(ctx.status.match_state == SlacState::Matching, test_name,
+                     "expected the FSM to still be in Matching right after CM_SLAC_MATCH.REQ")) {
+        return false;
+    }
+    const auto parm_cnf_after_match = count_slac_parm_cnf(sent_messages);
+
+    machine.message(create_cm_slac_parm_req(ev_mac, fill_run_id(0x79)));
+    if (!assert_true(count_slac_parm_cnf(sent_messages) == parm_cnf_after_match, test_name,
+                     "CM_SLAC_PARM.REQ with a new run_id after match completion was answered")) {
+        return false;
+    }
+    machine.message(create_cm_slac_parm_req(ev_mac, run_id));
+    if (!assert_true(count_slac_parm_cnf(sent_messages) == parm_cnf_after_match, test_name,
+                     "CM_SLAC_PARM.REQ with the matched run_id after match completion was answered")) {
+        return false;
+    }
+
+    // The ignored requests must not have unwound the completed match.
+    if (!wait_for_match_state(ctx, SlacState::Matched, machine, 700)) {
+        return assert_true(false, test_name, "did not reach Matched after ignored CM_SLAC_PARM.REQs");
+    }
+
+    machine.message(create_cm_slac_parm_req(ev_mac, fill_run_id(0x7A)));
+    if (!assert_parm_cnf_count_stays_at(parm_cnf_after_match, sent_messages, machine, 100)) {
+        return assert_true(false, test_name, "CM_SLAC_PARM.REQ in Matched state was answered");
+    }
+
+    return true;
+}
+
+bool test_leave_bcd_leaves_matched_state() {
+    const char* test_name = "test_leave_bcd_leaves_matched_state";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    bool dlink_ready = false;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+    callbacks.signal_dlink_ready = [&dlink_ready](bool value) { dlink_ready = value; };
+
+    TestContext ctx(callbacks);
+    configure_common(ctx);
+    fill_session_nmk(ctx, 0x42);
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0A};
+    auto run_id = fill_run_id(0xA1);
+    if (!perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::Matched, 700)) {
+        return false;
+    }
+    if (!assert_true(dlink_ready, test_name, "expected d_link_ready after a full match")) {
+        return false;
+    }
+
+    machine.leave_bcd();
+    if (!wait_for_match_state(ctx, SlacState::Reset, machine, 200)) {
+        return assert_true(false, test_name, "leave_bcd in Matched did not transition to Reset");
+    }
+    if (!assert_true(not dlink_ready, test_name, "d_link_ready was not withdrawn on the unplug")) {
+        return false;
+    }
+
+    return true;
+}
+
+bool test_leave_bcd_recovers_from_failed_state() {
+    const char* test_name = "test_leave_bcd_recovers_from_failed_state";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    TestContext ctx(callbacks);
+    configure_common(ctx);
+    // Reach the matching timeout quickly; reset_instead_of_fail is already false in
+    // configure_common, so the first expiry goes straight to Failed (conformance config).
+    ctx.slac_config.slac_init_timeout_ms = 60;
+    fill_session_nmk(ctx, 0x41);
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    if (!wait_for_match_state(ctx, SlacState::Failed, machine, 600)) {
+        return assert_true(false, test_name, "matching timeout did not transition to Failed");
+    }
+
+    // The unplug: leave_bcd only, exactly what EvseManager sends when SLAC is UNMATCHED.
+    machine.leave_bcd();
+    if (!wait_for_match_state(ctx, SlacState::Reset, machine, 200)) {
+        return assert_true(false, test_name, "leave_bcd in Failed did not transition to Reset");
+    }
+
+    machine.message(create_cm_set_key_cnf(defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS));
+    if (!wait_for_match_state(ctx, SlacState::Idle, machine, 200)) {
+        return assert_true(false, test_name, "did not re-key and return to Idle after the unplug");
+    }
+
+    // Re-plug: matching must work again and the SECC must answer CM_SLAC_PARM.REQ.
+    ctx.slac_config.slac_init_timeout_ms = 5000;
+    machine.enter_bcd();
+    if (!wait_for_match_state(ctx, SlacState::Matching, machine, 200)) {
+        return assert_true(false, test_name, "did not re-enter Matching on the next enter_bcd");
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x09};
+    auto run_id = fill_run_id(0x91);
+    const auto initial_parm_count = count_slac_parm_cnf(sent_messages);
+    machine.message(create_cm_slac_parm_req(ev_mac, run_id));
+    if (!wait_for_parm_cnf_count(sent_messages, initial_parm_count + 1, machine, 300)) {
+        return assert_true(false, test_name, "did not answer CM_SLAC_PARM.REQ after recovering from Failed");
+    }
+
+    return true;
+}
+
+bool test_reset_from_matched_emits_dlink_ready_false() {
+    // The module's PLC I/O error handler tears the FSM down with a synchronous reset event before
+    // stopping the controller (FSMController::teardown). That must leave Matched through the
+    // regular transition so Matched_def::on_exit publishes dlink_ready(false).
+    const char* test_name = "test_reset_from_matched_emits_dlink_ready_false";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    std::vector<bool> dlink_events;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+    callbacks.signal_dlink_ready = [&dlink_events](bool value) { dlink_events.push_back(value); };
+
+    TestContext ctx(callbacks);
+    configure_common(ctx);
+    fill_session_nmk(ctx, 0x42);
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0C};
+    auto run_id = fill_run_id(0xC1);
+    if (!perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::Matched, 700)) {
+        return false;
+    }
+    if (!assert_true(!dlink_events.empty() && dlink_events.back(), test_name,
+                     "expected d_link_ready after a full match")) {
+        return false;
+    }
+
+    machine.reset();
+    if (!assert_true(!dlink_events.empty() && !dlink_events.back(), test_name,
+                     "reset from Matched did not emit dlink_ready(false)")) {
+        return false;
+    }
+    if (!wait_for_match_state(ctx, SlacState::Reset, machine, 200)) {
+        return assert_true(false, test_name, "reset in Matched did not transition to Reset");
+    }
+
+    return true;
+}
+
+bool test_restart_fsm_from_matched_emits_dlink_ready_false() {
+    // PLC I/O recovery restarts the FSM via restart_fsm(). A bare msm::start() re-enters the
+    // initial state WITHOUT running on_exit of the active states, so a restart while Matched
+    // skipped Matched_def::on_exit — the only producer of dlink_ready(false) — and consumers
+    // kept a stale dlink_ready=true forever while state flipped to UNMATCHED.
+    const char* test_name = "test_restart_fsm_from_matched_emits_dlink_ready_false";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    std::vector<bool> dlink_events;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+    callbacks.signal_dlink_ready = [&dlink_events](bool value) { dlink_events.push_back(value); };
+
+    TestContext ctx(callbacks);
+    configure_common(ctx);
+    fill_session_nmk(ctx, 0x42);
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0B};
+    auto run_id = fill_run_id(0xB1);
+    if (!perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::Matched, 700)) {
+        return false;
+    }
+    if (!assert_true(!dlink_events.empty() && dlink_events.back(), test_name,
+                     "expected d_link_ready after a full match")) {
+        return false;
+    }
+
+    machine.restart_fsm();
+    if (!assert_true(!dlink_events.empty() && !dlink_events.back(), test_name,
+                     "restart_fsm from Matched did not emit dlink_ready(false) — stale dlink_ready "
+                     "would tell the HLC stack the data link is still up")) {
+        return false;
+    }
+    if (!assert_true(ctx.status.modem_link_ready == false, test_name,
+                     "modem_link_ready not cleared by the Matched exit on restart")) {
+        return false;
+    }
+
+    return true;
+}
+
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 27>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 35>{
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
                        test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
@@ -1923,6 +2394,19 @@ int main() {
                        test_matched_link_status_rejects_only_negative_cnf),
         std::make_pair("test_matched_qualcomm_link_status_rejects_only_negative_cnf",
                        test_matched_qualcomm_link_status_rejects_only_negative_cnf),
+        std::make_pair("test_atten_char_ind_sent_promptly_after_last_sound",
+                       test_atten_char_ind_sent_promptly_after_last_sound),
+        std::make_pair("test_atten_char_ind_ignores_sounds_beyond_num_sounds",
+                       test_atten_char_ind_ignores_sounds_beyond_num_sounds),
+        std::make_pair("test_matched_link_status_poll_interval_is_configurable",
+                       test_matched_link_status_poll_interval_is_configurable),
+        std::make_pair("test_parm_req_after_match_cnf_gets_no_cnf", test_parm_req_after_match_cnf_gets_no_cnf),
+        std::make_pair("test_leave_bcd_leaves_matched_state", test_leave_bcd_leaves_matched_state),
+        std::make_pair("test_leave_bcd_recovers_from_failed_state", test_leave_bcd_recovers_from_failed_state),
+        std::make_pair("test_reset_from_matched_emits_dlink_ready_false",
+                       test_reset_from_matched_emits_dlink_ready_false),
+        std::make_pair("test_restart_fsm_from_matched_emits_dlink_ready_false",
+                       test_restart_fsm_from_matched_emits_dlink_ready_false),
     };
 
     int failed_count = 0;
