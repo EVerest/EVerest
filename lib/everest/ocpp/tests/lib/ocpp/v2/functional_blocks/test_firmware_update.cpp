@@ -102,12 +102,20 @@ protected: // Functions
         return std::async(std::launch::deferred, []() { return ocpp::EnhancedMessage<MessageType>{}; });
     }
 
-    /// \brief Build an incoming UpdateFirmware.req (unsigned, so it needs no certificate) for \p request_id.
-    static ocpp::EnhancedMessage<MessageType> make_update_firmware_message(const std::int32_t request_id) {
+    /// \brief Build an incoming UpdateFirmware.req for \p request_id.
+    ///
+    /// Unsigned by default, so it needs no certificate. With \p signed_firmware it carries a signature but no
+    /// signing certificate, which is enough to make it a signed update without going through certificate
+    /// verification.
+    static ocpp::EnhancedMessage<MessageType> make_update_firmware_message(const std::int32_t request_id,
+                                                                           const bool signed_firmware = false) {
         UpdateFirmwareRequest req;
         req.requestId = request_id;
         req.firmware.location = "ftp://example.com/firmware.bin";
         req.firmware.retrieveDateTime = ocpp::DateTime();
+        if (signed_firmware) {
+            req.firmware.signature = "c2lnbmF0dXJl";
+        }
 
         ocpp::Call<UpdateFirmwareRequest> call(req);
         call.uniqueId = ocpp::create_message_id();
@@ -125,13 +133,14 @@ protected: // Functions
     }
 
     /// \brief Let \p firmware_update handle an UpdateFirmware.req that the application answers with \p status.
-    void handle_update_firmware_request(const std::int32_t request_id, const UpdateFirmwareStatusEnum status) {
+    void handle_update_firmware_request(const std::int32_t request_id, const UpdateFirmwareStatusEnum status,
+                                        const bool signed_firmware = false) {
         UpdateFirmwareResponse response;
         response.status = status;
         EXPECT_CALL(update_firmware_request_callback_mock, Call(_)).WillOnce(Return(response));
         EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(::testing::AnyNumber());
 
-        firmware_update->handle_message(make_update_firmware_message(request_id));
+        firmware_update->handle_message(make_update_firmware_message(request_id, signed_firmware));
 
         ::testing::Mock::VerifyAndClearExpectations(&update_firmware_request_callback_mock);
     }
@@ -460,6 +469,34 @@ TEST_F(FirmwareUpdateTest, AbortedUpdate_NewRequest_ResetsReportedFirmwareStatus
     }));
 
     firmware_update->on_firmware_update_status_notification(-1, FirmwareStatusEnum::Installing, std::nullopt);
+}
+
+// FAILS today - handle_firmware_update_req rewrites firmware_status_before_installing at its very top, before the
+// request has been validated and answered. A request that is not accepted starts no update cycle, so it must not
+// touch the running update's idea of which status comes right before installing: a signed update whose expected
+// SignatureVerified is rewritten to Downloaded by a rejected unsigned request never reaches its disable stage, so
+// its connectors are never disabled and the installation waits forever. A plain CSMS retry is enough to trigger it.
+TEST_F(FirmwareUpdateTest, RejectedRequest_KeepsRunningUpdatePreInstallStatus) {
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillRepeatedly(Invoke([](const json&, bool) {
+        return deferred_empty_response();
+    }));
+
+    // A signed update is accepted and starts running, so it will report SignatureVerified before installing.
+    handle_update_firmware_request(1, UpdateFirmwareStatusEnum::Accepted, true);
+    EXPECT_EQ(firmware_update->firmware_status_before_installing, FirmwareStatusEnum::SignatureVerified);
+
+    // The CSMS retries with an unsigned request while that update is still running. The charge point rejects it,
+    // so nothing about the running update may change.
+    handle_update_firmware_request(2, UpdateFirmwareStatusEnum::Rejected);
+    EXPECT_EQ(firmware_update->firmware_status_before_installing, FirmwareStatusEnum::SignatureVerified);
+
+    // The running update reaches the status it reports right before installing. That still has to disable the
+    // connectors and report that they are all unavailable.
+    EXPECT_CALL(evse_1, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false));
+    EXPECT_CALL(evse_2, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false));
+    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
+
+    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::SignatureVerified, std::nullopt);
 }
 
 // FAILS today - cross-talk. ChargePoint::initialize hands the same guarded callback to Availability and to

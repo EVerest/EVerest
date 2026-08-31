@@ -136,12 +136,6 @@ void FirmwareUpdate::on_firmware_status_notification_request() {
 
 void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call) {
     EVLOG_debug << "Received UpdateFirmwareRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
-    if (call.msg.firmware.signingCertificate.has_value() or call.msg.firmware.signature.has_value()) {
-        this->firmware_status_before_installing = FirmwareStatusEnum::SignatureVerified;
-    } else {
-        this->firmware_status_before_installing = FirmwareStatusEnum::Downloaded;
-    }
-
     UpdateFirmwareResponse response;
     const auto msg = call.msg;
     bool cert_valid_or_not_set = true;
@@ -162,6 +156,19 @@ void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call
 
     const ocpp::CallResult<UpdateFirmwareResponse> call_result(response, call.uniqueId);
     this->context.message_dispatcher.dispatch_call_result(call_result);
+
+    if ((response.status == UpdateFirmwareStatusEnum::Accepted) or
+        (response.status == UpdateFirmwareStatusEnum::AcceptedCanceled)) {
+        // Only an accepted request starts a new update cycle, and only then does the status reported right before
+        // installing change. A request that is not accepted leaves a still running update alone: rewriting this
+        // would strand it, because its own pre-install status would no longer be recognized and its connectors
+        // would never be disabled.
+        if (call.msg.firmware.signingCertificate.has_value() or call.msg.firmware.signature.has_value()) {
+            this->firmware_status_before_installing = FirmwareStatusEnum::SignatureVerified;
+        } else {
+            this->firmware_status_before_installing = FirmwareStatusEnum::Downloaded;
+        }
+    }
 
     if ((response.status == UpdateFirmwareStatusEnum::InvalidCertificate) or
         (response.status == UpdateFirmwareStatusEnum::RevokedCertificate)) {
