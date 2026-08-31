@@ -15,7 +15,7 @@ namespace iso15118::message_din {
 Variant::Variant(const io::StreamInputView& buffer_view) {
 
     VariantAccess va{
-        get_exi_input_stream(buffer_view), nullptr, this->data, this->type, this->custom_deleter, this->error,
+        get_exi_input_stream(buffer_view), nullptr, this->data, this->type, this->error,
     };
 
     din_exiDocument doc;
@@ -83,16 +83,10 @@ Variant::Variant(const io::StreamInputView& buffer_view) {
 
     if (data) {
         // in case data was set, make sure the custom deleter and the type were set!
-        assert(custom_deleter != nullptr);
+        assert(data.get_deleter() != nullptr);
         assert(type != Type::None);
     } else {
         logf_error("Failed due to: %s\n", error.c_str());
-    }
-}
-
-Variant::~Variant() {
-    if (data) {
-        custom_deleter(data);
     }
 }
 

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cassert>
+#include <memory>
 
 #include <iso15118/detail/cb_exi.hpp>
 #include <iso15118/message_din/variant.hpp>
@@ -19,21 +20,21 @@ struct VariantAccess {
     const din_MessageHeaderType* header{nullptr};
 
     // output
-    void*& data;
+    std::unique_ptr<void, iso15118::message_din::Variant::CustomDeleter>& data;
     iso15118::message_din::Type& type;
-    iso15118::message_din::Variant::CustomDeleter& custom_deleter;
     std::string& error;
 
     template <typename MessageType, typename CbExiMessageType> void insert_type(const CbExiMessageType& in) {
         assert(data == nullptr);
 
-        data = new MessageType;
-        type = iso15118::message_din::TypeTrait<MessageType>::type;
-        custom_deleter = [](void* ptr) { delete static_cast<MessageType*>(ptr); };
+        // Build fully before publishing: if convert() throws, the message is released here and
+        // neither data nor type is touched, leaving the Variant unchanged.
+        auto msg = std::make_unique<MessageType>();
+        convert(in, *msg);
+        convert(*header, msg->header);
 
-        auto& out = *static_cast<MessageType*>(data);
-        convert(in, out);
-        convert(*header, out.header);
+        type = iso15118::message_din::TypeTrait<MessageType>::type;
+        data = {msg.release(), [](void* ptr) { delete static_cast<MessageType*>(ptr); }};
     };
 };
 
