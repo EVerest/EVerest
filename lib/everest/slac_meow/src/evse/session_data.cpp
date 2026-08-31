@@ -5,8 +5,13 @@
 #include "everest/slac/protocol/utils.hpp"
 #include <algorithm>
 #include <everest/slac/evse/session_data.hpp>
+#include <everest/slac/protocol/format.hpp>
 
 namespace everest::slac::evse {
+
+std::string session_log_prefix(SessionData const& data) {
+    return "Session (run_id=" + format_run_id(data.run_id) + ", ev_mac=" + format_mac_addr(data.ev_mac) + "): ";
+}
 SessionData::SessionData(MacAddress ev_mac, RunId run_id, MacAddress evse_mac) :
     evse_mac(evse_mac), ev_mac(ev_mac), run_id(run_id) {
 }

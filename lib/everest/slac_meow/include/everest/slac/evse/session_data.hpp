@@ -2,12 +2,19 @@
 // Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <string>
+
 #include <everest/slac/protocol/messages.hpp>
 #include <everest/slac/protocol/types.hpp>
 
 namespace everest::slac::evse {
 
 /// One matching session's identity and the sounding results gathered for it.
+struct SessionData;
+
+/// "Session (run_id=..., ev_mac=...): ", so concurrent sessions stay tellable apart in the log.
+std::string session_log_prefix(SessionData const& data);
+
 struct SessionData {
     SessionData() = default;
     SessionData(MacAddress ev_mac, RunId run_id, MacAddress evse_mac);

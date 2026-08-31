@@ -36,6 +36,7 @@ void Matching::enter() {
     m_validate_step1_retries = 0;
     m_validate_owner_mac = MacAddress{};
     m_ctx.validation_done = false;
+    m_ctx.log_info("Entered Matching state, waiting for CM_SLAC_PARM.REQ");
     m_ctx.status.match_state = SlacState::Matching;
     m_ctx.status.d3_state = D3State::Matching;
 }
@@ -122,6 +123,7 @@ void Matching::add_session(messages::HomeplugMessage const& frame) {
         (*existing)->restart(data);
     }
 
+    m_ctx.log_info(session_log_prefix(data) + "Received CM_SLAC_PARM.REQ, sending CM_SLAC_PARM.CNF");
     auto param_confirm = data.create_cm_slac_parm_cnf();
     if (not m_ctx.send_slac_message(data.ev_mac, param_confirm)) {
         m_ctx.log_warn("Failed to send CM_SLAC_PARM.CNF");

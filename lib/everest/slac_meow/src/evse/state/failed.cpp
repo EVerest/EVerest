@@ -7,6 +7,7 @@
 namespace everest::slac::evse::state {
 
 void Failed::enter() {
+    m_ctx.log_info("Entered Failed state");
     if (m_ctx.slac_config.ac_mode_five_percent) {
         m_ctx.signal_error_routine_request();
     }

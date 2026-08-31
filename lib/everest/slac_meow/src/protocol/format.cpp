@@ -33,6 +33,15 @@ std::string format_mac_addr(MacAddress const& mac) {
     return format_mac_addr(mac.data());
 }
 
+std::string format_run_id(RunId const& run_id) {
+    std::string out;
+    out.reserve(run_id.size() * 2U);
+    for (auto const octet : run_id) {
+        append_hex(out, octet);
+    }
+    return out;
+}
+
 std::string format_nmk(Nmk const& nmk) {
     std::string out;
     out.reserve(nmk.size() * 2U);

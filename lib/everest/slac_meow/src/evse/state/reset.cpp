@@ -39,6 +39,7 @@ void Reset::enter() {
     m_set_key_attempts = 1;
     m_settled = false;
 
+    m_ctx.log_info("Entered Reset state");
     m_ctx.clear_match_confirm_cache();
     m_ctx.status.match_state = SlacState::Reset;
     m_ctx.status.d3_state = D3State::Unmatched;

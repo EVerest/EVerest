@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iomanip>
+#include <sstream>
 #include <string>
 
 #include <everest/slac/evse/state/failed.hpp>
@@ -15,6 +17,12 @@ namespace everest::slac::evse::state {
 void Matched::enter() {
     auto const& cfg = m_ctx.slac_config;
 
+    {
+        std::ostringstream ss;
+        ss << "Entered Matched state (EV " << format_mac_addr(m_ctx.status.ev_mac) << ", avg. attenuation "
+           << std::fixed << std::setprecision(1) << m_ctx.status.average_attenuation << " dB)";
+        m_ctx.log_info(ss.str());
+    }
     m_ctx.clear_match_confirm_cache();
     m_ctx.signal_dlink_ready(true);
 

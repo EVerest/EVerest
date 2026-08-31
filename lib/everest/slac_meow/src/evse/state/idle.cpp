@@ -8,6 +8,7 @@
 namespace everest::slac::evse::state {
 
 void Idle::enter() {
+    m_ctx.log_info("Entered Idle state");
     m_ctx.clear_match_confirm_cache();
     m_ctx.status.match_state = SlacState::Idle;
     m_ctx.status.d3_state = D3State::Unmatched;

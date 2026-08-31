@@ -17,12 +17,15 @@ namespace everest::slac::evse::state {
 void WaitForLink::enter() {
     auto const& cfg = m_ctx.slac_config;
 
+    m_ctx.log_info("Waiting for Link to be ready...");
+
     m_mode = link_check_mode_for(m_ctx.modem_vendor);
 
     m_poll.arm(m_ctx.current_time, std::chrono::milliseconds(cfg.link_status.retry_ms));
     m_deadline.arm(m_ctx.current_time, std::chrono::milliseconds(cfg.link_status.timeout_ms));
 
     m_ctx.status.match_state = SlacState::WaitForLink;
+    // still in the matching phase - the CM_SLAC_MATCH.CNF is out and the link is pending
     m_ctx.status.d3_state = D3State::Matching;
 
     if (m_mode != LinkCheckMode::None) {

@@ -17,4 +17,7 @@ std::string format_mac_addr(std::uint8_t const* mac);
 /// 32 uppercase hex characters, no separators.
 std::string format_nmk(Nmk const& nmk);
 
+/// 16 uppercase hex characters, no separators.
+std::string format_run_id(RunId const& run_id);
+
 } // namespace everest::slac
