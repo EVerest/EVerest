@@ -1255,6 +1255,16 @@ void ChargePointImpl::clear_firmware_install_pending() {
     this->firmware_update_is_pending = false;
     this->disable_connectors_during_install = true;
     this->all_connectors_unavailable_notified = false;
+
+    // Drop non-persistent queued availability changes
+    const std::lock_guard<std::mutex> change_availability_lock(change_availability_mutex);
+    for (auto it = this->change_availability_queue.begin(); it != this->change_availability_queue.end();) {
+        if (!it->second.persist) {
+            it = this->change_availability_queue.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void ChargePointImpl::stop_all_transactions() {
@@ -2731,6 +2741,7 @@ void ChargePointImpl::handleGetDiagnosticsRequest(ocpp::Call<GetDiagnosticsReque
 
 void ChargePointImpl::handleUpdateFirmwareRequest(ocpp::Call<UpdateFirmwareRequest> call) {
     EVLOG_debug << "Received UpdateFirmwareRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    this->clear_firmware_install_pending();
     const UpdateFirmwareResponse response;
     if (this->update_firmware_callback) {
         this->update_firmware_callback(call.msg);
@@ -3026,6 +3037,7 @@ void ChargePointImpl::handleGetLogRequest(ocpp::Call<GetLogRequest> call) {
 
 void ChargePointImpl::handleSignedUpdateFirmware(ocpp::Call<SignedUpdateFirmwareRequest> call) {
     EVLOG_debug << "Received SignedUpdateFirmwareRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    this->clear_firmware_install_pending();
     SignedUpdateFirmwareResponse response;
 
     if (this->evse_security->verify_certificate(call.msg.firmware.signingCertificate.get(),
@@ -4685,11 +4697,6 @@ void ChargePointImpl::on_log_status_notification(std::int32_t request_id, std::s
 void ChargePointImpl::on_firmware_update_status_notification(
     std::int32_t request_id, const FirmwareStatusNotification firmware_update_status,
     const std::optional<bool> disable_connectors_during_install) {
-    if (firmware_update_status == FirmwareStatusNotification::DownloadScheduled or
-        firmware_update_status == FirmwareStatusNotification::Downloading) {
-        this->all_connectors_unavailable_notified = false;
-    }
-
     try {
         if (request_id != -1) {
             this->signed_firmware_update_status_notification(

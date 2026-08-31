@@ -179,10 +179,8 @@ void ChargePoint::on_network_disconnected(OCPPInterfaceEnum ocpp_interface) {
 void ChargePoint::on_firmware_update_status_notification(std::int32_t request_id,
                                                          const FirmwareStatusEnum& firmware_update_status,
                                                          std::optional<bool> disable_connectors_during_install) {
-    if (is_firmware_status_end_state(firmware_update_status) or
-        firmware_update_status == FirmwareStatusEnum::DownloadScheduled or
-        firmware_update_status == FirmwareStatusEnum::Downloading) {
-        // Re-arm the single-fire guard at the start and end of a firmware update
+    if (is_firmware_status_end_state(firmware_update_status)) {
+        // Re-arm the single-fire guard at the end of a firmware update
         this->all_connectors_unavailable_notified = false;
     }
     this->firmware_update->on_firmware_update_status_notification(request_id, firmware_update_status,
@@ -828,6 +826,8 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
             this->authorization->handle_message(message);
             break;
         case MessageType::UpdateFirmware:
+            // Re-arm the single-fire guard at the start of a firmware update
+            this->all_connectors_unavailable_notified = false;
             this->firmware_update->handle_message(message);
             break;
         case MessageType::ReserveNow:
