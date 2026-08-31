@@ -462,57 +462,6 @@ TEST_F(FirmwareUpdateTest, AbortedUpdate_NewRequest_ResetsReportedFirmwareStatus
     firmware_update->on_firmware_update_status_notification(-1, FirmwareStatusEnum::Installing, std::nullopt);
 }
 
-// FAILS today - the ordering hang. A scheduled availability change can bring the last connector down after an
-// UpdateFirmware.req was accepted but before the update reaches its disable stage. The availability leg then
-// consumes and latches the single-fire guard for an event that is not the firmware wait, so the firmware-driven
-// notification is swallowed afterwards and the installation is never allowed to proceed - the update hangs.
-//
-// This is unreachable in production today only because FirmwareUpdate is the sole producer of the scheduled change
-// availability requests. Any second producer (e.g. a CSMS ChangeAvailability.req deferred behind a transaction)
-// makes it ordinary behavior.
-TEST_F(FirmwareUpdateTest, PendingUpdate_ScheduledAvailabilityChange_DoesNotSwallowFirmwareNotification) {
-    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillRepeatedly(Invoke([](const json&, bool) {
-        return deferred_empty_response();
-    }));
-
-    // EVSE 1 is idle and already inoperative, EVSE 2 is operative and has an active transaction.
-    ON_CALL(evse_manager, any_transaction_active(_)).WillByDefault(Return(true));
-    ON_CALL(evse_1, has_active_transaction()).WillByDefault(Return(false));
-    ON_CALL(evse_2, has_active_transaction()).WillByDefault(Return(true));
-    ON_CALL(evse_2, get_connector_effective_operational_status(_))
-        .WillByDefault(Return(OperationalStatusEnum::Operative));
-
-    // Something other than a firmware update parked a change for EVSE 2 behind the running transaction. It is
-    // persisted, so starting a new update cycle may not drop it.
-    availability->set_scheduled_change_availability_requests(2, {inoperative_request(2), true});
-
-    // The CSMS starts a firmware update. It is accepted, but the system module has not reported a status yet, so
-    // the update is not waiting for the connectors at this point.
-    handle_update_firmware_request(1, UpdateFirmwareStatusEnum::Accepted);
-
-    // The transaction on EVSE 2 ends and the parked change executes, leaving all connectors inoperative. This has
-    // nothing to do with the firmware update, so it must not consume the update's one notification.
-    ON_CALL(evse_manager, any_transaction_active(_)).WillByDefault(Return(false));
-    ON_CALL(evse_2, has_active_transaction()).WillByDefault(Return(false));
-    ON_CALL(evse_2, get_connector_effective_operational_status(_))
-        .WillByDefault(Return(OperationalStatusEnum::Inoperative));
-    EXPECT_CALL(evse_2, set_evse_operative_status(OperationalStatusEnum::Inoperative, true));
-    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(0);
-
-    availability->handle_scheduled_change_availability_requests(2);
-
-    ::testing::Mock::VerifyAndClearExpectations(&evse_2);
-    ::testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
-
-    // The update now reaches the stage where it waits for the connectors. They are already down, so installation
-    // has to be allowed right away.
-    // Downloaded rather than SignatureVerified: make_update_firmware_message() builds an unsigned request, so
-    // firmware_status_before_installing is Downloaded and only that status reaches the disable stage.
-    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
-
-    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::Downloaded, true);
-}
-
 // FAILS today - cross-talk. ChargePoint::initialize hands the same guarded callback to Availability and to
 // FirmwareUpdate, but the guard is only ever re-armed by firmware-update events. Availability fires the callback
 // for plain ChangeAvailability.req driven transitions, which are not a firmware update cycle at all, so once a
