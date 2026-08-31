@@ -35,9 +35,7 @@ Variant::Variant(const io::StreamInputView& buffer_view) {
     convert(doc.V2G_Message.Header, header);
     session_id = header.session_id;
 
-    VariantAccess va{
-        header, this->data, this->type, this->custom_deleter, this->error,
-    };
+    VariantAccess va{header, this->data, this->type, this->error};
 
     auto& body = doc.V2G_Message.Body;
 
@@ -119,18 +117,12 @@ Variant::Variant(const io::StreamInputView& buffer_view) {
 
     if (data) {
         // in case data was set, make sure the custom deleter and the type were set!
-        assert(custom_deleter != nullptr);
+        assert(data.get_deleter() != nullptr);
         assert(type != Type::None);
     } else if (type == Type::None) {
         // A relay-only type (e.g. CertificateInstallationReq) carries no data but a valid type; only a
         // genuinely unhandled message (type still None) is an error.
         logf_error("Failed due to: %s\n", error.c_str());
-    }
-}
-
-Variant::~Variant() {
-    if (data) {
-        custom_deleter(data);
     }
 }
 
