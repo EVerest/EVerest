@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef BUSLAC_HPP
-#define BUSLAC_HPP
+#ifndef BUEV_SLAC_HPP
+#define BUEV_SLAC_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -11,10 +11,12 @@
 #include "ld-ev.hpp"
 
 // headers for required interface implementations
-#include <generated/interfaces/slac/Interface.hpp>
+#include <generated/interfaces/ev_slac/Interface.hpp>
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
+#include <mutex>
+#include <string>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -23,13 +25,13 @@ struct Conf {
     std::string echo_device;
 };
 
-class BUSlac : public Everest::ModuleBase {
+class BUEvSlac : public Everest::ModuleBase {
 public:
-    BUSlac() = delete;
-    BUSlac(const ModuleInfo& info, std::unique_ptr<slacIntf> r_slac, Conf& config) :
+    BUEvSlac() = delete;
+    BUEvSlac(const ModuleInfo& info, std::unique_ptr<ev_slacIntf> r_slac, Conf& config) :
         ModuleBase(info), r_slac(std::move(r_slac)), config(config){};
 
-    const std::unique_ptr<slacIntf> r_slac;
+    const std::unique_ptr<ev_slacIntf> r_slac;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
@@ -52,8 +54,8 @@ private:
     std::mutex data_mutex;
     std::string state;
     std::string dlink;
-    std::string last_request_error_routine_timestamp;
     std::string ev_mac_address;
+    std::string last_trigger_matching_result;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 
@@ -63,4 +65,4 @@ private:
 
 } // namespace module
 
-#endif // BUSLAC_HPP
+#endif // BUEV_SLAC_HPP

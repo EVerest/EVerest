@@ -36,3 +36,11 @@ install(
     DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/everest"
     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )
+
+# MCS two-ChargeBridge bring-up: these scripts also start the pionix_chargebridge daemon,
+# so they do not go through generate_config_tmux_run_script / run_tmux_helper.sh
+install(
+    FILES "run-mcs-evse-bringup.sh" "run-mcs-ev-bringup.sh"
+    DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/everest"
+    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+)

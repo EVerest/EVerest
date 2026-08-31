@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef BUSLAC_HPP
-#define BUSLAC_HPP
+#ifndef BUEV_BOARD_SUPPORT_HPP
+#define BUEV_BOARD_SUPPORT_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -10,26 +10,39 @@
 
 #include "ld-ev.hpp"
 
+
 // headers for required interface implementations
-#include <generated/interfaces/slac/Interface.hpp>
+#include <generated/interfaces/ev_board_support/Interface.hpp>
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
+#include <mutex>
+#include <string>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
 
+
+
 struct Conf {
-    std::string echo_device;
+
+
 };
 
-class BUSlac : public Everest::ModuleBase {
+class BUEvBoardSupport : public Everest::ModuleBase {
 public:
-    BUSlac() = delete;
-    BUSlac(const ModuleInfo& info, std::unique_ptr<slacIntf> r_slac, Conf& config) :
-        ModuleBase(info), r_slac(std::move(r_slac)), config(config){};
+    BUEvBoardSupport() = delete;
+    BUEvBoardSupport(
+        const ModuleInfo& info,
+        std::unique_ptr<ev_board_supportIntf> r_bsp,
+        Conf& config
+    ) :
+        ModuleBase(info),
+        r_bsp(std::move(r_bsp)),
+        config(config)
+    {};
 
-    const std::unique_ptr<slacIntf> r_slac;
+    const std::unique_ptr<ev_board_supportIntf> r_bsp;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
@@ -50,11 +63,14 @@ private:
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
     std::mutex data_mutex;
-    std::string state;
-    std::string dlink;
-    std::string last_request_error_routine_timestamp;
-    std::string ev_mac_address;
+    std::string bsp_event{"None"};
+    std::string cp_pwm_duty_cycle{"N/A"};
+    std::string proximity_pilot{"N/A"};
+    std::string rcd_current{"N/A"};
+    std::string last_error_raised;
+    std::string last_error_cleared;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
+
 };
 
 // ev@087e516b-124c-48df-94fb-109508c7cda9:v1
@@ -63,4 +79,4 @@ private:
 
 } // namespace module
 
-#endif // BUSLAC_HPP
+#endif // BUEV_BOARD_SUPPORT_HPP

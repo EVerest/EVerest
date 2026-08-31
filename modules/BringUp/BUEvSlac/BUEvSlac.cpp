@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include "BUSlac.hpp"
+#include "BUEvSlac.hpp"
 
 #include "../common/link_echo.hpp"
 #include "ftxui/dom/table.hpp"
@@ -12,10 +12,10 @@ using namespace ftxui;
 
 namespace module {
 
-void BUSlac::init() {
+void BUEvSlac::init() {
 }
 
-void BUSlac::ready() {
+void BUEvSlac::ready() {
     auto screen = ScreenInteractive::Fullscreen();
 
     // Link echo: raw-ethernet ping/pong over the configured device, proving payload actually
@@ -39,16 +39,6 @@ void BUSlac::ready() {
         screen.PostEvent(Event::Custom);
     });
 
-    r_slac->subscribe_request_error_routine([this, &screen]() {
-        {
-            std::scoped_lock lock(data_mutex);
-            last_request_error_routine_timestamp = std::to_string(
-                std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
-                    .count());
-        }
-        screen.PostEvent(Event::Custom);
-    });
-
     r_slac->subscribe_ev_mac_address([this, &screen](const std::string& mac) {
         {
             std::scoped_lock lock(data_mutex);
@@ -68,8 +58,8 @@ void BUSlac::ready() {
             table_content = {
                 {"State", state},
                 {"DLink Ready", dlink},
-                {"Last Request Error Routine", last_request_error_routine_timestamp},
-                {"EV MAC Address", ev_mac_address},
+                {"Connector MAC Address", ev_mac_address},
+                {"Last trigger_matching", last_trigger_matching_result},
             };
         }
         {
@@ -108,13 +98,15 @@ void BUSlac::ready() {
     // Right column (Command Buttons)
     // -------------------------------------------------------------------
 
-    auto button_start_slac = Button("Start SLAC", [&] { r_slac->call_reset(true); });
-    auto button_stop_slac = Button("Stop SLAC", [&] { r_slac->call_reset(false); });
-    auto button_enter_bcd = Button("Enter BCD", [&] { r_slac->call_enter_bcd(); });
-    auto button_leave_bcd = Button("Leave BCD", [&] { r_slac->call_leave_bcd(); });
-    auto button_dlink_terminate = Button("DLink Terminate", [&] { r_slac->call_dlink_terminate(); });
-    auto button_dlink_error = Button("DLink Error", [&] { r_slac->call_dlink_error(); });
-    auto button_dlink_pause = Button("DLink Pause", [&] { r_slac->call_dlink_pause(); });
+    auto button_trigger_matching = Button("Trigger Matching", [&] {
+        bool accepted = r_slac->call_trigger_matching();
+        {
+            std::scoped_lock lock(data_mutex);
+            last_trigger_matching_result = accepted ? "accepted" : "rejected";
+        }
+        screen.PostEvent(Event::Custom);
+    });
+    auto button_reset = Button("Reset", [&] { r_slac->call_reset(); });
     // Payload sizes: 32 B is a minimal frame, 1400 B rides just under the tap MTU (1438) - both
     // shapes crossing the wire is what "data actually flows over the datalink" means here.
     auto button_echo_small = Button("Echo: 10 pings (small)", [&] { echo.send_burst(10, 32); });
@@ -124,14 +116,9 @@ void BUSlac::ready() {
         screen.PostEvent(Event::Custom);
     });
 
-    // Compose the command panel layout
     auto command_container = Container::Vertical({
-        Container::Horizontal({button_start_slac, button_stop_slac}),
-        button_enter_bcd,
-        button_leave_bcd,
-        button_dlink_terminate,
-        button_dlink_error,
-        button_dlink_pause,
+        button_trigger_matching,
+        button_reset,
         button_echo_small,
         button_echo_big,
         button_echo_auto,
@@ -141,13 +128,8 @@ void BUSlac::ready() {
         return vbox({
                    text("Commands") | bold | center,
                    separator(),
-                   button_start_slac->Render(),
-                   button_stop_slac->Render(),
-                   button_enter_bcd->Render(),
-                   button_leave_bcd->Render(),
-                   button_dlink_terminate->Render(),
-                   button_dlink_error->Render(),
-                   button_dlink_pause->Render(),
+                   button_trigger_matching->Render(),
+                   button_reset->Render(),
                    separator(),
                    button_echo_small->Render(),
                    button_echo_big->Render(),
@@ -166,7 +148,7 @@ void BUSlac::ready() {
 
     auto main_renderer = Renderer(layout, [&] {
         return vbox({
-            text("SLAC BringUp") | bold | center,
+            text("EV SLAC BringUp") | bold | center,
             separator(),
             hbox({
                 data_renderer->Render(),
@@ -178,7 +160,7 @@ void BUSlac::ready() {
     screen.Loop(main_renderer);
 }
 
-void BUSlac::shutdown() {
+void BUEvSlac::shutdown() {
 }
 
 } // namespace module
