@@ -31,6 +31,38 @@ void Matched::enter() {
     if (m_mode != LinkCheckMode::None) {
         send_link_status_req(m_ctx, m_mode);
     }
+
+    // Off by default. CmAmpMap_002 through 004.
+    m_amp_map_awaiting_cnf = false;
+    m_amp_map_retries = 0;
+    if (cfg.initiate_amp_map and cfg.amp_map_len > 0) {
+        if (not m_ctx.send_amp_map_req(m_ctx.status.ev_mac, cfg.amp_map_len, cfg.amp_map_data)) {
+            m_ctx.log_warn("Failed to send CM_AMP_MAP.REQ");
+        }
+        m_amp_map_awaiting_cnf = true;
+        m_amp_map_timer.arm(m_ctx.current_time, std::chrono::milliseconds(defs::TT_MATCH_RESPONSE_MS));
+    }
+}
+
+bool Matched::is_amp_map_req(messages::HomeplugMessage const& frame) {
+    if (not frame.is_valid() or frame.get_mmtype() != defs::MMTYPE_CM_AMP_MAP_REQ) {
+        return false;
+    }
+    auto const req = frame.payload_as<messages::cm_amp_map_req>();
+    return req.has_value() and req->am_len != 0;
+}
+
+void Matched::retransmit_amp_map() {
+    if (m_amp_map_retries >= defs::C_EV_MATCH_RETRY) {
+        m_amp_map_awaiting_cnf = false; // retry budget spent, stop asking
+        return;
+    }
+    m_amp_map_retries++;
+    auto const& cfg = m_ctx.slac_config;
+    if (not m_ctx.send_amp_map_req(m_ctx.status.ev_mac, cfg.amp_map_len, cfg.amp_map_data)) {
+        m_ctx.log_warn("Failed to resend CM_AMP_MAP.REQ");
+    }
+    m_amp_map_timer.rearm(m_ctx.current_time);
 }
 
 void Matched::leave() {
@@ -43,15 +75,34 @@ void Matched::leave() {
 
 Result Matched::feed(SlacEvent const& ev) {
     if (std::get_if<event::Update>(&ev)) {
+        if (m_amp_map_awaiting_cnf and m_amp_map_timer.expired(m_ctx.current_time)) {
+            retransmit_amp_map();
+        }
         if (m_mode != LinkCheckMode::None and m_poll.expired(m_ctx.current_time)) {
             send_link_status_req(m_ctx, m_mode);
             m_poll.rearm(m_ctx.current_time);
-            return handled();
         }
-        return {};
+        return handled();
     }
 
     if (auto const* frame = as_frame(ev)) {
+        // Answered whatever the supervision mode is. Applying the reduction is the modem's job.
+        if (is_amp_map_req(*frame)) {
+            messages::cm_amp_map_cnf reply{};
+            reply.result = defs::CM_AMP_MAP_CNF_RESULT_SUCCESS;
+            if (not m_ctx.send_slac_message(frame->get_src_mac(), reply)) {
+                m_ctx.log_warn("Failed to send CM_AMP_MAP.CNF");
+            }
+            return handled();
+        }
+        // Any other result leaves the retransmission running: V2G3-A09-114, CmAmpMap_004.
+        if (m_amp_map_awaiting_cnf and frame->is_valid() and frame->get_mmtype() == defs::MMTYPE_CM_AMP_MAP_CNF) {
+            auto const cnf = frame->payload_as<messages::cm_amp_map_cnf>();
+            if (cnf.has_value() and cnf->result == defs::CM_AMP_MAP_CNF_RESULT_SUCCESS) {
+                m_amp_map_awaiting_cnf = false;
+                return handled();
+            }
+        }
         if (m_mode != LinkCheckMode::None and is_link_down(*frame, m_mode)) {
             ++m_consecutive_neg;
             if (m_consecutive_neg < m_neg_threshold) {

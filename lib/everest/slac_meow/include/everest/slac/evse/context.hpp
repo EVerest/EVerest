@@ -6,6 +6,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <everest/slac/evse/config.hpp>
 #include <everest/slac/protocol/defs.hpp>
@@ -30,6 +31,9 @@ template <> struct MMTYPE<messages::cm_atten_char_ind> {
 };
 template <> struct MMTYPE<messages::cm_set_key_req> {
     static constexpr std::uint16_t value = defs::MMTYPE_CM_SET_KEY_REQ;
+};
+template <> struct MMTYPE<messages::cm_amp_map_cnf> {
+    static constexpr std::uint16_t value = defs::MMTYPE_CM_AMP_MAP_CNF;
 };
 template <> struct MMTYPE<messages::cm_validate_cnf> {
     static constexpr std::uint16_t value = defs::MMTYPE_CM_VALIDATE_CNF;
@@ -59,6 +63,10 @@ template <> struct MMTYPE<messages::lumissil::nscm_get_d_link_status_req> {
 /// HomePlug AV 1.1 by default; the vendor MMEs predate it and use 1.0.
 template <typename T> struct MMV {
     static constexpr auto value = defs::MMV::AV_1_1;
+};
+/// CM_AMP_MAP is not backward compatible with AV 1.1 and has to be framed AV 2.0.
+template <> struct MMV<messages::cm_amp_map_cnf> {
+    static constexpr auto value = defs::MMV::AV_2_0;
 };
 template <> struct MMV<messages::qualcomm::cm_reset_device_req> {
     static constexpr auto value = defs::MMV::AV_1_0;
@@ -157,6 +165,24 @@ public:
     template <typename SlacMessageType>
     bool send_slac_message(std::uint8_t const* mac, SlacMessageType const& message) {
         return send_slac_message(byte_array_from_wire<MacAddress>(mac), message);
+    }
+
+    /// The variable-length amplitude map does not fit the fixed-struct path above, so it is framed
+    /// here. am_data holds ceil(am_len / 2) pre-packed bytes.
+    bool send_amp_map_req(MacAddress const& mac, std::uint16_t am_len, std::vector<std::uint8_t> const& am_data) {
+        if (not m_callbacks.send_raw_slac) {
+            return false;
+        }
+        std::vector<std::uint8_t> payload;
+        payload.reserve(sizeof(std::uint16_t) + am_data.size());
+        payload.push_back(static_cast<std::uint8_t>(am_len & 0xFF));
+        payload.push_back(static_cast<std::uint8_t>((am_len >> 8) & 0xFF));
+        payload.insert(payload.end(), am_data.begin(), am_data.end());
+
+        messages::HomeplugMessage hp_message;
+        hp_message.setup_payload(payload.data(), payload.size(), defs::MMTYPE_CM_AMP_MAP_REQ, defs::MMV::AV_2_0);
+        hp_message.set_destination(mac);
+        return m_callbacks.send_raw_slac(hp_message);
     }
 
     void signal_cm_slac_parm_req(std::uint8_t const* ev_mac) {

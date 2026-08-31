@@ -338,6 +338,47 @@ std::size_t count_qualcomm_link_status_req(std::vector<SentMessage> const& messa
                          [](auto const& entry) { return is_qualcomm_link_status_req(entry.hp_message); });
 }
 
+bool is_cm_amp_map_req(messages::HomeplugMessage const& msg) {
+    return msg.is_valid() and msg.get_mmtype() == defs::MMTYPE_CM_AMP_MAP_REQ;
+}
+
+bool is_cm_amp_map_cnf(messages::HomeplugMessage const& msg) {
+    return msg.is_valid() and msg.get_mmtype() == defs::MMTYPE_CM_AMP_MAP_CNF;
+}
+
+std::size_t count_cm_amp_map_req(std::vector<SentMessage> const& messages) {
+    return std::count_if(messages.begin(), messages.end(),
+                         [](auto const& entry) { return is_cm_amp_map_req(entry.hp_message); });
+}
+
+std::size_t count_cm_amp_map_cnf(std::vector<SentMessage> const& messages) {
+    return std::count_if(messages.begin(), messages.end(),
+                         [](auto const& entry) { return is_cm_amp_map_cnf(entry.hp_message); });
+}
+
+/// An incoming CM_AMP_MAP.REQ. am_len == 0 is the invalid case that must go unanswered.
+messages::HomeplugMessage create_cm_amp_map_req(EvMac const& source, std::uint16_t am_len) {
+    std::array<std::uint8_t, sizeof(std::uint16_t) + 4> payload{};
+    payload[0] = static_cast<std::uint8_t>(am_len & 0xFF);
+    payload[1] = static_cast<std::uint8_t>((am_len >> 8) & 0xFF);
+
+    messages::HomeplugMessage message;
+    message.set_source(source);
+    message.setup_payload(payload.data(), payload.size(), defs::MMTYPE_CM_AMP_MAP_REQ, defs::MMV::AV_2_0);
+    return message;
+}
+
+/// The peer's answer to a SECC-initiated CM_AMP_MAP.REQ.
+messages::HomeplugMessage create_cm_amp_map_cnf(EvMac const& source, std::uint8_t result) {
+    messages::cm_amp_map_cnf msg{};
+    msg.result = result;
+
+    messages::HomeplugMessage message;
+    message.set_source(source);
+    message.setup_payload(&msg, sizeof(msg), defs::MMTYPE_CM_AMP_MAP_CNF, defs::MMV::AV_2_0);
+    return message;
+}
+
 bool wait_for_match_state(Context const& ctx, SlacState expected, slac_fsm& machine, int timeout_ms) {
     const auto state_match = [&ctx, expected]() { return ctx.status.match_state == expected; };
     return wait_for(std::chrono::milliseconds(timeout_ms), machine, state_match);
@@ -2492,8 +2533,107 @@ bool test_matched_link_status_neg_debounce_clamps_invalid_to_one() {
                        "clamped debounce_count=0 did not tear down on the first negative link-status CNF");
 }
 
+// Reach Matched with link supervision off, so the only traffic left is the amp map.
+bool reach_matched_for_amp_map(TestContext& ctx, std::vector<SentMessage>& sent_messages, slac_fsm& machine,
+                               EvMac const& ev_mac, std::uint8_t run_id_seed) {
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+    auto run_id = fill_run_id(run_id_seed);
+    return perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::Matched, 700);
+}
+
+bool test_amp_map_req_is_answered_while_matched() {
+    const char* test_name = "test_amp_map_req_is_answered_while_matched";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    TestContext ctx(callbacks);
+    configure_common(ctx);
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0D};
+    if (!reach_matched_for_amp_map(ctx, sent_messages, machine, ev_mac, 0x7C)) {
+        return assert_true(false, test_name, "did not reach Matched");
+    }
+
+    // A valid map is confirmed, whatever the SECC's own initiate_amp_map setting is.
+    const auto cnf_before = count_cm_amp_map_cnf(sent_messages);
+    machine.message(create_cm_amp_map_req(ev_mac, 8));
+    if (!assert_true(count_cm_amp_map_cnf(sent_messages) == cnf_before + 1, test_name,
+                     "a valid CM_AMP_MAP.REQ was not answered")) {
+        return false;
+    }
+
+    // am_len == 0 is invalid and must be left unanswered (ISO 15118-5 CmAmpMap_005).
+    const auto cnf_after_valid = count_cm_amp_map_cnf(sent_messages);
+    machine.message(create_cm_amp_map_req(ev_mac, 0));
+    return assert_true(count_cm_amp_map_cnf(sent_messages) == cnf_after_valid, test_name,
+                       "a CM_AMP_MAP.REQ with am_len 0 was answered");
+}
+
+bool test_amp_map_req_retransmits_until_confirmed() {
+    const char* test_name = "test_amp_map_req_retransmits_until_confirmed";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    TestContext ctx(callbacks);
+    configure_common(ctx);
+    ctx.slac_config.initiate_amp_map = true;
+    ctx.slac_config.amp_map_len = 4;
+    ctx.slac_config.amp_map_data = {0xFF, 0xFF};
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0E};
+    const auto req_before = count_cm_amp_map_req(sent_messages);
+    if (!reach_matched_for_amp_map(ctx, sent_messages, machine, ev_mac, 0x7D)) {
+        return assert_true(false, test_name, "did not reach Matched");
+    }
+
+    if (!assert_true(count_cm_amp_map_req(sent_messages) == req_before + 1, test_name,
+                     "no CM_AMP_MAP.REQ was sent on entering Matched")) {
+        return false;
+    }
+
+    // Unanswered, it is retransmitted every TT_match_response, at most C_EV_MATCH_RETRY times.
+    wait_for(std::chrono::milliseconds(defs::TT_MATCH_RESPONSE_MS * (defs::C_EV_MATCH_RETRY + 3)), machine,
+             []() { return false; });
+    const auto after_retries = count_cm_amp_map_req(sent_messages) - req_before;
+    if (!assert_true(after_retries == static_cast<std::size_t>(defs::C_EV_MATCH_RETRY) + 1, test_name,
+                     "retransmission did not stop at the retry limit")) {
+        return false;
+    }
+
+    // A fresh match, this time confirmed: the first REQ is the only one.
+    sent_messages.clear();
+    if (!reach_matched_for_amp_map(ctx, sent_messages, machine, ev_mac, 0x7E)) {
+        return assert_true(false, test_name, "did not reach Matched a second time");
+    }
+    const auto sent_once = count_cm_amp_map_req(sent_messages);
+    machine.message(create_cm_amp_map_cnf(ev_mac, defs::CM_AMP_MAP_CNF_RESULT_SUCCESS));
+    wait_for(std::chrono::milliseconds(defs::TT_MATCH_RESPONSE_MS * (defs::C_EV_MATCH_RETRY + 3)), machine,
+             []() { return false; });
+    return assert_true(count_cm_amp_map_req(sent_messages) == sent_once, test_name,
+                       "kept retransmitting CM_AMP_MAP.REQ after a successful CNF");
+}
+
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 37>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 39>{
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
                        test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
@@ -2560,6 +2700,8 @@ int main() {
                        test_matched_link_status_neg_debounce_tolerates_transient_flaps),
         std::make_pair("test_matched_link_status_neg_debounce_clamps_invalid_to_one",
                        test_matched_link_status_neg_debounce_clamps_invalid_to_one),
+        std::make_pair("test_amp_map_req_is_answered_while_matched", test_amp_map_req_is_answered_while_matched),
+        std::make_pair("test_amp_map_req_retransmits_until_confirmed", test_amp_map_req_retransmits_until_confirmed),
     };
 
     int failed_count = 0;
