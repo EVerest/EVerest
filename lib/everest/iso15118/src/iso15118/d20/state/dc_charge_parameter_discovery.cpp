@@ -239,10 +239,6 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
             m_ctx.session_stopped = true;
             return {};
         }
-        // Save adapted limits for later states (e.g. charge loop)
-        m_ctx.session_config.dc_limits = checked_limits;
-        m_ctx.dc_limits_locked_after_charge_param = true;
-        m_ctx.dc_limits_after_charge_param_bounds = checked_limits;
         res = handle_request(*req, m_ctx.session, checked_limits);
         m_ctx.respond(res);
 
@@ -252,6 +248,12 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
             m_ctx.session_stopped = true;
             return {};
         }
+
+        // Publish and persist adjusted limits only after they were accepted successfully.
+        m_ctx.feedback.dc_evse_adjusted_limits(checked_limits);
+        m_ctx.session_config.dc_limits = checked_limits;
+        m_ctx.dc_limits_locked_after_charge_param = true;
+        m_ctx.dc_limits_after_charge_param_bounds = checked_limits;
 
         return m_ctx.create_state<ScheduleExchange>();
     } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {

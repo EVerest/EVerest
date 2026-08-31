@@ -191,6 +191,7 @@ void energyImpl::request_energy_from_energy_manager(bool priority_request) {
 
         // copy complete external limit schedules for import
         if (not mod->get_local_energy_limits().schedule_import.empty()) {
+            // Local limits already include the optional DC session max-power cap.
             energy_flow_request.schedule_import = mod->get_local_energy_limits().schedule_import;
 
             if (mod->config.charge_mode == "DC") {
