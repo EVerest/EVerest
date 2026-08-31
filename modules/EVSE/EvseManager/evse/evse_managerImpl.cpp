@@ -411,6 +411,8 @@ void evse_managerImpl::ready() {
 types::evse_manager::Evse evse_managerImpl::handle_get_evse() {
     types::evse_manager::Evse evse;
     evse.id = this->mod->config.connector_id;
+    evse.evse_id = this->mod->config.evse_id;
+    evse.evse_id_din = this->mod->config.evse_id_din;
 
     std::vector<types::evse_manager::Connector> connectors;
     types::evse_manager::Connector connector;
