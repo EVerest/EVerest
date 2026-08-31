@@ -836,6 +836,110 @@ TEST_F(ChargePointCommonTestFixtureV2, FirmwareUpdate_AllConnectorsUnavailableGu
     charge_point->stop();
 }
 
+// A new UpdateFirmware.req starts a new update cycle and must re-arm the single-fire guard around
+// callbacks.all_connectors_unavailable_callback, so an update that died without reporting a terminal status
+// cannot leave the guard latched for the next cycle.
+TEST_F(ChargePointCommonTestFixtureV2, FirmwareUpdate_AllConnectorsUnavailableGuardResetsOnUpdateFirmwareRequest) {
+    configure_callbacks_with_mocks();
+    testing::MockFunction<void()> all_connectors_unavailable_callback_mock;
+    callbacks.all_connectors_unavailable_callback = all_connectors_unavailable_callback_mock.AsStdFunction();
+
+    auto database_handler = create_database_handler();
+    auto charge_point = std::make_unique<TestChargePoint>(
+        create_evse_connector_structure(), device_model, database_handler, create_message_queue(database_handler),
+        TEMP_OUTPUT_PATH, std::make_shared<EvseSecurityMock>(), callbacks);
+    charge_point->start();
+
+    // Latch the guard: opting in on InstallScheduled with no active transaction fires the callback exactly once,
+    // a duplicate notification does not re-fire it.
+    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
+    charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+    charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+    testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
+
+    // The update dies without ever reporting a terminal status; the CSMS then requests a new update.
+    UpdateFirmwareResponse update_firmware_response;
+    update_firmware_response.status = UpdateFirmwareStatusEnum::Accepted;
+    EXPECT_CALL(update_firmware_request_callback_mock, Call(testing::_))
+        .WillOnce(testing::Return(update_firmware_response));
+
+    UpdateFirmwareRequest req;
+    req.requestId = 2;
+    req.firmware.location = "ftp://example.com/firmware.bin";
+    req.firmware.retrieveDateTime = ocpp::DateTime();
+
+    ocpp::Call<UpdateFirmwareRequest> call(req);
+    call.uniqueId = ocpp::create_message_id();
+    EnhancedMessage<MessageType> enhanced_message;
+    enhanced_message.uniqueId = call.uniqueId;
+    enhanced_message.messageType = MessageType::UpdateFirmware;
+    enhanced_message.messageTypeId = ocpp::MessageTypeId::CALL;
+    enhanced_message.message = json::array();
+    enhanced_message.message.push_back(ocpp::MessageTypeId::CALL);
+    enhanced_message.message.push_back(call.uniqueId.get());
+    enhanced_message.message.push_back(call.msg.get_type());
+    enhanced_message.message.push_back(json(call.msg));
+
+    charge_point->handle_message(enhanced_message);
+
+    // The request re-armed the guard: a new opt-in trigger fires the callback again.
+    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
+    charge_point->on_firmware_update_status_notification(2, FirmwareStatusEnum::InstallScheduled, true);
+
+    charge_point->stop();
+}
+
+// FAILS today - ChargePoint::handle_message re-arms the guard for every incoming UpdateFirmware.req, before the
+// request has been validated and answered. A request the charge point rejects does not start a new update cycle,
+// so it must not touch the state of the update that is still running.
+TEST_F(ChargePointCommonTestFixtureV2, FirmwareUpdate_RejectedUpdateFirmwareRequestDoesNotReArmGuard) {
+    configure_callbacks_with_mocks();
+    testing::MockFunction<void()> all_connectors_unavailable_callback_mock;
+    callbacks.all_connectors_unavailable_callback = all_connectors_unavailable_callback_mock.AsStdFunction();
+
+    auto database_handler = create_database_handler();
+    auto charge_point = std::make_unique<TestChargePoint>(
+        create_evse_connector_structure(), device_model, database_handler, create_message_queue(database_handler),
+        TEMP_OUTPUT_PATH, std::make_shared<EvseSecurityMock>(), callbacks);
+    charge_point->start();
+
+    // An update is running and has already notified once.
+    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
+    charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+    testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
+
+    // The CSMS sends a request the charge point rejects, so no new update cycle is started.
+    UpdateFirmwareResponse update_firmware_response;
+    update_firmware_response.status = UpdateFirmwareStatusEnum::Rejected;
+    EXPECT_CALL(update_firmware_request_callback_mock, Call(testing::_))
+        .WillOnce(testing::Return(update_firmware_response));
+
+    UpdateFirmwareRequest req;
+    req.requestId = 2;
+    req.firmware.location = "ftp://example.com/firmware.bin";
+    req.firmware.retrieveDateTime = ocpp::DateTime();
+
+    ocpp::Call<UpdateFirmwareRequest> call(req);
+    call.uniqueId = ocpp::create_message_id();
+    EnhancedMessage<MessageType> enhanced_message;
+    enhanced_message.uniqueId = call.uniqueId;
+    enhanced_message.messageType = MessageType::UpdateFirmware;
+    enhanced_message.messageTypeId = ocpp::MessageTypeId::CALL;
+    enhanced_message.message = json::array();
+    enhanced_message.message.push_back(ocpp::MessageTypeId::CALL);
+    enhanced_message.message.push_back(call.uniqueId.get());
+    enhanced_message.message.push_back(call.msg.get_type());
+    enhanced_message.message.push_back(json(call.msg));
+
+    charge_point->handle_message(enhanced_message);
+
+    // The still-running update notifies again: the guard must still be latched from its first notification.
+    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(0);
+    charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+
+    charge_point->stop();
+}
+
 // Test currently disabled because this is not working now. Should be added to the transaction functional block.
 TEST_F(ChargePointFunctionalityTestFixtureV2,
        K05FR05_RequestStartTransactionRequest_SmartChargingCtrlrEnabledTrue_ValidatesTxProfiles) {

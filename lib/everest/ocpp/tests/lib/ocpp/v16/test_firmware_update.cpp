@@ -17,13 +17,19 @@
 /// therefore assert on the disable/unavailable callbacks only, never on an outgoing CSMS message for
 /// InstallScheduled.
 
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -193,6 +199,288 @@ TEST_F(ChargePointFirmwareUpdateTest, TerminalStatusResetsSingleFireGuard) {
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
                                                         std::optional<bool>{true});
     EXPECT_EQ(this->all_connectors_unavailable_count, 2);
+}
+
+/// \brief Fixture that additionally captures the registered message callback and the outgoing frames, so a test
+/// can complete the boot handshake and inject incoming CSMS messages (incoming CALL routing is gated on the
+/// Booted connection state).
+class ChargePointUpdateFirmwareRequestTest : public ChargePointFirmwareUpdateTestBase {
+protected:
+    void SetUp() override {
+        ChargePointFirmwareUpdateTestBase::SetUp();
+
+        ON_CALL(*this->connectivity_manager, set_message_callback(::testing::_))
+            .WillByDefault(::testing::SaveArg<0>(&this->message_callback));
+        ON_CALL(*this->connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(true));
+        ON_CALL(*this->connectivity_manager, send_to_websocket(::testing::_))
+            .WillByDefault(::testing::Invoke([this](const std::string& message) {
+                const std::lock_guard<std::mutex> lock(this->mtx);
+                this->sent_messages.push_back(message);
+                this->cv.notify_all();
+                return true;
+            }));
+    }
+
+    /// \brief Wait (bounded) until a CALL with the given \p action has been handed to send_to_websocket and
+    /// return its uniqueId.
+    std::optional<std::string> wait_for_outgoing_call(const std::string& action) {
+        std::unique_lock<std::mutex> lock(this->mtx);
+        std::optional<std::string> unique_id;
+        this->cv.wait_for(lock, std::chrono::seconds(5), [&]() {
+            for (const auto& message : this->sent_messages) {
+                const json parsed = json::parse(message, nullptr, false);
+                if (parsed.is_array() and parsed.size() > CALL_ACTION and
+                    parsed.at(MESSAGE_TYPE_ID) == static_cast<int>(MessageTypeId::CALL) and
+                    parsed.at(CALL_ACTION) == action) {
+                    unique_id = parsed.at(MESSAGE_ID).get<std::string>();
+                    return true;
+                }
+            }
+            return false;
+        });
+        return unique_id;
+    }
+
+    /// \brief Complete the websocket-connect + accepted-BootNotification handshake so incoming CALL messages are
+    /// dispatched to their handlers.
+    void boot_charge_point(ChargePointImpl& charge_point) {
+        charge_point.on_websocket_connected(0, ocpp::v2::NetworkConnectionProfile{}, ocpp::OcppProtocolVersion::v16);
+
+        const auto boot_notification_id = wait_for_outgoing_call("BootNotification");
+        ASSERT_TRUE(boot_notification_id.has_value()) << "BootNotification.req was not sent within the timeout";
+
+        json boot_response = json::array();
+        boot_response.push_back(MessageTypeId::CALLRESULT);
+        boot_response.push_back(boot_notification_id.value());
+        boot_response.push_back(
+            json{{"status", "Accepted"}, {"currentTime", ocpp::DateTime().to_rfc3339()}, {"interval", 0}});
+        ASSERT_NE(this->message_callback, nullptr);
+        this->message_callback(boot_response.dump());
+    }
+
+    /// \brief Feed an incoming CALL with the given \p action and \p payload into the registered message callback.
+    void send_call(const std::string& action, const json& payload, const std::string& unique_id) {
+        json call = json::array();
+        call.push_back(MessageTypeId::CALL);
+        call.push_back(unique_id);
+        call.push_back(action);
+        call.push_back(payload);
+        this->message_callback(call.dump());
+    }
+
+    /// \brief The payloads of all outgoing CALLs with the given \p action, in the order they were sent.
+    static std::vector<json> extract_call_payloads(const std::vector<std::string>& messages,
+                                                   const std::string& action) {
+        std::vector<json> payloads;
+        for (const auto& message : messages) {
+            const json parsed = json::parse(message, nullptr, false);
+            if (parsed.is_array() and parsed.size() > CALL_PAYLOAD and
+                parsed.at(MESSAGE_TYPE_ID) == static_cast<int>(MessageTypeId::CALL) and
+                parsed.at(CALL_ACTION) == action) {
+                payloads.push_back(parsed.at(CALL_PAYLOAD));
+            }
+        }
+        return payloads;
+    }
+
+    /// \brief Wait (bounded) until at least \p count outgoing CALLs with the given \p action have been handed to
+    /// send_to_websocket and return their payloads.
+    std::vector<json> wait_for_outgoing_calls(const std::string& action, std::size_t count) {
+        std::unique_lock<std::mutex> lock(this->mtx);
+        this->cv.wait_for(lock, std::chrono::seconds(5),
+                          [&]() { return extract_call_payloads(this->sent_messages, action).size() >= count; });
+        return extract_call_payloads(this->sent_messages, action);
+    }
+
+    /// \brief A minimal, schema-valid UpdateFirmware.req payload.
+    static json update_firmware_payload() {
+        json payload = json::object();
+        payload["location"] = "ftp://example.com/firmware.bin";
+        payload["retrieveDate"] = ocpp::DateTime().to_rfc3339();
+        return payload;
+    }
+
+    /// \brief A minimal, schema-valid SignedUpdateFirmware.req payload. The certificate content is irrelevant -
+    /// the tests stub EvseSecurity::verify_certificate to decide whether it is accepted.
+    static json signed_update_firmware_payload(const std::int32_t request_id) {
+        json firmware = json::object();
+        firmware["location"] = "ftp://example.com/firmware.bin";
+        firmware["retrieveDateTime"] = ocpp::DateTime().to_rfc3339();
+        firmware["signingCertificate"] = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+        firmware["signature"] = "c2lnbmF0dXJl";
+
+        json payload = json::object();
+        payload["requestId"] = request_id;
+        payload["firmware"] = firmware;
+        return payload;
+    }
+
+    std::function<void(const std::string&)> message_callback;
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::vector<std::string> sent_messages;
+};
+
+// Test that an UpdateFirmware.req starts a new update cycle: it re-arms the single-fire guard around
+// all_connectors_unavailable_callback (and clears the pending-install state), so an update that died without
+// reporting a terminal status cannot leave the guard latched for the next cycle.
+TEST_F(ChargePointUpdateFirmwareRequestTest, UpdateFirmwareRequestResetsSingleFireGuard) {
+    auto& charge_point = start_charge_point();
+    charge_point.register_update_firmware_callback([](const UpdateFirmwareRequest&) {});
+    boot_charge_point(charge_point);
+    if (::testing::Test::HasFatalFailure()) {
+        return;
+    }
+
+    // Latch the guard; a repeated trigger shows it holds.
+    charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
+                                                        std::optional<bool>{true});
+    charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
+                                                        std::optional<bool>{true});
+    EXPECT_EQ(this->all_connectors_unavailable_count, 1);
+
+    // The update dies without ever reporting a terminal status; the CSMS then requests a new update.
+    json update_firmware_call = json::array();
+    update_firmware_call.push_back(MessageTypeId::CALL);
+    update_firmware_call.push_back("update-firmware-request-1");
+    update_firmware_call.push_back("UpdateFirmware");
+    update_firmware_call.push_back(
+        json{{"location", "ftp://example.com/firmware.bin"}, {"retrieveDate", ocpp::DateTime().to_rfc3339()}});
+    this->message_callback(update_firmware_call.dump());
+
+    // The request re-armed the guard: a new opt-in trigger fires the unavailable callback again.
+    charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
+                                                        std::optional<bool>{true});
+    EXPECT_EQ(this->all_connectors_unavailable_count, 2);
+}
+
+/// ---------------------------------------------------------------------------------------------------------------
+/// The tests below model the cases that are still open on the review comment
+///   "This is not reset e.g. when the fw update aborts/crashes and doesnt notify or reports Idle and then this
+///    guard stays latched. I think we should reset on every firmware update request and we can remove this part
+///    here. This also needs fixing in v2."
+/// Each one states in its comment whether it is expected to pass against the current implementation (regression
+/// coverage for behaviour that already works) or to fail (a gap that still has to be closed).
+/// ---------------------------------------------------------------------------------------------------------------
+
+// PASSES today - regression coverage for the literal scenario in the review comment.
+//
+// The firmware updater dies and reports Idle. Idle is not a terminal status, so nothing along the status path
+// re-arms the guard; only the next UpdateFirmware.req may.
+TEST_F(ChargePointUpdateFirmwareRequestTest, IdleStatusFromDyingUpdateThenNewRequestResetsSingleFireGuard) {
+    auto& charge_point = start_charge_point();
+    charge_point.register_update_firmware_callback([](const UpdateFirmwareRequest&) {});
+    boot_charge_point(charge_point);
+    if (::testing::Test::HasFatalFailure()) {
+        return;
+    }
+
+    charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
+                                                        std::optional<bool>{true});
+    EXPECT_EQ(this->all_connectors_unavailable_count, 1);
+
+    // The update gives up and falls back to Idle instead of reporting a terminal status. That must not re-arm the
+    // guard on its own - the update cycle is still the old one.
+    charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::Idle, std::nullopt);
+    charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
+                                                        std::optional<bool>{true});
+    EXPECT_EQ(this->all_connectors_unavailable_count, 1);
+
+    // Only the next request starts a new cycle and re-arms the guard.
+    send_call("UpdateFirmware", update_firmware_payload(), "update-firmware-after-idle");
+
+    charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
+                                                        std::optional<bool>{true});
+    EXPECT_EQ(this->all_connectors_unavailable_count, 2);
+}
+
+// PASSES today - missing coverage: the same reset must hold for the signed variant of the request, which is the
+// only way an OCPP 1.6 SecurityExtensions firmware update is ever started.
+TEST_F(ChargePointUpdateFirmwareRequestTest, SignedUpdateFirmwareRequestResetsSingleFireGuard) {
+    ON_CALL(*this->evse_security, verify_certificate(::testing::_, ::testing::An<const ocpp::LeafCertificateType&>()))
+        .WillByDefault(::testing::Return(ocpp::CertificateValidationResult::Valid));
+
+    auto& charge_point = start_charge_point();
+    charge_point.register_signed_update_firmware_callback(
+        [](const SignedUpdateFirmwareRequest) { return UpdateFirmwareStatusEnumType::Accepted; });
+    boot_charge_point(charge_point);
+    if (::testing::Test::HasFatalFailure()) {
+        return;
+    }
+
+    // Latch the guard, then let the update die without ever reporting a terminal status.
+    charge_point.on_firmware_update_status_notification(1, FirmwareStatusNotification::InstallScheduled,
+                                                        std::optional<bool>{true});
+    charge_point.on_firmware_update_status_notification(1, FirmwareStatusNotification::InstallScheduled,
+                                                        std::optional<bool>{true});
+    EXPECT_EQ(this->all_connectors_unavailable_count, 1);
+
+    send_call("SignedUpdateFirmware", signed_update_firmware_payload(2), "signed-update-firmware-1");
+
+    charge_point.on_firmware_update_status_notification(2, FirmwareStatusNotification::InstallScheduled,
+                                                        std::optional<bool>{true});
+    EXPECT_EQ(this->all_connectors_unavailable_count, 2);
+}
+
+// FAILS today - handleSignedUpdateFirmware calls clear_firmware_install_pending() before verify_certificate, so a
+// request that is answered with InvalidCertificate (no new update cycle is started) still wipes the state of the
+// update that is actually running: the guard is re-armed and the availability changes queued behind running
+// transactions are dropped.
+TEST_F(ChargePointUpdateFirmwareRequestTest, InvalidCertificateSignedUpdateFirmwareDoesNotDisturbRunningUpdate) {
+    ON_CALL(*this->evse_security, verify_certificate(::testing::_, ::testing::An<const ocpp::LeafCertificateType&>()))
+        .WillByDefault(::testing::Return(ocpp::CertificateValidationResult::InvalidSignature));
+
+    auto& charge_point = start_charge_point();
+    charge_point.register_signed_update_firmware_callback(
+        [](const SignedUpdateFirmwareRequest) { return UpdateFirmwareStatusEnumType::Accepted; });
+    boot_charge_point(charge_point);
+    if (::testing::Test::HasFatalFailure()) {
+        return;
+    }
+
+    // An update is running and has already notified once.
+    charge_point.on_firmware_update_status_notification(1, FirmwareStatusNotification::InstallScheduled,
+                                                        std::optional<bool>{true});
+    EXPECT_EQ(this->all_connectors_unavailable_count, 1);
+
+    // The CSMS sends a request whose signing certificate does not validate. It is rejected with InvalidCertificate,
+    // so no new update cycle starts and the running one must be left untouched.
+    send_call("SignedUpdateFirmware", signed_update_firmware_payload(2), "signed-update-firmware-invalid");
+
+    // The still-running update notifies again - the guard must still be latched from its first notification.
+    charge_point.on_firmware_update_status_notification(1, FirmwareStatusNotification::InstallScheduled,
+                                                        std::optional<bool>{true});
+    EXPECT_EQ(this->all_connectors_unavailable_count, 1);
+}
+
+// FAILS today - "reset on every firmware update request" has to cover the reported firmware status as well.
+// firmware_status is only put back to Idle on a terminal status, so after an update that aborts while Installing
+// a TriggerMessage(FirmwareStatusNotification) keeps reporting the dead update's status forever, even after the
+// CSMS has started a new one.
+TEST_F(ChargePointUpdateFirmwareRequestTest, NewUpdateFirmwareRequestResetsReportedFirmwareStatus) {
+    auto& charge_point = start_charge_point();
+    charge_point.register_update_firmware_callback([](const UpdateFirmwareRequest&) {});
+    boot_charge_point(charge_point);
+    if (::testing::Test::HasFatalFailure()) {
+        return;
+    }
+
+    // The update reaches Installing and then dies without reporting a terminal status.
+    charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::Installing, std::nullopt);
+    const auto before_trigger = wait_for_outgoing_calls("FirmwareStatusNotification", 1);
+    ASSERT_FALSE(before_trigger.empty()) << "the Installing FirmwareStatusNotification.req was not sent in time";
+
+    // The CSMS starts a new update cycle ...
+    send_call("UpdateFirmware", update_firmware_payload(), "update-firmware-after-abort");
+
+    // ... and asks for the current firmware status. The new cycle has not reported anything yet, so the answer must
+    // be Idle rather than the leftover Installing of the dead cycle.
+    send_call("TriggerMessage", json{{"requestedMessage", "FirmwareStatusNotification"}}, "trigger-fw-status");
+
+    const auto payloads = wait_for_outgoing_calls("FirmwareStatusNotification", before_trigger.size() + 1);
+    ASSERT_GT(payloads.size(), before_trigger.size())
+        << "the triggered FirmwareStatusNotification.req was not sent within the timeout";
+    EXPECT_EQ(payloads.back().at("status"), "Idle");
 }
 
 } // namespace v16
