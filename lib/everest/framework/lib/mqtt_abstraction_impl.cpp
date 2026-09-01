@@ -413,17 +413,17 @@ void MQTTAbstractionImpl::on_mqtt_message() {
         if (not msg.has_value()) {
             break;
         }
-        handle_mqtt_message(msg.value());
+        handle_mqtt_message(std::move(msg.value()));
     }
 }
 
-void MQTTAbstractionImpl::handle_mqtt_message(const Message& message) {
+void MQTTAbstractionImpl::handle_mqtt_message(Message&& message) {
     BOOST_LOG_FUNCTION();
 
     EVLOG_verbose << "Incoming MQTT message. topic: " << message.topic << " payload: " << message.payload;
 
-    const auto& topic = message.topic;
-    const auto& payload = message.payload;
+    auto& topic = message.topic;
+    auto& payload = message.payload;
 
     try {
         std::string_view topic_view = topic;
@@ -432,7 +432,9 @@ void MQTTAbstractionImpl::handle_mqtt_message(const Message& message) {
             topic_view.compare(0, mqtt_everest_prefix_view.size(), mqtt_everest_prefix_view) == 0) {
             EVLOG_verbose << fmt::format("topic {} starts with {}", topic, mqtt_everest_prefix);
             try {
-                this->message_handler.add(ParsedMessage{std::move(topic), json::parse(payload.begin(), payload.end())});
+                // parse before moving the topic, so the error path below can still log it
+                auto data = json::parse(payload.begin(), payload.end());
+                this->message_handler.add(ParsedMessage{std::move(topic), std::move(data)});
             } catch (nlohmann::detail::parse_error& e) {
                 EVLOG_warning << fmt::format("Could not decode json for incoming topic '{}': {}", topic, payload);
                 return;
