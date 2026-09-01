@@ -1,0 +1,46 @@
+description: >-
+  Read and clear access to persistently stored session records. Records are created
+  when a session starts and completed when it finishes, so a record that is still open
+  lacks the fields that are only known at the end of a session.
+cmds:
+  get_sessions:
+    description: >-
+      Returns one page of stored session records, in the order they were stored,
+      oldest first. Iterate by passing the continuation_token of a reply into the
+      next call until a reply carries no token.
+    arguments:
+      request:
+        description: >-
+          Page request. Pass an empty object to start from the oldest record with the
+          default page size.
+        type: object
+        $ref: /session_storage#/GetSessionsRequest
+    result:
+      description: One page of stored session records
+      type: object
+      $ref: /session_storage#/SessionList
+  get_session:
+    description: >-
+      Returns the stored session record matching the given identifier, which is
+      either a session id or an OCPP transaction id
+    arguments:
+      identifier:
+        description: >-
+          Identifies the session record. Exactly one of its members must be set.
+        type: object
+        $ref: /session_storage#/SessionIdentifier
+    result:
+      description: >-
+        Wrapper carrying the matching session record. Its session member is absent if
+        no stored record matches the identifier.
+      type: object
+      $ref: /session_storage#/SessionResult
+  clear_sessions:
+    description: >-
+      Deletes every stored session record, including records that are still open.
+      This cannot be undone. When a deleted open session finishes later, the finish
+      is dropped and the record does not reappear.
+    result:
+      description: Number of session records that were deleted
+      type: object
+      $ref: /session_storage#/ClearSessionsResult
