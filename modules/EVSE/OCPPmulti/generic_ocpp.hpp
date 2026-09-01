@@ -473,10 +473,11 @@ protected:
     /// to the grid_support consumer after releasing the handle. No-op when no consumer is connected.
     void push_active_directive_sets();
 
-    /// \brief Populate m_grid_support_by_evse from the connections' framework mappings. Every connection
-    /// must carry a mapping; an unmapped connection is logged and excluded. Any EVSE without a wired
-    /// grid_support connection has its DER controller forced to Available=false.
-    void init_grid_support_routing(const std::map<std::int32_t, std::int32_t>& evse_connector_structure);
+    /// \brief Populate m_grid_support_by_evse from the connections' framework mappings. An unmapped
+    /// connection, or one mapping an already-served EVSE, is logged and excluded. Clearing an unwired
+    /// EVSE's DER controller is disable_other_der_ctrlrs' job, in the EverestDeviceModelStorage
+    /// constructor.
+    void init_grid_support_routing();
 
     /// \brief Resolve the grid_support connection mapped to \p evse_id, or nullptr if none.
     grid_supportIntf* grid_support_for_evse(std::int32_t evse_id) const;
