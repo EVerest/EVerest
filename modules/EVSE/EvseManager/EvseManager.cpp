@@ -1831,11 +1831,13 @@ bool EvseManager::update_supported_energy_transfers(const types::iso15118::Energ
     return update_supported_energy_transfers(std::vector<types::iso15118::EnergyTransferMode>{energy_transfer});
 }
 
-void EvseManager::recompute_and_publish_supported_ac_energy_transfers() {
+std::vector<types::iso15118::EnergyTransferMode> EvseManager::current_ac_energy_transfers() {
     const auto caps = *hw_capabilities.handle();
-    const auto der = der_available.load();
-    const auto energy_transfers = get_supported_ac_energy_transfers(caps, config.supported_iso_ac_bpt, der);
-    if (update_supported_energy_transfers(energy_transfers)) {
+    return get_supported_ac_energy_transfers(caps, config.supported_iso_ac_bpt, der_available.load());
+}
+
+void EvseManager::recompute_and_publish_supported_ac_energy_transfers() {
+    if (update_supported_energy_transfers(current_ac_energy_transfers())) {
         publish_and_update_supported_energy_transfers();
     }
 }

@@ -279,6 +279,8 @@ public:
     std::atomic_int ac_nr_phases_active{0};
 
     std::atomic<bool> der_available{false};
+    /// The AC energy transfer list implied by the current capabilities and der_available.
+    std::vector<types::iso15118::EnergyTransferMode> current_ac_energy_transfers();
     void recompute_and_publish_supported_ac_energy_transfers();
     bool is_hlc_enabled() const {
         return hlc_enabled;
