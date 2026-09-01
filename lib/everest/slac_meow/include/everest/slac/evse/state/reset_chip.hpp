@@ -17,6 +17,7 @@ struct ResetChip : public StateBase {
 
 private:
     Timer m_delay;
+    Timer m_timeout;
     bool m_request_sent{false};
 };
 

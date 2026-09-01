@@ -56,6 +56,8 @@ struct Config {
     struct ChipReset {
         bool enabled = false;
         int delay_ms = 100;
+        /// Also bounds the state for a modem of unknown vendor, which is sent no request at all.
+        int timeout_ms = 500;
     } chip_reset;
 
     struct LinkStatus {

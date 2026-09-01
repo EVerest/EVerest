@@ -36,16 +36,19 @@ Result ResetChip::feed(SlacEvent const& ev) {
                 }
             }
             m_request_sent = true;
+            m_timeout.arm(m_ctx.current_time, std::chrono::milliseconds(m_ctx.slac_config.chip_reset.timeout_ms));
             return handled();
         }
 
-        // The CG5317 does not answer the reset, so there is nothing to wait for. Qualcomm does,
-        // and is handled below.
-        //
-        // FIXME: for any other vendor nothing was sent and nothing will answer, so this state
-        // never completes - inherited from the boost::msm implementation, where chip_reset.timeout_ms
-        // is likewise never read.
+        // The CG5317 does not answer the reset, so there is nothing to wait for.
         if (m_ctx.modem_vendor == defs::ModemVendor::Lumissil) {
+            return m_ctx.create_state<Idle>();
+        }
+        // Qualcomm answers, and is handled below. A modem of any other vendor was sent nothing and
+        // will answer nothing, so without this the state never completed at all. Either way the
+        // wait is what the manifest calls "Timeout for RS_DEV.REQ (waiting for RS_DEV.CNF)".
+        if (m_timeout.expired(m_ctx.current_time)) {
+            m_ctx.log_warn("No reset confirmation within chip_reset.timeout_ms, continuing without it");
             return m_ctx.create_state<Idle>();
         }
         return {};

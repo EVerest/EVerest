@@ -766,8 +766,57 @@ bool test_short_cm_set_key_cnf_keeps_reset() {
 
 } // namespace
 
+/// Qualcomm waits for a CM_RESET_DEVICE.CNF a silent modem never sends, and an unknown vendor is
+/// sent no request at all - so without the timeout neither case ever leaves this state.
+bool reset_chip_releases_without_confirmation(char const* test_name, defs::ModemVendor vendor) {
+    ContextCallbacks callbacks{};
+    std::vector<SetKeySentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    TestContext ctx(callbacks);
+    configure_common(ctx);
+    ctx.slac_config.chip_reset.enabled = true;
+    ctx.slac_config.chip_reset.delay_ms = 5;
+    ctx.slac_config.chip_reset.timeout_ms = 50;
+    ctx.modem_vendor = vendor;
+    fill_session_nmk(ctx, 0x33);
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    machine.reset();
+
+    if (!wait_for_match_state(ctx, SlacState::Reset, machine, 200)) {
+        return assert_true(false, test_name, "did not enter Reset state");
+    }
+    machine.message(create_cm_set_key_cnf(defs::mme::set_key_cnf::RESULT_SUCCESS));
+    if (!wait_for_match_state(ctx, SlacState::ResetChip, machine, 200)) {
+        return assert_true(false, test_name, "did not enter ResetChip after the key was confirmed");
+    }
+
+    // it must not leave before the timeout - otherwise the wait is not what releases it
+    if (!assert_true(not wait_for_match_state(ctx, SlacState::Idle, machine, 20), test_name,
+                     "left ResetChip before chip_reset.timeout_ms elapsed")) {
+        return false;
+    }
+    return assert_true(wait_for_match_state(ctx, SlacState::Idle, machine, 200), test_name,
+                       "never left ResetChip without a reset confirmation");
+}
+
+bool test_chip_reset_timeout_releases_qualcomm() {
+    return reset_chip_releases_without_confirmation("test_chip_reset_timeout_releases_qualcomm",
+                                                    defs::ModemVendor::Qualcomm);
+}
+
+bool test_chip_reset_timeout_releases_unknown_vendor() {
+    return reset_chip_releases_without_confirmation("test_chip_reset_timeout_releases_unknown_vendor",
+                                                    defs::ModemVendor::Unknown);
+}
+
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 13>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 15>{
         std::make_pair("legacy_single_attempt_accepts_valid_success_result",
                        test_legacy_single_attempt_accepts_valid_success_result),
         std::make_pair("legacy_single_attempt_rejects_reserved_result",
@@ -793,6 +842,9 @@ int main() {
                                                               "retry_confirmed_hpgp_standard_accepts_0x00_success");
                        }),
         std::make_pair("test_short_cm_set_key_cnf_keeps_reset", test_short_cm_set_key_cnf_keeps_reset),
+        std::make_pair("test_chip_reset_timeout_releases_qualcomm", test_chip_reset_timeout_releases_qualcomm),
+        std::make_pair("test_chip_reset_timeout_releases_unknown_vendor",
+                       test_chip_reset_timeout_releases_unknown_vendor),
     };
 
     int failed_count = 0;
