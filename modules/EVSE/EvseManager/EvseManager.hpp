@@ -372,6 +372,9 @@ private:
 
     void setup_AC_mode();
     void setup_fake_DC_mode();
+    Charger::SetupConfig get_charger_setup_config(Charger::ChargeMode charge_mode, bool ac_with_soc_timeout) const;
+    void update_hlc_session_setup(bool include_contract_payment, bool supported_certificate_service,
+                                  bool central_contract_validation, bool force_external_payment);
 
     // special funtion to switch mode while session is active
     void switch_AC_mode();
