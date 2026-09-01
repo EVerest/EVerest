@@ -18,10 +18,13 @@ using namespace types::evse_manager;
 // class that provides access to internal state from the Charger class
 struct ChargerDerived : public Charger {
     using Charger::Charger;
+    using Charger::cleanup_transaction_on_startup;
     using Charger::get_enable_disable_source_table;
     using Charger::get_hlc_use_5percent_current_session;
     using Charger::get_shared_context;
+    using Charger::reconcile_transaction_on_startup;
     using Charger::run_state_machine;
+    using Charger::TransactionRecoveryResult;
 
     // updated when a non-zero connector is used to enable_disable()
     constexpr const auto& connector_enabled() {
@@ -47,6 +50,7 @@ struct ChargerTest : public testing::Test {
     std::unique_ptr<IECStateMachine> charger_bsp;
     std::unique_ptr<ErrorHandling> charger_error_handling;
     std::vector<std::unique_ptr<powermeterIntf>> charger_powermeter_billing;
+    std::vector<std::unique_ptr<kvsIntf>> charger_store_kvs;
     std::unique_ptr<PersistentStore> charger_store;
 
     // error handling requirements
@@ -72,10 +76,12 @@ struct ChargerTest : public testing::Test {
 
     void SetUp() override {
         reset_last_event();
+        charger_store = std::make_unique<PersistentStore>(charger_store_kvs, "EVSETEST");
         charger = std::make_unique<ChargerDerived>(
             charger_bsp, charger_error_handling, charger_powermeter_billing, charger_store,
             types::evse_board_support::Connector_type::IEC62196Type2Socket, "EVSETEST");
         charger->signal_simple_event.connect(&ChargerTest::session_event, this);
+        charger->signal_charging_paused_evse_event.connect(&ChargerTest::charging_paused_evse_event, this);
     }
 
     void TearDown() override {
@@ -84,12 +90,19 @@ struct ChargerTest : public testing::Test {
 
     void session_event(SessionEventEnum event) {
         last_event = event;
+        session_events.push_back(event);
+    }
+
+    void charging_paused_evse_event(ChargingPausedEVSEReasons reasons) {
+        paused_evse_events.push_back(std::move(reasons));
     }
 
     static constexpr SessionEventEnum default_event{SessionEventEnum::SessionFinished};
     static constexpr EnableDisableSource default_source{Enable_source::Unspecified, Enable_state::Unassigned, 10000};
 
     SessionEventEnum last_event{default_event};
+    std::vector<SessionEventEnum> session_events;
+    std::vector<ChargingPausedEVSEReasons> paused_evse_events;
 
     constexpr void reset_last_event() {
         last_event = default_event;
@@ -762,6 +775,224 @@ TEST_F(ChargerTest, DisableDuringIdle) {
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
 }
 
+TEST_F(ChargerTest, RecoversPersistedTransactionFromLiveCpStateC) {
+    charger->prepare_transaction_recovery("persisted-session");
+    charger->get_shared_context().max_current_cable = 32.F;
+    charger->set_max_current(16.F, std::chrono::steady_clock::now() + std::chrono::minutes(1));
+
+    // The initial Enabled publication must be ordered before the recovered
+    // charging state so consumers cannot finish startup in Available.
+    charger->enable_disable_initial_state_publish();
+    EXPECT_TRUE(session_events.empty());
+
+    EXPECT_EQ(charger->reconcile_transaction_on_startup(RawCPState::C, true, false),
+              ChargerDerived::TransactionRecoveryResult::Recovered);
+    charger->enable_disable_initial_state_publish();
+    charger->run_state_machine();
+
+    const auto& ctx = charger->get_shared_context();
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Charging);
+    EXPECT_EQ(ctx.session_uuid, "persisted-session");
+    EXPECT_TRUE(ctx.session_active);
+    EXPECT_TRUE(ctx.flag_transaction_active);
+    EXPECT_TRUE(ctx.flag_authorized);
+    EXPECT_TRUE(ctx.flag_ev_plugged_in);
+    ASSERT_EQ(session_events.size(), 2);
+    EXPECT_EQ(session_events[0], SessionEventEnum::Enabled);
+    EXPECT_EQ(session_events[1], SessionEventEnum::ChargingStarted);
+
+    // The real startup path invokes this once before starting the charger
+    // thread. A repeated request after recovery must not publish Enabled after
+    // ChargingStarted.
+    charger->enable_disable_initial_state_publish();
+    ASSERT_EQ(session_events.size(), 2);
+}
+
+TEST_F(ChargerTest, RecoversPersistedTransactionAsSuspendedWhenEvIsInCpStateB) {
+    charger->prepare_transaction_recovery("persisted-session");
+    charger->get_shared_context().max_current_cable = 32.F;
+    charger->set_max_current(16.F, std::chrono::steady_clock::now() + std::chrono::minutes(1));
+
+    EXPECT_EQ(charger->reconcile_transaction_on_startup(RawCPState::B, std::nullopt, false),
+              ChargerDerived::TransactionRecoveryResult::Recovered);
+    charger->enable_disable_initial_state_publish();
+    charger->run_state_machine();
+
+    const auto& ctx = charger->get_shared_context();
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::ChargingPausedEV);
+    EXPECT_TRUE(ctx.flag_transaction_active);
+    EXPECT_EQ(last_event, SessionEventEnum::ChargingPausedEV);
+}
+
+TEST_F(ChargerTest, RecoversCpStateBWithoutEnergyBudgetOrCableLimit) {
+    charger->prepare_transaction_recovery("persisted-session");
+
+    EXPECT_EQ(charger->reconcile_transaction_on_startup(RawCPState::B, std::nullopt, false),
+              ChargerDerived::TransactionRecoveryResult::Recovered);
+    charger->enable_disable_initial_state_publish();
+    charger->run_state_machine();
+
+    const auto& ctx = charger->get_shared_context();
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::ChargingPausedEV);
+    EXPECT_FALSE(ctx.max_current_cable.has_value());
+    EXPECT_TRUE(ctx.flag_transaction_active);
+    EXPECT_EQ(last_event, SessionEventEnum::ChargingPausedEV);
+}
+
+TEST_F(ChargerTest, EffectiveEnableDuringRecoveryCancelsPendingDisable) {
+    constexpr EnableDisableSource disable_source{Enable_source::CSMS, Enable_state::Disable, 100};
+    constexpr EnableDisableSource enable_source{Enable_source::CSMS, Enable_state::Enable, 100};
+
+    charger->prepare_transaction_recovery("persisted-session");
+
+    EXPECT_FALSE(charger->enable_disable(1, disable_source));
+    EXPECT_TRUE(charger->flag_disable_requested());
+    EXPECT_FALSE(charger->connector_enabled());
+
+    EXPECT_TRUE(charger->enable_disable(1, enable_source));
+    EXPECT_FALSE(charger->flag_disable_requested());
+    EXPECT_TRUE(charger->connector_enabled());
+
+    EXPECT_EQ(charger->reconcile_transaction_on_startup(RawCPState::B, std::nullopt, false),
+              ChargerDerived::TransactionRecoveryResult::Recovered);
+    EXPECT_EQ(charger->get_shared_context().current_state, Charger::EvseState::ChargingPausedEV);
+}
+
+TEST_F(ChargerTest, WaitsForReconcileUntilCpAndRelaisFeedbackHaveArrived) {
+    charger->prepare_transaction_recovery("persisted-session");
+    charger->get_shared_context().max_current_cable = 32.F;
+    charger->set_max_current(0.F, std::chrono::steady_clock::now() + std::chrono::minutes(1));
+
+    // PowerOff commonly arrives before the first CP event. It is not enough
+    // on its own to decide whether the persisted session is stale.
+    EXPECT_EQ(charger->reconcile_transaction_on_startup(std::nullopt, false, false),
+              ChargerDerived::TransactionRecoveryResult::Pending);
+    EXPECT_TRUE(session_events.empty());
+    EXPECT_TRUE(paused_evse_events.empty());
+
+    // Once C arrives, confirmed open relays mean that the EV is requesting
+    // power but the EVSE is not supplying it.
+    EXPECT_EQ(charger->reconcile_transaction_on_startup(RawCPState::C, false, false),
+              ChargerDerived::TransactionRecoveryResult::Recovered);
+    charger->enable_disable_initial_state_publish();
+    charger->run_state_machine();
+    const auto& ctx = charger->get_shared_context();
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_TRUE(ctx.contactor_open);
+    EXPECT_TRUE(ctx.flag_transaction_active);
+    ASSERT_EQ(session_events.size(), 1);
+    EXPECT_EQ(session_events[0], SessionEventEnum::Enabled);
+    ASSERT_EQ(paused_evse_events.size(), 1);
+    ASSERT_EQ(paused_evse_events[0].reasons.size(), 1);
+    EXPECT_EQ(paused_evse_events[0].reasons[0], PauseChargingEVSEReasonEnum::NoEnergy);
+}
+
+TEST_F(ChargerTest, WaitsForReconcileWhenCpRequestsPowerWithoutRelaisFeedback) {
+    charger->prepare_transaction_recovery("persisted-session");
+
+    EXPECT_EQ(charger->reconcile_transaction_on_startup(RawCPState::C, std::nullopt, false),
+              ChargerDerived::TransactionRecoveryResult::Pending);
+
+    const auto& ctx = charger->get_shared_context();
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Idle);
+    EXPECT_FALSE(ctx.session_active);
+    EXPECT_FALSE(ctx.flag_transaction_active);
+    EXPECT_TRUE(session_events.empty());
+}
+
+TEST_F(ChargerTest, PreservesTransactionAsSuspendedWhenRelaisFeedbackTimesOut) {
+    charger->prepare_transaction_recovery("persisted-session");
+
+    EXPECT_EQ(charger->reconcile_transaction_on_startup(RawCPState::C, std::nullopt, true),
+              ChargerDerived::TransactionRecoveryResult::Recovered);
+    charger->enable_disable_initial_state_publish();
+    charger->run_state_machine();
+
+    const auto& ctx = charger->get_shared_context();
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_TRUE(ctx.session_active);
+    EXPECT_TRUE(ctx.flag_transaction_active);
+    ASSERT_EQ(session_events.size(), 1);
+    EXPECT_EQ(session_events[0], SessionEventEnum::Enabled);
+    ASSERT_EQ(paused_evse_events.size(), 1);
+    ASSERT_EQ(paused_evse_events[0].reasons.size(), 1);
+    EXPECT_EQ(paused_evse_events[0].reasons[0], PauseChargingEVSEReasonEnum::NoEnergy);
+}
+
+TEST_F(ChargerTest, DoesNotRecoverPersistedTransactionWithoutLiveCpState) {
+    charger->prepare_transaction_recovery("persisted-session");
+
+    EXPECT_EQ(charger->reconcile_transaction_on_startup(std::nullopt, std::nullopt, false),
+              ChargerDerived::TransactionRecoveryResult::Pending);
+
+    const auto& ctx = charger->get_shared_context();
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Idle);
+    EXPECT_FALSE(ctx.session_active);
+    EXPECT_FALSE(ctx.flag_transaction_active);
+    EXPECT_TRUE(session_events.empty());
+}
+
+TEST_F(ChargerTest, CleansUpPersistedTransactionWhenCpStateTimesOut) {
+    charger->prepare_transaction_recovery("persisted-session");
+
+    EXPECT_EQ(charger->reconcile_transaction_on_startup(std::nullopt, std::nullopt, true),
+              ChargerDerived::TransactionRecoveryResult::Cleanup);
+}
+
+TEST_F(ChargerTest, CleanupOfPersistedTransactionFinishesTheResumedSession) {
+    // A SessionResumed event was published for the persisted session before the
+    // recovery outcome was known. Consumers track the connector as occupied
+    // until they see SessionFinished, so the cleanup must emit it.
+    std::optional<std::size_t> simple_events_before_transaction_finished;
+    std::string transaction_finished_uuid;
+    charger->signal_transaction_finished_event.connect(
+        [this, &simple_events_before_transaction_finished, &transaction_finished_uuid](
+            const StopTransactionReason& reason, const std::optional<types::authorization::ProvidedIdToken>&) {
+            simple_events_before_transaction_finished = session_events.size();
+            transaction_finished_uuid = charger->get_session_id();
+            EXPECT_EQ(reason, StopTransactionReason::PowerLoss);
+        });
+
+    std::string session_finished_uuid;
+    charger->signal_simple_event.connect([this, &session_finished_uuid](SessionEventEnum event) {
+        if (event == SessionEventEnum::SessionFinished) {
+            session_finished_uuid = charger->get_session_id();
+        }
+    });
+
+    charger->cleanup_transaction_on_startup("persisted-session");
+
+    ASSERT_EQ(session_events.size(), 1);
+    EXPECT_EQ(session_events[0], SessionEventEnum::SessionFinished);
+    // TransactionFinished must be published before SessionFinished
+    ASSERT_TRUE(simple_events_before_transaction_finished.has_value());
+    EXPECT_EQ(simple_events_before_transaction_finished.value(), 0);
+    // Both events must be attributed to the resumed session
+    EXPECT_EQ(transaction_finished_uuid, "persisted-session");
+    EXPECT_EQ(session_finished_uuid, "persisted-session");
+    // The stale uuid must not leak into subsequent events
+    EXPECT_TRUE(charger->get_session_id().empty());
+}
+
+TEST_F(ChargerTest, WaitsForEnergyBudgetBeforeRecoveringCharging) {
+    charger->prepare_transaction_recovery("persisted-session");
+    charger->get_shared_context().max_current_cable = 32.F;
+
+    EXPECT_EQ(charger->reconcile_transaction_on_startup(RawCPState::C, true, false),
+              ChargerDerived::TransactionRecoveryResult::Pending);
+
+    charger->set_max_current(16.F, std::chrono::steady_clock::now() + std::chrono::minutes(1));
+    EXPECT_EQ(charger->reconcile_transaction_on_startup(RawCPState::C, true, false),
+              ChargerDerived::TransactionRecoveryResult::Recovered);
+    charger->enable_disable_initial_state_publish();
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->get_shared_context().current_state, Charger::EvseState::Charging);
+    ASSERT_EQ(session_events.size(), 2);
+    EXPECT_EQ(session_events[0], SessionEventEnum::Enabled);
+    EXPECT_EQ(session_events[1], SessionEventEnum::ChargingStarted);
+}
+
 // ----------------------------------------------------------------------------
 // tests for dlink_error()
 // A D-LINK_ERROR normally restarts SLAC matching via T_step_X1/T_step_EF
@@ -931,6 +1162,14 @@ void IECStateMachine::connector_force_unlock() {
 }
 
 void IECStateMachine::set_authorized(bool a) {
+}
+
+std::optional<RawCPState> IECStateMachine::get_cp_state() {
+    return std::nullopt;
+}
+
+std::optional<bool> IECStateMachine::get_relais_state() {
+    return std::nullopt;
 }
 
 const std::string cpevent_to_string(CPEvent e) {

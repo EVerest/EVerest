@@ -95,7 +95,8 @@ public:
     //
 
     // external input to charger: update max_current and new validUntil
-    bool set_max_current(float ampere, std::chrono::time_point<std::chrono::steady_clock> validUntil);
+    bool set_max_current(float ampere, std::chrono::time_point<std::chrono::steady_clock> validUntil,
+                         bool is_energy_manager_budget = true);
     float get_max_current();
 
     sigslot::signal<float> signal_max_current;
@@ -224,6 +225,7 @@ public:
     std::optional<types::evse_manager::StopTransactionReason> get_last_stop_transaction_reason();
 
     void cleanup_transactions_on_startup();
+    void prepare_transaction_recovery(const std::string& session_uuid);
     EventQueue<CPEvent> bsp_event_queue;
 
 private:
@@ -277,6 +279,8 @@ private:
     void process_event(CPEvent event);
 
     void set_state(EvseState s);
+    bool process_transaction_recovery();
+    void publish_initial_enable_disable_state();
 
     // This mutex locks all variables related to the state machine
     Everest::timed_mutex_traceable state_machine_mutex;
@@ -300,6 +304,10 @@ private:
         /// complain if someone misuses.
         template <typename... U> void set_signal(U&&... args) {
             signal.connect(std::forward<U>(args)...);
+        }
+
+        void set_without_signal(bool value) {
+            std::atomic_bool::operator=(value);
         }
 
     private:
@@ -458,6 +466,18 @@ private:
 
     EventQueue<ErrorHandlingEvents> error_handling_event_queue;
 
+    struct TransactionRecovery {
+        std::string session_uuid;
+        std::optional<std::chrono::steady_clock::time_point> started;
+        std::vector<CPEvent> deferred_events;
+        bool energy_budget_received{false};
+        bool recovered_in_cp_state_b{false};
+        bool pending{false};
+        // Read from the mainloop before taking state_machine_mutex
+        std::atomic_bool cable_limit_read{false};
+    } transaction_recovery;
+    bool initial_enable_disable_state_published{false};
+
     // constants
     constexpr static int LEGACY_WAKEUP_TIMEOUT{30000};
     constexpr static int PREPARING_TIMEOUT_PAUSED_BY_EV{10000};
@@ -484,6 +504,7 @@ private:
     static constexpr int WAIT_FOR_ENERGY_IN_AUTHLOOP_TIMEOUT_MS = 5000;
     static constexpr int AC_X1_FALLBACK_TO_NOMINAL_TIMEOUT_MS = 10000;
     static constexpr int STOPPING_CHARGING_TIMEOUT_MS = 20000;
+    static constexpr auto TRANSACTION_RECOVERY_TIMEOUT = std::chrono::seconds(2);
     // Ensures apply_new_target_voltage_current() is called at least every DC_ENFORCE_TARGET_LIMITS_INTERVAL_MS
     // during DC charging. This re-applies EVSE limits to the power supply even when the EV does not send
     // new target values or ignores updated limits from energy management.
@@ -498,8 +519,17 @@ private:
     void enable_disable_source_table_update(const types::evse_manager::EnableDisableSource& source);
 
 protected:
+    enum class TransactionRecoveryResult {
+        Pending,
+        Recovered,
+        Cleanup,
+    };
+
     // provide access for unit tests
     void run_state_machine();
+    void cleanup_transaction_on_startup(const std::string& session_uuid);
+    TransactionRecoveryResult reconcile_transaction_on_startup(std::optional<RawCPState> cp_state,
+                                                               std::optional<bool> relais_on, bool timed_out);
     constexpr auto& get_shared_context() {
         return shared_context;
     }

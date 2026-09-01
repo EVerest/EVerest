@@ -1492,15 +1492,15 @@ void EvseManager::ready() {
     const auto session_id = store->get_session();
     if (!session_id.empty()) {
         charger->signal_session_resumed_event(session_id);
+        charger->prepare_transaction_recovery(session_id);
+    } else {
+        charger->cleanup_transactions_on_startup();
     }
 
-    // By default cleanup left-over transaction from e.g. power loss
-    // TOOD: Add resume handling
-    charger->cleanup_transactions_on_startup();
-
     //  start with a limit of 0 amps. We will get a budget from EnergyManager that is locally limited by hw
-    //  caps.
-    charger->set_max_current(0.0F, steady_clock::now() + std::chrono::seconds(120));
+    //  caps. This is a startup sentinel, not an EnergyManager budget: recovery
+    //  must wait for the first real budget before reasserting active charging.
+    charger->set_max_current(0.0F, steady_clock::now() + std::chrono::seconds(120), false);
     this->p_evse->publish_waiting_for_external_ready(config.external_ready_to_start_charging);
     if (not config.external_ready_to_start_charging) {
         // immediately ready, otherwise delay until we get the external signal
@@ -1519,11 +1519,11 @@ void EvseManager::ready_to_start_charging() {
     p_evse->publish_supported_energy_transfer_modes(*this->supported_energy_transfers.handle());
 
     timepoint_ready_for_charging = std::chrono::steady_clock::now();
-    charger->run();
-
     // this will publish a session event Enabled or Disabled that allows other modules the retrieve this state on
-    // startup
+    // startup. Request it before starting the charger thread so transaction recovery always orders it before the
+    // recovered charging state.
     charger->enable_disable_initial_state_publish();
+    charger->run();
 
     this->p_evse->publish_ready(true);
     EVLOG_info << fmt::format(fmt::emphasis::bold | fg(fmt::terminal_color::green), "🌀🌀🌀 Ready to start charging 🌀🌀🌀");

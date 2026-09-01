@@ -102,6 +102,9 @@ public:
 
     void set_authorized(bool a);
 
+    std::optional<RawCPState> get_cp_state();
+    std::optional<bool> get_relais_state();
+
     void set_ev_simplified_mode_evse_limit(bool l) {
         ev_simplified_mode_evse_limit = l;
     }
@@ -135,6 +138,11 @@ private:
     bool car_plugged_in{false};
 
     RawCPState last_cp_state{RawCPState::Disabled};
+    std::atomic<RawCPState> latest_cp_state{RawCPState::Disabled};
+    std::atomic_bool cp_state_received{false};
+    // Set while the port is disabled: those events were swallowed and are
+    // replayed once enable(true) is called.
+    std::atomic_bool cp_state_cached_while_disabled{false};
     AsyncTimeout timeout_state_c1;
     AsyncTimeout timeout_unlock_state_F;
 
@@ -155,6 +163,8 @@ private:
 
     std::atomic_bool enabled{false};
     std::atomic_bool relais_on{false};
+    std::atomic_bool relais_state_received{false};
+    std::atomic_bool relais_state_cached_while_disabled{false};
 
     static constexpr std::chrono::seconds power_off_under_load_in_c1_timeout{6};
     static constexpr std::chrono::seconds unlock_in_state_f_timeout{5};

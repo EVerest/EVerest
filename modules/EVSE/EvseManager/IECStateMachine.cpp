@@ -84,18 +84,23 @@ IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& 
 
     // Subscribe to bsp driver to receive BspEvents from the hardware
     r_bsp->subscribe_event([this](types::board_support_common::BspEvent const& event) {
-        if (enabled) {
-            // feed into state machine
-            process_bsp_event(event);
-        } else {
-            EVLOG_info << "Ignoring BSP Event, BSP is not enabled yet.";
-        }
+        // Always retain the latest physical snapshot. Some BSPs publish their
+        // startup state before EvseManager calls enable(true), and CP/relay
+        // values may not transition again during a host-only restart.
+        process_bsp_event(event);
     });
 }
 
 void IECStateMachine::process_bsp_event(types::board_support_common::BspEvent const& bsp_event) {
     auto event = from_bsp_event(bsp_event.event);
     std::visit(overloaded{[this](const RawCPState& raw_state) {
+                              latest_cp_state = raw_state;
+                              cp_state_received = true;
+                              cp_state_cached_while_disabled = not enabled;
+                              if (cp_state_cached_while_disabled) {
+                                  EVLOG_debug << "Caching BSP CP state until BSP is enabled.";
+                                  return;
+                              }
                               // If it is a raw CP state, run it through the state machine
                               feed_state_machine(raw_state);
                           },
@@ -104,8 +109,16 @@ void IECStateMachine::process_bsp_event(types::board_support_common::BspEvent co
                               // track relais state as confirmed by BSP
                               if (event == CPEvent::PowerOn) {
                                   relais_on = true;
+                                  relais_state_received = true;
+                                  relais_state_cached_while_disabled = not enabled;
                               } else if (event == CPEvent::PowerOff) {
                                   relais_on = false;
+                                  relais_state_received = true;
+                                  relais_state_cached_while_disabled = not enabled;
+                              }
+                              if (not enabled) {
+                                  EVLOG_debug << "Caching BSP relay state until BSP is enabled.";
+                                  return;
                               }
                               check_connector_lock();
 
@@ -474,6 +487,33 @@ void IECStateMachine::setup(bool has_ventilation) {
 void IECStateMachine::enable(bool en) {
     enabled = en;
     r_bsp->call_enable(en);
+    if (en) {
+        // Replay only the snapshots that were swallowed while disabled: the
+        // hardware may never repeat them. A later enable(true) must not re-emit
+        // state the state machine has already processed. A synchronous
+        // republish from call_enable() above clears the flags again.
+        if (cp_state_cached_while_disabled.exchange(false)) {
+            feed_state_machine(latest_cp_state.load());
+        }
+        if (relais_state_cached_while_disabled.exchange(false)) {
+            check_connector_lock();
+            signal_event(relais_on ? CPEvent::PowerOn : CPEvent::PowerOff);
+        }
+    }
+}
+
+std::optional<RawCPState> IECStateMachine::get_cp_state() {
+    if (not cp_state_received) {
+        return std::nullopt;
+    }
+    return latest_cp_state.load();
+}
+
+std::optional<bool> IECStateMachine::get_relais_state() {
+    if (not relais_state_received) {
+        return std::nullopt;
+    }
+    return relais_on.load();
 }
 
 // Forward the over current detection limit to the BSP. Many BSP MCUs monitor the charge current and trigger a fault

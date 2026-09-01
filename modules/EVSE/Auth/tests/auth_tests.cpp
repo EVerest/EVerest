@@ -15,6 +15,7 @@
 
 #include <AuthHandler.hpp>
 #include <FakeAuthReceiver.hpp>
+#include <generated/interfaces/kvs/Interface.hpp>
 
 using ::testing::_;
 using ::testing::Field;
@@ -72,6 +73,7 @@ class AuthTest : public ::testing::Test {
 protected:
     std::unique_ptr<AuthHandler> auth_handler;
     std::unique_ptr<FakeAuthReceiver> auth_receiver;
+    std::unique_ptr<kvsIntf> auth_store;
     testing::MockFunction<bool(json message)> send_callback_mock;
     StrictMock<MockFunction<void(const ProvidedIdToken& token, TokenValidationStatus status)>>
         mock_publish_token_validation_status_callback;
@@ -88,10 +90,10 @@ protected:
 
     // Builds the auth handler with the given \p selection_algorithm, registers all test callbacks and inits the
     // evses. SetUp uses PlugEvents; tests that need a different selection algorithm call this again to rebuild.
-    void init_auth_handler(SelectionAlgorithm selection_algorithm) {
+    void init_auth_handler(SelectionAlgorithm selection_algorithm, kvsIntf* store = nullptr) {
         const std::string id = "auth_handler_test_id";
-        this->auth_handler = std::make_unique<AuthHandler>(selection_algorithm, CONNECTION_TIMEOUT, true, false, false,
-                                                           true, id, nullptr);
+        this->auth_handler =
+            std::make_unique<AuthHandler>(selection_algorithm, CONNECTION_TIMEOUT, true, false, false, true, id, store);
 
         this->auth_handler->register_notify_evse_callback([this](const int evse_index,
                                                                  const ProvidedIdToken& provided_token,
@@ -1443,6 +1445,71 @@ TEST_F(AuthTest, test_complete_event_flow) {
     ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
     ASSERT_TRUE(this->auth_receiver->get_authorization(0));
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
+TEST_F(AuthTest, restored_identifier_can_stop_resumed_transaction) {
+    this->auth_store = std::make_unique<kvsIntf>();
+    this->init_auth_handler(SelectionAlgorithm::PlugEvents, this->auth_store.get());
+
+    std::vector<int32_t> connectors{1};
+    const auto provided_token = get_provided_token(VALID_TOKEN_1, connectors);
+    this->auth_handler->handle_session_event(1, get_transaction_started_event(provided_token));
+
+    // Recreate Auth to model a process restart while retaining KVS data.
+    this->init_auth_handler(SelectionAlgorithm::PlugEvents, this->auth_store.get());
+    SessionEvent resumed_event;
+    resumed_event.event = SessionEventEnum::SessionResumed;
+    this->auth_handler->handle_session_event(1, resumed_event);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStop));
+    EXPECT_CALL(mock_stop_transaction_callback,
+                Call(0, Field(&StopTransactionRequest::reason, StopTransactionReason::Local)));
+
+    EXPECT_EQ(this->auth_handler->on_token(provided_token), TokenHandlingResult::USED_TO_STOP_TRANSACTION);
+}
+
+/// \brief Test that the parent_id_token that is only known from the validation result survives a restart, so a
+/// different card of the same group can still stop the resumed transaction
+TEST_F(AuthTest, restored_identifier_with_parent_id_can_be_stopped_by_sibling_token) {
+    this->auth_store = std::make_unique<kvsIntf>();
+    this->init_auth_handler(SelectionAlgorithm::PlugEvents, this->auth_store.get());
+
+    std::vector<int32_t> connectors{1};
+    // VALID_TOKEN_1 and VALID_TOKEN_3 share PARENT_ID_TOKEN, but the parent id is only reported by the validate
+    // token callback and is not part of the provided token itself
+    const auto provided_token_1 = get_provided_token(VALID_TOKEN_1, connectors);
+    const auto provided_token_2 = get_provided_token(VALID_TOKEN_3, connectors);
+    ASSERT_FALSE(provided_token_1.parent_id_token.has_value());
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::UsedToStart));
+
+    this->auth_handler->handle_session_event(
+        1, get_session_started_event(types::evse_manager::StartSessionReason::EVConnected));
+    ASSERT_EQ(this->auth_handler->on_token(provided_token_1), TokenHandlingResult::USED_TO_START_TRANSACTION);
+    this->auth_handler->handle_session_event(1, get_transaction_started_event(provided_token_1));
+
+    // Recreate Auth to model a process restart while retaining KVS data.
+    this->init_auth_handler(SelectionAlgorithm::PlugEvents, this->auth_store.get());
+    SessionEvent resumed_event;
+    resumed_event.event = SessionEventEnum::SessionResumed;
+    this->auth_handler->handle_session_event(1, resumed_event);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::UsedToStop));
+    EXPECT_CALL(mock_stop_transaction_callback,
+                Call(0, Field(&StopTransactionRequest::reason, StopTransactionReason::Local)));
+
+    EXPECT_EQ(this->auth_handler->on_token(provided_token_2), TokenHandlingResult::USED_TO_STOP_TRANSACTION);
 }
 
 /// \brief Test if a token that is not reserved gets rejected and a parent_id_token that is reserved gets accepted

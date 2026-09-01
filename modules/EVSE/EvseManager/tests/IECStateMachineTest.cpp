@@ -88,6 +88,30 @@ TEST(IECStateMachine, init) {
     module::IECStateMachine state_machine(std::move(bsp_if), true, false);
 }
 
+TEST(IECStateMachine, ReportsOnlyHardwareCpAndRelaisState) {
+    BspStub bsp;
+    std::unique_ptr<evse_board_supportIntf> bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
+    module::IECStateMachine state_machine(std::move(bsp_if), true, false);
+
+    state_machine.enable(true);
+    EXPECT_FALSE(state_machine.get_cp_state().has_value());
+    EXPECT_FALSE(state_machine.get_relais_state().has_value());
+
+    // This evaluates the IEC state machine without a new hardware CP sample.
+    // It must not make the synthetic default state available to recovery.
+    state_machine.allow_power_on(false, Reason::PowerOff);
+    EXPECT_FALSE(state_machine.get_cp_state().has_value());
+
+    bsp.raise_event(Event::PowerOff);
+    ASSERT_TRUE(state_machine.get_relais_state().has_value());
+    EXPECT_FALSE(state_machine.get_relais_state().value());
+    EXPECT_FALSE(state_machine.get_cp_state().has_value());
+
+    bsp.raise_event(Event::C);
+    ASSERT_TRUE(state_machine.get_cp_state().has_value());
+    EXPECT_EQ(state_machine.get_cp_state().value(), module::RawCPState::C);
+}
+
 #if 0
 // test to demonstrate the output from backtrace
 
