@@ -319,9 +319,17 @@ bool CarSimulation::iso_wait_slac_matched(const CmdArguments& arguments) {
         // [V2G3-A09-123]: only repeat matching while the pilot is in Bx/Cx/Dx.
         if (!r_slac.empty() and cp_state_allows_matching()) {
             EVLOG_debug << "Slac trigger matching";
+            // MATCHING must be recorded BEFORE the calls: on a link that is already up (MCS --
+            // carrier present, nothing to negotiate) the provider answers MATCHED within
+            // milliseconds, and the state subscription can deliver it while
+            // call_trigger_matching() is still on the stack. Assigning afterwards clobbered
+            // that MATCHED with MATCHING and the wait never completed -- the provider publishes
+            // no second event for a state it already holds. With the assignment first, every
+            // provider publish (reset's UNMATCHED included) supersedes this value in publish
+            // order, so the provider stays the source of truth.
+            sim_data.slac_state = types::slac::State::MATCHING;
             r_slac[0]->call_reset();
             r_slac[0]->call_trigger_matching();
-            sim_data.slac_state = types::slac::State::MATCHING;
         }
     }
     if (sim_data.slac_state == types::slac::State::MATCHED) {
