@@ -51,7 +51,7 @@ void print_tree(StateTree const& tree, std::size_t depth, std::string& out) {
 
 } // namespace
 
-struct EvseFSM::Impl {
+struct FSM::Impl {
     explicit Impl(Context& context) : ctx(context) {
     }
 
@@ -106,12 +106,12 @@ struct EvseFSM::Impl {
     std::string last_signature;
 };
 
-EvseFSM::EvseFSM(Context& ctx) : impl(std::make_unique<Impl>(ctx)) {
+FSM::FSM(Context& ctx) : impl(std::make_unique<Impl>(ctx)) {
 }
 
-EvseFSM::~EvseFSM() = default;
+FSM::~FSM() = default;
 
-void EvseFSM::restart_fsm() {
+void FSM::restart_fsm() {
     impl->ctx.current_time = impl->ctx.now();
     impl->machine.reset();
     impl->last_signature.clear();
@@ -119,27 +119,27 @@ void EvseFSM::restart_fsm() {
     impl->post_process();
 }
 
-void EvseFSM::reset() {
+void FSM::reset() {
     impl->feed(event::Reset{});
 }
 
-void EvseFSM::enter_bcd() {
+void FSM::enter_bcd() {
     impl->feed(event::EnterBcd{});
 }
 
-void EvseFSM::leave_bcd() {
+void FSM::leave_bcd() {
     impl->feed(event::LeaveBcd{});
 }
 
-void EvseFSM::count_bc(int count) {
+void FSM::count_bc(int count) {
     impl->feed(event::CountBc{count});
 }
 
-void EvseFSM::message(messages::HomeplugMessage msg) {
+void FSM::message(messages::HomeplugMessage msg) {
     impl->feed(event::Message{msg});
 }
 
-void EvseFSM::update() {
+void FSM::update() {
     impl->feed(event::Update{});
 }
 

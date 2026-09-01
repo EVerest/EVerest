@@ -37,14 +37,14 @@ full: `protocol/` may not include from `evse/`, `ev/` or `io/`; the machines may
         context.hpp        Context, ContextCallbacks
         config.hpp         Config and its enums
         session_data.hpp   per matching session data
-        fsm.hpp            facade - class EvseFSM
+        fsm.hpp            facade - class FSM
         state/*.hpp        one file per state
         detail/*.hpp       pure helpers, unit testable without a state machine
       ev/                  THE EV STATE MACHINE
         event.hpp          Reset, Update, TriggerMatching, Message
         states.hpp         StateID, Result, StateBase
         context.hpp        Context, ContextCallbacks, Config
-        fsm.hpp            facade - class EvFSM
+        fsm.hpp            facade - class FSM
         state/*.hpp        one file per state
         detail/guards.hpp
       io/                  THE TRANSPORT - a dead end, see below
@@ -72,7 +72,7 @@ ieee2030_1_1.
 
 Because this library includes nothing from `slac_neo`, and in particular no header declaring
 `everest::lib::slac::fsm`, unqualified `fsm::` resolves to the state machine library and needs no
-leading `::`. The facades are named `EvseFSM` and `EvFSM` rather than `fsm`, to keep a second
+leading `::`. The facades are named `FSM` and `FSM` rather than `fsm`, to keep a second
 meaning out of that name.
 
 ## The contract

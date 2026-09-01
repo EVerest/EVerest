@@ -56,7 +56,7 @@ bool VirtualPLCLink::from_ev(messages::HomeplugMessage& frame) {
     return true;
 }
 
-void VirtualPLCLink::deliver(evse::EvseFSM& evse, ev::EvFSM& ev) {
+void VirtualPLCLink::deliver(evse::FSM& evse, ev::FSM& ev) {
     auto to_evse = std::move(m_to_evse);
     auto to_ev = std::move(m_to_ev);
     m_to_evse.clear();

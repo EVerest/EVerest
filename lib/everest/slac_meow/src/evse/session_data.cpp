@@ -16,8 +16,8 @@ SessionData::SessionData(MacAddress ev_mac, RunId run_id, MacAddress evse_mac) :
     evse_mac(evse_mac), ev_mac(ev_mac), run_id(run_id) {
 }
 
-bool SessionData::matches_identity(MacAddress const& other_ev_mac, RunId const& other_run_id) const {
-    return ev_mac == other_ev_mac and run_id == other_run_id;
+bool matches_identity(SessionData const& lhs, SessionData const& rhs) {
+    return lhs.ev_mac == rhs.ev_mac and lhs.run_id == rhs.run_id;
 }
 
 bool validate_message(SessionData const& data, messages::cm_atten_char_rsp const& msg) {

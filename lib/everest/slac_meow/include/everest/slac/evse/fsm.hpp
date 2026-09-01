@@ -11,15 +11,15 @@ namespace everest::slac::evse {
 
 // Neither copyable nor movable: the states hold a reference to the context, so moving the facade
 // would dangle them.
-class EvseFSM {
+class FSM {
 public:
-    explicit EvseFSM(Context& ctx);
-    ~EvseFSM();
+    explicit FSM(Context& ctx);
+    ~FSM();
 
-    EvseFSM(EvseFSM const&) = delete;
-    EvseFSM& operator=(EvseFSM const&) = delete;
-    EvseFSM(EvseFSM&&) = delete;
-    EvseFSM& operator=(EvseFSM&&) = delete;
+    FSM(FSM const&) = delete;
+    FSM& operator=(FSM const&) = delete;
+    FSM(FSM&&) = delete;
+    FSM& operator=(FSM&&) = delete;
 
     /// Events fed before this are ignored.
     void restart_fsm();

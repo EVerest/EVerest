@@ -11,16 +11,16 @@ namespace everest::slac::ev {
 
 // Neither copyable nor movable: the states hold a reference to the context, so moving the facade
 // would dangle them.
-class EvFSM {
+class FSM {
 public:
     /// The context carries the callbacks, the configuration and the time source.
-    explicit EvFSM(Context& ctx);
-    ~EvFSM();
+    explicit FSM(Context& ctx);
+    ~FSM();
 
-    EvFSM(EvFSM const&) = delete;
-    EvFSM& operator=(EvFSM const&) = delete;
-    EvFSM(EvFSM&&) = delete;
-    EvFSM& operator=(EvFSM&&) = delete;
+    FSM(FSM const&) = delete;
+    FSM& operator=(FSM const&) = delete;
+    FSM(FSM&&) = delete;
+    FSM& operator=(FSM&&) = delete;
 
     /// Start the machine. Events fed before this are ignored.
     void restart_fsm();

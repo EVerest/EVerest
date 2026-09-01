@@ -19,8 +19,6 @@ struct SessionData {
     SessionData() = default;
     SessionData(MacAddress ev_mac, RunId run_id, MacAddress evse_mac);
 
-    bool matches_identity(MacAddress const& other_ev_mac, RunId const& other_run_id) const;
-
     MacAddress evse_mac{};
 
     MacAddress ev_mac{};
@@ -31,6 +29,10 @@ struct SessionData {
 
     int num_retries{0};
 };
+
+/// A session is identified by the EV's MAC and the run id together, so a second CM_SLAC_PARM.REQ
+/// carrying both restarts it in place. Symmetric: neither side is the incumbent.
+bool matches_identity(SessionData const& lhs, SessionData const& rhs);
 
 /// Does this message belong to this session? A check needing no session lives in
 /// protocol/validation.hpp instead.

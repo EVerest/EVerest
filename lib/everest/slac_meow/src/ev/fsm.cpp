@@ -13,7 +13,7 @@
 
 namespace everest::slac::ev {
 
-struct EvFSM::Impl {
+struct FSM::Impl {
     explicit Impl(Context& context) : ctx(context) {
     }
 
@@ -34,30 +34,30 @@ struct EvFSM::Impl {
     std::optional<fsm::v2::FSM<ev::StateBase>> machine;
 };
 
-EvFSM::EvFSM(Context& ctx) : impl(std::make_unique<Impl>(ctx)) {
+FSM::FSM(Context& ctx) : impl(std::make_unique<Impl>(ctx)) {
 }
 
-EvFSM::~EvFSM() = default;
+FSM::~FSM() = default;
 
-void EvFSM::restart_fsm() {
+void FSM::restart_fsm() {
     impl->ctx.current_time = impl->ctx.now();
     impl->machine.reset();
     impl->machine.emplace(impl->ctx.create_state<ev::state::Reset>());
 }
 
-void EvFSM::reset() {
+void FSM::reset() {
     impl->feed(event::Reset{});
 }
 
-void EvFSM::trigger_matching() {
+void FSM::trigger_matching() {
     impl->feed(event::TriggerMatching{});
 }
 
-void EvFSM::message(messages::HomeplugMessage msg) {
+void FSM::message(messages::HomeplugMessage msg) {
     impl->feed(event::Message{msg});
 }
 
-void EvFSM::update() {
+void FSM::update() {
     impl->feed(event::Update{});
 }
 

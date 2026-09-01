@@ -50,7 +50,7 @@ public:
 
     /// Hand every queued frame to its addressee. Queued rather than delivered inline, so a send
     /// during a feed() cannot re-enter the other machine.
-    void deliver(evse::EvseFSM& evse, ev::EvFSM& ev);
+    void deliver(evse::FSM& evse, ev::FSM& ev);
 
 private:
     /// The modem confirms the key. Result 0x01 is what QCA parts answer and what

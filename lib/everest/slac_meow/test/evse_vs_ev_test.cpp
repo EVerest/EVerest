@@ -50,8 +50,8 @@ SCENARIO("An EV and an EVSE complete the ISO 15118-3 matching process") {
 
         ev::Context ev_ctx(ev_callbacks, EV_MAC);
 
-        evse::EvseFSM evse(evse_ctx);
-        ev::EvFSM ev(ev_ctx);
+        evse::FSM evse(evse_ctx);
+        ev::FSM ev(ev_ctx);
 
         int max_session_count = 0;
         auto tick = [&] {

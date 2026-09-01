@@ -108,9 +108,8 @@ void Matching::add_session(messages::HomeplugMessage const& frame) {
     auto const run_id = byte_array_from_wire<RunId>(msg->run_id);
     SessionData data(ev_mac, run_id, m_ctx.evse_mac);
 
-    auto existing = std::find_if(m_sessions.begin(), m_sessions.end(), [&data](auto const& session) {
-        return session->data().matches_identity(data.ev_mac, data.run_id);
-    });
+    auto existing = std::find_if(m_sessions.begin(), m_sessions.end(),
+                                 [&data](auto const& session) { return matches_identity(session->data(), data); });
 
     if (existing == m_sessions.end()) {
         auto const session_limit = max_matching_sessions();

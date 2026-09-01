@@ -20,7 +20,7 @@ using namespace everest::slac;
 using namespace everest::slac::evse;
 everest::slac::test::MockClock test_clock;
 
-using slac_fsm = everest::slac::evse::EvseFSM;
+using slac_fsm = everest::slac::evse::FSM;
 
 struct TestContext : everest::slac::evse::Context {
     explicit TestContext(ContextCallbacks& callbacks) :

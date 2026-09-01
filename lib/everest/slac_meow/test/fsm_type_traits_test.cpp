@@ -7,12 +7,12 @@
 #include <everest/slac/evse/fsm.hpp>
 
 // The facades hold the context the states reference; moving one would dangle them.
-static_assert(!std::is_copy_constructible_v<everest::slac::evse::EvseFSM>);
-static_assert(!std::is_copy_assignable_v<everest::slac::evse::EvseFSM>);
-static_assert(!std::is_move_constructible_v<everest::slac::evse::EvseFSM>);
-static_assert(!std::is_move_assignable_v<everest::slac::evse::EvseFSM>);
+static_assert(!std::is_copy_constructible_v<everest::slac::evse::FSM>);
+static_assert(!std::is_copy_assignable_v<everest::slac::evse::FSM>);
+static_assert(!std::is_move_constructible_v<everest::slac::evse::FSM>);
+static_assert(!std::is_move_assignable_v<everest::slac::evse::FSM>);
 
-static_assert(!std::is_copy_constructible_v<everest::slac::ev::EvFSM>);
-static_assert(!std::is_copy_assignable_v<everest::slac::ev::EvFSM>);
-static_assert(!std::is_move_constructible_v<everest::slac::ev::EvFSM>);
-static_assert(!std::is_move_assignable_v<everest::slac::ev::EvFSM>);
+static_assert(!std::is_copy_constructible_v<everest::slac::ev::FSM>);
+static_assert(!std::is_copy_assignable_v<everest::slac::ev::FSM>);
+static_assert(!std::is_move_constructible_v<everest::slac::ev::FSM>);
+static_assert(!std::is_move_assignable_v<everest::slac::ev::FSM>);

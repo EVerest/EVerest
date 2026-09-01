@@ -24,7 +24,7 @@ using namespace everest::slac;
 using namespace everest::slac::ev;
 everest::slac::test::MockClock test_clock;
 
-using ev_slac_fsm = everest::slac::ev::EvFSM;
+using ev_slac_fsm = everest::slac::ev::FSM;
 
 struct TestContext : everest::slac::ev::Context {
     TestContext(ContextCallbacks& callbacks, MacAddress const& mac) :
