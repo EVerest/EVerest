@@ -17,12 +17,15 @@ target_sources(${MODULE_NAME}
 # Which SLAC library the module is built against. Both implement the same protocol and present
 # nearly the same contract; main/slac_backend.hpp holds the differences. See that header.
 set(EVEREST_SLAC_BACKEND "neo" CACHE STRING "SLAC library to build EvseSlacNeo against")
-set_property(CACHE EVEREST_SLAC_BACKEND PROPERTY STRINGS neo)
+set_property(CACHE EVEREST_SLAC_BACKEND PROPERTY STRINGS neo meow)
 
 if(EVEREST_SLAC_BACKEND STREQUAL "neo")
     set(EVEREST_SLAC_BACKEND_LIB slac::neo)
+elseif(EVEREST_SLAC_BACKEND STREQUAL "meow")
+    set(EVEREST_SLAC_BACKEND_LIB slac::meow)
+    target_compile_definitions(${MODULE_NAME} PRIVATE EVEREST_SLAC_BACKEND_MEOW)
 else()
-    message(FATAL_ERROR "EVEREST_SLAC_BACKEND must be one of: neo (got '${EVEREST_SLAC_BACKEND}')")
+    message(FATAL_ERROR "EVEREST_SLAC_BACKEND must be one of: neo meow (got '${EVEREST_SLAC_BACKEND}')")
 endif()
 
 target_link_libraries(${MODULE_NAME}

@@ -8,7 +8,6 @@
 
 #include <map>
 
-#include <everest/slac/slac_event.hpp>
 #include <everest/utils/yaml_loader.hpp>
 #include <everest_api_types/telemetry/codec.hpp>
 #include <everest_api_types/telemetry/json_codec.hpp>
