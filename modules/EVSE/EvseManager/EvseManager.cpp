@@ -1629,33 +1629,13 @@ void EvseManager::setup_AC_mode() {
 
     types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 
-    // Set up energy transfer modes for HLC. For now we only support either DC or AC, not both at the same time.
-    std::vector<types::iso15118::EnergyTransferMode> transfer_modes;
-
-    transfer_modes.push_back(types::iso15118::EnergyTransferMode::AC_single_phase_core);
-
-    if (hw_capabilities.handle()->max_phase_count_import == 3) {
-        transfer_modes.push_back(types::iso15118::EnergyTransferMode::AC_three_phase_core);
-    }
-
-    // A locally built AC pair drops AC_BPT and the advertised AC DER mode, and nothing republishes
-    // them until the next capabilities update.
-    const auto caps = *hw_capabilities.handle();
-    const bool export_capable = caps.max_current_A_export > 0 and caps.max_phase_count_export >= 1;
-    if (config.supported_iso_ac_bpt and export_capable) {
-        transfer_modes.push_back(types::iso15118::EnergyTransferMode::AC_BPT);
-    }
-    if (der_available.load() and export_capable) {
-        transfer_modes.push_back(types::iso15118::EnergyTransferMode::AC_DER_IEC);
-    }
-
-    types::iso15118::SetupPhysicalValues setup_physical_values;
-
     constexpr auto sae_mode = types::iso15118::SaeJ2847BidiMode::None;
 
     if (hlc_enabled) {
         r_hlc[0]->call_setup(evseid, sae_mode, config.session_logging);
-        this->update_supported_energy_transfers(transfer_modes);
+        // Publish unconditionally: the HLC was just set up again and must be told its modes even
+        // when the list is unchanged.
+        this->update_supported_energy_transfers(current_ac_energy_transfers());
         this->publish_and_update_supported_energy_transfers();
     }
 }
