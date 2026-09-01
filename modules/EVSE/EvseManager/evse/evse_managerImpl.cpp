@@ -420,6 +420,14 @@ types::evse_manager::Evse evse_managerImpl::handle_get_evse() {
 
     connectors.push_back(connector);
     evse.connectors = connectors;
+
+    // Static, so consumers that build before capabilities arrive can still gate on the topology.
+    if (mod->config.charge_mode == "AC") {
+        evse.charge_mode = types::evse_manager::ChargeMode::AC;
+    } else if (mod->config.charge_mode == "DC") {
+        evse.charge_mode = types::evse_manager::ChargeMode::DC;
+    }
+
     return evse;
 }
 

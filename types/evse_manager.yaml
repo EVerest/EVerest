@@ -642,6 +642,18 @@ types:
           $ref: /evse_manager#/Connector
         minItems: 1
         maxItems: 128
+      charge_mode:
+        description: >-
+          AC or DC power topology of this EVSE. Absent when the serving module does not
+          report one; consumers that gate on it must not assume a default.
+        type: string
+        $ref: /evse_manager#/ChargeMode
+  ChargeMode:
+    description: Power topology of an EVSE
+    type: string
+    enum:
+      - AC
+      - DC
   PlugAndChargeConfiguration:
     description: Configuration for contract authorization
     type: object
