@@ -21,22 +21,22 @@ namespace detail {
 
 template <typename T> struct MMTYPE;
 template <> struct MMTYPE<messages::cm_slac_parm_req> {
-    static constexpr std::uint16_t value = defs::MMTYPE_CM_SLAC_PARAM_REQ;
+    static constexpr std::uint16_t value = defs::mmtype::SLAC_PARAM_REQ;
 };
 template <> struct MMTYPE<messages::cm_start_atten_char_ind> {
-    static constexpr std::uint16_t value = defs::MMTYPE_CM_START_ATTEN_CHAR_IND;
+    static constexpr std::uint16_t value = defs::mmtype::START_ATTEN_CHAR_IND;
 };
 template <> struct MMTYPE<messages::cm_mnbc_sound_ind> {
-    static constexpr std::uint16_t value = defs::MMTYPE_CM_MNBC_SOUND_IND;
+    static constexpr std::uint16_t value = defs::mmtype::MNBC_SOUND_IND;
 };
 template <> struct MMTYPE<messages::cm_atten_char_rsp> {
-    static constexpr std::uint16_t value = defs::MMTYPE_CM_ATTEN_CHAR_RSP;
+    static constexpr std::uint16_t value = defs::mmtype::ATTEN_CHAR_RSP;
 };
 template <> struct MMTYPE<messages::cm_slac_match_req> {
-    static constexpr std::uint16_t value = defs::MMTYPE_CM_SLAC_MATCH_REQ;
+    static constexpr std::uint16_t value = defs::mmtype::SLAC_MATCH_REQ;
 };
 template <> struct MMTYPE<messages::cm_set_key_req> {
-    static constexpr std::uint16_t value = defs::MMTYPE_CM_SET_KEY_REQ;
+    static constexpr std::uint16_t value = defs::mmtype::SET_KEY_REQ;
 };
 
 /// The EV sends only HomePlug AV 1.1 messages; it never talks to the vendor MMEs.

@@ -36,12 +36,12 @@ void Config::generate_nmk(Nmk& target_nmk) {
 bool accepts_set_key_cnf_success_result(SetKeyCnfSuccessMode mode, std::uint8_t result) {
     switch (mode) {
     case SetKeyCnfSuccessMode::modem_compat_0x01:
-        return result == defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS;
+        return result == defs::mme::set_key_cnf::RESULT_MODEM_COMPAT_SUCCESS;
     case SetKeyCnfSuccessMode::hpgp_standard_0x00:
-        return result == defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS;
+        return result == defs::mme::set_key_cnf::RESULT_HPGP_SUCCESS;
     case SetKeyCnfSuccessMode::accept_0x00_or_0x01:
-        return result == defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS or
-               result == defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS;
+        return result == defs::mme::set_key_cnf::RESULT_HPGP_SUCCESS or
+               result == defs::mme::set_key_cnf::RESULT_MODEM_COMPAT_SUCCESS;
     }
     return false;
 }

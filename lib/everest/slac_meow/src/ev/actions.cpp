@@ -34,7 +34,7 @@ void send_slac_match_req(Context& ctx) {
     messages::cm_slac_match_req match_req{};
     match_req.application_type = defs::COMMON_APPLICATION_TYPE;
     match_req.security_type = defs::COMMON_SECURITY_TYPE;
-    match_req.mvf_length = htole16(defs::CM_SLAC_MATCH_REQ_MVF_LENGTH);
+    match_req.mvf_length = htole16(defs::mme::slac_match_req::MVF_LENGTH);
     zero_wire(match_req.pev_id);
     copy_to_wire(match_req.pev_mac, ctx.ev_host_mac);
     zero_wire(match_req.evse_id);
@@ -62,7 +62,7 @@ void send_atten_char_rsp_and_match_req(Context& ctx, messages::HomeplugMessage c
     copy_to_wire(rsp.run_id, ctx.active_session.run_id);
     zero_wire(rsp.source_id);
     zero_wire(rsp.resp_id);
-    rsp.result = defs::CM_ATTEN_CHAR_RSP_RESULT;
+    rsp.result = defs::mme::atten_char_rsp::RESULT;
 
     if (not ctx.send_slac_message(ctx.active_session.evse_mac, rsp)) {
         ctx.log_warn("Failed to send CM_ATTEN_CHAR.RSP");

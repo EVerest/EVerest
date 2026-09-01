@@ -20,11 +20,11 @@ namespace everest::slac::evse::state {
 namespace {
 
 bool is_slac_parm_req(messages::HomeplugMessage const& frame) {
-    return frame.is_valid() and frame.get_mmtype() == defs::MMTYPE_CM_SLAC_PARAM_REQ;
+    return frame.is_valid() and frame.get_mmtype() == defs::mmtype::SLAC_PARAM_REQ;
 }
 
 bool is_validate_req(messages::HomeplugMessage const& frame) {
-    return frame.is_valid() and frame.get_mmtype() == defs::MMTYPE_CM_VALIDATE_REQ;
+    return frame.is_valid() and frame.get_mmtype() == defs::mmtype::VALIDATE_REQ;
 }
 
 } // namespace
@@ -135,7 +135,7 @@ void Matching::add_session(messages::HomeplugMessage const& frame) {
 
 void Matching::send_validate_cnf_reply(MacAddress const& mac, std::uint8_t result, std::uint8_t toggle_num) {
     messages::cm_validate_cnf reply{};
-    reply.signal_type = defs::CM_VALIDATE_REQ_SIGNAL_TYPE;
+    reply.signal_type = defs::mme::validate::SIGNAL_TYPE;
     reply.toggle_num = toggle_num;
     reply.result = result;
 
@@ -149,7 +149,7 @@ void Matching::handle_validate_req(messages::HomeplugMessage const& frame) {
     auto const req = frame.payload_as<messages::cm_validate_req>();
 
     // Ignored outright, leaving any step-1 repetition running: CmValidate_004.
-    if (not req.has_value() or req->signal_type != defs::CM_VALIDATE_REQ_SIGNAL_TYPE or src_mac == nullptr) {
+    if (not req.has_value() or req->signal_type != defs::mme::validate::SIGNAL_TYPE or src_mac == nullptr) {
         return;
     }
     auto const sender = byte_array_from_wire<MacAddress>(src_mac);
@@ -157,7 +157,7 @@ void Matching::handle_validate_req(messages::HomeplugMessage const& frame) {
     if (req->timer == 0x00) {
         // Step 1. Another EV asking mid-validation is told we are busy: V2G3-M09-13, CmValidate_009.
         if (m_validate_armed and sender != m_validate_owner_mac) {
-            send_validate_cnf_reply(sender, defs::CM_VALIDATE_REQ_RESULT_NOT_READY, 0);
+            send_validate_cnf_reply(sender, defs::mme::validate::RESULT_NOT_READY, 0);
             return;
         }
         // A repeated step 1 resets the retry counter: CmValidate_002.
@@ -170,7 +170,7 @@ void Matching::handle_validate_req(messages::HomeplugMessage const& frame) {
         // race the pilot path against the slower SLAC frame path and miss the first toggle.
         m_validate_baseline_bc = m_ctx.bc_transition_count;
         m_validate_timer.arm(m_ctx.current_time, std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS));
-        send_validate_cnf_reply(m_validate_owner_mac, defs::CM_VALIDATE_REQ_RESULT_READY, 0);
+        send_validate_cnf_reply(m_validate_owner_mac, defs::mme::validate::RESULT_READY, 0);
         return;
     }
 
@@ -178,7 +178,7 @@ void Matching::handle_validate_req(messages::HomeplugMessage const& frame) {
         return;
     }
     // The EV terminating or skipping: no CNF, validation over. CmValidate_005 through 008.
-    if (req->result != defs::CM_VALIDATE_REQ_RESULT_READY) {
+    if (req->result != defs::mme::validate::RESULT_READY) {
         m_validate_armed = false;
         m_validate_step2_pending = false;
         return;
@@ -197,7 +197,7 @@ void Matching::validate_tick() {
         // one B/C edge is counted per BCB toggle, so the delta since the baseline is the count
         auto const seen = m_ctx.bc_transition_count - m_validate_baseline_bc;
         auto const toggles = static_cast<std::uint8_t>(std::max(0, std::min(seen, 255)));
-        send_validate_cnf_reply(m_validate_owner_mac, defs::CM_VALIDATE_REQ_RESULT_SUCCESS, toggles);
+        send_validate_cnf_reply(m_validate_owner_mac, defs::mme::validate::RESULT_SUCCESS, toggles);
         m_validate_armed = false;
         m_validate_step2_pending = false;
         m_ctx.log_info("CM_VALIDATE: detected " + std::to_string(toggles) + " BCB toggle(s) during the toggle window");
@@ -209,7 +209,7 @@ void Matching::validate_tick() {
 
     if (m_validate_step1_retries < defs::C_EV_MATCH_RETRY) {
         m_validate_step1_retries++;
-        send_validate_cnf_reply(m_validate_owner_mac, defs::CM_VALIDATE_REQ_RESULT_READY, 0);
+        send_validate_cnf_reply(m_validate_owner_mac, defs::mme::validate::RESULT_READY, 0);
         m_validate_timer.rearm(m_ctx.current_time);
         return;
     }

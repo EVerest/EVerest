@@ -44,7 +44,7 @@ messages::HomeplugMessage create_cm_set_key_cnf(std::uint8_t result) {
     cnf.result = result;
 
     messages::HomeplugMessage message;
-    message.setup_payload(&cnf, sizeof(cnf), defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_CNF, defs::MMV::AV_1_1);
+    message.setup_payload(&cnf, sizeof(cnf), defs::mmtype::SET_KEY | defs::mmtype::MODE_CNF, defs::MMV::AV_1_1);
     return message;
 }
 
@@ -53,7 +53,7 @@ messages::cm_slac_match_req create_cm_slac_match_req_payload(EvMac const& ev_mac
     messages::cm_slac_match_req msg{};
     msg.application_type = defs::COMMON_APPLICATION_TYPE;
     msg.security_type = defs::COMMON_SECURITY_TYPE;
-    msg.mvf_length = defs::CM_SLAC_MATCH_REQ_MVF_LENGTH;
+    msg.mvf_length = defs::mme::slac_match_req::MVF_LENGTH;
     std::copy(ev_mac.begin(), ev_mac.end(), msg.pev_mac);
     std::copy(evse_mac.begin(), evse_mac.end(), msg.evse_mac);
     std::copy(run_id.begin(), run_id.end(), msg.run_id);
@@ -63,7 +63,7 @@ messages::cm_slac_match_req create_cm_slac_match_req_payload(EvMac const& ev_mac
 messages::HomeplugMessage wrap_cm_slac_match_req(EvMac const& source_mac, messages::cm_slac_match_req const& msg) {
     messages::HomeplugMessage message;
     message.set_source(source_mac);
-    message.setup_payload(&msg, sizeof(msg), defs::MMTYPE_CM_SLAC_MATCH | defs::MMTYPE_MODE_REQ, defs::MMV::AV_1_1);
+    message.setup_payload(&msg, sizeof(msg), defs::mmtype::SLAC_MATCH | defs::mmtype::MODE_REQ, defs::MMV::AV_1_1);
     return message;
 }
 
@@ -81,7 +81,7 @@ messages::HomeplugMessage create_cm_slac_parm_req(EvMac const& ev_mac, RunId con
 
     messages::HomeplugMessage message;
     message.set_source(ev_mac);
-    message.setup_payload(&req, sizeof(req), defs::MMTYPE_CM_SLAC_PARAM | defs::MMTYPE_MODE_REQ, defs::MMV::AV_1_1);
+    message.setup_payload(&req, sizeof(req), defs::mmtype::SLAC_PARAM | defs::mmtype::MODE_REQ, defs::MMV::AV_1_1);
     return message;
 }
 
@@ -96,15 +96,15 @@ messages::HomeplugMessage create_cm_start_atten_char_ind(EvMac const& ev_mac, Ru
     messages::cm_start_atten_char_ind msg{};
     msg.application_type = defs::COMMON_APPLICATION_TYPE;
     msg.security_type = defs::COMMON_SECURITY_TYPE;
-    msg.num_sounds = defs::CM_SLAC_PARM_CNF_NUM_SOUNDS;
-    msg.timeout = defs::CM_SLAC_PARM_CNF_TIMEOUT;
-    msg.resp_type = defs::CM_SLAC_PARM_CNF_RESP_TYPE;
+    msg.num_sounds = defs::mme::slac_parm_cnf::NUM_SOUNDS;
+    msg.timeout = defs::mme::slac_parm_cnf::TIMEOUT;
+    msg.resp_type = defs::mme::slac_parm_cnf::RESP_TYPE;
     std::copy(ev_mac.begin(), ev_mac.end(), msg.forwarding_sta);
     std::copy(run_id.begin(), run_id.end(), msg.run_id);
 
     messages::HomeplugMessage message;
     message.set_source(ev_mac);
-    message.setup_payload(&msg, sizeof(msg), defs::MMTYPE_CM_START_ATTEN_CHAR | defs::MMTYPE_MODE_IND,
+    message.setup_payload(&msg, sizeof(msg), defs::mmtype::START_ATTEN_CHAR | defs::mmtype::MODE_IND,
                           defs::MMV::AV_1_1);
     return message;
 }
@@ -119,12 +119,12 @@ messages::HomeplugMessage create_cm_atten_profile_ind(EvMac const& ev_mac, uint8
 
     messages::HomeplugMessage message;
     message.set_source(ev_mac);
-    message.setup_payload(&msg, sizeof(msg), defs::MMTYPE_CM_ATTEN_PROFILE | defs::MMTYPE_MODE_IND, defs::MMV::AV_1_1);
+    message.setup_payload(&msg, sizeof(msg), defs::mmtype::ATTEN_PROFILE | defs::mmtype::MODE_IND, defs::MMV::AV_1_1);
     return message;
 }
 
 messages::HomeplugMessage create_cm_atten_char_rsp(EvMac const& ev_mac, RunId const& run_id,
-                                                   uint8_t result = defs::CM_ATTEN_CHAR_RSP_RESULT) {
+                                                   uint8_t result = defs::mme::atten_char_rsp::RESULT) {
     messages::cm_atten_char_rsp msg{};
     msg.application_type = defs::COMMON_APPLICATION_TYPE;
     msg.security_type = defs::COMMON_SECURITY_TYPE;
@@ -134,7 +134,7 @@ messages::HomeplugMessage create_cm_atten_char_rsp(EvMac const& ev_mac, RunId co
 
     messages::HomeplugMessage message;
     message.set_source(ev_mac);
-    message.setup_payload(&msg, sizeof(msg), defs::MMTYPE_CM_ATTEN_CHAR | defs::MMTYPE_MODE_RSP, defs::MMV::AV_1_1);
+    message.setup_payload(&msg, sizeof(msg), defs::mmtype::ATTEN_CHAR | defs::mmtype::MODE_RSP, defs::MMV::AV_1_1);
     return message;
 }
 
@@ -151,13 +151,13 @@ messages::HomeplugMessage create_short_cm_slac_match_req(EvMac const& ev_mac, Ru
 
 messages::HomeplugMessage create_cm_validate_req(EvMac const& ev_mac, std::uint8_t pilot_timer = 0) {
     messages::cm_validate_req msg{};
-    msg.signal_type = defs::CM_VALIDATE_REQ_SIGNAL_TYPE;
+    msg.signal_type = defs::mme::validate::SIGNAL_TYPE;
     msg.timer = pilot_timer; // 0 = step 1 (ready); != 0 = step 2 (toggle-observation window)
-    msg.result = defs::CM_VALIDATE_REQ_RESULT_READY;
+    msg.result = defs::mme::validate::RESULT_READY;
 
     messages::HomeplugMessage message;
     message.set_source(ev_mac);
-    message.setup_payload(&msg, sizeof(msg), defs::MMTYPE_CM_VALIDATE | defs::MMTYPE_MODE_REQ, defs::MMV::AV_1_1);
+    message.setup_payload(&msg, sizeof(msg), defs::mmtype::VALIDATE | defs::mmtype::MODE_REQ, defs::MMV::AV_1_1);
     return message;
 }
 
@@ -167,7 +167,7 @@ messages::HomeplugMessage create_lumissil_link_status_cnf(EvMac const& source_ma
 
     messages::HomeplugMessage message;
     message.set_source(source_mac);
-    message.setup_payload(&msg, sizeof(msg), defs::lumissil::MMTYPE_NSCM_GET_D_LINK_STATUS | defs::MMTYPE_MODE_CNF,
+    message.setup_payload(&msg, sizeof(msg), defs::mmtype::lumissil::GET_D_LINK_STATUS | defs::mmtype::MODE_CNF,
                           defs::MMV::AV_1_0);
     return message;
 }
@@ -185,7 +185,7 @@ messages::HomeplugMessage create_qualcomm_link_status_cnf(EvMac const& source_ma
 
     messages::HomeplugMessage message;
     message.set_source(source_mac);
-    message.setup_payload(&msg, sizeof(msg), defs::qualcomm::MMTYPE_LINK_STATUS | defs::MMTYPE_MODE_CNF,
+    message.setup_payload(&msg, sizeof(msg), defs::mmtype::qualcomm::LINK_STATUS | defs::mmtype::MODE_CNF,
                           defs::MMV::AV_1_0);
     return message;
 }
@@ -197,19 +197,19 @@ messages::HomeplugMessage create_short_qualcomm_link_status_cnf(EvMac const& sou
 }
 
 bool is_slac_parm_cnf(messages::HomeplugMessage const& msg) {
-    return msg.get_mmtype() == (defs::MMTYPE_CM_SLAC_PARAM | defs::MMTYPE_MODE_CNF);
+    return msg.get_mmtype() == (defs::mmtype::SLAC_PARAM | defs::mmtype::MODE_CNF);
 }
 
 bool is_cm_atten_char_ind(messages::HomeplugMessage const& msg) {
-    return msg.get_mmtype() == (defs::MMTYPE_CM_ATTEN_CHAR | defs::MMTYPE_MODE_IND);
+    return msg.get_mmtype() == (defs::mmtype::ATTEN_CHAR | defs::mmtype::MODE_IND);
 }
 
 bool is_cm_validate_cnf(messages::HomeplugMessage const& msg) {
-    return msg.get_mmtype() == (defs::MMTYPE_CM_VALIDATE | defs::MMTYPE_MODE_CNF);
+    return msg.get_mmtype() == (defs::mmtype::VALIDATE | defs::mmtype::MODE_CNF);
 }
 
 bool is_cm_slac_match_cnf(messages::HomeplugMessage const& msg) {
-    return msg.get_mmtype() == (defs::MMTYPE_CM_SLAC_MATCH | defs::MMTYPE_MODE_CNF);
+    return msg.get_mmtype() == (defs::mmtype::SLAC_MATCH | defs::mmtype::MODE_CNF);
 }
 
 std::size_t count_slac_parm_cnf(std::vector<SentMessage> const& messages) {
@@ -330,7 +330,7 @@ bool wait_for(std::chrono::milliseconds timeout, slac_fsm& machine, Predicate&& 
 }
 
 bool is_qualcomm_link_status_req(messages::HomeplugMessage const& msg) {
-    return msg.get_mmtype() == (defs::qualcomm::MMTYPE_LINK_STATUS | defs::MMTYPE_MODE_REQ);
+    return msg.get_mmtype() == (defs::mmtype::qualcomm::LINK_STATUS | defs::mmtype::MODE_REQ);
 }
 
 std::size_t count_qualcomm_link_status_req(std::vector<SentMessage> const& messages) {
@@ -339,11 +339,11 @@ std::size_t count_qualcomm_link_status_req(std::vector<SentMessage> const& messa
 }
 
 bool is_cm_amp_map_req(messages::HomeplugMessage const& msg) {
-    return msg.is_valid() and msg.get_mmtype() == defs::MMTYPE_CM_AMP_MAP_REQ;
+    return msg.is_valid() and msg.get_mmtype() == defs::mmtype::AMP_MAP_REQ;
 }
 
 bool is_cm_amp_map_cnf(messages::HomeplugMessage const& msg) {
-    return msg.is_valid() and msg.get_mmtype() == defs::MMTYPE_CM_AMP_MAP_CNF;
+    return msg.is_valid() and msg.get_mmtype() == defs::mmtype::AMP_MAP_CNF;
 }
 
 std::size_t count_cm_amp_map_req(std::vector<SentMessage> const& messages) {
@@ -364,7 +364,7 @@ messages::HomeplugMessage create_cm_amp_map_req(EvMac const& source, std::uint16
 
     messages::HomeplugMessage message;
     message.set_source(source);
-    message.setup_payload(payload.data(), payload.size(), defs::MMTYPE_CM_AMP_MAP_REQ, defs::MMV::AV_2_0);
+    message.setup_payload(payload.data(), payload.size(), defs::mmtype::AMP_MAP_REQ, defs::MMV::AV_2_0);
     return message;
 }
 
@@ -375,7 +375,7 @@ messages::HomeplugMessage create_cm_amp_map_cnf(EvMac const& source, std::uint8_
 
     messages::HomeplugMessage message;
     message.set_source(source);
-    message.setup_payload(&msg, sizeof(msg), defs::MMTYPE_CM_AMP_MAP_CNF, defs::MMV::AV_2_0);
+    message.setup_payload(&msg, sizeof(msg), defs::mmtype::AMP_MAP_CNF, defs::MMV::AV_2_0);
     return message;
 }
 
@@ -443,7 +443,7 @@ bool perform_full_match_sequence(Context& ctx, std::vector<SentMessage>& sent_me
     }
     machine.message(create_cm_start_atten_char_ind(ev_mac, run_id));
 
-    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+    for (std::size_t i = 0; i < defs::mme::slac_parm_cnf::NUM_SOUNDS; ++i) {
         machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
     }
     if (!wait_for_atten_char_ind_count(sent_messages, initial_atten_count + 1, machine, timeout_ms)) {
@@ -484,7 +484,7 @@ bool enter_matching_state(Context& ctx, slac_fsm& machine) {
         return assert_true(false, test_name, "did not enter Reset state");
     }
 
-    machine.message(create_cm_set_key_cnf(defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS));
+    machine.message(create_cm_set_key_cnf(defs::mme::set_key_cnf::RESULT_MODEM_COMPAT_SUCCESS));
     if (!wait_for_match_state(ctx, SlacState::Idle, machine, 100)) {
         return assert_true(false, test_name, "did not transition to Idle on CM_SET_KEY.CNF");
     }
@@ -614,13 +614,13 @@ bool test_duplicate_cm_slac_parm_req_restarts_inflight_session() {
     if (!get_last_cm_atten_char_ind(sent_messages, atten_char)) {
         return assert_true(false, test_name, "could not read CM_ATTEN_CHAR.IND after duplicate restart");
     }
-    if (!assert_true(atten_char.num_sounds == defs::CM_SLAC_PARM_CNF_NUM_SOUNDS, test_name,
+    if (!assert_true(atten_char.num_sounds == defs::mme::slac_parm_cnf::NUM_SOUNDS, test_name,
                      "CM_ATTEN_CHAR.IND num_sounds still includes pre-duplicate profile")) {
         return false;
     }
 
     const auto expected_aag =
-        calc_expected_aag(0xA0, defs::CM_SLAC_PARM_CNF_NUM_SOUNDS, ctx.slac_config.sounding_atten_adjustment);
+        calc_expected_aag(0xA0, defs::mme::slac_parm_cnf::NUM_SOUNDS, ctx.slac_config.sounding_atten_adjustment);
     for (std::size_t i = 0; i < defs::AAG_LIST_LEN; ++i) {
         if (!assert_true(atten_char.attenuation_profile.aag[i] == expected_aag[i], test_name,
                          "CM_ATTEN_CHAR.IND attenuation profile contains pre-duplicate samples")) {
@@ -849,7 +849,7 @@ bool test_start_atten_char_only_advances_matching_session() {
     machine.message(create_cm_start_atten_char_ind(ev_mac_a, run_id_a));
 
     // Sound session A to completion: it must emit exactly one CM_ATTEN_CHAR.IND, addressed to A.
-    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+    for (std::size_t i = 0; i < defs::mme::slac_parm_cnf::NUM_SOUNDS; ++i) {
         machine.message(create_cm_atten_profile_ind(ev_mac_a, static_cast<uint8_t>(0xA0 + i)));
     }
     if (!wait_for_atten_char_ind_count(sent_messages, initial_atten + 1, machine, 700)) {
@@ -867,7 +867,7 @@ bool test_start_atten_char_only_advances_matching_session() {
     // Session B never received its own START_ATTEN, so it must still be waiting and ignore sound
     // profiles: no further CM_ATTEN_CHAR.IND may be emitted. With the bug, A's START_ATTEN advanced
     // B too, and these profiles would finalize B into a second CM_ATTEN_CHAR.IND.
-    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+    for (std::size_t i = 0; i < defs::mme::slac_parm_cnf::NUM_SOUNDS; ++i) {
         machine.message(create_cm_atten_profile_ind(ev_mac_b, static_cast<uint8_t>(0xB0 + i)));
     }
     return assert_true(assert_stays_at_count(initial_atten + 1, sent_messages, machine, 150), test_name,
@@ -1450,7 +1450,7 @@ bool test_waitforlink_retry_with_invalid_match_fields_does_not_resend_cnf() {
     machine.message(wrap_cm_slac_match_req(ev_mac, wrong_security));
 
     auto wrong_mvf = create_cm_slac_match_req_payload(ev_mac, run_id, evse_mac);
-    wrong_mvf.mvf_length = defs::CM_SLAC_MATCH_REQ_MVF_LENGTH + 1;
+    wrong_mvf.mvf_length = defs::mme::slac_match_req::MVF_LENGTH + 1;
     machine.message(wrap_cm_slac_match_req(ev_mac, wrong_mvf));
 
     auto changed = wait_for(std::chrono::milliseconds(120), machine, [&baseline_match_cnf_count, &sent_messages]() {
@@ -1496,7 +1496,7 @@ bool test_waitforlink_retry_after_reset_does_not_emit_cached_match_cnf() {
     if (!assert_true(not ctx.match_confirm_cache.valid, test_name, "Reset retained cached CM_SLAC_MATCH.CNF")) {
         return false;
     }
-    machine.message(create_cm_set_key_cnf(defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS));
+    machine.message(create_cm_set_key_cnf(defs::mme::set_key_cnf::RESULT_MODEM_COMPAT_SUCCESS));
     if (!wait_for_match_state(ctx, SlacState::Idle, machine, 120)) {
         return assert_true(false, test_name, "did not return to Idle after CM_SET_KEY.CNF");
     }
@@ -1729,7 +1729,7 @@ bool test_cm_validate_bcb_toggle_detection() {
     if (!get_last_cm_validate_cnf(sent_messages, first_cnf)) {
         return assert_true(false, test_name, "could not parse first CM_VALIDATE.CNF");
     }
-    if (!assert_true(first_cnf.result == defs::CM_VALIDATE_REQ_RESULT_READY, test_name,
+    if (!assert_true(first_cnf.result == defs::mme::validate::RESULT_READY, test_name,
                      "first CM_VALIDATE.CNF is not READY") or
         !assert_true(first_cnf.toggle_num == 0, test_name, "first CM_VALIDATE.CNF toggle_num is not 0")) {
         return false;
@@ -1753,12 +1753,12 @@ bool test_cm_validate_bcb_toggle_detection() {
     if (!get_last_cm_validate_cnf(sent_messages, second_cnf)) {
         return assert_true(false, test_name, "could not parse second CM_VALIDATE.CNF");
     }
-    return assert_true(second_cnf.signal_type == defs::CM_VALIDATE_REQ_SIGNAL_TYPE, test_name,
+    return assert_true(second_cnf.signal_type == defs::mme::validate::SIGNAL_TYPE, test_name,
                        "second CM_VALIDATE.CNF has unexpected signal_type") and
            assert_true(second_cnf.toggle_num == 3, test_name,
                        "second CM_VALIDATE.CNF toggle_num does not match the detected BCB toggles "
                        "(3 counted B->C edges = 3 toggles)") and
-           assert_true(second_cnf.result == defs::CM_VALIDATE_REQ_RESULT_SUCCESS, test_name,
+           assert_true(second_cnf.result == defs::mme::validate::RESULT_SUCCESS, test_name,
                        "second CM_VALIDATE.CNF result is not SUCCESS");
 }
 
@@ -1998,7 +1998,7 @@ bool test_atten_char_ind_sent_promptly_after_last_sound() {
     }
 
     machine.message(create_cm_start_atten_char_ind(ev_mac, run_id));
-    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+    for (std::size_t i = 0; i < defs::mme::slac_parm_cnf::NUM_SOUNDS; ++i) {
         machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
     }
 
@@ -2019,7 +2019,7 @@ bool test_atten_char_ind_sent_promptly_after_last_sound() {
     if (!get_last_cm_atten_char_ind(sent_messages, atten_char)) {
         return assert_true(false, test_name, "could not read CM_ATTEN_CHAR.IND");
     }
-    return assert_true(atten_char.num_sounds == defs::CM_SLAC_PARM_CNF_NUM_SOUNDS, test_name,
+    return assert_true(atten_char.num_sounds == defs::mme::slac_parm_cnf::NUM_SOUNDS, test_name,
                        "CM_ATTEN_CHAR.IND num_sounds != CM_SLAC_PARM_CNF_NUM_SOUNDS");
 }
 
@@ -2056,7 +2056,7 @@ bool test_atten_char_ind_ignores_sounds_beyond_num_sounds() {
     }
 
     machine.message(create_cm_start_atten_char_ind(ev_mac, run_id));
-    constexpr std::size_t excess_profiles = defs::CM_SLAC_PARM_CNF_NUM_SOUNDS + 2;
+    constexpr std::size_t excess_profiles = defs::mme::slac_parm_cnf::NUM_SOUNDS + 2;
     for (std::size_t i = 0; i < excess_profiles; ++i) {
         machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
     }
@@ -2070,13 +2070,13 @@ bool test_atten_char_ind_ignores_sounds_beyond_num_sounds() {
     if (!get_last_cm_atten_char_ind(sent_messages, atten_char)) {
         return assert_true(false, test_name, "could not read CM_ATTEN_CHAR.IND");
     }
-    if (!assert_true(atten_char.num_sounds == defs::CM_SLAC_PARM_CNF_NUM_SOUNDS, test_name,
+    if (!assert_true(atten_char.num_sounds == defs::mme::slac_parm_cnf::NUM_SOUNDS, test_name,
                      "num_sounds exceeds CM_SLAC_PARM_CNF_NUM_SOUNDS (excess profiles were counted)")) {
         return false;
     }
 
     const auto expected_aag =
-        calc_expected_aag(0xA0, defs::CM_SLAC_PARM_CNF_NUM_SOUNDS, ctx.slac_config.sounding_atten_adjustment);
+        calc_expected_aag(0xA0, defs::mme::slac_parm_cnf::NUM_SOUNDS, ctx.slac_config.sounding_atten_adjustment);
     for (std::size_t i = 0; i < defs::AAG_LIST_LEN; ++i) {
         if (!assert_true(atten_char.attenuation_profile.aag[i] == expected_aag[i], test_name,
                          "attenuation average includes profiles beyond CM_SLAC_PARM_CNF_NUM_SOUNDS")) {
@@ -2168,7 +2168,7 @@ bool test_parm_req_after_match_cnf_gets_no_cnf() {
         return assert_true(false, test_name, "did not emit CM_SLAC_PARM.CNF");
     }
     machine.message(create_cm_start_atten_char_ind(ev_mac, run_id));
-    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+    for (std::size_t i = 0; i < defs::mme::slac_parm_cnf::NUM_SOUNDS; ++i) {
         machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
     }
     if (!wait_for_atten_char_ind_count(sent_messages, initial_atten_count + 1, machine, 700)) {
@@ -2286,7 +2286,7 @@ bool test_leave_bcd_recovers_from_failed_state() {
         return assert_true(false, test_name, "leave_bcd in Failed did not transition to Reset");
     }
 
-    machine.message(create_cm_set_key_cnf(defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS));
+    machine.message(create_cm_set_key_cnf(defs::mme::set_key_cnf::RESULT_MODEM_COMPAT_SUCCESS));
     if (!wait_for_match_state(ctx, SlacState::Idle, machine, 200)) {
         return assert_true(false, test_name, "did not re-key and return to Idle after the unplug");
     }
@@ -2625,7 +2625,7 @@ bool test_amp_map_req_retransmits_until_confirmed() {
         return assert_true(false, test_name, "did not reach Matched a second time");
     }
     const auto sent_once = count_cm_amp_map_req(sent_messages);
-    machine.message(create_cm_amp_map_cnf(ev_mac, defs::CM_AMP_MAP_CNF_RESULT_SUCCESS));
+    machine.message(create_cm_amp_map_cnf(ev_mac, defs::mme::amp_map_cnf::RESULT_SUCCESS));
     wait_for(std::chrono::milliseconds(defs::TT_MATCH_RESPONSE_MS * (defs::C_EV_MATCH_RETRY + 3)), machine,
              []() { return false; });
     return assert_true(count_cm_amp_map_req(sent_messages) == sent_once, test_name,

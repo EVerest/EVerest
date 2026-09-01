@@ -33,19 +33,19 @@ bool check_message(messages::HomeplugMessage const& frame, std::uint16_t expecte
 }
 
 bool is_start_atten_char(messages::HomeplugMessage const& frame, SessionData const& data) {
-    return check_message<messages::cm_start_atten_char_ind>(frame, defs::MMTYPE_CM_START_ATTEN_CHAR_IND, data);
+    return check_message<messages::cm_start_atten_char_ind>(frame, defs::mmtype::START_ATTEN_CHAR_IND, data);
 }
 
 bool is_atten_profile_ind(messages::HomeplugMessage const& frame, SessionData const& data) {
-    return check_message<messages::cm_atten_profile_ind>(frame, defs::MMTYPE_CM_ATTEN_PROFILE_IND, data);
+    return check_message<messages::cm_atten_profile_ind>(frame, defs::mmtype::ATTEN_PROFILE_IND, data);
 }
 
 bool is_atten_char_rsp(messages::HomeplugMessage const& frame, SessionData const& data) {
-    return check_message<messages::cm_atten_char_rsp>(frame, defs::MMTYPE_CM_ATTEN_CHAR_RSP, data);
+    return check_message<messages::cm_atten_char_rsp>(frame, defs::mmtype::ATTEN_CHAR_RSP, data);
 }
 
 bool is_slac_match_req(messages::HomeplugMessage const& frame, SessionData const& data) {
-    return check_message<messages::cm_slac_match_req>(frame, defs::MMTYPE_CM_SLAC_MATCH_REQ, data);
+    return check_message<messages::cm_slac_match_req>(frame, defs::mmtype::SLAC_MATCH_REQ, data);
 }
 
 void send_atten_char_ind(Context& ctx, SessionData& data) {
@@ -146,12 +146,12 @@ Result Sounding::feed(SlacEvent const& ev) {
                 m_data.captured_sounds++;
                 m_ctx.log_debug(session_log_prefix(m_data) + "Received CM_ATTEN_PROFILE.IND (" +
                                 std::to_string(m_data.captured_sounds) + " of " +
-                                std::to_string(defs::CM_SLAC_PARM_CNF_NUM_SOUNDS) + " sounds captured)");
+                                std::to_string(defs::mme::slac_parm_cnf::NUM_SOUNDS) + " sounds captured)");
             }
 
             // V2G3-A09-44 allows leaving as soon as the sounds are in, which saves the rest of the
             // 600 ms window the EV would otherwise spend waiting for a result the EVSE already has.
-            if (m_data.captured_sounds >= defs::CM_SLAC_PARM_CNF_NUM_SOUNDS) {
+            if (m_data.captured_sounds >= defs::mme::slac_parm_cnf::NUM_SOUNDS) {
                 m_ctx.log_info(session_log_prefix(m_data) + "Received all sounds, finalizing sounding");
                 return m_ctx.create_state<FinalizeSounding>(m_data);
             }

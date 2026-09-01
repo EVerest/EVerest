@@ -49,7 +49,7 @@ void Init::latch_modem_vendor(messages::HomeplugMessage const& frame) {
     }
     auto const mmtype = frame.get_mmtype();
 
-    if (mmtype == defs::lumissil::MMTYPE_NSCM_GET_VERSION_CNF) {
+    if (mmtype == defs::mmtype::lumissil::GET_VERSION_CNF) {
         auto const msg = frame.payload_as<messages::lumissil::nscm_get_version_cnf>();
         m_ctx.modem_vendor = defs::ModemVendor::Lumissil;
         m_ctx.log_info(msg ? utils::device_info(*msg) : std::string{});
@@ -57,7 +57,7 @@ void Init::latch_modem_vendor(messages::HomeplugMessage const& frame) {
         return;
     }
 
-    if (mmtype == defs::qualcomm::MMTYPE_OP_ATTR_CNF) {
+    if (mmtype == defs::mmtype::qualcomm::OP_ATTR_CNF) {
         auto const msg = frame.payload_as<messages::qualcomm::op_attr_cnf>();
         m_ctx.modem_vendor = defs::ModemVendor::Qualcomm;
         m_ctx.log_info(msg ? utils::device_info(*msg) : std::string{});

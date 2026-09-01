@@ -105,13 +105,13 @@ bool test_link_check_mode_for_vendor() {
 messages::HomeplugMessage make_lumissil_link_status(std::uint8_t status) {
     messages::lumissil::nscm_get_d_link_status_cnf cnf{};
     cnf.link_status = status;
-    return make_frame(&cnf, sizeof(cnf), defs::lumissil::MMTYPE_NSCM_GET_D_LINK_STATUS_CNF, EVSE_MAC);
+    return make_frame(&cnf, sizeof(cnf), defs::mmtype::lumissil::GET_D_LINK_STATUS_CNF, EVSE_MAC);
 }
 
 messages::HomeplugMessage make_qualcomm_link_status(std::uint8_t status) {
     messages::qualcomm::link_status_cnf cnf{};
     cnf.link_status = status;
-    return make_frame(&cnf, sizeof(cnf), defs::qualcomm::MMTYPE_LINK_STATUS_CNF, EVSE_MAC);
+    return make_frame(&cnf, sizeof(cnf), defs::mmtype::qualcomm::LINK_STATUS_CNF, EVSE_MAC);
 }
 
 bool test_link_status_up_and_down() {
@@ -163,13 +163,13 @@ bool test_truncated_link_status_is_neither_up_nor_down() {
 messages::HomeplugMessage make_parm_cnf(RunId const& run_id) {
     messages::cm_slac_parm_cnf cnf{};
     copy_to_wire(cnf.run_id, run_id);
-    return make_frame(&cnf, sizeof(cnf), defs::MMTYPE_CM_SLAC_PARAM_CNF, EVSE_MAC);
+    return make_frame(&cnf, sizeof(cnf), defs::mmtype::SLAC_PARAM_CNF, EVSE_MAC);
 }
 
 messages::HomeplugMessage make_match_cnf(RunId const& run_id, MacAddress const& src) {
     messages::cm_slac_match_cnf cnf{};
     copy_to_wire(cnf.run_id, run_id);
-    return make_frame(&cnf, sizeof(cnf), defs::MMTYPE_CM_SLAC_MATCH_CNF, src);
+    return make_frame(&cnf, sizeof(cnf), defs::mmtype::SLAC_MATCH_CNF, src);
 }
 
 bool test_is_slac_parm_cnf_checks_run_id() {
@@ -204,9 +204,9 @@ bool test_is_set_key_cnf_ignores_result_byte() {
     const char* name = "test_is_set_key_cnf_ignores_result_byte";
     messages::cm_set_key_cnf cnf{};
     cnf.result = 0x7F; // deliberately not a success code
-    auto const frame = make_frame(&cnf, sizeof(cnf), defs::MMTYPE_CM_SET_KEY_CNF, EVSE_MAC);
+    auto const frame = make_frame(&cnf, sizeof(cnf), defs::mmtype::SET_KEY_CNF, EVSE_MAC);
 
-    auto const wrong_type = make_frame(&cnf, sizeof(cnf), defs::MMTYPE_CM_SET_KEY_REQ, EVSE_MAC);
+    auto const wrong_type = make_frame(&cnf, sizeof(cnf), defs::mmtype::SET_KEY_REQ, EVSE_MAC);
 
     return assert_true(ev::is_set_key_cnf(frame), name,
                        "the EV side accepts any well formed confirmation, result byte included") &&
@@ -219,7 +219,7 @@ bool test_is_atten_char_ind_for_run() {
     auto const run_id = make_run_id(0xA0);
     messages::cm_atten_char_ind ind{};
     copy_to_wire(ind.run_id, run_id);
-    auto const frame = make_frame(&ind, sizeof(ind), defs::MMTYPE_CM_ATTEN_CHAR_IND, EVSE_MAC);
+    auto const frame = make_frame(&ind, sizeof(ind), defs::mmtype::ATTEN_CHAR_IND, EVSE_MAC);
 
     return assert_true(ev::is_atten_char_ind(frame), name, "a well formed indication is recognised") &&
            assert_true(ev::is_atten_char_ind_for_run(frame, run_id), name, "our run id must be accepted") &&

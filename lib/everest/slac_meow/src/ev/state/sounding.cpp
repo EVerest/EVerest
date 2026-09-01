@@ -26,7 +26,7 @@ void send_next_sounding(Context& ctx) {
         msg.security_type = defs::COMMON_SECURITY_TYPE;
         msg.num_sounds = defs::C_EV_MATCH_MNBC;
         msg.timeout = static_cast<std::uint8_t>((defs::TT_EVSE_MATCH_MNBC_MS + 99) / 100);
-        msg.resp_type = defs::CM_SLAC_PARM_CNF_RESP_TYPE;
+        msg.resp_type = defs::mme::slac_parm_cnf::RESP_TYPE;
         copy_to_wire(msg.forwarding_sta, ctx.ev_host_mac);
         copy_to_wire(msg.run_id, ctx.active_session.run_id);
 

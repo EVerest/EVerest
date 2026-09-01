@@ -292,8 +292,8 @@ static_assert(std::is_trivially_copyable_v<lumissil::nscm_get_d_link_status_cnf>
 
 static_assert(sizeof(cm_set_key_cnf) == 14);
 static_assert(sizeof(cm_slac_parm_req) == 10);
-static_assert(sizeof(cm_slac_match_req) == defs::CM_SLAC_MATCH_REQ_MVF_LENGTH + 4);
-static_assert(sizeof(cm_slac_match_cnf) == defs::CM_SLAC_MATCH_CNF_MVF_LENGTH + 4);
+static_assert(sizeof(cm_slac_match_req) == defs::mme::slac_match_req::MVF_LENGTH + 4);
+static_assert(sizeof(cm_slac_match_cnf) == defs::mme::slac_match_cnf::MVF_LENGTH + 4);
 static_assert(sizeof(qualcomm::link_status_cnf) == 5);
 static_assert(sizeof(lumissil::nscm_get_d_link_status_cnf) == 23);
 static_assert(sizeof(lumissil::lms_header) == 19);

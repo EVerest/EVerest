@@ -134,7 +134,7 @@ Result Reset::feed(SlacEvent const& ev) {
     }
 
     if (auto const* message = get_if_message(ev)) {
-        if (message->is_valid() and message->get_mmtype() == defs::MMTYPE_CM_SET_KEY_CNF) {
+        if (message->is_valid() and message->get_mmtype() == defs::mmtype::SET_KEY_CNF) {
             return handle_set_key_cnf(*message);
         }
         return {};

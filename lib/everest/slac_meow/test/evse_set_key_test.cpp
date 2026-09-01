@@ -39,9 +39,9 @@ constexpr messages::HomeplugMessage::MacAddress default_peer_mac{{0x00, 0xB0, 0x
 
 struct SetKeyCnfParams {
     messages::HomeplugMessage::MacAddress source = default_peer_mac;
-    std::uint8_t pid = defs::CM_SET_KEY_REQ_PID_HLE;
-    std::uint16_t prn = defs::CM_SET_KEY_REQ_PRN_UNUSED;
-    std::uint8_t pmn = defs::CM_SET_KEY_REQ_PMN_UNUSED;
+    std::uint8_t pid = defs::mme::set_key_req::PID_HLE;
+    std::uint16_t prn = defs::mme::set_key_req::PRN_UNUSED;
+    std::uint8_t pmn = defs::mme::set_key_req::PMN_UNUSED;
     std::uint32_t my_nonce = 0;
     std::uint32_t your_nonce = 0;
 };
@@ -57,23 +57,23 @@ messages::HomeplugMessage create_cm_set_key_cnf(std::uint8_t result, SetKeyCnfPa
 
     messages::HomeplugMessage message;
     message.set_source(params.source);
-    message.setup_payload(&cnf, sizeof(cnf), defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_CNF, defs::MMV::AV_1_1);
+    message.setup_payload(&cnf, sizeof(cnf), defs::mmtype::SET_KEY | defs::mmtype::MODE_CNF, defs::MMV::AV_1_1);
     return message;
 }
 
 messages::HomeplugMessage create_cm_set_key_cnf_reserved() {
-    return create_cm_set_key_cnf(defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS + 0x80);
+    return create_cm_set_key_cnf(defs::mme::set_key_cnf::RESULT_MODEM_COMPAT_SUCCESS + 0x80);
 }
 
 messages::HomeplugMessage create_short_cm_set_key_cnf() {
-    auto message = create_cm_set_key_cnf(defs::CM_SET_KEY_CNF_RESULT_SUCCESS);
+    auto message = create_cm_set_key_cnf(defs::mme::set_key_cnf::RESULT_SUCCESS);
     message.mark_received_length(messages::HOMEPLUG_PAYLOAD_OFFSET + sizeof(messages::homeplug_fragmentation_part) +
                                  sizeof(messages::cm_set_key_cnf));
     return message;
 }
 
 bool is_set_key_request(messages::HomeplugMessage const& msg) {
-    return msg.get_mmtype() == (defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_REQ);
+    return msg.get_mmtype() == (defs::mmtype::SET_KEY | defs::mmtype::MODE_REQ);
 }
 
 std::vector<SetKeySentMessage> sort_set_key_messages(std::vector<SetKeySentMessage> const& messages) {
@@ -224,7 +224,7 @@ bool test_legacy_single_attempt_accepts_valid_success_result() {
         return false;
     }
 
-    machine.message(create_cm_set_key_cnf(defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS));
+    machine.message(create_cm_set_key_cnf(defs::mme::set_key_cnf::RESULT_MODEM_COMPAT_SUCCESS));
     if (!wait_for_match_state(ctx, SlacState::Idle, machine, 150)) {
         return assert_true(false, test_name, "did not leave Reset on CNF");
     }
@@ -320,9 +320,9 @@ bool test_legacy_single_attempt_accepts_compat_success_cnf() {
 
     auto compat_cnf = SetKeyCnfParams{};
     compat_cnf.source = messages::HomeplugMessage::MacAddress{{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}};
-    compat_cnf.pid = defs::CM_SET_KEY_REQ_PID_HLE + 1;
+    compat_cnf.pid = defs::mme::set_key_req::PID_HLE + 1;
     compat_cnf.my_nonce = 1;
-    machine.message(create_cm_set_key_cnf(defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS, compat_cnf));
+    machine.message(create_cm_set_key_cnf(defs::mme::set_key_cnf::RESULT_MODEM_COMPAT_SUCCESS, compat_cnf));
 
     if (!wait_for_match_state(ctx, SlacState::Idle, machine, 150)) {
         return assert_true(false, test_name, "did not leave Reset on compatible success CNF");
@@ -402,7 +402,7 @@ bool test_retry_confirmed_accepts_wrong_source() {
 
     SetKeyCnfParams wrong_source{};
     wrong_source.source = messages::HomeplugMessage::MacAddress{{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}};
-    machine.message(create_cm_set_key_cnf(defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS, wrong_source));
+    machine.message(create_cm_set_key_cnf(defs::mme::set_key_cnf::RESULT_MODEM_COMPAT_SUCCESS, wrong_source));
 
     if (!wait_for_match_state(ctx, SlacState::Idle, machine, 100)) {
         return assert_true(false, test_name, "retry_confirmed did not accept wrong-source success CNF");
@@ -445,7 +445,7 @@ bool test_retry_confirmed_accepts_malformed_fields() {
             return assert_true(false, test_name, "did not send initial CM_SET_KEY.REQ");
         }
 
-        machine.message(create_cm_set_key_cnf(defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS, params));
+        machine.message(create_cm_set_key_cnf(defs::mme::set_key_cnf::RESULT_MODEM_COMPAT_SUCCESS, params));
         if (!wait_for_match_state(ctx, SlacState::Idle, machine, 100)) {
             return assert_true(false, test_name, details);
         }
@@ -459,19 +459,19 @@ bool test_retry_confirmed_accepts_malformed_fields() {
     };
 
     auto malformed_pid = SetKeyCnfParams{};
-    malformed_pid.pid = defs::CM_SET_KEY_REQ_PID_HLE + 1;
+    malformed_pid.pid = defs::mme::set_key_req::PID_HLE + 1;
     if (!run_case(malformed_pid, 0x44, "retry_confirmed did not accept malformed pid success CNF")) {
         return false;
     }
 
     auto malformed_prn = SetKeyCnfParams{};
-    malformed_prn.prn = defs::CM_SET_KEY_REQ_PRN_UNUSED + 1;
+    malformed_prn.prn = defs::mme::set_key_req::PRN_UNUSED + 1;
     if (!run_case(malformed_prn, 0x45, "retry_confirmed did not accept malformed prn success CNF")) {
         return false;
     }
 
     auto malformed_pmn = SetKeyCnfParams{};
-    malformed_pmn.pmn = defs::CM_SET_KEY_REQ_PMN_UNUSED + 1;
+    malformed_pmn.pmn = defs::mme::set_key_req::PMN_UNUSED + 1;
     if (!run_case(malformed_pmn, 0x46, "retry_confirmed did not accept malformed pmn success CNF")) {
         return false;
     }
@@ -705,7 +705,7 @@ bool test_default_retries_on_hpgp_0x00_success_result() {
         return assert_true(false, test_name, "did not send initial CM_SET_KEY.REQ");
     }
 
-    machine.message(create_cm_set_key_cnf(defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS));
+    machine.message(create_cm_set_key_cnf(defs::mme::set_key_cnf::RESULT_HPGP_SUCCESS));
     if (!wait_for_set_key_count(sent_messages, 2, machine, 150)) {
         return assert_true(false, test_name, "default modem_compat_0x01 did not retry after 0x00 CNF");
     }
@@ -788,7 +788,7 @@ int main() {
                        test_default_retries_on_hpgp_0x00_success_result),
         std::make_pair("retry_confirmed_hpgp_standard_accepts_0x00_success",
                        [] {
-                           return run_retry_confirmed_success(defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS,
+                           return run_retry_confirmed_success(defs::mme::set_key_cnf::RESULT_HPGP_SUCCESS,
                                                               SetKeyCnfSuccessMode::hpgp_standard_0x00,
                                                               "retry_confirmed_hpgp_standard_accepts_0x00_success");
                        }),
@@ -805,7 +805,7 @@ int main() {
         }
     }
 
-    if (run_retry_confirmed_success(defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS,
+    if (run_retry_confirmed_success(defs::mme::set_key_cnf::RESULT_MODEM_COMPAT_SUCCESS,
                                     SetKeyCnfSuccessMode::modem_compat_0x01,
                                     "retry_confirmed_accepts_0x01_success") == false) {
         std::printf("[FAIL] retry_confirmed_accepts_0x01_success\n");
@@ -814,7 +814,8 @@ int main() {
         std::printf("[PASS] retry_confirmed_accepts_0x01_success\n");
     }
 
-    if (run_retry_confirmed_success(defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS, SetKeyCnfSuccessMode::accept_0x00_or_0x01,
+    if (run_retry_confirmed_success(defs::mme::set_key_cnf::RESULT_HPGP_SUCCESS,
+                                    SetKeyCnfSuccessMode::accept_0x00_or_0x01,
                                     "retry_confirmed_dual_accepts_0x00_success") == false) {
         std::printf("[FAIL] retry_confirmed_dual_accepts_0x00_success\n");
         ++failed_count;

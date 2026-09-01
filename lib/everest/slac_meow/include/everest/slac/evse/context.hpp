@@ -24,40 +24,40 @@ namespace detail {
 /// The MMTYPE and version each outgoing message is sent with.
 template <typename T> struct MMTYPE;
 template <> struct MMTYPE<messages::cm_slac_parm_cnf> {
-    static constexpr std::uint16_t value = defs::MMTYPE_CM_SLAC_PARAM_CNF;
+    static constexpr std::uint16_t value = defs::mmtype::SLAC_PARAM_CNF;
 };
 template <> struct MMTYPE<messages::cm_atten_char_ind> {
-    static constexpr std::uint16_t value = defs::MMTYPE_CM_ATTEN_CHAR_IND;
+    static constexpr std::uint16_t value = defs::mmtype::ATTEN_CHAR_IND;
 };
 template <> struct MMTYPE<messages::cm_set_key_req> {
-    static constexpr std::uint16_t value = defs::MMTYPE_CM_SET_KEY_REQ;
+    static constexpr std::uint16_t value = defs::mmtype::SET_KEY_REQ;
 };
 template <> struct MMTYPE<messages::cm_amp_map_cnf> {
-    static constexpr std::uint16_t value = defs::MMTYPE_CM_AMP_MAP_CNF;
+    static constexpr std::uint16_t value = defs::mmtype::AMP_MAP_CNF;
 };
 template <> struct MMTYPE<messages::cm_validate_cnf> {
-    static constexpr std::uint16_t value = defs::MMTYPE_CM_VALIDATE_CNF;
+    static constexpr std::uint16_t value = defs::mmtype::VALIDATE_CNF;
 };
 template <> struct MMTYPE<messages::cm_slac_match_cnf> {
-    static constexpr std::uint16_t value = defs::MMTYPE_CM_SLAC_MATCH_CNF;
+    static constexpr std::uint16_t value = defs::mmtype::SLAC_MATCH_CNF;
 };
 template <> struct MMTYPE<messages::qualcomm::cm_reset_device_req> {
-    static constexpr std::uint16_t value = defs::qualcomm::MMTYPE_CM_RESET_DEVICE_REQ;
+    static constexpr std::uint16_t value = defs::mmtype::qualcomm::RESET_DEVICE_REQ;
 };
 template <> struct MMTYPE<messages::qualcomm::link_status_req> {
-    static constexpr std::uint16_t value = defs::qualcomm::MMTYPE_LINK_STATUS_REQ;
+    static constexpr std::uint16_t value = defs::mmtype::qualcomm::LINK_STATUS_REQ;
 };
 template <> struct MMTYPE<messages::qualcomm::op_attr_req> {
-    static constexpr std::uint16_t value = defs::qualcomm::MMTYPE_OP_ATTR_REQ;
+    static constexpr std::uint16_t value = defs::mmtype::qualcomm::OP_ATTR_REQ;
 };
 template <> struct MMTYPE<messages::lumissil::nscm_reset_device_req> {
-    static constexpr std::uint16_t value = defs::lumissil::MMTYPE_NSCM_RESET_DEVICE_REQ;
+    static constexpr std::uint16_t value = defs::mmtype::lumissil::RESET_DEVICE_REQ;
 };
 template <> struct MMTYPE<messages::lumissil::nscm_get_version_req> {
-    static constexpr std::uint16_t value = defs::lumissil::MMTYPE_NSCM_GET_VERSION_REQ;
+    static constexpr std::uint16_t value = defs::mmtype::lumissil::GET_VERSION_REQ;
 };
 template <> struct MMTYPE<messages::lumissil::nscm_get_d_link_status_req> {
-    static constexpr std::uint16_t value = defs::lumissil::MMTYPE_NSCM_GET_D_LINK_STATUS_REQ;
+    static constexpr std::uint16_t value = defs::mmtype::lumissil::GET_D_LINK_STATUS_REQ;
 };
 
 /// HomePlug AV 1.1 by default; the vendor MMEs predate it and use 1.0.
@@ -180,7 +180,7 @@ public:
         payload.insert(payload.end(), am_data.begin(), am_data.end());
 
         messages::HomeplugMessage hp_message;
-        hp_message.setup_payload(payload.data(), payload.size(), defs::MMTYPE_CM_AMP_MAP_REQ, defs::MMV::AV_2_0);
+        hp_message.setup_payload(payload.data(), payload.size(), defs::mmtype::AMP_MAP_REQ, defs::MMV::AV_2_0);
         hp_message.set_destination(mac);
         return m_callbacks.send_raw_slac(hp_message);
     }

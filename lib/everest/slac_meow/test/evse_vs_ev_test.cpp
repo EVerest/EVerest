@@ -85,11 +85,11 @@ SCENARIO("An EV and an EVSE complete the ISO 15118-3 matching process") {
             }
 
             THEN("the message sequence of ISO 15118-3 Annex A, Figure A.1 is exchanged") {
-                std::vector<std::uint16_t> expected{defs::MMTYPE_CM_SLAC_PARAM_REQ, defs::MMTYPE_CM_SLAC_PARAM_CNF};
-                expected.insert(expected.end(), defs::C_EV_START_ATTEN_CHAR_INDS, defs::MMTYPE_CM_START_ATTEN_CHAR_IND);
-                expected.insert(expected.end(), defs::C_EV_MATCH_MNBC, defs::MMTYPE_CM_MNBC_SOUND_IND);
-                expected.insert(expected.end(), {defs::MMTYPE_CM_ATTEN_CHAR_IND, defs::MMTYPE_CM_ATTEN_CHAR_RSP,
-                                                 defs::MMTYPE_CM_SLAC_MATCH_REQ, defs::MMTYPE_CM_SLAC_MATCH_CNF});
+                std::vector<std::uint16_t> expected{defs::mmtype::SLAC_PARAM_REQ, defs::mmtype::SLAC_PARAM_CNF};
+                expected.insert(expected.end(), defs::C_EV_START_ATTEN_CHAR_INDS, defs::mmtype::START_ATTEN_CHAR_IND);
+                expected.insert(expected.end(), defs::C_EV_MATCH_MNBC, defs::mmtype::MNBC_SOUND_IND);
+                expected.insert(expected.end(), {defs::mmtype::ATTEN_CHAR_IND, defs::mmtype::ATTEN_CHAR_RSP,
+                                                 defs::mmtype::SLAC_MATCH_REQ, defs::mmtype::SLAC_MATCH_CNF});
 
                 REQUIRE(link.over_the_air() == expected);
             }

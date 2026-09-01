@@ -6,8 +6,6 @@
 
 namespace everest::slac::utils {
 
-namespace qca_defs = slac::defs::qualcomm;
-
 // note on byte order:
 //   - sha256 takes the most significant byte first from the lowest
 //     memory address
@@ -15,38 +13,37 @@ namespace qca_defs = slac::defs::qualcomm;
 //     the sha256 output is taken as the zero octet for the NMK-HS
 //   - for the generation of NID, the NMK is fed into sha256, so having
 //     a const char* as input should be the proper byte ordering already
-void generate_nmk_hs(std::uint8_t nmk_hs[slac::defs::NMK_LEN], const char* plain_password, int password_len) {
+void generate_nmk_hs(std::uint8_t nmk_hs[defs::NMK_LEN], const char* plain_password, int password_len) {
     // do pbkdf1 (use sha256 as hashing function, iterate 1000 times,
     // use salt)
     std::vector<std::uint8_t> input(plain_password, plain_password + password_len);
-    input.insert(input.end(), slac::defs::NMK_HASH_ARR.begin(), slac::defs::NMK_HASH_ARR.end());
+    input.insert(input.end(), defs::NMK_HASH_ARR.begin(), defs::NMK_HASH_ARR.end());
     openssl::sha_256_digest_t digest;
     openssl::sha_256(input.data(), input.size(), digest);
     for (int i = 0; i < 1000 - 1; ++i) {
         openssl::sha_256(digest.data(), openssl::sha_256_digest_size, digest);
     }
 
-    memcpy(nmk_hs, digest.data(), slac::defs::NMK_LEN);
+    memcpy(nmk_hs, digest.data(), defs::NMK_LEN);
 }
 
-void generate_nid_from_nmk(std::uint8_t nid[slac::defs::NID_LEN], const std::uint8_t nmk[slac::defs::NMK_LEN]) {
+void generate_nid_from_nmk(std::uint8_t nid[defs::NID_LEN], const std::uint8_t nmk[defs::NMK_LEN]) {
     // msb of least significant octet of NMK should be the leftmost bit
     // of the input, which corresponds to the usual const char* order
 
     // do pbkdf1 (use sha256 as hashing function, iterate 5 times, no
     // salt)
     openssl::sha_256_digest_t digest;
-    openssl::sha_256(nmk, slac::defs::NMK_LEN, digest);
+    openssl::sha_256(nmk, defs::NMK_LEN, digest);
     for (int i = 0; i < 5 - 1; ++i) {
         openssl::sha_256(digest.data(), openssl::sha_256_digest_size, digest);
     }
 
     // use leftmost 52 bits of the hash output
     // left most bit should be bit 7 of the nid
-    memcpy(nid, digest.data(), slac::defs::NID_LEN - 1); // (bits 52 - 5)
-    nid[slac::defs::NID_LEN - 1] =
-        (slac::defs::NID_SECURITY_LEVEL_SIMPLE_CONNECT << slac::defs::NID_SECURITY_LEVEL_OFFSET) |
-        ((static_cast<std::uint8_t>(digest.data()[6])) >> slac::defs::NID_MOST_SIGNIFANT_BYTE_SHIFT);
+    memcpy(nid, digest.data(), defs::NID_LEN - 1); // (bits 52 - 5)
+    nid[defs::NID_LEN - 1] = (defs::NID_SECURITY_LEVEL_SIMPLE_CONNECT << defs::NID_SECURITY_LEVEL_OFFSET) |
+                             ((static_cast<std::uint8_t>(digest.data()[6])) >> defs::NID_MOST_SIGNIFANT_BYTE_SHIFT);
 }
 
 std::string device_info(messages::qualcomm::op_attr_cnf const& msg) {
@@ -67,11 +64,11 @@ std::string device_info(messages::qualcomm::op_attr_cnf const& msg) {
 
     result += "\n  ZC signal: ";
 
-    const auto zc_signal =
-        (msg.line_freq_zc >> qca_defs::OP_ATTR_ZC_SIGNAL_SHIFT) & qca_defs::OP_ATTR_LINE_FREQ_ZC_MASK;
-    if (zc_signal == qca_defs::OP_ATTR_ZC_SIGNAL_DETECTED) {
+    const auto zc_signal = (msg.line_freq_zc >> defs::mme::qualcomm::op_attr::ZC_SIGNAL_SHIFT) &
+                           defs::mme::qualcomm::op_attr::LINE_FREQ_ZC_MASK;
+    if (zc_signal == defs::mme::qualcomm::op_attr::ZC_SIGNAL_DETECTED) {
         result += "Detected";
-    } else if (zc_signal == qca_defs::OP_ATTR_ZC_SIGNAL_MISSING) {
+    } else if (zc_signal == defs::mme::qualcomm::op_attr::ZC_SIGNAL_MISSING) {
         result += "Missing";
     } else {
         result += ("Unknown (" + std::to_string(zc_signal) + ")");
@@ -79,10 +76,10 @@ std::string device_info(messages::qualcomm::op_attr_cnf const& msg) {
 
     result += "\n  Line frequency: ";
 
-    const auto line_freq = msg.line_freq_zc & qca_defs::OP_ATTR_LINE_FREQ_ZC_MASK;
-    if (line_freq == qca_defs::OP_ATTR_LINE_FREQUENCY_50HZ) {
+    const auto line_freq = msg.line_freq_zc & defs::mme::qualcomm::op_attr::LINE_FREQ_ZC_MASK;
+    if (line_freq == defs::mme::qualcomm::op_attr::LINE_FREQUENCY_50HZ) {
         result += "50Hz";
-    } else if (line_freq == qca_defs::OP_ATTR_LINE_FREQUENCY_60HZ) {
+    } else if (line_freq == defs::mme::qualcomm::op_attr::LINE_FREQUENCY_60HZ) {
         result += "60Hz";
     } else {
         result += ("Unknown (" + std::to_string(line_freq) + ")");

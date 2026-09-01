@@ -12,7 +12,7 @@ bool is_slac_parm_cnf(messages::HomeplugMessage const& frame, RunId const& run_i
     if (not frame.is_valid()) {
         return false;
     }
-    if (frame.get_mmtype() != defs::MMTYPE_CM_SLAC_PARAM_CNF) {
+    if (frame.get_mmtype() != defs::mmtype::SLAC_PARAM_CNF) {
         return false;
     }
     auto const msg = frame.payload_as<messages::cm_slac_parm_cnf>();
@@ -26,7 +26,7 @@ bool is_atten_char_ind(messages::HomeplugMessage const& frame) {
     if (not frame.is_valid()) {
         return false;
     }
-    if (frame.get_mmtype() != defs::MMTYPE_CM_ATTEN_CHAR_IND) {
+    if (frame.get_mmtype() != defs::mmtype::ATTEN_CHAR_IND) {
         return false;
     }
     return frame.payload_as<messages::cm_atten_char_ind>().has_value();
@@ -44,7 +44,7 @@ bool is_slac_match_cnf(messages::HomeplugMessage const& frame, RunId const& run_
     if (not frame.is_valid()) {
         return false;
     }
-    if (frame.get_mmtype() != defs::MMTYPE_CM_SLAC_MATCH_CNF) {
+    if (frame.get_mmtype() != defs::mmtype::SLAC_MATCH_CNF) {
         return false;
     }
     auto const msg = frame.payload_as<messages::cm_slac_match_cnf>();
@@ -65,8 +65,7 @@ bool is_set_key_cnf(messages::HomeplugMessage const& frame) {
     if (not frame.is_valid()) {
         return false;
     }
-    return frame.get_mmtype() == defs::MMTYPE_CM_SET_KEY_CNF and
-           frame.payload_as<messages::cm_set_key_cnf>().has_value();
+    return frame.get_mmtype() == defs::mmtype::SET_KEY_CNF and frame.payload_as<messages::cm_set_key_cnf>().has_value();
 }
 
 } // namespace everest::slac::ev

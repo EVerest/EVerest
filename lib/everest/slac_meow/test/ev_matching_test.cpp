@@ -110,27 +110,27 @@ bool dlink_last_ready(std::vector<bool> const& dlink_ready_history, bool expecte
 }
 
 bool is_cm_slac_parm_req(messages::HomeplugMessage const& msg) {
-    return msg.get_mmtype() == (defs::MMTYPE_CM_SLAC_PARAM | defs::MMTYPE_MODE_REQ);
+    return msg.get_mmtype() == (defs::mmtype::SLAC_PARAM | defs::mmtype::MODE_REQ);
 }
 
 bool is_cm_start_atten_char_ind(messages::HomeplugMessage const& msg) {
-    return msg.get_mmtype() == (defs::MMTYPE_CM_START_ATTEN_CHAR | defs::MMTYPE_MODE_IND);
+    return msg.get_mmtype() == (defs::mmtype::START_ATTEN_CHAR | defs::mmtype::MODE_IND);
 }
 
 bool is_cm_mnbc_sound_ind(messages::HomeplugMessage const& msg) {
-    return msg.get_mmtype() == (defs::MMTYPE_CM_MNBC_SOUND | defs::MMTYPE_MODE_IND);
+    return msg.get_mmtype() == (defs::mmtype::MNBC_SOUND | defs::mmtype::MODE_IND);
 }
 
 bool is_cm_atten_char_rsp(messages::HomeplugMessage const& msg) {
-    return msg.get_mmtype() == (defs::MMTYPE_CM_ATTEN_CHAR | defs::MMTYPE_MODE_RSP);
+    return msg.get_mmtype() == (defs::mmtype::ATTEN_CHAR | defs::mmtype::MODE_RSP);
 }
 
 bool is_cm_slac_match_req(messages::HomeplugMessage const& msg) {
-    return msg.get_mmtype() == (defs::MMTYPE_CM_SLAC_MATCH | defs::MMTYPE_MODE_REQ);
+    return msg.get_mmtype() == (defs::mmtype::SLAC_MATCH | defs::mmtype::MODE_REQ);
 }
 
 bool is_cm_set_key_cnf(messages::HomeplugMessage const& msg) {
-    return msg.get_mmtype() == (defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_CNF);
+    return msg.get_mmtype() == (defs::mmtype::SET_KEY | defs::mmtype::MODE_CNF);
 }
 
 bool is_broadcast_destination(messages::HomeplugMessage const& msg) {
@@ -162,7 +162,7 @@ std::size_t count_cm_slac_match_req(std::vector<messages::HomeplugMessage> const
 }
 
 bool is_cm_set_key_req(messages::HomeplugMessage const& msg) {
-    return msg.get_mmtype() == (defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_REQ);
+    return msg.get_mmtype() == (defs::mmtype::SET_KEY | defs::mmtype::MODE_REQ);
 }
 
 std::size_t count_cm_set_key_req(std::vector<messages::HomeplugMessage> const& sent_messages) {
@@ -217,7 +217,7 @@ messages::HomeplugMessage create_cm_atten_char_ind(EvMac const& source_mac, EvMa
 
     messages::HomeplugMessage message;
     message.set_source(source_mac);
-    message.setup_payload(&atten_char, sizeof(atten_char), defs::MMTYPE_CM_ATTEN_CHAR | defs::MMTYPE_MODE_IND,
+    message.setup_payload(&atten_char, sizeof(atten_char), defs::mmtype::ATTEN_CHAR | defs::mmtype::MODE_IND,
                           defs::MMV::AV_1_1);
     return message;
 }
@@ -273,9 +273,9 @@ bool parse_run_id_from_parm_req(messages::HomeplugMessage const& request, RunId&
 messages::HomeplugMessage create_cm_slac_parm_cnf(EvMac const& evse_mac, RunId const& run_id) {
     messages::cm_slac_parm_cnf payload{};
     std::fill(std::begin(payload.m_sound_target), std::end(payload.m_sound_target), std::uint8_t{0xFF});
-    payload.num_sounds = defs::CM_SLAC_PARM_CNF_NUM_SOUNDS;
-    payload.timeout = defs::CM_SLAC_PARM_CNF_TIMEOUT;
-    payload.resp_type = defs::CM_SLAC_PARM_CNF_RESP_TYPE;
+    payload.num_sounds = defs::mme::slac_parm_cnf::NUM_SOUNDS;
+    payload.timeout = defs::mme::slac_parm_cnf::TIMEOUT;
+    payload.resp_type = defs::mme::slac_parm_cnf::RESP_TYPE;
     std::copy(evse_mac.begin(), evse_mac.end(), payload.forwarding_sta);
     payload.application_type = defs::COMMON_APPLICATION_TYPE;
     payload.security_type = defs::COMMON_SECURITY_TYPE;
@@ -283,7 +283,7 @@ messages::HomeplugMessage create_cm_slac_parm_cnf(EvMac const& evse_mac, RunId c
 
     messages::HomeplugMessage message;
     message.set_source(evse_mac);
-    message.setup_payload(&payload, sizeof(payload), defs::MMTYPE_CM_SLAC_PARAM | defs::MMTYPE_MODE_CNF,
+    message.setup_payload(&payload, sizeof(payload), defs::mmtype::SLAC_PARAM | defs::mmtype::MODE_CNF,
                           defs::MMV::AV_1_1);
     return message;
 }
@@ -300,7 +300,7 @@ messages::HomeplugMessage create_cm_slac_match_cnf(EvMac const& source_mac, EvMa
     messages::cm_slac_match_cnf match_cnf{};
     match_cnf.application_type = defs::COMMON_APPLICATION_TYPE;
     match_cnf.security_type = defs::COMMON_SECURITY_TYPE;
-    match_cnf.mvf_length = defs::CM_SLAC_MATCH_CNF_MVF_LENGTH;
+    match_cnf.mvf_length = defs::mme::slac_match_cnf::MVF_LENGTH;
     std::fill(std::begin(match_cnf.pev_id), std::end(match_cnf.pev_id), std::uint8_t{0});
     std::copy(ev_host_mac.begin(), ev_host_mac.end(), match_cnf.pev_mac);
     std::fill(std::begin(match_cnf.evse_id), std::end(match_cnf.evse_id), std::uint8_t{0});
@@ -313,7 +313,7 @@ messages::HomeplugMessage create_cm_slac_match_cnf(EvMac const& source_mac, EvMa
 
     messages::HomeplugMessage message;
     message.set_source(source_mac);
-    message.setup_payload(&match_cnf, sizeof(match_cnf), defs::MMTYPE_CM_SLAC_MATCH | defs::MMTYPE_MODE_CNF,
+    message.setup_payload(&match_cnf, sizeof(match_cnf), defs::mmtype::SLAC_MATCH | defs::mmtype::MODE_CNF,
                           defs::MMV::AV_1_1);
     return message;
 }
@@ -327,7 +327,7 @@ messages::HomeplugMessage create_short_cm_slac_match_cnf(EvMac const& source_mac
 
 struct SetKeyCnfParams {
     EvMac source{Context::EV_PLC_MAC};
-    std::uint8_t result = defs::CM_SET_KEY_CNF_RESULT_SUCCESS;
+    std::uint8_t result = defs::mme::set_key_cnf::RESULT_SUCCESS;
 };
 
 messages::HomeplugMessage create_cm_set_key_cnf(SetKeyCnfParams const& params) {
@@ -336,7 +336,7 @@ messages::HomeplugMessage create_cm_set_key_cnf(SetKeyCnfParams const& params) {
 
     messages::HomeplugMessage message;
     message.set_source(params.source);
-    message.setup_payload(&set_key_cnf, sizeof(set_key_cnf), defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_CNF,
+    message.setup_payload(&set_key_cnf, sizeof(set_key_cnf), defs::mmtype::SET_KEY | defs::mmtype::MODE_CNF,
                           defs::MMV::AV_1_1);
     return message;
 }
@@ -648,7 +648,7 @@ bool test_cm_slac_parm_cnf_sounding_sequence() {
                          "CM_START_ATTEN_CHAR.IND num_sounds is not C_EV_MATCH_MNBC")) {
             return false;
         }
-        if (!assert_true(start_atten_char.resp_type == defs::CM_SLAC_PARM_CNF_RESP_TYPE, test_name,
+        if (!assert_true(start_atten_char.resp_type == defs::mme::slac_parm_cnf::RESP_TYPE, test_name,
                          "CM_START_ATTEN_CHAR.IND resp_type is not CM_SLAC_PARM_CNF_RESP_TYPE")) {
             return false;
         }
@@ -840,7 +840,7 @@ bool test_cm_atten_char_ind_emits_rsp_and_match_req() {
             test_name, "CM_ATTEN_CHAR.RSP run_id does not match CM_SLAC_PARM.CNF run_id")) {
         return false;
     }
-    if (!assert_true(atten_rsp_payload.result == defs::CM_ATTEN_CHAR_RSP_RESULT, test_name,
+    if (!assert_true(atten_rsp_payload.result == defs::mme::atten_char_rsp::RESULT, test_name,
                      "CM_ATTEN_CHAR.RSP result is not CM_ATTEN_CHAR_RSP_RESULT")) {
         return false;
     }
@@ -873,7 +873,7 @@ bool test_cm_atten_char_ind_emits_rsp_and_match_req() {
             test_name, "CM_SLAC_MATCH.REQ run_id is not CM_SLAC_PARM.CNF run_id")) {
         return false;
     }
-    if (!assert_true(match_req_payload.mvf_length == defs::CM_SLAC_MATCH_REQ_MVF_LENGTH, test_name,
+    if (!assert_true(match_req_payload.mvf_length == defs::mme::slac_match_req::MVF_LENGTH, test_name,
                      "CM_SLAC_MATCH.REQ mvf_length is not CM_SLAC_MATCH_REQ_MVF_LENGTH")) {
         return false;
     }
@@ -1056,7 +1056,7 @@ bool test_valid_cm_slac_match_cnf_emits_cm_set_key_req() {
     }
 
     auto const& set_key_message = harness.sent_messages.back();
-    if (!assert_true(set_key_message.get_mmtype() == (defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_REQ), test_name,
+    if (!assert_true(set_key_message.get_mmtype() == (defs::mmtype::SET_KEY | defs::mmtype::MODE_REQ), test_name,
                      "CM_SET_KEY request has wrong mmtype")) {
         return false;
     }
@@ -1075,27 +1075,27 @@ bool test_valid_cm_slac_match_cnf_emits_cm_set_key_req() {
             test_name, "CM_SET_KEY.REQ new_key is not CM_SLAC_MATCH.CNF NMK")) {
         return false;
     }
-    if (!assert_true(set_key_payload.key_type == defs::CM_SET_KEY_REQ_KEY_TYPE_NMK, test_name,
+    if (!assert_true(set_key_payload.key_type == defs::mme::set_key_req::KEY_TYPE_NMK, test_name,
                      "CM_SET_KEY.REQ key_type is not NMK")) {
         return false;
     }
-    if (!assert_true(set_key_payload.pid == defs::CM_SET_KEY_REQ_PID_HLE, test_name,
+    if (!assert_true(set_key_payload.pid == defs::mme::set_key_req::PID_HLE, test_name,
                      "CM_SET_KEY.REQ pid is not CM_SET_KEY_REQ_PID_HLE")) {
         return false;
     }
-    if (!assert_true(set_key_payload.prn == defs::CM_SET_KEY_REQ_PRN_UNUSED, test_name,
+    if (!assert_true(set_key_payload.prn == defs::mme::set_key_req::PRN_UNUSED, test_name,
                      "CM_SET_KEY.REQ prn is not CM_SET_KEY_REQ_PRN_UNUSED")) {
         return false;
     }
-    if (!assert_true(set_key_payload.pmn == defs::CM_SET_KEY_REQ_PMN_UNUSED, test_name,
+    if (!assert_true(set_key_payload.pmn == defs::mme::set_key_req::PMN_UNUSED, test_name,
                      "CM_SET_KEY.REQ pmn is not CM_SET_KEY_REQ_PMN_UNUSED")) {
         return false;
     }
-    if (!assert_true(set_key_payload.cco_capability == defs::CM_SET_KEY_REQ_CCO_CAP_NONE, test_name,
+    if (!assert_true(set_key_payload.cco_capability == defs::mme::set_key_req::CCO_CAP_NONE, test_name,
                      "CM_SET_KEY.REQ cco_capability is not CM_SET_KEY_REQ_CCO_CAP_NONE")) {
         return false;
     }
-    if (!assert_true(set_key_payload.new_eks == defs::CM_SET_KEY_REQ_PEKS_NMK_KNOWN_TO_STA, test_name,
+    if (!assert_true(set_key_payload.new_eks == defs::mme::set_key_req::PEKS_NMK_KNOWN_TO_STA, test_name,
                      "CM_SET_KEY.REQ new_eks is not CM_SET_KEY_REQ_PEKS_NMK_KNOWN_TO_STA")) {
         return false;
     }

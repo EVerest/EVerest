@@ -19,6 +19,8 @@
 
 namespace {
 using namespace everest::lib::io;
+// these helpers sit at global scope, so defs:: does not resolve the way it does everywhere else
+namespace defs = everest::slac::defs;
 
 std::string build_errno_string(std::string const& msg, int error_code) {
     std::stringstream str;
@@ -30,7 +32,7 @@ std::string build_errno_string(std::string const& msg, int error_code) {
 }
 
 event::unique_fd open_raw_socket(std::string const& if_name) {
-    const auto protocol = htons(everest::slac::defs::ETH_P_HOMEPLUG_GREENPHY);
+    const auto protocol = htons(defs::ETH_P_HOMEPLUG_GREENPHY);
     errno = 0;
     int const if_index = if_nametoindex(if_name.c_str());
     if (if_index == 0) {

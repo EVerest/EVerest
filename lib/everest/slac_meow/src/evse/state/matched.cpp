@@ -53,7 +53,7 @@ void Matched::enter() {
 }
 
 bool Matched::is_amp_map_req(messages::HomeplugMessage const& frame) {
-    if (not frame.is_valid() or frame.get_mmtype() != defs::MMTYPE_CM_AMP_MAP_REQ) {
+    if (not frame.is_valid() or frame.get_mmtype() != defs::mmtype::AMP_MAP_REQ) {
         return false;
     }
     auto const req = frame.payload_as<messages::cm_amp_map_req>();
@@ -97,16 +97,16 @@ Result Matched::feed(SlacEvent const& ev) {
         // Answered whatever the supervision mode is. Applying the reduction is the modem's job.
         if (is_amp_map_req(*message)) {
             messages::cm_amp_map_cnf reply{};
-            reply.result = defs::CM_AMP_MAP_CNF_RESULT_SUCCESS;
+            reply.result = defs::mme::amp_map_cnf::RESULT_SUCCESS;
             if (not m_ctx.send_slac_message(message->get_src_mac(), reply)) {
                 m_ctx.log_warn("Failed to send CM_AMP_MAP.CNF");
             }
             return handled();
         }
         // Any other result leaves the retransmission running: V2G3-A09-114, CmAmpMap_004.
-        if (m_amp_map_awaiting_cnf and message->is_valid() and message->get_mmtype() == defs::MMTYPE_CM_AMP_MAP_CNF) {
+        if (m_amp_map_awaiting_cnf and message->is_valid() and message->get_mmtype() == defs::mmtype::AMP_MAP_CNF) {
             auto const cnf = message->payload_as<messages::cm_amp_map_cnf>();
-            if (cnf.has_value() and cnf->result == defs::CM_AMP_MAP_CNF_RESULT_SUCCESS) {
+            if (cnf.has_value() and cnf->result == defs::mme::amp_map_cnf::RESULT_SUCCESS) {
                 m_amp_map_awaiting_cnf = false;
                 return handled();
             }

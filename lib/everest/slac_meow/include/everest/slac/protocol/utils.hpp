@@ -9,8 +9,8 @@
 
 namespace everest::slac::utils {
 
-void generate_nmk_hs(std::uint8_t nmk_hs[slac::defs::NMK_LEN], const char* plain_password, int password_len);
-void generate_nid_from_nmk(std::uint8_t nid[slac::defs::NID_LEN], const std::uint8_t nmk[slac::defs::NMK_LEN]);
+void generate_nmk_hs(std::uint8_t nmk_hs[defs::NMK_LEN], const char* plain_password, int password_len);
+void generate_nid_from_nmk(std::uint8_t nid[defs::NID_LEN], const std::uint8_t nmk[defs::NMK_LEN]);
 std::string device_info(messages::qualcomm::op_attr_cnf const& mgs);
 std::string device_info(messages::lumissil::nscm_get_version_cnf const& msg);
 

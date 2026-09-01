@@ -52,7 +52,7 @@ Result ResetChip::feed(SlacEvent const& ev) {
     }
 
     if (auto const* message = get_if_message(ev)) {
-        if (m_request_sent and message->get_mmtype() == defs::qualcomm::MMTYPE_CM_RESET_DEVICE_CNF) {
+        if (m_request_sent and message->get_mmtype() == defs::mmtype::qualcomm::RESET_DEVICE_CNF) {
             return m_ctx.create_state<Idle>();
         }
     }

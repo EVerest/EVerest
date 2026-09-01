@@ -36,7 +36,7 @@ void send_link_status_req(Context& ctx, LinkCheckMode mode) {
 
 bool parse_link_status_cnf(messages::HomeplugMessage const& frame, LinkCheckMode mode, bool& linked) {
     if (mode == LinkCheckMode::Lumissil) {
-        if (frame.get_mmtype() != defs::lumissil::MMTYPE_NSCM_GET_D_LINK_STATUS_CNF) {
+        if (frame.get_mmtype() != defs::mmtype::lumissil::GET_D_LINK_STATUS_CNF) {
             return false;
         }
         auto const msg = frame.payload_as<messages::lumissil::nscm_get_d_link_status_cnf>();
@@ -48,7 +48,7 @@ bool parse_link_status_cnf(messages::HomeplugMessage const& frame, LinkCheckMode
     }
 
     if (mode == LinkCheckMode::Qualcomm) {
-        if (frame.get_mmtype() != defs::qualcomm::MMTYPE_LINK_STATUS_CNF) {
+        if (frame.get_mmtype() != defs::mmtype::qualcomm::LINK_STATUS_CNF) {
             return false;
         }
         auto const msg = frame.payload_as<messages::qualcomm::link_status_cnf>();

@@ -36,7 +36,7 @@ void WaitForLink::enter() {
 bool WaitForLink::resend_cached_match_cnf(messages::HomeplugMessage const& frame) {
     auto const& cache = m_ctx.match_confirm_cache;
 
-    if (frame.get_mmtype() != defs::MMTYPE_CM_SLAC_MATCH_REQ) {
+    if (frame.get_mmtype() != defs::mmtype::SLAC_MATCH_REQ) {
         return false;
     }
     auto const msg = frame.payload_as<messages::cm_slac_match_req>();

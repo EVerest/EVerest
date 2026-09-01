@@ -21,10 +21,10 @@ bool SessionData::matches_identity(MacAddress const& other_ev_mac, RunId const& 
 }
 
 bool validate_message(SessionData const& data, messages::cm_atten_char_rsp const& msg) {
-    if (msg.application_type not_eq slac::defs::COMMON_APPLICATION_TYPE) {
+    if (msg.application_type not_eq defs::COMMON_APPLICATION_TYPE) {
         return false;
     }
-    if (msg.security_type not_eq slac::defs::COMMON_SECURITY_TYPE) {
+    if (msg.security_type not_eq defs::COMMON_SECURITY_TYPE) {
         return false;
     }
     constexpr StationId source_id_ref{};
@@ -35,7 +35,7 @@ bool validate_message(SessionData const& data, messages::cm_atten_char_rsp const
     if (not wire_equal(msg.resp_id, resp_id_ref)) {
         return false;
     }
-    if (msg.result not_eq slac::defs::CM_ATTEN_CHAR_RSP_RESULT) {
+    if (msg.result not_eq defs::mme::atten_char_rsp::RESULT) {
         return false;
     }
 
@@ -52,13 +52,13 @@ bool validate_message(SessionData const& data, messages::cm_atten_char_rsp const
 }
 
 bool validate_message(SessionData const& data, messages::cm_slac_match_req const& msg) {
-    if (msg.application_type not_eq slac::defs::COMMON_APPLICATION_TYPE) {
+    if (msg.application_type not_eq defs::COMMON_APPLICATION_TYPE) {
         return false;
     }
-    if (msg.security_type not_eq slac::defs::COMMON_SECURITY_TYPE) {
+    if (msg.security_type not_eq defs::COMMON_SECURITY_TYPE) {
         return false;
     }
-    if (msg.mvf_length not_eq slac::defs::CM_SLAC_MATCH_REQ_MVF_LENGTH) {
+    if (msg.mvf_length not_eq defs::mme::slac_match_req::MVF_LENGTH) {
         return false;
     }
     // PEV ID = 0x00 TC_SECC_CMN_VTB_CmSlacMatch_013/014(?)
@@ -91,17 +91,17 @@ bool validate_message(SessionData const& data, messages::cm_atten_profile_ind co
     if (not wire_equal(msg.pev_mac, data.ev_mac)) {
         return false;
     }
-    if (msg.num_groups != slac::defs::AAG_LIST_LEN) {
+    if (msg.num_groups != defs::AAG_LIST_LEN) {
         return false;
     }
     return true;
 }
 
 bool validate_message(SessionData const& data, messages::cm_start_atten_char_ind const& msg) {
-    if (msg.application_type not_eq slac::defs::COMMON_APPLICATION_TYPE) {
+    if (msg.application_type not_eq defs::COMMON_APPLICATION_TYPE) {
         return false;
     }
-    if (msg.security_type not_eq slac::defs::COMMON_SECURITY_TYPE) {
+    if (msg.security_type not_eq defs::COMMON_SECURITY_TYPE) {
         return false;
     }
     if (msg.num_sounds == 0) { // Don't be strict to the ISO 15118-3
@@ -110,7 +110,7 @@ bool validate_message(SessionData const& data, messages::cm_start_atten_char_ind
     if (msg.timeout == 0) { // Don't be strict to the ISO 15118-3
         return false;
     }
-    if (msg.resp_type not_eq slac::defs::CM_SLAC_PARM_CNF_RESP_TYPE) {
+    if (msg.resp_type not_eq defs::mme::slac_parm_cnf::RESP_TYPE) {
         return false;
     }
     if (not wire_equal(msg.forwarding_sta, data.ev_mac)) {
@@ -126,13 +126,13 @@ bool validate_message(SessionData const& data, messages::cm_start_atten_char_ind
 messages::cm_slac_parm_cnf make_slac_parm_cnf(SessionData const& data) {
     messages::cm_slac_parm_cnf param_confirm{};
 
-    copy_wire(param_confirm.m_sound_target, slac::defs::BROADCAST_MAC_ADDRESS);
-    param_confirm.num_sounds = slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS;
-    param_confirm.timeout = slac::defs::CM_SLAC_PARM_CNF_TIMEOUT;
-    param_confirm.resp_type = slac::defs::CM_SLAC_PARM_CNF_RESP_TYPE;
+    copy_wire(param_confirm.m_sound_target, defs::BROADCAST_MAC_ADDRESS);
+    param_confirm.num_sounds = defs::mme::slac_parm_cnf::NUM_SOUNDS;
+    param_confirm.timeout = defs::mme::slac_parm_cnf::TIMEOUT;
+    param_confirm.resp_type = defs::mme::slac_parm_cnf::RESP_TYPE;
     copy_to_wire(param_confirm.forwarding_sta, data.ev_mac);
-    param_confirm.application_type = slac::defs::COMMON_APPLICATION_TYPE;
-    param_confirm.security_type = slac::defs::COMMON_SECURITY_TYPE;
+    param_confirm.application_type = defs::COMMON_APPLICATION_TYPE;
+    param_confirm.security_type = defs::COMMON_SECURITY_TYPE;
     copy_to_wire(param_confirm.run_id, data.run_id);
 
     return param_confirm;
@@ -141,21 +141,21 @@ messages::cm_slac_parm_cnf make_slac_parm_cnf(SessionData const& data) {
 messages::cm_atten_char_ind make_atten_char_ind(SessionData const& data, int atten_offset) {
     messages::cm_atten_char_ind atten_char_ind{};
 
-    atten_char_ind.application_type = slac::defs::COMMON_APPLICATION_TYPE;
-    atten_char_ind.security_type = slac::defs::COMMON_SECURITY_TYPE;
+    atten_char_ind.application_type = defs::COMMON_APPLICATION_TYPE;
+    atten_char_ind.security_type = defs::COMMON_SECURITY_TYPE;
     copy_to_wire(atten_char_ind.source_address, data.ev_mac);
     copy_to_wire(atten_char_ind.run_id, data.run_id);
     zero_wire(atten_char_ind.source_id);
     zero_wire(atten_char_ind.resp_id);
     atten_char_ind.num_sounds = data.captured_sounds;
-    atten_char_ind.attenuation_profile.num_groups = slac::defs::AAG_LIST_LEN;
+    atten_char_ind.attenuation_profile.num_groups = defs::AAG_LIST_LEN;
     if (data.captured_sounds != 0) {
-        for (int i = 0; i < slac::defs::AAG_LIST_LEN; ++i) {
+        for (int i = 0; i < defs::AAG_LIST_LEN; ++i) {
             atten_char_ind.attenuation_profile.aag[i] = data.captured_aags[i] / data.captured_sounds + atten_offset;
         }
     } else {
         // FIXME (aw): what to do here, if we didn't receive any sounds?
-        std::fill_n(atten_char_ind.attenuation_profile.aag, slac::defs::AAG_LIST_LEN, std::uint8_t{0x01});
+        std::fill_n(atten_char_ind.attenuation_profile.aag, defs::AAG_LIST_LEN, std::uint8_t{0x01});
     }
 
     return atten_char_ind;

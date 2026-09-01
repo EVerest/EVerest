@@ -14,8 +14,8 @@ const MacAddress EV_MAC{0x02, 0x00, 0x00, 0x00, 0x00, 0x42};
 const MacAddress MODEM_MAC{0x00, 0xB0, 0x52, 0x00, 0x00, 0x01};
 
 bool is_modem_directed(std::uint16_t mmtype) {
-    return mmtype == defs::MMTYPE_CM_SET_KEY_REQ or
-           (mmtype & defs::MMTYPE_CATEGORY_MASK) == defs::MMTYPE_CATEGORY_VENDOR_SPECIFIC;
+    return mmtype == defs::mmtype::SET_KEY_REQ or
+           (mmtype & defs::mmtype::CATEGORY_MASK) == defs::mmtype::CATEGORY_VENDOR_SPECIFIC;
 }
 
 bool VirtualPLCLink::from_evse(messages::HomeplugMessage& frame) {
@@ -24,7 +24,7 @@ bool VirtualPLCLink::from_evse(messages::HomeplugMessage& frame) {
 
     if (is_modem_directed(stamped.get_mmtype())) {
         // the EVSE's vendor probes go unanswered here, so its modem vendor stays Unknown
-        if (stamped.get_mmtype() == defs::MMTYPE_CM_SET_KEY_REQ) {
+        if (stamped.get_mmtype() == defs::mmtype::SET_KEY_REQ) {
             answer_set_key_req(m_to_evse);
         }
         return true;
@@ -39,7 +39,7 @@ bool VirtualPLCLink::from_ev(messages::HomeplugMessage& frame) {
     stamped.set_source(EV_MAC);
 
     if (is_modem_directed(stamped.get_mmtype())) {
-        if (stamped.get_mmtype() == defs::MMTYPE_CM_SET_KEY_REQ) {
+        if (stamped.get_mmtype() == defs::mmtype::SET_KEY_REQ) {
             m_ev_set_key_reqs.push_back(stamped);
             answer_set_key_req(m_to_ev);
         }
@@ -50,7 +50,7 @@ bool VirtualPLCLink::from_ev(messages::HomeplugMessage& frame) {
     m_to_evse.push_back(stamped);
 
     // the EVSE's modem reports what it heard of each M-Sound
-    if (stamped.get_mmtype() == defs::MMTYPE_CM_MNBC_SOUND_IND) {
+    if (stamped.get_mmtype() == defs::mmtype::MNBC_SOUND_IND) {
         inject_atten_profile();
     }
     return true;
@@ -72,10 +72,10 @@ void VirtualPLCLink::deliver(evse::EvseFSM& evse, ev::EvFSM& ev) {
 
 void VirtualPLCLink::answer_set_key_req(std::vector<messages::HomeplugMessage>& inbox) {
     messages::cm_set_key_cnf cnf{};
-    cnf.result = defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS;
+    cnf.result = defs::mme::set_key_cnf::RESULT_MODEM_COMPAT_SUCCESS;
 
     messages::HomeplugMessage frame;
-    frame.setup_payload(&cnf, sizeof(cnf), defs::MMTYPE_CM_SET_KEY_CNF, defs::MMV::AV_1_1);
+    frame.setup_payload(&cnf, sizeof(cnf), defs::mmtype::SET_KEY_CNF, defs::MMV::AV_1_1);
     frame.set_source(MODEM_MAC);
     inbox.push_back(frame);
 }
@@ -89,7 +89,7 @@ void VirtualPLCLink::inject_atten_profile() {
     }
 
     messages::HomeplugMessage frame;
-    frame.setup_payload(&ind, sizeof(ind), defs::MMTYPE_CM_ATTEN_PROFILE_IND, defs::MMV::AV_1_1);
+    frame.setup_payload(&ind, sizeof(ind), defs::mmtype::ATTEN_PROFILE_IND, defs::MMV::AV_1_1);
     frame.set_source(MODEM_MAC);
     m_to_evse.push_back(frame);
     ++m_injected_atten_profiles;
