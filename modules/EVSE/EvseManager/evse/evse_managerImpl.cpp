@@ -425,6 +425,11 @@ types::evse_manager::Evse evse_managerImpl::handle_get_evse() {
     // EvseManager currently only supports a single connector with id: 1;
     connector.id = 1;
     connector.type = mod->connector_type;
+    // Both static: settled in init(), so a consumer building before any session, or before
+    // asynchronously published capabilities arrive, still gets a real answer.
+    connector.charge_mode =
+        mod->config.charge_mode == "DC" ? types::evse_manager::ChargeMode::DC : types::evse_manager::ChargeMode::AC;
+    connector.hlc_capable = mod->is_hlc_enabled();
 
     connectors.push_back(connector);
     evse.connectors = connectors;
