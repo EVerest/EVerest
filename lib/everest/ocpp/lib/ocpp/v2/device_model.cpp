@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
 
+#include <cmath>
+#include <cstdint>
+#include <limits>
+
 #include <everest/database/exceptions.hpp>
 #include <ocpp/common/constants.hpp>
 #include <ocpp/common/utils.hpp>
@@ -260,6 +264,17 @@ bool validate_value(const VariableCharacteristics& characteristics, const std::s
         }
     }
     return false;
+}
+
+/// \brief Converts a monitor \p value to a string suitable for validate_value() given the variable's \p data_type.
+/// std::to_string(float) always renders six decimals (e.g. "950.000000"), which would fail integer validation even
+/// for integral values, so integral values for integer-typed variables are rendered without decimals.
+std::string monitor_value_to_string(const float value, const DataEnum data_type) {
+    if (data_type == DataEnum::integer and std::rint(value) == value and
+        std::abs(value) < static_cast<float>(std::numeric_limits<std::int32_t>::max())) {
+        return std::to_string(static_cast<std::int32_t>(value));
+    }
+    return std::to_string(value);
 }
 
 bool include_in_summary_inventory(const ComponentVariable& cv, const VariableAttribute& attribute) {
@@ -831,7 +846,8 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
                 valid_value = true;
             } else {
                 try {
-                    valid_value = validate_value(characteristics, std::to_string(request.value),
+                    valid_value = validate_value(characteristics,
+                                                 monitor_value_to_string(request.value, characteristics.dataType),
                                                  allow_zero(request.component, request.variable));
                 } catch (const std::exception& e) {
                     EVLOG_warning << "Could not validate monitor value: " << request.value
