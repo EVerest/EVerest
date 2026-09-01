@@ -82,6 +82,8 @@ struct GenericChargePointCallbacks {
     virtual std::future<ocpp::ConfigNetworkResult>
     cb_configure_network_connection_profile(std::int32_t configuration_slot,
                                             const ocpp::v2::NetworkConnectionProfile& network_connection_profile) = 0;
+    /// \brief Applies the requested availability and reports the connector's effective state to the CSMS.
+    /// \return true when the effective state matches the requested one.
     virtual bool cb_connector_effective_operative_status(std::int32_t evse_id, std::int32_t connector_id,
                                                          ocpp::v2::OperationalStatusEnum new_status) = 0;
     virtual void cb_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status,
