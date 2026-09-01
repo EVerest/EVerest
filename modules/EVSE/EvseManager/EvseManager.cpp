@@ -1665,8 +1665,9 @@ void EvseManager::setup_AC_mode(bool ac_hlc_enabled) {
     if (ac_hlc_enabled) {
         r_hlc[0]->call_setup(evseid, sae_mode, config.session_logging);
 
-        // Set up energy transfer modes for HLC. For now we only support either DC or AC, not both at the same time.
-        set_supported_energy_transfers([this] { return ac_core_energy_transfers(); }, SendEnergyTransfers::Always);
+        // A core-only AC list drops AC_BPT and the advertised AC DER mode, and nothing republishes
+        // them until the next capabilities update.
+        set_supported_energy_transfers([this] { return ac_energy_transfers(); }, SendEnergyTransfers::Always);
     } else {
         selected_protocol = "IEC61851-1";
     }
