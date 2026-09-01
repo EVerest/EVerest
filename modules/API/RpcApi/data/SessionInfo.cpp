@@ -110,6 +110,8 @@ void SessionInfoStore::update_state(const types::evse_manager::SessionEvent even
         [[fallthrough]];
     case Event::SwitchingPhases:
         [[fallthrough]];
+    case Event::StoppingTransaction:
+        [[fallthrough]];
     default:
         break;
     }

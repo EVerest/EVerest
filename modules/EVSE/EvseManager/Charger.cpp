@@ -1071,6 +1071,14 @@ void Charger::run_state_machine() {
                 // Transaction may already be stopped when it was cancelled earlier.
                 // In that case, do not sent a second transactionFinished event.
                 if (shared_context.flag_transaction_active) {
+                    // We only ever reach Finished with an active transaction after StoppingCharging has
+                    // confirmed shared_context.contactor_open, so the relais/contactor is safely open (power
+                    // off) at this point and the transaction is really ending (not resumable). Signal this
+                    // before writing the stop to the power meter: StoppingTransaction is not Eichrecht-relevant
+                    // by itself, but it is the checkpoint at which consumers can verify the relay/contactor
+                    // state before the final (calibrated) meter reading is taken, enabling Eichrecht-compliant
+                    // switch/measurement coordination ("Schaltmesskoordination").
+                    signal_simple_event(types::evse_manager::SessionEventEnum::StoppingTransaction);
                     stop_transaction();
                 }
 

@@ -59,6 +59,7 @@ enum class SessionEventEnum {
     ChargingPausedEV,
     ChargingPausedEVSE,
     StoppingCharging,
+    StoppingTransaction,
     ChargingFinished,
     TransactionFinished,
     SessionFinished,

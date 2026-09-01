@@ -2327,6 +2327,7 @@ void GenericOcpp::process_session_event(std::int32_t evse_id, const types::evse_
         case types::evse_manager::SessionEventEnum::ChargingFinished:
         case types::evse_manager::SessionEventEnum::PrepareCharging:
         case types::evse_manager::SessionEventEnum::StoppingCharging:
+        case types::evse_manager::SessionEventEnum::StoppingTransaction:
             break;
         }
 
