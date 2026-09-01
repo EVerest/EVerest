@@ -464,8 +464,7 @@ void EvseManager::ready() {
             setup_physical_values.ac_nominal_voltage = config.ac_nominal_voltage;
             r_hlc[0]->call_set_charging_parameters(setup_physical_values);
 
-            const auto hw_caps = *hw_capabilities.handle();
-            initial_energy_transfers = get_supported_ac_energy_transfers(hw_caps, config.supported_iso_ac_bpt, false);
+            // The AC list is built later, just before call_setup. initial_energy_transfers is only for DC/MCS.
 
             r_hlc[0]->subscribe_ac_eamount([this](double e) {
                 // FIXME send only on change / throttle messages
@@ -988,7 +987,12 @@ void EvseManager::ready() {
 
         r_hlc[0]->call_receipt_is_required(config.ev_receipt_required);
 
-        this->update_supported_energy_transfers(initial_energy_transfers);
+        if (config.charge_mode == "AC") {
+            // der_available may already be set, so rebuild the list instead of reusing initial_energy_transfers.
+            this->update_supported_energy_transfers(current_ac_energy_transfers());
+        } else {
+            this->update_supported_energy_transfers(initial_energy_transfers);
+        }
         r_hlc[0]->call_setup(evseid, sae_mode, config.session_logging);
         this->publish_and_update_supported_energy_transfers();
 
