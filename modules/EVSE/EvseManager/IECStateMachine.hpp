@@ -129,6 +129,8 @@ private:
     bool has_ventilation{false};
     bool power_on_allowed{false};
     bool last_power_on_allowed{false};
+    // Diagnostic only: last value actually forwarded to the BSP, to change-gate the forward log.
+    bool last_power_on_forwarded{false};
     std::atomic<double> pp_ampacity{0.0};
     std::atomic<double> last_amps{-1};
     std::atomic<AcPhases> max_phases{AcPhases::ThreePhases};
