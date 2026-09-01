@@ -50,6 +50,12 @@ public:
         return sim_data.state;
     }
 
+    // See SimulationData::clear_command_ticks(): called whenever a new command list replaces the
+    // queue, so no aborted command's countdown leaks into the new list.
+    void clear_command_ticks() {
+        sim_data.clear_command_ticks();
+    }
+
     std::optional<std::string>& get_modify_charging_session_cmds() {
         return sim_data.modify_charging_session_cmds;
     }
