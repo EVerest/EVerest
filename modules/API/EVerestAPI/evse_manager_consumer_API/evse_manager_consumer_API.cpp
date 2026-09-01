@@ -109,19 +109,23 @@ void evse_manager_consumer_API::ready() {
     helper.publish_ready_beacon();
 }
 
-auto evse_manager_consumer_API::forward_and_cache_api_var(std::string const& var) {
-    return helper.forward_and_cache_api_var(var, config.latch_variable_values, [var = var](auto const& val) {
-        using namespace API_types_ext;
-        using namespace API_powermeter;
-        using namespace API_generic;
-        using namespace API_energy;
-        using namespace API_evse_bsp;
-        using namespace API_iso;
-        using namespace API_imd;
-        using namespace API_dc;
-        using namespace API_random_delay;
-        return serialize(to_external_api(val));
-    });
+auto evse_manager_consumer_API::forward_and_cache_api_var(std::string const& var,
+                                                          std::optional<std::string> deprecation_notice) {
+    return helper.forward_and_cache_api_var(
+        var, config.latch_variable_values,
+        [var = var](auto const& val) {
+            using namespace API_types_ext;
+            using namespace API_powermeter;
+            using namespace API_generic;
+            using namespace API_energy;
+            using namespace API_evse_bsp;
+            using namespace API_iso;
+            using namespace API_imd;
+            using namespace API_dc;
+            using namespace API_random_delay;
+            return serialize(to_external_api(val));
+        },
+        std::move(deprecation_notice));
 }
 
 void evse_manager_consumer_API::generate_api_cmd_get_evse() {
@@ -255,7 +259,8 @@ void evse_manager_consumer_API::generate_api_var_powermeter() {
 }
 
 void evse_manager_consumer_API::generate_api_var_evse_id() {
-    r_evse_manager->subscribe_evse_id(forward_and_cache_api_var("evse_id"));
+    r_evse_manager->subscribe_evse_id(forward_and_cache_api_var(
+        "evse_id", "The evse_id var is deprecated and will be removed in 2027.04.0, use the get_evse command instead"));
 }
 
 void evse_manager_consumer_API::generate_api_var_hw_capabilities() {

@@ -93,7 +93,8 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
-    auto forward_and_cache_api_var(std::string const& var);
+    auto forward_and_cache_api_var(std::string const& var,
+                                   std::optional<std::string> deprecation_notice = std::nullopt);
 
     void generate_api_cmd_get_evse();
     void generate_api_cmd_enable_disable();

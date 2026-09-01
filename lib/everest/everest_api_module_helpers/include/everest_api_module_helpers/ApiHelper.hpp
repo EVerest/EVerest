@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -70,11 +71,13 @@ public:
     // Returns a callback suitable for r_xxx->subscribe_*(). serialize_fn converts the internal
     // type to its external representation and serializes it; it is supplied by the module
     // because the to_external_api/serialize overloads are only visible there.
+    // If deprecation_notice is set, it is logged as a warning whenever the var is requested via <var>/get.
     template <typename SerializeFn>
-    auto forward_and_cache_api_var(std::string const& var, bool latch_value, SerializeFn serialize_fn) {
+    auto forward_and_cache_api_var(std::string const& var, bool latch_value, SerializeFn serialize_fn,
+                                   std::optional<std::string> deprecation_notice = std::nullopt) {
         auto topic = topics.everest_to_extern(var);
         if (latch_value) {
-            subscribe_latched_value_request(var, topic);
+            subscribe_latched_value_request(var, topic, std::move(deprecation_notice));
         }
         return [this, topic = std::move(topic), serialize_fn = std::move(serialize_fn), latch_value](auto const& val) {
             try {
@@ -105,7 +108,8 @@ public:
     }
 
 private:
-    void subscribe_latched_value_request(std::string const& var, std::string const& topic);
+    void subscribe_latched_value_request(std::string const& var, std::string const& topic,
+                                         std::optional<std::string> deprecation_notice);
     void publish_and_cache_variable(std::string const& topic, std::string payload, bool cache_value);
     void log_forward_api_var_error(std::string const& topic, char const* what);
     void subscribe_mqtt_topic(std::string const& topic, ParseAndPublishFtor parse_and_publish);
