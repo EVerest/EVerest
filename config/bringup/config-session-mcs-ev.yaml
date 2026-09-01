@@ -16,12 +16,23 @@
 # SECOND session while mated (EVSE side kept alive, parked in B0 after the first session):
 # the EV must WAKE the EVSE first - the CC.5.2.4 toggle, driven by holding CP C while the
 # EVSE idles (cp_c_pulse; the EV firmware shapes the S V3 pulses, the EVSE firmware answers
-# with a synthesized BCB toggle, EvseManager re-arms). Trigger via the nodered-style
-# EXTERNAL topic (car_simulatorImpl::subscribe_to_external_mqtt, keyed on connector_id = 1):
-#   mosquitto_pub -t 'everest_external/nodered/1/carsim/cmd/execute_charging_session' \
+# with a synthesized BCB toggle, EvseManager re-arms). TWO TRAPS (TEST_PLAN HLC-01d findings
+# 7 and 9, both bench-found on 2026-09-01):
+#  - execute_charging_session RESETS the vehicle before running (handle_execute -> CP A =
+#    unplug on a bench_plug board). The wake must go via modify_charging_session, which
+#    replaces the command queue without touching vehicle state.
+#  - a FINISHED command queue stages the same reset (run() calls
+#    reset_car_simulation_defaults on finish; the pending UNPLUGGED state is applied by the
+#    first tick of the NEXT execution - i.e. the wake trigger unplugs first). So the
+#    first-session sequence must never finish: end it with 'sleep 36000' (the EvManager
+#    park-forever idiom). auto_exec_commands below does exactly that.
+# The wake trigger (nodered-style EXTERNAL topic, car_simulatorImpl::
+# subscribe_to_external_mqtt, keyed on connector_id = 1):
+#   mosquitto_pub -t 'everest_external/nodered/1/carsim/cmd/modify_charging_session' \
 #     -m 'cp_c_pulse 4;iso_wait_slac_matched;iso_wait_pwm_is_running 30;iso_start_v2g_session DC;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 30;iso_wait_v2g_session_stopped;unplug'
 # (inside the netns, add -h $MQTT_SERVER_ADDRESS - the broker sits on the veth there).
-# The same topic with the plain sequence (no cp_c_pulse) re-runs a first-style session.
+# execute_charging_session with the plain sequence re-runs a first-style (re)plug session -
+# append ';sleep 36000' whenever a wake is meant to follow it.
 # NOTE: "DC" here is EvManager's energy-mode word for the DC family; which -20 energy
 # service is actually requested comes from iso15118_car's supported_d20_energy_services
 # below (MCS first, plain DC as fallback while MCS service selection is fresh).
@@ -55,7 +66,7 @@ active_modules:
       connector_id: 1
       auto_enable: true
       auto_exec: true
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session DC;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 30;iso_wait_v2g_session_stopped;unplug
+      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session DC;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 30;iso_wait_v2g_session_stopped;sleep 36000
       dc_target_current: 20
       dc_target_voltage: 400
     connections:
