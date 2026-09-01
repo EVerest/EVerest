@@ -1279,8 +1279,12 @@ void EvseManager::ready() {
                 return;
             }
 
+            // The AC DER services carry the same AC target values: a DER charge loop that never
+            // receives one advertises a zero target for the whole session rather than omitting it.
             if (selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC or
-                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_BPT) {
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_BPT or
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_DER_IEC or
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_DER_SAE) {
 
                 // The sign of ampere carries the direction (see Charger::set_max_current), so an export
                 // target scales by the export phase count. Read through a temporary handle: binding the
