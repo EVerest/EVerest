@@ -15,6 +15,9 @@ template <typename Response, typename ResponseCode> Response& response_with_code
     return res;
 }
 
+uint64_t secc_time_s();
+uint64_t secc_time_ms();
+
 bool validate_and_setup_header(message_20::Header&, const Session&, const decltype(message_20::Header::session_id)&);
 
 void setup_header(message_20::Header&, const Session&);

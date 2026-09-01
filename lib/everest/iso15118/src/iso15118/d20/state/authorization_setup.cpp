@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
+#include <cinttypes>
 #include <random>
 
 #include <iso15118/d20/state/authorization.hpp>
@@ -69,7 +70,7 @@ Result AuthorizationSetup::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.cert_install_service,
                                         m_ctx.session_config.authorization_services);
 
-        logf_info("Timestamp: %d", req->header.timestamp);
+        logf_info("Timestamp: %" PRIu64, req->header.timestamp);
 
         m_ctx.respond(res);
 
