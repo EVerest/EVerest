@@ -47,6 +47,19 @@ class AcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         adjusted_config["active_modules"]["connector_1"]["config_module"]["hlc_charge_loop_without_energy_timeout_s"] = self.hlc_charge_loop_without_energy_timeout_s
         return adjusted_config
 
+class RequestZeroPowerInIdleAdjustmentStrategy(EverestConfigAdjustmentStrategy):
+    """
+    Adjustment strategy to set request_zero_power_in_idle of connector_1
+    """
+
+    def __init__(self, request_zero_power_in_idle: bool):
+        self.request_zero_power_in_idle = request_zero_power_in_idle
+
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        adjusted_config["active_modules"]["connector_1"]["config_module"]["request_zero_power_in_idle"] = self.request_zero_power_in_idle
+        return adjusted_config
+
 class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
     """
     Adjustment strategy to disable DIN SPEC 70121 module
@@ -1173,11 +1186,28 @@ async def test_iso15118_dc_session_paused_by_ev(
 )
 @pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_core_config("config-sil.yaml")
+@pytest.mark.parametrize(
+    "request_zero_power_in_idle",
+    [
+        pytest.param(
+            False,
+            marks=pytest.mark.everest_config_adaptions(RequestZeroPowerInIdleAdjustmentStrategy(False)),
+            id="request_zero_power_in_idle_false",
+        ),
+        pytest.param(
+            True,
+            marks=pytest.mark.everest_config_adaptions(RequestZeroPowerInIdleAdjustmentStrategy(True)),
+            id="request_zero_power_in_idle_true",
+        ),
+    ],
+)
 async def test_pwm_ac_session_paused_by_evse(
-    test_controller: TestController, everest_core: EverestCore
+    request_zero_power_in_idle, test_controller: TestController, everest_core: EverestCore
 ):
     """
     Test session events of a basic PWM AC charging session with session paused by EVSE.
+    With request_zero_power_in_idle the EVSE requests no energy while paused by the user and has to request
+    energy again once the pause is lifted, otherwise it could never resume.
     """
 
     probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
