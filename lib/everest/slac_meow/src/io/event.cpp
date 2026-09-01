@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 
-#include "everest/io/socket/socket.hpp"
-#include <cstring>
+#include <everest/io/socket/socket.hpp>
 #include <everest/slac/io/event.hpp>
 #include <everest/util/misc/bind.hpp>
 #include <linux/if_ether.h>

@@ -22,8 +22,8 @@ private:
     bool resend_cached_match_cnf(messages::HomeplugMessage const& frame);
 
     LinkCheckMode m_mode{LinkCheckMode::None};
-    Timer m_poll;
-    Timer m_deadline;
+    Timer m_poll{};
+    Timer m_deadline{};
 };
 
 } // namespace everest::slac::evse::state

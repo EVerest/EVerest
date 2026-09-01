@@ -98,8 +98,8 @@ struct FSM::Impl {
     }
 
     Context& ctx;
-    std::optional<fsm::v2::FSM<StateBase>> machine;
-    std::string last_signature;
+    std::optional<fsm::v2::FSM<StateBase>> machine{};
+    std::string last_signature{};
 };
 
 FSM::FSM(Context& ctx) : impl(std::make_unique<Impl>(ctx)) {

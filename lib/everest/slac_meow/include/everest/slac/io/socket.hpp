@@ -35,10 +35,12 @@ public:
     MacAddress get_mac_address() const;
 
 private:
-    ::everest::lib::io::event::unique_fd m_fd;
-    MacAddress m_mac;
+    ::everest::lib::io::event::unique_fd m_fd{};
+    // Only open() writes this, so without the initialiser get_mac_address() on an unopened socket
+    // returns indeterminate bytes. SlacEvent::m_mac_address records the same contract.
+    MacAddress m_mac{};
     int m_error_code{0};
-    std::string m_error_message;
+    std::string m_error_message{};
 };
 
 using slac_client = ::everest::lib::io::event::fd_event_client<slac_socket>::type;

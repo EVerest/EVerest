@@ -50,7 +50,7 @@ private:
     /// Sessions are held by pointer: the session states reference the session data, so it must not
     /// move when the list grows.
     std::vector<std::unique_ptr<Session>> m_sessions;
-    Timer m_deadline;
+    Timer m_deadline{};
     bool m_failed_matching_reset_once{false};
 
     bool m_validate_armed{false};         // step 1 seen; awaiting step 2 or repeating the step-1 CNF

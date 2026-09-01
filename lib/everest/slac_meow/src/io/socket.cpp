@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
+
 #include <everest/io/socket/socket.hpp>
 #include <everest/slac/io/socket.hpp>
 #include <everest/slac/protocol/defs.hpp>

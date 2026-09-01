@@ -31,7 +31,7 @@ struct FSM::Impl {
     Context& ctx;
     // fsm::v2::FSM enters its initial state in the constructor, but the machine is only started by
     // restart_fsm(), so it cannot be built until then.
-    std::optional<fsm::v2::FSM<ev::StateBase>> machine;
+    std::optional<fsm::v2::FSM<ev::StateBase>> machine{};
 };
 
 FSM::FSM(Context& ctx) : impl(std::make_unique<Impl>(ctx)) {

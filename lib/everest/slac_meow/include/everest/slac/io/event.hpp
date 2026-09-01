@@ -19,7 +19,7 @@ public:
     using HomeplugReadyHandler = std::function<void()>;
     using MacAddress = slac_socket::MacAddress;
 
-    SlacEvent(std::string const& if_name);
+    explicit SlacEvent(std::string const& if_name);
     bool send(HomeplugMessage& msg);
 
     const uint8_t* get_mac_addr();
@@ -36,17 +36,19 @@ private:
     void handle_socket_rx(HomeplugMessage const& data, slac_client::interface& client);
     void handle_error_timer();
 
+    // Not list-initialised: fd_event_client's variadic constructor would instantiate
+    // slac_socket::open() with an empty argument pack, which does not exist.
     slac_client m_connection;
-    ::everest::lib::io::event::timer_fd m_error_timer;
+    ::everest::lib::io::event::timer_fd m_error_timer{};
     bool m_on_error{false};
-    std::string m_error_detail;
-    HomeplugMessageHandler m_callback;
-    HomeplugErrorHandler m_error_cb;
+    std::string m_error_detail{};
+    HomeplugMessageHandler m_callback{};
+    HomeplugErrorHandler m_error_cb{};
     // The interface MAC lookup in the constructor is best effort - the PLC device may enumerate
     // after module start - and its failure is swallowed. Without this initialiser get_mac_addr()
     // hands indeterminate bytes to the state machine; the contract is that a missing interface
     // yields an all-zero MAC, which the module re-captures from the I/O ready callback.
     MacAddress m_mac_address{};
-    std::string m_if_name;
+    std::string m_if_name{};
 };
 } // namespace everest::slac::io

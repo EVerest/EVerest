@@ -27,7 +27,7 @@ private:
 
     Nmk m_pending_nmk{};
     int m_set_key_attempts{0};
-    Timer m_set_key_timer;
+    Timer m_set_key_timer{};
     /// The modem has answered, or we have given up waiting for it.
     bool m_settled{false};
 };

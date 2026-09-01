@@ -31,7 +31,7 @@ private:
 
     Step m_step{Step::BeforeOpAttr};
     bool m_vendor_latched{false};
-    Timer m_step_timer;
+    Timer m_step_timer{};
 };
 
 } // namespace everest::slac::evse::state

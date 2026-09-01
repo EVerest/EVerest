@@ -14,7 +14,7 @@
 // neighbouring charge points cross-talk and more than one EV can be sounding at the same time.
 namespace everest::slac::evse::state::session {
 
-using SessionData = SessionData;
+using SessionData = evse::SessionData;
 
 /// Everything these states need beyond the context is the session data.
 struct SessionStateBase : public StateBase {
@@ -32,7 +32,7 @@ struct WaitStartAtten : public SessionStateBase {
     Result feed(SlacEvent const&) final;
 
 private:
-    Timer m_deadline;
+    Timer m_deadline{};
 };
 
 struct Sounding : public SessionStateBase {
@@ -42,7 +42,7 @@ struct Sounding : public SessionStateBase {
     Result feed(SlacEvent const&) final;
 
 private:
-    Timer m_deadline;
+    Timer m_deadline{};
 };
 
 /// A short settling delay before reporting the averaged attenuation.
@@ -53,7 +53,7 @@ struct FinalizeSounding : public SessionStateBase {
     Result feed(SlacEvent const&) final;
 
 private:
-    Timer m_deadline;
+    Timer m_deadline{};
 };
 
 /// CM_ATTEN_CHAR.IND is out; waiting for the EV to acknowledge it, re-sending on timeout.
@@ -64,7 +64,7 @@ struct WaitAttenRsp : public SessionStateBase {
     Result feed(SlacEvent const&) final;
 
 private:
-    Timer m_deadline;
+    Timer m_deadline{};
 };
 
 struct WaitSlacMatch : public SessionStateBase {
@@ -74,7 +74,7 @@ struct WaitSlacMatch : public SessionStateBase {
     Result feed(SlacEvent const&) final;
 
 private:
-    Timer m_deadline;
+    Timer m_deadline{};
 };
 
 /// This session won: CM_SLAC_MATCH.CNF has been sent and cached.

@@ -121,7 +121,7 @@ using BasePointerType = std::unique_ptr<StateBase>;
 // data stays on the composite states themselves - Reset owns its pending NMK, Matching its sessions.
 class Context {
 public:
-    Context(ContextCallbacks const& callbacks) : m_callbacks(callbacks) {
+    explicit Context(ContextCallbacks const& callbacks) : m_callbacks(callbacks) {
     }
 
     template <typename StateType, typename... Args> BasePointerType create_state(Args&&... args) {
@@ -228,11 +228,11 @@ public:
         match_confirm_cache = MatchConfirmCache{};
     }
     void cache_match_confirm_message(messages::cm_slac_match_cnf const& message, MacAddress const& ev_mac,
-                                     MacAddress const& evse_mac, RunId const& run_id) {
+                                     MacAddress const& evse_mac_, RunId const& run_id) {
         match_confirm_cache.valid = true;
         match_confirm_cache.message = message;
         match_confirm_cache.ev_mac = ev_mac;
-        match_confirm_cache.evse_mac = evse_mac;
+        match_confirm_cache.evse_mac = evse_mac_;
         match_confirm_cache.run_id = run_id;
     }
 

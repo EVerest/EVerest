@@ -35,9 +35,9 @@ std::string to_string(StateID id);
 // A snapshot of the active state configuration; states report themselves into it. Deliberately
 // independent of everest_api_types - only the facade knows how to turn it into telemetry.
 struct StateTree {
-    std::string name;
-    std::vector<StateTree> children;
-    std::vector<StateTree> sessions;
+    std::string name{};
+    std::vector<StateTree> children{};
+    std::vector<StateTree> sessions{};
 };
 
 struct Result {

@@ -26,14 +26,14 @@ private:
     void retransmit_amp_map();
 
     LinkCheckMode m_mode{LinkCheckMode::None};
-    Timer m_poll;
+    Timer m_poll{};
     int m_consecutive_neg{0};
     int m_neg_threshold{1};
 
     // SECC-initiated CM_AMP_MAP: sent on entry, retransmitted until confirmed. CmAmpMap_003/004.
     bool m_amp_map_awaiting_cnf{false};
     int m_amp_map_retries{0};
-    Timer m_amp_map_timer;
+    Timer m_amp_map_timer{};
 };
 
 } // namespace everest::slac::evse::state

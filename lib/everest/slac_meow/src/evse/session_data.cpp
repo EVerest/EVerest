@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 
-#include "everest/slac/protocol/messages.hpp"
-#include "everest/slac/protocol/utils.hpp"
 #include <algorithm>
 #include <everest/slac/evse/session_data.hpp>
 #include <everest/slac/protocol/format.hpp>
+#include <everest/slac/protocol/messages.hpp>
+#include <everest/slac/protocol/utils.hpp>
 
 namespace everest::slac::evse {
 

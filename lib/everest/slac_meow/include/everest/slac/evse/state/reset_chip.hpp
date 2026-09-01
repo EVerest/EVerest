@@ -16,8 +16,8 @@ struct ResetChip : public StateBase {
     Result feed(SlacEvent const&) final;
 
 private:
-    Timer m_delay;
-    Timer m_timeout;
+    Timer m_delay{};
+    Timer m_timeout{};
     bool m_request_sent{false};
 };
 

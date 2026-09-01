@@ -16,7 +16,7 @@ struct WaitParmCnf : public StateBase {
     Result feed(SlacEvent const&) final;
 
 private:
-    Timer m_deadline;
+    Timer m_deadline{};
 };
 
 } // namespace everest::slac::ev::state
