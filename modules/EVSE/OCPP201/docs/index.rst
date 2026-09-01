@@ -284,6 +284,13 @@ The interface is used to receive the following variables:
 
 * **iso15118_certificate_request** to trigger a **DataTransfer.req(Get15118EVCertificateRequest)** as part of the Plug&Charge process
 
+Each connection mapped to a served EVSE provisions an **ISO15118Ctrlr** component. Its **Enabled** variable is derived from the
+`hlc_capable` field reported by the serving EvseManager via **get_evse**, collapsed per EVSE by **any** of its connectors, because the
+session runs on whichever plug can carry it. **Enabled** is provisioned read-only, so it states a static capability of the station rather
+than offering a CSMS runtime control: a station with an `extensions_15118` provider mapped but HLC switched off now reports **false** where
+it previously reported a hardcoded **true**. This module shares the same device model storage implementation as the
+:ref:`OCPPmulti <everest_modules_OCPPmulti>` module, so the same behavior applies in that module.
+
 Error Handling
 ==============
 
