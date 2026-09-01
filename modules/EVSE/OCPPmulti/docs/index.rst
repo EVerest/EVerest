@@ -431,10 +431,20 @@ The module maintains a per-EVSE snapshot of the DER directives currently applied
 EVSE's connection through the **set_active_directives** command. When libocpp applies, schedules, clears, supersedes, or
 expires a DER control, the snapshot is rebuilt and re-sent for every registered EVSE on its own connection.
 
-At startup the module pre-provisions an ``ACDERCtrlr`` or ``DCDERCtrlr`` device-model component (chosen by the EVSE's
-energy-transfer modes) for every DER-capable EVSE, so no static device-model JSON is required for the DER controllers.
-Any EVSE without a wired grid_support connection has its DER controller forced to ``Available="false"`` (preserving a
-CSMS-written ``"false"`` and its source), so the CSMS does not see DER as available after the wiring is removed.
+At startup the module pre-provisions an ``ACDERCtrlr`` or ``DCDERCtrlr`` device-model component for every EVSE with a
+wired grid_support connection, so no static device-model JSON is required for the DER controllers. Which of the two an
+EVSE gets follows the charge mode the serving EvseManager reports through ``get_evse``. Both facts are static and
+available before the device model is built, so the decision is made once, at provisioning.
+
+The component is deliberately not derived from the EVSE's supported energy-transfer modes: those are published
+asynchronously and are not waited on, so an EVSE whose modes had not arrived in time received no DER controller at all
+for the lifetime of the process and answered every DER message ``UnknownComponent``.
+
+The decision fails closed. An EVSE with no grid_support connection, or one whose EvseManager reports no charge mode,
+gets no DER controller, and the reason is logged. Whichever component was *not* selected is forced to
+``Available="false"`` and ``Enabled="false"`` after provisioning, since a component written by an earlier boot is
+otherwise retained in the device-model database; the forcing only clears a persisted ``"true"``, so a CSMS-written
+``"false"`` and its source survive an unwire/rewire cycle.
 
 The device declares its inverter capability through the ``capability`` variable. The module stores the capability, writes
 its config variables (``ModesSupported`` and the DC nameplate values) through the device model, and republishes the
