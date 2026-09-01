@@ -202,6 +202,7 @@ public:
 
     void set_hlc_charging_active();
     void set_hlc_allow_close_contactor(bool on);
+    void dc_open_contactor_request();
 
     void set_hlc_d20_active();
 
