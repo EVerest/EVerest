@@ -190,6 +190,34 @@ StartSessionReason_External to_external_api(StartSessionReason_Internal const& v
         "Unexpected value for everest::lib::API::V1_0::types::evse_manager::StartSessionReason_Internal");
 }
 
+ChargeMode_Internal to_internal_api(ChargeMode_External const& val) {
+    using SrcT = ChargeMode_External;
+    using TarT = ChargeMode_Internal;
+
+    switch (val) {
+    case SrcT::AC:
+        return TarT::AC;
+    case SrcT::DC:
+        return TarT::DC;
+    }
+
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::evse_manager::ChargeMode_External");
+}
+
+ChargeMode_External to_external_api(ChargeMode_Internal const& val) {
+    using SrcT = ChargeMode_Internal;
+    using TarT = ChargeMode_External;
+
+    switch (val) {
+    case SrcT::AC:
+        return TarT::AC;
+    case SrcT::DC:
+        return TarT::DC;
+    }
+
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::evse_manager::ChargeMode_Internal");
+}
+
 SessionEventEnum_Internal to_internal_api(SessionEventEnum_External const& val) {
     using SrcT = SessionEventEnum_External;
     using TarT = SessionEventEnum_Internal;
@@ -743,6 +771,15 @@ Connector_Internal to_internal_api(Connector_External const& val) {
     Connector_Internal result;
     result.id = val.id;
     result.type = optToInternal(val.type);
+    // Optional externally so that adding it did not break the published contract, required
+    // internally because every in-tree provider knows the answer at boot. There is no value to
+    // invent for an external Connector that omits it, and no caller converts in this direction.
+    if (not val.charge_mode.has_value() or not val.hlc_capable.has_value()) {
+        throw std::out_of_range("everest::lib::API::V1_0::types::evse_manager::Connector_External is missing "
+                                "charge_mode or hlc_capable, which the internal type requires");
+    }
+    result.charge_mode = to_internal_api(val.charge_mode.value());
+    result.hlc_capable = val.hlc_capable.value();
 
     return result;
 }
@@ -750,6 +787,9 @@ Connector_External to_external_api(Connector_Internal const& val) {
     Connector_External result;
     result.id = val.id;
     result.type = optToExternal(val.type);
+    result.charge_mode = to_external_api(val.charge_mode);
+    result.hlc_capable = val.hlc_capable;
+    // Always populated outbound: the internal type requires both.
 
     return result;
 }

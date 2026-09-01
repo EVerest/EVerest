@@ -321,13 +321,13 @@ private:
 
     types::energy::ExternalLimits external_local_energy_limits;
     const float EVSE_ABSOLUTE_MAX_CURRENT = 80.0;
-    bool slac_enabled;
+    bool slac_enabled{false};
 
     std::atomic_bool contactor_open{true};
 
     Everest::timed_mutex_traceable charger_ready_mutex;
     bool charger_ready{false};
-    std::atomic_bool hlc_enabled;
+    std::atomic_bool hlc_enabled{false};
 
     std::atomic_bool hlc_waiting_for_auth_eim;
     std::atomic_bool hlc_waiting_for_auth_pnc;
