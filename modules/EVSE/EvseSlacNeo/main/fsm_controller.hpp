@@ -3,7 +3,7 @@
 #ifndef EVSE_SLAC_FSM_CONTROLLER_HPP
 #define EVSE_SLAC_FSM_CONTROLLER_HPP
 
-#include "everest/slac/slac_fsm.hpp"
+#include "slac_backend.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -17,14 +17,14 @@ using namespace everest::lib;
 
 class FSMController : public io::event::fd_event_register_interface {
 public:
-    explicit FSMController(slac::fsm::evse::Context& ctx);
+    explicit FSMController(slac_backend::Context& ctx);
 
-    void signal_new_slac_message(slac::messages::HomeplugMessage const&);
+    void signal_new_slac_message(slac_backend::HomeplugMessage const&);
     void signal_reset();
     bool signal_enter_bcd();
     bool signal_leave_bcd();
-    // Push the running Control-Pilot B/C transition count (from EvseManager's count_bc command) into the
-    // FSM context for CM_VALIDATE BCB-toggle detection. Thread-safe atomic write, no event-loop hop.
+    // Thread safe, and needs no event-loop hop: the backend either stores it atomically or hands it
+    // back through a callback when it is needed.
     void signal_count_bc(int count);
 
     void run();
@@ -45,8 +45,8 @@ private:
     void handle_enter_bcd();
     void handle_leave_bcd();
 
-    slac::fsm::evse::Context& ctx;
-    slac::slac_fsm fsm;
+    slac_backend::Context& ctx;
+    slac_backend::Fsm fsm;
     std::atomic_bool active{false};
 
     event_fd m_reset;

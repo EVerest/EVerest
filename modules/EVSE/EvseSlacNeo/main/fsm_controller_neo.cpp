@@ -5,7 +5,7 @@
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/util/misc/bind.hpp>
 
-FSMController::FSMController(slac::fsm::evse::Context& context) : ctx(context), fsm(ctx) {
+FSMController::FSMController(slac_backend::Context& context) : ctx(context), fsm(ctx) {
 }
 
 void FSMController::init() {
@@ -27,11 +27,11 @@ void FSMController::teardown() {
     stop();
 }
 
-void FSMController::signal_new_slac_message(slac::messages::HomeplugMessage const& msg) {
+void FSMController::signal_new_slac_message(slac_backend::HomeplugMessage const& msg) {
     if (!active.load()) {
         return;
     }
-    ctx.slac_message_payload = msg;
+    slac_backend::stash_payload(ctx, msg);
     fsm.message(msg);
 }
 
@@ -59,9 +59,8 @@ bool FSMController::signal_leave_bcd() {
 }
 
 void FSMController::signal_count_bc(int count) {
-    // Just publish the latest count into the shared context; the CM_VALIDATE handler reads it when a
-    // request arrives. An atomic store is safe from any thread, so no event-loop hop is needed.
-    ctx.bc_transition_count.store(count);
+    // Read by the CM_VALIDATE handler when a request arrives.
+    slac_backend::publish_bc_transition_count(ctx, count);
 }
 
 void FSMController::handle_retrigger() {

@@ -14,10 +14,21 @@ target_sources(${MODULE_NAME}
     main/fsm_controller_neo.cpp
 )
 
+# Which SLAC library the module is built against. Both implement the same protocol and present
+# nearly the same contract; main/slac_backend.hpp holds the differences. See that header.
+set(EVEREST_SLAC_BACKEND "neo" CACHE STRING "SLAC library to build EvseSlacNeo against")
+set_property(CACHE EVEREST_SLAC_BACKEND PROPERTY STRINGS neo)
+
+if(EVEREST_SLAC_BACKEND STREQUAL "neo")
+    set(EVEREST_SLAC_BACKEND_LIB slac::neo)
+else()
+    message(FATAL_ERROR "EVEREST_SLAC_BACKEND must be one of: neo (got '${EVEREST_SLAC_BACKEND}')")
+endif()
+
 target_link_libraries(${MODULE_NAME}
     PRIVATE
         everest::everest_api_types
-        slac::neo
+        ${EVEREST_SLAC_BACKEND_LIB}
         everest::io
 )
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1

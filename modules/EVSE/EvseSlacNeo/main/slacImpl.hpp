@@ -14,20 +14,6 @@
 
 class FSMController;
 
-namespace everest {
-namespace lib {
-namespace slac {
-class SlacEvent;
-namespace fsm {
-namespace evse {
-struct Context;
-struct ContextCallbacks;
-} // namespace evse
-} // namespace fsm
-} // namespace slac
-} // namespace lib
-} // namespace everest
-
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
 #include <atomic>
@@ -35,8 +21,8 @@ struct ContextCallbacks;
 #include <string>
 #include <thread>
 
+#include "slac_backend.hpp"
 #include <everest/io/event/event_fd.hpp>
-#include <everest/slac/fsm/context.hpp>
 #include <everest/util/async/monitor.hpp>
 
 #include "lifecycle_gate.hpp"
@@ -135,9 +121,11 @@ private:
     everest::lib::io::event::event_fd exit_event;
     using LifecycleState = LifecycleStateT<FSMController>;
     everest::lib::util::monitor<LifecycleState> lifecycle_state;
-    everest::lib::slac::fsm::evse::ContextCallbacks callbacks;
-    std::unique_ptr<everest::lib::slac::fsm::evse::Context> fsm_ctx;
-    std::unique_ptr<everest::lib::slac::SlacEvent> slac_io;
+    // Written from the framework command thread, read by whichever backend samples it.
+    std::atomic<int> bc_transition_count{0};
+    slac_backend::ContextCallbacks callbacks;
+    std::unique_ptr<slac_backend::Context> fsm_ctx;
+    std::unique_ptr<slac_backend::SlacEvent> slac_io;
     std::unique_ptr<FSMController> fsm_ctrl;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };

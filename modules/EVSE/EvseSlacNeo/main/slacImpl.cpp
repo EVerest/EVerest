@@ -35,13 +35,13 @@ template <typename T> nlohmann::json to_telemetry_json(std::string const& value)
 
 // Converts the library's framework-agnostic D3State into the generated slac interface enum.
 // The mapping is total: D3State and types::slac::State share the same three matching states.
-types::slac::State to_interface_state(everest::lib::slac::D3State state) {
+types::slac::State to_interface_state(slac_backend::D3State state) {
     switch (state) {
-    case everest::lib::slac::D3State::Matching:
+    case slac_backend::D3State::Matching:
         return types::slac::State::MATCHING;
-    case everest::lib::slac::D3State::Matched:
+    case slac_backend::D3State::Matched:
         return types::slac::State::MATCHED;
-    case everest::lib::slac::D3State::Unmatched:
+    case slac_backend::D3State::Unmatched:
         return types::slac::State::UNMATCHED;
     }
     return types::slac::State::UNMATCHED;
@@ -238,7 +238,7 @@ bool slacImpl::wait_for_startup_delay_or_shutdown() {
 
 bool slacImpl::initialize_slac_io() {
     try {
-        slac_io = std::make_unique<everest::lib::slac::SlacEvent>(config.device);
+        slac_io = std::make_unique<slac_backend::SlacEvent>(config.device);
     } catch (const std::exception& e) {
         mark_worker_offline(fmt::format("Failed to initialize SLAC I/O on device '{}': {}", config.device, e.what()));
         return false;
@@ -250,7 +250,7 @@ bool slacImpl::initialize_slac_io() {
 }
 
 void slacImpl::configure_callbacks() {
-    callbacks.send_raw_slac = [this](slac::messages::HomeplugMessage& msg) -> bool {
+    callbacks.send_raw_slac = [this](slac_backend::HomeplugMessage& msg) -> bool {
         {
             auto lifecycle = lifecycle_state.handle();
             if (lifecycle->shutting_down) {
@@ -275,7 +275,7 @@ void slacImpl::configure_callbacks() {
 
     callbacks.signal_dlink_ready = [this](bool value) { publish_dlink_ready(value); };
 
-    callbacks.signal_state = [this](everest::lib::slac::D3State value) { publish_state(to_interface_state(value)); };
+    callbacks.signal_state = [this](slac_backend::D3State value) { publish_state(to_interface_state(value)); };
 
     callbacks.signal_error_routine_request = [this]() { publish_request_error_routine(nullptr); };
 
@@ -316,10 +316,14 @@ void slacImpl::configure_callbacks() {
     if (config.publish_mac_on_match_cnf) {
         callbacks.signal_ev_mac_address_match_cnf = [this](const std::string& mac) { publish_ev_mac_address(mac); };
     }
+
+    // Both are no-ops for a backend that needs neither; see slac_backend.hpp.
+    slac_backend::install_time_source(callbacks);
+    slac_backend::install_bc_transition_count(callbacks, [this]() { return bc_transition_count.load(); });
 }
 
 void slacImpl::configure_fsm_context() {
-    fsm_ctx = std::make_unique<slac::fsm::evse::Context>(callbacks);
+    fsm_ctx = std::make_unique<slac_backend::Context>(callbacks);
     if (config.set_key_timeout_ms > 0) {
         fsm_ctx->slac_config.set_key_timeout_ms = config.set_key_timeout_ms;
     } else {
@@ -329,43 +333,38 @@ void slacImpl::configure_fsm_context() {
     }
     fsm_ctx->slac_config.set_key_max_attempts = std::max(1, config.set_key_max_attempts);
     if (config.set_key_handling_mode.empty() || config.set_key_handling_mode == "retry_confirmed") {
-        fsm_ctx->slac_config.set_key_handling_mode = everest::lib::slac::fsm::evse::SetKeyHandlingMode::retry_confirmed;
+        fsm_ctx->slac_config.set_key_handling_mode = slac_backend::SetKeyHandlingMode::retry_confirmed;
     } else if (config.set_key_handling_mode == "legacy_single_attempt") {
-        fsm_ctx->slac_config.set_key_handling_mode =
-            everest::lib::slac::fsm::evse::SetKeyHandlingMode::legacy_single_attempt;
+        fsm_ctx->slac_config.set_key_handling_mode = slac_backend::SetKeyHandlingMode::legacy_single_attempt;
     } else {
         EVLOG_warning << "Invalid set_key_handling_mode '" << config.set_key_handling_mode
                       << "'. Expected 'legacy_single_attempt' or 'retry_confirmed'. Falling back to "
                       << "retry_confirmed";
-        fsm_ctx->slac_config.set_key_handling_mode = everest::lib::slac::fsm::evse::SetKeyHandlingMode::retry_confirmed;
+        fsm_ctx->slac_config.set_key_handling_mode = slac_backend::SetKeyHandlingMode::retry_confirmed;
     }
 
     if (config.set_key_cnf_success_mode.empty() || config.set_key_cnf_success_mode == "modem_compat_0x01") {
-        fsm_ctx->slac_config.set_key_cnf_success_mode =
-            everest::lib::slac::fsm::evse::SetKeyCnfSuccessMode::modem_compat_0x01;
+        fsm_ctx->slac_config.set_key_cnf_success_mode = slac_backend::SetKeyCnfSuccessMode::modem_compat_0x01;
     } else if (config.set_key_cnf_success_mode == "hpgp_standard_0x00") {
-        fsm_ctx->slac_config.set_key_cnf_success_mode =
-            everest::lib::slac::fsm::evse::SetKeyCnfSuccessMode::hpgp_standard_0x00;
+        fsm_ctx->slac_config.set_key_cnf_success_mode = slac_backend::SetKeyCnfSuccessMode::hpgp_standard_0x00;
     } else if (config.set_key_cnf_success_mode == "accept_0x00_or_0x01") {
-        fsm_ctx->slac_config.set_key_cnf_success_mode =
-            everest::lib::slac::fsm::evse::SetKeyCnfSuccessMode::accept_0x00_or_0x01;
+        fsm_ctx->slac_config.set_key_cnf_success_mode = slac_backend::SetKeyCnfSuccessMode::accept_0x00_or_0x01;
     } else {
         EVLOG_warning << "Invalid set_key_cnf_success_mode '" << config.set_key_cnf_success_mode
                       << "'. Expected 'modem_compat_0x01', 'hpgp_standard_0x00', or 'accept_0x00_or_0x01'. "
                       << "Falling back to modem_compat_0x01";
-        fsm_ctx->slac_config.set_key_cnf_success_mode =
-            everest::lib::slac::fsm::evse::SetKeyCnfSuccessMode::modem_compat_0x01;
+        fsm_ctx->slac_config.set_key_cnf_success_mode = slac_backend::SetKeyCnfSuccessMode::modem_compat_0x01;
     }
 
     if (config.nmk_generation_mode.empty() || config.nmk_generation_mode == "legacy_printable") {
-        fsm_ctx->slac_config.nmk_generation_mode = everest::lib::slac::fsm::evse::NmkGenerationMode::legacy_printable;
+        fsm_ctx->slac_config.nmk_generation_mode = slac_backend::NmkGenerationMode::legacy_printable;
     } else if (config.nmk_generation_mode == "full_byte_range") {
-        fsm_ctx->slac_config.nmk_generation_mode = everest::lib::slac::fsm::evse::NmkGenerationMode::full_byte_range;
+        fsm_ctx->slac_config.nmk_generation_mode = slac_backend::NmkGenerationMode::full_byte_range;
     } else {
         EVLOG_warning << "Invalid nmk_generation_mode '" << config.nmk_generation_mode
                       << "'. Expected 'full_byte_range' or 'legacy_printable'. Falling back to "
                       << "legacy_printable";
-        fsm_ctx->slac_config.nmk_generation_mode = everest::lib::slac::fsm::evse::NmkGenerationMode::legacy_printable;
+        fsm_ctx->slac_config.nmk_generation_mode = slac_backend::NmkGenerationMode::legacy_printable;
     }
 
     fsm_ctx->slac_config.slac_init_timeout_ms = config.slac_init_timeout_ms;
@@ -399,10 +398,9 @@ void slacImpl::configure_fsm_context() {
         const auto amp_map = load_amp_map(config.amp_map_file);
         fsm_ctx->slac_config.amp_map_len = amp_map.len;
         fsm_ctx->slac_config.amp_map_data = amp_map.data;
-        EVLOG_info << "CM_AMP_MAP initiation enabled with " << fsm_ctx->slac_config.amp_map_len
-                   << " carriers"
+        EVLOG_info << "CM_AMP_MAP initiation enabled with " << fsm_ctx->slac_config.amp_map_len << " carriers"
                    << (config.amp_map_file.empty() ? " (built-in all-maximum-TX default)"
-                                                    : " from '" + config.amp_map_file + "'");
+                                                   : " from '" + config.amp_map_file + "'");
     }
 
     fsm_ctx->slac_config.print_state_transitions = config.print_state_transitions;
@@ -433,8 +431,8 @@ void slacImpl::configure_slac_io_callbacks() {
     // MMTYPE and logs "Received non-expected SLAC message of type 0xA14E" per frame, which
     // adds RX/log load. Drop it pre-FSM. Other MMTYPEs (incl. CM_SET_KEY.CNF, CM_ATTEN_PROFILE.IND)
     // pass through unchanged.
-    slac_io->set_callback([this](slac::messages::HomeplugMessage const& msg) {
-        if (msg.get_mmtype() == everest::lib::slac::defs::qualcomm::MMTYPE_QCA_VS_ATTENUATION_CHARACTERISTICS) {
+    slac_io->set_callback([this](slac_backend::HomeplugMessage const& msg) {
+        if (msg.get_mmtype() == slac_backend::VENDOR_ATTENUATION_MMTYPE) {
             return;
         }
 
@@ -644,6 +642,7 @@ void slacImpl::handle_count_bc(int& count) {
     // EvseManager pushes the running count of Control-Pilot B/C transitions here on every edge. Forward
     // it into the FSM context so the CM_VALIDATE handler can detect the number of BCB toggles the EV
     // performed. Dropping a sample is harmless: the handler reads the latest value on the next request.
+    bc_transition_count.store(count);
     if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
         local_fsm_ctrl->signal_count_bc(count);
     }
