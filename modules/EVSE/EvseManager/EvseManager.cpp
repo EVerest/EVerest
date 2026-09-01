@@ -1658,15 +1658,13 @@ void EvseManager::setup_AC_mode(bool ac_hlc_enabled) {
 
     types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 
-    types::iso15118::SetupPhysicalValues setup_physical_values;
-
     constexpr auto sae_mode = types::iso15118::SaeJ2847BidiMode::None;
 
     if (ac_hlc_enabled) {
         r_hlc[0]->call_setup(evseid, sae_mode, config.session_logging);
 
-        // A core-only AC list drops AC_BPT and the advertised AC DER mode, and nothing republishes
-        // them until the next capabilities update.
+        // Publish unconditionally: the HLC was just set up again and must be told its modes even
+        // when the list is unchanged.
         set_supported_energy_transfers([this] { return ac_energy_transfers(); }, SendEnergyTransfers::Always);
     } else {
         selected_protocol = "IEC61851-1";
@@ -1882,18 +1880,6 @@ std::vector<types::iso15118::EnergyTransferMode> EvseManager::ac_energy_transfer
     const auto caps = hw_capabilities.get();
     const auto der = der_available.load();
     return get_supported_ac_energy_transfers(caps, config.supported_iso_ac_bpt, der);
-}
-
-std::vector<types::iso15118::EnergyTransferMode> EvseManager::ac_core_energy_transfers() {
-    std::vector<types::iso15118::EnergyTransferMode> transfer_modes;
-
-    transfer_modes.push_back(types::iso15118::EnergyTransferMode::AC_single_phase_core);
-
-    if (hw_capabilities.get().max_phase_count_import == 3) {
-        transfer_modes.push_back(types::iso15118::EnergyTransferMode::AC_three_phase_core);
-    }
-
-    return transfer_modes;
 }
 
 std::vector<types::iso15118::EnergyTransferMode> EvseManager::dc_energy_transfers() {
