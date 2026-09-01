@@ -27,6 +27,10 @@ void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::Pay
     // your code for cmd session_setup goes here
 }
 
+void ISO15118_chargerImpl::handle_set_free_service(bool& free_service) {
+    // your code for cmd set_free_service goes here
+}
+
 void ISO15118_chargerImpl::handle_bpt_setup(types::iso15118::BptSetup& bpt_config) {
     // your code for cmd bpt_setup goes here
 }

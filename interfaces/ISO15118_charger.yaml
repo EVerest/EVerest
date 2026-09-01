@@ -48,6 +48,17 @@ cmds:
           Indicates if the vehicle contract may be forwarded to and validated by a CSMS in case
           local validation was not successful
         type: boolean
+  set_free_service:
+    description: >-
+      Set whether the EVCharging service is offered free of charge (the FreeService flag in
+      ServiceDiscoveryRes). The module defaults to false, so only a call with true marks the service
+      as free. Drive this from the source that knows the tariff or free vend state, e.g. the CSMS.
+      The value applies to the next ServiceDiscoveryRes, which is sent before authorization takes
+      place, so call this whenever that state changes rather than at session start.
+    arguments:
+      free_service:
+        description: Set to true when the EVCharging service is offered free of charge
+        type: boolean
   bpt_setup:
     description: >-
       At startup, set the bpt setup for ISO15118-20 at least once. May be updated later on.

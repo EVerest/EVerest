@@ -870,6 +870,14 @@ void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::Pay
     setup_steps_done.set(to_underlying_value(SetupStep::AUTH_SETUP));
 }
 
+void ISO15118_chargerImpl::handle_set_free_service(bool& free_service) {
+    if (free_service) {
+        // libiso15118 hardcodes free_service to false for the energy transfer services in
+        // ServiceDiscoveryRes, so this cannot be applied yet.
+        EVLOG_warning << "FreeService is not supported for ISO15118-20 and is ignored";
+    }
+}
+
 void ISO15118_chargerImpl::handle_bpt_setup(types::iso15118::BptSetup& bpt_config) {
     std::scoped_lock lock(GEL);
 

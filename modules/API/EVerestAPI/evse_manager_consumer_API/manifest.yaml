@@ -46,6 +46,10 @@ requires:
     interface: uk_random_delay
     min_connections: 0
     max_connections: 1
+  hlc:
+    interface: ISO15118_charger
+    min_connections: 0
+    max_connections: 1
 
 enable_external_mqtt: true
 enable_global_errors: true
