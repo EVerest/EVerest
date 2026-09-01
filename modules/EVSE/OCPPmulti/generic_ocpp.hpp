@@ -476,7 +476,7 @@ protected:
     /// \brief Populate m_grid_support_by_evse from the connections' framework mappings. Every connection
     /// must carry a mapping; an unmapped connection is logged and excluded. Any EVSE without a wired
     /// grid_support connection has its DER controller forced to Available=false.
-    void init_grid_support_routing(const std::map<std::int32_t, std::int32_t>& evse_connector_structure);
+    void init_grid_support_routing();
 
     /// \brief Resolve the grid_support connection mapped to \p evse_id, or nullptr if none.
     grid_supportIntf* grid_support_for_evse(std::int32_t evse_id) const;

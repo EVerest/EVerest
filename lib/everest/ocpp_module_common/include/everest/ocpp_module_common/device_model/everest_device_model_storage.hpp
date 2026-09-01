@@ -4,6 +4,8 @@
 #pragma once
 
 #include <mutex>
+#include <optional>
+#include <set>
 
 #include <generated/interfaces/evse_manager/Interface.hpp>
 #include <generated/interfaces/iso15118_extensions/Interface.hpp>
@@ -19,18 +21,33 @@
 
 namespace ocpp_module_common::device_model {
 
-/// \brief Builds the DER controller component config for a single EVSE from its supported energy transfer modes.
+/// \brief Which DER controller component an EVSE is provisioned with.
+enum class DerCtrlrComponent {
+    None, ///< no DER controller component for this EVSE
+    Dc,   ///< DCDERCtrlr
+    Ac,   ///< ACDERCtrlr
+};
+
+/// \brief Decides an EVSE's DER controller component from static facts.
 ///
-/// DER-capable if it advertises a DER/bidirectional mode: AC_DER_IEC/AC_DER_SAE/AC_BPT_DER for AC, DC_BPT/DC_ACDP_BPT
-/// for DC. AC vs DC is chosen from the presence of any DC_* mode. The component is provisioned with Available "true"
-/// (ReadOnly, marking static presence) and Enabled "true" (ReadWrite, the CSMS runtime control) with empty
-/// ModesSupported.
+/// \param der_wired Whether a grid_support provider is wired to this EVSE.
+/// \param charge_mode The EVSE's AC/DC topology as reported by evse_manager.
 ///
-/// \returns The (ComponentKey, variables) pair for a DCDERCtrlr/ACDERCtrlr component, or std::nullopt if
-///          the EVSE is not DER-capable.
+/// Fails closed: an unwired EVSE, or one whose charge mode is unknown, gets no component. Deliberately
+/// not derived from an EVSE's supported energy transfer modes, which are published asynchronously and
+/// are not waited on before the device model is built.
+DerCtrlrComponent der_ctrlr_component(bool der_wired,
+                                      const std::optional<types::evse_manager::ChargeMode>& charge_mode);
+
+/// \brief Builds the DER controller component config for a single EVSE.
+///
+/// The component is provisioned with Available "true" (ReadOnly, marking static presence) and Enabled "true"
+/// (ReadWrite, the CSMS runtime control) with empty ModesSupported.
+///
+/// \returns The (ComponentKey, variables) pair for a DCDERCtrlr/ACDERCtrlr component, or std::nullopt for
+///          DerCtrlrComponent::None.
 std::optional<std::pair<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>>
-build_der_ctrlr_component_config(
-    int32_t evse_id, const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes);
+build_der_ctrlr_component_config(int32_t evse_id, DerCtrlrComponent component);
 
 /// \brief Builds the device-model SetVariableData vector that configures (but does not enable) the DER
 ///        controller for a given DER \p capability on EVSE \p evse_id.
@@ -48,18 +65,28 @@ to_der_ctrlr_config_set_variables(int32_t evse_id, const types::grid_support::DE
 ///          unwire/rewire cycle. Used at startup on an EVSE that no longer has a wired grid_support connection.
 void disable_der_ctrlr(ocpp::v2::DeviceModelStorageInterface& storage, int32_t evse_id);
 
+/// \brief Forces every DER controller of \p evse_id other than \p keep to Available "false" and Enabled "false".
+/// \details Same only-clear-"true" guard as disable_der_ctrlr, so a CSMS-written "false" and its source survive.
+///          Run after provisioning so a component written by an earlier boot, when the EVSE resolved to a
+///          different component, cannot linger in the database still marked available.
+void disable_other_der_ctrlrs(ocpp::v2::DeviceModelStorageInterface& storage, int32_t evse_id, DerCtrlrComponent keep);
+
 class EverestDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
 public:
-    /// \param with_der_components When true, DER-capable EVSEs get a DCDERCtrlr/ACDERCtrlr component. Pass true
-    ///        only if the module implements der_active_directives_callback: a present DER component makes that
-    ///        callback mandatory in ocpp::v2::Callbacks::all_callbacks_valid.
+    /// \param with_der_components When true, EVSEs with a wired grid_support connection get a
+    ///        DCDERCtrlr/ACDERCtrlr component. Pass true only if the module implements
+    ///        der_active_directives_callback: a present DER component makes that callback mandatory in
+    ///        ocpp::v2::Callbacks::all_callbacks_valid.
+    /// \param der_wired_evse_ids The EVSE ids with a wired grid_support connection. Only consulted when
+    ///        with_der_components is true.
     EverestDeviceModelStorage(
         const std::vector<std::unique_ptr<evse_managerIntf>>& r_evse_manager,
         const std::vector<std::unique_ptr<iso15118_extensionsIntf>>& r_extensions_15118,
         const std::map<int32_t, types::evse_board_support::HardwareCapabilities>& evse_hardware_capabilities_map,
         const std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>& evse_supported_energy_transfers,
         const std::map<int32_t, bool>& evse_service_renegotiation_supported, const bool with_der_components,
-        const std::filesystem::path& db_path, const std::filesystem::path& migration_files_path,
+        const std::set<int32_t>& der_wired_evse_ids, const std::filesystem::path& db_path,
+        const std::filesystem::path& migration_files_path,
         std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client);
     virtual ~EverestDeviceModelStorage() override = default;
     virtual ocpp::v2::DeviceModelMap get_device_model() override;
@@ -93,9 +120,6 @@ public:
 
     /// \bried Updates the VehicleId variable for the ConnectedEV component
     void update_connected_ev_vehicle_id(const int32_t evse_id, const std::string& vehicle_id);
-
-    /// \brief Forces the DER controller (DC or AC) of \p evse_id to Available "false" and Enabled "false", if present.
-    void disable_der(const int32_t evse_id);
 
 private:
     const std::vector<std::unique_ptr<evse_managerIntf>>& r_evse_manager;

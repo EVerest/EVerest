@@ -10,8 +10,8 @@
 
 #include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
 
+#include <generated/types/evse_manager.hpp>
 #include <generated/types/grid_support.hpp>
-#include <generated/types/iso15118.hpp>
 
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
@@ -20,7 +20,6 @@
 
 namespace {
 
-namespace etm = types::iso15118;
 namespace gs = types::grid_support;
 
 const ocpp::v2::DeviceModelVariable* find_variable(const std::vector<ocpp::v2::DeviceModelVariable>& variables,
@@ -33,14 +32,30 @@ const ocpp::v2::DeviceModelVariable* find_variable(const std::vector<ocpp::v2::D
     return nullptr;
 }
 
-// AC_BPT_DER generates an ACDERCtrlr with static presence (Available "true"/ReadOnly) and a runtime
-// Enabled control (provisioned "true"/ReadWrite), empty ModesSupported.
-TEST(EverestDeviceModelStorageDerTest, AcDerCapableEvseGeneratesAcDerCtrlr) {
-    constexpr int32_t evse_id = 1;
-    const std::vector<etm::EnergyTransferMode> modes{etm::EnergyTransferMode::AC_single_phase_core,
-                                                     etm::EnergyTransferMode::AC_BPT_DER};
+namespace dmn = ocpp_module_common::device_model;
+namespace em = types::evse_manager;
 
-    const auto config = ocpp_module_common::device_model::build_der_ctrlr_component_config(evse_id, modes);
+// The component is decided from two static facts, never from reported energy transfer modes: those are
+// published asynchronously and are not waited on, so an EVSE whose modes had not arrived by the time the
+// device model was built used to get no DER controller for the lifetime of the process, answering every
+// DER message UnknownComponent. Unwired or unknown charge mode fails closed.
+TEST(DerCtrlrComponentTest, DecidedFromWiringAndChargeMode) {
+    using dmn::DerCtrlrComponent;
+
+    EXPECT_EQ(dmn::der_ctrlr_component(false, em::ChargeMode::AC), DerCtrlrComponent::None);
+    EXPECT_EQ(dmn::der_ctrlr_component(false, em::ChargeMode::DC), DerCtrlrComponent::None);
+    EXPECT_EQ(dmn::der_ctrlr_component(false, std::nullopt), DerCtrlrComponent::None);
+    EXPECT_EQ(dmn::der_ctrlr_component(true, em::ChargeMode::AC), DerCtrlrComponent::Ac);
+    EXPECT_EQ(dmn::der_ctrlr_component(true, em::ChargeMode::DC), DerCtrlrComponent::Dc);
+    EXPECT_EQ(dmn::der_ctrlr_component(true, std::nullopt), DerCtrlrComponent::None);
+}
+
+// The Ac component carries static presence (Available "true"/ReadOnly) and a runtime Enabled control
+// (provisioned "true"/ReadWrite), with empty ModesSupported.
+TEST(EverestDeviceModelStorageDerTest, AcComponentGeneratesAcDerCtrlr) {
+    constexpr int32_t evse_id = 1;
+
+    const auto config = dmn::build_der_ctrlr_component_config(evse_id, dmn::DerCtrlrComponent::Ac);
 
     ASSERT_TRUE(config.has_value());
     EXPECT_EQ(config->first.name, "ACDERCtrlr");
@@ -72,13 +87,11 @@ TEST(EverestDeviceModelStorageDerTest, AcDerCapableEvseGeneratesAcDerCtrlr) {
     EXPECT_EQ(modes_attr.value.value().get(), "");
 }
 
-// DC_BPT generates a DCDERCtrlr, not an ACDERCtrlr.
-TEST(EverestDeviceModelStorageDerTest, DcDerCapableEvseGeneratesDcDerCtrlr) {
+// The Dc component generates a DCDERCtrlr, not an ACDERCtrlr.
+TEST(EverestDeviceModelStorageDerTest, DcComponentGeneratesDcDerCtrlr) {
     constexpr int32_t evse_id = 1;
-    const std::vector<etm::EnergyTransferMode> modes{etm::EnergyTransferMode::DC_extended,
-                                                     etm::EnergyTransferMode::DC_BPT};
 
-    const auto config = ocpp_module_common::device_model::build_der_ctrlr_component_config(evse_id, modes);
+    const auto config = dmn::build_der_ctrlr_component_config(evse_id, dmn::DerCtrlrComponent::Dc);
 
     ASSERT_TRUE(config.has_value());
     EXPECT_EQ(config->first.name, "DCDERCtrlr");
@@ -101,100 +114,13 @@ TEST(EverestDeviceModelStorageDerTest, DcDerCapableEvseGeneratesDcDerCtrlr) {
     EXPECT_EQ(enabled_attr.value.value().get(), "true");
     ASSERT_TRUE(enabled_attr.mutability.has_value());
     EXPECT_EQ(enabled_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadWrite);
-
-    const auto* modes_supported = find_variable(config->second, ocpp::v2::DERComponentVariables::ModesSupported.name);
-    ASSERT_NE(modes_supported, nullptr);
-    ASSERT_EQ(modes_supported->attributes.size(), 1u);
-    const auto& modes_attr = modes_supported->attributes.at(0).variable_attribute;
-    ASSERT_TRUE(modes_attr.value.has_value());
-    EXPECT_EQ(modes_attr.value.value().get(), "");
 }
 
-// With both a DC-DER (DC_BPT) and an AC-DER (AC_BPT_DER) mode, the DC branch takes precedence.
-TEST(EverestDeviceModelStorageDerTest, DcDerWinsOverAcDerWhenBothPresent) {
-    constexpr int32_t evse_id = 1;
-    const std::vector<etm::EnergyTransferMode> modes{etm::EnergyTransferMode::DC_BPT,
-                                                     etm::EnergyTransferMode::AC_BPT_DER};
-
-    const auto config = ocpp_module_common::device_model::build_der_ctrlr_component_config(evse_id, modes);
-
-    ASSERT_TRUE(config.has_value());
-    EXPECT_EQ(config->first.name, "DCDERCtrlr");
-    EXPECT_EQ(config->first.evse_id, evse_id);
-
-    const auto* available = find_variable(config->second, ocpp::v2::DERComponentVariables::Available.name);
-    ASSERT_NE(available, nullptr);
-    ASSERT_EQ(available->attributes.size(), 1u);
-    const auto& available_attr = available->attributes.at(0).variable_attribute;
-    ASSERT_TRUE(available_attr.value.has_value());
-    EXPECT_EQ(available_attr.value.value().get(), "true");
-    ASSERT_TRUE(available_attr.mutability.has_value());
-    EXPECT_EQ(available_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadOnly);
-
-    const auto* enabled = find_variable(config->second, ocpp::v2::DERComponentVariables::Enabled.name);
-    ASSERT_NE(enabled, nullptr);
-    ASSERT_EQ(enabled->attributes.size(), 1u);
-    const auto& enabled_attr = enabled->attributes.at(0).variable_attribute;
-    ASSERT_TRUE(enabled_attr.value.has_value());
-    EXPECT_EQ(enabled_attr.value.value().get(), "true");
-    ASSERT_TRUE(enabled_attr.mutability.has_value());
-    EXPECT_EQ(enabled_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadWrite);
-
-    const auto* modes_supported = find_variable(config->second, ocpp::v2::DERComponentVariables::ModesSupported.name);
-    ASSERT_NE(modes_supported, nullptr);
-    ASSERT_EQ(modes_supported->attributes.size(), 1u);
-    const auto& modes_attr = modes_supported->attributes.at(0).variable_attribute;
-    ASSERT_TRUE(modes_attr.value.has_value());
-    EXPECT_EQ(modes_attr.value.value().get(), "");
-}
-
-// Non-DER DC mode (DC_core) plus bare AC_DER_IEC falls through to the AC branch. Also covers the bare
-// AC_DER_IEC disjunct (the AC test above uses AC_BPT_DER).
-TEST(EverestDeviceModelStorageDerTest, NonDcDerWithBareAcDerGeneratesAcDerCtrlr) {
-    constexpr int32_t evse_id = 1;
-    const std::vector<etm::EnergyTransferMode> modes{etm::EnergyTransferMode::DC_core,
-                                                     etm::EnergyTransferMode::AC_DER_IEC};
-
-    const auto config = ocpp_module_common::device_model::build_der_ctrlr_component_config(evse_id, modes);
-
-    ASSERT_TRUE(config.has_value());
-    EXPECT_EQ(config->first.name, "ACDERCtrlr");
-    EXPECT_EQ(config->first.evse_id, evse_id);
-
-    const auto* available = find_variable(config->second, ocpp::v2::DERComponentVariables::Available.name);
-    ASSERT_NE(available, nullptr);
-    ASSERT_EQ(available->attributes.size(), 1u);
-    const auto& available_attr = available->attributes.at(0).variable_attribute;
-    ASSERT_TRUE(available_attr.value.has_value());
-    EXPECT_EQ(available_attr.value.value().get(), "true");
-    ASSERT_TRUE(available_attr.mutability.has_value());
-    EXPECT_EQ(available_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadOnly);
-
-    const auto* enabled = find_variable(config->second, ocpp::v2::DERComponentVariables::Enabled.name);
-    ASSERT_NE(enabled, nullptr);
-    ASSERT_EQ(enabled->attributes.size(), 1u);
-    const auto& enabled_attr = enabled->attributes.at(0).variable_attribute;
-    ASSERT_TRUE(enabled_attr.value.has_value());
-    EXPECT_EQ(enabled_attr.value.value().get(), "true");
-    ASSERT_TRUE(enabled_attr.mutability.has_value());
-    EXPECT_EQ(enabled_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadWrite);
-
-    const auto* modes_supported = find_variable(config->second, ocpp::v2::DERComponentVariables::ModesSupported.name);
-    ASSERT_NE(modes_supported, nullptr);
-    ASSERT_EQ(modes_supported->attributes.size(), 1u);
-    const auto& modes_attr = modes_supported->attributes.at(0).variable_attribute;
-    ASSERT_TRUE(modes_attr.value.has_value());
-    EXPECT_EQ(modes_attr.value.value().get(), "");
-}
-
-// Plain AC/DC charging modes (none of AC_DER_IEC/AC_DER_SAE/AC_BPT_DER/DC_BPT/DC_ACDP_BPT) generate no DER controller.
-TEST(EverestDeviceModelStorageDerTest, NonDerEvseGeneratesNoDerCtrlr) {
+// The None component generates nothing, which is what an unwired EVSE resolves to.
+TEST(EverestDeviceModelStorageDerTest, NoneComponentGeneratesNoDerCtrlr) {
     constexpr int32_t evse_id = 2;
-    const std::vector<etm::EnergyTransferMode> modes{etm::EnergyTransferMode::AC_single_phase_core,
-                                                     etm::EnergyTransferMode::AC_three_phase_core,
-                                                     etm::EnergyTransferMode::DC_extended};
 
-    const auto config = ocpp_module_common::device_model::build_der_ctrlr_component_config(evse_id, modes);
+    const auto config = dmn::build_der_ctrlr_component_config(evse_id, dmn::DerCtrlrComponent::None);
 
     EXPECT_FALSE(config.has_value());
 }
@@ -275,15 +201,16 @@ std::filesystem::path make_temp_db_path(const std::string& tag) {
     return path;
 }
 
-// Builds a device model DB at db_path holding a single DER controller for evse_id, derived from modes.
+// Builds a device model DB at db_path holding a single DER controller of the given component for evse_id.
+// fresh=false reuses an existing DB, which is how a re-provisioning boot is simulated.
 void init_db_with_der_ctrlr(const std::filesystem::path& db_path, const int32_t evse_id,
-                            const std::vector<etm::EnergyTransferMode>& modes) {
-    const auto der = dm::build_der_ctrlr_component_config(evse_id, modes);
+                            const dm::DerCtrlrComponent component, const bool fresh = true) {
+    const auto der = dm::build_der_ctrlr_component_config(evse_id, component);
     ASSERT_TRUE(der.has_value());
     std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>> component_configs;
     component_configs[der->first] = der->second;
     ocpp::v2::InitDeviceModelDb init_db(db_path, DEVICE_MODEL_MIGRATIONS_DIR);
-    init_db.initialize_database(component_configs, true);
+    init_db.initialize_database(component_configs, fresh);
     init_db.close_connection();
 }
 
@@ -300,7 +227,7 @@ std::optional<std::string> read_der_available(ocpp::v2::DeviceModelStorageInterf
 // disable_der_ctrlr forces both a persisted DCDERCtrlr Available "true" and Enabled "true" back to "false".
 TEST(EverestDeviceModelStorageDisableDerTest, DcDerCtrlrForcedToUnavailable) {
     const auto db_path = make_temp_db_path("dc");
-    init_db_with_der_ctrlr(db_path, 1, {etm::EnergyTransferMode::DC_extended, etm::EnergyTransferMode::DC_BPT});
+    init_db_with_der_ctrlr(db_path, 1, dm::DerCtrlrComponent::Dc);
 
     ocpp::v2::DeviceModelStorageSqlite storage(db_path);
     const auto available_cv =
@@ -328,8 +255,7 @@ TEST(EverestDeviceModelStorageDisableDerTest, DcDerCtrlrForcedToUnavailable) {
 // disable_der_ctrlr forces both a persisted ACDERCtrlr Available "true" and Enabled "true" back to "false".
 TEST(EverestDeviceModelStorageDisableDerTest, AcDerCtrlrForcedToUnavailable) {
     const auto db_path = make_temp_db_path("ac");
-    init_db_with_der_ctrlr(db_path, 1,
-                           {etm::EnergyTransferMode::AC_single_phase_core, etm::EnergyTransferMode::AC_BPT_DER});
+    init_db_with_der_ctrlr(db_path, 1, dm::DerCtrlrComponent::Ac);
 
     ocpp::v2::DeviceModelStorageSqlite storage(db_path);
     const auto available_cv =
@@ -358,7 +284,7 @@ TEST(EverestDeviceModelStorageDisableDerTest, AcDerCtrlrForcedToUnavailable) {
 // disable) is left untouched so its source marker survives an unwire/rewire cycle.
 TEST(EverestDeviceModelStorageDisableDerTest, EnabledAlreadyFalseLeftUntouched) {
     const auto db_path = make_temp_db_path("enabled_false");
-    init_db_with_der_ctrlr(db_path, 1, {etm::EnergyTransferMode::DC_extended, etm::EnergyTransferMode::DC_BPT});
+    init_db_with_der_ctrlr(db_path, 1, dm::DerCtrlrComponent::Dc);
 
     ocpp::v2::DeviceModelStorageSqlite storage(db_path);
     const auto enabled_cv =
@@ -379,7 +305,7 @@ TEST(EverestDeviceModelStorageDisableDerTest, EnabledAlreadyFalseLeftUntouched) 
 TEST(EverestDeviceModelStorageDisableDerTest, NoDerCtrlrIsSilentNoOp) {
     const auto db_path = make_temp_db_path("noder");
     // The DB only holds a DER controller for evse 1; evse 2 has none.
-    init_db_with_der_ctrlr(db_path, 1, {etm::EnergyTransferMode::DC_extended, etm::EnergyTransferMode::DC_BPT});
+    init_db_with_der_ctrlr(db_path, 1, dm::DerCtrlrComponent::Dc);
 
     ocpp::v2::DeviceModelStorageSqlite storage(db_path);
     EXPECT_NO_THROW(dm::disable_der_ctrlr(storage, 2));
@@ -390,6 +316,44 @@ TEST(EverestDeviceModelStorageDisableDerTest, NoDerCtrlrIsSilentNoOp) {
     const auto ac_cv =
         ocpp::v2::DERComponentVariables::get_ac_component_variable(2, ocpp::v2::DERComponentVariables::Available);
     EXPECT_FALSE(read_der_available(storage, ac_cv).has_value());
+}
+
+// Regression: InitDeviceModelDb keeps components that vanish from the config, so an EVSE that resolved to
+// one component on an earlier boot and to the other now would carry both, each still Available "true".
+// disable_other_der_ctrlrs is what makes provisioning total: at most one available controller per EVSE.
+TEST(EverestDeviceModelStorageDisableDerTest, ReprovisioningLeavesOneAvailableComponent) {
+    const auto db_path = make_temp_db_path("reprovision");
+    const auto ac_available =
+        ocpp::v2::DERComponentVariables::get_ac_component_variable(1, ocpp::v2::DERComponentVariables::Available);
+    const auto dc_available =
+        ocpp::v2::DERComponentVariables::get_dc_component_variable(1, ocpp::v2::DERComponentVariables::Available);
+
+    // An earlier boot resolved this EVSE to the AC component.
+    init_db_with_der_ctrlr(db_path, 1, dm::DerCtrlrComponent::Ac);
+    // This boot resolves it to DC, onto the same database.
+    init_db_with_der_ctrlr(db_path, 1, dm::DerCtrlrComponent::Dc, /*fresh=*/false);
+
+    ocpp::v2::DeviceModelStorageSqlite storage(db_path);
+    ASSERT_EQ(read_der_available(storage, ac_available), "true") << "precondition: the stale component survives";
+    ASSERT_EQ(read_der_available(storage, dc_available), "true");
+
+    dm::disable_other_der_ctrlrs(storage, 1, dm::DerCtrlrComponent::Dc);
+
+    EXPECT_EQ(read_der_available(storage, dc_available), "true");
+    EXPECT_EQ(read_der_available(storage, ac_available), "false");
+}
+
+// None clears both, so an EVSE that lost its grid_support wiring keeps no available controller.
+TEST(EverestDeviceModelStorageDisableDerTest, NoneComponentClearsBoth) {
+    const auto db_path = make_temp_db_path("reprovision_none");
+    init_db_with_der_ctrlr(db_path, 1, dm::DerCtrlrComponent::Ac);
+
+    ocpp::v2::DeviceModelStorageSqlite storage(db_path);
+    dm::disable_other_der_ctrlrs(storage, 1, dm::DerCtrlrComponent::None);
+
+    const auto ac_available =
+        ocpp::v2::DERComponentVariables::get_ac_component_variable(1, ocpp::v2::DERComponentVariables::Available);
+    EXPECT_EQ(read_der_available(storage, ac_available), "false");
 }
 
 } // namespace

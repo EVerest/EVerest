@@ -391,33 +391,31 @@ ocpp::v2::SetVariableData make_set_variable_data(const ocpp::v2::ComponentVariab
 
 } // anonymous namespace
 
-std::optional<std::pair<ocpp::v2::ComponentKey, std::vector<DeviceModelVariable>>> build_der_ctrlr_component_config(
-    int32_t evse_id, const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) {
-    const auto supports_mode = [&](const types::iso15118::EnergyTransferMode mode) {
-        return std::find(supported_energy_transfer_modes.cbegin(), supported_energy_transfer_modes.cend(), mode) !=
-               supported_energy_transfer_modes.cend();
-    };
-    const bool is_dc_evse =
-        std::any_of(supported_energy_transfer_modes.cbegin(), supported_energy_transfer_modes.cend(),
-                    [](const types::iso15118::EnergyTransferMode& mode) {
-                        return mode == types::iso15118::EnergyTransferMode::DC_core or
-                               mode == types::iso15118::EnergyTransferMode::DC_extended or
-                               mode == types::iso15118::EnergyTransferMode::DC_combo_core or
-                               mode == types::iso15118::EnergyTransferMode::DC_unique or
-                               mode == types::iso15118::EnergyTransferMode::DC or
-                               mode == types::iso15118::EnergyTransferMode::DC_BPT or
-                               mode == types::iso15118::EnergyTransferMode::DC_ACDP or
-                               mode == types::iso15118::EnergyTransferMode::DC_ACDP_BPT;
-                    });
-    const bool dc_der_capable = supports_mode(types::iso15118::EnergyTransferMode::DC_BPT) or
-                                supports_mode(types::iso15118::EnergyTransferMode::DC_ACDP_BPT);
-    const bool ac_der_capable = supports_mode(types::iso15118::EnergyTransferMode::AC_DER_IEC) or
-                                supports_mode(types::iso15118::EnergyTransferMode::AC_DER_SAE) or
-                                supports_mode(types::iso15118::EnergyTransferMode::AC_BPT_DER);
-    if (is_dc_evse and dc_der_capable) {
+DerCtrlrComponent der_ctrlr_component(const bool der_wired,
+                                      const std::optional<types::evse_manager::ChargeMode>& charge_mode) {
+    if (not der_wired or not charge_mode.has_value()) {
+        return DerCtrlrComponent::None;
+    }
+    // A switch, not a ternary: -Werror=switch-enum turns a new ChargeMode into a build failure rather
+    // than a silent Ac, which is what fails closed here.
+    switch (charge_mode.value()) {
+    case types::evse_manager::ChargeMode::DC:
+        return DerCtrlrComponent::Dc;
+    case types::evse_manager::ChargeMode::AC:
+        return DerCtrlrComponent::Ac;
+    }
+    return DerCtrlrComponent::None;
+}
+
+std::optional<std::pair<ocpp::v2::ComponentKey, std::vector<DeviceModelVariable>>>
+build_der_ctrlr_component_config(const int32_t evse_id, const DerCtrlrComponent component) {
+    switch (component) {
+    case DerCtrlrComponent::Dc:
         return std::make_pair(get_dc_der_ctrlr_component_key(evse_id), build_dc_der_ctrlr_variables());
-    } else if (ac_der_capable) {
+    case DerCtrlrComponent::Ac:
         return std::make_pair(get_ac_der_ctrlr_component_key(evse_id), build_ac_der_ctrlr_variables());
+    case DerCtrlrComponent::None:
+        break;
     }
     return std::nullopt;
 }
@@ -507,36 +505,52 @@ to_der_ctrlr_config_set_variables(const int32_t evse_id, const types::grid_suppo
     return result;
 }
 
+namespace {
+
+/// Writes "false" to one Available/Enabled Actual attribute, but only when it currently reads exactly
+/// "true". Absent components and any other value are left alone, which preserves the source marker of a
+/// CSMS-written Enabled="false" across an unwire/rewire cycle.
+void force_false(ocpp::v2::DeviceModelStorageInterface& storage,
+                 const ocpp::v2::ComponentVariable& component_variable) {
+    if (not component_variable.variable.has_value()) {
+        return;
+    }
+    const auto& variable = component_variable.variable.value();
+    const auto attribute =
+        storage.get_variable_attribute(component_variable.component, variable, ocpp::v2::AttributeEnum::Actual);
+    if (not attribute.has_value() or not attribute.value().value.has_value()) {
+        return;
+    }
+    if (attribute.value().value.value().get() != "true") {
+        return;
+    }
+    storage.set_variable_attribute_value(component_variable.component, variable, ocpp::v2::AttributeEnum::Actual,
+                                         "false", VARIABLE_SOURCE_EVEREST);
+}
+
+void clear_der_ctrlrs(ocpp::v2::DeviceModelStorageInterface& storage, const int32_t evse_id, const bool clear_dc,
+                      const bool clear_ac) {
+    namespace dcv = ocpp::v2::DERComponentVariables;
+    if (clear_dc) {
+        force_false(storage, dcv::get_dc_component_variable(evse_id, dcv::Available));
+        force_false(storage, dcv::get_dc_component_variable(evse_id, dcv::Enabled));
+    }
+    if (clear_ac) {
+        force_false(storage, dcv::get_ac_component_variable(evse_id, dcv::Available));
+        force_false(storage, dcv::get_ac_component_variable(evse_id, dcv::Enabled));
+    }
+}
+
+} // namespace
+
 void disable_der_ctrlr(ocpp::v2::DeviceModelStorageInterface& storage, const int32_t evse_id) {
-    const auto force_false = [&](const ocpp::v2::ComponentVariable& component_variable) {
-        if (not component_variable.variable.has_value()) {
-            return;
-        }
-        const auto& variable = component_variable.variable.value();
-        const auto attribute =
-            storage.get_variable_attribute(component_variable.component, variable, ocpp::v2::AttributeEnum::Actual);
-        if (not attribute.has_value()) {
-            return;
-        }
-        if (not attribute.value().value.has_value()) {
-            return;
-        }
-        // Only clear a persisted Available/Enabled="true"; leave any other value untouched (preserves the
-        // source marker of a CSMS-written Enabled="false" across an unwire/rewire cycle).
-        if (attribute.value().value.value().get() != "true") {
-            return;
-        }
-        storage.set_variable_attribute_value(component_variable.component, variable, ocpp::v2::AttributeEnum::Actual,
-                                             "false", VARIABLE_SOURCE_EVEREST);
-    };
-    force_false(ocpp::v2::DERComponentVariables::get_dc_component_variable(evse_id,
-                                                                           ocpp::v2::DERComponentVariables::Available));
-    force_false(ocpp::v2::DERComponentVariables::get_ac_component_variable(evse_id,
-                                                                           ocpp::v2::DERComponentVariables::Available));
-    force_false(
-        ocpp::v2::DERComponentVariables::get_dc_component_variable(evse_id, ocpp::v2::DERComponentVariables::Enabled));
-    force_false(
-        ocpp::v2::DERComponentVariables::get_ac_component_variable(evse_id, ocpp::v2::DERComponentVariables::Enabled));
+    clear_der_ctrlrs(storage, evse_id, /*clear_dc=*/true, /*clear_ac=*/true);
+}
+
+void disable_other_der_ctrlrs(ocpp::v2::DeviceModelStorageInterface& storage, const int32_t evse_id,
+                              const DerCtrlrComponent keep) {
+    clear_der_ctrlrs(storage, evse_id, /*clear_dc=*/keep != DerCtrlrComponent::Dc,
+                     /*clear_ac=*/keep != DerCtrlrComponent::Ac);
 }
 
 EverestDeviceModelStorage::EverestDeviceModelStorage(
@@ -545,7 +559,8 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
     const std::map<int32_t, types::evse_board_support::HardwareCapabilities>& evse_hardware_capabilities_map,
     const std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>& evse_supported_energy_transfers,
     const std::map<int32_t, bool>& evse_service_renegotiation_supported, const bool with_der_components,
-    const std::filesystem::path& db_path, const std::filesystem::path& migration_files_path,
+    const std::set<int32_t>& der_wired_evse_ids, const std::filesystem::path& db_path,
+    const std::filesystem::path& migration_files_path,
     std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client) :
     r_evse_manager(r_evse_manager),
     r_extensions_15118(r_extensions_15118),
@@ -553,6 +568,7 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
     this->module_configs = config_service_client->get_module_configs();
     this->mappings = config_service_client->get_mappings();
     std::map<ComponentKey, std::vector<DeviceModelVariable>> component_configs;
+    std::map<int32_t, DerCtrlrComponent> der_ctrlr_components;
 
     for (const auto& evse_manager : r_evse_manager) {
         const auto evse_info = evse_manager->call_get_evse();
@@ -587,7 +603,15 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
         component_configs[connected_ev_component_key] = build_connected_ev_variables();
 
         if (with_der_components) {
-            auto der_ctrlr_config = build_der_ctrlr_component_config(evse_info.id, supported_energy_transfer_modes);
+            const bool der_wired = der_wired_evse_ids.count(evse_info.id) > 0;
+            const auto component = der_ctrlr_component(der_wired, evse_info.charge_mode);
+            if (component == DerCtrlrComponent::None) {
+                EVLOG_info << "No DER controller for EVSE " << evse_info.id
+                           << (der_wired ? ": the serving evse_manager reports no charge mode"
+                                         : ": no grid_support connection");
+            }
+            der_ctrlr_components[evse_info.id] = component;
+            auto der_ctrlr_config = build_der_ctrlr_component_config(evse_info.id, component);
             if (der_ctrlr_config.has_value()) {
                 component_configs[der_ctrlr_config->first] = std::move(der_ctrlr_config->second);
             }
@@ -636,6 +660,13 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
     init_device_model_db.initialize_database(component_configs, false, false);
     init_device_model_db.close_connection();
     this->device_model_storage = std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(db_path);
+
+    // Provisioning only adds. A component this EVSE resolved to on an earlier boot is kept by
+    // InitDeviceModelDb, so clear whatever was not selected now: each EVSE ends with at most one
+    // DER controller marked available.
+    for (const auto& [evse_id, component] : der_ctrlr_components) {
+        disable_other_der_ctrlrs(*this->device_model_storage, evse_id, component);
+    }
 
     this->init_evse_components_and_variables(evse_hardware_capabilities_map, evse_supported_energy_transfers);
     this->init_everest_config();
@@ -864,11 +895,6 @@ void EverestDeviceModelStorage::update_connected_ev_vehicle_id(const int32_t evs
     this->device_model_storage->set_variable_attribute_value(
         connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleId, ocpp::v2::AttributeEnum::Actual,
         vehicle_id, VARIABLE_SOURCE_EVEREST);
-}
-
-void EverestDeviceModelStorage::disable_der(const int32_t evse_id) {
-    std::lock_guard<std::mutex> lock(device_model_mutex);
-    disable_der_ctrlr(*this->device_model_storage, evse_id);
 }
 
 void EverestDeviceModelStorage::update_power(const int32_t evse_id, const float total_power_active_import) {

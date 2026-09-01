@@ -5,6 +5,7 @@
 #include "everest/logging.hpp"
 #include "ocpp/common/types.hpp"
 #include "ocpp/common/utils.hpp"
+#include <set>
 
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
@@ -425,7 +426,6 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
 
     wait_all_ready();
     auto [evse_connector_structure, connector_mapping] = get_connector_structure();
-    const auto der_routing_structure = evse_connector_structure;
 
     const auto share_path = remove_dir(mv_info.paths.share);
 
@@ -452,14 +452,28 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     EVLOG_info << "v2 device model database path:      " << device_model_database_path;
     EVLOG_info << "EVerest device model database path: " << everest_device_model_database_path;
 
+    // Build the DER routing table first: its keys are the EVSEs with a wired grid_support connection,
+    // which is what provisioning needs, and it stays empty on 1.6 where DER does not apply.
+    if (ocpp_2_selected()) {
+        init_grid_support_routing();
+    } else if (not mv_requires.grid_support.empty()) {
+        EVLOG_warning << "grid_support connections are wired but the active OCPP version is 1.6; DER is a "
+                         "2.x-only feature and the grid_support wiring is inert";
+    }
+
+    std::set<std::int32_t> der_wired_evse_ids;
+    for (const auto& [evse_id, _] : m_grid_support_by_evse) {
+        der_wired_evse_ids.insert(evse_id);
+    }
+
     {
         std::lock_guard lock(m_member_mux);
         // initialise everest device model
         m_everest_device_model_storage = std::make_shared<module::device_model::EverestDeviceModelStorage>(
             mv_requires.evse_manager, mv_requires.extensions_15118, m_evse_hardware_capabilities_map,
             m_evse_supported_energy_transfer_modes, m_evse_service_renegotiation_supported,
-            /*with_der_components=*/true, everest_device_model_database_path, device_model_database_migration_path,
-            client);
+            /*with_der_components=*/true, der_wired_evse_ids, everest_device_model_database_path,
+            device_model_database_migration_path, client);
     }
 
     // clang-format off
@@ -486,15 +500,6 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     // properties which were loaded from configuration file(s)
     if (!mv_requires.charger_information.empty()) {
         args.charger_info = mv_requires.charger_information.at(0)->call_get_charger_information();
-    }
-
-    // must run before the charge point is built: der_active_directives_callback can fire during
-    // construction, and unmapped EVSEs need their DER controller disabled in the device model first
-    if (ocpp_2_selected()) {
-        init_grid_support_routing(der_routing_structure);
-    } else if (!mv_requires.grid_support.empty()) {
-        EVLOG_warning << "grid_support connections are wired but the active OCPP version is 1.6; DER is a "
-                         "2.x-only feature and the grid_support wiring is inert";
     }
 
     mv_charge_point.init(args);
@@ -2065,7 +2070,7 @@ void GenericOcpp::push_active_directive_sets() {
     }
 }
 
-void GenericOcpp::init_grid_support_routing(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) {
+void GenericOcpp::init_grid_support_routing() {
     for (const auto& grid_support : mv_requires.grid_support) {
         const auto mapping = grid_support->get_mapping();
         if (not mapping.has_value()) {
@@ -2077,13 +2082,6 @@ void GenericOcpp::init_grid_support_routing(const std::map<std::int32_t, std::in
         if (not inserted) {
             EVLOG_error << "grid_support connection on module " << grid_support->module_id << " maps evse "
                         << mapping->evse << " already served by another connection; keeping the first";
-        }
-    }
-
-    for (const auto& [evse_id, connector_count] : evse_connector_structure) {
-        if (m_grid_support_by_evse.find(evse_id) == m_grid_support_by_evse.end()) {
-            m_everest_device_model_storage->disable_der(evse_id);
-            EVLOG_info << "No grid_support connection for EVSE " << evse_id << ": DER controller disabled";
         }
     }
 }
