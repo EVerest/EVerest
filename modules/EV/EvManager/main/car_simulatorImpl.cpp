@@ -519,6 +519,10 @@ void car_simulatorImpl::reset_car_simulation_defaults() {
 void car_simulatorImpl::update_command_queue(std::string& value) {
     const std::lock_guard<std::mutex> lock{car_simulation_mutex};
     last_commands = value;
+    // The commands of the old queue are gone; their armed countdowns must not survive them
+    // (a replaced mid-flight 'sleep 36000' otherwise donates its remaining ticks to the next
+    // tick-based command that runs - see SimulationData::clear_command_ticks).
+    car_simulation->clear_command_ticks();
     command_queue = SimulationCommand::parse_sim_commands(value, *command_registry);
 }
 
