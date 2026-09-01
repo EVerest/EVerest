@@ -159,7 +159,10 @@ State Transitions
 
 **Replug Grace Period**
 
-Only active when the ``replug_timeout_s`` config option is greater than 0.
+Only active when the ``replug_timeout_s`` config option is greater than 0 and the transaction is
+younger than ``replug_max_transaction_age_s`` (0 = no limit). An unplug later in the transaction
+is treated as the user ending it — some EVs briefly pulse CP state A for exactly that — and
+finishes the transaction immediately.
 
 * ``StoppingCharging`` -> ``WaitingForReplug``: EV unplugged while transaction and authorization
   are otherwise still intact. The transaction stays open during the grace period.

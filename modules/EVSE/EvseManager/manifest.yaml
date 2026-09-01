@@ -454,6 +454,13 @@ config:
       finished as usual. Set to 0 to finish the transaction immediately on unplug.
     type: integer
     default: 0
+  replug_max_transaction_age_s:
+    description: >-
+      Maximum transaction age in seconds for the `replug_timeout_s` to apply. If the EV is
+      unplugged later than this into the transaction, the `replug_timeout_s` takes no effect.
+      Setting it to 0 or less disables the age limit.
+    type: integer
+    default: 300
 provides:
   evse:
     interface: evse_manager

@@ -123,7 +123,9 @@ void Charger::error_thread() {
         if (error_thread_handle.shouldExit()) {
             break;
         }
-        auto events = error_handling_event_queue.wait();
+        // Use a bounded wait: a plain wait() can miss the shutdown when the destructor's
+        // wake-up event is consumed before the exit flag is set, blocking the join forever.
+        auto events = error_handling_event_queue.wait_for(std::chrono::seconds(1));
         if (!events.empty()) {
             Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_signal_loop);
             for (auto& event : events) {
@@ -1037,13 +1039,22 @@ void Charger::run_state_machine() {
                 break;
             }
 
-            // If the only stop reason is the unplug and a replug timeout is configured, give the
-            // user a grace period to replug and continue the still active transaction.
-            if (not shared_context.flag_ev_plugged_in and config_context.replug_timeout_s > 0 and
-                shared_context.flag_transaction_active and shared_context.flag_authorized and
-                not shared_context.flag_disable_requested and shared_context.shutdown_type == ShutdownType::None) {
-                set_state(EvseState::WaitingForReplug);
-                break;
+            {
+                // The grace period only applies while the transaction is "young"; 0 means no limit.
+                const bool young_transaction =
+                    config_context.replug_max_transaction_age_s <= 0 or
+                    std::chrono::steady_clock::now() - shared_context.flag_transaction_active_since <
+                        std::chrono::seconds(config_context.replug_max_transaction_age_s);
+
+                // If the only stop reason is the unplug and a replug timeout is configured, give the
+                // user a grace period to replug and continue the still active transaction.
+                if (not shared_context.flag_ev_plugged_in and config_context.replug_timeout_s > 0 and
+                    young_transaction and shared_context.flag_transaction_active and
+                    shared_context.flag_authorized and not shared_context.flag_disable_requested and
+                    shared_context.shutdown_type == ShutdownType::None) {
+                    set_state(EvseState::WaitingForReplug);
+                    break;
+                }
             }
 
             // Those are fatal, so we can not recover without replugging.
@@ -1502,6 +1513,7 @@ bool Charger::start_transaction() {
 
     store->store_session(shared_context.session_uuid);
     signal_transaction_started_event(shared_context.id_token);
+    shared_context.flag_transaction_active_since = std::chrono::steady_clock::now();
     shared_context.flag_transaction_active = true;
     return true;
 }
@@ -1615,7 +1627,8 @@ void Charger::setup(bool has_ventilation, const ChargeMode _charge_mode, bool _a
                     const int _soft_over_current_timeout_ms, const int _state_F_after_fault_ms,
                     const bool fail_on_powermeter_errors, const bool raise_mrec9,
                     const int sleep_before_enabling_pwm_hlc_mode_ms, const utils::SessionIdType session_id_type,
-                    const int hlc_charge_loop_without_energy_timeout_s, const int replug_timeout_s) {
+                    const int hlc_charge_loop_without_energy_timeout_s, const int replug_timeout_s,
+                    const int replug_max_transaction_age_s) {
     // set up board support package
     bsp->setup(has_ventilation);
 
@@ -1641,6 +1654,7 @@ void Charger::setup(bool has_ventilation, const ChargeMode _charge_mode, bool _a
     config_context.session_id_type = session_id_type;
     config_context.hlc_charge_loop_without_energy_timeout_s = hlc_charge_loop_without_energy_timeout_s;
     config_context.replug_timeout_s = replug_timeout_s;
+    config_context.replug_max_transaction_age_s = replug_max_transaction_age_s;
 
     if (config_context.charge_mode == ChargeMode::AC and config_context.ac_hlc_enabled)
         EVLOG_info << "AC HLC mode enabled.";

@@ -107,7 +107,8 @@ public:
                const std::string switch_3ph1ph_cp_state, const int soft_over_current_timeout_ms,
                const int _state_F_after_fault_ms, const bool fail_on_powermeter_errors, const bool raise_mrec9,
                const int sleep_before_enabling_pwm_hlc_mode_ms, const utils::SessionIdType session_id_type,
-               const int hlc_charge_loop_without_energy_timeout_s, const int replug_timeout_s);
+               const int hlc_charge_loop_without_energy_timeout_s, const int replug_timeout_s,
+               const int replug_max_transaction_age_s);
 
     void enable_disable_initial_state_publish();
     bool enable_disable(int connector_id, const types::evse_manager::EnableDisableSource& source);
@@ -326,12 +327,14 @@ private:
         std::atomic_bool flag_paused_by_evse{false};
         std::atomic_bool flag_ev_plugged_in{false};
         // set to true if auth is from PnC, otherwise to false (EIM)
-        bool authorized_pnc;
+        bool authorized_pnc{false};
         bool matching_started;
         float max_current;
         std::chrono::time_point<std::chrono::steady_clock> max_current_valid_until;
         std::optional<double> max_current_cable;
         std::atomic_bool flag_transaction_active;
+        // Time the current transaction started; limits the replug grace period to young transactions
+        std::chrono::time_point<std::chrono::steady_clock> flag_transaction_active_since;
         bool session_active;
         std::string session_uuid;
         bool connector_enabled;
@@ -345,9 +348,9 @@ private:
         float current_drawn_by_vehicle[3];
         ShutdownType shutdown_type{ShutdownType::None};
         ShutdownType last_shutdown_type{ShutdownType::None};
-        int ac_with_soc_timer;
+        int ac_with_soc_timer{3600000};
         // non standard compliant option: time out after a while and switch back to DC to get SoC update
-        bool ac_with_soc_timeout;
+        bool ac_with_soc_timeout{false};
         bool contactor_welded{false};
         bool switch_3ph1ph_threephase{false};
         bool switch_3ph1ph_threephase_ongoing{false};
@@ -359,12 +362,13 @@ private:
     } shared_context;
 
     struct ConfigContext {
+        // Defaults mirror the manifest; all values are overwritten by setup()
         // non standard compliant option to enforce HLC in AC mode
-        bool ac_enforce_hlc;
+        bool ac_enforce_hlc{false};
         // Config option to use 5 percent PWM in HLC AC mode
-        bool ac_hlc_use_5percent;
+        bool ac_hlc_use_5percent{true};
         // Config option to enable HLC in AC mode
-        bool ac_hlc_enabled;
+        bool ac_hlc_enabled{false};
         // AC or DC
         ChargeMode charge_mode{0};
         // Delay when switching from 1ph to 3ph or 3ph to 1ph
@@ -376,9 +380,9 @@ private:
         // Switch to F for configured ms after a fatal error
         int state_F_after_fault_ms{300};
         // Fail on powermeter errors
-        bool fail_on_powermeter_errors;
+        bool fail_on_powermeter_errors{true};
         // Raise MREC9 authorization timeout error
-        bool raise_mrec9;
+        bool raise_mrec9{false};
         // sleep before enabling pwm in hlc mode
         int sleep_before_enabling_pwm_hlc_mode_ms{1000};
         // type used to generate session ids
@@ -389,6 +393,10 @@ private:
         // Grace period in seconds to continue an active transaction after the EV was unplugged.
         // 0 disables the grace period and finishes the transaction immediately on unplug.
         int replug_timeout_s{0};
+        // The replug grace period only applies if the EV is unplugged within this many seconds
+        // after the transaction started. Later unplugs finish the transaction immediately.
+        // 0 means no limit.
+        int replug_max_transaction_age_s{300};
     } config_context;
 
     // Used by different threads, but requires no complete state machine locking

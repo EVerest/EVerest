@@ -97,6 +97,7 @@ struct ChargerTest : public testing::Test {
         ctx.current_state = Charger::EvseState::StoppingCharging;
         ctx.flag_transaction_active = true;
         ctx.session_active = true;
+        ctx.flag_transaction_active_since = std::chrono::steady_clock::now();
         ctx.flag_authorized = true;
         ctx.contactor_open = true;
         ctx.flag_ev_plugged_in = false;
@@ -808,6 +809,39 @@ TEST_F(ChargerTest, UnplugWithReplugTimeoutEntersWaitingForReplug) {
     EXPECT_TRUE(ctx.flag_transaction_active);
     EXPECT_TRUE(ctx.session_active);
     EXPECT_TRUE(ctx.flag_authorized);
+}
+
+TEST_F(ChargerTest, UnplugAfterReplugMaxTransactionAgeFinishesImmediately) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().replug_timeout_s = 30;
+    charger->get_config_context().replug_max_transaction_age_s = 300;
+    simulate_unplug_during_transaction();
+    // The transaction is older than the replug window
+    ctx.flag_transaction_active_since = std::chrono::steady_clock::now() - std::chrono::seconds(301);
+
+    charger->run_state_machine();
+
+    // Too old for the grace period: finish immediately as if it was not configured
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Idle);
+    EXPECT_FALSE(ctx.flag_transaction_active);
+    EXPECT_FALSE(ctx.session_active);
+    EXPECT_EQ(last_event, SessionEventEnum::SessionFinished);
+    EXPECT_EQ(ctx.last_stop_transaction_reason, StopTransactionReason::EVDisconnected);
+}
+
+TEST_F(ChargerTest, ReplugMaxTransactionAgeZeroAppliesGraceToOldTransactions) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().replug_timeout_s = 30;
+    charger->get_config_context().replug_max_transaction_age_s = 0;
+    simulate_unplug_during_transaction();
+    ctx.flag_transaction_active_since = std::chrono::steady_clock::now() - std::chrono::hours(10);
+
+    charger->run_state_machine();
+
+    // 0 means no session age limit
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::WaitingForReplug);
+    EXPECT_TRUE(ctx.flag_transaction_active);
+    EXPECT_TRUE(ctx.session_active);
 }
 
 TEST_F(ChargerTest, ReplugWithinTimeoutContinuesSession) {
