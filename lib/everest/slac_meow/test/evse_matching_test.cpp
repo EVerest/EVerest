@@ -1698,6 +1698,9 @@ bool test_cm_validate_bcb_toggle_detection() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+    // the charge controller's running count, which the machine samples rather than is told
+    int bc_transitions = 0;
+    callbacks.bc_transition_count = [&bc_transitions]() { return bc_transitions; };
 
     TestContext ctx(callbacks);
     configure_common(ctx);
@@ -1715,7 +1718,7 @@ bool test_cm_validate_bcb_toggle_detection() {
 
     // Some B/C transitions may already have happened before validation starts; the handler must count
     // only the toggles that occur between the two exchanges (relative to the first-exchange baseline).
-    machine.count_bc(7);
+    bc_transitions = 7;
 
     // --- First exchange: EVSE arms counting and answers READY, toggle_num 0 ------------------------
     auto expected_cnf_count = count_cm_validate_cnf(sent_messages) + 1;
@@ -1737,7 +1740,7 @@ bool test_cm_validate_bcb_toggle_detection() {
 
     // --- EV toggles its CP (B->C->B ...): EvseManager counts one B->C edge per toggle and pushes the
     //     growing count in. Simulate three BCB toggles = 3 counted edges on top of the baseline of 7. --
-    machine.count_bc(7 + 3);
+    bc_transitions = 7 + 3;
 
     // --- Second exchange (step 2): a REQ with a non-zero pilotTimer opens the toggle-observation
     //     window (pilotTimer 1 = 200 ms). The EVSE does not answer until the window elapses, then

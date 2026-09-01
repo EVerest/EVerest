@@ -167,7 +167,7 @@ void Matching::handle_validate_req(messages::HomeplugMessage const& frame) {
         // Snapshot the counter here, at step 1: the EV only toggles during the step-2 window, so
         // every edge from now to the end of that window is a toggle. Snapshotting at step 2 would
         // race the pilot path against the slower SLAC frame path and miss the first toggle.
-        m_validate_baseline_bc = m_ctx.bc_transition_count;
+        m_validate_baseline_bc = m_ctx.bc_transition_count();
         m_validate_timer.arm(m_ctx.current_time, std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS));
         send_validate_cnf_reply(m_validate_owner_mac, defs::mme::validate::RESULT_READY, 0);
         return;
@@ -194,7 +194,7 @@ void Matching::validate_tick() {
 
     if (m_validate_step2_pending) {
         // one B/C edge is counted per BCB toggle, so the delta since the baseline is the count
-        auto const seen = m_ctx.bc_transition_count - m_validate_baseline_bc;
+        auto const seen = m_ctx.bc_transition_count() - m_validate_baseline_bc;
         auto const toggles = static_cast<std::uint8_t>(std::max(0, std::min(seen, 255)));
         send_validate_cnf_reply(m_validate_owner_mac, defs::mme::validate::RESULT_SUCCESS, toggles);
         m_validate_armed = false;

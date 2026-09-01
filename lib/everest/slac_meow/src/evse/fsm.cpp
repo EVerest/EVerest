@@ -59,10 +59,6 @@ struct FSM::Impl {
     /// point goes through here, so nothing is ever handled without a current_time.
     void feed(SlacEvent const& event) {
         ctx.current_time = ctx.now();
-        // context state the machine reads, not something a state reacts to on arrival
-        if (auto const* count = std::get_if<event::CountBc>(&event)) {
-            ctx.bc_transition_count = count->count;
-        }
         if (machine.has_value()) {
             machine->feed(event);
         }
@@ -129,10 +125,6 @@ void FSM::enter_bcd() {
 
 void FSM::leave_bcd() {
     impl->feed(event::LeaveBcd{});
-}
-
-void FSM::count_bc(int count) {
-    impl->feed(event::CountBc{count});
 }
 
 void FSM::message(messages::HomeplugMessage msg) {

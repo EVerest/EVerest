@@ -27,9 +27,6 @@ public:
     void reset();
     void enter_bcd();
     void leave_bcd();
-
-    /// CM_VALIDATE reads the delta over its observation window.
-    void count_bc(int count);
     void message(messages::HomeplugMessage msg);
     void update();
 

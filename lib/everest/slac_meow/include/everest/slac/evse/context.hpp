@@ -94,6 +94,10 @@ struct ContextCallbacks {
     std::function<bool(messages::HomeplugMessage&)> send_raw_slac{nullptr};
     std::function<TimePoint()> now{nullptr};
 
+    /// Sampled when a CM_VALIDATE exchange needs it, not reacted to. Optional: without it,
+    /// validation reports no toggles rather than failing.
+    std::function<int()> bc_transition_count{nullptr};
+
     std::function<void(D3State)> signal_state{nullptr};
     std::function<void(bool)> signal_dlink_ready{nullptr};
     std::function<void()> signal_error_routine_request{nullptr};
@@ -129,10 +133,12 @@ public:
         return m_callbacks.now();
     }
 
-    Config slac_config{};
-    /// CM_VALIDATE takes a baseline and reads the delta as the number of BCB toggles.
-    int bc_transition_count{0};
+    /// 0 if the charge controller supplies no count.
+    int bc_transition_count() const {
+        return m_callbacks.bc_transition_count ? m_callbacks.bc_transition_count() : 0;
+    }
 
+    Config slac_config{};
     /// After a CM_VALIDATE the match request must arrive within TT_match_sequence rather than the
     /// whole match session: CmSlacMatch_003/004, cmValidate variant.
     bool validation_done{false};
