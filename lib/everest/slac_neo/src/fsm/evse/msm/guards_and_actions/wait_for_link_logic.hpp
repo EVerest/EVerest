@@ -4,7 +4,7 @@
 // Guards and actions of the WaitForLink sub-machine (link detection after CM_SLAC_MATCH.CNF; see wait_for_link.hpp).
 
 #pragma once
-#include "common.hpp"
+#include "../common.hpp"
 
 namespace everest::lib::slac::msm::wait_for_link_sm {
 

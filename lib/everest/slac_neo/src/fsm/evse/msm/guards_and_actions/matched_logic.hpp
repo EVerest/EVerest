@@ -4,7 +4,7 @@
 // Guards and actions of the Matched sub-machine (link supervision and CM_AMP_MAP; see matched.hpp).
 
 #pragma once
-#include "common.hpp"
+#include "../common.hpp"
 
 namespace everest::lib::slac::msm::matched_sm {
 

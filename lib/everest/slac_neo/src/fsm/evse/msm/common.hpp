@@ -10,8 +10,8 @@
 //   effects that are a property of being in the state, such as raising dlink_ready in Matched).
 // - Row actions and guards in the transition tables hold what depends on the edge, i.e. on the
 //   event and the source state (answering a message, counting a retry).
-// The functors and entry helpers live in the *_actions.hpp sibling of each sub-machine, so a _def
-// file shows only states, aliases, the table, the hooks and its data.
+// The functors and entry helpers of each sub-machine live in guards_and_actions/<machine>_logic.hpp,
+// so a _def file shows only states, aliases, the table, the hooks and its data.
 
 #pragma once
 #include <everest/slac/fsm/slac_msm_helpers.hpp>

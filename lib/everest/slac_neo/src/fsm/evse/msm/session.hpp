@@ -6,7 +6,7 @@
 
 #pragma once
 #include "common.hpp"
-#include "session_actions.hpp"
+#include "guards_and_actions/session_logic.hpp"
 
 namespace everest::lib::slac::msm::session_sm {
 

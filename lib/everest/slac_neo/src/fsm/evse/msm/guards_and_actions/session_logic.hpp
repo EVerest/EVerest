@@ -4,7 +4,7 @@
 // Guards and actions of the Session sub-machine (one per CM_SLAC_PARM.REQ; see session.hpp).
 
 #pragma once
-#include "common.hpp"
+#include "../common.hpp"
 
 namespace everest::lib::slac::msm::session_sm {
 

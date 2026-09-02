@@ -7,7 +7,7 @@
 #pragma once
 #include "../validate_handler.hpp"
 #include "common.hpp"
-#include "matching_actions.hpp"
+#include "guards_and_actions/matching_logic.hpp"
 #include "session.hpp"
 
 namespace everest::lib::slac::msm::matching_sm {
