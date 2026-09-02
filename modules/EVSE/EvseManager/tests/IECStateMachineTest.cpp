@@ -27,6 +27,7 @@ struct BspStub : public module::stub::ModuleAdapterStub {
         _bsp["allow_power_on"] = &BspStub::call_allow_power_on;
         _bsp["enable"] = &BspStub::call_enable;
         _bsp["cp_state_X1"] = &BspStub::call_cp_state_X1;
+        _bsp["cp_state_F"] = &BspStub::call_cp_state_F;
         _bsp["pwm_on"] = &BspStub::call_pwm_on;
     }
 
@@ -56,6 +57,11 @@ struct BspStub : public module::stub::ModuleAdapterStub {
 
     virtual Result call_cp_state_X1(Parameters p) {
         std::cout << "call_cp_state_X1(" << p << ")" << std::endl;
+        return std::nullopt;
+    }
+
+    virtual Result call_cp_state_F(Parameters p) {
+        std::cout << "call_cp_state_F(" << p << ")" << std::endl;
         return std::nullopt;
     }
 
@@ -502,6 +508,80 @@ TEST_F(ConnectorLockTest, force_unlock_overrides_authorized) {
     sm->connector_force_unlock();
 
     EXPECT_GT(unlock_count, 0) << "connector_force_unlock should unlock even when authorized";
+}
+
+// ---------------------------------------------------------------------------
+// Tests for CP state F persistence
+//
+// The high level state machine commands state F on fatal errors. A BSP state
+// event (e.g. the initial A published around startup) arriving after that
+// command must not trigger the automatic X1 reset, which would undo the F
+// and unmask the fault.
+
+struct CpStateFTest : public testing::Test {
+    struct CpCommandRecorder : public BspStub {
+        std::vector<std::string> cp_commands;
+
+        Result call_cp_state_X1(Parameters p) override {
+            cp_commands.push_back("X1");
+            return BspStub::call_cp_state_X1(p);
+        }
+
+        Result call_cp_state_F(Parameters p) override {
+            cp_commands.push_back("F");
+            return BspStub::call_cp_state_F(p);
+        }
+    };
+
+    CpCommandRecorder bsp;
+    std::unique_ptr<evse_board_supportIntf> bsp_if;
+
+    std::unique_ptr<module::IECStateMachine> create_state_machine() {
+        bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
+        auto sm = std::make_unique<module::IECStateMachine>(bsp_if, true, false);
+        sm->enable(true);
+        return sm;
+    }
+};
+
+TEST_F(CpStateFTest, state_events_do_not_undo_requested_state_f) {
+    auto sm = create_state_machine();
+
+    sm->set_cp_state_F();
+    ASSERT_EQ(bsp.cp_commands, std::vector<std::string>{"F"});
+
+    // BSP still reports A, the F command has not taken effect there yet
+    bsp.raise_event(Event::A);
+    EXPECT_EQ(bsp.cp_commands, std::vector<std::string>{"F"}) << "A event must not reset the requested state F to X1";
+
+    bsp.raise_event(Event::E);
+    EXPECT_EQ(bsp.cp_commands, std::vector<std::string>{"F"}) << "E event must not reset the requested state F to X1";
+}
+
+TEST_F(CpStateFTest, x1_request_reenables_automatic_reset) {
+    auto sm = create_state_machine();
+
+    sm->set_cp_state_F();
+    bsp.raise_event(Event::F);
+    sm->set_cp_state_X1();
+    bsp.cp_commands.clear();
+
+    bsp.raise_event(Event::A);
+    EXPECT_EQ(bsp.cp_commands, std::vector<std::string>{"X1"})
+        << "after an X1 request the A event should reset the CP state again";
+}
+
+TEST_F(CpStateFTest, pwm_request_reenables_automatic_reset) {
+    auto sm = create_state_machine();
+
+    sm->set_cp_state_F();
+    bsp.raise_event(Event::F);
+    sm->set_pwm(0.05);
+    bsp.cp_commands.clear();
+
+    bsp.raise_event(Event::A);
+    EXPECT_EQ(bsp.cp_commands, std::vector<std::string>{"X1"})
+        << "after a PWM request the A event should reset the CP state again";
 }
 
 } // namespace

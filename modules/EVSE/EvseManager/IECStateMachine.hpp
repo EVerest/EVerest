@@ -135,6 +135,9 @@ private:
     bool car_plugged_in{false};
 
     RawCPState last_cp_state{RawCPState::Disabled};
+    // True while the high level state machine wants CP state F. Guards the automatic X1 reset on
+    // Disabled/A/E events, which could otherwise undo a concurrently commanded F on the BSP.
+    bool cp_state_f_requested{false};
     AsyncTimeout timeout_state_c1;
     AsyncTimeout timeout_unlock_state_F;
 
