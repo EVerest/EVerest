@@ -21,10 +21,6 @@ namespace {
 constexpr char kModuleLogPrefix[] = "EvSlacNeo: ";
 } // namespace
 
-ev_slacImpl::ev_slacImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<EvSlacNeo>& mod, Conf& config) :
-    ev_slacImplBase(ev, "main"), mod(mod), config(config) {
-}
-
 ev_slacImpl::~ev_slacImpl() {
     shutdown();
 }
