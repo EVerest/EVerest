@@ -11,6 +11,7 @@ add_executable(everest_io_tests
   fd_event_handler_test.cpp
   fd_event_client_backpressure_test.cpp
   pty_handler_test.cpp
+  vcan_netlink_manager_test.cpp
 )
 
 target_link_libraries(everest_io_tests
