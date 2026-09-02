@@ -1,0 +1,24 @@
+{{ u.license_header }}
+#include "{{ u.module_header }}"
+
+namespace module {
+
+void {{ u.class_name }}::init() {
+{% for impl in u.provides %}
+    invoke_init(*p_{{ impl.id }});
+{% endfor %}
+}
+
+void {{ u.class_name }}::ready() {
+{% for impl in u.provides %}
+    invoke_ready(*p_{{ impl.id }});
+{% endfor %}
+}
+
+void {{ u.class_name }}::shutdown() {
+{% for impl in u.provides %}
+    invoke_shutdown(*p_{{ impl.id }});
+{% endfor %}
+}
+
+} // namespace module
