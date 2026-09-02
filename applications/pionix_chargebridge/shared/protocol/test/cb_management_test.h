@@ -18,7 +18,10 @@ CB_STATIC_ASSERT((sizeof(CbFirmwarePacket) == 1 + 2 + 2 + 1024 && sizeof(CbFirmw
                  "Wrong CB type size!");
 CB_STATIC_ASSERT((sizeof(CbFirmwareEnd) == 4 + 1 + (128 + 1) && sizeof(CbFirmwareEnd) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");
-CB_STATIC_ASSERT((sizeof(CbHeartbeatPacket) == 224 && sizeof(CbHeartbeatPacket) <= CB_MAX_CB_STRUCT_SIZE),
+CB_STATIC_ASSERT((sizeof(CbHeartbeatPacket) == 224 + 4 + 1 && sizeof(CbHeartbeatPacket) <= CB_MAX_CB_STRUCT_SIZE),
+                 "Wrong CB type size!");
+CB_STATIC_ASSERT((sizeof(CbHeartbeatReplyPacket) == 53 + 1 + 4 + 4 &&
+                  sizeof(CbHeartbeatReplyPacket) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");
 CB_STATIC_ASSERT((sizeof(CbDebugUartLinePacket) == 2 + CB_DEBUG_UART_LINE_MAX &&
                   sizeof(CbDebugUartLinePacket) <= CB_MAX_CB_STRUCT_SIZE),

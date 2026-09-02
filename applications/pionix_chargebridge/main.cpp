@@ -457,6 +457,23 @@ int main(int argc, char* argv[]) {
         cb->manage(ev_handler, g_run_application, force_update);
     }
 
+    // Event loop lag watchdog: a 1 s timer that fires late by more than loop_lag_warn means the loop
+    // thread was blocked for that long (a dispatch, a blocking call). Silent otherwise.
+    static constexpr auto loop_watchdog_period = std::chrono::seconds(1);
+    static constexpr auto loop_lag_warn = std::chrono::milliseconds(500);
+    everest::lib::io::event::timer_fd loop_watchdog;
+    auto loop_watchdog_expected = std::chrono::steady_clock::now() + loop_watchdog_period;
+    ev_handler.register_event_handler(&loop_watchdog, [&loop_watchdog_expected]() {
+        auto const now = std::chrono::steady_clock::now();
+        auto const lag = std::chrono::duration_cast<std::chrono::milliseconds>(now - loop_watchdog_expected);
+        if (lag > loop_lag_warn) {
+            utilities::print_error("host", "LOOP", -1)
+                << "event loop stalled for " << lag.count() << " ms" << std::endl;
+        }
+        loop_watchdog_expected = now + loop_watchdog_period;
+    });
+    loop_watchdog.set_timeout(loop_watchdog_period);
+
     ev_handler.run(g_run_application);
     // Stop the UI first: it owns the terminal (ftxui alternate screen), and destroying the bridges
     // joins their manager threads, which can still be finishing a cancelled firmware upload. Doing it
