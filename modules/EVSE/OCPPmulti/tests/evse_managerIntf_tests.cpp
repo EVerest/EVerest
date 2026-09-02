@@ -144,8 +144,24 @@ TEST_F(GenericOcppRequiresTester, callGetEvse) {
         "evse_manager", "call_get_evse", 1,
         [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
 
-    interfaces->add_cmd_result(R"({"id":1,"connectors":[{"id":1}]})"_json);
-    interfaces->add_cmd_result(R"({"id":2,"connectors":[{"id":1},{"id":2},{"id":3}]})"_json);
+    // Built from the generated type rather than a JSON literal, so a new required field on Connector
+    // or Evse cannot leave these payloads missing a key. This test only counts connectors, so the
+    // charge mode and HLC values themselves are immaterial.
+    const auto evse_with = [](const std::int32_t evse_id, const std::int32_t connector_count) {
+        types::evse_manager::Evse evse;
+        evse.id = evse_id;
+        for (std::int32_t id = 1; id <= connector_count; ++id) {
+            types::evse_manager::Connector connector;
+            connector.id = id;
+            connector.charge_mode = types::evse_manager::ChargeMode::AC;
+            connector.hlc_capable = false;
+            evse.connectors.push_back(connector);
+        }
+        return json(evse);
+    };
+
+    interfaces->add_cmd_result(evse_with(1, 1));
+    interfaces->add_cmd_result(evse_with(2, 3));
 
     const auto [structure, v16_mapping] = ocpp->get_connector_structure();
 

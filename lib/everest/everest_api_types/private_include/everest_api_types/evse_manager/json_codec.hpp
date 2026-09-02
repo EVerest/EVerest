@@ -19,6 +19,9 @@ void from_json(json const& j, StopTransactionRequest& k);
 void to_json(json& j, StartSessionReason const& k) noexcept;
 void from_json(json const& j, StartSessionReason& k);
 
+void to_json(json& j, ChargeMode const& k) noexcept;
+void from_json(json const& j, ChargeMode& k);
+
 void to_json(json& j, SessionEventEnum const& k) noexcept;
 void from_json(json const& j, SessionEventEnum& k);
 

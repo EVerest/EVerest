@@ -232,6 +232,32 @@ void from_json(json const& j, StartSessionReason& k) {
                             " could not be converted to enum of type API_V1_0_StartSessionReason");
 }
 
+void to_json(json& j, ChargeMode const& k) noexcept {
+    switch (k) {
+    case ChargeMode::AC:
+        j = "AC";
+        return;
+    case ChargeMode::DC:
+        j = "DC";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::evse_manger::ChargeMode";
+}
+
+void from_json(json const& j, ChargeMode& k) {
+    std::string s = j;
+    if (s == "AC") {
+        k = ChargeMode::AC;
+        return;
+    }
+    if (s == "DC") {
+        k = ChargeMode::DC;
+        return;
+    }
+
+    throw std::out_of_range("Provided string " + s + " could not be converted to enum of type API_V1_0_ChargeMode");
+}
+
 void to_json(json& j, SessionEventEnum const& k) noexcept {
     switch (k) {
     case SessionEventEnum::Authorized:
@@ -1140,6 +1166,12 @@ void to_json(json& j, Connector const& k) noexcept {
     if (k.type) {
         j["type"] = k.type.value();
     }
+    if (k.charge_mode) {
+        j["charge_mode"] = k.charge_mode.value();
+    }
+    if (k.hlc_capable) {
+        j["hlc_capable"] = k.hlc_capable.value();
+    }
 }
 
 void from_json(json const& j, Connector& k) {
@@ -1147,6 +1179,12 @@ void from_json(json const& j, Connector& k) {
 
     if (j.contains("type")) {
         k.type.emplace(j.at("type"));
+    }
+    if (j.contains("charge_mode")) {
+        k.charge_mode.emplace(j.at("charge_mode"));
+    }
+    if (j.contains("hlc_capable")) {
+        k.hlc_capable.emplace(j.at("hlc_capable"));
     }
 }
 
