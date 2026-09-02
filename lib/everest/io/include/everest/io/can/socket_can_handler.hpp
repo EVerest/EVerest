@@ -5,15 +5,36 @@
 
 #pragma once
 
+#include <cstdint>
 #include <everest/io/can/can_payload.hpp>
 #include <everest/io/can/can_recv_filter.hpp>
 #include <everest/io/event/unique_fd.hpp>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace everest::lib::io {
 
 namespace can {
+
+/**
+ * @struct socket_can_options
+ * @brief Socket options requested on \ref socket_can_handler::open beyond the defaults (non
+ *        blocking, minimal send buffer). Defaults set nothing.
+ */
+struct socket_can_options {
+    /**
+     * @brief SO_RCVBUF in bytes, 0 keeps the kernel default. Clamped to net.core.rmem_max. One CAN
+     *        frame costs about 0.5 to 1 KB of skb truesize.
+     */
+    std::uint32_t receive_buffer_bytes{0};
+    /**
+     * @brief SO_PRIORITY (skb->priority), unset keeps the default. Values above 6 need CAP_NET_ADMIN.
+     *        \ref netlink::vcan_netlink_manager::unshaped_socket_priority bypasses the shaper of
+     *        \ref netlink::vcan_netlink_manager::set_transmit_rate_limit.
+     */
+    std::optional<int> socket_priority{};
+};
 
 /**
  * socket_can_handler bundles basic <a href="https://docs.kernel.org/networking/can.html">socket_can</a>
@@ -82,9 +103,11 @@ public:
      * Implementation for \p ClientPolicy
      * @param[in] can_dev The device to bind the socket to.
      * @param[in] recv_filters Optional filters applied on open (replaces stored filters).
+     * @param[in] options Socket options to request on top of the defaults, see \ref socket_can_options.
      * @return True on success, false otherwise.
      */
-    bool open(std::string const& can_dev, std::vector<can_recv_filter> const& recv_filters = {});
+    bool open(std::string const& can_dev, std::vector<can_recv_filter> const& recv_filters = {},
+              socket_can_options const& options = {});
 
     /**
      * @brief Set kernel receive filters for this handler.
@@ -141,6 +164,7 @@ private:
     event::unique_fd m_owned_can_fd;
     std::string m_can_dev;
     std::vector<can_recv_filter> m_recv_filters;
+    socket_can_options m_options;
 };
 } // namespace can
 } // namespace everest::lib::io

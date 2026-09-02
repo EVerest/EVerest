@@ -2,6 +2,7 @@
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include <algorithm>
+#include <cstdint>
 #include <everest/io/can/can_recv_filter.hpp>
 #include <everest/io/can/socket_can_handler.hpp>
 #include <everest/io/event/fd_event_handler.hpp>
@@ -110,7 +111,8 @@ bool socket_can_handler::rx(can_dataset& data) {
     return status == 0;
 }
 
-bool socket_can_handler::open(std::string const& can_device, std::vector<can_recv_filter> const& recv_filters) {
+bool socket_can_handler::open(std::string const& can_device, std::vector<can_recv_filter> const& recv_filters,
+                              socket_can_options const& options) {
     // IFNAMSIZ is the size of the buffer to write the name to.
     // This situation is special concerning null termination,
     // The name can occupy the fill buffer. If it does not, nulltermination is necessary
@@ -120,6 +122,7 @@ bool socket_can_handler::open(std::string const& can_device, std::vector<can_rec
         return false;
     }
     m_recv_filters = recv_filters;
+    m_options = options;
     m_can_dev = can_device;
     return open_device() == 0;
 }
@@ -185,6 +188,15 @@ int socket_can_handler::open_device() {
 
     socket::set_non_blocking(can_fd);
     socket::set_socket_send_buffer_to_min(can_fd);
+    // Best effort, see socket_can_options.
+    if (m_options.receive_buffer_bytes != 0) {
+        int rcvbuf = static_cast<int>(std::min<std::uint32_t>(m_options.receive_buffer_bytes, INT32_MAX));
+        (void)::setsockopt(can_fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+    }
+    if (m_options.socket_priority.has_value()) {
+        int prio = *m_options.socket_priority;
+        (void)::setsockopt(can_fd, SOL_SOCKET, SO_PRIORITY, &prio, sizeof(prio));
+    }
     m_owned_can_fd = std::move(can_fd);
 
     if (!apply_recv_filters()) {
