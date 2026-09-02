@@ -107,6 +107,20 @@ target_compile_definitions(framework
         TARGET_MIGRATION_FILE_VERSION=${TARGET_MIGRATION_FILE_VERSION}
 )
 
+
+if (CMAKE_INSTALL_PREFIX)
+    set_property(SOURCE runtime.cpp APPEND PROPERTY
+        COMPILE_DEFINITIONS EVEREST_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}"
+    )
+endif()
+
+if (CMAKE_INSTALL_LIBDIR)
+    set_property(SOURCE runtime.cpp APPEND PROPERTY
+        COMPILE_DEFINITIONS EVEREST_INSTALL_LIBDIR="${CMAKE_INSTALL_LIBDIR}"
+    )
+endif()
+
+
 set_target_properties(framework
     PROPERTIES
         POSITION_INDEPENDENT_CODE ON

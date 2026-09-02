@@ -16,13 +16,34 @@
 #include <utils/error/error_state_monitor.hpp>
 #include <utils/filesystem.hpp>
 
+#include <boost/program_options.hpp>
+
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
 
-#include <boost/program_options.hpp>
-
 namespace Everest {
+
+namespace defaults {
+
+#ifndef EVEREST_INSTALL_PREFIX
+#define EVEREST_INSTALL_PREFIX "/usr"
+#endif
+
+#ifndef EVEREST_INSTALL_LIBDIR
+#define EVEREST_INSTALL_LIBDIR "lib"
+#endif
+
+const std::string& prefix() {
+    static const std::string value{EVEREST_INSTALL_PREFIX};
+    return value;
+}
+
+const std::string& lib_dir() {
+    static const std::string value{EVEREST_INSTALL_LIBDIR};
+    return value;
+}
+} // namespace defaults
 
 namespace po = boost::program_options;
 
@@ -452,7 +473,7 @@ void ManagerSettings::init_prefix_and_data_dir(const std::string& prefix_) {
         prefix = assert_dir(prefix_, "User provided prefix");
     }
     if (prefix.empty()) {
-        prefix = assert_dir(defaults::PREFIX, "Default prefix");
+        prefix = assert_dir(defaults::prefix(), "Default prefix");
     }
     runtime_settings.data_dir =
         assert_dir((prefix / defaults::DATAROOT_DIR / defaults::NAMESPACE).string(), "Default share directory");
@@ -480,7 +501,7 @@ void ManagerSettings::init_config_file(const std::string& config_) {
     if (config_file.empty()) {
         auto config_file_prefix = runtime_settings.prefix;
         if (config_file_prefix.empty()) {
-            config_file_prefix = assert_dir(defaults::PREFIX, "Default prefix");
+            config_file_prefix = assert_dir(defaults::prefix(), "Default prefix");
         }
 
         if (config_file_prefix.string() == "/usr") {
@@ -890,8 +911,8 @@ bool ModuleLoader::parse_command_line(int argc, char* argv[]) {
         auto default_logging_config_file =
             fs::path(defaults::SYSCONF_DIR) / defaults::NAMESPACE / defaults::LOGGING_CONFIG_NAME;
 
-        if (std::strcmp(defaults::PREFIX, "/usr") != 0) {
-            default_logging_config_file = defaults::PREFIX / default_logging_config_file;
+        if (defaults::prefix() != "/usr") {
+            default_logging_config_file = defaults::prefix() / default_logging_config_file;
         } else {
             default_logging_config_file = fs::path("/") / default_logging_config_file;
         }
