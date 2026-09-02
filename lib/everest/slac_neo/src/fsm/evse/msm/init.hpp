@@ -12,25 +12,12 @@ namespace everest::lib::slac::msm::init_sm {
 
 struct Init_def : public state_machine_def<Init_def> {
     // States
-    struct Init : timeout_state {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            timeout_state::state_timeout_ms = fsm.ctx->slac_config.request_info_delay_ms;
-            timeout_state::on_entry(e, fsm);
-        }
-    };
-    struct OpAttr : timeout_state {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            timeout_state::state_timeout_ms = fsm.ctx->slac_config.request_info_delay_ms;
-            timeout_state::on_entry(e, fsm);
-        }
-    };
-    struct GetVersion : timeout_state {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            timeout_state::state_timeout_ms = fsm.ctx->slac_config.request_info_delay_ms;
-            timeout_state::on_entry(e, fsm);
-        }
-    };
+    // Each query state waits request_info_delay_ms for the modem's answer before moving on.
+    using request_info_timeout_state = config_timeout_state<&fsm::evse::EvseSlacConfig::request_info_delay_ms>;
     // clang-format off
+    struct Init       : request_info_timeout_state { };
+    struct OpAttr     : request_info_timeout_state { };
+    struct GetVersion : request_info_timeout_state { };
     struct Done       : exit_pseudo_state<update> { };
     struct Other      : state<> { };
     // clang-format on
@@ -75,8 +62,7 @@ struct Init_def : public state_machine_def<Init_def> {
     // Entry / exit
     template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
-        ctx->status.match_state = SlacState::Init;
-        ctx->status.d3_state = D3State::Unmatched;
+        ctx->enter_state(SlacState::Init, D3State::Unmatched);
     }
 
     // Members

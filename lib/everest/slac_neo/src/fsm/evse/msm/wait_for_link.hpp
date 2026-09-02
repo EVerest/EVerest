@@ -47,13 +47,11 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
     // Entry / exit
     template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
-        ctx->log_info("Waiting for Link to be ready...");
+        // Still in the matching phase (post CM_SLAC_MATCH.CNF, awaiting link) -> published as MATCHING.
+        ctx->enter_state(SlacState::WaitForLink, D3State::Matching, "Waiting for Link to be ready...");
         link_check_to_ms = ctx->slac_config.link_status.retry_ms;
         to.setDuration(std::chrono::milliseconds(ctx->slac_config.link_status.timeout_ms));
         to.reset();
-        ctx->status.match_state = SlacState::WaitForLink;
-        // Still in the matching phase (post CM_SLAC_MATCH.CNF, awaiting link) -> published as MATCHING.
-        ctx->status.d3_state = D3State::Matching;
     }
 
     // Members

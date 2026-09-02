@@ -49,6 +49,14 @@ void Context::clear_match_confirm_cache() {
     match_confirm_cache = MatchConfirmCache{};
 }
 
+void Context::enter_state(SlacState match_state, D3State d3_state, const std::string& log_message) {
+    if (not log_message.empty()) {
+        log_info(log_message);
+    }
+    status.match_state = match_state;
+    status.d3_state = d3_state;
+}
+
 void Context::cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message,
                                           uint8_t const* ev_mac, uint8_t const* evse_mac, uint8_t const* run_id) {
     cache_match_confirm_message(match_confirm_message, byte_array_from_wire<MacAddress>(ev_mac),

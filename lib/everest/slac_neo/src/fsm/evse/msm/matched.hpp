@@ -68,7 +68,7 @@ struct Matched_def : public state_machine_def<Matched_def> {
             std::ostringstream ss;
             ss << "Entered Matched state (EV " << format_mac_addr(ctx->status.ev_mac) << ", avg. attenuation "
                << std::fixed << std::setprecision(1) << ctx->status.average_attenuation << " dB)";
-            ctx->log_info(ss.str());
+            ctx->enter_state(SlacState::Matched, D3State::Matched, ss.str());
         }
         ctx->clear_match_confirm_cache();
         ctx->signal_dlink_ready(true);
@@ -76,26 +76,8 @@ struct Matched_def : public state_machine_def<Matched_def> {
         consecutive_neg_link_status = 0;
         neg_link_status_threshold =
             ctx->slac_config.link_status.debounce_count < 1 ? 1 : ctx->slac_config.link_status.debounce_count;
-        ctx->status.match_state = SlacState::Matched;
-        ctx->status.d3_state = D3State::Matched;
         ctx->status.modem_link_ready = true;
-
-        // ISO 15118-3 A.9.6 transmit-power limitation: once the AVLN is up, send
-        // the operator-configured amplitude map to the peer (CmAmpMap_002..004).
-        // Disabled by default; the map is provided via the amp_map_file config.
-        amp_map_awaiting_cnf = false;
-        amp_map_retries = 0;
-        if (ctx->slac_config.initiate_amp_map and ctx->slac_config.amp_map_len > 0) {
-            if (not ctx->send_amp_map_req(ctx->status.ev_mac, ctx->slac_config.amp_map_len,
-                                          ctx->slac_config.amp_map_data)) {
-                ctx->log_warn("Failed to send CM_AMP_MAP.REQ");
-            }
-            // Await the CM_AMP_MAP.CNF; retransmit every TT_match_response until it arrives, limited
-            // to C_EV_match_retry retransmissions (serviced by retransmit_amp_map on the update tick).
-            amp_map_awaiting_cnf = true;
-            amp_map_timer.setDurationMilliSeconds(defs::TT_MATCH_RESPONSE_MS);
-            amp_map_timer.reset();
-        }
+        start_amp_map_exchange(*this);
     }
 
     template <class Event, class Fsm> void on_exit(Event const&, Fsm&) {

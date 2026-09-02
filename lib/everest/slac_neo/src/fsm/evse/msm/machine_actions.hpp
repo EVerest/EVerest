@@ -21,7 +21,6 @@ struct is_legacy_set_key_handling_mode {
     }
 };
 
-
 // Actions
 struct on_matched_fail {
     template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {

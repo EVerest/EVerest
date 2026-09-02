@@ -41,23 +41,19 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
 
     struct Idle : public state<> {
         template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
-            fsm.ctx->log_info("Entered Idle state");
+            fsm.ctx->enter_state(SlacState::Idle, D3State::Unmatched, "Entered Idle state");
             fsm.ctx->clear_match_confirm_cache();
-            fsm.ctx->status.match_state = SlacState::Idle;
-            fsm.ctx->status.d3_state = D3State::Unmatched;
             fsm.ctx->status.modem_PIB = true;
         }
     };
     struct Failed : public state<> {
         template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
             auto& ctx = *fsm.ctx;
-            ctx.log_info("Entered Failed state");
+            ctx.enter_state(SlacState::Failed, D3State::Unmatched, "Entered Failed state");
             if (ctx.slac_config.ac_mode_five_percent) {
                 ctx.signal_error_routine_request();
             }
             ctx.clear_match_confirm_cache();
-            ctx.status.match_state = SlacState::Failed;
-            ctx.status.d3_state = D3State::Unmatched;
         }
     };
 
