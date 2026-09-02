@@ -29,18 +29,20 @@ struct ResetChip_def   : public state_machine_def<ResetChip_def> {
     // clang-format on
 
     // Guards
-    bool is_done(update const&){
-        // Qualcomm sends a reply
-        // CG5317 does not reply to the reset packet
-        // Chip reset not supported for other chips
-        return ctx->modem_vendor == defs::ModemVendor::Lumissil;
-    }
     struct is_reset_message {
         template <class Fsm, class SrcT, class TarT>
         bool operator()(message const& e, Fsm&, SrcT&, TarT& ) {
             const auto mmtype = e.payload.get_mmtype();
             auto expected = defs::qualcomm::MMTYPE_CM_RESET_DEVICE | defs::MMTYPE_MODE_CNF;
             return mmtype == expected;
+        }
+    };
+    // The reset is done without waiting for a reply: the Lumissil CG5317 does not answer the reset
+    // packet (Qualcomm replies, handled via Received; other chips do not support the chip reset).
+    struct reset_done {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            return fsm.ctx->modem_vendor == defs::ModemVendor::Lumissil;
         }
     };
 
@@ -65,7 +67,6 @@ struct ResetChip_def   : public state_machine_def<ResetChip_def> {
 
     // Transitions
     using initial_state = Delay;
-    using p = ResetChip_def;
     // clang-format off
     struct transition_table : boost::mpl::vector<
         //    +----------+---------+----------+----------------+------------------+
@@ -73,8 +74,8 @@ struct ResetChip_def   : public state_machine_def<ResetChip_def> {
         //    +----------+---------+----------+----------------+------------------+
         Row   < Delay    , update  , Sent     , send_message   , timeout          >,
         Row   < Sent     , message , Received , trigger_update , is_reset_message >,
-        g_row < Sent     , update  , Done     /* none */       , &p::is_done      >,
-        _row  < Received , update  , Done     /* none */         /* none */       >
+        Row   < Sent     , update  , Done     , none           , reset_done       >,
+        Row   < Received , update  , Done     , none           , none             >
         //    +----------+---------+----------+----------------+------------------+
         >{};
     // clang-format on

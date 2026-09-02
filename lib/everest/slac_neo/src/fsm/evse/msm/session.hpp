@@ -27,70 +27,8 @@ struct Session_def     : public state_machine_def<Session_def> {
         typedef boost::mpl::vector<SessionFailed> flag_list;
     };
 
-    // Member guards (used via row / from the functors in session_actions.hpp)
-    template<class MsgT>
-    static bool check_message(message const& e, std::uint16_t expected, fsm::evse::MatchingSessionData const& session_data) {
-        const auto mmtype = e.payload.get_mmtype();
-        if(mmtype not_eq expected){
-            return false;
-        }
-        auto const msg = e.payload.template payload_as<MsgT>();
-        if (not msg.has_value()) {
-            return false;
-        }
-        return session_data.validate_message(*msg);
-    }
-    bool is_start_atten_char(message const& e) {
-        auto mmtype = defs::MMTYPE_CM_START_ATTEN_CHAR | defs::MMTYPE_MODE_IND;
-        return check_message<slac::messages::cm_start_atten_char_ind>(e, mmtype, session_data);
-    }
-    bool is_atten_char_rsp(message const& e) {
-        auto mmtype = slac::defs::MMTYPE_CM_ATTEN_CHAR | slac::defs::MMTYPE_MODE_RSP;
-        return check_message<slac::messages::cm_atten_char_rsp>(e, mmtype, session_data);
-    }
-    bool is_slac_match_req(message const& e) {
-        auto mmtype = slac::defs::MMTYPE_CM_SLAC_MATCH | slac::defs::MMTYPE_MODE_REQ;
-        return check_message<slac::messages::cm_slac_match_req>(e, mmtype, session_data);
-    }
-    bool is_atten_profile_ind(message const& e) {
-        auto mmtype = slac::defs::MMTYPE_CM_ATTEN_PROFILE | slac::defs::MMTYPE_MODE_IND;
-        return check_message<slac::messages::cm_atten_profile_ind>(e, mmtype, session_data);
-    }
-
-    // Member actions (used via row)
-    void on_atten_char_rsp(message const&) {
-        ctx->log_info(session_log_prefix(session_data) +
-                      "Received CM_ATTEN_CHAR.RSP, waiting for CM_SLAC_MATCH.REQ");
-    }
-    void match_cnf(message const& e){
-        messages::cm_slac_match_cnf& reply = ctx->match_confirm_cache.message;
-        auto const msg = e.payload.payload_as<slac::messages::cm_slac_match_req>();
-        if (not msg.has_value()) {
-            return;
-        }
-        ctx->log_info(session_log_prefix(session_data) +
-                      "Received CM_SLAC_MATCH.REQ, sending CM_SLAC_MATCH.CNF -> session complete");
-        static constexpr Nmk failed_match_session_nmk{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                                                     0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10};
-
-        Nmk const* session_nmk = &ctx->slac_config.session_nmk;
-        if (ctx->slac_config.link_status.debug_simulate_failed_matching) {
-            ctx->log_info("Sending wrong NMK to EV to simulate a failed link setup after match request");
-            session_nmk = &failed_match_session_nmk;
-        }
-
-        session_data.create_cm_slac_match_cnf(reply, *msg, *session_nmk);
-        if (not ctx->send_slac_message(session_data.ev_mac, reply)) {
-            ctx->log_warn("Failed to send CM_SLAC_MATCH.CNF");
-        }
-        ctx->signal_cm_slac_match_cnf(session_data.ev_mac.data());
-        ctx->cache_match_confirm_message(reply, session_data.ev_mac, session_data.evse_mac, session_data.run_id);
-        std::copy(std::begin(session_data.ev_mac), std::end(session_data.ev_mac), std::begin(ctx->status.ev_mac));
-    }
-
     // Transitions
     using initial_state = WaitStartAtten;
-    using p = Session_def;
     using retry_timeout         = And_<timeout, retry_limit>;
     using log_no_start_atten    = log_session_failed<fail_no_start_atten>;
     using log_no_atten_rsp      = log_session_failed<fail_no_atten_rsp>;
@@ -109,10 +47,10 @@ struct Session_def     : public state_machine_def<Session_def> {
         Row   < FinalizeSounding , update  , WaitAttenRsp     , finalize_snd          , timeout                   >,
         Row   < WaitAttenRsp     , update  , WaitAttenRsp     , retry_snd             , timeout                   >,
         Row   < WaitAttenRsp     , update  , Failed           , log_no_atten_rsp      , retry_timeout             >,
-        row   < WaitAttenRsp     , message , WaitSlacMatch    , &p::on_atten_char_rsp , &p::is_atten_char_rsp     >,
+        Row   < WaitAttenRsp     , message , WaitSlacMatch    , on_atten_char_rsp     , is_atten_char_rsp_guard   >,
         Row   < WaitSlacMatch    , update  , Failed           , log_no_slac_match     , timeout                   >,
         Row   < WaitSlacMatch    , update  , Failed           , log_validation_window , validation_window_expired >,
-        row   < WaitSlacMatch    , message , MatchComplete    , &p::match_cnf         , &p::is_slac_match_req     >
+        Row   < WaitSlacMatch    , message , MatchComplete    , match_cnf             , is_slac_match_req_guard   >
         //    +------------------+---------+------------------+-----------------------+---------------------------+
         >{};
     // clang-format on
