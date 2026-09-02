@@ -4,10 +4,8 @@
 
 #include <cassert>
 #include <cerrno>
-#include <chrono>
 #include <cinttypes>
 #include <cstring>
-#include <thread>
 
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -58,7 +56,13 @@ ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, int connected_fd,
     poll_manager.register_fd(fd, [this]() { this->handle_bootstrap(); });
 }
 
-ConnectionPlain::~ConnectionPlain() = default;
+ConnectionPlain::~ConnectionPlain() {
+    // Make sure the socket is closed and unregistered from the poll manager even if the session was
+    // torn down without an explicit close(). The event callback targets the (dying) session, so
+    // silence it first.
+    event_callback = nullptr;
+    close();
+}
 
 void ConnectionPlain::set_event_callback(const ConnectionEventCallback& callback) {
     this->event_callback = callback;
@@ -71,12 +75,14 @@ Ipv6EndPoint ConnectionPlain::get_public_endpoint() const {
 void ConnectionPlain::write(const uint8_t* buf, size_t len) {
     assert(connection_open);
 
-    const auto write_result = ::write(fd, buf, len);
-
-    if (write_result == -1) {
+    // The fd is non-blocking, so a peer with a stalled receive window can make ::write() accept
+    // only part of a multi-kB response (or none, EAGAIN) -- that is backpressure, not an error.
+    // write_all waits for POLLOUT and continues, bounded by WRITE_TIMEOUT_MS so a peer that stays
+    // stalled ends the session (throw -> session teardown) instead of stalling the shared poll
+    // loop forever.
+    if (not write_all(fd, buf, len, WRITE_TIMEOUT_MS)) {
+        logf_error("write failed with error code: %d", errno);
         log_and_throw("Failed to write()");
-    } else if (not cmp_equal(write_result, len)) {
-        log_and_throw("Could not complete write");
     }
 }
 
@@ -98,8 +104,8 @@ ReadResult ConnectionPlain::read(uint8_t* buf, size_t len) {
     // EAGAIN/EWOULDBLOCK/EINTR mean "retry"; anything else (ECONNRESET, or
     // ETIMEDOUT from the TCP keepalive, ...) is terminal, so report it as a
     // closed connection. Otherwise the level-triggered poll would spin on the
-    // dead socket until the 60 s sequence timeout instead of tearing the
-    // session down within one tick.
+    // dead socket until the sequence timeout instead of tearing the session
+    // down within one tick.
     if (errno == EAGAIN or errno == EWOULDBLOCK or errno == EINTR) {
         return {true, 0, false};
     }
@@ -110,22 +116,33 @@ ReadResult ConnectionPlain::read(uint8_t* buf, size_t len) {
 
 void ConnectionPlain::handle_connect() {
 
-    sockaddr_in6 address;
-    socklen_t address_len = sizeof(address);
+    sockaddr_in6 address{};
+    const auto accepted = accept_connection(fd, address);
 
-    const auto accept_fd = accept4(fd, reinterpret_cast<struct sockaddr*>(&address), &address_len, SOCK_NONBLOCK);
-    if (accept_fd == -1) {
-        log_and_throw("Failed to accept4");
+    if (accepted.status == AcceptResult::Status::Transient) {
+        // The listener stays registered; just wait for the next connection.
+        return;
     }
 
-    if (not set_tcp_keepalive(accept_fd)) {
-        logf_warning("Failed to configure TCP keepalive on accepted connection");
+    if (accepted.status == AcceptResult::Status::Fatal) {
+        // Tear down just this connection (drops the listener, delivers CLOSED -> the session is
+        // reaped) instead of the whole controller loop.
+        logf_error("Closing the TCP listener after a fatal accept failure");
+        close();
+        return;
     }
+
+    const auto accept_fd = accepted.fd;
 
     const auto address_name = sockaddr_in6_to_name(address);
 
     if (not address_name) {
-        log_and_throw("Failed to determine string representation of ipv6 socket address");
+        // Never fatal (and would leak the accepted fd if it threw): log, drop the accepted socket
+        // and tear down this connection.
+        logf_error("Failed to determine string representation of ipv6 socket address");
+        ::close(accept_fd);
+        close();
+        return;
     }
 
     logf_info("Incoming connection from [%s]:%" PRIu16, address_name.get(), ntohs(address.sin6_port));
@@ -133,12 +150,28 @@ void ConnectionPlain::handle_connect() {
     poll_manager.unregister_fd(fd);
     ::close(fd);
 
+    // Point the member fd at the accepted socket BEFORE delivering events: an event handler
+    // reacting to ACCEPTED/OPEN with write()/read()/close() must not act on the just-closed
+    // listener fd, whose number the kernel may already have reused.
+    fd = accept_fd;
+
     call_if_available(event_callback, ConnectionEvent::ACCEPTED);
+
+    if (closed) {
+        // An event handler closed the connection during ACCEPTED (e.g. protocol/TLS gating):
+        // CLOSED has already been delivered, so the connection must not be revived by setting
+        // connection_open, and OPEN must not be delivered after CLOSED.
+        return;
+    }
 
     connection_open = true;
     call_if_available(event_callback, ConnectionEvent::OPEN);
 
-    fd = accept_fd;
+    if (closed) {
+        // An event handler closed the connection; don't re-register the closed fd.
+        return;
+    }
+
     poll_manager.register_fd(fd, [this]() { this->handle_data(); });
 }
 
@@ -150,8 +183,20 @@ void ConnectionPlain::handle_data() {
 
 void ConnectionPlain::handle_bootstrap() {
     call_if_available(event_callback, ConnectionEvent::ACCEPTED);
+
+    if (closed) {
+        // Same guard as handle_connect: a close() from the ACCEPTED handler already delivered
+        // CLOSED and unregistered the fd; don't revive the connection or fire OPEN after it.
+        return;
+    }
+
     connection_open = true;
     call_if_available(event_callback, ConnectionEvent::OPEN);
+
+    if (closed) {
+        // An event handler closed the connection; don't re-register the closed fd.
+        return;
+    }
 
     poll_manager.unregister_fd(fd);
 
@@ -160,18 +205,25 @@ void ConnectionPlain::handle_bootstrap() {
 }
 
 void ConnectionPlain::close() {
+    if (closed) {
+        // keep close() idempotent: the session driver closes on peer-EOF and again during teardown
+        return;
+    }
+    closed = true;
 
-    /* tear down TCP connection gracefully */
+    /* tear down the TCP connection (or the not-yet-accepted listening socket) */
     logf_info("Closing TCP connection");
 
-    const auto shutdown_result = shutdown(fd, SHUT_RDWR);
+    if (connection_open) {
+        // Established connection: send our FIN. The grace period for an EV-initiated close happens
+        // non-blocking in the session driver *before* this call (DIN [V2G-DC-937/938], ISO 15118-20
+        // [V2G20-1633]); close() itself must never stall the shared poll loop.
+        const auto shutdown_result = shutdown(fd, SHUT_RDWR);
 
-    if (shutdown_result == -1) {
-        logf_error("shutdown() failed");
+        if (shutdown_result == -1) {
+            logf_error("shutdown() failed");
+        }
     }
-
-    // Waiting for client closing the connection
-    std::this_thread::sleep_for(std::chrono::seconds(2));
 
     poll_manager.unregister_fd(fd);
 

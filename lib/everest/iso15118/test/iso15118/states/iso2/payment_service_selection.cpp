@@ -1,0 +1,151 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Pionix GmbH and Contributors to EVerest
+#include <catch2/catch_test_macros.hpp>
+
+#include <iso15118/detail/d2/state/payment_service_selection.hpp>
+
+using namespace iso15118;
+namespace dt = message_2::datatypes;
+
+SCENARIO("ISO 15118-2 SECC PaymentServiceSelection handling") {
+    const dt::SessionId id{};
+
+    GIVEN("ExternalPayment with the charge service selected") {
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::ExternalPayment;
+        req.selected_service_list.push_back(dt::SelectedService{1, std::nullopt});
+        const auto res = d2::state::handle_request(req, id, 1, true, false);
+        THEN("OK") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+        }
+    }
+
+    GIVEN("Contract payment is selected") {
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::Contract;
+        req.selected_service_list.push_back(dt::SelectedService{1, std::nullopt});
+        const auto res = d2::state::handle_request(req, id, 1, true, false);
+        THEN("FAILED_PaymentSelectionInvalid") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_PaymentSelectionInvalid);
+        }
+    }
+
+    GIVEN("The charge service is not selected") {
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::ExternalPayment;
+        const auto res = d2::state::handle_request(req, id, 1, true, false);
+        THEN("FAILED_NoChargeServiceSelected") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_NoChargeServiceSelected);
+        }
+    }
+
+    GIVEN("A selected service that was never offered") {
+        // [V2G2-467]: a ServiceID not in the offered ServiceList is rejected.
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::ExternalPayment;
+        req.selected_service_list.push_back(dt::SelectedService{1, std::nullopt});
+        req.selected_service_list.push_back(dt::SelectedService{99, std::nullopt});
+        const auto res = d2::state::handle_request(req, id, 1, true, false, /*cert_service_offered=*/false);
+        THEN("FAILED_ServiceSelectionInvalid") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+        }
+    }
+
+    GIVEN("The Certificate service selected while offered (PnC over TLS)") {
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::Contract;
+        req.selected_service_list.push_back(dt::SelectedService{1, std::nullopt});
+        req.selected_service_list.push_back(dt::SelectedService{dt::CERTIFICATE_SERVICE_ID, std::nullopt});
+        const auto res =
+            d2::state::handle_request(req, id, 1, true, /*contract_allowed=*/true, /*cert_service_offered=*/true);
+        THEN("OK") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+        }
+    }
+
+    GIVEN("A resumed EIM session where the EV switches to Contract") {
+        // [V2G2-741]: only the previously selected option was offered on resume; switching requires a
+        // terminated session, not a resume.
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::Contract;
+        req.selected_service_list.push_back(dt::SelectedService{1, std::nullopt});
+        const auto res = d2::state::handle_request(req, id, 1, true, /*contract_allowed=*/true,
+                                                   /*cert_service_offered=*/true, dt::PaymentOption::ExternalPayment);
+        THEN("FAILED_PaymentSelectionInvalid") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_PaymentSelectionInvalid);
+        }
+    }
+
+    GIVEN("A resumed EIM session where the EV selects ExternalPayment again") {
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::ExternalPayment;
+        req.selected_service_list.push_back(dt::SelectedService{1, std::nullopt});
+        const auto res = d2::state::handle_request(req, id, 1, true, /*contract_allowed=*/true,
+                                                   /*cert_service_offered=*/true, dt::PaymentOption::ExternalPayment);
+        THEN("OK") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+        }
+    }
+
+    GIVEN("ExternalPayment selected on a Contract-only (PnC-only) SECC") {
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::ExternalPayment;
+        req.selected_service_list.push_back(dt::SelectedService{1, std::nullopt});
+        const auto res = d2::state::handle_request(req, id, 1, /*eim_allowed=*/false, /*contract_allowed=*/true);
+        THEN("FAILED_PaymentSelectionInvalid: EIM was not offered [V2G2-465]") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_PaymentSelectionInvalid);
+        }
+    }
+
+    GIVEN("Contract selected on a Contract-only (PnC-only) SECC") {
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::Contract;
+        req.selected_service_list.push_back(dt::SelectedService{1, std::nullopt});
+        const auto res = d2::state::handle_request(req, id, 1, /*eim_allowed=*/false, /*contract_allowed=*/true);
+        THEN("OK") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+        }
+    }
+}
+
+SCENARIO("ISO 15118-2 SECC PaymentServiceSelection with external VAS") {
+    const dt::SessionId id{};
+    dt::ServiceList offered;
+    dt::Service vas;
+    vas.service_id = 42;
+    vas.service_category = dt::ServiceCategory::OtherCustom;
+    vas.free_service = true;
+    offered.push_back(vas);
+
+    GIVEN("The charge service plus an offered VAS are selected") {
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::ExternalPayment;
+        req.selected_service_list.push_back(dt::SelectedService{1, std::nullopt});
+        req.selected_service_list.push_back(dt::SelectedService{42, 7});
+        const auto res = d2::state::handle_request(req, id, 1, true, false, false, std::nullopt, offered);
+        THEN("OK") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+        }
+    }
+
+    GIVEN("The charge service plus a VAS that was not offered are selected") {
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::ExternalPayment;
+        req.selected_service_list.push_back(dt::SelectedService{1, std::nullopt});
+        req.selected_service_list.push_back(dt::SelectedService{43, std::nullopt});
+        const auto res = d2::state::handle_request(req, id, 1, true, false, false, std::nullopt, offered);
+        THEN("FAILED_ServiceSelectionInvalid [V2G2-467]") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+        }
+    }
+
+    GIVEN("Only the offered VAS is selected, without the charge service") {
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::ExternalPayment;
+        req.selected_service_list.push_back(dt::SelectedService{42, std::nullopt});
+        const auto res = d2::state::handle_request(req, id, 1, true, false, false, std::nullopt, offered);
+        THEN("FAILED_NoChargeServiceSelected keeps precedence [V2G2-804]") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_NoChargeServiceSelected);
+        }
+    }
+}

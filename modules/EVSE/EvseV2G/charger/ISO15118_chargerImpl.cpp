@@ -311,6 +311,12 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
     pthread_mutex_unlock(&v2g_ctx->mqtt_lock);
 }
 
+void ISO15118_chargerImpl::handle_cp_state_changed(types::iso15118::CpState& cp_state) {
+    // Not consumed yet: EvseV2G does not implement the [V2G-DC-988]/[V2G2-920..922] CP State B
+    // checks before WeldingDetection/SessionStop (follow-up; the Evse15118D20 stack does).
+    (void)cp_state;
+}
+
 void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {
     sdp_set_dlink_ready(v2g_ctx, value);
 

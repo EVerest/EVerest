@@ -14,10 +14,12 @@ struct FeedbackResults {
     float target_voltage;
     feedback::DcChargeLoopReq dc_charge_loop_req;
     feedback::DcMaximumLimits dc_max_limits;
-    iso15118::message_20::Type v2g_message;
+    iso15118::V2gMessageType v2g_message;
+    std::vector<uint8_t> v2g_exi_frame;
     std::string evcc_id;
     std::string selected_protocol;
     iso15118::d20::EVInformation ev_information;
+    iso15118::message_20::SupportedAppProtocolRequest ev_app_protocols;
     uint16_t id;
     dt::VasSelectedServiceList selected_vas;
 };
@@ -37,8 +39,13 @@ SCENARIO("Feedback Tests") {
     callbacks.dc_max_limits = [&feedback_results](const feedback::DcMaximumLimits& dc_max_limits_) {
         feedback_results.dc_max_limits = dc_max_limits_;
     };
-    callbacks.v2g_message = [&feedback_results](const iso15118::message_20::Type& type) {
+    callbacks.v2g_message = [&feedback_results](const iso15118::V2gMessageType& type,
+                                                const iso15118::io::StreamInputView& exi_frame) {
         feedback_results.v2g_message = type;
+        feedback_results.v2g_exi_frame.assign(exi_frame.payload, exi_frame.payload + exi_frame.payload_len);
+    };
+    callbacks.ev_app_protocols = [&feedback_results](const iso15118::message_20::SupportedAppProtocolRequest& req) {
+        feedback_results.ev_app_protocols = req;
     };
     callbacks.evccid = [&feedback_results](const std::string& evcc_id_) { feedback_results.evcc_id = evcc_id_; };
     callbacks.selected_protocol = [&feedback_results](const std::string& protocol) {
@@ -184,11 +191,39 @@ SCENARIO("Feedback Tests") {
 
     GIVEN("Test v2g_message") {
         using Type = iso15118::message_20::Type;
-        const Type expected = Type::DC_CableCheckReq;
+        const iso15118::V2gMessageType expected = Type::DC_CableCheckReq;
         feedback.v2g_message(Type::DC_CableCheckReq);
 
         THEN("v2g_message should be like expected") {
             REQUIRE(feedback_results.v2g_message == expected);
+        }
+
+        THEN("no EXI frame is reported when the caller does not supply one") {
+            REQUIRE(feedback_results.v2g_exi_frame.empty());
+        }
+    }
+
+    GIVEN("Test v2g_message with the wire frame attached") {
+        using Type = iso15118::message_20::Type;
+        const std::vector<uint8_t> frame{0x01, 0xfe, 0x80, 0x01, 0x00, 0x00, 0x00, 0x02, 0xab, 0xcd};
+        feedback.v2g_message(Type::DC_CableCheckReq, {frame.data(), frame.size()});
+
+        THEN("the whole V2GTP frame reaches the module") {
+            REQUIRE(feedback_results.v2g_exi_frame == frame);
+        }
+    }
+
+    GIVEN("Test ev_app_protocols") {
+        iso15118::message_20::SupportedAppProtocolRequest req;
+        req.app_protocol.push_back({"urn:iso:15118:2:2013:MsgDef", 2, 0, 1, 1});
+        feedback.ev_app_protocols(req);
+
+        THEN("the offered list reaches the module unchanged") {
+            REQUIRE(feedback_results.ev_app_protocols.app_protocol.size() == 1);
+            REQUIRE(feedback_results.ev_app_protocols.app_protocol.at(0).protocol_namespace ==
+                    "urn:iso:15118:2:2013:MsgDef");
+            REQUIRE(feedback_results.ev_app_protocols.app_protocol.at(0).version_number_major == 2);
+            REQUIRE(feedback_results.ev_app_protocols.app_protocol.at(0).schema_id == 1);
         }
     }
 
