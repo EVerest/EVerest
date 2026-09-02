@@ -6,6 +6,7 @@
 #include <utils/date.hpp>
 
 #include "EnergyManagerImpl.hpp"
+#include "EnergyManagerTestHelpers.hpp"
 #include "PowerMeterAggregator.hpp"
 
 namespace module {
@@ -478,36 +479,27 @@ TEST(CollectLeafMeasurements, SkipsEvseNodesWithoutMeasurement) {
 
 namespace {
 
+// Every manifest option comes from the shared factory, so a newly added option is set here
+// too instead of being read uninitialised; only the value under test is overridden.
 EnergyManagerConfig make_aggregation_config() {
-    EnergyManagerConfig c;
-    c.nominal_ac_voltage = 230.0;
-    c.update_interval = 1;
-    c.schedule_interval_duration = 60;
-    c.schedule_total_duration = 1;
-    c.slice_ampere = 0.5;
-    c.slice_watt = 500;
-    c.debug = false;
-    c.switch_3ph1ph_while_charging_mode = "Never";
-    c.switch_3ph1ph_max_nr_of_switches_per_session = 0;
-    c.switch_3ph1ph_switch_limit_stickyness = "DontChange";
-    c.switch_3ph1ph_power_hysteresis_W = 200;
-    c.switch_3ph1ph_time_hysteresis_s = 0;
+    auto c = test::make_default_config();
     c.power_meter_aggregation_window_s = 5;
     return c;
 }
 
-types::energy::ScheduleReqEntry make_entry(const std::string& timestamp, float max_current_A, float min_current_A) {
-    types::energy::ScheduleReqEntry e;
-    e.timestamp = timestamp;
-    e.limits_to_root.ac_max_current_A = {max_current_A, "TEST_max_current"};
-    e.limits_to_root.ac_min_current_A = {min_current_A, "TEST_min_current"};
-    e.limits_to_root.ac_max_phase_count = {3, "TEST_max_phases"};
-    e.limits_to_root.ac_min_phase_count = {1, "TEST_min_phases"};
-    e.limits_to_root.ac_number_of_active_phases = 3;
-    return e;
+} // namespace
+
+// A config option the factories forget is read uninitialised by EnergyManagerImpl - the
+// aggregation window becomes a garbage number of seconds - so the factories must set every
+// manifest option, and these assert the manifest defaults for the two easiest to forget.
+
+TEST(EnergyManagerConfigFactories, DefaultConfigSetsTheAggregationWindow) {
+    EXPECT_EQ(test::make_default_config().power_meter_aggregation_window_s, 5);
 }
 
-} // namespace
+TEST(EnergyManagerConfigFactories, AggregationConfigSetsTheBrokerStrategy) {
+    EXPECT_EQ(make_aggregation_config().broker_strategy, "FastCharging");
+}
 
 TEST(AggregatorWiring, RunOptimizerRefreshesTheLeafAggregate) {
     const std::string ts = "2026-08-04T12:00:00.000Z";
@@ -515,20 +507,20 @@ TEST(AggregatorWiring, RunOptimizerRefreshesTheLeafAggregate) {
 
     auto cp01 = make_node("cp01", types::energy::NodeType::Evse);
     cp01.evse_state = types::energy::EvseState::Charging;
-    cp01.schedule_import = {make_entry(ts, 32.0f, 6.0f)};
-    cp01.schedule_export = {make_entry(ts, 0.0f, 0.0f)};
+    cp01.schedule_import = {test::make_schedule_entry(ts, 32.0f, 6.0f)};
+    cp01.schedule_export = {test::make_schedule_entry(ts, 0.0f, 0.0f)};
     cp01.energy_usage_leaves = make_reading(1000.0f, at, std::chrono::seconds(1));
 
     auto cp02 = make_node("cp02", types::energy::NodeType::Evse);
     cp02.evse_state = types::energy::EvseState::Charging;
-    cp02.schedule_import = {make_entry(ts, 32.0f, 6.0f)};
-    cp02.schedule_export = {make_entry(ts, 0.0f, 0.0f)};
+    cp02.schedule_import = {test::make_schedule_entry(ts, 32.0f, 6.0f)};
+    cp02.schedule_export = {test::make_schedule_entry(ts, 0.0f, 0.0f)};
     // This one is well outside the 5s window and must be excluded.
     cp02.energy_usage_leaves = make_reading(2500.0f, at, std::chrono::seconds(60));
 
     auto grid = make_node("grid", types::energy::NodeType::Generic);
-    grid.schedule_import = {make_entry(ts, 63.0f, 0.0f)};
-    grid.schedule_export = {make_entry(ts, 0.0f, 0.0f)};
+    grid.schedule_import = {test::make_schedule_entry(ts, 63.0f, 0.0f)};
+    grid.schedule_export = {test::make_schedule_entry(ts, 0.0f, 0.0f)};
     grid.children = {cp01, cp02};
 
     EnergyManagerImpl impl(make_aggregation_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
@@ -547,13 +539,13 @@ TEST(AggregatorWiring, AggregateDoesNotAccumulateAcrossRuns) {
 
     auto cp01 = make_node("cp01", types::energy::NodeType::Evse);
     cp01.evse_state = types::energy::EvseState::Charging;
-    cp01.schedule_import = {make_entry(ts, 32.0f, 6.0f)};
-    cp01.schedule_export = {make_entry(ts, 0.0f, 0.0f)};
+    cp01.schedule_import = {test::make_schedule_entry(ts, 32.0f, 6.0f)};
+    cp01.schedule_export = {test::make_schedule_entry(ts, 0.0f, 0.0f)};
     cp01.energy_usage_leaves = make_reading(1000.0f, at, std::chrono::seconds(1));
 
     auto grid = make_node("grid", types::energy::NodeType::Generic);
-    grid.schedule_import = {make_entry(ts, 63.0f, 0.0f)};
-    grid.schedule_export = {make_entry(ts, 0.0f, 0.0f)};
+    grid.schedule_import = {test::make_schedule_entry(ts, 63.0f, 0.0f)};
+    grid.schedule_export = {test::make_schedule_entry(ts, 0.0f, 0.0f)};
     grid.children = {cp01};
 
     EnergyManagerImpl impl(make_aggregation_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
