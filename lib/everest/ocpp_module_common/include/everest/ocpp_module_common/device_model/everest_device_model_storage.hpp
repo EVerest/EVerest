@@ -28,6 +28,12 @@ enum class DerCtrlrComponent {
     Ac,   ///< ACDERCtrlr
 };
 
+/// \brief Whether an ISO 15118 session can ever occur on this EVSE.
+/// \details True when any connector reports hlc_capable. Asking "any" rather than "all" because the
+///          question is whether the EVSE speaks ISO 15118 at all: on a mixed EVSE the session runs on
+///          whichever plug can carry it, and reporting false there would misinform the CSMS.
+bool evse_hlc_capable(const std::vector<types::evse_manager::Connector>& connectors);
+
 /// \brief Decides an EVSE's DER controller component from static facts.
 ///
 /// \param der_wired Whether a grid_support provider is wired to this EVSE.
@@ -69,31 +75,47 @@ std::map<int32_t, DerCtrlrComponent> decide_der_ctrlr_components(const std::vect
 std::optional<std::pair<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>>
 build_der_ctrlr_component_config(int32_t evse_id, DerCtrlrComponent component);
 
-/// \brief Assembles the DER controller component configs for the EVSEs that resolve to one.
+/// \brief Assembles the DER controller and ISO 15118 component configs of the station.
 ///
 /// \param evses The EVSEs as reported by their evse_manager.
 /// \param der_wired_evse_ids The EVSE ids with a wired grid_support connection.
-/// \param with_der_components False on a station that provisions no DER at all, which yields an empty map.
+/// \param with_der_components False on a station that provisions no DER at all, which gates the DER
+///        controllers only: the ISO 15118 components are provisioned regardless.
+/// \param iso_extension_evse_ids The EVSE ids an iso15118_extensions connection is mapped to.
+/// \param evse_service_renegotiation_supported Per-EVSE ServiceRenegotiationSupport as reported by the
+///        extension. A missing entry reads as false.
 ///
 /// Decides with decide_der_ctrlr_components, then assembles. An EVSE resolving to DerCtrlrComponent::None
-/// contributes no entry, unlike decide_der_ctrlr_components which keeps it for the clearing pass.
+/// contributes no DER entry, unlike decide_der_ctrlr_components which keeps it for the clearing pass.
 ///
-/// \returns One (ComponentKey, variables) entry per EVSE that resolves to Ac or Dc, keyed by that EVSE's
-///          ACDERCtrlr/DCDERCtrlr component key with evse_id set. Empty when nothing resolves.
+/// \returns The (ComponentKey, variables) entries, keyed by ACDERCtrlr/DCDERCtrlr resp. ISO15118Ctrlr
+///          component key with evse_id set. Empty when nothing resolves and no extension is mapped, or maps
+///          only to EVSEs this station does not serve.
 std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>
 build_der_component_configs(const std::vector<types::evse_manager::Evse>& evses,
-                            const std::set<int32_t>& der_wired_evse_ids, bool with_der_components);
+                            const std::set<int32_t>& der_wired_evse_ids, bool with_der_components,
+                            const std::vector<int32_t>& iso_extension_evse_ids,
+                            const std::map<int32_t, bool>& evse_service_renegotiation_supported);
 
-/// \brief Assembles the DER controller component configs from an existing decision.
+/// \brief Assembles the same component configs from an existing DER decision.
 ///
 /// \param der_ctrlr_components The per-EVSE decision from decide_der_ctrlr_components.
+/// \param evses The EVSEs as reported by their evse_manager, read for the ISO 15118 components.
+/// \param iso_extension_evse_ids The EVSE ids an iso15118_extensions connection is mapped to.
+/// \param evse_service_renegotiation_supported Per-EVSE ServiceRenegotiationSupport as reported by the
+///        extension. A missing entry reads as false.
 ///
-/// For a caller that already holds the decision, so deciding (and its logging) happens only once.
+/// For a caller that already holds the decision, so deciding (and its logging) happens only once. The
+/// whole assembly lives here and the deciding overload delegates to it.
 ///
-/// \returns One (ComponentKey, variables) entry per EVSE that resolves to Ac or Dc, keyed by that EVSE's
-///          ACDERCtrlr/DCDERCtrlr component key with evse_id set. Empty when nothing resolves.
+/// \returns The (ComponentKey, variables) entries, keyed by ACDERCtrlr/DCDERCtrlr resp. ISO15118Ctrlr
+///          component key with evse_id set. Empty when nothing resolves and no extension is mapped, or maps
+///          only to EVSEs this station does not serve.
 std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>
-build_der_component_configs(const std::map<int32_t, DerCtrlrComponent>& der_ctrlr_components);
+build_der_component_configs(const std::map<int32_t, DerCtrlrComponent>& der_ctrlr_components,
+                            const std::vector<types::evse_manager::Evse>& evses,
+                            const std::vector<int32_t>& iso_extension_evse_ids,
+                            const std::map<int32_t, bool>& evse_service_renegotiation_supported);
 
 /// \brief Builds the device-model SetVariableData vector that configures (but does not enable) the DER
 ///        controller for a given DER \p capability on EVSE \p evse_id.

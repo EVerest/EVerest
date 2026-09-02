@@ -416,6 +416,14 @@ Shares data between ISO 15118 and OCPP, e.g. **set_get_certificate_response** to
 Plug&Charge EV contract certificate installation. Variables received include **iso15118_certificate_request** (to
 trigger the corresponding request) and **charging_needs**.
 
+Each mapped connection provisions an **ISO15118Ctrlr** component for the served EVSE. Its **Enabled** variable is
+derived from the ``hlc_capable`` field reported by the serving :ref:`EvseManager <everest_modules_EvseManager>` via
+**get_evse**, collapsed per EVSE by **any** of its connectors, since the session runs on whichever plug can carry it.
+**Enabled** is provisioned ``ReadOnly``, so it states a static capability of the station rather than offering a CSMS
+runtime control: a station with an extensions_15118 provider mapped but HLC switched off now reports ``false`` where
+it previously reported a hardcoded ``true``. A provider mapped to an EVSE id the station does not serve is logged as
+an error and provisions no **ISO15118Ctrlr** component for that id.
+
 Requires: grid_support (0-128)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

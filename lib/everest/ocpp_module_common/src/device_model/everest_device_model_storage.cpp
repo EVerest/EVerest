@@ -393,6 +393,11 @@ ocpp::v2::SetVariableData make_set_variable_data(const ocpp::v2::ComponentVariab
 
 } // anonymous namespace
 
+bool evse_hlc_capable(const std::vector<types::evse_manager::Connector>& connectors) {
+    return std::any_of(connectors.cbegin(), connectors.cend(),
+                       [](const types::evse_manager::Connector& c) { return c.hlc_capable; });
+}
+
 DerCtrlrComponent der_ctrlr_component(const bool der_wired,
                                       const std::vector<types::evse_manager::Connector>& connectors) {
     if (not der_wired) {
@@ -420,11 +425,9 @@ DerCtrlrComponent der_ctrlr_component(const bool der_wired,
         // slac, HLC and powersupply DCDC to be connected").
         return DerCtrlrComponent::Dc;
     }
-    // AC DER exists only as an ISO 15118-20 relay, so a connector that can never run an HLC session
-    // can never do AC DER. One HLC capable connector is enough, because the session runs on that plug.
-    const bool any_hlc = std::any_of(connectors.cbegin(), connectors.cend(),
-                                     [](const types::evse_manager::Connector& c) { return c.hlc_capable; });
-    return any_hlc ? DerCtrlrComponent::Ac : DerCtrlrComponent::None;
+    // AC DER exists only as an ISO 15118-20 relay, so an EVSE that can never run an HLC session can
+    // never do AC DER.
+    return evse_hlc_capable(connectors) ? DerCtrlrComponent::Ac : DerCtrlrComponent::None;
 }
 
 namespace {
@@ -493,7 +496,10 @@ build_der_ctrlr_component_config(const int32_t evse_id, const DerCtrlrComponent 
 }
 
 std::map<ocpp::v2::ComponentKey, std::vector<DeviceModelVariable>>
-build_der_component_configs(const std::map<int32_t, DerCtrlrComponent>& der_ctrlr_components) {
+build_der_component_configs(const std::map<int32_t, DerCtrlrComponent>& der_ctrlr_components,
+                            const std::vector<types::evse_manager::Evse>& evses,
+                            const std::vector<int32_t>& iso_extension_evse_ids,
+                            const std::map<int32_t, bool>& evse_service_renegotiation_supported) {
     std::map<ocpp::v2::ComponentKey, std::vector<DeviceModelVariable>> result;
     for (const auto& [evse_id, component] : der_ctrlr_components) {
         auto config = build_der_ctrlr_component_config(evse_id, component);
@@ -501,13 +507,37 @@ build_der_component_configs(const std::map<int32_t, DerCtrlrComponent>& der_ctrl
             result[config->first] = std::move(config->second);
         }
     }
+    for (const auto evse_id : iso_extension_evse_ids) {
+        const auto evse = std::find_if(evses.cbegin(), evses.cend(),
+                                       [evse_id](const types::evse_manager::Evse& e) { return e.id == evse_id; });
+        if (evse == evses.cend()) {
+            EVLOG_error << "iso15118_extensions is mapped to EVSE " << evse_id
+                        << ", which this station does not serve; no ISO15118Ctrlr component is provisioned";
+            continue;
+        }
+        // Unreachable through today's callers: the guard above narrows evse_id to a served EVSE and both
+        // modules seed this map over that same range. Kept because this function is public and directly
+        // callable, and "not supported" is the safe default.
+        const auto renegotiation = evse_service_renegotiation_supported.find(evse_id);
+        const bool renegotiation_supported =
+            renegotiation != evse_service_renegotiation_supported.cend() and renegotiation->second;
+        // TODO(mlitre): Correctly fill iso supported protocols
+        // Reported by the serving evse_manager rather than assumed: an extension can be wired to an
+        // EVSE whose HLC is switched off, and Enabled is provisioned ReadOnly, so a hardcoded "true"
+        // told the CSMS an ISO 15118 session was possible when it never was.
+        result[get_iso15118_component_key(evse_id)] =
+            build_iso15118_variables(evse_hlc_capable(evse->connectors), renegotiation_supported, "");
+    }
     return result;
 }
 
 std::map<ocpp::v2::ComponentKey, std::vector<DeviceModelVariable>>
 build_der_component_configs(const std::vector<types::evse_manager::Evse>& evses,
-                            const std::set<int32_t>& der_wired_evse_ids, const bool with_der_components) {
-    return build_der_component_configs(decide_der_ctrlr_components(evses, der_wired_evse_ids, with_der_components));
+                            const std::set<int32_t>& der_wired_evse_ids, const bool with_der_components,
+                            const std::vector<int32_t>& iso_extension_evse_ids,
+                            const std::map<int32_t, bool>& evse_service_renegotiation_supported) {
+    return build_der_component_configs(decide_der_ctrlr_components(evses, der_wired_evse_ids, with_der_components),
+                                       evses, iso_extension_evse_ids, evse_service_renegotiation_supported);
 }
 
 std::vector<ocpp::v2::SetVariableData>
@@ -699,23 +729,22 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
         component_configs[connected_ev_component_key] = build_connected_ev_variables();
     }
 
+    std::vector<int32_t> iso_extension_evse_ids;
+    for (const auto& extension : r_extensions_15118) {
+        const auto mapping = extension->get_mapping();
+        if (not mapping.has_value()) {
+            continue;
+        }
+        iso_extension_evse_ids.push_back(mapping->evse);
+    }
+
     // This map keeps the None entries that build_der_component_configs drops; disable_other_der_ctrlrs
     // needs them once the storage is open.
     const auto der_ctrlr_components = decide_der_ctrlr_components(evses, der_wired_evse_ids, with_der_components);
     // Assemble from the decision already in hand: re-deciding would log every None EVSE a second time.
-    for (auto& [component_key, variables] : build_der_component_configs(der_ctrlr_components)) {
+    for (auto& [component_key, variables] : build_der_component_configs(
+             der_ctrlr_components, evses, iso_extension_evse_ids, evse_service_renegotiation_supported)) {
         component_configs[component_key] = std::move(variables);
-    }
-    for (const auto& extension : r_extensions_15118) {
-        auto mapping = extension->get_mapping();
-        if (!mapping.has_value()) {
-            continue;
-        }
-        int evse_id = mapping->evse;
-        // TODO(mlitre): Correctly fill iso supported protocols
-        const auto iso15118_component_key = get_iso15118_component_key(evse_id);
-        component_configs[iso15118_component_key] =
-            build_iso15118_variables(true, evse_service_renegotiation_supported.at(evse_id), "");
     }
 
     // build OCPP2.x device model components from EVerest config    // This is our mapping strategy:
