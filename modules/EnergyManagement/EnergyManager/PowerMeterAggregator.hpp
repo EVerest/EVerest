@@ -62,6 +62,14 @@ public:
     std::size_t size() const;
 
     /// \brief Sums the readings that are fresh relative to \p now.
+    ///
+    /// A reading counts as fresh while its own measurement timestamp is younger than the
+    /// configured window. Two cases are deliberately not stale: a timestamp slightly in
+    /// the future, since minor clock skew between a meter and the controller must not
+    /// discard data, and any reading at all once the window is zero. A timestamp that
+    /// cannot be parsed is treated as stale and warned about once per meter rather than
+    /// once per call - see check_freshness() in the implementation for both rules.
+    ///
     /// \p now must be a real wall clock time; an epoch value would make every reading
     /// look like the future and disable the filter.
     AggregateResult aggregate(date::utc_clock::time_point now) const;

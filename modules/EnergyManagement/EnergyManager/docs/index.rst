@@ -17,40 +17,27 @@ for a detailed explanation of the concepts behind this module.
 Aggregating multiple power meters
 =================================
 
-Power meters in the energy tree publish independently of each other and of the
-optimizer cycle, so at any instant the last reading of each meter has a different age.
-Summing them naively mixes a fresh value with values from several seconds ago and
-yields a total that never actually existed on the installation.
+Power meters in the energy tree publish independently of each other and of the optimizer
+cycle, so at any instant the last reading of each meter has a different age. Summing them
+naively mixes a fresh value with values from several seconds ago and yields a site total
+that never actually existed on the installation.
 
-The EnergyManager therefore aggregates the leaf power meter readings through a windowed
-filter. Each reading carries its own measurement timestamp; a reading is included in the
-sum only if that timestamp lies within ``power_meter_aggregation_window_s`` of the
-optimizer's start time. Older readings are counted as stale and excluded rather than
-contributing a wrong value.
+The EnergyManager therefore sums only those readings whose own measurement timestamp lies
+within ``power_meter_aggregation_window_s`` of the optimizer's start time; older readings
+are excluded as stale rather than contributing a wrong value. Only EVSE nodes contribute,
+so no meter is ever counted together with meters it already measures. Power and per phase
+current are aggregated together.
 
-Only EVSE nodes contribute to the aggregate, and the tree walk does not descend below
-an EVSE node. An intermediate node's own meter measures the sum of its children — and an
-EVSE's meter covers everything downstream of it — so counting either together with its
-descendants would double count. For each EVSE the leaves side measurement is used,
-falling back to the root side measurement.
+Size the window at or above the publish interval of the slowest meter in the tree. A
+window shorter than that discards readings the meter has had no chance to refresh, and
+the aggregate keeps reporting fewer contributing meters than the installation has.
+Setting it to ``0`` disables the filter and always sums the last reading of every meter.
 
-Notes on behaviour:
-
-* The aggregate is rebuilt from scratch on every optimizer run, so a connector that
-  disappears from the tree stops contributing immediately.
-* A reading timestamped slightly in the future is treated as fresh -- small clock skew
-  between a meter and the controller must not discard data.
-* An unparsable timestamp is logged — once per meter, not once per optimizer cycle —
-  and the reading treated as stale, so a misbehaving meter cannot skew the sum or flood
-  the log. Detection relies on the parser returning the epoch rather than raising an
-  error, and applies even when the staleness filter is disabled.
-* Power and per phase current are aggregated together, in the same shape a single
-  connector's measurement uses, so one consumer type covers a connector and the site.
-* A per phase figure is reported only when *every* contributing meter supplied that
-  phase, so a phase sum never silently covers fewer meters than the total. A phase a
-  meter does not measure is reported as absent, never as zero -- a single phase meter
-  therefore leaves the site L2 and L3 sums unreported.
-* Setting the window to ``0`` disables the staleness filter entirely.
+**When a value is unknown it is reported as absent, never as zero.** If no meter has a
+fresh reading, the aggregate carries no total at all -- a consumer must read that as
+"unknown" and keep distributing on the static limits, never as "no power is flowing". The
+same holds per phase: a phase is summed only when every contributing meter reports it, so
+one single phase meter leaves the site L2 and L3 sums absent instead of understating them.
 
 Broker strategy and power meter observation
 ===========================================
@@ -79,4 +66,5 @@ connectors that are ``Unplugged`` or ``Finished`` are not observed.
    * - ``power_meter_aggregation_window_s``
      - ``5``
      - Validity window for a power meter reading when aggregating multiple meters [s].
-       ``0`` disables the staleness filter.
+       Set it at or above the publish interval of the slowest meter. ``0`` disables the
+       staleness filter.
