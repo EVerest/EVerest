@@ -939,48 +939,53 @@ void OCPP::ready() {
     });
 
     this->charge_point->register_transaction_started_callback(
-        [this](const int32_t connector, const std::string& session_id) {
+        [this](const std::string& session_id, const ocpp::v16::StartTransactionRequest& request) {
             types::ocpp::OcppTransactionEvent tevent;
             tevent.transaction_event = types::ocpp::TransactionEvent::Started;
-            tevent.evse = {connector, 1};
+            tevent.evse = {request.connectorId, 1};
             tevent.session_id = session_id;
+            tevent.timestamp = request.timestamp.to_rfc3339();
             p_ocpp_generic->publish_ocpp_transaction_event(tevent);
         });
 
     this->charge_point->register_transaction_updated_callback(
-        [this](const int32_t connector, const std::string& session_id, const int32_t transaction_id,
-               const ocpp::v16::IdTagInfo& id_tag_info) {
+        [this](const std::string& session_id, const ocpp::v16::StartTransactionRequest& request,
+               const ocpp::v16::StartTransactionResponse& response) {
             types::ocpp::OcppTransactionEvent tevent;
             tevent.transaction_event = types::ocpp::TransactionEvent::Updated;
-            tevent.evse = {connector, 1};
+            tevent.evse = {request.connectorId, 1};
             tevent.session_id = session_id;
-            tevent.transaction_id = std::to_string(transaction_id);
+            tevent.transaction_id = std::to_string(response.transactionId);
+            // StartTransaction.conf carries no time of its own, the update happens when it is processed
+            tevent.timestamp = ocpp::DateTime().to_rfc3339();
             p_ocpp_generic->publish_ocpp_transaction_event(tevent);
-            if (id_tag_info.parentIdTag.has_value()) {
+            if (response.idTagInfo.parentIdTag.has_value()) {
                 types::authorization::ValidationResultUpdate result_update;
                 types::authorization::IdToken id_token;
-                id_token.value = id_tag_info.parentIdTag.value();
+                id_token.value = response.idTagInfo.parentIdTag.value();
                 // Default to RFID auth type for parentIdTag since we have no
                 // information about it in ocpp1.6
                 id_token.type = types::authorization::IdTokenType::ISO14443;
                 result_update.validation_result.parent_id_token = id_token;
                 result_update.validation_result.authorization_status =
-                    conversions::to_everest_authorization_status(id_tag_info.status);
-                result_update.connector_id = connector;
+                    conversions::to_everest_authorization_status(response.idTagInfo.status);
+                result_update.connector_id = request.connectorId;
                 p_auth_validator->publish_validate_result_update(result_update);
             }
         });
 
-    this->charge_point->register_transaction_stopped_callback(
-        [this](const int32_t connector, const std::string& session_id, const int32_t transaction_id) {
-            EVLOG_info << "Transaction stopped at connector: " << connector << ", session_id: " << session_id;
-            types::ocpp::OcppTransactionEvent tevent;
-            tevent.transaction_event = types::ocpp::TransactionEvent::Ended;
-            tevent.evse = {connector, 1};
-            tevent.session_id = session_id;
-            tevent.transaction_id = std::to_string(transaction_id);
-            p_ocpp_generic->publish_ocpp_transaction_event(tevent);
-        });
+    this->charge_point->register_transaction_stopped_callback([this](const std::string& session_id,
+                                                                     const int32_t connector,
+                                                                     const ocpp::v16::StopTransactionRequest& request) {
+        EVLOG_info << "Transaction stopped at connector: " << connector << ", session_id: " << session_id;
+        types::ocpp::OcppTransactionEvent tevent;
+        tevent.transaction_event = types::ocpp::TransactionEvent::Ended;
+        tevent.evse = {connector, 1};
+        tevent.session_id = session_id;
+        tevent.transaction_id = std::to_string(request.transactionId);
+        tevent.timestamp = request.timestamp.to_rfc3339();
+        p_ocpp_generic->publish_ocpp_transaction_event(tevent);
+    });
 
     this->charge_point->register_boot_notification_response_callback(
         [this](const ocpp::v16::BootNotificationResponse& boot_notification_response) {
