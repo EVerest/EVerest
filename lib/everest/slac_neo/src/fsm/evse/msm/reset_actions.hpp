@@ -9,35 +9,30 @@
 namespace everest::lib::slac::msm::reset_sm {
 
 // Guards
-struct msg_expected : public is_message_of_type<defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_CNF>{ };
+struct msg_expected : public is_message_of_type<defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_CNF> {};
 struct is_retry_confirmed_set_key {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+    template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         return fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed;
     }
 };
 struct set_key_timeout {
-    template <class Evt, class Fsm, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+    template <class Evt, class Fsm, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         return fsm.set_key_timer_expired();
     }
 };
 struct has_set_key_cnf_payload {
-    template <class Evt, class Fsm, class SrcT, class TarT>
-    bool operator()(Evt const& e, Fsm&, SrcT&, TarT& ) {
+    template <class Evt, class Fsm, class SrcT, class TarT> bool operator()(Evt const& e, Fsm&, SrcT&, TarT&) {
         const auto msg = e.payload.template payload_as<messages::cm_set_key_cnf>();
         return msg.has_value();
     }
 };
 struct has_set_key_attempts_left {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+    template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         return fsm.set_key_attempts < fsm.ctx->slac_config.set_key_max_attempts;
     }
 };
 struct has_no_set_key_attempts_left {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+    template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         return fsm.set_key_attempts >= fsm.ctx->slac_config.set_key_max_attempts;
     }
 };
@@ -64,16 +59,14 @@ struct is_set_key_cnf_failed {
     }
 };
 struct is_reset_chip_on {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+    template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         return fsm.ctx->slac_config.chip_reset.enabled;
     }
 };
 
-//Actions
+// Actions
 struct send_set_key_req {
-    template <class Fsm>
-    static void send(Fsm& fsm) {
+    template <class Fsm> static void send(Fsm& fsm) {
         Nmk const& nmk = (fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed)
                              ? fsm.pending_nmk
                              : fsm.ctx->slac_config.session_nmk;
@@ -86,58 +79,48 @@ struct send_set_key_req {
         }
     }
 
-    template <class Evt, class Fsm, class SrcT, class TarT>
-    void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Evt, class Fsm, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         send(fsm);
     }
 };
 struct retry_send_set_key_req {
-    template <class Fsm, class SrcT, class TarT>
-    void operator()(none const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class SrcT, class TarT> void operator()(none const&, Fsm& fsm, SrcT&, TarT&) {
         fsm.set_key_attempts++;
-        fsm.ctx->log_warn("Retrying CM_SET_KEY.REQ due to timeout. Attempt " +
-                          std::to_string(fsm.set_key_attempts) + " of " +
-                          std::to_string(fsm.ctx->slac_config.set_key_max_attempts));
+        fsm.ctx->log_warn("Retrying CM_SET_KEY.REQ due to timeout. Attempt " + std::to_string(fsm.set_key_attempts) +
+                          " of " + std::to_string(fsm.ctx->slac_config.set_key_max_attempts));
         send_set_key_req::send(fsm);
     }
 };
 struct fail_send_set_key_req {
-    template <class Fsm, class SrcT, class TarT>
-    void operator()(none const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class SrcT, class TarT> void operator()(none const&, Fsm& fsm, SrcT&, TarT&) {
         fsm.ctx->log_error("CM_SET_KEY timeout without valid CM_SET_KEY.CNF after " +
                            std::to_string(fsm.ctx->slac_config.set_key_max_attempts) +
                            " attempts; continuing to reset/idle path");
     }
 };
 struct note_set_key_failed {
-    template <class Evt, class Fsm, class SrcT, class TarT>
-    void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
+    template <class Evt, class Fsm, class SrcT, class TarT> void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
         const auto reply = e.payload.template payload_as<messages::cm_set_key_cnf>();
         if (not reply.has_value()) {
             return;
         }
-        fsm.ctx->log_warn("CM_SET_KEY.CNF indicates failure with result=" +
-                          std::to_string(reply->result) +
-                          " on attempt " + std::to_string(fsm.set_key_attempts) +
-                          "; retrying after timeout (max " +
+        fsm.ctx->log_warn("CM_SET_KEY.CNF indicates failure with result=" + std::to_string(reply->result) +
+                          " on attempt " + std::to_string(fsm.set_key_attempts) + "; retrying after timeout (max " +
                           std::to_string(fsm.ctx->slac_config.set_key_max_attempts) + ")");
     }
 };
 struct give_up_set_key_failed {
-    template <class Evt, class Fsm, class SrcT, class TarT>
-    void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
+    template <class Evt, class Fsm, class SrcT, class TarT> void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
         const auto reply = e.payload.template payload_as<messages::cm_set_key_cnf>();
         if (not reply.has_value()) {
             return;
         }
-        fsm.ctx->log_error("CM_SET_KEY.CNF indicates failure with result=" +
-                           std::to_string(reply->result) +
+        fsm.ctx->log_error("CM_SET_KEY.CNF indicates failure with result=" + std::to_string(reply->result) +
                            " after maximum attempts; continuing to reset/idle path");
     }
 };
 struct apply_set_key_cnf {
-    template <class Evt, class Fsm, class SrcT, class TarT>
-    void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Evt, class Fsm, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         fsm.ctx->slac_config.session_nmk = fsm.pending_nmk;
         fsm.ctx->log_info("CM_SET_KEY.CNF success, NMK set on modem");
         fsm.ctx->status.modem_NMK = true;

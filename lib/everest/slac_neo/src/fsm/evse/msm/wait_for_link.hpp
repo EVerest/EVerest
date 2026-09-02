@@ -20,8 +20,7 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
 
     // Guards
     struct is_match_req {
-        template <class Fsm, class Evt, class SrcT, class TarT>
-        bool operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
+        template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
             if (e.payload.get_mmtype() != (defs::MMTYPE_CM_SLAC_MATCH | defs::MMTYPE_MODE_REQ)) {
                 return false;
             }
@@ -46,10 +45,9 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
         }
     };
 
-    //Actions
+    // Actions
     struct send_match_cnf {
-        template <class Fsm, class Evt, class SrcT, class TarT>
-        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+        template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
             auto& ctx = *fsm.ctx;
             if (not ctx.match_confirm_cache.valid) {
                 return;
@@ -82,12 +80,11 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
         >{};
     // clang-format on
 
-    template <class FSM,class Event>
-    void no_transition(Event const&, FSM&, int) { }
+    template <class FSM, class Event> void no_transition(Event const&, FSM&, int) {
+    }
 
     // Entry / exit
-    template <class Event, class Fsm>
-    void on_entry(Event const&, Fsm& fsm) {
+    template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
         ctx->log_info("Waiting for Link to be ready...");
         link_check_to_ms = ctx->slac_config.link_status.retry_ms;
@@ -102,7 +99,7 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
     fsm::evse::Context* ctx;
     int link_check_to_ms{0};
     timer to;
-    bool state_timeout(){
+    bool state_timeout() {
         return to.timeout();
     }
 };

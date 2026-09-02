@@ -10,7 +10,7 @@
 
 namespace everest::lib::slac::msm::session_sm {
 
-struct Session_def     : public state_machine_def<Session_def> {
+struct Session_def : public state_machine_def<Session_def> {
     // States
     // clang-format off
     static constexpr auto FINALIZE_SOUNDING_DELAY_MS = 45;
@@ -20,19 +20,19 @@ struct Session_def     : public state_machine_def<Session_def> {
     struct WaitAttenRsp     : public timeout_ms_state<defs::TT_MATCH_RESPONSE_MS> { };
     struct WaitSlacMatch    : public timeout_ms_state<defs::TT_EVSE_MATCH_SESSION_MS> {  };
     // clang-format on
-    struct MatchComplete    : public state<> {
+    struct MatchComplete : public state<> {
         typedef boost::mpl::vector<SessionMatched> flag_list;
     };
-    struct Failed           : public state<> {
+    struct Failed : public state<> {
         typedef boost::mpl::vector<SessionFailed> flag_list;
     };
 
     // Transitions
     using initial_state = WaitStartAtten;
-    using retry_timeout         = And_<timeout, retry_limit>;
-    using log_no_start_atten    = log_session_failed<fail_no_start_atten>;
-    using log_no_atten_rsp      = log_session_failed<fail_no_atten_rsp>;
-    using log_no_slac_match     = log_session_failed<fail_no_slac_match>;
+    using retry_timeout = And_<timeout, retry_limit>;
+    using log_no_start_atten = log_session_failed<fail_no_start_atten>;
+    using log_no_atten_rsp = log_session_failed<fail_no_atten_rsp>;
+    using log_no_slac_match = log_session_failed<fail_no_slac_match>;
     using log_validation_window = log_session_failed<fail_validation_window>;
     // clang-format off
     struct transition_table : boost::mpl::vector<
@@ -54,13 +54,12 @@ struct Session_def     : public state_machine_def<Session_def> {
         //    +------------------+---------+------------------+-----------------------+---------------------------+
         >{};
     // clang-format on
-    template <class FSM,class Event>
-    void no_transition(Event const&, FSM&, int) { }
+    template <class FSM, class Event> void no_transition(Event const&, FSM&, int) {
+    }
 
     // Entry / exit
-    template <class Event, class Fsm>
-    void on_entry(Event const&, Fsm&) {
-        //ctx = fsm.ctx; <- does not work here, since there is no parent FSM
+    template <class Event, class Fsm> void on_entry(Event const&, Fsm&) {
+        // ctx = fsm.ctx; <- does not work here, since there is no parent FSM
         session_data.num_retries = 0;
     }
 

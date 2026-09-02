@@ -10,7 +10,7 @@
 
 namespace everest::lib::slac::msm::reset_sm {
 
-struct Reset_def       : public state_machine_def<Reset_def> {
+struct Reset_def : public state_machine_def<Reset_def> {
     // States
     // clang-format off
     struct Init      : public state<>{ };
@@ -21,13 +21,13 @@ struct Reset_def       : public state_machine_def<Reset_def> {
     // clang-format on
 
     // Transition guards
-    using timeout_retry            = And_<set_key_timeout, And_<is_retry_confirmed_set_key, has_set_key_attempts_left>>;
-    using timeout_give_up          = And_<set_key_timeout, And_<is_retry_confirmed_set_key, has_no_set_key_attempts_left>>;
-    using set_key_ok               = And_<msg_expected, is_set_key_cnf_success>;
-    using set_key_failed           = And_<msg_expected, is_set_key_cnf_failed>;
-    using set_key_failed_retry     = And_<set_key_failed, And_<is_retry_confirmed_set_key, has_set_key_attempts_left>>;
-    using set_key_failed_give_up   = And_<set_key_failed, And_<is_retry_confirmed_set_key, has_no_set_key_attempts_left>>;
-    using no_reset_chip            = Not_<is_reset_chip_on>;
+    using timeout_retry = And_<set_key_timeout, And_<is_retry_confirmed_set_key, has_set_key_attempts_left>>;
+    using timeout_give_up = And_<set_key_timeout, And_<is_retry_confirmed_set_key, has_no_set_key_attempts_left>>;
+    using set_key_ok = And_<msg_expected, is_set_key_cnf_success>;
+    using set_key_failed = And_<msg_expected, is_set_key_cnf_failed>;
+    using set_key_failed_retry = And_<set_key_failed, And_<is_retry_confirmed_set_key, has_set_key_attempts_left>>;
+    using set_key_failed_give_up = And_<set_key_failed, And_<is_retry_confirmed_set_key, has_no_set_key_attempts_left>>;
+    using no_reset_chip = Not_<is_reset_chip_on>;
 
     // Transitions
     using initial_state = Init;
@@ -47,14 +47,13 @@ struct Reset_def       : public state_machine_def<Reset_def> {
         //  +----------+---------+-----------+------------------------+--------------------------+
         > {};
     // clang-format on
-    template <class FSM,class Event>
-    void no_transition(Event const&, FSM&, int) { }
+    template <class FSM, class Event> void no_transition(Event const&, FSM&, int) {
+    }
 
     // Entry / exit
-    template <class Event, class Fsm>
-    void on_entry(Event const&, Fsm& fsm) {
+    template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
-        if (fsm.ctx->slac_config.regenerate_key_on_reset){
+        if (fsm.ctx->slac_config.regenerate_key_on_reset) {
             if (fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed) {
                 fsm.ctx->slac_config.generate_nmk(this->pending_nmk);
             } else {

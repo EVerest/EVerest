@@ -38,41 +38,31 @@ using namespace boost::msm::front;
 using namespace boost::msm::back;
 
 // Guards
-struct is_lumissil
-{
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+struct is_lumissil {
+    template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         return fsm.ctx->modem_vendor == defs::ModemVendor::Lumissil;
     }
 };
-struct is_qualcomm
-{
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+struct is_qualcomm {
+    template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         return fsm.ctx->modem_vendor == defs::ModemVendor::Qualcomm;
     }
 };
-struct link_status_cnf
-{
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const& e, Fsm& fsm, SrcT& src, TarT&) {
+struct link_status_cnf {
+    template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const& e, Fsm& fsm, SrcT& src, TarT&) {
         return src.link_status_cnf(e, fsm);
     }
 };
 
-struct link_status_neg
-{
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const& e, Fsm& fsm, SrcT& src, TarT&) {
+struct link_status_neg {
+    template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const& e, Fsm& fsm, SrcT& src, TarT&) {
         return src.is_link_status_neg(e, fsm);
     }
 };
 
 // Actions
-struct link_status_req
-{
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& tar) {
+struct link_status_req {
+    template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& tar) {
         // Re-arm the poll timer only when we actually poll, so the link-status
         // poll cadence is not disturbed by unrelated self-transitions (see
         // CheckLink::on_entry).
@@ -82,13 +72,12 @@ struct link_status_req
 };
 
 // Flags
-struct SessionFailed{};
-struct SessionMatched{};
+struct SessionFailed {};
+struct SessionMatched {};
 
 // States
-struct CheckLink     : public state<> {
-    template <class Event, class Fsm>
-    void on_entry(Event const&, Fsm& fsm) {
+struct CheckLink : public state<> {
+    template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
         // Only (re)arm the poll duration here -- do NOT reset the timer's
         // reference. The poll timer is reset when a LINK_STATUS.REQ is actually
         // sent (see the link_status_req action). Otherwise every self-transition
@@ -104,15 +93,13 @@ struct CheckLink     : public state<> {
         return to.timeout();
     }
 };
-struct Lumissil      : public CheckLink {
-    template <class Fsm, class Evt>
-    bool is_link_status_message(Evt const& e, Fsm&) {
+struct Lumissil : public CheckLink {
+    template <class Fsm, class Evt> bool is_link_status_message(Evt const& e, Fsm&) {
         const auto mmtype = e.payload.get_mmtype();
         return mmtype == (defs::lumissil::MMTYPE_NSCM_GET_D_LINK_STATUS | defs::MMTYPE_MODE_CNF);
     }
 
-    template <class Fsm, class Evt>
-    bool link_status_cnf(Evt const& e, Fsm& fsm) {
+    template <class Fsm, class Evt> bool link_status_cnf(Evt const& e, Fsm& fsm) {
         if (not is_link_status_message(e, fsm)) {
             return false;
         }
@@ -120,8 +107,7 @@ struct Lumissil      : public CheckLink {
         return link_status_msg.has_value() && (link_status_msg->link_status == defs::D_LINK_STATUS_LINKED);
     }
 
-    template <class Fsm, class Evt>
-    bool is_link_status_neg(Evt const& e, Fsm& fsm) {
+    template <class Fsm, class Evt> bool is_link_status_neg(Evt const& e, Fsm& fsm) {
         if (not is_link_status_message(e, fsm)) {
             return false;
         }
@@ -129,8 +115,7 @@ struct Lumissil      : public CheckLink {
         return link_status_msg.has_value() && (link_status_msg->link_status != defs::D_LINK_STATUS_LINKED);
     }
 
-    template <class Fsm>
-    void link_status_req(Fsm& fsm) {
+    template <class Fsm> void link_status_req(Fsm& fsm) {
         messages::lumissil::nscm_get_d_link_status_req link_status_req{};
         if (not fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, link_status_req)) {
             fsm.ctx->log_warn("Failed to send CM_GET_D_LINK_STATUS.REQ to SLAC peer");
@@ -139,17 +124,14 @@ struct Lumissil      : public CheckLink {
     template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
         CheckLink::on_entry(e, fsm);
     }
-
 };
-struct Qualcomm      : public CheckLink {
-    template <class Fsm, class Evt>
-    bool is_link_status_message(Evt const& e, Fsm&) {
+struct Qualcomm : public CheckLink {
+    template <class Fsm, class Evt> bool is_link_status_message(Evt const& e, Fsm&) {
         const auto mmtype = e.payload.get_mmtype();
         return mmtype == (defs::qualcomm::MMTYPE_LINK_STATUS | defs::MMTYPE_MODE_CNF);
     }
 
-    template <class Fsm, class Evt>
-    bool link_status_cnf(Evt const& e, Fsm& fsm) {
+    template <class Fsm, class Evt> bool link_status_cnf(Evt const& e, Fsm& fsm) {
         if (not is_link_status_message(e, fsm)) {
             return false;
         }
@@ -157,8 +139,7 @@ struct Qualcomm      : public CheckLink {
         return link_status_msg.has_value() && (link_status_msg->link_status == defs::D_LINK_STATUS_LINKED);
     }
 
-    template <class Fsm, class Evt>
-    bool is_link_status_neg(Evt const& e, Fsm& fsm) {
+    template <class Fsm, class Evt> bool is_link_status_neg(Evt const& e, Fsm& fsm) {
         if (not is_link_status_message(e, fsm)) {
             return false;
         }
@@ -166,8 +147,7 @@ struct Qualcomm      : public CheckLink {
         return link_status_msg.has_value() && (link_status_msg->link_status != defs::D_LINK_STATUS_LINKED);
     }
 
-    template <class Fsm>
-    void link_status_req(Fsm& fsm) {
+    template <class Fsm> void link_status_req(Fsm& fsm) {
         messages::qualcomm::link_status_req link_status_req{};
         if (not fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, link_status_req)) {
             fsm.ctx->log_warn("Failed to send LINK_STATUS.REQ to SLAC peer");

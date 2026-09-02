@@ -8,11 +8,10 @@
 
 namespace everest::lib::slac::msm::reset_chip_sm {
 
-struct ResetChip_def   : public state_machine_def<ResetChip_def> {
+struct ResetChip_def : public state_machine_def<ResetChip_def> {
     // States
-    struct Delay     : public state<> {
-        template <class Event, class Fsm>
-        void on_entry(Event const&, Fsm& fsm) {
+    struct Delay : public state<> {
+        template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
             to.setDuration(std::chrono::milliseconds(fsm.ctx->slac_config.chip_reset.delay_ms));
             to.reset();
         }
@@ -30,8 +29,7 @@ struct ResetChip_def   : public state_machine_def<ResetChip_def> {
 
     // Guards
     struct is_reset_message {
-        template <class Fsm, class SrcT, class TarT>
-        bool operator()(message const& e, Fsm&, SrcT&, TarT& ) {
+        template <class Fsm, class SrcT, class TarT> bool operator()(message const& e, Fsm&, SrcT&, TarT&) {
             const auto mmtype = e.payload.get_mmtype();
             auto expected = defs::qualcomm::MMTYPE_CM_RESET_DEVICE | defs::MMTYPE_MODE_CNF;
             return mmtype == expected;
@@ -40,16 +38,14 @@ struct ResetChip_def   : public state_machine_def<ResetChip_def> {
     // The reset is done without waiting for a reply: the Lumissil CG5317 does not answer the reset
     // packet (Qualcomm replies, handled via Received; other chips do not support the chip reset).
     struct reset_done {
-        template <class Fsm, class Evt, class SrcT, class TarT>
-        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+        template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
             return fsm.ctx->modem_vendor == defs::ModemVendor::Lumissil;
         }
     };
 
     // Actions
     struct send_message {
-        template <class Fsm, class Evt, class SrcT, class TarT>
-        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+        template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
             auto& ctx = *fsm.ctx;
             if (ctx.modem_vendor == defs::ModemVendor::Qualcomm) {
                 messages::qualcomm::cm_reset_device_req reset_req{};
@@ -79,12 +75,11 @@ struct ResetChip_def   : public state_machine_def<ResetChip_def> {
         //    +----------+---------+----------+----------------+------------------+
         >{};
     // clang-format on
-    template <class FSM,class Event>
-    void no_transition(Event const&, FSM&, int) { }
+    template <class FSM, class Event> void no_transition(Event const&, FSM&, int) {
+    }
 
     // Entry / exit
-    template <class Event, class Fsm>
-    void on_entry(Event const&, Fsm& fsm) {
+    template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
         ctx->status.match_state = SlacState::ResetChip;
         ctx->status.d3_state = D3State::Unmatched;
