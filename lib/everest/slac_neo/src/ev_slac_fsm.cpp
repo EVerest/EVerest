@@ -2,7 +2,7 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 
 #include <everest/slac/ev_slac_fsm.hpp>
-#include <everest/slac/fsm/slac_ev_fsm.hpp>
+#include <everest/slac/fsm/ev/slac_ev_fsm.hpp>
 
 #include <utility>
 

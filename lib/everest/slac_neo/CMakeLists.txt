@@ -21,7 +21,7 @@ target_sources(slac_neo
     src/MatchingSessionData.cpp
     src/telemetry.cpp
     src/fsm/misc.cpp
-    src/fsm/context.cpp
+    src/fsm/evse/context.cpp
 
     #utils
     src/timer.cpp
