@@ -1,0 +1,45 @@
+description: Fixture sample types
+types:
+  Mood:
+    description: How the sample feels
+    type: string
+    enum:
+      - Happy
+      - Sad
+      - Indifferent
+  Reading:
+    description: One sample reading
+    type: object
+    additionalProperties: false
+    required:
+      - taken_at
+      - mood
+    properties:
+      taken_at:
+        description: When it was taken
+        type: string
+        format: date-time
+      mood:
+        description: The mood at the time
+        $ref: /sample#/Mood
+        type: object
+      power:
+        description: Power at the time, in another unit
+        type: object
+        $ref: /units#/Power
+      history:
+        description: Earlier moods
+        type: array
+        items:
+          type: object
+          $ref: /sample#/Mood
+      label:
+        description: A free-form label
+        type: string
+        maxLength: 32
+      kind:
+        description: An enum written inline
+        type: string
+        enum:
+          - First
+          - Second

@@ -1,0 +1,162 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+#ifndef {{ u.guard('interface') }}
+#define {{ u.guard('interface') }}
+
+//
+// AUTO GENERATED - DO NOT EDIT!
+// template version {{ u.template_version }}
+//
+
+#include <framework/ModuleAdapter.hpp>
+#include <utils/types.hpp>
+#include <utils/error.hpp>
+#include <utils/error/error_state_monitor.hpp>
+#include <utils/error/error_manager_req.hpp>
+
+#include "Types.hpp"
+
+class {{ u.interface_class }} {
+public:
+    {{ u.interface_class }}(Everest::ModuleAdapter* adapter, Requirement req, const std::string& module_id, std::optional<Mapping> mapping)
+        : module_id(module_id),
+        _adapter(adapter),
+        _req(req),
+        _mapping(mapping) {
+        if (adapter == nullptr) {
+            EVLOG_error << "adapter is nullptr, please check the initialization of the module";
+            error_manager = nullptr;
+            error_state_monitor = nullptr;
+            EVLOG_error << "error_manager and error_state_monitor are nullptr";
+        } else {
+            error_manager = adapter->get_error_manager_req(req);
+            if (error_manager == nullptr) {
+                EVLOG_error << "error_manager is nullptr";
+            }
+            error_state_monitor = adapter->get_error_state_monitor_req(req);
+            if (error_state_monitor == nullptr) {
+                EVLOG_error << "error_state_monitor is nullptr";
+            }
+        }
+    }
+
+    const std::string module_id;
+
+{% if not u.vars %}
+    // this interface does not export any variables to subscribe to
+{% else %}
+    // variables available for subscription
+{% for var in u.vars %}
+{% set kind = u.kind(var.type).value %}
+    void subscribe_{{ var.name }}(const std::function<void({% if kind != 'null' %}const {{ u.spell(var.type) }}&{% endif %})>& listener) {
+        _adapter->subscribe(_req, "{{ var.name }}", [func = std::move(listener)](const Value& value) {
+{% if kind == 'null' %}
+            if (not Everest::detail::is_type_compatible<{{ u.spell(var.type) }}>(value.type())) {
+                EVLOG_error << "Callback for variable '{{ var.name }}' in interface '{{ u.name }}' has wrong type!";
+            }
+            func();
+{% elif kind == 'object' %}
+            func(value);
+{% elif kind == 'enum' %}
+            func({{ u.from_string(var.type) }}(static_cast<{{ u.raw_spell(var.type) }}>(value)));
+{% elif kind == 'array' and u.element_is_enum(var.type) %}
+            std::vector<{{ u.element(var.type) }}> typed_value;
+            for (auto& entry : value) {
+                typed_value.push_back({{ u.element_from_string(var.type) }}(entry));
+            }
+            func(typed_value);
+{% elif kind == 'array' %}
+            func(value);
+{% elif kind == 'variant' %}
+            func(Everest::json_to_variant<{{ u.variant_alternatives(var.type) }}>(value));
+{% else %}
+            func(static_cast<{{ u.raw_spell(var.type) }}>(value));
+{% endif %}
+        });
+    }
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}
+{% endif %}
+
+    void subscribe_error(
+        const Everest::error::ErrorType& type,
+        const Everest::error::ErrorCallback& callback,
+        const Everest::error::ErrorCallback& clear_callback
+    ) {
+        error_manager->subscribe_error(type, callback, clear_callback);
+    }
+
+    void subscribe_all_errors(
+        const Everest::error::ErrorCallback& callback,
+        const Everest::error::ErrorCallback& clear_callback
+    ) {
+        error_manager->subscribe_all_errors(callback, clear_callback);
+    }
+
+{% if not u.cmds %}
+    // this interface does not export any commands to call
+{% else %}
+    // commands available to call
+{% for cmd in u.cmds %}
+    {{ u.result_type(cmd) }} call_{{ cmd.name }}({% for argument in cmd.arguments %}{{ u.call_declaration(argument) }}{{ ', ' if not loop.last }}{% endfor %}) {
+{% for argument in cmd.arguments %}
+{% if u.kind(argument.type).value == 'array' and u.element_is_enum(argument.type) %}
+        Array {{ argument.name }}_array;
+        for (const auto& {{ argument.name }}_entry : {{ argument.name }}) {
+            {{ argument.name }}_array.push_back({{ u.element_to_string(argument.type) }}({{ argument.name }}_entry));
+        }
+{% endif %}
+{% endfor %}
+        {% if cmd.result is not none %}Result result = {% endif %}_adapter->call(_req, "{{ cmd.name }}", Parameters{
+{% for argument in cmd.arguments %}
+{% set kind = u.kind(argument.type).value %}
+{% if kind == 'enum' %}
+            {"{{ argument.name }}", {{ u.to_string(argument.type) }}({{ argument.name }})}{{ ',' if not loop.last }}
+{% elif kind == 'array' and u.element_is_enum(argument.type) %}
+            {"{{ argument.name }}", {{ argument.name }}_array}{{ ',' if not loop.last }}
+{% elif kind == 'variant' %}
+            {"{{ argument.name }}", Everest::variant_to_json({{ argument.name }})}{{ ',' if not loop.last }}
+{% else %}
+            {"{{ argument.name }}", {{ argument.name }}}{{ ',' if not loop.last }}
+{% endif %}
+{% endfor %}
+        });
+{% if cmd.result is not none %}
+{% set kind = u.kind(cmd.result).value %}
+{% if kind == 'enum' %}
+        auto retval = {{ u.from_string(cmd.result) }}(static_cast<{{ u.raw_spell(cmd.result) }}>(result.value()));
+{% elif kind == 'object' %}
+        json retval_json = result.value();
+        {{ u.result_type(cmd) }} retval = retval_json;
+{% elif kind == 'array' %}
+        {{ u.result_type(cmd) }} retval (result.value().begin(), result.value().end());
+{% elif kind == 'variant' %}
+        auto retval = Everest::json_to_variant<{{ u.variant_alternatives(cmd.result) }}>(result.value());
+{% else %}
+        auto retval = static_cast<{{ u.raw_spell(cmd.result) }}>(result.value());
+{% endif %}
+        return retval;
+{% endif %}
+    }
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}
+{% endif %}
+
+    std::shared_ptr<Everest::error::ErrorStateMonitor> error_state_monitor;
+
+    std::optional<Mapping> get_mapping() {
+        return _mapping;
+    }
+
+private:
+    std::shared_ptr<Everest::error::ErrorManagerReq> error_manager;
+    Everest::ModuleAdapter* const _adapter;
+    Requirement _req;
+    std::optional<Mapping> _mapping;
+};
+
+#endif // {{ u.guard('interface') }}

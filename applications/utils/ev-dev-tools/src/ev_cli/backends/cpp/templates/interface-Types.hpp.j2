@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+#ifndef {{ u.guard('types') }}
+#define {{ u.guard('types') }}
+
+//
+// AUTO GENERATED - DO NOT EDIT!
+// template version {{ u.template_version }}
+//
+
+#include <optional>
+#include <ostream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <vector>
+
+#include <nlohmann/json.hpp>
+{% if u.includes %}
+
+{% for include in u.includes %}
+#include <{{ include }}>
+{% endfor %}
+{% endif %}
+
+using nlohmann::json;
+
+// The types this interface uses are declared in the headers included above;
+// an interface declares no types of its own.
+
+#endif // {{ u.guard('types') }}
