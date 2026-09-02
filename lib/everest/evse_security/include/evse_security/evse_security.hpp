@@ -29,6 +29,7 @@ struct DirectoryPaths {
     fs::path csms_leaf_key_directory;  /**< csms leaf key shall be located in this directory */
     fs::path secc_leaf_cert_directory; /**< secc leaf certificate for ISO15118 shall be located in this directory */
     fs::path secc_leaf_key_directory;  /**< secc leaf key shall be located in this directory */
+	fs::path ctl_directory;
 };
 struct FilePaths {
     // bundle paths
