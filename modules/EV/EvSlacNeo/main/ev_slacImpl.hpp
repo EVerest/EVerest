@@ -5,22 +5,12 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/ev_slac/Implementation.hpp>
 
 #include "../EvSlacNeo.hpp"
-
-class FSMController;
-
-namespace everest {
-namespace lib {
-namespace slac {
-class SlacEvent;
-} // namespace slac
-} // namespace lib
-} // namespace everest
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
@@ -31,10 +21,13 @@ class SlacEvent;
 
 #include <everest/io/event/event_fd.hpp>
 #include <everest/slac/fsm/ev/context.hpp>
+#include <everest/slac/slac_event.hpp>
 #include <everest/util/async/monitor.hpp>
-// ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
+
+#include "fsm_controller.hpp"
 
 namespace slac_fsm = everest::lib::slac::fsm;
+// ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
 namespace main {
@@ -48,16 +41,13 @@ struct Conf {
 class ev_slacImpl : public ev_slacImplBase {
 public:
     ev_slacImpl() = delete;
-    ev_slacImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<EvSlacNeo>& mod, Conf& config);
+    ev_slacImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<EvSlacNeo>& mod, Conf& config) :
+        ev_slacImplBase(ev, "main"), mod(mod), config(config){};
 
     // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
     // insert your public definitions here
+    // The framework calls shutdown() during orderly teardown; the destructor calls it again as an idempotent fallback.
     ~ev_slacImpl() override;
-
-    // Preparation for future generated/framework shutdown logic: when a shutdown phase is added next to init()/ready(),
-    // that hook should call this helper directly. The destructor calls it today as a fallback for the current static
-    // module lifetime.
-    void shutdown();
     // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
 
 protected:
@@ -75,8 +65,10 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
-    // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
+    // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
+    // insert your private definitions here
     void run();
     bool wait_for_ready_or_shutdown();
     bool initialize_slac_io();
@@ -109,9 +101,6 @@ private:
     std::unique_ptr<slac_fsm::ev::Context> fsm_ctx;
     std::unique_ptr<everest::lib::slac::SlacEvent> slac_io;
     std::unique_ptr<FSMController> fsm_ctrl;
-
-    // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
-    // insert your private definitions here
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

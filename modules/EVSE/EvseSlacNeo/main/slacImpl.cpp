@@ -117,10 +117,6 @@ AmpMap load_amp_map(const std::string& path) {
 }
 } // namespace
 
-slacImpl::slacImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<EvseSlacNeo>& mod, Conf& config) :
-    slacImplBase(ev, "main"), mod(mod), config(config) {
-}
-
 slacImpl::~slacImpl() {
     shutdown();
 }
@@ -363,8 +359,7 @@ void slacImpl::configure_fsm_context() {
         fsm_ctx->slac_config.nmk_generation_mode = everest::lib::slac::fsm::evse::NmkGenerationMode::full_byte_range;
     } else {
         EVLOG_warning << "Invalid nmk_generation_mode '" << config.nmk_generation_mode
-                      << "'. Expected 'full_byte_range' or 'legacy_printable'. Falling back to "
-                      << "legacy_printable";
+                      << "'. Expected 'full_byte_range' or 'legacy_printable'. Falling back to " << "legacy_printable";
         fsm_ctx->slac_config.nmk_generation_mode = everest::lib::slac::fsm::evse::NmkGenerationMode::legacy_printable;
     }
 
@@ -399,10 +394,9 @@ void slacImpl::configure_fsm_context() {
         const auto amp_map = load_amp_map(config.amp_map_file);
         fsm_ctx->slac_config.amp_map_len = amp_map.len;
         fsm_ctx->slac_config.amp_map_data = amp_map.data;
-        EVLOG_info << "CM_AMP_MAP initiation enabled with " << fsm_ctx->slac_config.amp_map_len
-                   << " carriers"
+        EVLOG_info << "CM_AMP_MAP initiation enabled with " << fsm_ctx->slac_config.amp_map_len << " carriers"
                    << (config.amp_map_file.empty() ? " (built-in all-maximum-TX default)"
-                                                    : " from '" + config.amp_map_file + "'");
+                                                   : " from '" + config.amp_map_file + "'");
     }
 
     fsm_ctx->slac_config.print_state_transitions = config.print_state_transitions;

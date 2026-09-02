@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -28,17 +28,12 @@ public:
     EvSlacNeo(const ModuleInfo& info, std::unique_ptr<ev_slacImplBase> p_main, Conf& config) :
         ModuleBase(info), p_main(std::move(p_main)), config(config){};
 
-    // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
-    // insert your public definitions here
-    ~EvSlacNeo() override;
-    // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
-
-    // Transitional shim until generated implementation base classes expose a real shutdown virtual. Keep the cast
-    // local so the generated module surface can be replaced cleanly when that hook exists.
-    void shutdown();
-
     const std::unique_ptr<ev_slacImplBase> p_main;
     const Conf& config;
+
+    // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
+    // insert your public definitions here
+    // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
     // ev@4714b2ab-a24f-4b95-ab81-36439e1478de:v1
@@ -49,6 +44,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
