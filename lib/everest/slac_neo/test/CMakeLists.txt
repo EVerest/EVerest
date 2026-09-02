@@ -78,6 +78,17 @@ target_compile_features(evse_slac_neo_misc_test PRIVATE cxx_std_17)
 
 add_test(NAME evse_slac_neo_misc_test COMMAND evse_slac_neo_misc_test)
 
+add_executable(evse_slac_neo_validate_test evse_slac_neo_validate_test.cpp)
+
+target_link_libraries(evse_slac_neo_validate_test
+    PRIVATE
+        slac_neo
+)
+
+target_compile_features(evse_slac_neo_validate_test PRIVATE cxx_std_17)
+
+add_test(NAME evse_slac_neo_validate_test COMMAND evse_slac_neo_validate_test)
+
 add_executable(ev_slac_neo_matching_test
     ev_slac_neo_matching_test.cpp
 )

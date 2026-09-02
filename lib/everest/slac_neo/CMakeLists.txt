@@ -22,6 +22,7 @@ target_sources(slac_neo
     src/telemetry.cpp
     src/fsm/misc.cpp
     src/fsm/evse/context.cpp
+    src/fsm/evse/validate_handler.cpp
 
     #utils
     src/timer.cpp

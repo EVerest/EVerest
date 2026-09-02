@@ -37,121 +37,29 @@ struct pipe_event {
     }
 };
 
-// ISO 15118-3 9.4 CM_VALIDATE BCB-toggle validation. The EV proves it sits on the same Control-Pilot
-// wire by switching its CP B->C->B (a "toggle") a number of times. The exchange has two steps,
-// distinguished by the REQ's pilotTimer field:
-//   step 1 (pilotTimer == 0): the EVSE answers CM_VALIDATE.CNF result=READY(0x01), toggle_num=0, and
-//     arms the observation. If the EV sends no step 2, the EVSE autonomously repeats the step-1 CNF
-//     every TT_match_sequence, limited to C_EV_match_retry repetitions, then FAILS silently.
-//   step 2 (pilotTimer != 0): the EV sends the REQ carrying TP_EV_vald_toggle (pilotTimer, 100 ms
-//     units) and then performs its BCB toggles during that window. Per ISO 15118-3 the EVSE waits out
-//     the window and only THEN answers result=SUCCESS(0x02) with toggle_num = number of toggles seen.
-// EvseManager counts one B->C edge per BCB toggle into ctx->bc_transition_count via the slac
-// count_bc command, so the delta over the window is the toggle count. A step-2 REQ from the owner carrying a non-READY result is
-// the EV's decision to terminate/skip -> no CNF. A step-1 REQ from a different EV while a validation is
-// in progress is answered NOT_READY(0x00) (processing blocked, [V2G3-M09-13] / CmValidate_009).
+// CM_VALIDATE (ISO 15118-3 9.4) BCB-toggle validation lives in fsm::evse::ValidateHandler
+// (src/fsm/evse/validate_handler.hpp); Matching only routes the REQ frames and the update tick to it.
 struct handle_validate_req {
     template <class Fsm, class SrcT, class TarT>
     void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
-        const auto* src_mac = e.payload.get_src_mac();
         const auto req = e.payload.payload_as<messages::cm_validate_req>();
-
-        // Invalid/unsupported signalType: ignore it and leave any in-progress step-1 repetition
-        // running (ISO 15118-5 CmValidate_004 sends signalType 0xFF between step-1 CNFs).
-        if (not req.has_value() or req->signal_type != defs::CM_VALIDATE_REQ_SIGNAL_TYPE) {
+        if (not req.has_value()) {
             return;
         }
-
-        if (req->timer == 0x00) {
-            // Step 1. A different EV mid-validation is blocked (0x00).
-            if (fsm.validate_armed and src_mac != nullptr and
-                not wire_pointer_equal(src_mac, fsm.validate_owner_mac)) {
-                if (src_mac != nullptr) {
-                    fsm.send_validate_cnf_reply(byte_array_from_wire<MacAddress>(src_mac),
-                                                defs::CM_VALIDATE_REQ_RESULT_NOT_READY, 0);
-                }
-                return;
-            }
-            // (Re-)arm: answer READY and (re)start the step-1 repetition interval. A repeated step-1
-            // REQ resets the retry counter (CmValidate_002).
-            if (src_mac != nullptr) {
-                fsm.validate_owner_mac = byte_array_from_wire<MacAddress>(src_mac);
-            }
-            fsm.validate_armed = true;
-            fsm.validate_step2_pending = false;
-            fsm.validate_step1_retries = 0;
-            // Snapshot the edge counter now, at step 1: no BCB toggle has happened yet (the EV
-            // toggles only during the step-2 window), so any edges counted from here to the end of
-            // that window are exactly the toggles. Snapshotting at step 2 instead would race the
-            // CP path (MQTT) against the slower SLAC-frame path and miss the first toggle's edges.
-            fsm.validate_baseline_bc = fsm.ctx->bc_transition_count.load();
-            fsm.validate_timer.setDurationMilliSeconds(defs::TT_MATCH_SEQUENCE_MS);
-            fsm.validate_timer.reset();
-            fsm.send_validate_cnf_reply(fsm.validate_owner_mac, defs::CM_VALIDATE_REQ_RESULT_READY, 0);
-            return;
-        }
-
-        // Step 2 (pilotTimer != 0): only the owner of the armed validation may proceed.
-        if (not fsm.validate_armed or src_mac == nullptr or
-            not wire_pointer_equal(src_mac, fsm.validate_owner_mac)) {
-            return;
-        }
-        // A non-READY result is the EV's decision to terminate/skip: no CNF, end the validation
-        // (CmValidate_005/006/007/008).
-        if (req->result != defs::CM_VALIDATE_REQ_RESULT_READY) {
-            fsm.validate_armed = false;
-            fsm.validate_step2_pending = false;
-            return;
-        }
-        // Start the toggle-observation window: wait out TP_EV_vald_toggle (pilotTimer in 100 ms
-        // units) before counting. The baseline was snapshotted at step 1 (before any toggle); the
-        // CNF is sent by validate_tick when the window elapses.
-        fsm.validate_step2_pending = true;
-        fsm.validate_timer.setDurationMilliSeconds((static_cast<long long>(req->timer) + 1) * 100);
-        fsm.validate_timer.reset();
+        fsm.validate.handle_req(*req, e.payload.get_src_mac(), *fsm.ctx);
     }
 };
-
-// Serviced on every `update` tick while a validation is armed (guard validate_needs_service): either
-// close the step-2 toggle window with a SUCCESS CNF, or repeat/expire the step-1 CNF.
+// Serviced on every `update` tick while a validation is armed (guard validate_needs_service).
 struct validate_tick {
     template <class Fsm, class Evt, class SrcT, class TarT>
     void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        if (fsm.validate_step2_pending) {
-            // EvseManager counts one B->C edge per BCB toggle, so the delta since the baseline IS
-            // the number of toggles the EV performed during the observation window.
-            const int toggles_seen = fsm.ctx->bc_transition_count.load() - fsm.validate_baseline_bc;
-            const int toggles = std::max(0, std::min(toggles_seen, 255));
-            fsm.send_validate_cnf_reply(fsm.validate_owner_mac,
-                                        defs::CM_VALIDATE_REQ_RESULT_SUCCESS,
-                                        static_cast<std::uint8_t>(toggles));
-            fsm.validate_armed = false;
-            fsm.validate_step2_pending = false;
-            fsm.ctx->log_info("CM_VALIDATE: detected " + std::to_string(toggles) +
-                              " BCB toggle(s) during the toggle window");
-            // Validation done: the CM_SLAC_MATCH.REQ must now arrive within TT_match_sequence
-            // (ISO 15118-5 CmSlacMatch_003/004 cmValidate variant), not the full match session.
-            fsm.ctx->validation_done = true;
-            fsm.ctx->validation_match_window.setDurationMilliSeconds(defs::TT_MATCH_SEQUENCE_MS);
-            fsm.ctx->validation_match_window.reset();
-        } else if (fsm.validate_armed) {
-            if (fsm.validate_step1_retries < slac::defs::C_EV_MATCH_RETRY) {
-                fsm.validate_step1_retries++;
-                fsm.send_validate_cnf_reply(fsm.validate_owner_mac,
-                                            defs::CM_VALIDATE_REQ_RESULT_READY, 0);
-                fsm.validate_timer.reset();
-            } else {
-                // Retry limit reached with no step 2: the validation (matching) has FAILED; stop
-                // answering (CmValidate_003/004).
-                fsm.validate_armed = false;
-            }
-        }
+        fsm.validate.tick(*fsm.ctx);
     }
 };
 struct validate_needs_service {
     template <class Fsm, class Evt, class SrcT, class TarT>
     bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        return (fsm.validate_armed or fsm.validate_step2_pending) and fsm.validate_timer.timeout();
+        return fsm.validate.needs_service();
     }
 };
 

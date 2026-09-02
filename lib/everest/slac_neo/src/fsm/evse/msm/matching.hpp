@@ -5,6 +5,7 @@
 // handles CM_VALIDATE. Exits to Matched once a session completed, or to Failed.
 
 #pragma once
+#include "../validate_handler.hpp"
 #include "common.hpp"
 #include "matching_actions.hpp"
 #include "session.hpp"
@@ -82,10 +83,7 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         to.setDuration(std::chrono::milliseconds(ctx->slac_config.slac_init_timeout_ms));
         to.reset();
         failed_matching_reset_once = false;
-        validate_armed = false;
-        validate_step2_pending = false;
-        validate_step1_retries = 0;
-        validate_owner_mac = MacAddress{};
+        validate.reset();
         ctx->validation_done = false;
         ctx->log_info("Entered Matching state, waiting for CM_SLAC_PARM.REQ");
         ctx->status.match_state = SlacState::Matching;
@@ -99,27 +97,11 @@ struct Matching_def    : public state_machine_def<Matching_def> {
     }
 
     // Members
-    void send_validate_cnf_reply(MacAddress const& mac, std::uint8_t result, std::uint8_t toggle_num) {
-        messages::cm_validate_cnf reply{};
-        reply.signal_type = defs::CM_VALIDATE_REQ_SIGNAL_TYPE;
-        reply.toggle_num = toggle_num;
-        reply.result = result;
-        if (not ctx->send_slac_message(mac, reply)) {
-            ctx->log_warn("Failed to send CM_VALIDATE.CNF");
-        }
-    }
-
     std::vector<Session> sessions;
     fsm::evse::Context* ctx;
     timer to;
     bool failed_matching_reset_once{false};
-    // CM_VALIDATE (ISO 15118-3 9.4) BCB-toggle validation state (see handle_validate_req / validate_tick).
-    bool validate_armed{false};         // step-1 seen; awaiting step-2 or repeating the step-1 CNF
-    bool validate_step2_pending{false}; // step-2 seen; waiting out the toggle-observation window
-    int validate_step1_retries{0};      // autonomous step-1 CNF repetitions so far (<= C_EV_match_retry)
-    int validate_baseline_bc{0};        // bc_transition_count at the start of the toggle window
-    MacAddress validate_owner_mac{};    // EV that owns the in-progress validation
-    timer validate_timer;               // step-1 repetition interval / step-2 toggle-observation window
+    fsm::evse::ValidateHandler validate; // CM_VALIDATE (ISO 15118-3 9.4) BCB-toggle validation
 
     static int clamp_max_matching_sessions(int max_matching_sessions) {
         return std::max(1, max_matching_sessions);
