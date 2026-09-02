@@ -22,48 +22,48 @@ bool check_message(message const& e, std::uint16_t expected, fsm::evse::Matching
     }
     return session_data.validate_message(*msg);
 }
-inline bool is_start_atten_char(message const& e, fsm::evse::MatchingSessionData const& session_data) {
+inline bool matches_start_atten_char(message const& e, fsm::evse::MatchingSessionData const& session_data) {
     auto mmtype = defs::MMTYPE_CM_START_ATTEN_CHAR | defs::MMTYPE_MODE_IND;
     return check_message<slac::messages::cm_start_atten_char_ind>(e, mmtype, session_data);
 }
-inline bool is_atten_char_rsp(message const& e, fsm::evse::MatchingSessionData const& session_data) {
+inline bool matches_atten_char_rsp(message const& e, fsm::evse::MatchingSessionData const& session_data) {
     auto mmtype = slac::defs::MMTYPE_CM_ATTEN_CHAR | slac::defs::MMTYPE_MODE_RSP;
     return check_message<slac::messages::cm_atten_char_rsp>(e, mmtype, session_data);
 }
-inline bool is_slac_match_req(message const& e, fsm::evse::MatchingSessionData const& session_data) {
+inline bool matches_slac_match_req(message const& e, fsm::evse::MatchingSessionData const& session_data) {
     auto mmtype = slac::defs::MMTYPE_CM_SLAC_MATCH | slac::defs::MMTYPE_MODE_REQ;
     return check_message<slac::messages::cm_slac_match_req>(e, mmtype, session_data);
 }
-inline bool is_atten_profile_ind(message const& e, fsm::evse::MatchingSessionData const& session_data) {
+inline bool matches_atten_profile_ind(message const& e, fsm::evse::MatchingSessionData const& session_data) {
     auto mmtype = slac::defs::MMTYPE_CM_ATTEN_PROFILE | slac::defs::MMTYPE_MODE_IND;
     return check_message<slac::messages::cm_atten_profile_ind>(e, mmtype, session_data);
 }
 
 // Guards
-struct is_atten_char_rsp_guard {
+struct is_atten_char_rsp {
     template <class Fsm, class SrcT, class TarT>
     bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
-        return is_atten_char_rsp(e, fsm.session_data);
+        return matches_atten_char_rsp(e, fsm.session_data);
     }
 };
-struct is_slac_match_req_guard {
+struct is_slac_match_req {
     template <class Fsm, class SrcT, class TarT>
     bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
-        return is_slac_match_req(e, fsm.session_data);
+        return matches_slac_match_req(e, fsm.session_data);
     }
 };
 struct sound_below_limit {
     template <class Fsm, class SrcT, class TarT>
     bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
         return fsm.session_data.captured_sounds + 1 < slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS and
-               is_atten_profile_ind(e, fsm.session_data);
+               matches_atten_profile_ind(e, fsm.session_data);
     }
 };
 struct sound_completes_count {
     template <class Fsm, class SrcT, class TarT>
     bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
         return fsm.session_data.captured_sounds + 1 >= slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS and
-               is_atten_profile_ind(e, fsm.session_data);
+               matches_atten_profile_ind(e, fsm.session_data);
     }
 };
 // After a CM_VALIDATE process, the CM_SLAC_MATCH.REQ must arrive within TT_match_sequence (much
@@ -86,7 +86,7 @@ struct retry_limit {
 struct start_atten_in_time {
     template <class Fsm, class SrcT, class TarT>
     bool operator()(message const& e, Fsm& fsm, SrcT& src, TarT&) {
-        return not src.state_timeout() and is_start_atten_char(e, fsm.session_data);
+        return not src.state_timeout() and matches_start_atten_char(e, fsm.session_data);
     }
 };
 
