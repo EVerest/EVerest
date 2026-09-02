@@ -6,6 +6,7 @@
 
 #pragma once
 #include "common.hpp"
+#include "init_actions.hpp"
 
 namespace everest::lib::slac::msm::init_sm {
 
@@ -50,22 +51,10 @@ struct Init_def : public state_machine_def<Init_def> {
         static auto constexpr msg_type = defs::qualcomm::MMTYPE_OP_ATTR | defs::MMTYPE_MODE_CNF;
     };
 
-    // Guards
-    struct is_qualcomm_msg : public is_message_of_type<Qualcomm::msg_type> {};
-    struct is_lumissil_msg : public is_message_of_type<Lumissil::msg_type> {};
-
-    // Actions
-    struct op_attr_req : public send_default_msg<messages::qualcomm::op_attr_req> {};
-    struct get_version_req : public send_default_msg<messages::lumissil::nscm_get_version_req> {};
-    struct set_modem_vendor {
-        template <class Fsm, class SrcT, class TarT> void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
-            fsm.ctx->modem_vendor = TarT::modem_vendor;
-            fsm.ctx->log_info(TarT::device_info(e));
-        }
-    };
-
     // Transitions
     using initial_state = boost::mpl::vector<Init, Other>;
+    using is_lumissil_msg = is_vendor_msg<Lumissil>;
+    using is_qualcomm_msg = is_vendor_msg<Qualcomm>;
     // clang-format off
     struct transition_table : boost::mpl::vector<
         //    +------------+---------+------------+------------------+-----------------+
