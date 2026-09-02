@@ -4,6 +4,8 @@
 
 #include <algorithm>
 
+#include <everest/slac/slac_defs.hpp>
+
 namespace {
 
 constexpr char hex_chars[] = "0123456789ABCDEF";
@@ -126,4 +128,33 @@ bool parse_mac_addr(const std::string& mac_str, uint8_t* mac, size_t length) {
 
     std::copy_n(parsed->begin(), parsed->size(), mac);
     return true;
+}
+
+bool accepts_set_key_cnf_success_result(everest::lib::slac::fsm::evse::SetKeyCnfSuccessMode mode, uint8_t result) {
+    using everest::lib::slac::fsm::evse::SetKeyCnfSuccessMode;
+    namespace defs = everest::lib::slac::defs;
+    switch (mode) {
+    case SetKeyCnfSuccessMode::modem_compat_0x01:
+        return result == defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS;
+    case SetKeyCnfSuccessMode::hpgp_standard_0x00:
+        return result == defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS;
+    case SetKeyCnfSuccessMode::accept_0x00_or_0x01:
+        return result == defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS ||
+               result == defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS;
+    }
+    return false;
+}
+
+std::string format_session_nmk_for_log(everest::lib::slac::Nmk const& nmk) {
+    std::string out;
+    out.reserve(nmk.size() * 2U);
+    for (auto const octet : nmk) {
+        append_hex_byte(out, octet);
+    }
+    return out;
+}
+
+std::string session_log_prefix(everest::lib::slac::fsm::evse::MatchingSessionData const& session_data) {
+    return "Session (run_id=" + format_run_id(session_data.run_id) + ", ev_mac=" + format_mac_addr(session_data.ev_mac) +
+           "): ";
 }
