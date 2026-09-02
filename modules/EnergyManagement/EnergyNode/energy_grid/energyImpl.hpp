@@ -15,6 +15,10 @@
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
 #include <everest/util/async/monitor.hpp>
+#include <map>
+#include <string>
+#include <string_view>
+#include <vector>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -55,12 +59,22 @@ private:
 
         // contains only the pricing informations last update
         types::energy_price_information::EnergyPriceSchedule energy_pricing;
+
+        // the energy_consumer connection each child subtree (keyed by its root uuid) was
+        // received from, so enforce_limits can be routed to its branch
+        std::map<std::string, energyIntf*> child_connections;
     };
 
     everest::lib::util::monitor<EnergyState> energy_state;
 
     types::energy::ScheduleReqEntry get_local_schedule_req_entry();
     std::vector<types::energy::ScheduleReqEntry> get_local_schedule();
+
+    // Updates the cached energy flow request of the child it was received from and republishes
+    void update_child_energy_flow_request(energyIntf* connection, const types::energy::EnergyFlowRequest& request);
+
+    // Returns the connections of all child branches whose cached subtree contains the uuid
+    static std::vector<energyIntf*> find_target_connections(const EnergyState& state, std::string_view uuid);
 
     void publish_complete_energy_object(const EnergyState& state);
     void set_external_limits(types::energy::ExternalLimits& l);

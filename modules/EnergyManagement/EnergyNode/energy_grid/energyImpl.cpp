@@ -9,8 +9,10 @@
 #include <chrono>
 #include <date/date.h>
 #include <date/tz.h>
+#include <string>
 #include <string_view>
 #include <utils/date.hpp>
+#include <vector>
 
 namespace module {
 namespace energy_grid {
@@ -27,23 +29,9 @@ void energyImpl::init() {
     energy_state_handle->energy_flow_request.schedule_import = get_local_schedule();
     energy_state_handle->energy_flow_request.schedule_export = get_local_schedule();
 
-    for (auto& entry : mod->r_energy_consumer) {
-        entry->subscribe_energy_flow_request([this](types::energy::EnergyFlowRequest const& e) {
-            // Received new energy_flow_request object from a child. Update in the cached object and republish.
-            auto energy_state_handle = energy_state.handle();
-
-            auto& children = energy_state_handle->energy_flow_request.children;
-            auto children_it = std::find_if(children.begin(), children.end(), [&e](const auto& child) {
-                return std::string_view{child.uuid} == std::string_view{e.uuid};
-            });
-            if (children_it != children.end()) {
-                *children_it = e;
-            } else {
-                children.push_back(std::move(e));
-            }
-
-            publish_complete_energy_object(*energy_state_handle);
-        });
+    for (auto const& consumer : mod->r_energy_consumer) {
+        consumer->subscribe_energy_flow_request(
+            [this, connection = consumer.get()](auto const& e) { update_child_energy_flow_request(connection, e); });
     }
 
     if (!mod->r_powermeter.empty()) {
@@ -69,6 +57,37 @@ void energyImpl::init() {
                 publish_complete_energy_object(*energy_state_handle);
             });
     }
+}
+
+void energyImpl::update_child_energy_flow_request(energyIntf* connection,
+                                                  const types::energy::EnergyFlowRequest& request) {
+    // Received new energy_flow_request object from a child. Update in the cached object and republish.
+    auto energy_state_handle = energy_state.handle();
+
+    auto& children = energy_state_handle->energy_flow_request.children;
+    auto children_it = std::find_if(children.begin(), children.end(), [&request](auto const& child) {
+        return std::string_view{child.uuid} == std::string_view{request.uuid};
+    });
+    if (children_it != children.end()) {
+        *children_it = request;
+    } else {
+        children.push_back(request);
+    }
+    energy_state_handle->child_connections[request.uuid] = connection;
+
+    publish_complete_energy_object(*energy_state_handle);
+}
+
+std::vector<energyIntf*> energyImpl::find_target_connections(const EnergyState& state, std::string_view uuid) {
+    std::vector<energyIntf*> connections;
+
+    for (auto const& child : state.energy_flow_request.children) {
+        if (energy_flow_request_contains_uuid(child, uuid)) {
+            connections.push_back(state.child_connections.at(child.uuid));
+        }
+    }
+
+    return connections;
 }
 
 types::energy::ScheduleReqEntry energyImpl::get_local_schedule_req_entry() {
@@ -185,14 +204,28 @@ void energyImpl::ready() {
 }
 
 void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
-    auto energy_state_handle = energy_state.handle();
+    std::vector<energyIntf*> target_connections;
 
-    // route to children if it is not for me
-    // FIXME: this sends it to all children, we could do a lookup on which branch it actually is
-    if (value.uuid != energy_state_handle->energy_flow_request.uuid) {
-        for (auto& entry : mod->r_energy_consumer) {
-            entry->call_enforce_limits(value);
+    {
+        auto energy_state_handle = energy_state.handle();
+
+        // it is for this node itself, no need to route it to children
+        if (value.uuid == energy_state_handle->energy_flow_request.uuid) {
+            return;
         }
+
+        target_connections = find_target_connections(*energy_state_handle, value.uuid);
+    }
+
+    if (target_connections.empty()) {
+        // Unknown uuid (e.g. no energy_flow_request received from that child yet): send to all children
+        for (auto const& consumer : mod->r_energy_consumer) {
+            target_connections.push_back(consumer.get());
+        }
+    }
+
+    for (auto const connection : target_connections) {
+        connection->call_enforce_limits(value);
     }
 };
 
