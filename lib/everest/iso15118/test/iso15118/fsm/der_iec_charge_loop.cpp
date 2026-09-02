@@ -2,6 +2,9 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <vector>
+
 #include "helper.hpp"
 
 #include <iso15118/d20/state/ac_der_iec_charge_loop.hpp>
@@ -68,7 +71,10 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
                                           powersupply_limits};
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
+
+    std::vector<session::feedback::Signal> signals;
     session::feedback::Callbacks callbacks{};
+    callbacks.signal = [&signals](session::feedback::Signal signal) { signals.push_back(signal); };
 
     auto state_helper = FsmStateHelper(d20::SessionConfig(evse_setup), pause_ctx, callbacks);
     auto ctx = state_helper.get_context();
@@ -534,6 +540,45 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
 
             const auto& session_setup_res = response_message.value();
             REQUIRE(session_setup_res.response_code == dt::ResponseCode::FAILED_SequenceError);
+        }
+    }
+
+    GIVEN("Good case - shutdown requested during power delivery") {
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::PowerDelivery>()};
+
+        d20::SelectedServiceParameters service_parameters = d20::SelectedServiceParameters(
+            dt::ServiceCategory::AC_DER_IEC, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
+            dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230, no_der_function_selected);
+
+        ctx.session = d20::Session(service_parameters);
+        ctx.request_shutdown();
+        signals.clear();
+
+        message_20::PowerDeliveryRequest req;
+        req.header.session_id = ctx.session.get_id();
+        req.header.timestamp = 1691411798;
+        req.processing = dt::Processing::Ongoing;
+        req.charge_progress = dt::Progress::Start;
+
+        state_helper.handle_request(req);
+        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("Session stops instead of entering the DER IEC charge loop") {
+            REQUIRE(result.transitioned() == true);
+            REQUIRE(fsm.get_current_state_id() == d20::StateID::SessionStop);
+
+            const auto response_message = ctx.get_response<message_20::PowerDeliveryResponse>();
+            REQUIRE(response_message.has_value());
+
+            const auto& res = response_message.value();
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.status.has_value());
+            REQUIRE(res.status.value().notification == dt::EvseNotification::Terminate);
+
+            REQUIRE(std::find(signals.begin(), signals.end(), session::feedback::Signal::CHARGE_LOOP_FINISHED) !=
+                    signals.end());
+            REQUIRE(std::find(signals.begin(), signals.end(), session::feedback::Signal::AC_OPEN_CONTACTOR) !=
+                    signals.end());
         }
     }
 }
