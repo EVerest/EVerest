@@ -224,6 +224,44 @@ subcommands:
 
    would update only the module header file ``Example.hpp``.
 
+***********************
+Selecting a target
+***********************
+
+The generating commands accept ``--backend``.  ``cpp`` is the default and
+produces the C++ headers EVerest compiles against.  ``ir-dump`` writes out
+``ev-cli``'s intermediate representation of the definitions as JSON instead,
+which is useful when working out what the generator made of a definition:
+
+.. code-block:: bash
+
+    ev-cli types generate-headers --backend ir-dump --output-dir /tmp/ir
+
+***************************
+Checking the schema dialect
+***************************
+
+EVerest's definitions are JSON Schema, but cross-type references are written
+``/units#/Power``, which only ``ev-cli`` and the framework know how to resolve,
+and most references carry sibling keywords that draft-07 ignores but JSON
+Schema 2020-12 -- and therefore OpenAPI 3.1 -- would apply.  ``ev-cli`` accepts
+all of this and can report it:
+
+.. code-block:: bash
+
+    ev-cli types conformance-report
+    ev-cli types conformance-report --verbose   # every site, with a suggestion
+
+Each entry says how the same thing would be written conformantly.  Two
+categories deserve attention rather than only a count: a sibling ``type`` that
+contradicts the type it references, and ``additionalProperties: false`` beside
+a reference to an object.  Both have no effect today and would change meaning
+if the definitions were read with OpenAPI semantics.
+
+The conformant spelling is already accepted -- ``#/types/Power`` within a file
+and ``units.yaml#/types/Power`` across files -- so definitions can be migrated
+one file at a time without anything downstream noticing.
+
 ----
 
 **Authors**: Kai-Uwe Hermann, Andreas Heinrich, Manuel Ziegler, Christoph Burandt

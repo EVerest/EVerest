@@ -8,24 +8,26 @@ exports_files(
 
 py_library(
     name = "lib",
-    srcs = glob(["src/ev_cli/*.py"]),
+    srcs = glob(["src/ev_cli/**/*.py"]),
+    data = glob([
+        "src/ev_cli/backends/*/templates/**",
+        "src/ev_cli/licenses/**",
+    ]),
     imports = ["src"],
     target_compatible_with = CROSS_PYTHON_INCOMPATIBLE,
     deps = [
         requirement("jinja2"),
         requirement("jsonschema"),
-        requirement("stringcase"),
         requirement("pyyaml"),
     ],
 )
 
 py_binary(
     name = "ev-cli",
-    srcs = ["src/ev_cli/ev.py"],
-    data = glob(["src/ev_cli/templates/**"]),
+    srcs = ["src/ev_cli/__main__.py"],
     legacy_create_init = False,
-    main = "src/ev_cli/ev.py",
-    visibility = ["//visibility:public"],
+    main = "src/ev_cli/__main__.py",
     target_compatible_with = CROSS_PYTHON_INCOMPATIBLE,
+    visibility = ["//visibility:public"],
     deps = [":lib"],
 )

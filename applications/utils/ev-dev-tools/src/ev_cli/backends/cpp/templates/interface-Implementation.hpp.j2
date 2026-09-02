@@ -1,0 +1,182 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+#ifndef {{ u.guard('implementation') }}
+#define {{ u.guard('implementation') }}
+
+//
+// AUTO GENERATED - DO NOT EDIT!
+// template version {{ u.template_version }}
+//
+
+#include <framework/ModuleAdapter.hpp>
+#include <utils/types.hpp>
+#include <utils/error.hpp>
+#include <utils/error/error_state_monitor.hpp>
+#include <utils/error/error_manager_impl.hpp>
+#include <utils/error/error_factory.hpp>
+
+#include "Types.hpp"
+
+class {{ u.implementation_class }} : public Everest::ImplementationBase {
+public:
+    {{ u.implementation_class }}(Everest::ModuleAdapter* ev, const std::string& name)
+        : Everest::ImplementationBase(),
+        _ev(ev),
+        _name(name) {
+        if (ev == nullptr) {
+            EVLOG_error << "ev is nullptr, please check the initialization of the module";
+            error_manager = nullptr;
+            error_state_monitor = nullptr;
+            error_factory = nullptr;
+            EVLOG_error << "error_manager, error_state_monitor and error_factory are nullptr";
+        } else {
+            error_manager = ev->get_error_manager_impl(name);
+            if (error_manager == nullptr) {
+                EVLOG_error << "error_manager is nullptr";
+            }
+            error_state_monitor = ev->get_error_state_monitor_impl(name);
+            if (error_state_monitor == nullptr) {
+                EVLOG_error << "error_state_monitor is nullptr";
+            }
+            error_factory = ev->get_error_factory(name);
+            if (error_factory == nullptr) {
+                EVLOG_error << "error_factory is nullptr";
+            }
+            impl_mapping = Everest::get_impl_mapping(ev->get_mapping(), name);
+        }
+    }
+
+{% if not u.vars %}
+    // no variables defined for this interface
+{% else %}
+    // publish functions for variables
+{% for var in u.vars %}
+{% set kind = u.kind(var.type).value %}
+    void publish_{{ var.name }}(const {{ u.spell(var.type) }}& value) {
+{% if kind == 'enum' %}
+        _ev->publish(_name, "{{ var.name }}", {{ u.to_string_view(var.type) }}(value));
+{% elif kind == 'array' and u.element_is_enum(var.type) %}
+        std::vector<std::string> string_array;
+        string_array.reserve(value.size());
+        for (const auto& entry : value) {
+            string_array.push_back({{ u.element_to_string(var.type) }}(entry));
+        }
+        _ev->publish(_name, "{{ var.name }}", string_array);
+{% else %}
+        _ev->publish(_name, "{{ var.name }}", value);
+{% endif %}
+    }
+{% endfor %}
+{% endif %}
+
+    void raise_error(const Everest::error::Error& error) {
+        error_manager->raise_error(error);
+    }
+
+    void clear_error(const Everest::error::ErrorType& type) {
+        error_manager->clear_error(type);
+    }
+
+    void clear_error(const Everest::error::ErrorType& type, const Everest::error::ErrorSubType& sub_type) {
+        error_manager->clear_error(type, sub_type);
+    }
+
+    void clear_all_errors_of_impl() {
+        error_manager->clear_all_errors();
+    }
+
+    void clear_all_errors_of_impl(const Everest::error::ErrorType& type) {
+        error_manager->clear_all_errors(type);
+    }
+
+    std::shared_ptr<Everest::error::ErrorStateMonitor> error_state_monitor;
+    std::shared_ptr<Everest::error::ErrorFactory> error_factory;
+    std::shared_ptr<Everest::error::ErrorManagerImpl> error_manager;
+
+    std::optional<Mapping> get_mapping() {
+        return impl_mapping;
+    }
+
+protected:
+{% if not u.cmds %}
+    // no commands defined for this interface
+{% else %}
+    // command handler functions (virtual)
+{% for cmd in u.cmds %}
+    virtual {{ u.result_type(cmd) }} handle_{{ cmd.name }}({% for argument in cmd.arguments %}{{ u.argument_declaration(argument) }}{{ ', ' if not loop.last }}{% endfor %}) = 0;
+{% endfor %}
+{% endif %}
+
+private:
+    Everest::ModuleAdapter* const _ev;
+    const std::string _name;
+    std::optional<Mapping> impl_mapping;
+
+    // helper function for getting all commands
+    void _gather_cmds([[maybe_unused]] std::vector<Everest::cmd>& cmds) override {
+{% if not u.cmds %}
+        // this interface does not offer any commands
+{% else %}
+{% for cmd in u.cmds %}
+        // {{ cmd.name }} command
+        Everest::cmd {{ cmd.name }}_cmd;
+        {{ cmd.name }}_cmd.impl_id = _name;
+        {{ cmd.name }}_cmd.cmd_name = "{{ cmd.name }}";
+{% if not cmd.arguments %}
+        // cmd {{ cmd.name }} has no arguments
+{% else %}
+        {{ cmd.name }}_cmd.arg_types = {
+{% for argument in cmd.arguments %}
+            {"{{ argument.name }}", {{ u.json_types(argument.type) }}}{{ ',' if not loop.last }}
+{% endfor %}
+        };
+{% endif %}
+        {{ cmd.name }}_cmd.cmd = [this](const Parameters& args) -> Result {
+{% if not cmd.arguments %}
+            (void) args; // no arguments used for this callback
+{% endif %}
+{% for argument in cmd.arguments %}
+{% set kind = u.kind(argument.type).value %}
+{% if kind == 'object' %}
+            auto {{ argument.name }} = args.at("{{ argument.name }}").get<{{ u.spell(argument.type) }}>();
+{% elif kind == 'enum' %}
+            auto {{ argument.name }} = {{ u.from_string(argument.type) }}(args.at("{{ argument.name }}").get<std::string>());
+{% elif kind == 'array' and u.element_is_enum(argument.type) %}
+            json {{ argument.name }}_json_array = args.at("{{ argument.name }}");
+            std::vector<{{ u.element(argument.type) }}> {{ argument.name }};
+            for (auto entry : {{ argument.name }}_json_array) {
+                {{ argument.name }}.push_back({{ u.element_from_string(argument.type) }}(entry));
+            }
+{% elif kind == 'array' %}
+            auto {{ argument.name }} = args.at("{{ argument.name }}").get<{{ u.spell(argument.type) }}>();
+{% elif kind == 'variant' %}
+            auto {{ argument.name }} = Everest::json_to_variant<{{ u.variant_alternatives(argument.type) }}>(args.at("{{ argument.name }}"));
+{% else %}
+            auto {{ argument.name }} = static_cast<{{ u.raw_spell(argument.type) }}>(args.at("{{ argument.name }}"));
+{% endif %}
+{% endfor %}
+
+            {{ 'auto result = ' if cmd.result }}this->handle_{{ cmd.name }}({% for argument in cmd.arguments %}{{ argument.name }}{{ ', ' if not loop.last }}{% endfor %});
+{% if cmd.result is none %}
+            return nullptr;
+{% elif u.kind(cmd.result).value == 'enum' %}
+            return {{ u.to_string(cmd.result) }}(result);
+{% elif u.kind(cmd.result).value == 'variant' %}
+            return Everest::variant_to_json(result);
+{% else %}
+            return result;
+{% endif %}
+        };
+{% if cmd.result is not none %}
+        {{ cmd.name }}_cmd.return_type = {{ u.json_types(cmd.result) }};
+{% endif %}
+        cmds.emplace_back(std::move({{ cmd.name }}_cmd));
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}
+{% endif %}
+    };
+};
+
+#endif // {{ u.guard('implementation') }}
