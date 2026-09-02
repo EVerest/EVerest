@@ -658,6 +658,14 @@ public:
     }
 
     /**
+     * \brief the port the listen socket is bound to
+     * \return the bound port in host byte order, 0 when there is no bound socket
+     * \note the only way to learn the port when config_t::service is "0", which
+     *       asks the operating system for an ephemeral port
+     */
+    [[nodiscard]] std::uint16_t bound_port() const;
+
+    /**
      * \brief wrap an externally-accepted TCP socket as a TLS server connection
      * \param[in] soc accepted TCP socket file descriptor
      * \param[in] ip peer IP address string (may be nullptr)

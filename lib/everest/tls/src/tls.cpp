@@ -1063,6 +1063,27 @@ bool Server::init_socket(const config_t& cfg) {
     return result;
 }
 
+std::uint16_t Server::bound_port() const {
+    if (m_socket == INVALID_SOCKET) {
+        return 0;
+    }
+
+    sockaddr_storage addr{};
+    socklen_t addr_len = sizeof(addr);
+    if (::getsockname(m_socket, reinterpret_cast<sockaddr*>(&addr), &addr_len) != 0) {
+        return 0;
+    }
+
+    switch (addr.ss_family) {
+    case AF_INET:
+        return ntohs(reinterpret_cast<const sockaddr_in*>(&addr)->sin_port);
+    case AF_INET6:
+        return ntohs(reinterpret_cast<const sockaddr_in6*>(&addr)->sin6_port);
+    default:
+        return 0;
+    }
+}
+
 int Server::handle_tls_1_3_verify_upgrade(SSL* ssl, int* /*alert*/) {
     // The verify upgrade only takes effect when the negotiated protocol will be
     // TLS 1.3. Both sides must allow it: the client must advertise TLS 1.3 in
