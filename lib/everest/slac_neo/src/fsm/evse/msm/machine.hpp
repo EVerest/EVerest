@@ -7,6 +7,7 @@
 #pragma once
 #include "common.hpp"
 #include "init.hpp"
+#include "machine_actions.hpp"
 #include "matched.hpp"
 #include "matching.hpp"
 #include "reset.hpp"
@@ -57,27 +58,6 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
             ctx.clear_match_confirm_cache();
             ctx.status.match_state = SlacState::Failed;
             ctx.status.d3_state = D3State::Unmatched;
-        }
-    };
-
-    // Guards
-    struct cfg_wait_for_link {
-        template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-            return fsm.ctx->slac_config.link_status.do_detect;
-        }
-    };
-    struct is_legacy_set_key_handling_mode {
-        template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-            return fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::legacy_single_attempt;
-        }
-    };
-
-    // Actions
-    struct on_matched_fail {
-        template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-            auto& ctx = *fsm.ctx;
-            ctx.log_error("Connection lost in matched state");
-            ctx.signal_error_routine_request();
         }
     };
 
