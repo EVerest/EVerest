@@ -23,6 +23,7 @@ target_sources(slac_neo
     src/fsm/misc.cpp
     src/fsm/evse/context.cpp
     src/fsm/evse/validate_handler.cpp
+    src/fsm/evse/amp_map_handler.cpp
 
     #utils
     src/timer.cpp

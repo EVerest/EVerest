@@ -40,61 +40,26 @@ struct send_amp_map_cnf {
     }
 };
 
-// Entry helpers
-// ISO 15118-3 A.9.6 transmit-power limitation: once the AVLN is up, send
-// the operator-configured amplitude map to the peer (CmAmpMap_002..004).
-// Disabled by default; the map is provided via the amp_map_file config.
-template <class MatchedSm> void start_amp_map_exchange(MatchedSm& sm) {
-    auto& ctx = *sm.ctx;
-    sm.amp_map_awaiting_cnf = false;
-    sm.amp_map_retries = 0;
-    if (ctx.slac_config.initiate_amp_map and ctx.slac_config.amp_map_len > 0) {
-        if (not ctx.send_amp_map_req(ctx.status.ev_mac, ctx.slac_config.amp_map_len, ctx.slac_config.amp_map_data)) {
-            ctx.log_warn("Failed to send CM_AMP_MAP.REQ");
-        }
-        // Await the CM_AMP_MAP.CNF; retransmit every TT_match_response until it arrives, limited
-        // to C_EV_match_retry retransmissions (serviced by retransmit_amp_map on the update tick).
-        sm.amp_map_awaiting_cnf = true;
-        sm.amp_map_timer.setDurationMilliSeconds(defs::TT_MATCH_RESPONSE_MS);
-        sm.amp_map_timer.reset();
-    }
-}
-
-// SECC-initiated CM_AMP_MAP.REQ (ISO 15118-3 A.9.6, PICS InitiateCmAmpMap): after sending the
-// first REQ (on_entry) the SECC retransmits it every TT_match_response until a CM_AMP_MAP.CNF with
-// result=0x00 arrives, limited to C_EV_match_retry retransmissions (CmAmpMap_003/004).
+// SECC-initiated CM_AMP_MAP exchange (ISO 15118-3 A.9.6); the logic lives in AmpMapHandler, owned by
+// Matched_def as `amp_map`. These only wire it to the update tick and to the incoming CNF.
 struct amp_map_retransmit_due {
     template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        return fsm.amp_map_awaiting_cnf and fsm.amp_map_timer.timeout();
+        return fsm.amp_map.retransmit_due();
     }
 };
 struct retransmit_amp_map {
     template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        if (fsm.amp_map_retries < slac::defs::C_EV_MATCH_RETRY) {
-            fsm.amp_map_retries++;
-            fsm.ctx->send_amp_map_req(fsm.ctx->status.ev_mac, fsm.ctx->slac_config.amp_map_len,
-                                      fsm.ctx->slac_config.amp_map_data);
-            fsm.amp_map_timer.reset();
-        } else {
-            fsm.amp_map_awaiting_cnf = false; // retry limit reached, stop
-        }
+        fsm.amp_map.retransmit(*fsm.ctx);
     }
 };
-// A CM_AMP_MAP.CNF with result=0x00 confirms the exchange and stops retransmission; any other
-// result is ignored ([V2G3-A09-114], CmAmpMap_004 keeps retransmitting on an invalid CNF).
 struct is_amp_map_cnf_ok {
     template <class Fsm, class SrcT, class TarT> bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
-        if (not fsm.amp_map_awaiting_cnf or
-            e.payload.get_mmtype() != (defs::MMTYPE_CM_AMP_MAP | defs::MMTYPE_MODE_CNF)) {
-            return false;
-        }
-        auto const cnf = e.payload.payload_as<messages::cm_amp_map_cnf>();
-        return cnf.has_value() and cnf->result == defs::CM_AMP_MAP_CNF_RESULT_SUCCESS;
+        return fsm.amp_map.is_awaited_cnf(e.payload);
     }
 };
 struct amp_map_cnf_ack {
     template <class Fsm, class SrcT, class TarT> void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
-        fsm.amp_map_awaiting_cnf = false;
+        fsm.amp_map.acknowledge_cnf();
     }
 };
 

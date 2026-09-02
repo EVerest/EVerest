@@ -5,6 +5,7 @@
 // link loss and runs the CM_AMP_MAP exchange. Exits to Failed when the link is lost.
 
 #pragma once
+#include "../amp_map_handler.hpp"
 #include "common.hpp"
 #include "matched_actions.hpp"
 
@@ -77,7 +78,7 @@ struct Matched_def : public state_machine_def<Matched_def> {
         neg_link_status_threshold =
             ctx->slac_config.link_status.debounce_count < 1 ? 1 : ctx->slac_config.link_status.debounce_count;
         ctx->status.modem_link_ready = true;
-        start_amp_map_exchange(*this);
+        amp_map.start(*ctx);
     }
 
     template <class Event, class Fsm> void on_exit(Event const&, Fsm&) {
@@ -93,10 +94,7 @@ struct Matched_def : public state_machine_def<Matched_def> {
     int link_check_to_ms{0};
     int consecutive_neg_link_status{0};
     int neg_link_status_threshold{1};
-    // SECC-initiated CM_AMP_MAP retransmission state (see the amp_map_* guards/actions in matched_actions.hpp).
-    bool amp_map_awaiting_cnf{false};
-    int amp_map_retries{0};
-    timer amp_map_timer;
+    fsm::evse::AmpMapHandler amp_map; // SECC-initiated CM_AMP_MAP exchange (ISO 15118-3 A.9.6)
 };
 
 } // namespace everest::lib::slac::msm::matched_sm
