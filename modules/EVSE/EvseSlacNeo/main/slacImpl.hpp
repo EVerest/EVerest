@@ -15,11 +15,13 @@
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <string>
-#include <thread>
 
 #include <everest/io/event/event_fd.hpp>
+#include <everest/io/event/fd_event_handler.hpp>
+#include <everest/io/event/timer_fd.hpp>
 #include <everest/slac/fsm/evse/context.hpp>
 #include <everest/slac/slac_event.hpp>
 #include <everest/util/async/monitor.hpp>
@@ -99,24 +101,43 @@ private:
     void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
-    void run();
     bool wait_for_startup_delay_or_shutdown();
     bool initialize_slac_io();
     void configure_callbacks();
     void configure_fsm_context();
     bool create_fsm_controller();
     void configure_slac_io_callbacks();
-    void run_blocking_event_loop();
+    /// Puts slac_io, fsm_ctrl and exit_event onto event_handler. False (after the abort path) if
+    /// any registration failed.
+    bool register_event_handlers();
+    void unregister_event_handlers();
+    /// Runs the loop on the init thread until the PLC I/O bring-up settled or timed out.
+    void run_bring_up_loop();
+    /// Runs the loop on the caller's thread until shutdown() (or a fatal error) stops it.
+    void run_event_loop();
     void handle_slac_io_ready();
     void handle_slac_io_error(bool on_error, const std::string& detail);
     void start_fsm_if_ready();
-    FSMController* get_available_fsm_controller();
+    /// Hand a command to the FSM controller with the lifecycle monitor held for the whole call, or
+    /// drop it (with a warning naming \p command) if the controller or the PLC I/O is not usable.
+    void post_command(char const* command, std::function<void(FSMController&)> const& post);
     void raise_communication_fault(const std::string& message);
     void clear_communication_fault();
-    void mark_worker_offline(const std::string& reason);
+    /// Fatal for the event loop: makes it return, tears the FSM down and (unless shutting down)
+    /// raises a CommunicationFault. Commands are dropped from then on. Loop thread only.
+    void abort_event_loop(const std::string& reason);
+
+    /// Loop-exit flag for fd_event_handler::run.
     std::atomic<bool> online{true};
-    std::thread worker;
+    /// Loop-exit flag for the bring-up phase in init(); cleared by the I/O ready and error
+    /// callbacks, the bring-up timer and shutdown().
+    std::atomic<bool> bring_up_pending{false};
+    /// Wakes the loop out of poll() so it can observe the flags above.
     everest::lib::io::event::event_fd exit_event;
+    /// Bounds the bring-up phase in init().
+    everest::lib::io::event::timer_fd bring_up_timer;
+    /// Driven on the init thread during bring-up, then on the framework's ready thread in ready().
+    everest::lib::io::event::fd_event_handler event_handler;
     using LifecycleState = LifecycleStateT<FSMController>;
     everest::lib::util::monitor<LifecycleState> lifecycle_state;
     everest::lib::slac::fsm::evse::ContextCallbacks callbacks;

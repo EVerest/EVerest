@@ -4,6 +4,7 @@
 #include "ev_slacImpl.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <memory>
 
 #include <everest/io/event/fd_event_handler.hpp>
@@ -19,105 +20,103 @@ namespace main {
 
 namespace {
 constexpr char kModuleLogPrefix[] = "EvSlacNeo: ";
+
+// How long shutdown() waits for the event loop running in ready() to return. It only has to
+// cover one poll wake-up, so anything measured in seconds is generous; the bound exists so that
+// a wedged loop degrades into a loud log instead of hanging the whole EVerest shutdown.
+constexpr std::chrono::milliseconds LOOP_EXIT_TIMEOUT{5000};
 } // namespace
 
 ev_slacImpl::~ev_slacImpl() {
     shutdown();
 }
 
+void ev_slacImpl::init() {
+    // Nothing to do yet: the EV side opens the PLC socket only after global ready (see ready()),
+    // so that no SLAC traffic is generated before the rest of the stack is up.
+}
+
+void ev_slacImpl::ready() {
+    // The event loop runs on this thread. The framework spawns a dedicated thread for the global
+    // ready message and joins it last during teardown, so blocking here is what that thread is
+    // for - no worker thread of our own is needed. shutdown() arrives on another framework thread
+    // and makes the loop return.
+    {
+        auto lifecycle = lifecycle_state.handle();
+        if (not lifecycle->may_enter_loop()) {
+            EVLOG_info << kModuleLogPrefix << "not starting the event loop (shutdown already requested)";
+            return;
+        }
+        lifecycle->ready_entered = true;
+    }
+    lifecycle_state.notify_all();
+
+    if (initialize_slac_io()) {
+        configure_callbacks();
+        configure_fsm_context();
+        if (create_fsm_controller()) {
+            configure_slac_io_callbacks();
+            run_event_loop();
+        }
+    }
+
+    {
+        auto lifecycle = lifecycle_state.handle();
+        // The loop is gone: handlers must not reach the controller any more.
+        lifecycle->worker = nullptr;
+        lifecycle->slac_io_ready = false;
+        lifecycle->loop_exited = true;
+    }
+    // Wakes shutdown(), which blocks until loop_exited is set.
+    lifecycle_state.notify_all();
+}
+
 void ev_slacImpl::shutdown() {
     FSMController* local_fsm_ctrl{nullptr};
     {
         auto lifecycle = lifecycle_state.handle();
+        // Idempotent: the framework hook and the destructor may both get here. A repeat call has
+        // work to do only if a previous one gave up waiting on a loop that is still running.
+        if (lifecycle->shutting_down and lifecycle->loop_settled()) {
+            return;
+        }
         lifecycle->shutting_down = true;
-        local_fsm_ctrl = lifecycle->fsm_ctrl;
-        lifecycle->fsm_ctrl = nullptr;
+        // From here on command handlers drop instead of touching the controller.
+        local_fsm_ctrl = lifecycle->worker;
+        lifecycle->worker = nullptr;
         lifecycle->slac_io_ready = false;
         lifecycle->slac_fsm_started = false;
     }
+    lifecycle_state.notify_all();
+
     if (local_fsm_ctrl) {
         local_fsm_ctrl->stop();
     }
-    lifecycle_state.notify_all();
     online.store(false);
     exit_event.notify();
-    if (worker.joinable()) {
-        worker.join();
+
+    // Wait for the loop before returning: the framework joins the thread running ready() and
+    // destroys the module afterwards, and everything the loop touches lives in this object.
+    auto const result = everest::lib::util::wait_for_loop_exit(lifecycle_state, LOOP_EXIT_TIMEOUT);
+    if (result == everest::lib::util::LoopExitResult::TimedOut) {
+        EVLOG_error << kModuleLogPrefix << "the event loop did not stop within " << LOOP_EXIT_TIMEOUT.count()
+                    << " ms; leaving the SLAC objects alive because the loop may still be using them";
+        return;
     }
+
     fsm_ctrl.reset();
     slac_io.reset();
     fsm_ctx.reset();
-}
-
-void ev_slacImpl::init() {
-    worker = std::thread(&ev_slacImpl::run, this);
-}
-
-void ev_slacImpl::ready() {
-    {
-        auto lifecycle = lifecycle_state.handle();
-        if (lifecycle->ready_requested) {
-            return;
-        }
-        lifecycle->ready_requested = true;
-    }
-    lifecycle_state.notify_all();
-}
-
-void ev_slacImpl::run() {
-    struct FsmCtrlLifecycleClearer {
-        ev_slacImpl& owner;
-        FSMController* active_controller{nullptr};
-
-        explicit FsmCtrlLifecycleClearer(ev_slacImpl& owner) : owner(owner) {
-        }
-        void arm(FSMController* controller) {
-            active_controller = controller;
-        }
-        ~FsmCtrlLifecycleClearer() {
-            if (active_controller == nullptr) {
-                return;
-            }
-            auto lifecycle = owner.lifecycle_state.handle();
-            if (lifecycle->fsm_ctrl == active_controller) {
-                lifecycle->fsm_ctrl = nullptr;
-            }
-        }
-    } fsm_ctrl_clearer(*this);
-
-    if (!wait_for_ready_or_shutdown()) {
-        return;
-    }
-
-    if (!initialize_slac_io()) {
-        return;
-    }
-
-    configure_callbacks();
-    configure_fsm_context();
-    if (!create_fsm_controller()) {
-        return;
-    }
-    fsm_ctrl_clearer.arm(fsm_ctrl.get());
-
-    configure_slac_io_callbacks();
-    run_blocking_event_loop();
-}
-
-bool ev_slacImpl::wait_for_ready_or_shutdown() {
-    auto lifecycle = lifecycle_state.handle();
-    lifecycle.wait([&] { return lifecycle->ready_requested || lifecycle->shutting_down; });
-    return !lifecycle->shutting_down;
 }
 
 bool ev_slacImpl::initialize_slac_io() {
     try {
         slac_io = std::make_unique<everest::lib::slac::SlacEvent>(config.device);
     } catch (const std::exception& e) {
-        mark_worker_offline(fmt::format("Failed to initialize SLAC I/O on device '{}': {}", config.device, e.what()));
+        abort_event_loop(fmt::format("Failed to initialize SLAC I/O on device '{}': {}", config.device, e.what()));
         return false;
     } catch (...) {
-        mark_worker_offline(fmt::format("Failed to initialize SLAC I/O on device '{}': unknown error", config.device));
+        abort_event_loop(fmt::format("Failed to initialize SLAC I/O on device '{}': unknown error", config.device));
         return false;
     }
     return true;
@@ -191,26 +190,20 @@ bool ev_slacImpl::create_fsm_controller() {
         if (lifecycle->shutting_down) {
             return false;
         }
-        lifecycle->fsm_ctrl = fsm_ctrl.get();
+        lifecycle->worker = fsm_ctrl.get();
     }
     return true;
 }
 
 void ev_slacImpl::configure_slac_io_callbacks() {
     slac_io->set_callback([this](slac::messages::HomeplugMessage const& msg) {
-        if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
-            local_fsm_ctrl->signal_new_slac_message(msg);
-            return;
-        }
-        EVLOG_warning << kModuleLogPrefix
-                      << "SLAC callback received while controller or PLC I/O is not available. Dropping message.";
+        post_command("SLAC message", [&msg](FSMController& target) { target.signal_new_slac_message(msg); });
     });
     slac_io->set_error_callback([this](auto on_error, auto const& detail) { handle_slac_io_error(on_error, detail); });
     slac_io->set_ready_callback([this]() { handle_slac_io_ready(); });
 }
 
-void ev_slacImpl::run_blocking_event_loop() {
-    everest::lib::io::event::fd_event_handler event_handler;
+void ev_slacImpl::run_event_loop() {
     auto registrations_ok = true;
     if (!event_handler.register_event_handler(slac_io.get())) {
         EVLOG_error << kModuleLogPrefix << "Failed to register SLAC I/O event handler.";
@@ -220,22 +213,30 @@ void ev_slacImpl::run_blocking_event_loop() {
         EVLOG_error << kModuleLogPrefix << "Failed to register SLAC FSM event handler.";
         registrations_ok = false;
     }
+    // Registered so that notifying it wakes poll(); the flag is `online`, the event is just the
+    // knock on the door. An eventfd counts, so a notify that lands before this registration is
+    // not lost - it fires on the first poll.
     if (!event_handler.register_event_handler(&exit_event, [](auto&) {})) {
         EVLOG_error << kModuleLogPrefix << "Failed to register exit event handler.";
         registrations_ok = false;
     }
-    if (!registrations_ok) {
-        mark_worker_offline("Aborting SLAC startup due to event handler registration failure.");
-        return;
+    if (registrations_ok) {
+        try {
+            event_handler.run(online);
+        } catch (const std::exception& e) {
+            abort_event_loop(fmt::format("SLAC event loop stopped unexpectedly: {}", e.what()));
+        } catch (...) {
+            abort_event_loop("SLAC event loop stopped unexpectedly: unknown error");
+        }
+    } else {
+        abort_event_loop("Aborting SLAC startup due to event handler registration failure.");
     }
 
-    try {
-        event_handler.run(online);
-    } catch (const std::exception& e) {
-        mark_worker_offline(fmt::format("SLAC worker stopped unexpectedly: {}", e.what()));
-    } catch (...) {
-        mark_worker_offline("SLAC worker stopped unexpectedly: unknown error");
-    }
+    // Drop the registrations while the registered objects are still alive; shutdown() destroys
+    // them once this returns.
+    (void)event_handler.unregister_event_handler(slac_io.get());
+    (void)event_handler.unregister_event_handler(fsm_ctrl.get());
+    (void)event_handler.unregister_event_handler(&exit_event);
 }
 
 void ev_slacImpl::handle_slac_io_ready() {
@@ -247,7 +248,7 @@ void ev_slacImpl::handle_slac_io_ready() {
             return;
         }
         lifecycle->slac_io_ready = true;
-        local_fsm_ctrl = lifecycle->fsm_ctrl;
+        local_fsm_ctrl = lifecycle->worker;
         if (local_fsm_ctrl && !lifecycle->slac_fsm_started) {
             lifecycle->slac_fsm_started = true;
             should_start_fsm = true;
@@ -274,9 +275,8 @@ void ev_slacImpl::handle_slac_io_ready() {
 
 void ev_slacImpl::handle_slac_io_error(bool on_error, const std::string& detail) {
     if (on_error) {
-        if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
-            local_fsm_ctrl->stop();
-        }
+        // Loop thread; stop() only clears an atomic, so holding the monitor across it is fine.
+        post_command("I/O error stop", [](FSMController& target) { target.stop(); });
         auto const detail_message = detail.empty() ? "unknown error" : detail;
         auto const fault_message =
             fmt::format("SLAC PLC communication unavailable on device {}: {}", config.device, detail_message);
@@ -288,12 +288,24 @@ void ev_slacImpl::handle_slac_io_error(bool on_error, const std::string& detail)
     }
 }
 
-FSMController* ev_slacImpl::get_available_fsm_controller() {
+void ev_slacImpl::post_command(char const* command, std::function<void(FSMController&)> const& post) {
+    // INVARIANT: the lifecycle monitor is held across the post, not just across the lookup.
+    //
+    // shutdown() waits for the event LOOP to exit, not for in-flight command handlers, and it
+    // destroys the controller afterwards. A framework thread that read the pointer, released the
+    // monitor and was then preempted could therefore come back and call into a destroyed
+    // controller. Holding the monitor for the whole call closes that window: shutdown() cannot
+    // get past its own handle() to clear the pointer and reset the controller while we are in
+    // here. FSMController::signal_*() only touch atomics and event_fds, so nothing here blocks
+    // and the loop thread never takes this monitor while holding anything the signals need.
     auto lifecycle = lifecycle_state.handle();
-    if (lifecycle->shutting_down || !lifecycle->slac_io_ready) {
-        return nullptr;
+    auto* target = lifecycle->live_worker();
+    if (target == nullptr || !lifecycle->slac_io_ready) {
+        EVLOG_warning << kModuleLogPrefix << "Ignoring " << command
+                      << " because SLAC controller or PLC I/O is not available.";
+        return;
     }
-    return lifecycle->fsm_ctrl;
+    post(*target);
 }
 
 void ev_slacImpl::raise_communication_fault(const std::string& message) {
@@ -338,18 +350,19 @@ void ev_slacImpl::clear_communication_fault() {
     }
 }
 
-void ev_slacImpl::mark_worker_offline(const std::string& reason) {
+void ev_slacImpl::abort_event_loop(const std::string& reason) {
     EVLOG_error << kModuleLogPrefix << reason;
+    // Makes the loop in ready() return (if it is running) and keeps it from being entered.
     online.store(false);
     FSMController* local_fsm_ctrl{nullptr};
     bool should_raise_fault{false};
     {
         auto lifecycle = lifecycle_state.handle();
         should_raise_fault = !lifecycle->shutting_down;
-        local_fsm_ctrl = lifecycle->fsm_ctrl;
+        local_fsm_ctrl = lifecycle->worker;
         lifecycle->slac_io_ready = false;
         lifecycle->slac_fsm_started = false;
-        lifecycle->fsm_ctrl = nullptr;
+        lifecycle->worker = nullptr;
     }
 
     if (local_fsm_ctrl) {
@@ -361,22 +374,17 @@ void ev_slacImpl::mark_worker_offline(const std::string& reason) {
     }
 }
 
+// --- interface commands -----------------------------------------------------------------------
+//
+// These run on framework threads. They only signal the controller's event_fds, which wake the
+// event loop; the state machine is never touched from here.
+
 void ev_slacImpl::handle_reset() {
-    if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
-        local_fsm_ctrl->signal_reset();
-    } else {
-        EVLOG_warning << kModuleLogPrefix
-                      << "Ignoring handle_reset because SLAC controller or PLC I/O is not available.";
-    }
+    post_command("handle_reset", [](FSMController& target) { target.signal_reset(); });
 }
 
 bool ev_slacImpl::handle_trigger_matching() {
-    if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
-        local_fsm_ctrl->signal_trigger_matching();
-        return true;
-    }
-    EVLOG_warning << kModuleLogPrefix
-                  << "Ignoring handle_trigger_matching because SLAC controller or PLC I/O is not available.";
+    post_command("handle_trigger_matching", [](FSMController& target) { target.signal_trigger_matching(); });
     return true;
 }
 

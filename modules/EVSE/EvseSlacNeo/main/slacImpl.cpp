@@ -24,10 +24,15 @@ namespace main {
 namespace {
 namespace api_telemetry = everest::lib::API::V1_0::types::telemetry;
 
-// Extra time init() grants the worker beyond startup_delay_ms to open the PLC device and
-// receive the first I/O ready (or error) event before giving up and continuing with a
-// CommunicationFault (see slacImpl::init). Bring-up normally settles within milliseconds.
-constexpr std::chrono::milliseconds IO_BRING_UP_TIMEOUT_MARGIN{10000};
+// How long init() drives the event loop after opening the PLC device, waiting for the first I/O
+// ready (or error) event before giving up and continuing with a CommunicationFault (see
+// slacImpl::init). Bring-up normally settles within milliseconds.
+constexpr std::chrono::milliseconds IO_BRING_UP_TIMEOUT{10000};
+
+// How long shutdown() waits for the event loop running in ready() to return. It only has to
+// cover one poll wake-up, so anything measured in seconds is generous; the bound exists so that
+// a wedged loop degrades into a loud log instead of hanging the whole EVerest shutdown.
+constexpr std::chrono::milliseconds LOOP_EXIT_TIMEOUT{5000};
 
 template <typename T> nlohmann::json to_telemetry_json(std::string const& value) {
     return api_telemetry::deserialize<T>(value);
@@ -121,98 +126,119 @@ slacImpl::~slacImpl() {
     shutdown();
 }
 
-void slacImpl::shutdown() {
-    FSMController* local_fsm_ctrl{nullptr};
-    {
-        auto lifecycle = lifecycle_state.handle();
-        lifecycle->shutting_down = true;
-        local_fsm_ctrl = lifecycle->fsm_ctrl;
-        lifecycle->fsm_ctrl = nullptr;
-    }
-    if (local_fsm_ctrl) {
-        local_fsm_ctrl->stop();
-    }
-    lifecycle_state.notify_all();
-    online.store(false);
-    exit_event.notify();
-    if (worker.joinable()) {
-        worker.join();
-    }
-    fsm_ctrl.reset();
-    slac_io.reset();
-    fsm_ctx.reset();
-}
-
 void slacImpl::init() {
-    // setup evse fsm thread
-    worker = std::thread(&slacImpl::run, this);
-
     // Do not report readiness (init() returning -> signal_ready -> global ready) before the PLC
     // I/O is usable or its bring-up has failed: EvseManager starts issuing enter_bcd/reset right
     // after global ready and this module drops commands while !slac_io_ready, so a car already
     // plugged in at boot would silently lose its first SLAC session. EvseSlac holds back
     // readiness the same way by running startup_delay_ms and the socket open inside init(); this
-    // also restores that meaning of startup_delay_ms. On failure or timeout init() still
-    // returns: the raised generic/CommunicationFault makes EvseManager set the connector
-    // inoperative instead of the whole EVerest stack stalling on this module.
-    const auto timeout = std::chrono::milliseconds(config.startup_delay_ms) + IO_BRING_UP_TIMEOUT_MARGIN;
-    if (wait_for_io_bring_up(lifecycle_state, timeout) == IoBringUpResult::TimedOut) {
-        raise_communication_fault(fmt::format("SLAC I/O on device {} reported neither ready nor an error within {} ms; "
-                                              "continuing startup with SLAC unavailable",
-                                              config.device, timeout.count()));
-    }
-}
-
-void slacImpl::ready() {
-    {
-        auto lifecycle = lifecycle_state.handle();
-        if (lifecycle->ready_requested) {
-            return;
-        }
-        lifecycle->ready_requested = true;
-    }
-    lifecycle_state.notify_all();
-    start_fsm_if_ready();
-}
-
-void slacImpl::run() {
-    struct FsmCtrlLifecycleClearer {
-        slacImpl& owner;
-        FSMController* active_controller{nullptr};
-
-        explicit FsmCtrlLifecycleClearer(slacImpl& owner) : owner(owner) {
-        }
-        void arm(FSMController* controller) {
-            active_controller = controller;
-        }
-        ~FsmCtrlLifecycleClearer() {
-            if (active_controller == nullptr) {
-                return;
-            }
-            auto lifecycle = owner.lifecycle_state.handle();
-            if (lifecycle->fsm_ctrl == active_controller) {
-                lifecycle->fsm_ctrl = nullptr;
-            }
-        }
-    } fsm_ctrl_clearer(*this);
-
+    // also preserves that meaning of startup_delay_ms.
+    //
+    // The I/O ready event is delivered through the event loop, and there is no worker thread of
+    // our own any more: the loop runs on the framework's ready thread inside ready(). So init()
+    // drives the same loop itself, on the init thread, just until bring-up settled (see
+    // run_bring_up_loop). On failure or timeout init() still returns: the raised
+    // generic/CommunicationFault makes EvseManager set the connector inoperative instead of the
+    // whole EVerest stack stalling on this module.
     if (!wait_for_startup_delay_or_shutdown()) {
         return;
     }
-
     if (!initialize_slac_io()) {
         return;
     }
-
     configure_callbacks();
     configure_fsm_context();
     if (!create_fsm_controller()) {
         return;
     }
-    fsm_ctrl_clearer.arm(fsm_ctrl.get());
-
     configure_slac_io_callbacks();
-    run_blocking_event_loop();
+    if (!register_event_handlers()) {
+        return;
+    }
+    run_bring_up_loop();
+}
+
+void slacImpl::ready() {
+    // The event loop runs on this thread. The framework spawns a dedicated thread for the global
+    // ready message and joins it last during teardown, so blocking here is what that thread is
+    // for. shutdown() arrives on another framework thread and makes the loop return.
+    {
+        auto lifecycle = lifecycle_state.handle();
+        if (not lifecycle->may_enter_loop()) {
+            EVLOG_info << "EvseSlacNeo: not starting the event loop (shutdown already requested)";
+            return;
+        }
+        lifecycle->ready_entered = true;
+    }
+    lifecycle_state.notify_all();
+
+    // Global ready may be the second of the two events the FSM start waits for.
+    start_fsm_if_ready();
+
+    if (online.load()) {
+        run_event_loop();
+    }
+
+    {
+        auto lifecycle = lifecycle_state.handle();
+        // The loop is gone: handlers must not reach the controller any more.
+        lifecycle->worker = nullptr;
+        lifecycle->slac_io_ready = false;
+        lifecycle->loop_exited = true;
+    }
+    // Wakes shutdown(), which blocks until loop_exited is set.
+    lifecycle_state.notify_all();
+}
+
+void slacImpl::shutdown() {
+    FSMController* local_fsm_ctrl{nullptr};
+    {
+        auto lifecycle = lifecycle_state.handle();
+        // Idempotent: the framework hook and the destructor may both get here. A repeat call has
+        // work to do only if a previous one gave up waiting on a loop that is still running.
+        if (lifecycle->shutting_down and lifecycle->loop_settled()) {
+            return;
+        }
+        lifecycle->shutting_down = true;
+        // From here on command handlers drop instead of touching the controller.
+        local_fsm_ctrl = lifecycle->worker;
+        lifecycle->worker = nullptr;
+    }
+    lifecycle_state.notify_all();
+
+    if (local_fsm_ctrl) {
+        // Cross-thread: freeze the FSM. The loop-only teardown() through a reset event is not
+        // available from here; the objects are destroyed below anyway.
+        local_fsm_ctrl->stop();
+    }
+    online.store(false);
+    bring_up_pending.store(false);
+    exit_event.notify();
+
+    // Wait for the loop before returning: the framework joins the thread running ready() and
+    // destroys the module afterwards, and everything the loop touches lives in this object.
+    auto const result = everest::lib::util::wait_for_loop_exit(lifecycle_state, LOOP_EXIT_TIMEOUT);
+    if (result == everest::lib::util::LoopExitResult::TimedOut) {
+        EVLOG_error << "EvseSlacNeo: the event loop did not stop within " << LOOP_EXIT_TIMEOUT.count()
+                    << " ms; leaving the SLAC objects alive because the loop may still be using them";
+        return;
+    }
+
+    // NotRunning also covers "init() is still in its bring-up loop on the init thread": that loop
+    // observes the flags above and returns, but it may be mid-iteration right now, so wait for it
+    // as well before destroying what it polls. ready() is not entered after a shutdown request.
+    {
+        auto lifecycle = lifecycle_state.handle();
+        if (!lifecycle.wait_for([&] { return !lifecycle->bring_up_running; }, LOOP_EXIT_TIMEOUT)) {
+            EVLOG_error << "EvseSlacNeo: the bring-up loop in init() did not stop within " << LOOP_EXIT_TIMEOUT.count()
+                        << " ms; leaving the SLAC objects alive because the loop may still be using them";
+            return;
+        }
+    }
+    unregister_event_handlers();
+    fsm_ctrl.reset();
+    slac_io.reset();
+    fsm_ctx.reset();
 }
 
 bool slacImpl::wait_for_startup_delay_or_shutdown() {
@@ -236,10 +262,10 @@ bool slacImpl::initialize_slac_io() {
     try {
         slac_io = std::make_unique<everest::lib::slac::SlacEvent>(config.device);
     } catch (const std::exception& e) {
-        mark_worker_offline(fmt::format("Failed to initialize SLAC I/O on device '{}': {}", config.device, e.what()));
+        abort_event_loop(fmt::format("Failed to initialize SLAC I/O on device '{}': {}", config.device, e.what()));
         return false;
     } catch (...) {
-        mark_worker_offline(fmt::format("Failed to initialize SLAC I/O on device '{}': unknown error", config.device));
+        abort_event_loop(fmt::format("Failed to initialize SLAC I/O on device '{}': unknown error", config.device));
         return false;
     }
     return true;
@@ -416,7 +442,7 @@ bool slacImpl::create_fsm_controller() {
         if (lifecycle->shutting_down) {
             return false;
         }
-        lifecycle->fsm_ctrl = fsm_ctrl.get();
+        lifecycle->worker = fsm_ctrl.get();
     }
     return true;
 }
@@ -432,19 +458,13 @@ void slacImpl::configure_slac_io_callbacks() {
             return;
         }
 
-        auto* local_fsm_ctrl = get_available_fsm_controller();
-        if (not local_fsm_ctrl) {
-            EVLOG_warning << "SLAC callback received while controller or PLC I/O is not available. Dropping message.";
-            return;
-        }
-        local_fsm_ctrl->signal_new_slac_message(msg);
+        post_command("SLAC message", [&msg](FSMController& target) { target.signal_new_slac_message(msg); });
     });
     slac_io->set_error_callback([this](auto on_error, auto const& detail) { handle_slac_io_error(on_error, detail); });
     slac_io->set_ready_callback([this]() { handle_slac_io_ready(); });
 }
 
-void slacImpl::run_blocking_event_loop() {
-    everest::lib::io::event::fd_event_handler event_handler;
+bool slacImpl::register_event_handlers() {
     auto registrations_ok = true;
     if (!event_handler.register_event_handler(slac_io.get())) {
         EVLOG_error << "Failed to register SLAC IO event handler.";
@@ -454,20 +474,100 @@ void slacImpl::run_blocking_event_loop() {
         EVLOG_error << "Failed to register FSM controller event handler.";
         registrations_ok = false;
     }
+    // Registered so that notifying it wakes poll(); the flags are `online` and `bring_up_pending`,
+    // the event is just the knock on the door. An eventfd counts, so a notify that lands before
+    // this registration is not lost - it fires on the first poll.
     if (!event_handler.register_event_handler(&exit_event, [](auto&) {})) {
         EVLOG_error << "Failed to register exit event handler.";
         registrations_ok = false;
     }
     if (!registrations_ok) {
-        mark_worker_offline("Aborting SLAC startup due to event handler registration failure.");
+        abort_event_loop("Aborting SLAC startup due to event handler registration failure.");
+        unregister_event_handlers();
+        return false;
+    }
+    return true;
+}
+
+void slacImpl::unregister_event_handlers() {
+    // Tolerates objects that were never registered; drop the registrations while the registered
+    // objects are still alive.
+    if (slac_io) {
+        (void)event_handler.unregister_event_handler(slac_io.get());
+    }
+    if (fsm_ctrl) {
+        (void)event_handler.unregister_event_handler(fsm_ctrl.get());
+    }
+    (void)event_handler.unregister_event_handler(&exit_event);
+    (void)event_handler.unregister_event_handler(&bring_up_timer);
+}
+
+void slacImpl::run_bring_up_loop() {
+    // Same handler, same registrations as ready() will use; only the exit condition differs. The
+    // ready callback, the error callback, the timer below and shutdown() all clear
+    // bring_up_pending, and the two callbacks also wake poll() by being fd events themselves.
+    bring_up_timer.set_single_shot(true);
+    if (!bring_up_timer.set_timeout(IO_BRING_UP_TIMEOUT) ||
+        !event_handler.register_event_handler(&bring_up_timer, [this]() {
+            EVLOG_warning << "SLAC I/O bring-up timer expired.";
+            bring_up_pending.store(false);
+        })) {
+        abort_event_loop("Failed to arm the SLAC I/O bring-up timer.");
         return;
     }
+
+    bring_up_pending.store(true);
+    {
+        auto lifecycle = lifecycle_state.handle();
+        // Tells shutdown() to wait for this loop before destroying anything it polls.
+        lifecycle->bring_up_running = true;
+        // Settled already (e.g. shutdown() raced ahead)? Then there is nothing to wait for.
+        if (lifecycle->io_bring_up_settled()) {
+            bring_up_pending.store(false);
+        }
+    }
+    lifecycle_state.notify_all();
+
+    try {
+        while (online.load() && bring_up_pending.load()) {
+            event_handler.poll();
+            event_handler.run_actions();
+        }
+    } catch (const std::exception& e) {
+        abort_event_loop(fmt::format("SLAC event loop stopped unexpectedly during bring-up: {}", e.what()));
+    } catch (...) {
+        abort_event_loop("SLAC event loop stopped unexpectedly during bring-up: unknown error");
+    }
+
+    (void)bring_up_timer.disarm();
+    (void)event_handler.unregister_event_handler(&bring_up_timer);
+
+    IoBringUpResult result{IoBringUpResult::TimedOut};
+    {
+        auto lifecycle = lifecycle_state.handle();
+        result = bring_up_result(*lifecycle);
+    }
+    if (result == IoBringUpResult::TimedOut) {
+        raise_communication_fault(fmt::format("SLAC I/O on device {} reported neither ready nor an error within {} ms; "
+                                              "continuing startup with SLAC unavailable",
+                                              config.device, IO_BRING_UP_TIMEOUT.count()));
+    }
+
+    {
+        auto lifecycle = lifecycle_state.handle();
+        lifecycle->bring_up_running = false;
+    }
+    // Wakes a shutdown() that is waiting for the bring-up loop.
+    lifecycle_state.notify_all();
+}
+
+void slacImpl::run_event_loop() {
     try {
         event_handler.run(online);
     } catch (const std::exception& e) {
-        mark_worker_offline(fmt::format("SLAC worker stopped unexpectedly: {}", e.what()));
+        abort_event_loop(fmt::format("SLAC event loop stopped unexpectedly: {}", e.what()));
     } catch (...) {
-        mark_worker_offline("SLAC worker stopped unexpectedly: unknown error");
+        abort_event_loop("SLAC event loop stopped unexpectedly: unknown error");
     }
 }
 
@@ -479,6 +579,8 @@ void slacImpl::handle_slac_io_ready() {
         }
         lifecycle->slac_io_ready = true;
     }
+    // Ends the bring-up loop in init() if that is where we are.
+    bring_up_pending.store(false);
 
     if (slac_io && fsm_ctx) {
         std::copy_n(slac_io->get_mac_addr(), fsm_ctx->evse_mac.size(), fsm_ctx->evse_mac.begin());
@@ -497,7 +599,7 @@ void slacImpl::start_fsm_if_ready() {
         if (!lifecycle->fsm_start_allowed()) {
             return;
         }
-        local_fsm_ctrl = lifecycle->fsm_ctrl;
+        local_fsm_ctrl = lifecycle->worker;
     }
 
     if (local_fsm_ctrl) {
@@ -510,7 +612,18 @@ void slacImpl::start_fsm_if_ready() {
 
 void slacImpl::handle_slac_io_error(bool on_error, const std::string& detail) {
     if (on_error) {
-        if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
+        // Loop thread: teardown() runs the FSM's reset path in place instead of freezing it. That
+        // path calls back into send_raw_slac, which takes the lifecycle monitor, so the pointer is
+        // copied out and the monitor released first. Safe without post_command's guarantee because
+        // shutdown() waits for this loop to exit before it destroys the controller.
+        FSMController* local_fsm_ctrl{nullptr};
+        {
+            auto lifecycle = lifecycle_state.handle();
+            if (lifecycle->slac_io_ready) {
+                local_fsm_ctrl = lifecycle->live_worker();
+            }
+        }
+        if (local_fsm_ctrl) {
             local_fsm_ctrl->teardown();
         }
         auto const detail_message = detail.empty() ? "unknown error" : detail;
@@ -524,12 +637,24 @@ void slacImpl::handle_slac_io_error(bool on_error, const std::string& detail) {
     }
 }
 
-FSMController* slacImpl::get_available_fsm_controller() {
+void slacImpl::post_command(char const* command, std::function<void(FSMController&)> const& post) {
+    // INVARIANT: the lifecycle monitor is held across the post, not just across the lookup.
+    //
+    // shutdown() waits for the event LOOP to exit, not for in-flight command handlers, and it
+    // destroys the controller afterwards. A framework thread that read the pointer, released the
+    // monitor and was then preempted could therefore come back and call into a destroyed
+    // controller. Holding the monitor for the whole call closes that window: shutdown() cannot
+    // get past its own handle() to clear the pointer and reset the controller while we are in
+    // here. FSMController::signal_*() only touch atomics and event_fds, so nothing here blocks;
+    // never post anything that runs FSM code (teardown()) through here, because the FSM calls
+    // back into send_raw_slac, which takes this (non-recursive) monitor.
     auto lifecycle = lifecycle_state.handle();
-    if (lifecycle->shutting_down || !lifecycle->slac_io_ready) {
-        return nullptr;
+    auto* target = lifecycle->live_worker();
+    if (target == nullptr || !lifecycle->slac_io_ready) {
+        EVLOG_warning << "Ignoring " << command << " because SLAC controller or PLC I/O is not available.";
+        return;
     }
-    return lifecycle->fsm_ctrl;
+    post(*target);
 }
 
 void slacImpl::raise_communication_fault(const std::string& message) {
@@ -555,7 +680,8 @@ void slacImpl::raise_communication_fault(const std::string& message) {
         raise_error(error_factory->create_error("generic/CommunicationFault", "", message));
     }
 
-    // Wake init(), which blocks in wait_for_io_bring_up() until ready or fault.
+    // A failed bring-up is a settled bring-up: ends the loop in init() if that is where we are.
+    bring_up_pending.store(false);
     lifecycle_state.notify_all();
 }
 
@@ -574,27 +700,28 @@ void slacImpl::clear_communication_fault() {
     if (should_clear && error_manager) {
         clear_error("generic/CommunicationFault");
     }
-
-    // Wake init(), which blocks in wait_for_io_bring_up() until ready or fault.
     lifecycle_state.notify_all();
 }
 
-void slacImpl::mark_worker_offline(const std::string& reason) {
+void slacImpl::abort_event_loop(const std::string& reason) {
     EVLOG_error << reason;
+    // Makes the loop (bring-up or ready) return and keeps it from being entered again.
     online.store(false);
+    bring_up_pending.store(false);
     FSMController* local_fsm_ctrl{nullptr};
     bool should_raise_fault{false};
     {
         auto lifecycle = lifecycle_state.handle();
         should_raise_fault = !lifecycle->shutting_down;
-        local_fsm_ctrl = lifecycle->fsm_ctrl;
+        local_fsm_ctrl = lifecycle->worker;
         lifecycle->slac_io_ready = false;
-        lifecycle->fsm_ctrl = nullptr;
+        lifecycle->worker = nullptr;
     }
 
     if (local_fsm_ctrl) {
-        // Worker-thread only (all callers run on the worker); see handle_slac_io_error for why the
-        // FSM must be torn down through a reset event instead of frozen with stop().
+        // Loop thread only (all callers run on the thread driving the loop); see
+        // handle_slac_io_error for why the FSM must be torn down through a reset event instead of
+        // frozen with stop().
         local_fsm_ctrl->teardown();
     }
 
@@ -603,6 +730,11 @@ void slacImpl::mark_worker_offline(const std::string& reason) {
     }
 }
 
+// --- interface commands -----------------------------------------------------------------------
+//
+// These run on framework threads. They only signal the controller's event_fds, which wake the
+// event loop; the state machine is never touched from here.
+
 void slacImpl::handle_reset(bool& enable) {
     // FIXME (aw): the enable could be used for power saving etc, but it is not implemented yet
     // CC: as power saving is not implemented, we actually don't need to reset at beginning of session (enable=true): At
@@ -610,36 +742,25 @@ void slacImpl::handle_reset(bool& enable) {
     // some hundreds of msecs at the beginning of the charging session as we do not need to set up keys. Then
     // EvseManager can switch on 5% PWM basically immediately as SLAC is already ready.
     if (!enable) {
-        if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
-            local_fsm_ctrl->signal_reset();
-        } else {
-            EVLOG_warning << "Ignoring handle_reset because SLAC controller or PLC I/O is not available.";
-        }
+        post_command("handle_reset", [](FSMController& target) { target.signal_reset(); });
     }
 }
 
 void slacImpl::handle_enter_bcd() {
-    if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
-        local_fsm_ctrl->signal_enter_bcd();
-    } else {
-        EVLOG_warning << "Ignoring handle_enter_bcd because SLAC controller or PLC I/O is not available.";
-    }
+    post_command("handle_enter_bcd", [](FSMController& target) { target.signal_enter_bcd(); });
 }
 
 void slacImpl::handle_leave_bcd() {
-    if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
-        local_fsm_ctrl->signal_leave_bcd();
-    } else {
-        EVLOG_warning << "Ignoring handle_leave_bcd because SLAC controller or PLC I/O is not available.";
-    }
+    post_command("handle_leave_bcd", [](FSMController& target) { target.signal_leave_bcd(); });
 }
 
 void slacImpl::handle_count_bc(int& count) {
     // EvseManager pushes the running count of Control-Pilot B/C transitions here on every edge. Forward
     // it into the FSM context so the CM_VALIDATE handler can detect the number of BCB toggles the EV
     // performed. Dropping a sample is harmless: the handler reads the latest value on the next request.
-    if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
-        local_fsm_ctrl->signal_count_bc(count);
+    auto lifecycle = lifecycle_state.handle();
+    if (auto* target = lifecycle->live_worker(); target != nullptr && lifecycle->slac_io_ready) {
+        target->signal_count_bc(count);
     }
 }
 
@@ -648,11 +769,7 @@ void slacImpl::handle_dlink_terminate() {
     // shall leave the logical network within TP_match_leave. All parameters related
     // to the current link shall be set to the default value and shall change to the status "Unmatched".
     EVLOG_info << "D-LINK_TERMINATE.request received, leaving network.";
-    if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
-        local_fsm_ctrl->signal_reset();
-    } else {
-        EVLOG_warning << "Ignoring handle_dlink_terminate because SLAC controller or PLC I/O is not available.";
-    }
+    post_command("handle_dlink_terminate", [](FSMController& target) { target.signal_reset(); });
 }
 
 void slacImpl::handle_dlink_error() {
@@ -661,11 +778,7 @@ void slacImpl::handle_dlink_error() {
     // CP signal is handled by EvseManager, so we just need to reset the SLAC state machine here.
     // DLINK_ERROR will be send from HLC layers when they detect that the connection is dead.
     EVLOG_warning << "D-LINK_ERROR.request received";
-    if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
-        local_fsm_ctrl->signal_reset();
-    } else {
-        EVLOG_warning << "Ignoring handle_dlink_error because SLAC controller or PLC I/O is not available.";
-    }
+    post_command("handle_dlink_error", [](FSMController& target) { target.signal_reset(); });
 }
 
 void slacImpl::handle_dlink_pause() {
