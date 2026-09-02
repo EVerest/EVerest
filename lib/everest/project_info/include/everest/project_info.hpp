@@ -8,8 +8,6 @@ namespace everest::project_info {
 
 std::string_view name() noexcept;
 
-std::string_view description() noexcept;
-
 std::string_view version() noexcept;
 
 std::string_view git_commit() noexcept;

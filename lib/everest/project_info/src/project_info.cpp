@@ -11,10 +11,6 @@ std::string_view name() noexcept {
     return PROJECT_NAME;
 }
 
-std::string_view description() noexcept {
-    return PROJECT_DESCRIPTION;
-}
-
 std::string_view version() noexcept {
     return PROJECT_VERSION;
 }
