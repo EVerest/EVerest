@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -26,8 +27,10 @@ namespace module {
 class PowerMeterAggregator {
 public:
     struct AggregateResult {
-        /// Sum of total power over all fresh meters [W]
-        float power_W{0.f};
+        /// Sum of total power over all fresh meters [W]. Empty when no meter contributed,
+        /// so "no data" is never reported as a total of zero - a distinction a caller
+        /// acting on the sum has to make (nothing connected vs. nothing flowing).
+        std::optional<float> power_W;
         /// Per phase sums [W], only meaningful when per_phase_available is true
         float power_L1_W{0.f};
         float power_L2_W{0.f};

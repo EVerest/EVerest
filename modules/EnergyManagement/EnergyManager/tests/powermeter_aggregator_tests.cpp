@@ -46,15 +46,29 @@ types::energy::EnergyFlowRequest make_node(const std::string& uuid, types::energ
 
 // ---------------------------------------------------------------- storage and summing
 
-TEST(PowerMeterAggregatorStorage, EmptyAggregateIsZero) {
+TEST(PowerMeterAggregatorStorage, EmptyAggregateReportsNoTotal) {
     PowerMeterAggregator aggregator(std::chrono::seconds(5));
 
     const auto result = aggregator.aggregate(NOW);
 
-    EXPECT_FLOAT_EQ(result.power_W, 0.0f);
+    EXPECT_FALSE(result.power_W.has_value());
     EXPECT_EQ(result.fresh_meters, 0);
     EXPECT_EQ(result.stale_meters, 0);
     EXPECT_FALSE(result.per_phase_available);
+}
+
+TEST(PowerMeterAggregatorStorage, NoDataIsDistinguishableFromGenuineZeroPower) {
+    PowerMeterAggregator without_meters(std::chrono::seconds(5));
+
+    PowerMeterAggregator with_a_zero_reading(std::chrono::seconds(5));
+    with_a_zero_reading.update("cp01", make_reading(0.0f, NOW, std::chrono::seconds(0)));
+
+    // No meter contributed, so there is no total to report - not a total of zero.
+    EXPECT_FALSE(without_meters.aggregate(NOW).power_W.has_value());
+    // A meter that genuinely measures no flow does report a total, and it is zero.
+    const auto measured = with_a_zero_reading.aggregate(NOW).power_W;
+    ASSERT_TRUE(measured.has_value());
+    EXPECT_FLOAT_EQ(measured.value(), 0.0f);
 }
 
 TEST(PowerMeterAggregatorStorage, SumsMultipleMeters) {
@@ -65,7 +79,7 @@ TEST(PowerMeterAggregatorStorage, SumsMultipleMeters) {
 
     const auto result = aggregator.aggregate(NOW);
 
-    EXPECT_FLOAT_EQ(result.power_W, 3500.0f);
+    EXPECT_FLOAT_EQ(result.power_W.value(), 3500.0f);
     EXPECT_EQ(result.fresh_meters, 2);
 }
 
@@ -78,7 +92,7 @@ TEST(PowerMeterAggregatorStorage, UpdateReplacesReadingForSameNode) {
     const auto result = aggregator.aggregate(NOW);
 
     EXPECT_EQ(aggregator.size(), 1U);
-    EXPECT_FLOAT_EQ(result.power_W, 1800.0f);
+    EXPECT_FLOAT_EQ(result.power_W.value(), 1800.0f);
     EXPECT_EQ(result.fresh_meters, 1);
 }
 
@@ -89,7 +103,7 @@ TEST(PowerMeterAggregatorStorage, ClearDropsAllReadings) {
     aggregator.clear();
 
     EXPECT_EQ(aggregator.size(), 0U);
-    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W, 0.0f);
+    EXPECT_FALSE(aggregator.aggregate(NOW).power_W.has_value());
 }
 
 TEST(PowerMeterAggregatorStorage, SumsPerPhaseWhenAllMetersReportIt) {
@@ -116,7 +130,7 @@ TEST(PowerMeterAggregatorStorage, PerPhaseUnavailableIfAnyMeterOmitsIt) {
 
     EXPECT_FALSE(result.per_phase_available);
     // The total is still a correct sum across both meters.
-    EXPECT_FLOAT_EQ(result.power_W, 3900.0f);
+    EXPECT_FLOAT_EQ(result.power_W.value(), 3900.0f);
 }
 
 TEST(PowerMeterAggregatorStorage, ReadingWithoutPowerValueCountsAsStale) {
@@ -131,7 +145,7 @@ TEST(PowerMeterAggregatorStorage, ReadingWithoutPowerValueCountsAsStale) {
 
     EXPECT_EQ(result.stale_meters, 1);
     EXPECT_EQ(result.fresh_meters, 1);
-    EXPECT_FLOAT_EQ(result.power_W, 1200.0f);
+    EXPECT_FLOAT_EQ(result.power_W.value(), 1200.0f);
 }
 
 TEST(PowerMeterAggregatorStorage, NegativePowerFromExportingMeterReducesTheSum) {
@@ -143,7 +157,7 @@ TEST(PowerMeterAggregatorStorage, NegativePowerFromExportingMeterReducesTheSum) 
 
     const auto result = aggregator.aggregate(NOW);
 
-    EXPECT_FLOAT_EQ(result.power_W, 2000.0f);
+    EXPECT_FLOAT_EQ(result.power_W.value(), 2000.0f);
     EXPECT_EQ(result.fresh_meters, 2);
 }
 
@@ -157,7 +171,7 @@ TEST(PowerMeterAggregatorWindow, ExcludesReadingOlderThanWindow) {
 
     const auto result = aggregator.aggregate(NOW);
 
-    EXPECT_FLOAT_EQ(result.power_W, 1000.0f);
+    EXPECT_FLOAT_EQ(result.power_W.value(), 1000.0f);
     EXPECT_EQ(result.fresh_meters, 1);
     EXPECT_EQ(result.stale_meters, 1);
 }
@@ -172,7 +186,7 @@ TEST(PowerMeterAggregatorWindow, SumsMixedAgeReadingsWithinWindow) {
 
     const auto result = aggregator.aggregate(NOW);
 
-    EXPECT_FLOAT_EQ(result.power_W, 6000.0f);
+    EXPECT_FLOAT_EQ(result.power_W.value(), 6000.0f);
     EXPECT_EQ(result.fresh_meters, 3);
     EXPECT_EQ(result.stale_meters, 0);
 }
@@ -184,7 +198,7 @@ TEST(PowerMeterAggregatorWindow, ReadingExactlyAtWindowEdgeIsStale) {
 
     const auto result = aggregator.aggregate(NOW);
 
-    EXPECT_FLOAT_EQ(result.power_W, 0.0f);
+    EXPECT_FALSE(result.power_W.has_value());
     EXPECT_EQ(result.stale_meters, 1);
 }
 
@@ -201,7 +215,7 @@ TEST(PowerMeterAggregatorWindow, SubSecondAgesResolveAtMillisecondPrecision) {
 
     const auto result = aggregator.aggregate(NOW);
 
-    EXPECT_FLOAT_EQ(result.power_W, 1000.0f);
+    EXPECT_FLOAT_EQ(result.power_W.value(), 1000.0f);
     EXPECT_EQ(result.fresh_meters, 1);
     EXPECT_EQ(result.stale_meters, 1);
 }
@@ -213,7 +227,7 @@ TEST(PowerMeterAggregatorWindow, ZeroWindowDisablesTheFilter) {
 
     const auto result = aggregator.aggregate(NOW);
 
-    EXPECT_FLOAT_EQ(result.power_W, 1000.0f);
+    EXPECT_FLOAT_EQ(result.power_W.value(), 1000.0f);
     EXPECT_EQ(result.fresh_meters, 1);
     EXPECT_EQ(result.stale_meters, 0);
 }
@@ -226,7 +240,7 @@ TEST(PowerMeterAggregatorWindow, FutureTimestampCountsAsFresh) {
 
     const auto result = aggregator.aggregate(NOW);
 
-    EXPECT_FLOAT_EQ(result.power_W, 1000.0f);
+    EXPECT_FLOAT_EQ(result.power_W.value(), 1000.0f);
     EXPECT_EQ(result.fresh_meters, 1);
 }
 
@@ -241,7 +255,7 @@ TEST(PowerMeterAggregatorWindow, UnparsableTimestampIsStale) {
     PowerMeterAggregator::AggregateResult result;
     ASSERT_NO_THROW(result = aggregator.aggregate(NOW));
 
-    EXPECT_FLOAT_EQ(result.power_W, 700.0f);
+    EXPECT_FLOAT_EQ(result.power_W.value(), 700.0f);
     EXPECT_EQ(result.fresh_meters, 1);
     EXPECT_EQ(result.stale_meters, 1);
 }
@@ -280,7 +294,7 @@ TEST(CollectLeafMeasurements, CollectsFromEvseNodesOnly) {
     collect_leaf_measurements(grid, aggregator);
 
     EXPECT_EQ(aggregator.size(), 2U);
-    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W, 3000.0f);
+    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W.value(), 3000.0f);
 }
 
 TEST(CollectLeafMeasurements, RecursesThroughNestedClusters) {
@@ -305,7 +319,7 @@ TEST(CollectLeafMeasurements, RecursesThroughNestedClusters) {
     collect_leaf_measurements(grid, aggregator);
 
     EXPECT_EQ(aggregator.size(), 3U);
-    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W, 3000.0f);
+    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W.value(), 3000.0f);
 }
 
 TEST(CollectLeafMeasurements, FallsBackToRootMeasurementOnEvseNode) {
@@ -316,7 +330,7 @@ TEST(CollectLeafMeasurements, FallsBackToRootMeasurementOnEvseNode) {
     collect_leaf_measurements(cp01, aggregator);
 
     EXPECT_EQ(aggregator.size(), 1U);
-    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W, 1200.0f);
+    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W.value(), 1200.0f);
 }
 
 TEST(CollectLeafMeasurements, DoesNotRecurseBelowAnEvseNode) {
@@ -333,7 +347,7 @@ TEST(CollectLeafMeasurements, DoesNotRecurseBelowAnEvseNode) {
     collect_leaf_measurements(cp01, aggregator);
 
     EXPECT_EQ(aggregator.size(), 1U);
-    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W, 3000.0f);
+    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W.value(), 3000.0f);
 }
 
 TEST(CollectLeafMeasurements, SkipsEvseNodesWithoutMeasurement) {
@@ -350,7 +364,7 @@ TEST(CollectLeafMeasurements, SkipsEvseNodesWithoutMeasurement) {
     // A connector with no meter at all is absent, not a stale entry.
     EXPECT_EQ(aggregator.size(), 1U);
     EXPECT_EQ(aggregator.aggregate(NOW).stale_meters, 0);
-    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W, 800.0f);
+    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W.value(), 800.0f);
 }
 
 // ---------------------------------------------------------------- optimizer wiring
@@ -415,7 +429,7 @@ TEST(AggregatorWiring, RunOptimizerRefreshesTheLeafAggregate) {
     impl.run_optimizer(grid, at);
 
     const auto& aggregate = impl.get_leaf_aggregate();
-    EXPECT_FLOAT_EQ(aggregate.power_W, 1000.0f);
+    EXPECT_FLOAT_EQ(aggregate.power_W.value(), 1000.0f);
     EXPECT_EQ(aggregate.fresh_meters, 1);
     EXPECT_EQ(aggregate.stale_meters, 1);
 }
@@ -441,7 +455,7 @@ TEST(AggregatorWiring, AggregateDoesNotAccumulateAcrossRuns) {
     impl.run_optimizer(grid, at);
 
     // Two runs over one meter must still report one meter, not two.
-    EXPECT_FLOAT_EQ(impl.get_leaf_aggregate().power_W, 1000.0f);
+    EXPECT_FLOAT_EQ(impl.get_leaf_aggregate().power_W.value(), 1000.0f);
     EXPECT_EQ(impl.get_leaf_aggregate().fresh_meters, 1);
 }
 
