@@ -42,6 +42,9 @@ public:
     virtual std::optional<StatusInfo>
     is_sign_certificate_possible(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const = 0;
     virtual void stop_certificate_signed_timer() = 0;
+    /// \brief Whether the ISO 15118-20 SECC leaf (OCPP 2.1 V2G20Certificate) is maintained next to the ISO 15118-2
+    /// one: OCPP 2.1 connection, V2GCertificateInstallationEnabled and V2G20CertificateInstallationEnabled
+    virtual bool v2g20_certificate_installation_enabled() const = 0;
     virtual void init_certificate_expiration_check_timers() = 0;
     virtual void stop_certificate_expiration_check_timers() = 0;
 
@@ -85,6 +88,12 @@ private:
     /// \brief Stops awaiting a CertificateSigned.req, which the retry timer would otherwise be the only thing to do.
     void reset_certificate_signing_state();
 
+    /// \brief The V2G root the SECC leaf of \p certificate_signing_use is (or will be) issued under, for
+    /// SignCertificateRequest.hashRootCertificate (A02.FR.27): the root of the installed leaf if there is one,
+    /// otherwise the only installed V2G root. std::nullopt when this is ambiguous.
+    std::optional<ocpp::CertificateHashDataType>
+    get_secc_root_certificate_hash(const ocpp::CertificateSigningUseEnum& certificate_signing_use);
+
     // Members
     const FunctionalBlockContext& context;
     MessageLogging& logging;
@@ -94,6 +103,10 @@ private:
 
     int csr_attempt;
     std::optional<ocpp::CertificateSigningUseEnum> awaited_certificate_signing_use_enum;
+    /// \brief requestId of the outstanding SignCertificate.req (OCPP 2.1, A02.FR.24). A CertificateSigned.req that
+    /// carries a different requestId is rejected (A02.FR.26). Not set on OCPP 2.0.1, whose schema lacks the field.
+    std::optional<std::int32_t> awaited_sign_certificate_request_id;
+    std::int32_t next_sign_certificate_request_id;
     Everest::SteadyTimer certificate_signed_timer;
     Everest::SteadyTimer client_certificate_expiration_check_timer;
     Everest::SteadyTimer v2g_certificate_expiration_check_timer;
@@ -118,6 +131,14 @@ private:
     std::optional<StatusInfo> check_certificate_install_allowed(InstallCertificateUseEnum cert_type) const;
     void scheduled_check_client_certificate_expiration();
     void scheduled_check_v2g_certificate_expiration();
+
+    /// \brief Check one SECC leaf (V2GCertificate or V2G20Certificate) and request a new one when it is missing or
+    /// expires within 30 days
+    /// \return true when a SignCertificate.req was sent
+    bool check_secc_certificate_expiration(const ocpp::CertificateSigningUseEnum& certificate_signing_use);
+
+public:
+    bool v2g20_certificate_installation_enabled() const override;
 };
 } // namespace v2
 } // namespace ocpp

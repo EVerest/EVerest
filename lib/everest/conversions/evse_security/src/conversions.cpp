@@ -44,6 +44,8 @@ evse_security::LeafCertificateType from_everest(types::evse_security::LeafCertif
         return evse_security::LeafCertificateType::MF;
     case types::evse_security::LeafCertificateType::MO:
         return evse_security::LeafCertificateType::MO;
+    case types::evse_security::LeafCertificateType::V2G20:
+        return evse_security::LeafCertificateType::V2G20;
     }
     throw std::out_of_range(
         "Could not convert types::evse_security::LeafCertificateType to evse_security::LeafCertificateType");
@@ -201,6 +203,7 @@ evse_security::CertificateInfo from_everest(types::evse_security::CertificateInf
             lhs.ocsp.push_back(from_everest(ocsp_data));
         }
     }
+    lhs.public_key_algorithm = other.public_key_algorithm.value_or("");
     return lhs;
 }
 
@@ -239,6 +242,8 @@ types::evse_security::LeafCertificateType to_everest(evse_security::LeafCertific
         return types::evse_security::LeafCertificateType::MF;
     case evse_security::LeafCertificateType::MO:
         return types::evse_security::LeafCertificateType::MO;
+    case evse_security::LeafCertificateType::V2G20:
+        return types::evse_security::LeafCertificateType::V2G20;
     }
     throw std::out_of_range(
         "Could not convert evse_security::LeafCertificateType to types::evse_security::LeafCertificateType");
@@ -426,6 +431,15 @@ types::evse_security::OCSPRequestDataList to_everest(evse_security::OCSPRequestD
     return lhs;
 }
 
+types::evse_security::CertificateOCSP to_everest(evse_security::CertificateOCSP other) {
+    types::evse_security::CertificateOCSP lhs;
+    lhs.hash = to_everest(other.hash);
+    if (other.ocsp_path.has_value()) {
+        lhs.ocsp_path = other.ocsp_path.value().string();
+    }
+    return lhs;
+}
+
 types::evse_security::CertificateInfo to_everest(evse_security::CertificateInfo other) {
     types::evse_security::CertificateInfo lhs;
     lhs.key = other.key;
@@ -434,6 +448,16 @@ types::evse_security::CertificateInfo to_everest(evse_security::CertificateInfo 
     lhs.certificate_single = other.certificate_single;
     lhs.password = other.password;
     lhs.certificate_count = other.certificate_count;
+    if (not other.ocsp.empty()) {
+        std::vector<types::evse_security::CertificateOCSP> ocsp;
+        for (const auto& ocsp_data : other.ocsp) {
+            ocsp.push_back(to_everest(ocsp_data));
+        }
+        lhs.ocsp = std::move(ocsp);
+    }
+    if (not other.public_key_algorithm.empty()) {
+        lhs.public_key_algorithm = other.public_key_algorithm;
+    }
     return lhs;
 }
 

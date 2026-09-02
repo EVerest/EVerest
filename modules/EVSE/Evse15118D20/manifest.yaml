@@ -30,7 +30,13 @@ config:
       tls_negotiation_strategy: it pins the min/max protocol version, the cipher list and the
       client_hello certificate-verify elevation. Set to true for ISO 15118-20 (mandates TLS 1.3 mTLS).
       Set to false to offer TLS 1.2 (cipher ECDHE-ECDSA-AES128-SHA256, no client-certificate request),
-      which is required for ISO 15118-2 / DIN SPEC 70121.
+      which is required for ISO 15118-2 / DIN SPEC 70121. With it unset the TLS version follows the EV's
+      offer, and the SECC leaf is chosen per connection to match: a prime256v1 leaf (ISO 15118-2) is
+      presented on TLS 1.2, a secp521r1 / Ed448 leaf (ISO 15118-20) on TLS 1.3, so install both leaves
+      in the security module's SECC leaf directory when offering both protocols.
+      Multi-chain selection works on both TLS 1.2 (driven by the trusted_ca_keys extension)
+      and TLS 1.3 (driven by the native certificate_authorities extension), so multiple V2G
+      leaf chains can be installed concurrently regardless of this flag.
     type: boolean
     default: false
   supported_DIN70121:

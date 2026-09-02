@@ -47,7 +47,8 @@ TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks cal
     callbacks(std::move(callbacks_)),
     evse_setup(std::move(setup_)),
     interface_name(config.interface_name),
-    connection_factory(std::move(connection_factory_)) {
+    connection_factory(std::move(connection_factory_)),
+    m_ssl_config(config.ssl) {
 
     const auto result_interface_check = io::check_and_update_interface(interface_name);
     if (result_interface_check) {
@@ -434,6 +435,20 @@ void TbdController::update_no_energy_pause(d20::NoEnergyPauseMode mode) {
     }
 }
 
+void TbdController::set_ssl_config(config::SSLConfig new_config) {
+    auto handle = m_ssl_config.handle();
+    *handle = std::move(new_config);
+}
+
+config::SSLConfig TbdController::ssl_config_snapshot() const {
+    auto handle = m_ssl_config.handle();
+    return *handle;
+}
+
+config::SSLConfig TbdController::connection_ssl_config() const {
+    return ssl_config_snapshot();
+}
+
 void TbdController::set_dlink_ready(bool ready) {
     if (sdp_server) {
         sdp_server->set_dlink_ready(ready);
@@ -506,7 +521,7 @@ void TbdController::handle_sdp_server_input() {
     auto make_connection = [this](bool secure_connection) -> std::unique_ptr<io::IConnection> {
         try {
             if (secure_connection) {
-                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, config.ssl);
+                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, connection_ssl_config());
             }
             return std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
         } catch (const std::runtime_error& e) {

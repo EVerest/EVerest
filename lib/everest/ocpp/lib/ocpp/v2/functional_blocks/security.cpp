@@ -4,6 +4,7 @@
 #include <ocpp/v2/functional_blocks/security.hpp>
 
 #include <boost/algorithm/string/join.hpp>
+#include <limits>
 
 #include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/common/constants.hpp>
@@ -45,6 +46,7 @@ Security::Security(const FunctionalBlockContext& functional_block_context, Messa
     ocsp_updater(ocsp_updater),
     security_event_callback(security_event_callback),
     csr_attempt(1),
+    next_sign_certificate_request_id(0),
     client_certificate_expiration_check_timer([this]() { this->scheduled_check_client_certificate_expiration(); }),
     v2g_certificate_expiration_check_timer([this]() { this->scheduled_check_v2g_certificate_expiration(); }) {
 }
@@ -255,10 +257,21 @@ void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certi
         should_use_tpm =
             this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::UseTPM).value_or(false);
     } else {
-        req.certificateType = ocpp::v2::CertificateSigningUseEnum::V2GCertificate;
+        // Both SECC leaf types (ISO 15118-2 V2GCertificate, ISO 15118-20 V2G20Certificate) share the SECC key
+        // store and hence the TPM setting
+        req.certificateType = (certificate_signing_use == ocpp::CertificateSigningUseEnum::V2G20Certificate)
+                                  ? ocpp::v2::CertificateSigningUseEnum::V2G20Certificate
+                                  : ocpp::v2::CertificateSigningUseEnum::V2GCertificate;
         should_use_tpm =
             this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::UseTPMSeccLeafCertificate)
                 .value_or(false);
+        if (this->context.ocpp_version == OcppProtocolVersion::v21) {
+            // A02.FR.27: name the PKI the SECC leaf shall be issued under (2.0.1 lacks the field)
+            const auto root_hash = this->get_secc_root_certificate_hash(certificate_signing_use);
+            if (root_hash.has_value()) {
+                req.hashRootCertificate = ocpp::evse_security_conversions::to_ocpp_v2(root_hash.value());
+            }
+        }
     }
 
     const auto result = this->context.evse_security.generate_certificate_signing_request(
@@ -278,35 +291,93 @@ void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certi
 
     req.csr = result.csr.value();
 
+    if (this->context.ocpp_version == OcppProtocolVersion::v21) {
+        // A02.FR.24: tag the request so the resulting CertificateSigned.req can be matched to it. The 2.0.1 schema
+        // does not know the field, so it is only sent on a 2.1 connection.
+        req.requestId = this->next_sign_certificate_request_id;
+        this->next_sign_certificate_request_id =
+            (this->next_sign_certificate_request_id == std::numeric_limits<std::int32_t>::max())
+                ? 0
+                : this->next_sign_certificate_request_id + 1;
+    }
+
     this->awaited_certificate_signing_use_enum = certificate_signing_use;
+    this->awaited_sign_certificate_request_id = req.requestId;
 
     const ocpp::Call<SignCertificateRequest> call(req);
     this->context.message_dispatcher.dispatch_call(call, initiated_by_trigger_message);
 }
 
 void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call) {
-    this->reset_certificate_signing_state();
-    this->certificate_signed_timer.stop();
-
     CertificateSignedResponse response;
     response.status = CertificateSignedStatusEnum::Rejected;
+
+    const auto awaited_certificate_signing_use = this->awaited_certificate_signing_use_enum;
+    const bool request_id_matches =
+        call.msg.requestId.has_value() and call.msg.requestId == this->awaited_sign_certificate_request_id;
+
+    if (call.msg.requestId.has_value() and not request_id_matches) {
+        // A02.FR.26: a CertificateSigned.req with an unknown requestId is rejected. The outstanding request (if any)
+        // stays outstanding, so the CSMS can still answer it.
+        EVLOG_warning << "Rejecting CertificateSigned.req with unknown requestId " << call.msg.requestId.value()
+                      << (this->awaited_sign_certificate_request_id.has_value()
+                              ? ", awaiting requestId " +
+                                    std::to_string(this->awaited_sign_certificate_request_id.value())
+                              : ", no SignCertificate.req with a requestId is outstanding");
+        response.statusInfo = make_status_info(reason_code_unspecified, "Unknown requestId");
+        const ocpp::CallResult<CertificateSignedResponse> call_result(response, call.uniqueId);
+        this->context.message_dispatcher.dispatch_call_result(call_result);
+        return;
+    }
+
+    this->reset_certificate_signing_state();
+    this->certificate_signed_timer.stop();
 
     const auto certificate_chain = call.msg.certificateChain.get();
     ocpp::CertificateSigningUseEnum cert_signing_use; // NOLINT(cppcoreguidelines-init-variables): initialized below
 
-    if (!call.msg.certificateType.has_value() or
-        call.msg.certificateType.value() == CertificateSigningUseEnum::ChargingStationCertificate) {
+    if (!call.msg.certificateType.has_value()) {
+        // The CSMS is only recommended to echo the type (A02.FR.14). Without it, the certificate answers the
+        // SignCertificate.req we are waiting for; the spec's "used for both connections" fallback only applies when
+        // nothing is outstanding, and then the CSMS client certificate is the only leaf a chain could be for that
+        // was not requested with a type.
+        cert_signing_use =
+            awaited_certificate_signing_use.value_or(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+        if (awaited_certificate_signing_use.has_value()) {
+            EVLOG_info << "CertificateSigned.req without certificateType, installing as the awaited "
+                       << ocpp::conversions::certificate_signing_use_enum_to_string(cert_signing_use);
+        }
+    } else if (call.msg.certificateType.value() == CertificateSigningUseEnum::ChargingStationCertificate) {
         cert_signing_use = ocpp::CertificateSigningUseEnum::ChargingStationCertificate;
+    } else if (call.msg.certificateType.value() == CertificateSigningUseEnum::V2G20Certificate) {
+        cert_signing_use = ocpp::CertificateSigningUseEnum::V2G20Certificate;
     } else {
         cert_signing_use = ocpp::CertificateSigningUseEnum::V2GCertificate;
     }
+
+    if (request_id_matches and awaited_certificate_signing_use.has_value() and
+        cert_signing_use != awaited_certificate_signing_use.value()) {
+        // A matching requestId proves which SignCertificate.req this answers, so its type wins over a
+        // contradicting certificateType
+        EVLOG_warning << "CertificateSigned.req with requestId " << call.msg.requestId.value()
+                      << " carries certificateType "
+                      << ocpp::conversions::certificate_signing_use_enum_to_string(cert_signing_use)
+                      << " but answers a SignCertificate.req for "
+                      << ocpp::conversions::certificate_signing_use_enum_to_string(
+                             awaited_certificate_signing_use.value())
+                      << ", installing as the latter";
+        cert_signing_use = awaited_certificate_signing_use.value();
+    }
+
+    const bool is_secc_leaf = (cert_signing_use == ocpp::CertificateSigningUseEnum::V2GCertificate) or
+                              (cert_signing_use == ocpp::CertificateSigningUseEnum::V2G20Certificate);
 
     const auto result = this->context.evse_security.update_leaf_certificate(certificate_chain, cert_signing_use);
 
     if (result == ocpp::InstallCertificateResult::Accepted) {
         response.status = CertificateSignedStatusEnum::Accepted;
-        // For V2G certificates, also trigger an OCSP cache update
-        if (cert_signing_use == ocpp::CertificateSigningUseEnum::V2GCertificate) {
+        // For SECC (V2G / V2G20) certificates, also trigger an OCSP cache update
+        if (is_secc_leaf) {
             this->ocsp_updater.trigger_ocsp_cache_update();
         }
     }
@@ -391,8 +462,41 @@ void Security::handle_sign_certificate_response(CallResult<SignCertificateRespon
     }
 }
 
+std::optional<ocpp::CertificateHashDataType>
+Security::get_secc_root_certificate_hash(const ocpp::CertificateSigningUseEnum& certificate_signing_use) {
+    const auto roots = this->context.evse_security.get_installed_certificates({CertificateType::V2GRootCertificate});
+    if (roots.empty()) {
+        return std::nullopt;
+    }
+
+    // Renewal: the leaf's chain identifies the root. The OCSP hash data of every chain element carries the hashes of
+    // its issuer's name and key; for the topmost element that is the root, and a self-signed root's own hash data
+    // holds the same two hashes.
+    const auto leaf = this->context.evse_security.get_leaf_certificate_info(certificate_signing_use, true);
+    if (leaf.status == GetCertificateInfoStatus::Accepted and leaf.info.has_value()) {
+        for (const auto& chain_element : leaf.info->ocsp) {
+            for (const auto& root : roots) {
+                if (root.certificateHashData.issuerNameHash == chain_element.hash.issuerNameHash and
+                    root.certificateHashData.issuerKeyHash == chain_element.hash.issuerKeyHash) {
+                    return root.certificateHashData;
+                }
+            }
+        }
+    }
+
+    // Initial provisioning (or a leaf under a root that is no longer installed): only unambiguous with one root
+    if (roots.size() == 1) {
+        return roots.front().certificateHashData;
+    }
+    EVLOG_info << roots.size() << " V2G roots installed and none identified as the issuer of the "
+               << ocpp::conversions::certificate_signing_use_enum_to_string(certificate_signing_use)
+               << " leaf, leaving the PKI choice to the CSMS (no hashRootCertificate)";
+    return std::nullopt;
+}
+
 void Security::reset_certificate_signing_state() {
     this->awaited_certificate_signing_use_enum = std::nullopt;
+    this->awaited_sign_certificate_request_id = std::nullopt;
     this->csr_attempt = 1;
 }
 
@@ -544,19 +648,45 @@ void Security::scheduled_check_client_certificate_expiration() {
             .value_or(12 * 60 * 60)));
 }
 
+bool Security::v2g20_certificate_installation_enabled() const {
+    // The ISO 15118-20 SECC leaf is a separate certificate (TLS 1.3, secp521r1) requested with the OCPP 2.1
+    // certificateType V2G20Certificate. A 2.0.1 CSMS does not know that enum, so it is only maintained on an
+    // OCPP 2.1 connection, on top of V2GCertificateInstallationEnabled, unless V2G20CertificateInstallationEnabled
+    // (default true, also when absent from the device model) is switched off for a CSMS that lacks the enum.
+    return this->context.ocpp_version == OcppProtocolVersion::v21 and
+           this->context.device_model
+               .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
+               .value_or(false) and
+           this->context.device_model
+               .get_optional_value<bool>(ControllerComponentVariables::V2G20CertificateInstallationEnabled)
+               .value_or(true);
+}
+
+bool Security::check_secc_certificate_expiration(const ocpp::CertificateSigningUseEnum& certificate_signing_use) {
+    const auto name = ocpp::conversions::certificate_signing_use_enum_to_string(certificate_signing_use);
+    EVLOG_info << "Checking if " << name << " has expired";
+    // 0 also when no leaf of that type is installed yet, so the initial certificate is requested the same way
+    const int expiry_days_count = this->context.evse_security.get_leaf_expiry_days_count(certificate_signing_use);
+    if (expiry_days_count < 30) {
+        EVLOG_info << name << " is invalid in " << expiry_days_count
+                   << " days. Requesting new certificate with certificate signing request";
+        this->sign_certificate_req(certificate_signing_use);
+        return true;
+    }
+    EVLOG_info << name << " is still valid.";
+    return false;
+}
+
 void Security::scheduled_check_v2g_certificate_expiration() {
     if (this->context.device_model
             .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
             .value_or(false)) {
-        EVLOG_info << "Checking if V2GCertificate has expired";
-        const int expiry_days_count =
-            this->context.evse_security.get_leaf_expiry_days_count(ocpp::CertificateSigningUseEnum::V2GCertificate);
-        if (expiry_days_count < 30) {
-            EVLOG_info << "V2GCertificate is invalid in " << expiry_days_count
-                       << " days. Requesting new certificate with certificate signing request";
-            this->sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate);
-        } else {
-            EVLOG_info << "V2GCertificate is still valid.";
+        // The ISO 15118-2 and ISO 15118-20 SECC leafs are renewed independently. Only one SignCertificate.req
+        // can be outstanding at a time, so when both are due the -2 leaf goes first and the -20 leaf is
+        // requested on the next check (V2GCertificateExpireCheckIntervalSeconds).
+        const bool requested = this->check_secc_certificate_expiration(ocpp::CertificateSigningUseEnum::V2GCertificate);
+        if (this->v2g20_certificate_installation_enabled() and not requested) {
+            this->check_secc_certificate_expiration(ocpp::CertificateSigningUseEnum::V2G20Certificate);
         }
     } else {
         if (this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::PnCEnabled)

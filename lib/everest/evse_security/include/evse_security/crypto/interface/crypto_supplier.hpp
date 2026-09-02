@@ -35,6 +35,9 @@ public:
     static std::string x509_to_string(X509Handle* handle);
     static std::string x509_get_responder_url(X509Handle* handle);
     static std::string x509_get_key_hash(X509Handle* handle);
+    /// @brief Name of the public key algorithm: the EC curve name for EC keys (e.g. "prime256v1",
+    /// "secp521r1"), otherwise the key type name (e.g. "ED448", "RSA"). Empty on error.
+    static std::string x509_get_public_key_algorithm(X509Handle* handle);
     static std::string x509_get_serial_number(X509Handle* handle);
     static std::string x509_get_issuer_name_hash(X509Handle* handle);
     static std::string x509_get_common_name(X509Handle* handle);

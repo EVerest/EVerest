@@ -6,6 +6,7 @@
 #include <boost/smart_ptr/shared_ptr.hpp>
 #include <everest/tls/openssl_util.hpp>
 
+#include <array>
 #include <cassert>
 #include <limits>
 
@@ -312,6 +313,107 @@ const chain_t* select(const trusted_ca_keys_t& extension, const chain_list& chai
     return result;
 }
 
+namespace {
+
+/**
+ * \brief check a chain's trust anchors against a list of distinguished names
+ * \param[in] chain contains the list of trust anchors
+ * \param[in] names is the list of distinguished names advertised by the peer
+ * \param[in] name_count is the number of entries in names
+ * \param[inout] warned_malformed caps the malformed-DN warning at one line per
+ *               selection; the peer controls names, so per-comparison logging
+ *               could emit name_count x trust-anchor lines per handshake
+ * \return true on the first (trust anchor subject, name) match
+ */
+bool chain_matches_dn_list(const chain_t& chain, const STACK_OF(X509_NAME) * names, int name_count,
+                           bool& warned_malformed) {
+    for (const auto& ta : chain.chain.trust_anchors) {
+        auto* subject = X509_get_subject_name(ta.get());
+        if (subject == nullptr) {
+            continue;
+        }
+        for (int i = 0; i < name_count; ++i) {
+            const auto* candidate = sk_X509_NAME_value(names, i);
+            if (candidate == nullptr) {
+                continue;
+            }
+            const int cmp = X509_NAME_cmp(subject, candidate);
+            if (cmp == 0) {
+                return true;
+            }
+            if ((cmp == -2) && not warned_malformed) {
+                log_warning("select_by_dn_list: malformed DN skipped in comparison");
+                warned_malformed = true;
+            }
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+const chain_t* select_by_dn_list(const STACK_OF(X509_NAME) * names, const chain_list& chains) {
+    return select_by_dn_list(names, chains, 0);
+}
+
+const chain_t* select_by_dn_list(const STACK_OF(X509_NAME) * names, const chain_list& chains, int tls_version) {
+    if (names == nullptr) {
+        return nullptr;
+    }
+    const int name_count = sk_X509_NAME_num(names);
+    if (name_count <= 0) {
+        return nullptr;
+    }
+
+    bool warned_malformed{false};
+    for (const auto& chain : chains) {
+        if ((tls_version != 0) && !compatible(chain, tls_version)) {
+            continue;
+        }
+        if (chain_matches_dn_list(chain, names, name_count, warned_malformed)) {
+            return &chain;
+        }
+    }
+    return nullptr;
+}
+
+bool compatible(const chain_t& chain, int tls_version) {
+    return (chain.tls_version == 0) || (chain.tls_version == tls_version);
+}
+
+const chain_t* select(const trusted_ca_keys_t& extension, const chain_list& chains, int tls_version) {
+    const chain_t* result{nullptr};
+    for (const auto& chain : chains) {
+        if (compatible(chain, tls_version) && match(extension, chain)) {
+            result = &chain;
+            break;
+        }
+    }
+    return result;
+}
+
+const chain_t* select_by_version(const chain_list& chains, int tls_version) {
+    const chain_t* exact{nullptr};
+    const chain_t* untagged{nullptr};
+    bool any_tagged{false};
+    for (const auto& chain : chains) {
+        if (chain.tls_version == 0) {
+            if (untagged == nullptr) {
+                untagged = &chain;
+            }
+        } else {
+            any_tagged = true;
+            if ((chain.tls_version == tls_version) && (exact == nullptr)) {
+                exact = &chain;
+            }
+        }
+    }
+    if (!any_tagged) {
+        return nullptr;
+    }
+    return (exact != nullptr) ? exact : untagged;
+}
+
 int ServerTrustedCaKeys::s_index{-1};
 
 ServerTrustedCaKeys::ServerTrustedCaKeys() {
@@ -322,7 +424,9 @@ ServerTrustedCaKeys::ServerTrustedCaKeys() {
 
 bool ServerTrustedCaKeys::init_ssl(SslContext* ctx) {
     bool bRes{true};
-    // TLS 1.2 and below only - use certificate_authorities in TLS 1.3
+    // Legacy custom trusted_ca_keys extension is TLS 1.2 and below only.
+    // TLS 1.3 multi-chain selection uses SSL_get0_peer_CA_list (driven by
+    // the peer's certificate_authorities extension) in handle_certificate_cb.
     constexpr int context_tck =
         SSL_EXT_TLS_ONLY | SSL_EXT_TLS1_2_AND_BELOW_ONLY | SSL_EXT_IGNORE_ON_RESUMPTION | SSL_EXT_CLIENT_HELLO;
     if (SSL_CTX_add_custom_ext(ctx, TLSEXT_TYPE_trusted_ca_keys, context_tck, nullptr, nullptr, nullptr,
@@ -345,6 +449,14 @@ const chain_t* ServerTrustedCaKeys::select(const trusted_ca_keys_t& extension) {
     return trusted_ca_keys::select(extension, m_chains);
 }
 
+const chain_t* ServerTrustedCaKeys::select(const trusted_ca_keys_t& extension, int tls_version) {
+    return trusted_ca_keys::select(extension, m_chains, tls_version);
+}
+
+const chain_t* ServerTrustedCaKeys::select_by_version(int tls_version) {
+    return trusted_ca_keys::select_by_version(m_chains, tls_version);
+}
+
 const chain_t* ServerTrustedCaKeys::select_default() {
     return (m_chains.empty()) ? nullptr : m_chains.data();
 }
@@ -365,6 +477,64 @@ int ServerTrustedCaKeys::trusted_ca_keys_cb(SSL* ctx, unsigned int ext_type, uns
     return 1;
 }
 
+namespace {
+
+/**
+ * \brief name a chain by its leaf certificate subject for log messages
+ * \param[in] chain the chain to name
+ * \return the leaf subject as a one-line string, or a placeholder when the
+ *         chain has no leaf or the subject cannot be rendered
+ */
+std::string leaf_subject_name(const chain_t& chain) {
+    const auto* leaf = chain.chain.leaf.get();
+    if (leaf == nullptr) {
+        return "<no leaf>";
+    }
+    std::array<char, 256> buf{};
+    // X509_NAME_oneline renders a null/empty subject as an empty string, not an error
+    if ((X509_NAME_oneline(X509_get_subject_name(leaf), buf.data(), static_cast<int>(buf.size())) == nullptr) ||
+        (buf[0] == '\0')) {
+        return "<unknown subject>";
+    }
+    return std::string(buf.data());
+}
+
+} // namespace
+
+int ServerTrustedCaKeys::apply_selection_locked(SSL* ssl, const std::lock_guard<std::mutex>& /* m_mux witness */,
+                                                const chain_t* selected, const char* context_label) {
+    if (selected == nullptr) {
+        // No specific chain matched; keep the default certificate already
+        // configured on the SSL_CTX.
+        return 1;
+    }
+    if (use_certificate_and_key(ssl, *selected)) {
+        return 1;
+    }
+    // The selected chain failed to apply; fall back to the default chain.
+    const auto* fallback = select_default();
+    if (fallback == selected) {
+        log_warning(std::string("terminating TLS handshake: ") + context_label +
+                    ": selected chain failed to apply and is the only/default chain");
+        return 0;
+    }
+    if (fallback == nullptr) {
+        // use_certificate_and_key() already called SSL_certs_clear(), so the connection
+        // has no certificate. With no default chain to fall back to, continuing would
+        // reach an opaque OpenSSL error mid-handshake; abort explicitly instead.
+        log_warning(std::string("terminating TLS handshake: ") + context_label +
+                    ": selected chain failed to apply and no default chain is available");
+        return 0;
+    }
+    log_warning(std::string(context_label) + ": selected chain (" + leaf_subject_name(*selected) +
+                ") failed to apply; serving default chain");
+    if (not use_certificate_and_key(ssl, *fallback)) {
+        log_warning(std::string("terminating TLS handshake: ") + context_label);
+        return 0;
+    }
+    return 1;
+}
+
 int ServerTrustedCaKeys::handle_certificate_cb(SSL* ssl, void* arg) {
     /*
      * return values:
@@ -375,7 +545,6 @@ int ServerTrustedCaKeys::handle_certificate_cb(SSL* ssl, void* arg) {
     int result{1};
 
     auto* tck_p = reinterpret_cast<ServerTrustedCaKeys*>(arg);
-    auto* keys_p = get_data(ssl);
 
     /*
      * From OpenSSL man page
@@ -385,26 +554,64 @@ int ServerTrustedCaKeys::handle_certificate_cb(SSL* ssl, void* arg) {
      * It might also call SSL_certs_clear().
      */
 
-    if ((tck_p != nullptr) && (keys_p != nullptr) && (keys_p->flags.has_trusted_ca_keys())) {
-        // prevent update() from changing pointers
-        std::lock_guard lock(tck_p->m_mux);
+    if (tck_p == nullptr) {
+        return result;
+    }
 
-        const auto* selected = tck_p->select(keys_p->tck);
-        if (selected != nullptr) {
-            if (!use_certificate_and_key(ssl, *selected)) {
-                // setting failed - try and use the default
-                selected = tck_p->select_default();
-                if (selected != nullptr) {
-                    if (!use_certificate_and_key(ssl, *selected)) {
-                        // there has been a problem setting the server
-                        // certificate, key and chain
-                        result = 0;
-                        log_warning("terminating TLS handshake: trusted_ca_keys");
-                    }
-                }
+    // prevent update() from changing pointers
+    std::lock_guard lock(tck_p->m_mux);
+
+    /*
+     * The certificate callback runs after the ClientHello has been processed,
+     * so the protocol version is already negotiated. ISO 15118-2 (TLS 1.2,
+     * secp256r1 leaf) and ISO 15118-20 (TLS 1.3, secp521r1/Ed448 leaf) need
+     * different SECC leaf certificates, hence chains can be tagged with the
+     * version they are meant for. Selection:
+     *
+     * 1. the peer's CA preference, restricted to chains compatible with the
+     *    negotiated version: certificate_authorities (TLS 1.3) or the legacy
+     *    trusted_ca_keys extension (TLS 1.2 and below)
+     * 2. otherwise the version tag alone (exact tag, then an untagged chain)
+     * 3. when nothing is tagged and the peer expressed no CA preference the
+     *    SSL_CTX default certificate is left as it is
+     */
+    const int tls_version = SSL_version(ssl);
+    const chain_t* selected{nullptr};
+    const char* context_label{"chain selection"};
+
+    if (tls_version == TLS1_3_VERSION) {
+        context_label = "certificate_authorities";
+        const STACK_OF(X509_NAME)* names = SSL_get0_peer_CA_list(ssl);
+        if (names != nullptr && sk_X509_NAME_num(names) > 0) {
+            selected = select_by_dn_list(names, tck_p->m_chains, tls_version);
+            if (selected == nullptr) {
+                log_warning("certificate_authorities: no configured chain matched the peer's advertised CA names; "
+                            "serving default chain");
+            }
+        } else {
+            log_debug("certificate_authorities: peer sent no certificate_authorities; serving default chain");
+        }
+    } else {
+        context_label = "trusted_ca_keys";
+        auto* keys_p = get_data(ssl);
+        if ((keys_p != nullptr) && (keys_p->flags.has_trusted_ca_keys())) {
+            selected = tck_p->select(keys_p->tck, tls_version);
+            if (selected == nullptr) {
+                log_warning("trusted_ca_keys: no configured chain matched the peer's trusted_ca_keys; "
+                            "serving default chain");
             }
         }
     }
+
+    if (selected == nullptr) {
+        // nullptr when no chain carries a version tag: keep the SSL_CTX default
+        selected = tck_p->select_by_version(tls_version);
+        if (selected != nullptr) {
+            context_label = "tls_version";
+        }
+    }
+
+    result = tck_p->apply_selection_locked(ssl, lock, selected, context_label);
     return result;
 }
 

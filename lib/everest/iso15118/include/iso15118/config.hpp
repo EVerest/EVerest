@@ -26,11 +26,40 @@ enum class CertificateBackend {
  * Multiple chains may be configured to support TLS 1.3 multi-chain selection
  * driven by the peer's certificate_authorities extension (RFC 8446 §4.2.4).
  */
+/**
+ * \brief which negotiated TLS version a SECC certificate chain is meant for
+ *
+ * ISO 15118-2 runs TLS 1.2 with a secp256r1 SECC leaf, ISO 15118-20 runs TLS 1.3 with a
+ * secp521r1 / Ed448 SECC leaf; one leaf cannot serve both. Tagging each chain lets the TLS
+ * server present the matching leaf once the version has been negotiated (exact tag first,
+ * then an ANY chain, then the first chain). With no tagged chain the first chain is used
+ * for every connection.
+ */
+enum class ChainTlsVersion {
+    ANY,
+    TLS_1_2,
+    TLS_1_3,
+};
+
 struct ChainConfig {
     std::string path_certificate_chain;                //!< PEM file: leaf followed by intermediate CAs
     std::string path_certificate_key;                  //!< PEM file: private key for the leaf
     std::optional<std::string> private_key_password{}; //!< optional password for the private key
-    std::vector<std::string> ocsp_response_files{};    //!< OCSP DER files in chain order
+    /// OCSP DER files: one entry per chain certificate in chain order; std::nullopt
+    /// means no OCSP staple for that position
+    std::vector<std::optional<std::string>> ocsp_response_files{};
+    /// inline PEM of the chain's self-signed root; drives TLS 1.3 chain selection
+    /// (certificate_authorities) and TLS 1.2 trusted_ca_keys. Empty disables this chain
+    /// from selection (it can still be the default chain when first in the list).
+    std::optional<std::string> trust_anchor_pem{};
+    ChainTlsVersion tls_version{ChainTlsVersion::ANY}; //!< negotiated TLS version this chain is presented on
+
+    bool operator==(const ChainConfig& other) const {
+        return path_certificate_chain == other.path_certificate_chain &&
+               path_certificate_key == other.path_certificate_key &&
+               private_key_password == other.private_key_password && ocsp_response_files == other.ocsp_response_files &&
+               trust_anchor_pem == other.trust_anchor_pem && tls_version == other.tls_version;
+    }
 };
 
 /**
@@ -53,6 +82,15 @@ struct SSLConfig {
     bool enable_tls_key_logging{false};           //!< write SSLKEYLOGFILE entries
     bool enforce_tls_1_3{false};                  //!< require TLS 1.3 minimum
     std::filesystem::path tls_key_logging_path{}; //!< destination directory for keylog
+
+    bool operator==(const SSLConfig& other) const {
+        return backend == other.backend && config_string == other.config_string && chains == other.chains &&
+               path_certificate_v2g_root == other.path_certificate_v2g_root &&
+               path_certificate_mo_root == other.path_certificate_mo_root &&
+               enable_ssl_logging == other.enable_ssl_logging &&
+               enable_tls_key_logging == other.enable_tls_key_logging && enforce_tls_1_3 == other.enforce_tls_1_3 &&
+               tls_key_logging_path == other.tls_key_logging_path;
+    }
 };
 
 } // namespace iso15118::config
