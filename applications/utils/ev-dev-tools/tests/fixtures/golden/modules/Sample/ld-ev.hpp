@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+#ifndef LD_EV_HPP
+#define LD_EV_HPP
+
+//
+// AUTO GENERATED - DO NOT EDIT!
+// template version 6
+//
+
+#include <framework/ModuleAdapter.hpp>
+#include <framework/everest.hpp>
+#include <utils/config_service_interface.hpp>
+
+#include <everest/logging.hpp>
+
+namespace module {
+
+// helper class for invoking private functions on module
+struct LdEverest {
+    static void init(ModuleConfigs module_configs, const ModuleInfo& info);
+    static void ready();
+    static void shutdown();
+};
+
+void register_module_adapter(Everest::ModuleAdapter module_adapter);
+
+std::vector<Everest::cmd> everest_register(const RequirementInitialization& requirement_init);
+
+void subscribe_global_all_errors(
+    const Everest::error::ErrorCallback& callback,
+    const Everest::error::ErrorCallback& clear_callback
+);
+std::shared_ptr<Everest::error::ErrorStateMonitor> get_global_error_state_monitor();
+
+std::shared_ptr<Everest::config::ConfigServiceClient> get_config_service_client();
+
+} // namespace module
+
+#endif // LD_EV_HPP

@@ -1,9 +1,48 @@
 [build-system]
-requires = [
-    "setuptools>=42",
-    "wheel"
-]
+requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "ev-dev-tools"
+description = "Utilities for developing with the EVerest framework"
+readme = { file = "README.rst", content-type = "text/x-rst" }
+requires-python = ">=3.10"
+dynamic = ["version"]
+dependencies = [
+    "jinja2 ~=3.1",
+    "jsonschema ~=4.26",
+    "pyyaml ~=6.0",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+
+[[project.authors]]
+name = "Pionix GmbH and Contributors to EVerest"
+
+[project.urls]
+Homepage = "https://github.com/EVerest/everest-core"
+
+[project.optional-dependencies]
+test = ["pytest ~=8.0"]
+
+[project.scripts]
+ev-cli = "ev_cli.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "ev_cli.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"ev_cli" = ["licenses/**/*"]
+"ev_cli.backends.cpp" = ["templates/*.j2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.autopep8]
 max_line_length = 120
