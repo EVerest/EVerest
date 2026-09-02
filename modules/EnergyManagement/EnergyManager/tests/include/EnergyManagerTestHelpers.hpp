@@ -31,6 +31,7 @@ inline EnergyManagerConfig make_default_config() {
     c.switch_3ph1ph_power_hysteresis_W = 200;
     c.switch_3ph1ph_time_hysteresis_s = 0;
     c.broker_strategy = "FastCharging";
+    c.power_meter_aggregation_window_s = 5;
     return c;
 }
 

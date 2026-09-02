@@ -17,21 +17,28 @@
 
 namespace module {
 
+/// \brief The module's manifest options.
+///
+/// Every member carries its manifest default, so an option a caller forgets to set reads as
+/// that default instead of an indeterminate value. Production always assigns all of them
+/// from the generated config; the defaults exist for tests, where a missed option used to
+/// reach EnergyManagerImpl as garbage (a negative aggregation window silently switched the
+/// staleness filter off).
 struct EnergyManagerConfig {
-    double nominal_ac_voltage;
-    int update_interval;
-    int schedule_interval_duration;
-    int schedule_total_duration;
-    double slice_ampere;
-    double slice_watt;
-    bool debug;
-    std::string switch_3ph1ph_while_charging_mode;
-    int switch_3ph1ph_max_nr_of_switches_per_session;
-    std::string switch_3ph1ph_switch_limit_stickyness;
-    int switch_3ph1ph_power_hysteresis_W;
-    int switch_3ph1ph_time_hysteresis_s;
-    std::string broker_strategy;
-    int power_meter_aggregation_window_s;
+    double nominal_ac_voltage{230.0};
+    int update_interval{1};
+    int schedule_interval_duration{60};
+    int schedule_total_duration{1};
+    double slice_ampere{0.5};
+    double slice_watt{500};
+    bool debug{false};
+    std::string switch_3ph1ph_while_charging_mode{"Never"};
+    int switch_3ph1ph_max_nr_of_switches_per_session{0};
+    std::string switch_3ph1ph_switch_limit_stickyness{"DontChange"};
+    int switch_3ph1ph_power_hysteresis_W{200};
+    int switch_3ph1ph_time_hysteresis_s{600};
+    std::string broker_strategy{"FastCharging"};
+    int power_meter_aggregation_window_s{5};
 };
 
 /// \brief Broker selected by the broker_strategy config option (see manifest.yaml).
