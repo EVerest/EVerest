@@ -108,6 +108,42 @@ static_assert(
 static_assert(not everest::lib::io::utilities::event_client_handshake_policy_v<everest::lib::io::tcp::tcp_socket>,
               "the handshake policy trait must not match a hookless policy");
 
+// tx_coalescing() appends to a payload possibly mid write: only byte stream policies that trim
+// the sent prefix may have it, frame transports and TLS must not.
+template <class Client, class = void> struct client_has_tx_coalescing : std::false_type {};
+template <class Client>
+struct client_has_tx_coalescing<Client, std::void_t<decltype(std::declval<Client&>().tx_coalescing(
+                                            std::declval<typename Client::ClientPayloadT const&>(), std::size_t{}))>>
+    : std::true_type {};
+
+static_assert(everest::lib::io::utilities::policy_supports_tx_coalescing_v<everest::lib::io::tcp::tcp_socket>,
+              "tcp_socket must admit tx_coalescing");
+static_assert(client_has_tx_coalescing<everest::lib::io::tcp::tcp_client>::value,
+              "tcp_client must expose tx_coalescing()");
+static_assert(everest::lib::io::utilities::policy_supports_tx_coalescing_v<everest::lib::io::serial::pty_handler>,
+              "pty_handler must admit tx_coalescing");
+static_assert(client_has_tx_coalescing<everest::lib::io::serial::event_pty_base>::value,
+              "event_pty_base must expose tx_coalescing()");
+
+static_assert(not everest::lib::io::utilities::policy_supports_tx_coalescing_v<everest::lib::io::raw::raw_socket>,
+              "raw_socket is a frame transport and must not admit tx_coalescing");
+static_assert(not client_has_tx_coalescing<everest::lib::io::raw::raw_client>::value,
+              "raw_client must not expose tx_coalescing()");
+static_assert(not everest::lib::io::utilities::policy_supports_tx_coalescing_v<everest::lib::io::tun_tap::tap_handler>,
+              "tap_handler is a frame transport and must not admit tx_coalescing");
+static_assert(not client_has_tx_coalescing<everest::lib::io::tun_tap::tap_client>::value,
+              "tap_client must not expose tx_coalescing()");
+static_assert(
+    not everest::lib::io::utilities::policy_supports_tx_coalescing_v<everest::lib::io::udp::udp_client_socket>,
+    "udp_client_socket is a datagram transport and must not admit tx_coalescing");
+static_assert(not client_has_tx_coalescing<everest::lib::io::udp::udp_client>::value,
+              "udp_client must not expose tx_coalescing()");
+static_assert(
+    not everest::lib::io::utilities::policy_supports_tx_coalescing_v<everest::lib::io::can::socket_can_handler>,
+    "socket_can_handler is a frame transport and must not admit tx_coalescing");
+static_assert(not client_has_tx_coalescing<everest::lib::io::can::socket_can>::value,
+              "socket_can must not expose tx_coalescing()");
+
 #ifdef EVEREST_IO_ENABLE_TLS
 static_assert(std::is_class_v<everest::lib::io::tls::tls_client>, "tls_client alias must resolve");
 static_assert(std::is_abstract_v<everest::lib::io::tls::tls_client_interface>,
@@ -122,6 +158,11 @@ static_assert(everest::lib::io::utilities::event_client_handshake_policy_v<evere
               "tls_client_socket must satisfy the handshake client policy");
 static_assert(everest::lib::io::utilities::has_member_get_error_string_v<everest::lib::io::tls::tls_client_socket>,
               "tls_client_socket must expose get_error_string()");
+static_assert(
+    not everest::lib::io::utilities::policy_supports_tx_coalescing_v<everest::lib::io::tls::tls_client_socket>,
+    "tls_client_socket retries a would-block with the identical buffer and must not admit tx_coalescing");
+static_assert(not client_has_tx_coalescing<everest::lib::io::tls::tls_client>::value,
+              "tls_client must not expose tx_coalescing()");
 #endif
 
 TEST(fd_event_client_alias, tcp_client_constructs_hookless_path_unchanged) {

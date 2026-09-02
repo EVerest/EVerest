@@ -102,19 +102,24 @@ bool generic_fd_event_client_impl::setup_error_event_handler() {
 void generic_fd_event_client_impl::setup_io_event_handler(int fd) {
     using namespace everest::lib::io::event;
     m_connection_failed = false;
+    // Registered for reading below.
+    m_rx_paused = false;
     // Belongs to the previous connection, so it may not describe a failure of this one.
     m_local_error_text.clear();
     m_event_handler->register_event_handler(
         fd,
         [this, fd](auto events) {
             // A terminal notification wins over a pending handshake: the connection it would be
-            // negotiated on is gone.
-            if (events.count(poll_events::error) or events.count(poll_events::hungup)) {
+            // negotiated on is gone. read_hungup is monitored only while paused, see pause_rx.
+            if (events.count(poll_events::error) or events.count(poll_events::hungup) or
+                events.count(poll_events::read_hungup)) {
                 // Level triggered, so the fd keeps notifying until the queued teardown removes it,
                 // and reading SO_ERROR clears it.
                 if (not m_connection_failed) {
                     m_connection_failed = true;
-                    auto const kind = events.count(poll_events::error) != 0 ? poll_events::error : poll_events::hungup;
+                    auto const kind = events.count(poll_events::error) != 0    ? poll_events::error
+                                      : events.count(poll_events::hungup) != 0 ? poll_events::hungup
+                                                                               : poll_events::read_hungup;
                     set_error_status_and_notify(consume_poll_error(fd, kind));
                 }
                 return;
@@ -305,8 +310,52 @@ int generic_fd_event_client_impl::consume_poll_error(int fd, poll_events kind) {
     }
     // With no code to read back, the fallback describes the notification rather than naming a
     // cause: this client also drives serial lines and tun/tap devices, where ECONNRESET would
-    // invent a peer that reset nothing.
-    return socket::consume_poll_error(fd, kind, kind == poll_events::hungup ? ENOTCONN : EIO);
+    // invent a peer that reset nothing. read_hungup is a stream peer closing: ECONNRESET, as the
+    // read path reports it.
+    auto const fallback = kind == poll_events::hungup ? ENOTCONN : kind == poll_events::read_hungup ? ECONNRESET : EIO;
+    return socket::consume_poll_error(fd, kind, fallback);
+}
+
+bool generic_fd_event_client_impl::pause_rx() {
+    return set_rx_paused(true);
+}
+
+bool generic_fd_event_client_impl::resume_rx() {
+    return set_rx_paused(false);
+}
+
+int generic_fd_event_client_impl::connected_fd() {
+    auto client_status = m_client_status.handle();
+    return client_status->ok ? client_status->fd : -1;
+}
+
+bool generic_fd_event_client_impl::rx_paused() const {
+    return m_rx_paused;
+}
+
+bool generic_fd_event_client_impl::set_rx_paused(bool paused) {
+    // The handshake owns the monitored events.
+    if (m_handshake_pending()) {
+        return false;
+    }
+    // Between a reopen and the registration of its descriptor there is nothing to pause.
+    auto const fd = connected_fd();
+    if (fd < 0 or not m_event_handler->is_registered(fd)) {
+        return false;
+    }
+    if (m_rx_paused == paused) {
+        return true;
+    }
+    // Paused, EPOLLRDHUP stands in for readability to notice the peer closing (non-socket
+    // descriptors ignore it). One modification, so a failure changes nothing.
+    auto const off = paused ? poll_events::read : poll_events::read_hungup;
+    auto const on = paused ? poll_events::read_hungup : poll_events::read;
+    if (not m_event_handler->modify_event_handler(fd, fd_event_handler::event_list{on},
+                                                  fd_event_handler::event_list{off})) {
+        return false;
+    }
+    m_rx_paused = paused;
+    return true;
 }
 
 bool generic_fd_event_client_impl::monitor_for(int fd, poll_events desired) {
@@ -314,11 +363,10 @@ bool generic_fd_event_client_impl::monitor_for(int fd, poll_events desired) {
     if (not is_monitorable(desired)) {
         return false;
     }
-    auto read_ok = m_event_handler->modify_event_handler(
-        fd, poll_events::read, desired == poll_events::read ? event_modification::add : event_modification::remove);
-    auto write_ok = m_event_handler->modify_event_handler(
-        fd, poll_events::write, desired == poll_events::write ? event_modification::add : event_modification::remove);
-    return read_ok and write_ok;
+    // One modification: never both or neither in between.
+    auto const other = desired == poll_events::read ? poll_events::write : poll_events::read;
+    return m_event_handler->modify_event_handler(fd, fd_event_handler::event_list{desired},
+                                                 fd_event_handler::event_list{other});
 }
 
 poll_events generic_fd_event_client_impl::default_desired_events() {
@@ -384,14 +432,9 @@ void generic_fd_event_client_impl::set_on_ready_action(ready_action&& item) {
     // Assign on the loop thread, where it is read when a connection becomes ready.
     add_action([this, item = std::move(item)]() mutable {
         m_on_ready_action = std::move(item);
-        auto connected = false;
-        {
-            auto client_status = m_client_status.handle();
-            connected = client_status->ok;
-        }
         // A connected transport is not a ready client while its handshake is outstanding, and
         // the connected status outlives a failure until the queued teardown runs.
-        if (connected and not m_connection_failed and not m_handshake_pending()) {
+        if (connected_fd() >= 0 and not m_connection_failed and not m_handshake_pending()) {
             // Explicit registration on a ready connection asks to be called now.
             m_ready_fired_generation = 0;
             maybe_fire_ready();

@@ -98,6 +98,38 @@ template <typename T>
 inline constexpr bool policy_buffers_tx_before_connect_v = policy_buffers_tx_before_connect<T>::value;
 
 /**
+ * @brief Trait: T declares a member 'supports_tx_coalescing'.
+ */
+template <typename T, typename V = void> struct has_member_supports_tx_coalescing : std::false_type {};
+
+/**
+ * @brief Specialization for a T that has it.
+ */
+template <typename T>
+struct has_member_supports_tx_coalescing<T, std::void_t<decltype(T::supports_tx_coalescing)>> : std::true_type {};
+
+/**
+ * @brief Trait: whether generic_fd_event_client::tx_coalescing exists for a policy. False unless
+ * the policy declares 'supports_tx_coalescing'.
+ * @details Coalescing appends to a payload the policy may be mid way through sending. Only a byte
+ * stream whose tx() leaves exactly the unsent bytes in the payload and tolerates it growing may
+ * opt in; frame transports and TLS (identical buffer on retry) may not.
+ */
+template <typename T, typename V = void> struct policy_supports_tx_coalescing : std::false_type {};
+
+/**
+ * @brief Specialization carrying the declared value.
+ */
+template <typename T>
+struct policy_supports_tx_coalescing<T, std::enable_if_t<has_member_supports_tx_coalescing<T>::value>>
+    : std::integral_constant<bool, T::supports_tx_coalescing> {};
+
+/**
+ * @brief Variable template for policy_supports_tx_coalescing.
+ */
+template <typename T> inline constexpr bool policy_supports_tx_coalescing_v = policy_supports_tx_coalescing<T>::value;
+
+/**
  * @enum tx_buffering
  * @brief Whether a client holds payloads written before its connection is up.
  * @details Selected per instance at construction, defaulting to what the policy declares through

@@ -40,6 +40,13 @@ struct pty_status {
  * error checking. <br>
  * Although this class can be used on its own, the main purpose is to implement the
  * \p ClientPolicy of \ref event::fd_event_client
+ *
+ * The master is non blocking: a write the slave has not made room for returns false from \ref tx
+ * with the unsent bytes left in the payload, and the client retries on the next writable event.
+ * Undrained data queues in the client's tx buffer up to
+ * \ref event::generic_fd_event_client::max_buffered_tx_payloads, then tx() rejects. A consumer
+ * that must not lose data throttles its source (tx_queue_depth(), set_tx_drained_action(),
+ * pause_rx()); a blocking master would stall the whole event loop instead.
  */
 class pty_handler {
 public:
@@ -50,6 +57,12 @@ public:
     using PayloadT = std::vector<uint8_t>;
 
     /**
+     * @var supports_tx_coalescing
+     * @brief Byte stream, \ref tx leaves exactly the unsent bytes in the payload.
+     */
+    static constexpr bool supports_tx_coalescing{true};
+
+    /**
      * @brief The class is default constructed
      */
     pty_handler() = default;
@@ -57,14 +70,16 @@ public:
 
     /**
      * @brief Write a dataset to the PTY
-     * @details Implementation for \p ClientPolicy
+     * @details Implementation for \p ClientPolicy. A partial write removes the written bytes from
+     * \p data, a would-block leaves it unchanged; both return false with \ref get_error zero.
      * @param[in] data Payload
-     * @return True on success, False on failure and partial writes.
+     * @return True on success, false on failure, partial write or would-block.
      */
     bool tx(PayloadT& data);
     /**
      * @brief Read a dataset from the PTY
-     * @details Implementation for \p ClientPolicy
+     * @details Implementation for \p ClientPolicy. Nothing pending returns false with \ref get_error
+     * zero.
      * @param[in] data Payload
      * @return True on success, False otherwise.
      */
@@ -74,7 +89,7 @@ public:
      * @brief Open the PTY
      * @details Activates <a href="https://lists.gnu.org/archive/html/bug-readline/2011-01/msg00004.html">EXTPROC</a>
      * an <a href="https://man7.org/linux/man-pages/man2/TIOCPKT.2const.html">TIOCPKT</a>
-     * via \ref make_pty_mode_aware. <br>
+     * via \ref make_pty_mode_aware; the master is made non blocking. <br>
      * Implementation for \p ClientPolicy
      * @return True on success, false otherwise.
      */
@@ -89,7 +104,8 @@ public:
 
     /**
      * @brief Get the current error
-     * @details Implementation for \p ClientPolicy
+     * @details Implementation for \p ClientPolicy. Set by \ref open, \ref tx and \ref rx only; a
+     * would-block or partial write leaves it zero, \ref get_status never sets it.
      * @return The last errno. Zero if there is no error.
      */
     int get_error() const;
