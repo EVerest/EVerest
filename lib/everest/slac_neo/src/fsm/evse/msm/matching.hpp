@@ -61,9 +61,8 @@ struct Matching_def : public state_machine_def<Matching_def> {
         failed_matching_reset_once = false;
         validate.reset();
         ctx->validation_done = false;
-        ctx->log_info("Entered Matching state, waiting for CM_SLAC_PARM.REQ");
-        ctx->status.match_state = SlacState::Matching;
-        ctx->status.d3_state = D3State::Matching;
+        ctx->enter_state(SlacState::Matching, D3State::Matching,
+                         "Entered Matching state, waiting for CM_SLAC_PARM.REQ");
     }
 
     template <class Event, class Fsm> void on_exit(Event const&, Fsm&) {

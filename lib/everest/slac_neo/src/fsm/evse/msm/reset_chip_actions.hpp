@@ -25,7 +25,6 @@ struct reset_done {
     }
 };
 
-
 // Actions
 struct send_message {
     template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {

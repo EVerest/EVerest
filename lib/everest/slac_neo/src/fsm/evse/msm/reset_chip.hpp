@@ -48,8 +48,7 @@ struct ResetChip_def : public state_machine_def<ResetChip_def> {
     // Entry / exit
     template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
-        ctx->status.match_state = SlacState::ResetChip;
-        ctx->status.d3_state = D3State::Unmatched;
+        ctx->enter_state(SlacState::ResetChip, D3State::Unmatched);
     }
 
     // Members

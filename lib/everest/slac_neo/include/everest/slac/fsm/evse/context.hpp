@@ -204,8 +204,8 @@ struct Context {
         payload.insert(payload.end(), am_data.begin(), am_data.end());
 
         messages::HomeplugMessage hp_message;
-        hp_message.setup_payload(payload.data(), payload.size(),
-                                 defs::MMTYPE_CM_AMP_MAP | defs::MMTYPE_MODE_REQ, defs::MMV::AV_2_0);
+        hp_message.setup_payload(payload.data(), payload.size(), defs::MMTYPE_CM_AMP_MAP | defs::MMTYPE_MODE_REQ,
+                                 defs::MMV::AV_2_0);
         hp_message.set_destination(mac);
         if (not callbacks.send_raw_slac) {
             return false;
@@ -222,6 +222,9 @@ struct Context {
     // Deduplicates consecutive identical states so a single logical transition emits at most one signal.
     void publish_slac_state();
     void clear_match_confirm_cache();
+    // Bookkeeping every state performs on entry: record the detailed and the public state and,
+    // if given, log the entry. Kept in one place so the on_entry hooks read as short checklists.
+    void enter_state(SlacState match_state, D3State d3_state, const std::string& log_message = {});
     void cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message, uint8_t const* ev_mac,
                                      uint8_t const* evse_mac, uint8_t const* run_id);
     void cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message, MacAddress const& ev_mac,

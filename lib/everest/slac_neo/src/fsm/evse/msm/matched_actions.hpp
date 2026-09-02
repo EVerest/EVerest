@@ -40,6 +40,26 @@ struct send_amp_map_cnf {
     }
 };
 
+// Entry helpers
+// ISO 15118-3 A.9.6 transmit-power limitation: once the AVLN is up, send
+// the operator-configured amplitude map to the peer (CmAmpMap_002..004).
+// Disabled by default; the map is provided via the amp_map_file config.
+template <class MatchedSm> void start_amp_map_exchange(MatchedSm& sm) {
+    auto& ctx = *sm.ctx;
+    sm.amp_map_awaiting_cnf = false;
+    sm.amp_map_retries = 0;
+    if (ctx.slac_config.initiate_amp_map and ctx.slac_config.amp_map_len > 0) {
+        if (not ctx.send_amp_map_req(ctx.status.ev_mac, ctx.slac_config.amp_map_len, ctx.slac_config.amp_map_data)) {
+            ctx.log_warn("Failed to send CM_AMP_MAP.REQ");
+        }
+        // Await the CM_AMP_MAP.CNF; retransmit every TT_match_response until it arrives, limited
+        // to C_EV_match_retry retransmissions (serviced by retransmit_amp_map on the update tick).
+        sm.amp_map_awaiting_cnf = true;
+        sm.amp_map_timer.setDurationMilliSeconds(defs::TT_MATCH_RESPONSE_MS);
+        sm.amp_map_timer.reset();
+    }
+}
+
 // SECC-initiated CM_AMP_MAP.REQ (ISO 15118-3 A.9.6, PICS InitiateCmAmpMap): after sending the
 // first REQ (on_entry) the SECC retransmits it every TT_match_response until a CM_AMP_MAP.CNF with
 // result=0x00 arrives, limited to C_EV_match_retry retransmissions (CmAmpMap_003/004).

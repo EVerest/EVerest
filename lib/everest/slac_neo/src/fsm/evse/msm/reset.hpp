@@ -53,23 +53,9 @@ struct Reset_def : public state_machine_def<Reset_def> {
     // Entry / exit
     template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
-        if (fsm.ctx->slac_config.regenerate_key_on_reset) {
-            if (fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed) {
-                fsm.ctx->slac_config.generate_nmk(this->pending_nmk);
-            } else {
-                fsm.ctx->slac_config.generate_nmk(fsm.ctx->slac_config.session_nmk);
-            }
-        } else {
-            this->pending_nmk = fsm.ctx->slac_config.session_nmk;
-        }
-        if (fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::legacy_single_attempt) {
-            this->pending_nmk = fsm.ctx->slac_config.session_nmk;
-        }
-        this->set_key_attempts = 1;
-        ctx->log_info("Entered Reset state");
+        select_nmk_for_reset(*this);
+        ctx->enter_state(SlacState::Reset, D3State::Unmatched, "Entered Reset state");
         ctx->clear_match_confirm_cache();
-        ctx->status.match_state = SlacState::Reset;
-        ctx->status.d3_state = D3State::Unmatched;
         ctx->status.modem_NMK = false;
     }
 

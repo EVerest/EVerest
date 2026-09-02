@@ -34,7 +34,6 @@ struct is_match_req {
     }
 };
 
-
 // Actions
 struct send_match_cnf {
     template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {

@@ -8,6 +8,29 @@
 
 namespace everest::lib::slac::msm::reset_sm {
 
+// Entry helpers
+// Decide which NMK the upcoming CM_SET_KEY.REQ carries. With regenerate_key_on_reset a fresh key is
+// generated: into pending_nmk in retry_confirmed mode (it becomes the session key only once the
+// modem confirmed it, see apply_set_key_cnf) or straight into the session key otherwise. Without
+// regeneration the current session key is re-sent. legacy_single_attempt always sends the session
+// key. Also arms the first attempt.
+template <class ResetSm> void select_nmk_for_reset(ResetSm& sm) {
+    auto& config = sm.ctx->slac_config;
+    if (config.regenerate_key_on_reset) {
+        if (config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed) {
+            config.generate_nmk(sm.pending_nmk);
+        } else {
+            config.generate_nmk(config.session_nmk);
+        }
+    } else {
+        sm.pending_nmk = config.session_nmk;
+    }
+    if (config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::legacy_single_attempt) {
+        sm.pending_nmk = config.session_nmk;
+    }
+    sm.set_key_attempts = 1;
+}
+
 // Guards
 struct msg_expected : public is_message_of_type<defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_CNF> {};
 struct is_retry_confirmed_set_key {

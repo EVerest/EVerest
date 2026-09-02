@@ -3,6 +3,15 @@
 
 // Shared building blocks of the EVSE SLAC state machine: includes, namespace setup, the session
 // flags and the vendor-specific link-status check states used by Matched and WaitForLink.
+//
+// Where behaviour lives:
+// - on_entry / on_exit of a state hold what holds for that state regardless of how it was entered
+//   or left (status bookkeeping, arming the state's timers, resetting per-state counters, and side
+//   effects that are a property of being in the state, such as raising dlink_ready in Matched).
+// - Row actions and guards in the transition tables hold what depends on the edge, i.e. on the
+//   event and the source state (answering a message, counting a retry).
+// The functors and entry helpers live in the *_actions.hpp sibling of each sub-machine, so a _def
+// file shows only states, aliases, the table, the hooks and its data.
 
 #pragma once
 #include <everest/slac/fsm/slac_msm_helpers.hpp>
@@ -36,6 +45,15 @@ using namespace everest::lib::slac;
 using namespace std::chrono_literals;
 using namespace boost::msm::front;
 using namespace boost::msm::back;
+
+// States
+// A timeout state whose duration is read from one EvseSlacConfig field on entry.
+template <int fsm::evse::EvseSlacConfig::*Field> struct config_timeout_state : timeout_state {
+    template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
+        timeout_state::state_timeout_ms = static_cast<std::uint32_t>(fsm.ctx->slac_config.*Field);
+        timeout_state::on_entry(e, fsm);
+    }
+};
 
 // Guards
 struct is_lumissil {
