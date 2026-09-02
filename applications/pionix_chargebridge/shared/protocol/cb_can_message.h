@@ -53,6 +53,15 @@ typedef enum _CanPacketType : uint8_t{
     CanPacketType_Keep_Alive = 1,
 } CanPacketType;
 
+/* Since 2026-09 a CAN UDP datagram carries 1..N of these records back to
+ * back (N bounded by the datagram size; records are always full-size, so the
+ * count is byte_count / sizeof). Both senders batch with a ~3 ms hold-off
+ * ("mini Nagle": a frame following another within 3 ms waits for followers,
+ * up to 12 per datagram; a frame after a quiet gap leaves immediately) and
+ * receivers must iterate. NOTE: this is not gated by a
+ * version (CB_CONFIG_VERSION only versions the config struct, which is
+ * unchanged): an old receiver silently reads only the first record of a
+ * batch, so deploy firmware and tool together. */
 struct CB_COMPILER_ATTR_PACK cb_can_message {
     uint8_t version;
     CanPacketType packet_type; // 0: regular CAN packet, 1: dummy keep-alive packet

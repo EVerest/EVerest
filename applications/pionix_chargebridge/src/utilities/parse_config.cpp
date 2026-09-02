@@ -286,6 +286,8 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
     get_block("heartbeat", c.heartbeat, [&](auto& cfg, auto const& main) {
         get_node_or_default(cfg.interval_s, main, "interval_s", 1);
         get_node_or_default(cfg.connection_to_s, main, "connection_to_s", 3 * cfg.interval_s);
+        // cb-session-v1: steal the MCU even if a healthy session on another host owns it
+        get_node_or_default(cfg.force_takeover, main, "force_takeover", false);
         cfg.cb_remote = c.cb_remote;
         cfg.cb_port = c.cb_port;
         get_node(cfg.cb_config.safety, "safety");
