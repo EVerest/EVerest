@@ -99,8 +99,30 @@ bool test_slac_event_mac_is_zero_without_readable_interface() {
     return assert_true(all_zero, test_name, "MAC for a missing interface is not all-zero");
 }
 
+bool test_accepts_set_key_cnf_success_result_per_mode() {
+    const char* test_name = "test_accepts_set_key_cnf_success_result_per_mode";
+    using fsm::evse::SetKeyCnfSuccessMode;
+
+    bool ok = true;
+    ok &= assert_true(accepts_set_key_cnf_success_result(SetKeyCnfSuccessMode::modem_compat_0x01, 0x01), test_name,
+                      "modem_compat_0x01 must accept 0x01");
+    ok &= assert_true(not accepts_set_key_cnf_success_result(SetKeyCnfSuccessMode::modem_compat_0x01, 0x00),
+                      test_name, "modem_compat_0x01 must reject 0x00");
+    ok &= assert_true(accepts_set_key_cnf_success_result(SetKeyCnfSuccessMode::hpgp_standard_0x00, 0x00), test_name,
+                      "hpgp_standard_0x00 must accept 0x00");
+    ok &= assert_true(not accepts_set_key_cnf_success_result(SetKeyCnfSuccessMode::hpgp_standard_0x00, 0x01),
+                      test_name, "hpgp_standard_0x00 must reject 0x01");
+    ok &= assert_true(accepts_set_key_cnf_success_result(SetKeyCnfSuccessMode::accept_0x00_or_0x01, 0x00), test_name,
+                      "accept_0x00_or_0x01 must accept 0x00");
+    ok &= assert_true(accepts_set_key_cnf_success_result(SetKeyCnfSuccessMode::accept_0x00_or_0x01, 0x01), test_name,
+                      "accept_0x00_or_0x01 must accept 0x01");
+    ok &= assert_true(not accepts_set_key_cnf_success_result(SetKeyCnfSuccessMode::accept_0x00_or_0x01, 0x02),
+                      test_name, "accept_0x00_or_0x01 must reject 0x02");
+    return ok;
+}
+
 int main() {
-    std::array<std::pair<const char*, bool (*)()>, 8> tests{{
+    std::array<std::pair<const char*, bool (*)()>, 9> tests{{
         {"test_slac_event_mac_is_zero_without_readable_interface",
          test_slac_event_mac_is_zero_without_readable_interface},
         {"test_format_mac_addr_known_value", test_format_mac_addr_known_value},
@@ -111,6 +133,7 @@ int main() {
         {"test_parse_mac_addr_legacy_output_unchanged_on_failure",
          test_parse_mac_addr_legacy_output_unchanged_on_failure},
         {"test_parse_and_format_round_trip", test_parse_and_format_round_trip},
+        {"test_accepts_set_key_cnf_success_result_per_mode", test_accepts_set_key_cnf_success_result_per_mode},
     }};
 
     int failed_count = 0;
