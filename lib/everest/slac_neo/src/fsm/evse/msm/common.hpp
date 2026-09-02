@@ -38,14 +38,6 @@ using namespace boost::msm::front;
 using namespace boost::msm::back;
 
 // Guards
-struct is_link_detection_on
-{
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm&, SrcT&, TarT& )
-    {
-        return true;
-    }
-};
 struct is_lumissil
 {
     template <class Fsm, class Evt, class SrcT, class TarT>
@@ -73,15 +65,6 @@ struct link_status_neg
     template <class Fsm, class Evt, class SrcT, class TarT>
     bool operator()(Evt const& e, Fsm& fsm, SrcT& src, TarT&) {
         return src.is_link_status_neg(e, fsm);
-    }
-};
-
-struct failed
-{
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT& src, TarT& )
-    {
-        return src.state_failed();
     }
 };
 

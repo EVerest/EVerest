@@ -16,12 +16,6 @@ struct is_retry_confirmed_set_key {
         return fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed;
     }
 };
-struct is_legacy_single_attempt_set_key {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
-        return fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::legacy_single_attempt;
-    }
-};
 struct set_key_timeout {
     template <class Evt, class Fsm, class SrcT, class TarT>
     bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
