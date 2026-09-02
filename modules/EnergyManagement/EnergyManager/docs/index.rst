@@ -44,8 +44,12 @@ Notes on behaviour:
   and the reading treated as stale, so a misbehaving meter cannot skew the sum or flood
   the log. Detection relies on the parser returning the epoch rather than raising an
   error, and applies even when the staleness filter is disabled.
-* Per phase sums are reported only when *every* contributing meter supplied per phase
-  values, so the per phase figures always cover the same set of meters as the total.
+* Power and per phase current are aggregated together, in the same shape a single
+  connector's measurement uses, so one consumer type covers a connector and the site.
+* A per phase figure is reported only when *every* contributing meter supplied that
+  phase, so a phase sum never silently covers fewer meters than the total. A phase a
+  meter does not measure is reported as absent, never as zero -- a single phase meter
+  therefore leaves the site L2 and L3 sums unreported.
 * Setting the window to ``0`` disables the staleness filter entirely.
 
 Broker strategy and power meter observation

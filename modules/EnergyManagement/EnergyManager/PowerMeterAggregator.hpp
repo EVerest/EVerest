@@ -26,18 +26,22 @@ namespace module {
 /// optimizer run it belongs to and tests are deterministic.
 class PowerMeterAggregator {
 public:
+    /// \brief The site wide equivalent of BrokerContext::last_observed_measurement.
+    ///
+    /// Deliberately shaped like ObservedMeasurement (see Broker.hpp) so a consumer handles
+    /// one measurement type whether it reads a single connector or the whole site. The rule
+    /// stated there holds here too: a value the meters do not cover is nullopt, never zero.
     struct AggregateResult {
-        /// Sum of total power over all fresh meters [W]. Empty when no meter contributed,
-        /// so "no data" is never reported as a total of zero - a distinction a caller
-        /// acting on the sum has to make (nothing connected vs. nothing flowing).
-        std::optional<float> power_W;
-        /// Per phase sums [W], only meaningful when per_phase_available is true
-        float power_L1_W{0.f};
-        float power_L2_W{0.f};
-        float power_L3_W{0.f};
-        /// True only when every contributing meter reported per phase values, so the
-        /// per phase sums cover the same set of meters as power_W.
-        bool per_phase_available{false};
+        /// Summed power [W] over all fresh meters. Empty when no meter contributed, so
+        /// "no data" never reads as a total of zero (nothing connected vs. nothing
+        /// flowing). Its per phase members are nullopt unless *every* contributing meter
+        /// reported that phase, so a phase sum never silently omits a meter.
+        std::optional<types::units::Power> power_W;
+        /// Summed current [A] over the same meters, under the same per field rule. A
+        /// single phase meter reports only L1, so L2 and L3 stay nullopt as soon as one
+        /// contributing meter does not measure them. N is never summed: neutral currents
+        /// do not add up scalar-wise and no consumer trades against them.
+        types::units::Current current_A;
         /// Number of meters that contributed to the sums
         int fresh_meters{0};
         /// Number of stored meters excluded because their reading was too old or unusable

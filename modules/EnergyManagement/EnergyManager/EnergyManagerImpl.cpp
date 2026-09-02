@@ -158,7 +158,7 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
 
     if (globals.debug) {
         // Spell out the absence of a total rather than printing a zero that no meter reported.
-        const auto power = leaf_aggregate.power_W.has_value() ? fmt::format("{}W", leaf_aggregate.power_W.value())
+        const auto power = leaf_aggregate.power_W.has_value() ? fmt::format("{}W", leaf_aggregate.power_W.value().total)
                                                               : std::string("no reading");
         EVLOG_info << fmt::format("Aggregated leaf power: {} from {} meter(s), {} stale", power,
                                   leaf_aggregate.fresh_meters, leaf_aggregate.stale_meters);
