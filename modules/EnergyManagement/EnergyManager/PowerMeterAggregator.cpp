@@ -69,6 +69,10 @@ PowerMeterAggregator::AggregateResult PowerMeterAggregator::aggregate(date::utc_
     // so the per phase figures always cover the same meters as the total.
     bool all_have_per_phase = true;
 
+    // Summed separately so the total is only published once a meter has actually
+    // contributed: an empty sum must read as "no data", not as zero watts.
+    float total_W = 0.f;
+
     for (const auto& [uuid, reading] : readings) {
         if (not reading.power_W.has_value()) {
             result.stale_meters++;
@@ -98,7 +102,7 @@ PowerMeterAggregator::AggregateResult PowerMeterAggregator::aggregate(date::utc_
 
         const auto& power = reading.power_W.value();
 
-        result.power_W += power.total;
+        total_W += power.total;
         result.fresh_meters++;
 
         if (power.L1.has_value() and power.L2.has_value() and power.L3.has_value()) {
@@ -108,6 +112,10 @@ PowerMeterAggregator::AggregateResult PowerMeterAggregator::aggregate(date::utc_
         } else {
             all_have_per_phase = false;
         }
+    }
+
+    if (result.fresh_meters > 0) {
+        result.power_W = total_W;
     }
 
     result.per_phase_available = all_have_per_phase and result.fresh_meters > 0;
