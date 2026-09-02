@@ -1,0 +1,578 @@
+---
+asyncapi: 3.0.0
+id: 'pionix:de:everest:session_storage_consumer_API'
+info:
+  title: 'EVerest API definition for session storage (consumer)'
+  version: 1.0.0
+  description: >-
+    API for EVerest API clients to read and clear persistently stored session records.
+
+  license:
+    name: Apache-2.0
+    url: https://opensource.org/licenses/Apache-2.0
+  tags:
+    - name: EVerest
+    - name: SessionStorage
+servers:
+  default:
+    pathname: 'everest_api/1/session_storage_consumer/{module_id}'
+    host: 'localhost:1883'
+    description: default local MQTT
+    protocol: mqtt
+    variables:
+      module_id:
+        description: The ID of the module as defined in the EVerest config file.
+defaultContentType: application/json
+
+
+channels:
+  send_request_get_sessions:
+    address: 'm2e/get_sessions'
+    messages:
+      send_request_get_sessions:
+        $ref: '#/components/messages/send_request_get_sessions'
+  receive_reply_get_sessions:
+    address: null
+    messages:
+      receive_reply_get_sessions:
+        $ref: '#/components/messages/receive_reply_get_sessions'
+
+  send_request_get_session:
+    address: 'm2e/get_session'
+    messages:
+      send_request_get_session:
+        $ref: '#/components/messages/send_request_get_session'
+  receive_reply_get_session:
+    address: null
+    messages:
+      receive_reply_get_session:
+        $ref: '#/components/messages/receive_reply_get_session'
+
+  send_request_clear_sessions:
+    address: 'm2e/clear_sessions'
+    messages:
+      send_request_clear_sessions:
+        $ref: '#/components/messages/send_request_clear_sessions'
+  receive_reply_clear_sessions:
+    address: null
+    messages:
+      receive_reply_clear_sessions:
+        $ref: '#/components/messages/receive_reply_clear_sessions'
+
+  receive_heartbeat:
+    address: 'e2m/heartbeat'
+    messages:
+      receive_heartbeat:
+        $ref: '#/components/messages/receive_heartbeat'
+  send_communication_check:
+    address: 'm2e/communication_check'
+    messages:
+      send_communication_check:
+        $ref: '#/components/messages/send_communication_check'
+
+
+operations:
+  send_request_get_sessions:
+    title: 'Send request to transmit one page of stored session records'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_sessions'
+    description: >-
+      Direction: Module to EVerest.
+      Request one page of stored session records, oldest first. Iterate by
+      passing the continuation_token of a reply into the next request until a
+      reply carries no token.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_sessions'
+  receive_reply_get_sessions:
+    title: 'Receive reply with one page of stored session records'
+    action: receive
+    description: 'Direction: EVerest to Module'
+    channel:
+      $ref: '#/channels/receive_reply_get_sessions'
+
+  send_request_get_session:
+    title: 'Send request to transmit a single stored session record'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_session'
+    description: >-
+      Direction: Module to EVerest.
+      Request one session record, identified either by its session id or by its
+      OCPP transaction id. The reply will be sent to the replyTo address specified in
+      the message headers. If no record matches the identifier, a null payload will be
+      sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_session'
+  receive_reply_get_session:
+    title: 'Receive reply with a single stored session record'
+    action: receive
+    description: 'Direction: EVerest to Module'
+    channel:
+      $ref: '#/channels/receive_reply_get_session'
+
+  send_request_clear_sessions:
+    title: 'Send request to delete all stored session records'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_clear_sessions'
+    description: >-
+      Direction: Module to EVerest.
+      Deletes every stored session record, including records that are still open.
+      This cannot be undone. When a deleted open session finishes later, the
+      finish is dropped and the record does not reappear.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_clear_sessions'
+  receive_reply_clear_sessions:
+    title: 'Receive reply to the request to delete all stored session records'
+    action: receive
+    description: 'Direction: EVerest to Module'
+    channel:
+      $ref: '#/channels/receive_reply_clear_sessions'
+
+  receive_heartbeat:
+    title: 'Receive heartbeat'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_heartbeat'
+  send_communication_check:
+    title: 'Send communication check'
+    action: send
+    channel:
+      $ref: '#/channels/send_communication_check'
+
+
+components:
+  messages:
+    send_request_get_sessions:
+      name: send_request_get_sessions
+      title: 'Request one page of stored session records'
+      summary: 'Request one page of stored session records.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to.
+          payload:
+            $ref: '#/components/schemas/GetSessionsRequest'
+      examples:
+        - summary: "Request the first page of all stored sessions"
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+            payload: {}
+        - summary: "Request the next page of the finished sessions of EVSE 1"
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+            payload:
+              limit: 100
+              continuation_token: 5f2a9c31d4e8b0a7:184
+              filter:
+                state: Finished
+                evse_id: 1
+    receive_reply_get_sessions:
+      name: receive_reply_get_sessions
+      title: 'One page of stored session records'
+      summary: 'Reply to the request to send one page of stored session records'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SessionList'
+
+    send_request_get_session:
+      name: send_request_get_session
+      title: 'Request a single stored session record'
+      summary: 'Request the session record matching the given identifier.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to.
+          payload:
+            $ref: '#/components/schemas/SessionIdentifier'
+      examples:
+        - summary: "Request a session by session id"
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+            payload:
+              session_id: 550e8400-e29b-41d4-a716-446655440000
+    receive_reply_get_session:
+      name: receive_reply_get_session
+      title: 'A single stored session record'
+      summary: >-
+        Reply to the request to send a single session record. Null if no record
+        matches the identifier.
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/Session'
+          - type: 'null'
+
+    send_request_clear_sessions:
+      name: send_request_clear_sessions
+      title: 'Request deletion of all stored session records'
+      summary: 'Delete all stored session records.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: "Clear all stored sessions"
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_clear_sessions:
+      name: receive_reply_clear_sessions
+      title: 'Result of deleting all stored session records'
+      summary: 'Reply to the request to delete all stored session records'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ClearSessionsResult'
+
+    receive_heartbeat:
+      name: receive_heartbeat
+      title: 'Receive heartbeat'
+      summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HeartBeatId'
+      examples:
+        - summary: "Heartbeat"
+          payload: 42
+
+    send_communication_check:
+      name: send_communication_check
+      title: 'Send communication check'
+      summary: Signal to EVerest that communication is good or check shall be stopped
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CommunicationCheck'
+      examples:
+        - summary: "CommunicationCheck"
+          payload:
+            true
+
+
+  schemas:
+    SessionFilter:
+      description: Criteria a session record must match to be returned
+      type: object
+      additionalProperties: true
+      properties:
+        state:
+          description: Only records in this lifecycle state
+          type: string
+          $ref: '#/components/schemas/SessionState'
+        evse_id:
+          description: Only records of the EVSE with this numeric id
+          type: integer
+          minimum: 1
+          maximum: 128
+        started_after:
+          description: >-
+            Only records whose session started strictly after this point in
+            time, in RFC3339 format. Compared as an instant, so any UTC offset
+            may be used. A value that is not a timestamp is ignored.
+          type: string
+          format: date-time
+    GetSessionsRequest:
+      description: >-
+        Page request for stored session records. An empty object requests the
+        first page of all records with the default page size.
+      type: object
+      additionalProperties: true
+      properties:
+        limit:
+          description: >-
+            Maximum number of records in the reply. EVerest may return fewer, and
+            clamps the value to its supported maximum.
+          type: integer
+          minimum: 1
+        continuation_token:
+          description: >-
+            Opaque token from a previous reply to continue the iteration. Omit to
+            start from the oldest record. An invalid or outdated token starts the
+            iteration from the beginning.
+          type: string
+        filter:
+          description: Criteria the returned records must match
+          type: object
+          $ref: '#/components/schemas/SessionFilter'
+    SessionList:
+      description: One page of stored session records
+      type: object
+      additionalProperties: true
+      required:
+        - sessions
+      properties:
+        sessions:
+          description: >-
+            The records of this page, in the order they were stored, oldest first.
+            Empty if no more records match.
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+        continuation_token:
+          description: >-
+            Present if there may be more matching records. Pass it in the next
+            request to continue the iteration; a reply without it means the
+            iteration is complete.
+          type: string
+    Session:
+      description: >-
+        One persistently stored session record. A record is created when the session
+        starts and completed when it finishes, so the fields that are only known at
+        the end of a session are absent while the record is open.
+      type: object
+      additionalProperties: true
+      required:
+        - session_id
+        - evse_id
+        - evse_id_string
+        - connector_id
+        - state
+        - timestamp_start
+        - start_reason
+      properties:
+        session_id:
+          description: >-
+            The EVSE generated UUID of the session. A session contains at most one
+            transaction, so this also identifies the transaction charged within it.
+          type: string
+        evse_id:
+          description: >-
+            The numeric id of the EVSE this session ran on, as used across EVerest
+            interfaces (1-based).
+          type: integer
+          minimum: 1
+          maximum: 128
+        evse_id_string:
+          description: >-
+            The EVSEID of the EVSE this session ran on, as configured in the
+            EvseManager. Empty if the EvseManager does not provide one.
+          type: string
+        connector_id:
+          description: The id of the connector that was used for this session.
+          type: integer
+          minimum: 1
+        state:
+          description: Lifecycle state of this record
+          type: string
+          $ref: '#/components/schemas/SessionState'
+        timestamp_start:
+          description: Time the session started, in RFC3339 format
+          type: string
+          format: date-time
+        timestamp_stop:
+          description: >-
+            Time the session finished, in RFC3339 format. Absent while the record is
+            Open, and absent on Stale records.
+          type: string
+          format: date-time
+        start_reason:
+          description: Why this session was started
+          type: string
+          $ref: 'evse_manager_consumer_API.yaml#/components/schemas/StartSessionReason'
+        transaction:
+          description: >-
+            The transaction charged within this session. Absent if the session never
+            reached a transaction, for example when an EV was plugged in but never
+            authorized.
+          type: object
+          $ref: '#/components/schemas/Transaction'
+        ocpp_transaction_id:
+          description: >-
+            The transaction id known to the CSMS, always as a string. Only present in
+            OCPP setups: for OCPP 2.0.1 and 2.1 it is identical to session_id, for
+            OCPP 1.6 it is the numeric id assigned by the CSMS in decimal notation,
+            which arrives only after the transaction has already started. With early
+            OCPP TxStartPoints an OCPP transaction can exist for a session that never
+            reaches an EVerest transaction, so this may be present while transaction
+            is absent.
+          type: string
+        ocpp_transaction_timestamp_start:
+          description: >-
+            Time the OCPP transaction started, in RFC3339 format, as reported in the
+            transaction events of the OCPP module. It is the charging station clock
+            at the OCPP transaction start and can differ from timestamp_start and
+            from the timestamps of transaction, because the point at which an OCPP
+            2.x transaction starts is configurable via its TxStartPoint. Absent if
+            no OCPP module is connected or the event was not received.
+          type: string
+          format: date-time
+        ocpp_transaction_timestamp_stop:
+          description: >-
+            Time the OCPP transaction stopped, in RFC3339 format, as reported in the
+            transaction events of the OCPP module. It is the charging station clock
+            at the OCPP transaction stop and can differ from timestamp_stop and from
+            the timestamps of transaction, because the point at which an OCPP 2.x
+            transaction stops is configurable via its TxStopPoint. Absent if no OCPP
+            module is connected or the event was not received.
+          type: string
+          format: date-time
+        cost:
+          description: >-
+            Cost and tariff information reported for this session. Only present in
+            setups where a cost source is connected, and all figures originate from
+            the CSMS. The id_tag member is never populated, because the raw id token
+            is not persisted.
+          type: object
+          $ref: 'session_cost_API.yaml#/components/schemas/SessionCost'
+    Transaction:
+      description: >-
+        The transaction charged within a session. It starts at the point where all
+        preconditions for charging are met and finishes when one of them irrevocably
+        becomes false, so the fields that are only known at the end of a transaction
+        are absent while it is running.
+      type: object
+      additionalProperties: true
+      required:
+        - timestamp_start
+        - energy_Wh_import_start
+      properties:
+        timestamp_start:
+          description: Time the transaction started, in RFC3339 format
+          type: string
+          format: date-time
+        timestamp_stop:
+          description: >-
+            Time the transaction finished, in RFC3339 format. Absent while the
+            transaction is still running.
+          type: string
+          format: date-time
+        energy_Wh_import_start:
+          description: >-
+            Total imported energy reading taken when the transaction started, in Wh
+          type: number
+        energy_Wh_import_stop:
+          description: >-
+            Total imported energy reading taken when the transaction finished, in Wh.
+            Absent while the transaction is still running.
+          type: number
+        id_token_hash:
+          description: >-
+            Hash of the id token that started the transaction. The raw token is never
+            stored as a dedicated field, but note that a stored signed meter value
+            embeds it (OCMF ID field).
+            Computed as the lower case hex encoded SHA256 digest of the id token
+            type concatenated with the id token value, matching the hash the OCPP stack
+            uses for its authorization cache, so a hash computed elsewhere in the stack
+            can be compared to this one directly. Absent only if the digest could not
+            be calculated.
+          type: string
+          minLength: 64
+          maxLength: 64
+        id_token_type:
+          description: >-
+            Type of the id token that started the transaction. Part of the input to
+            id_token_hash, so it is needed to reproduce the hash.
+          type: string
+          $ref: 'auth_consumer_API.yaml#/components/schemas/IdTokenType'
+        authorization_type:
+          description: >-
+            How the id token was presented, i.e. which authorization mechanism started
+            this transaction.
+          type: string
+          $ref: 'auth_consumer_API.yaml#/components/schemas/AuthorizationType'
+        stop_reason:
+          description: >-
+            Why the transaction was stopped. Absent while the transaction is still
+            running. A transaction that was interrupted by a power cycle and recovered
+            on the next boot carries PowerLoss.
+          type: string
+          $ref: 'evse_manager_consumer_API.yaml#/components/schemas/StopTransactionReason'
+        signed_meter_value_start:
+          description: >-
+            Signed meter value (e.g. an OCMF record) captured when the transaction
+            started. Only populated when the module is configured to store signed meter
+            values via its store_signed_meter_values config option. Be aware that the
+            signed data typically embeds the raw id token (OCMF ID field), so enabling
+            the option persists raw tokens. May only become available when the
+            transaction finishes, in which case it is completed at that point.
+          type: object
+          $ref: 'powermeter_API.yaml#/components/schemas/units_signed/types/SignedMeterValue'
+        signed_meter_value_stop:
+          description: >-
+            Signed meter value (e.g. an OCMF record) captured when the transaction
+            finished, with the same config gate and raw-token caveat as
+            signed_meter_value_start. Absent while the transaction is still running.
+          type: object
+          $ref: 'powermeter_API.yaml#/components/schemas/units_signed/types/SignedMeterValue'
+    SessionState:
+      description: |
+        Lifecycle state of a stored session record
+        - Open: The session is ongoing.
+        - Finished: The session finished. Sessions with a running transaction that were interrupted by a power cycle are also closed by the module during recovery on the next boot, in which case the transaction carries stop reason PowerLoss and the session stop timestamp is the time of the recovery.
+        - Stale: The session never finished and never will. A newer session was started on the same EVSE while this record was still Open, which means tracking of this one was lost, for example in a crash or a power cycle during a session without a running transaction.
+      type: string
+      enum:
+        - Open
+        - Finished
+        - Stale
+    SessionIdentifier:
+      description: >-
+        Identifies a single session record. Exactly one of the members must be
+        set. If both are set, session_id takes precedence.
+      type: object
+      additionalProperties: true
+      properties:
+        session_id:
+          description: The EVSE generated UUID of the session
+          type: string
+        ocpp_transaction_id:
+          description: The transaction id known to the CSMS
+          type: string
+    ClearSessionsResult:
+      description: Result of deleting all stored session records
+      type: object
+      additionalProperties: true
+      required:
+        - cleared
+      properties:
+        cleared:
+          description: Number of session records that were deleted
+          type: integer
+          minimum: 0
+
+    CommunicationCheck:
+      type: boolean
+      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+    HeartBeatId:
+      type: integer
+      description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"
