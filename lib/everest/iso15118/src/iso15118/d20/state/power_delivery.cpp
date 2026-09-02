@@ -149,7 +149,7 @@ Result PowerDelivery::feed(Event ev) {
 
         if (shutdown_requested) {
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
-            if (m_ctx.session.is_ac_charger()) {
+            if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger()) {
                 m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
                 return m_ctx.create_state<SessionStop>();
             }
