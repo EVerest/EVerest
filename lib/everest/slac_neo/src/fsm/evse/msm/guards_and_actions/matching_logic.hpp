@@ -4,7 +4,7 @@
 // Guards and actions of the Matching sub-machine (see matching.hpp).
 
 #pragma once
-#include "common.hpp"
+#include "../common.hpp"
 
 namespace everest::lib::slac::msm::matching_sm {
 

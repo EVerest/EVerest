@@ -6,7 +6,7 @@
 
 #pragma once
 #include "common.hpp"
-#include "init_actions.hpp"
+#include "guards_and_actions/init_logic.hpp"
 
 namespace everest::lib::slac::msm::init_sm {
 

@@ -4,7 +4,7 @@
 // Guards and actions of the ResetChip sub-machine (modem reset after CM_SET_KEY; see reset_chip.hpp).
 
 #pragma once
-#include "common.hpp"
+#include "../common.hpp"
 
 namespace everest::lib::slac::msm::reset_chip_sm {
 

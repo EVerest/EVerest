@@ -7,7 +7,7 @@
 #pragma once
 #include "../amp_map_handler.hpp"
 #include "common.hpp"
-#include "matched_actions.hpp"
+#include "guards_and_actions/matched_logic.hpp"
 
 namespace everest::lib::slac::msm::matched_sm {
 

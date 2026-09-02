@@ -5,7 +5,7 @@
 
 #pragma once
 #include "common.hpp"
-#include "reset_chip_actions.hpp"
+#include "guards_and_actions/reset_chip_logic.hpp"
 
 namespace everest::lib::slac::msm::reset_chip_sm {
 

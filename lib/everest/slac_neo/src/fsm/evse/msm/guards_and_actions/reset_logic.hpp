@@ -4,7 +4,7 @@
 // Guards and actions of the Reset sub-machine (CM_SET_KEY handling; see reset.hpp).
 
 #pragma once
-#include "common.hpp"
+#include "../common.hpp"
 
 namespace everest::lib::slac::msm::reset_sm {
 

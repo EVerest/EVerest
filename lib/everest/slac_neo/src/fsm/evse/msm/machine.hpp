@@ -6,8 +6,8 @@
 
 #pragma once
 #include "common.hpp"
+#include "guards_and_actions/machine_logic.hpp"
 #include "init.hpp"
-#include "machine_actions.hpp"
 #include "matched.hpp"
 #include "matching.hpp"
 #include "reset.hpp"

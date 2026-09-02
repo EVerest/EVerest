@@ -4,7 +4,7 @@
 // Guards and actions of the Init sub-machine (modem vendor detection; see init.hpp).
 
 #pragma once
-#include "common.hpp"
+#include "../common.hpp"
 
 namespace everest::lib::slac::msm::init_sm {
 

@@ -6,7 +6,7 @@
 
 #pragma once
 #include "common.hpp"
-#include "reset_actions.hpp"
+#include "guards_and_actions/reset_logic.hpp"
 
 namespace everest::lib::slac::msm::reset_sm {
 
@@ -65,7 +65,7 @@ struct Reset_def : public state_machine_def<Reset_def> {
     int set_key_attempts{0};
     timer set_key_timer;
 
-    // Named differently from the set_key_timeout guard functor in reset_actions.hpp, which the
+    // Named differently from the set_key_timeout guard functor in guards_and_actions/reset_logic.hpp, which the
     // transition guards above refer to.
     bool set_key_timer_expired() {
         return set_key_timer.timeout();

@@ -6,7 +6,7 @@
 
 #pragma once
 #include "common.hpp"
-#include "wait_for_link_actions.hpp"
+#include "guards_and_actions/wait_for_link_logic.hpp"
 
 namespace everest::lib::slac::msm::wait_for_link_sm {
 
