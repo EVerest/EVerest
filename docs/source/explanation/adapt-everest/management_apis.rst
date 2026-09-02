@@ -81,6 +81,22 @@ read-write mode by appending ``=rw`` to the flag, e.g. with the following comman
 
    ./run-scripts/run-sil.sh --lifecycle-api=rw
 
+Clients
+=======
+
+EVerest ships a command line client for both APIs,
+:ref:`everest-management-api-cli <exp_dev_tools_management_api_cli>`, which
+is installed into the Python venv of the build directory. It covers every
+request of both APIs, prints the replies as JSON and can follow the status
+and notification topics. The :ref:`management APIs tutorial <tutorial_management_apis>`
+uses it throughout.
+
+The integration tests in ``tests/management_api_tests`` drive the APIs through
+the client modules of that package and are a good reference when writing your
+own client: all that is needed is an MQTT client that publishes a request
+envelope and subscribes to the reply topic named in it (see
+:ref:`MQTT Topics <exp_management_apis_topics>`).
+
 AsyncAPI specification
 ======================
 
@@ -98,6 +114,8 @@ Here is an example for the *list_all_slots* command of the configuration_API:
 - message for the command: *send_request_list_all_slots*
 - message for the response: *receive_reply_list_all_slots*
 
+
+.. _exp_management_apis_topics:
 
 MQTT Topics
 ===========
@@ -127,3 +145,38 @@ The reply topic for a command is not fixed but is specified in the ``replyTo``
 field of the command message. This allows clients to specify their own topic
 for receiving the response, e.g. to distinguish responses from different
 commands as well as from different invocations of the same command.
+
+Request and reply messages
+==========================
+
+A command is sent as a *RequestReply* envelope: the ``headers`` object names
+the topic the reply is expected on, the ``payload`` object carries the
+arguments of the command (an empty object for commands without arguments).
+The manager publishes the bare result object on that ``replyTo`` topic.
+
+.. code-block:: json
+
+   {"headers": {"replyTo": "manual/reply"}, "payload": {"slot_id": 1}}
+
+Two kinds of invalid requests are treated differently:
+
+-  A message whose envelope cannot be parsed (invalid JSON, missing
+   ``headers`` or ``replyTo``) gets no reply at all. A client only notices
+   this as a timeout.
+-  A message with a valid envelope but an invalid or incomplete ``payload``
+   is answered with the command's failure result, for example ``Rejected``.
+
+The notices on ``e2m`` topics differ in retention: the lifecycle ``status`` is
+published retained, so a subscriber always receives the last known status,
+while ``active_slot`` and ``config_updates`` are published without retention
+and are only seen by clients subscribed at that moment.
+
+The exchange can be reproduced without any client library using the mosquitto
+command line tools:
+
+.. code-block:: bash
+
+   mosquitto_rr -q 2 -e manual/reply \
+     -t everest_api/1/configuration/m2e/list_all_slots \
+     -m '{"headers":{"replyTo":"manual/reply"},"payload":{}}'
+   mosquitto_sub -v -t 'everest_api/1/#'     # everything the APIs publish

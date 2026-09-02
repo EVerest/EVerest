@@ -24,5 +24,11 @@ ev_add_pip_package(
 
 add_subdirectory(everest-testing)
 
-add_subdirectory(everest-config-api-cli)
-add_subdirectory(everest-lifecycle-api-cli)
+# client for the management APIs; the management API tests import it
+if(EVEREST_CORE_BUILD_TESTING)
+    ev_add_pip_package(
+        NAME everest-management-api-cli
+        SOURCE_DIRECTORY everest-management-api-cli
+    )
+    add_subdirectory(everest-management-api-cli)
+endif()

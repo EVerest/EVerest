@@ -1,12 +1,11 @@
-#!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
-"""Shared RequestReply RPC helper for the manager's management APIs.
+"""RequestReply RPC helper for the manager's management APIs.
 
 Requests use the generic envelope {"headers": {"replyTo": <topic>}, "payload": <object>}
-(see lib/everest/everest_api_types/src/everest_api_types/generic/json_codec.cpp); the manager
-publishes the bare result object to the replyTo topic.
+(see lib/everest/everest_api_types/src/everest_api_types/generic/json_codec.cpp in everest-core);
+the manager publishes the bare result object to the replyTo topic.
 """
 
 import json
@@ -17,17 +16,18 @@ from typing import List
 
 import paho.mqtt.client as mqtt
 
+REPLY_TOPIC_PREFIX = "everest_management_api_cli"
+
 _SUBACK_EVENTS_ATTR = "_mqtt_rpc_suback_events"
 _SUBACK_LOCK_ATTR = "_mqtt_rpc_suback_lock"
 
 
 def _ensure_suback_dispatcher(mqtt_client: mqtt.Client) -> None:
-    """Install a single on_subscribe dispatcher on the client that resolves
-    a per-mid Event, so multiple independent callers (e.g. the lifecycle and
-    configuration API clients sharing one connected_mqtt_client fixture) can
-    each wait for their own SUBACK without clobbering each other's callback.
+    """Install a single on_subscribe dispatcher on the client that resolves a per-mid Event.
 
-    Idempotent: safe to call repeatedly on the same client.
+    Multiple independent callers (the lifecycle and configuration clients share one MQTT
+    connection) can then each wait for their own SUBACK without clobbering each other's
+    callback. Idempotent: safe to call repeatedly on the same client.
     """
     if getattr(mqtt_client, _SUBACK_EVENTS_ATTR, None) is not None:
         return
@@ -50,10 +50,10 @@ def _ensure_suback_dispatcher(mqtt_client: mqtt.Client) -> None:
 def subscribe_and_wait(mqtt_client: mqtt.Client, topic, timeout_s: float = 5.0, **kwargs) -> None:
     """Subscribe and block until the broker's SUBACK for this subscription is received.
 
-    `topic` is whatever paho's Client.subscribe() accepts as its first argument
-    (a topic string, a (topic, qos) tuple, or a list of (topic, qos) tuples).
-    Fails fast with a clear message if the subscribe request itself is rejected
-    locally, or if no SUBACK arrives within `timeout_s`.
+    `topic` is whatever paho's Client.subscribe() accepts as its first argument (a topic
+    string, a (topic, qos) tuple, or a list of (topic, qos) tuples). Fails fast with a clear
+    message if the subscribe request itself is rejected locally, or if no SUBACK arrives
+    within `timeout_s`.
     """
     _ensure_suback_dispatcher(mqtt_client)
     lock = getattr(mqtt_client, _SUBACK_LOCK_ATTR)
@@ -79,16 +79,20 @@ def subscribe_and_wait(mqtt_client: mqtt.Client, topic, timeout_s: float = 5.0, 
 
 
 def perform_rpc(mqtt_client: mqtt.Client, command_topic: str, payload: dict,
-                timeout_s: float = 10.0) -> dict:
-    reply_topic = f"everest_management_api_tests/{uuid.uuid4().hex}/reply"
+                timeout_s: float = 4.0) -> dict:
+    """Publish one request on `command_topic` and return the parsed reply.
+
+    Raises TimeoutError when no reply arrives within `timeout_s`. Note that the manager
+    sends no reply at all when the request envelope itself cannot be parsed.
+    """
+    reply_topic = f"{REPLY_TOPIC_PREFIX}/{uuid.uuid4().hex}/reply"
     reply_event = threading.Event()
     replies: List[dict] = []
     decode_errors: List[str] = []
 
     def on_reply(_client, _userdata, msg):
-        # runs on paho's network thread: an uncaught exception here would not
-        # surface as a test failure, it would just leave reply_event unset
-        # and the caller waiting until the (misleading) timeout below.
+        # runs on paho's network thread: an uncaught exception here would just leave
+        # reply_event unset and the caller waiting until the (misleading) timeout below.
         try:
             reply = json.loads(msg.payload)
         except (ValueError, TypeError) as exc:
@@ -108,7 +112,6 @@ def perform_rpc(mqtt_client: mqtt.Client, command_topic: str, payload: dict,
             raise RuntimeError(
                 f"Failed to publish request to '{command_topic}': paho error code {publish_info.rc}")
         if not reply_event.wait(timeout_s):
-            # note: on an internal error the manager publishes no reply at all
             detail = f"; decode errors: {decode_errors}" if decode_errors else ""
             raise TimeoutError(
                 f"Timeout waiting for reply to '{command_topic}' on {reply_topic}{detail}")

@@ -1,13 +1,12 @@
-#!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
-"""Raw-MQTT client for the manager's configuration management API.
+"""Client for the manager's configuration management API (everest_api/<version>/configuration).
 
-Topics and payloads per lib/everest/framework/src/management_api/configuration_api.cpp
-and lib/everest/everest_api_types/src/everest_api_types/configuration/json_codec.cpp.
-Unlike the lifecycle status topic, the monitor topics (active_slot, config_updates) are
-published QoS0 and NOT retained — subscribe before the manager starts.
+Topics and payloads per lib/everest/framework/src/management_api/configuration_api.cpp and
+docs/source/reference/EVerest_API/configuration_API.yaml in everest-core. Unlike the lifecycle
+status topic, the notification topics (active_slot, config_updates) are published QoS0 and NOT
+retained: subscribe before the manager starts to see its boot-time active_slot notice.
 """
 
 import json
@@ -18,7 +17,7 @@ from typing import Callable, List, Optional, Tuple
 
 import paho.mqtt.client as mqtt
 
-from mqtt_rpc import perform_rpc, subscribe_and_wait
+from .mqtt_rpc import perform_rpc, subscribe_and_wait
 
 CONFIGURATION_API_VERSION = 1
 CONFIGURATION_TOPIC_BASE = f"everest_api/{CONFIGURATION_API_VERSION}/configuration"
@@ -27,13 +26,18 @@ CONFIG_UPDATES_TOPIC = f"{CONFIGURATION_TOPIC_BASE}/e2m/config_updates"
 
 # (module_id, parameter_name, implementation_id or None for module-level parameters)
 ParameterId = Tuple[str, str, Optional[str]]
+# (module_id, parameter_name, implementation_id or None, new value as string)
+ParameterUpdate = Tuple[str, str, Optional[str], str]
+
+# Called with (topic, decoded payload) for every notification the manager publishes.
+NoticeListener = Callable[[str, dict], None]
 
 
 def configuration_command_topic(command: str) -> str:
     return f"{CONFIGURATION_TOPIC_BASE}/m2e/{command}"
 
 
-def _cfg_param_id(param: ParameterId) -> dict:
+def cfg_param_id(param: ParameterId) -> dict:
     module_id, parameter_name, implementation_id = param
     identifier = {"module_id": module_id, "parameter_name": parameter_name}
     if implementation_id is not None:
@@ -42,10 +46,11 @@ def _cfg_param_id(param: ParameterId) -> dict:
 
 
 class ConfigurationApiClient:
-    """Drives the configuration API over raw MQTT and records its notification streams."""
+    """Drives the configuration API over MQTT and records its notification streams."""
 
-    def __init__(self, mqtt_client: mqtt.Client):
+    def __init__(self, mqtt_client: mqtt.Client, listener: Optional[NoticeListener] = None):
         self._client = mqtt_client
+        self._listener = listener
         self._lock = threading.Lock()
         self._active_slot_notices: List[dict] = []
         self._config_update_notices: List[dict] = []
@@ -57,9 +62,7 @@ class ConfigurationApiClient:
         subscribe_and_wait(self._client, [(ACTIVE_SLOT_TOPIC, 2), (CONFIG_UPDATES_TOPIC, 2)])
 
     def _decode(self, what: str, msg) -> Optional[dict]:
-        # runs on paho's network thread: an uncaught exception here must not
-        # propagate, or the notice never gets recorded and the waiter below
-        # dies later with a misleading timeout instead of the real cause.
+        # runs on paho's network thread: an uncaught exception here must not propagate
         try:
             return json.loads(msg.payload)
         except (ValueError, TypeError) as exc:
@@ -73,17 +76,19 @@ class ConfigurationApiClient:
         notice = self._decode("active_slot", msg)
         if notice is None:
             return
-        logging.info(f"configuration active_slot notice: {notice}")
         with self._lock:
             self._active_slot_notices.append(notice)
+        if self._listener is not None:
+            self._listener(ACTIVE_SLOT_TOPIC, notice)
 
     def _on_config_update(self, _client, _userdata, msg) -> None:
         notice = self._decode("config_updates", msg)
         if notice is None:
             return
-        logging.info(f"configuration config_updates notice: {notice}")
         with self._lock:
             self._config_update_notices.append(notice)
+        if self._listener is not None:
+            self._listener(CONFIG_UPDATES_TOPIC, notice)
 
     @property
     def active_slot_notices(self) -> List[dict]:
@@ -101,15 +106,11 @@ class ConfigurationApiClient:
             return list(self._decode_errors)
 
     def mark_active_slot_stream(self) -> int:
-        """Return the current active_slot notice stream position, for waiting on
-        notices newer than 'now' (see LifecycleApiClient.mark()). Deliberately not
-        named mark_active_slot(...): that name is already the mark_active_slot RPC
-        wrapper below, and reusing it here for the notice stream would be confusing."""
+        """Return the current active_slot notice stream position (see LifecycleApiClient.mark())."""
         return len(self.active_slot_notices)
 
     def mark_config_update_stream(self) -> int:
-        """Return the current config_updates notice stream position, for waiting on
-        notices newer than 'now' (see LifecycleApiClient.mark())."""
+        """Return the current config_updates notice stream position (see LifecycleApiClient.mark())."""
         return len(self.config_update_notices)
 
     def _wait_for(self, notices: Callable[[], List[dict]], predicate: Callable[[dict], bool],
@@ -124,8 +125,7 @@ class ConfigurationApiClient:
         detail = f"; decode errors: {errors}" if errors else ""
         raise TimeoutError(
             f"Timeout waiting for {what} notice; "
-            f"received (from index {after_index}): {notices()[after_index:]}{detail}"
-        )
+            f"received (from index {after_index}): {notices()[after_index:]}{detail}")
 
     def wait_for_active_slot(self, predicate: Callable[[dict], bool], timeout_s: float = 60.0,
                              after_index: int = 0) -> dict:
@@ -143,57 +143,58 @@ class ConfigurationApiClient:
 
     # --- commands ---
 
-    def _rpc(self, command: str, payload: dict, timeout_s: float = 10.0) -> dict:
+    def rpc(self, command: str, payload: dict, timeout_s: float = 10.0) -> dict:
+        """Send an arbitrary configuration API command and return the parsed reply."""
         return perform_rpc(self._client, configuration_command_topic(command), payload, timeout_s)
 
-    def list_all_slots(self) -> dict:
-        return self._rpc("list_all_slots", {})
+    def list_all_slots(self, timeout_s: float = 10.0) -> dict:
+        return self.rpc("list_all_slots", {}, timeout_s)
 
-    def get_active_slot(self) -> dict:
-        return self._rpc("get_active_slot", {})
+    def get_active_slot(self, timeout_s: float = 10.0) -> dict:
+        return self.rpc("get_active_slot", {}, timeout_s)
 
-    def mark_active_slot(self, slot_id: int) -> dict:
-        return self._rpc("mark_active_slot", {"slot_id": slot_id})
+    def mark_active_slot(self, slot_id: int, timeout_s: float = 10.0) -> dict:
+        return self.rpc("mark_active_slot", {"slot_id": slot_id}, timeout_s)
 
-    def delete_slot(self, slot_id: int) -> dict:
-        return self._rpc("delete_slot", {"slot_id": slot_id})
+    def delete_slot(self, slot_id: int, timeout_s: float = 10.0) -> dict:
+        return self.rpc("delete_slot", {"slot_id": slot_id}, timeout_s)
 
-    def duplicate_slot(self, slot_id: int, description: Optional[str] = None) -> dict:
+    def duplicate_slot(self, slot_id: int, description: Optional[str] = None,
+                       timeout_s: float = 10.0) -> dict:
         payload = {"slot_id": slot_id}
         if description is not None:
             payload["new_description"] = description
-        return self._rpc("duplicate_slot", payload)
+        return self.rpc("duplicate_slot", payload, timeout_s)
 
     def load_from_yaml(self, raw_yaml: str, description: Optional[str] = None,
-                       slot_id: Optional[int] = None) -> dict:
+                       slot_id: Optional[int] = None, timeout_s: float = 10.0) -> dict:
         payload = {"raw_yaml": raw_yaml}
         if description is not None:
             payload["description"] = description
         if slot_id is not None:
             payload["slot_id"] = slot_id
-        return self._rpc("load_from_yaml", payload)
+        return self.rpc("load_from_yaml", payload, timeout_s)
 
-    def set_description(self, slot_id: int, description: str) -> dict:
-        return self._rpc("set_description", {"slot_id": slot_id, "description": description})
+    def set_description(self, slot_id: int, description: str, timeout_s: float = 10.0) -> dict:
+        return self.rpc("set_description", {"slot_id": slot_id, "description": description}, timeout_s)
 
-    def get_configuration(self, slot_id: int, force_read_from_db: bool = False) -> dict:
-        return self._rpc("get_configuration",
-                         {"slot_id": slot_id, "force_read_from_db": force_read_from_db})
+    def get_configuration(self, slot_id: int, force_read_from_db: bool = False,
+                          timeout_s: float = 10.0) -> dict:
+        return self.rpc("get_configuration",
+                        {"slot_id": slot_id, "force_read_from_db": force_read_from_db}, timeout_s)
 
-    def set_config_parameters(self, slot_id: int,
-                              updates: List[Tuple[str, str, Optional[str], str]]) -> dict:
-        """updates: list of (module_id, parameter_name, implementation_id or None, value)."""
+    def set_config_parameters(self, slot_id: int, updates: List[ParameterUpdate],
+                              timeout_s: float = 10.0) -> dict:
         parameter_updates = [
-            {"cfg_param_id": _cfg_param_id((module_id, parameter_name, implementation_id)),
-             "value": value}
+            {"cfg_param_id": cfg_param_id((module_id, parameter_name, implementation_id)), "value": value}
             for module_id, parameter_name, implementation_id, value in updates
         ]
-        return self._rpc("set_config_parameters",
-                         {"slot_id": slot_id, "parameter_updates": parameter_updates})
+        return self.rpc("set_config_parameters",
+                        {"slot_id": slot_id, "parameter_updates": parameter_updates}, timeout_s)
 
     def get_config_parameters(self, slot_id: int, parameters: List[ParameterId],
-                              force_read_from_db: bool = False) -> dict:
-        return self._rpc("get_config_parameters",
-                         {"slot_id": slot_id,
-                          "parameters": [_cfg_param_id(p) for p in parameters],
-                          "force_read_from_db": force_read_from_db})
+                              force_read_from_db: bool = False, timeout_s: float = 10.0) -> dict:
+        return self.rpc("get_config_parameters",
+                        {"slot_id": slot_id,
+                         "parameters": [cfg_param_id(p) for p in parameters],
+                         "force_read_from_db": force_read_from_db}, timeout_s)
