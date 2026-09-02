@@ -47,10 +47,10 @@ struct Session_def     : public state_machine_def<Session_def> {
         Row   < FinalizeSounding , update  , WaitAttenRsp     , finalize_snd          , timeout                   >,
         Row   < WaitAttenRsp     , update  , WaitAttenRsp     , retry_snd             , timeout                   >,
         Row   < WaitAttenRsp     , update  , Failed           , log_no_atten_rsp      , retry_timeout             >,
-        Row   < WaitAttenRsp     , message , WaitSlacMatch    , on_atten_char_rsp     , is_atten_char_rsp_guard   >,
+        Row   < WaitAttenRsp     , message , WaitSlacMatch    , on_atten_char_rsp     , is_atten_char_rsp         >,
         Row   < WaitSlacMatch    , update  , Failed           , log_no_slac_match     , timeout                   >,
         Row   < WaitSlacMatch    , update  , Failed           , log_validation_window , validation_window_expired >,
-        Row   < WaitSlacMatch    , message , MatchComplete    , match_cnf             , is_slac_match_req_guard   >
+        Row   < WaitSlacMatch    , message , MatchComplete    , match_cnf             , is_slac_match_req         >
         //    +------------------+---------+------------------+-----------------------+---------------------------+
         >{};
     // clang-format on
