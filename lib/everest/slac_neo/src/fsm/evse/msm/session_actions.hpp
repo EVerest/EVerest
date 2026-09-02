@@ -8,19 +8,62 @@
 
 namespace everest::lib::slac::msm::session_sm {
 
+// Message checks: the frame has the expected MMTYPE, decodes as MsgT and belongs to this session
+// (run id / EV MAC, see MatchingSessionData::validate_message).
+template<class MsgT>
+bool check_message(message const& e, std::uint16_t expected, fsm::evse::MatchingSessionData const& session_data) {
+    const auto mmtype = e.payload.get_mmtype();
+    if(mmtype not_eq expected){
+        return false;
+    }
+    auto const msg = e.payload.template payload_as<MsgT>();
+    if (not msg.has_value()) {
+        return false;
+    }
+    return session_data.validate_message(*msg);
+}
+inline bool is_start_atten_char(message const& e, fsm::evse::MatchingSessionData const& session_data) {
+    auto mmtype = defs::MMTYPE_CM_START_ATTEN_CHAR | defs::MMTYPE_MODE_IND;
+    return check_message<slac::messages::cm_start_atten_char_ind>(e, mmtype, session_data);
+}
+inline bool is_atten_char_rsp(message const& e, fsm::evse::MatchingSessionData const& session_data) {
+    auto mmtype = slac::defs::MMTYPE_CM_ATTEN_CHAR | slac::defs::MMTYPE_MODE_RSP;
+    return check_message<slac::messages::cm_atten_char_rsp>(e, mmtype, session_data);
+}
+inline bool is_slac_match_req(message const& e, fsm::evse::MatchingSessionData const& session_data) {
+    auto mmtype = slac::defs::MMTYPE_CM_SLAC_MATCH | slac::defs::MMTYPE_MODE_REQ;
+    return check_message<slac::messages::cm_slac_match_req>(e, mmtype, session_data);
+}
+inline bool is_atten_profile_ind(message const& e, fsm::evse::MatchingSessionData const& session_data) {
+    auto mmtype = slac::defs::MMTYPE_CM_ATTEN_PROFILE | slac::defs::MMTYPE_MODE_IND;
+    return check_message<slac::messages::cm_atten_profile_ind>(e, mmtype, session_data);
+}
+
 // Guards
+struct is_atten_char_rsp_guard {
+    template <class Fsm, class SrcT, class TarT>
+    bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+        return is_atten_char_rsp(e, fsm.session_data);
+    }
+};
+struct is_slac_match_req_guard {
+    template <class Fsm, class SrcT, class TarT>
+    bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+        return is_slac_match_req(e, fsm.session_data);
+    }
+};
 struct sound_below_limit {
     template <class Fsm, class SrcT, class TarT>
     bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
         return fsm.session_data.captured_sounds + 1 < slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS and
-               fsm.is_atten_profile_ind(e);
+               is_atten_profile_ind(e, fsm.session_data);
     }
 };
 struct sound_completes_count {
     template <class Fsm, class SrcT, class TarT>
     bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
         return fsm.session_data.captured_sounds + 1 >= slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS and
-               fsm.is_atten_profile_ind(e);
+               is_atten_profile_ind(e, fsm.session_data);
     }
 };
 // After a CM_VALIDATE process, the CM_SLAC_MATCH.REQ must arrive within TT_match_sequence (much
@@ -43,7 +86,7 @@ struct retry_limit {
 struct start_atten_in_time {
     template <class Fsm, class SrcT, class TarT>
     bool operator()(message const& e, Fsm& fsm, SrcT& src, TarT&) {
-        return not src.state_timeout() and fsm.is_start_atten_char(e);
+        return not src.state_timeout() and is_start_atten_char(e, fsm.session_data);
     }
 };
 
@@ -74,6 +117,44 @@ struct capture_sound {
             fsm.ctx->log_info(session_log_prefix(fsm.session_data) +
                               "Received all sounds, finalizing sounding");
         }
+    }
+};
+
+struct on_atten_char_rsp {
+    template <class Fsm, class SrcT, class TarT>
+    void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
+        fsm.ctx->log_info(session_log_prefix(fsm.session_data) +
+                          "Received CM_ATTEN_CHAR.RSP, waiting for CM_SLAC_MATCH.REQ");
+    }
+};
+struct match_cnf {
+    template <class Fsm, class SrcT, class TarT>
+    void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+        auto& ctx = *fsm.ctx;
+        auto& session_data = fsm.session_data;
+        messages::cm_slac_match_cnf& reply = ctx.match_confirm_cache.message;
+        auto const msg = e.payload.payload_as<slac::messages::cm_slac_match_req>();
+        if (not msg.has_value()) {
+            return;
+        }
+        ctx.log_info(session_log_prefix(session_data) +
+                     "Received CM_SLAC_MATCH.REQ, sending CM_SLAC_MATCH.CNF -> session complete");
+        static constexpr Nmk failed_match_session_nmk{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                                                     0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10};
+
+        Nmk const* session_nmk = &ctx.slac_config.session_nmk;
+        if (ctx.slac_config.link_status.debug_simulate_failed_matching) {
+            ctx.log_info("Sending wrong NMK to EV to simulate a failed link setup after match request");
+            session_nmk = &failed_match_session_nmk;
+        }
+
+        session_data.create_cm_slac_match_cnf(reply, *msg, *session_nmk);
+        if (not ctx.send_slac_message(session_data.ev_mac, reply)) {
+            ctx.log_warn("Failed to send CM_SLAC_MATCH.CNF");
+        }
+        ctx.signal_cm_slac_match_cnf(session_data.ev_mac.data());
+        ctx.cache_match_confirm_message(reply, session_data.ev_mac, session_data.evse_mac, session_data.run_id);
+        std::copy(std::begin(session_data.ev_mac), std::end(session_data.ev_mac), std::begin(ctx.status.ev_mac));
     }
 };
 

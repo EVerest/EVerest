@@ -8,6 +8,29 @@
 
 namespace everest::lib::slac::msm::matching_sm {
 
+// Session bookkeeping shared by the guards below. A session flags SessionMatched in MatchComplete
+// and SessionFailed in Failed (see session.hpp).
+template <class Fsm> bool any_session_matched(Fsm& fsm) {
+    for(auto& elem : fsm.sessions){
+        if(elem.template is_flag_active<SessionMatched>()){
+            return true;
+        }
+    }
+    return false;
+}
+// False while there is no session at all: "all failed" needs at least one session.
+template <class Fsm> bool all_sessions_failed(Fsm& fsm) {
+    if(fsm.sessions.empty()){
+        return false;
+    }
+    for(auto& elem : fsm.sessions){
+        if(not elem.template is_flag_active<SessionFailed>()){
+            return false;
+        }
+    }
+    return true;
+}
+
 // Guards
 struct is_slac_param_req : public is_message_of_type<slac::defs::MMTYPE_CM_SLAC_PARAM | slac::defs::MMTYPE_MODE_REQ> { };
 // A session in MatchComplete means CM_SLAC_MATCH.CNF is out, but Matching is only exited on the
@@ -17,7 +40,7 @@ struct is_slac_param_req : public is_message_of_type<slac::defs::MMTYPE_CM_SLAC_
 struct has_matched_session {
     template <class Fsm, class Evt, class SrcT, class TarT>
     bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        return fsm.is_matched(update{});
+        return any_session_matched(fsm);
     }
 };
 
@@ -122,7 +145,7 @@ struct should_reset_instead_of_fail {
     template <class Evt, class Fsm, class SrcT, class TarT>
     bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
         auto const should_timeout = fsm.to.timeout();
-        auto const is_failed = fsm.is_failed(update{});
+        auto const is_failed = all_sessions_failed(fsm);
         auto const no_sessions = fsm.sessions.empty();
         auto const should_reset = (not fsm.failed_matching_reset_once) and
                                   fsm.ctx->slac_config.reset_instead_of_fail and
@@ -134,7 +157,7 @@ struct should_transition_to_failed_matching {
     template <class Evt, class Fsm, class SrcT, class TarT>
     bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
         auto const should_timeout = fsm.to.timeout();
-        auto const is_failed = fsm.is_failed(update{});
+        auto const is_failed = all_sessions_failed(fsm);
         auto const no_sessions = fsm.sessions.empty();
         auto const should_fail = (is_failed or (no_sessions && should_timeout)) and
                                  ((not fsm.ctx->slac_config.reset_instead_of_fail) or fsm.failed_matching_reset_once);

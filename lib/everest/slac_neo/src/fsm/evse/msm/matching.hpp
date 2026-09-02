@@ -22,31 +22,9 @@ struct Matching_def    : public state_machine_def<Matching_def> {
     struct Failed  : public exit_pseudo_state<update> { };
     // clang-format on
 
-    // Member guards (used via g_row / from the functors in matching_actions.hpp)
-    bool is_matched(update const&) {
-        for(auto& elem : sessions){
-            if(elem.is_flag_active<SessionMatched>()){
-                return true;
-            }
-        }
-        return false;
-    }
-    bool is_failed(update const&) {
-        if(sessions.empty()){
-            return false;
-        }
-        for(auto& elem : sessions){
-            if(not elem.is_flag_active<SessionFailed>()){
-                return false;
-            }
-        }
-        return true;
-    }
-
     // Transitions
     using Session = state_machine<session_sm::Session_def>;
     using initial_state = boost::mpl::vector<Init, Listen, Pipe>;
-    using p = Matching_def;
     using fail_matching = should_transition_to_failed_matching;
     using reset_matching = should_reset_instead_of_fail;
     using not_validate_req = Not_<is_validate_req>;
@@ -57,7 +35,7 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         //    +--------+---------+---------+-----------------------+------------------------+
         //    | Source | Event   | Target  | Action                | Guard                  |
         //    +--------+---------+---------+-----------------------+------------------------+
-        g_row < Init   , update  , Matched /* none */              , &p::is_matched         >,
+        Row   < Init   , update  , Matched , none                  , has_matched_session    >,
         Row   < Init   , update  , Failed  , none                  , fail_matching          >,
         Row   < Init   , update  , Init    , reset_matching_subfsm , reset_matching         >,
         //    +--------+---------+---------+-----------------------+------------------------+
