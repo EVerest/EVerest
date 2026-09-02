@@ -30,19 +30,24 @@ void FSMController::signal_new_slac_message(slac::messages::HomeplugMessage cons
     fsm.message(msg);
 }
 
-void FSMController::signal_reset() {
-    if (!active.load()) {
-        return;
-    }
-    m_reset.notify();
-}
-
-bool FSMController::signal_trigger_matching() {
+bool FSMController::post(std::function<void()> task) {
     if (!active.load()) {
         return false;
     }
-    m_trigger_matching.notify();
+    auto* handler = m_handler.load();
+    if (handler == nullptr) {
+        return false;
+    }
+    handler->add_action(std::move(task));
     return true;
+}
+
+void FSMController::signal_reset() {
+    post([this] { handle_reset(); });
+}
+
+bool FSMController::signal_trigger_matching() {
+    return post([this] { handle_trigger_matching(); });
 }
 
 void FSMController::handle_retrigger() {
@@ -68,21 +73,14 @@ void FSMController::handle_trigger_matching() {
 
 bool FSMController::register_events(everest::lib::io::event::fd_event_handler& handler) {
     using everest::lib::util::bind_obj;
-    using T = FSMController;
-    auto result = true;
-    result &= handler.register_event_handler(&m_reset, bind_obj(&T::handle_reset, this));
-    result &= handler.register_event_handler(&m_trigger_matching, bind_obj(&T::handle_trigger_matching, this));
-    result &= handler.register_event_handler(&m_retrigger, bind_obj(&T::handle_retrigger, this));
-    return result;
+    if (!handler.register_event_handler(&m_retrigger, bind_obj(&FSMController::handle_retrigger, this))) {
+        return false;
+    }
+    m_handler.store(&handler);
+    return true;
 }
 
 bool FSMController::unregister_events(everest::lib::io::event::fd_event_handler& handler) {
-    auto result = true;
-    result &= handler.unregister_event_handler(&m_reset);
-    result &= handler.unregister_event_handler(&m_trigger_matching);
-    result &= handler.unregister_event_handler(&m_retrigger);
-    return result;
-}
-
-void FSMController::run() {
+    m_handler.store(nullptr);
+    return handler.unregister_event_handler(&m_retrigger);
 }
