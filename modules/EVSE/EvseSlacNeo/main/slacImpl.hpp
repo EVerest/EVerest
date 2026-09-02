@@ -36,7 +36,7 @@ struct ContextCallbacks;
 #include <thread>
 
 #include <everest/io/event/event_fd.hpp>
-#include <everest/slac/fsm/context.hpp>
+#include <everest/slac/fsm/evse/context.hpp>
 #include <everest/util/async/monitor.hpp>
 
 #include "lifecycle_gate.hpp"

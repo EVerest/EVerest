@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 
-#include <everest/slac/fsm/slac_evse_fsm.hpp>
+#include <everest/slac/fsm/evse/slac_evse_fsm.hpp>
 #include <everest/slac/slac_fsm.hpp>
 #include <everest_api_types/telemetry/codec.hpp>
 // clang-format off

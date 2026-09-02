@@ -11,7 +11,7 @@
 #include <vector>
 
 #include <everest/slac/HomeplugMessage.hpp>
-#include <everest/slac/fsm/context.hpp>
+#include <everest/slac/fsm/evse/context.hpp>
 #include <everest/slac/slac_fsm.hpp>
 
 using namespace everest::lib::slac;

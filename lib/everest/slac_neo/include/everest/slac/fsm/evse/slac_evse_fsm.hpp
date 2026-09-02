@@ -17,7 +17,7 @@
 
 #include <everest/slac/HomeplugMessage.hpp>
 #include <everest/slac/MatchingSessionData.hpp>
-#include <everest/slac/fsm/context.hpp>
+#include <everest/slac/fsm/evse/context.hpp>
 #include <everest/slac/timer.hpp>
 
 #include <algorithm>
