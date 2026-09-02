@@ -1,15 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef FRAMEWORK_EVEREST_RUNTIME_HPP
-#define FRAMEWORK_EVEREST_RUNTIME_HPP
-
-#include <cstdint>
-#include <filesystem>
-#include <string>
-
-#include <fmt/color.h>
-#include <fmt/core.h>
-#include <sys/prctl.h>
+#pragma once
 
 #include <framework/ModuleAdapter.hpp>
 #include <utils/config/settings.hpp>
@@ -18,6 +9,14 @@
 #include <everest/compile_time_settings.hpp>
 #include <everest/logging.hpp>
 #include <everest/utils/yaml_loader.hpp>
+
+#include <fmt/color.h>
+#include <fmt/core.h>
+#include <sys/prctl.h>
+
+#include <cstdint>
+#include <filesystem>
+#include <string>
 
 namespace boost::program_options {
 class variables_map; // forward declaration
@@ -48,15 +47,15 @@ inline constexpr auto VERSION_INFORMATION_FILE = "version_information.txt";
 namespace defaults {
 
 // defaults:
-//   PREFIX: set by cmake
 //   EVEREST_NAMESPACE: everest
-//   EVEREST_INSTALL_LIBDIR: set by cmake
-//   BIN_DIR: ${PREFIX}/bin
-//   LIBEXEC_DIR: ${PREFIX}/libexec
-//   LIB_DIR: ${PREFIX}/${EVEREST_INSTALL_LIBDIR}
-//   SYSCONF_DIR: /etc, if ${PREFIX}==/usr, otherwise ${PREFIX}/etc
-//   LOCALSTATE_DIR: /var, if ${PREFIX}==/usr, otherwise ${PREFIX}/var
-//   DATAROOT_DIR: ${PREFIX}/share
+//   prefix(): /usr (otherwise CMAKE_INSTALL_PREFIX if set)
+//   lib_dir(): lib (otherwise CMAKE_INSTALL_LIBDIR if set)
+//   BIN_DIR: ${prefix()}/bin
+//   LIBEXEC_DIR: ${prefix()}/libexec
+//   LIB_DIR: ${prefix()}/${lib_dir()}
+//   SYSCONF_DIR: /etc, if ${prefix()}==/usr, otherwise ${prefix()}/etc
+//   LOCALSTATE_DIR: /var, if ${prefix()}==/usr, otherwise ${prefix()}/var
+//   DATAROOT_DIR: ${prefix()}/share
 //
 //   modules_dir: ${LIBEXEC_DIR}${EVEREST_NAMESPACE}
 //   types_dir: ${DATAROOT_DIR}${EVEREST_NAMESPACE}/types
@@ -67,11 +66,12 @@ namespace defaults {
 //   config_path: ${SYSCONF_DIR}${EVEREST_NAMESPACE}/default.yaml
 //   logging_config_path: ${SYSCONF_DIR}${EVEREST_NAMESPACE}/default_logging.cfg
 
-inline constexpr auto PREFIX = EVEREST_INSTALL_PREFIX;
+const std::string& prefix();
+const std::string& lib_dir();
+
 inline constexpr auto NAMESPACE = EVEREST_NAMESPACE;
 
 inline constexpr auto BIN_DIR = "bin";
-inline constexpr auto LIB_DIR = EVEREST_INSTALL_LIBDIR;
 inline constexpr auto LIBEXEC_DIR = "libexec";
 inline constexpr auto SYSCONF_DIR = "etc";
 inline constexpr auto LOCALSTATE_DIR = "var";
@@ -167,5 +167,3 @@ public:
 };
 
 } // namespace Everest
-
-#endif // FRAMEWORK_EVEREST_RUNTIME_HPP

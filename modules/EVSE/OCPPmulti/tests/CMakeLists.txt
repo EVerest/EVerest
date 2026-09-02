@@ -64,10 +64,15 @@ target_sources(${TEST_TARGET_NAME}
 target_compile_definitions(${TEST_TARGET_NAME}
     PRIVATE
     UNIT_TESTS
-    # The factory tests seed a real device model database from the shipped libocpp component configs
-    # and migrations - the same sources the installed module runs against.
-    LIBOCPP_COMPONENT_CONFIG_DIR="${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/common/component_config"
-    LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR="${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/common/device_model_migrations"
+)
+
+set_property(
+    SOURCE charge_point_config_factory_v16_tests.cpp
+    APPEND
+    PROPERTY COMPILE_DEFINITIONS
+        LIBOCPP_COMPONENT_CONFIG_DIR="${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/common/component_config"
+        LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR="${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/common/device_model_migrations"
+
 )
 
 target_link_libraries(${TEST_TARGET_NAME}
