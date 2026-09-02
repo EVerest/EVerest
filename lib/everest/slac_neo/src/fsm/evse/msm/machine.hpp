@@ -38,9 +38,8 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
     using WaitForLink_Fail = WaitForLink::exit_pt<wait_for_link_sm::WaitForLink_def::Failed>;
     using WaitForLink_Match = WaitForLink::exit_pt<wait_for_link_sm::WaitForLink_def::Matched>;
 
-    struct Idle   : public state<> {
-        template <class Event, class Fsm>
-        void on_entry(Event const&, Fsm& fsm) {
+    struct Idle : public state<> {
+        template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
             fsm.ctx->log_info("Entered Idle state");
             fsm.ctx->clear_match_confirm_cache();
             fsm.ctx->status.match_state = SlacState::Idle;
@@ -49,8 +48,7 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
         }
     };
     struct Failed : public state<> {
-        template <class Event, class Fsm>
-        void on_entry(Event const&, Fsm& fsm) {
+        template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
             auto& ctx = *fsm.ctx;
             ctx.log_info("Entered Failed state");
             if (ctx.slac_config.ac_mode_five_percent) {
@@ -64,22 +62,19 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
 
     // Guards
     struct cfg_wait_for_link {
-        template <class Fsm, class Evt, class SrcT, class TarT>
-        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+        template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
             return fsm.ctx->slac_config.link_status.do_detect;
         }
     };
     struct is_legacy_set_key_handling_mode {
-        template <class Fsm, class Evt, class SrcT, class TarT>
-        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+        template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
             return fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::legacy_single_attempt;
         }
     };
 
     // Actions
     struct on_matched_fail {
-        template <class Fsm, class Evt, class SrcT, class TarT>
-        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+        template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
             auto& ctx = *fsm.ctx;
             ctx.log_error("Connection lost in matched state");
             ctx.signal_error_routine_request();
@@ -128,8 +123,7 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
         //  +-------------------+-----------+-------------+-----------------+-------------------+
         > {};
     // clang-format on
-    template <class FSM,class Event>
-    void no_transition(Event const&, FSM&, int) {
+    template <class FSM, class Event> void no_transition(Event const&, FSM&, int) {
     }
 
     // Members

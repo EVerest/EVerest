@@ -10,7 +10,7 @@
 
 namespace everest::lib::slac::msm::matched_sm {
 
-struct Matched_def     : public state_machine_def<Matched_def> {
+struct Matched_def : public state_machine_def<Matched_def> {
     // States
     // clang-format off
     struct Init          : public state<> { };
@@ -58,18 +58,16 @@ struct Matched_def     : public state_machine_def<Matched_def> {
         >{};
     // clang-format on
 
-    template <class FSM,class Event>
-    void no_transition(Event const&, FSM&, int) { }
+    template <class FSM, class Event> void no_transition(Event const&, FSM&, int) {
+    }
 
     // Entry / exit
-    template <class Event, class Fsm>
-    void on_entry(Event const&, Fsm& fsm) {
+    template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
         {
             std::ostringstream ss;
-            ss << "Entered Matched state (EV " << format_mac_addr(ctx->status.ev_mac)
-               << ", avg. attenuation " << std::fixed << std::setprecision(1)
-               << ctx->status.average_attenuation << " dB)";
+            ss << "Entered Matched state (EV " << format_mac_addr(ctx->status.ev_mac) << ", avg. attenuation "
+               << std::fixed << std::setprecision(1) << ctx->status.average_attenuation << " dB)";
             ctx->log_info(ss.str());
         }
         ctx->clear_match_confirm_cache();
@@ -100,8 +98,7 @@ struct Matched_def     : public state_machine_def<Matched_def> {
         }
     }
 
-    template <class Event, class Fsm>
-    void on_exit(Event const&, Fsm&) {
+    template <class Event, class Fsm> void on_exit(Event const&, Fsm&) {
         ctx->signal_dlink_ready(false);
         ctx->status.ev_mac.fill(0);
         ctx->status.average_attenuation = 0.f;

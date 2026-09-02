@@ -11,8 +11,8 @@ namespace everest::lib::slac::msm::matching_sm {
 // Session bookkeeping shared by the guards below. A session flags SessionMatched in MatchComplete
 // and SessionFailed in Failed (see session.hpp).
 template <class Fsm> bool any_session_matched(Fsm& fsm) {
-    for(auto& elem : fsm.sessions){
-        if(elem.template is_flag_active<SessionMatched>()){
+    for (auto& elem : fsm.sessions) {
+        if (elem.template is_flag_active<SessionMatched>()) {
             return true;
         }
     }
@@ -20,11 +20,11 @@ template <class Fsm> bool any_session_matched(Fsm& fsm) {
 }
 // False while there is no session at all: "all failed" needs at least one session.
 template <class Fsm> bool all_sessions_failed(Fsm& fsm) {
-    if(fsm.sessions.empty()){
+    if (fsm.sessions.empty()) {
         return false;
     }
-    for(auto& elem : fsm.sessions){
-        if(not elem.template is_flag_active<SessionFailed>()){
+    for (auto& elem : fsm.sessions) {
+        if (not elem.template is_flag_active<SessionFailed>()) {
             return false;
         }
     }
@@ -32,29 +32,26 @@ template <class Fsm> bool all_sessions_failed(Fsm& fsm) {
 }
 
 // Guards
-struct is_slac_param_req : public is_message_of_type<slac::defs::MMTYPE_CM_SLAC_PARAM | slac::defs::MMTYPE_MODE_REQ> { };
+struct is_slac_param_req : public is_message_of_type<slac::defs::MMTYPE_CM_SLAC_PARAM | slac::defs::MMTYPE_MODE_REQ> {};
 // A session in MatchComplete means CM_SLAC_MATCH.CNF is out, but Matching is only exited on the
 // next update tick. In that window (and per ISO 15118-3 whenever an AVLN is up) a fresh
 // CM_SLAC_PARM.REQ must get no CNF (TC_SECC_CMN_VTB_PLCLinkStatus_003) and must not restart the
 // completed session.
 struct has_matched_session {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         return any_session_matched(fsm);
     }
 };
 
-//Actions
+// Actions
 struct ignore_parm_req {
-    template <class Fsm, class SrcT, class TarT>
-    void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class SrcT, class TarT> void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
         fsm.ctx->log_info("Ignoring CM_SLAC_PARM.REQ, match already completed");
     }
 };
 struct pipe_event {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT& ) {
-        for(auto& elem : fsm.sessions){
+    template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
+        for (auto& elem : fsm.sessions) {
             elem.process_event(e);
         }
     }
@@ -63,8 +60,7 @@ struct pipe_event {
 // CM_VALIDATE (ISO 15118-3 9.4) BCB-toggle validation lives in fsm::evse::ValidateHandler
 // (src/fsm/evse/validate_handler.hpp); Matching only routes the REQ frames and the update tick to it.
 struct handle_validate_req {
-    template <class Fsm, class SrcT, class TarT>
-    void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class SrcT, class TarT> void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
         const auto req = e.payload.payload_as<messages::cm_validate_req>();
         if (not req.has_value()) {
             return;
@@ -74,21 +70,18 @@ struct handle_validate_req {
 };
 // Serviced on every `update` tick while a validation is armed (guard validate_needs_service).
 struct validate_tick {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         fsm.validate.tick(*fsm.ctx);
     }
 };
 struct validate_needs_service {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         return fsm.validate.needs_service();
     }
 };
 
 struct reset_matching_subfsm {
-    template <class Evt, class Fsm, class SrcT, class TarT>
-    void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Evt, class Fsm, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         fsm.ctx->status.session_count = 0;
         fsm.sessions.clear();
         fsm.to.setDuration(std::chrono::milliseconds(fsm.ctx->slac_config.slac_init_timeout_ms));
@@ -98,8 +91,7 @@ struct reset_matching_subfsm {
 };
 
 struct add_session {
-    template <class Fsm, class SrcT, class TarT>
-    void operator()(message const& e, Fsm& fsm, SrcT&, TarT& ) {
+    template <class Fsm, class SrcT, class TarT> void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
         // Add session
         auto& ctx = *fsm.ctx;
         auto const msg = e.payload.payload_as<slac::messages::cm_slac_parm_req>();
@@ -112,10 +104,9 @@ struct add_session {
         auto const ev_mac = byte_array_from_wire<MacAddress>(e.payload.get_src_mac());
         auto const run_id = byte_array_from_wire<RunId>(msg->run_id);
         fsm::evse::MatchingSessionData data(ev_mac, run_id, ctx.evse_mac);
-        auto session_iter = std::find_if(fsm.sessions.begin(), fsm.sessions.end(),
-                                        [&data](auto const& session) {
-                                            return session.session_data.matches_identity(data.ev_mac, data.run_id);
-                                        });
+        auto session_iter = std::find_if(fsm.sessions.begin(), fsm.sessions.end(), [&data](auto const& session) {
+            return session.session_data.matches_identity(data.ev_mac, data.run_id);
+        });
         if (session_iter == fsm.sessions.end()) {
             auto const max_matching_sessions = fsm.max_matching_sessions();
             if (static_cast<int>(fsm.sessions.size()) >= max_matching_sessions) {
@@ -139,11 +130,10 @@ struct add_session {
         ctx.status.session_count = fsm.sessions.size();
     }
 };
-struct is_validate_req : public is_message_of_type<defs::MMTYPE_CM_VALIDATE | defs::MMTYPE_MODE_REQ> { };
+struct is_validate_req : public is_message_of_type<defs::MMTYPE_CM_VALIDATE | defs::MMTYPE_MODE_REQ> {};
 
 struct should_reset_instead_of_fail {
-    template <class Evt, class Fsm, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+    template <class Evt, class Fsm, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         auto const should_timeout = fsm.to.timeout();
         auto const is_failed = all_sessions_failed(fsm);
         auto const no_sessions = fsm.sessions.empty();
@@ -154,8 +144,7 @@ struct should_reset_instead_of_fail {
     }
 };
 struct should_transition_to_failed_matching {
-    template <class Evt, class Fsm, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+    template <class Evt, class Fsm, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         auto const should_timeout = fsm.to.timeout();
         auto const is_failed = all_sessions_failed(fsm);
         auto const no_sessions = fsm.sessions.empty();

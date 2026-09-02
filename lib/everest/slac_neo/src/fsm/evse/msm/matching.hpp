@@ -12,7 +12,7 @@
 
 namespace everest::lib::slac::msm::matching_sm {
 
-struct Matching_def    : public state_machine_def<Matching_def> {
+struct Matching_def : public state_machine_def<Matching_def> {
     // States
     // clang-format off
     struct Init    : public state<> { };
@@ -50,13 +50,11 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         >{};
     // clang-format on
 
-    template <class FSM,class Event>
-    void no_transition(Event const&, FSM&, int) {
+    template <class FSM, class Event> void no_transition(Event const&, FSM&, int) {
     }
 
     // Entry / exit
-    template <class Event, class Fsm>
-    void on_entry(Event const&, Fsm& fsm) {
+    template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
         to.setDuration(std::chrono::milliseconds(ctx->slac_config.slac_init_timeout_ms));
         to.reset();
@@ -68,8 +66,7 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         ctx->status.d3_state = D3State::Matching;
     }
 
-    template <class Event, class Fsm>
-    void on_exit(Event const&, Fsm&) {
+    template <class Event, class Fsm> void on_exit(Event const&, Fsm&) {
         sessions.clear();
         ctx->status.session_count = 0;
     }

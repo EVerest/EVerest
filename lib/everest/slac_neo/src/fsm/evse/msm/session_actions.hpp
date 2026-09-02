@@ -10,10 +10,10 @@ namespace everest::lib::slac::msm::session_sm {
 
 // Message checks: the frame has the expected MMTYPE, decodes as MsgT and belongs to this session
 // (run id / EV MAC, see MatchingSessionData::validate_message).
-template<class MsgT>
+template <class MsgT>
 bool check_message(message const& e, std::uint16_t expected, fsm::evse::MatchingSessionData const& session_data) {
     const auto mmtype = e.payload.get_mmtype();
-    if(mmtype not_eq expected){
+    if (mmtype not_eq expected) {
         return false;
     }
     auto const msg = e.payload.template payload_as<MsgT>();
@@ -41,27 +41,23 @@ inline bool matches_atten_profile_ind(message const& e, fsm::evse::MatchingSessi
 
 // Guards
 struct is_atten_char_rsp {
-    template <class Fsm, class SrcT, class TarT>
-    bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class SrcT, class TarT> bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
         return matches_atten_char_rsp(e, fsm.session_data);
     }
 };
 struct is_slac_match_req {
-    template <class Fsm, class SrcT, class TarT>
-    bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class SrcT, class TarT> bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
         return matches_slac_match_req(e, fsm.session_data);
     }
 };
 struct sound_below_limit {
-    template <class Fsm, class SrcT, class TarT>
-    bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class SrcT, class TarT> bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
         return fsm.session_data.captured_sounds + 1 < slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS and
                matches_atten_profile_ind(e, fsm.session_data);
     }
 };
 struct sound_completes_count {
-    template <class Fsm, class SrcT, class TarT>
-    bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class SrcT, class TarT> bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
         return fsm.session_data.captured_sounds + 1 >= slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS and
                matches_atten_profile_ind(e, fsm.session_data);
     }
@@ -71,37 +67,32 @@ struct sound_completes_count {
 // shorter window elapses the matching has FAILED (ISO 15118-5 CmSlacMatch_003/004 cmValidate
 // variant); a late CM_SLAC_MATCH.REQ must then get no CM_SLAC_MATCH.CNF.
 struct validation_window_expired {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         return fsm.ctx->validation_done and fsm.ctx->validation_match_window.timeout();
     }
 };
 struct retry_limit {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+    template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         return fsm.session_data.num_retries >= slac::defs::C_EV_MATCH_RETRY;
     }
 };
 
 struct start_atten_in_time {
-    template <class Fsm, class SrcT, class TarT>
-    bool operator()(message const& e, Fsm& fsm, SrcT& src, TarT&) {
+    template <class Fsm, class SrcT, class TarT> bool operator()(message const& e, Fsm& fsm, SrcT& src, TarT&) {
         return not src.state_timeout() and matches_start_atten_char(e, fsm.session_data);
     }
 };
 
 // Actions
 struct sounding_started {
-    template <class Fsm, class SrcT, class TarT>
-    void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class SrcT, class TarT> void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
         fsm.ctx->log_info(session_log_prefix(fsm.session_data) +
                           "Received CM_START_ATTEN_CHAR.IND, MNBC sounding started");
     }
 };
 // Accumulate one CM_ATTEN_PROFILE.IND (see sound_below_limit / sound_completes_count).
 struct capture_sound {
-    template <class Fsm, class SrcT, class TarT>
-    void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class SrcT, class TarT> void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
         auto const msg = e.payload.payload_as<slac::messages::cm_atten_profile_ind>();
         if (not msg.has_value()) {
             return;
@@ -114,22 +105,19 @@ struct capture_sound {
                            std::to_string(fsm.session_data.captured_sounds) + " of " +
                            std::to_string(slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS) + " sounds captured)");
         if (fsm.session_data.captured_sounds >= slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS) {
-            fsm.ctx->log_info(session_log_prefix(fsm.session_data) +
-                              "Received all sounds, finalizing sounding");
+            fsm.ctx->log_info(session_log_prefix(fsm.session_data) + "Received all sounds, finalizing sounding");
         }
     }
 };
 
 struct on_atten_char_rsp {
-    template <class Fsm, class SrcT, class TarT>
-    void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class SrcT, class TarT> void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
         fsm.ctx->log_info(session_log_prefix(fsm.session_data) +
                           "Received CM_ATTEN_CHAR.RSP, waiting for CM_SLAC_MATCH.REQ");
     }
 };
 struct match_cnf {
-    template <class Fsm, class SrcT, class TarT>
-    void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class SrcT, class TarT> void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
         auto& ctx = *fsm.ctx;
         auto& session_data = fsm.session_data;
         messages::cm_slac_match_cnf& reply = ctx.match_confirm_cache.message;
@@ -140,7 +128,7 @@ struct match_cnf {
         ctx.log_info(session_log_prefix(session_data) +
                      "Received CM_SLAC_MATCH.REQ, sending CM_SLAC_MATCH.CNF -> session complete");
         static constexpr Nmk failed_match_session_nmk{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                                                     0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10};
+                                                      0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10};
 
         Nmk const* session_nmk = &ctx.slac_config.session_nmk;
         if (ctx.slac_config.link_status.debug_simulate_failed_matching) {
@@ -174,20 +162,18 @@ template <class Fsm> void send_atten_char(Fsm& fsm) {
     if (fsm.ctx->slac_config.sounding_atten_adjustment != 0) {
         ss << " plus offset " << std::to_string(fsm.ctx->slac_config.sounding_atten_adjustment) << " dB";
     }
-    ss << ", from " << std::to_string(slac::defs::AAG_LIST_LEN) << " groups, "
-       << fsm.session_data.captured_sounds << " sounds";
+    ss << ", from " << std::to_string(slac::defs::AAG_LIST_LEN) << " groups, " << fsm.session_data.captured_sounds
+       << " sounds";
     fsm.ctx->log_info(session_log_prefix(fsm.session_data) + ss.str());
 }
 struct finalize_snd {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+    template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         fsm.ctx->log_info(session_log_prefix(fsm.session_data) + "Finalize sounding, sending CM_ATTEN_CHAR.IND");
         send_atten_char(fsm);
     }
 };
 struct retry_snd {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         fsm.ctx->log_info(session_log_prefix(fsm.session_data) +
                           "No CM_ATTEN_CHAR.RSP yet, retransmitting CM_ATTEN_CHAR.IND (retry " +
                           std::to_string(fsm.session_data.num_retries + 1) + " of " +
@@ -198,17 +184,13 @@ struct retry_snd {
 };
 
 template <char const* Reason> struct log_session_failed {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+    template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         fsm.ctx->log_info(session_log_prefix(fsm.session_data) + Reason);
     }
 };
-inline constexpr char const fail_no_start_atten[] =
-    "Timeout waiting for CM_START_ATTEN_CHAR.IND, session failed";
-inline constexpr char const fail_no_atten_rsp[] =
-    "No CM_ATTEN_CHAR.RSP after all retries, session failed";
-inline constexpr char const fail_no_slac_match[] =
-    "Timeout waiting for CM_SLAC_MATCH.REQ, session failed";
+inline constexpr char const fail_no_start_atten[] = "Timeout waiting for CM_START_ATTEN_CHAR.IND, session failed";
+inline constexpr char const fail_no_atten_rsp[] = "No CM_ATTEN_CHAR.RSP after all retries, session failed";
+inline constexpr char const fail_no_slac_match[] = "Timeout waiting for CM_SLAC_MATCH.REQ, session failed";
 inline constexpr char const fail_validation_window[] =
     "No CM_SLAC_MATCH.REQ within TT_match_sequence after CM_VALIDATE, session failed";
 
