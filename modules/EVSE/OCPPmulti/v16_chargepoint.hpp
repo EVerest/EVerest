@@ -87,11 +87,11 @@ private:
     ocpp::v16::UpdateFirmwareStatusEnumType cb_signed_update_firmware(ocpp::v16::SignedUpdateFirmwareRequest msg);
     bool cb_stop_transaction(std::int32_t ocpp_connector_id, ocpp::v16::Reason reason);
     ocpp::v16::DataTransferResponse cb_tariff_message(const ocpp::TariffMessage& message);
-    void cb_transaction_started(std::int32_t ocpp_connector_id, const std::string& session_id);
-    void cb_transaction_stopped(std::int32_t ocpp_connector_id, const std::string& session_id,
-                                std::int32_t transaction_id);
-    void cb_transaction_updated(std::int32_t ocpp_connector_id, const std::string& session_id,
-                                std::int32_t transaction_id, const ocpp::v16::IdTagInfo& id_tag_info);
+    void cb_transaction_started(const std::string& session_id, const ocpp::v16::StartTransactionRequest& request);
+    void cb_transaction_stopped(const std::string& session_id, std::int32_t ocpp_connector_id,
+                                const ocpp::v16::StopTransactionRequest& request);
+    void cb_transaction_updated(const std::string& session_id, const ocpp::v16::StartTransactionRequest& request,
+                                const ocpp::v16::StartTransactionResponse& response);
     ocpp::v16::UnlockStatus cb_unlock_connector(std::int32_t ocpp_connector_id);
     void cb_update_firmware(ocpp::v16::UpdateFirmwareRequest msg);
     ocpp::v16::GetLogResponse cb_upload_diagnostics(const ocpp::v16::GetDiagnosticsRequest& request);

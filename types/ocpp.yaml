@@ -225,6 +225,7 @@ types:
     required:
       - transaction_event
       - session_id
+      - timestamp
     properties:
       transaction_event:
         description: >-
@@ -248,8 +249,9 @@ types:
         description: >-
           Time of the transaction event in RFC3339 format. For OCPP 2.x this is the timestamp of the
           TransactionEventRequest, for OCPP 1.6 the timestamp reported in the corresponding
-          StartTransaction.req or StopTransaction.req. Absent if the timestamp of the underlying
-          message is not available.
+          StartTransaction.req or StopTransaction.req. For Updated events in OCPP 1.6 it is the time the
+          StartTransaction.conf that triggers them was processed, because that message carries no
+          timestamp of its own.
         type: string
         format: date-time
   TransactionEvent:

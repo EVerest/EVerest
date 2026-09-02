@@ -298,19 +298,20 @@ ocpp::v16::DataTransferResponse ChargePointV16::cb_tariff_message(const ocpp::Ta
     return response;
 }
 
-void ChargePointV16::cb_transaction_started(const std::int32_t ocpp_connector_id, const std::string& session_id) {
-    if (const auto evse = evse_from_ocpp_connector(ocpp_connector_id)) {
+void ChargePointV16::cb_transaction_started(const std::string& session_id,
+                                            const ocpp::v16::StartTransactionRequest& request) {
+    if (const auto evse = evse_from_ocpp_connector(request.connectorId)) {
         ocpp::v2::TransactionEventRequest event;
         event.eventType = ocpp::v2::TransactionEventEnum::Started;
         event.evse = {evse->evse_id, evse->connector_id};
         event.transactionInfo.transactionId = session_id;
         // the numeric OCPP1.6 transaction id is not assigned yet at this point
-        m_callbacks_ptr->cb_transaction_event(event, std::nullopt, std::nullopt);
+        m_callbacks_ptr->cb_transaction_event(event, std::nullopt, request.timestamp);
     }
 }
 
-void ChargePointV16::cb_transaction_stopped(const std::int32_t ocpp_connector_id, const std::string& session_id,
-                                            const std::int32_t transaction_id) {
+void ChargePointV16::cb_transaction_stopped(const std::string& session_id, const std::int32_t ocpp_connector_id,
+                                            const ocpp::v16::StopTransactionRequest& request) {
     EVLOG_info << "Transaction stopped at OCPP1.6 connector: " << ocpp_connector_id << ", session_id: " << session_id;
     if (const auto evse = evse_from_ocpp_connector(ocpp_connector_id)) {
         ocpp::v2::TransactionEventRequest event;
@@ -318,32 +319,33 @@ void ChargePointV16::cb_transaction_stopped(const std::int32_t ocpp_connector_id
         event.evse = {evse->evse_id, evse->connector_id};
         event.transactionInfo.transactionId = session_id;
         // event.seqNo = 0; seqNo does not exist in OCPP1.6
-        m_callbacks_ptr->cb_transaction_event(event, std::to_string(transaction_id), std::nullopt);
+        m_callbacks_ptr->cb_transaction_event(event, std::to_string(request.transactionId), request.timestamp);
     }
 }
 
-void ChargePointV16::cb_transaction_updated(const std::int32_t ocpp_connector_id, const std::string& session_id,
-                                            const std::int32_t transaction_id,
-                                            const ocpp::v16::IdTagInfo& id_tag_info) {
-    if (const auto evse = evse_from_ocpp_connector(ocpp_connector_id)) {
+void ChargePointV16::cb_transaction_updated(const std::string& session_id,
+                                            const ocpp::v16::StartTransactionRequest& request,
+                                            const ocpp::v16::StartTransactionResponse& response) {
+    if (const auto evse = evse_from_ocpp_connector(request.connectorId)) {
         ocpp::v2::TransactionEventRequest event;
         event.eventType = ocpp::v2::TransactionEventEnum::Updated;
         event.evse = {evse->evse_id, evse->connector_id};
         event.transactionInfo.transactionId = session_id;
         // event.seqNo = 0; seqNo does not exist in OCPP1.6
-        m_callbacks_ptr->cb_transaction_event(event, std::to_string(transaction_id), std::nullopt);
+        // StartTransaction.conf carries no time of its own, the update happens when it is processed
+        m_callbacks_ptr->cb_transaction_event(event, std::to_string(response.transactionId), ocpp::DateTime());
 
         ocpp::v2::TransactionEventResponse event_response;
-        if (id_tag_info.parentIdTag) {
+        if (response.idTagInfo.parentIdTag) {
             ocpp::v2::IdTokenInfo token;
-            token.status = convert(id_tag_info.status);
-            token.cacheExpiryDateTime = id_tag_info.expiryDate;
-            token.groupIdToken = {static_cast<std::string>(id_tag_info.parentIdTag.value()), "ISO14443"};
+            token.status = convert(response.idTagInfo.status);
+            token.cacheExpiryDateTime = response.idTagInfo.expiryDate;
+            token.groupIdToken = {static_cast<std::string>(response.idTagInfo.parentIdTag.value()), "ISO14443"};
             event_response.idTokenInfo = token;
         }
 
-        m_callbacks_ptr->cb_transaction_event_response(event, event_response, std::to_string(transaction_id),
-                                                       std::nullopt);
+        m_callbacks_ptr->cb_transaction_event_response(event, event_response, std::to_string(response.transactionId),
+                                                       request.timestamp);
     }
 }
 

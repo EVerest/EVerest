@@ -249,11 +249,11 @@ int main(int argc, char* argv[]) {
                   << "Setting charging profiles" << std::endl;
     });
 
-    charge_point->register_transaction_updated_callback([](const std::int32_t connector, const std::string& session_id,
-                                                           const std::int32_t transaction_id,
-                                                           const ocpp::v16::IdTagInfo& id_tag_info) {
-        std::cout << "Callback: Transaction updated at connector# " << connector
-                  << " and transaction id: " << transaction_id << std::endl;
+    charge_point->register_transaction_updated_callback([](const std::string& session_id,
+                                                           const ocpp::v16::StartTransactionRequest& request,
+                                                           const ocpp::v16::StartTransactionResponse& response) {
+        std::cout << "Callback: Transaction updated at connector# " << request.connectorId
+                  << " and transaction id: " << response.transactionId << std::endl;
     });
 
     /************************************** STOP REGISTERING CALLBACKS **************************************/
