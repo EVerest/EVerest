@@ -48,6 +48,34 @@ Freshness check_freshness(const types::powermeter::Powermeter& reading, date::ut
     return age < window ? Freshness::Fresh : Freshness::Stale;
 }
 
+/// \brief Sums one optional measurement field across meters.
+///
+/// A field is only summable while every contributing meter supplies it: a meter that does
+/// not measure a phase reports nothing there, not zero, so adding the others would produce
+/// a sum that quietly covers fewer meters than the total. Once any contributor omits the
+/// field the accumulator yields nullopt for good.
+class FieldAccumulator {
+public:
+    void add(const std::optional<float>& value) {
+        if (value.has_value()) {
+            sum += value.value();
+        } else {
+            covered_by_all = false;
+        }
+    }
+
+    std::optional<float> total() const {
+        if (not covered_by_all) {
+            return std::nullopt;
+        }
+        return sum;
+    }
+
+private:
+    float sum{0.f};
+    bool covered_by_all{true};
+};
+
 } // namespace
 
 void PowerMeterAggregator::update(const std::string& node_uuid, const types::powermeter::Powermeter& reading) {
@@ -65,13 +93,11 @@ std::size_t PowerMeterAggregator::size() const {
 PowerMeterAggregator::AggregateResult PowerMeterAggregator::aggregate(date::utc_clock::time_point now) const {
     AggregateResult result;
 
-    // Per phase sums are only reported when every contributing meter supplied them,
-    // so the per phase figures always cover the same meters as the total.
-    bool all_have_per_phase = true;
-
-    // Summed separately so the total is only published once a meter has actually
-    // contributed: an empty sum must read as "no data", not as zero watts.
+    // Summed separately so the sums are only published once a meter has actually
+    // contributed: an empty sum must read as "no data", not as zero.
     float total_W = 0.f;
+    FieldAccumulator power_L1_W, power_L2_W, power_L3_W;
+    FieldAccumulator current_DC_A, current_L1_A, current_L2_A, current_L3_A;
 
     for (const auto& [uuid, reading] : readings) {
         if (not reading.power_W.has_value()) {
@@ -105,20 +131,32 @@ PowerMeterAggregator::AggregateResult PowerMeterAggregator::aggregate(date::utc_
         total_W += power.total;
         result.fresh_meters++;
 
-        if (power.L1.has_value() and power.L2.has_value() and power.L3.has_value()) {
-            result.power_L1_W += power.L1.value();
-            result.power_L2_W += power.L2.value();
-            result.power_L3_W += power.L3.value();
-        } else {
-            all_have_per_phase = false;
-        }
+        power_L1_W.add(power.L1);
+        power_L2_W.add(power.L2);
+        power_L3_W.add(power.L3);
+
+        // A meter publishing power but no current is simply not covered for current. Feed
+        // the accumulators an empty Current so that counts the same as a missing phase.
+        const auto current = reading.current_A.value_or(types::units::Current{});
+        current_DC_A.add(current.DC);
+        current_L1_A.add(current.L1);
+        current_L2_A.add(current.L2);
+        current_L3_A.add(current.L3);
     }
 
     if (result.fresh_meters > 0) {
-        result.power_W = total_W;
-    }
+        types::units::Power power;
+        power.total = total_W;
+        power.L1 = power_L1_W.total();
+        power.L2 = power_L2_W.total();
+        power.L3 = power_L3_W.total();
+        result.power_W = power;
 
-    result.per_phase_available = all_have_per_phase and result.fresh_meters > 0;
+        result.current_A.DC = current_DC_A.total();
+        result.current_A.L1 = current_L1_A.total();
+        result.current_A.L2 = current_L2_A.total();
+        result.current_A.L3 = current_L3_A.total();
+    }
 
     return result;
 }
