@@ -455,7 +455,7 @@ TEST(DerSetupTest, apply_reseeds_a_seed_config_on_re_derivation) {
     // nominal-derived default.
     state.sae_setup_config->der_control.enter_service.enter_service_voltage_high = 999.0f;
 
-    const auto second = module::derive_der_limits({dt::ServiceCategory::AC_DER_SAE}, ac, 6000.0f, 400u);
+    const auto second = module::derive_der_limits({dt::ServiceCategory::AC_DER_SAE}, ac, 6000.0f, 230u);
     ASSERT_TRUE(second.sae_setup_config.has_value());
     const auto transitions = module::apply_derivation(second, state);
 
