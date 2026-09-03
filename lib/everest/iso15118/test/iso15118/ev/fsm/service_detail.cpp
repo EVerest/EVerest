@@ -98,6 +98,14 @@ std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> der_mask(std::initializer_list<DERCo
     return mask;
 }
 
+// A DER parameter set with an explicit Connector value.
+ParameterSet make_der_param_set_on(uint16_t id, ControlMode control_mode, int32_t connector,
+                                   std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> der_mask) {
+    auto set = make_der_param_set(id, control_mode, der_mask);
+    set.parameter[0] = {"Connector", connector};
+    return set;
+}
+
 // Parameter set carrying a raw DERControlFunctions bitmask, so a SECC advertising bits at or
 // above the width the EV models can be exercised.
 ParameterSet make_der_param_set_raw(uint16_t id, ControlMode control_mode, int32_t der_functions) {
@@ -122,6 +130,24 @@ ev::DerControlFunctions dso_setpoint_support() {
     ev::DerControlFunctions functions{};
     functions.dso_q_setpoint_provision = true;
     functions.dso_cos_phi_setpoint_provision = true;
+    return functions;
+}
+
+// An EV supporting every IEC DER control function.
+ev::DerControlFunctions all_der_support() {
+    ev::DerControlFunctions functions{};
+    functions.over_frequency_watt_mode = true;
+    functions.under_frequency_watt_mode = true;
+    functions.volt_watt_mode = true;
+    functions.volt_var_mode = true;
+    functions.watt_var_mode = true;
+    functions.watt_cos_phi_mode = true;
+    functions.dso_q_setpoint_provision = true;
+    functions.dso_cos_phi_setpoint_provision = true;
+    functions.dc_injection_restriction = true;
+    functions.zero_current_mode = true;
+    functions.over_voltage_fault_ride_through_mode = true;
+    functions.under_voltage_fault_ride_through_mode = true;
     return functions;
 }
 
@@ -601,4 +627,34 @@ SCENARIO("ISO15118-20 EV ServiceDetail falls back to SinglePhase with a warning 
     REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 1);
     REQUIRE(primed.ctx.selected_ac_connector() == message_20::datatypes::AcConnector::SinglePhase);
     REQUIRE(logs.has_warning_containing("preferred ThreePhase"));
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail records the DER mask of the set it selects") {
+    const ev::feedback::Callbacks callbacks{};
+    FsmStateHelper helper{callbacks,
+                          {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                          ServiceCategory::AC_DER_IEC,
+                          all_der_support(),
+                          true};
+    auto& ctx = helper.get_context();
+    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    ev::AcChargeParams params{};
+    params.phase_count = 3;
+    helper.set_ac_params(params);
+    auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
+
+    // Both sets are acceptable and neither is on the preferred connector, so the first one is
+    // selected; its mask, not the last one scanned, is what was negotiated.
+    const std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> first_mask{0b11};
+    const std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> second_mask{0b1};
+    helper.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC,
+                                         {make_der_param_set_on(1, ControlMode::Dynamic, SINGLE_PHASE, first_mask),
+                                          make_der_param_set_on(2, ControlMode::Dynamic, SINGLE_PHASE, second_mask)}));
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
+    REQUIRE(selected_parameter_set_id(helper.get_message_exchange()) == 1);
+    REQUIRE(ctx.der_negotiated_functions() == first_mask);
+    REQUIRE(ctx.selected_ac_connector() == message_20::datatypes::AcConnector::SinglePhase);
 }
