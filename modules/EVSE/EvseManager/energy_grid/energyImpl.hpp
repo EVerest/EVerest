@@ -61,10 +61,12 @@ private:
     void clear_export_request_schedule();
     void clear_request_schedules();
     void request_energy_from_energy_manager(bool priority_request);
+    bool energy_needed_in_current_state() const;
     types::evse_board_support::HardwareCapabilities hw_caps;
     float last_enforced_limit{0.};
     float limit_when_random_delay_started{0.};
     std::atomic<Charger::EvseState> charger_state;
+    std::atomic<bool> paused_by_user_or_error{false};
     static constexpr std::chrono::seconds detect_startup_with_ev_attached_duration{5};
 
     std::string source_base;

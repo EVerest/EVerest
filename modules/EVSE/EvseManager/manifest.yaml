@@ -245,8 +245,9 @@ config:
     default: V2G
   request_zero_power_in_idle:
     description: >-
-      "true: In Idle mode (no car connected), request 0A from energy management. In installations with many charging stations this should be set"
-      "to allow the power to be distributed to the chargers that are connected to a car."
+      "true: In Idle mode (no car connected) and while charging is paused by the EVSE for a user pause or an error, request 0A from"
+      "energy management. In installations with many charging stations this should be set to allow the power to be distributed to the"
+      "chargers that are connected to a car. A pause because of missing energy keeps requesting energy so that charging can resume."
       "false: Request the normal current even if no car is connected. This speeds up the start of charging on AC BASIC charging as"
       "EvseManager does not need to wait for energy from the energy manager after plug in."
     type: boolean

@@ -5,6 +5,7 @@
 
 #include <everest/helpers/phase_rotation.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -142,6 +143,31 @@ void energyImpl::ready() {
             request_energy_thread.detach();
         }
     });
+
+    mod->charger->signal_charging_paused_evse_event.connect(
+        [this](const types::evse_manager::ChargingPausedEVSEReasons& paused) {
+            using types::evse_manager::PauseChargingEVSEReasonEnum;
+            const auto has_reason = [&paused](const PauseChargingEVSEReasonEnum reason) {
+                return std::find(paused.reasons.begin(), paused.reasons.end(), reason) != paused.reasons.end();
+            };
+            paused_by_user_or_error =
+                has_reason(PauseChargingEVSEReasonEnum::UserPause) or has_reason(PauseChargingEVSEReasonEnum::Error);
+        });
+}
+
+bool energyImpl::energy_needed_in_current_state() const {
+    switch (charger_state) {
+    case Charger::EvseState::Charging:
+    case Charger::EvseState::PrepareCharging:
+    case Charger::EvseState::WaitingForAuthentication:
+    case Charger::EvseState::ChargingPausedEV:
+        return true;
+    case Charger::EvseState::ChargingPausedEVSE:
+        // a pause for missing energy alone keeps requesting so that charging can resume
+        return not paused_by_user_or_error;
+    default:
+        return false;
+    }
 }
 
 types::energy::EvseState to_energy_evse_state(const Charger::EvseState charger_state) {
@@ -192,9 +218,7 @@ void energyImpl::request_energy_from_energy_manager(bool priority_request) {
     clear_export_request_schedule();
 
     // If we need energy, copy local limit schedules to energy_flow_request.
-    if (charger_state == Charger::EvseState::Charging || charger_state == Charger::EvseState::PrepareCharging ||
-        charger_state == Charger::EvseState::WaitingForAuthentication ||
-        charger_state == Charger::EvseState::ChargingPausedEV || !mod->config.request_zero_power_in_idle) {
+    if (energy_needed_in_current_state() || !mod->config.request_zero_power_in_idle) {
 
         // copy complete external limit schedules for import
         if (not mod->get_local_energy_limits().schedule_import.empty()) {
