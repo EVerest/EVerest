@@ -1801,10 +1801,10 @@ types:
         maximum: 1500
   EvPresentValues:
     description: >-
-      Values the EV measures during a charging loop. Both are mandatory on the wire, so an
-      unreported value is transmitted as zero and reads as a measured zero. Which one applies
-      depends on the energy transfer mode, hence both are optional here: DC carries the
-      voltage, AC the active power.
+      Values the EV measures during a charging loop. Both are mandatory on the wire. A value
+      never fed is transmitted as zero and reads as a measured zero at the SECC; a field absent
+      from one update keeps its last value. Which one applies depends on the energy transfer
+      mode, hence both are optional: DC carries the voltage, AC the active power.
     type: object
     additionalProperties: false
     properties:
