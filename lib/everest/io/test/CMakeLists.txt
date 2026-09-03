@@ -9,6 +9,11 @@ add_executable(everest_io_tests
   fd_event_client_async_test.cpp
   client_connect_error_test.cpp
   fd_event_handler_test.cpp
+  tap_carrier_test.cpp
+  netlink_route_parser_test.cpp
+  netlink_link_tracker_test.cpp
+  netlink_neighbor_table_test.cpp
+  netlink_peer_liveness_test.cpp
 )
 
 target_link_libraries(everest_io_tests
