@@ -1,0 +1,37 @@
+sequenceDiagram
+    participant CSMS
+    participant OCPP as OCPP module
+    participant Module as Evse15118D20
+    participant Ctrl as TbdController
+    participant Session as running Session
+    participant EV
+
+    CSMS->>OCPP: SetDERControl
+    OCPP->>Module: grid_support set_active_directives
+    Module->>Module: apply_active_der_directives
+    opt AC_DER_SAE not advertised or its limits not derived yet
+        Note over Module: info log, revision untouched, stop here
+    end
+    Module->>Module: relay_sae_grid_code
+    Module->>Module: sae_relay_input<br/>sorted (id, received_at) plus nominal voltage and frequency
+    alt relay input unchanged
+        Note over Module: revision stays in effect, nothing pushed
+    else relay input changed
+        Module->>Module: map_active_directives_to_sae_der_control<br/>default grid code plus winners per Annex M element,<br/>trip curves transposed to duration-first
+        Module->>Module: validate_sae_der_setup against SAE DER limits and AC limits
+        alt violation
+            Note over Module: warning, previous revision remains dictated
+        else valid
+            Module->>Module: revision + 1, store as next-session setup
+            Module->>Ctrl: update_der_sae_limits(limits, setup config)
+            Ctrl->>Session: push_control_event(DerSaeSetupConfig)
+            Session->>Session: install_der_sae_setup_config<br/>validate_sae_der_setup against the session's own limits
+            alt violation
+                Note over Session: warning, the running session keeps its old grid code,<br/>the new revision is still the next-session setup
+            else installed
+                EV->>Session: DER_SAE_AC_ChargeLoopReq
+                Session-->>EV: DERControlCLRes: EnterServiceCLRes plus voltage_trip,<br/>frequency_trip, reactive_power_support_cl_res,<br/>active_power_support_cl_res
+                Session->>Session: record_der_control_sent(revision),<br/>EnabledModes warning re-armed
+            end
+        end
+    end
