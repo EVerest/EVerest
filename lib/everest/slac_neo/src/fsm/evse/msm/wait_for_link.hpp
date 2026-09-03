@@ -49,13 +49,13 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
         ctx = fsm.ctx;
         // Still in the matching phase (post CM_SLAC_MATCH.CNF, awaiting link) -> published as MATCHING.
         ctx->enter_state(SlacState::WaitForLink, D3State::Matching, "Waiting for Link to be ready...");
-        link_check_to_ms = ctx->slac_config.link_status.retry_ms;
-        to.arm(ctx->current_time, std::chrono::milliseconds(ctx->slac_config.link_status.timeout_ms));
+        link_check_to = ctx->slac_config.link_status.retry;
+        to.arm(ctx->current_time, ctx->slac_config.link_status.timeout);
     }
 
     // Members
     fsm::evse::Context* ctx;
-    int link_check_to_ms{0};
+    std::chrono::milliseconds link_check_to{0};
     timer to;
     bool state_timeout(timer::tp now) const {
         return to.expired(now);

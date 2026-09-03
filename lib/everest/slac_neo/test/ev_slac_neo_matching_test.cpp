@@ -20,6 +20,7 @@
 
 using namespace everest::lib::slac;
 using namespace everest::lib::slac::fsm::ev;
+using namespace std::chrono_literals;
 
 namespace {
 
@@ -1319,7 +1320,7 @@ bool test_timeout_failure_reaches_failed_state() {
     const char* test_name = "test_timeout_failure_reaches_failed_state";
 
     TestHarness harness{};
-    harness.ctx.slac_config.parm_req_timeout_ms = 1;
+    harness.ctx.slac_config.parm_req_timeout = 1ms;
     harness.ctx.slac_config.parm_req_attempts = 1;
     if (!init_unmatched(harness, test_name)) {
         return false;
@@ -1366,7 +1367,7 @@ bool test_parm_req_attempts_config_controls_retry_count() {
     const char* test_name = "test_parm_req_attempts_config_controls_retry_count";
 
     TestHarness harness{};
-    harness.ctx.slac_config.parm_req_timeout_ms = 1;
+    harness.ctx.slac_config.parm_req_timeout = 1ms;
     harness.ctx.slac_config.parm_req_attempts = 3;
     if (!init_unmatched(harness, test_name)) {
         return false;

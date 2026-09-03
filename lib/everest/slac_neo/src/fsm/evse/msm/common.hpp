@@ -48,9 +48,9 @@ using namespace boost::msm::back;
 
 // States
 // A timeout state whose duration is read from one EvseSlacConfig field on entry.
-template <int fsm::evse::EvseSlacConfig::*Field> struct config_timeout_state : timeout_state {
+template <std::chrono::milliseconds fsm::evse::EvseSlacConfig::*Field> struct config_timeout_state : timeout_state {
     template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-        timeout_state::state_timeout_ms = static_cast<std::uint32_t>(fsm.ctx->slac_config.*Field);
+        timeout_state::duration = fsm.ctx->slac_config.*Field;
         timeout_state::on_entry(e, fsm);
     }
 };
@@ -103,7 +103,7 @@ struct CheckLink : public state<> {
         // CM_AMP_MAP retransmit/responder in the matched state) would restart the
         // countdown and starve the link-status poll, so a connection loss would
         // not be detected within TP_match_leave (ISO 15118-5 PLCLinkStatus_005).
-        to.set_duration(std::chrono::milliseconds(fsm.link_check_to_ms));
+        to.set_duration(fsm.link_check_to);
     }
 
     timer to;

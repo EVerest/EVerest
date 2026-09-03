@@ -17,6 +17,7 @@
 
 using namespace everest::lib::slac;
 using namespace everest::lib::slac::fsm::evse;
+using namespace std::chrono_literals;
 
 namespace {
 
@@ -413,10 +414,10 @@ bool perform_full_match_sequence(Context& ctx, std::vector<SentMessage>& sent_me
 }
 
 void configure_common(Context& ctx) {
-    ctx.slac_config.request_info_delay_ms = 1;
-    ctx.slac_config.set_key_timeout_ms = 5;
+    ctx.slac_config.request_info_delay = 1ms;
+    ctx.slac_config.set_key_timeout = 5ms;
     ctx.slac_config.set_key_max_attempts = 3;
-    ctx.slac_config.slac_init_timeout_ms = 5000;
+    ctx.slac_config.slac_init_timeout = 5000ms;
     ctx.slac_config.chip_reset.enabled = false;
     ctx.slac_config.reset_instead_of_fail = false;
     ctx.slac_config.regenerate_key_on_reset = true;
@@ -426,8 +427,8 @@ void configure_common(Context& ctx) {
 void configure_wait_for_link(Context& ctx) {
     ctx.modem_vendor = defs::ModemVendor::Lumissil;
     ctx.slac_config.link_status.do_detect = true;
-    ctx.slac_config.link_status.retry_ms = 20;
-    ctx.slac_config.link_status.timeout_ms = 300;
+    ctx.slac_config.link_status.retry = 20ms;
+    ctx.slac_config.link_status.timeout = 300ms;
 }
 
 bool enter_matching_state(Context& ctx, slac_fsm& machine) {
@@ -1697,9 +1698,9 @@ bool test_short_link_status_cnf_does_not_leave_matched_or_failed() {
     configure_common(ctx);
     ctx.modem_vendor = defs::ModemVendor::Lumissil;
     ctx.slac_config.link_status.do_detect = true;
-    ctx.slac_config.link_status.retry_ms = 20;
-    ctx.slac_config.link_status.poll_in_matched_state_ms = 120;
-    ctx.slac_config.link_status.timeout_ms = 350;
+    ctx.slac_config.link_status.retry = 20ms;
+    ctx.slac_config.link_status.poll_in_matched_state = 120ms;
+    ctx.slac_config.link_status.timeout = 350ms;
     EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
     std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
 
@@ -1902,7 +1903,7 @@ bool test_no_cm_slac_parm_timeout_resets_then_fails() {
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.reset_instead_of_fail = true;
-    ctx.slac_config.slac_init_timeout_ms = 120;
+    ctx.slac_config.slac_init_timeout = 120ms;
 
     EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
     std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
@@ -1913,8 +1914,8 @@ bool test_no_cm_slac_parm_timeout_resets_then_fails() {
         return false;
     }
 
-    auto const timeout_ms = ctx.slac_config.slac_init_timeout_ms;
-    auto const first_timeout_deadline = test_clock.now() + std::chrono::milliseconds(timeout_ms + 30);
+    auto const timeout = ctx.slac_config.slac_init_timeout;
+    auto const first_timeout_deadline = test_clock.now() + timeout + 30ms;
     while (test_clock.now() < first_timeout_deadline) {
         machine.update();
         if (ctx.status.match_state == SlacState::Failed) {
@@ -1929,7 +1930,7 @@ bool test_no_cm_slac_parm_timeout_resets_then_fails() {
     if (!assert_true(ctx.status.session_count == 0, test_name, "session_count should remain zero after reset")) {
         return false;
     }
-    if (!wait_for_match_state(ctx, SlacState::Failed, machine, static_cast<int>(timeout_ms * 2 + 60))) {
+    if (!wait_for_match_state(ctx, SlacState::Failed, machine, static_cast<int>((timeout * 2 + 60ms).count()))) {
         return assert_true(false, test_name, "second matching timeout did not transition to Failed");
     }
 
@@ -1950,7 +1951,7 @@ bool test_no_cm_slac_parm_timeout_fails_when_reset_disabled() {
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.reset_instead_of_fail = false;
-    ctx.slac_config.slac_init_timeout_ms = 80;
+    ctx.slac_config.slac_init_timeout = 80ms;
 
     EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
     std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
@@ -1982,9 +1983,9 @@ bool test_matched_link_status_rejects_only_negative_cnf() {
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.link_status.do_detect = true;
-    ctx.slac_config.link_status.retry_ms = 20;
-    ctx.slac_config.link_status.poll_in_matched_state_ms = 120;
-    ctx.slac_config.link_status.timeout_ms = 300;
+    ctx.slac_config.link_status.retry = 20ms;
+    ctx.slac_config.link_status.poll_in_matched_state = 120ms;
+    ctx.slac_config.link_status.timeout = 300ms;
     ctx.modem_vendor = defs::ModemVendor::Lumissil;
 
     EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
@@ -2049,9 +2050,9 @@ bool test_matched_qualcomm_link_status_rejects_only_negative_cnf() {
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.link_status.do_detect = true;
-    ctx.slac_config.link_status.retry_ms = 20;
-    ctx.slac_config.link_status.poll_in_matched_state_ms = 120;
-    ctx.slac_config.link_status.timeout_ms = 300;
+    ctx.slac_config.link_status.retry = 20ms;
+    ctx.slac_config.link_status.poll_in_matched_state = 120ms;
+    ctx.slac_config.link_status.timeout = 300ms;
     ctx.modem_vendor = defs::ModemVendor::Qualcomm;
 
     EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
@@ -2109,9 +2110,9 @@ bool test_matched_link_status_neg_debounce_tolerates_transient_flaps() {
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.link_status.do_detect = true;
-    ctx.slac_config.link_status.retry_ms = 20;
-    ctx.slac_config.link_status.poll_in_matched_state_ms = 120;
-    ctx.slac_config.link_status.timeout_ms = 300;
+    ctx.slac_config.link_status.retry = 20ms;
+    ctx.slac_config.link_status.poll_in_matched_state = 120ms;
+    ctx.slac_config.link_status.timeout = 300ms;
     ctx.slac_config.link_status.debounce_count = 3;
     ctx.modem_vendor = defs::ModemVendor::Qualcomm;
 
@@ -2268,9 +2269,9 @@ bool test_matched_link_status_poll_interval_is_configurable() {
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.link_status.do_detect = true;
-    ctx.slac_config.link_status.retry_ms = 20;
-    ctx.slac_config.link_status.poll_in_matched_state_ms = 100;
-    ctx.slac_config.link_status.timeout_ms = 300;
+    ctx.slac_config.link_status.retry = 20ms;
+    ctx.slac_config.link_status.poll_in_matched_state = 100ms;
+    ctx.slac_config.link_status.timeout = 300ms;
     ctx.modem_vendor = defs::ModemVendor::Qualcomm;
 
     EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
@@ -2320,9 +2321,9 @@ bool test_matched_link_status_neg_debounce_clamps_invalid_to_one() {
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.link_status.do_detect = true;
-    ctx.slac_config.link_status.retry_ms = 20;
-    ctx.slac_config.link_status.poll_in_matched_state_ms = 120;
-    ctx.slac_config.link_status.timeout_ms = 300;
+    ctx.slac_config.link_status.retry = 20ms;
+    ctx.slac_config.link_status.poll_in_matched_state = 120ms;
+    ctx.slac_config.link_status.timeout = 300ms;
     ctx.slac_config.link_status.debounce_count = 0;
     ctx.modem_vendor = defs::ModemVendor::Lumissil;
 
@@ -2374,7 +2375,7 @@ bool test_leave_bcd_recovers_from_failed_state() {
     configure_common(ctx);
     // Reach the matching timeout quickly; reset_instead_of_fail is already false in
     // configure_common, so the first expiry goes straight to Failed (conformance config).
-    ctx.slac_config.slac_init_timeout_ms = 60;
+    ctx.slac_config.slac_init_timeout = 60ms;
     fill_session_nmk(ctx, 0x41);
 
     EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
@@ -2402,7 +2403,7 @@ bool test_leave_bcd_recovers_from_failed_state() {
     }
 
     // Re-plug: matching must work again and the SECC must answer CM_SLAC_PARM.REQ.
-    ctx.slac_config.slac_init_timeout_ms = 5000;
+    ctx.slac_config.slac_init_timeout = 5000ms;
     machine.enter_bcd();
     if (!wait_for_match_state(ctx, SlacState::Matching, machine, 200)) {
         return assert_true(false, test_name, "did not re-enter Matching on the next enter_bcd");

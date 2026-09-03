@@ -102,9 +102,10 @@ template <std::uint32_t TimeoutMS> struct timeout_ms_state : public state<> {
         return to.expired(now);
     }
 };
+// A timeout state whose duration is set by the deriving state before it forwards to on_entry.
 struct timeout_state : public state<> {
     template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
-        to.arm(fsm.ctx->current_time, std::chrono::milliseconds(state_timeout_ms));
+        to.arm(fsm.ctx->current_time, duration);
     }
 
     timer to;
@@ -112,7 +113,7 @@ struct timeout_state : public state<> {
         return to.expired(now);
     }
 
-    std::uint32_t state_timeout_ms{0};
+    std::chrono::milliseconds duration{0};
 };
 
 // clang-format on

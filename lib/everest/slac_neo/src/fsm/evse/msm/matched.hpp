@@ -73,7 +73,7 @@ struct Matched_def : public state_machine_def<Matched_def> {
         }
         ctx->clear_match_confirm_cache();
         ctx->signal_dlink_ready(true);
-        link_check_to_ms = ctx->slac_config.link_status.poll_in_matched_state_ms;
+        link_check_to = ctx->slac_config.link_status.poll_in_matched_state;
         consecutive_neg_link_status = 0;
         neg_link_status_threshold =
             ctx->slac_config.link_status.debounce_count < 1 ? 1 : ctx->slac_config.link_status.debounce_count;
@@ -91,7 +91,7 @@ struct Matched_def : public state_machine_def<Matched_def> {
 
     // Members
     fsm::evse::Context* ctx;
-    int link_check_to_ms{0};
+    std::chrono::milliseconds link_check_to{0};
     int consecutive_neg_link_status{0};
     int neg_link_status_threshold{1};
     fsm::evse::AmpMapHandler amp_map; // SECC-initiated CM_AMP_MAP exchange (ISO 15118-3 A.9.6)

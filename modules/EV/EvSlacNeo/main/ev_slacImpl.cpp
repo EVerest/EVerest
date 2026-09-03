@@ -167,11 +167,11 @@ void ev_slacImpl::configure_fsm_context() {
     fsm_ctx = std::make_unique<slac_fsm::ev::Context>(callbacks, slac_io->get_mac_addr());
 
     if (config.set_key_timeout_ms > 0) {
-        fsm_ctx->slac_config.set_key_timeout_ms = config.set_key_timeout_ms;
+        fsm_ctx->slac_config.set_key_timeout = std::chrono::milliseconds{config.set_key_timeout_ms};
     } else {
         EVLOG_warning << kModuleLogPrefix << "Invalid set_key_timeout_ms value '" << config.set_key_timeout_ms
                       << "'; clamping set_key_timeout_ms to 1 ms";
-        fsm_ctx->slac_config.set_key_timeout_ms = 1;
+        fsm_ctx->slac_config.set_key_timeout = std::chrono::milliseconds{1};
     }
 
     if (config.parm_req_attempts > 0) {
