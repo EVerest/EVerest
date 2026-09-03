@@ -26,11 +26,11 @@
 //! Towards the payment backend a transaction is identified by an invoice
 //! token. When the token-id is derived from the physical card (see the
 //! `read_card_control` config), the caller of the `auth_token_validator`
-//! interface must deliver the invoice token in the `parent_id_token` field
-//! of the provided token - the validation is rejected otherwise. Without a
-//! card derived token-id the token-id itself is the invoice token. The
-//! module keeps the mapping from token-id to invoice token for the lifetime
-//! of the transaction.
+//! interface must deliver the invoice token in the `additional_info` of the
+//! provided id token, in an entry of type [INVOICE_TOKEN_ADDITIONAL_INFO_TYPE]
+//! - the validation is rejected otherwise. Without a card derived token-id
+//! the token-id itself is the invoice token. The module keeps the mapping
+//! from token-id to invoice token for the lifetime of the transaction.
 //!
 //! ## Implementation details
 //!
@@ -68,6 +68,21 @@ use zvt_feig_terminal::config::{Config, FeigConfig};
 use zvt_feig_terminal::feig::{CardInfo, Error};
 
 const INVALID_BANK_TOKEN: &str = "PAYMENT_TERMINAL_INVALID";
+
+/// The `type` of the `additional_info` entry of an id token carrying the
+/// invoice token - see the module documentation.
+pub const INVOICE_TOKEN_ADDITIONAL_INFO_TYPE: &str = "invoice_token";
+
+/// Returns the invoice token delivered in the `additional_info` of the id
+/// token, if any.
+fn invoice_token_from_additional_info(id_token: &IdToken) -> Option<String> {
+    id_token
+        .additional_info
+        .as_ref()?
+        .iter()
+        .find(|info| info.r#type == INVOICE_TOKEN_ADDITIONAL_INFO_TYPE)
+        .map(|info| info.value.clone())
+}
 
 mod backoff {
     use std::cmp::min;
@@ -415,7 +430,7 @@ impl PaymentTerminalModule {
 
                 // Attempting to get an invoice token. Not needed if we
                 // expect the card id: the invoice token then arrives
-                // through `parent_id_token` in the validation.
+                // through the `additional_info` in the validation.
                 if token.is_none() && bank_cards_enabled && !self.card_id_expected() {
                     if let Some(publisher) = publishers.bank_session_token_slots.get(0) {
                         if bank_token_backoff.is_ready() {
@@ -583,14 +598,14 @@ impl AuthTokenValidatorServiceSubscriber for PaymentTerminalModule {
         // backend. It may differ from the id token - see the module
         // documentation.
         let invoice_token = if self.card_id_expected() {
-            match provided_token.parent_id_token.as_ref() {
-                Some(parent_id_token) => parent_id_token.value.clone(),
+            match invoice_token_from_additional_info(&provided_token.id_token) {
+                Some(invoice_token) => invoice_token,
                 None => {
                     // The id token is derived from the physical card: without an
                     // invoice token the payment backend could not match the
                     // transaction to an invoice.
                     log::warn!(
-                        "Validating a `BankCard` without an invoice token in `parent_id_token`"
+                        "Validating a `BankCard` without an invoice token in `additional_info`"
                     );
                     return Ok(AuthorizationStatus::Invalid.into());
                 }
@@ -725,6 +740,7 @@ fn main(module: &Module) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use self::generated::types::authorization::CustomIdToken;
     use self::generated::types::money::Currency;
     use self::generated::types::money::CurrencyCode;
     use self::generated::types::session_cost::SessionCostChunk;
@@ -746,6 +762,14 @@ mod tests {
                 bank_transactions: Mutex::new(HashMap::new()),
                 read_card_control: 0xd0,
             }
+        }
+    }
+
+    /// The `additional_info` entry carrying the given invoice token.
+    fn invoice_token_info(invoice_token: &str) -> CustomIdToken {
+        CustomIdToken {
+            value: invoice_token.to_string(),
+            r#type: INVOICE_TOKEN_ADDITIONAL_INFO_TYPE.to_string(),
         }
     }
 
@@ -1218,7 +1242,9 @@ mod tests {
     }
 
     #[test]
-    /// Test validate_token with successful transaction
+    /// Test validate_token with successful transaction. Under the legacy
+    /// contract the id token is the invoice token - an invoice token in the
+    /// `additional_info` is ignored.
     fn payment_terminal__validate_token__success() {
         let mut feig_mock = SyncFeig::default();
         feig_mock
@@ -1231,11 +1257,8 @@ mod tests {
 
         let mut provided_token =
             ProvidedIdToken::new("valid_token".to_string(), AuthorizationType::BankCard, None);
-        provided_token.parent_id_token = Some(IdToken {
-            value: "some_other_token".to_string(),
-            r#type: IdTokenType::Local,
-            additional_info: None,
-        });
+        provided_token.id_token.additional_info =
+            Some(vec![invoice_token_info("some_other_token")]);
         let everest_mock = ModulePublisher::default();
 
         let result = pt_module.validate_token(&(&everest_mock).into(), provided_token);
@@ -1256,27 +1279,40 @@ mod tests {
     }
 
     #[test]
-    /// Without a parent_id_token the validation must fail without reserving
-    /// any money.
-    fn payment_terminal__validate_token__full_read__no_parent_token() {
-        let everest_mock = ModulePublisher::default();
-        let mut feig_mock = SyncFeig::default();
-        feig_mock.expect_begin_transaction().times(0);
-        let mut pt_module: PaymentTerminalModule = feig_mock.into();
-        pt_module.read_card_control = 0xc0;
-        let provided_token = ProvidedIdToken::new(
-            "some card id".to_string(),
-            AuthorizationType::BankCard,
+    /// Without an invoice token in the `additional_info` the validation must
+    /// fail without reserving any money.
+    fn payment_terminal__validate_token__full_read__no_invoice_token() {
+        let PARAMETERS = [
             None,
-        );
+            Some(vec![]),
+            // An entry of a different type is not an invoice token.
+            Some(vec![CustomIdToken {
+                value: "invoice_token".to_string(),
+                r#type: "other".to_string(),
+            }]),
+        ];
 
-        let result = pt_module.validate_token(&(&everest_mock).into(), provided_token);
+        for additional_info in PARAMETERS {
+            let everest_mock = ModulePublisher::default();
+            let mut feig_mock = SyncFeig::default();
+            feig_mock.expect_begin_transaction().times(0);
+            let mut pt_module: PaymentTerminalModule = feig_mock.into();
+            pt_module.read_card_control = 0xc0;
+            let mut provided_token = ProvidedIdToken::new(
+                "some card id".to_string(),
+                AuthorizationType::BankCard,
+                None,
+            );
+            provided_token.id_token.additional_info = additional_info;
 
-        assert_eq!(
-            result.unwrap().authorization_status,
-            AuthorizationStatus::Invalid
-        );
-        assert!(pt_module.bank_transactions.lock().unwrap().is_empty());
+            let result = pt_module.validate_token(&(&everest_mock).into(), provided_token);
+
+            assert_eq!(
+                result.unwrap().authorization_status,
+                AuthorizationStatus::Invalid
+            );
+            assert!(pt_module.bank_transactions.lock().unwrap().is_empty());
+        }
     }
 
     #[test]
@@ -1297,11 +1333,14 @@ mod tests {
             AuthorizationType::BankCard,
             None,
         );
-        provided_token.parent_id_token = Some(IdToken {
-            value: "invoice_token".to_string(),
-            r#type: IdTokenType::Local,
-            additional_info: None,
-        });
+        provided_token.id_token.additional_info = Some(vec![
+            // Other entries are skipped.
+            CustomIdToken {
+                value: "something else".to_string(),
+                r#type: "other".to_string(),
+            },
+            invoice_token_info("invoice_token"),
+        ]);
 
         let result = pt_module.validate_token(&(&everest_mock).into(), provided_token);
 
