@@ -34,7 +34,7 @@ public:
     void start(Context& ctx);
 
     // Whether the retransmission interval has elapsed while a CNF is still awaited.
-    bool retransmit_due() const;
+    bool retransmit_due(timer::tp now) const;
 
     // Service the elapsed interval: retransmit the REQ, or stop once the retry limit is reached.
     void retransmit(Context& ctx);

@@ -41,7 +41,7 @@ public:
 
     // Whether tick() has work to do: a validation is armed or a step-2 window is pending, and the
     // corresponding timer has expired.
-    bool needs_service() const;
+    bool needs_service(timer::tp now) const;
 
     // Service the expired timer: either close the step-2 toggle window with a SUCCESS CNF, or
     // repeat/expire the step-1 CNF.

@@ -44,7 +44,7 @@ struct send_amp_map_cnf {
 // Matched_def as `amp_map`. These only wire it to the update tick and to the incoming CNF.
 struct amp_map_retransmit_due {
     template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        return fsm.amp_map.retransmit_due();
+        return fsm.amp_map.retransmit_due(fsm.ctx->current_time);
     }
 };
 struct retransmit_amp_map {

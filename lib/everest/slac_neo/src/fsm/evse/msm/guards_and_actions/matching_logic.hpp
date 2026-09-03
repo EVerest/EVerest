@@ -76,7 +76,7 @@ struct validate_tick {
 };
 struct validate_needs_service {
     template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        return fsm.validate.needs_service();
+        return fsm.validate.needs_service(fsm.ctx->current_time);
     }
 };
 
@@ -84,8 +84,7 @@ struct reset_matching_subfsm {
     template <class Evt, class Fsm, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         fsm.ctx->status.session_count = 0;
         fsm.sessions.clear();
-        fsm.to.setDuration(std::chrono::milliseconds(fsm.ctx->slac_config.slac_init_timeout_ms));
-        fsm.to.reset();
+        fsm.to.arm(fsm.ctx->current_time, std::chrono::milliseconds(fsm.ctx->slac_config.slac_init_timeout_ms));
         fsm.failed_matching_reset_once = true;
     }
 };
@@ -134,7 +133,7 @@ struct is_validate_req : public is_message_of_type<defs::MMTYPE_CM_VALIDATE | de
 
 struct should_reset_instead_of_fail {
     template <class Evt, class Fsm, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        auto const should_timeout = fsm.to.timeout();
+        auto const should_timeout = fsm.to.expired(fsm.ctx->current_time);
         auto const is_failed = all_sessions_failed(fsm);
         auto const no_sessions = fsm.sessions.empty();
         auto const should_reset = (not fsm.failed_matching_reset_once) and
@@ -145,7 +144,7 @@ struct should_reset_instead_of_fail {
 };
 struct should_transition_to_failed_matching {
     template <class Evt, class Fsm, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        auto const should_timeout = fsm.to.timeout();
+        auto const should_timeout = fsm.to.expired(fsm.ctx->current_time);
         auto const is_failed = all_sessions_failed(fsm);
         auto const no_sessions = fsm.sessions.empty();
         auto const should_fail = (is_failed or (no_sessions && should_timeout)) and

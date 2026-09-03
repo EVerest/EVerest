@@ -11,6 +11,7 @@
 #include <everest/slac/slac_defs.hpp>
 #include <everest/slac/slac_messages.hpp>
 #include <everest/slac/slac_types.hpp>
+#include <everest/slac/timer.hpp>
 
 namespace everest::lib::slac::fsm::ev {
 
@@ -55,6 +56,9 @@ struct ContextCallbacks {
     std::function<void(const std::string&)> log_info{nullptr};
     std::function<void(const std::string&)> log_warn{nullptr};
     std::function<void(const std::string&)> log_error{nullptr};
+    // Time source for every timer in the state machine; steady_clock when unset. Tests inject a
+    // controllable clock here so timeouts are driven, not waited for.
+    std::function<timer::tp()> now{nullptr};
 };
 
 struct EvSlacConfig {
@@ -101,6 +105,11 @@ struct Context {
     // event specific payloads
     // FIXME (aw): due to the synchronous nature of the fsm, this could be even a ptr/ref
     messages::HomeplugMessage slac_message_payload;
+
+    // "Now" as seen by every timer during the current event. ev_slac_fsm samples it once per event
+    // from callbacks.now, so all deadlines evaluated in one event agree on the time.
+    timer::tp current_time{};
+    void sample_time();
 
     template <typename SlacMessageType> bool send_slac_message(MacAddress const& mac, SlacMessageType const& message) {
         if (not callbacks.send_raw_slac) {

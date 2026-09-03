@@ -6,13 +6,14 @@
 #include <cstdint>
 #include <cstdio>
 #include <net/ethernet.h>
-#include <thread>
 #include <utility>
 #include <vector>
 
 #include <everest/slac/HomeplugMessage.hpp>
 #include <everest/slac/fsm/evse/context.hpp>
 #include <everest/slac/slac_fsm.hpp>
+
+#include "mock_clock.hpp"
 
 using namespace everest::lib::slac;
 using namespace everest::lib::slac::fsm::evse;
@@ -99,15 +100,18 @@ bool assert_true(bool cond, const char* test_name, const char* details) {
     return true;
 }
 
+// The clock every Context in this file runs on; wait_for() advances it one millisecond per update tick.
+test::MockClock test_clock;
+
 template <typename Predicate>
 bool wait_for(std::chrono::milliseconds timeout, slac_fsm& machine, Predicate&& predicate) {
-    auto start = std::chrono::steady_clock::now();
-    while (std::chrono::steady_clock::now() - start < timeout) {
+    auto const deadline = test_clock.now() + timeout;
+    while (test_clock.now() < deadline) {
         if (predicate()) {
             return true;
         }
         machine.update();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        test_clock.advance_ms(1);
     }
     return predicate();
 }
@@ -175,6 +179,8 @@ bool test_legacy_single_attempt_accepts_valid_success_result() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -244,6 +250,8 @@ bool test_legacy_single_attempt_rejects_reserved_result() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.set_key_handling_mode = SetKeyHandlingMode::legacy_single_attempt;
@@ -288,6 +296,8 @@ bool test_legacy_single_attempt_accepts_compat_success_cnf() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -335,6 +345,8 @@ bool test_legacy_single_attempt_reaches_failed() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.set_key_handling_mode = SetKeyHandlingMode::legacy_single_attempt;
@@ -370,6 +382,8 @@ bool test_retry_confirmed_accepts_wrong_source() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -415,6 +429,8 @@ bool test_retry_confirmed_accepts_malformed_fields() {
             sent_messages.push_back({sent_messages.size(), hp_message});
             return true;
         };
+
+        callbacks.now = test_clock.source();
 
         Context ctx(callbacks);
         configure_common(ctx);
@@ -485,6 +501,8 @@ bool test_retry_confirmed_reserved_result_is_failure() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.set_key_handling_mode = SetKeyHandlingMode::retry_confirmed;
@@ -531,6 +549,7 @@ bool test_default_set_key_handling_mode_is_retry_confirmed() {
     const char* test_name = "test_default_set_key_handling_mode_is_retry_confirmed";
 
     ContextCallbacks callbacks{};
+    callbacks.now = test_clock.source();
     Context ctx(callbacks);
 
     return assert_true(ctx.slac_config.set_key_handling_mode == SetKeyHandlingMode::retry_confirmed, test_name,
@@ -541,6 +560,7 @@ bool test_default_set_key_cnf_success_mode_is_modem_compat() {
     const char* test_name = "test_default_set_key_cnf_success_mode_is_modem_compat";
 
     ContextCallbacks callbacks{};
+    callbacks.now = test_clock.source();
     Context ctx(callbacks);
 
     return assert_true(ctx.slac_config.set_key_cnf_success_mode == SetKeyCnfSuccessMode::modem_compat_0x01, test_name,
@@ -556,6 +576,8 @@ bool test_retry_confirmed_retries_until_attempt_limit_without_promoting_session_
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -624,6 +646,8 @@ bool run_retry_confirmed_success(uint8_t result, SetKeyCnfSuccessMode success_mo
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.set_key_handling_mode = SetKeyHandlingMode::retry_confirmed;
@@ -675,6 +699,8 @@ bool test_default_retries_on_hpgp_0x00_success_result() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.set_key_handling_mode = SetKeyHandlingMode::retry_confirmed;
@@ -717,6 +743,8 @@ bool test_short_cm_set_key_cnf_keeps_reset() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);

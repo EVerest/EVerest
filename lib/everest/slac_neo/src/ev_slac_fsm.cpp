@@ -21,24 +21,29 @@ ev_slac_fsm::~ev_slac_fsm() {
 }
 
 void ev_slac_fsm::reset() {
+    ctx.sample_time();
     impl->fsm.process_event(msm::reset{});
 }
 
 void ev_slac_fsm::trigger_matching() {
+    ctx.sample_time();
     impl->fsm.process_event(msm::ev::trigger_matching{});
 }
 
 void ev_slac_fsm::message(messages::HomeplugMessage msg) {
     msm::message event;
     event.payload = std::move(msg);
+    ctx.sample_time();
     impl->fsm.process_event(event);
 }
 
 void ev_slac_fsm::update() {
+    ctx.sample_time();
     impl->fsm.process_event(msm::update{});
 }
 
 void ev_slac_fsm::restart_fsm() {
+    ctx.sample_time();
     impl->fsm.start();
 }
 

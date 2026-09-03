@@ -13,13 +13,12 @@ struct ResetChip_def : public state_machine_def<ResetChip_def> {
     // States
     struct Delay : public state<> {
         template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
-            to.setDuration(std::chrono::milliseconds(fsm.ctx->slac_config.chip_reset.delay_ms));
-            to.reset();
+            to.arm(fsm.ctx->current_time, std::chrono::milliseconds(fsm.ctx->slac_config.chip_reset.delay_ms));
         }
 
         timer to;
-        bool state_timeout() {
-            return to.timeout();
+        bool state_timeout(timer::tp now) const {
+            return to.expired(now);
         }
     };
     // clang-format off

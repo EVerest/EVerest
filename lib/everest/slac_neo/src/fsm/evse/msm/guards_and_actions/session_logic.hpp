@@ -68,7 +68,7 @@ struct sound_completes_count {
 // variant); a late CM_SLAC_MATCH.REQ must then get no CM_SLAC_MATCH.CNF.
 struct validation_window_expired {
     template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        return fsm.ctx->validation_done and fsm.ctx->validation_match_window.timeout();
+        return fsm.ctx->validation_done and fsm.ctx->validation_match_window.expired(fsm.ctx->current_time);
     }
 };
 struct retry_limit {
@@ -79,7 +79,7 @@ struct retry_limit {
 
 struct start_atten_in_time {
     template <class Fsm, class SrcT, class TarT> bool operator()(message const& e, Fsm& fsm, SrcT& src, TarT&) {
-        return not src.state_timeout() and matches_start_atten_char(e, fsm.session_data);
+        return not src.state_timeout(fsm.ctx->current_time) and matches_start_atten_char(e, fsm.session_data);
     }
 };
 
