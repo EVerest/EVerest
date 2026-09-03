@@ -70,11 +70,14 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     res.service_renegotiation_supported = false;
     session.service_renegotiation_supported = false;
 
-    // Reset default value
-    res.energy_transfer_service_list.clear();
-
     std::vector<dt::Service> energy_services_list;
     std::vector<dt::VasService> vas_services_list;
+
+    const auto offer_all_energy_services = [&]() {
+        for (auto& energy_service : energy_services) {
+            energy_services_list.push_back({energy_service, false});
+        }
+    };
 
     // EV supported service ID's
     if (req.supported_service_ids.has_value() == true) {
@@ -96,14 +99,28 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
                 ev_energy_services.emplace_back(energy_service);
             }
         }
-    } else {
-        for (auto& energy_service : energy_services) {
-            energy_services_list.push_back({energy_service, false});
+
+        // Filtering by SupportedServiceIDs is optional (Table 39). With no match, offer every energy
+        // service the EVSE has and let the EV decide at ServiceSelection.
+        if (energy_services_list.empty() and not energy_services.empty()) {
+            logf_info("No EV supported service ID matches the offered energy services, offering all of them");
+            offer_all_energy_services();
         }
+    } else {
+        offer_all_energy_services();
         for (auto& vas_service : vas_services) {
             vas_services_list.push_back({vas_service, false});
         }
     }
+
+    if (energy_services_list.empty()) {
+        logf_error("No energy transfer service is configured, rejecting service discovery. Sending the default AC "
+                   "service to avoid encoding issues");
+        return response_with_code(res, dt::ResponseCode::FAILED);
+    }
+
+    // Reset default value
+    res.energy_transfer_service_list.clear();
 
     for (auto& conf_energy_service : energy_services_list) {
         auto& energy_service = res.energy_transfer_service_list.emplace_back();
