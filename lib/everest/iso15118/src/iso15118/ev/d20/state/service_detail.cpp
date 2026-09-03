@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
+#include <algorithm>
 #include <bitset>
 #include <cstdint>
 #include <optional>
@@ -58,15 +59,23 @@ bool is_dynamic(const message_20::datatypes::ParameterSet& set) {
 
 struct DerControlFunctionsOffer {
     std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> mask;
-    // The offer carried bits at or above DER_CONTROL_FUNCTION_COUNT, so it names functions
-    // the EV models nothing for. The bitset constructor drops them, hence the separate flag.
+    // Set when the offer names functions the EV cannot model: bits at or above
+    // DER_CONTROL_FUNCTION_COUNT (dropped by the bitset constructor) or a
+    // DERControlFunctions value that is not an integer.
     bool has_unknown_functions{false};
 };
 
 DerControlFunctionsOffer get_der_control_functions(const message_20::datatypes::ParameterSet& set) {
+    const auto present = std::any_of(set.parameter.begin(), set.parameter.end(),
+                                     [](const auto& parameter) { return parameter.name == "DERControlFunctions"; });
+    if (not present) {
+        return {};
+    }
     const auto value = get_int_parameter(set, "DERControlFunctions");
     if (not value.has_value()) {
-        return {};
+        // Present but not an integer: the offer names functions the EV cannot read.
+        logf_warning("AC_DER_IEC parameter set %u carries a non-integer DERControlFunctions value", set.id);
+        return DerControlFunctionsOffer{{}, true};
     }
     const auto raw = static_cast<unsigned long long>(static_cast<uint32_t>(value.value()));
     constexpr auto known_functions = (1ULL << ev::DER_CONTROL_FUNCTION_COUNT) - 1ULL;

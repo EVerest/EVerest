@@ -475,3 +475,57 @@ SCENARIO("ISO15118-20 EV ServiceDetail skips an AC_DER_IEC set with functions ab
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->selected_energy_transfer_service.parameter_set_id == 7);
 }
+
+SCENARIO("ISO15118-20 EV ServiceDetail treats a non-integer DERControlFunctions value as unknown functions") {
+    const LogCapture logs{};
+    const ev::feedback::Callbacks callbacks{};
+    FsmStateHelper helper{callbacks,
+                          {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                          ServiceCategory::AC_DER_IEC,
+                          dso_setpoint_support(),
+                          true};
+    auto& ctx = helper.get_context();
+    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
+
+    // The only Dynamic set carries a DERControlFunctions value that is not an integer.
+    auto set = make_param_set(5, ControlMode::Dynamic);
+    set.parameter.push_back({"DERControlFunctions", true});
+    helper.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC, {set}));
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceDetail);
+    REQUIRE(ctx.is_session_stopped() == true);
+    REQUIRE(logs.has_warning_containing("non-integer DERControlFunctions"));
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail selects the first Dynamic set on a non-integer DERControlFunctions value when "
+         "not strict") {
+    const LogCapture logs{};
+    const ev::feedback::Callbacks callbacks{};
+    FsmStateHelper helper{callbacks,
+                          {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                          ServiceCategory::AC_DER_IEC,
+                          dso_setpoint_support(),
+                          false};
+    auto& ctx = helper.get_context();
+    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
+
+    auto set = make_param_set(5, ControlMode::Dynamic);
+    set.parameter.push_back({"DERControlFunctions", true});
+    helper.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC, {set}));
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
+    REQUIRE(ctx.is_session_stopped() == false);
+    REQUIRE(logs.has_warning_containing("non-integer DERControlFunctions"));
+    REQUIRE(ctx.der_negotiated_functions().none());
+
+    const auto requests = take_all_requests(helper.get_message_exchange());
+    const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->selected_energy_transfer_service.parameter_set_id == 5);
+}
