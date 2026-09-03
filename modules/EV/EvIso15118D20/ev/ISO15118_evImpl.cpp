@@ -58,40 +58,6 @@ void ISO15118_evImpl::init() {
             break;
         }
     });
-
-    check_config();
-}
-
-void ISO15118_evImpl::check_config() {
-    namespace dt = iso15118::message_20::datatypes;
-
-    // energy_service only picks the SAP namespace; DC is fine for validating transport fields.
-    auto problems = iso15118::ev::validate_config(make_ev_config(dt::ServiceCategory::DC));
-
-    const auto append = [&problems](std::vector<std::string> more) {
-        problems.insert(problems.end(), std::make_move_iterator(more.begin()), std::make_move_iterator(more.end()));
-    };
-
-    iso15118::ev::AcChargeParams ac_params;
-    ac_params.max_charge_power = static_cast<float>(mod->config.ac_max_charge_power_w);
-    ac_params.min_charge_power = static_cast<float>(mod->config.ac_min_charge_power_w);
-    ac_params.max_discharge_power = static_cast<float>(mod->config.ac_max_discharge_power_w);
-    ac_params.min_discharge_power = static_cast<float>(mod->config.ac_min_discharge_power_w);
-    append(iso15118::ev::validate_ac_charge_params(ac_params));
-
-    iso15118::ev::DcChargeParams dc_params;
-    dc_params.max_discharge_power = static_cast<float>(mod->config.dc_max_discharge_power_w);
-    dc_params.min_discharge_power = static_cast<float>(mod->config.dc_min_discharge_power_w);
-    dc_params.max_discharge_current = static_cast<float>(mod->config.dc_max_discharge_current_a);
-    append(iso15118::ev::validate_dc_charge_params(dc_params));
-
-    config_valid = problems.empty();
-    for (const auto& problem : problems) {
-        EVLOG_error << "EvIso15118D20: invalid config: " << problem;
-    }
-    if (not config_valid) {
-        EVLOG_error << "EvIso15118D20: start_charging is refused until the module config is corrected";
-    }
 }
 
 void ISO15118_evImpl::ready() {
@@ -355,10 +321,6 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
                       << "'; only DC, DC BPT, AC single/three-phase, AC BPT and AC DER IEC are supported";
         return false;
     }
-    if (not config_valid) {
-        EVLOG_error << "EvIso15118D20: rejecting start_charging; the module config is invalid";
-        return false;
-    }
     {
         auto h = session.handle();
         if ((*h).phase != SessionPhase::idle) {
@@ -383,6 +345,24 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
             (*h).dc_params.min_discharge_power = static_cast<float>(mod->config.dc_min_discharge_power_w);
             (*h).dc_params.max_discharge_current =
                 (*h).cmd_max_discharge_current.value_or(static_cast<float>(mod->config.dc_max_discharge_current_a));
+        }
+        // Validate what actually goes on the wire: the merged params, not the raw config.
+        auto problems = iso15118::ev::validate_config(make_ev_config(energy_service));
+        const auto append = [&problems](std::vector<std::string> more) {
+            problems.insert(problems.end(), std::make_move_iterator(more.begin()), std::make_move_iterator(more.end()));
+        };
+        if (iso15118::ev::is_ac_family(energy_service)) {
+            append(iso15118::ev::validate_ac_charge_params((*h).ac_params));
+        }
+        if (energy_service == dt::ServiceCategory::DC or energy_service == dt::ServiceCategory::DC_BPT) {
+            append(iso15118::ev::validate_dc_charge_params((*h).dc_params));
+        }
+        if (not problems.empty()) {
+            for (const auto& problem : problems) {
+                EVLOG_error << "EvIso15118D20: invalid session parameter: " << problem;
+            }
+            EVLOG_error << "EvIso15118D20: rejecting start_charging; the session parameters are invalid";
+            return false;
         }
         (*h).phase = SessionPhase::requested;
     }
