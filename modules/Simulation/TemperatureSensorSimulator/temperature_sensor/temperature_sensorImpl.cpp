@@ -112,6 +112,11 @@ void temperature_sensorImpl::init() {
 void temperature_sensorImpl::ready() {
 }
 
+void temperature_sensorImpl::shutdown() {
+    // Thread::stop() signals and joins, and is a no-op once the worker is gone
+    publish_thread_handle.stop();
+}
+
 void temperature_sensorImpl::publish_worker() {
     while (true) {
         if (publish_thread_handle.shouldExit()) {
