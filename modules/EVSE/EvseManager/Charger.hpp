@@ -344,11 +344,15 @@ private:
         std::optional<types::evse_manager::StopTransactionReason> last_stop_transaction_reason;
         types::evse_manager::StartSessionReason last_start_session_reason;
         float current_drawn_by_vehicle[3];
+        // Diagnostics for stale power meter data: when current_drawn_by_vehicle was last updated
+        // (default-constructed until the first powermeter publication). Only used for warnings,
+        // the values are still used as-is.
+        std::chrono::time_point<std::chrono::steady_clock> current_drawn_by_vehicle_last_update{};
         ShutdownType shutdown_type{ShutdownType::None};
         ShutdownType last_shutdown_type{ShutdownType::None};
-        int ac_with_soc_timer;
+        int ac_with_soc_timer{3600000};
         // non standard compliant option: time out after a while and switch back to DC to get SoC update
-        bool ac_with_soc_timeout;
+        bool ac_with_soc_timeout{false};
         bool contactor_welded{false};
         bool switch_3ph1ph_threephase{false};
         bool switch_3ph1ph_threephase_ongoing{false};
@@ -416,6 +420,8 @@ private:
         float t_step_X1_return_pwm;
         std::chrono::time_point<std::chrono::steady_clock> last_over_current_event;
         bool over_current{false};
+        // Rate limit for the stale powermeter data warning in check_soft_over_current
+        std::chrono::time_point<std::chrono::steady_clock> last_stale_powermeter_warning{};
 
         ShutdownType last_shutdown_type{ShutdownType::None};
         std::chrono::system_clock::time_point current_state_started;
