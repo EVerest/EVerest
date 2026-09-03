@@ -4,6 +4,7 @@
 #include <iso15118/ev/d20/state/dc_cable_check.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
+#include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/schedule_exchange.hpp>
 
@@ -45,6 +46,10 @@ Result ScheduleExchange::feed(Event ev) {
     const auto* res = expect_response<message_20::ScheduleExchangeResponse>(m_ctx, *variant);
     if (res == nullptr) {
         return Result::stopping();
+    }
+
+    if (auto stop = stop_before_start(m_ctx)) {
+        return std::move(*stop);
     }
 
     if (res->processing == message_20::datatypes::Processing::Finished) {
