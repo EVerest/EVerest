@@ -140,10 +140,10 @@ ParameterSet make_der_param_set(uint16_t id, ControlMode control_mode,
     return set;
 }
 
-// Walk an ev::Session from start() through the first DC_ChargeLoopRequest by injecting
+// Walk an ev::Session from start() through the first DC_CableCheckRequest by injecting
 // canned response frames, asserting the request emitted at each step and the feedback
-// fired along the way. Shared by both scenarios; returns the established session id.
-message_20::datatypes::SessionId walk_to_dc_charge_loop(SessionFixture& fx) {
+// fired along the way. Returns the established session id.
+message_20::datatypes::SessionId walk_to_dc_cable_check(SessionFixture& fx) {
     const auto sid = WALK_SESSION_ID;
 
     // start() -> SupportedAppProtocolRequest
@@ -238,6 +238,14 @@ message_20::datatypes::SessionId walk_to_dc_charge_loop(SessionFixture& fx) {
         REQUIRE(req.header.session_id == sid);
     }
     REQUIRE(fx.ev_power_ready);
+
+    return sid;
+}
+
+// Continue from the first DC_CableCheckRequest through the first DC_ChargeLoopRequest.
+// Shared by the DC scenarios; returns the established session id.
+message_20::datatypes::SessionId walk_to_dc_charge_loop(SessionFixture& fx) {
+    const auto sid = walk_to_dc_cable_check(fx);
 
     // DC_CableCheckResponse(OK, Finished) -> DC_PreChargeRequest(Ongoing).
     auto cable_check_res = ok_res<message_20::DC_CableCheckResponse>(sid);
@@ -1032,6 +1040,39 @@ SCENARIO("ISO15118-20 EV Session drives a graceful EV-initiated stop from an act
             THEN("the loop breaks into PowerDelivery(Stop) and walks to a clean SessionStop") {
                 walk_stop_to_finish(fx, sid);
                 REQUIRE_FALSE(fx.stop_from_charger);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session: EV stop requested during DC_CableCheck sends SessionStopReq next") {
+    // [V2G20-2644]: before PowerDeliveryReq(Start) an EV-side stop goes straight to SessionStop.
+    // No precharge, no dc_power_on, and no PowerDelivery(Stop)/welding-detection walk.
+    GIVEN("A Session walked to the first DC_CableCheckRequest") {
+        SessionFixture fx;
+        const auto sid = walk_to_dc_cable_check(fx);
+
+        WHEN("a StopCharging control event is delivered and the CableCheck OK Finished response arrives") {
+            fx.session.deliver_control_event(ev::d20::StopCharging{true});
+
+            auto cable_check_res = ok_res<message_20::DC_CableCheckResponse>(sid);
+            cable_check_res.processing = Processing::Finished;
+            {
+                const auto req = inject_then_expect<message_20::SessionStopRequest>(
+                    fx, "EV stop during DC_CableCheck -> SessionStop", cable_check_res, PT::Part20DC);
+                REQUIRE(req.header.session_id == sid);
+                REQUIRE(req.charging_session == message_20::datatypes::ChargingSession::Terminate);
+            }
+            REQUIRE_FALSE(fx.dc_power_on);
+            REQUIRE_FALSE(fx.stop_from_charger);
+
+            THEN("the SessionStopResponse finishes the session cleanly") {
+                auto stop_res = ok_res<message_20::SessionStopResponse>(sid);
+                fx.session.on_bytes_received(frame_payload(PT::Part20Main, serialize_msg(stop_res)));
+                REQUIRE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.session.is_finished(); }, 1s));
+                REQUIRE_FALSE(fx.timed_out);
+                REQUIRE_FALSE(fx.dc_power_on);
             }
         }
     }

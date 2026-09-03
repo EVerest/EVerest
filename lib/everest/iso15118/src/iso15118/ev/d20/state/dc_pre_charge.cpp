@@ -6,6 +6,7 @@
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/dc_pre_charge.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
+#include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/dc_pre_charge.hpp>
 
@@ -44,6 +45,10 @@ Result DC_PreCharge::feed(Event ev) {
     const auto* res = expect_response<message_20::DC_PreChargeResponse>(m_ctx, *variant);
     if (res == nullptr) {
         return Result::stopping();
+    }
+
+    if (auto stop = stop_before_start(m_ctx)) {
+        return std::move(*stop);
     }
 
     const auto params = m_ctx.get_dc_params();

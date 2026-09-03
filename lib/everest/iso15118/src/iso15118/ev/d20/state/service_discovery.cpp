@@ -6,6 +6,7 @@
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/service_detail.hpp>
 #include <iso15118/ev/d20/state/service_discovery.hpp>
+#include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/service_discovery.hpp>
 
@@ -31,6 +32,10 @@ Result ServiceDiscovery::feed(Event ev) {
     const auto* res = expect_response<message_20::ServiceDiscoveryResponse>(m_ctx, *variant);
     if (res == nullptr) {
         return Result::stopping();
+    }
+
+    if (auto stop = stop_before_start(m_ctx)) {
+        return std::move(*stop);
     }
 
     const auto requested = m_ctx.selected_service();
