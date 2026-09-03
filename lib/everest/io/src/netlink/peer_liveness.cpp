@@ -17,14 +17,27 @@ peer_liveness::verdict peer_liveness::apply(neighbor_report const& report) {
     // `update.alive` rather than only the table: at the table's cap a live peer's entry may not
     // have been stored, and it must still count.
     if (m_table.any_alive() or update.alive) {
+        m_last_entry_failed = false;
         result.cancel_grace = true;
         result.reachable_mac = update.reachable_mac;
         return result;
     }
 
     if (m_table.empty()) {
-        // No opinion: either nothing has been seen yet, or the last entry was removed rather than
-        // failing. Removal is what the kernel does to idle entries, so it must not end a session.
+        if (report.deleted and update.failed) {
+            // The last entry went away carrying NUD_FAILED: the kernel garbage collecting a dead
+            // peer's entry. The kernel does that within seconds of the failure, typically before a
+            // grace period of any useful length has expired, so it must not be mistaken for the
+            // "idle entry removed" case below. The verdict stays what the failure made it: keep
+            // the grace timer running (or start it, should the failure itself not have been seen)
+            // and remember the loss, since the table no longer holds it.
+            m_last_entry_failed = true;
+            result.arm_grace = true;
+            return result;
+        }
+        // No opinion: either nothing has been seen yet, or the last entry was removed while it was
+        // not failed. Removal is what the kernel does to idle entries, so it must not end a session.
+        m_last_entry_failed = false;
         result.cancel_grace = true;
         return result;
     }
@@ -40,11 +53,15 @@ peer_liveness::verdict peer_liveness::apply(neighbor_report const& report) {
 }
 
 bool peer_liveness::peer_is_lost() const {
+    if (m_last_entry_failed) {
+        return true;
+    }
     return not m_table.empty() and not m_table.any_alive();
 }
 
 void peer_liveness::clear() {
     m_table.clear();
+    m_last_entry_failed = false;
 }
 
 bool peer_liveness::empty() const {
