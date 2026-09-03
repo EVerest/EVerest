@@ -37,6 +37,9 @@ void convert(dt_sae::ActivePowerSupportCPDRes& out, const sae::ActivePowerSuppor
 
 void convert(dt_sae::DERControlCPDRes& out, const sae::DERControl& in);
 
+dt_sae::RequiredDEROperatingMode convert(sae::RequiredDEROperatingMode in);
+dt_sae::GridConnectionMode convert(sae::GridConnectionMode in);
+
 void convert(dt_sae::EnterServiceCLRes& out, const sae::EnterServiceCPDRes& in);
 void convert(dt_sae::ReactivePowerSupportCLRes& out, const sae::ReactivePowerSupportCPDRes& in);
 void convert(dt_sae::ActivePowerSupportCLRes& out, const sae::ActivePowerSupportCPDRes& in);
