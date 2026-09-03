@@ -35,7 +35,8 @@ struct ISO15118_chargerImplStub : public ISO15118_chargerImplBase {
         std::cout << "ISO15118_chargerImplBase::handle_set_charging_parameters called" << std::endl;
     }
     virtual void handle_session_setup(std::vector<types::iso15118::PaymentOption>& payment_options,
-                                      bool& supported_certificate_service, bool& central_contract_validation_allowed) {
+                                      bool& supported_certificate_service, bool& central_contract_validation_allowed,
+                                      bool& fake_dc_enabled) {
         std::cout << "ISO15118_chargerImplBase::handle_session_setup called" << std::endl;
     }
     virtual void handle_authorization_response(types::authorization::AuthorizationStatus& authorization_status,
