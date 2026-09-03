@@ -323,6 +323,9 @@ void ISO15118_chargerImpl::ready() {
     }
 }
 
+void ISO15118_chargerImpl::shutdown() {
+}
+
 void ISO15118_chargerImpl::update_supported_vas_services() {
     iso15118::d20::SupportedVASs supported_vas_services;
 
