@@ -235,16 +235,19 @@ slac_fsm::~slac_fsm() {
 }
 
 void slac_fsm::reset() {
+    ctx.sample_time();
     impl->fsm.process_event(msm::reset{});
     event_post_processing();
 }
 
 void slac_fsm::enter_bcd() {
+    ctx.sample_time();
     impl->fsm.process_event(msm::enter_bcd{});
     event_post_processing();
 }
 
 void slac_fsm::leave_bcd() {
+    ctx.sample_time();
     impl->fsm.process_event(msm::leave_bcd{});
     event_post_processing();
 }
@@ -252,16 +255,19 @@ void slac_fsm::leave_bcd() {
 void slac_fsm::message(messages::HomeplugMessage msg) {
     msm::message event;
     event.payload = std::move(msg);
+    ctx.sample_time();
     impl->fsm.process_event(event);
     event_post_processing();
 }
 
 void slac_fsm::update() {
+    ctx.sample_time();
     impl->fsm.process_event(msm::update{});
     event_post_processing();
 }
 
 void slac_fsm::restart_fsm() {
+    ctx.sample_time();
     if (impl->started) {
         impl->fsm.stop();
     }

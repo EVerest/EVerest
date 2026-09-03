@@ -54,8 +54,8 @@ struct update {};
 // Guards
 struct timeout {
     template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm&, SrcT& src, TarT&) {
-        return src.state_timeout();
+    bool operator()(Evt const&, Fsm& fsm, SrcT& src, TarT&) {
+        return src.state_timeout(fsm.ctx->current_time);
     }
 };
 
@@ -93,25 +93,23 @@ struct send_default_msg {
 // States
 template <std::uint32_t TimeoutMS> struct timeout_ms_state : public state<> {
     template <class Event, class Fsm>
-    void on_entry(Event const&, Fsm&) {
-        to.setDuration(std::chrono::milliseconds(TimeoutMS));
-        to.reset();
+    void on_entry(Event const&, Fsm& fsm) {
+        to.arm(fsm.ctx->current_time, std::chrono::milliseconds(TimeoutMS));
     }
 
     timer to;
-    bool state_timeout() {
-        return to.timeout();
+    bool state_timeout(timer::tp now) const {
+        return to.expired(now);
     }
 };
 struct timeout_state : public state<> {
-    template <class Event, class Fsm> void on_entry(Event const&, Fsm&) {
-        to.setDuration(std::chrono::milliseconds(state_timeout_ms));
-        to.reset();
+    template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
+        to.arm(fsm.ctx->current_time, std::chrono::milliseconds(state_timeout_ms));
     }
 
     timer to;
-    bool state_timeout() {
-        return to.timeout();
+    bool state_timeout(timer::tp now) const {
+        return to.expired(now);
     }
 
     std::uint32_t state_timeout_ms{0};

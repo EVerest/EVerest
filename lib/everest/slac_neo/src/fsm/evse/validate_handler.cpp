@@ -42,8 +42,7 @@ void ValidateHandler::handle_req(messages::cm_validate_req const& req, std::uint
         // that window are exactly the toggles. Snapshotting at step 2 instead would race the
         // CP path (MQTT) against the slower SLAC-frame path and miss the first toggle's edges.
         baseline_bc_ = ctx.bc_transition_count.load();
-        timer_.setDurationMilliSeconds(defs::TT_MATCH_SEQUENCE_MS);
-        timer_.reset();
+        timer_.arm(ctx.current_time, std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS));
         send_cnf(ctx, owner_mac_, defs::CM_VALIDATE_REQ_RESULT_READY, 0);
         return;
     }
@@ -63,12 +62,11 @@ void ValidateHandler::handle_req(messages::cm_validate_req const& req, std::uint
     // units) before counting. The baseline was snapshotted at step 1 (before any toggle); the
     // CNF is sent by tick() when the window elapses.
     step2_pending_ = true;
-    timer_.setDurationMilliSeconds((static_cast<long long>(req.timer) + 1) * 100);
-    timer_.reset();
+    timer_.arm(ctx.current_time, std::chrono::milliseconds((static_cast<long long>(req.timer) + 1) * 100));
 }
 
-bool ValidateHandler::needs_service() const {
-    return (armed_ or step2_pending_) and timer_.timeout();
+bool ValidateHandler::needs_service(timer::tp now) const {
+    return (armed_ or step2_pending_) and timer_.expired(now);
 }
 
 void ValidateHandler::tick(Context& ctx) {
@@ -84,13 +82,12 @@ void ValidateHandler::tick(Context& ctx) {
         // Validation done: the CM_SLAC_MATCH.REQ must now arrive within TT_match_sequence
         // (ISO 15118-5 CmSlacMatch_003/004 cmValidate variant), not the full match session.
         ctx.validation_done = true;
-        ctx.validation_match_window.setDurationMilliSeconds(defs::TT_MATCH_SEQUENCE_MS);
-        ctx.validation_match_window.reset();
+        ctx.validation_match_window.arm(ctx.current_time, std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS));
     } else if (armed_) {
         if (step1_retries_ < defs::C_EV_MATCH_RETRY) {
             step1_retries_++;
             send_cnf(ctx, owner_mac_, defs::CM_VALIDATE_REQ_RESULT_READY, 0);
-            timer_.reset();
+            timer_.reset(ctx.current_time);
         } else {
             // Retry limit reached with no step 2: the validation (matching) has FAILED; stop
             // answering (CmValidate_003/004).

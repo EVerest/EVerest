@@ -2,58 +2,48 @@
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 
 #pragma once
+
 #include <chrono>
 
 namespace everest::lib::slac {
 
+// A deadline that never reads a clock. The owner samples "now" once per event (Context::sample_time)
+// and passes it in, so every timer in one event agrees on the time, the state machines are a pure
+// function of their inputs, and tests advance time instead of waiting for it.
 class timer {
 public:
     using clock = std::chrono::steady_clock;
     using tp = clock::time_point;
     using tick = std::chrono::microseconds;
-    timer();
-    template <class Rep, class Period>
-    timer(std::chrono::duration<Rep, Period> duration, bool initial_timeout = false) :
-        reference(initial_timeout ? clock::now() - duration : clock::now()), target(clock::now()), duration(duration) {
+
+    // Set the duration without moving the reference; the deadline becomes reference + duration.
+    // (CheckLink relies on this to re-arm the poll cadence without restarting the countdown.)
+    template <class Rep, class Period> void set_duration(std::chrono::duration<Rep, Period> value) {
+        duration = std::chrono::duration_cast<tick>(value);
+    }
+    void set_duration_ms(long long value);
+
+    // (Re)start the countdown at \p now, keeping the duration.
+    void reset(tp now);
+
+    // set_duration followed by reset.
+    template <class Rep, class Period> void arm(tp now, std::chrono::duration<Rep, Period> value) {
+        set_duration(value);
+        reset(now);
     }
 
-    virtual ~timer() = default;
+    [[nodiscard]] tp deadline() const;
 
-    [[nodiscard]] explicit operator bool() const;
+    // Strictly after the deadline: in the tick the deadline falls on the timer has not expired yet.
+    // A default-constructed timer (reference at the clock epoch, zero duration) counts as expired.
+    [[nodiscard]] bool expired(tp now) const;
 
-    void reset();
-    void resetReference();
-    void forceTimeoutState();
-
-    template <class Rep, class Period> void setDuration(std::chrono::duration<Rep, Period> value) {
-        duration = value;
-        target = reference + value;
-    }
-
-    void setDurationMicroSeconds(long long value);
-    void setDurationMilliSeconds(long long value);
-    void setDurationSeconds(long long value);
-    void setDurationMinutes(long long value);
-
-    template <class Rep, class Period>
-    [[nodiscard]] bool getRemainingTime(std::chrono::duration<Rep, Period>& remaining_time) const {
-        remaining_time = std::chrono::duration_cast<std::chrono::duration<Rep, Period>>(remaining());
-        return timeout();
-    }
-    [[nodiscard]] long long getRemainingMicroSeconds() const;
-    [[nodiscard]] long long getRemainingMilliSeconds() const;
-    [[nodiscard]] long long getRemainingSeconds() const;
-    [[nodiscard]] long long getRemainingMinutes() const;
-    [[nodiscard]] tick remaining() const;
-
-    void setTimePoint(tp const& value);
-    [[nodiscard]] tp getTargetTime() const;
-    [[nodiscard]] bool timeout() const;
+    // Time left until the deadline; negative once expired.
+    [[nodiscard]] tick remaining(tp now) const;
 
 private:
-    tp reference;
-    tp target;
-    tick duration;
+    tp reference{};
+    tick duration{0};
 };
 
 } // namespace everest::lib::slac

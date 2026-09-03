@@ -10,7 +10,6 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -20,6 +19,7 @@
 #include <everest/slac/slac_messages.hpp>
 
 #include "../src/fsm/evse/validate_handler.hpp"
+#include "mock_clock.hpp"
 
 using namespace everest::lib::slac;
 using namespace everest::lib::slac::fsm::evse;
@@ -43,9 +43,12 @@ struct SentCnf {
 struct Harness {
     ContextCallbacks callbacks{};
     std::vector<SentCnf> sent;
+    test::MockClock clock;
     Context ctx{callbacks};
 
     Harness() {
+        callbacks.now = clock.source();
+        ctx.sample_time();
         callbacks.send_raw_slac = [this](messages::HomeplugMessage& hp_message) {
             if (hp_message.get_mmtype() != (defs::MMTYPE_CM_VALIDATE | defs::MMTYPE_MODE_CNF)) {
                 return true;
@@ -58,6 +61,12 @@ struct Harness {
             sent.push_back(entry);
             return true;
         };
+    }
+
+    // Move time forward as the state machine would see it: one sample per event.
+    void advance_ms(long long ms) {
+        clock.advance_ms(ms);
+        ctx.sample_time();
     }
 };
 
@@ -72,10 +81,6 @@ messages::cm_validate_req make_req(std::uint8_t pilot_timer, std::uint8_t result
 
 const MacAddress ev_a{{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x01}};
 const MacAddress ev_b{{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x02}};
-
-void sleep_ms(long long ms) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-}
 
 bool test_step1_answers_ready_and_arms() {
     const char* test_name = "test_step1_answers_ready_and_arms";
@@ -92,7 +97,8 @@ bool test_step1_answers_ready_and_arms() {
            assert_true(h.sent[0].cnf.signal_type == defs::CM_VALIDATE_REQ_SIGNAL_TYPE, test_name,
                        "step-1 CNF signal_type must be 0x00") and
            assert_true(handler.armed() and not handler.step2_pending(), test_name, "handler must be armed") and
-           assert_true(not handler.needs_service(), test_name, "no service needed right after arming");
+           assert_true(not handler.needs_service(h.ctx.current_time), test_name,
+                       "no service needed right after arming");
 }
 
 bool test_step2_waits_out_window_then_reports_toggle_count() {
@@ -111,12 +117,13 @@ bool test_step2_waits_out_window_then_reports_toggle_count() {
     handler.handle_req(make_req(1), ev_a.data(), h.ctx);
     if (not assert_true(h.sent.size() == 1, test_name, "step 2 must not be answered immediately") or
         not assert_true(handler.step2_pending(), test_name, "step 2 must open the toggle window") or
-        not assert_true(not handler.needs_service(), test_name, "window must not have elapsed yet")) {
+        not assert_true(not handler.needs_service(h.ctx.current_time), test_name, "window must not have elapsed yet")) {
         return false;
     }
 
-    sleep_ms(250);
-    if (not assert_true(handler.needs_service(), test_name, "window must have elapsed after 250 ms")) {
+    h.advance_ms(201); // pilotTimer 1 = 200 ms window; the tick after it
+    if (not assert_true(handler.needs_service(h.ctx.current_time), test_name,
+                        "window must have elapsed after 250 ms")) {
         return false;
     }
     handler.tick(h.ctx);
@@ -129,7 +136,7 @@ bool test_step2_waits_out_window_then_reports_toggle_count() {
            assert_true(not handler.armed() and not handler.step2_pending(), test_name,
                        "validation must be finished") and
            assert_true(h.ctx.validation_done, test_name, "validation_done must be set for the match window") and
-           assert_true(not h.ctx.validation_match_window.timeout(), test_name,
+           assert_true(not h.ctx.validation_match_window.expired(h.ctx.current_time), test_name,
                        "the post-validation match window must have been (re)started");
 }
 
@@ -168,8 +175,9 @@ bool test_step1_is_repeated_up_to_retry_limit_then_fails_silently() {
 
     // Each TT_match_sequence without a step 2 repeats the READY CNF, C_EV_match_retry times.
     for (int repetition = 1; repetition <= defs::C_EV_MATCH_RETRY; ++repetition) {
-        sleep_ms(defs::TT_MATCH_SEQUENCE_MS + 50);
-        if (not assert_true(handler.needs_service(), test_name, "repetition interval must have elapsed")) {
+        h.advance_ms(defs::TT_MATCH_SEQUENCE_MS + 1);
+        if (not assert_true(handler.needs_service(h.ctx.current_time), test_name,
+                            "repetition interval must have elapsed")) {
             return false;
         }
         handler.tick(h.ctx);
@@ -183,15 +191,15 @@ bool test_step1_is_repeated_up_to_retry_limit_then_fails_silently() {
     }
 
     // One more interval: the limit is reached, the validation fails silently.
-    sleep_ms(defs::TT_MATCH_SEQUENCE_MS + 50);
-    if (not assert_true(handler.needs_service(), test_name, "final interval must have elapsed")) {
+    h.advance_ms(defs::TT_MATCH_SEQUENCE_MS + 1);
+    if (not assert_true(handler.needs_service(h.ctx.current_time), test_name, "final interval must have elapsed")) {
         return false;
     }
     handler.tick(h.ctx);
     return assert_true(static_cast<int>(h.sent.size()) == 1 + defs::C_EV_MATCH_RETRY, test_name,
                        "no CNF may be sent once the retry limit is reached") and
            assert_true(not handler.armed(), test_name, "handler must disarm after the retry limit") and
-           assert_true(not handler.needs_service(), test_name, "nothing left to service");
+           assert_true(not handler.needs_service(h.ctx.current_time), test_name, "nothing left to service");
 }
 
 bool test_non_ready_step2_ends_validation_without_cnf() {

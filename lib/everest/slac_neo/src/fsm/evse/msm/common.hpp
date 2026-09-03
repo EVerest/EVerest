@@ -84,7 +84,7 @@ struct link_status_req {
         // Re-arm the poll timer only when we actually poll, so the link-status
         // poll cadence is not disturbed by unrelated self-transitions (see
         // CheckLink::on_entry).
-        tar.to.reset();
+        tar.to.reset(fsm.ctx->current_time);
         tar.link_status_req(fsm);
     }
 };
@@ -103,12 +103,12 @@ struct CheckLink : public state<> {
         // CM_AMP_MAP retransmit/responder in the matched state) would restart the
         // countdown and starve the link-status poll, so a connection loss would
         // not be detected within TP_match_leave (ISO 15118-5 PLCLinkStatus_005).
-        to.setDuration(std::chrono::milliseconds(fsm.link_check_to_ms));
+        to.set_duration(std::chrono::milliseconds(fsm.link_check_to_ms));
     }
 
     timer to;
-    bool state_timeout() {
-        return to.timeout();
+    bool state_timeout(timer::tp now) const {
+        return to.expired(now);
     }
 };
 struct Lumissil : public CheckLink {

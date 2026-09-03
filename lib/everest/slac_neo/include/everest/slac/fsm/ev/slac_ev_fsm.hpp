@@ -256,8 +256,9 @@ struct SlacEVFSM_def : state_machine_def<SlacEVFSM_def> {
     struct should_continue_sounding {
         template <class Evt, class Fsm, class SrcT, class TarT>
         bool operator()(Evt const&, Fsm& fsm, SrcT& src, TarT&) {
-            return not src.state_timeout() && (fsm.start_atten_char_count < defs::C_EV_START_ATTEN_CHAR_INDS ||
-                                               fsm.mnbc_sound_count < defs::C_EV_MATCH_MNBC);
+            return not src.state_timeout(fsm.ctx->current_time) &&
+                   (fsm.start_atten_char_count < defs::C_EV_START_ATTEN_CHAR_INDS ||
+                    fsm.mnbc_sound_count < defs::C_EV_MATCH_MNBC);
         }
     };
 

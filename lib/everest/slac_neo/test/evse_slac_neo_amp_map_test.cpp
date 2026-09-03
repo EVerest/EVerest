@@ -9,7 +9,6 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -19,6 +18,7 @@
 #include <everest/slac/slac_messages.hpp>
 
 #include "../src/fsm/evse/amp_map_handler.hpp"
+#include "mock_clock.hpp"
 
 using namespace everest::lib::slac;
 using namespace everest::lib::slac::fsm::evse;
@@ -45,9 +45,12 @@ const MacAddress ev_mac{{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x01}};
 struct Harness {
     ContextCallbacks callbacks{};
     std::vector<SentReq> sent;
+    test::MockClock clock;
     Context ctx{callbacks};
 
     Harness() {
+        callbacks.now = clock.source();
+        ctx.sample_time();
         callbacks.send_raw_slac = [this](messages::HomeplugMessage& hp_message) {
             if (hp_message.get_mmtype() != (defs::MMTYPE_CM_AMP_MAP | defs::MMTYPE_MODE_REQ)) {
                 return true;
@@ -65,6 +68,12 @@ struct Harness {
         ctx.slac_config.amp_map_len = 2;
         ctx.slac_config.amp_map_data = {0xFF};
     }
+
+    // Move time forward as the state machine would see it: one sample per event.
+    void advance_ms(long long ms) {
+        clock.advance_ms(ms);
+        ctx.sample_time();
+    }
 };
 
 messages::HomeplugMessage make_cnf(std::uint8_t result) {
@@ -73,10 +82,6 @@ messages::HomeplugMessage make_cnf(std::uint8_t result) {
     messages::HomeplugMessage message;
     message.setup_payload(&cnf, sizeof(cnf), defs::MMTYPE_CM_AMP_MAP | defs::MMTYPE_MODE_CNF, defs::MMV::AV_2_0);
     return message;
-}
-
-void sleep_ms(long long ms) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 }
 
 bool test_no_request_when_not_configured() {
@@ -97,7 +102,8 @@ bool test_no_request_when_not_configured() {
     handler.start(h.ctx);
     return assert_true(h.sent.empty(), test_name, "no REQ for an empty amplitude map") and
            assert_true(not handler.awaiting_cnf(), test_name, "nothing awaited for an empty map") and
-           assert_true(not handler.retransmit_due(), test_name, "no retransmission without a request");
+           assert_true(not handler.retransmit_due(h.ctx.current_time), test_name,
+                       "no retransmission without a request");
 }
 
 bool test_start_sends_request_and_awaits_cnf() {
@@ -112,7 +118,8 @@ bool test_start_sends_request_and_awaits_cnf() {
            assert_true(h.sent[0].am_len == 2, test_name, "REQ must carry the configured am_len") and
            assert_true(handler.awaiting_cnf(), test_name, "a CNF must be awaited after start") and
            assert_true(handler.retries() == 0, test_name, "no retransmission yet") and
-           assert_true(not handler.retransmit_due(), test_name, "interval must not have elapsed right away");
+           assert_true(not handler.retransmit_due(h.ctx.current_time), test_name,
+                       "interval must not have elapsed right away");
 }
 
 bool test_retransmits_after_interval_then_gives_up() {
@@ -123,29 +130,30 @@ bool test_retransmits_after_interval_then_gives_up() {
     handler.start(h.ctx);
 
     for (int i = 1; i <= defs::C_EV_MATCH_RETRY; ++i) {
-        sleep_ms(defs::TT_MATCH_RESPONSE_MS + 50);
-        if (not assert_true(handler.retransmit_due(), test_name, "interval must have elapsed")) {
+        h.advance_ms(defs::TT_MATCH_RESPONSE_MS + 1);
+        if (not assert_true(handler.retransmit_due(h.ctx.current_time), test_name, "interval must have elapsed")) {
             return false;
         }
         handler.retransmit(h.ctx);
         if (not assert_true(static_cast<int>(h.sent.size()) == 1 + i, test_name, "each service must retransmit once") or
             not assert_true(handler.retries() == i, test_name, "retry counter must follow") or
             not assert_true(handler.awaiting_cnf(), test_name, "still awaiting within the retry budget") or
-            not assert_true(not handler.retransmit_due(), test_name, "interval must be re-armed")) {
+            not assert_true(not handler.retransmit_due(h.ctx.current_time), test_name, "interval must be re-armed")) {
             return false;
         }
     }
 
     // Retry budget exhausted: the next service stops the exchange without another frame.
-    sleep_ms(defs::TT_MATCH_RESPONSE_MS + 50);
-    if (not assert_true(handler.retransmit_due(), test_name, "interval must have elapsed once more")) {
+    h.advance_ms(defs::TT_MATCH_RESPONSE_MS + 1);
+    if (not assert_true(handler.retransmit_due(h.ctx.current_time), test_name,
+                        "interval must have elapsed once more")) {
         return false;
     }
     handler.retransmit(h.ctx);
     return assert_true(static_cast<int>(h.sent.size()) == 1 + defs::C_EV_MATCH_RETRY, test_name,
                        "no frame beyond C_EV_match_retry retransmissions") and
            assert_true(not handler.awaiting_cnf(), test_name, "exchange must be over after the retry limit") and
-           assert_true(not handler.retransmit_due(), test_name, "nothing due once given up");
+           assert_true(not handler.retransmit_due(h.ctx.current_time), test_name, "nothing due once given up");
 }
 
 bool test_cnf_stops_retransmission() {
@@ -166,9 +174,9 @@ bool test_cnf_stops_retransmission() {
     }
     handler.acknowledge_cnf();
 
-    sleep_ms(defs::TT_MATCH_RESPONSE_MS + 50);
+    h.advance_ms(defs::TT_MATCH_RESPONSE_MS + 1);
     return assert_true(not handler.awaiting_cnf(), test_name, "CNF must end the exchange") and
-           assert_true(not handler.retransmit_due(), test_name, "no retransmission after the CNF") and
+           assert_true(not handler.retransmit_due(h.ctx.current_time), test_name, "no retransmission after the CNF") and
            assert_true(not handler.is_awaited_cnf(ok), test_name,
                        "a CNF is only awaited while a REQ is outstanding") and
            assert_true(h.sent.size() == 1, test_name, "only the initial REQ must have been sent");
@@ -182,9 +190,9 @@ bool test_reset_forgets_exchange() {
     handler.start(h.ctx);
     handler.reset();
 
-    sleep_ms(defs::TT_MATCH_RESPONSE_MS + 50);
+    h.advance_ms(defs::TT_MATCH_RESPONSE_MS + 1);
     return assert_true(not handler.awaiting_cnf(), test_name, "reset must drop the outstanding REQ") and
-           assert_true(not handler.retransmit_due(), test_name, "nothing due after reset") and
+           assert_true(not handler.retransmit_due(h.ctx.current_time), test_name, "nothing due after reset") and
            assert_true(handler.retries() == 0, test_name, "reset must clear the retry counter");
 }
 

@@ -9,6 +9,10 @@
 
 namespace everest::lib::slac::fsm::evse {
 
+void Context::sample_time() {
+    current_time = callbacks.now ? callbacks.now() : timer::clock::now();
+}
+
 void Context::signal_cm_slac_parm_req(const uint8_t* mac) {
     if (callbacks.signal_ev_mac_address_parm_req) {
         const auto mac_string = format_mac_addr(mac);

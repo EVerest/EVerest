@@ -7,12 +7,13 @@
 #include <cstdio>
 #include <net/ethernet.h>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include <everest/slac/HomeplugMessage.hpp>
 #include <everest/slac/fsm/evse/context.hpp>
 #include <everest/slac/slac_fsm.hpp>
+
+#include "mock_clock.hpp"
 
 using namespace everest::lib::slac;
 using namespace everest::lib::slac::fsm::evse;
@@ -314,15 +315,18 @@ bool assert_true(bool cond, const char* test_name, const char* details) {
     return true;
 }
 
+// The clock every Context in this file runs on; wait_for() advances it one millisecond per update tick.
+test::MockClock test_clock;
+
 template <typename Predicate>
 bool wait_for(std::chrono::milliseconds timeout, slac_fsm& machine, Predicate&& predicate) {
-    auto start = std::chrono::steady_clock::now();
-    while (std::chrono::steady_clock::now() - start < timeout) {
+    auto const deadline = test_clock.now() + timeout;
+    while (test_clock.now() < deadline) {
         if (predicate()) {
             return true;
         }
         machine.update();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        test_clock.advance_ms(1);
     }
     return predicate();
 }
@@ -462,6 +466,8 @@ bool test_duplicate_cm_slac_parm_req_restarts_same_session() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.max_matching_sessions = 1;
@@ -505,6 +511,8 @@ bool test_duplicate_cm_slac_parm_req_restarts_inflight_session() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -594,6 +602,8 @@ bool test_atten_char_ind_sent_promptly_after_last_sound() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
@@ -619,14 +629,13 @@ bool test_atten_char_ind_sent_promptly_after_last_sound() {
     }
 
     // Well below TT_EVSE_MATCH_MNBC_MS (600 ms): only the last-sound fast path can make this.
-    const auto last_sound_time = std::chrono::steady_clock::now();
+    const auto last_sound_time = test_clock.now();
     if (!wait_for_atten_char_ind_count(sent_messages, 1, machine, 300)) {
         return assert_true(false, test_name,
                            "CM_ATTEN_CHAR.IND not sent within 300 ms of the last sound (fast path dead, "
                            "session waits out the full 600 ms TT_EVSE_MATCH_MNBC window)");
     }
-    const auto elapsed =
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - last_sound_time);
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(test_clock.now() - last_sound_time);
     if (!assert_true(elapsed.count() < 300, test_name, "CM_ATTEN_CHAR.IND arrived too late after the last sound")) {
         return false;
     }
@@ -651,6 +660,8 @@ bool test_atten_char_ind_ignores_sounds_beyond_num_sounds() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -712,6 +723,8 @@ bool test_invalid_cm_slac_parm_req_is_ignored() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
@@ -757,6 +770,8 @@ bool test_short_cm_slac_param_req_does_not_create_session() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
@@ -800,6 +815,8 @@ bool test_different_run_id_creates_new_session() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -845,6 +862,8 @@ bool test_different_ev_mac_creates_new_session() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
@@ -888,6 +907,8 @@ bool test_start_atten_char_only_advances_matching_session() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -960,6 +981,8 @@ bool test_matching_sessions_respect_max_matching_sessions() {
         ++cm_parm_req_signal_count;
     };
     callbacks.log_warn = [&warning_count](const std::string&) { ++warning_count; };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -1061,6 +1084,8 @@ bool test_invalid_max_matching_sessions_is_clamped() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.max_matching_sessions = 0;
@@ -1112,6 +1137,8 @@ bool test_debug_simulate_failed_matching_uses_wrong_nmk() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     fill_session_nmk(ctx, 0x11);
@@ -1158,6 +1185,8 @@ bool test_matching_uses_session_nmk_when_debug_disabled() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.link_status.debug_simulate_failed_matching = false;
@@ -1202,6 +1231,8 @@ bool test_signal_state_published_through_full_match() {
         return true;
     };
     callbacks.signal_state = [&published_states](D3State state) { published_states.push_back(state); };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -1265,6 +1296,8 @@ bool test_signal_state_stays_matching_during_wait_for_link() {
     callbacks.signal_state = [&published_states](D3State state) { published_states.push_back(state); };
     callbacks.signal_ev_mac_address_match_cnf = [](const std::string&) {};
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     configure_wait_for_link(ctx);
@@ -1314,6 +1347,8 @@ bool test_waitforlink_retry_from_same_ev_and_run_id_resends_cnf() {
         return true;
     };
     callbacks.signal_ev_mac_address_match_cnf = [](const std::string&) {};
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -1365,6 +1400,8 @@ bool test_waitforlink_retry_from_different_src_does_not_resend_cnf() {
     std::size_t match_cnf_cb_count = 0;
     callbacks.signal_ev_mac_address_match_cnf = [&match_cnf_cb_count](const std::string&) { ++match_cnf_cb_count; };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     configure_wait_for_link(ctx);
@@ -1408,6 +1445,8 @@ bool test_waitforlink_retry_with_different_run_id_does_not_resend_cnf() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     configure_wait_for_link(ctx);
@@ -1445,6 +1484,8 @@ bool test_waitforlink_retry_with_different_pev_mac_does_not_resend_cnf() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -1486,6 +1527,8 @@ bool test_waitforlink_retry_with_invalid_match_fields_does_not_resend_cnf() {
     };
     std::size_t match_cnf_cb_count = 0;
     callbacks.signal_ev_mac_address_match_cnf = [&match_cnf_cb_count](const std::string&) { ++match_cnf_cb_count; };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -1542,6 +1585,8 @@ bool test_waitforlink_retry_after_reset_does_not_emit_cached_match_cnf() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     configure_wait_for_link(ctx);
@@ -1593,6 +1638,8 @@ bool test_short_cm_slac_match_req_does_not_emit_match_cnf() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     configure_wait_for_link(ctx);
@@ -1643,6 +1690,8 @@ bool test_short_link_status_cnf_does_not_leave_matched_or_failed() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -1714,6 +1763,8 @@ bool test_reset_instead_of_fail_waits_for_new_parm_request() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.reset_instead_of_fail = true;
@@ -1771,6 +1822,8 @@ bool test_cm_validate_bcb_toggle_detection() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -1844,6 +1897,8 @@ bool test_no_cm_slac_parm_timeout_resets_then_fails() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.reset_instead_of_fail = true;
@@ -1859,13 +1914,13 @@ bool test_no_cm_slac_parm_timeout_resets_then_fails() {
     }
 
     auto const timeout_ms = ctx.slac_config.slac_init_timeout_ms;
-    auto const first_timeout_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms + 30);
-    while (std::chrono::steady_clock::now() < first_timeout_deadline) {
+    auto const first_timeout_deadline = test_clock.now() + std::chrono::milliseconds(timeout_ms + 30);
+    while (test_clock.now() < first_timeout_deadline) {
         machine.update();
         if (ctx.status.match_state == SlacState::Failed) {
             return assert_true(false, test_name, "state transitioned to Failed before first matching timeout reset");
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        test_clock.advance_ms(1);
     }
     if (!assert_true(ctx.status.match_state == SlacState::Matching, test_name,
                      "first matching timeout did not remain in Matching after reset")) {
@@ -1889,6 +1944,8 @@ bool test_no_cm_slac_parm_timeout_fails_when_reset_disabled() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -1919,6 +1976,8 @@ bool test_matched_link_status_rejects_only_negative_cnf() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -1985,6 +2044,8 @@ bool test_matched_qualcomm_link_status_rejects_only_negative_cnf() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.link_status.do_detect = true;
@@ -2042,6 +2103,8 @@ bool test_matched_link_status_neg_debounce_tolerates_transient_flaps() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -2124,6 +2187,8 @@ bool test_parm_req_after_match_cnf_gets_no_cnf() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
 
@@ -2198,6 +2263,8 @@ bool test_matched_link_status_poll_interval_is_configurable() {
         return true;
     };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.link_status.do_detect = true;
@@ -2231,8 +2298,8 @@ bool test_matched_link_status_poll_interval_is_configurable() {
     wait_for(std::chrono::milliseconds(550), machine, []() { return false; });
     const auto polls = count_qualcomm_link_status_req(sent_messages) - polls_at_matched;
 
-    // 550 ms at a 100 ms cadence: ~5 polls. At the former 1000 ms default there would be none in
-    // this window; generous scheduling slack on both bounds.
+    // 550 ms at a 100 ms cadence: 5 polls. At the former 1000 ms default there would be none in
+    // this window; the bounds are kept loose so the assertion is about the cadence, not the tick.
     if (!assert_true(polls >= 3, test_name, "matched-state poll cadence did not follow the configured interval")) {
         return false;
     }
@@ -2247,6 +2314,8 @@ bool test_matched_link_status_neg_debounce_clamps_invalid_to_one() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -2298,6 +2367,8 @@ bool test_leave_bcd_recovers_from_failed_state() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);
@@ -2365,6 +2436,8 @@ bool test_restart_fsm_from_matched_emits_dlink_ready_false() {
     };
     callbacks.signal_dlink_ready = [&dlink_events](bool value) { dlink_events.push_back(value); };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     fill_session_nmk(ctx, 0x42);
@@ -2416,6 +2489,8 @@ bool test_reset_from_matched_emits_dlink_ready_false() {
     };
     callbacks.signal_dlink_ready = [&dlink_events](bool value) { dlink_events.push_back(value); };
 
+    callbacks.now = test_clock.source();
+
     Context ctx(callbacks);
     configure_common(ctx);
     fill_session_nmk(ctx, 0x42);
@@ -2461,6 +2536,8 @@ bool test_leave_bcd_leaves_matched_state() {
         return true;
     };
     callbacks.signal_dlink_ready = [&dlink_ready](bool value) { dlink_ready = value; };
+
+    callbacks.now = test_clock.source();
 
     Context ctx(callbacks);
     configure_common(ctx);

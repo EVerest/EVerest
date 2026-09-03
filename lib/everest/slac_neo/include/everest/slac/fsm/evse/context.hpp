@@ -158,6 +158,9 @@ struct ContextCallbacks {
     std::function<void(const std::string&)> log_warn{nullptr};
     std::function<void(const std::string&)> log_error{nullptr};
     std::function<void(const std::string&, const std::string&, const std::string&)> pub_telemetry{nullptr};
+    // Time source for every timer in the state machine; steady_clock when unset. Tests inject a
+    // controllable clock here so timeouts are driven, not waited for.
+    std::function<timer::tp()> now{nullptr};
 };
 
 struct Context {
@@ -253,6 +256,11 @@ struct Context {
     // validation is performed. validation_match_window bounds that post-validation match window.
     bool validation_done{false};
     everest::lib::slac::timer validation_match_window;
+
+    // "Now" as seen by every timer during the current event. slac_fsm samples it once per event
+    // from callbacks.now, so all deadlines evaluated in one event agree on the time.
+    timer::tp current_time{};
+    void sample_time();
 
     SlacTelemetry status;
 

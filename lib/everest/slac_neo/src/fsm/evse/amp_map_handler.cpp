@@ -23,19 +23,18 @@ void AmpMapHandler::start(Context& ctx) {
     // Await the CM_AMP_MAP.CNF; retransmit every TT_match_response until it arrives, limited
     // to C_EV_match_retry retransmissions (serviced by retransmit() on the update tick).
     awaiting_cnf_ = true;
-    timer_.setDurationMilliSeconds(defs::TT_MATCH_RESPONSE_MS);
-    timer_.reset();
+    timer_.arm(ctx.current_time, std::chrono::milliseconds(defs::TT_MATCH_RESPONSE_MS));
 }
 
-bool AmpMapHandler::retransmit_due() const {
-    return awaiting_cnf_ and timer_.timeout();
+bool AmpMapHandler::retransmit_due(timer::tp now) const {
+    return awaiting_cnf_ and timer_.expired(now);
 }
 
 void AmpMapHandler::retransmit(Context& ctx) {
     if (retries_ < defs::C_EV_MATCH_RETRY) {
         retries_++;
         ctx.send_amp_map_req(ctx.status.ev_mac, ctx.slac_config.amp_map_len, ctx.slac_config.amp_map_data);
-        timer_.reset();
+        timer_.reset(ctx.current_time);
     } else {
         awaiting_cnf_ = false; // retry limit reached, stop
     }

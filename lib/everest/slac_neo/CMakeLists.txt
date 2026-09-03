@@ -21,6 +21,7 @@ target_sources(slac_neo
     src/MatchingSessionData.cpp
     src/telemetry.cpp
     src/fsm/misc.cpp
+    src/fsm/ev/context.cpp
     src/fsm/evse/context.cpp
     src/fsm/evse/validate_handler.cpp
     src/fsm/evse/amp_map_handler.cpp

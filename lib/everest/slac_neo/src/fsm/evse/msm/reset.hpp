@@ -67,11 +67,11 @@ struct Reset_def : public state_machine_def<Reset_def> {
 
     // Named differently from the set_key_timeout guard functor in guards_and_actions/reset_logic.hpp, which the
     // transition guards above refer to.
-    bool set_key_timer_expired() {
-        return set_key_timer.timeout();
+    bool set_key_timer_expired(timer::tp now) const {
+        return set_key_timer.expired(now);
     }
-    bool state_timeout() {
-        return set_key_timer_expired();
+    bool state_timeout(timer::tp now) const {
+        return set_key_timer_expired(now);
     }
 };
 

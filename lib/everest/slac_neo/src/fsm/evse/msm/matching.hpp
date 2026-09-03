@@ -56,8 +56,7 @@ struct Matching_def : public state_machine_def<Matching_def> {
     // Entry / exit
     template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
-        to.setDuration(std::chrono::milliseconds(ctx->slac_config.slac_init_timeout_ms));
-        to.reset();
+        to.arm(ctx->current_time, std::chrono::milliseconds(ctx->slac_config.slac_init_timeout_ms));
         failed_matching_reset_once = false;
         validate.reset();
         ctx->validation_done = false;
@@ -84,8 +83,8 @@ struct Matching_def : public state_machine_def<Matching_def> {
         return clamp_max_matching_sessions(ctx->slac_config.max_matching_sessions);
     }
 
-    bool state_timeout() {
-        return to.timeout();
+    bool state_timeout(timer::tp now) const {
+        return to.expired(now);
     }
 };
 
