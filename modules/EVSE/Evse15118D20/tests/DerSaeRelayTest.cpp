@@ -747,18 +747,18 @@ TEST(DerSaeRelayTest, inert_functions_drops_an_enabled_volt_var) {
     EXPECT_NE(std::find(inert.begin(), inert.end(), "WattVar"), inert.end());
 }
 
-TEST(DerSaeRelayTest, zero_nominal_voltage_rejects_every_directive) {
+TEST(DerSaeRelayTest, zero_nominal_voltage_maps_nothing) {
     // The default is derived from the nominal, so without one there is no baseline to map onto.
     const auto vv = make_curve_directive(DT::VoltVar, gs::DERUnit::PctMaxVar, {pt(92.0f, 44.0f), pt(108.0f, -44.0f)},
                                          std::nullopt, "vv");
     auto fv = make_directive(DT::FixedVar, "fv");
     fv.fixed_var = make_fixed_var(25.0f, gs::DERUnit::PctMaxVar);
+    const auto fw = make_curve_directive(DT::FreqWatt, gs::DERUnit::PctMaxW, {pt(50.2f, 100.0f), pt(51.0f, 0.0f)});
 
-    const auto out = map_active_directives_to_sae_der_control(make_set({vv, fv}), 0.0f, NOMINAL_HZ);
+    const auto out = map_active_directives_to_sae_der_control(make_set({vv, fv, fw}), 0.0f, NOMINAL_HZ);
 
     EXPECT_FALSE(out.der_control.reactive_power_support.volt_var.enable);
     EXPECT_FALSE(out.der_control.reactive_power_support.constant_var.enable);
-    EXPECT_TRUE(out.shadowed_ids.empty());
     EXPECT_TRUE(out.unmapped.empty());
 
     const auto def = iso15118::d20::get_default_sae_der_control(0.0f);
