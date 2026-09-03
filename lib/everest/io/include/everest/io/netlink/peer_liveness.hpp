@@ -33,7 +33,10 @@ namespace everest::lib::io::netlink {
  * - It only ever speaks when it has seen at least one neighbour. An empty table is <b>no
  *   opinion</b>, never "the peer is gone" - that is the state before the peer has sent anything,
  *   and also the state after the kernel garbage-collected an idle entry. Removal of the last entry
- *   is therefore not a loss.
+ *   is therefore not a loss - with one exception: the kernel also garbage collects NUD_FAILED
+ *   entries, within seconds of the failure, and a removal that carries NUD_FAILED is that dead
+ *   peer being tidied away, not an idle one. It leaves the verdict where the failure put it, so a
+ *   grace period already running keeps running and \ref peer_is_lost stays true.
  * - A single NUD_FAILED is not enough. It only counts while no other neighbour of the device is
  *   alive, and even then only if none recovers within the caller's grace period.
  * - The grace period is not restarted by further failures - that would push the deadline out
@@ -77,7 +80,8 @@ public:
 
     /**
      * @brief Whether the peer counts as gone. Ask this when the grace period expires.
-     * @details True when the device had neighbours and none of them is alive.
+     * @details True when the device had neighbours and none of them is alive, or when its last
+     * neighbour was removed by the kernel while NUD_FAILED (see the class description).
      *
      * Entries that are neither alive nor failed - NUD_INCOMPLETE, resolution still in flight -
      * count towards a lost peer here, even though \ref apply refuses to *start* a grace period for
@@ -104,6 +108,12 @@ public:
 
 private:
     neighbor_table m_table;
+    /**
+     * @brief The table became empty because its last entry was removed while NUD_FAILED.
+     * @details The table itself cannot hold this: the entry is gone. Set by \ref apply on such a
+     * removal, cleared by any live neighbour, by a removal that is not a failure, and by \ref clear.
+     */
+    bool m_last_entry_failed{false};
 };
 
 } // namespace everest::lib::io::netlink
