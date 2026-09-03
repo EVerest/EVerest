@@ -150,8 +150,8 @@ private:
     // relay input changes, so an AC-limits re-derivation re-pushes the same revision and the session stays
     // quiet. Guarded by GEL.
     std::uint32_t sae_grid_code_revision{0};
-    // Relay input behind sae_grid_code_revision. Seeded with the empty set on every derivation while the
-    // held config is still the seed (revision 0); nullopt until the first. Guarded by GEL.
+    // Relay input behind sae_grid_code_revision. Seeded with the empty set on every derivation that assigns
+    // SAE limits while the held config is still the seed (revision 0); nullopt until the first. Guarded by GEL.
     std::optional<module::SaeRelayInput> sae_applied_input;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };

@@ -310,6 +310,16 @@ sae::CurveDataPointsList single_point_curve() {
 
 } // namespace
 
+TEST_CASE("Frequency droop accepts only an under frequency branch") {
+    const iso15118::d20::SaeDerTransferLimits valid_limits{};
+    auto der_control = iso15118::d20::get_default_sae_der_control(NOMINAL_VOLTAGE_V);
+    der_control.active_power_support.frequency_droop.enable = true;
+    der_control.active_power_support.frequency_droop.over_frequency_droop = std::nullopt;
+    der_control.active_power_support.frequency_droop.under_frequency_droop = sae::FrequencyDroopSettings{};
+
+    REQUIRE(session_config_offers_ac_der_sae(valid_limits, der_control) == true);
+}
+
 SCENARIO("SessionConfig validates a caller supplied SAE DER setup config") {
 
     const iso15118::d20::SaeDerTransferLimits valid_limits{};
