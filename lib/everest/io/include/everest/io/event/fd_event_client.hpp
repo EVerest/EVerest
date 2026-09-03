@@ -640,7 +640,8 @@ public:
      * @tparam P SFINAE hook, always \p ClientPolicy. Do not pass.
      * @param[in] payload The data to be transmitted
      * @param[in] max_payload_size Upper bound for a merged payload; a larger \p payload is queued on
-     * its own
+     * its own. Peer dependent: use the peer's receive window or the MSS, not larger than the socket
+     * send buffer
      * @return True if merged or buffered. A merge is accepted even with the buffer at
      * \ref max_buffered_tx_payloads; a new entry is rejected as in \ref tx
      */
@@ -653,10 +654,6 @@ public:
         if (not m_tx_buffer.empty()) {
             auto& newest = m_tx_buffer.back();
             if (newest.size() + payload.size() <= max_payload_size) {
-                // Size for the bound once instead of growing per merge.
-                if (newest.capacity() < max_payload_size) {
-                    newest.reserve(max_payload_size);
-                }
                 newest.insert(newest.end(), payload.begin(), payload.end());
                 // A waiting payload already holds the write registration or a wakeup is in flight.
                 return true;
