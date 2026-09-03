@@ -1,0 +1,291 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+
+#include <everest/slac/evse/state/session.hpp>
+
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <string>
+
+#include <everest/slac/protocol/builders.hpp>
+#include <everest/slac/protocol/defs.hpp>
+#include <everest/slac/protocol/messages.hpp>
+
+namespace everest::slac::evse::state::session {
+
+namespace {
+
+/// The settling delay between the last sound and reporting the averaged attenuation.
+constexpr std::uint32_t FINALIZE_SOUNDING_DELAY_MS = 45;
+
+/// mmtype match, payload present, and the payload belongs to this session.
+template <typename MsgT>
+bool check_message(messages::HomeplugMessage const& frame, std::uint16_t expected, SessionData const& session_data) {
+    if (frame.get_mmtype() != expected) {
+        return false;
+    }
+    auto const msg = frame.payload_as<MsgT>();
+    if (not msg.has_value()) {
+        return false;
+    }
+    return validate_message(session_data, *msg);
+}
+
+bool is_start_atten_char(messages::HomeplugMessage const& frame, SessionData const& data) {
+    return check_message<messages::cm_start_atten_char_ind>(frame, defs::mmtype::START_ATTEN_CHAR_IND, data);
+}
+
+bool is_atten_profile_ind(messages::HomeplugMessage const& frame, SessionData const& data) {
+    return check_message<messages::cm_atten_profile_ind>(frame, defs::mmtype::ATTEN_PROFILE_IND, data);
+}
+
+bool is_atten_char_rsp(messages::HomeplugMessage const& frame, SessionData const& data) {
+    return check_message<messages::cm_atten_char_rsp>(frame, defs::mmtype::ATTEN_CHAR_RSP, data);
+}
+
+bool is_slac_match_req(messages::HomeplugMessage const& frame, SessionData const& data) {
+    return check_message<messages::cm_slac_match_req>(frame, defs::mmtype::SLAC_MATCH_REQ, data);
+}
+
+void send_atten_char_ind(Context& ctx, SessionData& data) {
+    auto atten_char = make_atten_char_ind(data, ctx.slac_config.sounding_atten_adjustment);
+    if (not ctx.send_slac_message(data.ev_mac, atten_char)) {
+        ctx.log_warn("Failed to send CM_ATTEN_CHAR.IND");
+    }
+
+    int aag_overall_sum = 0;
+    for (std::size_t i = 0; i < defs::AAG_LIST_LEN; ++i) {
+        aag_overall_sum += atten_char.attenuation_profile.aag[i];
+    }
+    ctx.status.average_attenuation = aag_overall_sum / defs::AAG_LIST_LEN;
+
+    std::ostringstream ss;
+    ss << "Avg atten.: " << std::fixed << std::setprecision(1)
+       << (static_cast<double>(aag_overall_sum) / defs::AAG_LIST_LEN) << " dB";
+    if (ctx.slac_config.sounding_atten_adjustment != 0) {
+        ss << " plus offset " << std::to_string(ctx.slac_config.sounding_atten_adjustment) << " dB";
+    }
+    ss << ", from " << std::to_string(defs::AAG_LIST_LEN) << " groups, " << data.captured_sounds << " sounds";
+    ctx.log_info(session_log_prefix(data) + ss.str());
+}
+
+/// Answer CM_SLAC_MATCH.REQ, cache the answer, and publish the EV MAC.
+void send_match_cnf(Context& ctx, SessionData& data, messages::HomeplugMessage const& frame) {
+    messages::cm_slac_match_cnf& reply = ctx.match_confirm_cache.message;
+
+    auto const msg = frame.payload_as<messages::cm_slac_match_req>();
+    if (not msg.has_value()) {
+        return;
+    }
+
+    static constexpr Nmk failed_match_session_nmk{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                                                  0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10};
+
+    Nmk const* session_nmk = &ctx.slac_config.session_nmk;
+    if (ctx.slac_config.link_status.debug_simulate_failed_matching) {
+        ctx.log_info("Sending wrong NMK to EV to simulate a failed link setup after match request");
+        session_nmk = &failed_match_session_nmk;
+    }
+
+    protocol::make_slac_match_cnf(reply, *msg, *session_nmk);
+    if (not ctx.send_slac_message(data.ev_mac, reply)) {
+        ctx.log_warn("Failed to send CM_SLAC_MATCH.CNF");
+    }
+    ctx.signal_cm_slac_match_cnf(data.ev_mac.data());
+    ctx.cache_match_confirm_message(reply, data.ev_mac, data.evse_mac, data.run_id);
+    std::copy(std::begin(data.ev_mac), std::end(data.ev_mac), std::begin(ctx.status.ev_mac));
+}
+
+} // namespace
+
+void WaitStartAtten::enter() {
+    m_deadline.arm(m_ctx.current_time, std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS));
+}
+
+Result WaitStartAtten::feed(SlacEvent const& ev) {
+    if (std::get_if<event::Update>(&ev)) {
+        if (m_deadline.expired(m_ctx.current_time)) {
+            m_ctx.log_info(session_log_prefix(m_data) + "Timeout waiting for CM_START_ATTEN_CHAR.IND, session failed");
+            return m_ctx.create_state<Failed>(m_data);
+        }
+        return {};
+    }
+
+    if (auto const* message = get_if_message(ev)) {
+        // A START that arrives in the same tick the state already timed out is too late: the
+        // session fails on the next update rather than starting a sounding phase it cannot finish.
+        if (not m_deadline.expired(m_ctx.current_time) and is_start_atten_char(*message, m_data)) {
+            m_ctx.log_info(session_log_prefix(m_data) + "Received CM_START_ATTEN_CHAR.IND, MNBC sounding started");
+            return m_ctx.create_state<Sounding>(m_data);
+        }
+    }
+
+    return {};
+}
+
+void Sounding::enter() {
+    m_deadline.arm(m_ctx.current_time, std::chrono::milliseconds(defs::TT_EVSE_MATCH_MNBC_MS));
+}
+
+Result Sounding::feed(SlacEvent const& ev) {
+    if (std::get_if<event::Update>(&ev)) {
+        if (m_deadline.expired(m_ctx.current_time)) {
+            return m_ctx.create_state<FinalizeSounding>(m_data);
+        }
+        return {};
+    }
+
+    if (auto const* message = get_if_message(ev)) {
+        if (is_atten_profile_ind(*message, m_data)) {
+            auto const msg = message->payload_as<messages::cm_atten_profile_ind>();
+            if (msg.has_value()) {
+                for (int i = 0; i < defs::AAG_LIST_LEN; ++i) {
+                    m_data.captured_aags[i] += msg->aag[i];
+                }
+                m_data.captured_sounds++;
+                m_ctx.log_debug(session_log_prefix(m_data) + "Received CM_ATTEN_PROFILE.IND (" +
+                                std::to_string(m_data.captured_sounds) + " of " +
+                                std::to_string(defs::mme::slac_parm_cnf::NUM_SOUNDS) + " sounds captured)");
+            }
+
+            // V2G3-A09-44 allows leaving as soon as the sounds are in, which saves the rest of the
+            // 600 ms window the EV would otherwise spend waiting for a result the EVSE already has.
+            if (m_data.captured_sounds >= defs::mme::slac_parm_cnf::NUM_SOUNDS) {
+                m_ctx.log_info(session_log_prefix(m_data) + "Received all sounds, finalizing sounding");
+                return m_ctx.create_state<FinalizeSounding>(m_data);
+            }
+            return handled();
+        }
+    }
+
+    return {};
+}
+
+void FinalizeSounding::enter() {
+    m_deadline.arm(m_ctx.current_time, std::chrono::milliseconds(FINALIZE_SOUNDING_DELAY_MS));
+}
+
+Result FinalizeSounding::feed(SlacEvent const& ev) {
+    if (std::get_if<event::Update>(&ev)) {
+        if (m_deadline.expired(m_ctx.current_time)) {
+            m_ctx.log_info(session_log_prefix(m_data) + "Finalize sounding, sending CM_ATTEN_CHAR.IND");
+            send_atten_char_ind(m_ctx, m_data);
+            return m_ctx.create_state<WaitAttenRsp>(m_data);
+        }
+    }
+    return {};
+}
+
+void WaitAttenRsp::enter() {
+    m_deadline.arm(m_ctx.current_time, std::chrono::milliseconds(defs::TT_MATCH_RESPONSE_MS));
+}
+
+Result WaitAttenRsp::feed(SlacEvent const& ev) {
+    if (std::get_if<event::Update>(&ev)) {
+        if (not m_deadline.expired(m_ctx.current_time)) {
+            return {};
+        }
+        if (m_data.num_retries >= defs::C_EV_MATCH_RETRY) {
+            m_ctx.log_info(session_log_prefix(m_data) + "No CM_ATTEN_CHAR.RSP after all retries, session failed");
+            return m_ctx.create_state<Failed>(m_data);
+        }
+        m_ctx.log_info(session_log_prefix(m_data) +
+                       "No CM_ATTEN_CHAR.RSP yet, retransmitting CM_ATTEN_CHAR.IND (retry " +
+                       std::to_string(m_data.num_retries + 1) + " of " + std::to_string(defs::C_EV_MATCH_RETRY) + ")");
+        send_atten_char_ind(m_ctx, m_data);
+        m_data.num_retries++;
+        m_deadline.rearm(m_ctx.current_time);
+        return handled();
+    }
+
+    if (auto const* message = get_if_message(ev)) {
+        if (is_atten_char_rsp(*message, m_data)) {
+            m_ctx.log_info(session_log_prefix(m_data) + "Received CM_ATTEN_CHAR.RSP, waiting for CM_SLAC_MATCH.REQ");
+            return m_ctx.create_state<WaitSlacMatch>(m_data);
+        }
+    }
+
+    return {};
+}
+
+void WaitSlacMatch::enter() {
+    m_deadline.arm(m_ctx.current_time, std::chrono::milliseconds(defs::TT_EVSE_MATCH_SESSION_MS));
+}
+
+Result WaitSlacMatch::feed(SlacEvent const& ev) {
+    if (std::get_if<event::Update>(&ev)) {
+        if (m_deadline.expired(m_ctx.current_time)) {
+            m_ctx.log_info(session_log_prefix(m_data) + "Timeout waiting for CM_SLAC_MATCH.REQ, session failed");
+            return m_ctx.create_state<Failed>(m_data);
+        }
+        // A late request gets no answer: CmSlacMatch_003/004, cmValidate variant.
+        if (m_ctx.validation_done and m_ctx.validation_match_window.expired(m_ctx.current_time)) {
+            m_ctx.log_info(session_log_prefix(m_data) +
+                           "No CM_SLAC_MATCH.REQ within TT_match_sequence after CM_VALIDATE, session failed");
+            return m_ctx.create_state<Failed>(m_data);
+        }
+        return {};
+    }
+
+    if (auto const* message = get_if_message(ev)) {
+        if (is_slac_match_req(*message, m_data)) {
+            m_ctx.log_info(session_log_prefix(m_data) +
+                           "Received CM_SLAC_MATCH.REQ, sending CM_SLAC_MATCH.CNF -> session complete");
+            send_match_cnf(m_ctx, m_data, *message);
+            return m_ctx.create_state<MatchComplete>(m_data);
+        }
+    }
+
+    return {};
+}
+
+Result MatchComplete::feed(SlacEvent const&) {
+    return {};
+}
+
+Result Failed::feed(SlacEvent const&) {
+    return {};
+}
+
+Session::Session(Context& ctx, SessionData data) : m_ctx(ctx), m_data(std::move(data)) {
+    m_data.num_retries = 0;
+    m_fsm.emplace(m_ctx.create_state<WaitStartAtten>(m_data));
+}
+
+void Session::restart(SessionData data) {
+    // drop the running machine before the data it references is replaced
+    m_fsm.reset();
+    m_data = std::move(data);
+    m_data.num_retries = 0;
+    m_fsm.emplace(m_ctx.create_state<WaitStartAtten>(m_data));
+}
+
+void Session::feed(SlacEvent const& ev) {
+    if (m_fsm.has_value()) {
+        m_fsm->feed(ev);
+    }
+}
+
+bool Session::matched() const {
+    return m_fsm.has_value() and m_fsm->get_current_state_id() == StateID::SessionMatchComplete;
+}
+
+bool Session::failed() const {
+    return m_fsm.has_value() and m_fsm->get_current_state_id() == StateID::SessionFailed;
+}
+
+void Session::signature(std::string& out) const {
+    if (m_fsm.has_value()) {
+        out += std::to_string(static_cast<int>(m_fsm->get_current_state_id()));
+        out += ';';
+    }
+}
+
+void Session::describe(StateTree& out) const {
+    if (m_fsm.has_value()) {
+        out.name = to_string(m_fsm->get_current_state_id());
+    }
+}
+
+} // namespace everest::slac::evse::state::session
