@@ -4,6 +4,7 @@
 #include <everest/io/event/fd_event_client.hpp>
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/socket/socket.hpp>
+#include <everest/util/misc/container.hpp>
 
 #include <cerrno>
 #include <utility>
@@ -101,6 +102,7 @@ bool generic_fd_event_client_impl::setup_error_event_handler() {
 
 void generic_fd_event_client_impl::setup_io_event_handler(int fd) {
     using namespace everest::lib::io::event;
+    namespace util = everest::lib::util;
     m_connection_failed = false;
     // Registered for reading below.
     m_rx_paused = false;
@@ -111,15 +113,13 @@ void generic_fd_event_client_impl::setup_io_event_handler(int fd) {
         [this, fd](auto events) {
             // A terminal notification wins over a pending handshake: the connection it would be
             // negotiated on is gone. read_hungup is monitored only while paused, see pause_rx.
-            if (events.count(poll_events::error) or events.count(poll_events::hungup) or
-                events.count(poll_events::read_hungup)) {
+            if (util::exists_any(events, poll_events::error, poll_events::hungup, poll_events::read_hungup)) {
                 // Level triggered, so the fd keeps notifying until the queued teardown removes it,
                 // and reading SO_ERROR clears it.
                 if (not m_connection_failed) {
                     m_connection_failed = true;
-                    auto const kind = events.count(poll_events::error) != 0    ? poll_events::error
-                                      : events.count(poll_events::hungup) != 0 ? poll_events::hungup
-                                                                               : poll_events::read_hungup;
+                    auto const kind = util::first_present(events, poll_events::error, poll_events::hungup)
+                                          .value_or(poll_events::read_hungup);
                     set_error_status_and_notify(consume_poll_error(fd, kind));
                 }
                 return;

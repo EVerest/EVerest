@@ -62,6 +62,31 @@ template <typename Container, typename T> bool exists(const Container& c, const 
 }
 
 /**
+ * @brief True if any of \p vals exists in \p c.
+ * @details Each value is looked up with \ref exists.
+ */
+template <typename Container, typename... T> bool exists_any(const Container& c, const T&... vals) {
+    return (exists(c, vals) || ...);
+}
+
+/**
+ * @brief The first of \p first, \p rest... that exists in \p c, in argument order.
+ * @details Each value is looked up with \ref exists.
+ * @return The first value found, std::nullopt if none exists.
+ */
+template <typename Container, typename T, typename... Ts>
+std::optional<T> first_present(const Container& c, const T& first, const Ts&... rest) {
+    if (exists(c, first)) {
+        return first;
+    }
+    if constexpr (sizeof...(rest) == 0) {
+        return std::nullopt;
+    } else {
+        return first_present(c, rest...);
+    }
+}
+
+/**
  * @brief Implementation for sequence containers (vector, list, etc.).
  * @return Pointer to the found element or nullptr.
  */
