@@ -147,6 +147,46 @@ TEST(fd_event_handler_test, register_reports_false_when_epoll_add_fails) {
     ::close(raw);
 }
 
+TEST(fd_event_handler_test, swapping_events_takes_effect_in_one_modification) {
+    fd_event_handler handler;
+    int pipe_fds[2];
+    ASSERT_EQ(::pipe(pipe_fds), 0);
+    // The write end of an empty pipe is writable at once and never readable.
+    int writes = 0;
+    ASSERT_TRUE(handler.register_event_handler(
+        pipe_fds[1],
+        [&](fd_event_handler::event_list const& events) {
+            writes += static_cast<int>(events.count(poll_events::write));
+        },
+        poll_events::read));
+    EXPECT_FALSE(handler.poll(20ms));
+    EXPECT_EQ(writes, 0);
+
+    EXPECT_TRUE(handler.modify_event_handler(pipe_fds[1], fd_event_handler::event_list{poll_events::write},
+                                             fd_event_handler::event_list{poll_events::read}));
+    EXPECT_TRUE(handler.poll(100ms));
+    EXPECT_EQ(writes, 1);
+
+    EXPECT_TRUE(handler.modify_event_handler(pipe_fds[1], fd_event_handler::event_list{poll_events::read},
+                                             fd_event_handler::event_list{poll_events::write}));
+    EXPECT_FALSE(handler.poll(20ms));
+    EXPECT_EQ(writes, 1);
+
+    // An event named on both sides ends up enabled.
+    EXPECT_TRUE(handler.modify_event_handler(pipe_fds[1], fd_event_handler::event_list{poll_events::write},
+                                             fd_event_handler::event_list{poll_events::write}));
+    EXPECT_TRUE(handler.poll(100ms));
+    EXPECT_EQ(writes, 2);
+
+    ASSERT_TRUE(handler.unregister_event_handler(pipe_fds[1]));
+    EXPECT_FALSE(handler.modify_event_handler(pipe_fds[1], fd_event_handler::event_list{poll_events::write},
+                                              fd_event_handler::event_list{poll_events::read}));
+    EXPECT_FALSE(handler.modify_event_handler(-1, fd_event_handler::event_list{poll_events::write},
+                                              fd_event_handler::event_list{poll_events::read}));
+    ::close(pipe_fds[0]);
+    ::close(pipe_fds[1]);
+}
+
 TEST(fd_event_handler_test, poll_keeps_the_batch_across_a_registration_exchange) {
     fd_event_handler handler;
 

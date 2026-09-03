@@ -32,6 +32,8 @@ uint32_t poll_event_to_bitmask(poll_events e) {
         return EPOLLERR;
     case poll_events::hungup:
         return EPOLLHUP;
+    case poll_events::read_hungup:
+        return EPOLLRDHUP;
     }
     return 0;
 }
@@ -52,6 +54,9 @@ std::set<poll_events> bitmask_to_poll_events(uint32_t bitmask) {
     }
     if (bitmask & EPOLLHUP) {
         result.insert(poll_events::hungup);
+    }
+    if (bitmask & EPOLLRDHUP) {
+        result.insert(poll_events::read_hungup);
     }
     return result;
 }
@@ -126,6 +131,16 @@ public:
             return result;
         };
         return modify(fd, events, action);
+    }
+
+    bool modify_swap(int fd, fd_event_handler::event_list const& enable, fd_event_handler::event_list const& disable) {
+        auto const raw_disable = sum_events(disable);
+        auto action = [raw_disable](uint32_t current, fd_event_handler::event_list const& change) {
+            auto raw_change = sum_events(change);
+            auto result = (current & (~raw_disable)) | raw_change;
+            return result;
+        };
+        return modify(fd, enable, action);
     }
 
     bool modify_replace(int fd, fd_event_handler::event_list const& events) {
@@ -331,6 +346,12 @@ bool fd_event_handler::modify_event_handler(int fd, event_list const& events, ev
 
 bool fd_event_handler::modify_event_handler(int fd, poll_events event, event_modification change) {
     return modify_event_handler(fd, event_list{event}, change);
+}
+bool fd_event_handler::modify_event_handler(int fd, event_list const& enable, event_list const& disable) {
+    if (fd == -1) {
+        return false;
+    }
+    return m_handlers->modify_swap(fd, enable, disable);
 }
 
 bool fd_event_handler::remove_event_handler(int fd) {

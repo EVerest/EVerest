@@ -18,7 +18,10 @@ using event_pty_base = event::fd_event_client<pty_handler>::type;
 
 /**
  * event_pty extends \ref event_pty_base for the special handling needed
- * for data and status, which are both received via RX
+ * for data and status, which are both received via RX.
+ *
+ * Writes to a slave that stopped reading queue in the tx buffer and are rejected once it is full
+ * instead of stalling the loop, see \ref pty_handler.
  */
 class event_pty : public event_pty_base {
     /**

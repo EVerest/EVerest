@@ -194,6 +194,34 @@ public:
      */
     void set_on_ready_action(std::function<void()>&& item);
 
+    /**
+     * @brief Stop monitoring the connection for readability.
+     * @details Backpressure towards the writer behind the descriptor: the kernel buffer fills and
+     *          the writer blocks. Error, hangup and write monitoring are unaffected. A stream socket
+     *          is watched for the peer closing its writing side instead (EPOLLRDHUP), reported
+     *          through the error handler; unread data is lost with the connection. Rejected while
+     *          no connection is monitored (before the first \ref sync, during a reopen or a
+     *          handshake). A new connection starts unpaused, re-apply from \ref set_on_ready_action.
+     *          Idempotent. Loop thread only, like \ref sync.
+     * @return True if reads are paused
+     */
+    bool pause_rx();
+
+    /**
+     * @brief Resume monitoring the connection for readability after \ref pause_rx.
+     * @details Level triggered: data queued while paused is dispatched on the next poll. Idempotent,
+     *          same constraints as \ref pause_rx.
+     * @return True if reads are resumed
+     */
+    bool resume_rx();
+
+    /**
+     * @brief Whether reads are paused on the current connection.
+     * @details False without a monitored connection and for every new connection until paused.
+     * @return True if paused by \ref pause_rx
+     */
+    bool rx_paused() const;
+
 protected:
     /**
      * @brief Constructor.
@@ -303,14 +331,31 @@ protected:
     /**
      * @brief Consume the error code of an error or hangup notification on \p fd.
      * @details Prefers the error of the client policy, then SO_ERROR, then the notification kind
-     *          itself (ENOTCONN for a hangup, EIO otherwise) for a descriptor that is not a
-     *          socket. Never resolves to 0, which would read as a cleared error. Reading SO_ERROR
-     *          clears it, so call this exactly once per connection.
+     *          itself (ENOTCONN for a hangup, ECONNRESET for the peer shutting its writing side,
+     *          EIO otherwise) for a descriptor that is not a socket. Never resolves to 0, which
+     *          would read as a cleared error. Reading SO_ERROR clears it, so call this exactly
+     *          once per connection.
      * @param[in] fd The file descriptor the notification arrived on
-     * @param[in] kind poll_events::hungup for a hangup, poll_events::error otherwise
+     * @param[in] kind poll_events::hungup for a hangup, poll_events::read_hungup for a peer that
+     *            shut its writing side while reads were paused, poll_events::error otherwise
      * @return A nonzero error code
      */
     int consume_poll_error(int fd, poll_events kind);
+
+    /**
+     * @brief The descriptor of the current connection.
+     * @return The descriptor, -1 without a connection
+     */
+    int connected_fd();
+
+    /**
+     * @brief Switch monitoring the connection for readability off or on.
+     * @details Implements \ref pause_rx and \ref resume_rx: swaps readability against the peer close
+     *          watch in one event handler modification, so on failure nothing changed.
+     * @param[in] paused True to stop reads, false to resume them
+     * @return True if the requested state is in force
+     */
+    bool set_rx_paused(bool paused);
 
     static poll_events default_desired_events();
 
@@ -410,6 +455,8 @@ protected:
     ready_action m_on_ready_action;
     std::atomic_uint64_t m_connected_generation{0};
     bool m_connection_failed{false};
+    // Reads paused on the current connection; cleared on retire and on registration.
+    bool m_rx_paused{false};
     // Every connection attempt pre-increments the generation, so 0 cannot match a connection.
     std::uint64_t m_ready_fired_generation{0};
     std::uint64_t m_handshake_deadline_generation{0};
@@ -467,7 +514,8 @@ public:
      * payloads, not bytes, so the memory ceiling is this many times the size of a payload the
      * caller writes.
      * For the socket policies, whose \p PayloadT is a `std::vector<std::uint8_t>`, that size is
-     * whatever the caller passes.
+     * whatever the caller passes. With \ref tx_coalescing the ceiling is this many times the larger
+     * of the bound and the largest single payload.
      */
     static constexpr std::size_t max_buffered_tx_payloads{1024};
 
@@ -536,12 +584,7 @@ public:
         if (not connection_accepts_tx()) {
             return false;
         }
-        if (m_tx_buffer.size() >= max_buffered_tx_payloads) {
-            return false;
-        }
-        m_tx_buffer.emplace(payload);
-        m_io_event_fd.notify();
-        return true;
+        return enqueue_tx(payload);
     }
 
     /**
@@ -584,6 +627,64 @@ public:
         reset_connection_state();
         schedule_reset();
         return true;
+    }
+
+    /**
+     * @brief Send data, appending it to the newest buffered payload when possible.
+     * @details Like \ref tx, but if payloads are waiting and the merged size stays within
+     * \p max_payload_size, \p payload is appended to the newest one. Nothing is held back: a payload
+     * queued on an empty buffer goes out on the next writable event. The newest payload may be mid
+     * write, so the policy must leave exactly the unsent bytes in it and tolerate it growing; only a
+     * \p ClientPolicy declaring `static constexpr bool supports_tx_coalescing{true}` has this function,
+     * see \ref utilities::policy_supports_tx_coalescing. Loop thread only.
+     * @tparam P SFINAE hook, always \p ClientPolicy. Do not pass.
+     * @param[in] payload The data to be transmitted
+     * @param[in] max_payload_size Upper bound for a merged payload; a larger \p payload is queued on
+     * its own. Peer dependent: use the peer's receive window or the MSS, not larger than the socket
+     * send buffer
+     * @return True if merged or buffered. A merge is accepted even with the buffer at
+     * \ref max_buffered_tx_payloads; a new entry is rejected as in \ref tx
+     */
+    template <class P = ClientPolicy, std::enable_if_t<utilities::policy_supports_tx_coalescing_v<P>, int> = 0>
+    bool tx_coalescing(ClientPayloadT const& payload, std::size_t max_payload_size) {
+        static_assert(std::is_same_v<P, ClientPolicy>, "P selects the overload on ClientPolicy only, do not pass it");
+        if (not connection_accepts_tx()) {
+            return false;
+        }
+        if (not m_tx_buffer.empty()) {
+            auto& newest = m_tx_buffer.back();
+            if (newest.size() + payload.size() <= max_payload_size) {
+                newest.insert(newest.end(), payload.begin(), payload.end());
+                // A waiting payload already holds the write registration or a wakeup is in flight.
+                return true;
+            }
+        }
+        // Same rejection conditions as tx.
+        return enqueue_tx(payload);
+    }
+
+    /**
+     * @brief Number of payloads waiting in the tx buffer.
+     * @details Loop thread only. With \ref set_tx_drained_action and \ref pause_rx: pause the source
+     * past a watermark, resume when drained.
+     * @return 0 to \ref max_buffered_tx_payloads
+     */
+    std::size_t tx_queue_depth() const {
+        return m_tx_buffer.size();
+    }
+
+    /**
+     * @brief Register a callback fired when the tx buffer runs empty.
+     * @details Called on the loop thread right after the last buffered payload was written, inside
+     * this client's dispatch: \ref tx, \ref reset and pausing or resuming another client are fine
+     * there, destroying this client is not. Not called by \ref reset or on a failed connection, which
+     * clear the buffer without sending. Resume a paused source from \ref set_on_ready_action, not from
+     * the error handler: without pre-connect buffering \ref tx rejects until the reopen completes.
+     * Pass an empty function to unregister.
+     * @param[in] item The callback
+     */
+    void set_tx_drained_action(std::function<void()> item) {
+        add_action([this, item = std::move(item)]() mutable { m_tx_drained_action = std::move(item); });
     }
 
     /**
@@ -696,6 +797,16 @@ private:
     // peer even while it is still open and still registered. The connection state cannot answer
     // this: without the guards below a successful read would report code 0 and put a retired
     // connection back to connected.
+    // Shared by tx and tx_coalescing.
+    bool enqueue_tx(ClientPayloadT const& payload) {
+        if (m_tx_buffer.size() >= max_buffered_tx_payloads) {
+            return false;
+        }
+        m_tx_buffer.emplace(payload);
+        m_io_event_fd.notify();
+        return true;
+    }
+
     bool handle_is_current() const {
         return m_handle != nullptr and m_handle_generation == m_connect_generation.load();
     }
@@ -713,6 +824,13 @@ private:
         auto success = m_handle->tx(elem);
         if (success) {
             m_tx_buffer.pop();
+            if (m_tx_buffer.empty() and m_tx_drained_action) {
+                m_tx_drained_action();
+                // The action may have reset this client; do not report the retired connection, see receive_one.
+                if (not handle_is_current()) {
+                    return action_status::empty;
+                }
+            }
             return action_status::success;
         }
         return action_status::fail;
@@ -816,6 +934,8 @@ private:
             client_status->ok = false;
             client_status->fd = -1;
         }
+        // The pause belonged to the connection just retired.
+        m_rx_paused = false;
         m_handle.reset();
         return action_status::success;
     }
@@ -867,6 +987,7 @@ private:
     std::shared_ptr<async_connect_state> m_async_connect_state;
     cb_rx m_rx;
     std::function<void()> m_open_device;
+    std::function<void()> m_tx_drained_action;
     std::queue<ClientPayloadT> m_tx_buffer;
     ClientPayloadT m_data;
     bool m_buffer_tx_before_connect{false};
@@ -894,6 +1015,9 @@ private:
  *                                    // connection is up instead of rejecting them. Absent means it does not.
  *                                    // Read only for a policy that offers setup/connect. Overridable per
  *                                    // instance, see utilities::tx_buffering
+ *   static constexpr bool supports_tx_coalescing; // [optional] tx_coalescing() exists for this policy. Only for a
+ *                                    // byte stream whose tx() leaves exactly the unsent bytes in the payload and
+ *                                    // tolerates it growing between retries. Absent means false.
  *   bool open(ArgsT... args);        // Opens the device. Parameters given by fd_event_client's constructor.
  *                                    // Return true on success, false otherwise
  *   bool setup(ArgsT... args);       // [optional] Setup the device. Parameters given by fd_event_client's constructor.

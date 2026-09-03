@@ -29,6 +29,12 @@ public:
     using PayloadT = std::vector<uint8_t>;
 
     /**
+     * @var supports_tx_coalescing
+     * @brief Byte stream, \ref tx leaves exactly the unsent bytes in the payload.
+     */
+    static constexpr bool supports_tx_coalescing{true};
+
+    /**
      * @brief The class is default constructed
      */
     tcp_socket() = default;
