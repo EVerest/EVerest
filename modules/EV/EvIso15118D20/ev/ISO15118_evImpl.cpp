@@ -298,6 +298,11 @@ void ISO15118_evImpl::run_one_session() {
             }
             (*h).current = &controller;
             (*h).phase = SessionPhase::running;
+            // Values pushed between the snapshot above and this point would otherwise reach
+            // neither the snapshot nor the live controller.
+            controller.update_present_soc((*h).dc_params.present_soc);
+            controller.update_present_voltage((*h).dc_params.present_voltage);
+            controller.update_present_active_power((*h).ac_params.present_active_power);
         }
         controller.loop();
     } catch (const std::exception& e) {
