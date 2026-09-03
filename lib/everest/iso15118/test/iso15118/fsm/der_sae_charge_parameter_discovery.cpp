@@ -267,8 +267,8 @@ SCENARIO("ISO15118-20 der sae ac charge parameter discovery state transitions") 
         }
 
         THEN("The DER control set is marked as delivered") {
-            const auto update_time = ctx.session_config.der_sae_setup_config.value().der_control_update_time;
-            REQUIRE(ctx.session.der_control_changed_since_cpd(update_time) == false);
+            const auto revision = ctx.session_config.der_sae_setup_config.value().revision;
+            REQUIRE(ctx.session.der_control_changed_since_cpd(revision) == false);
         }
 
         THEN("The masked EV supported modes are recorded on the session") {

@@ -110,7 +110,11 @@ DerApplyTransitions apply_derivation(const DerLimitsDerivation& derived, DerAppl
 
     if (derived.sae_limits.has_value()) {
         current.sae_limits = derived.sae_limits;
-        current.sae_setup_config = derived.sae_setup_config;
+        // A relayed grid code (revision > 0) outlives AC-limit re-derivations. The seed nobody dictated is
+        // re-derived instead, so a changed nominal is reflected in the default it is built from.
+        if (not current.sae_setup_config.has_value() or current.sae_setup_config->revision == 0) {
+            current.sae_setup_config = derived.sae_setup_config;
+        }
         transitions.sae = DerSaeApplyTransition::Assigned;
     } else if (current.sae_limits.has_value()) {
         transitions.sae = DerSaeApplyTransition::KeptPrevious;

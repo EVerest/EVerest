@@ -25,4 +25,10 @@ std::optional<std::string> validate_sae_der_setup(const DerSaeSetupConfig& setup
 std::optional<std::string> validate_sae_nominals_within_maxima(const SaeDerTransferLimits& sae_limits,
                                                                const AcTransferLimits& ac_limits);
 
+/// \brief Installs a grid code delivered to a running session, or keeps the previous one.
+///
+/// The setup is validated against the session's SAE and AC limits first. A violation, or missing SAE limits,
+/// leaves the installed grid code untouched and is warned about. Returns whether the setup was installed.
+bool install_der_sae_setup_config(SessionConfig& session_config, const DerSaeSetupConfig& setup_config);
+
 } // namespace iso15118::d20

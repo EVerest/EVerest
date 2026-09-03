@@ -11,10 +11,14 @@
 #include <algorithm>
 #include <cstdint>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include <utils/date.hpp>
 
 #include <iso15118/config.hpp>
+#include <iso15118/detail/d20/config_validation.hpp>
 #include <iso15118/io/logging.hpp>
 
 namespace module {
@@ -190,16 +194,21 @@ void ISO15118_chargerImpl::apply_active_der_directives() {
         return;
     }
 
-    // Snapshot the GEL-protected setup_config fields under the lock, then release it before touching the
-    // controller: update_*_der_functions reach into the evse_setup monitor (a second lock), and holding GEL
-    // across that would risk lock inversion. controller is set once in ready() and lives for the impl lifetime,
-    // so the snapshotted pointer stays valid after the lock is released.
+    // Snapshot the GEL-protected setup_config fields so the mapping runs outside GEL, not because a
+    // controller call would need GEL released; for the lock rank see der_apply_mutex in the header.
+    // controller is set once in ready() and outlives the impl, so the snapshotted pointer stays valid.
     iso15118::TbdController* controller_ptr = nullptr;
     float volt_base = 0.0f;
     float watt_base = 0.0f;
     std::optional<float> var_base;
     bool sae_advertised = false;
     bool iec_advertised = false;
+    float nominal_voltage_v = 0.0f;
+    float nominal_frequency_hz = 0.0f;
+    std::optional<iso15118::d20::DerSaeSetupConfig> current_sae;
+    std::optional<iso15118::d20::SaeDerTransferLimits> der_sae_limits;
+    std::uint32_t applied_revision = 0;
+    std::optional<module::SaeRelayInput> applied_input;
     {
         std::scoped_lock lock(GEL);
         controller_ptr = controller.get();
@@ -215,6 +224,16 @@ void ISO15118_chargerImpl::apply_active_der_directives() {
         };
         sae_advertised = advertised(dt::ServiceCategory::AC_DER_SAE);
         iec_advertised = advertised(dt::ServiceCategory::AC_DER_IEC);
+
+        der_sae_limits = setup_config.der_sae_limits;
+        if (der_sae_limits.has_value()) {
+            nominal_voltage_v = dt::from_RationalNumber(der_sae_limits->grid_limits.nominal_voltage);
+            nominal_frequency_hz = dt::from_RationalNumber(der_sae_limits->grid_limits.nominal_frequency);
+        }
+        current_sae = setup_config.der_sae_setup_config.value_or(
+            iso15118::d20::make_inert_default_sae_setup_config(nominal_voltage_v));
+        applied_revision = sae_grid_code_revision;
+        applied_input = sae_applied_input;
     }
 
     if (controller_ptr == nullptr) {
@@ -224,8 +243,13 @@ void ISO15118_chargerImpl::apply_active_der_directives() {
     }
 
     if (sae_advertised) {
-        EVLOG_warning << "grid_support DER directives are applied to the AC_DER_IEC control functions only. An "
-                         "AC_DER_SAE session keeps its configured grid code unchanged.";
+        if (not der_sae_limits.has_value()) {
+            EVLOG_info << "AC_DER_SAE is advertised but no SAE DER limits are derived yet; grid_support directives "
+                          "will be relayed once the grid parameters are known.";
+        } else {
+            relay_sae_grid_code(directives.value(), *controller_ptr, nominal_voltage_v, nominal_frequency_hz,
+                                current_sae.value(), applied_revision, applied_input);
+        }
     }
 
     if (not sae_advertised and not iec_advertised) {
@@ -247,8 +271,69 @@ void ISO15118_chargerImpl::apply_active_der_directives() {
     }
 }
 
+void ISO15118_chargerImpl::relay_sae_grid_code(const types::grid_support::ActiveDirectiveSet& directives,
+                                               iso15118::TbdController& controller_ref, float nominal_voltage_v,
+                                               float nominal_frequency_hz,
+                                               const iso15118::d20::DerSaeSetupConfig& current_sae,
+                                               std::uint32_t applied_revision,
+                                               const std::optional<module::SaeRelayInput>& applied_input) {
+    const auto input = module::sae_relay_input(directives, nominal_voltage_v, nominal_frequency_hz);
+    if (applied_input == input) {
+        EVLOG_debug << "grid_support directive set unchanged; SAE grid code revision " << applied_revision
+                    << " stays in effect.";
+        return;
+    }
+
+    const auto relay =
+        module::map_active_directives_to_sae_der_control(directives, nominal_voltage_v, nominal_frequency_hz);
+    iso15118::d20::DerSaeSetupConfig next{relay.der_control, current_sae.required_der_operating_mode,
+                                          current_sae.grid_connection_mode};
+    next.revision = applied_revision + 1;
+
+    std::vector<std::string> directive_ids;
+    directive_ids.reserve(directives.directives.size());
+    for (const auto& d : directives.directives) {
+        directive_ids.push_back(d.id);
+    }
+
+    // Validate and push against the limits held now, not the caller's snapshot: an AC-limit handler may have
+    // re-derived them in between, and the next session sees whatever the last push carried. The controller push
+    // stays inside the same hold as the commit so no re-derivation can interleave between the two.
+    {
+        std::scoped_lock lock(GEL);
+        const auto violation = [&]() -> std::optional<std::string> {
+            if (not setup_config.der_sae_limits.has_value()) {
+                return "SAE DER limits were withdrawn while mapping";
+            }
+            return iso15118::d20::validate_sae_der_setup(next, *setup_config.der_sae_limits, setup_config.ac_limits);
+        }();
+        if (violation.has_value()) {
+            EVLOG_warning << "Rejecting SAE grid code from grid_support directives on EVSE " << setup_config.evse_id
+                          << " (" << fmt::format("{}", fmt::join(directive_ids, ", ")) << "): " << *violation
+                          << "; revision " << applied_revision << " remains dictated.";
+            return;
+        }
+        setup_config.der_sae_setup_config = next;
+        sae_grid_code_revision = next.revision;
+        sae_applied_input = input;
+        controller_ref.update_der_sae_limits(setup_config.der_sae_limits, next);
+    }
+
+    std::vector<std::string_view> unmapped;
+    unmapped.reserve(relay.unmapped.size());
+    for (const auto type : relay.unmapped) {
+        unmapped.push_back(types::grid_support::directive_type_to_string_view(type));
+    }
+    EVLOG_info << "SAE grid code revision " << next.revision << " dictated; inert functions: "
+               << fmt::format("{}", fmt::join(module::inert_sae_der_functions(next.der_control), ", "))
+               << "; shadowed directives: " << fmt::format("{}", fmt::join(relay.shadowed_ids, ", "))
+               << "; unmapped types: " << fmt::format("{}", fmt::join(unmapped, ", "));
+}
+
 void ISO15118_chargerImpl::update_der_limits_locked() {
-    // DER control directives reach the EV through the control-function relay, not here.
+    // DER control directives reach the EV through the IEC control-function relay and the SAE grid code relay,
+    // not here. A relayed SAE setup config (revision > 0) is kept across re-derivations and re-pushed on the
+    // SAE branch below unchanged; the seed (revision 0) is rebuilt from the freshly derived nominals.
     const auto derived = derive_der_limits(
         setup_config.supported_energy_services, setup_config.ac_limits, evse_max_reactive_power,
         setup_config.ac_setup_config.has_value() ? std::optional<std::uint32_t>{setup_config.ac_setup_config->voltage}
@@ -263,6 +348,17 @@ void ISO15118_chargerImpl::update_der_limits_locked() {
     setup_config.der_iec_limits = applied.iec_limits;
     setup_config.der_sae_limits = applied.sae_limits;
     setup_config.der_sae_setup_config = applied.sae_setup_config;
+
+    if (transitions.sae == DerSaeApplyTransition::Assigned and setup_config.der_sae_limits.has_value() and
+        setup_config.der_sae_setup_config.has_value() and setup_config.der_sae_setup_config->revision == 0) {
+        // The seed nobody dictated. Record it as the relayed input so a first apply of an empty directive set
+        // maps to the same default and stays quiet instead of dictating revision 1. The nominals come off the
+        // limits just assigned, through the same conversion the relay's compare side uses, so the two agree.
+        const auto& grid_limits = setup_config.der_sae_limits->grid_limits;
+        sae_applied_input = module::sae_relay_input(types::grid_support::ActiveDirectiveSet{},
+                                                    dt::from_RationalNumber(grid_limits.nominal_voltage),
+                                                    dt::from_RationalNumber(grid_limits.nominal_frequency));
+    }
 
     const auto status_changed = derived.sae_status != logged_sae_der_status;
     logged_sae_der_status = derived.sae_status;

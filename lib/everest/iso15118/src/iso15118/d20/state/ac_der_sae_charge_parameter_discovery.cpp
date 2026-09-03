@@ -154,24 +154,16 @@ handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req
     // The gated Enable flags are the SECC decision, so the EV's later EnabledModes echo is compared against
     // this and not against its own declaration.
     session.set_enabled_der_control_modes(derive_enabled_modes(mode.der_control_cpd_res));
-    session.record_der_control_sent(sae_config.der_control_update_time);
+    session.record_der_control_sent(sae_config.revision);
 
     mode.processing =
         req.transfer_mode.processing == dt::Processing::Ongoing ? dt::Processing::Ongoing : dt::Processing::Finished;
 
     convert_sae_limits(mode, der_limits);
 
-    if (sae_config.required_der_operating_mode == sae::RequiredDEROperatingMode::GridFollowing) {
-        mode.required_der_operating_mode = dt::sae::RequiredDEROperatingMode::GridFollowing;
-    } else if (sae_config.required_der_operating_mode == sae::RequiredDEROperatingMode::GridForming) {
-        mode.required_der_operating_mode = dt::sae::RequiredDEROperatingMode::GridForming;
-    }
-
-    if (sae_config.grid_connection_mode == sae::GridConnectionMode::GridConnected) {
-        mode.grid_connection_mode = dt::sae::GridConnectionMode::GridConnected;
-    } else if (sae_config.grid_connection_mode == sae::GridConnectionMode::GridIslanded) {
-        mode.grid_connection_mode = dt::sae::GridConnectionMode::GridIslanded;
-    }
+    mode.required_der_operating_mode = convert(sae_config.required_der_operating_mode);
+    mode.grid_connection_mode = convert(sae_config.grid_connection_mode);
+    session.record_der_modes_sent(sae_config.required_der_operating_mode, sae_config.grid_connection_mode);
 
     mode.update_time = sae_config.der_control_update_time;
 
