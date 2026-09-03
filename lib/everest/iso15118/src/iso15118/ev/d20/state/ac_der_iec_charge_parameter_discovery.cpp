@@ -50,8 +50,9 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
         return {};
     }
 
-    // Slices to the AC base; DER discovery fields (DerControl curves, discharge) are not surfaced yet.
+    // ac_limits sees the AC base; der_curves carries the dictated DER functions.
     m_ctx.feedback.ac_limits(res->transfer_mode);
+    m_ctx.feedback.der_curves(res->transfer_mode.der_control);
 
     return m_ctx.create_state<ScheduleExchange>();
 }

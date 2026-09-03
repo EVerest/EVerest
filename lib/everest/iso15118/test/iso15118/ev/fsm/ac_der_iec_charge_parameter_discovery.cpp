@@ -3,6 +3,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <optional>
+
 #include "helper.hpp"
 
 #include <iso15118/ev/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
@@ -117,6 +119,23 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeParameterDiscovery transitions to Sche
     REQUIRE(fired == true);
     REQUIRE(reported_frequency == 50.0f);
     REQUIRE(reported_max_charge_power == 15000.0f);
+}
+
+SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeParameterDiscovery fires der_curves with the dictated DerControl") {
+    std::optional<message_20::datatypes::DerControl> captured;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.der_curves = [&](const message_20::datatypes::DerControl& control) { captured = control; };
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeParameterDiscovery> primed{callbacks, seed_single_phase};
+
+    auto response = make_response(SESSION_HEADER, ResponseCode::OK);
+    response.transfer_mode.der_control.max_level_dc_injection = message_20::datatypes::from_float(0.5f);
+    primed.handle_response(response);
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(captured.has_value());
+    REQUIRE(captured->max_level_dc_injection.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(*captured->max_level_dc_injection) == Catch::Approx(0.5f));
 }
 
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeParameterDiscovery rejects malformed responses") {
