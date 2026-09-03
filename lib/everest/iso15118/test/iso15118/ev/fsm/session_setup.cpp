@@ -126,7 +126,7 @@ SCENARIO("ISO15118-20 EV session setup rejects a resumed session") {
         const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
 
         REQUIRE(result.transitioned() == false);
-        REQUIRE_FALSE(result);
+        REQUIRE(result.output == ev::d20::Disposition::Stopping);
         REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::SessionSetup);
         REQUIRE(ctx.is_session_stopped() == true);
         REQUIRE(take_all_requests(state_helper.get_message_exchange()).empty());

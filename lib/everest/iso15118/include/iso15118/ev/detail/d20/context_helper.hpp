@@ -5,6 +5,7 @@
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/session_id.hpp>
+#include <iso15118/ev/d20/states.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/variant.hpp>
 
@@ -13,6 +14,11 @@ namespace iso15118::ev::d20 {
 void setup_header(message_20::Header&, const SessionId&);
 
 bool check_response_code(message_20::datatypes::ResponseCode response_code);
+
+// Returns the violated expectation, or nullptr when the declared disposition matches what happened.
+// `consumed` is true when the feed pulled a response (Event::V2GTP_MESSAGE).
+const char* disposition_violation(Disposition d, bool consumed, bool has_request, bool session_stopped,
+                                  bool transitioned);
 
 // Validate an inbound response: the expected variant, a session id matching the
 // active session, and an accepted response code. On any failure it logs, stops the
