@@ -210,6 +210,20 @@ async def assert_no_events(mock, excluded_events, wait_time=2, reset_after_check
         mock.reset_mock()
 
 
+async def wait_for_variable_value(mock, expected_value, timeout=30):
+    """Wait until the mock received a variable publication with the expected value."""
+    start_time = asyncio.get_event_loop().time()
+
+    while asyncio.get_event_loop().time() - start_time < timeout:
+        for call in mock.call_args_list:
+            if call[0][0] == expected_value:
+                mock.reset_mock()
+                return
+        await asyncio.sleep(0.1)
+
+    raise TimeoutError(f"Timeout waiting for variable value {expected_value}")
+
+
 async def wait_for_ready(mock, timeout=5):
     """Wait until the ready mock has been called."""
     start_time = asyncio.get_event_loop().time()
@@ -1201,12 +1215,12 @@ async def test_pwm_ac_session_paused_by_evse(
     connections={
         "evse_manager": [Requirement("connector_1", "evse")],
         "gcp": [Requirement("grid_connection_point", "external_limits")],
+        "slac": [Requirement("slac", "evse")],
     }
 )
 @pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy())
 @pytest.mark.everest_core_config("config-sil.yaml")
-@pytest.mark.skip(reason="Currently fails because EV Simulator does not start a new session once it is a user pause")
 async def test_iso15118_ac_session_paused_by_evse(
     test_controller: TestController, everest_core: EverestCore
 ):
@@ -1216,8 +1230,11 @@ async def test_iso15118_ac_session_paused_by_evse(
     probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
         test_controller, everest_core
     )
+    slac_state_mock = Mock()
+    probe_module.subscribe_variable("slac", "state", slac_state_mock)
     await start_session(test_controller, session_event_mock, test_controller.plug_in_ac_iso)
     await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)
+    slac_state_mock.reset_mock()
     await probe_module.call_command(
         "evse_manager",
         "pause_charging",
@@ -1225,7 +1242,10 @@ async def test_iso15118_ac_session_paused_by_evse(
     )
     await wait_for_session_events(session_event_mock, ["ChargingPausedEVSE"])
     await assert_power_below(powermeter_mock, power_threshold_w=10, timeout=5)
-    await assert_no_events(session_event_mock, ["ChargingStarted"], wait_time=5)
+    # Resume only once the EVSE has processed the V2G session teardown: the D-LINK handler
+    # resets SLAC last, so UNMATCHED means the pause has settled.
+    await wait_for_variable_value(slac_state_mock, "UNMATCHED", timeout=15)
+    await assert_no_events(session_event_mock, ["ChargingStarted"])
     await probe_module.call_command(
         "evse_manager",
         "resume_charging",
@@ -1240,12 +1260,12 @@ async def test_iso15118_ac_session_paused_by_evse(
     connections={
         "evse_manager": [Requirement("evse_manager", "evse")],
         "gcp": [Requirement("grid_connection_point", "external_limits")],
+        "slac": [Requirement("slac", "evse")],
     }
 )
 @pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_core_config("config-sil-dc.yaml")
 @pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy())
-@pytest.mark.skip(reason="Currently fails because EV Simulator does not start a new session once it is a user pause")
 async def test_iso15118_dc_session_paused_by_evse(
     test_controller: TestController, everest_core: EverestCore
 ):
@@ -1256,9 +1276,12 @@ async def test_iso15118_dc_session_paused_by_evse(
     probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
         test_controller, everest_core
     )
+    slac_state_mock = Mock()
+    probe_module.subscribe_variable("slac", "state", slac_state_mock)
 
     await start_session(test_controller, session_event_mock, test_controller.plug_in_dc_iso)
     await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)
+    slac_state_mock.reset_mock()
     await probe_module.call_command(
         "evse_manager",
         "pause_charging",
@@ -1266,6 +1289,10 @@ async def test_iso15118_dc_session_paused_by_evse(
     )
     await wait_for_session_events(session_event_mock, ["ChargingPausedEVSE"])
     await assert_power_below(powermeter_mock, power_threshold_w=10, timeout=5)
+    # Resume only once the EVSE has processed the V2G session teardown: the D-LINK handler
+    # resets SLAC last, so UNMATCHED means the pause has settled.
+    await wait_for_variable_value(slac_state_mock, "UNMATCHED", timeout=15)
+    await assert_no_events(session_event_mock, ["ChargingStarted"])
     await probe_module.call_command(
         "evse_manager",
         "resume_charging",

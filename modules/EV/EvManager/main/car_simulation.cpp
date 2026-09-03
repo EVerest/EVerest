@@ -5,6 +5,7 @@
 #include "constants.hpp"
 
 #include <everest/logging.hpp>
+#include <fmt/core.h>
 
 constexpr double MS_FACTOR = (1.0 / 60.0 / 60.0 / 1000.0);
 
@@ -278,30 +279,11 @@ bool CarSimulation::iso_dc_power_on(const CmdArguments& arguments) {
         return true;
     }
 
-    if (sim_data.iso_charger_paused) {
-
-        const auto cmds =
-            std::array<std::string, 2>{"pause;iso_wait_v2g_session_stopped;sleep 2;iso_wait_pwm_is_running;",
-                                       "iso_wait_pwr_ready;iso_wait_for_stop 36000"};
-
-        EVLOG_info << "Charger wants to pause the session";
-        r_ev_board_support->call_allow_power_on(false);
-
-        // NOTE(sl): Change when the Energymode has more then 2 values
-        const std::string energy_mode = (sim_data.energy_mode == EnergyMode::AC) ? "AC" : "DC";
-        const std::string iso_start_v2g_session = "iso_start_v2g_session " + energy_mode + ";";
-
-        auto& modify_session_cmds = sim_data.modify_charging_session_cmds.emplace();
-
-        modify_session_cmds = cmds[0];
-        modify_session_cmds += iso_start_v2g_session;
-        modify_session_cmds += cmds[1];
-
-        sim_data.iso_pwr_ready = false;
-        sim_data.sleep_ticks_left.reset();
-        sim_data.iso_charger_paused = false;
-
-        // NOTE(sl): return false, otherwise the simulation will end too early before the session cmds can be adjusted
+    // Return false in both cases, otherwise the simulation ends before the session cmds can be adjusted
+    if (sim_data.iso_stopped) {
+        arm_restart_after_charger_stop();
+    } else if (sim_data.iso_charger_paused) {
+        arm_resume_after_charger_pause();
     }
 
     return false;
@@ -352,6 +334,7 @@ bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool th
     } else {
         return false;
     }
+    sim_data.v2g_session_active = true;
     return true;
 }
 
@@ -395,47 +378,74 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
     }
     if (sim_data.iso_stopped) {
         EVLOG_info << "POWER OFF iso stopped";
-        r_ev_board_support->call_allow_power_on(false);
-        sim_data.state = SimState::PLUGGED_IN;
-        sim_data.sleep_ticks_left.reset();
-        return true;
+        // Return false afterwards, otherwise the simulation ends before the session cmds can be adjusted
+        arm_restart_after_charger_stop();
+        return false;
     }
 
     if (sim_data.iso_charger_paused) {
-
-        const auto cmds =
-            std::array<std::string, 2>{"pause;iso_wait_v2g_session_stopped;sleep 2;iso_wait_pwm_is_running;",
-                                       "iso_wait_pwr_ready;iso_wait_for_stop 36000"};
-
-        EVLOG_info << "Charger wants to pause the session";
-        r_ev_board_support->call_allow_power_on(false);
-
-        // NOTE(sl): Change when the Energymode has more then 2 values
-        const std::string energy_mode = (sim_data.energy_mode == EnergyMode::AC) ? "AC" : "DC";
-        const std::string iso_start_v2g_session = "iso_start_v2g_session " + energy_mode + ";";
-
-        auto& modify_session_cmds = sim_data.modify_charging_session_cmds.emplace();
-
-        modify_session_cmds = cmds[0];
-        modify_session_cmds += iso_start_v2g_session;
-        modify_session_cmds += cmds[1];
-
-        sim_data.iso_pwr_ready = false;
-        sim_data.sleep_ticks_left.reset();
-        sim_data.iso_charger_paused = false;
-
-        // NOTE(sl): return false, otherwise the simulation will end too early before the session cmds can be adjusted
+        arm_resume_after_charger_pause();
         return false;
     }
     return false;
 }
 
-bool CarSimulation::iso_wait_v2g_session_stopped(const CmdArguments& arguments) {
-    if (sim_data.v2g_finished) {
-        sim_data.v2g_finished = false;
-        return true;
+// ISO 15118-20 charger pause: the link stays matched, so wait for PWM and resume the session.
+void CarSimulation::arm_resume_after_charger_pause() {
+    EVLOG_info << "Charger wants to pause the session";
+    r_ev_board_support->call_allow_power_on(false);
+
+    // NOTE(sl): Change when the Energymode has more then 2 values
+    const std::string energy_mode = (sim_data.energy_mode == EnergyMode::AC) ? "AC" : "DC";
+
+    auto& modify_session_cmds = sim_data.modify_charging_session_cmds.emplace();
+
+    modify_session_cmds = "pause;iso_wait_v2g_session_stopped;sleep 2;iso_wait_pwm_is_running;";
+    modify_session_cmds += "iso_start_v2g_session " + energy_mode + ";";
+    modify_session_cmds += "iso_wait_pwr_ready;iso_wait_for_stop 36000";
+
+    sim_data.iso_pwr_ready = false;
+    sim_data.sleep_ticks_left.reset();
+    sim_data.iso_charger_paused = false;
+}
+
+// DIN SPEC and ISO 15118-2 have no charger-side pause: the charger terminates the V2G session
+// and wakes the EV up again via PWM. The wake-up requires a full new SLAC matching and V2G
+// session, so stay plugged in and re-arm the whole session start instead of ending the simulation.
+void CarSimulation::arm_restart_after_charger_stop() {
+    EVLOG_info << "Charger stopped the session, waiting for a PWM wake-up to start a new one";
+    r_ev_board_support->call_allow_power_on(false);
+    sim_data.state = SimState::PLUGGED_IN;
+
+    const bool dc = sim_data.energy_mode == EnergyMode::DC;
+
+    auto& modify_session_cmds = sim_data.modify_charging_session_cmds.emplace();
+
+    modify_session_cmds = "pause;iso_wait_v2g_session_stopped;sleep 2;iso_wait_pwm_is_running;";
+    if (not r_slac.empty()) {
+        modify_session_cmds += "iso_wait_slac_matched;";
     }
-    return false;
+    modify_session_cmds += std::string{"iso_start_v2g_session "} + (dc ? "DC" : "AC") + ";";
+    modify_session_cmds += "iso_wait_pwr_ready;";
+    if (dc) {
+        modify_session_cmds += "iso_dc_power_on;";
+    } else {
+        const std::string phases = (charge_mode == ChargeMode::ACThreePhase) ? "3" : "1";
+        modify_session_cmds += "iso_draw_power_regulated " + fmt::format("{:g}", charge_current_a) + "," + phases + ";";
+    }
+    modify_session_cmds += "iso_wait_for_stop 36000";
+
+    // Force iso_wait_slac_matched to trigger a new matching: the EV slac sim still reports MATCHED,
+    // but the charger restarts its matching on resume and only pairs with a peer in MATCHING state
+    sim_data.slac_state = types::slac::State::UNMATCHED;
+    sim_data.iso_stopped = false;
+    sim_data.iso_pwr_ready = false;
+    sim_data.dc_power_on = false;
+    sim_data.sleep_ticks_left.reset();
+}
+
+bool CarSimulation::iso_wait_v2g_session_stopped(const CmdArguments& arguments) {
+    return not sim_data.v2g_session_active;
 }
 
 bool CarSimulation::iso_pause_charging(const CmdArguments& arguments) {
@@ -450,7 +460,6 @@ bool CarSimulation::iso_wait_for_resume(const CmdArguments& arguments) {
 }
 
 bool CarSimulation::iso_start_bcb_toggle(const CmdArguments& arguments) {
-    sim_data.v2g_finished = false;
     sim_data.state = SimState::BCB_TOGGLE;
     if (sim_data.bcb_toggles >= std::stoul(arguments[0]) || sim_data.bcb_toggles == 3) {
         sim_data.bcb_toggles = 0;
