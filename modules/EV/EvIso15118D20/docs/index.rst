@@ -106,6 +106,9 @@ The implementation has a deliberately narrow scope:
 - **DER directives are log-only.** AC DER IEC directives (target active power,
   DSO Q and cos phi setpoints) are logged, not published, pending an interface
   variable. The three-phase inverter relay use case is assumed.
+- **DER curves are log-only.** DER curves dictated in
+  ``DER_AC_ChargeParameterDiscoveryRes`` are logged, not applied; the EV negotiates
+  the functions and observes what the SECC dictates.
 - **No TLS.** The session advertises ``NO_TRANSPORT_SECURITY``; Plug & Charge and
   TLS are out of scope.
 - **No pause/resume.** ``pause_charging`` is a no-op.

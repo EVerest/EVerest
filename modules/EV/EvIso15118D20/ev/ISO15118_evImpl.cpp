@@ -171,6 +171,29 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
         EVLOG_info << line.str();
     };
 
+    // Dictated DER curves are observed, not applied
+    callbacks.der_curves = [](const iso15118::message_20::datatypes::DerControl& control) {
+        std::ostringstream line;
+        line << "EvIso15118D20: DER curves dictated:";
+        bool any = false;
+        const auto append = [&](bool present, const char* name) {
+            if (present) {
+                line << ' ' << name;
+                any = true;
+            }
+        };
+        append(control.over_voltage_fault_ride_through.has_value(), "over_voltage_fault_ride_through");
+        append(control.under_voltage_fault_ride_through.has_value(), "under_voltage_fault_ride_through");
+        append(control.zero_current.has_value(), "zero_current");
+        append(control.reactive_power_support.has_value(), "reactive_power_support");
+        append(control.active_power_support.has_value(), "active_power_support");
+        append(control.max_level_dc_injection.has_value(), "max_level_dc_injection");
+        if (not any) {
+            line << " none";
+        }
+        EVLOG_info << line.str();
+    };
+
     return callbacks;
 }
 

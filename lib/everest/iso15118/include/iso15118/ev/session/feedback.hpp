@@ -9,6 +9,7 @@
 #include <iso15118/message/ac_charge_loop.hpp>
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
 #include <iso15118/message/ac_der_iec_charge_loop.hpp>
+#include <iso15118/message/ac_der_iec_charge_parameter_discovery.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/type.hpp>
 
@@ -28,6 +29,7 @@ struct Callbacks {
     std::function<void(const message_20::datatypes::AC_CPDResEnergyTransferMode&)> ac_limits;
     std::function<void(const message_20::datatypes::Dynamic_AC_CLResControlMode&)> ac_target_power;
     std::function<void(const message_20::datatypes::DER_Dynamic_AC_CLResControlMode&)> der_control;
+    std::function<void(const message_20::datatypes::DerControl&)> der_curves;
 };
 
 } // namespace iso15118::ev::feedback
@@ -49,6 +51,7 @@ public:
     void ac_limits(const message_20::datatypes::AC_CPDResEnergyTransferMode&) const;
     void ac_target_power(const message_20::datatypes::Dynamic_AC_CLResControlMode&) const;
     void der_control(const message_20::datatypes::DER_Dynamic_AC_CLResControlMode&) const;
+    void der_curves(const message_20::datatypes::DerControl&) const;
 
 private:
     feedback::Callbacks callbacks;
