@@ -84,9 +84,8 @@ bool tcp_socket::tx(PayloadT& payload) {
         return false;
     }
     if (status < static_cast<ssize_t>(payload.size())) {
-        // We have a reference to the current data. Replace it with what is left to be written
-        // and return false. This signals the current block cannot be removed from the buffer.
-        payload = {payload.begin() + status, payload.end()};
+        // Keep the unsent bytes in place and return false: the block stays in the buffer.
+        payload.erase(payload.begin(), payload.begin() + status);
         return false;
     }
     return true;

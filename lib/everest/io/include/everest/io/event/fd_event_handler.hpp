@@ -30,6 +30,8 @@ enum class poll_events {
     write = 2,
     error = 3,
     hungup = 4,
+    /// Peer closed its writing side (EPOLLRDHUP). Only when monitored for, stream sockets only.
+    read_hungup = 5,
 };
 
 // event/fd_event_client.hpp and socket/socket.hpp declare poll_events opaquely to break the
@@ -252,6 +254,16 @@ public:
      * @return Description
      */
     bool modify_event_handler(int fd, poll_events event, event_modification change);
+
+    /**
+     * @brief Enable one set of events and disable another in a single EPOLL_CTL_MOD.
+     * @details Both changes take effect or neither. An event in both lists ends up enabled.
+     * @param[in] fd The file descriptor
+     * @param[in] enable Events to monitor
+     * @param[in] disable Events to stop monitoring
+     * @return True on success, false otherwise (unregistered fd, or epoll failure with events unchanged)
+     */
+    bool modify_event_handler(int fd, event_list const& enable, event_list const& disable);
 
     /**
      * @brief Stop monitoring of events on the file descriptor.

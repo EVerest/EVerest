@@ -46,6 +46,36 @@ time: `on_error()` reports `true` from the call until the reopen.
 
 `tx()` and `reset()` are loop-thread only: call them from the thread that drives `sync()`, or from
 a callback that thread dispatches.
+
+## Flow control between clients
+
+A consumer forwarding from one client into another (pty into TCP) can throttle the source instead
+of dropping when the sink's buffer is full:
+
+- `pause_rx()` / `resume_rx()` / `rx_paused()`: stop and restart monitoring the source for
+  readability; the kernel buffer fills and the writer blocks. A paused stream socket still reports
+  the peer closing through the error handler. Rejected without a monitored connection (before the
+  first `sync()`, during a reopen or a handshake), idempotent, and a reconnect starts unpaused:
+  re-apply from `set_on_ready_action`.
+- `tx_queue_depth()` / `set_tx_drained_action()`: pause the source past a watermark, resume it from
+  the drained action. `reset()` and a failed connection clear the buffer without draining; resume
+  the source from the sink's `set_on_ready_action`, not from the error handler: without pre-connect
+  buffering `tx()` rejects until the reopen completes.
+- `tx_coalescing(payload, max_payload_size)`: append to the newest waiting payload instead of
+  queueing another. Exists only for a policy declaring `supports_tx_coalescing{true}`: a byte stream
+  whose `tx()` leaves exactly the unsent bytes in the payload (`tcp_socket`, `pty_handler`). Frame
+  transports and TLS do not compile with it.
+
+All share the loop-thread contract of `tx()`.
+
+## PTY
+
+`pty_handler` opens the master non blocking. A write the slave has not drained returns early,
+`tx()` keeps the unsent bytes and the client retries; a blocking master would stall the whole loop.
+Undrained data queues up to `max_buffered_tx_payloads`, then `tx()` rejects. A feeder that must not
+lose data throttles its source with the flow control above, otherwise it checks the return value of
+`tx()`.
+
 ## TLS
 
 Drives the libtls (`everest::tls`) `Server` and `Client` through the same
