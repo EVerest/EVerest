@@ -191,8 +191,82 @@ SCENARIO("Service discovery state handling") {
           "(ServiceRenegotiationSupported: false)") {
     } // Todo(sl): Fill out
 
-    GIVEN("Bad case - EV supported_service_ids do not match with evse supported services") {
-    } // Todo(sl): Fill out
+    GIVEN("EV supported_service_ids do not match with evse supported services") {
+
+        d20::Session session = d20::Session();
+
+        message_20::ServiceDiscoveryRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+
+        // AC_DER_IEC only, which the EVSE below does not offer.
+        auto& supported_service_ids = req.supported_service_ids.emplace();
+        supported_service_ids.push_back(message_20::to_underlying_value(dt::ServiceCategory::AC_DER_IEC));
+
+        std::vector<dt::ServiceCategory> supported_energy_transfer_services = {dt::ServiceCategory::AC,
+                                                                               dt::ServiceCategory::AC_BPT};
+        std::vector<dt::ServiceCategory> ev_energy_services{};
+
+        const auto res =
+            d20::state::handle_request(req, session, supported_energy_transfer_services, {}, ev_energy_services);
+
+        THEN("ResponseCode: OK, the full offer is sent instead of an empty list") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.energy_transfer_service_list.size() == 2);
+            REQUIRE(res.energy_transfer_service_list[0].service_id == dt::ServiceCategory::AC);
+            REQUIRE(res.energy_transfer_service_list[1].service_id == dt::ServiceCategory::AC_BPT);
+            REQUIRE(res.vas_list.has_value() == false);
+            REQUIRE(session.offered_services.energy_services.size() == 2);
+            REQUIRE(ev_energy_services == std::vector<dt::ServiceCategory>{dt::ServiceCategory::AC_DER_IEC});
+        }
+    }
+
+    GIVEN("Bad case - evse offers no energy transfer service at all") {
+
+        d20::Session session = d20::Session();
+
+        message_20::ServiceDiscoveryRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+
+        // No filter from the EV, so the offer is whatever the EVSE has, here nothing.
+        std::vector<dt::ServiceCategory> supported_energy_transfer_services{};
+        std::vector<dt::ServiceCategory> ev_energy_services{};
+
+        const auto res =
+            d20::state::handle_request(req, session, supported_energy_transfer_services, {}, ev_energy_services);
+
+        THEN("ResponseCode: FAILED, mandatory fields should be set") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED);
+            REQUIRE(res.energy_transfer_service_list.size() == 1);
+            REQUIRE(session.offered_services.energy_services.empty());
+        }
+    }
+
+    GIVEN("Bad case - evse offers no energy transfer service and the EV filters") {
+
+        d20::Session session = d20::Session();
+
+        message_20::ServiceDiscoveryRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+
+        auto& supported_service_ids = req.supported_service_ids.emplace();
+        supported_service_ids.push_back(message_20::to_underlying_value(dt::ServiceCategory::AC));
+
+        std::vector<dt::ServiceCategory> supported_energy_transfer_services{};
+        std::vector<dt::ServiceCategory> ev_energy_services{};
+
+        const auto res =
+            d20::state::handle_request(req, session, supported_energy_transfer_services, {}, ev_energy_services);
+
+        THEN("ResponseCode: FAILED, mandatory fields should be set") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED);
+            REQUIRE(res.energy_transfer_service_list.size() == 1);
+            REQUIRE(session.offered_services.energy_services.empty());
+            REQUIRE(ev_energy_services == std::vector<dt::ServiceCategory>{dt::ServiceCategory::AC});
+        }
+    }
 
     // GIVEN("Bad Case - sequence error") {} // TODO(sl): not here
 
