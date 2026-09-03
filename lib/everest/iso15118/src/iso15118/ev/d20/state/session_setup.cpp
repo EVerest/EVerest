@@ -44,10 +44,22 @@ Result SessionSetup::feed(Event ev) {
         return {};
     }
 
-    if (not check_response_code(res->response_code)) {
-        // SessionSetup hand-rolls this check instead of using expect_response, so it has to
-        // log the rejection itself.
-        logf_error("SessionSetupResponse rejected with response_code: %d", static_cast<int>(res->response_code));
+    using message_20::datatypes::ResponseCode;
+
+    // SessionSetupRequest always carries a zero session id, so the EV never asks to
+    // resume and OK_OldSessionJoined is a protocol violation.
+    if (res->response_code == ResponseCode::OK_OldSessionJoined) {
+        logf_error("EVSE joined an old session although this EV requested a new one; aborting");
+        m_ctx.stop_session();
+        return {};
+    }
+
+    // Strict on purpose: this EV exists to surface SECC deviations, so plain OK and every
+    // WARNING_* are rejected here even though the generic table accepts them elsewhere.
+    if (res->response_code != ResponseCode::OK_NewSessionEstablished) {
+        logf_error("SessionSetupResponse rejected with response_code %d: a new session requires "
+                   "OK_NewSessionEstablished",
+                   static_cast<int>(res->response_code));
         m_ctx.stop_session();
         return {};
     }
@@ -58,29 +70,15 @@ Result SessionSetup::feed(Event ev) {
         return {};
     }
 
-    // SessionSetupRequest always carries a zero session id, so the EV never asks to
-    // resume and OK_OldSessionJoined is a protocol violation.
-    if (res->response_code == message_20::datatypes::ResponseCode::OK_OldSessionJoined) {
-        logf_error("EVSE joined an old session although the EV requested a new one. Abort the session.");
+    logf_info("New session established by EVSE.");
+
+    if (session_is_zero(res->header.session_id)) {
+        logf_error("Returned SessionID is zero although a new session was requested. Abort the session.");
         m_ctx.stop_session();
         return {};
     }
 
-    // A plain OK carries the same authoritative session id as OK_NewSessionEstablished;
-    // both must be adopted, and a zero id is unusable either way (every later request
-    // would echo zeros).
-    if (res->response_code == message_20::datatypes::ResponseCode::OK or
-        res->response_code == message_20::datatypes::ResponseCode::OK_NewSessionEstablished) {
-        logf_info("New session established by EVSE.");
-
-        if (session_is_zero(res->header.session_id)) {
-            logf_error("Returned SessionID is zero although a new session was requested. Abort the session.");
-            m_ctx.stop_session();
-            return {};
-        }
-
-        m_ctx.get_session().set_id(res->header.session_id);
-    }
+    m_ctx.get_session().set_id(res->header.session_id);
 
     return {m_ctx.create_state<AuthorizationSetup>()};
 }
