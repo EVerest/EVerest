@@ -14,10 +14,6 @@ namespace {
 
 namespace dt = message_20::datatypes;
 
-void assign(std::optional<dt::RationalNumber>& out, const std::optional<float>& value) {
-    out = value.has_value() ? std::make_optional(dt::from_float(*value)) : std::nullopt;
-}
-
 void fill_dynamic_charge(dt::Dynamic_AC_CLReqControlMode& mode, const AcChargeParams& params,
                          dt::AcConnector connector) {
     mode.departure_time = std::nullopt;
@@ -25,22 +21,14 @@ void fill_dynamic_charge(dt::Dynamic_AC_CLReqControlMode& mode, const AcChargePa
     mode.max_energy_request = {0, 0};
     mode.min_energy_request = {0, 0};
 
-    const auto max = split_ac_limit(params.max_charge_power, params.phase_count, connector);
-    mode.max_charge_power = dt::from_float(max.base);
-    assign(mode.max_charge_power_L2, max.l2);
-    assign(mode.max_charge_power_L3, max.l3);
+    emit_ac_limit(params.max_charge_power, params.phase_count, connector, mode.max_charge_power,
+                  mode.max_charge_power_L2, mode.max_charge_power_L3);
+    emit_ac_limit(params.min_charge_power, params.phase_count, connector, mode.min_charge_power,
+                  mode.min_charge_power_L2, mode.min_charge_power_L3);
 
-    const auto min = split_ac_limit(params.min_charge_power, params.phase_count, connector);
-    mode.min_charge_power = dt::from_float(min.base);
-    assign(mode.min_charge_power_L2, min.l2);
-    assign(mode.min_charge_power_L3, min.l3);
-
-    // Only ever the module's measurement; see the note in dc_charge_loop.cpp. It is a single
-    // aggregate reading, so it is split the same way rather than invented per line.
-    const auto present = split_ac_limit(params.present_active_power, params.phase_count, connector);
-    mode.present_active_power = dt::from_float(present.base);
-    assign(mode.present_active_power_L2, present.l2);
-    assign(mode.present_active_power_L3, present.l3);
+    // Only ever the module's measurement; see the note in dc_charge_loop.cpp.
+    emit_ac_present(params.present_active_power, params.phase_count, connector, mode.present_active_power,
+                    mode.present_active_power_L2, mode.present_active_power_L3);
 
     mode.present_reactive_power = {0, 0};
 }
@@ -56,15 +44,10 @@ message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const Ac
         dt::BPT_Dynamic_AC_CLReqControlMode mode;
         fill_dynamic_charge(mode, params, connector);
 
-        const auto max_discharge = split_ac_limit(params.max_discharge_power, params.phase_count, connector);
-        mode.max_discharge_power = dt::from_float(max_discharge.base);
-        assign(mode.max_discharge_power_L2, max_discharge.l2);
-        assign(mode.max_discharge_power_L3, max_discharge.l3);
-
-        const auto min_discharge = split_ac_limit(params.min_discharge_power, params.phase_count, connector);
-        mode.min_discharge_power = dt::from_float(min_discharge.base);
-        assign(mode.min_discharge_power_L2, min_discharge.l2);
-        assign(mode.min_discharge_power_L3, min_discharge.l3);
+        emit_ac_limit(params.max_discharge_power, params.phase_count, connector, mode.max_discharge_power,
+                      mode.max_discharge_power_L2, mode.max_discharge_power_L3);
+        emit_ac_limit(params.min_discharge_power, params.phase_count, connector, mode.min_discharge_power,
+                      mode.min_discharge_power_L2, mode.min_discharge_power_L3);
 
         req.control_mode = mode;
     } else {
@@ -80,8 +63,8 @@ message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const Ac
 
 void AC_ChargeLoop::enter() {
     logf_debug("Enter state: AC_ChargeLoop");
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service(),
-                                    m_ctx.selected_ac_connector().value_or(dt::AcConnector::SinglePhase)));
+    m_ctx.send_request(
+        make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service(), m_ctx.ac_connector()));
 }
 
 Result AC_ChargeLoop::feed(Event ev) {
@@ -117,8 +100,8 @@ Result AC_ChargeLoop::feed(Event ev) {
     }
 
     m_ctx.feedback.ac_target_power(*mode);
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service(),
-                                    m_ctx.selected_ac_connector().value_or(dt::AcConnector::SinglePhase)));
+    m_ctx.send_request(
+        make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service(), m_ctx.ac_connector()));
     return {};
 }
 

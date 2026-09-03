@@ -183,6 +183,12 @@ public:
         selected_ac_connector_ = connector;
     }
 
+    // The connector the AC states emit for. SinglePhase is the reading under which the base
+    // element is never a sum.
+    message_20::datatypes::AcConnector ac_connector() const {
+        return selected_ac_connector_.value_or(message_20::datatypes::AcConnector::SinglePhase);
+    }
+
     // IEC DER control functions the EV supports (config-driven), matched against the
     // SECC's AC_DER_IEC parameter sets in ServiceDetail.
     std::bitset<DER_CONTROL_FUNCTION_COUNT> der_supported_functions() const {
