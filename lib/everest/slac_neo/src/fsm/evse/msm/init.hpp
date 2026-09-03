@@ -13,7 +13,7 @@ namespace everest::lib::slac::msm::init_sm {
 struct Init_def : public state_machine_def<Init_def> {
     // States
     // Each query state waits request_info_delay_ms for the modem's answer before moving on.
-    using request_info_timeout_state = config_timeout_state<&fsm::evse::EvseSlacConfig::request_info_delay_ms>;
+    using request_info_timeout_state = config_timeout_state<&fsm::evse::EvseSlacConfig::request_info_delay>;
     // clang-format off
     struct Init       : request_info_timeout_state { };
     struct OpAttr     : request_info_timeout_state { };

@@ -13,7 +13,7 @@ struct ResetChip_def : public state_machine_def<ResetChip_def> {
     // States
     struct Delay : public state<> {
         template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
-            to.arm(fsm.ctx->current_time, std::chrono::milliseconds(fsm.ctx->slac_config.chip_reset.delay_ms));
+            to.arm(fsm.ctx->current_time, fsm.ctx->slac_config.chip_reset.delay);
         }
 
         timer to;

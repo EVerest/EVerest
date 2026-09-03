@@ -17,6 +17,7 @@
 
 using namespace everest::lib::slac;
 using namespace everest::lib::slac::fsm::evse;
+using namespace std::chrono_literals;
 
 namespace {
 
@@ -148,10 +149,10 @@ bool expect_nmk_equal(Nmk const& lhs, Nmk const& rhs) {
 }
 
 void configure_common(Context& ctx) {
-    ctx.slac_config.request_info_delay_ms = 1;
-    ctx.slac_config.set_key_timeout_ms = 5;
+    ctx.slac_config.request_info_delay = 1ms;
+    ctx.slac_config.set_key_timeout = 5ms;
     ctx.slac_config.set_key_max_attempts = 3;
-    ctx.slac_config.slac_init_timeout_ms = 5;
+    ctx.slac_config.slac_init_timeout = 5ms;
     ctx.slac_config.chip_reset.enabled = false;
     ctx.slac_config.reset_instead_of_fail = false;
     ctx.slac_config.regenerate_key_on_reset = true;
@@ -185,7 +186,7 @@ bool test_legacy_single_attempt_accepts_valid_success_result() {
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.set_key_handling_mode = SetKeyHandlingMode::legacy_single_attempt;
-    ctx.slac_config.set_key_timeout_ms = 50;
+    ctx.slac_config.set_key_timeout = 50ms;
     fill_session_nmk(ctx, 0x11);
 
     slac_fsm machine(ctx);
@@ -255,7 +256,7 @@ bool test_legacy_single_attempt_rejects_reserved_result() {
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.set_key_handling_mode = SetKeyHandlingMode::legacy_single_attempt;
-    ctx.slac_config.set_key_timeout_ms = 20;
+    ctx.slac_config.set_key_timeout = 20ms;
     fill_session_nmk(ctx, 0x22);
 
     slac_fsm machine(ctx);
@@ -302,7 +303,7 @@ bool test_legacy_single_attempt_accepts_compat_success_cnf() {
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.set_key_handling_mode = SetKeyHandlingMode::legacy_single_attempt;
-    ctx.slac_config.set_key_timeout_ms = 20;
+    ctx.slac_config.set_key_timeout = 20ms;
     fill_session_nmk(ctx, 0x23);
 
     slac_fsm machine(ctx);
@@ -388,7 +389,7 @@ bool test_retry_confirmed_accepts_wrong_source() {
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.set_key_handling_mode = SetKeyHandlingMode::retry_confirmed;
-    ctx.slac_config.set_key_timeout_ms = 80;
+    ctx.slac_config.set_key_timeout = 80ms;
     fill_session_nmk(ctx, 0x33);
 
     slac_fsm machine(ctx);
@@ -435,7 +436,7 @@ bool test_retry_confirmed_accepts_malformed_fields() {
         Context ctx(callbacks);
         configure_common(ctx);
         ctx.slac_config.set_key_handling_mode = SetKeyHandlingMode::retry_confirmed;
-        ctx.slac_config.set_key_timeout_ms = 80;
+        ctx.slac_config.set_key_timeout = 80ms;
         fill_session_nmk(ctx, nmk_base);
 
         slac_fsm machine(ctx);
@@ -704,7 +705,7 @@ bool test_default_retries_on_hpgp_0x00_success_result() {
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.set_key_handling_mode = SetKeyHandlingMode::retry_confirmed;
-    ctx.slac_config.set_key_timeout_ms = 80;
+    ctx.slac_config.set_key_timeout = 80ms;
     ctx.slac_config.set_key_max_attempts = 3;
     fill_session_nmk(ctx, 0x55);
     auto session_nmk_before = current_session_nmk(ctx);
@@ -749,7 +750,7 @@ bool test_short_cm_set_key_cnf_keeps_reset() {
     Context ctx(callbacks);
     configure_common(ctx);
     ctx.slac_config.set_key_handling_mode = SetKeyHandlingMode::retry_confirmed;
-    ctx.slac_config.set_key_timeout_ms = 150;
+    ctx.slac_config.set_key_timeout = 150ms;
 
     slac_fsm machine(ctx);
     machine.restart_fsm();

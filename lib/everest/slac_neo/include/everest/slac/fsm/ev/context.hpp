@@ -63,15 +63,15 @@ struct ContextCallbacks {
 
 struct EvSlacConfig {
     // timeout for CM_SET_KEY.REQ
-    int set_key_timeout_ms = 500;
+    std::chrono::milliseconds set_key_timeout{500};
     // maximum amount of attempts to send CM_SLAC_PARM.REQ
     int parm_req_attempts = defs::C_EV_PARM_REQ_ATTEMPTS;
     // timeout for CM_SLAC_PARM.REQ
-    int parm_req_timeout_ms = defs::TT_MATCH_RESPONSE_MS;
+    std::chrono::milliseconds parm_req_timeout{defs::TT_MATCH_RESPONSE_MS};
     // maximum amount of attempts to send CM_SLAC_MATCH.REQ
     int match_req_attempts = defs::C_EV_MATCH_RETRY;
     // timeout for CM_SLAC_MATCH.REQ
-    int match_req_timeout_ms = defs::TT_MATCH_RESPONSE_MS;
+    std::chrono::milliseconds match_req_timeout{defs::TT_MATCH_RESPONSE_MS};
 };
 
 struct SessionParameters {

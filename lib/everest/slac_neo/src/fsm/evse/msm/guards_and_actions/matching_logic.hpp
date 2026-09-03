@@ -84,7 +84,7 @@ struct reset_matching_subfsm {
     template <class Evt, class Fsm, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         fsm.ctx->status.session_count = 0;
         fsm.sessions.clear();
-        fsm.to.arm(fsm.ctx->current_time, std::chrono::milliseconds(fsm.ctx->slac_config.slac_init_timeout_ms));
+        fsm.to.arm(fsm.ctx->current_time, fsm.ctx->slac_config.slac_init_timeout);
         fsm.failed_matching_reset_once = true;
     }
 };

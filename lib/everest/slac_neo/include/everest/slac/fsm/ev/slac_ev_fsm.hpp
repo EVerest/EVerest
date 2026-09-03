@@ -59,11 +59,11 @@ struct SlacEVFSM_def : state_machine_def<SlacEVFSM_def> {
 
     struct WaitParmCnf : public timeout_state {
         template <class Event, class Fsm> void on_entry(Event const& event, Fsm& fsm) {
-            auto timeout_ms = defs::TT_MATCH_RESPONSE_MS;
-            if (fsm.ctx && fsm.ctx->slac_config.parm_req_timeout_ms > 0) {
-                timeout_ms = fsm.ctx->slac_config.parm_req_timeout_ms;
+            auto timeout = std::chrono::milliseconds{defs::TT_MATCH_RESPONSE_MS};
+            if (fsm.ctx && fsm.ctx->slac_config.parm_req_timeout.count() > 0) {
+                timeout = fsm.ctx->slac_config.parm_req_timeout;
             }
-            timeout_state::state_timeout_ms = timeout_ms;
+            timeout_state::duration = timeout;
             timeout_state::on_entry(event, fsm);
         }
     };
@@ -71,21 +71,21 @@ struct SlacEVFSM_def : state_machine_def<SlacEVFSM_def> {
     struct WaitAttenCharInd : public timeout_ms_state<defs::TT_EV_ATTEN_RESULTS_MS> {};
     struct WaitMatchCnf : public timeout_state {
         template <class Event, class Fsm> void on_entry(Event const& event, Fsm& fsm) {
-            auto timeout_ms = defs::TT_MATCH_RESPONSE_MS;
-            if (fsm.ctx && fsm.ctx->slac_config.match_req_timeout_ms > 0) {
-                timeout_ms = fsm.ctx->slac_config.match_req_timeout_ms;
+            auto timeout = std::chrono::milliseconds{defs::TT_MATCH_RESPONSE_MS};
+            if (fsm.ctx && fsm.ctx->slac_config.match_req_timeout.count() > 0) {
+                timeout = fsm.ctx->slac_config.match_req_timeout;
             }
-            timeout_state::state_timeout_ms = timeout_ms;
+            timeout_state::duration = timeout;
             timeout_state::on_entry(event, fsm);
         }
     };
     struct WaitSetKeyCnf : public timeout_state {
         template <class Event, class Fsm> void on_entry(Event const& event, Fsm& fsm) {
-            auto timeout_ms = defs::TT_MATCH_JOIN_MS;
-            if (fsm.ctx && fsm.ctx->slac_config.set_key_timeout_ms > 0) {
-                timeout_ms = fsm.ctx->slac_config.set_key_timeout_ms;
+            auto timeout = std::chrono::milliseconds{defs::TT_MATCH_JOIN_MS};
+            if (fsm.ctx && fsm.ctx->slac_config.set_key_timeout.count() > 0) {
+                timeout = fsm.ctx->slac_config.set_key_timeout;
             }
-            timeout_state::state_timeout_ms = timeout_ms;
+            timeout_state::duration = timeout;
             timeout_state::on_entry(event, fsm);
         }
     };

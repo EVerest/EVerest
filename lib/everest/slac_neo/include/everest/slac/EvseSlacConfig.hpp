@@ -2,6 +2,8 @@
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <chrono>
+
 #include <cstdint>
 #include <vector>
 #include <everest/slac/slac_defs.hpp>
@@ -46,35 +48,35 @@ struct EvseSlacConfig {
     bool ac_mode_five_percent{true};
 
     // timeout for CM_SET_KEY.REQ
-    int set_key_timeout_ms = 500;
+    std::chrono::milliseconds set_key_timeout{500};
 
     // maximum amount of attempts to send CM_SET_KEY.REQ
     int set_key_max_attempts = 10;
 
     // timeout for CM_SLAC_PARM.REQ
-    int slac_init_timeout_ms = defs::TT_EVSE_SLAC_INIT_MS;
+    std::chrono::milliseconds slac_init_timeout{defs::TT_EVSE_SLAC_INIT_MS};
 
     // Settings CM_DEVICE_RESET.REQ
     struct chip_reset_struct {
         bool enabled = false;
-        int timeout_ms = 500;
-        int delay_ms = 100;
+        std::chrono::milliseconds timeout{500};
+        std::chrono::milliseconds delay{100};
     } chip_reset;
 
     // Settings for LINK_STATUS detection
     struct link_status_struct {
         bool do_detect = false;
-        int retry_ms = 100;
+        std::chrono::milliseconds retry{100};
         // Detection of a link loss takes up to debounce_count consecutive polls; keep
-        // debounce_count * poll_in_matched_state_ms well below TP_match_leave (1 s) so the SECC
+        // debounce_count * poll_in_matched_state well below TP_match_leave (1 s) so the SECC
         // leaves the AVLN in time on connection loss (ISO 15118-3, PLCLinkStatus_005).
-        int poll_in_matched_state_ms = 200;
-        int timeout_ms = 5000;
+        std::chrono::milliseconds poll_in_matched_state{200};
+        std::chrono::milliseconds timeout{5000};
         int debounce_count = 1;
         bool debug_simulate_failed_matching = false;
     } link_status;
 
-    int request_info_delay_ms = 100;
+    std::chrono::milliseconds request_info_delay{100};
 
     // offset for adjusting the calculated sounding attenuation
     int sounding_atten_adjustment = 0;

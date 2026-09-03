@@ -56,7 +56,7 @@ struct Matching_def : public state_machine_def<Matching_def> {
     // Entry / exit
     template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
-        to.arm(ctx->current_time, std::chrono::milliseconds(ctx->slac_config.slac_init_timeout_ms));
+        to.arm(ctx->current_time, ctx->slac_config.slac_init_timeout);
         failed_matching_reset_once = false;
         validate.reset();
         ctx->validation_done = false;

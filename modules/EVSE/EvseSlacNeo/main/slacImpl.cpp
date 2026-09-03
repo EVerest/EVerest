@@ -343,11 +343,11 @@ void slacImpl::configure_callbacks() {
 void slacImpl::configure_fsm_context() {
     fsm_ctx = std::make_unique<slac::fsm::evse::Context>(callbacks);
     if (config.set_key_timeout_ms > 0) {
-        fsm_ctx->slac_config.set_key_timeout_ms = config.set_key_timeout_ms;
+        fsm_ctx->slac_config.set_key_timeout = std::chrono::milliseconds{config.set_key_timeout_ms};
     } else {
         EVLOG_warning << "Invalid set_key_timeout_ms value '" << config.set_key_timeout_ms
                       << "'; clamping set_key_timeout_ms to 1 ms";
-        fsm_ctx->slac_config.set_key_timeout_ms = 1;
+        fsm_ctx->slac_config.set_key_timeout = std::chrono::milliseconds{1};
     }
     fsm_ctx->slac_config.set_key_max_attempts = std::max(1, config.set_key_max_attempts);
     if (config.set_key_handling_mode.empty() || config.set_key_handling_mode == "retry_confirmed") {
@@ -389,7 +389,7 @@ void slacImpl::configure_fsm_context() {
         fsm_ctx->slac_config.nmk_generation_mode = everest::lib::slac::fsm::evse::NmkGenerationMode::legacy_printable;
     }
 
-    fsm_ctx->slac_config.slac_init_timeout_ms = config.slac_init_timeout_ms;
+    fsm_ctx->slac_config.slac_init_timeout = std::chrono::milliseconds{config.slac_init_timeout_ms};
     fsm_ctx->slac_config.max_matching_sessions = std::max(1, config.max_matching_sessions);
     if (config.max_matching_sessions > 16) {
         EVLOG_warning << "High max_matching_sessions value '" << config.max_matching_sessions
@@ -399,14 +399,14 @@ void slacImpl::configure_fsm_context() {
     fsm_ctx->slac_config.sounding_atten_adjustment = config.sounding_attenuation_adjustment;
 
     fsm_ctx->slac_config.chip_reset.enabled = config.do_chip_reset;
-    fsm_ctx->slac_config.chip_reset.delay_ms = config.chip_reset_delay_ms;
-    fsm_ctx->slac_config.chip_reset.timeout_ms = config.chip_reset_timeout_ms;
+    fsm_ctx->slac_config.chip_reset.delay = std::chrono::milliseconds{config.chip_reset_delay_ms};
+    fsm_ctx->slac_config.chip_reset.timeout = std::chrono::milliseconds{config.chip_reset_timeout_ms};
 
     fsm_ctx->slac_config.link_status.do_detect = config.link_status_detection;
-    fsm_ctx->slac_config.link_status.retry_ms = config.link_status_retry_ms;
-    fsm_ctx->slac_config.link_status.timeout_ms = config.link_status_timeout_ms;
-    fsm_ctx->slac_config.link_status.poll_in_matched_state_ms =
-        std::max(10, config.link_status_poll_in_matched_state_ms);
+    fsm_ctx->slac_config.link_status.retry = std::chrono::milliseconds{config.link_status_retry_ms};
+    fsm_ctx->slac_config.link_status.timeout = std::chrono::milliseconds{config.link_status_timeout_ms};
+    fsm_ctx->slac_config.link_status.poll_in_matched_state =
+        std::chrono::milliseconds{std::max(10, config.link_status_poll_in_matched_state_ms)};
     fsm_ctx->slac_config.link_status.debounce_count = std::max(1, config.link_status_debounce_count);
     fsm_ctx->slac_config.link_status.debug_simulate_failed_matching = config.debug_simulate_failed_matching;
 
