@@ -419,3 +419,61 @@ TEST(DerSetupTest, apply_leaves_stale_iec_limits_when_the_service_is_withdrawn) 
     EXPECT_FALSE(transitions.iec_assigned);
     EXPECT_TRUE(state.iec_limits.has_value());
 }
+
+TEST(DerSetupTest, apply_keeps_a_relayed_sae_setup_config_on_re_derivation) {
+    const auto ac = make_ac_limits(11000.0f, 11000.0f);
+    module::DerAppliedState state{};
+
+    const auto first = module::derive_der_limits({dt::ServiceCategory::AC_DER_SAE}, ac, 5000.0f, 400u);
+    ASSERT_EQ(module::apply_derivation(first, state).sae, module::DerSaeApplyTransition::Assigned);
+    ASSERT_TRUE(state.sae_setup_config.has_value());
+
+    // A relayed grid code lands in the applied state; a later AC-limits re-derivation must not erase it.
+    state.sae_setup_config->revision = 7;
+    state.sae_setup_config->der_control.reactive_power_support.volt_var.enable = true;
+
+    const auto second = module::derive_der_limits({dt::ServiceCategory::AC_DER_SAE}, ac, 6000.0f, 400u);
+    ASSERT_TRUE(second.sae_setup_config.has_value());
+    const auto transitions = module::apply_derivation(second, state);
+
+    EXPECT_EQ(transitions.sae, module::DerSaeApplyTransition::Assigned);
+    ASSERT_TRUE(state.sae_setup_config.has_value());
+    EXPECT_EQ(state.sae_setup_config->revision, 7u);
+    EXPECT_TRUE(state.sae_setup_config->der_control.reactive_power_support.volt_var.enable);
+}
+
+TEST(DerSetupTest, apply_reseeds_a_seed_config_on_re_derivation) {
+    const auto ac = make_ac_limits(11000.0f, 11000.0f);
+    module::DerAppliedState state{};
+
+    const auto first = module::derive_der_limits({dt::ServiceCategory::AC_DER_SAE}, ac, 5000.0f, 400u);
+    ASSERT_EQ(module::apply_derivation(first, state).sae, module::DerSaeApplyTransition::Assigned);
+    ASSERT_TRUE(state.sae_setup_config.has_value());
+    ASSERT_EQ(state.sae_setup_config->revision, 0u);
+
+    // Revision 0 is the seed nobody dictated, so a re-derivation replaces it instead of preserving a stale
+    // nominal-derived default.
+    state.sae_setup_config->der_control.enter_service.enter_service_voltage_high = 999.0f;
+
+    const auto second = module::derive_der_limits({dt::ServiceCategory::AC_DER_SAE}, ac, 6000.0f, 400u);
+    ASSERT_TRUE(second.sae_setup_config.has_value());
+    const auto transitions = module::apply_derivation(second, state);
+
+    EXPECT_EQ(transitions.sae, module::DerSaeApplyTransition::Assigned);
+    ASSERT_TRUE(state.sae_setup_config.has_value());
+    EXPECT_FLOAT_EQ(state.sae_setup_config->der_control.enter_service.enter_service_voltage_high,
+                    second.sae_setup_config->der_control.enter_service.enter_service_voltage_high);
+}
+
+TEST(DerSetupTest, apply_fills_an_absent_sae_setup_config_from_the_derivation) {
+    const auto ac = make_ac_limits(11000.0f, 11000.0f);
+    module::DerAppliedState state{};
+
+    const auto derived = module::derive_der_limits({dt::ServiceCategory::AC_DER_SAE}, ac, 5000.0f, 400u);
+    const auto transitions = module::apply_derivation(derived, state);
+
+    EXPECT_EQ(transitions.sae, module::DerSaeApplyTransition::Assigned);
+    ASSERT_TRUE(state.sae_setup_config.has_value());
+    EXPECT_EQ(state.sae_setup_config->revision, 0u);
+    EXPECT_FALSE(state.sae_setup_config->der_control.reactive_power_support.volt_var.enable);
+}

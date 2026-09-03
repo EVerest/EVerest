@@ -552,3 +552,103 @@ SCENARIO("without update_der_sae_limits AC_DER_SAE is kept out of the offer") {
         }
     }
 }
+
+namespace {
+
+constexpr auto WITHDRAWN_LINE = "SAE grid code withdrawn";
+
+// The logging callback is process global and the session logs from its own thread, so the capture
+// guards its buffer and uninstalls itself before the buffer dies.
+class LoggingCapture {
+public:
+    LoggingCapture() {
+        iso15118::io::set_logging_callback([this](iso15118::LogLevel level, std::string message) {
+            std::lock_guard<std::mutex> lock(mutex);
+            lines.emplace_back(level, std::move(message));
+        });
+    }
+    LoggingCapture(const LoggingCapture&) = delete;
+    LoggingCapture& operator=(const LoggingCapture&) = delete;
+    ~LoggingCapture() {
+        iso15118::io::set_logging_callback([](iso15118::LogLevel, std::string) {});
+    }
+
+    std::size_t count(iso15118::LogLevel level, const char* needle) {
+        std::lock_guard<std::mutex> lock(mutex);
+        return static_cast<std::size_t>(std::count_if(lines.begin(), lines.end(), [level, needle](const auto& entry) {
+            return entry.first == level and entry.second.find(needle) != std::string::npos;
+        }));
+    }
+
+private:
+    std::mutex mutex;
+    std::vector<std::pair<iso15118::LogLevel, std::string>> lines;
+};
+
+} // namespace
+
+// The module refreshes the SAE limits with nullopt/nullopt whenever the grid parameters are missing, so a
+// live session without any grid code must not be reported as having one withdrawn.
+SCENARIO("update_der_sae_limits logs the SAE grid code withdrawal only on the transition") {
+    LoggingCapture log;
+
+    iso15118::session::feedback::Callbacks callbacks;
+    callbacks.signal = [](auto) {};
+
+    auto controller = make_controller(false, callbacks);
+    auto fds = make_nonblocking_socketpair();
+
+    // Tears the session down even when an assertion fails, so the driver thread is always joined.
+    struct LiveSession {
+        iso15118::TbdController& controller;
+        std::array<int, 2>& fds;
+        iso15118::StartSessionResult ok{};
+        std::thread thread;
+
+        LiveSession(iso15118::TbdController& controller_, std::array<int, 2>& fds_) :
+            controller(controller_), fds(fds_) {
+            thread = std::thread([this] {
+                auto start_options = iso15118::StartSessionOptions{};
+                start_options.skip_app_protocol_negotiation = true;
+                ok = controller.start_session(fds.at(0), start_options);
+            });
+        }
+        ~LiveSession() {
+            close(fds.at(1));
+            controller.shutdown();
+            thread.join();
+        }
+    };
+
+    SessionWatchdog watchdog(controller, std::chrono::seconds(20));
+    LiveSession live(controller, fds);
+
+    // Hold the session in SessionSetup so it stays live while the limits are updated.
+    const auto request_frame =
+        make_v2gtp_frame(iso15118::io::v2gtp::PayloadType::Part20Main, session_setup_req, sizeof(session_setup_req));
+    ::write(fds.at(1), request_frame.data(), request_frame.size());
+    const auto response = read_v2gtp_frame(fds.at(1), std::chrono::seconds(5));
+    REQUIRE(response.has_value());
+    REQUIRE(controller.has_active_session());
+
+    WHEN("no grid code was ever installed and the limits are refreshed with nullopt") {
+        controller.update_der_sae_limits(std::nullopt, std::nullopt);
+
+        THEN("nothing is reported as withdrawn") {
+            REQUIRE(log.count(iso15118::LogLevel::Info, WITHDRAWN_LINE) == 0);
+        }
+    }
+
+    WHEN("a grid code is installed and then withdrawn") {
+        controller.update_der_sae_limits(iso15118::d20::SaeDerTransferLimits{},
+                                         iso15118::d20::make_inert_default_sae_setup_config(NOMINAL_VOLTAGE_V));
+        controller.update_der_sae_limits(iso15118::d20::SaeDerTransferLimits{}, std::nullopt);
+        controller.update_der_sae_limits(iso15118::d20::SaeDerTransferLimits{}, std::nullopt);
+
+        THEN("the withdrawal is reported exactly once") {
+            REQUIRE(log.count(iso15118::LogLevel::Info, WITHDRAWN_LINE) == 1);
+        }
+    }
+
+    REQUIRE_FALSE(watchdog.timed_out());
+}

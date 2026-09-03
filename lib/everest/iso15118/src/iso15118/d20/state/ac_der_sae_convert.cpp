@@ -401,6 +401,16 @@ void convert(dt_sae::DERControlCPDRes& out, const sae::DERControl& in) {
     convert(out.active_power_support_cpd_res, in.active_power_support);
 }
 
+dt_sae::RequiredDEROperatingMode convert(sae::RequiredDEROperatingMode in) {
+    return in == sae::RequiredDEROperatingMode::GridForming ? dt_sae::RequiredDEROperatingMode::GridForming
+                                                            : dt_sae::RequiredDEROperatingMode::GridFollowing;
+}
+
+dt_sae::GridConnectionMode convert(sae::GridConnectionMode in) {
+    return in == sae::GridConnectionMode::GridIslanded ? dt_sae::GridConnectionMode::GridIslanded
+                                                       : dt_sae::GridConnectionMode::GridConnected;
+}
+
 void convert(dt_sae::EnterServiceCLRes& out, const sae::EnterServiceCPDRes& in) {
     convert_enter_service(out, in);
 }

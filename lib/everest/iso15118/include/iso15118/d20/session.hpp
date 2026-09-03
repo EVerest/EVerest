@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include <iso15118/d20/der_functions.hpp>
 #include <iso15118/io/sha_hash.hpp>
 #include <iso15118/message/common_types.hpp>
 
@@ -166,12 +167,25 @@ public:
         return enabled_der_control_modes;
     }
 
-    void record_der_control_sent(std::uint64_t update_time) {
-        der_control_sent_update_time.emplace(update_time);
+    void record_der_control_sent(std::uint32_t revision) {
+        der_control_sent_revision.emplace(revision);
     }
 
-    [[nodiscard]] bool der_control_changed_since_cpd(std::uint64_t config_update_time) const {
-        return der_control_sent_update_time != config_update_time;
+    [[nodiscard]] bool der_control_changed_since_cpd(std::uint32_t config_revision) const {
+        return der_control_sent_revision != config_revision;
+    }
+
+    void record_der_modes_sent(sae::RequiredDEROperatingMode operating_mode, sae::GridConnectionMode connection_mode) {
+        sent_required_der_operating_mode.emplace(operating_mode);
+        sent_grid_connection_mode.emplace(connection_mode);
+    }
+
+    [[nodiscard]] std::optional<sae::RequiredDEROperatingMode> get_sent_required_der_operating_mode() const {
+        return sent_required_der_operating_mode;
+    }
+
+    [[nodiscard]] std::optional<sae::GridConnectionMode> get_sent_grid_connection_mode() const {
+        return sent_grid_connection_mode;
     }
 
     ~Session();
@@ -194,9 +208,13 @@ private:
     // compared against. Zero until the SAE CPD has run.
     std::uint32_t enabled_der_control_modes{0};
 
-    // The DerSaeSetupConfig::der_control_update_time last sent to the EV, to be compared against the
-    // configured one. Empty until the SAE CPD has run.
-    std::optional<std::uint64_t> der_control_sent_update_time{};
+    // The DerSaeSetupConfig::revision last sent to the EV, to be compared against the configured one. Empty
+    // until the SAE CPD has run.
+    std::optional<std::uint32_t> der_control_sent_revision{};
+
+    // Last-sent Annex M mode enums, for [V2G20-3358]-[V2G20-3361] per-field resend (ADR-0027).
+    std::optional<sae::RequiredDEROperatingMode> sent_required_der_operating_mode{};
+    std::optional<sae::GridConnectionMode> sent_grid_connection_mode{};
 };
 
 } // namespace iso15118::d20

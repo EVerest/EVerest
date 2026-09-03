@@ -245,11 +245,12 @@ struct DataTuple {
 constexpr auto CurveDataPointsMaxLength = 10;
 using CurveDataPointsList = everest::lib::util::fixed_vector<DataTuple, CurveDataPointsMaxLength>;
 
+// Trip curve: x is the duration in seconds, y is the voltage or frequency threshold (M.2.2.1.10, M.2.2.1.11).
 struct DERCurve {
     bool enable{false};
     std::optional<std::uint16_t> priority;
-    DERUnit x_unit{DERUnit::PercentageV};
-    DERUnit y_unit{DERUnit::s};
+    DERUnit x_unit{DERUnit::s};
+    DERUnit y_unit{DERUnit::PercentageV};
     CurveDataPointsList curve_data_points;
     std::optional<CurveDataPointsList> curve_data_points_L2;
     std::optional<CurveDataPointsList> curve_data_points_L3;
