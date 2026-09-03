@@ -61,12 +61,12 @@ SESSION_COMMANDS = (
 
 
 # EvseManager::ready() builds its initial AC energy transfer list with der_available hardcoded to
-# false (modules/EVSE/EvseManager/EvseManager.cpp:452), so AC_DER_IEC never reaches the SECC's
+# false (get_supported_ac_energy_transfers(..., false)), so AC_DER_IEC never reaches the SECC's
 # offered services and no AC DER session can be negotiated. That gate is deliberate: DER stays
 # unreleased until it has been fully tested. Until it is lifted this test cannot pass, so it is
 # skipped rather than left red. Drop this marker when EvseManager passes the real der_available.
 @pytest.mark.skip(
-    reason="AC_DER_IEC is gated off in EvseManager.cpp:452 until DER is fully tested"
+    reason="AC_DER_IEC is gated off until EvseManager reports der_available in its initial energy transfers"
 )
 @pytest.mark.asyncio
 @pytest.mark.xdist_group(name="ISO15118")
