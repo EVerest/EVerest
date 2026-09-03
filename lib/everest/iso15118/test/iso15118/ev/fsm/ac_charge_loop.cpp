@@ -144,6 +144,34 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop splits limits and the present measurement
     REQUIRE(message_20::datatypes::from_RationalNumber(*mode->present_active_power_L3) == 1700.0f);
 }
 
+SCENARIO("ISO15118-20 EV AC_ChargeLoop reports the aggregate present power on a SinglePhase connector") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, [](FsmStateHelper& helper) {
+                                                          ev::AcChargeParams p{};
+                                                          p.phase_count = 3;
+                                                          p.max_charge_power = 11100.0f;
+                                                          p.min_charge_power = 900.0f;
+                                                          p.present_active_power = 5100.0f;
+                                                          helper.set_ac_params(p);
+                                                          helper.get_context().set_selected_ac_connector(
+                                                              message_20::datatypes::AcConnector::SinglePhase);
+                                                      }};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::AC_ChargeLoopRequest>();
+    REQUIRE(request_message.has_value());
+
+    const auto* mode = std::get_if<message_20::datatypes::Dynamic_AC_CLReqControlMode>(&request_message->control_mode);
+    REQUIRE(mode != nullptr);
+
+    // The limits are what one line can draw; the measurement is what the EV draws on that line,
+    // which on a single-phase connector is all of it.
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_charge_power) == 3700.0f);
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode->present_active_power) == 5100.0f);
+    REQUIRE_FALSE(mode->present_active_power_L2.has_value());
+    REQUIRE_FALSE(mode->present_active_power_L3.has_value());
+}
+
 SCENARIO("ISO15118-20 EV AC_ChargeLoop fires ac_target_power on a Dynamic response") {
     float reported = 0.0f;
     bool fired = false;
