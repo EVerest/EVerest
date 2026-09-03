@@ -53,4 +53,8 @@ void Feedback::der_control(const message_20::datatypes::DER_Dynamic_AC_CLResCont
     call_if_available(callbacks.der_control, mode);
 }
 
+void Feedback::der_curves(const message_20::datatypes::DerControl& control) const {
+    call_if_available(callbacks.der_curves, control);
+}
+
 } // namespace iso15118::ev
