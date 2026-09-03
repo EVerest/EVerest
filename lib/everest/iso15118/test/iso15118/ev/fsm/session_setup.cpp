@@ -44,46 +44,54 @@ SCENARIO("ISO15118-20 EV session setup state transitions") {
     }
 }
 
-// A plain OK carries the same authoritative session id as OK_NewSessionEstablished, so
-// it must be adopted too: proceeding with the EV's zero id would echo zeros in every
-// later request and the SECC would reject the session on a sequence error.
-SCENARIO("ISO15118-20 EV session setup adopts the session id on a plain OK") {
+// This EV exists to surface SECC deviations, so SessionSetup is strict: a new session
+// is only accepted on OK_NewSessionEstablished. Plain OK and every WARNING_* stop the
+// session here even though the generic response-code table accepts them elsewhere.
+SCENARIO("ISO15118-20 EV session setup rejects every code but OK_NewSessionEstablished") {
 
     const ev::feedback::Callbacks callbacks{};
 
-    GIVEN("a plain OK response carrying a non-zero session id") {
+    const auto expect_rejected = [&](message_20::datatypes::ResponseCode code) {
         auto state_helper = FsmStateHelper(callbacks);
         auto& ctx = state_helper.get_context();
 
         fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::SessionSetup>()};
 
-        const auto res =
-            message_20::SessionSetupResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::OK, "everest se"};
+        const auto res = message_20::SessionSetupResponse{SESSION_HEADER, code, "everest se"};
 
         state_helper.handle_response(res);
         const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
 
-        THEN("the SECC session id is adopted and echoed in the AuthorizationSetupRequest") {
-            REQUIRE(result.transitioned() == true);
-            REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::AuthorizationSetup);
-            REQUIRE(ctx.get_session().get_id() == SESSION_HEADER.session_id);
-
-            const auto requests = take_all_requests(state_helper.get_message_exchange());
-            const auto request_message = requests.get<message_20::AuthorizationSetupRequest>();
-            REQUIRE(request_message.has_value());
-            REQUIRE(request_message.value().header.session_id == SESSION_HEADER.session_id);
+        THEN("the session is stopped without adopting the id") {
+            REQUIRE(result.transitioned() == false);
+            REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::SessionSetup);
+            REQUIRE(ctx.is_session_stopped() == true);
+            REQUIRE(ctx.get_session().get_id() == message_20::datatypes::SessionId{});
+            REQUIRE(take_all_requests(state_helper.get_message_exchange()).empty());
         }
+    };
+
+    GIVEN("a plain OK response carrying a non-zero session id") {
+        expect_rejected(message_20::datatypes::ResponseCode::OK);
     }
 
-    GIVEN("a plain OK response carrying a zero session id") {
+    GIVEN("an OK_CertificateExpiresSoon response carrying a non-zero session id") {
+        expect_rejected(message_20::datatypes::ResponseCode::OK_CertificateExpiresSoon);
+    }
+
+    GIVEN("a WARNING_EIMAuthorizationFailure response carrying a non-zero session id") {
+        expect_rejected(message_20::datatypes::ResponseCode::WARNING_EIMAuthorizationFailure);
+    }
+
+    GIVEN("an OK_NewSessionEstablished response carrying a zero session id") {
         auto state_helper = FsmStateHelper(callbacks);
         auto& ctx = state_helper.get_context();
 
         fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::SessionSetup>()};
 
         const auto zero_header = message_20::Header{std::array<uint8_t, 8>{}, 1691411798};
-        const auto res =
-            message_20::SessionSetupResponse{zero_header, message_20::datatypes::ResponseCode::OK, "everest se"};
+        const auto res = message_20::SessionSetupResponse{
+            zero_header, message_20::datatypes::ResponseCode::OK_NewSessionEstablished, "everest se"};
 
         state_helper.handle_response(res);
         const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
