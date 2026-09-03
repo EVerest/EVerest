@@ -8,6 +8,7 @@ namespace iso15118::ev::d20 {
 
 // Mirrors iso15118/d20/states.hpp on purpose: the Context type differs and the EV has no TIMEOUT
 // event. Kept as a separate header so either side can change its Result without touching the other.
+// Result carries a Disposition the Session enforces.
 
 class Context;
 
@@ -46,8 +47,7 @@ enum class StateID {
 //
 // A state that consumes a response must leave exactly one thing behind: a new request, a stopped
 // session, or a successor whose enter() emits. Do none of those and no timer stays armed, so the
-// session hangs with nothing to show for it. Session::check_disposition() holds each of these to
-// its word.
+// session hangs with nothing to show for it. Session::feed_fsm() verifies each after the feed.
 enum class Disposition {
     Ignored,       // the event was not this state's to handle; nothing was consumed
     Awaiting,      // a request was emitted; the session now waits for its response
@@ -58,7 +58,7 @@ enum class Disposition {
 struct Result {
     // Transition. The successor's enter() is responsible for emitting.
     Result(BasePointerType result_state) :
-        unhandled(false), new_state(std::move(result_state)), disposition(Disposition::Transitioning) {
+        unhandled(false), new_state(std::move(result_state)), output(Disposition::Transitioning) {
     }
 
     static Result ignored() {
@@ -75,16 +75,19 @@ struct Result {
         return Result{Disposition::Stopping};
     }
 
-    bool unhandled{true};
+    // Derived from output: only Ignored leaves the event unhandled. The fsm engine reads
+    // `unhandled` and forwards `output` in its FeedResult.
+    bool unhandled;
     BasePointerType new_state{nullptr};
-    Disposition disposition{Disposition::Ignored};
+    Disposition output{Disposition::Ignored};
 
 private:
     // Deliberately private: `return {}` would say nothing about which of the four outcomes
     // happened, which is what let a silently hanging session look like ordinary code.
-    constexpr Result() = default;
+    Result() : Result(Disposition::Ignored) {
+    }
 
-    explicit Result(Disposition d) : disposition(d) {
+    explicit Result(Disposition d) : unhandled(d == Disposition::Ignored), output(d) {
     }
 };
 

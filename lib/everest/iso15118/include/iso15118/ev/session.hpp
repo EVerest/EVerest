@@ -114,6 +114,9 @@ public:
 
 private:
     void handle_complete_frame();
+    // Feed the FSM and hold the state to its declared Disposition: a mismatch is logged
+    // and stops the session instead of leaving it parked with no timer armed.
+    void feed_fsm(d20::Event ev);
     void arm_send_delay();
     void transmit_pending();
     void on_send_delay_expired();
