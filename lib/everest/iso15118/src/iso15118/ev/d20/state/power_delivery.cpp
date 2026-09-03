@@ -66,8 +66,8 @@ Result PowerDelivery::feed(Event ev) {
         return m_ctx.create_state<DC_WeldingDetection>();
     // Standby and ScheduleRenegotiation are accepted on the wire but the EV drives nothing
     // afterwards: no request goes out and no timer stays armed, so the session cannot progress.
-    // It already ended here, via the catch-all in Session::on_response_consumed; stopping
-    // explicitly says so instead of letting it read as a state that meant to stay.
+    // Stopping here keeps the declared outcome honest; Session::feed_fsm would otherwise flag a
+    // consumed response that produced nothing.
     case Progress::Standby:
         logf_warning("PowerDelivery Standby accepted, but the EV drives no standby loop; stopping the session");
         m_ctx.stop_session();
