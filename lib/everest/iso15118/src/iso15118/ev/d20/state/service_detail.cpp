@@ -13,6 +13,7 @@
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/service_detail.hpp>
 #include <iso15118/ev/d20/state/service_selection.hpp>
+#include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/der_control_functions.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/service_detail.hpp>
@@ -205,6 +206,10 @@ Result ServiceDetail::feed(Event ev) {
     const auto* res = expect_response<message_20::ServiceDetailResponse>(m_ctx, *variant);
     if (res == nullptr) {
         return Result::stopping();
+    }
+
+    if (auto stop = stop_before_start(m_ctx)) {
+        return std::move(*stop);
     }
 
     if (res->service_parameter_list.empty()) {

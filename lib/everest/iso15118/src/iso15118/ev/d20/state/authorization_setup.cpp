@@ -4,6 +4,7 @@
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/authorization.hpp>
 #include <iso15118/ev/d20/state/authorization_setup.hpp>
+#include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 #include <iso15118/message/authorization.hpp>
@@ -29,6 +30,10 @@ Result AuthorizationSetup::feed(Event ev) {
     const auto* res = expect_response<message_20::AuthorizationSetupResponse>(m_ctx, *variant);
     if (res == nullptr) {
         return Result::stopping();
+    }
+
+    if (auto stop = stop_before_start(m_ctx)) {
+        return std::move(*stop);
     }
 
     auto& info = m_ctx.get_evse_session_info();

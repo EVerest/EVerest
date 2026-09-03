@@ -4,6 +4,7 @@
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/dc_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
+#include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/dc_charge_parameter_discovery.hpp>
 
@@ -60,6 +61,10 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
     const auto* res = expect_response<message_20::DC_ChargeParameterDiscoveryResponse>(m_ctx, *variant);
     if (res == nullptr) {
         return Result::stopping();
+    }
+
+    if (auto stop = stop_before_start(m_ctx)) {
+        return std::move(*stop);
     }
 
     if (m_ctx.selected_service() == dt::ServiceCategory::DC_BPT) {

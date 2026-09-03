@@ -6,6 +6,7 @@
 #include <iso15118/ev/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/dc_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/service_selection.hpp>
+#include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/service_selection.hpp>
 
@@ -30,6 +31,10 @@ Result ServiceSelection::feed(Event ev) {
     const auto* res = expect_response<message_20::ServiceSelectionResponse>(m_ctx, *variant);
     if (res == nullptr) {
         return Result::stopping();
+    }
+
+    if (auto stop = stop_before_start(m_ctx)) {
+        return std::move(*stop);
     }
 
     // AC_DER_IEC is part of the AC family, so it must be matched before the

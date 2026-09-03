@@ -7,6 +7,7 @@
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/schedule_exchange.hpp>
+#include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/type.hpp>
 
 using namespace iso15118;
@@ -99,6 +100,28 @@ SCENARIO(
     REQUIRE(result.transitioned() == true);
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
     REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV ScheduleExchange goes to SessionStop when a stop was requested") {
+    // [V2G20-2644]: a stopped session never signals power readiness; SessionStopReq(Terminate)
+    // is the next request instead of DC_CableCheckReq.
+    bool ev_power_ready_fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.ev_power_ready = [&ev_power_ready_fired]() { ev_power_ready_fired = true; };
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, no_seed};
+    primed.ctx.set_stop_charging_requested(true);
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
+    REQUIRE(ev_power_ready_fired == false);
+
+    const auto requests = primed.take_requests();
+    const auto stop_request = requests.get<message_20::SessionStopRequest>();
+    REQUIRE(stop_request.has_value());
+    REQUIRE(stop_request->charging_session == message_20::datatypes::ChargingSession::Terminate);
 }
 
 SCENARIO("ISO15118-20 EV ScheduleExchange stays and resends on Ongoing without firing ev_power_ready") {
