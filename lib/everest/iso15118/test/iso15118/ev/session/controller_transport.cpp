@@ -436,7 +436,7 @@ private:
 ev::EvConfig link_config() {
     ev::EvConfig config{};
     config.interface_name = "lo";
-    config.evcc_id = "EVTESTID01";
+    config.evcc_id = "02:00:00:00:00:01";
     config.send_delay = 5ms;
     // Far enough out that the response watchdog cannot be what ends any run below.
     config.response_timeout = 5s;
