@@ -74,6 +74,7 @@ struct DynamicSetChoice {
     uint16_t id{};
     // Unset when no AC connector was looked for (DC).
     std::optional<message_20::datatypes::AcConnector> connector;
+    std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> mask;
 };
 
 // An AC set without a readable Connector cannot be matched; treat it as single-phase, the
@@ -96,14 +97,14 @@ find_dynamic_parameter_set(const message_20::datatypes::ServiceParameterList& se
             continue;
         }
         if (not preferred.has_value()) {
-            return DynamicSetChoice{set.id, std::nullopt};
+            return DynamicSetChoice{set.id, std::nullopt, {}};
         }
         const auto connector = ac_connector_of(set);
         if (connector == *preferred) {
-            return DynamicSetChoice{set.id, connector};
+            return DynamicSetChoice{set.id, connector, {}};
         }
         if (not fallback.has_value()) {
-            fallback = DynamicSetChoice{set.id, connector};
+            fallback = DynamicSetChoice{set.id, connector, {}};
         }
     }
     return fallback;
@@ -218,32 +219,35 @@ Result ServiceDetail::feed(Event ev) {
         const auto supported = m_ctx.der_supported_functions();
         // AC_DER_IEC is an AC service, so a preference always exists here.
         const auto der_preferred = preferred_connector(m_ctx).value();
-        std::optional<uint16_t> first_dynamic_id;
+        std::optional<DynamicSetChoice> first_dynamic;
         DerControlFunctionsOffer first_dynamic_offer;
-        message_20::datatypes::AcConnector first_dynamic_connector{message_20::datatypes::AcConnector::SinglePhase};
         // DER function support is the primary key; the connector only breaks ties between sets
         // that are already acceptable, so a matching connector never costs a supported function.
         std::optional<DynamicSetChoice> acceptable;
+
+        // Records the negotiated mask and connector of the one set the EV goes on with.
+        const auto select = [this](const DynamicSetChoice& choice) {
+            m_ctx.set_der_negotiated_functions(choice.mask);
+            m_ctx.set_selected_ac_connector(choice.connector.value());
+            return m_ctx.create_state<ServiceSelection>(choice.id);
+        };
 
         for (const auto& set : res->service_parameter_list) {
             if (not is_dynamic(set)) {
                 continue;
             }
             const auto offer = get_der_control_functions(set);
-            const auto connector = ac_connector_of(set);
-            if (not first_dynamic_id.has_value()) {
-                first_dynamic_id = set.id;
+            const DynamicSetChoice choice{set.id, ac_connector_of(set), offer.mask & supported};
+            if (not first_dynamic.has_value()) {
+                first_dynamic = choice;
                 first_dynamic_offer = offer;
-                first_dynamic_connector = connector;
             }
             if ((offer.mask & ~supported).none() and not offer.has_unknown_functions) {
-                m_ctx.set_der_negotiated_functions(offer.mask & supported);
-                if (connector == der_preferred) {
-                    m_ctx.set_selected_ac_connector(connector);
-                    return m_ctx.create_state<ServiceSelection>(set.id);
+                if (choice.connector == der_preferred) {
+                    return select(choice);
                 }
                 if (not acceptable.has_value()) {
-                    acceptable = DynamicSetChoice{set.id, connector};
+                    acceptable = choice;
                 }
             }
         }
@@ -252,11 +256,10 @@ Result ServiceDetail::feed(Event ev) {
             logf_warning("No AC_DER_IEC set offers both the supported DER functions and the preferred %s connector; "
                          "selecting the %s set",
                          connector_name(der_preferred), connector_name(acceptable->connector.value()));
-            m_ctx.set_selected_ac_connector(acceptable->connector.value());
-            return m_ctx.create_state<ServiceSelection>(acceptable->id);
+            return select(*acceptable);
         }
 
-        if (not first_dynamic_id.has_value()) {
+        if (not first_dynamic.has_value()) {
             logf_error("AC_DER_IEC ServiceDetailResponse offers no Dynamic control-mode parameter set");
             m_ctx.stop_session();
             return {};
@@ -279,9 +282,7 @@ Result ServiceDetail::feed(Event ev) {
         logf_warning("AC_DER_IEC offers no set within the supported DER functions (unsupported: %s); "
                      "selecting the first Dynamic set anyway",
                      unsupported.c_str());
-        m_ctx.set_der_negotiated_functions(first_dynamic_offer.mask & supported);
-        m_ctx.set_selected_ac_connector(first_dynamic_connector);
-        return m_ctx.create_state<ServiceSelection>(first_dynamic_id.value());
+        return select(*first_dynamic);
     }
 
     const auto preferred = preferred_connector(m_ctx);
