@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <iso15118/d20/ac_powers.hpp>
+#include <iso15118/d20/config.hpp>
 #include <iso15118/d20/dynamic_mode_parameters.hpp>
 #include <iso15118/d20/limits.hpp>
 
@@ -198,6 +199,6 @@ using ControlEvent =
                  PauseCharging, DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters, ClosedContactor,
                  AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs, CertificateResponse, EvseError,
                  CpStateChanged, UpdateAcMaxCurrent, PhysicalValues, NoEnergyPause, UpdateIsolationStatus,
-                 UpdatePowersupplyLimits>;
+                 UpdatePowersupplyLimits, DerSaeSetupConfig>;
 
 } // namespace iso15118::d20
