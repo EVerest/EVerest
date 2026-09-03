@@ -123,7 +123,9 @@ enter-service window is 1.05 and 0.917 of nominal (AMD1 Table 1 gives both bands
 in volts) and the volt-var ``ReferenceVoltage`` is the nominal itself. A
 ``FrequencyDroop`` carrying a zeroed over-frequency branch is present but
 disabled, because Table M.33 obliges ``UnderFrequencyDroop`` whenever
-``OverFrequencyDroop`` is absent, and that holds regardless of ``enable``.
+``OverFrequencyDroop`` is absent, and that holds regardless of ``enable``. The
+frequency bands remain the shipped 50 Hz-family values and do not follow the
+nominal frequency.
 
 The values are structurally valid, and the two mandatory curves per trip family
 carry the schema minimum of two data points, so a SAE station is conformant
@@ -195,6 +197,11 @@ and ``PercentageV`` on y, and the EV denormalizes the percentage against the bas
 voltage for the function, usually the nominal voltage advertised here. Changing
 one side alone silently moves the EV's trip thresholds.
 
+``PercentageV`` does not carry its base voltage on the wire. For trip thresholds,
+the relay assumes the EV uses the advertised nominal as its base voltage; an EV
+using a different function-specific base would interpret the same percentage
+differently.
+
 Service withdrawal
 ------------------
 
@@ -253,9 +260,6 @@ Known gaps
   (s) unconverted, by decision, and needs a follow-up. It reaches
   ``EnterServiceRampTime`` only when paired with ``delay``; alone it is dropped at
   debug, and ``delay`` without ``ramp_rate`` rejects the directive.
-- The inert default's enter-service bands and volt-var reference voltage follow
-  the configured nominal voltage, so a nominal change re-seeds the default until
-  a grid code is relayed.
 
 DER flavor selection
 ====================
