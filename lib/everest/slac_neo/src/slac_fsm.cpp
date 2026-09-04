@@ -2,13 +2,10 @@
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "fsm/evse/msm/machine.hpp"
+#include <boost/msm/back/tools.hpp>
 #include <everest/slac/slac_fsm.hpp>
 #include <everest_api_types/telemetry/codec.hpp>
-// clang-format off
-#include <boost/msm/back/tools.hpp>
 #include <type_traits>
-#include "fsm/misc.hpp"
-// clang-format on
 
 namespace everest::lib::slac {
 
