@@ -4726,9 +4726,13 @@ void ChargePointImpl::on_firmware_update_status_notification(
 
     if (firmware_update_status == FirmwareStatusNotification::InstallationFailed or
         firmware_update_status == FirmwareStatusNotification::Installed or
-        firmware_update_status == FirmwareStatusNotification::InstallVerificationFailed) {
+        firmware_update_status == FirmwareStatusNotification::InstallVerificationFailed or
+        firmware_update_status == FirmwareStatusNotification::Idle) {
         // Restore connector status, since we did not save to db the status, we can just get the old status back
-        // using it
+        // using it. Idle is included because it is the documented at-rest status: an update that dies or an OCPP
+        // restart can make the System module re-announce Idle without ever reaching one of the three terminal
+        // statuses above, which would otherwise leave connectors disabled for the install stuck Unavailable.
+        // Nothing emits Idle before InstallScheduled, so restoring already-Operative connectors here is a no-op.
         try {
             auto connector_availability = this->database_handler->get_connector_availability();
             for (const auto& [connector, availability] : connector_availability) {
@@ -4755,6 +4759,11 @@ void ChargePointImpl::on_firmware_update_status_notification(
         // Reset status to idle to avoid on trigger message sending an incorrect status
         // Even if we have to retry the firmware update resetting to Idle won't cause an issue since we do not
         // trigger a status notification and we don't have a state machine to block certain state transitions
+        //
+        // Deliberately NOT extended to Idle itself: this also calls clear_firmware_install_pending(), which
+        // re-arms the single-fire guard around all_connectors_unavailable_callback. An updater that dies and
+        // merely reports Idle has not started a new update cycle - only a fresh UpdateFirmware(.signed).req may
+        // re-arm that guard (see IdleStatusFromDyingUpdateThenNewRequestResetsSingleFireGuard).
         if (request_id != -1) {
             this->signed_firmware_status = FirmwareStatusEnumType::Idle;
         } else {

@@ -539,6 +539,48 @@ TEST_F(FirmwareUpdateTest, RejectedRequest_KeepsRunningUpdatePreInstallStatus) {
     firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::SignatureVerified, std::nullopt);
 }
 
+// PR 2514 review r3811033363 ("We should also treat Idle as a reset state and run the restore sequence") - v2
+// mirror of the v16 fix in ChargePointImpl::on_firmware_update_status_notification. Idle is the documented
+// at-rest status: an update that dies or an OCPP restart can make the System module re-announce Idle without
+// ever reaching one of the enumerated end states, which would otherwise leave connectors disabled for the
+// install stuck Unavailable. Verified separately from is_firmware_status_end_state() on purpose: that predicate
+// is also what ChargePoint::on_firmware_update_status_notification uses to reset the all-connectors-unavailable
+// guard, and Idle must NOT reset that guard - the update cycle is still the old one (mirrors v16's
+// IdleStatusFromDyingUpdateThenNewRequestResetsSingleFireGuard).
+TEST_F(FirmwareUpdateTest, IdleStatus_RestoresConnectors_WithoutRearmingGuard) {
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillRepeatedly(Invoke([](const json&, bool) {
+        return deferred_empty_response();
+    }));
+
+    // InstallScheduled disables both connectors and fires the guarded callback once.
+    EXPECT_CALL(evse_1, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false));
+    EXPECT_CALL(evse_2, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false));
+    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
+
+    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+
+    ::testing::Mock::VerifyAndClearExpectations(&evse_1);
+    ::testing::Mock::VerifyAndClearExpectations(&evse_2);
+    ::testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
+
+    // The updater gives up and falls back to Idle instead of one of the enumerated end states. That must restore
+    // the connectors disabled for the install, and must not fire the guarded callback again.
+    EXPECT_CALL(evse_1, restore_connector_operative_status(1));
+    EXPECT_CALL(evse_2, restore_connector_operative_status(1));
+    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(0);
+
+    firmware_update->on_firmware_update_status_notification(-1, FirmwareStatusEnum::Idle, std::nullopt);
+
+    ::testing::Mock::VerifyAndClearExpectations(&evse_1);
+    ::testing::Mock::VerifyAndClearExpectations(&evse_2);
+    ::testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
+
+    // The guard is still latched from the InstallScheduled notification: Idle did not re-arm it. Only a fresh
+    // UpdateFirmware.req starts a new cycle and may reset this (see the AbortedUpdate_NewRequest_* tests above).
+    EXPECT_TRUE(this->all_connectors_unavailable_notified.load())
+        << "Idle must not reset the all-connectors-unavailable guard - the update cycle is still the old one";
+}
+
 // PR 2514 review r3810981354 asked whether Availability should get the guarded callback at all, worried an
 // unrelated ChangeAvailability completion could latch the guard and swallow a later firmware notification. That
 // direction is unreachable: the guard only ever goes Waiting->Notified, and while it is idle the CAS is a no-op.

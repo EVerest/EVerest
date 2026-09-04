@@ -85,6 +85,13 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
         if (is_firmware_status_end_state(req.status)) {
             // One of the end states is reached. Restore all connector states.
             this->restore_all_connector_states();
+        } else if (req.status == FirmwareStatusEnum::Idle) {
+            // Idle is the documented at-rest status; an update that dies or an OCPP restart can make the System
+            // module re-announce Idle without ever reaching an end state above, which would otherwise leave
+            // connectors disabled for the install stuck Unavailable. Kept out of is_firmware_status_end_state()
+            // on purpose: that predicate also gates the all-connectors-unavailable guard reset in
+            // ChargePoint::on_firmware_update_status_notification, and Idle must not re-arm that guard.
+            this->restore_all_connector_states();
         }
 
         if (this->firmware_status_before_installing == req.status) {
