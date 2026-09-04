@@ -303,6 +303,18 @@ This indicates that the EVSE is inoperative (not ready for energy transfer).
 
 In OCPP2 errors can be reported using the **NotifyEventRequest.req**. This message is used to report all other errros received.  
 
+NotifyEvent
+^^^^^^^^^^^
+
+The **eventData** property of the **NotifyEvent.req** carries the details of the reported error:
+
+* ``techCode`` is set to the MREC techCode if the EVerest error type has an MREC mapping, and to the EVerest error
+  type itself otherwise.
+* ``techInfo`` is set to the message of the EVerest error, truncated to 500 characters. If the error was raised
+  without a message, the description of the error type is sent instead.
+* ``actualValue`` is ``"true"`` when the error is raised and ``"false"`` when it is cleared. The ``cleared``
+  property is set accordingly.
+
 Current Limitation
 ^^^^^^^^^^^^^^^^^^
 
