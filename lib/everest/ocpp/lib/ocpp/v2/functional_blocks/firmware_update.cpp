@@ -120,7 +120,7 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
     // Explicitly allow disabling the connectors when an update is scheduled
     if (firmware_update_status == FirmwareStatusEnum::InstallScheduled and
         disable_connectors_during_install.value_or(false)) {
-        this->change_all_connectors_to_unavailable_for_firmware_update();
+        this->change_all_connectors_to_unavailable_for_firmware_update(is_duplicate);
     }
 }
 
@@ -188,12 +188,27 @@ void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call
     }
 }
 
-void FirmwareUpdate::change_all_connectors_to_unavailable_for_firmware_update() {
+void FirmwareUpdate::change_all_connectors_to_unavailable_for_firmware_update(bool is_duplicate_notification) {
     ChangeAvailabilityResponse response;
     response.status = ChangeAvailabilityStatusEnum::Scheduled;
 
     ChangeAvailabilityRequest msg;
     msg.operationalStatus = OperationalStatusEnum::Inoperative;
+
+    // The first (non-duplicate) application of a cycle always disables unconditionally, since a connector may
+    // legitimately still be Operative at that point. A duplicate/echoed notification re-runs this and must not
+    // silently revert a connector that a CSMS ChangeAvailability has since made Operative, so it only reasserts
+    // Inoperative on connectors that are not currently Operative.
+    const auto disable_connectors = [is_duplicate_notification](EvseInterface& evse) {
+        const std::uint32_t number_of_connectors = evse.get_number_of_connectors();
+        for (std::uint32_t i = 1; i <= number_of_connectors; ++i) {
+            const auto connector_id = static_cast<std::int32_t>(i);
+            if (!is_duplicate_notification or
+                evse.get_connector_effective_operational_status(connector_id) != OperationalStatusEnum::Operative) {
+                evse.set_connector_operative_status(connector_id, OperationalStatusEnum::Inoperative, false);
+            }
+        }
+    };
 
     const auto transaction_active = this->context.evse_manager.any_transaction_active(std::nullopt);
 
@@ -201,7 +216,7 @@ void FirmwareUpdate::change_all_connectors_to_unavailable_for_firmware_update() 
         // execute change availability if possible
         for (auto& evse : this->context.evse_manager) {
             if (!evse.has_active_transaction()) {
-                set_evse_connectors_unavailable(evse, false);
+                disable_connectors(evse);
             }
         }
         // Check succeeded, trigger the callback if needed
@@ -213,7 +228,7 @@ void FirmwareUpdate::change_all_connectors_to_unavailable_for_firmware_update() 
         // put all EVSEs to unavailable that do not have active transaction
         for (auto& evse : this->context.evse_manager) {
             if (!evse.has_active_transaction()) {
-                set_evse_connectors_unavailable(evse, false);
+                disable_connectors(evse);
             } else {
                 EVSE e;
                 e.id = evse.get_id();
