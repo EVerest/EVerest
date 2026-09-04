@@ -6,7 +6,8 @@
 
 namespace iso15118::ev::d20 {
 
-// FIXME(SL): Copied directly from d20/states.hpp. This should be refactored!
+// Mirrors iso15118/d20/states.hpp on purpose: the Context type differs and the EV has no TIMEOUT
+// event. Kept as a separate header so either side can change its Result without touching the other.
 
 class Context;
 
