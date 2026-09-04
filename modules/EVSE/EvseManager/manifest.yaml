@@ -4,18 +4,27 @@ description: >-
   Will be used for billing if present.
 config:
   connector_id:
-    description: Connector id of this evse manager
+    description: >-
+      ID of this EVSE within the charging station, according to the 3-tier model of OCPP
+      (charging station > EVSE > connector). The parameter is named connector_id for
+      backwards compatibility reasons only; it does not identify a connector.
     type: integer
   connector_type:
     description: The connector type of this evse manager (/evse_manager#/ConnectorTypeEnum)
     type: string
     default: "Unknown"
   evse_id:
-    description: EVSE ID
+    description: >-
+      EVSE ID that uniquely identifies this EVSE, e.g. DE*PNX*E1234567*1. It has a special
+      format that includes the country code, the operator id and a power outlet id
+      (eMI3 format, normatively specified in ISO 15118-2 Annex H) and is sent as the
+      EVSEID field in ISO 15118 messages.
     type: string
     default: DE*PNX*E1234567*1
   evse_id_din:
-    description: EVSE ID DIN after DIN SPEC 91286
+    description: >-
+      EVSE ID used for DIN 70121 sessions (format according to DIN SPEC 91286,
+      hexBinary-encoded), e.g. 49A80737A45678
     type: string
     default: 49A80737A45678
   payment_enable_eim:

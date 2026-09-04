@@ -34,3 +34,10 @@ to the corresponding migration guide.
      - 2026.10.0
      - 2027.04.0
      - Change `implementation_id: meter` to `implementation_id: main` in the config connection
+   * - The `evse_id` topics of the `evse_manager_consumer_API` AsyncAPI
+       (`e2m/evse_id` and `m2e/evse_id/get`), superseded by the `get_evse`
+       command
+     - 2026.10.0
+     - 2027.04.0
+     - Use the `get_evse` command, which provides both the eMI3-format EVSE ID
+       (ISO 15118-2 Annex H) and the DIN 70121 EVSE ID (DIN SPEC 91286)
