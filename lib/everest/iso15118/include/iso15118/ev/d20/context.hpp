@@ -172,6 +172,23 @@ public:
         return ev::is_ac_family(selected_service_);
     }
 
+    // AC connector of the parameter set ServiceDetail selected. Decides both how an advertised
+    // total is split across lines and whether the _L2/_L3 peers may be emitted at all, so the AC
+    // states must not guess it. Unset until an AC parameter set is chosen, and never set for DC.
+    std::optional<message_20::datatypes::AcConnector> selected_ac_connector() const {
+        return selected_ac_connector_;
+    }
+
+    void set_selected_ac_connector(message_20::datatypes::AcConnector connector) {
+        selected_ac_connector_ = connector;
+    }
+
+    // The connector the AC states emit for. SinglePhase is the reading under which the base
+    // element is never a sum.
+    message_20::datatypes::AcConnector ac_connector() const {
+        return selected_ac_connector_.value_or(message_20::datatypes::AcConnector::SinglePhase);
+    }
+
     // IEC DER control functions the EV supports (config-driven), matched against the
     // SECC's AC_DER_IEC parameter sets in ServiceDetail.
     std::bitset<DER_CONTROL_FUNCTION_COUNT> der_supported_functions() const {
@@ -223,6 +240,8 @@ private:
     everest::lib::util::monitor<AcChargeParams>& ac_params;
 
     message_20::datatypes::ServiceCategory selected_service_;
+
+    std::optional<message_20::datatypes::AcConnector> selected_ac_connector_{};
 
     std::bitset<DER_CONTROL_FUNCTION_COUNT> der_supported_functions_{};
 

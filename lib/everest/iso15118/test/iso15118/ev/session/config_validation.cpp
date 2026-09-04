@@ -119,6 +119,20 @@ SCENARIO("ISO15118-20 EV config validation rejects negative power values") {
     }
 }
 
+// The connector preference and the per-line split only model one or three lines.
+SCENARIO("ISO15118-20 EV config validation rejects an AC phase count other than 1 or 3") {
+    GIVEN("AC charge params with a phase count of 2") {
+        auto params = sane_ac_params();
+        params.phase_count = 2;
+
+        THEN("the problem is reported") {
+            const auto problems = ev::validate_ac_charge_params(params);
+            REQUIRE(problems.size() == 1);
+            REQUIRE(problems.front() == "ac phase_count must be 1 or 3 (is 2)");
+        }
+    }
+}
+
 SCENARIO("ISO15118-20 EV config validation rejects a non-positive response timeout") {
     GIVEN("an EvConfig with a zero response timeout") {
         auto config = sane_config();
