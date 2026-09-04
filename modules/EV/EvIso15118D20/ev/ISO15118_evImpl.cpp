@@ -322,11 +322,13 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
             (*h).ac_params.max_discharge_power = static_cast<float>(mod->config.ac_max_discharge_power_w);
             (*h).ac_params.min_discharge_power = static_cast<float>(mod->config.ac_min_discharge_power_w);
         }
-        if (energy_service == dt::ServiceCategory::DC_BPT and not(*h).bpt_dc_params_set) {
-            // set_bpt_dc_params discharge limits win; config knobs are the fallback
-            (*h).dc_params.max_discharge_power = static_cast<float>(mod->config.dc_max_discharge_power_w);
+        if (energy_service == dt::ServiceCategory::DC_BPT) {
+            // set_bpt_dc_params discharge limits win; config settings are the fallback
+            (*h).dc_params.max_discharge_power =
+                (*h).cmd_max_discharge_power.value_or(static_cast<float>(mod->config.dc_max_discharge_power_w));
             (*h).dc_params.min_discharge_power = static_cast<float>(mod->config.dc_min_discharge_power_w);
-            (*h).dc_params.max_discharge_current = static_cast<float>(mod->config.dc_max_discharge_current_a);
+            (*h).dc_params.max_discharge_current =
+                (*h).cmd_max_discharge_current.value_or(static_cast<float>(mod->config.dc_max_discharge_current_a));
         }
         (*h).phase = SessionPhase::requested;
     }
@@ -417,15 +419,13 @@ void ISO15118_evImpl::handle_set_bpt_dc_params(types::iso15118::DcEvBPTParameter
                     << " % (SECC-target-driven)";
     }
 
-    // command values override the config knobs seeded at start_charging
+    // command values override the config settings seeded at start_charging
     auto h = session.handle();
-    (*h).bpt_dc_params_set = true;
-    auto& params = (*h).dc_params;
     if (EvBPTParameters.discharge_max_power_limit) {
-        params.max_discharge_power = static_cast<float>(*EvBPTParameters.discharge_max_power_limit);
+        (*h).cmd_max_discharge_power = static_cast<float>(*EvBPTParameters.discharge_max_power_limit);
     }
     if (EvBPTParameters.discharge_max_current_limit) {
-        params.max_discharge_current = static_cast<float>(*EvBPTParameters.discharge_max_current_limit);
+        (*h).cmd_max_discharge_current = static_cast<float>(*EvBPTParameters.discharge_max_current_limit);
     }
 }
 
