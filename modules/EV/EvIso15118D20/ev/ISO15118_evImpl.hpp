@@ -13,6 +13,7 @@
 #include "../EvIso15118D20.hpp"
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
+#include <optional>
 #include <thread>
 
 #include <everest/util/async/monitor.hpp>
@@ -75,7 +76,9 @@ private:
         bool shutting_down{false};
         iso15118::ev::Controller* current{nullptr};
         iso15118::ev::DcChargeParams dc_params;
-        bool bpt_dc_params_set{false};
+        // From set_bpt_dc_params; overlay the config values at start_charging.
+        std::optional<float> cmd_max_discharge_power;
+        std::optional<float> cmd_max_discharge_current;
         iso15118::ev::AcChargeParams ac_params;
         iso15118::message_20::datatypes::ServiceCategory energy_service{
             iso15118::message_20::datatypes::ServiceCategory::DC};
