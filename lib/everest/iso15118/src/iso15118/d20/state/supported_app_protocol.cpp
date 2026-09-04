@@ -25,14 +25,13 @@ constexpr std::array AcNamespaces = {ISO20_AC_NAMESPACE, ISO20_DER_IEC_NAMESPACE
 
 using ResponseCode = message_20::SupportedAppProtocolResponse::ResponseCode;
 
+namespace {
 struct SupportedEnergyModes {
     bool ac{false};
     bool dc{false};
     bool acdp{false};
     bool wpt{false};
 };
-
-namespace {
 
 message_20::SupportedAppProtocolResponse handle_request(const message_20::SupportedAppProtocolRequest& req,
                                                         const SupportedEnergyModes& modes,

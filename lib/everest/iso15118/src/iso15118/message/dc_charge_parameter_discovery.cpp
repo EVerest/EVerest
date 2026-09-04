@@ -91,6 +91,7 @@ void convert(const struct iso20_dc_DC_ChargeParameterDiscoveryResType& in, DC_Ch
 // End conversion for deserializing a DCChargeParameterResponse (EVside)
 
 // Begin conversion for serializing a DCChargeParameterResponse (EVSEside)
+namespace {
 struct ModeResponseVisitor {
     ModeResponseVisitor(iso20_dc_DC_ChargeParameterDiscoveryResType& res_) : res(res_){};
     void operator()(const DC_ModeRes& in) {
@@ -128,6 +129,7 @@ struct ModeResponseVisitor {
 private:
     iso20_dc_DC_ChargeParameterDiscoveryResType& res;
 };
+} // namespace
 
 template <>
 void convert(const DC_ChargeParameterDiscoveryResponse& in, struct iso20_dc_DC_ChargeParameterDiscoveryResType& out) {
@@ -159,6 +161,7 @@ template <> size_t serialize(const DC_ChargeParameterDiscoveryResponse& in, cons
 
 // Begin conversion for serializing a DCChargeParameterRequest (EVside)
 
+namespace {
 struct ModeRequestVisitor {
     ModeRequestVisitor(iso20_dc_DC_ChargeParameterDiscoveryReqType& req_) : req(req_){};
     void operator()(const DC_ModeReq& in) {
@@ -192,6 +195,7 @@ struct ModeRequestVisitor {
 private:
     iso20_dc_DC_ChargeParameterDiscoveryReqType& req;
 };
+} // namespace
 
 template <>
 void convert(const DC_ChargeParameterDiscoveryRequest& in, iso20_dc_DC_ChargeParameterDiscoveryReqType& out) {

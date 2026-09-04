@@ -204,6 +204,7 @@ void convert(const struct iso20_ac_der_iec_DER_Scheduled_AC_CLReqControlModeType
     out.grid_event_condition = in.GridEventCondition;
 }
 
+namespace {
 struct ReqControlModeVisitor {
     using DER_ScheduledCM = datatypes::DER_Scheduled_AC_CLReqControlMode;
     using DER_DynamicCM = datatypes::DER_Dynamic_AC_CLReqControlMode;
@@ -227,6 +228,7 @@ struct ReqControlModeVisitor {
 private:
     iso20_ac_der_iec_AC_ChargeLoopReqType& req;
 };
+} // namespace
 
 template <> void convert(const DER_AC_ChargeLoopRequest& in, struct iso20_ac_der_iec_AC_ChargeLoopReqType& out) {
     init_iso20_ac_der_iec_AC_ChargeLoopReqType(&out);
@@ -499,6 +501,7 @@ void convert(const struct iso20_ac_der_iec_DER_Dynamic_AC_CLResControlModeType& 
     CB2CPP_CONVERT_IF_USED(in.DSOCosPhiSetpoint, out.dso_cos_phi_setpoint);
 }
 
+namespace {
 struct ControlModeVisitor {
     using DER_ScheduledCM = datatypes::DER_Scheduled_AC_CLResControlMode;
     using DER_DynamicCM = datatypes::DER_Dynamic_AC_CLResControlMode;
@@ -522,6 +525,7 @@ struct ControlModeVisitor {
 private:
     iso20_ac_der_iec_AC_ChargeLoopResType& res;
 };
+} // namespace
 
 template <> void convert(const DER_AC_ChargeLoopResponse& in, struct iso20_ac_der_iec_AC_ChargeLoopResType& out) {
     init_iso20_ac_der_iec_AC_ChargeLoopResType(&out);
