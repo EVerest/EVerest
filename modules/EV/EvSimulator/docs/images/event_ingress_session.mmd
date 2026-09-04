@@ -1,0 +1,36 @@
+sequenceDiagram
+    autonumber
+    participant Cfg as m2e/configure_session
+    participant Plug as m2e/plug
+    participant Queue as Event queue
+    participant FSM as fsm::v2 FSM
+    participant Ctx as FsmContext
+    participant Bsp as ev_board_support
+    participant Iso as ISO15118_ev
+    participant E2M as e2m/state
+
+    Cfg->>Queue: ConfigureSession(SessionConfigParams)
+    Queue->>Ctx: intercepted pre-FSM (validate + latch)
+    Ctx->>E2M: command_ack Accepted/Rejected
+
+    Plug->>Queue: Plug
+    Queue->>FSM: feed(Plug)
+    FSM->>Ctx: enter Plugged (enqueue BeginSession)
+    Ctx->>E2M: state=Plugged
+    Queue->>FSM: feed(BeginSession)
+    Note over FSM,Ctx: resolve ctx.configured_session or AcIec default
+    FSM->>Ctx: enter SlacMatching (ISO modes)
+    Ctx->>Bsp: slac_trigger_matching()
+    Ctx->>E2M: state=SlacMatching
+
+    Bsp-->>Queue: SlacState(MATCHED)
+    Queue->>FSM: feed(SlacState)
+    FSM->>Ctx: enter V2GNegotiating
+    Ctx->>Iso: iso_start_charging(mode,...)
+    Ctx->>E2M: state=V2GNegotiating
+
+    Iso-->>Queue: IsoPowerReady
+    Queue->>FSM: feed(IsoPowerReady)
+    FSM->>Ctx: enter Charging
+    Ctx->>Bsp: set_cp(C), allow_power_on(true)
+    Ctx->>E2M: state=Charging
