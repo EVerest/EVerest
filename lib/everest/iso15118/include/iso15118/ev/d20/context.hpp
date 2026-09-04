@@ -26,6 +26,7 @@
 #include <iso15118/ev/d20/evse_session_info.hpp>
 #include <iso15118/ev/d20/session_id.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
+#include <iso15118/ev/service_family.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 
 namespace iso15118::ev::d20 {
@@ -175,14 +176,13 @@ public:
         return *h;
     }
 
-    // Energy service the EV drives this session. Defaults to the service requested
-    // at construction and is refined once ServiceSelection negotiates.
+    // Energy service requested at construction; ServiceSelection sends exactly this.
     message_20::datatypes::ServiceCategory selected_service() const {
         return selected_service_;
     }
 
-    void set_selected_service(message_20::datatypes::ServiceCategory service) {
-        selected_service_ = service;
+    bool is_ac_family() const {
+        return ev::is_ac_family(selected_service_);
     }
 
     // EVSE-reported session data, populated by AuthorizationSetup and read by the

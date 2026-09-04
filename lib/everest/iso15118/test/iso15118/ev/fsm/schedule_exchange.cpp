@@ -14,6 +14,7 @@ using namespace iso15118;
 namespace {
 using message_20::datatypes::Processing;
 using message_20::datatypes::ResponseCode;
+using message_20::datatypes::ServiceCategory;
 
 message_20::ScheduleExchangeResponse make_response(const message_20::Header& header, ResponseCode response_code,
                                                    Processing processing) {
@@ -55,10 +56,7 @@ SCENARIO("ISO15118-20 EV ScheduleExchange fires ev_power_ready and transitions t
     bool ev_power_ready_fired = false;
     ev::feedback::Callbacks callbacks{};
     callbacks.ev_power_ready = [&ev_power_ready_fired]() { ev_power_ready_fired = true; };
-    const auto seed_ac = [](FsmStateHelper& helper) {
-        helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC);
-    };
-    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, seed_ac};
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, ServiceCategory::AC, no_seed};
 
     primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);

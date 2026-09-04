@@ -14,6 +14,7 @@ using namespace iso15118;
 namespace {
 using message_20::datatypes::Progress;
 using message_20::datatypes::ResponseCode;
+using message_20::datatypes::ServiceCategory;
 
 message_20::PowerDeliveryResponse make_pd_res(const message_20::Header& header, ResponseCode code) {
     return message_20::PowerDeliveryResponse{header, code, std::nullopt};
@@ -60,10 +61,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_WeldingDetection on Sto
 
 SCENARIO("ISO15118-20 EV PowerDelivery transitions to AC_ChargeLoop on OK response for AC") {
     const ev::feedback::Callbacks callbacks{};
-    const auto seed_ac = [](FsmStateHelper& helper) {
-        helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC);
-    };
-    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_ac, Progress::Start};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC, no_seed, Progress::Start};
 
     primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
@@ -75,10 +73,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery transitions to AC_ChargeLoop on OK respon
 
 SCENARIO("ISO15118-20 EV PowerDelivery transitions to SessionStop on Stop for AC") {
     const ev::feedback::Callbacks callbacks{};
-    const auto seed_ac = [](FsmStateHelper& helper) {
-        helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC);
-    };
-    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_ac, Progress::Stop};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC, no_seed, Progress::Stop};
 
     primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);

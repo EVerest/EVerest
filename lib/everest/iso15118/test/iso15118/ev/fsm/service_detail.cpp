@@ -57,8 +57,6 @@ message_20::ServiceDetailResponse make_dc_response(const message_20::Header& hea
     return make_response(header, code, ServiceCategory::DC,
                          {make_param_set(5, ControlMode::Scheduled), make_param_set(7, ControlMode::Dynamic)});
 }
-
-const auto seed_ac = [](FsmStateHelper& helper) { helper.get_context().set_selected_service(ServiceCategory::AC); };
 } // namespace
 
 SCENARIO("ISO15118-20 EV ServiceDetail transitions to ServiceSelection with the Dynamic parameter set") {
@@ -93,7 +91,7 @@ SCENARIO("ISO15118-20 EV ServiceDetail emits a DC ServiceDetailRequest on enter"
 
 SCENARIO("ISO15118-20 EV ServiceDetail requests the configured AC service on enter") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, seed_ac};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC, no_seed};
 
     const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::ServiceDetailRequest>();
@@ -103,7 +101,7 @@ SCENARIO("ISO15118-20 EV ServiceDetail requests the configured AC service on ent
 
 SCENARIO("ISO15118-20 EV ServiceDetail selects the Dynamic parameter set for AC") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, seed_ac};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC, no_seed};
 
     primed.handle_response(
         make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC,

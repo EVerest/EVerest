@@ -49,7 +49,7 @@ Result ScheduleExchange::feed(Event ev) {
 
     if (res->processing == message_20::datatypes::Processing::Finished) {
         m_ctx.feedback.ev_power_ready();
-        if (m_ctx.selected_service() == message_20::datatypes::ServiceCategory::AC) {
+        if (m_ctx.is_ac_family()) {
             return m_ctx.create_state<PowerDelivery>(message_20::datatypes::Progress::Start);
         }
         return m_ctx.create_state<DC_CableCheck>();

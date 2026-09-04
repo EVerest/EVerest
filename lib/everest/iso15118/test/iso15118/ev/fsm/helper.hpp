@@ -5,6 +5,7 @@
 #include <array>
 #include <memory>
 #include <optional>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -26,11 +27,16 @@ inline constexpr auto SESSION_HEADER =
 inline constexpr auto WRONG_HEADER =
     message_20::Header{std::array<uint8_t, 8>{0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00, 0x00}, 1691411798};
 
+// What a fixture advertises unless the test names its own list. Named so PrimedState
+// can reach the third constructor argument without restating it.
+inline const std::vector<message_20::SupportedAppProtocol> DEFAULT_APP_PROTOCOLS = {
+    {"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
+
 class FsmStateHelper {
 public:
     FsmStateHelper(
         const ev::feedback::Callbacks& callbacks,
-        std::vector<message_20::SupportedAppProtocol> protocols = {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}},
+        std::vector<message_20::SupportedAppProtocol> protocols = DEFAULT_APP_PROTOCOLS,
         message_20::datatypes::ServiceCategory requested_service = message_20::datatypes::ServiceCategory::DC) :
         advertised_app_protocols(std::move(protocols)),
         ctx(callbacks, msg_exch, evcc_id, advertised_app_protocols, control_event, dc_params, ac_params,
@@ -93,8 +99,8 @@ private:
     everest::lib::util::monitor<ev::AcChargeParams> ac_params{ev::AcChargeParams{}};
 
     message_20::datatypes::Identifier evcc_id{"EVTESTID01"};
-    std::vector<message_20::SupportedAppProtocol> advertised_app_protocols{
-        {"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
+    // Always set from the constructor argument, which defaults to DEFAULT_APP_PROTOCOLS.
+    std::vector<message_20::SupportedAppProtocol> advertised_app_protocols;
     std::optional<ev::d20::ControlEvent> control_event{};
 
     ev::d20::Context ctx;
@@ -148,10 +154,22 @@ inline const auto no_seed = [](FsmStateHelper&) {};
 // services, DcChargeParams, cert hashes) BEFORE the state is entered, then enters
 // State with any forwarded ctor args. Access the FSM/context/exchange via the public
 // members; the entry request queued by State::enter() is already pending.
+// The Context requests DC unless the test names another service; the service is fixed
+// at construction, so it goes before the seed rather than into it.
 template <typename State> struct PrimedState {
-    template <typename Seed, typename... Args>
+    // Seed must be callable, which is what keeps this from competing with the overload
+    // below when a test does name a service.
+    template <typename Seed, typename... Args, std::enable_if_t<std::is_invocable_v<Seed&, FsmStateHelper&>, int> = 0>
     PrimedState(const ev::feedback::Callbacks& callbacks, Seed seed, Args&&... args) :
-        helper(callbacks), ctx(helper.get_context()), fsm(seed_and_enter(seed, std::forward<Args>(args)...)) {
+        PrimedState(callbacks, message_20::datatypes::ServiceCategory::DC, seed, std::forward<Args>(args)...) {
+    }
+
+    template <typename Seed, typename... Args>
+    PrimedState(const ev::feedback::Callbacks& callbacks, message_20::datatypes::ServiceCategory requested_service,
+                Seed seed, Args&&... args) :
+        helper(callbacks, DEFAULT_APP_PROTOCOLS, requested_service),
+        ctx(helper.get_context()),
+        fsm(seed_and_enter(seed, std::forward<Args>(args)...)) {
     }
 
     template <typename ResponseType> void handle_response(const ResponseType& response) {

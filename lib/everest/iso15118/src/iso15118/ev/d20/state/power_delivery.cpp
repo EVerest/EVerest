@@ -46,7 +46,7 @@ Result PowerDelivery::feed(Event ev) {
     }
 
     using Progress = message_20::datatypes::Progress;
-    const bool is_ac = m_ctx.selected_service() == message_20::datatypes::ServiceCategory::AC;
+    const bool is_ac = m_ctx.is_ac_family();
     switch (m_charge_progress) {
     case Progress::Start:
         if (is_ac) {
