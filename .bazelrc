@@ -17,6 +17,14 @@ build:ci --copt=-g0
 build:ci --repository_cache=~/.cache/bazel-repo-cache
 build:ci --disk_cache=~/.cache/bazel-disk-cache
 
+# Authenticate external downloads from GitHub. Anonymous archive fetches share a
+# per-IP rate limit that answers 429 and fails the job before anything is built.
+# The helper serves the credentials CI writes to ~/.netrc, on the redirect
+# target as well as on the URL a repository rule names; see the helper for why
+# netrc alone does not cover both.
+build:ci --credential_helper=github.com=%workspace%/.ci/bazel/netrc_credential_helper.py
+build:ci --credential_helper=codeload.github.com=%workspace%/.ci/bazel/netrc_credential_helper.py
+
 # workaround for goption.c:169:14: error: two or more data types in declaration specifiers on armv7
 build:armv7-linux-gnueabihf --repo_env=BAZEL_CONLYOPTS="-std=gnu17"
 build:aarch64-linux-gnu --repo_env=BAZEL_CONLYOPTS=""

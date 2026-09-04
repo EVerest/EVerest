@@ -15,6 +15,14 @@ jobs:
       - run: echo branch name is ${{ github.ref }}
       - name: Checkout
         uses: actions/checkout@v6
+      - name: Authenticate GitHub downloads
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          umask 077
+          for host in github.com codeload.github.com; do
+            printf 'machine %s\nlogin x-access-token\npassword %s\n' "$host" "$GITHUB_TOKEN"
+          done > "$HOME/.netrc"
       - name: Mount bazel repo cache
         uses: actions/cache@v5
         with:
