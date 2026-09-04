@@ -38,3 +38,18 @@ if(EVEREST_ENABLE_COVERAGE)
         EXECUTABLE ctest
     )
 endif()
+
+# The evcc test binary exercises the EV side, so it only exists when that side is built.
+if(ISO15118_BUILD_EV_SIDE)
+    add_executable(evcc)
+
+    target_sources(evcc
+        PRIVATE
+            evcc.cpp
+    )
+
+    target_link_libraries(evcc
+        PRIVATE
+            iso15118::iso15118
+    )
+endif()

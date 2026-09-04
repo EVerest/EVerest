@@ -1,4 +1,7 @@
 add_subdirectory(d20)
+if(ISO15118_BUILD_EV_SIDE)
+    add_subdirectory(ev)
+endif()
 add_subdirectory(fsm)
 add_subdirectory(io)
 add_subdirectory(session)
