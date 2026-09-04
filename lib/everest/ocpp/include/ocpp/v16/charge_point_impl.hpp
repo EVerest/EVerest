@@ -198,11 +198,13 @@ private:
     std::function<GetLogResponse(GetLogRequest msg)> upload_logs_callback;
     std::function<void(std::int32_t connection_timeout)> set_connection_timeout_callback;
 
-    std::function<void(const std::int32_t connector, const std::string& session_id)> transaction_started_callback;
-    std::function<void(const std::int32_t connector, const std::string& session_id, const std::int32_t transaction_id,
-                       const IdTagInfo& id_tag_info)>
+    std::function<void(const std::string& session_id, const StartTransactionRequest& request)>
+        transaction_started_callback;
+    std::function<void(const std::string& session_id, const StartTransactionRequest& request,
+                       const StartTransactionResponse& response)>
         transaction_updated_callback;
-    std::function<void(const std::int32_t connector, const std::string& session_id, const std::int32_t transaction_id)>
+    std::function<void(const std::string& session_id, const std::int32_t connector,
+                       const StopTransactionRequest& request)>
         transaction_stopped_callback;
     std::function<ocpp::ReservationCheckStatus(const std::int32_t connector, const std::string& id_token)>
         is_token_reserved_for_connector_callback;
@@ -314,7 +316,7 @@ private:
     void handleRemoteStartTransactionRequest(Call<RemoteStartTransactionRequest> call);
     void handleRemoteStopTransactionRequest(Call<RemoteStopTransactionRequest> call);
     void handleResetRequest(Call<ResetRequest> call);
-    void handleStartTransactionResponse(CallResult<StartTransactionResponse> call_result);
+    void handleStartTransactionResponse(const EnhancedMessage<v16::MessageType>& message);
     void handleStopTransactionResponse(const EnhancedMessage<v16::MessageType>& message);
     void handleUnlockConnectorRequest(Call<UnlockConnectorRequest> call);
     void handleHeartbeatResponse(CallResult<HeartbeatResponse> call_result);
@@ -929,25 +931,27 @@ public:
                                  const ocpp::v2::CertificateActionEnum& certificate_action)>& callback);
 
     /// \brief registers a \p callback function that is called when a StartTransaction.req message is sent by the
-    /// chargepoint
+    /// chargepoint. The \p request is the message as sent, the \p session_id correlates it with the EVerest session
+    /// because it is not part of the message.
     /// \param callback
     void register_transaction_started_callback(
-        const std::function<void(const std::int32_t connector, const std::string& session_id)>& callback);
+        const std::function<void(const std::string& session_id, const StartTransactionRequest& request)>& callback);
 
     /// \brief registers a \p callback function that is called when a StopTransaction.req message is sent by the
-    /// chargepoint
+    /// chargepoint. The \p request is the message as sent, \p session_id and \p connector correlate it with the
+    /// EVerest session and connector because neither is part of the message.
     /// \param callback
     void register_transaction_stopped_callback(
-        const std::function<void(const std::int32_t connector, const std::string& session_id,
-                                 const std::int32_t transaction_id)>& callback);
+        const std::function<void(const std::string& session_id, const std::int32_t connector,
+                                 const StopTransactionRequest& request)>& callback);
 
     /// \brief registers a \p callback function that is called when a StartTransaction.conf message is received by the
-    /// CSMS. This includes the transactionId.
+    /// CSMS. The \p response includes the transactionId and the idTagInfo, the \p request is the StartTransaction.req
+    /// it answers.
     /// \param callback
     void register_transaction_updated_callback(
-        const std::function<void(const std::int32_t connector, const std::string& session_id,
-                                 const std::int32_t transaction_id, const IdTagInfo& id_tag_info)>
-            callback);
+        const std::function<void(const std::string& session_id, const StartTransactionRequest& request,
+                                 const StartTransactionResponse& response)>& callback);
 
     /// \brief registers a \p callback function that can be used to react on changed configuration keys. This
     /// callback is called when a configuration key has been changed by the CSMS

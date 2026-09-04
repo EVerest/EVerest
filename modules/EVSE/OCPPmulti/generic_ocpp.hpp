@@ -404,11 +404,11 @@ protected:
     void cb_time_sync(const ocpp::DateTime& current_time) override;
     void cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event,
                               const std::optional<std::string>& transaction_id,
-                              const std::optional<ocpp::DateTime>& timestamp) override;
+                              const ocpp::DateTime& timestamp) override;
     void cb_transaction_event_response(const ocpp::v2::TransactionEventRequest& transaction_event,
                                        const ocpp::v2::TransactionEventResponse& transaction_event_response,
                                        const std::optional<std::string>& transaction_id,
-                                       const std::optional<ocpp::DateTime>& timestamp) override;
+                                       const ocpp::DateTime& timestamp) override;
     ocpp::v2::UnlockConnectorResponse cb_unlock_connector(std::int32_t evse_id, std::int32_t connector_id) override;
     bool cb_update_allowed_energy_transfer_modes(
         const std::vector<ocpp::v2::EnergyTransferModeEnum>& allowed_energy_transfer_modes,
