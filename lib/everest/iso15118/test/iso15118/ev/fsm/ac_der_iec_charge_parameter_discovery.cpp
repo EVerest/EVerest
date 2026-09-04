@@ -37,6 +37,8 @@ const auto seed_charge_limits = [](FsmStateHelper& helper) {
     ev::AcChargeParams p{};
     p.max_charge_power = 22000.0f;
     p.min_charge_power = 1000.0f;
+    p.max_discharge_power = 15000.0f;
+    p.min_discharge_power = 800.0f;
     helper.set_ac_params(p);
 };
 } // namespace
@@ -53,9 +55,9 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeParameterDiscovery emits a DER request
     const auto& mode = request_message->transfer_mode;
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_charge_power) == Catch::Approx(22000.0f));
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_charge_power) == Catch::Approx(1000.0f));
-    // A DER session advertises discharge capability alongside charge.
-    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_discharge_power) == Catch::Approx(22000.0f));
-    REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_discharge_power) == Catch::Approx(1000.0f));
+    // Discharge limits come from the discharge params, never mirrored from charge.
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_discharge_power) == Catch::Approx(15000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_discharge_power) == Catch::Approx(800.0f));
     // The EV drives a single discovery round: processing is Finished.
     REQUIRE(mode.processing == message_20::datatypes::Processing::Finished);
     // The limits are three-phase totals: no per-phase charge or discharge field is advertised.
