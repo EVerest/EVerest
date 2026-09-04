@@ -18,8 +18,8 @@ void AC_DER_IEC_ChargeParameterDiscovery::enter() {
     dt::DER_AC_CPDReqEnergyTransferMode mode{};
     mode.max_charge_power = dt::from_float(p.max_charge_power);
     mode.min_charge_power = dt::from_float(p.min_charge_power);
-    mode.max_discharge_power = dt::from_float(p.max_charge_power);
-    mode.min_discharge_power = dt::from_float(p.min_charge_power);
+    mode.max_discharge_power = dt::from_float(p.max_discharge_power);
+    mode.min_discharge_power = dt::from_float(p.min_discharge_power);
     mode.processing = dt::Processing::Finished;
 
     message_20::DER_AC_ChargeParameterDiscoveryRequest req;
