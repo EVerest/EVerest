@@ -95,8 +95,8 @@ constexpr float AC_MIN_CHARGE_POWER = 1000.0f;
 constexpr float AC_PRESENT_ACTIVE_POWER = 5000.0f;
 constexpr float AC_TARGET_ACTIVE_POWER = 7000.0f;
 
-// Discharge limits seeded for the AC_BPT walk; asserted on the AC_BPT CPD and
-// charge-loop requests.
+// Discharge limits seeded for the AC_BPT and AC_DER_IEC walks; asserted on the
+// BPT and DER CPD requests and the BPT charge-loop requests.
 constexpr float AC_MAX_DISCHARGE_POWER = 15000.0f;
 constexpr float AC_MIN_DISCHARGE_POWER = 500.0f;
 
@@ -589,8 +589,11 @@ message_20::datatypes::SessionId walk_to_ac_der_iec_charge_loop(SessionFixture& 
         REQUIRE(header_payload_type(fx.captured.back()) == PT::Part20DerIec);
         REQUIRE(message_20::datatypes::from_RationalNumber(req.transfer_mode.max_charge_power) ==
                 Catch::Approx(AC_MAX_CHARGE_POWER));
+        // Discharge limits come from the discharge params, never mirrored from charge.
         REQUIRE(message_20::datatypes::from_RationalNumber(req.transfer_mode.max_discharge_power) ==
-                Catch::Approx(AC_MAX_CHARGE_POWER));
+                Catch::Approx(AC_MAX_DISCHARGE_POWER));
+        REQUIRE(message_20::datatypes::from_RationalNumber(req.transfer_mode.min_discharge_power) ==
+                Catch::Approx(AC_MIN_DISCHARGE_POWER));
     }
 
     // DER_AC_ChargeParameterDiscoveryResponse(OK) -> ScheduleExchangeRequest; fires ac_limits.
@@ -1264,7 +1267,7 @@ SCENARIO("ISO15118-20 EV Session drives a full AC_DER_IEC session through the DE
                           ev::DcChargeParams{},
                           default_advertised_ac_app_protocols(),
                           message_20::datatypes::ServiceCategory::AC_DER_IEC,
-                          ac_seed_params()};
+                          ac_bpt_seed_params()};
 
         WHEN("the session is walked to an active AC_DER_IEC_ChargeLoop and the SECC then signals Terminate") {
             const auto sid = walk_to_ac_der_iec_charge_loop(fx);
