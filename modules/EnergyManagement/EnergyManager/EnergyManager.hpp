@@ -36,6 +36,7 @@ struct Conf {
     std::string switch_3ph1ph_switch_limit_stickyness;
     int switch_3ph1ph_power_hysteresis_W;
     int switch_3ph1ph_time_hysteresis_s;
+    std::string broker_strategy;
 };
 
 class EnergyManager : public Everest::ModuleBase {
@@ -62,6 +63,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
