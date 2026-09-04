@@ -464,8 +464,7 @@ void EvseManager::ready() {
             setup_physical_values.ac_nominal_voltage = config.ac_nominal_voltage;
             r_hlc[0]->call_set_charging_parameters(setup_physical_values);
 
-            const auto hw_caps = *hw_capabilities.handle();
-            initial_energy_transfers = get_supported_ac_energy_transfers(hw_caps, config.supported_iso_ac_bpt, false);
+            // The AC list is built later, just before call_setup. initial_energy_transfers is only for DC/MCS.
 
             r_hlc[0]->subscribe_ac_eamount([this](double e) {
                 // FIXME send only on change / throttle messages
@@ -988,7 +987,12 @@ void EvseManager::ready() {
 
         r_hlc[0]->call_receipt_is_required(config.ev_receipt_required);
 
-        this->update_supported_energy_transfers(initial_energy_transfers);
+        if (config.charge_mode == "AC") {
+            // der_available may already be set, so rebuild the list instead of reusing initial_energy_transfers.
+            this->update_supported_energy_transfers(current_ac_energy_transfers());
+        } else {
+            this->update_supported_energy_transfers(initial_energy_transfers);
+        }
         r_hlc[0]->call_setup(evseid, sae_mode, config.session_logging);
         this->publish_and_update_supported_energy_transfers();
 
@@ -1275,8 +1279,12 @@ void EvseManager::ready() {
                 return;
             }
 
+            // The AC DER services carry the same AC target values: a DER charge loop that never
+            // receives one advertises a zero target for the whole session rather than omitting it.
             if (selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC or
-                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_BPT) {
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_BPT or
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_DER_IEC or
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_DER_SAE) {
 
                 // The sign of ampere carries the direction (see Charger::set_max_current), so an export
                 // target scales by the export phase count. Read through a temporary handle: binding the
@@ -1850,11 +1858,14 @@ bool EvseManager::update_supported_energy_transfers(const types::iso15118::Energ
     return update_supported_energy_transfers(std::vector<types::iso15118::EnergyTransferMode>{energy_transfer});
 }
 
-void EvseManager::recompute_and_publish_supported_ac_energy_transfers() {
+std::vector<types::iso15118::EnergyTransferMode> EvseManager::current_ac_energy_transfers() {
     const auto caps = *hw_capabilities.handle();
     const auto der = der_available.load();
-    const auto energy_transfers = get_supported_ac_energy_transfers(caps, config.supported_iso_ac_bpt, der);
-    if (update_supported_energy_transfers(energy_transfers)) {
+    return get_supported_ac_energy_transfers(caps, config.supported_iso_ac_bpt, der);
+}
+
+void EvseManager::recompute_and_publish_supported_ac_energy_transfers() {
+    if (update_supported_energy_transfers(current_ac_energy_transfers())) {
         publish_and_update_supported_energy_transfers();
     }
 }

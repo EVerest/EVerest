@@ -300,6 +300,8 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
+    /// The AC energy transfer list implied by the current capabilities and der_available.
+    std::vector<types::iso15118::EnergyTransferMode> current_ac_energy_transfers();
     std::mutex powersupply_capabilities_mutex;
     types::power_supply_DC::Capabilities powersupply_capabilities;
     std::optional<types::power_supply_DC::Capabilities> last_hlc_capabilities;
