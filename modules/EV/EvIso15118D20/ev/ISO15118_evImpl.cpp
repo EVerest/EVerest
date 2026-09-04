@@ -191,7 +191,7 @@ void ISO15118_evImpl::handle_stop_charging() {
 }
 
 void ISO15118_evImpl::handle_pause_charging() {
-    EVLOG_info << "EvIso15118D20: pause_charging: deferred to M1+";
+    EVLOG_info << "EvIso15118D20: pause_charging is not supported";
 }
 
 void ISO15118_evImpl::handle_set_fault() {
@@ -215,7 +215,7 @@ void ISO15118_evImpl::handle_set_bpt_dc_params(types::iso15118::DcEvBPTParameter
 }
 
 void ISO15118_evImpl::handle_enable_sae_j2847_v2g_v2h() {
-    EVLOG_info << "EvIso15118D20: enable_sae_j2847_v2g_v2h: deferred to M1+";
+    EVLOG_info << "EvIso15118D20: enable_sae_j2847_v2g_v2h is not supported";
 }
 
 void ISO15118_evImpl::handle_update_soc(double& SoC) {
