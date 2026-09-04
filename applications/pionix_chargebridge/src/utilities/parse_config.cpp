@@ -376,6 +376,8 @@ charge_bridge_config set_config_placeholders(charge_bridge_config const& src, ch
         result.plc->cb_remote = ip;
         result.plc->cb = result.cb_name;
         replace(result.plc->plc_tap);
+        replace(result.plc->plc_ip);
+        replace(result.plc->plc_netmaks);
     }
     if (result.bsp.has_value()) {
         result.bsp->cb_remote = ip;
@@ -420,8 +422,10 @@ std::vector<charge_bridge_config> parse_config_multi(std::string const& config_f
         ip_list_node >> ip_list;
         std::vector<charge_bridge_config> cb_config_list(ip_list.size());
 
+        // The "##" placeholder counts from 1, not 0: it is also used as the last octet of the
+        // tap's IPv4 address (e.g. "172.25.5.##"), where 0 is the network address.
         for (std::size_t i = 0; i < ip_list.size(); ++i) {
-            set_config_placeholders(base_config, cb_config_list[i], strip_brackets(ip_list[i]), i);
+            set_config_placeholders(base_config, cb_config_list[i], strip_brackets(ip_list[i]), i + 1);
         }
 
         return cb_config_list;
