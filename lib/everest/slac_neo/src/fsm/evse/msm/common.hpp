@@ -14,7 +14,7 @@
 // so a _def file shows only states, aliases, the table, the hooks and its data.
 
 #pragma once
-#include <everest/slac/fsm/slac_msm_helpers.hpp>
+#include "../../msm_helpers.hpp"
 
 #include <boost/mpl/vector.hpp>
 #include <boost/msm/back/state_machine.hpp>

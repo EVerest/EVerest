@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <everest/slac/fsm/slac_msm_helpers.hpp>
+#include "../../msm_helpers.hpp"
 
 #include <algorithm>
 #include <endian.h>
