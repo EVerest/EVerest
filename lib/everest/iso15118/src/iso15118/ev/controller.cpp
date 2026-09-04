@@ -77,7 +77,8 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcCharg
             return true;
         },
         reactor, SessionTiming{config.send_delay, config.response_timeout}, config.evcc_id,
-        config.advertised_app_protocols, &dc_params, &ac_params, config.energy_service);
+        config.advertised_app_protocols, &dc_params, &ac_params, config.energy_service, config.der_control_functions,
+        config.der_stop_on_unsupported_functions);
 
     // The session can finish inside a timer callback, so the run loop cannot poll for it.
     session->set_on_finished([this]() {
