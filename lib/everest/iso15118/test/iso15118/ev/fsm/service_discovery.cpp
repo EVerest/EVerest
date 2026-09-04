@@ -55,13 +55,9 @@ SCENARIO("ISO15118-20 EV ServiceDiscovery stops session when DC not offered") {
     REQUIRE(primed.ctx.is_session_stopped() == true);
 }
 
-namespace {
-const auto seed_ac = [](FsmStateHelper& helper) { helper.get_context().set_selected_service(ServiceCategory::AC); };
-} // namespace
-
 SCENARIO("ISO15118-20 EV ServiceDiscovery lists the configured AC service") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceDiscovery> primed{callbacks, seed_ac};
+    PrimedState<ev::d20::state::ServiceDiscovery> primed{callbacks, ServiceCategory::AC, no_seed};
 
     const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::ServiceDiscoveryRequest>();
@@ -73,7 +69,7 @@ SCENARIO("ISO15118-20 EV ServiceDiscovery lists the configured AC service") {
 
 SCENARIO("ISO15118-20 EV ServiceDiscovery transitions to ServiceDetail when AC offered") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceDiscovery> primed{callbacks, seed_ac};
+    PrimedState<ev::d20::state::ServiceDiscovery> primed{callbacks, ServiceCategory::AC, no_seed};
 
     primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
@@ -90,7 +86,7 @@ SCENARIO("ISO15118-20 EV ServiceDiscovery transitions to ServiceDetail when AC o
 
 SCENARIO("ISO15118-20 EV ServiceDiscovery stops session when AC not offered") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceDiscovery> primed{callbacks, seed_ac};
+    PrimedState<ev::d20::state::ServiceDiscovery> primed{callbacks, ServiceCategory::AC, no_seed};
 
     primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::DC));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
