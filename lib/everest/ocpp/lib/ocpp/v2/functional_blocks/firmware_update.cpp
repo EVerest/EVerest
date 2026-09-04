@@ -159,10 +159,6 @@ void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call
 
     if ((response.status == UpdateFirmwareStatusEnum::Accepted) or
         (response.status == UpdateFirmwareStatusEnum::AcceptedCanceled)) {
-        // Only an accepted request starts a new update cycle, and only then does the status reported right before
-        // installing change. A request that is not accepted leaves a still running update alone: rewriting this
-        // would strand it, because its own pre-install status would no longer be recognized and its connectors
-        // would never be disabled.
         if (call.msg.firmware.signingCertificate.has_value() or call.msg.firmware.signature.has_value()) {
             this->firmware_status_before_installing = FirmwareStatusEnum::SignatureVerified;
         } else {

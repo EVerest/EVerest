@@ -180,11 +180,11 @@ void ChargePoint::on_firmware_update_status_notification(std::int32_t request_id
                                                          const FirmwareStatusEnum& firmware_update_status,
                                                          std::optional<bool> disable_connectors_during_install) {
     if (is_firmware_status_end_state(firmware_update_status)) {
-        // The update is over, so nothing is waiting for the connectors anymore.
+        // The update is over, reset the state to Idle
         this->all_connectors_unavailable_notification_state = AllConnectorsUnavailableNotificationState::Idle;
     } else if (firmware_update_status != FirmwareStatusEnum::Idle) {
-        // An update is in progress and may still have to be told. Only coming from Idle: a further status of an
-        // update that was already told must not arm it a second time.
+        // Whenever there is an update in progress (firmware_update_status is non-idle),
+        // set the notification state to non-Idle (Waiting) as well
         auto expected = AllConnectorsUnavailableNotificationState::Idle;
         this->all_connectors_unavailable_notification_state.compare_exchange_strong(
             expected, AllConnectorsUnavailableNotificationState::Waiting);
@@ -655,9 +655,7 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     this->meter_values = std::make_unique<MeterValues>(*this->functional_block_context);
 
-    // Wrap the all_connectors_unavailable_callback so that it can fire only once per update cycle, and only for an
-    // update that is actually waiting for it. Claiming the notification with a compare exchange is what keeps an
-    // availability change that is unrelated to any firmware update from consuming it.
+    // Wrap the all_connectors_unavailable_callback so that it can fire only once per update cycle
     std::optional<AllConnectorsUnavailableCallback> guarded_all_connectors_unavailable_callback;
     if (this->callbacks.all_connectors_unavailable_callback.has_value()) {
         guarded_all_connectors_unavailable_callback = [this]() {
@@ -836,7 +834,6 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
             this->authorization->handle_message(message);
             break;
         case MessageType::UpdateFirmware:
-            // A new update cycle starts, so the notification is due again.
             this->all_connectors_unavailable_notification_state = AllConnectorsUnavailableNotificationState::Waiting;
             this->firmware_update->handle_message(message);
             break;

@@ -2741,10 +2741,7 @@ void ChargePointImpl::handleGetDiagnosticsRequest(ocpp::Call<GetDiagnosticsReque
 
 void ChargePointImpl::handleUpdateFirmwareRequest(ocpp::Call<UpdateFirmwareRequest> call) {
     EVLOG_debug << "Received UpdateFirmwareRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
-    // UpdateFirmware.conf carries no status in OCPP 1.6, so every request starts a new update cycle.
     this->clear_firmware_install_pending();
-    // The new cycle has not reported anything yet, so a TriggerMessage must not answer with the status the dead
-    // cycle last reported.
     this->firmware_status = FirmwareStatus::Idle;
     const UpdateFirmwareResponse response;
     if (this->update_firmware_callback) {
@@ -3057,12 +3054,7 @@ void ChargePointImpl::handleSignedUpdateFirmware(ocpp::Call<SignedUpdateFirmware
 
     if (response.status == UpdateFirmwareStatusEnumType::Accepted or
         response.status == UpdateFirmwareStatusEnumType::AcceptedCanceled) {
-        // Only an accepted request starts a new update cycle. A request answered with InvalidCertificate,
-        // RevokedCertificate or Rejected must leave a still running update alone: clearing here would re-arm its
-        // single-fire guard and drop the availability changes it queued behind running transactions.
         this->clear_firmware_install_pending();
-        // The new cycle has not reported anything yet, so a TriggerMessage must not answer with the status the dead
-        // cycle last reported.
         this->signed_firmware_status = FirmwareStatusEnumType::Idle;
     }
 

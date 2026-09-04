@@ -400,11 +400,8 @@ public:
 
 /// \brief Tracks whether the running firmware update still has to be told that all connectors became unavailable.
 enum class AllConnectorsUnavailableNotificationState {
-    /// \brief No firmware update is running, so nothing is waiting to be told.
     Idle,
-    /// \brief A firmware update is running and has not been told yet.
     Waiting,
-    /// \brief The running firmware update has been told. It is not told again until a new update cycle starts.
     Notified,
 };
 
@@ -450,10 +447,8 @@ private:
     std::atomic<std::int32_t> upload_log_status_id;
     BootReasonEnum bootreason{BootReasonEnum::PowerUp};
     bool skip_invalid_csms_certificate_notifications{false};
-    // Ensures the update waiting for disabled connectors is triggered exactly once per update cycle, and only while
-    // an update is actually running: the callback is shared with the availability functional block, which also fires
-    // it for plain ChangeAvailability driven transitions that are no firmware update at all. A plain "already
-    // notified" flag cannot tell those apart and lets them consume the update's one notification.
+    // Ensures the update waiting for disabled connectors is triggered exactly once per update cycle, and only while an
+    // update is actually running
     std::atomic<AllConnectorsUnavailableNotificationState> all_connectors_unavailable_notification_state{
         AllConnectorsUnavailableNotificationState::Idle};
 
