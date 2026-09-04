@@ -17,6 +17,7 @@
 #include <iso15118/message/variant.hpp>
 
 #include <iso15118/ev/d20/state/supported_app_protocol.hpp>
+#include <iso15118/ev/detail/d20/context_helper.hpp>
 
 namespace iso15118::ev {
 
@@ -154,12 +155,26 @@ void Session::deliver_control_event(const d20::ControlEvent& event) {
             context.set_stop_charging_requested(true);
         }
         if (fsm.has_value()) {
-            fsm->feed(d20::Event::CONTROL_MESSAGE);
+            feed_fsm(d20::Event::CONTROL_MESSAGE);
         }
         if (message_exchange.has_request()) {
             arm_send_delay();
         }
     });
+}
+
+void Session::feed_fsm(d20::Event ev) {
+    const auto state_before = fsm->get_current_state_id();
+    const auto fed = fsm->feed(ev);
+
+    const auto* violation =
+        d20::disposition_violation(fed.output, ev == d20::Event::V2GTP_MESSAGE, message_exchange.has_request(),
+                                   context.is_session_stopped(), fed.transitioned());
+    if (violation != nullptr) {
+        logf_error("EV state %d declared %d but %s; stopping the session", static_cast<int>(state_before),
+                   static_cast<int>(fed.output), violation);
+        context.stop_session();
+    }
 }
 
 void Session::handle_complete_frame() {
@@ -181,19 +196,12 @@ void Session::handle_complete_frame() {
         context.feedback.v2g_message(message_exchange.peek_response_type());
 
         if (fsm.has_value()) {
-            fsm->feed(d20::Event::V2GTP_MESSAGE);
+            feed_fsm(d20::Event::V2GTP_MESSAGE);
         }
 
         // The FSM may have produced the next request; hold it for the send delay.
         if (message_exchange.has_request()) {
             arm_send_delay();
-        } else if (not context.is_session_stopped()) {
-            // The watchdog was disarmed above, the state consumed the response, yet it
-            // produced neither a follow-up request nor a session stop. No timer is left
-            // armed, so the session would hang silently. Stop loudly instead.
-            logf_warning("EV: state consumed a response without producing a request or stopping; "
-                         "stopping the session");
-            context.stop_session();
         }
     });
 }
