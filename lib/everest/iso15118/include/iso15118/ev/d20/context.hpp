@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include <iso15118/io/sha_hash.hpp>
 #include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/payload_type.hpp>
@@ -144,22 +143,6 @@ public:
         return stop_charging_requested;
     }
 
-    void set_charger_cert_hash(std::optional<io::sha512_hash_t> hash) {
-        charger_cert_hash = hash;
-    }
-
-    auto get_charger_cert_hash() const {
-        return charger_cert_hash;
-    }
-
-    void set_charger_cert_session_hash(std::optional<io::sha512_hash_t> hash) {
-        charger_cert_session_hash = hash;
-    }
-
-    auto get_charger_cert_session_hash() const {
-        return charger_cert_session_hash;
-    }
-
     const message_20::datatypes::Identifier& get_evcc_id() const {
         return evcc_id;
     }
@@ -178,27 +161,6 @@ public:
     AcChargeParams get_ac_params() const {
         auto h = ac_params.handle();
         return *h;
-    }
-
-    // Last present voltage the SECC reported in a DC charge-loop response. The EV has no
-    // measurement source for its own mandatory present voltage yet, so the charge loop
-    // approximates it from this. Held here so it outlives a single loop iteration.
-    std::optional<float> evse_present_voltage() const {
-        return evse_present_voltage_;
-    }
-
-    void set_evse_present_voltage(float voltage) {
-        evse_present_voltage_ = voltage;
-    }
-
-    // Last active-power target the SECC dictated in an AC charge-loop response. Same
-    // role as evse_present_voltage() for the mandatory AC present active power.
-    std::optional<float> evse_target_active_power() const {
-        return evse_target_active_power_;
-    }
-
-    void set_evse_target_active_power(float power) {
-        evse_target_active_power_ = power;
     }
 
     // Energy service requested at construction; ServiceSelection sends exactly this.
@@ -260,10 +222,6 @@ private:
     // Module -> FSM AC-params channel; same locked-copy-snapshot contract as dc_params.
     everest::lib::util::monitor<AcChargeParams>& ac_params;
 
-    std::optional<float> evse_present_voltage_{};
-
-    std::optional<float> evse_target_active_power_{};
-
     message_20::datatypes::ServiceCategory selected_service_;
 
     std::bitset<DER_CONTROL_FUNCTION_COUNT> der_supported_functions_{};
@@ -281,10 +239,6 @@ private:
     bool session_stopped{false};
 
     bool stop_charging_requested{false};
-
-    std::optional<io::sha512_hash_t> charger_cert_hash{std::nullopt};
-
-    std::optional<io::sha512_hash_t> charger_cert_session_hash{std::nullopt};
 };
 
 } // namespace iso15118::ev::d20

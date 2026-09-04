@@ -5,9 +5,13 @@
 
 #include <chrono>
 #include <exception>
+#include <iterator>
 #include <sstream>
+#include <string>
 #include <utility>
+#include <vector>
 
+#include <iso15118/ev/config_validation.hpp>
 #include <iso15118/ev/service_family.hpp>
 #include <iso15118/io/logging.hpp>
 #include <iso15118/io/sdp.hpp>
@@ -78,13 +82,11 @@ iso15118::ev::EvConfig
 ISO15118_evImpl::make_ev_config(iso15118::message_20::datatypes::ServiceCategory energy_service) const {
     iso15118::ev::EvConfig ev_config;
 
-    // ev::Controller resolves the interface name (including "auto") and throws on failure;
-    // run_one_session()'s catch reports it.
+    // ev::Controller throws on an unresolvable interface (incl. "auto"); caught in run_one_session().
     ev_config.interface_name = mod->config.device;
     ev_config.evcc_id = mod->config.evcc_id;
     ev_config.response_timeout = std::chrono::milliseconds(mod->config.response_timeout_ms);
     ev_config.advertised_security = iso15118::io::v2gtp::Security::NO_TRANSPORT_SECURITY;
-    ev_config.discover = true;
 
     namespace dt = iso15118::message_20::datatypes;
     ev_config.energy_service = energy_service;
@@ -225,8 +227,8 @@ void ISO15118_evImpl::session_worker() {
             }
         }
         run_one_session();
-        // published after run_one_session() has reset phase to idle, so a consumer
-        // that starts a new session in response is not rejected by the phase guard
+        // Published after phase resets to idle, so a consumer starting a new session
+        // in response isn't rejected by the phase guard.
         publish_v2g_session_finished(nullptr);
     }
 }
@@ -249,8 +251,7 @@ void ISO15118_evImpl::run_one_session() {
         }
         iso15118::ev::Controller controller(make_ev_config(energy_service), make_callbacks(), cached_dc_params,
                                             cached_ac_params);
-        // declared after the controller, so it runs before ~Controller on every
-        // exit path, clearing the off-thread pointer while the object is still alive
+        // Declared after controller so it clears the off-thread pointer before ~Controller runs.
         ScopeGuard clear_current{[this] {
             auto h = session.handle();
             (*h).current = nullptr;
@@ -263,6 +264,11 @@ void ISO15118_evImpl::run_one_session() {
             }
             (*h).current = &controller;
             (*h).phase = SessionPhase::running;
+            // Values pushed between the snapshot above and this point would otherwise reach
+            // neither the snapshot nor the live controller.
+            controller.update_present_soc((*h).dc_params.present_soc);
+            controller.update_present_voltage((*h).dc_params.present_voltage);
+            controller.update_present_active_power((*h).ac_params.present_active_power);
         }
         controller.loop();
     } catch (const std::exception& e) {
@@ -299,7 +305,17 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     case types::iso15118::EnergyTransferMode::AC_DER_IEC:
         energy_service = iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC;
         break;
-    default:
+    // Listed rather than folded into a default arm so -Wswitch flags a new mode.
+    case types::iso15118::EnergyTransferMode::AC_two_phase:
+    case types::iso15118::EnergyTransferMode::AC_BPT_DER:
+    case types::iso15118::EnergyTransferMode::AC_DER_SAE:
+    case types::iso15118::EnergyTransferMode::DC_combo_core:
+    case types::iso15118::EnergyTransferMode::DC_unique:
+    case types::iso15118::EnergyTransferMode::DC_ACDP:
+    case types::iso15118::EnergyTransferMode::DC_ACDP_BPT:
+    case types::iso15118::EnergyTransferMode::WPT:
+    case types::iso15118::EnergyTransferMode::MCS:
+    case types::iso15118::EnergyTransferMode::MCS_BPT:
         EVLOG_warning << "EvIso15118D20: rejecting start_charging with unsupported EnergyTransferMode '"
                       << types::iso15118::energy_transfer_mode_to_string(EnergyTransferMode)
                       << "'; only DC, DC BPT, AC single/three-phase, AC BPT and AC DER IEC are supported";
@@ -329,6 +345,24 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
             (*h).dc_params.min_discharge_power = static_cast<float>(mod->config.dc_min_discharge_power_w);
             (*h).dc_params.max_discharge_current =
                 (*h).cmd_max_discharge_current.value_or(static_cast<float>(mod->config.dc_max_discharge_current_a));
+        }
+        // Validate what actually goes on the wire: the merged params, not the raw config.
+        auto problems = iso15118::ev::validate_config(make_ev_config(energy_service));
+        const auto append = [&problems](std::vector<std::string> more) {
+            problems.insert(problems.end(), std::make_move_iterator(more.begin()), std::make_move_iterator(more.end()));
+        };
+        if (iso15118::ev::is_ac_family(energy_service)) {
+            append(iso15118::ev::validate_ac_charge_params((*h).ac_params));
+        }
+        if (energy_service == dt::ServiceCategory::DC or energy_service == dt::ServiceCategory::DC_BPT) {
+            append(iso15118::ev::validate_dc_charge_params((*h).dc_params));
+        }
+        if (not problems.empty()) {
+            for (const auto& problem : problems) {
+                EVLOG_error << "EvIso15118D20: invalid session parameter: " << problem;
+            }
+            EVLOG_error << "EvIso15118D20: rejecting start_charging; the session parameters are invalid";
+            return false;
         }
         (*h).phase = SessionPhase::requested;
     }
@@ -374,6 +408,7 @@ void ISO15118_evImpl::handle_set_dc_params(types::iso15118::DcEvParameters& EvPa
     note_missing("max_power_limit", EvParameters.max_power_limit.has_value());
     note_missing("max_current_limit", EvParameters.max_current_limit.has_value());
     note_missing("max_voltage_limit", EvParameters.max_voltage_limit.has_value());
+    note_missing("min_voltage_limit", EvParameters.min_voltage_limit.has_value());
     note_missing("energy_capacity", EvParameters.energy_capacity.has_value());
     note_missing("target_voltage", EvParameters.target_voltage.has_value());
     note_missing("target_current", EvParameters.target_current.has_value());
@@ -387,6 +422,7 @@ void ISO15118_evImpl::handle_set_dc_params(types::iso15118::DcEvParameters& EvPa
     params.max_charge_power = EvParameters.max_power_limit.value_or(0.0f);
     params.max_charge_current = EvParameters.max_current_limit.value_or(0.0f);
     params.max_voltage = EvParameters.max_voltage_limit.value_or(0.0f);
+    params.min_voltage = EvParameters.min_voltage_limit.value_or(0.0f);
     params.energy_capacity = EvParameters.energy_capacity.value_or(0.0f);
     params.target_voltage = EvParameters.target_voltage.value_or(0.0f);
     params.target_current = EvParameters.target_current.value_or(0.0f);
@@ -438,6 +474,27 @@ void ISO15118_evImpl::handle_update_soc(double& SoC) {
     (*h).dc_params.present_soc = SoC;
     if ((*h).current) {
         (*h).current->update_present_soc(SoC);
+    }
+}
+
+void ISO15118_evImpl::handle_update_present_values(types::iso15118::EvPresentValues& PresentValues) {
+    // Stored on session params (seeds the next session) as well as pushed to the live
+    // Controller. Absent fields keep their last value rather than reset to 0, which
+    // would read as a real measurement.
+    auto h = session.handle();
+    if (PresentValues.present_voltage.has_value()) {
+        const auto voltage = PresentValues.present_voltage.value();
+        (*h).dc_params.present_voltage = voltage;
+        if ((*h).current) {
+            (*h).current->update_present_voltage(voltage);
+        }
+    }
+    if (PresentValues.present_active_power.has_value()) {
+        const auto power = PresentValues.present_active_power.value();
+        (*h).ac_params.present_active_power = power;
+        if ((*h).current) {
+            (*h).current->update_present_active_power(power);
+        }
     }
 }
 

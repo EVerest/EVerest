@@ -101,9 +101,10 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop emits a Dynamic DC_ChargeLoopRequest on e
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_voltage) == Catch::Approx(200.0f));
 }
 
-SCENARIO("ISO15118-20 EV DC_ChargeLoop seeds present_voltage from the target voltage") {
-    // Nothing feeds a measured present voltage yet, so the first request approximates it
-    // with the voltage the EV asks for rather than putting a zero on the wire.
+SCENARIO("ISO15118-20 EV DC_ChargeLoop does not substitute the target voltage for a measurement") {
+    // present_voltage carries one thing only, what the module measured. Reporting the
+    // voltage the EV asked for would be indistinguishable on the wire from a measurement
+    // and could never diverge from it, which is the disagreement worth detecting.
     const ev::feedback::Callbacks callbacks{};
     const auto seed_target_only = [](FsmStateHelper& helper) {
         ev::DcChargeParams params{};
@@ -118,12 +119,12 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop seeds present_voltage from the target vol
     const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::DC_ChargeLoopRequest>();
     REQUIRE(request_message.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(request_message->present_voltage) == Catch::Approx(420.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(request_message->present_voltage) == Catch::Approx(0.0f));
 }
 
-SCENARIO("ISO15118-20 EV DC_ChargeLoop adopts the present voltage the SECC reports") {
-    // The SECC's reported present voltage is a better approximation than the EV's own
-    // target, so every loop iteration after the first carries it.
+SCENARIO("ISO15118-20 EV DC_ChargeLoop does not substitute the SECC reading for a measurement") {
+    // Echoing the SECC back at itself cannot reveal a divergence between what the EVSE
+    // delivers and what the EV receives.
     StopObserver obs;
     const auto seed_target_only = [](FsmStateHelper& helper) {
         ev::DcChargeParams params{};
@@ -134,12 +135,7 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop adopts the present voltage the SECC repor
         helper.set_dc_params(params);
     };
     PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_target_only};
-
-    // The enter() request still carries the seed.
-    const auto seeded = primed.take_requests();
-    const auto seeded_request = seeded.get<message_20::DC_ChargeLoopRequest>();
-    REQUIRE(seeded_request.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(seeded_request->present_voltage) == Catch::Approx(420.0f));
+    primed.take_requests();
 
     auto res = make_res(SESSION_HEADER, ResponseCode::OK);
     res.present_voltage = message_20::datatypes::from_float(390.0f);
@@ -149,10 +145,10 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop adopts the present voltage the SECC repor
     const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::DC_ChargeLoopRequest>();
     REQUIRE(request_message.has_value());
-    REQUIRE(message_20::datatypes::from_RationalNumber(request_message->present_voltage) == Catch::Approx(390.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(request_message->present_voltage) == Catch::Approx(0.0f));
 }
 
-SCENARIO("ISO15118-20 EV DC_ChargeLoop prefers a module-fed present voltage over the approximation") {
+SCENARIO("ISO15118-20 EV DC_ChargeLoop reports the module-fed present voltage") {
     StopObserver obs;
     const auto seed_measured = [](FsmStateHelper& helper) {
         ev::DcChargeParams params{};
@@ -164,13 +160,13 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop prefers a module-fed present voltage over
     };
     PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_measured};
 
-    // The measured value wins over the target-voltage seed.
+    // The fed measurement is what goes on the wire.
     const auto seeded = primed.take_requests();
     const auto seeded_request = seeded.get<message_20::DC_ChargeLoopRequest>();
     REQUIRE(seeded_request.has_value());
     REQUIRE(message_20::datatypes::from_RationalNumber(seeded_request->present_voltage) == Catch::Approx(380.0f));
 
-    // and over the voltage the SECC reports.
+    // and it is not displaced by what the SECC reports.
     primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
     REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned() == false);
 
@@ -275,9 +271,8 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop defers an EV-initiated stop to the next r
     StopObserver obs;
     PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_present_400};
 
-    // Session::deliver_control_event records an EV-initiated stop on the Context.
-    // The stop request does not transition immediately: a loop request is still outstanding, and a
-    // CONTROL_MESSAGE is a no-op inside the state.
+    // CONTROL_MESSAGE is a no-op inside the state; the stop only takes effect at the
+    // next response boundary.
     primed.ctx.set_stop_charging_requested(true);
     const auto control_result = primed.feed(ev::d20::Event::CONTROL_MESSAGE);
 
@@ -301,9 +296,8 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop defers an EV-initiated stop to the next r
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeLoop honors a stop request set before the state was entered") {
-    // The Context stop request can be set (via Session::deliver_control_event) while the
-    // FSM is in an earlier state; DC_ChargeLoop must honor it on the next response even
-    // though it never saw the CONTROL_MESSAGE itself.
+    // The stop can be set while the FSM is in an earlier state; DC_ChargeLoop must
+    // honor it even though it never saw the CONTROL_MESSAGE itself.
     StopObserver obs;
     const auto seed_stop_request = [](FsmStateHelper& helper) {
         ev::DcChargeParams params{};
@@ -374,12 +368,7 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop stops a BPT session on a plain Dynamic re
     PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, message_20::datatypes::ServiceCategory::DC_BPT,
                                                       seed_bpt_present_400};
 
-    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, make_res(SESSION_HEADER, ResponseCode::OK), ev::d20::StateID::DC_ChargeLoop);
     REQUIRE(obs.fired == false);
 }
 
@@ -387,12 +376,7 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop stops a plain DC session on a BPT_Dynamic
     StopObserver obs;
     PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_present_400};
 
-    primed.handle_response(make_bpt_res(SESSION_HEADER, ResponseCode::OK));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, make_bpt_res(SESSION_HEADER, ResponseCode::OK), ev::d20::StateID::DC_ChargeLoop);
     REQUIRE(obs.fired == false);
 }
 
@@ -440,6 +424,38 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop honors a stop request for a BPT session")
     const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
     REQUIRE(pd_request.has_value());
     REQUIRE(pd_request->charge_progress == message_20::datatypes::Progress::Stop);
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop stops the session on a FAILED response mid-loop") {
+    StopObserver obs;
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_present_400};
+
+    // One accepted iteration first, so the rejection below happens mid-loop and not on entry.
+    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
+    REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned() == false);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+    REQUIRE(primed.take_requests().get<message_20::DC_ChargeLoopRequest>().has_value());
+
+    expect_stops_session(primed, make_res(SESSION_HEADER, ResponseCode::FAILED_SequenceError),
+                         ev::d20::StateID::DC_ChargeLoop);
+    REQUIRE(obs.fired == false);
+    REQUIRE(primed.take_requests().empty());
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop stops the session on a mismatched session_id mid-loop") {
+    StopObserver obs;
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_present_400};
+
+    // One accepted iteration first: the session id is re-checked on every response, not
+    // just on the first one the state sees.
+    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
+    REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned() == false);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+    REQUIRE(primed.take_requests().get<message_20::DC_ChargeLoopRequest>().has_value());
+
+    expect_stops_session(primed, make_res(WRONG_HEADER, ResponseCode::OK), ev::d20::StateID::DC_ChargeLoop);
+    REQUIRE(obs.fired == false);
+    REQUIRE(primed.take_requests().empty());
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeLoop rejects malformed responses") {

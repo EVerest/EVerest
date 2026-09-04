@@ -250,13 +250,10 @@ SCENARIO("ISO15118-20 EV ServiceDetail stops session when only Scheduled offered
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, no_seed};
 
-    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::DC,
-                                         {make_param_set(5, ControlMode::Scheduled)}));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::ServiceDetail);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed,
+                         make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::DC,
+                                       {make_param_set(5, ControlMode::Scheduled)}),
+                         ev::d20::StateID::ServiceDetail);
 }
 
 SCENARIO("ISO15118-20 EV ServiceDetail stops session on empty parameter list") {
@@ -265,12 +262,7 @@ SCENARIO("ISO15118-20 EV ServiceDetail stops session on empty parameter list") {
 
     auto res = make_dc_response(SESSION_HEADER, ResponseCode::OK);
     res.service_parameter_list.clear();
-    primed.handle_response(res);
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::ServiceDetail);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, res, ev::d20::StateID::ServiceDetail);
 }
 
 SCENARIO("ISO15118-20 EV ServiceDetail rejects malformed responses") {
@@ -326,14 +318,11 @@ SCENARIO("ISO15118-20 EV ServiceDetail stops the session when no AC_DER_IEC set 
     ctx.get_session().set_id(SESSION_HEADER.session_id);
     auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
 
-    helper.handle_response(
+    expect_stops_session(
+        helper, fsm,
         make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC,
-                      {make_der_param_set(5, ControlMode::Dynamic, der_mask({DERControlName::VoltWattMode}))}));
-    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceDetail);
-    REQUIRE(ctx.is_session_stopped() == true);
+                      {make_der_param_set(5, ControlMode::Dynamic, der_mask({DERControlName::VoltWattMode}))}),
+        ev::d20::StateID::ServiceDetail);
 }
 
 SCENARIO("ISO15118-20 EV ServiceDetail selects the first Dynamic set on unsupported functions when not strict") {
@@ -407,13 +396,10 @@ SCENARIO("ISO15118-20 EV ServiceDetail stops on AC_DER_IEC functions above the s
     auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
 
     // The only Dynamic set demands a function the EV models no bit for.
-    helper.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC,
-                                         {make_der_param_set_raw(5, ControlMode::Dynamic, UNKNOWN_FUNCTION_BIT)}));
-    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceDetail);
-    REQUIRE(ctx.is_session_stopped() == true);
+    expect_stops_session(helper, fsm,
+                         make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC,
+                                       {make_der_param_set_raw(5, ControlMode::Dynamic, UNKNOWN_FUNCTION_BIT)}),
+                         ev::d20::StateID::ServiceDetail);
 }
 
 SCENARIO("ISO15118-20 EV ServiceDetail warns on AC_DER_IEC functions above the supported width when not strict") {
