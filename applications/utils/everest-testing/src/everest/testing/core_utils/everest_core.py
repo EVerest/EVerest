@@ -245,6 +245,11 @@ class EverestCore:
         with self.everest_config_path.open("r") as f:
             return yaml.safe_load(f)
 
+    @property
+    def db_path(self) -> Path:
+        """Path of the manager's configuration database (passed via --db)."""
+        return self._db_path
+
     def _write_temporary_config(self, template_config_path: Path, everest_configuration_adjustment_strategies: Optional[
         List[EverestConfigAdjustmentStrategy]]):
         everest_configuration_adjustment_strategies = everest_configuration_adjustment_strategies if everest_configuration_adjustment_strategies else []
@@ -262,7 +267,8 @@ class EverestCore:
             yaml.dump(everest_config, f)
 
     def start(self, standalone_module: Optional[Union[str, List[str]]] = None, test_connections: Connections = None,
-              expected_status: Optional[str] = None):
+              expected_status: Optional[str] = None,
+              startup_timeout_s: Optional[float] = None):
         """Starts EVerest in a subprocess
 
         Args:
@@ -272,7 +278,13 @@ class EverestCore:
              ALL_MODULES_STARTED / WAITING_FOR_STANDALONE_MODULES, e.g. ManagerStatusFifo.MANAGER_IDLE
              when the manager is expected to boot into Idle (empty config with --idle-on-failure or
              --into-idle).
+            startup_timeout_s (float, optional): How long to wait for the expected startup status
+             (e.g. ALL_MODULES_STARTED). Defaults to STARTUP_TIMEOUT when None. Callers that start
+             EVerest with --into-idle and only trigger the actual module startup later (from within
+             the same blocked start() call's budget) should pass a larger value here.
         """
+        if startup_timeout_s is None:
+            startup_timeout_s = STARTUP_TIMEOUT
 
         standalone_module = standalone_module if standalone_module is not None else self._standalone_module
 
@@ -323,7 +335,7 @@ class EverestCore:
         if expected_status is None:
             expected_status = ManagerStatusFifo.ALL_MODULES_STARTED if standalone_module == None else ManagerStatusFifo.WAITING_FOR_STANDALONE_MODULES
 
-        status = self.status_listener.wait_for_status(STARTUP_TIMEOUT, [expected_status])
+        status = self.status_listener.wait_for_status(startup_timeout_s, [expected_status])
         if not status:
             # Do not call read_everest_log() here: the log-reader thread already
             # owns stderr, and a blocking readline on a live process hangs forever.

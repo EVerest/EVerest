@@ -90,3 +90,52 @@ TEST_CASE("Manager module status mapping", "[manager_module_status]") {
         CHECK(module_status_action_for(ManagerState::ShutdownFinalizing) == ModuleStatusAction::Stopped);
     }
 }
+
+TEST_CASE("Manager module status transition dedup", "[manager_module_status]") {
+
+    SECTION("a transition between states sharing an action reports nothing") {
+        // Regression guard: a stop request escalated ShutdownRequested -> ForceTerminating (always,
+        // without --graceful-shutdown), and a crash went through CrashShutdownInProgress as well -
+        // each hop repeated "Stopping" to the client, so one stop request published it two or three
+        // times. Same phase, nothing new to report.
+        const std::vector<std::pair<ManagerState, ManagerState>> repeats{
+            {ManagerState::ShutdownRequested, ManagerState::ForceTerminating},
+            {ManagerState::ShutdownRequested, ManagerState::CrashShutdownInProgress},
+            {ManagerState::CrashShutdownInProgress, ManagerState::ForceTerminating},
+        };
+        for (const auto& [from, to] : repeats) {
+            INFO("state indices " << static_cast<int>(from) << " -> " << static_cast<int>(to));
+            CHECK(module_status_action_for_transition(from, to) == std::nullopt);
+        }
+    }
+
+    SECTION("exhaustive: a transition reports iff the destination's action differs") {
+        for (const auto from : ALL_STATES) {
+            for (const auto to : ALL_STATES) {
+                INFO("state indices " << static_cast<int>(from) << " -> " << static_cast<int>(to));
+                const auto action = module_status_action_for_transition(from, to);
+                if (module_status_action_for(from) == module_status_action_for(to)) {
+                    CHECK(action == std::nullopt);
+                } else {
+                    REQUIRE(action.has_value());
+                    // Still derived from the destination alone (see module_status_action_for()).
+                    CHECK(action.value() == module_status_action_for(to));
+                }
+            }
+        }
+    }
+
+    SECTION("the phase changes every shutdown flow relies on still report") {
+        // The stop flow's status story: request accepted -> Stopping, all pids reaped -> Stopped,
+        // settled -> AtRest. Dedup must not eat any of these edges.
+        CHECK(module_status_action_for_transition(ManagerState::Running, ManagerState::ShutdownRequested) ==
+              ModuleStatusAction::Stopping);
+        CHECK(module_status_action_for_transition(ManagerState::ForceTerminating, ManagerState::ShutdownFinalizing) ==
+              ModuleStatusAction::Stopped);
+        CHECK(module_status_action_for_transition(ManagerState::ShutdownFinalizing, ManagerState::Idle) ==
+              ModuleStatusAction::AtRest);
+        // Admin-panel restart drain: the escalation out of RestartRequested is a real phase change.
+        CHECK(module_status_action_for_transition(ManagerState::RestartRequested, ManagerState::ForceTerminating) ==
+              ModuleStatusAction::Stopping);
+    }
+}

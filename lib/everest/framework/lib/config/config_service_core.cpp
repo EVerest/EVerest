@@ -188,7 +188,7 @@ void ConfigServiceCore::internal_reinitialize_from_db(bool force_reload) {
     // always reload module configuration in order to include possible WillApplyOnRestart changes
     reload_from_storage();
     if (slot_changed) {
-        publish_active_slot_update();
+        publish_active_slot_update(ActiveSlotUpdateCause::SlotInfo);
     }
 }
 
@@ -196,8 +196,8 @@ std::unique_ptr<ec::SqliteStorage> ConfigServiceCore::make_storage(int slot_id) 
     return std::make_unique<ec::SqliteStorage>(m_db, slot_id);
 }
 
-void ConfigServiceCore::publish_active_slot_update() {
-    const ActiveSlotUpdate update{now_rfc3339(), m_active_slot_id, m_next_boot_slot_id, m_module_status};
+void ConfigServiceCore::publish_active_slot_update(ActiveSlotUpdateCause cause) {
+    const ActiveSlotUpdate update{now_rfc3339(), m_active_slot_id, m_next_boot_slot_id, m_module_status, cause};
     auto handlers_copy = m_active_slot_handlers;
 
     for (const auto& handler : handlers_copy) {
@@ -277,7 +277,7 @@ SetActiveSlotStatus ConfigServiceCore::internal_mark_active_slot(int slot_id) {
         return SetActiveSlotStatus::Failed;
     }
     m_next_boot_slot_id = slot_id;
-    publish_active_slot_update();
+    publish_active_slot_update(ActiveSlotUpdateCause::SlotInfo);
     EVLOG_info << "Successfully marked slot " << slot_id << " as active for next boot.";
     return SetActiveSlotStatus::Success;
 }
@@ -691,7 +691,7 @@ void ConfigServiceCore::set_modules_running() {
 }
 void ConfigServiceCore::internal_set_modules_running() {
     m_module_status = ActiveSlotStatus::Running;
-    publish_active_slot_update();
+    publish_active_slot_update(ActiveSlotUpdateCause::ModuleStatus);
 }
 
 void ConfigServiceCore::set_modules_stopped() {
@@ -699,7 +699,7 @@ void ConfigServiceCore::set_modules_stopped() {
 }
 void ConfigServiceCore::internal_set_modules_stopped() {
     m_module_status = ActiveSlotStatus::Stopped;
-    publish_active_slot_update();
+    publish_active_slot_update(ActiveSlotUpdateCause::ModuleStatus);
 }
 
 void ConfigServiceCore::set_modules_starting() {
@@ -707,7 +707,7 @@ void ConfigServiceCore::set_modules_starting() {
 }
 void ConfigServiceCore::internal_set_modules_starting() {
     m_module_status = ActiveSlotStatus::Starting;
-    publish_active_slot_update();
+    publish_active_slot_update(ActiveSlotUpdateCause::ModuleStatus);
 }
 
 void ConfigServiceCore::set_modules_stopping() {
@@ -715,7 +715,7 @@ void ConfigServiceCore::set_modules_stopping() {
 }
 void ConfigServiceCore::internal_set_modules_stopping() {
     m_module_status = ActiveSlotStatus::Stopping;
-    publish_active_slot_update();
+    publish_active_slot_update(ActiveSlotUpdateCause::ModuleStatus);
 }
 
 void ConfigServiceCore::notice_cfg_validation_failed() {
@@ -723,7 +723,7 @@ void ConfigServiceCore::notice_cfg_validation_failed() {
 }
 void ConfigServiceCore::internal_notice_cfg_validation_failed() {
     m_module_status = ActiveSlotStatus::FailedToStart;
-    publish_active_slot_update();
+    publish_active_slot_update(ActiveSlotUpdateCause::ModuleStatus);
 }
 
 void ConfigServiceCore::notice_module_restart_triggered() {
@@ -731,7 +731,7 @@ void ConfigServiceCore::notice_module_restart_triggered() {
 }
 void ConfigServiceCore::internal_notice_module_restart_triggered() {
     m_module_status = ActiveSlotStatus::RestartTriggered;
-    publish_active_slot_update();
+    publish_active_slot_update(ActiveSlotUpdateCause::ModuleStatus);
 }
 
 void ConfigServiceCore::set_modules_at_rest() {

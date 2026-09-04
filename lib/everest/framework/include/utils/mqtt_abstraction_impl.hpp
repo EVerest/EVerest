@@ -51,9 +51,11 @@ public:
     void disconnect() override;
     void stop_message_handling() override;
     void publish(const std::string& topic, const nlohmann::json& json) override;
-    void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false) override;
+    void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false,
+                 bool record_retained = true) override;
     void publish(const std::string& topic, const std::string& data) override;
-    void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false) override;
+    void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false,
+                 bool record_retained = true) override;
     void subscribe(const std::string& topic) override;
     void subscribe(const std::string& topic, QOS qos) override;
     void unsubscribe(const std::string& topic) override;

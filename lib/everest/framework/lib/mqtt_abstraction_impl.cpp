@@ -149,10 +149,11 @@ void MQTTAbstractionImpl::publish(const std::string& topic, const json& json) {
     publish(topic, json, QOS::QOS2);
 }
 
-void MQTTAbstractionImpl::publish(const std::string& topic, const json& json, QOS qos, bool retain) {
+void MQTTAbstractionImpl::publish(const std::string& topic, const json& json, QOS qos, bool retain,
+                                  bool record_retained) {
     BOOST_LOG_FUNCTION();
 
-    publish(topic, json.dump(), qos, retain);
+    publish(topic, json.dump(), qos, retain, record_retained);
 }
 
 void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& data) {
@@ -161,7 +162,8 @@ void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& d
     publish(topic, data, QOS::QOS0);
 }
 
-void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& data, QOS qos, bool retain) {
+void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& data, QOS qos, bool retain,
+                                  bool record_retained) {
     BOOST_LOG_FUNCTION();
 
     if (topic.empty()) {
@@ -170,7 +172,7 @@ void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& d
 
     auto mqtt_qos = to_io_qos(qos, everest::lib::io::mqtt::mqtt_client::QoS::at_most_once);
 
-    if (retain) {
+    if (retain and record_retained) {
         if (not(data.empty() and qos == QOS::QOS0)) {
             // topic should be retained, so save the topic in retained_topics
             // do not save the topic when the payload is empty and QOS is set to 0 which means a retained topic is to be

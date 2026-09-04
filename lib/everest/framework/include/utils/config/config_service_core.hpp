@@ -208,7 +208,11 @@ private:
     void reload_from_storage();
 
     std::unique_ptr<everest::config::SqliteStorage> make_storage(int slot_id);
-    void publish_active_slot_update();
+    /// \brief Emit an ActiveSlotUpdate to every registered handler.
+    ///
+    /// The cause is a required argument: consumers discriminate on it (a status-only consumer must
+    /// ignore SlotInfo events), so mislabelling an event silently misroutes it.
+    void publish_active_slot_update(ActiveSlotUpdateCause cause);
     void publish_config_update(const ConfigurationUpdate& update);
 
     /// \brief Storage handle for the currently active slot, used to persist runtime config writes.

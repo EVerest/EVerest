@@ -220,7 +220,11 @@ in-memory configuration.
 
 If the reloaded configuration is invalid or contains no modules, the restart
 fails: the manager exits with an error, or, with ``--idle-on-failure``, stays in
-``Idle`` and reports ``FailedToStart``.
+``Idle`` and reports ``FailedToStart``. A restart requested while the manager is
+already ``Idle`` is the exception: it settles back into ``Idle`` and reports
+``FailedToStart`` regardless of ``--idle-on-failure``, because nothing was
+running and exiting would take the APIs away from the very client that must push
+a corrected configuration.
 
 **********************
 Manager Unavailability

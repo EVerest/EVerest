@@ -266,6 +266,11 @@ Administrative Module Restart
   ``--idle-on-failure`` was passed, in which case it settles into ``Idle`` and
   reports *FailedToStart* (load a corrected configuration and request another
   restart).
+- Exception: a restart requested via the Lifecycle API while the manager is
+  already ``Idle`` settles back into ``Idle`` and reports *FailedToStart*
+  **regardless of** ``--idle-on-failure`` — nothing was running, and exiting
+  would take the API away from the very client that must push a corrected
+  configuration.
 
 .. _exp-manager-lifecycle-force-kill:
 

@@ -35,6 +35,7 @@ target_compile_definitions(${TEST_TARGET_NAME}
         EVEREST_FRAMEWORK_EXPECTED_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD=${EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD}
 )
 
+add_subdirectory(api)
 add_subdirectory(controller)
 add_subdirectory(manager)
 

@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <optional>
+
 /// @file manager_module_status.hpp
 ///
 /// The manager lifecycle phase (`ManagerState`) and its mapping onto the module status reported to
@@ -83,4 +85,25 @@ constexpr ModuleStatusAction module_status_action_for(ManagerState state) {
         return ModuleStatusAction::AtRest;
     }
     return ModuleStatusAction::AtRest;
+}
+
+/// \brief The status action a state *transition* should trigger: the destination's action, or
+/// nullopt when the origin already reported the same one.
+///
+/// Several states share an action (ShutdownRequested, CrashShutdownInProgress and ForceTerminating
+/// all report Stopping), so a shutdown that escalates through them would report the same status
+/// once per hop - the client saw "Stopping" two or three times for one stop request. The phase did
+/// not change between those hops, so there is nothing new to report and the repeat is suppressed
+/// here. Note the action itself is still derived from the destination alone (see
+/// module_status_action_for()); the transition only gates *whether* it is reported.
+///
+/// This suppression is deliberately blind to the meaningful repeats the config service must emit
+/// (a second FailedToStart or RestartTriggered): those are produced by direct notice_*() calls on
+/// ConfigServiceCore, not by the state-transition handler, so they never pass through here.
+constexpr std::optional<ModuleStatusAction> module_status_action_for_transition(ManagerState from, ManagerState to) {
+    const auto action = module_status_action_for(to);
+    if (module_status_action_for(from) == action) {
+        return std::nullopt;
+    }
+    return action;
 }

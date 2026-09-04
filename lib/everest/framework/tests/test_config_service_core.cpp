@@ -311,6 +311,9 @@ active_modules:
         for (size_t i = 0; i < expected_statuses.size(); ++i) {
             INFO("event index " << i);
             CHECK(events[i].status == expected_statuses[i]);
+            // Labelled as a status event, which is what makes a status-only consumer forward it
+            // (including a repeat of the same status).
+            CHECK(events[i].cause == ActiveSlotUpdateCause::ModuleStatus);
             // Run-state changes never move the slot: every event reports the default active slot 0
             CHECK(events[i].active_slot_id == 0);
             REQUIRE(events[i].next_boot_slot_id.has_value());
@@ -511,6 +514,9 @@ active_modules:
             listener_called = true;
             REQUIRE(update.next_boot_slot_id.has_value());
             CHECK(update.next_boot_slot_id.value() == 1);
+            // Labelled as slot info, not a status change: the module status rides along unchanged,
+            // so a status-only consumer must be able to drop this event.
+            CHECK(update.cause == ActiveSlotUpdateCause::SlotInfo);
         });
 
         // 1. Success
