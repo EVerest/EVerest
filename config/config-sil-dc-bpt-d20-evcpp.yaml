@@ -13,69 +13,66 @@ active_modules:
       device: auto
       evcc_id: "AA:BB:CC:DD:EE:01"
       response_timeout_ms: 8000
-      ac_max_charge_power_w: 11040
-      ac_min_charge_power_w: 4140
+      dc_max_discharge_power_w: 150000
+      dc_min_discharge_power_w: 0
+      dc_max_discharge_current_a: 200
   evse_manager:
     module: EvseManager
     config_module:
-      ac_enforce_hlc: false
-      ac_hlc_enabled: true
-      ac_hlc_use_5percent: false
-      ac_nominal_voltage: 230
-      supported_iso_ac_bpt: true
-      charge_mode: AC
       connector_id: 1
-      ev_receipt_required: false
       evse_id: DE*PNX*E12345*1
-      has_ventilation: true
-      payment_enable_contract: false
-      payment_enable_eim: true
+      evse_id_din: 49A80737A45678
       session_logging: true
-      session_logging_path: /tmp/everest-logs
       session_logging_xml: false
-      switch_3ph1ph_delay_s: 5
-      switch_3ph1ph_cp_state: X1
+      session_logging_path: /tmp/everest-logs
+      charge_mode: DC
+      payment_enable_contract: false
       bpt_channel: Unified
       bpt_generator_mode: GridFollowing
-      bpt_grid_code_island_method: Passive
     connections:
       bsp:
-        - module_id: connector_1_powerpath
+        - module_id: yeti_driver
           implementation_id: board_support
-      hlc:
-        - module_id: iso15118_charger
-          implementation_id: charger
       powermeter_car_side:
-        - module_id: connector_1_powerpath
+        - module_id: powersupply_dc
           implementation_id: powermeter
       slac:
         - module_id: slac
           implementation_id: evse
-      ac_rcd:
-        - implementation_id: rcd
-          module_id: connector_1_powerpath
-      connector_lock:
-        - implementation_id: connector_lock
-          module_id: connector_1_powerpath
-  connector_1_powerpath:
+      hlc:
+        - module_id: iso15118_charger
+          implementation_id: charger
+      powersupply_DC:
+        - module_id: powersupply_dc
+          implementation_id: main
+      imd:
+        - module_id: imd
+          implementation_id: main
+  powersupply_dc:
+    module: DCSupplySimulator
+  yeti_driver:
+    module: YetiSimulator
     config_module:
       connector_id: 1
-    connections: {}
-    module: YetiSimulator
-    telemetry:
-      id: 1
   slac:
     module: SlacSimulator
+  imd:
+    config_implementation:
+      main:
+        selftest_success: true
+    module: IMDSimulator
   ev_manager:
     module: EvManager
     config_module:
       connector_id: 1
       auto_enable: true
       auto_exec: false
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session AC;iso_wait_pwr_ready;iso_draw_power_regulated 16,3;iso_wait_for_stop 20;iso_wait_v2g_session_stopped;unplug
+      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session DC_BPT;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 15;iso_wait_v2g_session_stopped;unplug;
+      dc_target_current: 20
+      dc_target_voltage: 400
     connections:
       ev_board_support:
-        - module_id: connector_1_powerpath
+        - module_id: yeti_driver
           implementation_id: ev_board_support
       ev:
         - module_id: iso15118_car
@@ -102,8 +99,7 @@ active_modules:
     module: DummyTokenProvider
     config_implementation:
       main:
-        timeout: 10
-        token: DEADBEEF
+        token: TOKEN1
     connections:
       evse:
         - module_id: evse_manager
@@ -140,7 +136,7 @@ active_modules:
         - module_id: api_sink
           implementation_id: energy_grid
       powermeter:
-        - module_id: connector_1_powerpath
+        - module_id: yeti_driver
           implementation_id: powermeter
   api_sink:
     module: EnergyNode
@@ -166,6 +162,12 @@ active_modules:
       evse_energy_sink:
         - module_id: api_sink
           implementation_id: external_limits
+  ev_api:
+    module: EvAPI
+    connections:
+      ev_manager:
+        - implementation_id: ev_manager
+          module_id: ev_manager
   error_history:
     module: ErrorHistory
     config_implementation:

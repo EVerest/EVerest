@@ -59,6 +59,32 @@ SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_WeldingDetection on Sto
     REQUIRE(primed.ctx.is_session_stopped() == false);
 }
 
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_ChargeLoop on OK response for DC_BPT") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, message_20::datatypes::ServiceCategory::DC_BPT,
+                                                      no_seed, Progress::Start};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_WeldingDetection on Stop for DC_BPT") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, message_20::datatypes::ServiceCategory::DC_BPT,
+                                                      no_seed, Progress::Stop};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_WeldingDetection);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
 SCENARIO("ISO15118-20 EV PowerDelivery transitions to AC_ChargeLoop on OK response for AC") {
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC, no_seed, Progress::Start};

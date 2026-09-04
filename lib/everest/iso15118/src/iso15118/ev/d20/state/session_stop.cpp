@@ -12,7 +12,7 @@ void SessionStop::enter() {
     message_20::SessionStopRequest req;
     setup_header(req.header, m_ctx.get_session());
     req.charging_session = message_20::datatypes::ChargingSession::Terminate;
-    m_ctx.respond(req);
+    m_ctx.send_request(req);
 }
 
 Result SessionStop::feed(Event ev) {

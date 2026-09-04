@@ -30,9 +30,35 @@ message_20::DC_ChargeLoopResponse make_res(const message_20::Header& header, Res
     return res;
 }
 
+message_20::DC_ChargeLoopResponse make_bpt_res(const message_20::Header& header, ResponseCode code,
+                                               std::optional<message_20::datatypes::EvseStatus> status = std::nullopt) {
+    message_20::DC_ChargeLoopResponse res;
+    res.header = header;
+    res.response_code = code;
+    res.status = status;
+    res.present_voltage = message_20::datatypes::from_float(400.0f);
+    res.present_current = message_20::datatypes::from_float(10.0f);
+    res.control_mode = message_20::datatypes::BPT_Dynamic_DC_CLResControlMode{};
+    return res;
+}
+
 // DC_ChargeLoop reads present_voltage from the DC params for each loop request.
 const auto seed_present_400 = [](FsmStateHelper& helper) {
     ev::DcChargeParams params{};
+    params.present_voltage = 400.0f;
+    helper.set_dc_params(params);
+};
+
+// A BPT session seeded with discharge limits alongside the charge params.
+const auto seed_bpt_present_400 = [](FsmStateHelper& helper) {
+    ev::DcChargeParams params{};
+    params.max_charge_power = 11000.0f;
+    params.max_charge_current = 200.0f;
+    params.max_voltage = 500.0f;
+    params.min_voltage = 200.0f;
+    params.max_discharge_power = 9000.0f;
+    params.min_discharge_power = 500.0f;
+    params.max_discharge_current = 180.0f;
     params.present_voltage = 400.0f;
     helper.set_dc_params(params);
 };
@@ -73,6 +99,85 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop emits a Dynamic DC_ChargeLoopRequest on e
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_charge_current) == Catch::Approx(32.0f));
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_voltage) == Catch::Approx(500.0f));
     REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_voltage) == Catch::Approx(200.0f));
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop seeds present_voltage from the target voltage") {
+    // Nothing feeds a measured present voltage yet, so the first request approximates it
+    // with the voltage the EV asks for rather than putting a zero on the wire.
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_target_only = [](FsmStateHelper& helper) {
+        ev::DcChargeParams params{};
+        params.max_charge_power = 11000.0f;
+        params.max_voltage = 500.0f;
+        params.min_voltage = 200.0f;
+        params.target_voltage = 420.0f;
+        helper.set_dc_params(params);
+    };
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{callbacks, seed_target_only};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::DC_ChargeLoopRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(request_message->present_voltage) == Catch::Approx(420.0f));
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop adopts the present voltage the SECC reports") {
+    // The SECC's reported present voltage is a better approximation than the EV's own
+    // target, so every loop iteration after the first carries it.
+    StopObserver obs;
+    const auto seed_target_only = [](FsmStateHelper& helper) {
+        ev::DcChargeParams params{};
+        params.max_charge_power = 11000.0f;
+        params.max_voltage = 500.0f;
+        params.min_voltage = 200.0f;
+        params.target_voltage = 420.0f;
+        helper.set_dc_params(params);
+    };
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_target_only};
+
+    // The enter() request still carries the seed.
+    const auto seeded = primed.take_requests();
+    const auto seeded_request = seeded.get<message_20::DC_ChargeLoopRequest>();
+    REQUIRE(seeded_request.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(seeded_request->present_voltage) == Catch::Approx(420.0f));
+
+    auto res = make_res(SESSION_HEADER, ResponseCode::OK);
+    res.present_voltage = message_20::datatypes::from_float(390.0f);
+    primed.handle_response(res);
+    REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned() == false);
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::DC_ChargeLoopRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(request_message->present_voltage) == Catch::Approx(390.0f));
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop prefers a module-fed present voltage over the approximation") {
+    StopObserver obs;
+    const auto seed_measured = [](FsmStateHelper& helper) {
+        ev::DcChargeParams params{};
+        params.max_voltage = 500.0f;
+        params.min_voltage = 200.0f;
+        params.target_voltage = 420.0f;
+        params.present_voltage = 380.0f;
+        helper.set_dc_params(params);
+    };
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_measured};
+
+    // The measured value wins over the target-voltage seed.
+    const auto seeded = primed.take_requests();
+    const auto seeded_request = seeded.get<message_20::DC_ChargeLoopRequest>();
+    REQUIRE(seeded_request.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(seeded_request->present_voltage) == Catch::Approx(380.0f));
+
+    // and over the voltage the SECC reports.
+    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
+    REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned() == false);
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::DC_ChargeLoopRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(request_message->present_voltage) == Catch::Approx(380.0f));
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeLoop stays and re-emits a request on a non-Terminate response") {
@@ -210,6 +315,121 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop honors a stop request set before the stat
     PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_stop_request};
 
     primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+    REQUIRE(obs.fired == false);
+
+    const auto requests = primed.take_requests();
+    const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(pd_request.has_value());
+    REQUIRE(pd_request->charge_progress == message_20::datatypes::Progress::Stop);
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop emits a BPT_Dynamic request with discharge limits for a BPT session") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{callbacks, message_20::datatypes::ServiceCategory::DC_BPT,
+                                                      seed_bpt_present_400};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::DC_ChargeLoopRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(
+        std::holds_alternative<message_20::datatypes::BPT_Dynamic_DC_CLReqControlMode>(request_message->control_mode));
+    const auto& mode = std::get<message_20::datatypes::BPT_Dynamic_DC_CLReqControlMode>(request_message->control_mode);
+    // Charge-side fields carried over unchanged.
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_charge_power) == Catch::Approx(11000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_charge_current) == Catch::Approx(200.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_voltage) == Catch::Approx(500.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_voltage) == Catch::Approx(200.0f));
+    // Discharge fields from the DC params.
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_discharge_power) == Catch::Approx(9000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_discharge_power) == Catch::Approx(500.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_discharge_current) == Catch::Approx(180.0f));
+    // v2x energy request fields are deliberately omitted.
+    REQUIRE_FALSE(mode.max_v2x_energy_request.has_value());
+    REQUIRE_FALSE(mode.min_v2x_energy_request.has_value());
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop continues on a BPT_Dynamic response for a BPT session") {
+    StopObserver obs;
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, message_20::datatypes::ServiceCategory::DC_BPT,
+                                                      seed_bpt_present_400};
+
+    primed.handle_response(make_bpt_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+    REQUIRE(obs.fired == false);
+
+    const auto requests = primed.take_requests();
+    REQUIRE(requests.get<message_20::DC_ChargeLoopRequest>().has_value());
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop stops a BPT session on a plain Dynamic reply it never requested") {
+    StopObserver obs;
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, message_20::datatypes::ServiceCategory::DC_BPT,
+                                                      seed_bpt_present_400};
+
+    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == true);
+    REQUIRE(obs.fired == false);
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop stops a plain DC session on a BPT_Dynamic reply it never requested") {
+    StopObserver obs;
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, seed_present_400};
+
+    primed.handle_response(make_bpt_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == true);
+    REQUIRE(obs.fired == false);
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop fires stop_from_charger and drives PowerDelivery(Stop) on Terminate for BPT") {
+    StopObserver obs;
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, message_20::datatypes::ServiceCategory::DC_BPT,
+                                                      seed_bpt_present_400};
+
+    primed.handle_response(
+        make_bpt_res(SESSION_HEADER, ResponseCode::OK,
+                     message_20::datatypes::EvseStatus{0, message_20::datatypes::EvseNotification::Terminate}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(obs.fired == true);
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+
+    const auto requests = primed.take_requests();
+    const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(pd_request.has_value());
+    REQUIRE(pd_request->charge_progress == message_20::datatypes::Progress::Stop);
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop honors a stop request for a BPT session") {
+    StopObserver obs;
+    const auto seed_bpt_latched = [](FsmStateHelper& helper) {
+        ev::DcChargeParams params{};
+        params.present_voltage = 400.0f;
+        params.max_discharge_power = 9000.0f;
+        helper.set_dc_params(params);
+        helper.get_context().set_stop_charging_requested(true);
+    };
+    PrimedState<ev::d20::state::DC_ChargeLoop> primed{obs.callbacks, message_20::datatypes::ServiceCategory::DC_BPT,
+                                                      seed_bpt_latched};
+
+    primed.handle_response(make_bpt_res(SESSION_HEADER, ResponseCode::OK));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
 
     REQUIRE(result.transitioned() == true);
