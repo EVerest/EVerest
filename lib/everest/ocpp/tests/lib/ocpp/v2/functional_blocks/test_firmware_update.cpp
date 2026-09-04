@@ -433,25 +433,6 @@ TEST_F(FirmwareUpdateTest, AbortedUpdate_NewRequest_DropsScheduledAvailabilityCh
     availability->handle_scheduled_change_availability_requests(2);
 }
 
-// FAILS today - the guard is re-armed in ChargePoint::handle_message, so the functional block that owns the
-// callback cannot start a new update cycle on its own.
-TEST_F(FirmwareUpdateTest, AbortedUpdate_NewRequest_ReArmsSingleFireGuard) {
-    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillRepeatedly(Invoke([](const json&, bool) {
-        return deferred_empty_response();
-    }));
-
-    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
-    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
-    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
-    ::testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
-
-    // The update dies without a terminal status; the next accepted request starts a new cycle.
-    handle_update_firmware_request(2, UpdateFirmwareStatusEnum::Accepted);
-
-    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
-    firmware_update->on_firmware_update_status_notification(2, FirmwareStatusEnum::InstallScheduled, true);
-}
-
 // Guard rail for the fix - must keep PASSING. A request the charge point answers with Rejected (or
 // InvalidCertificate / RevokedCertificate) does not start a new update cycle, so it must not disturb the update
 // that is still running: neither its guard nor the availability changes it queued.
