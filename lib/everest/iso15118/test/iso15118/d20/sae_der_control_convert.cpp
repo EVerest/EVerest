@@ -81,20 +81,22 @@ SCENARIO("The default SAE DER control converts onto the wire") {
             REQUIRE(out.frequency_trip.under_frequency_must_trip_curve.curve_data_points.size() == 2);
         }
 
-        THEN("The over voltage trip curve points survive the rational number conversion") {
+        THEN("The over voltage trip curve points survive the rational number conversion, ordered by "
+             "ascending duration") {
             const auto& points = out.voltage_trip.over_voltage_must_trip_curve.curve_data_points;
-            REQUIRE_THAT(value_of(points[0].x_value), WithinAbs(2.0f, TOLERANCE));
-            REQUIRE_THAT(value_of(points[0].y_value), WithinAbs(110.0f, TOLERANCE));
-            REQUIRE_THAT(value_of(points[1].x_value), WithinAbs(0.16f, TOLERANCE));
-            REQUIRE_THAT(value_of(points[1].y_value), WithinAbs(120.0f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[0].x_value), WithinAbs(0.16f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[0].y_value), WithinAbs(120.0f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[1].x_value), WithinAbs(2.0f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[1].y_value), WithinAbs(110.0f, TOLERANCE));
         }
 
-        THEN("The over frequency trip curve points survive the rational number conversion") {
+        THEN("The over frequency trip curve points survive the rational number conversion, ordered by "
+             "ascending duration") {
             const auto& points = out.frequency_trip.over_frequency_must_trip_curve.curve_data_points;
-            REQUIRE_THAT(value_of(points[0].x_value), WithinAbs(300.0f, TOLERANCE));
-            REQUIRE_THAT(value_of(points[0].y_value), WithinAbs(51.5f, TOLERANCE));
-            REQUIRE_THAT(value_of(points[1].x_value), WithinAbs(0.16f, TOLERANCE));
-            REQUIRE_THAT(value_of(points[1].y_value), WithinAbs(52.0f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[0].x_value), WithinAbs(0.16f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[0].y_value), WithinAbs(52.0f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[1].x_value), WithinAbs(300.0f, TOLERANCE));
+            REQUIRE_THAT(value_of(points[1].y_value), WithinAbs(51.5f, TOLERANCE));
         }
 
         THEN("The curve units survive the conversion") {
@@ -453,10 +455,10 @@ SCENARIO("Enableable function bits render as names for the log lines") {
         }
     }
 
-    GIVEN("A bitmap holding only bits the SECC never enables") {
-        THEN("It renders as none") {
+    GIVEN("A bitmap holding a bit the SECC never enables") {
+        THEN("It still renders by name, callers pre-mask what they log") {
             REQUIRE(iso15118::d20::state::sae_function_names(bit_of(sae::DerBitMapFunctions::ChargeFunction)) ==
-                    "none");
+                    "charge");
         }
     }
 }
