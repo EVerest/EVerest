@@ -329,14 +329,14 @@ types:
       key:
         description: Key / Identifier
         type: string
-        maximum: 50
+        maxLength: 50
       read_only:
         description: Indicates if the configuration key is configured to be read-only
         type: boolean
       value:
         description: Value of the configuration key
         type: string
-        maximum: 5000
+        maxLength: 5000
   GetConfigurationResponse:
     description: Response to a GetConfiguration request
     type: object
@@ -357,7 +357,7 @@ types:
         items:
           description: Unknown key
           type: string
-          maximum: 50
+          maxLength: 50
   ConfigurationStatus:
     description: Response to a set_custom_configuration_key command
     type: string
