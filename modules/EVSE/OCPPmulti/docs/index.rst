@@ -76,6 +76,19 @@ these MQTT topics (the message payload is ignored):
 
 This is intended for debug and testing purposes.
 
+Network preparation via the system provider
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If ``DelegateNetworkConfigurationToSystem`` is set to ``true``, the module asks the ``system`` provider to prepare the network
+(**configure_network**) before every CSMS connection attempt and binds the websocket to the interface address the
+provider returns; see :ref:`Network connection configuration <handwritten_ocppmulti_network-connection-configuration>`.
+The provider must answer promptly (``NotSupported`` is acceptable). With the :ref:`system_API <everest_modules_system_API>`
+module the external client must reply to ``e2m/configure_network``; a client that stays silent blocks every
+connection attempt until the request times out, so the charge point never reaches the CSMS.
+
+With the default ``false`` no request is sent and the connection is established as with the
+:ref:`OCPP201 <everest_modules_OCPP201>` module (``IFace`` handling included).
+
 Device model configuration via component configs
 =================================================
 
@@ -184,10 +197,11 @@ previously used with OCPP 2.x, which writes back the negotiated version; OCPP 1.
 leaving the charge point unable to connect. The same fallback applies when the active slot's profile is
 incomplete; in OCPP 2.x an incomplete slot is simply skipped.
 
-The ``interface_address`` returned by the ``system`` provider's **configure_network** *replaces* the static
-``Internal``/``IFace`` configuration key when binding the websocket - including clearing it when the provider
-answers ``Ready`` or ``NotSupported`` without an address. Since this module always performs the configure_network
-round-trip, ``IFace`` is effectively not used on successful attempts.
+With ``DelegateNetworkConfigurationToSystem`` set to ``true``, the ``interface_address`` returned by the ``system`` provider's
+**configure_network** *replaces* the static ``Internal``/``IFace`` configuration key when binding the websocket -
+including clearing it when the provider answers ``Ready`` or ``NotSupported`` without an address, so ``IFace`` is
+effectively not used on successful attempts. With the default ``false`` no configure_network round-trip is performed
+and ``IFace`` is handled as in the OCPP201 module.
 
 The legacy JSON configuration backend (OCPP 1.6 without a device model, as used by the ``OCPP`` module) is
 unaffected by this and keeps the previous single-profile behavior.
@@ -491,12 +505,13 @@ for production use without modification). Used to execute and control system-wid
 * **set_system_time** to apply the time communicated by the CSMS
 * **get_boot_reason** for the boot notification at startup
 * **configure_network** to prepare the network for a connection attempt on a network profile slot (see
-  :ref:`Network connection configuration <handwritten_ocppmulti_network-connection-configuration>`); a provider
-  without special network handling answers ``NotSupported``
+  :ref:`Network connection configuration <handwritten_ocppmulti_network-connection-configuration>`); only called
+  when ``DelegateNetworkConfigurationToSystem`` is ``true``; a provider without special network handling answers
+  ``NotSupported``
 
 The **log_status** and **firmware_update_status** variables are received to report the corresponding status
-notifications to the CSMS, and **configure_network_status** reports the asynchronous outcome of
-**configure_network** requests.
+notifications to the CSMS, and **configure_network_status** (subscribed only when ``DelegateNetworkConfigurationToSystem``
+is ``true``) reports the asynchronous outcome of **configure_network** requests.
 
 Error reporting
 ===============
@@ -776,16 +791,25 @@ Failover between slots
 """"""""""""""""""""""
 
 Slots are tried in priority order, and the list wraps around. A slot is skipped
-when the ``system`` provider's **configure_network** answers
-``Failed``/``Rejected`` (or does not respond within
-``InternalCtrlr``/``NetworkConfigTimeout`` seconds, default 60), when the
+when ``DelegateNetworkConfigurationToSystem`` is ``true`` and the ``system`` provider's
+**configure_network** answers ``Failed``/``Rejected`` or answers ``Processing``
+without publishing **configure_network_status** within
+``InternalCtrlr``/``NetworkConfigTimeout`` seconds (default 60), when the
 resulting profile is invalid, or when the websocket connection fails
 ``OCPPCommCtrlr``/``NetworkProfileConnectionAttempts`` times in a row. Setting
 ``NetworkProfileConnectionAttempts`` to ``-1`` means retry-forever and thereby
 disables the websocket-failure-driven part of the failover; only do that
 deliberately. There is no automatic fall-back to a higher-priority slot while a
-lower-priority one is connected. The address the ``system`` provider returns
-from **configure_network** is what the websocket is bound to for that attempt.
+lower-priority one is connected. With ``DelegateNetworkConfigurationToSystem`` the
+address the ``system`` provider returns from **configure_network** is what the
+websocket is bound to for that attempt; without it no provider request is made.
+
+The **configure_network** command itself is called synchronously on libocpp's
+connectivity thread, so a provider that does not answer the command at all is
+bounded by the EVerest framework command timeout (300 seconds), not by
+``NetworkConfigTimeout``. Each connection attempt then blocks for that long
+before the slot is retried, which is why the flag must only be enabled with a
+provider (and, for ``system_API``, an external client) that answers promptly.
 
 Profiles with a ``SecurityProfile`` below the *confirmed* security profile -
 the ``SecurityCtrlr``/``SecurityProfile`` value, which is raised only after a

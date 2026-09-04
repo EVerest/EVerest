@@ -327,6 +327,18 @@ so existing connections carry over:
   ``evse_energy_sink``, ``evse_manager``, ``extensions_15118``, ``security``,
   ``system``) are identical to both old modules.
 
+.. note::
+
+   OCPPmulti can delegate network preparation before every CSMS connection
+   attempt to the ``system`` provider's ``configure_network`` command. This is
+   off by default (``DelegateNetworkConfigurationToSystem: false``) and then behaves like
+   the old modules. Before enabling it, make sure the ``system`` provider
+   implements ``configure_network`` (``NotSupported`` is a valid answer), and
+   with the ``system_API`` module that every external client replies to
+   ``e2m/configure_network`` (again, ``NotSupported`` suffices). A client that
+   stays silent blocks each connection attempt until the request times out;
+   consider lowering ``system_API``'s ``cfg_request_reply_to_s`` accordingly.
+
 On the ``provides`` side, OCPPmulti offers the same interfaces as
 ``OCPP201`` (``auth_validator``, ``auth_provider``, ``data_transfer``,
 ``ocpp_generic``, ``session_cost``); the 1.6-specific ``main``
