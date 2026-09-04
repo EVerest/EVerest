@@ -96,14 +96,19 @@ protected:
     /// \brief Register the callbacks the connector-disable path fires:
     ///   * disable_evse_callback records the connector id it is invoked for (and returns true),
     ///   * all_connectors_unavailable_callback counts how often it has been called,
-    ///   * enable_evse_callback is a safe no-op (touched by the terminal-status restore path).
+    ///   * enable_evse_callback records the connector id it is invoked for (and returns true) - this is the
+    ///     restore-sequence side effect a terminal status (or, per the still-open review comment, Idle) is
+    ///     supposed to trigger for connectors that were disabled for the install.
     void register_callbacks(ChargePointImpl& cp) {
         cp.register_disable_evse_callback([this](std::int32_t connector) {
             this->disabled_connectors.push_back(connector);
             return true;
         });
         cp.register_all_connectors_unavailable_callback([this]() { ++this->all_connectors_unavailable_count; });
-        cp.register_enable_evse_callback([](std::int32_t) { return true; });
+        cp.register_enable_evse_callback([this](std::int32_t connector) {
+            this->enabled_connectors.push_back(connector);
+            return true;
+        });
     }
 
     /// \brief The connectors 1..N the disable path is expected to disable when none are in an active transaction.
@@ -122,6 +127,7 @@ protected:
     fs::path tmp_dir;
 
     std::vector<std::int32_t> disabled_connectors;
+    std::vector<std::int32_t> enabled_connectors;
     int all_connectors_unavailable_count{0};
 };
 
@@ -203,6 +209,55 @@ TEST_F(ChargePointFirmwareUpdateTest, TerminalStatusResetsSingleFireGuard) {
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
                                                         std::optional<bool>{true});
     EXPECT_EQ(this->all_connectors_unavailable_count, 2);
+}
+
+// FAILS today (PR 2514 review r3811033363, "We should also treat Idle as a reset state and run the restore
+// sequence"): the restore block only runs for InstallationFailed/Installed/InstallVerificationFailed, so an
+// updater that gives up and falls back to Idle - documented in types/system.yaml as "System is not performing
+// firmware update related tasks" - leaves the connectors it disabled for the install stuck Unavailable.
+// The CONNECTORS table is seeded first because the restore sequence reads availability from the database, and a
+// fresh test database has no rows, which would make the restore loop a no-op whatever status triggered it.
+TEST_F(ChargePointFirmwareUpdateTest, IdleStatusRestoresConnectorsDisabledForInstall) {
+    auto& charge_point = start_charge_point();
+
+    for (const auto connector : this->expected_idle_connectors()) {
+        charge_point.database_handler->insert_or_update_connector_availability(connector, AvailabilityType::Operative);
+    }
+
+    charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
+                                                        std::optional<bool>{true});
+    ASSERT_EQ(this->disabled_connectors, expected_idle_connectors());
+    ASSERT_EQ(this->all_connectors_unavailable_count, 1);
+
+    // The updater aborts and falls back to Idle instead of one of the three enumerated terminal statuses.
+    charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::Idle, std::nullopt);
+
+    EXPECT_EQ(this->enabled_connectors, expected_idle_connectors())
+        << "Idle did not run the restore sequence: connectors disabled for the firmware install are stuck "
+           "Unavailable";
+}
+
+// Test that clear_firmware_install_pending() erases exactly the change_availability_queue entries the firmware
+// update queued for itself (persist == false) and leaves a genuinely CSMS-scheduled entry (persist == true)
+// alone, as its declaration claims ("drops availability changes queued for the firmware update that have not
+// been executed yet"). The predicate has to discriminate on the persist flag, not on connector id.
+TEST_F(ChargePointFirmwareUpdateTest, ClearFirmwareInstallPendingDropsOnlyNonPersistentQueuedChanges) {
+    auto& charge_point = start_charge_point();
+
+    // A CSMS ChangeAvailability.req queued behind a running transaction is always persist == true (see
+    // preprocess_change_availability_request) and must survive regardless of any firmware update.
+    charge_point.change_availability_queue[1] = {AvailabilityType::Inoperative, /*persist=*/true};
+
+    // The connector-disable path queues its own change as persist == false when a transaction is running (see
+    // change_all_connectors_to_unavailable_for_firmware_update). Seed it on a different connector so the erase
+    // predicate is exercised on both flags at once.
+    charge_point.change_availability_queue[2] = {AvailabilityType::Inoperative, /*persist=*/false};
+
+    charge_point.clear_firmware_install_pending();
+
+    ASSERT_EQ(charge_point.change_availability_queue.count(1), 1u);
+    EXPECT_TRUE(charge_point.change_availability_queue.at(1).persist);
+    EXPECT_EQ(charge_point.change_availability_queue.count(2), 0u);
 }
 
 /// \brief Fixture that additionally captures the registered message callback and the outgoing frames, so a test
@@ -402,10 +457,10 @@ TEST_F(ChargePointUpdateFirmwareRequestTest, SignedUpdateFirmwareRequestResetsSi
     EXPECT_EQ(this->all_connectors_unavailable_count, 2);
 }
 
-// FAILS today - handleSignedUpdateFirmware calls clear_firmware_install_pending() before verify_certificate, so a
-// request that is answered with InvalidCertificate (no new update cycle is started) still wipes the state of the
-// update that is actually running: the guard is re-armed and the availability changes queued behind running
-// transactions are dropped.
+// A SignedUpdateFirmware.req answered with InvalidCertificate starts no new update cycle, so it must not wipe the
+// state of the update that is actually running: the guard stays latched and the availability changes queued behind
+// running transactions survive. handleSignedUpdateFirmware only calls clear_firmware_install_pending() once the
+// certificate has been verified.
 TEST_F(ChargePointUpdateFirmwareRequestTest, InvalidCertificateSignedUpdateFirmwareDoesNotDisturbRunningUpdate) {
     ON_CALL(*this->evse_security, verify_certificate(::testing::_, ::testing::An<const ocpp::LeafCertificateType&>()))
         .WillByDefault(::testing::Return(ocpp::CertificateValidationResult::InvalidSignature));

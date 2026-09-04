@@ -183,6 +183,46 @@ TEST_F(FirmwareUpdateTest, InstallScheduled_ExplicitTrue_NoActiveTransaction_Tri
     firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
 }
 
+
+// FAILS today (PR 2514 review r3810993263, "Shouldnt this also go into the is_duplicate block?"): the
+// InstallScheduled disable-connectors statement sits after the `if (!is_duplicate)` block closes, so it runs on
+// every duplicate notification too. Duplicates are not hypothetical - the FIXME in
+// on_firmware_update_status_notification describes the System module resending the identical status/request_id
+// while it waits for a running transaction to finish. change_all_connectors_to_unavailable_for_firmware_update()
+// re-forces every non-busy connector to Inoperative without checking its current status, so a duplicate silently
+// reverts a CSMS ChangeAvailability(Operative) issued in between - no request/response, nothing reported.
+TEST_F(FirmwareUpdateTest, DuplicateInstallScheduled_UnconditionallyReassertsUnavailable) {
+    // First InstallScheduled: forwarded to the CSMS, disables both connectors, fires the guarded callback once.
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillOnce(Invoke([](const json& call, bool) {
+        auto request = call[ocpp::CALL_PAYLOAD].get<FirmwareStatusNotificationRequest>();
+        EXPECT_EQ(request.status, FirmwareStatusEnum::InstallScheduled);
+        return deferred_empty_response();
+    }));
+    EXPECT_CALL(evse_1, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false));
+    EXPECT_CALL(evse_2, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false));
+    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
+
+    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+
+    ::testing::Mock::VerifyAndClearExpectations(&mock_dispatcher);
+    ::testing::Mock::VerifyAndClearExpectations(&evse_1);
+    ::testing::Mock::VerifyAndClearExpectations(&evse_2);
+    ::testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
+
+    // The CSMS operator sends ChangeAvailability(Operative) for evse 1's connector - e.g. to let it charge while
+    // the update is still waiting on evse 2's transaction. Modeled here by flipping what evse 1 now reports.
+    ON_CALL(evse_1, get_connector_effective_operational_status(_))
+        .WillByDefault(Return(OperationalStatusEnum::Operative));
+
+    // The System module's wait-for-transaction poll loop resends the SAME InstallScheduled/request_id: a duplicate.
+    // It must not reach the CSMS again (existing behavior, re-checked here), and - the assertion under review - it
+    // must not silently force evse 1's connector back to Inoperative, undoing the operator's ChangeAvailability.
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+    EXPECT_CALL(evse_1, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false)).Times(0);
+
+    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+}
+
 // Test that an InstallScheduled message without disable_connectors_during_install will not disable connectors
 TEST_F(FirmwareUpdateTest, InstallScheduled_Nullopt_OnlyForwardsToCsms) {
     EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillOnce(Invoke([](const json& call, bool) {
@@ -499,27 +539,32 @@ TEST_F(FirmwareUpdateTest, RejectedRequest_KeepsRunningUpdatePreInstallStatus) {
     firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::SignatureVerified, std::nullopt);
 }
 
-// FAILS today - cross-talk. ChargePoint::initialize hands the same guarded callback to Availability and to
-// FirmwareUpdate, but the guard is only ever re-armed by firmware-update events. Availability fires the callback
-// for plain ChangeAvailability.req driven transitions, which are not a firmware update cycle at all, so once a
-// firmware update has latched the guard an unrelated "all connectors are now inoperative" is swallowed.
-TEST_F(FirmwareUpdateTest, FirmwareUpdateGuard_DoesNotSwallowAvailabilityDrivenNotification) {
+// PR 2514 review r3810981354 asked whether Availability should get the guarded callback at all, worried an
+// unrelated ChangeAvailability completion could latch the guard and swallow a later firmware notification. That
+// direction is unreachable: the guard only ever goes Waiting->Notified, and while it is idle the CAS is a no-op.
+// The reverse direction does happen, and is correct: Availability's scheduled_change_availability_requests is
+// the only delivery path for a firmware-triggered disable that had to wait for a transaction, and
+// are_all_connectors_effectively_inoperative() stays true for the rest of the cycle, so there is exactly one
+// real "all connectors unavailable" transition per cycle. Reporting it twice would double-fire the callback's
+// consumer (OCPP201.cpp call_allow_firmware_installation()), which is a one-shot permission gate.
+TEST_F(FirmwareUpdateTest, FirmwareUpdateGuard_SuppressesRedundantAvailabilityDrivenNotification) {
     EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillRepeatedly(Invoke([](const json&, bool) {
         return deferred_empty_response();
     }));
 
-    // A firmware update latches the guard and then dies without reporting a terminal status.
+    // A firmware update reaches InstallScheduled and reports all connectors unavailable.
     EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
     firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
     ::testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
 
-    // Completely unrelated to any firmware update: the CSMS sent ChangeAvailability(Inoperative) for EVSE 2 while
-    // a transaction was running, so it was scheduled. The transaction now ends and the change executes, leaving
-    // all connectors inoperative - which must be reported.
+    // Unrelated to that firmware update: the CSMS separately sent ChangeAvailability(Inoperative) for EVSE 2 while
+    // a transaction was running, so it was scheduled. That transaction now ends and the change executes. All
+    // connectors are already unavailable (reported above), so this is not new information and must not be
+    // reported again.
     availability->set_scheduled_change_availability_requests(2, {inoperative_request(2), true});
 
     EXPECT_CALL(evse_2, set_evse_operative_status(OperationalStatusEnum::Inoperative, true));
-    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
+    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(0);
 
     availability->handle_scheduled_change_availability_requests(2);
 }
