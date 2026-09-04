@@ -535,9 +535,13 @@ void YetiSimulator::add_noise() {
     const auto random_number_between_0_and_1 = [] {
         return static_cast<double>(rand()) / static_cast<double>(RAND_MAX);
     };
-    const auto noise = 1 + (random_number_between_0_and_1() - 0.5) * 0.02;
-    const auto lonoise = 1 + (random_number_between_0_and_1() - 0.5) * 0.005;
-    const auto impedance = module_state->simdata_setting.impedance / 1000.0;
+    // multiplicative noise, uniformly distributed within +-peak_percent
+    const auto random_noise_factor = [&](const double peak_percent) {
+        return 1 + (random_number_between_0_and_1() - 0.5) * 2.0 * peak_percent / 100.0;
+    };
+    const auto noise = random_noise_factor(config.measurement_noise_percent);
+    const auto lonoise = random_noise_factor(config.frequency_noise_percent);
+    const auto impedance = module_state->simdata_setting.impedance_ohm;
 
     module_state->simulation_data.currents.L1 = module_state->simdata_setting.currents.L1 * noise;
     module_state->simulation_data.currents.L2 = module_state->simdata_setting.currents.L2 * noise;
