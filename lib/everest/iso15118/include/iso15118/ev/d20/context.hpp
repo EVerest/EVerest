@@ -58,6 +58,8 @@ class Session;
 class Context {
 public:
     Context(session::feedback::Callbacks, MessageExchange&);
+    Context(const Context&) = delete;
+    Context& operator=(const Context&) = delete;
 
     template <typename StateType, typename... Args> BasePointerType create_state(Args&&... args) {
         return std::make_unique<StateType>(*this, std::forward<Args>(args)...);
