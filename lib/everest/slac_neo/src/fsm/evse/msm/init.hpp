@@ -5,8 +5,24 @@
 // NSCM_GET_VERSION, then exits to Reset.
 
 #pragma once
+#include "../../msm_helpers.hpp"
 #include "common.hpp"
 #include "guards_and_actions/init_logic.hpp"
+
+#include <everest/slac/EvseSlacConfig.hpp>
+#include <everest/slac/fsm/evse/context.hpp>
+#include <everest/slac/slac_defs.hpp>
+#include <everest/slac/slac_messages.hpp>
+#include <everest/slac/slac_utils.hpp>
+#include <everest/slac/telemetry.hpp>
+
+#include <boost/mpl/vector.hpp>
+#include <boost/msm/front/completion_event.hpp>
+#include <boost/msm/front/functor_row.hpp>
+#include <boost/msm/front/state_machine_def.hpp>
+#include <boost/msm/front/states.hpp>
+
+#include <string>
 
 namespace everest::lib::slac::msm::init_sm {
 

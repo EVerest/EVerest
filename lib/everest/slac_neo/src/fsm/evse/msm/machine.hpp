@@ -5,7 +5,7 @@
 // between them. Include this file to get the complete machine (SlacFSM).
 
 #pragma once
-#include "common.hpp"
+#include "../../msm_helpers.hpp"
 #include "guards_and_actions/machine_logic.hpp"
 #include "init.hpp"
 #include "matched.hpp"
@@ -14,7 +14,19 @@
 #include "reset_chip.hpp"
 #include "wait_for_link.hpp"
 
+#include <everest/slac/fsm/evse/context.hpp>
+#include <everest/slac/telemetry.hpp>
+
+#include <boost/mpl/vector.hpp>
+#include <boost/msm/back/state_machine.hpp>
+#include <boost/msm/front/completion_event.hpp>
+#include <boost/msm/front/functor_row.hpp>
+#include <boost/msm/front/state_machine_def.hpp>
+#include <boost/msm/front/states.hpp>
+
 namespace everest::lib::slac::msm {
+
+using boost::msm::back::state_machine;
 
 struct SlacFSM_def : state_machine_def<SlacFSM_def> {
     // States

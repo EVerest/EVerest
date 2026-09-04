@@ -5,8 +5,21 @@
 // linked (or the link-status timeout elapses). Re-sends the cached CM_SLAC_MATCH.CNF on request.
 
 #pragma once
+#include "../../msm_helpers.hpp"
 #include "common.hpp"
 #include "guards_and_actions/wait_for_link_logic.hpp"
+
+#include <everest/slac/fsm/evse/context.hpp>
+#include <everest/slac/telemetry.hpp>
+#include <everest/slac/timer.hpp>
+
+#include <boost/mpl/vector.hpp>
+#include <boost/msm/front/completion_event.hpp>
+#include <boost/msm/front/functor_row.hpp>
+#include <boost/msm/front/state_machine_def.hpp>
+#include <boost/msm/front/states.hpp>
+
+#include <chrono>
 
 namespace everest::lib::slac::msm::wait_for_link_sm {
 

@@ -2,7 +2,6 @@
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <array>
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/event/timer_fd.hpp>
 #include <everest/slac/slac.hpp>

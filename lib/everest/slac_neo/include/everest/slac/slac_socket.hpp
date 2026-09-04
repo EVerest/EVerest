@@ -3,11 +3,9 @@
 
 #pragma once
 
-#include <cstdint>
 #include <everest/io/event/fd_event_client.hpp>
 #include <everest/io/event/unique_fd.hpp>
 #include <everest/slac/slac.hpp>
-#include <functional>
 #include <string>
 
 namespace everest::lib::slac {

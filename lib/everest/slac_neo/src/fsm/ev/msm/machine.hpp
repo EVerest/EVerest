@@ -13,7 +13,6 @@
 #include <boost/msm/back/state_machine.hpp>
 #include <boost/msm/front/completion_event.hpp>
 #include <boost/msm/front/functor_row.hpp>
-#include <boost/msm/front/internal_row.hpp>
 #include <boost/msm/front/state_machine_def.hpp>
 #include <boost/msm/front/states.hpp>
 

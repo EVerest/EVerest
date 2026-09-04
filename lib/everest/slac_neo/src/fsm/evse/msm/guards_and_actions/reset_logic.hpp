@@ -4,7 +4,16 @@
 // Guards and actions of the Reset sub-machine (CM_SET_KEY handling; see reset.hpp).
 
 #pragma once
-#include "../common.hpp"
+#include "../../../misc.hpp"
+#include "../../../msm_helpers.hpp"
+
+#include <everest/slac/EvseSlacConfig.hpp>
+#include <everest/slac/MatchingSessionData.hpp>
+#include <everest/slac/slac_defs.hpp>
+#include <everest/slac/slac_messages.hpp>
+#include <everest/slac/slac_types.hpp>
+
+#include <boost/msm/front/completion_event.hpp>
 
 namespace everest::lib::slac::msm::reset_sm {
 

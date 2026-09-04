@@ -4,8 +4,18 @@
 // ResetChip sub-machine: optional modem reset after the NMK was programmed (Reset -> ResetChip -> Idle).
 
 #pragma once
-#include "common.hpp"
+#include "../../msm_helpers.hpp"
 #include "guards_and_actions/reset_chip_logic.hpp"
+
+#include <everest/slac/fsm/evse/context.hpp>
+#include <everest/slac/telemetry.hpp>
+#include <everest/slac/timer.hpp>
+
+#include <boost/mpl/vector.hpp>
+#include <boost/msm/front/completion_event.hpp>
+#include <boost/msm/front/functor_row.hpp>
+#include <boost/msm/front/state_machine_def.hpp>
+#include <boost/msm/front/states.hpp>
 
 namespace everest::lib::slac::msm::reset_chip_sm {
 

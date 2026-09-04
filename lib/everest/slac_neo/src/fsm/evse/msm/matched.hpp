@@ -5,9 +5,25 @@
 // link loss and runs the CM_AMP_MAP exchange. Exits to Failed when the link is lost.
 
 #pragma once
+#include "../../misc.hpp"
+#include "../../msm_helpers.hpp"
 #include "../amp_map_handler.hpp"
 #include "common.hpp"
 #include "guards_and_actions/matched_logic.hpp"
+
+#include <everest/slac/fsm/evse/context.hpp>
+#include <everest/slac/telemetry.hpp>
+
+#include <boost/mpl/vector.hpp>
+#include <boost/msm/front/completion_event.hpp>
+#include <boost/msm/front/functor_row.hpp>
+#include <boost/msm/front/state_machine_def.hpp>
+#include <boost/msm/front/states.hpp>
+
+#include <chrono>
+#include <iomanip>
+#include <ios>
+#include <sstream>
 
 namespace everest::lib::slac::msm::matched_sm {
 

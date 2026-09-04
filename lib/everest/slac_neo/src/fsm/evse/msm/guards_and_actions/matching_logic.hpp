@@ -4,7 +4,14 @@
 // Guards and actions of the Matching sub-machine (see matching.hpp).
 
 #pragma once
+#include "../../../misc.hpp"
+#include "../../../msm_helpers.hpp"
 #include "../common.hpp"
+
+#include <everest/slac/MatchingSessionData.hpp>
+#include <everest/slac/slac_defs.hpp>
+#include <everest/slac/slac_messages.hpp>
+#include <everest/slac/slac_types.hpp>
 
 namespace everest::lib::slac::msm::matching_sm {
 
