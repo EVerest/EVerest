@@ -416,6 +416,9 @@ ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& 
         result.error_code = error_code;
         result.vendor_id = ocpp_module_common::v16::CHARGE_X_MREC_VENDOR_ID;
         result.vendor_error_code = ocpp::CiString<50>(vendor_error_code, ocpp::StringTooLarge::Truncate);
+        if (not error.message.empty()) {
+            result.info = ocpp::CiString<50>(error.message, ocpp::StringTooLarge::Truncate);
+        }
         incomplete = false;
     }
 
@@ -429,6 +432,7 @@ ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& 
         if (ocpp_it != ocpp_module_common::v16::OCPP_ERROR_MAP.end()) {
             // update the result
             result.error_code = ocpp_it->second;
+            result.vendor_id = ocpp::CiString<255>(error.message, ocpp::StringTooLarge::Truncate);
             incomplete = false;
         }
     }

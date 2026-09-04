@@ -157,7 +157,19 @@ components:
           description: The subtype of the error
           type: string
         message:
-          description: Addition information about the error
+          description: |-
+            Optional free-text detail about this specific occurrence of the error,
+            e.g. a measured value or a diagnostic string from the hardware. Unlike
+            the fixed per-error-type description, this is chosen by the caller.
+            If an OCPP module is part of the EVerest configuration, the message is
+            forwarded to the CSMS:
+            * OCPP 1.6 (`StatusNotification.req`):
+              * MREC errors: sent as `info`, truncated to 50 characters.
+                Omitted entirely when the message is empty.
+              * all other errors: sent as `vendorId`, truncated to 255 characters.
+            * OCPP 2.x (`NotifyEvent.req`): sent as `techInfo`, truncated to 500
+              characters. When the message is empty, the error description is sent
+              instead.
           type: string
 
     CommunicationCheck:

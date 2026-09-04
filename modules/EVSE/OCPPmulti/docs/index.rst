@@ -523,8 +523,10 @@ as follows:
 
 * If the EVerest error type has a (built-in) MREC mapping, ``errorCode`` is taken from that mapping, ``vendorId`` is
   set to the MREC vendor id, and ``vendorErrorCode`` carries the MREC techCode. (The OCPP 1.6 path uses a fixed
-  built-in table; ``CustomMrecErrorMapPath`` is not applied here.)
-* Otherwise, if it maps to a standard OCPP 1.6 error code, ``errorCode`` is set accordingly.
+  built-in table; ``CustomMrecErrorMapPath`` is not applied here.) The error message is written to ``info`` instead
+  of ``vendorId``, truncated to 50 characters; if the error was raised without a message, ``info`` is omitted.
+* Otherwise, if it maps to a standard OCPP 1.6 error code, ``errorCode`` is set accordingly and ``vendorId`` carries
+  the error message (up to 255 characters).
 * Otherwise, ``errorCode`` is ``OtherError``, ``info`` carries the error origin, ``vendorId`` the error message
   (up to 255 characters, the largest field), and ``vendorErrorCode`` a code derived from the EVerest error type
   (``info`` and ``vendorErrorCode`` are limited to 50 characters).
@@ -549,6 +551,15 @@ status **Faulted** for the Inoperative case above). All other errors are reporte
 
 The variable is constantly set to **Problem** for now; a more fine-grained mapping of errors to component-variable
 combinations may be added in the future.
+
+The remaining **eventData** properties are filled as follows:
+
+* ``techCode`` is set to the MREC techCode if the EVerest error type has an MREC mapping, and to the EVerest error
+  type itself otherwise.
+* ``techInfo`` is set to the message of the EVerest error, truncated to 500 characters. If the error was raised
+  without a message, the description of the error type is sent instead.
+* ``actualValue`` is ``"true"`` when the error is raised and ``"false"`` when it is cleared. The ``cleared``
+  property is set accordingly.
 
 .. _handwritten_ocppmulti_suspend-reason-reporting:
 
