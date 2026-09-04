@@ -83,15 +83,15 @@ config:
     default: true
   ac_max_discharge_power_w:
     description:
-      Advertised AC maximum discharge power in watts (BPT), as a three-phase
-      total. The default is 16 A x 230 V x 3.
+      Advertised AC maximum discharge power in watts (AC_BPT and AC_DER_IEC), as a
+      three-phase total. The default is 16 A x 230 V x 3.
     type: number
     minimum: 0
     default: 11040
   ac_min_discharge_power_w:
     description:
-      Advertised AC minimum discharge power in watts (BPT), as a three-phase
-      total. The default is 6 A x 230 V x 3.
+      Advertised AC minimum discharge power in watts (AC_BPT and AC_DER_IEC), as a
+      three-phase total. The default is 6 A x 230 V x 3.
     type: number
     minimum: 0
     default: 4140
