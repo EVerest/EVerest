@@ -1106,7 +1106,18 @@ void EvseManager::ready() {
                 // r_slac[0]->call_reset(true);
                 // This is entering BCD from state A
                 car_manufacturer = types::evse_manager::CarManufacturer::Unknown;
+                // New session: restart the B/C transition counter used for BCB-toggle detection.
+                // Push the reset to SLAC too, otherwise EvseSlacNeo's counter stays at the previous
+                // (stale) value and the CM_VALIDATE baseline is off, under-counting the BCB toggles.
+                bc_transition_count = 0;
+                r_slac[0]->call_count_bc(bc_transition_count);
                 r_slac[0]->call_enter_bcd();
+            } else if (event == CPEvent::CarRequestedPower) {
+                // Count only the B->C edge (CarRequestedPower): a BCB toggle is B->C->B, so one B->C
+                // per toggle. Pushing the running total to SLAC lets EvseSlacNeo use it directly as the
+                // number of BCB toggles during CM_VALIDATE (no C->B counting, halving the command calls).
+                bc_transition_count += 1;
+                r_slac[0]->call_count_bc(bc_transition_count);
             } else if (event == CPEvent::CarUnplugged) {
                 // Make a local copy as leave_bcd() will overwrite the slac_unmatched flag
                 bool unmatched_on_unplug = not slac_unmatched;

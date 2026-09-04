@@ -91,6 +91,9 @@ target_sources(everest_api_types
   src/everest_api_types/slac/codec.cpp
   src/everest_api_types/slac/json_codec.cpp
 
+  src/everest_api_types/telemetry/codec.cpp
+  src/everest_api_types/telemetry/json_codec.cpp
+
   src/everest_api_types/system/codec.cpp
   src/everest_api_types/system/json_codec.cpp
 
