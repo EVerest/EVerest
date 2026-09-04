@@ -71,6 +71,40 @@ public:
     bool destroy(std::string const& interface_name);
 
     /**
+     * @brief Shape what producers write into the vcan with a token bucket (tbf), so a writer feels
+     *        the bus rate as on real hardware: a small SO_SNDBUF blocks at bus rate, the default
+     *        buffer gets ENOBUFS when the queue is full.
+     * @details Qdisc tree over rtnetlink (RTM_NEWQDISC): a 2-band prio root; skb->priority 6/7
+     *          (\ref unshaped_socket_priority, the bridge's own bus-to-host writes) -> pfifo,
+     *          everything else -> tbf. Idempotent; the qdiscs disappear with the interface. tbf
+     *          meters skb bytes (16 per classic frame, 72 per CAN FD frame), derive \p rate_bps from
+     *          the wire cost of the traffic. Without IFF_ECHO (vcan default) local readers get a
+     *          clone before the qdisc, so only the writer is paced; a reader that needs bus rate
+     *          paces its reads.
+     * @param interface_name The interface (must exist).
+     * @param rate_bps Token refill rate in bit/s of skb bytes.
+     * @param burst_bytes Bucket in bytes, at least the CAN FD MTU (72); should be >= rate/HZ.
+     * @param limit_bytes Queue capacity in bytes.
+     * @return True on success. False otherwise (reported through the error handler); then nothing
+     *         is left installed, also when an earlier call had shaped the interface.
+     */
+    bool set_transmit_rate_limit(std::string const& interface_name, std::uint64_t rate_bps, std::uint32_t burst_bytes,
+                                 std::uint32_t limit_bytes);
+
+    /**
+     * @brief Remove the shaper of \ref set_transmit_rate_limit. Idempotent.
+     * @param interface_name The interface (must exist).
+     * @return True on success, false otherwise (reported through the error handler).
+     */
+    bool clear_transmit_rate_limit(std::string const& interface_name);
+
+    /**
+     * @brief SO_PRIORITY that bypasses the shaper of \ref set_transmit_rate_limit, see
+     *        \ref can::socket_can_options::socket_priority.
+     */
+    static std::uint8_t unshaped_socket_priority();
+
+    /**
      * @brief Access the single instance of this object.
      * @details The underlying object is created on the first call to this function.
      * @return Reference to the object instance
@@ -123,6 +157,26 @@ private:
      * @throws std::runtime_error if the operation fails or ACK is not received.
      */
     void send_netlink_request_impl(int msg_type, int flags, cb_type const& callback);
+
+    /**
+     * @brief Wait for the kernel's answer to \p req: returns on ACK, throws on NLMSG_ERROR or when no
+     *        matching reply arrives.
+     */
+    void await_ack(NetlinkMessage const& req, int msg_type);
+
+    /**
+     * @brief Send one qdisc request (RTM_NEWQDISC or RTM_DELQDISC) and wait for its ACK; throws on
+     *        refusal.
+     * @param kind The qdisc kind, nullptr for a delete.
+     * @param fill_options Appends TCA_OPTIONS; may be empty.
+     */
+    void send_qdisc(int msg_type, unsigned int ifindex, std::uint32_t parent, std::uint32_t handle, char const* kind,
+                    std::function<void(NetlinkMessage&)> const& fill_options);
+
+    /**
+     * @brief Delete the root qdisc; ENOENT (kernel default queue) counts as done. Throws otherwise.
+     */
+    void remove_root_qdisc(unsigned int ifindex);
 
     /**
      * @brief Wraps exception handling for \p send_netlink_request_impl
