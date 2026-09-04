@@ -80,7 +80,7 @@ async def wait_for_call(mock: Mock, timeout: float = 30.0):
 async def test_ev_iso15118d20_dc_session(
     test_controller: TestController, everest_core: EverestCore
 ):
-    """M0 SIL gate: the C++ EvIso15118D20 module completes a DC ISO 15118-20 session.
+    """SIL gate: the C++ EvIso15118D20 module completes a DC ISO 15118-20 session.
 
     Observes both sides of the V2G link via a two-connection probe:
       - charger.evcc_id and charger.selected_protocol (SECC view of the EVCC)
