@@ -20,8 +20,9 @@ using Scheduled_BPT_DC_Res = message_20::datatypes::BPT_Scheduled_DC_CLResContro
 using Dynamic_DC_Res = message_20::datatypes::Dynamic_DC_CLResControlMode;
 using Dynamic_BPT_DC_Res = message_20::datatypes::BPT_Dynamic_DC_CLResControlMode;
 
-SCENARIO("DC charge loop state handling") {
+namespace {
 
+d20::EvseSetupConfig make_evse_setup() {
     const auto evse_id = std::string("everest se");
     const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::DC,
                                                                         dt::ServiceCategory::DC_BPT};
@@ -30,8 +31,8 @@ SCENARIO("DC charge loop state handling") {
     const std::vector<uint16_t> vas_services{};
 
     d20::DcTransferLimits dc_limits;
-    d20::AcTransferLimits ac_limits;
-    d20::DcTransferLimits powersupply_limits;
+    const d20::AcTransferLimits ac_limits;
+    const d20::DcTransferLimits powersupply_limits;
     dc_limits.charge_limits.power.max = {22, 3};
     dc_limits.charge_limits.power.min = {10, 0};
     dc_limits.charge_limits.current.max = {250, 0};
@@ -46,20 +47,26 @@ SCENARIO("DC charge loop state handling") {
         {dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc},
         {dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedBySecc}};
 
-    const d20::EvseSetupConfig evse_setup{evse_id,
-                                          supported_energy_services,
-                                          auth_services,
-                                          vas_services,
-                                          cert_install,
-                                          dc_limits,
-                                          ac_limits,
-                                          std::nullopt,
-                                          control_mobility_modes,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          powersupply_limits};
+    d20::EvseSetupConfig setup{};
+    setup.evse_id = evse_id;
+    setup.supported_energy_services = supported_energy_services;
+    setup.authorization_services = auth_services;
+    setup.supported_vas_services = vas_services;
+    setup.enable_certificate_install_service = cert_install;
+    setup.dc_limits = dc_limits;
+    setup.ac_limits = ac_limits;
+    setup.der_iec_limits = std::nullopt;
+    setup.der_sae_limits = std::nullopt;
+    setup.control_mobility_modes = control_mobility_modes;
+    setup.powersupply_limits = powersupply_limits;
+    return setup;
+}
+
+} // namespace
+
+SCENARIO("DC charge loop state handling") {
+
+    const auto evse_setup = make_evse_setup();
 
     GIVEN("Bad case - Unknown session") {
 
