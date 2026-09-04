@@ -14,11 +14,12 @@ negotiated (assuming a three-phase inverter relay); received DER directives are
 logged only, as ``ISO15118_ev`` has no DER variable to publish them on.
 
 Bidirectional power transfer (BPT) is negotiated for both AC_BPT and DC_BPT in
-Dynamic control mode. The advertised discharge limits come from the ``*_discharge_*``
-config knobs; ``set_bpt_dc_params`` overrides the DC discharge power and current at
-runtime. AC_BPT assumes a three-phase inverter relay. Reverse power flow itself is
-driven entirely by the SECC's target-power directives; the EVSE's advertised
-discharge limits are logged for visibility.
+Dynamic control mode. The advertised discharge limits come from the
+``*_discharge_*`` config settings; ``set_bpt_dc_params`` overrides the
+configured DC discharge power and current for the next session (parameters are
+snapshotted when a session starts). AC_BPT assumes a three-phase inverter relay.
+Reverse power flow itself is driven entirely by the SECC's target-power
+directives; the EVSE's advertised discharge limits are logged for visibility.
 
 Configuration
 -------------
@@ -89,12 +90,12 @@ Configuration
      - Stop the session if no AC_DER_IEC parameter set fits the supported DER functions.
    * - ``ac_max_discharge_power_w``
      - ``11040``
-     - Advertised AC maximum discharge power in watts (BPT), as a three-phase
-       total. The default is 16 A x 230 V x 3.
+     - Advertised AC maximum discharge power in watts (AC_BPT and AC_DER_IEC),
+       as a three-phase total. The default is 16 A x 230 V x 3.
    * - ``ac_min_discharge_power_w``
      - ``4140``
-     - Advertised AC minimum discharge power in watts (BPT), as a three-phase
-       total. The default is 6 A x 230 V x 3.
+     - Advertised AC minimum discharge power in watts (AC_BPT and AC_DER_IEC),
+       as a three-phase total. The default is 6 A x 230 V x 3.
    * - ``dc_max_discharge_power_w``
      - ``150000``
      - Advertised DC maximum discharge power in watts (BPT).

@@ -405,7 +405,7 @@ void ISO15118_evImpl::handle_set_bpt_dc_params(types::iso15118::DcEvBPTParameter
     note_missing("discharge_max_current_limit", EvBPTParameters.discharge_max_current_limit.has_value());
     if (not missing.empty()) {
         EVLOG_warning << "EvIso15118D20: set_bpt_dc_params missing " << missing
-                      << "; keeping configured discharge knobs";
+                      << "; keeping the configured discharge settings";
     }
 
     // discharge_target_current / discharge_minimal_soc are not consumed by the -20
