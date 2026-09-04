@@ -142,13 +142,17 @@ void ErrorHandling::clear_over_voltage_error() {
 
 // Find out if the current error set is fatal to charging or not
 void ErrorHandling::process_error() {
+    // Called from every requirement's error callbacks (potentially on different threads). Holding the monitor handle
+    // serializes the whole inoperative_causes read-compare-clear-raise sequence below so it cannot interleave.
+    auto causes = inoperative_causes.handle();
+
     const auto fatal = errors_prevent_charging();
-    if (fatal) {
-        // signal to charger a new error has been set that prevents charging
-        raise_inoperative_error(*fatal);
+    if (not fatal.empty()) {
+        // signal to charger that errors are active that prevent charging
+        raise_inoperative_error(fatal, *causes);
     } else {
         // signal an error that does not prevent charging
-        clear_inoperative_error();
+        clear_inoperative_error(*causes);
     }
 
     // All errors cleared signal is for OCPP 1.6. It is triggered when there are no errors anymore,
@@ -173,103 +177,131 @@ void ErrorHandling::process_error() {
     }
 }
 
-// Check all errors from p_evse and all requirements to see if they block charging
-std::optional<Everest::error::Error> ErrorHandling::errors_prevent_charging() {
+// Collect all errors from p_evse and all requirements that block charging, in detection order.
+std::vector<Everest::error::Error> ErrorHandling::errors_prevent_charging() {
+    std::vector<Everest::error::Error> fatal_errors;
 
-    auto is_fatal = [](auto errors, auto ignore_list) -> std::optional<Everest::error::Error> {
+    auto collect_fatal = [&fatal_errors](const auto& errors, const auto& ignore_list) {
         for (const auto& e : errors) {
-            if (std::none_of(ignore_list.begin(), ignore_list.end(), [e](const auto& ign) { return e->type == ign; })) {
-                return *e;
+            if (std::none_of(ignore_list.begin(), ignore_list.end(),
+                             [&e](const auto& ign) { return e->type == ign; })) {
+                fatal_errors.push_back(*e);
             }
         }
-        return std::nullopt;
     };
 
-    auto fatal = is_fatal(p_evse->error_state_monitor->get_active_errors(), ignore_errors.evse);
-    if (fatal) {
-        return fatal;
-    }
-
-    fatal = is_fatal(r_bsp->error_state_monitor->get_active_errors(), ignore_errors.bsp);
-    if (fatal) {
-        return fatal;
-    }
-
+    collect_fatal(p_evse->error_state_monitor->get_active_errors(), ignore_errors.evse);
+    collect_fatal(r_bsp->error_state_monitor->get_active_errors(), ignore_errors.bsp);
     if (r_connector_lock.size() > 0) {
-        fatal = is_fatal(r_connector_lock[0]->error_state_monitor->get_active_errors(), ignore_errors.connector_lock);
-        if (fatal) {
-            return fatal;
-        }
+        collect_fatal(r_connector_lock[0]->error_state_monitor->get_active_errors(), ignore_errors.connector_lock);
     }
-
     if (r_ac_rcd.size() > 0) {
-        fatal = is_fatal(r_ac_rcd[0]->error_state_monitor->get_active_errors(), ignore_errors.ac_rcd);
-        if (fatal) {
-            return fatal;
-        }
+        collect_fatal(r_ac_rcd[0]->error_state_monitor->get_active_errors(), ignore_errors.ac_rcd);
     }
-
     if (r_imd.size() > 0) {
-        fatal = is_fatal(r_imd[0]->error_state_monitor->get_active_errors(), ignore_errors.imd);
-        if (fatal) {
-            return fatal;
-        }
+        collect_fatal(r_imd[0]->error_state_monitor->get_active_errors(), ignore_errors.imd);
     }
-
     if (r_powersupply.size() > 0) {
-        fatal = is_fatal(r_powersupply[0]->error_state_monitor->get_active_errors(), ignore_errors.powersupply);
-        if (fatal) {
-            return fatal;
-        }
+        collect_fatal(r_powersupply[0]->error_state_monitor->get_active_errors(), ignore_errors.powersupply);
     }
-
     if (r_powermeter.size() > 0) {
-        fatal = is_fatal(r_powermeter[0]->error_state_monitor->get_active_errors(), ignore_errors.powermeter);
-        if (fatal) {
-            return fatal;
-        }
+        collect_fatal(r_powermeter[0]->error_state_monitor->get_active_errors(), ignore_errors.powermeter);
     }
+<<<<<<< HEAD
 
+=======
+    if (r_slac.size() > 0) {
+        collect_fatal(r_slac[0]->error_state_monitor->get_active_errors(), ignore_errors.slac);
+    }
+    if (r_hlc.size() > 0) {
+        collect_fatal(r_hlc[0]->error_state_monitor->get_active_errors(), ignore_errors.hlc);
+    }
+>>>>>>> 3b7541f (fix(EvseManager): refresh Inoperative error when the active fatal cause set changes (#2374))
     if (r_over_voltage_monitor.size() > 0) {
-        fatal = is_fatal(r_over_voltage_monitor[0]->error_state_monitor->get_active_errors(),
-                         ignore_errors.over_voltage_monitor);
-        if (fatal) {
-            return fatal;
-        }
+        collect_fatal(r_over_voltage_monitor[0]->error_state_monitor->get_active_errors(),
+                      ignore_errors.over_voltage_monitor);
     }
 
-    return std::nullopt;
+    return fatal_errors;
 }
 
-void ErrorHandling::raise_inoperative_error(const Everest::error::Error& caused_by) {
-    if (p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", "")) {
-        // dont raise if already raised
+// Caller must hold the inoperative_causes monitor handle (this mutates it).
+void ErrorHandling::raise_inoperative_error(const std::vector<Everest::error::Error>& causes,
+                                            InoperativeCauses& inoperative_causes) {
+    if (causes.empty()) {
         return;
     }
 
-    // raise externally
+    auto is_emergency = [](const auto& errors) {
+        return std::any_of(errors.begin(), errors.end(), [](const Everest::error::Error& cause) {
+            return cause.severity == Everest::error::Severity::High;
+        });
+    };
+
+    // Everest::error::Error has no operator==, so compare the two sets by their (type, sub_type) keys via the
+    // comparator: same size and every corresponding element equivalent under ErrorCauseLess.
+    auto same_causes = [](const InoperativeCauses& a, const InoperativeCauses& b) {
+        const ErrorCauseLess less;
+        return a.size() == b.size() &&
+               std::equal(a.begin(), a.end(), b.begin(),
+                          [&less](const Everest::error::Error& x, const Everest::error::Error& y) {
+                              return not less(x, y) and not less(y, x);
+                          });
+    };
+
+    // Key the causes on (type, sub_type); the set makes change-detection independent of detection order.
+    const InoperativeCauses current(causes.begin(), causes.end());
+
+    const bool already_raised = p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", "");
+    if (already_raised && same_causes(current, inoperative_causes)) {
+        // Same set of causes, nothing to update.
+        return;
+    }
+
+    const bool was_emergency = is_emergency(inoperative_causes);
+
+    if (already_raised) {
+        // Causes changed: the framework has no in-place update, so clear and re-raise. No
+        // AllErrorsPreventingChargingCleared is emitted, keeping the charger shut down across the refresh.
+        p_evse->clear_error("evse_manager/Inoperative");
+    }
+
+    // First cause drives message and vendor_id; the description lists every active cause. Downstream consumers with
+    // shorter limits (e.g. OCPP 1.6 StatusNotification, CiString<50>) truncate it themselves.
+    const auto& primary = causes.front();
+    std::string description = generate_description(primary);
+    for (auto it = std::next(causes.begin()); it != causes.end(); ++it) {
+        description += ", " + generate_description(*it);
+    }
+
     Everest::error::Error error_object = p_evse->error_factory->create_error(
-        "evse_manager/Inoperative", "", caused_by.type, Everest::error::Severity::High);
-    error_object.description = generate_description(caused_by);
-    if (inoperative_error_use_vendor_id && !caused_by.vendor_id.empty()) {
-        error_object.vendor_id = caused_by.vendor_id;
+        "evse_manager/Inoperative", "", primary.type, Everest::error::Severity::High);
+    error_object.description = description;
+    if (inoperative_error_use_vendor_id && !primary.vendor_id.empty()) {
+        error_object.vendor_id = primary.vendor_id;
     } else {
         error_object.vendor_id = "EVerest";
     }
     p_evse->raise_error(error_object);
+    // Track what we just raised, so the next call detects a changed cause set.
+    inoperative_causes = current;
 
-    // shutdown based on severity
-    if (caused_by.severity == Everest::error::Severity::High) {
-        signal_error(ErrorHandlingEvents::ForceEmergencyShutdown);
-    } else {
-        signal_error(ErrorHandlingEvents::ForceErrorShutdown);
+    // Emergency shutdown if any active cause is high severity, otherwise error shutdown. Only (re)signal on a genuine
+    // transition -- the first raise or a change of shutdown type. A pure description refresh must not re-signal:
+    // downstream this cancels an active reservation again (EvseManager) on every refresh, and the charger already
+    // stays shut down without a repeat.
+    const bool emergency = is_emergency(causes);
+    if (not already_raised or emergency != was_emergency) {
+        signal_error(emergency ? ErrorHandlingEvents::ForceEmergencyShutdown : ErrorHandlingEvents::ForceErrorShutdown);
     }
 }
 
-void ErrorHandling::clear_inoperative_error() {
+// Caller must hold the inoperative_causes monitor handle (this mutates it).
+void ErrorHandling::clear_inoperative_error(InoperativeCauses& inoperative_causes) {
     // clear externally
     if (p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", "")) {
         p_evse->clear_error("evse_manager/Inoperative");
+        inoperative_causes.clear();
         signal_error(ErrorHandlingEvents::AllErrorsPreventingChargingCleared);
     }
 }
