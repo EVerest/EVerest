@@ -82,6 +82,20 @@ bool component_variables_match(const std::vector<ComponentVariable>& component_v
                            (component.instance == v.component.instance) and (variable == v.variable)); // B08.FR.23
                }) != component_variables.end();
 }
+
+std::string format_missing_required_variable(const RequiredComponentVariable& required_variable,
+                                             const std::string& reason) {
+    std::stringstream ss;
+    ss << required_variable.component.name << "/"
+       << (required_variable.variable.has_value() ? required_variable.variable.value().name : "<unnamed>") << ": "
+       << reason;
+    if (required_variable.component.name == ControllerComponents::OCPP16LegacyCtrlr.name) {
+        ss << " (the OCPP16LegacyCtrlr component is required for every OCPP version so the device model supports "
+              "switching between OCPP 1.6 and 2.x; add standardized/OCPP16LegacyCtrlr.json to the device model "
+              "config directory or initialize the database with the built-in OCPP16LegacyCtrlr fallback enabled)";
+    }
+    return ss.str();
+}
 } // namespace
 
 void DeviceModel::check_variable_has_value(const ComponentVariable& component_variable, const AttributeEnum attribute) {
@@ -140,11 +154,7 @@ void DeviceModel::check_required_variables() {
         try {
             check_required_variable(required_variable, supported_versions);
         } catch (const std::exception& e) {
-            std::stringstream ss;
-            ss << required_variable.component.name << "/"
-               << (required_variable.variable.has_value() ? required_variable.variable.value().name : "<unnamed>")
-               << ": " << e.what();
-            missing_var_errors.push_back(ss.str());
+            missing_var_errors.push_back(format_missing_required_variable(required_variable, e.what()));
         }
     }
 
@@ -159,11 +169,7 @@ void DeviceModel::check_required_variables() {
             try {
                 check_required_variable(required_variable, supported_versions);
             } catch (const std::exception& e) {
-                std::stringstream ss;
-                ss << required_variable.component.name << "/"
-                   << (required_variable.variable.has_value() ? required_variable.variable.value().name : "<unnamed>")
-                   << ": " << e.what();
-                missing_var_errors.push_back(ss.str());
+                missing_var_errors.push_back(format_missing_required_variable(required_variable, e.what()));
             }
         }
     }
