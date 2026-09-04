@@ -51,8 +51,9 @@ foreach (EVC_DEP IN ITEMS log timer evse_security tls)
     endif()
 endforeach()
 
+# io is only needed by the EV side, see src/iso15118/CMakeLists.txt.
 set(EVC_IO_DIR "${EVC_EVEREST_LIB_DIR}/io")
-if (EVC_IO_DIR AND NOT DISABLE_ISO15118_LOCAL_DEPENDENCIES)
+if (ISO15118_BUILD_EV_SIDE AND EXISTS "${EVC_IO_DIR}" AND NOT DISABLE_ISO15118_LOCAL_DEPENDENCIES)
     message(STATUS "Detected io in ${EVC_IO_DIR}, if you do not want this set -DDISABLE_ISO15118_LOCAL_DEPENDENCIES=ON")
     if (BUILD_TESTING)
         message(STATUS "Setting BUILD_TESTING temporary to false")
