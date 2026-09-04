@@ -2,8 +2,8 @@
 
 Guidance for AI coding agents working in `EVerest`, the mono-repository formerly named
 `everest-core`: runtime manager, modules, shared libraries, interface definitions, test
-infrastructure. C++ primary, plus Python, Rust and JavaScript. CMake with Ninja; CI also
-builds with Bazel.
+infrastructure. C++ primary, plus Python, Rust and JavaScript. CMake, any generator;
+CI also builds with Bazel.
 
 Libraries that once lived in separate `lib*` repositories are now in-tree under
 `lib/everest/` and are edited in place; there is no upstream repository to mirror them
@@ -38,23 +38,26 @@ change to build, run, test or codegen mechanics means updating this file as well
 `make build`, `make test` and `make lint` do not exist here.
 
 ```bash
-cmake -S . -B build -GNinja \
+cmake -S . -B build \
   -DCMAKE_INSTALL_PREFIX=./build/dist \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   -DBUILD_TESTING=ON \
   -DEVEREST_ENABLE_COMPILE_WARNINGS=ON
-ninja -C build install -j$(nproc)
+cmake --build build --target install
 ```
+
+Pass `-j` yourself, since generator defaults are either the whole machine or a single
+job. When several agents share a host, cap the total to the core count.
 
 Dependencies are pinned in `dependencies.yaml` and fetched by edm at configure time;
 `-DDISABLE_EDM=ON` uses system packages. `ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`
 defaults to ON, so development certificates need no extra flag.
 
-To iterate faster, build one module (`ninja -C build OCPP201`) or skip heavy ones with
-`-DEVEREST_EXCLUDE_MODULES="EvseSlac;EvseV2G;IsoMux"`, quoting the list. `cmake -LH build`
-lists all options; the two easiest to miss are `EVEREST_ENABLE_COVERAGE` and
-`CMAKE_RUN_CLANG_TIDY`, both OFF.
+To iterate faster, build one module (`cmake --build build --target OCPP201`) or skip
+heavy ones with `-DEVEREST_EXCLUDE_MODULES="EvseSlac;EvseV2G;IsoMux"`, quoting the
+list. `cmake -LH build` lists all options; the two easiest to miss are
+`EVEREST_ENABLE_COVERAGE` and `CMAKE_RUN_CLANG_TIDY`, both OFF.
 
 ## Running
 
@@ -213,6 +216,8 @@ Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
 | OCPP 2.0.1 and 2.1 | `modules/EVSE/OCPP201/` | one module serves both versions |
 | API module | `modules/API/API/` | directory name is doubled |
 | libocpp | `lib/everest/ocpp/` | in-tree |
+| threading helpers | `lib/everest/util/` | `monitor` for shared state; prefer over raw `std::mutex` |
+| transport and IO | `lib/everest/io/` | use its clients; prefer over raw `poll`/`epoll` |
 
 ## Invariants
 
@@ -238,6 +243,8 @@ often:
 - Sign off every commit (`Signed-off-by`, DCO), enforced by
   `.github/workflows/job_dco-check.yaml`.
 - New files need copyright and license headers.
+- Files you modify get their copyright end year bumped to the current year: `2020 - 2025`
+  becomes `2020 - 2026`, a single `2023` becomes `2023 - 2026`. Never write `2026 - 2026`.
 - While review is open, do not rebase or force-push, so reviewers can see that feedback
   was addressed. Squashing to a single commit once approved is how changes land.
 - Every contribution must be reviewed and understood by a human before submission.
