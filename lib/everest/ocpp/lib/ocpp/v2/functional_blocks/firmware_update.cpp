@@ -176,6 +176,11 @@ void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call
         } else {
             this->firmware_status_before_installing = FirmwareStatusEnum::Downloaded;
         }
+
+        // A new update cycle starts: forget the previous cycle's reported status so a dead cycle's leftover status
+        // cannot suppress this cycle's first notification as a duplicate.
+        this->firmware_status = FirmwareStatusEnum::Idle;
+        this->firmware_status_id = std::nullopt;
     }
 
     if ((response.status == UpdateFirmwareStatusEnum::InvalidCertificate) or

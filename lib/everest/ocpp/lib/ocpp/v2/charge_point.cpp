@@ -36,6 +36,7 @@
 #include <ocpp/v2/messages/LogStatusNotification.hpp>
 #include <ocpp/v2/messages/RequestStopTransaction.hpp>
 #include <ocpp/v2/messages/TriggerMessage.hpp>
+#include <ocpp/v2/messages/UpdateFirmware.hpp>
 
 #include <optional>
 #include <stdexcept>
@@ -686,9 +687,23 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         *functional_block_context, *this->meter_values, this->callbacks.tariff_message_callback,
         this->callbacks.set_running_cost_callback, this->callbacks.default_price_callback, this->io_context);
 
-    this->firmware_update = std::make_unique<FirmwareUpdate>(
-        *this->functional_block_context, *this->availability, *this->security,
-        this->callbacks.update_firmware_request_callback, guarded_all_connectors_unavailable_callback);
+    // Wrap update_firmware_request_callback so that only a request the callback accepts (re-)arms the guard for the
+    // update cycle it starts; a rejected request must not disturb a still running update.
+    UpdateFirmwareRequestCallback update_firmware_request_callback = this->callbacks.update_firmware_request_callback;
+    if (update_firmware_request_callback) {
+        update_firmware_request_callback = [this](const UpdateFirmwareRequest& request) {
+            const auto response = this->callbacks.update_firmware_request_callback(request);
+            if (response.status == UpdateFirmwareStatusEnum::Accepted or
+                response.status == UpdateFirmwareStatusEnum::AcceptedCanceled) {
+                this->all_connectors_unavailable_notification_state = AllConnectorsUnavailableNotificationState::Waiting;
+            }
+            return response;
+        };
+    }
+
+    this->firmware_update = std::make_unique<FirmwareUpdate>(*this->functional_block_context, *this->availability,
+                                                              *this->security, update_firmware_request_callback,
+                                                              guarded_all_connectors_unavailable_callback);
 
     this->transaction = std::make_unique<TransactionBlock>(
         *this->functional_block_context, *this->message_queue, *this->authorization, *this->availability,
@@ -834,7 +849,8 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
             this->authorization->handle_message(message);
             break;
         case MessageType::UpdateFirmware:
-            this->all_connectors_unavailable_notification_state = AllConnectorsUnavailableNotificationState::Waiting;
+            // The guard is (re-)armed only if the request is accepted; see the wrapped
+            // update_firmware_request_callback set up in initialize().
             this->firmware_update->handle_message(message);
             break;
         case MessageType::ReserveNow:
