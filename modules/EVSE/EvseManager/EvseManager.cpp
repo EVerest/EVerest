@@ -1267,16 +1267,25 @@ void EvseManager::ready() {
     charger->signal_max_current.connect([this](float ampere) {
         // The charger changed the max current setting. Forward to HLC
         if (hlc_enabled) {
-            if (not selected_d20_energy_service.has_value() and ampere >= 0.0) {
-                r_hlc[0]->call_update_ac_max_current(ampere); // ISO-2
+            if (not selected_d20_energy_service.has_value()) {
+                // ISO-2 has no discharge direction, so a negative target is not forwarded.
+                if (ampere >= 0.0f) {
+                    r_hlc[0]->call_update_ac_max_current(ampere); // ISO-2
+                }
                 return;
             }
 
             if (selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC or
                 selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_BPT) {
 
+                // The sign of ampere carries the direction (see Charger::set_max_current), so an export
+                // target scales by the export phase count. Read through a temporary handle: binding the
+                // handle would hold the capabilities lock across the call below.
+                const auto phase_count = ampere < 0.0f ? hw_capabilities.handle()->max_phase_count_export
+                                                       : hw_capabilities.handle()->max_phase_count_import;
+
                 types::units::Power target_power = {ampere * static_cast<float>(config.ac_nominal_voltage) *
-                                                    hw_capabilities.handle()->max_phase_count_import};
+                                                    phase_count};
 
                 // TODO(SL): Adding target frequency
                 // TODO(SL): Adding reactive power
