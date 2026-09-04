@@ -38,7 +38,7 @@ ev_define_dependency(
 
 ev_define_dependency(
     DEPENDENCY_NAME everest-sqlite
-    DEPENDENT_MODULES_LIST ErrorHistory)
+    DEPENDENT_MODULES_LIST ErrorHistory PersistentSessionStorage)
 
 ev_define_dependency(
     DEPENDENCY_NAME libiso15118
