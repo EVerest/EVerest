@@ -166,6 +166,11 @@ void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call
 
     if ((response.status == UpdateFirmwareStatusEnum::Accepted) or
         (response.status == UpdateFirmwareStatusEnum::AcceptedCanceled)) {
+        // A new cycle starts here. Drop any non-persistent change a previous cycle queued behind a running
+        // transaction (see change_all_connectors_to_unavailable_for_firmware_update): if that cycle died without
+        // ever reaching a terminal status, the stale entry must not survive to force the EVSE Inoperative once
+        // the transaction eventually ends.
+        this->availability.drop_non_persistent_scheduled_changes();
         if (call.msg.firmware.signingCertificate.has_value() or call.msg.firmware.signature.has_value()) {
             this->firmware_status_before_installing = FirmwareStatusEnum::SignatureVerified;
         } else {
@@ -213,6 +218,10 @@ void FirmwareUpdate::change_all_connectors_to_unavailable_for_firmware_update() 
                 EVSE e;
                 e.id = evse.get_id();
                 msg.evse = e;
+                // NOTE: this unconditionally overwrites any existing scheduled entry for this evse_id with
+                // persist=false, even one that began as a genuine persist=true CSMS ChangeAvailability request.
+                // That is a separate, narrower issue than the non-persistent-entry cleanup this class does
+                // elsewhere (see drop_non_persistent_scheduled_changes()) and is left untouched here.
                 this->availability.set_scheduled_change_availability_requests(evse.get_id(), {msg, false});
             }
         }
@@ -227,6 +236,10 @@ void FirmwareUpdate::restore_all_connector_states() {
             evse.restore_connector_operative_status(static_cast<std::int32_t>(i));
         }
     }
+    // Drop any non-persistent ChangeAvailability(Inoperative) this cycle queued behind a running transaction
+    // (see change_all_connectors_to_unavailable_for_firmware_update): once the cycle has reached a terminal
+    // status, that entry must not survive to force the EVSE Inoperative when the transaction later ends.
+    this->availability.drop_non_persistent_scheduled_changes();
 }
 
 } // namespace ocpp::v2
