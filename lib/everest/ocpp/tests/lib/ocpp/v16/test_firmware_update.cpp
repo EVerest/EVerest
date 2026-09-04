@@ -120,6 +120,16 @@ protected:
         return connectors;
     }
 
+    /// \brief The connectors the restore sequence is expected to re-enable: every connector the database reports
+    /// as Operative, which includes the charge-point-wide connector 0 alongside the physical connectors.
+    std::vector<std::int32_t> expected_restored_connectors() const {
+        std::vector<std::int32_t> connectors{0};
+        for (const auto connector : this->expected_idle_connectors()) {
+            connectors.push_back(connector);
+        }
+        return connectors;
+    }
+
     std::shared_ptr<NiceMock<EvseSecurityMock>> evse_security;
     std::shared_ptr<NiceMock<ConnectivityManagerMock>> connectivity_manager;
     std::unique_ptr<ChargePointConfiguration> configuration;
@@ -229,10 +239,14 @@ TEST_F(ChargePointFirmwareUpdateTest, IdleStatusRestoresConnectorsDisabledForIns
     ASSERT_EQ(this->disabled_connectors, expected_idle_connectors());
     ASSERT_EQ(this->all_connectors_unavailable_count, 1);
 
+    // Boot already enabled the connectors it read as Operative from the database, so only the enables that
+    // happen from here on are the restore sequence's own.
+    this->enabled_connectors.clear();
+
     // The updater aborts and falls back to Idle instead of one of the three enumerated terminal statuses.
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::Idle, std::nullopt);
 
-    EXPECT_EQ(this->enabled_connectors, expected_idle_connectors())
+    EXPECT_EQ(this->enabled_connectors, expected_restored_connectors())
         << "Idle did not run the restore sequence: connectors disabled for the firmware install are stuck "
            "Unavailable";
 }
