@@ -59,7 +59,7 @@ SCENARIO("ISO15118-20 EV Context returns a locked-copy snapshot of the seeded AC
     }
 }
 
-SCENARIO("ISO15118-20 EV Context tracks the selected energy service") {
+SCENARIO("ISO15118-20 EV Context reports the requested energy service") {
 
     const ev::feedback::Callbacks callbacks{};
 
@@ -68,16 +68,9 @@ SCENARIO("ISO15118-20 EV Context tracks the selected energy service") {
         FsmStateHelper helper{callbacks};
         auto& ctx = helper.get_context();
 
-        THEN("selected_service() defaults to DC") {
+        THEN("selected_service() is DC and is_ac_family() is false") {
             REQUIRE(ctx.selected_service() == message_20::datatypes::ServiceCategory::DC);
-        }
-
-        WHEN("set_selected_service(AC) is called") {
-            ctx.set_selected_service(message_20::datatypes::ServiceCategory::AC);
-
-            THEN("selected_service() returns AC") {
-                REQUIRE(ctx.selected_service() == message_20::datatypes::ServiceCategory::AC);
-            }
+            REQUIRE(ctx.is_ac_family() == false);
         }
     }
 
@@ -87,8 +80,20 @@ SCENARIO("ISO15118-20 EV Context tracks the selected energy service") {
             callbacks, {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}}, message_20::datatypes::ServiceCategory::AC};
         auto& ctx = helper.get_context();
 
-        THEN("selected_service() defaults to AC") {
+        THEN("selected_service() is AC and is_ac_family() is true") {
             REQUIRE(ctx.selected_service() == message_20::datatypes::ServiceCategory::AC);
+            REQUIRE(ctx.is_ac_family() == true);
+        }
+    }
+
+    GIVEN("A Context constructed with a requested AC_BPT service") {
+
+        FsmStateHelper helper{
+            callbacks, {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}}, message_20::datatypes::ServiceCategory::AC_BPT};
+        auto& ctx = helper.get_context();
+
+        THEN("is_ac_family() is true, so the AC branches take AC_BPT too") {
+            REQUIRE(ctx.is_ac_family() == true);
         }
     }
 }

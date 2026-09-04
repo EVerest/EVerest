@@ -31,9 +31,7 @@ Result ServiceSelection::feed(Event ev) {
         return {};
     }
 
-    const auto service = m_ctx.selected_service();
-
-    if (service == message_20::datatypes::ServiceCategory::AC) {
+    if (m_ctx.is_ac_family()) {
         return m_ctx.create_state<AC_ChargeParameterDiscovery>();
     }
 

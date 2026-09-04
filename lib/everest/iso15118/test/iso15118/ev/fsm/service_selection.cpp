@@ -21,8 +21,6 @@ message_20::ServiceSelectionResponse make_response(const message_20::Header& hea
     res.response_code = code;
     return res;
 }
-
-const auto seed_ac = [](FsmStateHelper& helper) { helper.get_context().set_selected_service(ServiceCategory::AC); };
 } // namespace
 
 SCENARIO("ISO15118-20 EV ServiceSelection emits a DC ServiceSelectionRequest on enter") {
@@ -52,7 +50,7 @@ SCENARIO("ISO15118-20 EV ServiceSelection transitions to DC_ChargeParameterDisco
 
 SCENARIO("ISO15118-20 EV ServiceSelection emits an AC ServiceSelectionRequest on enter") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, seed_ac, uint16_t{3}};
+    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::AC, no_seed, uint16_t{3}};
 
     const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
@@ -63,7 +61,7 @@ SCENARIO("ISO15118-20 EV ServiceSelection emits an AC ServiceSelectionRequest on
 
 SCENARIO("ISO15118-20 EV ServiceSelection transitions to AC_ChargeParameterDiscovery on OK") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, seed_ac, uint16_t{1}};
+    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::AC, no_seed, uint16_t{1}};
 
     primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);

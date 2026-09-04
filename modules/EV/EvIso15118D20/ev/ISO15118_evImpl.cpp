@@ -7,6 +7,7 @@
 #include <exception>
 #include <utility>
 
+#include <iso15118/ev/service_family.hpp>
 #include <iso15118/io/logging.hpp>
 #include <iso15118/io/sdp.hpp>
 
@@ -85,7 +86,7 @@ ISO15118_evImpl::make_ev_config(iso15118::message_20::datatypes::ServiceCategory
     ev_config.discover = true;
 
     ev_config.energy_service = energy_service;
-    if (energy_service == iso15118::message_20::datatypes::ServiceCategory::AC) {
+    if (iso15118::ev::is_ac_family(energy_service)) {
         ev_config.advertised_app_protocols = {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}};
     }
 
@@ -232,7 +233,7 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
             return false;
         }
         (*h).energy_service = energy_service;
-        if (energy_service == iso15118::message_20::datatypes::ServiceCategory::AC) {
+        if (iso15118::ev::is_ac_family(energy_service)) {
             (*h).ac_params.max_charge_power = static_cast<float>(mod->config.ac_max_charge_power_w);
             (*h).ac_params.min_charge_power = static_cast<float>(mod->config.ac_min_charge_power_w);
             (*h).ac_params.three_phase = three_phase;
