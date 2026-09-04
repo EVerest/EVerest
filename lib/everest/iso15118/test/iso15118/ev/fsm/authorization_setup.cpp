@@ -17,7 +17,7 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
 
     auto state_helper = FsmStateHelper(callbacks);
 
-    auto ctx = state_helper.get_context();
+    auto& ctx = state_helper.get_context();
 
     GIVEN("Good case - authorization setup response with OK and EIM") {
 
