@@ -23,6 +23,9 @@ struct heartbeat_config {
     std::string cb_remote;
     std::uint16_t interval_s;
     std::uint16_t connection_to_s;
+    // cb-session-v1: take over a MCU owned by a healthy session on another host. Default: only
+    // dead or same-IP owners are taken over.
+    bool force_takeover{false};
     CbConfig cb_config;
 };
 
@@ -55,7 +58,9 @@ private:
     everest::lib::io::event::timer_fd m_heartbeat_timer;
     everest::lib::io::event::timer_fd m_error_timer;
     std::string m_identifier;
-    CbManagementPacket<CbConfig> m_config_message;
+    CbManagementPacket<CbHeartbeatPacket> m_config_message;
+    // Deduplicates the "owned by another host" report (one line per rejection episode).
+    bool m_session_rejected{false};
     std::chrono::steady_clock::time_point m_last_heartbeat_reply;
     bool m_cb_connected{false};
     bool m_inital_cb_commcheck{true};
