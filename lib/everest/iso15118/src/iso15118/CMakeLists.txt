@@ -99,6 +99,9 @@ if(ISO15118_BUILD_EV_SIDE)
         ev/io/sdp_client.cpp
         ev/ev_controller.cpp
     )
+
+    # Only the EV side uses everest::io.
+    target_link_libraries(iso15118 PUBLIC everest::io)
 endif()
 
 target_link_libraries(iso15118
@@ -107,7 +110,6 @@ target_link_libraries(iso15118
         cbv2g::tp
         cbv2g::iso20
         everest::util
-        everest::io
     PRIVATE
         Threads::Threads
 )
