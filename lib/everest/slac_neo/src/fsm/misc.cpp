@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include "misc.hpp"
 
 #include <algorithm>
 
 #include <everest/slac/slac_defs.hpp>
+
+namespace everest::lib::slac {
 
 namespace {
 
@@ -28,12 +30,12 @@ std::optional<uint8_t> parse_hex_nibble(char digit) {
     return std::nullopt;
 }
 
-std::optional<everest::lib::slac::MacAddress> parse_mac_addr_impl(std::string_view mac_str) {
+std::optional<MacAddress> parse_mac_addr_impl(std::string_view mac_str) {
     if (mac_str.size() != 17) {
         return std::nullopt;
     }
 
-    everest::lib::slac::MacAddress mac{};
+    MacAddress mac{};
     for (std::size_t i = 0; i < mac.size(); ++i) {
         auto const hi = parse_hex_nibble(mac_str[i * 3U]);
         auto const lo = parse_hex_nibble(mac_str[(i * 3U) + 1U]);
@@ -53,7 +55,7 @@ std::optional<everest::lib::slac::MacAddress> parse_mac_addr_impl(std::string_vi
 
 } // namespace
 
-std::string format_nmk(everest::lib::slac::Nmk const& nmk) {
+std::string format_nmk(Nmk const& nmk) {
     std::string out;
     out.reserve(nmk.size() * 3U);
     for (auto const octet : nmk) {
@@ -63,7 +65,7 @@ std::string format_nmk(everest::lib::slac::Nmk const& nmk) {
     return out;
 }
 
-std::string format_mac_addr(everest::lib::slac::MacAddress const& mac) {
+std::string format_mac_addr(MacAddress const& mac) {
     std::string out;
     out.reserve(18U);
     for (std::size_t i = 0; i < mac.size(); ++i) {
@@ -75,7 +77,7 @@ std::string format_mac_addr(everest::lib::slac::MacAddress const& mac) {
     return out;
 }
 
-std::string format_run_id(everest::lib::slac::RunId const& run_id) {
+std::string format_run_id(RunId const& run_id) {
     std::string out;
     out.reserve(run_id.size() * 2U);
     for (auto const octet : run_id) {
@@ -95,29 +97,29 @@ std::string format_mmtype(const uint16_t mmtype) {
 }
 
 std::string format_nmk(const uint8_t* nmk) {
-    everest::lib::slac::Nmk nmk_arr{};
+    Nmk nmk_arr{};
     std::copy_n(nmk, nmk_arr.size(), nmk_arr.begin());
     return format_nmk(nmk_arr);
 }
 
 std::string format_mac_addr(const uint8_t* mac) {
-    everest::lib::slac::MacAddress mac_arr{};
+    MacAddress mac_arr{};
     std::copy_n(mac, mac_arr.size(), mac_arr.begin());
     return format_mac_addr(mac_arr);
 }
 
 std::string format_run_id(const uint8_t* run_id) {
-    everest::lib::slac::RunId run_id_arr{};
+    RunId run_id_arr{};
     std::copy_n(run_id, run_id_arr.size(), run_id_arr.begin());
     return format_run_id(run_id_arr);
 }
 
-std::optional<everest::lib::slac::MacAddress> parse_mac_addr(std::string_view text) {
+std::optional<MacAddress> parse_mac_addr(std::string_view text) {
     return parse_mac_addr_impl(text);
 }
 
 bool parse_mac_addr(const std::string& mac_str, uint8_t* mac, size_t length) {
-    if (mac == nullptr || length < everest::lib::slac::MacAddress{}.size()) {
+    if (mac == nullptr || length < MacAddress{}.size()) {
         return false;
     }
 
@@ -130,9 +132,8 @@ bool parse_mac_addr(const std::string& mac_str, uint8_t* mac, size_t length) {
     return true;
 }
 
-bool accepts_set_key_cnf_success_result(everest::lib::slac::fsm::evse::SetKeyCnfSuccessMode mode, uint8_t result) {
-    using everest::lib::slac::fsm::evse::SetKeyCnfSuccessMode;
-    namespace defs = everest::lib::slac::defs;
+bool accepts_set_key_cnf_success_result(fsm::evse::SetKeyCnfSuccessMode mode, uint8_t result) {
+    using fsm::evse::SetKeyCnfSuccessMode;
     switch (mode) {
     case SetKeyCnfSuccessMode::modem_compat_0x01:
         return result == defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS;
@@ -145,7 +146,7 @@ bool accepts_set_key_cnf_success_result(everest::lib::slac::fsm::evse::SetKeyCnf
     return false;
 }
 
-std::string format_session_nmk_for_log(everest::lib::slac::Nmk const& nmk) {
+std::string format_session_nmk_for_log(Nmk const& nmk) {
     std::string out;
     out.reserve(nmk.size() * 2U);
     for (auto const octet : nmk) {
@@ -154,7 +155,9 @@ std::string format_session_nmk_for_log(everest::lib::slac::Nmk const& nmk) {
     return out;
 }
 
-std::string session_log_prefix(everest::lib::slac::fsm::evse::MatchingSessionData const& session_data) {
+std::string session_log_prefix(fsm::evse::MatchingSessionData const& session_data) {
     return "Session (run_id=" + format_run_id(session_data.run_id) + ", ev_mac=" + format_mac_addr(session_data.ev_mac) +
            "): ";
 }
+
+} // namespace everest::lib::slac

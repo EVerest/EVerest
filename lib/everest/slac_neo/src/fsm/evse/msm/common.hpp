@@ -14,37 +14,22 @@
 // so a _def file shows only states, aliases, the table, the hooks and its data.
 
 #pragma once
+
 #include "../../msm_helpers.hpp"
 
-#include <boost/mpl/vector.hpp>
-#include <boost/msm/back/state_machine.hpp>
-#include <boost/msm/front/completion_event.hpp>
-#include <boost/msm/front/functor_row.hpp>
-#include <boost/msm/front/internal_row.hpp>
-#include <boost/msm/front/state_machine_def.hpp>
-#include <boost/msm/front/states.hpp>
+#include <everest/slac/EvseSlacConfig.hpp>
+#include <everest/slac/MatchingSessionData.hpp>
+#include <everest/slac/fsm/evse/context.hpp>
 #include <everest/slac/slac_defs.hpp>
 #include <everest/slac/slac_messages.hpp>
 #include <everest/slac/slac_utils.hpp>
-
-#include <everest/slac/HomeplugMessage.hpp>
-#include <everest/slac/MatchingSessionData.hpp>
-#include <everest/slac/fsm/evse/context.hpp>
 #include <everest/slac/timer.hpp>
 
-#include "../../misc.hpp"
+#include <boost/msm/front/states.hpp>
 
-#include <algorithm>
 #include <chrono>
-#include <iomanip>
-#include <iostream>
-#include <sstream>
 
 namespace everest::lib::slac::msm {
-using namespace everest::lib::slac;
-using namespace std::chrono_literals;
-using namespace boost::msm::front;
-using namespace boost::msm::back;
 
 // States
 // A timeout state whose duration is read from one EvseSlacConfig field on entry.

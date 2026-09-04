@@ -5,12 +5,28 @@
 // handles CM_VALIDATE. Exits to Matched once a session completed, or to Failed.
 
 #pragma once
+#include "../../msm_helpers.hpp"
 #include "../validate_handler.hpp"
-#include "common.hpp"
 #include "guards_and_actions/matching_logic.hpp"
 #include "session.hpp"
 
+#include <everest/slac/fsm/evse/context.hpp>
+#include <everest/slac/telemetry.hpp>
+#include <everest/slac/timer.hpp>
+
+#include <boost/mpl/vector.hpp>
+#include <boost/msm/back/state_machine.hpp>
+#include <boost/msm/front/completion_event.hpp>
+#include <boost/msm/front/functor_row.hpp>
+#include <boost/msm/front/state_machine_def.hpp>
+#include <boost/msm/front/states.hpp>
+
+#include <algorithm>
+#include <vector>
+
 namespace everest::lib::slac::msm::matching_sm {
+
+using boost::msm::back::state_machine;
 
 struct Matching_def : public state_machine_def<Matching_def> {
     // States

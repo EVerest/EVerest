@@ -4,7 +4,6 @@
 #define EVSE_SLAC_CONTEXT_HPP
 
 #include "everest/slac/slac_messages.hpp"
-#include <array>
 #include <atomic>
 #include <functional>
 #include <optional>

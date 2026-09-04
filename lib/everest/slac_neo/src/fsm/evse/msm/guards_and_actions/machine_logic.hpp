@@ -4,7 +4,7 @@
 // Guards and actions of the top-level SLAC machine (see machine.hpp).
 
 #pragma once
-#include "../common.hpp"
+#include <everest/slac/EvseSlacConfig.hpp>
 
 namespace everest::lib::slac::msm {
 

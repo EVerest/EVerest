@@ -7,13 +7,7 @@
 #include <everest/util/misc/bind.hpp>
 #include <linux/if_ether.h>
 
-#include <algorithm>
-#include <array>
-#include <cstring>
-#include <iomanip>
 #include <net/if.h>
-#include <optional>
-#include <sstream>
 #include <string>
 #include <sys/ioctl.h>
 #include <unistd.h>

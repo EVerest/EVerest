@@ -4,7 +4,19 @@
 // Guards and actions of the Session sub-machine (one per CM_SLAC_PARM.REQ; see session.hpp).
 
 #pragma once
-#include "../common.hpp"
+#include "../../../msm_helpers.hpp"
+
+#include <everest/slac/MatchingSessionData.hpp>
+#include <everest/slac/slac_defs.hpp>
+#include <everest/slac/slac_messages.hpp>
+#include <everest/slac/slac_types.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <iomanip>
+#include <ios>
+#include <sstream>
+#include <string>
 
 namespace everest::lib::slac::msm::session_sm {
 

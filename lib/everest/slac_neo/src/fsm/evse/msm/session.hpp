@@ -5,8 +5,19 @@
 // Runs the sounding exchange for a single EV from CM_START_ATTEN_CHAR.IND to CM_SLAC_MATCH.CNF.
 
 #pragma once
+#include "../../msm_helpers.hpp"
 #include "common.hpp"
 #include "guards_and_actions/session_logic.hpp"
+
+#include <everest/slac/MatchingSessionData.hpp>
+#include <everest/slac/fsm/evse/context.hpp>
+#include <everest/slac/slac_defs.hpp>
+
+#include <boost/mpl/vector.hpp>
+#include <boost/msm/front/completion_event.hpp>
+#include <boost/msm/front/functor_row.hpp>
+#include <boost/msm/front/state_machine_def.hpp>
+#include <boost/msm/front/states.hpp>
 
 namespace everest::lib::slac::msm::session_sm {
 
