@@ -8,9 +8,97 @@
 
 #include "helper.hpp"
 
+#include <iso15118/ev/ac_charge_params.hpp>
+
 using namespace iso15118;
 
-SCENARIO("EV d20 Context encodes a request that round-trips back to the same message") {
+SCENARIO("ISO15118-20 EV Context returns a locked-copy snapshot of the seeded AC charge params") {
+
+    GIVEN("An EV d20 Context with a seeded AcChargeParams monitor") {
+
+        const ev::feedback::Callbacks callbacks{};
+        FsmStateHelper helper{callbacks};
+
+        ev::AcChargeParams params{};
+        params.max_charge_power = 11000.0f;
+        params.min_charge_power = 1000.0f;
+        params.three_phase = true;
+        params.present_active_power = 5000.0f;
+        helper.set_ac_params(params);
+
+        auto& ctx = helper.get_context();
+
+        WHEN("The AC params are read back through the Context getter") {
+
+            const auto snapshot = ctx.get_ac_params();
+
+            THEN("Every field matches the seeded params") {
+                REQUIRE(snapshot.max_charge_power == params.max_charge_power);
+                REQUIRE(snapshot.min_charge_power == params.min_charge_power);
+                REQUIRE(snapshot.three_phase == params.three_phase);
+                REQUIRE(snapshot.present_active_power == params.present_active_power);
+            }
+        }
+
+        WHEN("The live present_active_power is mutated through the monitor handle") {
+            {
+                auto h = helper.get_ac_params_monitor().handle();
+                (*h).present_active_power = 7500.0f;
+            }
+
+            THEN("A fresh Context snapshot reflects the new live value") {
+                const auto snapshot = ctx.get_ac_params();
+                REQUIRE(snapshot.present_active_power == 7500.0f);
+
+                AND_THEN("The static fields are unchanged") {
+                    REQUIRE(snapshot.max_charge_power == params.max_charge_power);
+                    REQUIRE(snapshot.three_phase == params.three_phase);
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Context reports the requested energy service") {
+
+    const ev::feedback::Callbacks callbacks{};
+
+    GIVEN("A Context constructed with the default (DC) requested service") {
+
+        FsmStateHelper helper{callbacks};
+        auto& ctx = helper.get_context();
+
+        THEN("selected_service() is DC and is_ac_family() is false") {
+            REQUIRE(ctx.selected_service() == message_20::datatypes::ServiceCategory::DC);
+            REQUIRE(ctx.is_ac_family() == false);
+        }
+    }
+
+    GIVEN("A Context constructed with a requested AC service") {
+
+        FsmStateHelper helper{
+            callbacks, {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}}, message_20::datatypes::ServiceCategory::AC};
+        auto& ctx = helper.get_context();
+
+        THEN("selected_service() is AC and is_ac_family() is true") {
+            REQUIRE(ctx.selected_service() == message_20::datatypes::ServiceCategory::AC);
+            REQUIRE(ctx.is_ac_family() == true);
+        }
+    }
+
+    GIVEN("A Context constructed with a requested AC_BPT service") {
+
+        FsmStateHelper helper{
+            callbacks, {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}}, message_20::datatypes::ServiceCategory::AC_BPT};
+        auto& ctx = helper.get_context();
+
+        THEN("is_ac_family() is true, so the AC branches take AC_BPT too") {
+            REQUIRE(ctx.is_ac_family() == true);
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Context encodes a request that round-trips back to the same message") {
 
     GIVEN("An EV d20 Context with an empty MessageExchange") {
 

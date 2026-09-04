@@ -46,10 +46,15 @@ SCENARIO("ISO15118-20 EV Controller config defaults") {
 }
 
 SCENARIO("ISO15118-20 EV Controller shutdown stops the loop") {
-    // With no SECC responding, the reactor sits in the pre-session phase. shutdown() must
-    // terminate run() well before the 18 s setup timeout and fire the stopped callback.
-    // It does not isolate the add_action wake from the SDP retry timer, which also wakes
-    // poll(); that latency is not observable through loop().
+    // loop() runs SDP discovery on `lo`; with no SECC responding, the reactor stays
+    // in the pre-session phase (SDP retry + setup timeout, both far from elapsing).
+    // shutdown() must terminate run() promptly, well before the 18 s setup timeout,
+    // and fire the stopped callback.
+    //
+    // Note: this does not isolate shutdown's add_action wake from the periodic SDP
+    // retry timer that also wakes poll() (the wake only bounds the worst-case stop
+    // latency, which is not separately observable through loop()). A socket-level
+    // walk is deferred to the Session-level FSM-walk test.
     GIVEN("A Controller running SDP discovery with no SECC present") {
         ev::EvConfig config{};
         config.interface_name = "lo";
@@ -90,44 +95,28 @@ SCENARIO("ISO15118-20 EV Session on_finished callback throwing does not escape")
     // must be swallowed (logged), fired exactly once, and must not re-enter once the
     // session is already signalled.
     GIVEN("A Session whose on_finished throws on first invocation") {
-        everest::lib::io::event::fd_event_handler reactor;
+        ev::test::SessionFixture fx{"EVTESTID01", ev::SessionTiming{5ms, 50ms}};
 
-        std::vector<std::vector<uint8_t>> captured;
         int finished_count = 0;
-
-        ev::feedback::Callbacks callbacks{};
-
-        const ev::SessionTiming timing{5ms, 50ms};
-
-        ev::Session session{callbacks,
-                            [&captured](std::vector<uint8_t> frame) {
-                                captured.push_back(std::move(frame));
-                                return true;
-                            },
-                            reactor,
-                            timing,
-                            "EVTESTID01",
-                            ev::test::default_advertised_app_protocols()};
-
-        session.set_on_finished([&finished_count]() {
+        fx.session.set_on_finished([&finished_count]() {
             ++finished_count;
             throw std::runtime_error("consumer on_finished callback failure");
         });
 
         WHEN("the session finishes (watchdog timeout) and the callback throws") {
-            session.start();
+            fx.session.start();
 
-            // Pump the reactor through the SAP send and the watchdog expiry. A throw
+            // Run the reactor through the SAP send and the watchdog expiry. A throw
             // escaping the guard would propagate out of reactor.poll(); the loop below
             // would then see it, so an unguarded callback fails the test by exception.
             const auto deadline = std::chrono::steady_clock::now() + 2s;
-            while (not session.is_finished() and std::chrono::steady_clock::now() < deadline) {
-                reactor.poll(1ms);
-                reactor.run_actions();
+            while (not fx.session.is_finished() and std::chrono::steady_clock::now() < deadline) {
+                fx.reactor.poll(1ms);
+                fx.reactor.run_actions();
             }
 
             THEN("the throw is swallowed, the callback fired once, and the session is finished") {
-                REQUIRE(session.is_finished());
+                REQUIRE(fx.session.is_finished());
                 REQUIRE(finished_count == 1);
             }
         }
@@ -135,15 +124,15 @@ SCENARIO("ISO15118-20 EV Session on_finished callback throwing does not escape")
 }
 
 SCENARIO("ISO15118-20 EV Controller post_control_event marshals onto the reactor") {
-    // Smoke assertion (documented): post_control_event must NOT touch the session/pump
+    // Smoke assertion (documented): post_control_event must NOT touch the session
     // from the caller's thread. The Controller owns its reactor privately, so the
-    // queued action cannot be pumped here without opening a socket (a fixed_endpoint
+    // queued action cannot be run here without opening a socket (a fixed_endpoint
     // run would connect); the deferred deliver runs in loop(), exercised at the
-    // pump-level FSM walk. What this pins: post_control_event is safe to call before
+    // Session-level FSM walk. What this pins: post_control_event is safe to call before
     // the reactor runs and returns without crashing or synchronously mutating the
-    // pump (deliver_control_event is a no-op before start() anyway, so any synchronous
+    // session (deliver_control_event is a no-op before start() anyway, so any synchronous
     // call would be observable only as a crash on the absent FSM). It does not assert
-    // the action ran (that needs the reactor pumped, i.e. a socket).
+    // the action ran (that needs the reactor running, i.e. a socket).
     GIVEN("A Controller built with discover=false and a fixed endpoint (no SdpClient)") {
         ev::EvConfig config{};
         config.interface_name = "lo";
@@ -160,7 +149,7 @@ SCENARIO("ISO15118-20 EV Controller post_control_event marshals onto the reactor
         ev::Controller controller{config, callbacks};
 
         WHEN("a control event is posted without ever running the loop") {
-            THEN("the call marshals (no crash, no synchronous pump mutation) and returns") {
+            THEN("the call marshals (no crash, no synchronous session mutation) and returns") {
                 REQUIRE_NOTHROW(controller.post_control_event(ev::d20::StopCharging{true}));
             }
         }
@@ -170,7 +159,7 @@ SCENARIO("ISO15118-20 EV Controller post_control_event marshals onto the reactor
 SCENARIO("ISO15118-20 EV Controller request_stop marshals onto the reactor before the loop runs") {
     // request_stop must be safe to call off the reactor thread before loop() runs:
     // it only queues an action (deliver StopCharging + arm the grace timer), never
-    // touching pump/session/timer state synchronously.
+    // touching session or timer state synchronously.
     GIVEN("A Controller built with discover=false and a fixed endpoint (no SdpClient)") {
         ev::EvConfig config{};
         config.interface_name = "lo";
@@ -187,7 +176,7 @@ SCENARIO("ISO15118-20 EV Controller request_stop marshals onto the reactor befor
         ev::Controller controller{config, callbacks};
 
         WHEN("request_stop is called without ever running the loop") {
-            THEN("the call marshals (no crash, no synchronous pump mutation) and returns") {
+            THEN("the call marshals (no crash, no synchronous session mutation) and returns") {
                 REQUIRE_NOTHROW(controller.request_stop());
             }
         }
