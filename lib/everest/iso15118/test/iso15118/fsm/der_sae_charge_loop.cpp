@@ -5,10 +5,13 @@
 #include "helper.hpp"
 
 #include <iso15118/d20/state/ac_der_sae_charge_loop.hpp>
+#include <iso15118/d20/state/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/session_stop.hpp>
 
 #include <iso15118/d20/config.hpp>
+#include <iso15118/detail/d20/config_validation.hpp>
 #include <iso15118/message/ac_der_sae_charge_loop.hpp>
+#include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/message/power_delivery.hpp>
 #include <iso15118/message/session_setup.hpp>
 
@@ -69,9 +72,10 @@ constexpr auto DER_ALARM_STATUS_LINE = "EV reports DERAlarmStatus 0x00000004";
 constexpr auto ENABLED_MODES_MISMATCH_LINE = "EV EnabledModes 0x00000008 do not match the modes the SECC enabled "
                                              "0x00800008, missing: volt var, extra: none";
 constexpr auto ENABLED_MODES_MISMATCH_NEEDLE = "do not match the modes the SECC enabled";
+constexpr auto REJECTED_GRID_CODE_NEEDLE = "Rejecting mid-session SAE grid code revision";
 
 // Stands in for an older control set the charge parameter discovery would have recorded.
-constexpr std::uint64_t STALE_UPDATE_TIME = 1;
+constexpr std::uint32_t STALE_REVISION = 1;
 
 // The logging callback is process global, so it has to be uninstalled before the buffer it writes into dies.
 class LoggingCapture {
@@ -138,7 +142,25 @@ d20::Session make_session(dt::ControlMode control_mode, dt::MobilityNeedsMode mo
                                                             mobility_needs_mode, dt::Pricing::NoPricing, 230);
     d20::Session session{service_parameters};
     session.set_ev_supported_sae_functions(ev_supported_modes);
+    // The charge parameter discovery dictates the default modes, so a session that skips it records them here.
+    session.record_der_modes_sent(sae::RequiredDEROperatingMode::GridFollowing, sae::GridConnectionMode::GridConnected);
     return session;
+}
+
+message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest make_cpd_request(const std::array<std::uint8_t, 8>& session_id,
+                                                                        std::uint32_t supported_modes) {
+    message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest req{};
+    req.header.session_id = session_id;
+    req.header.timestamp = 1691411797;
+
+    auto& mode = req.transfer_mode;
+    mode.max_charge_power = {22, 3};
+    mode.min_charge_power = {10, 0};
+    mode.maximum_discharge_power = {-22, 3};
+    mode.processing = dt::Processing::Finished;
+    mode.supported_modes = supported_modes;
+    mode.enabled_modes = 0;
+    return req;
 }
 
 message_20::DER_SAE_AC_ChargeLoopRequest make_scheduled_request(const std::array<std::uint8_t, 8>& session_id) {
@@ -220,8 +242,8 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
 
     auto ctx = state_helper.get_context();
 
-    const auto update_time = ctx.session_config.der_sae_setup_config.value().der_control_update_time;
-    REQUIRE(update_time != STALE_UPDATE_TIME);
+    const auto revision = ctx.session_config.der_sae_setup_config.value().revision;
+    REQUIRE(revision != STALE_REVISION);
 
     GIVEN("Bad case - unknown session") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeLoop>()};
@@ -252,7 +274,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
 
         ctx.session =
             make_session(dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc, CHARGE_AND_DISCHARGE_ONLY);
-        ctx.session.record_der_control_sent(STALE_UPDATE_TIME);
+        ctx.session.record_der_control_sent(STALE_REVISION);
 
         state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
@@ -267,9 +289,9 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
             REQUIRE(res.value().response_code == dt::ResponseCode::FAILED);
         }
 
-        THEN("A rejected loop leaves the recorded control set at the older update time") {
-            REQUIRE(ctx.session.der_control_changed_since_cpd(STALE_UPDATE_TIME) == false);
-            REQUIRE(ctx.session.der_control_changed_since_cpd(update_time) == true);
+        THEN("A rejected loop leaves the recorded control set at the older revision") {
+            REQUIRE(ctx.session.der_control_changed_since_cpd(STALE_REVISION) == false);
+            REQUIRE(ctx.session.der_control_changed_since_cpd(revision) == true);
         }
 
         THEN("No charge loop feedback is dispatched") {
@@ -307,7 +329,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
 
         ctx.session =
             make_session(dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc, WITH_ENTER_SERVICE);
-        ctx.session.record_der_control_sent(update_time);
+        ctx.session.record_der_control_sent(revision);
 
         d20::AcTargetPower target_power{};
         state_helper.set_active_control_event(target_power);
@@ -386,7 +408,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeLoop>()};
 
         ctx.session = make_session(dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc, WITH_ENTER_SERVICE);
-        ctx.session.record_der_control_sent(update_time);
+        ctx.session.record_der_control_sent(revision);
 
         d20::AcTargetPower target_power{};
         target_power.target_active_power = dt::RationalNumber{10, 3};
@@ -419,7 +441,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeLoop>()};
 
         ctx.session = make_session(dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedBySecc, WITH_ENTER_SERVICE);
-        ctx.session.record_der_control_sent(update_time);
+        ctx.session.record_der_control_sent(revision);
 
         d20::AcTargetPower target_power{};
         target_power.target_active_power = dt::RationalNumber{10, 3};
@@ -455,7 +477,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeLoop>()};
 
         ctx.session = make_session(dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedBySecc, WITH_ENTER_SERVICE);
-        ctx.session.record_der_control_sent(update_time);
+        ctx.session.record_der_control_sent(revision);
 
         state_helper.handle_request(make_dynamic_request(ctx.session.get_id()));
         fsm.feed(d20::Event::V2GTP_MESSAGE);
@@ -477,7 +499,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeLoop>()};
 
         ctx.session = make_session(dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc, WITH_ENTER_SERVICE);
-        ctx.session.record_der_control_sent(update_time);
+        ctx.session.record_der_control_sent(revision);
 
         state_helper.set_active_control_event(d20::PauseCharging{true});
         fsm.feed(d20::Event::CONTROL_MESSAGE);
@@ -503,7 +525,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeLoop>()};
 
         ctx.session = make_session(dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc, WITH_ENTER_SERVICE);
-        ctx.session.record_der_control_sent(update_time);
+        ctx.session.record_der_control_sent(revision);
 
         state_helper.set_active_control_event(d20::StopCharging{true});
         fsm.feed(d20::Event::CONTROL_MESSAGE);
@@ -530,7 +552,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
 
         ctx.session =
             make_session(dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc, CHARGE_AND_DISCHARGE_ONLY);
-        ctx.session.record_der_control_sent(update_time);
+        ctx.session.record_der_control_sent(revision);
 
         auto req = make_scheduled_request(ctx.session.get_id());
         std::get<Scheduled_DER_Req>(req.control_mode).der_alarm_status = 0x00000004u;
@@ -572,7 +594,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
 
         ctx.session = make_session(dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc,
                                    CHARGE_AND_DISCHARGE_ONLY | SECC_ENABLED_MODES);
-        ctx.session.record_der_control_sent(update_time);
+        ctx.session.record_der_control_sent(revision);
         ctx.session.set_enabled_der_control_modes(SECC_ENABLED_MODES);
 
         auto req = make_scheduled_request(ctx.session.get_id());
@@ -594,7 +616,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
 
         ctx.session = make_session(dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc,
                                    CHARGE_AND_DISCHARGE_ONLY | SECC_ENABLED_MODES);
-        ctx.session.record_der_control_sent(update_time);
+        ctx.session.record_der_control_sent(revision);
         ctx.session.set_enabled_der_control_modes(SECC_ENABLED_MODES);
 
         auto req = make_scheduled_request(ctx.session.get_id());
@@ -625,7 +647,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
 
         ctx.session = make_session(dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc,
                                    CHARGE_AND_DISCHARGE_ONLY | SECC_ENABLED_MODES);
-        ctx.session.record_der_control_sent(update_time);
+        ctx.session.record_der_control_sent(revision);
         ctx.session.set_enabled_der_control_modes(SECC_ENABLED_MODES);
 
         auto req = make_scheduled_request(ctx.session.get_id());
@@ -648,9 +670,9 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
 
         ctx.session = make_session(dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc,
                                    CHARGE_AND_DISCHARGE_ONLY | SECC_ENABLED_MODES);
-        // A stale update time is what a config change mid session looks like to the charge loop. The EV still
+        // A stale revision is what a config change mid session looks like to the charge loop. The EV still
         // echoes the discovery era enabled modes, so this iteration has nothing to complain about.
-        ctx.session.record_der_control_sent(STALE_UPDATE_TIME);
+        ctx.session.record_der_control_sent(STALE_REVISION);
         ctx.session.set_enabled_der_control_modes(SECC_ENABLED_MODES);
 
         auto req = make_scheduled_request(ctx.session.get_id());
@@ -686,7 +708,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
 
         ctx.session =
             make_session(dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc, CHARGE_AND_DISCHARGE_ONLY);
-        ctx.session.record_der_control_sent(update_time);
+        ctx.session.record_der_control_sent(revision);
 
         state_helper.handle_request(make_dynamic_request(ctx.session.get_id()));
         fsm.feed(d20::Event::V2GTP_MESSAGE);
@@ -724,7 +746,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
 
         ctx.session =
             make_session(dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc, CHARGE_AND_DISCHARGE_ONLY);
-        ctx.session.record_der_control_sent(update_time);
+        ctx.session.record_der_control_sent(revision);
 
         d20::AcTargetPower target_power{};
         target_power.target_active_power = dt::RationalNumber{10, 3};
@@ -746,44 +768,343 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
         }
     }
 
-    // The mid-session DER control update has no production trigger yet: the charge parameter discovery marks
-    // the control set as delivered and the setup config is never mutated afterwards. The shape below is therefore
-    // driven by a session that never ran the charge parameter discovery.
-    GIVEN("A session whose DER control set was never delivered") {
-        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeLoop>()};
+    GIVEN("A session whose charge parameter discovery delivered the control set") {
+        fsm::v2::FSM<d20::StateBase> cpd_fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeParameterDiscovery>()};
 
         ctx.session =
             make_session(dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc, WITH_ENTER_SERVICE);
-        REQUIRE(ctx.session.der_control_changed_since_cpd(update_time) == true);
+        state_helper.handle_request(make_cpd_request(ctx.session.get_id(), WITH_ENTER_SERVICE));
+        REQUIRE(cpd_fsm.feed(d20::Event::V2GTP_MESSAGE).transitioned() == true);
 
-        state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
-        fsm.feed(d20::Event::V2GTP_MESSAGE);
+        auto& der_config = ctx.session_config.der_sae_setup_config.value();
+        REQUIRE(ctx.session.der_control_changed_since_cpd(der_config.revision) == false);
 
-        THEN("All four optional DER control blocks are emitted") {
-            const auto first = ctx.get_response<ChargeLoopResponse>();
-            REQUIRE(first.has_value());
-            REQUIRE(first.value().response_code == dt::ResponseCode::OK);
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeLoop>()};
 
-            const auto& first_der_control = std::get<Scheduled_DER_Res>(first.value().control_mode).der_control_cl_res;
-            REQUIRE(first_der_control.voltage_trip.has_value() == true);
-            REQUIRE(first_der_control.frequency_trip.has_value() == true);
-            REQUIRE(first_der_control.reactive_power_support_cl_res.has_value() == true);
-            REQUIRE(first_der_control.active_power_support_cl_res.has_value() == true);
+        WHEN("Only the update time moves on") {
+            der_config.der_control_update_time += 1;
 
-            AND_THEN("The control set is recorded and the following request emits none of them") {
-                REQUIRE(ctx.session.der_control_changed_since_cpd(update_time) == false);
+            state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
+            fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+            THEN("None of the four optional DER control blocks are emitted") {
+                const auto res = ctx.get_response<ChargeLoopResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res.value().response_code == dt::ResponseCode::OK);
+
+                const auto& der_control = std::get<Scheduled_DER_Res>(res.value().control_mode).der_control_cl_res;
+                REQUIRE(der_control.voltage_trip.has_value() == false);
+                REQUIRE(der_control.frequency_trip.has_value() == false);
+                REQUIRE(der_control.reactive_power_support_cl_res.has_value() == false);
+                REQUIRE(der_control.active_power_support_cl_res.has_value() == false);
+            }
+        }
+
+        WHEN("The revision moves on") {
+            der_config.revision += 1;
+
+            state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
+            fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+            THEN("All four optional DER control blocks are emitted") {
+                const auto first = ctx.get_response<ChargeLoopResponse>();
+                REQUIRE(first.has_value());
+                REQUIRE(first.value().response_code == dt::ResponseCode::OK);
+
+                const auto& first_der_control =
+                    std::get<Scheduled_DER_Res>(first.value().control_mode).der_control_cl_res;
+                REQUIRE(first_der_control.voltage_trip.has_value() == true);
+                REQUIRE(first_der_control.frequency_trip.has_value() == true);
+                REQUIRE(first_der_control.reactive_power_support_cl_res.has_value() == true);
+                REQUIRE(first_der_control.active_power_support_cl_res.has_value() == true);
+
+                AND_THEN("The control set is recorded and the following request emits none of them") {
+                    REQUIRE(ctx.session.der_control_changed_since_cpd(der_config.revision) == false);
+
+                    state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
+                    fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+                    const auto& second_der_control =
+                        std::get<Scheduled_DER_Res>(ctx.get_response<ChargeLoopResponse>().value().control_mode)
+                            .der_control_cl_res;
+                    REQUIRE(second_der_control.voltage_trip.has_value() == false);
+                    REQUIRE(second_der_control.frequency_trip.has_value() == false);
+                    REQUIRE(second_der_control.reactive_power_support_cl_res.has_value() == false);
+                    REQUIRE(second_der_control.active_power_support_cl_res.has_value() == false);
+                    REQUIRE(second_der_control.enter_service_cl_res.permit_service == true);
+                }
+            }
+        }
+
+        WHEN("A conformant grid code with a bumped revision arrives as a control event") {
+            const auto previous_revision = der_config.revision;
+            auto updated = der_config;
+            updated.revision = previous_revision + 1;
+            updated.der_control.reactive_power_support.volt_var.enable = true;
+
+            REQUIRE(d20::install_der_sae_setup_config(ctx.session_config, updated) == true);
+            state_helper.set_active_control_event(updated);
+            fsm.feed(d20::Event::CONTROL_MESSAGE);
+
+            THEN("The session config carries the new revision") {
+                REQUIRE(ctx.session_config.der_sae_setup_config.value().revision == updated.revision);
+                REQUIRE(ctx.session_config.der_sae_setup_config.value().revision != previous_revision);
+                REQUIRE(count_lines(log_lines, LogLevel::Warning, REJECTED_GRID_CODE_NEEDLE) == 0);
+            }
+
+            THEN("The next charge loop response carries all four blocks, volt var gated by the EV declaration") {
+                state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
+                fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+                const auto res = ctx.get_response<ChargeLoopResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res.value().response_code == dt::ResponseCode::OK);
+
+                const auto& der_control = std::get<Scheduled_DER_Res>(res.value().control_mode).der_control_cl_res;
+                REQUIRE(der_control.voltage_trip.has_value() == true);
+                REQUIRE(der_control.frequency_trip.has_value() == true);
+                REQUIRE(der_control.reactive_power_support_cl_res.has_value() == true);
+                REQUIRE(der_control.active_power_support_cl_res.has_value() == true);
+
+                // This EV declared no VoltVarFunction, so the gate clears the enable the grid code set.
+                const auto& volt_var = der_control.reactive_power_support_cl_res.value().volt_var;
+                REQUIRE(volt_var.has_value() == true);
+                REQUIRE(volt_var.value().enable == false);
+                REQUIRE(ctx.session.der_control_changed_since_cpd(updated.revision) == false);
+            }
+        }
+
+        WHEN("A grid code whose must trip curve has a single point arrives") {
+            const auto previous_revision = der_config.revision;
+            auto rejected = der_config;
+            rejected.revision = previous_revision + 1;
+            rejected.der_control.voltage_trip.over_voltage_must_trip_curve.curve_data_points = {{1.0f, 110.0f}};
+
+            REQUIRE(d20::install_der_sae_setup_config(ctx.session_config, rejected) == false);
+
+            THEN("The previous grid code stays installed and the rejection is warned about") {
+                REQUIRE(ctx.session_config.der_sae_setup_config.value().revision == previous_revision);
+                REQUIRE(count_lines(log_lines, LogLevel::Warning, REJECTED_GRID_CODE_NEEDLE) == 1);
+            }
+
+            THEN("The next charge loop response is permit only") {
+                state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
+                fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+                const auto res = ctx.get_response<ChargeLoopResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res.value().response_code == dt::ResponseCode::OK);
+
+                const auto& der_control = std::get<Scheduled_DER_Res>(res.value().control_mode).der_control_cl_res;
+                REQUIRE(der_control.enter_service_cl_res.permit_service == true);
+                REQUIRE(der_control.voltage_trip.has_value() == false);
+                REQUIRE(der_control.frequency_trip.has_value() == false);
+                REQUIRE(der_control.reactive_power_support_cl_res.has_value() == false);
+                REQUIRE(der_control.active_power_support_cl_res.has_value() == false);
+            }
+        }
+
+        WHEN("A grid code that only islands the grid connection arrives") {
+            auto updated = der_config;
+            updated.revision += 1;
+            updated.grid_connection_mode = sae::GridConnectionMode::GridIslanded;
+
+            REQUIRE(d20::install_der_sae_setup_config(ctx.session_config, updated) == true);
+            state_helper.set_active_control_event(updated);
+            fsm.feed(d20::Event::CONTROL_MESSAGE);
+
+            THEN("Only the grid connection mode is re-sent, and only once") {
+                state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
+                fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+                const auto first = ctx.get_response<ChargeLoopResponse>();
+                REQUIRE(first.has_value());
+                REQUIRE(first.value().response_code == dt::ResponseCode::OK);
+
+                const auto& first_mode = std::get<Scheduled_DER_Res>(first.value().control_mode);
+                REQUIRE(first_mode.grid_connection_mode.has_value() == true);
+                REQUIRE(first_mode.grid_connection_mode.value() == dt_sae::GridConnectionMode::GridIslanded);
+                REQUIRE(first_mode.required_der_operating_mode.has_value() == false);
 
                 state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
                 fsm.feed(d20::Event::V2GTP_MESSAGE);
 
-                const auto& second_der_control =
-                    std::get<Scheduled_DER_Res>(ctx.get_response<ChargeLoopResponse>().value().control_mode)
-                        .der_control_cl_res;
-                REQUIRE(second_der_control.voltage_trip.has_value() == false);
-                REQUIRE(second_der_control.frequency_trip.has_value() == false);
-                REQUIRE(second_der_control.reactive_power_support_cl_res.has_value() == false);
-                REQUIRE(second_der_control.active_power_support_cl_res.has_value() == false);
+                const auto& second_mode =
+                    std::get<Scheduled_DER_Res>(ctx.get_response<ChargeLoopResponse>().value().control_mode);
+                REQUIRE(second_mode.grid_connection_mode.has_value() == false);
+                REQUIRE(second_mode.required_der_operating_mode.has_value() == false);
             }
+        }
+
+        WHEN("A grid code that only requires grid forming arrives") {
+            auto updated = der_config;
+            updated.revision += 1;
+            updated.required_der_operating_mode = sae::RequiredDEROperatingMode::GridForming;
+
+            REQUIRE(d20::install_der_sae_setup_config(ctx.session_config, updated) == true);
+            state_helper.set_active_control_event(updated);
+            fsm.feed(d20::Event::CONTROL_MESSAGE);
+
+            THEN("Only the required operating mode is re-sent, and only once") {
+                state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
+                fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+                const auto first = ctx.get_response<ChargeLoopResponse>();
+                REQUIRE(first.has_value());
+                REQUIRE(first.value().response_code == dt::ResponseCode::OK);
+
+                const auto& first_mode = std::get<Scheduled_DER_Res>(first.value().control_mode);
+                REQUIRE(first_mode.required_der_operating_mode.has_value() == true);
+                REQUIRE(first_mode.required_der_operating_mode.value() ==
+                        dt_sae::RequiredDEROperatingMode::GridForming);
+                REQUIRE(first_mode.grid_connection_mode.has_value() == false);
+
+                state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
+                fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+                const auto& second_mode =
+                    std::get<Scheduled_DER_Res>(ctx.get_response<ChargeLoopResponse>().value().control_mode);
+                REQUIRE(second_mode.required_der_operating_mode.has_value() == false);
+                REQUIRE(second_mode.grid_connection_mode.has_value() == false);
+            }
+        }
+    }
+
+    GIVEN("A session whose EV declared the volt var function at the charge parameter discovery") {
+        constexpr auto with_volt_var = WITH_ENTER_SERVICE | bit_of(sae::DerBitMapFunctions::VoltVarFunction);
+
+        fsm::v2::FSM<d20::StateBase> cpd_fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeParameterDiscovery>()};
+
+        ctx.session = make_session(dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc, with_volt_var);
+        state_helper.handle_request(make_cpd_request(ctx.session.get_id(), with_volt_var));
+        REQUIRE(cpd_fsm.feed(d20::Event::V2GTP_MESSAGE).transitioned() == true);
+
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeLoop>()};
+
+        WHEN("A grid code enabling volt var arrives with a bumped revision") {
+            auto updated = ctx.session_config.der_sae_setup_config.value();
+            updated.revision += 1;
+            updated.der_control.reactive_power_support.volt_var.enable = true;
+
+            REQUIRE(d20::install_der_sae_setup_config(ctx.session_config, updated) == true);
+            state_helper.set_active_control_event(updated);
+            fsm.feed(d20::Event::CONTROL_MESSAGE);
+
+            state_helper.handle_request(make_scheduled_request(ctx.session.get_id()));
+            fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+            THEN("The re-sent volt var block is enabled") {
+                const auto res = ctx.get_response<ChargeLoopResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res.value().response_code == dt::ResponseCode::OK);
+
+                const auto& der_control = std::get<Scheduled_DER_Res>(res.value().control_mode).der_control_cl_res;
+                REQUIRE(der_control.reactive_power_support_cl_res.has_value() == true);
+                REQUIRE(der_control.reactive_power_support_cl_res.value().volt_var.has_value() == true);
+                REQUIRE(der_control.reactive_power_support_cl_res.value().volt_var.value().enable == true);
+                REQUIRE(
+                    ctx.session.get_enabled_der_control_modes() ==
+                    (bit_of(sae::DerBitMapFunctions::EnterService) | bit_of(sae::DerBitMapFunctions::VoltVarFunction)));
+            }
+        }
+
+        WHEN("The EV echoes a mismatching EnabledModes before and after a grid code re-sends the control set") {
+            // Only enter service is enabled after the charge parameter discovery, so this echo misses it.
+            auto req = make_scheduled_request(ctx.session.get_id());
+            std::get<Scheduled_DER_Req>(req.control_mode).enabled_modes = CHARGE_AND_DISCHARGE_ONLY;
+
+            state_helper.handle_request(req);
+            fsm.feed(d20::Event::V2GTP_MESSAGE);
+            REQUIRE(count_lines(log_lines, LogLevel::Warning, ENABLED_MODES_MISMATCH_NEEDLE) == 1);
+
+            auto updated = ctx.session_config.der_sae_setup_config.value();
+            updated.revision += 1;
+            updated.der_control.reactive_power_support.volt_var.enable = true;
+
+            REQUIRE(d20::install_der_sae_setup_config(ctx.session_config, updated) == true);
+            state_helper.set_active_control_event(updated);
+            fsm.feed(d20::Event::CONTROL_MESSAGE);
+
+            // The echo in the loop that carries the re-sent control set predates it, so it is still measured
+            // against the old set and stays latched.
+            state_helper.handle_request(req);
+            fsm.feed(d20::Event::V2GTP_MESSAGE);
+            REQUIRE(count_lines(log_lines, LogLevel::Warning, ENABLED_MODES_MISMATCH_NEEDLE) == 1);
+
+            // The EV keeps echoing the old set while the SECC now expects enter service and volt var.
+            state_helper.handle_request(req);
+            fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+            THEN("The mismatch is reported a second time and latches again") {
+                const auto res = ctx.get_response<ChargeLoopResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res.value().response_code == dt::ResponseCode::OK);
+                REQUIRE(count_lines(log_lines, LogLevel::Warning, ENABLED_MODES_MISMATCH_NEEDLE) == 2);
+
+                state_helper.handle_request(req);
+                fsm.feed(d20::Event::V2GTP_MESSAGE);
+                REQUIRE(count_lines(log_lines, LogLevel::Warning, ENABLED_MODES_MISMATCH_NEEDLE) == 2);
+            }
+        }
+    }
+
+    GIVEN("A dynamic session whose charge parameter discovery delivered the control set") {
+        fsm::v2::FSM<d20::StateBase> cpd_fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeParameterDiscovery>()};
+
+        ctx.session = make_session(dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc, WITH_ENTER_SERVICE);
+        state_helper.handle_request(make_cpd_request(ctx.session.get_id(), WITH_ENTER_SERVICE));
+        REQUIRE(cpd_fsm.feed(d20::Event::V2GTP_MESSAGE).transitioned() == true);
+
+        auto& der_config = ctx.session_config.der_sae_setup_config.value();
+        REQUIRE(ctx.session.der_control_changed_since_cpd(der_config.revision) == false);
+
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeLoop>()};
+
+        d20::AcTargetPower target_power{};
+        target_power.target_active_power = dt::RationalNumber{10, 3};
+        state_helper.set_active_control_event(target_power);
+        fsm.feed(d20::Event::CONTROL_MESSAGE);
+
+        WHEN("The revision moves on") {
+            der_config.revision += 1;
+
+            state_helper.handle_request(make_dynamic_request(ctx.session.get_id()));
+            fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+            THEN("All four optional DER control blocks are emitted inside the dynamic response") {
+                const auto first = ctx.get_response<ChargeLoopResponse>();
+                REQUIRE(first.has_value());
+                REQUIRE(first.value().response_code == dt::ResponseCode::OK);
+
+                const auto& first_der_control =
+                    std::get<Dynamic_DER_Res>(first.value().control_mode).der_control_cl_res;
+                REQUIRE(first_der_control.voltage_trip.has_value() == true);
+                REQUIRE(first_der_control.frequency_trip.has_value() == true);
+                REQUIRE(first_der_control.reactive_power_support_cl_res.has_value() == true);
+                REQUIRE(first_der_control.active_power_support_cl_res.has_value() == true);
+
+                AND_THEN("The control set is recorded and the following request emits none of them") {
+                    REQUIRE(ctx.session.der_control_changed_since_cpd(der_config.revision) == false);
+
+                    state_helper.handle_request(make_dynamic_request(ctx.session.get_id()));
+                    fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+                    const auto& second_der_control =
+                        std::get<Dynamic_DER_Res>(ctx.get_response<ChargeLoopResponse>().value().control_mode)
+                            .der_control_cl_res;
+                    REQUIRE(second_der_control.voltage_trip.has_value() == false);
+                    REQUIRE(second_der_control.frequency_trip.has_value() == false);
+                    REQUIRE(second_der_control.reactive_power_support_cl_res.has_value() == false);
+                    REQUIRE(second_der_control.active_power_support_cl_res.has_value() == false);
+                    REQUIRE(second_der_control.enter_service_cl_res.permit_service == true);
+                }
+            }
+        }
+    }
+
+    GIVEN("A fresh session that never ran the charge parameter discovery") {
+        THEN("Every revision counts as changed, the recorded revision is absent rather than zero") {
+            REQUIRE(d20::Session().der_control_changed_since_cpd(0) == true);
         }
     }
 
@@ -896,7 +1217,7 @@ SCENARIO("ISO15118-20 der sae ac charge loop state transitions") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_SAE_ChargeLoop>()};
 
         ctx.session = make_session(dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc, WITH_ENTER_SERVICE);
-        ctx.session.record_der_control_sent(update_time);
+        ctx.session.record_der_control_sent(revision);
 
         d20::AcTargetPower target_power{};
         target_power.target_active_power = dt::RationalNumber{10, 3};

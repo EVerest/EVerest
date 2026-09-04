@@ -294,10 +294,21 @@ void TbdController::update_der_iec_limits(const std::optional<d20::IecDerTransfe
 
 void TbdController::update_der_sae_limits(const std::optional<d20::SaeDerTransferLimits>& limits,
                                           const std::optional<d20::DerSaeSetupConfig>& setup_config) {
-    // Applies to the next session, as update_der_iec_limits does.
-    auto s = evse_setup.handle();
-    s->der_sae_limits = limits;
-    s->der_sae_setup_config = setup_config;
+    // The limits apply to the next session. A setup config also reaches a running session, which validates it
+    // against its own limits before installing it; a withdrawn config does not.
+    bool withdrawn = false;
+    {
+        auto s = evse_setup.handle();
+        withdrawn = s->der_sae_setup_config.has_value() and not setup_config.has_value();
+        s->der_sae_limits = limits;
+        s->der_sae_setup_config = setup_config;
+    }
+
+    if (session and setup_config.has_value()) {
+        session->push_control_event(setup_config.value());
+    } else if (session and withdrawn) {
+        logf_info("SAE grid code withdrawn; the running session keeps its grid code until it ends");
+    }
 }
 
 void TbdController::set_dlink_ready(bool ready) {

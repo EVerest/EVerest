@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <iso15118/d20/ac_powers.hpp>
+#include <iso15118/d20/config.hpp>
 #include <iso15118/d20/dynamic_mode_parameters.hpp>
 #include <iso15118/d20/limits.hpp>
 
@@ -87,8 +88,9 @@ private:
 // TODO(SL): Define this globally for message and states
 using SupportedVASs = std::vector<uint16_t>;
 
-using ControlEvent = std::variant<CableCheckFinished, PresentVoltageCurrent, AuthorizationResponse, StopCharging,
-                                  PauseCharging, DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters,
-                                  ClosedContactor, AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs>;
+using ControlEvent =
+    std::variant<CableCheckFinished, PresentVoltageCurrent, AuthorizationResponse, StopCharging, PauseCharging,
+                 DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters, ClosedContactor, AcTargetPower,
+                 AcPresentPower, EnergyServices, SupportedVASs, DerSaeSetupConfig>;
 
 } // namespace iso15118::d20

@@ -53,12 +53,31 @@ std::optional<dt::RationalNumber> phase_maximum(const std::optional<Limit<dt::Ra
     return limit.value().max;
 }
 
+// The mode enums dictated at the charge parameter discovery are re-sent per field on change only, [V2G20-3358]
+// to [V2G20-3361]. Independent of the control set revision.
+struct ModesToSend {
+    std::optional<dt::sae::RequiredDEROperatingMode> required_der_operating_mode;
+    std::optional<dt::sae::GridConnectionMode> grid_connection_mode;
+};
+
+ModesToSend modes_to_send(const d20::Session& session, const d20::DerSaeSetupConfig& der_config) {
+    ModesToSend out{};
+    if (session.get_sent_required_der_operating_mode() != der_config.required_der_operating_mode) {
+        out.required_der_operating_mode = convert(der_config.required_der_operating_mode);
+    }
+    if (session.get_sent_grid_connection_mode() != der_config.grid_connection_mode) {
+        out.grid_connection_mode = convert(der_config.grid_connection_mode);
+    }
+    return out;
+}
+
 // Everything both response control modes share. The target active power differs: optional in scheduled mode,
 // mandatory in dynamic mode.
 template <typename Res>
 void fill_shared(Res& out, const AcTargetPower& targets, const d20::AcPresentPower& present_power,
                  const d20::AcTransferLimits& ac_limits, const d20::SaeDerTransferLimits& sae_limits,
-                 const d20::DerSaeSetupConfig& der_config, bool changed_since_cpd, std::uint32_t ev_supported_modes) {
+                 const d20::DerSaeSetupConfig& der_config, bool changed_since_cpd, const ModesToSend& modes,
+                 std::uint32_t ev_supported_modes) {
     build_der_control_cl_res(out.der_control_cl_res, der_config, changed_since_cpd, ev_supported_modes);
 
     out.present_active_power = present_power.present_active_power;
@@ -81,15 +100,16 @@ void fill_shared(Res& out, const AcTargetPower& targets, const d20::AcPresentPow
         out.target_reactive_power_L3 = targets.target_reactive_power_L3;
     }
 
-    // required_der_operating_mode and grid_connection_mode are dictated at the charge parameter discovery.
-    // [V2G20-3358] to [V2G20-3361] require re-sending each on change; not implemented. Inert until the SAE
-    // der_relay can change them mid-session.
+    out.required_der_operating_mode = modes.required_der_operating_mode;
+    out.grid_connection_mode = modes.grid_connection_mode;
 }
 
 void fill(Scheduled_DER_Res& out, const AcTargetPower& targets, const d20::AcPresentPower& present_power,
           const d20::AcTransferLimits& ac_limits, const d20::SaeDerTransferLimits& sae_limits,
-          const d20::DerSaeSetupConfig& der_config, bool changed_since_cpd, std::uint32_t ev_supported_modes) {
-    fill_shared(out, targets, present_power, ac_limits, sae_limits, der_config, changed_since_cpd, ev_supported_modes);
+          const d20::DerSaeSetupConfig& der_config, bool changed_since_cpd, const ModesToSend& modes,
+          std::uint32_t ev_supported_modes) {
+    fill_shared(out, targets, present_power, ac_limits, sae_limits, der_config, changed_since_cpd, modes,
+                ev_supported_modes);
 
     // Optional in scheduled mode: the target power comes from the negotiated schedule.
     if (is_function_set(ev_supported_modes, DerFn::EVSETargetActivePowerFunction)) {
@@ -101,9 +121,10 @@ void fill(Scheduled_DER_Res& out, const AcTargetPower& targets, const d20::AcPre
 
 void fill(Dynamic_DER_Res& out, const AcTargetPower& targets, const d20::AcPresentPower& present_power,
           const d20::AcTransferLimits& ac_limits, const d20::SaeDerTransferLimits& sae_limits,
-          const d20::DerSaeSetupConfig& der_config, bool changed_since_cpd, std::uint32_t ev_supported_modes,
-          SaeChargeLoopLogState& log_state) {
-    fill_shared(out, targets, present_power, ac_limits, sae_limits, der_config, changed_since_cpd, ev_supported_modes);
+          const d20::DerSaeSetupConfig& der_config, bool changed_since_cpd, const ModesToSend& modes,
+          std::uint32_t ev_supported_modes, SaeChargeLoopLogState& log_state) {
+    fill_shared(out, targets, present_power, ac_limits, sae_limits, der_config, changed_since_cpd, modes,
+                ev_supported_modes);
 
     const auto target_active_power_declared = is_function_set(ev_supported_modes, DerFn::EVSETargetActivePowerFunction);
 
@@ -176,6 +197,7 @@ handle_request(const message_20::DER_SAE_AC_ChargeLoopRequest& req, const d20::S
     }
 
     const auto secc_enabled_modes = session.get_enabled_der_control_modes();
+    const auto modes = modes_to_send(session, der_config.value());
 
     std::visit(
         [secc_enabled_modes, &log_state](const auto& mode) {
@@ -196,7 +218,7 @@ handle_request(const message_20::DER_SAE_AC_ChargeLoopRequest& req, const d20::S
 
         auto& res_mode = res.control_mode.emplace<Scheduled_DER_Res>();
         fill(res_mode, target_powers, present_powers, ac_limits, sae_limits.value(), der_config.value(),
-             changed_since_cpd, ev_supported_modes.value());
+             changed_since_cpd, modes, ev_supported_modes.value());
 
     } else if (std::holds_alternative<Dynamic_DER_Req>(req.control_mode)) {
         if (selected_control_mode != dt::ControlMode::Dynamic) {
@@ -213,7 +235,7 @@ handle_request(const message_20::DER_SAE_AC_ChargeLoopRequest& req, const d20::S
 
         auto& res_mode = res.control_mode.emplace<Dynamic_DER_Res>();
         fill(res_mode, target_powers, present_powers, ac_limits, sae_limits.value(), der_config.value(),
-             changed_since_cpd, ev_supported_modes.value(), log_state);
+             changed_since_cpd, modes, ev_supported_modes.value(), log_state);
 
         if (selected_mobility_needs_mode == dt::MobilityNeedsMode::ProvidedBySecc) {
             set_dynamic_parameters_in_res(res_mode, dynamic_parameters, res.header.timestamp);
@@ -302,7 +324,7 @@ Result AC_DER_SAE_ChargeLoop::feed(Event ev) {
 
         const auto& der_config = m_ctx.session_config.der_sae_setup_config;
         const auto changed_since_cpd =
-            der_config.has_value() and m_ctx.session.der_control_changed_since_cpd(der_config->der_control_update_time);
+            der_config.has_value() and m_ctx.session.der_control_changed_since_cpd(der_config->revision);
 
         const auto res = handle_request(*req, m_ctx.session, stop, pause, target_powers, present_powers,
                                         dynamic_parameters, m_ctx.session_config.ac_limits,
@@ -326,8 +348,15 @@ Result AC_DER_SAE_ChargeLoop::feed(Event ev) {
                 std::visit([](const auto& mode) -> const dt::sae::DERControlCLRes& { return mode.der_control_cl_res; },
                            res.control_mode);
             m_ctx.session.set_enabled_der_control_modes(derive_enabled_modes(der_control_cl_res));
+            // The re-sent control set changes what the EV should echo, so the one-shot warning re-arms.
+            log_state.reported_enabled_modes_mismatch = false;
 
-            m_ctx.session.record_der_control_sent(der_config->der_control_update_time);
+            m_ctx.session.record_der_control_sent(der_config->revision);
+        }
+
+        if (der_config.has_value()) {
+            m_ctx.session.record_der_modes_sent(der_config->required_der_operating_mode,
+                                                der_config->grid_connection_mode);
         }
 
         if (const auto* mode = std::get_if<Scheduled_DER_Req>(&req->control_mode)) {

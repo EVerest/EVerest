@@ -16,23 +16,54 @@ set; see "DER flavor selection" below.
 DER grid support
 ================
 
-This section describes the ``AC_DER_IEC`` path. ``AC_DER_SAE`` is covered in
-"AC_DER_SAE grid code" below.
+This section describes both directive relays. The SAE negotiation, the default
+grid code and the mid-session path are covered in "AC_DER_SAE grid code" below.
 
 Active DER directives received via ``grid_support::set_active_directives`` are
-stored and relayed to the EV as AC_DER_IEC control functions. Only the curve
-family is mapped: ``VoltVar`` to ``VoltVarMode``, ``WattVar`` to ``WattVarMode``,
-``WattPF`` to ``WattCosPhiMode``, each as an absolute-unit control curve. Non-curve
-directives (frequency, volt-watt, setpoint, ride-through) have no counterpart
-here and are logged and skipped.
+stored and relayed to the EV per annex.
 
-The relay is IEC-only. On a SAE station the stored directives reach nothing:
-``apply_active_der_directives`` logs a warning and leaves the SAE grid code
-unchanged, so the station runs the inert default until a SAE relay lands.
+The IEC relay maps three curve families, ``VoltVar`` to ``VoltVarMode``,
+``WattVar`` to ``WattVarMode`` and ``WattPF`` to ``WattCosPhiMode``, each as an
+absolute-unit control curve; a type that appears twice is last-wins. Non-curve
+directives (frequency, volt-watt, setpoint, ride-through) have no counterpart here
+and are logged and skipped. Application is next-session-dynamic: a directive
+arriving mid-session takes effect at the next V2G session. The DER transfer limits
+advertised at each session's charge parameter discovery derive from ``ac_limits``.
 
-Application is next-session-dynamic: a directive arriving mid-session takes
-effect at the next V2G session. The DER transfer limits advertised at each
-session's charge parameter discovery derive from ``ac_limits``.
+The SAE relay maps the directive table onto the inert default grid code, so a
+directive that leaves the set falls back to the shipped default rather than
+lingering: ``HVMustTrip``, ``HVMayTrip``, ``HVMomCess``, ``LVMustTrip``,
+``LVMayTrip``, ``LVMomCess``, ``HFMustTrip``, ``HFMayTrip``, ``LFMustTrip``,
+``VoltVar``, ``WattVar``, ``FixedVar``, ``VoltWatt``, ``FreqDroop``,
+``LimitMaxDischarge``, ``FixedPFAbsorb``, ``FixedPFInject`` and ``EnterService``.
+``FixedPFAbsorb`` and ``FixedPFInject`` share the single ``ConstantPowerFactor``
+element, so one wins and the other is shadowed. Each Annex M element takes one
+writer: the lowest priority wins, array order breaks ties, and shadowed
+directives are logged by id (unlike the IEC relay, which ignores priority). A
+winner that fails validation frees its element for the next candidate. Only the
+single-phase fields are written. ``LimitMaxDischarge`` is an approximation: the
+percentage is clamped to 0..100 and rounded, not rescaled against the EV's
+maximum discharge power. The mapped grid code reaches the next session and, after
+validation, the running one; see "Mid-session updates" below.
+
+The relay owns every unit and orientation conversion, so the library below it
+knows nothing about OCPP:
+
+- ``grid_support`` trip curves arrive in OCPP orientation, threshold on ``x`` and
+  seconds on ``y``. The relay swaps them into the Annex M duration-first form
+  (``x`` the duration in seconds, ``y`` the threshold) and sorts by duration per
+  M.2.2.1.10 and M.2.2.1.11; two points sharing a duration reject the directive.
+  HV/LV thresholds stay percentages of nominal (``PercentageV``) and HF/LF stay
+  Hz, so no volt conversion happens.
+- ``EnterService`` voltage bands and the VoltVar ``ReferenceVoltage`` pass through
+  in volts, because AMD1 Table 1 gives them in volts and so does ``grid_support``.
+- The ``FixedVar`` setpoint sign is inverted into ``VarSetpoint``. The two sign
+  conventions are opposed and [V2G20-3183] mandates the conversion.
+- The directive ``priority`` is forwarded into every written element that carries
+  one; ``EnterService`` has none. A value outside the Annex M ``uint16`` range is
+  omitted with a warning rather than wrapped.
+- A curve with more than ten data points is rejected, never truncated: dropping
+  points would silently reshape the grid code the operator asked for.
 
 This module does not publish DER ``capability``; an empty one is expected for
 AC_DER_IEC.
@@ -80,11 +111,21 @@ per-function gating sit relative to the response carrying them.
 Default grid code
 -----------------
 
-``get_default_sae_der_control()`` returns a complete but functionally inactive
-configuration: every ``enable`` and ``permit_service`` is false. ``DERControlCPDRes``
-and all its sub-elements are mandatory, so a SAE SECC must emit a full grid code at
-charge parameter discovery or not offer the service at all. An inert one keeps a
-station that was never given a grid code from claiming one.
+``get_default_sae_der_control(nominal_voltage_v)`` returns a complete but
+functionally inactive configuration: every ``enable`` and ``permit_service`` is
+false. ``DERControlCPDRes`` and all its sub-elements are mandatory, so a SAE SECC
+must emit a full grid code at charge parameter discovery or not offer the service
+at all. An inert one keeps a station that was never given a grid code from
+claiming one.
+
+The volt-valued fields are derived from the nominal voltage passed in: the
+enter-service window is 1.05 and 0.917 of nominal (AMD1 Table 1 gives both bands
+in volts) and the volt-var ``ReferenceVoltage`` is the nominal itself. A
+``FrequencyDroop`` carrying a zeroed over-frequency branch is present but
+disabled, because Table M.33 obliges ``UnderFrequencyDroop`` whenever
+``OverFrequencyDroop`` is absent, and that holds regardless of ``enable``. The
+frequency bands remain the shipped 50 Hz-family values and do not follow the
+nominal frequency.
 
 The values are structurally valid, and the two mandatory curves per trip family
 carry the schema minimum of two data points, so a SAE station is conformant
@@ -93,13 +134,52 @@ without any DSO directive.
 Mid-session updates
 -------------------
 
-``DERControlCLRes`` updates parameters already sent in ``DERControlCPDRes``. Only
-``EnterServiceCLRes`` is mandatory inside it, and only ``permit_service`` inside
-that. The other four blocks (``voltage_trip``, ``frequency_trip``,
-``reactive_power_support_cl_res``, ``active_power_support_cl_res``) are emitted
-only when the DER control changed since charge parameter discovery, keyed on
-``DerSaeSetupConfig::der_control_update_time``. Sending a conditional element
-unconditionally is itself non-conformant, so the unchanged path clears them.
+``DERControlCLRes`` updates parameters already sent in ``DERControlCPDRes``
+([V2G20-3236]). Only ``EnterServiceCLRes`` is mandatory inside it, and only
+``permit_service`` inside that. The other four blocks (``voltage_trip``,
+``frequency_trip``, ``reactive_power_support_cl_res``,
+``active_power_support_cl_res``) are emitted only when the grid code changed
+since charge parameter discovery. Sending a conditional element unconditionally
+is itself non-conformant, so the unchanged path clears them.
+
+Change detection is keyed on ``DerSaeSetupConfig::revision``, a producer-owned
+counter this module bumps only when the relay input changes: the
+sorted directive ids with their ``received_at`` stamps, plus the nominal voltage
+and frequency the mapping converts against. The session records the revision it
+sent at charge parameter discovery and after each re-send, and compares that
+against the installed config. ``der_control_update_time`` is the wall clock
+``UpdateTime`` on the wire and nothing else; it is never compared, because a
+timestamp changes on every construction while the counter changes only with the
+content. A re-apply of an unchanged directive set, or an AC-limit re-derivation,
+therefore does not re-dictate the grid code.
+
+``RequiredDEROperatingMode`` and ``GridConnectionMode`` are handled per field and
+independently of the revision: each is re-sent in the charge loop response only
+when it differs from the value last sent to this EV and is left unset otherwise
+([V2G20-3358] to [V2G20-3361]).
+
+The path from a directive to the wire runs once ``AC_DER_SAE`` is advertised and
+its limits are derived; otherwise ``apply_active_der_directives`` logs at info and
+leaves the revision untouched. ``relay_sae_grid_code`` compares the relay input,
+maps the set with ``map_active_directives_to_sae_der_control``, validates the
+result with ``validate_sae_der_setup`` against the SAE DER limits and AC limits
+held at that moment, stores it as the next-session setup and hands it to
+``TbdController::update_der_sae_limits``. The controller pushes it into the
+running session as a control event, where ``install_der_sae_setup_config``
+validates it once more against the session's own limits before installing it. The
+next ``DERControlCLRes`` then carries the four blocks, gated by the EV's declared
+``SupportedModes`` like the discovery response, and the ``EnabledModes`` mismatch
+warning re-arms. An invalid grid code is rejected with a warning at either stage.
+A module-stage rejection leaves the previous revision dictated. A session-stage
+rejection keeps the running session on its old grid code; the new revision is
+still the next-session setup. The controller also guards a caller passing no
+setup config: that withdrawal is logged once per withdrawal and does not reach
+the running session, which keeps its grid code until it ends. This module never
+withdraws; an empty directive set produces a new inert revision instead. The
+relayed setup config outlives AC-limit re-derivations: the derivation seeds it
+only while none is held or the held one is still the seed (revision 0).
+
+.. mermaid:: sae-der-relay.mmd
 
 Transfer limits and the voltage window
 --------------------------------------
@@ -116,6 +196,11 @@ under-voltage must-trip curves (110 % and 88 %): those curves carry duration on 
 and ``PercentageV`` on y, and the EV denormalizes the percentage against the base
 voltage for the function, usually the nominal voltage advertised here. Changing
 one side alone silently moves the EV's trip thresholds.
+
+``PercentageV`` does not carry its base voltage on the wire. For trip thresholds,
+the relay assumes the EV uses the advertised nominal as its base voltage; an EV
+using a different function-specific base would interpret the same percentage
+differently.
 
 Service withdrawal
 ------------------
@@ -151,28 +236,30 @@ zero EVSE capability yields explicit zeros rather than omitted elements.
 Known gaps
 ----------
 
-- No SAE ``der_relay`` exists, so ``grid_support`` directives cannot reach a SAE
-  session. In practice nothing changes the configuration mid-session, so the four
-  optional ``DERControlCLRes`` blocks are not currently emitted.
 - A SAE session's ``ChargingNeeds`` omits the reactive-power limits. SAE var
   absorption and injection do not map onto the IEC charge and discharge reactive
   fields of ``types::iso15118::DERChargingParameters``, so those are left unset.
   The supported-modes bitmap, the four excitation fields and the optional session
   total discharge energy available do pass through.
-- ``required_der_operating_mode`` and ``grid_connection_mode`` are dictated at the
-  charge parameter discovery only. [V2G20-3358] to [V2G20-3361] require the SECC to
-  re-send each one in the charge loop when it changes; that is not implemented, and
-  both are left unset on every SAE charge loop response.
-- The grid code itself can be re-dictated mid-session through ``DERControlCLRes``
-  ([V2G20-3236]) and the library does build it: the four optional sub-structs are
-  emitted whenever the setup config's ``der_control_update_time`` differs from the
-  value already sent, and the steady-state payload carries only the mandatory
-  ``EnterServiceCLRes.PermitService``. Nothing can trigger it in a running session
-  yet. ``TbdController::update_der_sae_limits`` writes only the next-session setup
-  and ``SessionConfig`` copies the grid code at construction, so
-  ``der_control_update_time`` cannot change within a session. Reaching a running
-  session needs a control event arm like the one ``ac_limits`` has, plus the SAE
-  ``der_relay`` above to produce the change.
+- ``required_der_operating_mode`` and ``grid_connection_mode`` are re-sent per
+  field in the charge loop response when they differ from the value last sent
+  ([V2G20-3358] to [V2G20-3361]). Nothing in this module changes them after boot;
+  the relay carries the current values through, so in practice both are dictated
+  at charge parameter discovery only.
+- Directive types with no Annex M target are logged once per applied set and
+  skipped: ``FreqWatt``, ``WattPF``, ``ZeroCurrent``,
+  ``OvervoltageFaultRideThrough``, ``UndervoltageFaultRideThrough``,
+  ``MaximumLevelDCInjection``, ``DSOQSetpoint``, ``DSOCosPhiSetpoint``,
+  ``PowerMonitoringMustTrip`` and ``Gradients`` exist in Annex L or in OCPP only.
+- The SAE relay writes the single-phase fields only; every ``_L2`` and ``_L3``
+  counterpart stays unset.
+- ``LimitMaxDischarge`` is approximated: ``pct_max_discharge_power`` lands in
+  ``PercentageValue`` clamped to 0..100 and rounded, not rescaled against the
+  EV's maximum discharge power.
+- ``grid_support`` ``ramp_rate`` (%/s) is copied into ``EnterServiceRampTime``
+  (s) unconverted, by decision, and needs a follow-up. It reaches
+  ``EnterServiceRampTime`` only when paired with ``delay``; alone it is dropped at
+  debug, and ``delay`` without ``ramp_rate`` rejects the directive.
 
 DER flavor selection
 ====================

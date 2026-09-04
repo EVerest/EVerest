@@ -17,9 +17,12 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "der_relay.hpp"
+#include "der_relay_sae.hpp"
 #include "der_setup.hpp"
 #include "grid_event.hpp"
 #include "utils.hpp"
@@ -118,9 +121,19 @@ private:
     std::bitset<12> ev_selected_der_control_functions;
 
     // Serializes apply_active_der_directives so the per-name update loop cannot interleave between two
-    // concurrent applies and leave a mixed DER-function map. Outermost lock; acquired before GEL.
+    // concurrent applies and leave a mixed DER-function map.
+    //
+    // Lock rank, outermost first: der_apply_mutex > GEL > TbdController::evse_setup (a util::monitor, not a
+    // std::mutex). Never acquired in the reverse order. Calling the controller under GEL is therefore
+    // allowed, and relay_sae_grid_code and update_der_limits_locked both do so.
     std::mutex der_apply_mutex;
     void apply_active_der_directives();
+    // SAE half of apply_active_der_directives. Maps on the caller's GEL snapshot without GEL held, then
+    // re-acquires it to validate against the current limits and commit. Called with der_apply_mutex held.
+    void relay_sae_grid_code(const types::grid_support::ActiveDirectiveSet& directives,
+                             iso15118::TbdController& controller_ref, float nominal_voltage_v,
+                             float nominal_frequency_hz, const iso15118::d20::DerSaeSetupConfig& current_sae,
+                             std::uint32_t applied_revision, const std::optional<module::SaeRelayInput>& applied_input);
 
     // Re-derives the DER transfer limits and mirrors them into the controller. Call with GEL held, from
     // every handler that writes one of its inputs.
@@ -132,6 +145,14 @@ private:
     // Nominal voltage and frequency reported by the last logged Ready derivation, so a change to the
     // advertised grid values is re-logged instead of staying hidden. Guarded by GEL.
     std::optional<std::pair<std::uint32_t, float>> logged_sae_nominal;
+
+    // Revision of the SAE grid code last dictated from grid_support directives. Bumped only when the
+    // relay input changes, so an AC-limits re-derivation re-pushes the same revision and the session stays
+    // quiet. Guarded by GEL.
+    std::uint32_t sae_grid_code_revision{0};
+    // Relay input behind sae_grid_code_revision. Seeded with the empty set on every derivation that assigns
+    // SAE limits while the held config is still the seed (revision 0); nullopt until the first. Guarded by GEL.
+    std::optional<module::SaeRelayInput> sae_applied_input;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

@@ -82,6 +82,7 @@ public:
 
     // The DER limits are read when a SessionConfig is built, so an update applies to the next session.
     void update_der_iec_limits(const std::optional<d20::IecDerTransferLimits>&);
+    // The SAE setup config additionally reaches a running session as a control event.
     void update_der_sae_limits(const std::optional<d20::SaeDerTransferLimits>&,
                                const std::optional<d20::DerSaeSetupConfig>&);
 

@@ -59,6 +59,8 @@ struct DerSaeSetupConfig {
     sae::RequiredDEROperatingMode required_der_operating_mode{sae::RequiredDEROperatingMode::GridFollowing};
     sae::GridConnectionMode grid_connection_mode{sae::GridConnectionMode::GridConnected};
     std::uint64_t der_control_update_time{0}; // SECC time
+    // Producer-owned change counter; der_control_update_time is the wire UpdateTime only (ADR-0027).
+    std::uint32_t revision{0};
 };
 
 /// Inert default grid code with GridFollowing/GridConnected; not a real grid code.

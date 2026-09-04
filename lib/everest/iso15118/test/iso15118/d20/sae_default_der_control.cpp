@@ -172,6 +172,18 @@ SCENARIO("Default SAE DER control is inert") {
     }
 }
 
+SCENARIO("A default constructed trip curve carries the trip axis units") {
+
+    GIVEN("A default constructed DERCurve") {
+        const sae::DERCurve curve{};
+
+        THEN("The x axis is the duration in seconds and the y axis is a voltage percentage") {
+            REQUIRE(curve.x_unit == sae::DERUnit::s);
+            REQUIRE(curve.y_unit == sae::DERUnit::PercentageV);
+        }
+    }
+}
+
 namespace {
 
 iso15118::d20::EvseSetupConfig
@@ -259,6 +271,14 @@ SCENARIO("SessionConfig fills in a default SAE DER setup config") {
             REQUIRE(config.der_sae_setup_config->der_control_update_time > 0);
         }
     }
+
+    GIVEN("A freshly constructed setup config") {
+        const auto config = iso15118::d20::make_inert_default_sae_setup_config(NOMINAL_VOLTAGE_V);
+
+        THEN("The revision starts at zero") {
+            REQUIRE(config.revision == 0);
+        }
+    }
 }
 
 namespace {
@@ -289,6 +309,16 @@ sae::CurveDataPointsList single_point_curve() {
 }
 
 } // namespace
+
+TEST_CASE("Frequency droop accepts only an under frequency branch") {
+    const iso15118::d20::SaeDerTransferLimits valid_limits{};
+    auto der_control = iso15118::d20::get_default_sae_der_control(NOMINAL_VOLTAGE_V);
+    der_control.active_power_support.frequency_droop.enable = true;
+    der_control.active_power_support.frequency_droop.over_frequency_droop = std::nullopt;
+    der_control.active_power_support.frequency_droop.under_frequency_droop = sae::FrequencyDroopSettings{};
+
+    REQUIRE(session_config_offers_ac_der_sae(valid_limits, der_control) == true);
+}
 
 SCENARIO("SessionConfig validates a caller supplied SAE DER setup config") {
 
@@ -337,6 +367,65 @@ SCENARIO("SessionConfig validates a caller supplied SAE DER setup config") {
 
         THEN("The service is stripped") {
             REQUIRE(session_config_offers_ac_der_sae(valid_limits, der_control) == false);
+        }
+    }
+
+    GIVEN("A must trip curve whose points descend by duration") {
+        auto der_control = iso15118::d20::get_default_sae_der_control(NOMINAL_VOLTAGE_V);
+        der_control.voltage_trip.over_voltage_must_trip_curve.curve_data_points = {{2.0f, 110.0f}, {0.16f, 120.0f}};
+
+        THEN("The service is stripped") {
+            REQUIRE(session_config_offers_ac_der_sae(valid_limits, der_control) == false);
+        }
+    }
+
+    GIVEN("A must trip curve whose x unit is not seconds") {
+        auto der_control = iso15118::d20::get_default_sae_der_control(NOMINAL_VOLTAGE_V);
+        der_control.voltage_trip.over_voltage_must_trip_curve.x_unit = sae::DERUnit::PercentageV;
+
+        THEN("The service is stripped") {
+            REQUIRE(session_config_offers_ac_der_sae(valid_limits, der_control) == false);
+        }
+    }
+
+    GIVEN("A volt var curve whose points descend on x") {
+        auto der_control = iso15118::d20::get_default_sae_der_control(NOMINAL_VOLTAGE_V);
+        der_control.reactive_power_support.volt_var.curve_data_points = {{110.0f, 0.0f}, {100.0f, 0.0f}};
+
+        THEN("The service is kept because the trip axis rule does not cover response curves") {
+            REQUIRE(session_config_offers_ac_der_sae(valid_limits, der_control) == true);
+        }
+    }
+
+    GIVEN("Frequency droop enabled without either droop branch") {
+        auto der_control = iso15118::d20::get_default_sae_der_control(NOMINAL_VOLTAGE_V);
+        der_control.active_power_support.frequency_droop.enable = true;
+        der_control.active_power_support.frequency_droop.over_frequency_droop = std::nullopt;
+        der_control.active_power_support.frequency_droop.under_frequency_droop = std::nullopt;
+
+        THEN("The service is stripped") {
+            REQUIRE(session_config_offers_ac_der_sae(valid_limits, der_control) == false);
+        }
+    }
+
+    GIVEN("Frequency droop disabled without either droop branch") {
+        auto der_control = iso15118::d20::get_default_sae_der_control(NOMINAL_VOLTAGE_V);
+        der_control.active_power_support.frequency_droop.enable = false;
+        der_control.active_power_support.frequency_droop.over_frequency_droop = std::nullopt;
+        der_control.active_power_support.frequency_droop.under_frequency_droop = std::nullopt;
+
+        THEN("The service is stripped") {
+            REQUIRE(session_config_offers_ac_der_sae(valid_limits, der_control) == false);
+        }
+    }
+
+    GIVEN("Frequency droop enabled with an over frequency branch") {
+        auto der_control = iso15118::d20::get_default_sae_der_control(NOMINAL_VOLTAGE_V);
+        der_control.active_power_support.frequency_droop.enable = true;
+        der_control.active_power_support.frequency_droop.over_frequency_droop = sae::FrequencyDroopSettings{};
+
+        THEN("The service is kept") {
+            REQUIRE(session_config_offers_ac_der_sae(valid_limits, der_control) == true);
         }
     }
 
@@ -584,6 +673,55 @@ SCENARIO("The SAE DER validator names the violated rule") {
             const auto violation = iso15118::d20::validate_sae_der_setup(setup, valid_limits, valid_ac_limits);
             REQUIRE(violation.has_value() == true);
             REQUIRE(violation.value().find("watt var curve L3") != std::string::npos);
+        }
+    }
+
+    GIVEN("A must trip curve whose points descend by duration") {
+        auto der_control = iso15118::d20::get_default_sae_der_control(NOMINAL_VOLTAGE_V);
+        der_control.frequency_trip.under_frequency_must_trip_curve.curve_data_points = {{300.0f, 47.5f},
+                                                                                        {0.16f, 47.0f}};
+
+        const auto setup = iso15118::d20::DerSaeSetupConfig(der_control, sae::RequiredDEROperatingMode::GridFollowing,
+                                                            sae::GridConnectionMode::GridConnected);
+
+        THEN("The violation names the curve and the ordering rule") {
+            const auto violation = iso15118::d20::validate_sae_der_setup(setup, valid_limits, valid_ac_limits);
+            REQUIRE(violation.has_value() == true);
+            REQUIRE(violation.value().find("under frequency must trip curve") != std::string::npos);
+            REQUIRE(violation.value().find("ascending") != std::string::npos);
+        }
+    }
+
+    GIVEN("A must trip curve whose x unit is not seconds") {
+        auto der_control = iso15118::d20::get_default_sae_der_control(NOMINAL_VOLTAGE_V);
+        der_control.voltage_trip.under_voltage_must_trip_curve.x_unit = sae::DERUnit::PercentageV;
+
+        const auto setup = iso15118::d20::DerSaeSetupConfig(der_control, sae::RequiredDEROperatingMode::GridFollowing,
+                                                            sae::GridConnectionMode::GridConnected);
+
+        THEN("The violation names the curve and the x unit") {
+            const auto violation = iso15118::d20::validate_sae_der_setup(setup, valid_limits, valid_ac_limits);
+            REQUIRE(violation.has_value() == true);
+            REQUIRE(violation.value().find("under voltage must trip curve") != std::string::npos);
+            REQUIRE(violation.value().find("x_unit") != std::string::npos);
+        }
+    }
+
+    GIVEN("A disabled frequency droop without either droop branch") {
+        auto der_control = iso15118::d20::get_default_sae_der_control(NOMINAL_VOLTAGE_V);
+        der_control.active_power_support.frequency_droop.enable = false;
+        der_control.active_power_support.frequency_droop.over_frequency_droop = std::nullopt;
+        der_control.active_power_support.frequency_droop.under_frequency_droop = std::nullopt;
+
+        const auto setup = iso15118::d20::DerSaeSetupConfig(der_control, sae::RequiredDEROperatingMode::GridFollowing,
+                                                            sae::GridConnectionMode::GridConnected);
+
+        THEN("The violation names the droop rule without mentioning enable") {
+            const auto violation = iso15118::d20::validate_sae_der_setup(setup, valid_limits, valid_ac_limits);
+            REQUIRE(violation.has_value() == true);
+            REQUIRE(violation.value().find("frequency droop") != std::string::npos);
+            REQUIRE(violation.value().find("carries neither") != std::string::npos);
+            REQUIRE(violation.value().find("enabled") == std::string::npos);
         }
     }
 

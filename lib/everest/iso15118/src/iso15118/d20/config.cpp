@@ -371,15 +371,25 @@ DerSaeSetupConfig make_inert_default_sae_setup_config(float nominal_voltage_v) {
 namespace {
 
 /// \brief One curve carrier's three data point lists, so the checks below can loop over heterogeneous carriers.
+///
+/// Trip carriers additionally record their x unit; the axis rules below apply to them only.
 struct CurveLists {
     const char* name;
     const sae::CurveDataPointsList* points;
     const std::optional<sae::CurveDataPointsList>* points_L2;
     const std::optional<sae::CurveDataPointsList>* points_L3;
+    bool trip;
+    sae::DERUnit x_unit;
 };
 
 template <typename Curve> CurveLists curve_lists(const char* name, const Curve& curve) {
-    return {name, &curve.curve_data_points, &curve.curve_data_points_L2, &curve.curve_data_points_L3};
+    return {name,        &curve.curve_data_points, &curve.curve_data_points_L2, &curve.curve_data_points_L3, false,
+            curve.x_unit};
+}
+
+CurveLists trip_curve_lists(const char* name, const sae::DERCurve& curve) {
+    return {name,        &curve.curve_data_points, &curve.curve_data_points_L2, &curve.curve_data_points_L3, true,
+            curve.x_unit};
 }
 
 std::optional<std::string> check_curve_length(const sae::CurveDataPointsList& points, const char* name,
@@ -391,17 +401,43 @@ std::optional<std::string> check_curve_length(const sae::CurveDataPointsList& po
            " curve data points";
 }
 
+/// \brief Trip curve points are ordered by strictly ascending duration (M.2.2.1.10, M.2.2.1.11).
+std::optional<std::string> check_trip_curve_order(const sae::CurveDataPointsList& points, const char* name,
+                                                  const char* phase) {
+    const auto not_ascending = [](const sae::DataTuple& lhs, const sae::DataTuple& rhs) {
+        return lhs.x_value >= rhs.x_value;
+    };
+    if (std::adjacent_find(points.begin(), points.end(), not_ascending) == points.end()) {
+        return std::nullopt;
+    }
+    return std::string(name) + phase + " curve data points are not in ascending duration order";
+}
+
+std::optional<std::string> check_curve_list(const CurveLists& entry, const sae::CurveDataPointsList& points,
+                                            const char* phase) {
+    if (auto violation = check_curve_length(points, entry.name, phase)) {
+        return violation;
+    }
+    if (entry.trip) {
+        return check_trip_curve_order(points, entry.name, phase);
+    }
+    return std::nullopt;
+}
+
 std::optional<std::string> check_curve_lists(const CurveLists& entry) {
-    if (auto violation = check_curve_length(*entry.points, entry.name, "")) {
+    if (entry.trip and entry.x_unit != sae::DERUnit::s) {
+        return std::string(entry.name) + " x_unit must be s";
+    }
+    if (auto violation = check_curve_list(entry, *entry.points, "")) {
         return violation;
     }
     if (entry.points_L2->has_value()) {
-        if (auto violation = check_curve_length(entry.points_L2->value(), entry.name, " L2")) {
+        if (auto violation = check_curve_list(entry, entry.points_L2->value(), " L2")) {
             return violation;
         }
     }
     if (entry.points_L3->has_value()) {
-        if (auto violation = check_curve_length(entry.points_L3->value(), entry.name, " L3")) {
+        if (auto violation = check_curve_list(entry, entry.points_L3->value(), " L3")) {
             return violation;
         }
     }
@@ -410,7 +446,7 @@ std::optional<std::string> check_curve_lists(const CurveLists& entry) {
 
 void add_optional_curve(std::vector<CurveLists>& entries, const char* name, const std::optional<sae::DERCurve>& curve) {
     if (curve.has_value()) {
-        entries.push_back(curve_lists(name, curve.value()));
+        entries.push_back(trip_curve_lists(name, curve.value()));
     }
 }
 
@@ -424,10 +460,10 @@ std::optional<std::string> validate_sae_der_curves(const sae::DERControl& contro
     const auto& frequency_trip = control.frequency_trip;
 
     std::vector<CurveLists> entries{
-        curve_lists("over voltage must trip curve", voltage_trip.over_voltage_must_trip_curve),
-        curve_lists("under voltage must trip curve", voltage_trip.under_voltage_must_trip_curve),
-        curve_lists("over frequency must trip curve", frequency_trip.over_frequency_must_trip_curve),
-        curve_lists("under frequency must trip curve", frequency_trip.under_frequency_must_trip_curve),
+        trip_curve_lists("over voltage must trip curve", voltage_trip.over_voltage_must_trip_curve),
+        trip_curve_lists("under voltage must trip curve", voltage_trip.under_voltage_must_trip_curve),
+        trip_curve_lists("over frequency must trip curve", frequency_trip.over_frequency_must_trip_curve),
+        trip_curve_lists("under frequency must trip curve", frequency_trip.under_frequency_must_trip_curve),
         curve_lists("volt var curve", control.reactive_power_support.volt_var),
         curve_lists("watt var curve", control.reactive_power_support.watt_var),
         curve_lists("volt watt curve", control.active_power_support.volt_watt),
@@ -448,6 +484,15 @@ std::optional<std::string> validate_sae_der_curves(const sae::DERControl& contro
         }
     }
 
+    return std::nullopt;
+}
+
+/// \brief A frequency droop carries at least one of its two branches (T.M33), enabled or not.
+std::optional<std::string> validate_sae_frequency_droop(const sae::FrequencyDroop& frequency_droop) {
+    if (not frequency_droop.over_frequency_droop.has_value() and
+        not frequency_droop.under_frequency_droop.has_value()) {
+        return "frequency droop carries neither over_frequency_droop nor under_frequency_droop (T.M33)";
+    }
     return std::nullopt;
 }
 
@@ -631,6 +676,9 @@ std::optional<std::string> validate_sae_der_setup(const DerSaeSetupConfig& setup
     if (auto violation = validate_sae_der_curves(setup_config.der_control)) {
         return violation;
     }
+    if (auto violation = validate_sae_frequency_droop(setup_config.der_control.active_power_support.frequency_droop)) {
+        return violation;
+    }
     if (auto violation = validate_sae_enter_service(setup_config.der_control.enter_service)) {
         return violation;
     }
@@ -663,6 +711,25 @@ std::optional<std::string> validate_sae_nominals_within_maxima(const SaeDerTrans
         }
     }
     return std::nullopt;
+}
+
+bool install_der_sae_setup_config(SessionConfig& session_config, const DerSaeSetupConfig& setup_config) {
+    if (not session_config.der_sae_limits.has_value()) {
+        logf_warning("Rejecting mid-session SAE grid code revision %u: no sae der limits defined",
+                     setup_config.revision);
+        return false;
+    }
+
+    const auto violation =
+        validate_sae_der_setup(setup_config, session_config.der_sae_limits.value(), session_config.ac_limits);
+    if (violation.has_value()) {
+        logf_warning("Rejecting mid-session SAE grid code revision %u: %s", setup_config.revision,
+                     violation.value().c_str());
+        return false;
+    }
+
+    session_config.der_sae_setup_config = setup_config;
+    return true;
 }
 
 void SessionConfig::set_supported_energy_transfer_services(std::vector<dt::ServiceCategory> services) {

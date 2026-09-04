@@ -12,6 +12,7 @@
 #include <iso15118/d20/state/session_setup.hpp>
 #include <iso15118/d20/state/supported_app_protocol.hpp>
 
+#include <iso15118/detail/d20/config_validation.hpp>
 #include <iso15118/detail/helper.hpp>
 
 namespace iso15118 {
@@ -198,6 +199,8 @@ TimePoint const& Session::poll() {
             ctx.session_config.supported_vas_services = *control_data;
         } else if (const auto control_data = ctx.get_control_event<d20::AcTransferLimits>()) {
             ctx.session_config.ac_limits = *control_data;
+        } else if (const auto control_data = ctx.get_control_event<d20::DerSaeSetupConfig>()) {
+            d20::install_der_sae_setup_config(ctx.session_config, *control_data);
         } else if (const auto control_data = ctx.get_control_event<d20::UpdateDynamicModeParameters>()) {
             ctx.cache_dynamic_mode_parameters.emplace(*control_data);
         } else if (const auto control_data = ctx.get_control_event<d20::AcTargetPower>()) {
