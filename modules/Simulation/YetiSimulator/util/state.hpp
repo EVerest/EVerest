@@ -84,7 +84,7 @@ struct SimulationData {
 struct SimdataSetting {
     double cp_voltage = 12.0;
     double pp_resistor = 220.1;
-    double impedance = 500.0;
+    double impedance_ohm = 0.5;
     double rcd_current = 0.1;
     bool diode_fail = false;
     bool error_e = false;
