@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstring>
 #include <exception>
+#include <stdexcept>
 #include <utility>
 
 #include <cbv2g/exi_v2gtp.h>
@@ -34,8 +35,15 @@ Session::Session(feedback::Callbacks callbacks, OutboundSend outbound_send_,
     send_delay_timer.set_single_shot(true);
     watchdog_timer.set_single_shot(true);
 
-    reactor.register_event_handler(&send_delay_timer, [this]() { on_send_delay_expired(); });
-    reactor.register_event_handler(&watchdog_timer, [this]() { on_watchdog_expired(); });
+    // The reactor is the only dispatcher for these timers; without it start() would arm a timer nobody fires and the
+    // session would hang silently.
+    if (not reactor.register_event_handler(&send_delay_timer, [this]() { on_send_delay_expired(); })) {
+        throw std::runtime_error("EV Session: failed to register the send-delay timer on the reactor");
+    }
+    if (not reactor.register_event_handler(&watchdog_timer, [this]() { on_watchdog_expired(); })) {
+        reactor.unregister_event_handler(&send_delay_timer);
+        throw std::runtime_error("EV Session: failed to register the response watchdog on the reactor");
+    }
 }
 
 Session::~Session() {
