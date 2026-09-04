@@ -1,4 +1,5 @@
 *build*
+!.ci/build-kit/
 !lib/everest/*/cmake/*-build.cmake
 !applications/*/cmake/*-build.cmake
 *dist
