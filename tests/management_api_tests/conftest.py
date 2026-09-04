@@ -6,8 +6,8 @@ import pytest
 
 from everest.testing.core_utils.fixtures import *
 
-from configuration_api_client import ConfigurationApiClient
-from lifecycle_api_client import LifecycleApiClient, clear_retained_lifecycle_status
+from everest_management_api_cli.configuration_api import ConfigurationApiClient
+from everest_management_api_cli.lifecycle_api import LifecycleApiClient, clear_retained_lifecycle_status
 
 
 @pytest.fixture
