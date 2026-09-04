@@ -32,6 +32,7 @@ std::string serialize(TransactionStatus val) noexcept;
 std::string serialize(ReplyStartTransaction const& val) noexcept;
 std::string serialize(ReplyStopTransaction const& val) noexcept;
 std::string serialize(RequestStartTransaction const& val) noexcept;
+std::string serialize(Capabilities const& val) noexcept;
 
 std::ostream& operator<<(std::ostream& os, OCMFUserIdentificationStatus const& val);
 std::ostream& operator<<(std::ostream& os, OCMFIdentificationFlags const& val);
@@ -56,6 +57,7 @@ std::ostream& operator<<(std::ostream& os, TransactionStatus const& val);
 std::ostream& operator<<(std::ostream& os, ReplyStartTransaction const& val);
 std::ostream& operator<<(std::ostream& os, ReplyStopTransaction const& val);
 std::ostream& operator<<(std::ostream& os, RequestStartTransaction const& val);
+std::ostream& operator<<(std::ostream& os, Capabilities const& val);
 
 template <class T> T deserialize(std::string const& val);
 template <class T> std::optional<T> try_deserialize(std::string const& val) noexcept {
