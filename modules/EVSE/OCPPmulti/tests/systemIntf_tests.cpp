@@ -268,13 +268,14 @@ TEST_F(GenericOcppRequiresTester, subscribeLogStatus) {
 }
 
 // ----------------------------------------------------------------------------
-// configure_network: cb_configure_network_connection_profile() delegates to call_configure_network()
-// synchronously; a Processing answer defers the outcome to the configure_network_status var subscription.
-// Discipline: queue cmd results BEFORE invoking the cb.
+// configure_network: with DelegateNetworkConfigurationToSystem set, cb_configure_network_connection_profile() delegates
+// to call_configure_network() synchronously; a Processing answer defers the outcome to the configure_network_status var
+// subscription. Discipline: queue cmd results BEFORE invoking the cb.
 
 class ConfigureNetworkTester : public GenericOcppRequiresTester {
 protected:
     void SetUp() override {
+        config.DelegateNetworkConfigurationToSystem = true;
         GenericOcppRequiresTester::SetUp();
         interfaces->subscribe_var("system", "call_configure_network",
                                   [this](const auto&, const auto&, const auto& data) {
@@ -413,6 +414,61 @@ TEST_F(ConfigureNetworkTester, callConfigureNetworkInvalidStatusYieldsFailure) {
     const auto result = future.get();
     EXPECT_FALSE(result.success);
     EXPECT_FALSE(result.interface_address.has_value());
+}
+
+// ----------------------------------------------------------------------------
+// configure_network with DelegateNetworkConfigurationToSystem left at its default (false): no provider round-trip,
+// the future resolves immediately like the OCPP201 stub does
+
+class ConfigureNetworkDisabledTester : public GenericOcppRequiresTester {
+protected:
+    void SetUp() override {
+        ASSERT_FALSE(config.DelegateNetworkConfigurationToSystem);
+        GenericOcppRequiresTester::SetUp();
+        interfaces->subscribe_var("system", "call_configure_network",
+                                  [this](const auto&, const auto&, const auto& data) {
+                                      std::lock_guard<std::mutex> lock(m_mutex);
+                                      m_received.push_back(data);
+                                  });
+    }
+
+    std::size_t received_count() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_received.size();
+    }
+
+    std::mutex m_mutex;
+    std::vector<json> m_received;
+};
+
+TEST_F(ConfigureNetworkDisabledTester, disabledResolvesImmediatelyWithoutCallingProvider) {
+    // a queued Ready answer must never be consumed: the provider is not asked at all
+
+    interfaces->add_cmd_result(R"({"status":"Ready","interface_address":"192.168.5.1"})"_json);
+
+    auto future = ocpp->cb_configure_network_connection_profile(1, network_profile(ocpp::v2::OCPPInterfaceEnum::Any));
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    const auto result = future.get();
+    EXPECT_TRUE(result.success);
+    EXPECT_FALSE(result.interface_address.has_value());
+
+    EXPECT_FALSE(wait_for_condition([this] { return received_count() >= 1; }, std::chrono::milliseconds(200)));
+}
+
+TEST_F(ConfigureNetworkDisabledTester, disabledIgnoresStatusVar) {
+    // without a pending request a configure_network_status publish is a no-op; nothing is fulfilled twice
+
+    auto future =
+        ocpp->cb_configure_network_connection_profile(1, network_profile(ocpp::v2::OCPPInterfaceEnum::Wired0));
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    EXPECT_TRUE(future.get().success);
+
+    interfaces->publish(0, "configure_network_status",
+                        json{{"request_id", 1}, {"status", "Ready"}, {"interface_address", "10.1.2.3"}});
+    interfaces->publish(0, "configure_network_status", json{{"request_id", 1}, {"status", "Failed"}});
+
+    EXPECT_FALSE(wait_for_condition([this] { return received_count() >= 1; }, std::chrono::milliseconds(200)));
 }
 
 } // namespace

@@ -7,6 +7,8 @@ Covers the NotSupported / Ready direct answers and the deferred Processing varia
 (completed via the configure_network_status var). Only the combined OCPPmulti module
 implements the delegation, so the tests are pinned via ocpp_multi_only; the config
 rewrite swaps the legacy OCPP module in the probe config for OCPPmulti (Mode Only1.6).
+The delegation is opt-in (DelegateNetworkConfigurationToSystem, default false), so the config
+adaption below switches it on.
 
 In OCPP1.6 libocpp synthesizes a single network connection profile from
 CentralSystemURI/SecurityProfile with configuration slot 1 and ocppInterface "Any"
@@ -27,6 +29,7 @@ from everest.testing.core_utils._configuration.libocpp_configuration_helper impo
 )
 from everest.testing.ocpp_utils.central_system import CentralSystem
 
+from everest_test_utils import OCPPMultiModuleConfigStrategy
 from everest_test_utils_probe_modules import implement_ocpp16_probe_commands
 
 log = logging.getLogger("OCPPmultiConfigureNetwork16")
@@ -57,6 +60,7 @@ async def _connect(probe_module):
 @pytest.mark.ocpp_version("ocpp1.6")
 @pytest.mark.ocpp_multi_only
 @pytest.mark.everest_core_config("everest-config-ocpp16-probe-module.yaml")
+@pytest.mark.everest_config_adaptions(OCPPMultiModuleConfigStrategy({"DelegateNetworkConfigurationToSystem": True}))
 @pytest.mark.probe_module
 class TestConfigureNetwork16:
 

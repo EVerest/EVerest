@@ -9,7 +9,9 @@ default (ocppInterface Wired0); request_id is a module-generated opaque id.
 
 Only the combined OCPPmulti module implements the delegation (legacy OCPP201 keeps
 the unconditional-success stub), so the tests are pinned via ocpp_multi_only; the
-config rewrite swaps the OCPP201 module in the probe config for OCPPmulti.
+config rewrite swaps the OCPP201 module in the probe config for OCPPmulti. The
+delegation is opt-in (DelegateNetworkConfigurationToSystem, default false), so the config
+adaption below switches it on.
 """
 
 import asyncio
@@ -19,6 +21,8 @@ import threading
 import pytest
 
 from everest.testing.ocpp_utils.central_system import CentralSystem
+
+from everest_test_utils import OCPPMultiModuleConfigStrategy
 
 log = logging.getLogger("OCPPmultiConfigureNetwork")
 
@@ -46,6 +50,7 @@ async def _connect(probe_module):
 @pytest.mark.ocpp_version("ocpp2.0.1")
 @pytest.mark.ocpp_multi_only
 @pytest.mark.everest_core_config("everest-config-ocpp201-probe-module.yaml")
+@pytest.mark.everest_config_adaptions(OCPPMultiModuleConfigStrategy({"DelegateNetworkConfigurationToSystem": True}))
 @pytest.mark.probe_module
 class TestConfigureNetwork:
 
