@@ -56,13 +56,44 @@ endif()
 option(LIBEVSE_SECURITY_USE_BOOST_FILESYSTEM "Usage of boost/filesystem.hpp instead of std::filesystem" OFF)
 
 option(LIBEVSE_CRYPTO_SUPPLIER_OPENSSL "Default OpenSSL cryptography supplier" ON)
-
+option(ENFORCE_CERT_PROFILES "Enable certificate profile enforcement" ON)
 # dependencies
 if (LIBEVSE_CRYPTO_SUPPLIER_OPENSSL)
     find_package(OpenSSL 3 REQUIRED)
 endif()
 
 add_subdirectory(lib)
+
+if(ENFORCE_CERT_PROFILES)
+    target_compile_definitions(evse_security PRIVATE
+        ENFORCE_CERT_PROFILES=1
+    )
+else()
+    target_compile_definitions(evse_security PRIVATE
+        ENFORCE_CERT_PROFILES=0
+    )
+endif()
+
+
+# compile definition and install for Security_Profiles
+if(NOT DISABLE_EDM)
+
+    install(
+        DIRECTORY Security_Profiles/
+        DESTINATION share/everest/Security_Profiles
+    )
+
+    target_compile_definitions(evse_security PRIVATE
+        CERT_PROFILES_DIR="${CMAKE_INSTALL_PREFIX}/share/everest/Security_Profiles/iso15118-20"
+    )
+
+else()
+
+    target_compile_definitions(evse_security PRIVATE
+        CERT_PROFILES_DIR="${CMAKE_INSTALL_PREFIX}/Security_Profiles/iso15118-20"
+    )
+
+endif()
 
 # packaging
 if (EVSE_SECURITY_INSTALL)

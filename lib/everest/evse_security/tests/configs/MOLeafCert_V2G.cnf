@@ -11,5 +11,7 @@ domainComponent			= MO
 [ext]
 basicConstraints		= critical,CA:false
 keyUsage				= critical,digitalSignature,keyAgreement
+extendedKeyUsage		= clientAuth
 subjectKeyIdentifier	= hash
+authorityKeyIdentifier	= keyid:always
 

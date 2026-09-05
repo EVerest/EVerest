@@ -88,3 +88,9 @@ file(COPY
     "${CMAKE_CURRENT_SOURCE_DIR}/openssl-pki.conf"
     DESTINATION "${LIBEVSE_SECURITY_TEST_DIR}/tests"
 )
+
+file(COPY
+    "${CMAKE_CURRENT_SOURCE_DIR}/eonti_addon_test_certs"
+    DESTINATION "${LIBEVSE_SECURITY_TEST_DIR}/tests"
+    FILES_MATCHING PATTERN "*"
+)
