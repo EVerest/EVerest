@@ -937,6 +937,8 @@ Monitoring configuration changes
 Legacy-form registrations (empty component name) receive legacy-shaped events.
 Registrations are additive across calls.
 
+.. _handwritten_ocppmulti_migration-from-ocpp16-key-addressing:
+
 Migration from OCPP 1.6 key addressing
 ======================================
 
