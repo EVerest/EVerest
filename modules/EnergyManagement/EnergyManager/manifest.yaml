@@ -99,6 +99,34 @@ config:
     type: integer
     default: 5
     minimum: 0
+  power_redistribution_margin:
+    description: >-
+      Relative deadband of the power redistribution inference (PowerRedistribution strategy only).
+      A connector counts as under-consuming when its measured power is more than this fraction
+      of its allocation below the allocation; the site counts as having headroom when the
+      aggregated measurement is more than this fraction of the grid limit below the grid limit.
+      Nothing is redistributed yet: candidates are only logged.
+    type: number
+    default: 0.1
+    minimum: 0
+    maximum: 1
+  power_redistribution_gain:
+    description: >-
+      Proportional gain of the increase law: the reported increase is this fraction of the
+      headroom beyond the deadband, so steps are large far from the grid limit and vanish
+      close to it. 0 reports no increase.
+    type: number
+    default: 0.5
+    minimum: 0
+    maximum: 1
+  power_redistribution_hold_time_s:
+    description: >-
+      Time a reduce or increase condition must hold continuously before it is reported [s].
+      Filters transients such as an EV ramping up at session start. Measured against the
+      optimizer's start time, so it is independent of update_interval.
+    type: integer
+    default: 10
+    minimum: 0
 provides:
   main:
     description: Main interface of the energy manager

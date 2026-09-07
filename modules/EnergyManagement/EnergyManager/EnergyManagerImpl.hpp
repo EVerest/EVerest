@@ -39,6 +39,9 @@ struct EnergyManagerConfig {
     int switch_3ph1ph_time_hysteresis_s{600};
     std::string broker_strategy{"FastCharging"};
     int power_meter_aggregation_window_s{5};
+    double power_redistribution_margin{0.1};
+    double power_redistribution_gain{0.5};
+    int power_redistribution_hold_time_s{10};
 };
 
 /// \brief Broker selected by the broker_strategy config option (see manifest.yaml).

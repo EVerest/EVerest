@@ -38,6 +38,9 @@ struct Conf {
     int switch_3ph1ph_time_hysteresis_s;
     std::string broker_strategy;
     int power_meter_aggregation_window_s;
+    double power_redistribution_margin;
+    double power_redistribution_gain;
+    int power_redistribution_hold_time_s;
 };
 
 class EnergyManager : public Everest::ModuleBase {
