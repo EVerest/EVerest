@@ -20,3 +20,10 @@ RUN npm install -g corepack@0.33.0 \
     && apt-get -y remove npm \
     && corepack enable npm --install-directory /usr/bin \
     && corepack prepare npm@10.9.8 --activate
+
+# Third-party test requirements of everest-testing, so that installing its
+# wheel in a test job resolves them from the image instead of downloading them
+# from PyPI on every run. Refresh with .ci/build-kit/sync_test_requirements.py.
+COPY test-requirements.txt /tmp/test-requirements.txt
+RUN python3 -m pip install --break-system-packages -r /tmp/test-requirements.txt \
+    && rm /tmp/test-requirements.txt

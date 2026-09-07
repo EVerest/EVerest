@@ -9,10 +9,11 @@ if [ $retVal -ne 0 ]; then
     exit $retVal
 fi
 
+# Third-party requirements come from the build-kit image, see
+# .ci/build-kit/docker/test-requirements.txt
 python3 -m pip install --break-system-packages \
     $EXT_MOUNT/wheels/everestpy-*.whl \
-    $EXT_MOUNT/wheels/everest_testing-*.whl \
-    pytest-html
+    $EXT_MOUNT/wheels/everest_testing-*.whl
 retVal=$?
 
 if [ $retVal -ne 0 ]; then
