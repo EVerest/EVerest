@@ -1428,6 +1428,7 @@ to_everest_ocpp_transaction_event(const ocpp::v2::TransactionEventRequest& trans
     ocpp_transaction_event.session_id =
         transaction_event.transactionInfo.transactionId; // session_id == transaction_id for OCPP2.0.1
     ocpp_transaction_event.transaction_id = transaction_event.transactionInfo.transactionId;
+    ocpp_transaction_event.timestamp = transaction_event.timestamp.to_rfc3339();
     return ocpp_transaction_event;
 }
 

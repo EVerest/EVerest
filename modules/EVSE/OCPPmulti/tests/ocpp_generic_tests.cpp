@@ -817,7 +817,7 @@ TEST_F(GenericOcppProvidesTester, publishOcppTransactionEvent) {
 
     TransactionEventRequest request;
     request.eventType = TransactionEventEnum::Updated;
-    request.timestamp = DateTime{};
+    request.timestamp = DateTime{"2026-06-05T13:37:36.409Z"};
     request.triggerReason = TriggerReasonEnum::ChargingRateChanged;
     request.seqNo = 99587;
     request.transactionInfo = Transaction{"TransactionId"};
@@ -837,19 +837,20 @@ TEST_F(GenericOcppProvidesTester, publishOcppTransactionEvent) {
     interfaces->subscribe_var("ocpp_generic", "ocpp_transaction_event",
                               [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp->cb_transaction_event(request, "TransactionId");
+    ocpp->cb_transaction_event(request, "TransactionId", request.timestamp);
     ASSERT_EQ(received.size(), 1);
-    EXPECT_EQ(received[0],
-              R"({"session_id":"TransactionId","transaction_event":"Updated","transaction_id":"TransactionId"})"_json);
+    EXPECT_EQ(
+        received[0],
+        R"({"session_id":"TransactionId","timestamp":"2026-06-05T13:37:36.409Z","transaction_event":"Updated","transaction_id":"TransactionId"})"_json);
 
-    // OCPP1.6: numeric transaction id differs from the session id
-    ocpp->cb_transaction_event(request, "42");
+    // OCPP1.6: numeric transaction id differs from the session id and no timestamp is reported
+    ocpp->cb_transaction_event(request, "42", std::nullopt);
     ASSERT_EQ(received.size(), 2);
     EXPECT_EQ(received[1],
               R"({"session_id":"TransactionId","transaction_event":"Updated","transaction_id":"42"})"_json);
 
     // OCPP1.6: transaction id not assigned yet (Started)
-    ocpp->cb_transaction_event(request, std::nullopt);
+    ocpp->cb_transaction_event(request, std::nullopt, std::nullopt);
     ASSERT_EQ(received.size(), 3);
     EXPECT_EQ(received[2], R"({"session_id":"TransactionId","transaction_event":"Updated"})"_json);
 }
@@ -869,7 +870,7 @@ TEST_F(GenericOcppProvidesTester, publishOcppTransactionEventRespose) {
 
     TransactionEventRequest transaction_event;
     transaction_event.eventType = TransactionEventEnum::Started;
-    transaction_event.timestamp = DateTime();
+    transaction_event.timestamp = DateTime{"2026-06-05T13:37:36.409Z"};
     transaction_event.triggerReason = TriggerReasonEnum::CablePluggedIn;
     transaction_event.seqNo = 10;
     transaction_event.transactionInfo = Transaction{"transactionId"};
@@ -898,19 +899,20 @@ TEST_F(GenericOcppProvidesTester, publishOcppTransactionEventRespose) {
     interfaces->subscribe_var("ocpp_generic", "ocpp_transaction_event_response",
                               [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response, "transactionId");
+    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response, "transactionId",
+                                        transaction_event.timestamp);
 
     transaction_event.eventType = TransactionEventEnum::Updated;
     transaction_event.triggerReason = TriggerReasonEnum::ChargingStateChanged;
     transaction_event.evse = EVSE{1, 0};
     transaction_event_response.idTokenInfo = IdTokenInfo{AuthorizationStatusEnum::Accepted};
-    // OCPP1.6: numeric transaction id differs from the session id
-    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response, "42");
+    // OCPP1.6: numeric transaction id differs from the session id and no timestamp is reported
+    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response, "42", std::nullopt);
 
     EXPECT_EQ(received.size(), 2);
     EXPECT_EQ(
         received[0],
-        R"({"original_transaction_event":{"session_id":"transactionId","transaction_event":"Started","transaction_id":"transactionId"}})"_json);
+        R"({"original_transaction_event":{"session_id":"transactionId","timestamp":"2026-06-05T13:37:36.409Z","transaction_event":"Started","transaction_id":"transactionId"}})"_json);
     EXPECT_EQ(
         received[1],
         R"({"original_transaction_event":{"evse":{"connector_id":0,"id":1},"session_id":"transactionId","transaction_event":"Updated","transaction_id":"42"}})"_json);
