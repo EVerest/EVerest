@@ -6,6 +6,7 @@
 #include <string>
 
 #include <everest/util/async/lifecycle_gate.hpp>
+#include <everest/util/async/monitor.hpp>
 
 namespace module {
 namespace main {
@@ -58,6 +59,32 @@ template <typename ControllerT> IoBringUpResult bring_up_result(LifecycleStateT<
         return IoBringUpResult::Fault;
     }
     return IoBringUpResult::TimedOut;
+}
+
+// Run \p work on the live controller with the lifecycle monitor NOT held.
+//
+// The monitor is taken only to look the controller up and is released before \p work runs. FSM
+// code must never run with it held: FSMController::signal_new_slac_message() runs the state
+// machine in place, the FSM answers a request through send_raw_slac, and that takes this same
+// monitor -- which is not recursive, so the loop thread would deadlock against itself on the
+// first inbound frame that needs a reply. Releasing it first is safe because the callers run on
+// the loop thread and shutdown() waits for the loop to exit before destroying the controller.
+//
+// Use this for every dispatch that reaches the FSM. post_command() is the other shape, and it
+// holds the monitor across the call: only for signals that just touch atomics and event_fds.
+//
+// Returns false if there is no live controller or the PLC I/O is not ready; \p work did not run.
+template <typename StateT, typename MTX, typename WorkT>
+bool dispatch_to_controller_unlocked(everest::lib::util::monitor<StateT, MTX>& lifecycle, WorkT&& work) {
+    auto* const target = [&lifecycle]() {
+        auto guard = lifecycle.handle();
+        return guard->slac_io_ready ? guard->live_worker() : nullptr;
+    }();
+    if (target == nullptr) {
+        return false;
+    }
+    work(*target);
+    return true;
 }
 
 } // namespace main

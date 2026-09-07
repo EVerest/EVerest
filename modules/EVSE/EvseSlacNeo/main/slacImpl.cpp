@@ -458,24 +458,14 @@ void slacImpl::configure_slac_io_callbacks() {
             return;
         }
 
-        // Loop thread: signal_new_slac_message runs the FSM in place rather than posting it, and a
-        // request the FSM answers calls back into send_raw_slac, which takes the lifecycle monitor.
-        // post_command holds that monitor across the call, so routing this through it self-deadlocks
-        // on the first frame that needs a reply (CM_SLAC_PARM.REQ). Copy the pointer out and release
-        // the monitor first, like handle_slac_io_error does. Safe without post_command's guarantee
-        // because shutdown() waits for this loop to exit before it destroys the controller.
-        FSMController* local_fsm_ctrl{nullptr};
-        {
-            auto lifecycle = lifecycle_state.handle();
-            if (lifecycle->slac_io_ready) {
-                local_fsm_ctrl = lifecycle->live_worker();
-            }
-        }
-        if (local_fsm_ctrl == nullptr) {
+        // Loop thread. NOT post_command: signal_new_slac_message runs the FSM in place, the FSM
+        // answers through send_raw_slac, and that takes the lifecycle monitor post_command holds
+        // across its call -- a self-deadlock on the first frame needing a reply. The dispatch
+        // helper releases the monitor before running the FSM; see its comment.
+        if (not dispatch_to_controller_unlocked(
+                lifecycle_state, [&msg](FSMController& target) { target.signal_new_slac_message(msg); })) {
             EVLOG_warning << "Ignoring SLAC message because SLAC controller or PLC I/O is not available.";
-            return;
         }
-        local_fsm_ctrl->signal_new_slac_message(msg);
     });
     slac_io->set_error_callback([this](auto on_error, auto const& detail) { handle_slac_io_error(on_error, detail); });
     slac_io->set_ready_callback([this]() { handle_slac_io_ready(); });
@@ -629,20 +619,10 @@ void slacImpl::start_fsm_if_ready() {
 
 void slacImpl::handle_slac_io_error(bool on_error, const std::string& detail) {
     if (on_error) {
-        // Loop thread: teardown() runs the FSM's reset path in place instead of freezing it. That
-        // path calls back into send_raw_slac, which takes the lifecycle monitor, so the pointer is
-        // copied out and the monitor released first. Safe without post_command's guarantee because
-        // shutdown() waits for this loop to exit before it destroys the controller.
-        FSMController* local_fsm_ctrl{nullptr};
-        {
-            auto lifecycle = lifecycle_state.handle();
-            if (lifecycle->slac_io_ready) {
-                local_fsm_ctrl = lifecycle->live_worker();
-            }
-        }
-        if (local_fsm_ctrl) {
-            local_fsm_ctrl->teardown();
-        }
+        // Loop thread: teardown() runs the FSM's reset path in place instead of freezing it, and
+        // that path calls back into send_raw_slac, so it must not run with the lifecycle monitor
+        // held. Same reason the receive dispatch uses this helper.
+        (void)dispatch_to_controller_unlocked(lifecycle_state, [](FSMController& target) { target.teardown(); });
         auto const detail_message = detail.empty() ? "unknown error" : detail;
         auto const fault_message =
             fmt::format("SLAC PLC communication unavailable on device {}: {}", config.device, detail_message);
