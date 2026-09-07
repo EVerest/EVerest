@@ -48,7 +48,8 @@ EVSE:
 - ``FastCharging`` (default): allocate as much as the limits allow.
 - ``PowerRedistribution``: currently trades identically to ``FastCharging`` and
   additionally observes the connector's live power meter reading once per optimizer
-  run. Allocations are never modified by the observation.
+  run. Allocations are never modified by the observation. From the observations it
+  infers where power could be redistributed and logs that (see below).
 
 The measurement is taken from the EVSE's own power meter, reported through the
 ``energy_usage_leaves`` field of the energy flow request (with ``energy_usage_root``
@@ -68,3 +69,53 @@ connectors that are ``Unplugged`` or ``Finished`` are not observed.
      - Validity window for a power meter reading when aggregating multiple meters [s].
        Set it at or above the publish interval of the slowest meter. ``0`` disables the
        staleness filter.
+
+Power redistribution inference (log only)
+=========================================
+
+With the ``PowerRedistribution`` strategy the EnergyManager compares, after every
+optimizer run, what each connector was allotted in the previous run with what its meter
+now reports, and the aggregated site consumption with the import limit of the grid
+connection. The result is logged; **no allocation is changed yet**. Acting on it is the
+next stage of the power redistribution work.
+
+Per connector, with allotted power ``A`` and measured power ``M``:
+
+- ``M`` more than ``margin x A`` below ``A``: the connector is *under-consuming*. The
+  allocation could shrink to ``M x (1 + margin)``, but never below the connector's
+  minimum current, so a session is trimmed rather than starved.
+- otherwise it consumes its allocation: *saturated* if its own static maximum leaves
+  room, *at maximum* if not.
+- without a previous allocation (first run of a session) or without a measurement no
+  claim is made.
+
+For the site, with grid limit ``G`` and fresh aggregate ``S`` (only when every meter is
+fresh, see above): headroom ``G - S`` beyond ``margin x G`` can be handed to the saturated
+connectors. The reported increase is ``gain x (headroom - margin x G)``, split equally and
+clamped to each connector's static maximum, so the step is large far from the grid limit
+and vanishes close to it.
+
+Both conditions must hold continuously for ``power_redistribution_hold_time_s`` before
+they are reported, which filters transients such as an EV ramping up. A report is logged
+once at info level when the condition becomes held (``power can be reduced by ... W``,
+``power can be increased by ... W``) and once more when it clears. With ``debug`` on,
+every run additionally prints the site headroom and the classification of every
+connector.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Config option
+     - Default
+     - Description
+   * - ``power_redistribution_margin``
+     - ``0.1``
+     - Relative deadband, as a fraction of the allocation (per connector) or of the grid
+       limit (site). Gaps inside it are treated as consuming the allocation.
+   * - ``power_redistribution_gain``
+     - ``0.5``
+     - Fraction of the headroom beyond the deadband that is reported as increase.
+       ``0`` disables the increase report.
+   * - ``power_redistribution_hold_time_s``
+     - ``10``
+     - Time a condition must hold before it is reported [s]. ``0`` reports immediately.
