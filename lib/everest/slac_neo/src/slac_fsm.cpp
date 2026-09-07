@@ -2,10 +2,24 @@
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "fsm/evse/msm/machine.hpp"
-#include <boost/msm/back/tools.hpp>
+
 #include <everest/slac/slac_fsm.hpp>
 #include <everest_api_types/telemetry/codec.hpp>
+
+#include <boost/core/demangle.hpp>
+#include <boost/mpl/for_each.hpp>
+#include <boost/mpl/placeholders.hpp>
+#include <boost/msm/back/metafunctions.hpp>
+#include <boost/msm/common.hpp>
+
+#include <cstddef>
+#include <iostream>
+#include <memory>
+#include <string>
 #include <type_traits>
+#include <typeinfo>
+#include <utility>
+#include <vector>
 
 namespace everest::lib::slac {
 

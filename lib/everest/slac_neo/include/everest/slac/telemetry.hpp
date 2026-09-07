@@ -4,7 +4,6 @@
 #pragma once
 
 #include "everest/slac/HomeplugMessage.hpp"
-#include <nlohmann/json_fwd.hpp>
 #include <string>
 
 namespace everest::lib::slac {
