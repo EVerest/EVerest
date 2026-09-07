@@ -46,6 +46,9 @@ struct EnergyManagerConfig {
     int redistribution_reduction_hold_s{30};
     int redistribution_measurement_max_age_s{10};
     int power_meter_aggregation_window_s{5};
+    double power_redistribution_margin{0.1};
+    double power_redistribution_gain{0.5};
+    int power_redistribution_hold_time_s{10};
 };
 
 /// \brief Broker selected by the broker_strategy config option (see manifest.yaml).

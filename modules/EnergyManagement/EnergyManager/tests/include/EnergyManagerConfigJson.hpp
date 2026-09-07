@@ -30,6 +30,9 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             {"redistribution_reduction_hold_s", config.redistribution_reduction_hold_s},
             {"redistribution_measurement_max_age_s", config.redistribution_measurement_max_age_s},
             {"power_meter_aggregation_window_s", config.power_meter_aggregation_window_s},
+            {"power_redistribution_margin", config.power_redistribution_margin},
+            {"power_redistribution_gain", config.power_redistribution_gain},
+            {"power_redistribution_hold_time_s", config.power_redistribution_hold_time_s},
         };
     }
     static module::EnergyManagerConfig from_json(const json& j) {
@@ -52,6 +55,9 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             j.value("redistribution_reduction_hold_s", 30),
             j.value("redistribution_measurement_max_age_s", 10),
             j.value("power_meter_aggregation_window_s", 5),
+            j.value("power_redistribution_margin", 0.1),
+            j.value("power_redistribution_gain", 0.5),
+            j.value("power_redistribution_hold_time_s", 10),
         };
     }
 };

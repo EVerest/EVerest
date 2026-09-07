@@ -31,6 +31,9 @@ void EnergyManager::init() {
     energy_manager_config.redistribution_reduction_hold_s = config.redistribution_reduction_hold_s;
     energy_manager_config.redistribution_measurement_max_age_s = config.redistribution_measurement_max_age_s;
     energy_manager_config.power_meter_aggregation_window_s = config.power_meter_aggregation_window_s;
+    energy_manager_config.power_redistribution_margin = config.power_redistribution_margin;
+    energy_manager_config.power_redistribution_gain = config.power_redistribution_gain;
+    energy_manager_config.power_redistribution_hold_time_s = config.power_redistribution_hold_time_s;
 
     const auto enforce_limits_callback = [this](const std::vector<types::energy::EnforcedLimits>& limits) {
         const types::energy::NumberWithSource nonumber = {-9999.0};

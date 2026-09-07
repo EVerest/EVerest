@@ -42,6 +42,9 @@ inline EnergyManagerConfig make_default_config() {
     c.redistribution_reduction_hold_s = 30;
     c.redistribution_measurement_max_age_s = 10;
     c.power_meter_aggregation_window_s = 5;
+    c.power_redistribution_margin = 0.1;
+    c.power_redistribution_gain = 0.5;
+    c.power_redistribution_hold_time_s = 10;
     return c;
 }
 
