@@ -13,6 +13,7 @@
 #include <thread>
 
 #include <Broker.hpp>
+#include <BrokerPowerRedistribution.hpp>
 #include <PowerMeterAggregator.hpp>
 
 #include <memory>
@@ -55,6 +56,14 @@ struct EnergyManagerConfig {
 enum class BrokerStrategy {
     FastCharging,
     PowerRedistribution,
+};
+
+/// \brief What the power redistribution inference concluded in the most recent optimizer
+/// run: the site view and one entry per EVSE in the tree. Empty with the FastCharging
+/// strategy.
+struct RedistributionInference {
+    SiteInference site;
+    std::map<std::string, ConnectorInference> connectors;
 };
 
 class EnergyManagerImpl {
@@ -109,10 +118,22 @@ public:
     /// data race for any external caller.
     PowerMeterAggregator::AggregateResult get_leaf_aggregate() const;
 
+    /// \brief The power redistribution inference of the most recent run_optimizer() call.
+    /// Returned by value under the optimizer lock, like get_leaf_aggregate().
+    RedistributionInference get_redistribution_inference() const;
+
 private:
     /// \brief Logs the meters aggregate() reported as having an unparsable timestamp, once
     /// per meter rather than once per optimizer run.
     void warn_about_unparsable_meters(const std::vector<std::string>& unparsable);
+
+    /// \brief Runs the log-only power redistribution inference for one optimizer run, after
+    /// trading. Compares each connector's measurement with the allocation of the previous
+    /// run, the site aggregate with the grid limit, applies the hold time and logs
+    /// candidates on change. Called under energy_mutex.
+    void infer_redistribution(const types::energy::EnergyFlowRequest& request,
+                              const std::vector<std::shared_ptr<Broker>>& brokers,
+                              const std::vector<types::energy::EnforcedLimits>& limits);
 
     EnergyManagerConfig config;
     BrokerStrategy broker_strategy;
@@ -151,6 +172,12 @@ private:
     // the history that a single aggregation does not have, so it lives here rather than in
     // the aggregator. An entry is dropped once the meter delivers a usable timestamp again.
     std::set<std::string> warned_unparsable_meters;
+
+    RedistributionInference redistribution_inference;
+    // start_time of the run since which the site has continuously had headroom to hand
+    // out; nullopt while it has not. Site counterpart of BrokerContext::under_consuming_since.
+    std::optional<date::utc_clock::time_point> headroom_since;
+    bool increase_reported{false};
 };
 
 } // namespace module
