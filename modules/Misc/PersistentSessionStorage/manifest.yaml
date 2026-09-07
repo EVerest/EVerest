@@ -1,0 +1,50 @@
+description: >-
+  Persists a session record for every charging session of the connected EvseManagers
+  in a SQLite database and provides read and clear access to the stored records.
+  Records survive restarts and power cycles, so they can be read out after the fact,
+  for example by an EVerest API client.
+config:
+  database_path:
+    description: >-
+      Path to the SQLite database file that holds the session records. Must point to
+      persistent storage, since the records are meant to survive restarts and power
+      cycles. The parent directory must exist and be writable. There is no default,
+      every deployment has to choose its persistent location explicitly.
+    type: string
+  max_sessions:
+    description: >-
+      Maximum number of session records to keep. When a new record is stored while
+      the limit is already reached, the oldest records are deleted first, regardless
+      of their state.
+    type: integer
+    minimum: 1
+    default: 10000
+  store_signed_meter_values:
+    description: >-
+      Store the signed meter values (e.g. OCMF records) of transaction start and stop
+      in the dedicated signed_meter_value_start/signed_meter_value_stop fields of the
+      transaction. Disabled by default because signed data typically embeds the raw id
+      token in its OCMF ID field, so enabling this persists raw id tokens.
+    type: boolean
+    default: false
+provides:
+  main:
+    description: Read and clear access to the stored session records
+    interface: session_storage
+requires:
+  evse_manager:
+    interface: evse_manager
+    min_connections: 1
+    max_connections: 128
+  ocpp:
+    interface: ocpp
+    min_connections: 0
+    max_connections: 1
+  session_cost:
+    interface: session_cost
+    min_connections: 0
+    max_connections: 1
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Piet Gömpel
