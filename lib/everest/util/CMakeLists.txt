@@ -22,7 +22,6 @@ set_target_properties(everest_util
 )
 
 install(TARGETS everest_util
-    EXPORT everest-core-targets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
