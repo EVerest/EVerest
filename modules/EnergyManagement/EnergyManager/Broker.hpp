@@ -42,6 +42,9 @@ struct BrokerContext {
         ts_1ph_optimal = date::utc_clock::now();
         tracking_warned_no_measurement = false;
         last_observed_measurement = {};
+        last_allocated_W.reset();
+        under_consuming_since.reset();
+        reduce_reported = false;
     };
 
     int number_1ph3ph_cycles;
@@ -55,6 +58,19 @@ struct BrokerContext {
     // Reading last observed by the measurement tracking broker for this connector.
     // Empty (all nullopt) while no measurement is available. Reset by clear() on unplug.
     ObservedMeasurement last_observed_measurement;
+
+    // Import power [W] the previous optimizer run handed to this connector: the "allotted"
+    // side of the power redistribution inference, compared against the measurement of the
+    // following run. nullopt before the first run of a session and while not in a session.
+    std::optional<float> last_allocated_W;
+
+    // start_time of the optimizer run since which this connector has continuously consumed
+    // less than allotted (by more than the margin). nullopt while it is not under-consuming.
+    std::optional<date::utc_clock::time_point> under_consuming_since;
+
+    // True once "power can be reduced" has been logged for the current stretch of
+    // under-consumption, so it is reported once rather than every optimizer run.
+    bool reduce_reported;
 };
 
 // base class for different Brokers
