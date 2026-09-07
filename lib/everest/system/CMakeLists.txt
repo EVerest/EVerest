@@ -36,9 +36,14 @@ target_compile_definitions(everest_system
 set_target_properties(everest_system PROPERTIES EXPORT_NAME system)
 
 if (DISABLE_EDM)
+    if (EVEREST_CORE_BUILD)
+        set(SYSTEM_EXPORT_TARGETS everest-core-targets)
+    else()
+        set(SYSTEM_EXPORT_TARGETS everest_system-targets)
+    endif()
     install(
         TARGETS everest_system
-        EXPORT everest_system-targets
+        EXPORT ${SYSTEM_EXPORT_TARGETS}
     )
 
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest

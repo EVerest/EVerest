@@ -45,6 +45,7 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest
 if (DISABLE_EDM)
     install(
         TARGETS everest_yaml
+        EXPORT everest-core-targets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
