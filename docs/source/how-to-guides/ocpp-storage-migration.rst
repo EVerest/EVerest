@@ -300,9 +300,13 @@ What to keep in mind
   individual ``MeterPublicKey[N]`` variables, and
   ``ChargingScheduleAllowedChargingRateUnit`` values ``Current``/``Power`` are
   converted to ``A``/``W``.
-* The ``OCPP16LegacyCtrlr`` component configuration is always required for
-  OCPP 1.6 operation. If it is absent from ``DeviceModelConfigPath``, the
-  module injects a built-in default schema for it automatically.
+* The ``OCPP16LegacyCtrlr`` component configuration is always required, for
+  OCPP 1.6 as well as OCPP 2.x operation: the device model is shared between
+  all supported OCPP versions so that a station can switch between them
+  seamlessly, which requires the full set of components for every version to
+  be present. If it is absent from ``DeviceModelConfigPath`` (for example in a
+  directory copied from a release before this component existed), the module
+  injects a built-in default schema for it automatically.
 * Once configuration was migrated or changed by the CSMS the configuration is
   protected from being overwritten by defaults in the component configuration.
   This ensures that values are not accidentally reset to defaults on

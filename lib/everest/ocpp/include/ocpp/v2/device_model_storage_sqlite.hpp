@@ -33,7 +33,9 @@ public:
     /// \param db_path              Path to database
     /// \param migration_files_path Path to the migration files to initialize the database (only needs to be set if
     ///                             `init_db` is true)
-    /// \param config_path          Path to the device model config used to initialize the database
+    /// \param config_path          Path to the device model config used to initialize the database. If the config
+    ///                             does not contain the OCPP16LegacyCtrlr component, the built-in default schema for
+    ///                             it is injected (see InitDeviceModelDb::initialize_database).
     ///
     explicit DeviceModelStorageSqlite(const fs::path& db_path, const std::filesystem::path& migration_files_path,
                                       const std::filesystem::path& config_path);

@@ -143,7 +143,11 @@ network profile selectors, or the ``SecurityCtrlr`` connection fallbacks ``Ident
 those are managed via the standardized OCPP 1.6 keys with their reboot/reconnect semantics, and a mapping file
 containing such a target is rejected at startup. OCPP 1.6
 keys without a standardized device model counterpart are kept in a dedicated ``OCPP16LegacyCtrlr`` component, whose
-``NumberOfConnectors`` value is automatically patched to the actual number of connected EVSEs.
+``NumberOfConnectors`` value is automatically patched to the actual number of connected EVSEs. This component is
+required for OCPP 2.x operation as well: the device model is shared between all supported OCPP versions so that the
+station can switch between OCPP 1.6 and OCPP 2.x seamlessly, which requires the full set of components for every
+version to be present. If ``standardized/OCPP16LegacyCtrlr.json`` is absent from ``DeviceModelConfigPath``, a
+built-in default schema for it is injected automatically.
 
 .. _handwritten_ocppmulti_network-profiles-ocpp16:
 

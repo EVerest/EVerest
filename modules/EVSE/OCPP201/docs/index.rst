@@ -48,6 +48,14 @@ characteristics, attributes, and monitors. Please see `the documentation for the
 
 To add a custom component, you can simply add another JSON configuration file for it, and it will automatically be applied and reported.
 
+The ``OCPP16LegacyCtrlr`` component (``standardized/OCPP16LegacyCtrlr.json``) is always required, also for pure OCPP 2.x
+operation. The device model is shared between all supported OCPP versions so that a station can switch between OCPP 1.6 and
+OCPP 2.x seamlessly, and this requires the full set of components for every version to be present. If the component is absent
+from **DeviceModelConfigPath** (for example in a directory copied from a release before this component existed), the module
+injects a built-in default schema for it automatically.
+``InternalCtrlr/NumberOfConnectors`` and ``InternalCtrlr/ChargePointId`` are no longer part of the device model; leftover entries
+in custom component configs are tolerated but not used.
+
 Configuring the OCPP2 version
 =============================
 
