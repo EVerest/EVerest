@@ -458,7 +458,24 @@ void slacImpl::configure_slac_io_callbacks() {
             return;
         }
 
-        post_command("SLAC message", [&msg](FSMController& target) { target.signal_new_slac_message(msg); });
+        // Loop thread: signal_new_slac_message runs the FSM in place rather than posting it, and a
+        // request the FSM answers calls back into send_raw_slac, which takes the lifecycle monitor.
+        // post_command holds that monitor across the call, so routing this through it self-deadlocks
+        // on the first frame that needs a reply (CM_SLAC_PARM.REQ). Copy the pointer out and release
+        // the monitor first, like handle_slac_io_error does. Safe without post_command's guarantee
+        // because shutdown() waits for this loop to exit before it destroys the controller.
+        FSMController* local_fsm_ctrl{nullptr};
+        {
+            auto lifecycle = lifecycle_state.handle();
+            if (lifecycle->slac_io_ready) {
+                local_fsm_ctrl = lifecycle->live_worker();
+            }
+        }
+        if (local_fsm_ctrl == nullptr) {
+            EVLOG_warning << "Ignoring SLAC message because SLAC controller or PLC I/O is not available.";
+            return;
+        }
+        local_fsm_ctrl->signal_new_slac_message(msg);
     });
     slac_io->set_error_callback([this](auto on_error, auto const& detail) { handle_slac_io_error(on_error, detail); });
     slac_io->set_ready_callback([this]() { handle_slac_io_ready(); });
@@ -645,9 +662,10 @@ void slacImpl::post_command(char const* command, std::function<void(FSMControlle
     // monitor and was then preempted could therefore come back and call into a destroyed
     // controller. Holding the monitor for the whole call closes that window: shutdown() cannot
     // get past its own handle() to clear the pointer and reset the controller while we are in
-    // here. FSMController::signal_*() only touch atomics and event_fds, so nothing here blocks;
-    // never post anything that runs FSM code (teardown()) through here, because the FSM calls
-    // back into send_raw_slac, which takes this (non-recursive) monitor.
+    // here. Only signal_reset/signal_enter_bcd/signal_leave_bcd may be posted through here: they
+    // just touch atomics and event_fds, so nothing blocks. Never post anything that runs FSM code
+    // in place (teardown(), signal_new_slac_message()), because the FSM calls back into
+    // send_raw_slac, which takes this (non-recursive) monitor and would deadlock the loop thread.
     auto lifecycle = lifecycle_state.handle();
     auto* target = lifecycle->live_worker();
     if (target == nullptr || !lifecycle->slac_io_ready) {
