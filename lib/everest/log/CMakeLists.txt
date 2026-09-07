@@ -74,9 +74,14 @@ install(
 if (LOG_INSTALL)
     set_target_properties(everest_log PROPERTIES EXPORT_NAME log)
 
+    if (EVEREST_CORE_BUILD)
+        set(LOG_EXPORT_TARGETS everest-core-targets)
+    else()
+        set(LOG_EXPORT_TARGETS log-targets)
+    endif()
     install(
         TARGETS everest_log
-        EXPORT log-targets
+        EXPORT ${LOG_EXPORT_TARGETS}
     )
 
     install(
@@ -88,13 +93,15 @@ if (LOG_INSTALL)
     #   FIXME (aw): if statically build, we would need to install libbacktrace too
     endif()
 
-    evc_setup_package(
-        NAME everest-log
-        NAMESPACE everest
-        EXPORT log-targets
-        ADDITIONAL_CONTENT
-            "find_dependency(Boost COMPONENTS log_setup log)"
-    )
+    if (NOT EVEREST_CORE_BUILD)
+        evc_setup_package(
+            NAME everest-log
+            NAMESPACE everest
+            EXPORT log-targets
+            ADDITIONAL_CONTENT
+                "find_dependency(Boost COMPONENTS log_setup log)"
+        )
+    endif()
 endif()
 
 

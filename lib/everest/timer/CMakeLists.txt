@@ -57,9 +57,14 @@ endif()
 
 # packaging
 if (TIMER_INSTALL)
+    if (EVEREST_CORE_BUILD)
+        set(TIMER_EXPORT_TARGETS everest-core-targets)
+    else()
+        set(TIMER_EXPORT_TARGETS timer-targets)
+    endif()
     install(
         TARGETS timer
-        EXPORT timer-targets
+        EXPORT ${TIMER_EXPORT_TARGETS}
     )
 
     install(
@@ -67,11 +72,13 @@ if (TIMER_INSTALL)
         TYPE INCLUDE
     )
 
-    evc_setup_package(
-        NAME everest-timer
-        EXPORT timer-targets
-        NAMESPACE everest
-        ADDITIONAL_CONTENT
-            "find_dependency(Boost COMPONENTS system)"
-    )
+    if (NOT EVEREST_CORE_BUILD)
+        evc_setup_package(
+            NAME everest-timer
+            EXPORT timer-targets
+            NAMESPACE everest
+            ADDITIONAL_CONTENT
+                "find_dependency(Boost COMPONENTS system)"
+        )
+    endif()
 endif()

@@ -6,6 +6,9 @@ project(everest-core
 	LANGUAGES CXX C
 )
 
+# The aggregate package is the only export owner when the complete core is built.
+set(EVEREST_CORE_BUILD ON)
+
 find_package(everest-cmake 0.7
     COMPONENTS bundling
     PATHS ../everest-cmake
