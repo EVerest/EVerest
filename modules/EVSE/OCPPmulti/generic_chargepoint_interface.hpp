@@ -139,15 +139,15 @@ struct GenericChargePointCallbacks {
     virtual void cb_time_sync(const ocpp::DateTime& current_time) = 0;
     /// transaction_id: CSMS-assigned transaction id; differs from transactionInfo.transactionId (the session id) in
     /// 1.6 mode and is unset while not yet assigned
-    /// timestamp: time of the transaction event as reported to the CSMS; unset in 1.6 mode, where it is not part of
-    /// the transaction callbacks
+    /// timestamp: time of the transaction event as reported to the CSMS; taken from the StartTransaction.req or
+    /// StopTransaction.req in 1.6 mode, where the fabricated transaction_event carries no time of its own
     virtual void cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event,
                                       const std::optional<std::string>& transaction_id,
-                                      const std::optional<ocpp::DateTime>& timestamp) = 0;
+                                      const ocpp::DateTime& timestamp) = 0;
     virtual void cb_transaction_event_response(const ocpp::v2::TransactionEventRequest& transaction_event,
                                                const ocpp::v2::TransactionEventResponse& transaction_event_response,
                                                const std::optional<std::string>& transaction_id,
-                                               const std::optional<ocpp::DateTime>& timestamp) = 0;
+                                               const ocpp::DateTime& timestamp) = 0;
     virtual ocpp::v2::UnlockConnectorResponse cb_unlock_connector(std::int32_t evse_id, std::int32_t connector_id) = 0;
     virtual bool cb_update_allowed_energy_transfer_modes(
         const std::vector<ocpp::v2::EnergyTransferModeEnum>& allowed_energy_transfer_modes,
