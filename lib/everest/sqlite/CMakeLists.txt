@@ -55,9 +55,14 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 if (EVEREST_SQLITE_INSTALL)
     set_target_properties(everest_sqlite PROPERTIES EXPORT_NAME sqlite)
 
+    if (EVEREST_CORE_BUILD)
+        set(SQLITE_EXPORT_TARGETS everest-core-targets)
+    else()
+        set(SQLITE_EXPORT_TARGETS everest_sqlite-targets)
+    endif()
     install(
         TARGETS everest_sqlite
-        EXPORT everest_sqlite-targets
+        EXPORT ${SQLITE_EXPORT_TARGETS}
         LIBRARY
     )
 
@@ -72,14 +77,16 @@ if (EVEREST_SQLITE_INSTALL)
             ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}/cmake
     )
 
-    evc_setup_package(
-        NAME everest-sqlite
-        NAMESPACE everest
-        EXPORT everest_sqlite-targets
-        ADDITIONAL_CONTENT
-            "find_dependency(SQLite3)"
-            "include($\{CMAKE_CURRENT_LIST_DIR\}/cmake/CollectMigrationFiles.cmake)"
-    )
+    if (NOT EVEREST_CORE_BUILD)
+        evc_setup_package(
+            NAME everest-sqlite
+            NAMESPACE everest
+            EXPORT everest_sqlite-targets
+            ADDITIONAL_CONTENT
+                "find_dependency(SQLite3)"
+                "include($\{CMAKE_CURRENT_LIST_DIR\}/cmake/CollectMigrationFiles.cmake)"
+        )
+    endif()
 endif()
 
 if(EVEREST_SQLITE_BUILD_TESTING)

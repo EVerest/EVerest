@@ -66,9 +66,14 @@ add_subdirectory(lib)
 
 # packaging
 if (EVSE_SECURITY_INSTALL)
+    if (EVEREST_CORE_BUILD)
+        set(EVSE_SECURITY_EXPORT_TARGETS everest-core-targets)
+    else()
+        set(EVSE_SECURITY_EXPORT_TARGETS evse_security-targets)
+    endif()
     install(
         TARGETS evse_security
-        EXPORT evse_security-targets
+        EXPORT ${EVSE_SECURITY_EXPORT_TARGETS}
         LIBRARY
     )
 
@@ -83,11 +88,13 @@ if (EVSE_SECURITY_INSTALL)
         TYPE INCLUDE
     )
 
-    evc_setup_package(
-        NAME everest-evse_security
-        NAMESPACE everest
-        EXPORT evse_security-targets
-    )
+    if (NOT EVEREST_CORE_BUILD)
+        evc_setup_package(
+            NAME everest-evse_security
+            NAMESPACE everest
+            EXPORT evse_security-targets
+        )
+    endif()
 endif()
 
 if(LIBEVSE_SECURITY_BUILD_TESTING)
