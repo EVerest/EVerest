@@ -22,9 +22,9 @@ from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.fixtures import *
 
 from assertions import assert_status_subsequence
-from configuration_api_client import ConfigurationApiClient, configuration_command_topic
+from everest_management_api_cli.configuration_api import ConfigurationApiClient, configuration_command_topic
 from example_config import example_active_modules_yaml
-from mqtt_rpc import perform_rpc
+from everest_management_api_cli.mqtt_rpc import perform_rpc
 
 # The configuration API topics are not test-instance specific (no per-test MQTT
 # prefix), so these tests must not run concurrently with each other.

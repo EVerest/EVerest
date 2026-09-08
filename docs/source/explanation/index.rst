@@ -65,6 +65,12 @@ Below that, you will be presented with a categorized list of all articles.
 
         Command line tool to generate C++ code from interface and manifest definitions.
 
+    .. grid-item-card:: The Management API Client
+       :link: dev-tools/management-api-cli
+       :link-type: doc
+
+        Command line client for the lifecycle and configuration APIs of the manager.
+
     .. grid-item-card:: The Plug&Charge Process in EVerest
        :link: pnc-process
        :link-type: doc
@@ -122,6 +128,7 @@ Below that, you will be presented with a categorized list of all articles.
     energymanagement/index
     dev-tools/edm
     dev-tools/ev-cli
+    dev-tools/management-api-cli
     pnc-process
     linux-yocto/index
     hardware-architecture

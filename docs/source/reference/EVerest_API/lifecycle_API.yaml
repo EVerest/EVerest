@@ -237,7 +237,7 @@ components:
             module_status: "NotRunning"
             configuration_api_available: "RW"
             lifecycle_api_ro: false
-        - summary: "EVerest not running (last will)"
+        - summary: "EVerest not running (manager shutdown, or last will on an unclean death)"
           payload:
             everest_running: false
 
@@ -314,7 +314,11 @@ components:
         - RO
         - RW
     ExecutionStatusUpdateNotice:
-      description: Execution status summary. Will include all the optional fields, if everest_running is true.
+      description: >-
+        Execution status summary. Will include all the optional fields, if everest_running is true.
+        A false everest_running carries no other field: the manager publishes exactly this payload
+        when it shuts down, and registers it as its MQTT last will for the case where it dies before
+        getting that far.
       type: object
       additionalProperties: true
       properties:
