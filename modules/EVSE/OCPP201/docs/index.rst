@@ -110,6 +110,9 @@ Provides: session_cost
 **Interface**: :ref:`session_cost <everest_interfaces_session_cost>`
 
 This interface is implemented to publish session costs received by the CSMS as part of the California Pricing whitepaper extension.
+The final session cost of a transaction started with a bank card carries the id tag in its ``id_tag``, so that a
+payment terminal can attribute the cost to the card although the CSMS reports the final cost only with the response to
+the Ended event, possibly long after the transaction when the station was offline.
 
 Requires: evse_manager
 ^^^^^^^^^^^^^^^^^^^^^^

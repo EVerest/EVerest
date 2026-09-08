@@ -79,6 +79,7 @@ genrule(
 # OCPP201 module
 cc_everest_module(
     name = "OCPP201",
+    srcs = ["transaction_id_tags.hpp"],
     data = [":ocpp201_config_files"],
     impls = IMPLS,
     deps = [
@@ -102,6 +103,7 @@ cc_test(
     ]) + [
         "generated/modules/OCPP201/ld-ev.hpp",
         "tests/ocpp_conversions_test.cpp",
+        "tests/transaction_id_tags_test.cpp",
     ],
     includes = [
         ".",
