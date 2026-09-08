@@ -6,8 +6,10 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <sys/types.h>
 #include <vector>
 
 #include <everest/io/event/unique_fd.hpp>
@@ -220,6 +222,95 @@ void bind_socket_to_device(int fd, std::string const& device);
  */
 event::unique_fd open_raw_promiscuous_socket(std::string const& if_name);
 #endif
+
+/**
+ * @brief Open a unix domain datagram socket connected to a server.
+ * @param[in] server_name Server path or abstract name
+ * @param[in] server_is_abstract True if @p server_name is abstract
+ * @param[in] client_bind_name Own name to bind. Empty binds none unless @p client_autobind. A
+ * filesystem name follows the stale file rules of \ref open_uds_server_socket; the caller removes
+ * it when done
+ * @param[in] client_is_abstract True if @p client_bind_name is abstract
+ * @param[in] client_autobind True to let the kernel assign a unique abstract name. Together with a
+ * non empty @p client_bind_name EINVAL is thrown
+ * @return The connected socket, blocking
+ * @throws socket_error carrying the errno on failure
+ */
+event::unique_fd open_uds_client_socket(std::string const& server_name, bool server_is_abstract,
+                                        std::string const& client_bind_name = "", bool client_is_abstract = true,
+                                        bool client_autobind = false);
+
+/**
+ * @brief Open a unix domain datagram socket bound to @p server_name.
+ * @details A stale socket file (nothing bound to it) is removed first. A live socket fails with
+ * EADDRINUSE, a file that is not a socket with EEXIST. Connecting to a socket file needs write
+ * permission on it.
+ * @param[in] server_name Path or abstract name to bind
+ * @param[in] is_abstract True for the abstract namespace
+ * @param[in] mode Permissions of the socket file, set right after bind. Only with a path; with an
+ * abstract name EINVAL is thrown
+ * @return The bound socket, blocking
+ * @throws socket_error carrying the errno on failure
+ */
+event::unique_fd open_uds_server_socket(std::string const& server_name, bool is_abstract,
+                                        std::optional<mode_t> mode = std::nullopt);
+
+/**
+ * @brief Open a listening unix domain SOCK_SEQPACKET socket.
+ * @details Non blocking and close-on-exec, ready for accept(). Stale file rules and @p mode as for
+ * \ref open_uds_server_socket; @p mode is set before listen().
+ * @param[in] server_name Path or abstract name to bind
+ * @param[in] is_abstract True for the abstract namespace
+ * @param[in] mode Permissions of the socket file. Only with a path
+ * @return The listening socket
+ * @throws socket_error carrying the errno on failure
+ */
+event::unique_fd open_uds_seqpacket_server_socket(std::string const& server_name, bool is_abstract,
+                                                  std::optional<mode_t> mode = std::nullopt);
+
+/**
+ * @brief Open a unix domain SOCK_SEQPACKET socket connected to a listener.
+ * @details Non blocking and close-on-exec. A unix connect completes in the call: the socket is
+ * connected on return or the call throws, EAGAIN for a full backlog.
+ * @param[in] server_name Listener path or abstract name
+ * @param[in] server_is_abstract True if @p server_name is abstract
+ * @return The connected socket
+ * @throws socket_error carrying the errno on failure
+ */
+event::unique_fd open_uds_seqpacket_client_socket(std::string const& server_name, bool server_is_abstract);
+
+/**
+ * @struct peer_credentials
+ * @brief Identity of a unix domain socket peer as recorded by the kernel. Cannot be forged.
+ */
+struct peer_credentials {
+    pid_t pid{0};
+    uid_t uid{0};
+    gid_t gid{0};
+};
+
+/**
+ * @brief Request the sender's credentials with every datagram (SO_PASSCRED).
+ * @details Delivered as an SCM_CREDENTIALS control message. Sending from an unnamed socket with
+ * this set makes the kernel autobind it.
+ * @param[in] fd Unix domain socket
+ * @throws socket_error carrying the errno on failure
+ */
+void request_peer_credentials(int fd);
+
+/**
+ * @brief Credentials of the peer of a connected unix domain socket (SO_PEERCRED).
+ * @param[in] fd Connected unix domain socket
+ * @return The credentials, std::nullopt if @p fd has no peer
+ */
+std::optional<peer_credentials> get_peer_credentials(int fd);
+
+/**
+ * @brief pidfd of the peer of a connected unix domain socket (SO_PEERPIDFD, Linux 6.5 and later).
+ * @param[in] fd Connected unix domain socket
+ * @return The pidfd, empty if @p fd has no peer or the kernel lacks the option
+ */
+event::unique_fd get_peer_pidfd(int fd);
 
 /**
  * @brief Enable <a href="https://man7.org/linux/man-pages/man7/tcp.7.html">TCP_NODELAY</a> on a socket

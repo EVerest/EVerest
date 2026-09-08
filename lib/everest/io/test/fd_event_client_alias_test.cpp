@@ -18,6 +18,10 @@
 #include <everest/io/udp/udp_dualstack_server.hpp>
 #include <everest/io/udp/udp_server.hpp>
 #include <everest/io/udp/udp_unconnected_client.hpp>
+#include <everest/io/uds/uds_client.hpp>
+#include <everest/io/uds/uds_seqpacket_client.hpp>
+#include <everest/io/uds/uds_seqpacket_peer.hpp>
+#include <everest/io/uds/uds_server.hpp>
 #include <everest/io/utilities/event_client_async_policy.hpp>
 
 #ifdef EVEREST_IO_ENABLE_TLS
@@ -103,6 +107,34 @@ static_assert(
     not everest::lib::io::utilities::event_client_async_policy_v<everest::lib::io::udp::udp_unconnected_socket>,
     "udp_unconnected_socket must stay a synchronous policy");
 
+static_assert(std::is_class_v<everest::lib::io::uds::uds_client>, "uds_client alias must resolve");
+static_assert(sizeof(everest::lib::io::uds::uds_client) > 0, "fd_event_client must instantiate on uds_client_socket");
+static_assert(everest::lib::io::utilities::event_client_async_policy_v<everest::lib::io::uds::uds_client_socket>,
+              "uds_client_socket must stay an async policy");
+
+// The uds server policy answers the source of the last rx(), so it rejects tx() until a
+// datagram arrived, exactly as the udp servers above.
+static_assert(std::is_class_v<everest::lib::io::uds::uds_server>, "uds_server alias must resolve");
+static_assert(sizeof(everest::lib::io::uds::uds_server) > 0, "fd_event_client must instantiate on uds_server_socket");
+static_assert(not everest::lib::io::utilities::event_client_async_policy_v<everest::lib::io::uds::uds_server_socket>,
+              "uds_server_socket must stay a synchronous policy");
+
+static_assert(std::is_class_v<everest::lib::io::uds::uds_seqpacket_client>, "uds_seqpacket_client alias must resolve");
+static_assert(sizeof(everest::lib::io::uds::uds_seqpacket_client) > 0,
+              "fd_event_client must instantiate on uds_seqpacket_client_socket");
+static_assert(
+    everest::lib::io::utilities::event_client_async_policy_v<everest::lib::io::uds::uds_seqpacket_client_socket>,
+    "uds_seqpacket_client_socket must stay an async policy");
+
+// An accepted connection is handed over, never connected, so the peer has no connect() to run
+// off the loop and must stay synchronous.
+static_assert(std::is_class_v<everest::lib::io::uds::uds_seqpacket_peer>, "uds_seqpacket_peer alias must resolve");
+static_assert(sizeof(everest::lib::io::uds::uds_seqpacket_peer) > 0,
+              "fd_event_client must instantiate on uds_seqpacket_peer_socket");
+static_assert(
+    not everest::lib::io::utilities::event_client_async_policy_v<everest::lib::io::uds::uds_seqpacket_peer_socket>,
+    "uds_seqpacket_peer_socket must stay a synchronous policy");
+
 // Teeth for the handshake-policy assertions below: the trait must discriminate. tcp_socket is
 // hookless, so it must not match, while still satisfying the async setup()/connect() policy.
 static_assert(not everest::lib::io::utilities::event_client_handshake_policy_v<everest::lib::io::tcp::tcp_socket>,
@@ -138,6 +170,23 @@ static_assert(
     "udp_client_socket is a datagram transport and must not admit tx_coalescing");
 static_assert(not client_has_tx_coalescing<everest::lib::io::udp::udp_client>::value,
               "udp_client must not expose tx_coalescing()");
+static_assert(
+    not everest::lib::io::utilities::policy_supports_tx_coalescing_v<everest::lib::io::uds::uds_client_socket>,
+    "uds_client_socket is a datagram transport, and one that carries descriptors per message which a "
+    "merge would drop, so it must not admit tx_coalescing");
+static_assert(not client_has_tx_coalescing<everest::lib::io::uds::uds_client>::value,
+              "uds_client must not expose tx_coalescing()");
+// SEQPACKET keeps message boundaries; merging two payloads would merge two messages.
+static_assert(not everest::lib::io::utilities::policy_supports_tx_coalescing_v<
+                  everest::lib::io::uds::uds_seqpacket_client_socket>,
+              "uds_seqpacket_client_socket is a message transport and must not admit tx_coalescing");
+static_assert(not client_has_tx_coalescing<everest::lib::io::uds::uds_seqpacket_client>::value,
+              "uds_seqpacket_client must not expose tx_coalescing()");
+static_assert(
+    not everest::lib::io::utilities::policy_supports_tx_coalescing_v<everest::lib::io::uds::uds_seqpacket_peer_socket>,
+    "uds_seqpacket_peer_socket is a message transport and must not admit tx_coalescing");
+static_assert(not client_has_tx_coalescing<everest::lib::io::uds::uds_seqpacket_peer>::value,
+              "uds_seqpacket_peer must not expose tx_coalescing()");
 static_assert(
     not everest::lib::io::utilities::policy_supports_tx_coalescing_v<everest::lib::io::can::socket_can_handler>,
     "socket_can_handler is a frame transport and must not admit tx_coalescing");
