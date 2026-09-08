@@ -154,6 +154,21 @@ void CarSimulation::simulate_soc() {
         }
     }
 
+    if (soc < 100.0) {
+        sim_data.full_soc_pause_requested = false;
+    } else if (config.pause_charging_at_full_soc and not sim_data.full_soc_pause_requested) {
+        sim_data.full_soc_pause_requested = true;
+        EVLOG_info << "Simulated battery is full, pausing charging";
+        if (sim_data.state == SimState::ISO_CHARGING_REGULATED) {
+            // Run the pause through the command queue so it behaves exactly like
+            // the iso_pause_charging simulation command, replacing whatever
+            // session commands are still running.
+            sim_data.modify_charging_session_cmds.emplace("iso_pause_charging");
+        } else {
+            sim_data.state = SimState::PLUGGED_IN;
+        }
+    }
+
     ev_info.soc = soc;
     ev_info.battery_capacity = sim_data.battery_capacity_wh;
     ev_info.battery_full_soc = 100;
