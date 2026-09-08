@@ -6,6 +6,7 @@
 #include <asm-generic/socket.h>
 #include <cerrno>
 #include <chrono>
+#include <cstddef>
 #include <cstring>
 #include <fcntl.h>
 #include <ifaddrs.h>
@@ -22,7 +23,10 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
 #include <unistd.h>
+#include <utility>
 
 // Nothing includes this translation unit, so the complete poll_events is available here where
 // socket/socket.hpp can only declare it opaquely.
@@ -224,6 +228,125 @@ void bind_socket_to_interface_address(int fd, std::string const& device, std::ui
     }
     if (::bind(fd, reinterpret_cast<struct sockaddr*>(&local), sizeof(local)) < 0) {
         throw_errno("Fallback bind to interface " + device + " (" + ip + ":" + std::to_string(port) + ") failed");
+    }
+}
+
+/** Send buffer of a unix domain socket. AF_UNIX never drops a datagram: a sender whose receiver
+ * has not drained its queue blocks, or gets EAGAIN when non blocking, and the queue depth that
+ * allows is bounded by the sender's SO_SNDBUF and net.unix.max_dgram_qlen. So this is how far a
+ * burst may run ahead of its reader; the kernel clamps it to net.core.wmem_max. */
+constexpr int uds_socket_buffer_size = 1024 * 1024;
+
+// A sockaddr_un naming @p name, and the exact length of that address. An abstract name is a
+// leading NUL followed by exactly the name, with no terminator, so its length carries the name
+// and cannot be recovered from the bytes. A pathname is NUL terminated, except that Linux lets it
+// fill sun_path completely, in which case the address length is the whole structure and the
+// terminator is implied.
+std::pair<struct sockaddr_un, socklen_t> make_uds_address(std::string const& name, bool use_abstract) {
+    struct sockaddr_un addr {};
+    addr.sun_family = AF_UNIX;
+
+    if (name.empty()) {
+        // An empty pathname would go out as a zero length abstract name, which the kernel accepts:
+        // a socket nobody meant to create, in a namespace nobody asked for.
+        throw_error("UDS name must not be empty", EINVAL);
+    }
+    constexpr size_t sun_path_size = sizeof(addr.sun_path);
+    // The abstract marker takes one byte of sun_path; a pathname's terminator may fall off the end.
+    const size_t max_name_len = use_abstract ? sun_path_size - 1 : sun_path_size;
+    if (name.length() > max_name_len) {
+        throw_error("UDS name is too long: " + name, ENAMETOOLONG);
+    }
+
+    constexpr auto family_offset = offsetof(struct sockaddr_un, sun_path);
+    std::memcpy(addr.sun_path + (use_abstract ? 1 : 0), name.data(), name.length());
+    const size_t path_len = std::min(name.length() + 1, sun_path_size);
+    return {addr, static_cast<socklen_t>(family_offset + path_len)};
+}
+
+// Failure leaves the kernel default in place, which is a smaller buffer and not a broken socket.
+// Only the send side is set: on AF_UNIX the receive buffer plays no part in how much may queue.
+void configure_uds_socket_buffers(int socket_fd) {
+    const int buffer_size = uds_socket_buffer_size;
+    (void)::setsockopt(socket_fd, SOL_SOCKET, SO_SNDBUF, &buffer_size, sizeof(buffer_size));
+}
+
+// Makes @p path free for a bind, or throws. A unix socket file outlives the socket that bound it,
+// so the leftover of a previous run would fail the bind with EADDRINUSE. Only such a leftover is
+// removed: a probe connect tells a stale file (ECONNREFUSED) from a socket somebody still serves
+// (EADDRINUSE here), and a file that is not a socket at all is somebody else's and reported EEXIST.
+// The probe is always a datagram socket: connecting a SEQPACKET probe would land in a live
+// listener's backlog as a phantom connection, while a datagram probe against a live listener is
+// refused with EPROTOTYPE and touches nothing.
+void free_uds_path_for_bind(std::string const& path) {
+    struct stat st {};
+    if (::lstat(path.c_str(), &st) == -1) {
+        if (errno == ENOENT) {
+            return;
+        }
+        throw_errno("Cannot inspect UDS path '" + path + "'");
+    }
+    if (not S_ISSOCK(st.st_mode)) {
+        throw_error("Refusing to bind UDS at '" + path + "': exists and is not a socket", EEXIST);
+    }
+
+    const int probe = ::socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+    if (probe == -1) {
+        throw_errno("Failed to create the probe socket for '" + path + "'");
+    }
+    event::unique_fd owned_probe{probe};
+    auto const [addr, addr_len] = make_uds_address(path, false);
+    if (::connect(owned_probe, reinterpret_cast<struct sockaddr const*>(&addr), addr_len) == 0 or errno == EAGAIN or
+        errno == EPROTOTYPE) {
+        // A live datagram socket accepts, a live listener of another type refuses with EPROTOTYPE:
+        // either way somebody serves it.
+        throw_error("Refusing to bind UDS at '" + path + "': a live socket is bound there", EADDRINUSE);
+    }
+    if (errno != ECONNREFUSED) {
+        throw_errno("Cannot probe UDS path '" + path + "'");
+    }
+    if (::unlink(path.c_str()) == -1 and errno != ENOENT) {
+        throw_errno("Cannot remove stale UDS socket file '" + path + "'");
+    }
+}
+// A socket file created by bind() and not yet handed to the caller. Removed again unless the open
+// completes: a connect, chmod or listen that fails after the bind must not leave the file behind.
+class bound_path_guard {
+public:
+    bound_path_guard() = default;
+    bound_path_guard(std::string const& path, bool is_abstract) : m_path(is_abstract ? std::string{} : path) {
+    }
+    bound_path_guard(bound_path_guard const&) = delete;
+    bound_path_guard& operator=(bound_path_guard const&) = delete;
+    ~bound_path_guard() {
+        if (not m_path.empty()) {
+            ::unlink(m_path.c_str());
+        }
+    }
+    // Only after a successful bind: before it, the file is not ours to remove.
+    void arm(std::string const& path) {
+        m_path = path;
+    }
+    void commit() {
+        m_path.clear();
+    }
+
+private:
+    std::string m_path;
+};
+
+// Permissions for a freshly bound socket file. bind() creates it under the umask, chmod() sets
+// what was asked for. An abstract name has no file, so a mode for one is a misunderstanding worth
+// reporting rather than ignoring.
+void apply_uds_path_mode(std::string const& path, bool is_abstract, std::optional<mode_t> mode) {
+    if (not mode) {
+        return;
+    }
+    if (is_abstract) {
+        throw_error("Permissions for UDS '" + path + "': an abstract name has no file to protect", EINVAL);
+    }
+    if (::chmod(path.c_str(), *mode) == -1) {
+        throw_errno("Failed to set permissions on UDS socket file '" + path + "'");
     }
 }
 } // namespace
@@ -522,6 +645,166 @@ event::unique_fd open_raw_promiscuous_socket(std::string const& if_name) {
     return event::unique_fd(socket_fd);
 }
 #endif
+
+event::unique_fd open_uds_client_socket(std::string const& server_name, bool server_is_abstract,
+                                        std::string const& client_bind_name, bool client_is_abstract,
+                                        bool client_autobind) {
+    if (client_autobind and not client_bind_name.empty()) {
+        throw_error("UDS client '" + client_bind_name + "': a name and autobind are two answers to one question",
+                    EINVAL);
+    }
+    const int socket_fd = ::socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+    if (socket_fd == -1) {
+        throw_errno("Failed to create UDS client socket");
+    }
+    event::unique_fd owned{socket_fd};
+    configure_uds_socket_buffers(owned);
+
+    if (client_autobind) {
+        // An address of just the family, no path at all, is the request for the kernel to make one
+        // up: a unique name in the abstract namespace.
+        struct sockaddr_un unnamed {};
+        unnamed.sun_family = AF_UNIX;
+        if (::bind(owned, reinterpret_cast<struct sockaddr const*>(&unnamed), sizeof(sa_family_t)) == -1) {
+            throw_errno("Failed to autobind UDS client");
+        }
+    }
+    bound_path_guard bound;
+    if (not client_autobind and not client_bind_name.empty()) {
+        auto const [client_addr, client_len] = make_uds_address(client_bind_name, client_is_abstract);
+        if (not client_is_abstract) {
+            free_uds_path_for_bind(client_bind_name);
+        }
+        if (::bind(owned, reinterpret_cast<struct sockaddr const*>(&client_addr), client_len) == -1) {
+            throw_errno("Failed to bind UDS client to '" + client_bind_name + "'");
+        }
+        if (not client_is_abstract) {
+            bound.arm(client_bind_name);
+        }
+    }
+
+    auto const [server_addr, server_len] = make_uds_address(server_name, server_is_abstract);
+    if (::connect(owned, reinterpret_cast<struct sockaddr const*>(&server_addr), server_len) == -1) {
+        throw_errno("Could not connect to UDS server '" + server_name + "'");
+    }
+
+    bound.commit();
+    return owned;
+}
+
+event::unique_fd open_uds_server_socket(std::string const& server_name, bool is_abstract, std::optional<mode_t> mode) {
+    if (is_abstract and mode) {
+        // Checked before anything is created, so a misunderstanding leaves nothing behind.
+        apply_uds_path_mode(server_name, is_abstract, mode);
+    }
+    const int socket_fd = ::socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+    if (socket_fd == -1) {
+        throw_errno("Failed to create UDS server socket");
+    }
+    event::unique_fd owned{socket_fd};
+    configure_uds_socket_buffers(owned);
+
+    auto const [server_addr, server_len] = make_uds_address(server_name, is_abstract);
+    if (not is_abstract) {
+        free_uds_path_for_bind(server_name);
+    }
+
+    if (::bind(owned, reinterpret_cast<struct sockaddr const*>(&server_addr), server_len) == -1) {
+        throw_errno("Failed to bind UDS server to '" + server_name + "'");
+    }
+    bound_path_guard bound{server_name, is_abstract};
+    apply_uds_path_mode(server_name, is_abstract, mode);
+
+    bound.commit();
+    return owned;
+}
+
+event::unique_fd open_uds_seqpacket_server_socket(std::string const& server_name, bool is_abstract,
+                                                  std::optional<mode_t> mode) {
+    constexpr int backlog = 64;
+    if (is_abstract and mode) {
+        apply_uds_path_mode(server_name, is_abstract, mode);
+    }
+    const int socket_fd = ::socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+    if (socket_fd == -1) {
+        throw_errno("Failed to create UDS SEQPACKET server socket");
+    }
+    event::unique_fd owned{socket_fd};
+    configure_uds_socket_buffers(owned);
+
+    auto const [server_addr, server_len] = make_uds_address(server_name, is_abstract);
+    if (not is_abstract) {
+        free_uds_path_for_bind(server_name);
+    }
+
+    if (::bind(owned, reinterpret_cast<struct sockaddr const*>(&server_addr), server_len) == -1) {
+        throw_errno("Failed to bind UDS SEQPACKET server to '" + server_name + "'");
+    }
+    bound_path_guard bound{server_name, is_abstract};
+    // Before listen(): nobody connects to a file that does not yet have its permissions.
+    apply_uds_path_mode(server_name, is_abstract, mode);
+
+    if (::listen(owned, backlog) == -1) {
+        throw_errno("Failed to listen on UDS SEQPACKET server '" + server_name + "'");
+    }
+
+    bound.commit();
+    return owned;
+}
+
+event::unique_fd open_uds_seqpacket_client_socket(std::string const& server_name, bool server_is_abstract) {
+    // Non blocking like the listener it connects to. There is no handshake to wait for on AF_UNIX:
+    // connect() either lands in the backlog at once or fails, with EAGAIN when the backlog is full.
+    const int socket_fd = ::socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+    if (socket_fd == -1) {
+        throw_errno("Failed to create UDS SEQPACKET client socket");
+    }
+    event::unique_fd owned{socket_fd};
+    configure_uds_socket_buffers(owned);
+
+    auto const [server_addr, server_len] = make_uds_address(server_name, server_is_abstract);
+    if (::connect(owned, reinterpret_cast<struct sockaddr const*>(&server_addr), server_len) == -1) {
+        throw_errno("Could not connect SEQPACKET UDS to server '" + server_name + "'");
+    }
+
+    return owned;
+}
+
+void request_peer_credentials(int fd) {
+    const int enable = 1;
+    if (::setsockopt(fd, SOL_SOCKET, SO_PASSCRED, &enable, sizeof(enable)) == -1) {
+        throw_errno("Failed to setsockopt(SO_PASSCRED)");
+    }
+}
+
+std::optional<peer_credentials> get_peer_credentials(int fd) {
+    struct ucred credentials {};
+    socklen_t len = sizeof(credentials);
+    if (::getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &credentials, &len) == -1) {
+        return std::nullopt;
+    }
+    // Without a peer the call succeeds and answers the overflow ids with pid 0, which no live
+    // process has: that is "nobody", not somebody with pid 0.
+    if (credentials.pid == 0) {
+        return std::nullopt;
+    }
+    return peer_credentials{credentials.pid, credentials.uid, credentials.gid};
+}
+
+event::unique_fd get_peer_pidfd(int fd) {
+#ifdef SO_PEERPIDFD
+    int pidfd = -1;
+    socklen_t len = sizeof(pidfd);
+    if (::getsockopt(fd, SOL_SOCKET, SO_PEERPIDFD, &pidfd, &len) == -1) {
+        // ENOPROTOOPT on a kernel before 6.5, ENODATA without a peer: empty either way.
+        return {};
+    }
+    return event::unique_fd{pidfd};
+#else
+    (void)fd;
+    return {};
+#endif
+}
 
 void enable_tcp_no_delay(int fd) {
     socklen_t enable = 1;

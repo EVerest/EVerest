@@ -4,6 +4,7 @@ libeverest_io provides utilities for socket based communication.
 
 Currently there are clients for
  - UDP
+ - UDS (unix domain sockets, datagram and SOCK_SEQPACKET)
  - SocketCAN
  - MQTT
  - PTY
@@ -67,6 +68,52 @@ of dropping when the sink's buffer is full:
   transports and TLS do not compile with it.
 
 All share the loop-thread contract of `tx()`.
+
+## UDS
+
+Unix domain sockets for processes on one machine. Reliable and ordered, message boundaries kept,
+and two things no other transport here has: a message can carry **file descriptors**, and the
+kernel tells you **who** sent it.
+
+Two flavours, same `uds_payload`:
+
+| | datagram | SOCK_SEQPACKET |
+|---|---|---|
+| shape | one server, any number of clients | one connection per client |
+| peer goes away | server never learns, client sees `ECONNREFUSED` on its next send | both sides told at once |
+| identity | per message, opt in (`with_peer_credentials`) | per connection, `peer_credentials()` / `peer_pidfd()` |
+| use for | stateless many-to-one messaging | control channels with per-client state |
+
+Datagram: `uds_server(name, is_abstract)` and `uds_client(name, is_abstract)`. The client is always
+answerable: without a local name the kernel assigns one (autobind). SEQPACKET:
+`uds_seqpacket_listener` accepts and hands each connection to your callback as a
+`uds_seqpacket_peer`; `uds_seqpacket_client` connects. Like every client here it reports a lost
+connection through the error handler and reconnects on `reset()`. A peer is single use: drop it on
+error.
+
+Names are either a filesystem path or a name in the abstract namespace (`is_abstract`, default).
+A path is a file: it can be given permissions (`mode`, connecting needs write permission), a stale
+one is cleaned up, a live one is never stolen. Abstract names need no directory and vanish with the
+socket.
+
+Descriptors ride on the payload: `payload.attach_duplicate(fd)` / `payload.attach(std::move(fd))`
+to send, `payload.fds` / `payload.fd(i)` on receive. They are owned and shared, so a queued payload
+keeps them alive until sent and a received one closes them with its last copy. The one descriptor
+case is `send_fd(client, fd, "what it is")`, same call for every socket and client type
+(`uds_utils.hpp`).
+
+```cpp
+uds::uds_server server(name, true, /*with_peer_credentials=*/true);
+server.set_rx_handler([](uds::uds_payload const& p, auto& device) {
+    if (p.credentials and p.has_fds()) {
+        use(p.fd(), p.credentials->pid);
+    }
+    device.tx(p); // reply to the sender
+});
+```
+
+Example: `test_uds_eventfd_share` shares an eventfd both ways over SEQPACKET, then the two ends
+wake each other through the loop without another message.
 
 ## PTY
 
