@@ -111,11 +111,13 @@ if (ISO15118_TARGET_ZEPHYR)
     target_sources(iso15118
         PRIVATE
         io/socket_helper_zephyr.cpp
+        detail/mutex_zephyr.cpp
     )
 else()
     target_sources(iso15118
         PRIVATE
         io/socket_helper_posix.cpp
+        detail/mutex_libstdcxx.cpp
     )
 endif()
 

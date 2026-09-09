@@ -9,12 +9,11 @@
 #include <string>
 #include <vector>
 
-#include <everest/util/async/monitor.hpp>
-
 #include "config.hpp"
 #include <iso15118/d20/config.hpp>
 #include <iso15118/d20/control_event.hpp>
 #include <iso15118/d20/limits.hpp>
+#include <iso15118/detail/monitor.hpp>
 #include <iso15118/io/connection_abstract.hpp>
 #include <iso15118/io/poll_manager.hpp>
 #include <iso15118/io/sdp_server.hpp>
@@ -117,7 +116,7 @@ private:
     const TbdConfig config;
     const session::feedback::Callbacks callbacks;
 
-    everest::lib::util::monitor<d20::EvseSetupConfig> evse_setup;
+    detail::Monitor<d20::EvseSetupConfig> evse_setup;
 
     std::string interface_name;
 

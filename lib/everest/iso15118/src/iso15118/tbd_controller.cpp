@@ -20,7 +20,8 @@ static constexpr auto POLL_MANAGER_TIMEOUT_MS = 50;
 
 namespace {
 bool fd_is_open(int fd) {
-    return fd >= 0 and fcntl(fd, F_GETFD) != -1;
+    // F_GETFL is the more portable choice
+    return fd >= 0 and fcntl(fd, F_GETFL) != -1;
 }
 
 // Resets the driver-running flag on scope exit, so it is released even if an exception
