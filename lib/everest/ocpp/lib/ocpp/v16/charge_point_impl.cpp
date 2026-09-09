@@ -1238,8 +1238,7 @@ void ChargePointImpl::change_all_connectors_to_unavailable_for_firmware_update()
     }
 
     if (!transaction_running) {
-        // Only notify when a callback is actually registered, so a callback registered later is not silently skipped
-        // for this cycle
+        // Check for the callback first, so the guard is not burned while none is registered yet
         if (this->all_connectors_unavailable_callback and !this->all_connectors_unavailable_notified.exchange(true)) {
             this->all_connectors_unavailable_callback();
         }
@@ -1256,7 +1255,6 @@ void ChargePointImpl::clear_firmware_install_pending() {
     this->disable_connectors_during_install = true;
     this->all_connectors_unavailable_notified = false;
 
-    // Drop non-persistent queued availability changes
     const std::lock_guard<std::mutex> change_availability_lock(change_availability_mutex);
     for (auto it = this->change_availability_queue.begin(); it != this->change_availability_queue.end();) {
         if (!it->second.persist) {
@@ -4717,7 +4715,8 @@ void ChargePointImpl::on_firmware_update_status_notification(
         EVLOG_debug << "Could not convert incoming FirmwareStatusNotification to OCPP type";
     }
 
-    // Explicitly allow disabling the connectors when an update is scheduled
+    // Opt-in only, because an install can stay scheduled for a long time and the connectors would be unavailable
+    // for all of it
     if (firmware_update_status == FirmwareStatusNotification::InstallScheduled and
         disable_connectors_during_install.value_or(false)) {
         this->set_firmware_install_pending(true);
@@ -4729,10 +4728,9 @@ void ChargePointImpl::on_firmware_update_status_notification(
         firmware_update_status == FirmwareStatusNotification::InstallVerificationFailed or
         firmware_update_status == FirmwareStatusNotification::Idle) {
         // Restore connector status, since we did not save to db the status, we can just get the old status back
-        // using it. Idle is included because it is the documented at-rest status: an update that dies or an OCPP
-        // restart can make the System module re-announce Idle without ever reaching one of the three terminal
-        // statuses above, which would otherwise leave connectors disabled for the install stuck Unavailable.
-        // Nothing emits Idle before InstallScheduled, so restoring already-Operative connectors here is a no-op.
+        // using it. Idle is in here because an update that dies or an OCPP restart can re-announce it without
+        // ever reaching one of the terminal statuses, which would leave the connectors disabled for the install
+        // stuck Unavailable
         try {
             auto connector_availability = this->database_handler->get_connector_availability();
             for (const auto& [connector, availability] : connector_availability) {
@@ -4760,10 +4758,9 @@ void ChargePointImpl::on_firmware_update_status_notification(
         // Even if we have to retry the firmware update resetting to Idle won't cause an issue since we do not
         // trigger a status notification and we don't have a state machine to block certain state transitions
         //
-        // Deliberately NOT extended to Idle itself: this also calls clear_firmware_install_pending(), which
-        // re-arms the single-fire guard around all_connectors_unavailable_callback. An updater that dies and
-        // merely reports Idle has not started a new update cycle - only a fresh UpdateFirmware(.signed).req may
-        // re-arm that guard (see IdleStatusFromDyingUpdateThenNewRequestResetsSingleFireGuard).
+        // Idle is deliberately not in here, because this also re-arms the single-fire guard around
+        // all_connectors_unavailable_callback. An update that dies and only reports Idle has not started a new
+        // cycle, so only a fresh UpdateFirmware(.signed).req may re-arm it
         if (request_id != -1) {
             this->signed_firmware_status = FirmwareStatusEnumType::Idle;
         } else {

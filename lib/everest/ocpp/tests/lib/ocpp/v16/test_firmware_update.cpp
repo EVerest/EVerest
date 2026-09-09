@@ -2,20 +2,11 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 /// \file test_firmware_update.cpp
-/// \brief Behavioural unit tests for the v16 ChargePointImpl firmware-update connector-disable logic in
-/// on_firmware_update_status_notification.
+/// \brief Unit tests for the connector-disable logic in ChargePointImpl::on_firmware_update_status_notification.
 ///
-/// These tests construct a ChargePointImpl through its injection constructor (mocked ConnectivityManager, no
-/// security config, no message callback) and assert only the observable side effects of the connector-disable
-/// path: which connectors the disable_evse_callback is invoked for, and how often the
-/// all_connectors_unavailable_callback fires. They cover the explicit-opt-in InstallScheduled trigger, the
-/// default-true pre-install (Downloaded) trigger, the single-fire guard, and the terminal-status guard reset.
-///
-/// Note on the plain OCPP 1.6 path (request_id == -1): the FirmwareStatus enum cannot represent InstallScheduled,
-/// so the enum conversion in on_firmware_update_status_notification throws std::out_of_range and is swallowed.
-/// Nothing is sent to the CSMS for that status, but the connector-disable side effects still run. These tests
-/// therefore assert on the disable/unavailable callbacks only, never on an outgoing CSMS message for
-/// InstallScheduled.
+/// The FirmwareStatus enum of plain OCPP 1.6 (request_id == -1) cannot represent InstallScheduled, so the
+/// conversion throws std::out_of_range and is swallowed. Nothing is sent to the CSMS for that status, but the
+/// connector-disable side effects still run, which is why these tests only assert on the callbacks.
 
 #include <chrono>
 #include <condition_variable>
@@ -65,8 +56,8 @@ protected:
         this->configuration =
             std::make_unique<ChargePointConfiguration>(config_file, CONFIG_DIR_V16, USER_CONFIG_FILE_LOCATION_V16);
 
-        // Each test gets its own temporary directory so the on-disk sqlite db and message logs do not collide.
-        // Tests within a gtest binary run sequentially, so a simple incrementing counter is unique.
+        // One temporary directory per test, so the sqlite db and message logs do not collide. Tests in a gtest
+        // binary run sequentially, so an incrementing counter is unique
         static int test_dir_counter = 0;
         this->tmp_dir =
             fs::temp_directory_path() / ("ocpp_v16_firmware_update_test_" + std::to_string(test_dir_counter++));
@@ -93,12 +84,7 @@ protected:
         return *this->charge_point;
     }
 
-    /// \brief Register the callbacks the connector-disable path fires:
-    ///   * disable_evse_callback records the connector id it is invoked for (and returns true),
-    ///   * all_connectors_unavailable_callback counts how often it has been called,
-    ///   * enable_evse_callback records the connector id it is invoked for (and returns true) - this is the
-    ///     restore-sequence side effect a terminal status (or, per the still-open review comment, Idle) is
-    ///     supposed to trigger for connectors that were disabled for the install.
+    /// \brief Register the callbacks the connector-disable path fires and record what they are called with
     void register_callbacks(ChargePointImpl& cp) {
         cp.register_disable_evse_callback([this](std::int32_t connector) {
             this->disabled_connectors.push_back(connector);
@@ -120,8 +106,8 @@ protected:
         return connectors;
     }
 
-    /// \brief The connectors the restore sequence is expected to re-enable: every connector the database reports
-    /// as Operative, which includes the charge-point-wide connector 0 alongside the physical connectors.
+    /// \brief The connectors the restore sequence re-enables: every one the database reports as Operative, which
+    /// includes the charge-point-wide connector 0.
     std::vector<std::int32_t> expected_restored_connectors() const {
         std::vector<std::int32_t> connectors{0};
         for (const auto connector : this->expected_idle_connectors()) {
@@ -143,8 +129,6 @@ protected:
 
 using ChargePointFirmwareUpdateTest = ChargePointFirmwareUpdateTestBase;
 
-// Test that InstallScheduled with disable_connectors_during_install = true disables all connectors and triggers
-// all_connectors_unavailable_callback exactly once
 TEST_F(ChargePointFirmwareUpdateTest, InstallScheduledOptInDisablesConnectorsSingleFire) {
     auto& charge_point = start_charge_point();
 
@@ -154,16 +138,14 @@ TEST_F(ChargePointFirmwareUpdateTest, InstallScheduledOptInDisablesConnectorsSin
     EXPECT_EQ(this->disabled_connectors, expected_idle_connectors());
     EXPECT_EQ(this->all_connectors_unavailable_count, 1);
 
-    // Re-send the same trigger: the disable callback may run again, but the single-fire guard keeps the
-    // all_connectors_unavailable_callback pinned at one invocation until a terminal status resets it.
+    // The same trigger again: the guard keeps the unavailable callback at one call until a terminal status
+    // resets it
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
                                                         std::optional<bool>{true});
 
     EXPECT_EQ(this->all_connectors_unavailable_count, 1);
 }
 
-// Test that InstallScheduled without disable_connectors_during_install set does not disable connnectors and does not
-// trigger all_connectors_unavailable_callback
 class InstallScheduledNoOptInTest : public ChargePointFirmwareUpdateTestBase,
                                     public ::testing::WithParamInterface<std::optional<bool>> {};
 
@@ -179,8 +161,6 @@ TEST_P(InstallScheduledNoOptInTest, ForwardOnlyNoConnectorDisable) {
 INSTANTIATE_TEST_SUITE_P(InstallScheduledNoOptIn, InstallScheduledNoOptInTest,
                          ::testing::Values(std::optional<bool>{std::nullopt}, std::optional<bool>{false}));
 
-// Test that Downloaded without disable_connectors_during_install set (nullopt) still disables the connectors and
-// triggers all_connectors_unavailable_callback
 TEST_F(ChargePointFirmwareUpdateTest, DownloadedDefaultsToDisablingConnectors) {
     auto& charge_point = start_charge_point();
 
@@ -190,8 +170,6 @@ TEST_F(ChargePointFirmwareUpdateTest, DownloadedDefaultsToDisablingConnectors) {
     EXPECT_EQ(this->all_connectors_unavailable_count, 1);
 }
 
-// Test that Downloaded with disable_connectors_during_install = false does not disable the connectors and does not
-// trigger all_connectors_unavailable_callback
 TEST_F(ChargePointFirmwareUpdateTest, DownloadedWithFalseDoesNotDisableConnectors) {
     auto& charge_point = start_charge_point();
 
@@ -202,7 +180,6 @@ TEST_F(ChargePointFirmwareUpdateTest, DownloadedWithFalseDoesNotDisableConnector
     EXPECT_EQ(this->all_connectors_unavailable_count, 0);
 }
 
-// Test that a terminal status resets the guard around all_connectors_unavailable_callback and allows it to fire again
 TEST_F(ChargePointFirmwareUpdateTest, TerminalStatusResetsSingleFireGuard) {
     auto& charge_point = start_charge_point();
 
@@ -210,23 +187,19 @@ TEST_F(ChargePointFirmwareUpdateTest, TerminalStatusResetsSingleFireGuard) {
                                                         std::optional<bool>{true});
     EXPECT_EQ(this->all_connectors_unavailable_count, 1);
 
-    // Terminal status: clears firmware_update_is_pending and, crucially, all_connectors_unavailable_notified.
+    // Terminal status, which also clears all_connectors_unavailable_notified
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallationFailed,
                                                         std::nullopt);
     EXPECT_EQ(this->all_connectors_unavailable_count, 1);
 
-    // A new opt-in trigger fires the unavailable callback again now that the guard has been reset.
+    // The guard is reset, so a new opt-in trigger fires the callback again
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
                                                         std::optional<bool>{true});
     EXPECT_EQ(this->all_connectors_unavailable_count, 2);
 }
 
-// FAILS today (PR 2514 review r3811033363, "We should also treat Idle as a reset state and run the restore
-// sequence"): the restore block only runs for InstallationFailed/Installed/InstallVerificationFailed, so an
-// updater that gives up and falls back to Idle - documented in types/system.yaml as "System is not performing
-// firmware update related tasks" - leaves the connectors it disabled for the install stuck Unavailable.
-// The CONNECTORS table is seeded first because the restore sequence reads availability from the database, and a
-// fresh test database has no rows, which would make the restore loop a no-op whatever status triggered it.
+// The CONNECTORS table is seeded first, because the restore sequence reads availability from the database and a
+// fresh test database has no rows, which would make the restore loop a no-op whatever status triggered it
 TEST_F(ChargePointFirmwareUpdateTest, IdleStatusRestoresConnectorsDisabledForInstall) {
     auto& charge_point = start_charge_point();
 
@@ -239,11 +212,11 @@ TEST_F(ChargePointFirmwareUpdateTest, IdleStatusRestoresConnectorsDisabledForIns
     ASSERT_EQ(this->disabled_connectors, expected_idle_connectors());
     ASSERT_EQ(this->all_connectors_unavailable_count, 1);
 
-    // Boot already enabled the connectors it read as Operative from the database, so only the enables that
-    // happen from here on are the restore sequence's own.
+    // Boot already enabled the connectors it read as Operative, so only the enables from here on are the
+    // restore sequence's own
     this->enabled_connectors.clear();
 
-    // The updater aborts and falls back to Idle instead of one of the three enumerated terminal statuses.
+    // The updater aborts and falls back to Idle instead of a terminal status
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::Idle, std::nullopt);
 
     EXPECT_EQ(this->enabled_connectors, expected_restored_connectors())
@@ -251,20 +224,16 @@ TEST_F(ChargePointFirmwareUpdateTest, IdleStatusRestoresConnectorsDisabledForIns
            "Unavailable";
 }
 
-// Test that clear_firmware_install_pending() erases exactly the change_availability_queue entries the firmware
-// update queued for itself (persist == false) and leaves a genuinely CSMS-scheduled entry (persist == true)
-// alone, as its declaration claims ("drops availability changes queued for the firmware update that have not
-// been executed yet"). The predicate has to discriminate on the persist flag, not on connector id.
+// The erase predicate has to discriminate on the persist flag, not on the connector id
 TEST_F(ChargePointFirmwareUpdateTest, ClearFirmwareInstallPendingDropsOnlyNonPersistentQueuedChanges) {
     auto& charge_point = start_charge_point();
 
-    // A CSMS ChangeAvailability.req queued behind a running transaction is always persist == true (see
-    // preprocess_change_availability_request) and must survive regardless of any firmware update.
+    // A CSMS ChangeAvailability.req queued behind a running transaction is always persist == true and must
+    // survive whatever a firmware update does
     charge_point.change_availability_queue[1] = {AvailabilityType::Inoperative, /*persist=*/true};
 
-    // The connector-disable path queues its own change as persist == false when a transaction is running (see
-    // change_all_connectors_to_unavailable_for_firmware_update). Seed it on a different connector so the erase
-    // predicate is exercised on both flags at once.
+    // The connector-disable path queues its own change as persist == false. Seed it on a different connector, so
+    // the predicate is exercised on both flags at once
     charge_point.change_availability_queue[2] = {AvailabilityType::Inoperative, /*persist=*/false};
 
     charge_point.clear_firmware_install_pending();
@@ -274,9 +243,8 @@ TEST_F(ChargePointFirmwareUpdateTest, ClearFirmwareInstallPendingDropsOnlyNonPer
     EXPECT_EQ(charge_point.change_availability_queue.count(2), 0u);
 }
 
-/// \brief Fixture that additionally captures the registered message callback and the outgoing frames, so a test
-/// can complete the boot handshake and inject incoming CSMS messages (incoming CALL routing is gated on the
-/// Booted connection state).
+/// \brief Fixture that also captures the message callback and the outgoing frames, so a test can complete the
+/// boot handshake and inject incoming CSMS messages (incoming CALLs are only routed once Booted).
 class ChargePointUpdateFirmwareRequestTest : public ChargePointFirmwareUpdateTestBase {
 protected:
     void SetUp() override {
@@ -349,8 +317,8 @@ protected:
         return payload;
     }
 
-    /// \brief A minimal, schema-valid SignedUpdateFirmware.req payload. The certificate content is irrelevant -
-    /// the tests stub EvseSecurity::verify_certificate to decide whether it is accepted.
+    /// \brief A minimal, schema-valid SignedUpdateFirmware.req payload. The certificate content is irrelevant,
+    /// because the tests stub EvseSecurity::verify_certificate to decide whether it is accepted.
     static json signed_update_firmware_payload(const std::int32_t request_id) {
         json firmware = json::object();
         firmware["location"] = "ftp://example.com/firmware.bin";
@@ -370,9 +338,7 @@ protected:
     std::vector<std::string> sent_messages;
 };
 
-// Test that an UpdateFirmware.req starts a new update cycle: it re-arms the single-fire guard around
-// all_connectors_unavailable_callback (and clears the pending-install state), so an update that died without
-// reporting a terminal status cannot leave the guard latched for the next cycle.
+// An update that died without reporting a terminal status must not leave the guard latched for the next cycle
 TEST_F(ChargePointUpdateFirmwareRequestTest, UpdateFirmwareRequestResetsSingleFireGuard) {
     auto& charge_point = start_charge_point();
     charge_point.register_update_firmware_callback([](const UpdateFirmwareRequest&) {});
@@ -381,14 +347,14 @@ TEST_F(ChargePointUpdateFirmwareRequestTest, UpdateFirmwareRequestResetsSingleFi
         return;
     }
 
-    // Latch the guard; a repeated trigger shows it holds.
+    // Latch the guard, a repeated trigger shows it holds
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
                                                         std::optional<bool>{true});
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
                                                         std::optional<bool>{true});
     EXPECT_EQ(this->all_connectors_unavailable_count, 1);
 
-    // The update dies without ever reporting a terminal status; the CSMS then requests a new update.
+    // The update dies without ever reporting a terminal status, then the CSMS requests a new update
     json update_firmware_call = json::array();
     update_firmware_call.push_back(MessageTypeId::CALL);
     update_firmware_call.push_back("update-firmware-request-1");
@@ -397,25 +363,14 @@ TEST_F(ChargePointUpdateFirmwareRequestTest, UpdateFirmwareRequestResetsSingleFi
         json{{"location", "ftp://example.com/firmware.bin"}, {"retrieveDate", ocpp::DateTime().to_rfc3339()}});
     this->message_callback(update_firmware_call.dump());
 
-    // The request re-armed the guard: a new opt-in trigger fires the unavailable callback again.
+    // The request re-armed the guard, so a new opt-in trigger fires the callback again
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
                                                         std::optional<bool>{true});
     EXPECT_EQ(this->all_connectors_unavailable_count, 2);
 }
 
-/// ---------------------------------------------------------------------------------------------------------------
-/// The tests below model the cases that are still open on the review comment
-///   "This is not reset e.g. when the fw update aborts/crashes and doesnt notify or reports Idle and then this
-///    guard stays latched. I think we should reset on every firmware update request and we can remove this part
-///    here. This also needs fixing in v2."
-/// Each one states in its comment whether it is expected to pass against the current implementation (regression
-/// coverage for behaviour that already works) or to fail (a gap that still has to be closed).
-/// ---------------------------------------------------------------------------------------------------------------
-
-// PASSES today - regression coverage for the literal scenario in the review comment.
-//
-// The firmware updater dies and reports Idle. Idle is not a terminal status, so nothing along the status path
-// re-arms the guard; only the next UpdateFirmware.req may.
+// Idle is not a terminal status, so nothing along the status path re-arms the guard when the updater dies and
+// reports it. Only the next UpdateFirmware.req may
 TEST_F(ChargePointUpdateFirmwareRequestTest, IdleStatusFromDyingUpdateThenNewRequestResetsSingleFireGuard) {
     auto& charge_point = start_charge_point();
     charge_point.register_update_firmware_callback([](const UpdateFirmwareRequest&) {});
@@ -428,14 +383,14 @@ TEST_F(ChargePointUpdateFirmwareRequestTest, IdleStatusFromDyingUpdateThenNewReq
                                                         std::optional<bool>{true});
     EXPECT_EQ(this->all_connectors_unavailable_count, 1);
 
-    // The update gives up and falls back to Idle instead of reporting a terminal status. That must not re-arm the
-    // guard on its own - the update cycle is still the old one.
+    // The update gives up and falls back to Idle, which must not re-arm the guard on its own because the cycle
+    // is still the old one
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::Idle, std::nullopt);
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
                                                         std::optional<bool>{true});
     EXPECT_EQ(this->all_connectors_unavailable_count, 1);
 
-    // Only the next request starts a new cycle and re-arms the guard.
+    // Only the next request starts a new cycle and re-arms the guard
     send_call("UpdateFirmware", update_firmware_payload(), "update-firmware-after-idle");
 
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::InstallScheduled,
@@ -443,8 +398,7 @@ TEST_F(ChargePointUpdateFirmwareRequestTest, IdleStatusFromDyingUpdateThenNewReq
     EXPECT_EQ(this->all_connectors_unavailable_count, 2);
 }
 
-// PASSES today - missing coverage: the same reset must hold for the signed variant of the request, which is the
-// only way an OCPP 1.6 SecurityExtensions firmware update is ever started.
+// The signed variant of the request is the only way a SecurityExtensions firmware update is ever started
 TEST_F(ChargePointUpdateFirmwareRequestTest, SignedUpdateFirmwareRequestResetsSingleFireGuard) {
     ON_CALL(*this->evse_security, verify_certificate(::testing::_, ::testing::An<const ocpp::LeafCertificateType&>()))
         .WillByDefault(::testing::Return(ocpp::CertificateValidationResult::Valid));
@@ -457,7 +411,7 @@ TEST_F(ChargePointUpdateFirmwareRequestTest, SignedUpdateFirmwareRequestResetsSi
         return;
     }
 
-    // Latch the guard, then let the update die without ever reporting a terminal status.
+    // Latch the guard, then let the update die without ever reporting a terminal status
     charge_point.on_firmware_update_status_notification(1, FirmwareStatusNotification::InstallScheduled,
                                                         std::optional<bool>{true});
     charge_point.on_firmware_update_status_notification(1, FirmwareStatusNotification::InstallScheduled,
@@ -471,10 +425,9 @@ TEST_F(ChargePointUpdateFirmwareRequestTest, SignedUpdateFirmwareRequestResetsSi
     EXPECT_EQ(this->all_connectors_unavailable_count, 2);
 }
 
-// A SignedUpdateFirmware.req answered with InvalidCertificate starts no new update cycle, so it must not wipe the
-// state of the update that is actually running: the guard stays latched and the availability changes queued behind
-// running transactions survive. handleSignedUpdateFirmware only calls clear_firmware_install_pending() once the
-// certificate has been verified.
+// A request answered with InvalidCertificate starts no new cycle, so it must not wipe the state of the update
+// that is actually running. handleSignedUpdateFirmware only clears the pending install once the certificate has
+// been verified
 TEST_F(ChargePointUpdateFirmwareRequestTest, InvalidCertificateSignedUpdateFirmwareDoesNotDisturbRunningUpdate) {
     ON_CALL(*this->evse_security, verify_certificate(::testing::_, ::testing::An<const ocpp::LeafCertificateType&>()))
         .WillByDefault(::testing::Return(ocpp::CertificateValidationResult::InvalidSignature));
@@ -487,31 +440,26 @@ TEST_F(ChargePointUpdateFirmwareRequestTest, InvalidCertificateSignedUpdateFirmw
         return;
     }
 
-    // An update is running and has already notified once.
+    // An update is running and has already notified once
     charge_point.on_firmware_update_status_notification(1, FirmwareStatusNotification::InstallScheduled,
                                                         std::optional<bool>{true});
     EXPECT_EQ(this->all_connectors_unavailable_count, 1);
 
-    // The CSMS sends a request whose signing certificate does not validate. It is rejected with InvalidCertificate,
-    // so no new update cycle starts and the running one must be left untouched.
+    // The signing certificate does not validate, so the request is rejected and starts no new cycle
     send_call("SignedUpdateFirmware", signed_update_firmware_payload(2), "signed-update-firmware-invalid");
 
-    // The still-running update notifies again - the guard must still be latched from its first notification.
+    // The still-running update notifies again, so the guard must still be latched from its first notification
     charge_point.on_firmware_update_status_notification(1, FirmwareStatusNotification::InstallScheduled,
                                                         std::optional<bool>{true});
     EXPECT_EQ(this->all_connectors_unavailable_count, 1);
 }
 
-// "Reset on every firmware update request" has to cover the reported firmware status as well: it is only put back to
-// Idle on a terminal status, so after an update that aborts while Installing a
-// TriggerMessage(FirmwareStatusNotification) would keep reporting the dead update's status, even after the CSMS has
-// started a new one.
+// The reported firmware status is only put back to Idle on a terminal status, so after an update that aborts
+// while Installing a TriggerMessage(FirmwareStatusNotification) would keep reporting the dead update's status
 //
-// This asserts the reported status directly rather than the outgoing message it would end up in. A
-// FirmwareStatusNotification.req the charge point sends on its own initiative goes through
-// MessageQueue::push_call_async, which answers offline without ever handing it to the websocket while the queue is
-// paused, so it cannot be observed here. See handleTriggerMessageRequest,
-// MessageTrigger::FirmwareStatusNotification for what reads this status.
+// This asserts the status field rather than the message it would end up in, because a self-initiated
+// FirmwareStatusNotification.req goes through MessageQueue::push_call_async, which answers offline without ever
+// handing it to the websocket while the queue is paused
 TEST_F(ChargePointUpdateFirmwareRequestTest, NewUpdateFirmwareRequestResetsFirmwareStatusToIdle) {
     auto& charge_point = start_charge_point();
     charge_point.register_update_firmware_callback([](const UpdateFirmwareRequest&) {});
@@ -520,13 +468,12 @@ TEST_F(ChargePointUpdateFirmwareRequestTest, NewUpdateFirmwareRequestResetsFirmw
         return;
     }
 
-    // The update reaches Installing and then dies without ever reporting a terminal status, so this stays the status
-    // the charge point would report to the CSMS.
+    // The update reaches Installing and then dies, so this stays the status the charge point would report
     charge_point.on_firmware_update_status_notification(-1, FirmwareStatusNotification::Installing, std::nullopt);
     ASSERT_EQ(charge_point.firmware_status, FirmwareStatus::Installing);
 
-    // The CSMS starts a new update cycle. The new cycle has not reported anything yet, so the leftover Installing of
-    // the dead cycle must not be what a TriggerMessage.req is answered with.
+    // The new cycle has not reported anything yet, so the dead cycle's leftover Installing must not be what a
+    // TriggerMessage.req is answered with
     send_call("UpdateFirmware", update_firmware_payload(), "update-firmware-after-abort");
 
     EXPECT_EQ(charge_point.firmware_status, FirmwareStatus::Idle);

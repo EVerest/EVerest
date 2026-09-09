@@ -266,13 +266,11 @@ private:
     /// update can proceed
     void change_all_connectors_to_unavailable_for_firmware_update();
 
-    /// \brief Marks a firmware install as pending; connectors will be disabled (now or once running transactions
-    /// end) when \p disable_connectors is true.
+    /// \brief Marks a firmware install as pending, disabling the connectors when \p disable_connectors is true.
     void set_firmware_install_pending(bool disable_connectors);
 
-    /// \brief Clears all pending-install state set by \ref set_firmware_install_pending, re-arms the
-    /// all_connectors_unavailable_callback single-fire guard and drops availability changes queued for the
-    /// firmware update that have not been executed yet.
+    /// \brief Clears the pending-install state, re-arms the all_connectors_unavailable_callback guard and drops
+    /// availability changes the firmware update queued but never executed.
     void clear_firmware_install_pending();
 
     /// \brief Tries to resume the transactions given by \p resuming_session_ids . This function retrieves open

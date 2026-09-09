@@ -398,7 +398,7 @@ public:
     virtual std::vector<int> get_network_connection_slots() const = 0;
 };
 
-/// \brief Tracks whether the running firmware update still has to be told that all connectors became unavailable.
+/// \brief Whether the running firmware update still has to be told that all connectors became unavailable.
 enum class AllConnectorsUnavailableNotificationState {
     Idle,
     Waiting,
@@ -447,8 +447,7 @@ private:
     std::atomic<std::int32_t> upload_log_status_id;
     BootReasonEnum bootreason{BootReasonEnum::PowerUp};
     bool skip_invalid_csms_certificate_notifications{false};
-    // Ensures the update waiting for disabled connectors is triggered exactly once per update cycle, and only while an
-    // update is actually running
+    // Limits the all-connectors-unavailable notification to one per update cycle
     std::atomic<AllConnectorsUnavailableNotificationState> all_connectors_unavailable_notification_state{
         AllConnectorsUnavailableNotificationState::Idle};
 

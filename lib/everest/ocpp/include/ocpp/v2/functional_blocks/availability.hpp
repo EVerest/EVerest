@@ -59,9 +59,8 @@ public:
 
     ///
     /// \brief Drop every scheduled change availability request that was queued with persist == false.
-    /// \note Used to clean up non-persistent entries left behind by a firmware update cycle that ended (or was
-    ///       superseded by a new request) before the queued entry it created behind a running transaction was
-    ///       ever executed.
+    /// \note Cleans up entries a firmware update cycle queued behind a running transaction and then ended before
+    ///       they were executed.
     ///
     virtual void drop_non_persistent_scheduled_changes() = 0;
 

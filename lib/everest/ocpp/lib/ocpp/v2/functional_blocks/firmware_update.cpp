@@ -16,7 +16,6 @@
 namespace ocpp::v2 {
 
 bool is_firmware_status_end_state(const FirmwareStatusEnum& status) {
-    // Terminal (end) states of a firmware update.
     return status == FirmwareStatusEnum::DownloadFailed or status == FirmwareStatusEnum::InstallationFailed or
            status == FirmwareStatusEnum::Installed or status == FirmwareStatusEnum::InstallVerificationFailed or
            status == FirmwareStatusEnum::InvalidSignature;
@@ -86,11 +85,10 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
             // One of the end states is reached. Restore all connector states.
             this->restore_all_connector_states();
         } else if (req.status == FirmwareStatusEnum::Idle) {
-            // Idle is the documented at-rest status; an update that dies or an OCPP restart can make the System
-            // module re-announce Idle without ever reaching an end state above, which would otherwise leave
-            // connectors disabled for the install stuck Unavailable. Kept out of is_firmware_status_end_state()
-            // on purpose: that predicate also gates the all-connectors-unavailable guard reset in
-            // ChargePoint::on_firmware_update_status_notification, and Idle must not re-arm that guard.
+            // An update that dies or an OCPP restart can re-announce Idle without ever reaching an end state,
+            // which would leave the connectors disabled for the install stuck Unavailable. Not folded into
+            // is_firmware_status_end_state(), because that also resets the all-connectors-unavailable guard,
+            // which Idle must not do
             this->restore_all_connector_states();
         }
 
@@ -108,16 +106,15 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
                 this->context.message_dispatcher.dispatch_call_async(call);
             }
 
-            // Pre-install trigger: disable connectors when the status matches the status expected right before
-            // installing (Downloaded / SignatureVerified). Resolves to today's default-true behavior when the
-            // caller did not explicitly specify a value.
+            // Disabling the connectors right before installing is the default when the caller did not specify
             if (disable_connectors_during_install.value_or(true)) {
                 this->change_all_connectors_to_unavailable_for_firmware_update();
             }
         }
     }
 
-    // Explicitly allow disabling the connectors when an update is scheduled
+    // Opt-in only, because an install can stay scheduled for a long time and the connectors would be unavailable
+    // for all of it
     if (firmware_update_status == FirmwareStatusEnum::InstallScheduled and
         disable_connectors_during_install.value_or(false)) {
         this->change_all_connectors_to_unavailable_for_firmware_update(is_duplicate);
@@ -166,10 +163,8 @@ void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call
 
     if ((response.status == UpdateFirmwareStatusEnum::Accepted) or
         (response.status == UpdateFirmwareStatusEnum::AcceptedCanceled)) {
-        // A new cycle starts here. Drop any non-persistent change a previous cycle queued behind a running
-        // transaction (see change_all_connectors_to_unavailable_for_firmware_update): if that cycle died without
-        // ever reaching a terminal status, the stale entry must not survive to force the EVSE Inoperative once
-        // the transaction eventually ends.
+        // Drop what a previous cycle queued behind a running transaction, so a cycle that died without reaching
+        // an end state cannot force the EVSE Inoperative once that transaction ends
         this->availability.drop_non_persistent_scheduled_changes();
         if (call.msg.firmware.signingCertificate.has_value() or call.msg.firmware.signature.has_value()) {
             this->firmware_status_before_installing = FirmwareStatusEnum::SignatureVerified;
@@ -177,8 +172,8 @@ void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call
             this->firmware_status_before_installing = FirmwareStatusEnum::Downloaded;
         }
 
-        // A new update cycle starts: forget the previous cycle's reported status so a dead cycle's leftover status
-        // cannot suppress this cycle's first notification as a duplicate.
+        // Forget the previous cycle's status, so its leftovers cannot suppress this cycle's first notification
+        // as a duplicate
         this->firmware_status = FirmwareStatusEnum::Idle;
         this->firmware_status_id = std::nullopt;
     }
@@ -200,10 +195,9 @@ void FirmwareUpdate::change_all_connectors_to_unavailable_for_firmware_update(bo
     ChangeAvailabilityRequest msg;
     msg.operationalStatus = OperationalStatusEnum::Inoperative;
 
-    // The first (non-duplicate) application of a cycle always disables unconditionally, since a connector may
-    // legitimately still be Operative at that point. A duplicate/echoed notification re-runs this and must not
-    // silently revert a connector that a CSMS ChangeAvailability has since made Operative, so it only reasserts
-    // Inoperative on connectors that are not currently Operative.
+    // A duplicate notification must not revert a connector that a CSMS ChangeAvailability has made Operative in
+    // the meantime. The first notification of a cycle disables unconditionally, because the connectors are
+    // legitimately still Operative at that point
     const auto disable_connectors = [is_duplicate_notification](EvseInterface& evse) {
         const std::uint32_t number_of_connectors = evse.get_number_of_connectors();
         for (std::uint32_t i = 1; i <= number_of_connectors; ++i) {
@@ -238,10 +232,7 @@ void FirmwareUpdate::change_all_connectors_to_unavailable_for_firmware_update(bo
                 EVSE e;
                 e.id = evse.get_id();
                 msg.evse = e;
-                // NOTE: this unconditionally overwrites any existing scheduled entry for this evse_id with
-                // persist=false, even one that began as a genuine persist=true CSMS ChangeAvailability request.
-                // That is a separate, narrower issue than the non-persistent-entry cleanup this class does
-                // elsewhere (see drop_non_persistent_scheduled_changes()) and is left untouched here.
+                // TODO: This overwrites a pending persist=true CSMS ChangeAvailability request with persist=false
                 this->availability.set_scheduled_change_availability_requests(evse.get_id(), {msg, false});
             }
         }
@@ -256,9 +247,8 @@ void FirmwareUpdate::restore_all_connector_states() {
             evse.restore_connector_operative_status(static_cast<std::int32_t>(i));
         }
     }
-    // Drop any non-persistent ChangeAvailability(Inoperative) this cycle queued behind a running transaction
-    // (see change_all_connectors_to_unavailable_for_firmware_update): once the cycle has reached a terminal
-    // status, that entry must not survive to force the EVSE Inoperative when the transaction later ends.
+    // The cycle is over, so a change it queued behind a running transaction must not force the EVSE Inoperative
+    // once that transaction ends
     this->availability.drop_non_persistent_scheduled_changes();
 }
 

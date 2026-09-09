@@ -181,11 +181,9 @@ void ChargePoint::on_firmware_update_status_notification(std::int32_t request_id
                                                          const FirmwareStatusEnum& firmware_update_status,
                                                          std::optional<bool> disable_connectors_during_install) {
     if (is_firmware_status_end_state(firmware_update_status)) {
-        // The update is over, reset the state to Idle
         this->all_connectors_unavailable_notification_state = AllConnectorsUnavailableNotificationState::Idle;
     } else if (firmware_update_status != FirmwareStatusEnum::Idle) {
-        // Whenever there is an update in progress (firmware_update_status is non-idle),
-        // set the notification state to non-Idle (Waiting) as well
+        // Only arm from Idle, so a cycle that has already notified is not armed again
         auto expected = AllConnectorsUnavailableNotificationState::Idle;
         this->all_connectors_unavailable_notification_state.compare_exchange_strong(
             expected, AllConnectorsUnavailableNotificationState::Waiting);
@@ -656,7 +654,7 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     this->meter_values = std::make_unique<MeterValues>(*this->functional_block_context);
 
-    // Wrap the all_connectors_unavailable_callback so that it can fire only once per update cycle
+    // Wrap all_connectors_unavailable_callback so it can only fire once per update cycle
     std::optional<AllConnectorsUnavailableCallback> guarded_all_connectors_unavailable_callback;
     if (this->callbacks.all_connectors_unavailable_callback.has_value()) {
         guarded_all_connectors_unavailable_callback = [this]() {
@@ -687,23 +685,24 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         *functional_block_context, *this->meter_values, this->callbacks.tariff_message_callback,
         this->callbacks.set_running_cost_callback, this->callbacks.default_price_callback, this->io_context);
 
-    // Wrap update_firmware_request_callback so that only a request the callback accepts (re-)arms the guard for the
-    // update cycle it starts; a rejected request must not disturb a still running update.
+    // Arm the guard only for a request the application accepts, so a rejected one does not disturb a running
+    // update
     UpdateFirmwareRequestCallback update_firmware_request_callback = this->callbacks.update_firmware_request_callback;
     if (update_firmware_request_callback) {
         update_firmware_request_callback = [this](const UpdateFirmwareRequest& request) {
             const auto response = this->callbacks.update_firmware_request_callback(request);
             if (response.status == UpdateFirmwareStatusEnum::Accepted or
                 response.status == UpdateFirmwareStatusEnum::AcceptedCanceled) {
-                this->all_connectors_unavailable_notification_state = AllConnectorsUnavailableNotificationState::Waiting;
+                this->all_connectors_unavailable_notification_state =
+                    AllConnectorsUnavailableNotificationState::Waiting;
             }
             return response;
         };
     }
 
-    this->firmware_update = std::make_unique<FirmwareUpdate>(*this->functional_block_context, *this->availability,
-                                                              *this->security, update_firmware_request_callback,
-                                                              guarded_all_connectors_unavailable_callback);
+    this->firmware_update =
+        std::make_unique<FirmwareUpdate>(*this->functional_block_context, *this->availability, *this->security,
+                                         update_firmware_request_callback, guarded_all_connectors_unavailable_callback);
 
     this->transaction = std::make_unique<TransactionBlock>(
         *this->functional_block_context, *this->message_queue, *this->authorization, *this->availability,
@@ -849,8 +848,6 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
             this->authorization->handle_message(message);
             break;
         case MessageType::UpdateFirmware:
-            // The guard is (re-)armed only if the request is accepted; see the wrapped
-            // update_firmware_request_callback set up in initialize().
             this->firmware_update->handle_message(message);
             break;
         case MessageType::ReserveNow:

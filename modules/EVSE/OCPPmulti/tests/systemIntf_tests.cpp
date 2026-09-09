@@ -235,7 +235,7 @@ TEST_F(GenericOcppRequiresTester, subscribeSupportedEnergyTransferModes) {
     update.request_id = 128847;
     update.firmware_update_status = FirmwareUpdateStatusEnum::Downloading;
 
-    // No firmware_update_metadata is set, so the flag is forwarded unset and libocpp applies its phase defaults.
+    // No firmware_update_metadata is set, so the flag is forwarded unset and libocpp applies its defaults
     EXPECT_CALL(chargepoint, on_firmware_update_status_notification(update.request_id, FirmwareStatusEnum::Downloading,
                                                                     std::optional<bool>{}))
         .Times(1);

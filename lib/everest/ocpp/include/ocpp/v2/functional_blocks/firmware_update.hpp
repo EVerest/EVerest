@@ -18,8 +18,6 @@ struct UpdateFirmwareResponse;
 using UpdateFirmwareRequestCallback = std::function<UpdateFirmwareResponse(const UpdateFirmwareRequest& request)>;
 using AllConnectorsUnavailableCallback = std::function<void()>;
 
-/// \brief Checks whether the given firmware status is one of the terminal (end) states of a firmware update
-/// (DownloadFailed, InstallationFailed, Installed, InstallVerificationFailed, InvalidSignature).
 bool is_firmware_status_end_state(const FirmwareStatusEnum& status);
 
 class FirmwareUpdateInterface : public MessageHandlerInterface {
@@ -65,10 +63,8 @@ private: // Functions
     /// change
     /// If all connectors are unavailable signal to the firmware updater that installation of the firmware update can
     /// proceed
-    /// \param is_duplicate_notification True when this is triggered by a duplicate/echoed status notification for a
-    ///        cycle that already disabled connectors once; a connector a CSMS has since made Operative is then left
-    ///        alone instead of being silently forced back to Inoperative. The first (non-duplicate) application of a
-    ///        cycle always disables unconditionally.
+    /// \param is_duplicate_notification When true, connectors a CSMS has since made Operative are left alone
+    ///        instead of being forced back to Inoperative
     void change_all_connectors_to_unavailable_for_firmware_update(bool is_duplicate_notification = false);
 
     /// \brief Restores all connectors to their persisted state

@@ -802,8 +802,6 @@ public:
     std::unique_ptr<SmartChargingMock> smart_charging;
 };
 
-// Test the single-fire guard around callbacks.all_connectors_unavailable_callback. Shared between the transaction and
-// availability functional blocks
 TEST_F(ChargePointCommonTestFixtureV2, FirmwareUpdate_AllConnectorsUnavailableGuardResetsOnFirmwareEndState) {
     configure_callbacks_with_mocks();
     testing::MockFunction<void()> all_connectors_unavailable_callback_mock;
@@ -815,30 +813,27 @@ TEST_F(ChargePointCommonTestFixtureV2, FirmwareUpdate_AllConnectorsUnavailableGu
         TEMP_OUTPUT_PATH, std::make_shared<EvseSecurityMock>(), callbacks);
     charge_point->start();
 
-    // First firmware update cycle: opting in on InstallScheduled with no active transaction disables all
-    // connectors and fires the callback exactly once.
+    // The first cycle: opting in on InstallScheduled with no active transaction fires the callback once
     EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
     charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
     testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
 
-    // A duplicate notification must not re-fire the callback: the guard still holds.
+    // A duplicate notification must not re-fire the callback
     EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(0);
     charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
     testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
 
-    // Reaching a firmware end state (Installed) resets the guard for the next update cycle.
+    // Reaching an end state resets the guard for the next update cycle
     charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::Installed, std::nullopt);
 
-    // Second update cycle: the guard was reset, so the callback can fire again.
+    // The guard was reset, so the second cycle can fire the callback again
     EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
     charge_point->on_firmware_update_status_notification(2, FirmwareStatusEnum::InstallScheduled, true);
 
     charge_point->stop();
 }
 
-// A new UpdateFirmware.req starts a new update cycle and must re-arm the single-fire guard around
-// callbacks.all_connectors_unavailable_callback, so an update that died without reporting a terminal status
-// cannot leave the guard latched for the next cycle.
+// An update that died without reporting a terminal status must not leave the guard latched for the next cycle
 TEST_F(ChargePointCommonTestFixtureV2, FirmwareUpdate_AllConnectorsUnavailableGuardResetsOnUpdateFirmwareRequest) {
     configure_callbacks_with_mocks();
     testing::MockFunction<void()> all_connectors_unavailable_callback_mock;
@@ -850,14 +845,13 @@ TEST_F(ChargePointCommonTestFixtureV2, FirmwareUpdate_AllConnectorsUnavailableGu
         TEMP_OUTPUT_PATH, std::make_shared<EvseSecurityMock>(), callbacks);
     charge_point->start();
 
-    // Latch the guard: opting in on InstallScheduled with no active transaction fires the callback exactly once,
-    // a duplicate notification does not re-fire it.
+    // Latch the guard, a duplicate notification shows it holds
     EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
     charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
     charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
     testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
 
-    // The update dies without ever reporting a terminal status; the CSMS then requests a new update.
+    // The update dies without ever reporting a terminal status, then the CSMS requests a new update
     UpdateFirmwareResponse update_firmware_response;
     update_firmware_response.status = UpdateFirmwareStatusEnum::Accepted;
     EXPECT_CALL(update_firmware_request_callback_mock, Call(testing::_))
@@ -882,16 +876,15 @@ TEST_F(ChargePointCommonTestFixtureV2, FirmwareUpdate_AllConnectorsUnavailableGu
 
     charge_point->handle_message(enhanced_message);
 
-    // The request re-armed the guard: a new opt-in trigger fires the callback again.
+    // The request re-armed the guard, so a new opt-in trigger fires the callback again
     EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
     charge_point->on_firmware_update_status_notification(2, FirmwareStatusEnum::InstallScheduled, true);
 
     charge_point->stop();
 }
 
-// FAILS today - ChargePoint::handle_message re-arms the guard for every incoming UpdateFirmware.req, before the
-// request has been validated and answered. A request the charge point rejects does not start a new update cycle,
-// so it must not touch the state of the update that is still running.
+// A request the charge point rejects starts no new update cycle, so it must not touch the state of the update
+// that is still running
 TEST_F(ChargePointCommonTestFixtureV2, FirmwareUpdate_RejectedUpdateFirmwareRequestDoesNotReArmGuard) {
     configure_callbacks_with_mocks();
     testing::MockFunction<void()> all_connectors_unavailable_callback_mock;
@@ -903,12 +896,12 @@ TEST_F(ChargePointCommonTestFixtureV2, FirmwareUpdate_RejectedUpdateFirmwareRequ
         TEMP_OUTPUT_PATH, std::make_shared<EvseSecurityMock>(), callbacks);
     charge_point->start();
 
-    // An update is running and has already notified once.
+    // An update is running and has already notified once
     EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
     charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
     testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
 
-    // The CSMS sends a request the charge point rejects, so no new update cycle is started.
+    // The CSMS sends a request the charge point rejects, so no new cycle is started
     UpdateFirmwareResponse update_firmware_response;
     update_firmware_response.status = UpdateFirmwareStatusEnum::Rejected;
     EXPECT_CALL(update_firmware_request_callback_mock, Call(testing::_))
@@ -933,7 +926,7 @@ TEST_F(ChargePointCommonTestFixtureV2, FirmwareUpdate_RejectedUpdateFirmwareRequ
 
     charge_point->handle_message(enhanced_message);
 
-    // The still-running update notifies again: the guard must still be latched from its first notification.
+    // The still-running update notifies again, so the guard must still be latched from its first notification
     EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(0);
     charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
 
