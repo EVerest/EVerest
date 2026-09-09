@@ -101,20 +101,29 @@ void append_le32(std::vector<std::uint8_t>& out, std::uint32_t value) {
 
 TEST(heartbeat_reply, the_wire_layout_is_frozen) {
     EXPECT_EQ(sizeof(CbLinkStatusPacket), 8u);
-    EXPECT_EQ(sizeof(CbHeartbeatReplyPacket), 62u);
-    // The link status sits after the 53 bytes of measurements, the latched role after it.
-    EXPECT_EQ(offsetof(CbHeartbeatReplyPacket, link_status), 53u);
-    EXPECT_EQ(offsetof(CbHeartbeatReplyPacket, latched_cb_type), 61u);
+    EXPECT_EQ(sizeof(CbHeartbeatReplyPacket), 71u);
+    // After the 53 bytes of measurements come the 9 bytes of session ownership (cb-session-v1:
+    // session_status, owner_session_id, owner_ip_v4), then the link status, then the latched role.
+    EXPECT_EQ(offsetof(CbHeartbeatReplyPacket, session_status), 53u);
+    EXPECT_EQ(offsetof(CbHeartbeatReplyPacket, owner_session_id), 54u);
+    EXPECT_EQ(offsetof(CbHeartbeatReplyPacket, owner_ip_v4), 58u);
+    EXPECT_EQ(offsetof(CbHeartbeatReplyPacket, link_status), 62u);
+    EXPECT_EQ(offsetof(CbHeartbeatReplyPacket, latched_cb_type), 70u);
     // 2 byte CbStructType + the payload: what a datagram has to measure to be accepted.
-    EXPECT_EQ(sizeof(wire_reply), 64u);
+    EXPECT_EQ(sizeof(wire_reply), 73u);
 }
 
 TEST(heartbeat_reply, the_config_layout_is_frozen) {
-    // The config grows by cb_type as its last field, which is what the version bump announces.
+    // The config grows by station_id and cb_type as its last fields, which is what the version bump
+    // announces (together with the cb-session-v1 heartbeat trailer, see below).
     EXPECT_EQ(CB_CONFIG_VERSION, 6);
     EXPECT_EQ(sizeof(CbConfig), 226u);
+    EXPECT_EQ(offsetof(CbConfig, station_id), 224u);
     EXPECT_EQ(offsetof(CbConfig, cb_type), 225u);
-    EXPECT_EQ(sizeof(CbHeartbeatPacket), 226u);
+    // The heartbeat is the config plus session_id (4) and session_flags (1).
+    EXPECT_EQ(offsetof(CbHeartbeatPacket, session_id), 226u);
+    EXPECT_EQ(offsetof(CbHeartbeatPacket, session_flags), 230u);
+    EXPECT_EQ(sizeof(CbHeartbeatPacket), 231u);
 }
 
 TEST(heartbeat_reply, the_message_ids_are_frozen) {
@@ -157,6 +166,9 @@ TEST(heartbeat_reply, the_embedded_link_status_is_read_from_the_right_offset) {
     append_le16(buffer, 45);                                 // temperature_PT1000_C[0]
     append_le16(buffer, 46);                                 // temperature_PT1000_C[1]
     append_le32(buffer, 123456);                             // uptime_ms
+    buffer.push_back(0);                                     // session_status (CBSS_Accepted)
+    append_le32(buffer, 0xA5A5F00D);                         // owner_session_id
+    append_le32(buffer, 0xC0A80101);                         // owner_ip_v4 (192.168.1.1)
     // CbLinkStatusPacket
     buffer.push_back(CB_LINK_TECH_SPE); // technology
     buffer.push_back(1);                // phy_operational
@@ -178,6 +190,10 @@ TEST(heartbeat_reply, the_embedded_link_status_is_read_from_the_right_offset) {
     EXPECT_EQ(reply.data.temperature_mcu_C, 42);
     EXPECT_EQ(reply.data.temperature_PT1000_C[1], 46);
     EXPECT_EQ(reply.data.uptime_ms, 123456);
+    // The session-ownership trailer that sits between the measurements and the link status.
+    EXPECT_EQ(reply.data.session_status, static_cast<uint8_t>(CbSessionStatus::CBSS_Accepted));
+    EXPECT_EQ(reply.data.owner_session_id, 0xA5A5F00Du);
+    EXPECT_EQ(reply.data.owner_ip_v4, 0xC0A80101u);
     // The payload this feature exists for.
     EXPECT_EQ(reply.data.link_status.technology, CB_LINK_TECH_SPE);
     EXPECT_EQ(reply.data.link_status.phy_operational, 1);

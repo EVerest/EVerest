@@ -11,9 +11,30 @@
 #include <iostream>
 #include <memory>
 #include <protocol/cb_management.h>
+#include <random>
+#include <string>
 
 namespace {
 const std::uint16_t s_to_ms_factor = 1000;
+
+// cb-session-v1: random nonzero id per tool instance; a new id makes the MCU hand the session
+// over. 0 = legacy sender.
+std::uint32_t generate_session_id() {
+    std::random_device rd;
+    std::uint32_t id = 0;
+    while (id == 0) {
+        id = (static_cast<std::uint32_t>(rd()) << 16) ^ static_cast<std::uint32_t>(rd());
+    }
+    return id;
+}
+
+std::string format_ipv4(std::uint32_t ip) {
+    if (ip == 0) {
+        return "unknown";
+    }
+    return std::to_string((ip >> 24) & 0xff) + "." + std::to_string((ip >> 16) & 0xff) + "." +
+           std::to_string((ip >> 8) & 0xff) + "." + std::to_string(ip & 0xff);
+}
 } // namespace
 
 namespace charge_bridge {
@@ -30,7 +51,9 @@ heartbeat_service::heartbeat_service(heartbeat_config const& config,
     m_ready_notify(ready_notify) {
 
     m_identifier = config.cb + "/" + config.item;
-    std::memcpy(&m_config_message.data, &config.cb_config, sizeof(CbConfig));
+    std::memcpy(&m_config_message.data.module_config, &config.cb_config, sizeof(CbConfig));
+    m_config_message.data.session_id = generate_session_id();
+    m_config_message.data.session_flags = config.force_takeover ? CB_SESSION_FLAG_FORCE_TAKEOVER : 0;
     m_config_message.type = CbStructType::CST_HostToCb_Heartbeat;
     m_heartbeat_interval = std::chrono::milliseconds(config.interval_s * s_to_ms_factor);
     m_connection_to = std::chrono::milliseconds(config.connection_to_s * s_to_ms_factor);
@@ -206,6 +229,24 @@ void heartbeat_service::handle_heartbeat_reply(everest::lib::io::udp::udp_payloa
         return;
     }
     std::memcpy(&data, payload.buffer.data(), sizeof(data));
+
+    // Owned by another host's session (cb-session-v1): not liveness, and none of the measurement,
+    // link-status or role fields below are valid in such a reply. Report the owner once per episode.
+    if (data.data.session_status == static_cast<uint8_t>(CbSessionStatus::CBSS_RejectedBusy)) {
+        if (not m_session_rejected) {
+            utilities::print_error(m_identifier, "HEARTBEAT/UDP", -1)
+                << "ChargeBridge is owned by another host (" << format_ipv4(data.data.owner_ip_v4) << ", session "
+                << std::hex << data.data.owner_session_id << std::dec
+                << "); set heartbeat.force_takeover to steal it" << std::endl;
+            m_session_rejected = true;
+        }
+        return;
+    }
+    if (m_session_rejected) {
+        utilities::print_error(m_identifier, "HEARTBEAT/UDP", 0) << "ChargeBridge session accepted" << std::endl;
+        m_session_rejected = false;
+    }
+
     m_last_heartbeat_reply = std::chrono::steady_clock::now();
     auto mcu_current = static_cast<uint32_t>(data.data.uptime_ms);
     if (utilities::mcu_rebooted(m_mcu_timestamp, mcu_current)) {
@@ -253,7 +294,7 @@ void heartbeat_service::handle_heartbeat_reply(everest::lib::io::udp::udp_payloa
     // anything, so it produces no report at all.
     m_latched_cb_type = data.data.latched_cb_type;
     m_link_technology = data.data.link_status.technology;
-    auto const configured = m_config_message.data.cb_type;
+    auto const configured = m_config_message.data.module_config.cb_type;
     if (evaluate_role_latch(configured, m_latched_cb_type) == role_latch_state::mismatched and
         not m_role_mismatch_reported) {
         m_role_mismatch_reported = true;

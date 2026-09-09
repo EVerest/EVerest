@@ -18,16 +18,19 @@ CB_STATIC_ASSERT((sizeof(CbFirmwarePacket) == 1 + 2 + 2 + 1024 && sizeof(CbFirmw
                  "Wrong CB type size!");
 CB_STATIC_ASSERT((sizeof(CbFirmwareEnd) == 4 + 1 + (128 + 1) && sizeof(CbFirmwareEnd) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");
-// The trailing +1 is CbConfig.cb_type (charge_bridge.type), CB_CONFIG_VERSION 6.
-CB_STATIC_ASSERT((sizeof(CbHeartbeatPacket) == 225 + 1 && sizeof(CbHeartbeatPacket) <= CB_MAX_CB_STRUCT_SIZE),
+// 224 bytes of CbConfig v4, + 4 + 1 session_id/session_flags (cb-session-v1, protocol v5),
+// + 1 CbConfig.station_id, + 1 CbConfig.cb_type (charge_bridge.type) -> CB_CONFIG_VERSION 6.
+CB_STATIC_ASSERT((sizeof(CbHeartbeatPacket) == 224 + 4 + 1 + 1 + 1 && sizeof(CbHeartbeatPacket) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");
-CB_STATIC_ASSERT(sizeof(CbConfig) == sizeof(CbHeartbeatPacket), "CbHeartbeatPacket is just a CbConfig!");
+CB_STATIC_ASSERT(sizeof(CbHeartbeatPacket) == sizeof(CbConfig) + 4 + 1,
+                 "CbHeartbeatPacket is a CbConfig plus the session_id/session_flags trailer!");
 CB_STATIC_ASSERT(sizeof(CbLinkTechnology) == 1, "Wrong CB type size!");
 CB_STATIC_ASSERT((sizeof(CbLinkStatusPacket) == 8 && sizeof(CbLinkStatusPacket) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");
-// 53 bytes of measurements + the embedded 8 byte CbLinkStatusPacket + 1 byte latched_cb_type
-CB_STATIC_ASSERT((sizeof(CbHeartbeatReplyPacket) == 53 + sizeof(CbLinkStatusPacket) + 1 &&
-                  sizeof(CbHeartbeatReplyPacket) == 62 &&
+// 53 bytes of measurements + 1 + 4 + 4 session ownership (session_status/owner_session_id/owner_ip_v4)
+// + the embedded 8 byte CbLinkStatusPacket + 1 byte latched_cb_type
+CB_STATIC_ASSERT((sizeof(CbHeartbeatReplyPacket) == 53 + 1 + 4 + 4 + sizeof(CbLinkStatusPacket) + 1 &&
+                  sizeof(CbHeartbeatReplyPacket) == 71 &&
                   sizeof(CbHeartbeatReplyPacket) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");
 CB_STATIC_ASSERT((sizeof(CbDebugUartLinePacket) == 2 + CB_DEBUG_UART_LINE_MAX &&
