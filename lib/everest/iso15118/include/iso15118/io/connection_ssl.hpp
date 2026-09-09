@@ -53,4 +53,8 @@ private:
     void handle_connect();
     void handle_data();
 };
+
+std::unique_ptr<IConnection> make_tls_connection(PollManager& poll_manager, const std::string& interface_name,
+                                                  const config::SSLConfig& ssl_config);
+
 } // namespace iso15118::io

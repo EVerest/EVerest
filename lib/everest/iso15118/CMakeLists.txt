@@ -33,6 +33,7 @@ option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
 option(ISO15118_INSTALL "Enable install target" ${EVC_MAIN_PROJECT})
 option(DISABLE_ISO15118_LOCAL_DEPENDENCIES "Disable local dependency lookup for libiso15118" OFF)
 option(ISO15118_USE_EXPORTED_BUILD "Use (experimental) exported build of libiso15118" OFF)
+option(ISO15118_ENABLE_TLS "Build the OpenSSL-backed TLS connection (io::ConnectionSSL) and its evse_security/tls/log dependencies" ON)
 option(${PROJECT_NAME}_USE_PYTHON_VENV "Use python venv for pip install targets" ON)
 
 if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})

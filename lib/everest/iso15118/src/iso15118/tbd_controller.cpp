@@ -358,7 +358,7 @@ void TbdController::handle_sdp_server_input() {
     auto connection = [this](bool secure_connection) -> std::unique_ptr<io::IConnection> {
         try {
             if (secure_connection) {
-                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, config.ssl);
+                return io::make_tls_connection(poll_manager, interface_name, config.ssl);
             }
             return std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
         } catch (const std::runtime_error& e) {

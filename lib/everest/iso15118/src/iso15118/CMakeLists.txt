@@ -87,16 +87,23 @@ target_link_libraries(iso15118
         Threads::Threads
 )
 
-target_link_libraries(iso15118
-    PRIVATE
-        OpenSSL::SSL
-        OpenSSL::Crypto
-        everest::tls
-)
-target_sources(iso15118
-    PRIVATE
-    io/connection_ssl.cpp
-)
+if (ISO15118_ENABLE_TLS)
+    target_link_libraries(iso15118
+        PRIVATE
+            OpenSSL::SSL
+            OpenSSL::Crypto
+            everest::tls
+    )
+    target_sources(iso15118
+        PRIVATE
+        io/connection_ssl.cpp
+    )
+else()
+    target_sources(iso15118
+        PRIVATE
+        io/connection_ssl_stub.cpp
+    )
+endif()
 
 # FIXME (aw): do we want to have this public here?
 target_compile_features(iso15118 PUBLIC cxx_std_17)

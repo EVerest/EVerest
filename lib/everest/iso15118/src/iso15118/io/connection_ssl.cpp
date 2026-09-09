@@ -91,7 +91,7 @@ tls::Server::config_t make_tls_server_config(const config::SSLConfig& cfg, const
     out.socket = listen_fd;
     out.ipv6_only = true;
     out.tls_key_logging = cfg.enable_tls_key_logging;
-    out.tls_key_logging_path = cfg.tls_key_logging_path.string();
+    out.tls_key_logging_path = cfg.tls_key_logging_path;
     out.enforce_tls_1_3 = cfg.enforce_tls_1_3;
     if (cfg.enable_tls_key_logging) {
         // tls::Server records cfg.host as the keylog UDP interface; mirror today's behavior
@@ -321,6 +321,11 @@ void ConnectionSSL::close() {
     logf_info("TLS connection closed");
 
     call_if_available(event_callback, ConnectionEvent::CLOSED);
+}
+
+std::unique_ptr<IConnection> make_tls_connection(PollManager& poll_manager, const std::string& interface_name,
+                                                  const config::SSLConfig& ssl_config) {
+    return std::make_unique<ConnectionSSL>(poll_manager, interface_name, ssl_config);
 }
 
 } // namespace iso15118::io
