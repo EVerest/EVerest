@@ -25,6 +25,8 @@ enum class StateID {
     ServiceDetail,
     ServiceDiscovery,
     PaymentServiceSelection,
+    ChargeParameterDiscovery,   // AC + DC
+    ChargingStatus,             // AC charge loop
     WeldingDetection,
     CableCheck,
     PowerDelivery,
