@@ -39,19 +39,23 @@ active_modules:
           module_id: token_validator
     module: Auth
   ev_manager:
+    module: EvSimulator
     config_module:
       connector_id: 1
+      max_current_a: 16
+      three_phases: true
+      cfg_communication_check_to_s: 0
+      cfg_heartbeat_interval_ms: 1000
+      tick_interval_ms: 100
     connections:
-      ev:
-        - implementation_id: ev
-          module_id: iso15118_car
       ev_board_support:
-        - implementation_id: ev_board_support
-          module_id: connector_1_powerpath
+        - { module_id: connector_1_powerpath, implementation_id: ev_board_support }
+      ev:
+        - { module_id: iso15118_car,          implementation_id: ev }
       slac:
-        - implementation_id: ev
-          module_id: slac
-    module: EvSimulator
+        - { module_id: slac,                  implementation_id: ev }
+      kvs:
+        - { module_id: persistent_store,      implementation_id: main }
   energy_manager:
     config_module:
       switch_3ph1ph_while_charging_mode: Both
@@ -69,7 +73,6 @@ active_modules:
     module: EnergyManager
   connector_1:
     config_module:
-      enable_nodered_interface: true
       ac_enforce_hlc: false
       ac_hlc_enabled: true
       ac_hlc_use_5percent: false
