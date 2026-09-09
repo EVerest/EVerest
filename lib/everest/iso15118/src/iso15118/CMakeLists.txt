@@ -17,6 +17,7 @@ target_sources(iso15118
         io/poll_manager.cpp
         io/sdp_packet.cpp
         io/sdp_server.cpp
+        io/sha_hash.cpp
         io/socket_helper.cpp
 
         session/feedback.cpp
@@ -97,13 +98,11 @@ if (ISO15118_ENABLE_TLS)
     target_sources(iso15118
         PRIVATE
         io/connection_ssl.cpp
-        io/sha_hash_openssl.cpp
     )
 else()
     target_sources(iso15118
         PRIVATE
         io/connection_ssl_stub.cpp
-        io/sha_hash_stub.cpp
     )
 endif()
 
