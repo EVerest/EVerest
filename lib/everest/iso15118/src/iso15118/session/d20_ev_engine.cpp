@@ -6,6 +6,7 @@
 #include <utility>
 
 #include <iso15118/d20/ev/state/session_setup.hpp>
+#include <iso15118/detail/helper.hpp>
 
 #include <iso15118/message/variant.hpp>
 
@@ -49,6 +50,15 @@ void D20EvEngine::on_control_event(const d20::ev::ControlEvent& event) {
 }
 
 void D20EvEngine::on_timeout(d20::TimeoutType timeout) {
+    // PERFORMANCE is the communication-setup guard owned by EvSession; it is stopped before this engine
+    // is created. If it fires anyway, that is a bookkeeping bug in the session layer, not a protocol
+    // timeout of the active state -- name it instead of letting the state report a message timeout.
+    if (timeout == d20::TimeoutType::PERFORMANCE) {
+        logf_error("Communication setup timeout fired while the ISO 15118-20 session engine is running "
+                   "(guard was never stopped) - terminating session");
+        ctx.session_stopped = true;
+        return;
+    }
     ctx.set_active_timeout(timeout);
     [[maybe_unused]] const auto res = fsm.feed(d20::ev::Event::TIMEOUT);
 }

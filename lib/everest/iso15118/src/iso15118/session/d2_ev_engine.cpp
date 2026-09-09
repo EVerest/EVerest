@@ -6,6 +6,7 @@
 #include <utility>
 
 #include <iso15118/d2/ev/state/session_setup.hpp>
+#include <iso15118/detail/helper.hpp>
 
 #include <iso15118/message_2/variant.hpp>
 
@@ -58,6 +59,14 @@ void D2EvEngine::on_control_event(const d20::ev::ControlEvent& event) {
 }
 
 void D2EvEngine::on_timeout(d20::TimeoutType timeout) {
+    // See D20EvEngine::on_timeout: the communication-setup guard belongs to EvSession and must be stopped
+    // before any engine exists.
+    if (timeout == d20::TimeoutType::PERFORMANCE) {
+        logf_error("Communication setup timeout fired while the session engine is running "
+                   "(guard was never stopped) - terminating session");
+        ctx.session_stopped = true;
+        return;
+    }
     ctx.set_active_timeout(timeout);
     [[maybe_unused]] const auto res = fsm.feed(d2::ev::Event::TIMEOUT);
 }

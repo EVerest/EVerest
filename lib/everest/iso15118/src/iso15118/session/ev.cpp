@@ -125,14 +125,22 @@ EvSession::EvSession(std::unique_ptr<io::IConnection> connection_, session::EvSe
     feedback(callbacks_) {
 
     next_session_event = offset_time_point_by_ms(get_current_time_point(), SESSION_IDLE_TIMEOUT_MS);
-    connection->set_event_callback([this](io::ConnectionEvent event) { this->handle_connection_event(event); });
 
     // Guard everything up to the first request (TCP connect, TLS handshake, waiting for OPEN) with the
     // V2G_EVCC_CommunicationSetup_Timeout. Until the handshake completes, state.connected is false and
     // poll() skips all IO handling -- without this guard a SECC that accepts TCP and then stalls the
     // TLS handshake (or a MITM dripping bytes) would wedge the session forever. Stopped in
     // start_supported_app_protocol(), which arms the per-message SEQUENCE timeout instead.
+    //
+    // MUST be armed BEFORE the event callback is registered: a plain-TCP connection is already
+    // established at this point and ConnectionClientPlain::set_event_callback() delivers ACCEPTED and
+    // OPEN synchronously, i.e. start_supported_app_protocol() -- and its stop of this guard -- runs
+    // from inside set_event_callback(). Armed afterwards, the guard would never be stopped and would
+    // fire 20 s into the session as a bogus message timeout in whatever state is active then (bench-
+    // found 2026-09-09 against a non-TLS SECC: the DC charge loop was cut after exactly 20 s). TLS
+    // connections never showed it because their OPEN arrives asynchronously after the handshake.
     timeouts.start_timeout(d20::TimeoutType::PERFORMANCE, d20::ev::COMMUNICATION_SETUP_TIMEOUT_MS);
+    connection->set_event_callback([this](io::ConnectionEvent event) { this->handle_connection_event(event); });
 }
 
 EvSession::~EvSession() = default;
