@@ -766,6 +766,13 @@ void OCPP201::ready() {
                 conversions::to_everest_transaction_event_response(transaction_event_response);
             ocpp_transaction_event_response.original_transaction_event = ocpp_transaction_event;
             this->p_ocpp_generic->publish_ocpp_transaction_event_response(ocpp_transaction_event_response);
+            // The final cost of a transaction comes with the response to its Ended event. libocpp hands the
+            // response to this callback before it processes the cost, so the id tag is only dropped here when no
+            // cost follows.
+            if (transaction_event.eventType == ocpp::v2::TransactionEventEnum::Ended and
+                !transaction_event_response.totalCost.has_value()) {
+                this->transaction_id_tags.pop(transaction_event.transactionInfo.transactionId.get());
+            }
             if (transaction_event_response.idTokenInfo.has_value() and transaction_event.evse.has_value()) {
                 types::authorization::ValidationResultUpdate result_update;
                 result_update.validation_result =
@@ -854,8 +861,11 @@ void OCPP201::ready() {
                     EVLOG_error << e.what();
                 }
             }
-            const types::session_cost::SessionCost cost =
+            types::session_cost::SessionCost cost =
                 ocpp_conversions::create_session_cost(running_cost, number_of_decimals, currency);
+            if (running_cost.state == ocpp::RunningCostState::Finished) {
+                cost.id_tag = this->transaction_id_tags.pop(running_cost.transaction_id);
+            }
             this->p_session_cost->publish_session_cost(cost);
         };
 
@@ -1533,6 +1543,9 @@ void OCPP201::process_session_started(const int32_t evse_id, const int32_t conne
     transaction_data->remote_start_id = remote_start_id;
     transaction_data->reservation_id = reservation_id;
     this->transaction_handler->add_transaction_data(evse_id, transaction_data);
+    if (session_started.id_tag.has_value()) {
+        this->transaction_id_tags.push(transaction_data->session_id, session_started.id_tag.value());
+    }
 
     const auto tx_event_effect = this->transaction_handler->submit_event(evse_id, tx_event);
     this->process_tx_event_effect(evse_id, tx_event_effect, session_event);
@@ -1596,6 +1609,7 @@ void OCPP201::process_transaction_started(const int32_t evse_id, const int32_t c
         update_evcc_id_token(id_token, evse_evcc_id_handle->at(evse_id), ocpp_protocol_version);
     }
     transaction_data->id_token = id_token;
+    this->transaction_id_tags.push(transaction_data->session_id, transaction_started.id_tag);
 
     std::optional<ocpp::v2::IdToken> group_id_token = std::nullopt;
     if (transaction_started.id_tag.parent_id_token.has_value()) {
