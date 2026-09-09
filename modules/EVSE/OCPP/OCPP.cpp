@@ -1137,9 +1137,9 @@ void OCPP::ready() {
                 },
                 remaining);
             if (all_cleared) {
-                EVLOG_info << "All EVSE errors cleared, connecting to CSMS.";
+                EVLOG_warning << "All EVSE errors cleared, connecting to CSMS.";
             } else {
-                EVLOG_info << "Error grace period elapsed, connecting to CSMS with current error state.";
+                EVLOG_warning << "Error grace period elapsed, connecting to CSMS with current error state.";
             }
         }
     }
