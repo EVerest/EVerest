@@ -16,6 +16,7 @@ add_executable(everest_io_tests
   netlink_peer_liveness_test.cpp
   fd_event_client_backpressure_test.cpp
   pty_handler_test.cpp
+  vcan_netlink_manager_test.cpp
 )
 
 target_link_libraries(everest_io_tests
