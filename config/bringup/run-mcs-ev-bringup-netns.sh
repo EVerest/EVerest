@@ -10,8 +10,20 @@
 # namespace, and every cross-link packet must go over the copper.
 #
 # Two lifelines reach into the namespace:
-#  - a veth pair (host 10.200.0.1 <-> ns 10.200.0.2) with NAT, so the daemon's UDP to the
-#    EV MCU (192.168.188.x, explicit IP - mDNS does not cross NAT) keeps working
+#  - the EV MCU link. The daemon config addresses the MCU as an IPv6 LINK-LOCAL literal
+#    scoped to its USB-Ethernet interface ("fe80::...%eth1"). Link-local traffic can never
+#    be routed or NAT'ed, and the scope name must resolve INSIDE the namespace - so the
+#    harness moves that interface itself into the namespace for the session (parsed from
+#    charge_bridge.ip; override with EV_MCU_IFACE=<if>) and hands it back to the root
+#    namespace when the session ends (NetworkManager re-adopts it). Only when the config
+#    holds no "%iface" (legacy IPv4 / mDNS setups) the old lifeline applies: a veth pair
+#    (host 10.200.0.1 <-> ns 10.200.0.2) with NAT for the daemon's UDP to an explicit
+#    IPv4 MCU address (mDNS does not cross NAT).
+#    TRAP: the CB firmware uses ONE MAC for both ends of its USB CDC link, so the kernel's
+#    default EUI-64 link-local for the moved interface would be the MCU's own address and
+#    fail DAD. The harness therefore disables autoconf on it (addr_gen_mode=1) and assigns
+#    a fixed fe80::2 before bringing it up. (On the host NetworkManager sidesteps the
+#    same clash with stable-privacy addresses.)
 #  - the MQTT broker, via a socat forward bound to the veth's host address, so
 #    mosquitto's own config stays untouched. All EV-side "localhost" MQTT endpoints are
 #    redirected: the daemon via a derived config (sed), manager and panels via
@@ -25,8 +37,10 @@
 # the caps and starts its tmux server without any further prompt. The namespace and the
 # NAT rule persist across runs (cheap, reusable); --teardown removes them.
 #
-# Bench-habit note: cb_plc_ev now lives in the namespace -
+# Bench-habit note: cb_plc_ev - and, while a session runs, the EV MCU's USB interface -
+# live in the namespace:
 #   sudo ip netns exec mcs-ev cat /sys/class/net/cb_plc_ev/carrier
+#   sudo ip netns exec mcs-ev ping fe80::46b7:d0ff:fec8:fb7b%eth1
 # and the neighbour proof on the EVSE side (root namespace) is
 #   ip neigh show dev cb_plc
 
@@ -39,15 +53,18 @@ HOST_IP=10.200.0.1
 NS_IP=10.200.0.2
 NET=10.200.0.0/24
 SOCAT_PIDFILE=/run/mcs-ev-netns-socat.pid
+# Fixed link-local for the moved MCU interface inside the namespace (see the header TRAP).
+MCU_IF_LL=fe80::2
 
 if [ "$(id -u)" != "0" ]; then
     # Self-elevate: ip netns needs root. Still exactly one password for the whole session -
     # inside the namespace everything drops back to the invoking user with ambient caps, so the
     # inner script prompts for nothing. EV_INNER_SCRIPT (and CB_CONFIG) must survive the
-    # elevation - sudo strips the environment, so pass them as VAR=value arguments.
+    # elevation - sudo strips the environment, so pass them as VAR=value arguments
+    # (EV_MCU_IFACE too, including an explicitly EMPTY one = "do not move any interface").
     echo "one sudo prompt: namespace setup needs root"
     exec sudo -- env ${EV_INNER_SCRIPT:+EV_INNER_SCRIPT="$EV_INNER_SCRIPT"} \
-        ${CB_CONFIG:+CB_CONFIG="$CB_CONFIG"} "$0" "$@"
+        ${CB_CONFIG:+CB_CONFIG="$CB_CONFIG"} ${EV_MCU_IFACE+EV_MCU_IFACE="$EV_MCU_IFACE"} "$0" "$@"
 fi
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -59,8 +76,19 @@ stop_socat() {
     fi
 }
 
+# Physical (non-veth) interfaces parked in the namespace go back to the root namespace;
+# NetworkManager re-adopts them there. 'netns 1' = PID 1's namespace.
+return_phys_ifaces() {
+    local ifc
+    for ifc in $(ip -n $NS -o link show 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1); do
+        case "$ifc" in lo | "$VETH_NS") continue ;; esac
+        ip -n $NS link set "$ifc" netns 1 2>/dev/null || true
+    done
+}
+
 if [ "${1:-}" = "--teardown" ]; then
     stop_socat
+    return_phys_ifaces
     ip netns del $NS 2>/dev/null || true # takes its veth end - and thereby the host end - with it
     iptables -t nat -D POSTROUTING -s $NET -j MASQUERADE 2>/dev/null || true
     iptables -D FORWARD -s $NET -j ACCEPT 2>/dev/null || true
@@ -117,13 +145,60 @@ if [ ! -f "$CB_CONFIG_SRC" ]; then
     exit 1
 fi
 DERIVED_CONFIG=$(mktemp /tmp/config-CB-MCS-EV-netns.XXXXXX.yaml)
-trap 'rm -f "$DERIVED_CONFIG"' EXIT
 sed -e "s/mqtt_remote: \"localhost\"/mqtt_remote: \"$HOST_IP\"/" \
     -e "s/mqtt_bind: 127.0.0.1/mqtt_bind: $NS_IP/" \
     "$CB_CONFIG_SRC" >"$DERIVED_CONFIG"
 # mktemp under sudo creates the file root-owned mode 0600, and everything past the handoff runs
 # as the invoking user again - who must be able to read their own daemon config.
 chmod 0644 "$DERIVED_CONFIG"
+
+# --- EV MCU interface into the namespace (IPv6 link-local addressing) ---------------------------
+# charge_bridge.ip "fe80::...%eth1" -> eth1. Only the first '%'-scoped address counts (plc.ip is
+# the tap's plain IPv4). EV_MCU_IFACE overrides; empty = legacy veth/NAT lifeline, nothing moved.
+MCU_IFACE=${EV_MCU_IFACE-$(sed -nE 's/^[[:space:]]*ip:[[:space:]]*"?\[?[^"[:space:]]*%([A-Za-z0-9_.-]+).*/\1/p' "$CB_CONFIG_SRC" | head -n1)}
+cleanup() {
+    stop_socat
+    return_phys_ifaces
+    rm -f "$DERIVED_CONFIG"
+}
+trap cleanup EXIT
+if [ -n "$MCU_IFACE" ]; then
+    # A daemon started from the SOURCE config in the root namespace is using that interface right
+    # now (the inner script's zombie guard only knows the derived config's name).
+    if pgrep -af "pionix_chargebridge.*$(basename "$CB_CONFIG_SRC")" >/dev/null 2>&1; then
+        echo "ERROR: a pionix_chargebridge with $(basename "$CB_CONFIG_SRC") is running in the root namespace" >&2
+        echo "       and holds $MCU_IFACE - stop it (or the plain run-mcs-ev-*.sh session) first:" >&2
+        pgrep -af "pionix_chargebridge.*$(basename "$CB_CONFIG_SRC")" >&2
+        exit 1
+    fi
+    if ip link show "$MCU_IFACE" >/dev/null 2>&1; then
+        ip link set "$MCU_IFACE" down
+        ip link set "$MCU_IFACE" netns $NS
+    elif ! ip -n $NS link show "$MCU_IFACE" >/dev/null 2>&1; then
+        echo "ERROR: MCU interface '$MCU_IFACE' (from charge_bridge.ip in $(basename "$CB_CONFIG_SRC"))" >&2
+        echo "       exists neither in the root namespace nor in '$NS' - is the EV board's USB plugged in?" >&2
+        exit 1
+    fi
+    # No kernel autoconf (would EUI-64 into the MCU's own address - same MAC on both ends of the
+    # USB link), fixed link-local instead, then up and wait for DAD to clear it.
+    ip -n $NS link set "$MCU_IFACE" down
+    ip netns exec $NS sysctl -qw "net.ipv6.conf.$MCU_IFACE.addr_gen_mode=1"
+    ip -n $NS addr replace "$MCU_IF_LL/64" dev "$MCU_IFACE" scope link
+    ip -n $NS link set "$MCU_IFACE" up
+    for _ in $(seq 1 50); do
+        ip -n $NS -6 addr show dev "$MCU_IFACE" tentative | grep -q inet6 || break
+        sleep 0.1
+    done
+    if ip -n $NS -6 addr show dev "$MCU_IFACE" dadfailed | grep -q inet6; then
+        echo "ERROR: DAD failed for $MCU_IF_LL on $MCU_IFACE inside '$NS' - something else on that link" >&2
+        echo "       already uses it; pick another MCU_IF_LL in $0" >&2
+        exit 1
+    fi
+    if ip -n $NS -6 addr show dev "$MCU_IFACE" tentative | grep -q inet6; then
+        echo "warning: $MCU_IF_LL on $MCU_IFACE still tentative after 5 s (link down? carrier=$(ip -n $NS -o link show "$MCU_IFACE" | grep -o 'state [A-Z]*'))" >&2
+    fi
+    echo "moved $MCU_IFACE into '$NS' ($MCU_IF_LL/64, returned to the root namespace when the session ends)"
+fi
 
 # --- hand off into the namespace, dropped back to the invoking user ----------------------------
 RUN_USER=${SUDO_USER:-root}
@@ -135,6 +210,6 @@ ip netns exec $NS setpriv --reuid="$RUN_USER" --regid="$(id -g "$RUN_USER")" --i
     MQTT_SERVER_ADDRESS=$HOST_IP MQTT_SERVER_PORT=1883 CB_CONFIG="$DERIVED_CONFIG" \
     "${EV_INNER_SCRIPT:-$SCRIPT_DIR/run-mcs-ev-bringup.sh}" "$@"
 
-# The inner script's tmux session has ended; the derived config is removed by the EXIT trap.
-stop_socat
+# The inner script's tmux session has ended; the EXIT trap stops socat, hands the MCU interface
+# back to the root namespace and removes the derived config.
 echo "session ended; namespace '$NS' kept for the next run ('$0 --teardown' removes it)"
