@@ -154,6 +154,12 @@ types:
       - DcPreChargeRes
       - DcWeldingDetectionReq
       - DcWeldingDetectionRes
+      - MeteringConfirmationReq
+      - MeteringConfirmationRes
+      - VehicleCheckInReq
+      - VehicleCheckInRes
+      - VehicleCheckOutReq
+      - VehicleCheckOutRes
       - UnknownMessage
   SaeJ2847BidiMode:
     description: Bidi mode for sae j2847_2
