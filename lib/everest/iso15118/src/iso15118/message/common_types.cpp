@@ -217,14 +217,14 @@ float from_RationalNumber(const RationalNumber& in) {
 
 RationalNumber from_float(float in) {
     RationalNumber out;
-    if (in == 0.0) {
+    if (in == 0.0f) {
         out.exponent = 0;
         out.value = 0;
         return out;
     }
     out.exponent = static_cast<int8_t>(floor(log10(fabs(in))));
     out.exponent -= 3; // add 3 digits of precision
-    out.value = static_cast<int16_t>(in * pow(10, -out.exponent));
+    out.value = static_cast<int16_t>(static_cast<double>(in) * pow(10, -out.exponent));
     return out;
 }
 

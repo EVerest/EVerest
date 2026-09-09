@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Pionix GmbH and Contributors to EVerest
+
+config ISO15118
+	bool "ISO 15118-20 EVSE communication controller (libiso15118)"
+	select CPP
+	select CPP_EXCEPTIONS
+	select REQUIRES_FULL_LIBCPP
+	select POSIX_API        # POSIX_SYSTEM_INTERFACES, required by POSIX_THREADS below; together
+	                         # with NETWORKING below, also pulls in POSIX_NETWORKING, which
+	                         # selects NET_SOCKETS, NET_INTERFACE_NAME (if_nametoindex) and
+	                         # NET_SOCKETPAIR - see subsys/portability/posix/options/Kconfig.net
+	select POSIX_THREADS    # everest::util's monitor.hpp (std::mutex/condition_variable) and
+	                         # CMake's find_package(Threads) both need this
+	select NETWORKING       # base net stack; required by POSIX_NETWORKING above
+	select POSIX_IPV6       # NET_IPV6 + the POSIX IPv6 socket API - SDP/V2GTP is IPv6-only
+	select NET_TCP          # V2GTP session traffic (NET_UDP, for SDP discovery, defaults to y)
+	select NET_TCP_KEEPALIVE # socket_helper.cpp unconditionally sets TCP_KEEPIDLE/TCP_KEEPINTVL/
+	                          # TCP_KEEPCNT; without this those setsockopt() calls fail at runtime
+	help
+	  Build libiso15118, the ISO 15118-20 SECC protocol stack (EXI codec, D20 state
+	  machine, SDP/V2GTP session handling). See zephyr/CMakeLists.txt in the module
+	  root for how the sources are wired in.
+
+	  The iso15118 CMake target itself requests C++17 via target_compile_features(),
+	  independent of Zephyr's global STD_CPP Kconfig choice (which defaults to C++11
+	  and applies to the rest of the application).
+
+	  This currently builds with ISO15118_ENABLE_TLS=OFF (no TLS support - a mbedTLS
+	  port is planned separately); io::make_tls_connection() rejects TLS offers at
+	  runtime instead. The io/* networking sources also still assume Linux/BSD socket
+	  APIs (getifaddrs, SO_BINDTODEVICE, accept4, ...) that are not all available
+	  under Zephyr's socket layer - porting notes live alongside this module. The
+	  select statements above only make the *subsystems* those files will eventually
+	  need available; they do not by themselves make io/* build against Zephyr's own
+	  network stack (as opposed to a host libc, e.g. under native_sim).
+
+# The D20 message/session layer allocates via std::vector/std::string/std::unique_ptr; bump the
+# default system heap accordingly. An application can still override this explicitly with
+# CONFIG_HEAP_MEM_POOL_SIZE in its own prj.conf.
+config HEAP_MEM_POOL_SIZE
+	default 32768 if ISO15118

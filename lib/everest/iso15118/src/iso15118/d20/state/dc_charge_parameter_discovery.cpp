@@ -106,7 +106,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
             dc_max_limits.voltage = dt::from_RationalNumber(mode->max_voltage);
             dc_max_limits.power = dt::from_RationalNumber(mode->max_charge_power);
 
-            logf_info("Max charge current %fA", dt::from_RationalNumber(mode->max_charge_current));
+            logf_info("Max charge current %fA", static_cast<double>(dt::from_RationalNumber(mode->max_charge_current)));
 
             // Set EV transfer limits
             m_ctx.session_ev_info.ev_transfer_limits.emplace<DC_ModeReq>(*mode);
@@ -115,8 +115,9 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
             dc_max_limits.voltage = dt::from_RationalNumber(mode->max_voltage);
             dc_max_limits.power = dt::from_RationalNumber(mode->max_charge_power);
 
-            logf_info("Max charge current %fA", dt::from_RationalNumber(mode->max_charge_current));
-            logf_info("Max discharge current %fA", dt::from_RationalNumber(mode->max_discharge_current));
+            logf_info("Max charge current %fA", static_cast<double>(dt::from_RationalNumber(mode->max_charge_current)));
+            logf_info("Max discharge current %fA",
+                      static_cast<double>(dt::from_RationalNumber(mode->max_discharge_current)));
 
             // Set EV transfer limits
             m_ctx.session_ev_info.ev_transfer_limits.emplace<BPT_DC_ModeReq>(*mode);
