@@ -1,0 +1,7 @@
+flowchart LR
+    External["External<br/>MQTT m2e/* + BSP/ISO/SLAC peers"]
+    Runtime["EvSimRuntime<br/>(epoll loop + FSM + context)"]
+    Publishers["Publishers<br/>ev_manager + MQTT e2m/* + peer call_*"]
+
+    External --> Runtime
+    Runtime --> Publishers
