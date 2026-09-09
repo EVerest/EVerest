@@ -354,6 +354,17 @@ void car_simulatorImpl::subscribe_to_variables_on_init() {
     const std::lock_guard<std::mutex> lock{car_simulation_mutex};
     using types::board_support_common::BspEvent;
     mod->r_ev_board_support->subscribe_bsp_event([this](const auto& bsp_event) {
+        // PowerOn / PowerOff are relay (contactor) feedback, not a control pilot measurement. They
+        // arrive on the same variable, and recording one as the measured pilot state made
+        // cp_state_allows_matching() false: with the EV's relay-open feedback landing after CP B,
+        // iso_wait_slac_matched never triggered matching and the vehicle sat in B forever
+        // (bench-found 2026-09-09 against a third-party MCS EVSE; our own EVSE happened to order
+        // the two events the other way round). Keep the pilot bookkeeping to pilot states.
+        if (bsp_event.event == types::board_support_common::Event::PowerOn or
+            bsp_event.event == types::board_support_common::Event::PowerOff) {
+            EVLOG_debug << "Relay feedback from the vehicle BSP: " << bsp_event.event;
+            return;
+        }
         const auto previous_event = car_simulation->get_bsp_event();
         car_simulation->set_bsp_event(bsp_event.event);
         if (bsp_event.event != previous_event) {
