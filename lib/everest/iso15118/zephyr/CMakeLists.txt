@@ -26,6 +26,8 @@ set(ISO15118_INSTALL OFF)
 # TLS support (OpenSSL-backed) is not available on Zephyr; a mbedTLS-backed
 # io::make_tls_connection() is planned as a separate follow-up.
 set(ISO15118_ENABLE_TLS OFF)
+# Builds io/socket_helper_zephyr.cpp instead of io/socket_helper_posix.cpp (no getifaddrs()).
+set(ISO15118_TARGET_ZEPHYR ON)
 
 add_subdirectory(${ISO15118_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/iso15118)
 

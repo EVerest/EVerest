@@ -13,6 +13,7 @@
 #include <cbv2g/exi_v2gtp.h>
 
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/detail/io/socket_helper.hpp>
 
 // FIXME(Sl): Not sure with define
 /* link-local multicast address ff02::1 aka ip6-allnodes */
@@ -44,9 +45,8 @@ SdpServer::SdpServer(const std::string& interface_name) {
         log_and_throw("Failed to open socket");
     }
 
-    // initialize socket address, leave scope_id and flowinfo at 0
-    struct sockaddr_in6 socket_address;
-    bzero(&socket_address, sizeof(socket_address));
+    // initialize socket address, leave scope_id (and flowinfo, on platforms that have it) at 0
+    struct sockaddr_in6 socket_address {};
     socket_address.sin6_family = AF_INET6;
     socket_address.sin6_port = htons(v2gtp::SDP_SERVER_PORT);
     memcpy(&socket_address.sin6_addr, &in6addr_any, sizeof(socket_address.sin6_addr));
@@ -78,7 +78,7 @@ SdpServer::SdpServer(const std::string& interface_name) {
     // Join multicast group
     struct ipv6_mreq mreq {};
     mreq.ipv6mr_multiaddr = {{IN6ADDR_ALLNODES}};
-    mreq.ipv6mr_interface = if_nametoindex(interface_name.c_str());
+    set_ipv6_mreq_interface(mreq, if_nametoindex(interface_name.c_str()));
 
     result = setsockopt(fd, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq, sizeof(mreq));
     if (result == -1) {
@@ -191,7 +191,9 @@ TlsKeyLoggingServer::TlsKeyLoggingServer(const std::string& interface_name, uint
     auto could_bind = false;
     auto source_port = 49152;
     for (; source_port < 65535; source_port++) {
-        sockaddr_in6 source_address = {AF_INET6, htons(source_port), 0, {}, 0};
+        sockaddr_in6 source_address{};
+        source_address.sin6_family = AF_INET6;
+        source_address.sin6_port = htons(source_port);
         if (bind(fd, reinterpret_cast<sockaddr*>(&source_address), sizeof(sockaddr_in6)) == 0) {
             could_bind = true;
             break;
@@ -207,7 +209,7 @@ TlsKeyLoggingServer::TlsKeyLoggingServer(const std::string& interface_name, uint
 
     const auto index = if_nametoindex(interface_name.c_str());
     auto mreq = ipv6_mreq{};
-    mreq.ipv6mr_interface = index;
+    set_ipv6_mreq_interface(mreq, index);
     if (inet_pton(AF_INET6, LINK_LOCAL_MULTICAST, &mreq.ipv6mr_multiaddr) <= 0) {
         const auto error_msg = adding_err_msg("Failed to setup multicast address");
         log_and_throw(error_msg.c_str());
@@ -222,7 +224,8 @@ TlsKeyLoggingServer::TlsKeyLoggingServer(const std::string& interface_name, uint
         log_and_throw(error_msg.c_str());
     }
 
-    destination_address = {AF_INET6, htons(port), 0, {}, 0};
+    destination_address.sin6_family = AF_INET6;
+    destination_address.sin6_port = htons(port);
     if (inet_pton(AF_INET6, LINK_LOCAL_MULTICAST, &destination_address.sin6_addr) <= 0) {
         const auto error_msg = adding_err_msg("Failed to setup server address, reset key_log_fd");
         log_and_throw(error_msg.c_str());

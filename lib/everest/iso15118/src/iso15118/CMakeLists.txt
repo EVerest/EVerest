@@ -97,11 +97,25 @@ if (ISO15118_ENABLE_TLS)
     target_sources(iso15118
         PRIVATE
         io/connection_ssl.cpp
+        io/sha_hash_openssl.cpp
     )
 else()
     target_sources(iso15118
         PRIVATE
         io/connection_ssl_stub.cpp
+        io/sha_hash_stub.cpp
+    )
+endif()
+
+if (ISO15118_TARGET_ZEPHYR)
+    target_sources(iso15118
+        PRIVATE
+        io/socket_helper_zephyr.cpp
+    )
+else()
+    target_sources(iso15118
+        PRIVATE
+        io/socket_helper_posix.cpp
     )
 endif()
 
