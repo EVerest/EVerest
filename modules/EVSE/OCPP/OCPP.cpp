@@ -4,6 +4,7 @@
 
 #include "charge_point_config_factory.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <optional>
@@ -411,6 +412,12 @@ void OCPP::init_evse_maps() {
         }
     }
     {
+        auto errors_cleared_handle = this->evse_errors_cleared_map.handle();
+        for (size_t evse_id = 1; evse_id <= this->r_evse_manager.size(); evse_id++) {
+            (*errors_cleared_handle)[evse_id] = false;
+        }
+    }
+    {
         auto soc_handle = this->evse_soc_map.handle();
         for (size_t evse_id = 1; evse_id <= this->r_evse_manager.size(); evse_id++) {
             (*soc_handle)[evse_id] = std::nullopt;
@@ -544,6 +551,13 @@ void OCPP::init() {
                     ready_handle->at(evse_id) = true;
                 }
                 this->evse_ready_map.notify_one();
+            }
+        });
+
+        this->r_evse_manager.at(evse_id - 1)->subscribe_all_errors_cleared([this, evse_id](bool cleared) {
+            if (cleared) {
+                this->evse_errors_cleared_map.handle()->at(evse_id) = true;
+                this->evse_errors_cleared_map.notify_one();
             }
         });
     }
@@ -1098,6 +1112,38 @@ void OCPP::ready() {
     // wait for potential events from the evses in order to start OCPP with the
     // correct initial state (e.g. EV might be plugged in at startup)
     std::this_thread::sleep_for(std::chrono::milliseconds(this->config.DelayOcppStart));
+
+    // optional grace period: delay connecting to the CSMS so transient startup errors (e.g. hardware
+    // self-tests) can clear before OCPP starts reporting them
+    if (this->config.ErrorGracePeriodS > 0) {
+        // always wait out the minimum: right after startup, "no errors yet" can simply mean slow-initializing
+        // hardware (BSP, powermeter, ...) hasn't run its self-test yet, not that everything is fine
+        const auto min_period_s = std::max(0, std::min(this->config.ErrorGraceMinPeriodS, this->config.ErrorGracePeriodS));
+        if (min_period_s > 0) {
+            std::this_thread::sleep_for(std::chrono::seconds(min_period_s));
+        }
+
+        const auto remaining = std::chrono::seconds(this->config.ErrorGracePeriodS - min_period_s);
+        if (remaining.count() > 0) {
+            auto errors_cleared_handle = this->evse_errors_cleared_map.handle();
+            const auto all_cleared = errors_cleared_handle.wait_for(
+                [&errors_cleared_handle]() {
+                    for (const auto& [evse, cleared] : *errors_cleared_handle) {
+                        if (!cleared) {
+                            return false;
+                        }
+                    }
+                    return true;
+                },
+                remaining);
+            if (all_cleared) {
+                EVLOG_info << "All EVSE errors cleared, connecting to CSMS.";
+            } else {
+                EVLOG_info << "Error grace period elapsed, connecting to CSMS with current error state.";
+            }
+        }
+    }
+
     const auto boot_reason = conversions::to_ocpp_boot_reason_enum(this->r_system->call_get_boot_reason());
 
     // we can now start the OCPP connection and process any queued events. We lock
