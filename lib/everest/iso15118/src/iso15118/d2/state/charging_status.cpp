@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
-#include <iso15118/d2/state/charging_status.hpp>
 #include <iso15118/d2/state/charge_parameter_discovery.hpp>
+#include <iso15118/d2/state/charging_status.hpp>
 #include <iso15118/d2/state/power_delivery.hpp>
 #include <iso15118/d2/state/session_stop.hpp>
-#include <iso15118/message/d2/ac_charging_status.hpp>
-#include <iso15118/message/d2/power_delivery.hpp>
 #include <iso15118/detail/d2/context_helper.hpp>
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/message/d2/ac_charging_status.hpp>
+#include <iso15118/message/d2/power_delivery.hpp>
 #include <iso15118/session/feedback.hpp>
 
 namespace iso15118::d2::state {
 
 namespace dt = msg::data_types;
 
-void ChargingStatus::enter() {}
+void ChargingStatus::enter() {
+}
 
 Result ChargingStatus::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
@@ -27,20 +28,19 @@ Result ChargingStatus::feed(Event ev) {
     if (const auto req = variant->get_if<msg::AC_ChargingStatusRequest>()) {
         msg::AC_ChargingStatusResponse res;
         setup_header(res.header, m_ctx.session);
-        res.evse_id              = m_ctx.session_config.evse_id;
+        res.evse_id = m_ctx.session_config.evse_id;
         res.sa_schedule_tuple_id = selected_sa_id;
         // [V2G2-691] ReceiptRequired shall be false for EIM (ExternalPayment)
-        res.receipt_required    = false;
+        res.receipt_required = false;
         // EVSEMaxCurrent derived from the configured rating (power / voltage),
         // consistent with ChargeParameterDiscovery.
         const int32_t nominal_v = m_ctx.session_config.evse_nominal_voltage_v;
-        const int32_t phases    = (m_ctx.session_config.evse_phase_count > 0)
-                                      ? m_ctx.session_config.evse_phase_count : 1;
+        const int32_t phases = (m_ctx.session_config.evse_phase_count > 0) ? m_ctx.session_config.evse_phase_count : 1;
         // Per-phase max current = total power / (phases * voltage).
         const int16_t max_current_a =
             (nominal_v > 0) ? static_cast<int16_t>(m_ctx.session_config.evse_max_power_w / (nominal_v * phases)) : 0;
-        res.evse_max_current    = dt::PhysicalValue{max_current_a, 0, dt::UnitSymbol::A};
-        res.ac_evse_status.rcd                    = false;
+        res.evse_max_current = dt::PhysicalValue{max_current_a, 0, dt::UnitSymbol::A};
+        res.ac_evse_status.rcd = false;
         // Mid-charge deauthorization (RFID/remote revoked): tell the EV to stop
         // via EVSENotification=StopCharging [V2G2-845] so it ramps down and sends
         // PowerDeliveryReq{Stop} -> clean SessionStop. The contactor is already
@@ -51,7 +51,7 @@ Result ChargingStatus::feed(Event ev) {
             authorized ? dt::EvseNotification::None : dt::EvseNotification::StopCharging;
         response_with_code(res, dt::ResponseCode::OK);
         m_ctx.respond(res);
-        return {};  // stay in ChargingStatus
+        return {}; // stay in ChargingStatus
     }
 
     // During the AC charge loop the EV may send a PowerDeliveryReq. Its

@@ -7,7 +7,8 @@
 namespace iso15118::d2::state {
 
 struct Authorization : public StateBase {
-    Authorization(Context& ctx) : StateBase(ctx, StateID::Authorization) {}
+    Authorization(Context& ctx) : StateBase(ctx, StateID::Authorization) {
+    }
     void enter() final;
     Result feed(Event) final;
 };

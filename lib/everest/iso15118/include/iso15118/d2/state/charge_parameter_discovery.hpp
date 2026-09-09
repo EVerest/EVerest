@@ -7,7 +7,8 @@
 namespace iso15118::d2::state {
 
 struct ChargeParameterDiscovery : public StateBase {
-    ChargeParameterDiscovery(Context& ctx) : StateBase(ctx, StateID::ChargeParameterDiscovery) {}
+    ChargeParameterDiscovery(Context& ctx) : StateBase(ctx, StateID::ChargeParameterDiscovery) {
+    }
     void enter() final;
     Result feed(Event) final;
 };

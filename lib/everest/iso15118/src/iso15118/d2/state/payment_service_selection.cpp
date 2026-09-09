@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
-#include <iso15118/d2/state/payment_service_selection.hpp>
 #include <iso15118/d2/state/authorization.hpp>
-#include <iso15118/message/d2/payment_service_selection.hpp>
+#include <iso15118/d2/state/payment_service_selection.hpp>
 #include <iso15118/detail/d2/context_helper.hpp>
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/message/d2/payment_service_selection.hpp>
 
 namespace iso15118::d2::state {
 
 namespace dt = msg::data_types;
 
-void PaymentServiceSelection::enter() {}
+void PaymentServiceSelection::enter() {
+}
 
 Result PaymentServiceSelection::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {

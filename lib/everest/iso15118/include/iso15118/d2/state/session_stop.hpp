@@ -7,7 +7,8 @@
 namespace iso15118::d2::state {
 
 struct SessionStop : public StateBase {
-    SessionStop(Context& ctx) : StateBase(ctx, StateID::SessionStop) {}
+    SessionStop(Context& ctx) : StateBase(ctx, StateID::SessionStop) {
+    }
     void enter() final;
     Result feed(Event) final;
 };

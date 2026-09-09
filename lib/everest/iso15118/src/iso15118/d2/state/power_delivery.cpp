@@ -1,19 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
-#include <iso15118/d2/state/power_delivery.hpp>
 #include <iso15118/d2/state/charge_parameter_discovery.hpp>
 #include <iso15118/d2/state/charging_status.hpp>
+#include <iso15118/d2/state/power_delivery.hpp>
 #include <iso15118/d2/state/session_stop.hpp>
-#include <iso15118/message/d2/power_delivery.hpp>
 #include <iso15118/detail/d2/context_helper.hpp>
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/message/d2/power_delivery.hpp>
 #include <iso15118/session/feedback.hpp>
 
 namespace iso15118::d2::state {
 
 namespace dt = msg::data_types;
 
-void PowerDelivery::enter() {}
+void PowerDelivery::enter() {
+}
 
 Result PowerDelivery::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
@@ -37,7 +38,7 @@ Result PowerDelivery::feed(Event ev) {
         m_ctx.respond(res);
 
         const auto progress = req->charge_progress;
-        const auto sa_id    = req->sa_schedule_tuple_id;
+        const auto sa_id = req->sa_schedule_tuple_id;
 
         if (progress == dt::ChargeProgress::Start) {
             // Close contactor and enter AC charge loop
