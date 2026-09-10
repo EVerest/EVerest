@@ -55,6 +55,12 @@ void from_json(const json& j, SetChargingCurrentParams& k);
 void to_json(json& j, SetSocParams const& k) noexcept;
 void from_json(const json& j, SetSocParams& k);
 
+void to_json(json& j, SetPresentValuesParams const& k) noexcept;
+void from_json(const json& j, SetPresentValuesParams& k);
+
+void to_json(json& j, StopSessionParams const& k) noexcept;
+void from_json(const json& j, StopSessionParams& k);
+
 void to_json(json& j, BcbToggleParams const& k) noexcept;
 void from_json(const json& j, BcbToggleParams& k);
 

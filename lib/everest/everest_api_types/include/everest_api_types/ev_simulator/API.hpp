@@ -198,6 +198,26 @@ struct SetSocParams {
     float soc_pct;
 };
 
+// Per-field override of the present values the EV reports over ISO 15118.
+// EvSimulator otherwise echoes what the EVSE delivered, so this is how a test
+// makes the EV report a value the charger did not deliver and reaches the
+// SECC obligations that only a disagreement triggers.
+//
+// A field left unset keeps echoing. Overriding one value therefore cannot
+// silently zero the other, which matters because a present value the EV never
+// reports is transmitted as zero and reads at the SECC as a measured zero.
+struct SetPresentValuesParams {
+    std::optional<float> present_voltage;      // [V] overrides the delivered DC voltage
+    std::optional<float> present_active_power; // [W] overrides the integrated active power
+};
+
+// Teardown selector for the stop_session command. `abort` terminates the V2G
+// session immediately instead of exchanging SessionStop, which is how the
+// suite stages a malformed teardown; the default is the clean stop.
+struct StopSessionParams {
+    bool abort{false};
+};
+
 struct BcbToggleParams {
     // Number of B<->C round-trips to perform. Each round-trip is two CP edges
     // (B->C, then C->B). When unset, the FSM uses its default of 3 round-trips
