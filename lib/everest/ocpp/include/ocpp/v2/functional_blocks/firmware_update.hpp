@@ -63,9 +63,7 @@ private: // Functions
     /// change
     /// If all connectors are unavailable signal to the firmware updater that installation of the firmware update can
     /// proceed
-    /// \param is_duplicate_notification When true, connectors a CSMS has since made Operative are left alone
-    ///        instead of being forced back to Inoperative
-    void change_all_connectors_to_unavailable_for_firmware_update(bool is_duplicate_notification = false);
+    void change_all_connectors_to_unavailable_for_firmware_update();
 
     /// \brief Restores all connectors to their persisted state
     void restore_all_connector_states();

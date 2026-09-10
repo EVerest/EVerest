@@ -182,39 +182,6 @@ TEST_F(FirmwareUpdateTest, InstallScheduled_ExplicitTrue_NoActiveTransaction_Tri
     firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
 }
 
-// Duplicates are not hypothetical: the FIXME in on_firmware_update_status_notification describes the System
-// module resending the identical status and request_id while it waits for a running transaction to finish
-TEST_F(FirmwareUpdateTest, DuplicateInstallScheduled_UnconditionallyReassertsUnavailable) {
-    // The first InstallScheduled is forwarded to the CSMS, disables both connectors and fires the callback once
-    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillOnce(Invoke([](const json& call, bool) {
-        auto request = call[ocpp::CALL_PAYLOAD].get<FirmwareStatusNotificationRequest>();
-        EXPECT_EQ(request.status, FirmwareStatusEnum::InstallScheduled);
-        return deferred_empty_response();
-    }));
-    EXPECT_CALL(evse_1, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false));
-    EXPECT_CALL(evse_2, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false));
-    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
-
-    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
-
-    ::testing::Mock::VerifyAndClearExpectations(&mock_dispatcher);
-    ::testing::Mock::VerifyAndClearExpectations(&evse_1);
-    ::testing::Mock::VerifyAndClearExpectations(&evse_2);
-    ::testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
-
-    // The CSMS operator makes evse 1's connector Operative again, to let it charge while the update is still
-    // waiting on evse 2's transaction. Modeled by flipping what evse 1 reports
-    ON_CALL(evse_1, get_connector_effective_operational_status(_))
-        .WillByDefault(Return(OperationalStatusEnum::Operative));
-
-    // The wait-for-transaction poll loop resends the same InstallScheduled and request_id. That must not reach
-    // the CSMS again, and must not force evse 1's connector back to Inoperative
-    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
-    EXPECT_CALL(evse_1, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false)).Times(0);
-
-    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
-}
-
 TEST_F(FirmwareUpdateTest, InstallScheduled_Nullopt_OnlyForwardsToCsms) {
     EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillOnce(Invoke([](const json& call, bool) {
         auto request = call[ocpp::CALL_PAYLOAD].get<FirmwareStatusNotificationRequest>();
