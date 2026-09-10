@@ -26,7 +26,6 @@ using ::iso15118::shared_datatypes::SessionId;
 static constexpr auto EVCC_ID_LENGTH = 6;
 using EvccId = std::array<uint8_t, EVCC_ID_LENGTH>;
 
-// ISO 15118-2 Table 105 well-known ServiceIDs.
 static constexpr uint16_t CHARGE_SERVICE_ID = 1;      // AC_DC_Charging (EVCharging)
 static constexpr uint16_t CERTIFICATE_SERVICE_ID = 2; // Certificate (ContractCertificate)
 

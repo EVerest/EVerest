@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Pionix GmbH and Contributors to EVerest
-#include <iso15118/d2/state/service_detail.hpp>
+#include <iso15118/d2/state/service_selection.hpp>
 
-#include <iso15118/d2/state/payment_service_selection.hpp>
 #include <iso15118/d2/state/session_stop.hpp>
 
 #include <iso15118/detail/d2/state/sequence_error.hpp>
@@ -24,9 +23,8 @@ message_2::ServiceDetailResponse handle_request(const message_2::ServiceDetailRe
     if (req.service_id == charge_service_id) {
         res.response_code = dt::ResponseCode::OK;
     } else if (cert_service_offered and req.service_id == dt::CERTIFICATE_SERVICE_ID) {
-        // Certificate service details [V2G2-428], Table 106: ParameterSetID 1 = "Installation",
-        // ParameterSetID 2 = "Update". The SECC relays both CertificateInstallation and CertificateUpdate
-        // (raw pass-through to the CSMS/CPS backend, which distinguishes the action), so both are offered.
+        // [V2G2-428], Table 106: ParameterSetID 1 = Installation, 2 = Update. The SECC relays both as raw
+        // pass-through to the backend, which distinguishes the action, so both are offered.
         res.response_code = dt::ResponseCode::OK;
         auto& parameter_list = res.service_parameter_list.emplace();
 
@@ -51,41 +49,32 @@ message_2::ServiceDetailResponse handle_request(const message_2::ServiceDetailRe
     return res;
 }
 
-void ServiceDetail::enter() {
-    logf_debug("Enter state: ServiceDetail");
+void ServiceSelection::enter() {
+    logf_debug("Enter state: ServiceSelection");
 }
 
-Result ServiceDetail::feed(Event ev) {
-    if (ev != Event::V2GTP_MESSAGE) {
+Result ServiceSelection::on_request(const message_2::Variant& received) {
+    // [V2G2-545]/[V2G2-548]: ServiceDetail is optional and repeatable, so the EV either asks again or
+    // ends the loop by selecting.
+    const auto type = received.get_type();
+    if (type == message_2::Type::ServiceDetailReq) {
+        return process_service_detail(received.get<message_2::ServiceDetailRequest>());
+    } else if (type == message_2::Type::PaymentServiceSelectionReq) {
+        return process_payment_selection(received.get<message_2::PaymentServiceSelectionRequest>());
+    } else {
+        logf_warning("Expected ServiceDetailReq or PaymentServiceSelectionReq! But got type id: %d",
+                     received.get_type());
+        respond_sequence_error(m_ctx, received.get_type());
         return {};
     }
+}
 
-    // An EV aborting mid-handshake sends SessionStopReq; hand it to SessionStop for a clean SessionStopRes.
-    if (m_ctx.peek_request_type() == message_2::Type::SessionStopReq) {
-        return m_ctx.create_state<SessionStop>();
-    }
+Result ServiceSelection::process_service_detail(const message_2::ServiceDetailRequest& req) {
 
-    // ServiceDetail is optional: loop on ServiceDetailReq, otherwise hand the pending request to the
-    // PaymentServiceSelection state (transition without consuming; the engine re-feeds it).
-    if (m_ctx.peek_request_type() != message_2::Type::ServiceDetailReq) {
-        return m_ctx.create_state<PaymentServiceSelection>();
-    }
-
-    const auto variant = m_ctx.pull_request();
-    const auto req = variant->get<message_2::ServiceDetailRequest>();
-
-    // The request must echo the assigned SessionID [V2G2-388]; a mismatch is answered with
-    // ServiceDetailRes/FAILED_UnknownSession and terminates the session.
-    if (reject_unknown_session(m_ctx, *variant)) {
-        return {};
-    }
-
-    // The Certificate service is only offered (hence its detail only valid) over a PnC-enabled TLS session
-    // when the SECC actually provides certificate installation/update.
+    // Only valid over a PnC-enabled TLS session where the SECC provides certificate installation.
     const bool cert_service_offered = m_ctx.session_config.pnc_enabled and m_ctx.session_config.tls_active and
                                       m_ctx.session_config.cert_install_service;
 
-    // External VAS: ask the provider (through the module) for the parameter sets of the requested service.
     const bool vas_offered = is_offered_vas(m_ctx.session_config.offered_vas_services, req.service_id);
     std::optional<dt::ServiceParameterList> vas_parameters;
     if (vas_offered) {

@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
-//
-// Engine-level tests of the SupportedAppProtocol handshake: the negotiation itself is covered in
-// secc_sap.cpp, this drives the SapEngine the way the Session does (feed a serialized request, drain
-// the staged response, take the handover result) and pins the states in between.
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
@@ -27,7 +23,6 @@ message_20::SupportedAppProtocol make_protocol(const std::string& protocol_names
     return {protocol_namespace, major, minor, schema_id, priority};
 }
 
-// Drives a SapEngine over an output buffer of its own, standing in for the Session's response buffer.
 class SapEngineHelper {
 public:
     SapEngineHelper(std::vector<ProtocolId> supported_protocols, bool tls_active) :
@@ -40,18 +35,15 @@ public:
         return engine;
     }
 
-    // Serialize \p req into a scratch buffer and hand it to the engine, as the Session does with the
-    // payload of a received V2GTP packet.
+    // As the Session does with the payload of a received V2GTP packet.
     void feed(const message_20::SupportedAppProtocolRequest& req) {
         feed_serialized(req);
     }
 
-    // Anything but a request: the handshake only ever expects a SupportedAppProtocolReq.
     void feed(const message_20::SupportedAppProtocolResponse& res) {
         feed_serialized(res);
     }
 
-    // Decode whatever the engine staged in the output buffer.
     message_20::SupportedAppProtocolResponse take_response() {
         const auto outgoing = engine.take_outgoing();
         REQUIRE(outgoing.has_value());
@@ -114,8 +106,7 @@ SCENARIO("SapEngine hands the session over to the negotiated protocol") {
 
         THEN("The response is staged and the session is not over") {
             REQUIRE(engine.has_outgoing());
-            // Must stay false while the response is staged, otherwise the Session tears down before it
-            // reaches the EV.
+            // Must stay false while the response is staged, or the Session tears down before it reaches the EV.
             REQUIRE_FALSE(engine.is_finished());
             REQUIRE_FALSE(engine.is_paused());
             REQUIRE_FALSE(engine.is_finished_with_error());

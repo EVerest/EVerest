@@ -59,19 +59,20 @@ target_sources(iso15118
         d2/state/sequence_error.cpp
         d2/state/session_setup.cpp
         d2/state/service_discovery.cpp
-        d2/state/service_detail.cpp
+        d2/state/service_selection.cpp
         d2/state/payment_service_selection.cpp
         d2/state/payment_details.cpp
-        d2/state/certificate_installation.cpp
+        d2/state/identification.cpp
         d2/state/authorization.cpp
         d2/state/charge_parameter_discovery.cpp
         d2/state/cable_check.cpp
         d2/state/pre_charge.cpp
         d2/state/power_delivery.cpp
-        d2/state/current_demand.cpp
-        d2/state/charging_status.cpp
+        d2/state/dc_charge_loop.cpp
+        d2/state/ac_charge_loop.cpp
         d2/state/welding_detection.cpp
         d2/state/session_stop.cpp
+        d2/states.cpp
         d2/state/metering_receipt.cpp
 
         d20/state/session_setup.cpp
