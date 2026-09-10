@@ -59,8 +59,10 @@ cc_library(
         ":version_information",
     ],
     cxxopts = ["-std=c++17"],
-    # See https://github.com/HowardHinnant/date/issues/324
-    local_defines = [
+    # See https://github.com/HowardHinnant/date/issues/324. These have to reach
+    # every dependent that includes date/tz.h: USE_OS_TZDB changes the layout of
+    # date::tzdb, and libdate-tz.a is built with it enabled.
+    defines = [
         "BUILD_TZ_LIB=ON",
         "USE_SYSTEM_TZ_DB=ON",
         "USE_OS_TZDB=1",

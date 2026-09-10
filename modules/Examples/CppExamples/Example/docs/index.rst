@@ -52,3 +52,17 @@ the demo environment from the everest-core root:
         -v $PWD/modules/Examples/CppExamples/Example/otel-collector.yaml:/etc/otelcol/config.yaml \
         otel/opentelemetry-collector
     OTEL_METRIC_EXPORT_INTERVAL=5000 bazel run //modules/Examples/CppExamples/Example:otel_env
+
+For a UI use ``grafana/otel-lgtm`` instead of the plain collector: it listens
+on the same port and serves Grafana on http://localhost:3000 (admin/admin) with
+Tempo for the traces and Prometheus for the metrics, where the counter shows up
+as ``everest_example_commands_total{job="everest/Example", instance="example"}``.
+
+Spans and metrics that are still queued when EVerest stops are only flushed if
+the manager asks the modules to shut down, which needs its
+``--graceful-shutdown`` flag:
+
+.. code-block:: bash
+
+    bazel run //modules/Examples/CppExamples/Example:otel_env -- \
+        --prefix . --config etc/everest/config-otel.yaml --graceful-shutdown

@@ -2,6 +2,7 @@
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include "Example.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <mutex>
 #include <thread>
@@ -90,10 +91,16 @@ void Example::init_opentelemetry() {
         resource);
     sdk::trace::Provider::SetTracerProvider(tracer_provider);
 
+    // interval and timeout come from OTEL_METRIC_EXPORT_INTERVAL/_TIMEOUT; the
+    // SDK silently falls back to 60s if the timeout is not below the interval
+    sdk::metrics::PeriodicExportingMetricReaderOptions reader_options;
+    reader_options.export_timeout_millis =
+        std::min(reader_options.export_timeout_millis, reader_options.export_interval_millis / 2);
+
     meter_provider =
         sdk::metrics::MeterProviderFactory::Create(std::make_unique<sdk::metrics::ViewRegistry>(), resource);
     meter_provider->AddMetricReader(sdk::metrics::PeriodicExportingMetricReaderFactory::Create(
-        otlp::OtlpHttpMetricExporterFactory::Create(), sdk::metrics::PeriodicExportingMetricReaderOptions{}));
+        otlp::OtlpHttpMetricExporterFactory::Create(), reader_options));
     sdk::metrics::Provider::SetMeterProvider(meter_provider);
 }
 
