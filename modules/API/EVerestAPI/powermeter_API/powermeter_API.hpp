@@ -62,6 +62,7 @@ private:
     // insert your private definitions here
     void generate_api_var_powermeter_values();
     void generate_api_var_public_key_ocmf();
+    void generate_api_var_capabilities();
 
     ev_API::CommCheckHandler<powermeterImplBase> comm_check{"powermeter/CommunicationFault",
                                                             ev_API::bridge_connection_lost_message, p_main};

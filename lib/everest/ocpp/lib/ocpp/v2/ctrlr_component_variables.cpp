@@ -245,6 +245,12 @@ const ComponentVariable VerifyCsmsAllowWildcards = {
         "VerifyCsmsAllowWildcards",
     }),
 };
+const ComponentVariable ReportSuspendedEVSEReasonChange = {
+    ControllerComponents::InternalCtrlr,
+    std::optional<Variable>({
+        "ReportSuspendedEVSEReasonChange",
+    }),
+};
 const ComponentVariable IFace = {
     ControllerComponents::InternalCtrlr,
     std::optional<Variable>({
@@ -351,6 +357,12 @@ const ComponentVariable AllowSecurityLevelZeroConnections = {
     ControllerComponents::InternalCtrlr,
     std::optional<Variable>({
         "AllowSecurityLevelZeroConnections",
+    }),
+};
+const ComponentVariable DeferFirmwareDownloadDuringTransaction = {
+    ControllerComponents::InternalCtrlr,
+    std::optional<Variable>({
+        "DeferFirmwareDownloadDuringTransaction",
     }),
 };
 const RequiredComponentVariable SupportedOcppVersions = {
@@ -491,7 +503,7 @@ const ComponentVariable OfflineTxForUnknownIdEnabled = {
 };
 const ComponentVariable AllowNewSessionsPendingFirmwareUpdate = {
     ControllerComponents::ChargingStation,
-    std::optional<Variable>({"AllowNewSessionsPendingFirmwareUpdate", "BytesPerMessage"}),
+    std::optional<Variable>({"AllowNewSessionsPendingFirmwareUpdate"}),
 };
 const RequiredComponentVariable ChargingStationAvailabilityState = {
     ControllerComponents::ChargingStation,
@@ -1398,6 +1410,12 @@ const ComponentVariable WaitForSetUserPriceTimeout = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({
         "WaitForSetUserPriceTimeout",
+    }),
+};
+const ComponentVariable ReportClearedErrors = {
+    ControllerComponents::OCPP16LegacyCtrlr,
+    std::optional<Variable>({
+        "ReportClearedErrors",
     }),
 };
 } // namespace ControllerComponentVariables

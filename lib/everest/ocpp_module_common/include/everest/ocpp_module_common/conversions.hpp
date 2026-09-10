@@ -4,6 +4,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -226,6 +227,17 @@ to_everest_registration_status(const ocpp::v2::RegistrationStatusEnum& registrat
 /// \brief Converts a given ocpp::v2::StatusInfo \p status_info to a
 /// types::ocpp::StatusInfoType
 types::ocpp::StatusInfoType to_everest_status_info_type(const ocpp::v2::StatusInfo& status_info);
+
+/// \brief Converts a given ocpp::OcppProtocolVersion \p protocol_version to the OCPP version string used on the
+/// EVerest ocpp interface (1.6, 2.0.1 or 2.1)
+/// \returns std::nullopt for ocpp::OcppProtocolVersion::Unknown
+std::optional<std::string> to_everest_ocpp_version(ocpp::OcppProtocolVersion protocol_version);
+
+/// \brief Converts the arguments of a connection state change to a types::ocpp::ConnectionStatus
+types::ocpp::ConnectionStatus
+to_everest_connection_status(bool is_connected, int32_t configuration_slot,
+                             const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
+                             ocpp::OcppProtocolVersion protocol_version);
 
 /// \brief Converts a given ocpp::v2::GetVariableResult \p get_variable_result_vector to a
 /// std::vector<types::ocpp::GetVariableResult>

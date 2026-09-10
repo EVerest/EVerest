@@ -8,6 +8,10 @@
 #include <memory>
 #include <optional>
 
+namespace module {
+std::vector<std::string> observed_cp_state_commands;
+}
+
 namespace {
 using namespace module;
 using namespace types::evse_manager;
@@ -19,6 +23,7 @@ using namespace types::evse_manager;
 struct ChargerDerived : public Charger {
     using Charger::Charger;
     using Charger::get_enable_disable_source_table;
+    using Charger::get_hlc_use_5percent_current_session;
     using Charger::get_shared_context;
     using Charger::run_state_machine;
 
@@ -71,6 +76,7 @@ struct ChargerTest : public testing::Test {
 
     void SetUp() override {
         reset_last_event();
+        observed_cp_state_commands.clear();
         charger = std::make_unique<ChargerDerived>(
             charger_bsp, charger_error_handling, charger_powermeter_billing, charger_store,
             types::evse_board_support::Connector_type::IEC62196Type2Socket, "EVSETEST");
@@ -761,6 +767,139 @@ TEST_F(ChargerTest, DisableDuringIdle) {
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
 }
 
+// ----------------------------------------------------------------------------
+// tests for dlink_error()
+// A D-LINK_ERROR normally restarts SLAC matching according to the ISO 15118-3
+// error recovery sequence ([V2G3-M07-05]). For an HLC session, CP is first
+// switched to X1 before the state machine starts the configured reinitialization
+// (defaulting to T_step_EF).
+// When the session is being stopped for good or is already finished, the
+// D-LINK_ERROR is just the consequence of the HLC session shutting down and
+// matching must NOT be restarted, so the session can end in
+// StoppingCharging -> Finished.
+
+struct ChargerDlinkErrorTest : public ChargerTest {
+    // never dereferenced: the IECStateMachine used here is the no-op stub below
+    std::unique_ptr<evse_board_supportIntf> bsp_if;
+
+    void SetUp() override {
+        charger_bsp = std::make_unique<IECStateMachine>(bsp_if, true, false);
+        ChargerTest::SetUp();
+    }
+
+    void setup_hlc_session_in(Charger::EvseState state) {
+        auto& ctx = charger->get_shared_context();
+        ctx.current_state = state;
+        ctx.pwm_running = true;
+        ctx.hlc_charging_active = true;
+        ctx.flag_transaction_active = true;
+        ctx.flag_authorized = true;
+        charger->get_hlc_use_5percent_current_session() = true;
+    }
+};
+
+TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWhenStoppingDeauthorized) {
+    // Transaction stopped on request during cable check: auth is withdrawn and the
+    // charger is in StoppingCharging when the dying HLC session reports D-LINK_ERROR
+    setup_hlc_session_in(Charger::EvseState::StoppingCharging);
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_authorized = false;
+
+    charger->dlink_error();
+
+    // Matching must not be restarted; PWM is switched off so the state machine can
+    // proceed to Finished
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
+    EXPECT_FALSE(ctx.pwm_running);
+}
+
+TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWhenStoppingWithoutTransaction) {
+    setup_hlc_session_in(Charger::EvseState::StoppingCharging);
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_transaction_active = false;
+
+    charger->dlink_error();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
+    EXPECT_FALSE(ctx.pwm_running);
+}
+
+TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWhenStoppingForDisable) {
+    setup_hlc_session_in(Charger::EvseState::StoppingCharging);
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_disable_requested = true;
+
+    charger->dlink_error();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
+    EXPECT_FALSE(ctx.pwm_running);
+}
+
+TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWhenFinished) {
+    // The EV may drop to state B quickly after a requested stop, in which case the
+    // charger reaches Finished (with PWM still running) before the dying HLC session
+    // reports D-LINK_ERROR. This must not resurrect the finished session.
+    setup_hlc_session_in(Charger::EvseState::Finished);
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_transaction_active = false;
+    ctx.flag_authorized = false;
+
+    charger->dlink_error();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Finished);
+    EXPECT_FALSE(ctx.pwm_running);
+}
+
+TEST_F(ChargerDlinkErrorTest, MatchingRestartDuringActiveSession) {
+    // A D-LINK_ERROR during an active session (e.g. HLC communication error during
+    // cable check with the transaction still running) switches CP to X1 before
+    // the configured reinitialization starts.
+    setup_hlc_session_in(Charger::EvseState::PrepareCharging);
+
+    charger->dlink_error();
+
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+    EXPECT_FALSE(charger->get_shared_context().pwm_running);
+    EXPECT_TRUE(charger->get_shared_context().reinit_requested);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Reinit);
+}
+
+TEST_F(ChargerDlinkErrorTest, MatchingRestartWhenStoppingToPause) {
+    // StoppingCharging is also a transit state for EVSE-initiated pause: the session
+    // continues afterwards, so the error recovery must still restart matching
+    setup_hlc_session_in(Charger::EvseState::StoppingCharging);
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_paused_by_evse = true;
+
+    charger->dlink_error();
+
+    // A pause continues the session, so it follows the same X1-before-reinit
+    // recovery sequence as an active session.
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+    EXPECT_FALSE(ctx.pwm_running);
+    EXPECT_TRUE(ctx.reinit_requested);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
+
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Reinit);
+}
+
+TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWithNominalPwm) {
+    // [V2G3-M07-12]: in nominal PWM mode (AC with HLC on nominal duty cycle), basic
+    // charging continues and matching is not restarted on a D-LINK_ERROR
+    setup_hlc_session_in(Charger::EvseState::Charging);
+    charger->get_hlc_use_5percent_current_session() = false;
+
+    charger->dlink_error();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
+}
+
 } // namespace
 
 // ----------------------------------------------------------------------------
@@ -805,8 +944,15 @@ void IECStateMachine::set_overcurrent_limit(double amps) {
 void IECStateMachine::set_pwm(double value) {
 }
 void IECStateMachine::set_cp_state_X1() {
+    observed_cp_state_commands.emplace_back("X1");
 }
+
+void IECStateMachine::set_cp_state_E() {
+    observed_cp_state_commands.emplace_back("E");
+}
+
 void IECStateMachine::set_cp_state_F() {
+    observed_cp_state_commands.emplace_back("F");
 }
 
 void IECStateMachine::enable(bool en) {

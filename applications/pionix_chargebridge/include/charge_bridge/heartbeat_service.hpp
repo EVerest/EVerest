@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include "protocol/cb_management.h"
+#include <charge_bridge/utilities/print_status.hpp>
 #include <chrono>
 #include <everest/io/can/can_payload.hpp>
 #include <everest/io/event/fd_event_register_interface.hpp>
 #include <everest/io/event/timer_fd.hpp>
 #include <everest/io/udp/udp_client.hpp>
+#include <everest/util/misc/observable.hpp>
 #include <memory>
+#include <optional>
 #include <protocol/cb_config.h>
 
 namespace charge_bridge {
@@ -20,27 +23,44 @@ struct heartbeat_config {
     std::string cb_remote;
     std::uint16_t interval_s;
     std::uint16_t connection_to_s;
+    // cb-session-v1: take over a MCU owned by a healthy session on another host. Default: only
+    // dead or same-IP owners are taken over.
+    bool force_takeover{false};
     CbConfig cb_config;
 };
 
 class heartbeat_service : public everest::lib::io::event::fd_event_register_interface {
 public:
-    heartbeat_service(heartbeat_config const& config, std::function<void(bool)> const& publish_connection_status);
+    heartbeat_service(heartbeat_config const& config, std::function<void(bool)> const& publish_connection_status,
+                      everest::lib::io::event::event_fd& ready_notify);
     ~heartbeat_service();
 
     bool register_events(everest::lib::io::event::fd_event_handler& handler) override;
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
+    void disconnect_cb_endpoint();
+    void connect_cb_endpoint(std::string const& remote);
+    bool available() const;
+    int mcu_reset_count() const;
+    std::optional<utilities::chargebridge_telemetry> latest_telemetry() const;
 
 private:
     void handle_error_timer();
     void handle_heartbeat_timer();
     void handle_udp_rx(everest::lib::io::udp::udp_payload const& payload);
+    void create_udp_client(std::string const& remote, uint16_t remote_port);
+    void handle_ready();
 
-    everest::lib::io::udp::udp_client m_udp;
+    std::unique_ptr<everest::lib::io::udp::udp_client> m_udp;
+    std::uint16_t m_udp_port{0};
+    std::string m_udp_remote;
     bool m_udp_on_error{false};
+    bool m_udp_ready{false};
     everest::lib::io::event::timer_fd m_heartbeat_timer;
+    everest::lib::io::event::timer_fd m_error_timer;
     std::string m_identifier;
-    CbManagementPacket<CbConfig> m_config_message;
+    CbManagementPacket<CbHeartbeatPacket> m_config_message;
+    // Deduplicates the "owned by another host" report (one line per rejection episode).
+    bool m_session_rejected{false};
     std::chrono::steady_clock::time_point m_last_heartbeat_reply;
     bool m_cb_connected{false};
     bool m_inital_cb_commcheck{true};
@@ -49,6 +69,10 @@ private:
     std::function<void(bool)> m_publish_connection_status;
     std::uint32_t m_mcu_timestamp{0};
     int m_mcu_reset_count{0};
+    utilities::chargebridge_telemetry m_telemetry;
+    bool m_have_telemetry{false};
+    everest::lib::util::observable<bool> m_ready{false};
+    everest::lib::io::event::event_fd& m_ready_notify;
 };
 
 } // namespace charge_bridge

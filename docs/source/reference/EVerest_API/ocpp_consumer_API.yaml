@@ -76,6 +76,21 @@ channels:
     messages:
       send_request_monitor_variables:
         $ref: '#/components/messages/send_request_monitor_variables'
+  send_request_change_availability:
+    address: 'm2e/change_availability'
+    messages:
+      send_request_change_availability:
+        $ref: '#/components/messages/send_request_change_availability'
+  receive_reply_change_availability:
+    address: null
+    messages:
+      receive_reply_change_availability:
+        $ref: '#/components/messages/receive_reply_change_availability'
+  send_request_security_event:
+    address: 'm2e/security_event'
+    messages:
+      send_request_security_event:
+        $ref: '#/components/messages/send_request_security_event'
 
   receive_ocpp_transaction_event:
     address: 'e2m/ocpp_transaction_event'
@@ -97,6 +112,21 @@ channels:
     messages:
       receive_is_connected:
         $ref: '#/components/messages/receive_is_connected'
+  receive_connection_status:
+    address: 'e2m/connection_status'
+    messages:
+      receive_connection_status:
+        $ref: '#/components/messages/receive_connection_status'
+  send_request_get_connection_status:
+    address: 'm2e/connection_status/get'
+    messages:
+      send_request_get_connection_status:
+        $ref: '#/components/messages/send_request_get_connection_status'
+  receive_reply_get_connection_status:
+    address: null
+    messages:
+      receive_reply_get_connection_status:
+        $ref: '#/components/messages/receive_reply_get_connection_status'
   receive_security_event:
     address: 'e2m/security_event'
     messages:
@@ -182,6 +212,21 @@ channels:
     messages:
       receive_reply_get_ocpp_message:
         $ref: '#/components/messages/receive_reply_get_ocpp_message'
+  receive_implementation_ready:
+    address: 'e2m/implementation_ready'
+    messages:
+      receive_implementation_ready:
+        $ref: '#/components/messages/receive_implementation_ready'
+  send_request_get_implementation_ready:
+    address: 'm2e/implementation_ready/get'
+    messages:
+      send_request_get_implementation_ready:
+        $ref: '#/components/messages/send_request_get_implementation_ready'
+  receive_reply_get_implementation_ready:
+    address: null
+    messages:
+      receive_reply_get_implementation_ready:
+        $ref: '#/components/messages/receive_reply_get_implementation_ready'
 
 
   receive_heartbeat:
@@ -273,6 +318,28 @@ operations:
     channel:
       $ref: '#/channels/send_request_monitor_variables'
     description: 'Direction: Module to EVerest'
+  send_request_change_availability:
+    title: 'Send request to change the availability'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_change_availability'
+    description: 'Direction: Module to EVerest'
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_change_availability'
+  receive_reply_change_availability:
+    title: 'Receive response to the change availability request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_change_availability'
+  send_request_security_event:
+    title: 'Send request to trigger a security event'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_security_event'
+    description: 'Direction: Module to EVerest'
 
   receive_ocpp_transaction_event:
     title: 'Receive is OCPP transaction event'
@@ -284,6 +351,19 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_is_connected'
+    description: >-
+      Deprecated: use receive_connection_status instead, which reports the same
+      connection state in its connected property together with the connection details.
+  receive_connection_status:
+    title: 'Receive connection status'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_connection_status'
+  receive_implementation_ready:
+    title: 'Receive implementation ready'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_implementation_ready'
   receive_security_event:
     title: 'Receive security event'
     action: receive
@@ -386,6 +466,7 @@ operations:
     channel:
       $ref: '#/channels/send_request_get_is_connected'
     description: >-
+      Deprecated: use send_request_get_connection_status instead.
       Request the most recently published (latched) Is Connected.
       The reply will be sent to the replyTo address specified in the message headers.
       If no latched value is available yet, a null payload will be sent.
@@ -399,6 +480,45 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_reply_get_is_connected'
+  send_request_get_connection_status:
+    title: 'Request current Connection Status'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_connection_status'
+    description: >-
+      Request the most recently published (latched) Connection Status.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_connection_status'
+  receive_reply_get_connection_status:
+    title: 'Reply to get Connection Status request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_connection_status'
+  send_request_get_implementation_ready:
+    title: 'Request current Implementation Ready'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_implementation_ready'
+    description: >-
+      Request the most recently published (latched) Implementation Ready.
+      The reply will be sent to the replyTo address specified in the message headers.
+      The bridge seeds this value with false at startup, so a reply of null only occurs
+      if latching is disabled for this module.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_implementation_ready'
+  receive_reply_get_implementation_ready:
+    title: 'Reply to get Implementation Ready request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_implementation_ready'
   send_request_get_charging_schedules:
     title: 'Request current Charging Schedules'
     action: send
@@ -673,6 +793,65 @@ components:
               variable:
                 name: string
                 instance: string
+    send_request_change_availability:
+      title: 'Request change availability'
+      summary: 'Request to change the availability of the Charging Station / an EVSE / a Connector.'
+      description: >-
+        Allows to send a ChangeAvailabilityRequest internally (as can be done by the CSMS).
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
+          payload:
+            $ref: '#/components/schemas/ChangeAvailabilityRequest'
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+            payload:
+              operational_status: Inoperative
+              evse:
+                id: 1
+                connector_id: 1
+    receive_reply_change_availability:
+      name: receive_reply_change_availability
+      title: 'Reply to change availability request'
+      summary: 'Reply to the request to change the availability'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ChangeAvailabilityResponse'
+      examples:
+        - summary: ""
+          payload:
+            status: Accepted
+            status_info:
+              reason_code: string
+              additional_info: string
+    send_request_security_event:
+      title: 'Trigger security event'
+      summary: 'Trigger a security event.'
+      description: >-
+        Triggers a SecurityEventNotification.req at the CSMS if it is deemed critical,
+        either by setting the flag in this event or if absent automatically by libocpp
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SecurityEvent'
+      examples:
+        - summary: ""
+          payload:
+            type: string
+            info: string
+            critical: true
+            timestamp: '2026-07-30T12:00:00Z'
 
     receive_ocpp_transaction_event:
       name: receive_ocpp_transaction_event
@@ -716,10 +895,33 @@ components:
     receive_is_connected:
       name: receive_is_connected
       title: 'Receive is connected'
-      summary: Indicates if chargepoint is connected to CSMS
+      summary: >-
+        Deprecated: use receive_connection_status instead.
+        Indicates if chargepoint is connected to CSMS
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ConnectedStatus'
+    receive_connection_status:
+      name: receive_connection_status
+      title: 'Receive connection status'
+      summary: >-
+        Indicates if the chargepoint is connected to the CSMS and reports the details of
+        the connection the status refers to. Published on every connect and disconnect,
+        replacing the deprecated is_connected variable.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ConnectionStatus'
+    receive_implementation_ready:
+      name: receive_implementation_ready
+      title: 'Receive implementation ready'
+      summary: Indicates whether the OCPP implementation behind this API accepts commands
+      description: |
+        True means the OCPP module has finished its startup and accepts the commands offered by
+        this API. Before that, commands are answered with Rejected or Offline results.
+        The heartbeat of this API only proves that the bridge module itself is alive.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ImplementationReady'
     receive_security_event:
       name: receive_security_event
       title: 'Receive security event'
@@ -859,7 +1061,9 @@ components:
     send_request_get_is_connected:
       name: send_request_get_is_connected
       title: 'Request current Is Connected'
-      summary: 'Request the most recently published (latched) Is Connected.'
+      summary: >-
+        Deprecated: use send_request_get_connection_status instead.
+        Request the most recently published (latched) Is Connected.
       contentType: application/json
       payload:
         type: object
@@ -882,11 +1086,77 @@ components:
     receive_reply_get_is_connected:
       name: receive_reply_get_is_connected
       title: 'Reply to get Is Connected request'
-      summary: 'The most recently published Is Connected.'
+      summary: >-
+        Deprecated: use receive_reply_get_connection_status instead.
+        The most recently published Is Connected.
       contentType: application/json
       payload:
         oneOf:
           - $ref: '#/components/schemas/ConnectedStatus'
+          - type: 'null'
+    send_request_get_connection_status:
+      name: send_request_get_connection_status
+      title: 'Request current Connection Status'
+      summary: 'Request the most recently published (latched) Connection Status.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_connection_status:
+      name: receive_reply_get_connection_status
+      title: 'Reply to get Connection Status request'
+      summary: 'The most recently published Connection Status.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/ConnectionStatus'
+          - type: 'null'
+    send_request_get_implementation_ready:
+      name: send_request_get_implementation_ready
+      title: 'Request current Implementation Ready'
+      summary: 'Request the most recently published (latched) Implementation Ready.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_implementation_ready:
+      name: receive_reply_get_implementation_ready
+      title: 'Reply to get Implementation Ready request'
+      summary: 'The most recently published Implementation Ready.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/ImplementationReady'
           - type: 'null'
     send_request_get_charging_schedules:
       name: send_request_get_charging_schedules
@@ -966,6 +1236,10 @@ components:
       name: receive_heartbeat
       title: 'Receive heartbeat'
       summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      description: |
+        The heartbeat signals that the bridge module serving this API is alive.
+        It says nothing about the readiness of the OCPP module behind it.
+        See receive_implementation_ready for that.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/HeartBeatId'
@@ -1023,6 +1297,53 @@ components:
             returns something other than Accepted, the value of the interval field indicates the
             minimum wait time before sending a next BootNotification request.
           type: integer
+        status_info:
+          description: Detailed status information.
+          type: object
+          $ref: '#/components/schemas/StatusInfoType'
+    OperationalStatusEnumType:
+      description: >-
+        Operational status of Charging Station /EVSE / Connector
+      type: string
+      enum:
+        - Inoperative
+        - Operative
+    ChangeAvailabilityRequest:
+      description: Request type to change the availability of the Charging Station/ an EVSE / a Connector.
+      type: object
+      additionalProperties: true
+      required:
+        - operational_status
+      properties:
+        operational_status:
+          description: Type of availability change that the Charging Station should perform.
+          type: string
+          $ref: '#/components/schemas/OperationalStatusEnumType'
+        evse:
+          description: >-
+            Specify EVSE/Connector whose status is changed. When omitted, the
+            message refers to the Charging Station as a whole.
+          type: object
+          $ref: '#/components/schemas/EVSE'
+    ChangeAvailabilityStatusEnumType:
+      description: >-
+        Status returned in response to ChangeAvailabilityRequest.
+      type: string
+      enum:
+        - Accepted
+        - Rejected
+        - Scheduled
+    ChangeAvailabilityResponse:
+      description: Response type to request to change the availability of the Charging Station/ an EVSE / a Connector.
+      type: object
+      additionalProperties: true
+      required:
+        - status
+      properties:
+        status:
+          description: Indicates whether the Charging Station is able to perform the availability change.
+          type: string
+          $ref: '#/components/schemas/ChangeAvailabilityStatusEnumType'
         status_info:
           description: Detailed status information.
           type: object
@@ -1348,7 +1669,60 @@ components:
           type: object
           $ref: '#/components/schemas/Variable'
     ConnectedStatus:
-      description: Indicates if chargepoint is connected to CSMS
+      description: >-
+        Deprecated: use ConnectionStatus (connection_status) instead.
+        Indicates if chargepoint is connected to CSMS
+      type: boolean
+    ConnectionStatus:
+      description: >-
+        Status of the connection of the chargepoint to the CSMS, including the details
+        of the connection the status refers to. While connected, the details describe
+        the active connection; while disconnected, they describe the connection that
+        has just been lost or whose connection attempt has just failed. Details that
+        are not available for the active OCPP version are omitted.
+      type: object
+      additionalProperties: false
+      required:
+        - connected
+      properties:
+        connected:
+          description: Indicates if the chargepoint is connected to the CSMS
+          type: boolean
+        csms_url:
+          description: >-
+            CSMS endpoint URL of the connection. OCPP2.x reports ocppCsmsUrl of the
+            network connection profile, OCPP1.6 the CentralSystemURI configuration key.
+          type: string
+        identity:
+          description: >-
+            Identity the chargepoint uses towards the CSMS. OCPP2.x reports identity of
+            the network connection profile, OCPP1.6 the ChargePointId.
+          type: string
+        security_profile:
+          description: >-
+            OCPP security profile of the connection. OCPP2.x reports securityProfile of
+            the network connection profile, OCPP1.6 the SecurityProfile configuration key.
+          type: integer
+        configuration_slot:
+          description: >-
+            Configuration slot of the network connection profile the connection uses.
+          type: integer
+        ocpp_interface:
+          description: >-
+            Network interface of the network connection profile the connection uses
+          type: string
+        ocpp_transport:
+          description: >-
+            Transport of the network connection profile the connection uses
+          type: string
+        ocpp_version:
+          description: >-
+            OCPP protocol version in use on the connection (e.g. 1.6, 2.0.1 or 2.1)
+          type: string
+    ImplementationReady:
+      description: >-
+        Indicates whether the OCPP implementation has finished its startup and accepts commands
+        on this API. Unrelated to CSMS connectivity (see ConnectionStatus).
       type: boolean
     CustomData:
       description: Custom data extension

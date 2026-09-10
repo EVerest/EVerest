@@ -300,7 +300,7 @@ handle_request(const message_20::DER_AC_ChargeParameterDiscoveryRequest& req, co
 } // namespace
 
 void AC_DER_IEC_ChargeParameterDiscovery::enter() {
-    m_ctx.log.enter_state("AC_DER_IEC_ChargeParameterDiscovery");
+    logf_debug("Enter state: AC_DER_IEC_ChargeParameterDiscovery");
     present_powers = m_ctx.cache_ac_present_power.value_or(AcPresentPower{});
 }
 
@@ -323,12 +323,13 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
 
         m_ctx.session_ev_info.ev_transfer_limits.emplace<dt::DER_AC_CPDReqEnergyTransferMode>(req->transfer_mode);
 
+        // TODO(SL): Should be not a problem but maybe its better to assign the values directly
         const auto operating_mode =
-            static_cast<dt::OperatingMode>(m_ctx.session_config.der_setup_config.operating_mode);
+            static_cast<dt::OperatingMode>(m_ctx.session_config.der_iec_setup_config.operating_mode);
         const auto grid_connection_mode =
-            static_cast<dt::GridConnectionMode>(m_ctx.session_config.der_setup_config.grid_connection_mode);
+            static_cast<dt::GridConnectionMode>(m_ctx.session_config.der_iec_setup_config.grid_connection_mode);
 
-        const auto& der_functions = m_ctx.session_config.der_setup_config.supported_der_control_functions;
+        const auto& der_functions = m_ctx.session_config.der_iec_setup_config.supported_der_control_functions;
         const auto& selected_services = m_ctx.session.get_selected_services();
 
         const auto der_control = create_der_control(selected_services.selected_der_control_functions, der_functions);
@@ -362,7 +363,7 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
 
         return {};
     }
-    m_ctx.log("expected AC_ChargeParameterDiscovery! But code type id: %d", variant->get_type());
+    logf_warning("Expected AC_ChargeParameterDiscovery! But code type id: %d", variant->get_type());
     m_ctx.session_stopped = true;
 
     // Sequence Error

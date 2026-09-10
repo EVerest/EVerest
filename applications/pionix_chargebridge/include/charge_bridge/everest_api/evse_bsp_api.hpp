@@ -49,9 +49,10 @@ private:
 
     void handle_event_cp(std::uint8_t cp);
     void handle_event_relay(std::uint8_t relay);
+    void publish_error_flag_edges(std::uint32_t prev, std::uint32_t next);
     void handle_error(const SafetyErrorFlags& data);
     void handle_pp_type1(std::uint8_t data);
-    void handle_pp_type2(std::uint8_t data);
+    void handle_pp_type2(std::uint8_t data, bool republish = false);
     void handle_stop_button(std::uint8_t data);
 
     void send_event(API_BSP::Event data);
@@ -93,6 +94,7 @@ private:
     bool everest_connected{false};
     bool m_cb_connected{false};
     bool m_bc_initial_comm_check{true};
+    bool m_pp_fault_raised{false};
     std::string m_cb_identifier;
     std::chrono::steady_clock::time_point last_everest_heartbeat;
 

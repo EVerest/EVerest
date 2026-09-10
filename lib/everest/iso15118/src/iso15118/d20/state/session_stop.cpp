@@ -29,7 +29,7 @@ message_20::SessionStopResponse handle_request(const message_20::SessionStopRequ
 }
 
 void SessionStop::enter() {
-    m_ctx.log.enter_state("SessionStop");
+    logf_debug("Enter state: SessionStop");
 }
 
 Result SessionStop::feed(Event ev) {
@@ -75,7 +75,7 @@ Result SessionStop::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("expected SessionStop! But code type id: %d", variant->get_type());
+        logf_warning("Expected SessionStop! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

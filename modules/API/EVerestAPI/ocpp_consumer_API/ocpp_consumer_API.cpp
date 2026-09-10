@@ -7,8 +7,10 @@
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/ocpp/API.hpp>
 #include <everest_api_types/ocpp/codec.hpp>
+#include <everest_api_types/ocpp/json_codec.hpp>
 #include <everest_api_types/ocpp/wrapper.hpp>
 #include <everest_api_types/utilities/codec.hpp>
+#include <everest_api_types/utilities/request_reply.hpp>
 
 namespace {
 template <class T> T const& to_external_api(T const& val) {
@@ -21,6 +23,7 @@ namespace module {
 namespace API_types_ext = API_types::ocpp;
 namespace API_generic = API_types::generic;
 using ev_API::deserialize;
+using ev_API::deserialize_request;
 
 void ocpp_consumer_API::init() {
     invoke_init(*p_main);
@@ -34,7 +37,8 @@ void ocpp_consumer_API::init() {
 
     // setup var forwarding before modules start publishing
     generate_api_var_security_event();
-    generate_api_var_is_connected();
+    generate_api_var_connection_status();
+    generate_api_var_implementation_ready();
     generate_api_var_boot_notification_response();
     generate_api_var_ocpp_transaction_event();
     generate_api_var_event_data();
@@ -51,6 +55,8 @@ void ocpp_consumer_API::ready() {
     generate_api_cmd_get_variables();
     generate_api_cmd_set_variables();
     generate_api_cmd_monitor_variables();
+    generate_api_cmd_change_availability();
+    generate_api_cmd_security_event();
 
     helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
@@ -69,15 +75,13 @@ auto ocpp_consumer_API::forward_and_cache_api_var(std::string const& var) {
 void ocpp_consumer_API::generate_api_cmd_data_transfer() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("data_transfer_outgoing", [=](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
-            DataTransferRequest request;
-            if (deserialize(msg.payload, request)) {
-                auto int_reply = r_data_transfer->call_data_transfer(to_internal_api(request));
-                auto reply = to_external_api(int_reply);
-                mqtt_v.publish(msg.replyTo, serialize(reply));
-                return true;
-            }
+        std::string reply_to;
+        DataTransferRequest request;
+        if (deserialize_request(data, reply_to, request)) {
+            auto int_reply = r_data_transfer->call_data_transfer(to_internal_api(request));
+            auto reply = to_external_api(int_reply);
+            mqtt_v.publish(reply_to, serialize(reply));
+            return true;
         }
         return false;
     });
@@ -86,15 +90,13 @@ void ocpp_consumer_API::generate_api_cmd_data_transfer() {
 void ocpp_consumer_API::generate_api_cmd_get_variables() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("get_variables", [=](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
-            GetVariableRequestList request;
-            if (deserialize(msg.payload, request)) {
-                auto int_reply = r_ocpp->call_get_variables(to_internal_api(request));
-                auto reply = to_external_api(int_reply);
-                mqtt_v.publish(msg.replyTo, serialize(reply));
-                return true;
-            }
+        std::string reply_to;
+        GetVariableRequestList request;
+        if (deserialize_request(data, reply_to, request)) {
+            auto int_reply = r_ocpp->call_get_variables(to_internal_api(request));
+            auto reply = to_external_api(int_reply);
+            mqtt_v.publish(reply_to, serialize(reply));
+            return true;
         }
         return false;
     });
@@ -103,15 +105,13 @@ void ocpp_consumer_API::generate_api_cmd_get_variables() {
 void ocpp_consumer_API::generate_api_cmd_set_variables() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("set_variables", [=](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
-            SetVariablesArgs request;
-            if (deserialize(msg.payload, request)) {
-                auto int_reply = r_ocpp->call_set_variables(to_internal_api(request.variables), request.source);
-                auto reply = to_external_api(int_reply);
-                mqtt_v.publish(msg.replyTo, serialize(reply));
-                return true;
-            }
+        std::string reply_to;
+        SetVariablesArgs request;
+        if (deserialize_request(data, reply_to, request)) {
+            auto int_reply = r_ocpp->call_set_variables(to_internal_api(request.variables), request.source);
+            auto reply = to_external_api(int_reply);
+            mqtt_v.publish(reply_to, serialize(reply));
+            return true;
         }
         return false;
     });
@@ -129,12 +129,53 @@ void ocpp_consumer_API::generate_api_cmd_monitor_variables() {
     });
 }
 
+void ocpp_consumer_API::generate_api_cmd_change_availability() {
+    using namespace API_types_ext;
+    helper.subscribe_api_topic("change_availability", [=](std::string const& data) {
+        std::string reply_to;
+        ChangeAvailabilityRequest request;
+        if (deserialize_request(data, reply_to, request)) {
+            auto int_reply = r_ocpp->call_change_availability(to_internal_api(request));
+            auto reply = to_external_api(int_reply);
+            mqtt_v.publish(reply_to, serialize(reply));
+            return true;
+        }
+        return false;
+    });
+}
+
+void ocpp_consumer_API::generate_api_cmd_security_event() {
+    using namespace API_types_ext;
+    helper.subscribe_api_topic("security_event", [=](std::string const& data) {
+        SecurityEvent event;
+        if (deserialize(data, event)) {
+            r_ocpp->call_security_event(to_internal_api(event));
+            return true;
+        }
+        return false;
+    });
+}
+
 void ocpp_consumer_API::generate_api_var_security_event() {
     r_ocpp->subscribe_security_event(forward_and_cache_api_var("security_event"));
 }
 
-void ocpp_consumer_API::generate_api_var_is_connected() {
-    r_ocpp->subscribe_is_connected(forward_and_cache_api_var("is_connected"));
+void ocpp_consumer_API::generate_api_var_connection_status() {
+    auto forward_connection_status = forward_and_cache_api_var("connection_status");
+    auto forward_is_connected = forward_and_cache_api_var("is_connected");
+    r_ocpp->subscribe_connection_status([forward_connection_status, forward_is_connected](auto const& status) {
+        forward_connection_status(status);
+        // deprecated: is_connected is kept for backwards compatibility and reports the
+        // connected property of the connection status as a plain boolean
+        forward_is_connected(status.connected);
+    });
+}
+
+void ocpp_consumer_API::generate_api_var_implementation_ready() {
+    r_ocpp->subscribe_ready(forward_and_cache_api_var("implementation_ready"));
+    // seed the value: the OCPP implementation only publishes once it is up, so without this a
+    // client querying implementation_ready/get before that would receive null instead of false
+    helper.publish_initial_api_var("implementation_ready", API_generic::serialize(false), config.latch_variable_values);
 }
 
 void ocpp_consumer_API::generate_api_var_boot_notification_response() {

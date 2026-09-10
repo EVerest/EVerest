@@ -197,7 +197,7 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
 }
 
 void DC_ChargeLoop::enter() {
-    m_ctx.log.enter_state("DC_ChargeLoop");
+    logf_debug("Enter state: DC_ChargeLoop");
     dynamic_parameters = m_ctx.cache_dynamic_mode_parameters.value_or(UpdateDynamicModeParameters{});
 }
 
@@ -276,7 +276,7 @@ Result DC_ChargeLoop::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("Expected PowerDeliveryReq or DC_ChargeLoopReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected PowerDeliveryReq or DC_ChargeLoopReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

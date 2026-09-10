@@ -12,9 +12,9 @@
 
 #include <everest_api_types/entrypoint/codec.hpp>
 #include <everest_api_types/generic/string.hpp>
+#include <everest_api_types/utilities/request_reply.hpp>
 
 #include <everest/logging.hpp>
-#include <generated/version_information.hpp>
 
 namespace {
 inline bool ends_with(std::string_view str, std::string_view suffix) {
@@ -78,9 +78,9 @@ void ApiHelper::init_topics() {
 
 void ApiHelper::generate_api_entrypoint_cmd_discover() {
     subscribe_entrypoint_var("discover", [this](std::string const& data) {
-        V1_0::types::generic::RequestReply msg;
-        if (deserialize(data, msg)) {
-            mqtt.publish(msg.replyTo, V1_0::types::entrypoint::serialize(discover_response));
+        std::string reply_to;
+        if (deserialize_request(data, reply_to)) {
+            mqtt.publish(reply_to, V1_0::types::entrypoint::serialize(discover_response));
             return true;
         }
         return false;
@@ -93,10 +93,10 @@ void ApiHelper::generate_api_entrypoint_cmd_query_module() {
         topic << "query-modules/" << api_type;
 
         subscribe_entrypoint_var(topic.str(), [api_type = api_type, this](std::string const& data) {
-            V1_0::types::generic::RequestReply msg;
-            if (deserialize(data, msg)) {
+            std::string reply_to;
+            if (deserialize_request(data, reply_to)) {
                 if (module_query_response.count(api_type) > 0) {
-                    mqtt.publish(msg.replyTo, V1_0::types::entrypoint::serialize(module_query_response[api_type]));
+                    mqtt.publish(reply_to, V1_0::types::entrypoint::serialize(module_query_response[api_type]));
                 }
                 return true;
             }
@@ -111,27 +111,32 @@ void ApiHelper::publish_ready_beacon() {
     }
 }
 
-void ApiHelper::subscribe_latched_value_request(std::string const& var, std::string const& topic) {
-    subscribe_api_topic(var + "/get", [this, topic](std::string const& data) {
-        V1_0::types::generic::RequestReply msg;
-        if (deserialize(data, msg)) {
-            std::optional<std::string> payload;
-            {
-                std::lock_guard<std::mutex> lock(serialized_variables_mutex);
-                auto it = serialized_variables_cache.find(topic);
-                if (it != serialized_variables_cache.end()) {
-                    payload = it->second;
+void ApiHelper::subscribe_latched_value_request(std::string const& var, std::string const& topic,
+                                                std::optional<std::string> deprecation_notice) {
+    subscribe_api_topic(
+        var + "/get", [this, var, topic, deprecation_notice = std::move(deprecation_notice)](std::string const& data) {
+            std::string reply_to;
+            if (deserialize_request(data, reply_to)) {
+                if (deprecation_notice.has_value()) {
+                    EVLOG_warning << "Deprecated request for var '" << var << "': " << deprecation_notice.value();
                 }
+                std::optional<std::string> payload;
+                {
+                    std::lock_guard<std::mutex> lock(serialized_variables_mutex);
+                    auto it = serialized_variables_cache.find(topic);
+                    if (it != serialized_variables_cache.end()) {
+                        payload = it->second;
+                    }
+                }
+                if (payload) {
+                    mqtt.publish(reply_to, *payload);
+                } else {
+                    mqtt.publish(reply_to, "null");
+                }
+                return true;
             }
-            if (payload) {
-                mqtt.publish(msg.replyTo, *payload);
-            } else {
-                mqtt.publish(msg.replyTo, "null");
-            }
-            return true;
-        }
-        return false;
-    });
+            return false;
+        });
 }
 
 void ApiHelper::log_forward_api_var_error(std::string const& topic, char const* what) {
@@ -142,12 +147,12 @@ void ApiHelper::log_forward_api_var_error(std::string const& topic, char const* 
     }
 }
 
-void ApiHelper::publish_and_cache_variable(std::string const& topic, std::string const& payload, bool cache_value) {
+void ApiHelper::publish_and_cache_variable(std::string const& topic, std::string payload, bool cache_value) {
+    mqtt.publish(topic, payload);
     if (cache_value) {
         std::lock_guard<std::mutex> lock(serialized_variables_mutex);
-        serialized_variables_cache[topic] = payload;
+        serialized_variables_cache[topic] = std::move(payload);
     }
-    mqtt.publish(topic, payload);
 }
 
 void ApiHelper::subscribe_entrypoint_var(std::string const& var, ParseAndPublishFtor parse_and_publish) {

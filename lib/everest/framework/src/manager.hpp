@@ -17,6 +17,12 @@
 #include <unordered_map>
 #include <vector>
 
+#include "manager_module_status.hpp"
+
+namespace everest::db::sqlite {
+class ConnectionInterface;
+} // namespace everest::db::sqlite
+
 namespace Everest {
 class ManagerConfig;
 class MQTTAbstraction;
@@ -24,6 +30,9 @@ class StatusFifo;
 struct ManagerSettings;
 namespace system {
 class SignalPolling;
+}
+namespace config {
+class ConfigServiceCore;
 }
 } // namespace Everest
 struct TypedHandler;
@@ -35,30 +44,25 @@ struct ModuleShutdownInfo {
     int wstatus;
 };
 
+// Data structure to keep MQTT Last-Will-and-Testament related items together
+struct LwtCfg {
+    std::string topic;
+    std::string data;
+};
+
 /// @file manager.hpp
 ///
-/// `ManagerState` is the **phase** of the main-loop (what the manager is doing right now).
+/// `ManagerState` is the **phase** of the main-loop (what the manager is doing right now). It lives
+/// in `manager_module_status.hpp` together with its mapping onto the module status reported to the
+/// config service.
 /// `ShutdownCause` records **why** a shutdown or drain was started; it is kept across transient
 /// states (for example through `ForceTerminating` / `ShutdownFinalizing`) so the next step can
 /// distinguish normal stop, admin-driven restart, and crash recovery.
 ///
-/// The full lifecycle description lives in `lib/everest/framework/docs/ManagerLifecycle.md`,
-/// the state machine diagram in `lib/everest/framework/docs/ManagerLifecycleStateMachine.mmd`.
+/// The full lifecycle description lives in `docs/source/explanation/manager-lifecycle.rst`,
+/// the state machine diagram in
+/// `docs/source/explanation/images/manager_lifecycle_state_machine.mmd`.
 /// Timeouts and limits that drive transitions are defined in `manager.cpp`.
-
-/// \brief Runtime phase of the manager main loop (see file-level state machine description).
-enum class ManagerState {
-    Initializing,
-    StartingModules,
-    Running,
-    RestartRequested,
-    CrashShutdownInProgress,
-    ShutdownRequested,
-    ForceTerminating,
-    ShutdownFinalizing,
-    Idle,
-    Exiting
-};
 
 /// \brief Why the current shutdown / drain was started (persists across some ManagerState values).
 enum class ShutdownCause {
@@ -66,6 +70,16 @@ enum class ShutdownCause {
     Normal,
     Restart,
     Crash
+};
+
+/// \brief Deferred lifecycle-API intent recorded on the MQTT thread and consumed by the main loop.
+///
+/// The LifecycleAPI stop/restart command handlers run on an MQTT worker thread. Stop/Restart
+/// are mutually exclusive, so a single atomic with last-writer-wins semantics is sufficient.
+enum class LifecycleApiRequest {
+    None,
+    Stop,
+    Restart
 };
 
 class Manager {
@@ -90,10 +104,10 @@ private:
     // while keeping runtime data explicit (instead of hidden mutable members).
     /// \brief Aggregates runtime dependencies used across handlers for one run.
     struct RuntimeContext {
-        std::shared_ptr<Everest::ManagerConfig>& config;
+        std::shared_ptr<const Everest::ManagerConfig>& config;
         Everest::MQTTAbstraction& mqtt_abstraction;
-        const std::vector<std::string>& ignored_modules;
-        const std::vector<std::string>& standalone_modules;
+        std::vector<std::string>& ignored_modules;
+        std::vector<std::string>& standalone_modules;
         const Everest::ManagerSettings& ms;
         Everest::StatusFifo& status_fifo;
         bool retain_topics;
@@ -116,13 +130,18 @@ private:
 
     /// \brief Load and validate manager configuration from current boot source.
     /// \param ms Fully resolved manager settings for this run.
+    /// \param preloaded_module_configs Full module configuration, but maybe not validated yet
     /// \return Shared validated configuration object.
-    std::shared_ptr<Everest::ManagerConfig> load_and_validate_config(const Everest::ManagerSettings& ms) const;
+    std::shared_ptr<const Everest::ManagerConfig>
+    load_and_validate_config(const Everest::ManagerSettings& ms,
+                             everest::config::ModuleConfigurations& preloaded_module_configs) const;
 
     /// \brief Create MQTT abstraction, connect, and spawn its main loop thread.
     /// \param ms Fully resolved manager settings for this run.
+    /// \param lwt_cfg Optional Last-Will-and-Testament
     /// \return Connected MQTT abstraction, or nullptr on connection failure.
-    std::unique_ptr<Everest::MQTTAbstraction> create_and_connect_mqtt(const Everest::ManagerSettings& ms) const;
+    std::unique_ptr<Everest::MQTTAbstraction> create_and_connect_mqtt(const Everest::ManagerSettings& ms,
+                                                                      std::optional<LwtCfg> lwt_cfg) const;
 
     /// \brief Collect standalone module ids from config plus CLI overrides.
     /// \param config Validated manager configuration for this run.
@@ -138,15 +157,27 @@ private:
     void publish_startup_metadata(const RuntimeContext& ctx) const;
 
     /// \brief Unregister all module ready handlers and clear ready-tracking state.
-    void unregister_module_ready_handlers(Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
+    void unregister_module_ready_handlers(const Everest::ManagerConfig& config,
+                                          Everest::MQTTAbstraction& mqtt_abstraction);
 
     /// \brief Unregister module ready handlers and clear retained MQTT topics.
     /// \note Must be called with the config that was used to register handlers (before any reload).
     /// \note MQTT must still be connected; call before any disconnect.
-    void cleanup_modules_state(Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
+    void cleanup_modules_state(const Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
+
+    /// \brief cleanup_modules_state() for paths that can also run without a configuration: does
+    /// nothing when ctx.config is null, the state a boot with no valid configuration leaves behind.
+    void cleanup_modules_state_if_configured(const RuntimeContext& ctx);
+
+    /// \brief SIGKILL every module process still tracked in m_module_handles, if any.
+    ///
+    /// The teardown net behind ModuleProcessGuard in run(): a no-op on the paths that already drained
+    /// or killed their modules, so a warning from here means an exit skipped module teardown. noexcept
+    /// because it runs from a destructor, including while an exception unwinds out of run().
+    void sigkill_remaining_modules() noexcept;
 
     /// \brief Terminate remaining module processes (SIGTERM, then SIGKILL fallback).
-    void shutdown_modules(const std::map<pid_t, std::string>& modules, Everest::ManagerConfig& config,
+    void shutdown_modules(const std::map<pid_t, std::string>& modules, const Everest::ManagerConfig& config,
                           Everest::MQTTAbstraction& mqtt_abstraction);
 
     /// \brief Convert ManagerState enum to a readable string for logs.
@@ -155,7 +186,7 @@ private:
     /// \brief Apply state transition with transition logging.
     void transition_to(ManagerState new_state);
 
-    /// \brief Like transition_to(); caller must hold state_transition_mutex_.
+    /// \brief Like transition_to(); caller must hold m_state_transition_mutex.
     void transition_to_unlocked(ManagerState new_state);
 
     /// \brief Write a status-fifo message when a fifo path was configured for this run.
@@ -167,11 +198,14 @@ private:
     /// \brief Write CRASH_RECOVERY_ATTEMPT:n/max to the status fifo.
     void notify_crash_recovery_attempt(std::uint8_t attempt, std::uint8_t max);
 
-    /// \brief Like is_in_shutdown_flow_state(); caller must hold state_transition_mutex_.
+    /// \brief Like is_in_shutdown_flow_state(); caller must hold m_state_transition_mutex.
     bool is_in_shutdown_flow_state_unlocked() const;
 
-    /// \brief Load current state; caller must hold state_transition_mutex_.
+    /// \brief Load current state; caller must hold m_state_transition_mutex.
     ManagerState current_state_unlocked() const;
+    /// \brief Reload the configuration from the config_service_core class and update relevant fields in the context
+    /// \return Updated context to a valid configuration
+    bool reload_and_update_context(RuntimeContext& ctx);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // State predicates
@@ -191,9 +225,25 @@ private:
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     /// \brief Handle module startup: transition to StartingModules, register ready handlers, and spawn modules.
+    ///
+    /// Records each spawned child pid in m_module_handles as it is forked, rather than assigning the
+    /// whole mapping on success, so a throw partway through the spawn still leaves every already-forked
+    /// process visible to ModuleProcessGuard in run(). Requires m_module_handles to be empty on entry.
     /// \param ctx Runtime dependencies for the current run.
-    /// \return Mapping of spawned child pid to module id.
-    std::map<pid_t, std::string> handle_start_modules(const RuntimeContext& ctx);
+    void handle_start_modules(const RuntimeContext& ctx);
+
+    /// \brief Settle into Idle after a failed start or reload, logging \p reason and reporting
+    /// FailedToStart to the Configuration API. Shared by the boot and restart paths.
+    void settle_into_idle_after_failed_start(std::string_view reason);
+
+    /// \brief Run the "EVerest is up and running" completion sequence: clear retained startup topics,
+    /// log readiness, transition to Running and announce readiness via the status fifo and global
+    /// ready topic. Called from the module-ready handler once all modules report ready.
+    /// \return true if the manager transitioned to Running; false if it was skipped because a
+    /// shutdown is already in progress.
+    bool transition_to_running_and_announce(Everest::MQTTAbstraction& mqtt_abstraction,
+                                            Everest::StatusFifo& status_fifo, const std::string& mqtt_everest_prefix,
+                                            bool retain_topics);
 
     /// \brief Advance lifecycle state when current phase is complete.
     /// \param ctx Runtime dependencies for the current run.
@@ -210,10 +260,20 @@ private:
     std::optional<int> handle_finalize_shutdown_transition(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
                                                            bool restart_requested, bool crash_in_progress);
 
-    /// \brief Reload config and initiate module restart sequence.
-    void handle_restart_modules_after_shutdown(RuntimeContext& ctx);
+    /// \brief Outcome of a module restart after a completed drain.
+    enum class RestartOutcome {
+        Restarted,  ///< Configuration reloaded and modules started again.
+        StayedIdle, ///< Nothing startable; --idle-on-failure keeps the manager in Idle.
+        ExitFailure ///< Nothing startable; the caller must exit with EXIT_FAILURE (default).
+    };
 
-    /// \brief Format the entries of shutdown_info_ that did not exit cleanly for logging.
+    /// \brief Reload the configuration and start the modules again after a completed drain.
+    /// A reload that fails or yields an empty module list is a failed restart: with
+    /// --idle-on-failure the manager settles into Idle (restart intent cleared), otherwise the
+    /// caller must terminate the manager with EXIT_FAILURE.
+    RestartOutcome handle_restart_modules_after_shutdown(RuntimeContext& ctx);
+
+    /// \brief Format the entries of m_shutdown_info that did not exit cleanly for logging.
     /// \return Space-separated "id (wait status)" list, empty when all modules exited cleanly.
     std::string format_unclean_exits() const;
 
@@ -224,10 +284,23 @@ private:
     /// \return std::nullopt for callers that return std::optional<int>.
     std::optional<int> transition_to_idle_after_shutdown(std::string_view log_message);
 
-    /// \brief Disconnect controller and MQTT, optionally reset shutdown state, transition to Exiting.
+    /// \brief Shut down the controller, transition to Exiting, then publish the final lifecycle
+    ///        status and disconnect MQTT.
     /// \return Process exit code for the caller.
     int transition_to_exiting_after_shutdown(RuntimeContext& ctx, ManagerAdminPanel& admin_panel, int exit_code,
                                              bool reset_state);
+
+    /// \brief Publish the final lifecycle status (at most once) and disconnect MQTT before the
+    ///        manager process exits.
+    ///
+    /// The publish must happen immediately before the disconnect: see
+    /// LifecycleAPI::publish_shutdown_status() for why that ordering is load-bearing. Keeping it in
+    /// here rather than at the call sites means no exit path can forget it; and since only exit
+    /// paths call this - module restarts keep the connection - it cannot fire on a restart.
+    ///
+    /// Publishes only when --lifecycle-api was given: without that gate a run without the lifecycle
+    /// API would create that retained topic out of nowhere on exit.
+    void publish_final_status_and_disconnect(Everest::MQTTAbstraction& mqtt_abstraction);
 
     /// \brief Finalize normal shutdown and decide exit vs idle outcome.
     /// \param ctx Runtime dependencies for the current run.
@@ -302,28 +375,64 @@ private:
     ///        needs polling, long otherwise (SIGINT/SIGTERM/SIGCHLD wake the poll immediately).
     int signal_poll_timeout_ms() const;
 
-    const boost::program_options::variables_map& vm_;
-    Everest::StatusFifo* status_fifo_{nullptr};
-    bool recover_module_crashes_{false};
+    /// \brief True when --lifecycle-api was given, i.e. the lifecycle status topic is in use.
+    ///
+    /// Recomputed from m_vm rather than cached: the last-will registration, the LifecycleAPI
+    /// construction and the final shutdown status must all agree on this predicate.
+    bool lifecycle_api_active() const;
+
+    /// \brief Register a callback invoked on every state transition with (old_state, new_state).
+    void register_state_transition_handler(std::function<void(ManagerState, ManagerState)> handler);
+
+    /// \brief Wake the main-loop poll after recording a lifecycle-API request (MQTT-thread safe).
+    void poke_lifecycle_wakeup();
+
+    /// \brief Consume a deferred lifecycle-API stop/restart request on the main loop.
+    /// \param ctx Runtime dependencies for the current run.
+    void handle_lifecycle_api_request(RuntimeContext& ctx);
+
+    const boost::program_options::variables_map& m_vm;
+    Everest::StatusFifo* m_status_fifo{nullptr};
+    bool m_recover_module_crashes{false};
     // Opt-in via --graceful-shutdown: publish the MQTT shutdown signal and give modules
     // SHUTDOWN_TIMEOUT_MS to exit on their own. Default (false): terminate module processes
     // immediately (SIGTERM, escalating to SIGKILL after FORCE_KILL_GRACE_TIMEOUT_MS).
-    bool graceful_shutdown_enabled_{false};
-    // state_ is atomic because the module-ready handler runs on the MQTT thread; transitions are
-    // serialized with state_transition_mutex_ (main loop and ready handler).
-    std::atomic<ManagerState> state_{ManagerState::Idle};
-    ShutdownCause shutdown_cause_{ShutdownCause::None};
-    std::atomic<bool> sigint_received_{false};
+    bool m_graceful_shutdown_enabled{false};
+    // Opt-in via --idle-on-failure: stay alive in Idle whenever there is nothing startable (an
+    // invalid or empty boot configuration, crash recovery exhausted, a failed config reload during a
+    // restart) so the config API stays available. Default (false): exit with an error.
+    bool m_idle_on_failure{false};
+    // m_state is atomic because the module-ready handler runs on the MQTT thread; transitions are
+    // serialized with m_state_transition_mutex (main loop and ready handler).
+    std::atomic<ManagerState> m_state{ManagerState::Idle};
+    ShutdownCause m_shutdown_cause{ShutdownCause::None};
+    std::atomic<bool> m_sigint_received{false};
+    // Deferred lifecycle-API intent: set on the MQTT worker thread by the stop/restart command
+    // handlers, consumed on the main loop by handle_lifecycle_api_request(). Keeps all mutation of
+    // m_module_handles/shutdown_* on the main thread. Last-writer-wins (Stop/Restart exclusive).
+    std::atomic<LifecycleApiRequest> m_lifecycle_api_request{LifecycleApiRequest::None};
+    // eventfd owned by run(): the MQTT stop/restart handlers write to it after setting
+    // m_lifecycle_api_request to wake up the main-loop poll() immediately.
+    // -1 when not yet created / after run() returns. Atomic because the MQTT worker thread reads it
+    // in poke_lifecycle_wakeup() while the main thread creates/closes it in run().
+    std::atomic<int> m_lifecycle_wakeup_fd{-1};
+    // Latch for publish_final_status_and_disconnect(): the exiting paths publish the final lifecycle
+    // status explicitly, and run()'s exit guard publishes it again for the paths that leave by
+    // throwing. Main thread only (all exits from run() unwind there).
+    bool m_final_lifecycle_status_published{false};
     // Unexpected-exit recovery attempts for this manager process lifetime (current config).
     // Not cleared on transition to Running; resets when run() starts (future: also on config change).
-    std::uint8_t unexpected_module_exit_count_{0};
-    std::chrono::steady_clock::time_point module_startup_start_time_{std::chrono::steady_clock::now()};
-    std::optional<std::chrono::steady_clock::time_point> shutdown_start_time_;
-    std::optional<std::chrono::steady_clock::time_point> force_terminate_start_time_;
-    bool force_kill_sent_{false};
-    std::map<pid_t, std::string> module_handles_;
-    std::vector<ModuleShutdownInfo> shutdown_info_;
-    ModulesReadyType modules_ready_; // guarded by modules_ready_mutex_
-    std::mutex modules_ready_mutex_;
-    mutable std::mutex state_transition_mutex_;
+    std::uint8_t m_unexpected_module_exit_count{0};
+    std::chrono::steady_clock::time_point m_module_startup_start_time{std::chrono::steady_clock::now()};
+    std::optional<std::chrono::steady_clock::time_point> m_shutdown_start_time;
+    std::optional<std::chrono::steady_clock::time_point> m_force_terminate_start_time;
+    bool m_force_kill_sent{false};
+    std::map<pid_t, std::string> m_module_handles;
+    std::vector<ModuleShutdownInfo> m_shutdown_info;
+    ModulesReadyType m_modules_ready; // guarded by m_modules_ready_mutex
+    std::mutex m_modules_ready_mutex;
+    mutable std::mutex m_state_transition_mutex;
+    std::vector<std::function<void(ManagerState, ManagerState)>> m_state_transition_handlers;
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> m_db_connection;
+    std::unique_ptr<Everest::config::ConfigServiceCore> m_config_service_core{};
 };

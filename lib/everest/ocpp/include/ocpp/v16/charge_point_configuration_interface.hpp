@@ -67,6 +67,7 @@ public:
     virtual bool getLogMessagesRaw() = 0;
     virtual bool getLogRotation() = 0;
     virtual bool getLogRotationDateSuffix() = 0;
+    virtual bool getReportSuspendedEVSEReasonChange() = 0;
     virtual bool getStopTransactionIfUnlockNotSupported() = 0;
     virtual bool getUseSslDefaultVerifyPaths() = 0;
     virtual bool getUseTPM() = 0;
@@ -102,6 +103,7 @@ public:
     virtual std::optional<bool> getQueueAllMessages() = 0;
     virtual std::optional<bool> getRejectRemoteStartTransactionWithoutConnectorId() = 0;
     virtual std::optional<bool> getRemoteStartTransactionWithoutConnectorIdFindFirst() = 0;
+    virtual std::optional<bool> getReportClearedErrors() = 0;
     virtual std::optional<int> getMessageQueueSizeThreshold() = 0;
     virtual std::optional<std::int32_t> getCompositeScheduleDefaultLimitAmps() = 0;
     virtual std::optional<std::int32_t> getCompositeScheduleDefaultLimitWatts() = 0;
@@ -128,6 +130,7 @@ public:
     virtual KeyValue getMaxCompositeScheduleDurationKeyValue() = 0;
     virtual KeyValue getMaxMessageSizeKeyValue() = 0;
     virtual KeyValue getOcspRequestIntervalKeyValue() = 0;
+    virtual KeyValue getReportSuspendedEVSEReasonChangeKeyValue() = 0;
     virtual KeyValue getRetryBackoffRandomRangeKeyValue() = 0;
     virtual KeyValue getRetryBackoffRepeatTimesKeyValue() = 0;
     virtual KeyValue getRetryBackoffWaitMinimumKeyValue() = 0;
@@ -161,6 +164,7 @@ public:
     virtual std::optional<KeyValue> getQueueAllMessagesKeyValue() = 0;
     virtual std::optional<KeyValue> getRejectRemoteStartTransactionWithoutConnectorIdKeyValue() = 0;
     virtual std::optional<KeyValue> getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue() = 0;
+    virtual std::optional<KeyValue> getReportClearedErrorsKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectCommonNameKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectCountryKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectOrganizationKeyValue() = 0;
@@ -178,6 +182,7 @@ public:
     virtual void setOcspRequestInterval(std::int32_t ocsp_request_interval) = 0;
     virtual void setRejectRemoteStartTransactionWithoutConnectorId(bool reject) = 0;
     virtual void setRemoteStartTransactionWithoutConnectorIdFindFirst(bool find_first) = 0;
+    virtual void setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) = 0;
     virtual void setRetryBackoffRandomRange(std::int32_t retry_backoff_random_range) = 0;
     virtual void setRetryBackoffRepeatTimes(std::int32_t retry_backoff_repeat_times) = 0;
     virtual void setRetryBackoffWaitMinimum(std::int32_t retry_backoff_wait_minimum) = 0;
@@ -341,6 +346,12 @@ public:
     virtual void setCpoName(const std::string& cpo_name) = 0;
     virtual void setDisableSecurityEventNotifications(bool disable_security_event_notifications) = 0;
     virtual void setSecurityProfile(std::int32_t security_profile) = 0;
+    /// \brief Set the SecurityProfile of a specific network profile slot. Used by the security-profile
+    ///        switch so the revert targets the slot captured at switch time even if the active slot moved
+    ///        (multi-slot failover). Backends without per-slot profiles ignore the slot.
+    virtual void set_security_profile_for_slot(std::int32_t /*slot*/, std::int32_t security_profile) {
+        setSecurityProfile(security_profile);
+    }
 
     // Local Auth List Management Profile
     virtual bool getLocalAuthListEnabled() = 0;

@@ -26,7 +26,8 @@ typedef union _SafetyErrorFlags {
         uint32_t config_mem_error : 1;
         uint32_t dc_hv_ov_emergency : 1;
         uint32_t dc_hv_ov_error : 1;
-        uint32_t reserved : 17;
+        uint32_t rcd_error : 1;
+        uint32_t reserved : 16;
     } flags;
     uint32_t raw;
 } SafetyErrorFlags;

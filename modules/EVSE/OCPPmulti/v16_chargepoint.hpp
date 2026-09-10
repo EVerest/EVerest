@@ -53,6 +53,9 @@ private:
         std::string device_model_config_mappings;
         std::int32_t ocpp16_network_config_slot;
         bool enable_legacy_config_migration;
+        // Registered as source "EVEREST" in the composed device model storage, next to the SQLite-backed
+        // "OCPP" source; same composition as the OCPP 2.x path.
+        std::shared_ptr<ocpp_module_common::device_model::EverestDeviceModelStorage> everest_device_model;
     };
 
     void check_configured(const std::string_view& fn);
@@ -61,7 +64,8 @@ private:
     std::optional<evse_connector_t> evse_from_ocpp_connector(std::int32_t ocpp_connector_id) const;
 
     void cb_boot_notification_response(const ocpp::v16::BootNotificationResponse& boot_notification_response);
-    void cb_connection_state_changed(bool is_connected);
+    void cb_connection_state_changed(bool is_connected, int configuration_slot,
+                                     const ocpp::v2::NetworkConnectionProfile& network_connection_profile);
     ocpp::v16::DataTransferResponse cb_data_transfer(const ocpp::v16::DataTransferRequest& request);
     void cb_default_price(const ocpp::TariffMessage& message);
     bool cb_disable_evse(std::int32_t ocpp_connector_id);
@@ -205,6 +209,8 @@ public:
     ocpp::v2::AuthorizeResponse validate_token(const types::authorization::ProvidedIdToken& provided_token) override;
 
     static bool default_is_fault(const Everest::error::Error& error);
+    static std::optional<ocpp::CiString<50>>
+    encode_pause_reasons(const std::optional<types::evse_manager::ChargingPausedEVSEReasons>& reasons);
     static std::string default_vendor_error_code(const Everest::error::Error& error);
 };
 

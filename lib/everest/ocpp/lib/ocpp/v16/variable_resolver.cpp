@@ -14,20 +14,6 @@ bool matches(const ocpp::v2::ComponentVariable& cv, const ocpp::v2::Component& c
     return cv.variable.has_value() && (cv.component == component) && (cv.variable.value() == variable);
 }
 
-bool is_connection_config(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
-    using namespace ocpp::v2;
-    if (component.name == "NetworkConfiguration") {
-        return true; // any slot instance
-    }
-    if (matches(ControllerComponentVariables::NetworkConfigurationPriority, component, variable) ||
-        matches(ControllerComponentVariables::ActiveNetworkProfile, component, variable)) {
-        return true;
-    }
-    // SecurityCtrlr fallback CVs used by make_nc_kv_with_fallback for ChargePointId / AuthorizationKey
-    return matches(ControllerComponentVariables::SecurityCtrlrIdentity, component, variable) ||
-           matches(ControllerComponentVariables::BasicAuthPassword, component, variable);
-}
-
 bool is_read_only_derived(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
     if (matches(ocpp::v2::ControllerComponentVariables::SupportedFeatureProfiles, component, variable)) {
         return true;
@@ -43,6 +29,20 @@ bool is_read_only_derived(const ocpp::v2::Component& component, const ocpp::v2::
 } // namespace
 
 namespace ocpp::v16 {
+
+bool is_connection_config_cv(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
+    using namespace ocpp::v2;
+    if (component.name == "NetworkConfiguration") {
+        return true; // any slot instance
+    }
+    if (matches(ControllerComponentVariables::NetworkConfigurationPriority, component, variable) ||
+        matches(ControllerComponentVariables::ActiveNetworkProfile, component, variable)) {
+        return true;
+    }
+    // SecurityCtrlr fallback CVs used by make_nc_kv_with_fallback for ChargePointId / AuthorizationKey
+    return matches(ControllerComponentVariables::SecurityCtrlrIdentity, component, variable) ||
+           matches(ControllerComponentVariables::BasicAuthPassword, component, variable);
+}
 
 VariableResolver::VariableResolver(ocpp::v2::Ocpp16CustomConfigMappings custom_mappings) :
     custom_mappings(std::move(custom_mappings)) {
@@ -87,7 +87,7 @@ ReverseResult VariableResolver::cv_to_key(const ocpp::v2::Component& component,
 }
 
 CVClass VariableResolver::classify(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) const {
-    if (is_connection_config(component, variable)) {
+    if (is_connection_config_cv(component, variable)) {
         return CVClass::ConnectionConfig;
     }
     if (is_read_only_derived(component, variable)) {

@@ -2,16 +2,34 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 cc_library(
     name = "everest_api_types",
-    srcs = [
-        "src/everest_api_types/telemetry/codec.cpp",
-        "src/everest_api_types/telemetry/json_codec.cpp",
+    # NOTE: only the framework-free API modules are exposed here. The
+    # configuration/generic/lifecycle modules have no wrapper.cpp and therefore
+    # need neither the generated interface headers nor everest::framework, which
+    # keeps this target a leaf (nlohmann_json only). Modules with a wrapper.cpp
+    # are intentionally left out.
+    srcs = glob([
+        "src/everest_api_types/configuration/*.cpp",
+        "src/everest_api_types/generic/*.cpp",
+        "src/everest_api_types/lifecycle/*.cpp",
+        "src/everest_api_types/telemetry/*.cpp",
+    ]) + [
+        "src/everest_api_types/utilities/Topics.cpp",
+        "src/everest_api_types/utilities/codec.cpp",
     ],
-    hdrs = [
-        "include/everest_api_types/telemetry/API.hpp",
-        "include/everest_api_types/telemetry/codec.hpp",
+    hdrs = glob([
+        "include/everest_api_types/configuration/*.hpp",
+        "include/everest_api_types/generic/*.hpp",
+        "include/everest_api_types/lifecycle/*.hpp",
+        "include/everest_api_types/telemetry/*.hpp",
+        "private_include/everest_api_types/configuration/*.hpp",
+        "private_include/everest_api_types/generic/*.hpp",
+        "private_include/everest_api_types/lifecycle/*.hpp",
+        "private_include/everest_api_types/telemetry/*.hpp",
+    ]) + [
+        "include/everest_api_types/utilities/Topics.hpp",
+        "include/everest_api_types/utilities/codec.hpp",
         "include/everest_api_types/utilities/constants.hpp",
         "include/everest_api_types/utilities/deserialize_templates.inc",
-        "private_include/everest_api_types/telemetry/json_codec.hpp",
         "private_include/everest_api_types/utilities/json_codec_helpers.hpp",
     ],
     includes = [

@@ -22,6 +22,8 @@
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
 #include <sigslot/signal.hpp>
+
+#include <string>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -31,6 +33,7 @@ struct Conf {
     int phase_count;
     double nominal_voltage_V;
     bool enhance_external_schedule;
+    std::string phase_rotation;
 };
 
 class EnergyNode : public Everest::ModuleBase {

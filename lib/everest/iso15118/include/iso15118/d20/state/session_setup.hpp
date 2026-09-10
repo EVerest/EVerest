@@ -8,7 +8,8 @@
 namespace iso15118::d20::state {
 
 struct SessionSetup : public StateBase {
-    SessionSetup(Context& ctx) : StateBase(ctx, StateID::SessionSetup) {
+    SessionSetup(Context& ctx, bool skip_app_protocol_negotiation_) :
+        StateBase(ctx, StateID::SessionSetup), skip_app_protocol_negotiation(skip_app_protocol_negotiation_) {
     }
 
     void enter() final;
@@ -17,6 +18,7 @@ struct SessionSetup : public StateBase {
 
 private:
     std::string evse_id;
+    bool skip_app_protocol_negotiation;
 };
 
 } // namespace iso15118::d20::state

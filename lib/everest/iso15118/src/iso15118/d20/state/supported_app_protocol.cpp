@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/supported_app_protocol.hpp>
 
 #include <algorithm>
@@ -66,7 +66,7 @@ message_20::SupportedAppProtocolResponse handle_request(const message_20::Suppor
 } // namespace
 
 void SupportedAppProtocol::enter() {
-    m_ctx.log.enter_state("SupportedAppProtocol");
+    logf_debug("Enter state: SupportedAppProtocol");
 }
 
 Result SupportedAppProtocol::feed(Event ev) {
@@ -84,7 +84,8 @@ Result SupportedAppProtocol::feed(Event ev) {
         if (m_ctx.session_config.selecting_sap_based_on_energy_service) {
             logf_info("Selecting supported app protocol namespace based on the supported energy services");
             for (const auto& service : supported_energy_services) {
-                if (service == dt::ServiceCategory::AC or service == dt::ServiceCategory::AC_BPT) {
+                if (service == dt::ServiceCategory::AC or service == dt::ServiceCategory::AC_BPT or
+                    service == dt::ServiceCategory::AC_DER_IEC or service == dt::ServiceCategory::AC_DER_SAE) {
                     energy_modes.ac = true;
                 } else if (service == dt::ServiceCategory::DC or service == dt::ServiceCategory::DC_BPT or
                            service == dt::ServiceCategory::MCS or service == dt::ServiceCategory::MCS_BPT) {
@@ -131,9 +132,9 @@ Result SupportedAppProtocol::feed(Event ev) {
                 }
             }
         }
-        return m_ctx.create_state<SessionSetup>();
+        return m_ctx.create_state<SessionSetup>(false);
     }
-    m_ctx.log("expected SupportedAppProtocolReq! But code type id: %d", variant->get_type());
+    logf_warning("Expected SupportedAppProtocolReq! But code type id: %d", variant->get_type());
 
     m_ctx.session_stopped = true;
     return {};

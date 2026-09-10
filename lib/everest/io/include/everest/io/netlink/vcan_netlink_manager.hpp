@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 /** \file */
 
@@ -24,8 +24,23 @@ class vcan_netlink_manager {
 public:
     struct NetlinkMessage;
 
+    /// Sink for diagnostics about failed netlink operations. Receives one fully formatted line
+    /// without trailing newline.
+    using error_handler_type = std::function<void(std::string const&)>;
+
     vcan_netlink_manager(vcan_netlink_manager const&) = delete;
     vcan_netlink_manager& operator=(vcan_netlink_manager const&) = delete;
+
+    /**
+     * @brief Redirect diagnostics about failed netlink operations.
+     * @details Without a handler, diagnostics are written to std::cerr. Applications that own the
+     * terminal (or use a logging framework) can install their own sink here. An empty handler
+     * restores the std::cerr default. Exceptions thrown by the handler are swallowed and the message
+     * falls back to std::cerr, since reporting happens in exception handlers and destructors.
+     * This is not synchronized: install the handler during setup, before the first netlink operation.
+     * @param[in] handler The sink to report to
+     */
+    void set_error_handler(error_handler_type handler);
 
     /**
      * @brief Creates a new virtual CAN interface.
@@ -54,6 +69,42 @@ public:
      * @return True on success, false otherwise
      */
     bool destroy(std::string const& interface_name);
+
+    /**
+     * @brief Shape what producers write into the vcan with a token bucket (tbf), so a writer feels
+     *        the bus rate as on real hardware: a small SO_SNDBUF blocks at bus rate, the default
+     *        buffer gets ENOBUFS when the queue is full.
+     * @details Qdisc tree over rtnetlink (RTM_NEWQDISC): a 2-band prio root; skb->priority 6/7
+     *          (\ref unshaped_socket_priority, the bridge's own bus-to-host writes) -> pfifo,
+     *          everything else -> tbf. Idempotent; the qdiscs disappear with the interface. tbf
+     *          meters skb bytes (16 per classic frame, 72 per CAN FD frame), derive \p rate_bps from
+     *          the wire cost of the traffic. Without IFF_ECHO (vcan default) local readers get a
+     *          clone before the qdisc, so only the writer is paced; a reader that needs bus rate
+     *          paces its reads.
+     * @param interface_name The interface (must exist).
+     * @param rate_bps Token refill rate in bit/s of skb bytes.
+     * @param burst_bytes Bucket in bytes, at least the CAN FD MTU (72); should be >= rate/HZ.
+     * @param limit_bytes Queue capacity in bytes.
+     * @return True on success. False otherwise (reported through the error handler). A shaper
+     *         installed by an earlier call stays in place with its previous parameters; a failed
+     *         first installation leaves the interface unshaped, unless removing the half
+     *         installed tree fails as well (also reported).
+     */
+    bool set_transmit_rate_limit(std::string const& interface_name, std::uint64_t rate_bps, std::uint32_t burst_bytes,
+                                 std::uint32_t limit_bytes);
+
+    /**
+     * @brief Remove the shaper of \ref set_transmit_rate_limit. Idempotent.
+     * @param interface_name The interface (must exist).
+     * @return True on success, false otherwise (reported through the error handler).
+     */
+    bool clear_transmit_rate_limit(std::string const& interface_name);
+
+    /**
+     * @brief SO_PRIORITY that bypasses the shaper of \ref set_transmit_rate_limit, see
+     *        \ref can::socket_can_options::socket_priority.
+     */
+    static std::uint8_t unshaped_socket_priority();
 
     /**
      * @brief Access the single instance of this object.
@@ -110,6 +161,26 @@ private:
     void send_netlink_request_impl(int msg_type, int flags, cb_type const& callback);
 
     /**
+     * @brief Wait for the kernel's answer to \p req: returns on ACK, throws on NLMSG_ERROR or when no
+     *        matching reply arrives.
+     */
+    void await_ack(NetlinkMessage const& req, int msg_type);
+
+    /**
+     * @brief Send one qdisc request (RTM_NEWQDISC or RTM_DELQDISC) and wait for its ACK; throws on
+     *        refusal.
+     * @param kind The qdisc kind, nullptr for a delete.
+     * @param fill_options Appends TCA_OPTIONS; may be empty.
+     */
+    void send_qdisc(int msg_type, unsigned int ifindex, std::uint32_t parent, std::uint32_t handle, char const* kind,
+                    std::function<void(NetlinkMessage&)> const& fill_options);
+
+    /**
+     * @brief Delete the root qdisc; ENOENT (kernel default queue) counts as done. Throws otherwise.
+     */
+    void remove_root_qdisc(unsigned int ifindex);
+
+    /**
      * @brief Wraps exception handling for \p send_netlink_request_impl
      * @param msg_type The type of Netlink message (e.g., RTM_NEWLINK).
      * @param flags Netlink message flags (e.g., NLM_F_CREATE | NLM_F_EXCL).
@@ -120,6 +191,16 @@ private:
      */
     bool send_netlink_request(int msg_type, int flags, cb_type const& callback, std::string const& interface_name,
                               std::string const& caller);
+
+    /**
+     * @brief Report a failed netlink operation to the error handler, or to std::cerr if none is set.
+     * @param interface_name The interface the operation was about.
+     * @param[in] caller The name of the caller
+     * @param[in] reason Description of the failure
+     */
+    void report_error(std::string const& interface_name, std::string const& caller, std::string const& reason);
+
+    error_handler_type m_error_handler{nullptr};
 };
 
 } // namespace everest::lib::io::netlink

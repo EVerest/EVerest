@@ -131,8 +131,17 @@ config:
       OCPP 1.6
       NetworkConfiguration slot number that OCPP 1.6 connection details (CentralSystemURI, SecurityProfile,
       AuthorizationKey, HostName, ChargePointId) are migrated to during the one-time device model migration.
-      Any existing attribute values in the target slot are overwritten.
-      Set to 0 to skip migration of network connection details entirely.
+      Any existing attribute values in the target slot are overwritten, the slot's OcppInterface is set to
+      "Any" unless the component config sets an explicit attribute value (a "default" does not count), and
+      OCPPCommCtrlr/ActiveNetworkProfile is pointed at the slot. The target slot must be defined in the
+      component configuration: a NetworkConfiguration_<N> component config must exist for it (otherwise the
+      migration of network connection details is skipped with an error log). The slot must also be listed in
+      the OCPPCommCtrlr/NetworkConfigurationPriority value for the profile to be used, and in that variable's
+      valuesList for runtime priority writes naming the slot to be accepted (a warning is logged when either
+      is missing).
+      The shipped example configs cover the default slot 1. Set to 0 to skip migration of network connection
+      details; the confirmed security profile (SecurityCtrlr/SecurityProfile) is still initialized from the
+      legacy config's SecurityProfile in that case.
     type: integer
     default: 1
   RequestCompositeScheduleDurationS:

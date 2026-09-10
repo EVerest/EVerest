@@ -105,7 +105,10 @@ ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connec
                 ocpp_main_path, core_database_path, sql_init_path, message_log_path, evse_security, callbacks) {
 }
 
-ChargePoint::~ChargePoint() = default;
+ChargePoint::~ChargePoint() {
+    // Suppress deferred websocket callbacks before any member is destroyed.
+    this->connectivity_manager->disarm_connection_callbacks();
+}
 
 void ChargePoint::start(BootReasonEnum bootreason, bool start_connecting) {
     this->connectivity_manager->set_message_callback(
@@ -162,6 +165,8 @@ void ChargePoint::stop() {
     this->ocsp_updater.stop();
     this->availability->stop_heartbeat_timer();
     this->provisioning->stop_bootnotification_timer();
+    // Callbacks stay armed: this only queues the disconnected notification the owner waits for.
+    // ~ChargePoint() disarms.
     this->connectivity_manager->disconnect();
     this->security->stop_certificate_expiration_check_timers();
     this->diagnostics->stop_monitoring();
@@ -254,6 +259,8 @@ void ChargePoint::on_transaction_finished(const std::int32_t evse_id, const Date
                                           const std::optional<SignedMeterValue>& start_signed_meter_value) {
     this->transaction->on_transaction_finished(evse_id, timestamp, meter_stop, reason, trigger_reason, id_token,
                                                signed_meter_value, charging_state, start_signed_meter_value);
+    // Starts a firmware download deferred by L01.FR.13 once the last transaction ended.
+    this->firmware_update->on_transaction_finished();
 }
 
 void ChargePoint::on_session_finished(const std::int32_t evse_id, const std::int32_t connector_id) {

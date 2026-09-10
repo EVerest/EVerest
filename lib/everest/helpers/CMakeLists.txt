@@ -15,6 +15,7 @@ target_sources(everest_helpers
     PRIVATE
         src/helpers.cpp
         src/coverage.cpp
+        src/phase_rotation.cpp
 )
 
 if (EVEREST_CORE_BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)

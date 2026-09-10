@@ -258,6 +258,23 @@ static telemetry_types::ChargeProgress to_telemetry_charge_progress(iso2_chargeP
     }
 }
 
+/*!
+ * \brief set_dc_shutdown_status_code This function marks the remaining DC phases as shut down after the EV requested
+ * to stop the charging session, so that PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown
+ * [IEC 61851-23:2023 CC.7.5.19]. More specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are
+ * preserved.
+ * \param ctx points to the V2G context.
+ */
+static void set_dc_shutdown_status_code(struct v2g_context* ctx) {
+    for (const auto phase : {PHASE_CHARGE, PHASE_WELDING}) {
+        uint8_t& status_code = ctx->evse_v2g_data.evse_status_code[phase];
+        if ((status_code == iso2_DC_EVSEStatusCodeType_EVSE_NotReady) ||
+            (status_code == iso2_DC_EVSEStatusCodeType_EVSE_Ready)) {
+            status_code = iso2_DC_EVSEStatusCodeType_EVSE_Shutdown;
+        }
+    }
+}
+
 //=============================================
 //             Publishing request msg
 //=============================================
@@ -1418,6 +1435,7 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
             transport.set(&telemetry_types::V2gTransport::charge_parameter_discovery_requested, true);
         });
     }
+    const bool first_req = conn->ctx->last_v2g_msg != V2G_CHARGE_PARAMETER_DISCOVERY_MSG;
 
     /* At first, publish the received ev request message to the MQTT interface */
     publish_iso_charge_parameter_discovery_req(conn->ctx, req);
@@ -1560,11 +1578,8 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
     } else {
 
         if (conn->ctx->evse_v2g_data.sae_bidi_data.enabled_sae_v2h == true) {
-            static bool first_req = true;
-
             if (first_req == true) {
                 res->EVSEProcessing = iso2_EVSEProcessingType_Ongoing;
-                first_req = false;
             } else {
                 // Check if second req message contains neg values
                 // Check if bulk soc is set
@@ -1578,8 +1593,6 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
                     res->ResponseCode = iso2_responseCodeType::iso2_responseCodeType_FAILED_WrongEnergyTransferMode;
                 }
                 res->EVSEProcessing = iso2_EVSEProcessingType_Finished;
-                // reset first_req
-                first_req = true;
             }
         }
 
@@ -1648,6 +1661,24 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
                 conn->ctx->evse_v2g_data.no_energy_pause == NoEnergyPauseStatus::BeforeCableCheck
                     ? 0
                     : PAUSE_NOTIFICATION_DELAY;
+        }
+    }
+
+    /* If fake HLC DC is active, try to stop the charging session over EVSENotification and EVSEStatusCode first.
+     * If the EV is ignoring the shutdown request, stop the charging session in the next response message with a failed
+     * response code.
+     */
+    if (conn->ctx->is_fake_dc) {
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSENotification = iso2_EVSENotificationType_StopCharging;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.NotificationMaxDelay = 0;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode = iso2_DC_EVSEStatusCodeType_EVSE_Shutdown;
+
+        if (first_req == true) {
+            dlog(DLOG_LEVEL_INFO, "Initiate stop of the fake HLC ISO DC session");
+            res->EVSEProcessing = iso2_EVSEProcessingType_Ongoing;
+        } else {
+            res->ResponseCode = iso2_responseCodeType_FAILED;
+            res->EVSEProcessing = iso2_EVSEProcessingType_Finished;
         }
     }
 
@@ -1763,6 +1794,7 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection* conn) {
             // state is checked by other module
             conn->ctx->p_charger->publish_ac_open_contactor(nullptr);
         } else {
+            set_dc_shutdown_status_code(conn->ctx);
             conn->ctx->p_charger->publish_current_demand_finished(nullptr);
             conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
         }

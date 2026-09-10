@@ -9,6 +9,7 @@
 
 #include <arpa/inet.h>
 
+#include <iso15118/d20/state/session_setup.hpp>
 #include <iso15118/d20/state/supported_app_protocol.hpp>
 
 #include <iso15118/detail/helper.hpp>
@@ -18,7 +19,9 @@ namespace iso15118 {
 static constexpr auto SESSION_IDLE_TIMEOUT_MS = 5000;
 static constexpr auto MIN_RESPONSE_INTERVAL_MS = 100; // minimum time between two response messages
 
-static void log_sdp_packet(const iso15118::io::SdpPacket& sdp) {
+namespace {
+
+void log_sdp_packet(const iso15118::io::SdpPacket& sdp) {
     static constexpr auto ESCAPED_BYTE_CHAR_COUNT = 4;
     auto payload_string_buffer = std::make_unique<char[]>(sdp.get_payload_length() * ESCAPED_BYTE_CHAR_COUNT + 1);
     for (std::size_t i = 0; i < sdp.get_payload_length(); ++i) {
@@ -30,12 +33,7 @@ static void log_sdp_packet(const iso15118::io::SdpPacket& sdp) {
                         payload_string_buffer.get());
 }
 
-static void log_packet_from_car(const iso15118::io::SdpPacket& packet, session::SessionLogger& logger) {
-    logger.exi(static_cast<uint16_t>(packet.get_payload_type()), packet.get_payload_buffer(),
-               packet.get_payload_length(), session::logging::ExiMessageDirection::FROM_EV);
-}
-
-static std::unique_ptr<message_20::Variant> make_variant_from_packet(const iso15118::io::SdpPacket& packet) {
+std::unique_ptr<message_20::Variant> make_variant_from_packet(const iso15118::io::SdpPacket& packet) {
     return std::make_unique<message_20::Variant>(
         packet.get_payload_type(), io::StreamInputView{packet.get_payload_buffer(), packet.get_payload_length()});
 }
@@ -124,7 +122,7 @@ V2GTPReadResult read_single_v2gtp_packet(io::IConnection& connection, io::SdpPac
     return V2GTPReadResult::complete;
 }
 
-static size_t setup_response_header(uint8_t* buffer, iso15118::io::v2gtp::PayloadType payload_type, size_t size) {
+size_t setup_response_header(uint8_t* buffer, iso15118::io::v2gtp::PayloadType payload_type, size_t size) {
     buffer[0] = iso15118::io::SDP_PROTOCOL_VERSION;
     buffer[1] = iso15118::io::SDP_INVERSE_PROTOCOL_VERSION;
 
@@ -139,13 +137,20 @@ static size_t setup_response_header(uint8_t* buffer, iso15118::io::v2gtp::Payloa
 
     return size + iso15118::io::SdpPacket::V2GTP_HEADER_SIZE;
 }
+} // namespace
 
 Session::Session(std::unique_ptr<io::IConnection> connection_, d20::SessionConfig session_config,
                  const session::feedback::Callbacks& callbacks, std::optional<d20::PauseContext>& pause_ctx) :
+    Session(std::move(connection_), std::move(session_config), callbacks, pause_ctx, false) {
+}
+
+Session::Session(std::unique_ptr<io::IConnection> connection_, d20::SessionConfig session_config,
+                 const session::feedback::Callbacks& callbacks, std::optional<d20::PauseContext>& pause_ctx,
+                 bool skip_app_protocol_negotiation) :
     connection(std::move(connection_)),
-    log(this),
-    ctx(callbacks, log, std::move(session_config), pause_ctx, active_control_event, message_exchange, timeouts),
-    fsm(ctx.create_state<d20::state::SupportedAppProtocol>()) {
+    ctx(callbacks, std::move(session_config), pause_ctx, active_control_event, message_exchange, timeouts),
+    fsm(skip_app_protocol_negotiation ? ctx.create_state<d20::state::SessionSetup>(true)
+                                      : ctx.create_state<d20::state::SupportedAppProtocol>()) {
 
     next_session_event = offset_time_point_by_ms(get_current_time_point(), SESSION_IDLE_TIMEOUT_MS);
     connection->set_event_callback([this](io::ConnectionEvent event) { this->handle_connection_event(event); });
@@ -230,11 +235,11 @@ TimePoint const& Session::poll() {
     // check for complete sdp packet
     if (packet.is_complete()) {
         // FIXME (aw): this event loop only acts on new packets, seems to be enough for now ...
-        log_packet_from_car(packet, log);
 
         message_exchange.set_request(make_variant_from_packet(packet));
 
-        packet = {}; // reset the packet
+        packet = {};            // reset the packet
+        state.new_data = false; // reset new_data flag
 
         const auto request_msg_type = ctx.peek_request_type();
 
@@ -306,10 +311,6 @@ void Session::send_response() {
 
     timeouts.start_timeout(d20::TimeoutType::SEQUENCE, d20::TIMEOUT_SEQUENCE);
 
-    // FIXME (aw): this is hacky ...
-    log.exi(static_cast<uint16_t>(stored_payload_type), response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
-            payload_size, session::logging::ExiMessageDirection::TO_EV);
-
     ctx.feedback.v2g_message(stored_response_type);
 }
 
@@ -319,7 +320,7 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
     case Event::ACCEPTED:
         assert(state.connected == false);
         state.connected = true;
-        log("Accepted connection on port %d", connection->get_public_endpoint().port);
+        logf_info("Accepted connection on port %d", connection->get_public_endpoint().port);
         return;
 
     case Event::NEW_DATA:

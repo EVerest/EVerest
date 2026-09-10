@@ -62,6 +62,7 @@ private:
     // insert your private definitions here
     void generate_api_var_firmware_update_status();
     void generate_api_var_log_status();
+    void generate_api_var_configure_network_status();
 
     ev_API::CommCheckHandler<systemImplBase> comm_check{"system/CommunicationFault",
                                                         ev_API::bridge_connection_lost_message, p_main};

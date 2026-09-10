@@ -760,6 +760,8 @@ Evse_Internal to_internal_api(Evse_External const& val) {
     for (auto const& elem : val.connectors) {
         result.connectors.push_back(to_internal_api(elem));
     }
+    result.evse_id = val.evse_id;
+    result.evse_id_din = val.evse_id_din;
     return result;
 }
 
@@ -769,6 +771,8 @@ Evse_External to_external_api(Evse_Internal const& val) {
     for (auto const& elem : val.connectors) {
         result.connectors.push_back(to_external_api(elem));
     }
+    result.evse_id = val.evse_id;
+    result.evse_id_din = val.evse_id_din;
     return result;
 }
 

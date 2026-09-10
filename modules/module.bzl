@@ -73,6 +73,7 @@ def cc_everest_module(
         deps = deps + [
             "@everest-core//interfaces:interfaces_lib",
             "//lib/everest/framework:framework",
+            "//lib/everest/project_info",
         ],
         data = data,  # Pass through data files to the binary
         copts = ["-std=c++17"],

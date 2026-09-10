@@ -1,4 +1,15 @@
 active_modules:
+  ocpp_api:
+    module: ocpp_consumer_API
+    config_module:
+      cfg_communication_check_to_s: 0
+    connections:
+      ocpp:
+        - module_id: ocpp
+          implementation_id: ocpp_generic
+      data_transfer:
+        - module_id: ocpp
+          implementation_id: data_transfer
   iso15118_charger:
     module: EvseV2G
     config_module:
@@ -21,6 +32,7 @@ active_modules:
         evse: 1
     module: EvseManager
     config_module:
+      enable_nodered_interface: true
       connector_id: 1
       evse_id: "1"
       connector_type: "cType2"
@@ -57,6 +69,7 @@ active_modules:
       module:
         evse: 2
     config_module:
+      enable_nodered_interface: true
       connector_id: 2
       evse_id: "2"
       connector_type: "cType2"

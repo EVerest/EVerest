@@ -3,6 +3,8 @@
 
 #include <ocpp/v2/functional_blocks/security.hpp>
 
+#include <boost/algorithm/string/join.hpp>
+
 #include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/common/constants.hpp>
 #include <ocpp/common/ocpp_logging.hpp>
@@ -22,6 +24,19 @@
 constexpr std::int32_t minimum_cert_signing_wait_time_seconds = 10;
 
 namespace ocpp::v2 {
+
+namespace {
+const CiString<20> reason_code_missing_device_model_info{"MissingDevModelInfo"};
+const CiString<20> reason_code_unspecified{"Unspecified"};
+const CiString<20> reason_code_unsupported_request{"UnsupportedRequest"};
+
+StatusInfo make_status_info(const CiString<20>& reason_code, const std::string& additional_info) {
+    StatusInfo status_info;
+    status_info.reasonCode = reason_code;
+    status_info.additionalInfo = additional_info;
+    return status_info;
+}
+} // namespace
 
 Security::Security(const FunctionalBlockContext& functional_block_context, MessageLogging& logging,
                    OcspUpdaterInterface& ocsp_updater, SecurityEventCallback security_event_callback) :
@@ -161,6 +176,63 @@ void Security::security_event_notification_req(const CiString<50>& event_type,
     }
 }
 
+std::variant<Security::CsrInputs, StatusInfo>
+Security::get_csr_inputs(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const {
+    std::optional<std::string> common;
+    std::optional<std::string> country;
+    std::optional<std::string> organization;
+
+    if (certificate_signing_use == ocpp::CertificateSigningUseEnum::ChargingStationCertificate) {
+        common = this->context.device_model.get_optional_value<std::string>(
+            ControllerComponentVariables::ChargeBoxSerialNumber);
+        organization =
+            this->context.device_model.get_optional_value<std::string>(ControllerComponentVariables::OrganizationName);
+        country = this->context.device_model.get_optional_value<std::string>(
+            ControllerComponentVariables::ISO15118CtrlrCountryName);
+    } else {
+        common = this->context.device_model.get_optional_value<std::string>(
+            ControllerComponentVariables::ISO15118CtrlrSeccId);
+        organization = this->context.device_model.get_optional_value<std::string>(
+            ControllerComponentVariables::ISO15118CtrlrOrganizationName);
+        country = this->context.device_model.get_optional_value<std::string>(
+            ControllerComponentVariables::ISO15118CtrlrCountryName);
+    }
+
+    std::vector<std::string> missing;
+    if (!common.has_value()) {
+        missing.push_back("commonName");
+    }
+    if (!country.has_value()) {
+        missing.push_back("country");
+    }
+    if (!organization.has_value()) {
+        missing.push_back("organizationName");
+    }
+
+    if (!missing.empty()) {
+        const std::string missing_inputs = "Missing " + boost::algorithm::join(missing, ", ");
+        EVLOG_warning << missing_inputs << " to generate CSR";
+        return make_status_info(reason_code_missing_device_model_info, missing_inputs);
+    }
+
+    return CsrInputs{common.value(), organization.value(), country.value()};
+}
+
+std::optional<StatusInfo>
+Security::is_sign_certificate_possible(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const {
+    if (this->awaited_certificate_signing_use_enum.has_value()) {
+        EVLOG_warning << "Cannot send a SignCertificate.req while still waiting for CertificateSigned.req from CSMS";
+        return make_status_info(reason_code_unspecified, "Awaiting CertificateSigned.req from the CSMS");
+    }
+
+    const auto csr_inputs = this->get_csr_inputs(certificate_signing_use);
+    if (const auto* rejection = std::get_if<StatusInfo>(&csr_inputs)) {
+        return *rejection;
+    }
+
+    return std::nullopt;
+}
+
 void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
                                     const bool initiated_by_trigger_message) {
     if (this->awaited_certificate_signing_use_enum.has_value()) {
@@ -169,53 +241,29 @@ void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certi
         return;
     }
 
-    SignCertificateRequest req;
+    const auto csr_inputs_or_rejection = this->get_csr_inputs(certificate_signing_use);
+    const auto* csr_inputs = std::get_if<CsrInputs>(&csr_inputs_or_rejection);
+    if (csr_inputs == nullptr) {
+        return;
+    }
 
-    std::optional<std::string> common;
-    std::optional<std::string> country;
-    std::optional<std::string> organization;
+    SignCertificateRequest req;
     bool should_use_tpm = false;
 
     if (certificate_signing_use == ocpp::CertificateSigningUseEnum::ChargingStationCertificate) {
         req.certificateType = ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate;
-        common = this->context.device_model.get_optional_value<std::string>(
-            ControllerComponentVariables::ChargeBoxSerialNumber);
-        organization =
-            this->context.device_model.get_optional_value<std::string>(ControllerComponentVariables::OrganizationName);
-        country = this->context.device_model.get_optional_value<std::string>(
-            ControllerComponentVariables::ISO15118CtrlrCountryName);
         should_use_tpm =
             this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::UseTPM).value_or(false);
     } else {
         req.certificateType = ocpp::v2::CertificateSigningUseEnum::V2GCertificate;
-        common = this->context.device_model.get_optional_value<std::string>(
-            ControllerComponentVariables::ISO15118CtrlrSeccId);
-        organization = this->context.device_model.get_optional_value<std::string>(
-            ControllerComponentVariables::ISO15118CtrlrOrganizationName);
-        country = this->context.device_model.get_optional_value<std::string>(
-            ControllerComponentVariables::ISO15118CtrlrCountryName);
         should_use_tpm =
             this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::UseTPMSeccLeafCertificate)
                 .value_or(false);
     }
 
-    if (!common.has_value()) {
-        EVLOG_warning << "Missing configuration of commonName to generate CSR";
-        return;
-    }
-
-    if (!country.has_value()) {
-        EVLOG_warning << "Missing configuration country to generate CSR";
-        return;
-    }
-
-    if (!organization.has_value()) {
-        EVLOG_warning << "Missing configuration of organizationName to generate CSR";
-        return;
-    }
-
     const auto result = this->context.evse_security.generate_certificate_signing_request(
-        certificate_signing_use, country.value(), organization.value(), common.value(), should_use_tpm);
+        certificate_signing_use, csr_inputs->country, csr_inputs->organization, csr_inputs->common_name,
+        should_use_tpm);
 
     if (result.status != GetCertificateSignRequestStatus::Accepted or !result.csr.has_value()) {
         EVLOG_error << "CSR generation was unsuccessful for sign request: "
@@ -237,9 +285,7 @@ void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certi
 }
 
 void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call) {
-    // reset these parameters
-    this->csr_attempt = 1;
-    this->awaited_certificate_signing_use_enum = std::nullopt;
+    this->reset_certificate_signing_state();
     this->certificate_signed_timer.stop();
 
     CertificateSignedResponse response;
@@ -311,18 +357,19 @@ void Security::handle_sign_certificate_response(CallResult<SignCertificateRespon
         if (!cert_signing_wait_minimum.has_value()) {
             EVLOG_warning << "No CertSigningWaitMinimum is configured, will not attempt to retry SignCertificate.req "
                              "in case CSMS doesn't send CertificateSigned.req";
+            this->reset_certificate_signing_state();
             return;
         }
         if (!cert_signing_repeat_times.has_value()) {
             EVLOG_warning << "No CertSigningRepeatTimes is configured, will not attempt to retry SignCertificate.req "
                              "in case CSMS doesn't send CertificateSigned.req";
+            this->reset_certificate_signing_state();
             return;
         }
 
         if (this->csr_attempt > cert_signing_repeat_times.value()) {
-            this->csr_attempt = 1;
             this->certificate_signed_timer.stop();
-            this->awaited_certificate_signing_use_enum = std::nullopt;
+            this->reset_certificate_signing_state();
             return;
         }
         const int retry_backoff_seconds = clamp_to<int>(
@@ -339,10 +386,14 @@ void Security::handle_sign_certificate_response(CallResult<SignCertificateRespon
             },
             std::chrono::seconds(retry_backoff_seconds));
     } else {
-        this->awaited_certificate_signing_use_enum = std::nullopt;
-        this->csr_attempt = 1;
+        this->reset_certificate_signing_state();
         EVLOG_warning << "SignCertificate.req has not been accepted by CSMS";
     }
+}
+
+void Security::reset_certificate_signing_state() {
+    this->awaited_certificate_signing_use_enum = std::nullopt;
+    this->csr_attempt = 1;
 }
 
 void Security::handle_get_installed_certificate_ids_req(Call<GetInstalledCertificateIdsRequest> call) {
@@ -391,11 +442,9 @@ void Security::handle_install_certificate_req(Call<InstallCertificateRequest> ca
     const auto msg = call.msg;
     InstallCertificateResponse response;
 
-    if (!should_allow_certificate_install(msg.certificateType)) {
+    if (auto refusal = check_certificate_install_allowed(msg.certificateType); refusal.has_value()) {
         response.status = InstallCertificateStatusEnum::Rejected;
-        response.statusInfo = StatusInfo();
-        response.statusInfo->reasonCode = "UnsecureConnection";
-        response.statusInfo->additionalInfo = "CertificateInstallationNotAllowedWithUnsecureConnection";
+        response.statusInfo = std::move(refusal);
     } else {
         const auto result = this->context.evse_security.install_ca_certificate(
             msg.certificate.get(), ocpp::evse_security_conversions::from_ocpp_v2(msg.certificateType));
@@ -436,31 +485,45 @@ void Security::handle_delete_certificate_req(Call<DeleteCertificateRequest> call
     this->context.message_dispatcher.dispatch_call_result(call_result);
 }
 
-bool Security::should_allow_certificate_install(InstallCertificateUseEnum cert_type) const {
+std::optional<StatusInfo> Security::check_certificate_install_allowed(InstallCertificateUseEnum cert_type) const {
+    if (cert_type == InstallCertificateUseEnum::OEMRootCertificate) {
+        // FIXME: Implement OEMRootCertificate. Refused independently of the security profile, because the conversion
+        // towards evse_security has no OEM equivalent and throws.
+        return make_status_info(reason_code_unsupported_request, "OEMRootCertificateInstallationNotSupported");
+    }
+
     const int security_profile =
         this->context.device_model.get_value<int>(ControllerComponentVariables::SecurityProfile);
 
     if (security_profile > 1) {
-        return true;
+        return std::nullopt;
     }
+
     switch (cert_type) {
     case InstallCertificateUseEnum::CSMSRootCertificate:
-        return this->context.device_model
-            .get_optional_value<bool>(ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection)
-            .value_or(true);
-
+        if (!this->context.device_model
+                 .get_optional_value<bool>(ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection)
+                 .value_or(true)) {
+            return make_status_info(reason_code_unspecified,
+                                    "CSMSRootCertificateInstallationNotAllowedWithUnsecureConnection");
+        }
+        return std::nullopt;
     case InstallCertificateUseEnum::ManufacturerRootCertificate:
-        return this->context.device_model
-            .get_optional_value<bool>(ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection)
-            .value_or(true);
+        if (!this->context.device_model
+                 .get_optional_value<bool>(ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection)
+                 .value_or(true)) {
+            return make_status_info(reason_code_unspecified,
+                                    "ManufacturerRootCertificateInstallationNotAllowedWithUnsecureConnection");
+        }
+        return std::nullopt;
     case InstallCertificateUseEnum::MORootCertificate:
     case InstallCertificateUseEnum::V2GRootCertificate:
-        return true;
+        return std::nullopt;
     case InstallCertificateUseEnum::OEMRootCertificate:
-        // FIXME: Implement OEMRootCertificate
-        return false;
+        break; // handled above
     }
-    return false;
+    // Unknown certificate types stay refused, as they were before.
+    return make_status_info(reason_code_unsupported_request, "CertificateTypeNotSupported");
 }
 
 void Security::scheduled_check_client_certificate_expiration() {

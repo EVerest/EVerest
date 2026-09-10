@@ -4,6 +4,7 @@ add_executable(everest_util_tests
   async/thread_pool_scaling_tests.cpp
   async/wrapper_tests.cpp
   misc/change_tracker_tests.cpp
+  misc/container_tests.cpp
   enum/EnumFlagsTest.cpp
   enum/EnumFlagsTest_B.cpp
   math/comparison_tests.cpp

@@ -12,6 +12,7 @@
 #include <ocpp/v2/functional_blocks/security.hpp>
 #undef private
 #include <ocpp/v2/messages/CertificateSigned.hpp>
+#include <ocpp/v2/messages/InstallCertificate.hpp>
 #include <ocpp/v2/messages/Reset.hpp>
 #include <ocpp/v2/messages/SecurityEventNotification.hpp>
 #include <ocpp/v2/messages/SignCertificate.hpp>
@@ -33,6 +34,20 @@ using ::testing::Invoke;
 using ::testing::MockFunction;
 using ::testing::Return;
 
+namespace {
+/// \brief Removes \p variable_names from the SecurityCtrlr component before the device model is handed to the fixture,
+/// so a test can exercise the paths taken when an optional device model value is absent. set_value cannot express this:
+/// validate_value rejects an empty value for an integer variable.
+DeviceModel* device_model_without_security_ctrlr_variables(DeviceModelTestHelper& device_model_test_helper,
+                                                           const std::vector<std::string>& variable_names) {
+    for (const auto& variable_name : variable_names) {
+        EXPECT_TRUE(device_model_test_helper.remove_variable_from_db("SecurityCtrlr", std::nullopt, std::nullopt,
+                                                                     std::nullopt, variable_name, std::nullopt));
+    }
+    return device_model_test_helper.get_device_model();
+}
+} // namespace
+
 class SecurityTest : public ::testing::Test {
 public:
 protected: // Members
@@ -53,9 +68,13 @@ protected: // Members
     Security security;
 
 protected: // Functions
-    SecurityTest() :
+    SecurityTest() : SecurityTest(std::vector<std::string>{}) {
+    }
+
+    explicit SecurityTest(const std::vector<std::string>& removed_security_ctrlr_variables) :
         device_model_test_helper(),
-        device_model(device_model_test_helper.get_device_model()),
+        device_model(
+            device_model_without_security_ctrlr_variables(device_model_test_helper, removed_security_ctrlr_variables)),
         logging(false, "", "", false, false, false, false, false, false, false, nullptr),
         evse_security(),
         connectivity_manager(),
@@ -98,6 +117,41 @@ protected: // Functions
         EXPECT_EQ(device_model->set_value(update_certificate_symlinks.component,
                                           update_certificate_symlinks.variable.value(), AttributeEnum::Actual,
                                           enabled ? "true" : "false", "default", true),
+                  SetVariableStatusEnum::Accepted);
+    }
+
+    /// \brief Sets every device model value a ChargingStationCertificate CSR needs, so a test can reach the sending
+    /// path without repeating the four set_value calls.
+    void set_charging_station_csr_inputs() {
+        this->device_model->set_value(ControllerComponentVariables::ChargeBoxSerialNumber.component,
+                                      ControllerComponentVariables::ChargeBoxSerialNumber.variable.value(),
+                                      AttributeEnum::Actual, "testserialnumber", "test", true);
+        this->device_model->set_value(ControllerComponentVariables::OrganizationName.component,
+                                      ControllerComponentVariables::OrganizationName.variable.value(),
+                                      AttributeEnum::Actual, "testOrganization", "test", true);
+        this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrCountryName.component,
+                                      ControllerComponentVariables::ISO15118CtrlrCountryName.variable.value(),
+                                      AttributeEnum::Actual, "testCountry", "test", true);
+        this->device_model->set_value(ControllerComponentVariables::UseTPM.component,
+                                      ControllerComponentVariables::UseTPM.variable.value(), AttributeEnum::Actual,
+                                      "false", "test", true);
+    }
+
+    ocpp::EnhancedMessage<MessageType>
+    create_example_install_certificate_request(const InstallCertificateUseEnum certificate_type) {
+        InstallCertificateRequest request;
+        request.certificateType = certificate_type;
+        request.certificate = "";
+        ocpp::Call<InstallCertificateRequest> call(request);
+        ocpp::EnhancedMessage<MessageType> enhanced_message;
+        enhanced_message.messageType = MessageType::InstallCertificate;
+        enhanced_message.message = call;
+        return enhanced_message;
+    }
+
+    void set_bool_variable(DeviceModel* device_model, const ComponentVariable& component_variable, const bool value) {
+        EXPECT_EQ(device_model->set_value(component_variable.component, component_variable.variable.value(),
+                                          AttributeEnum::Actual, value ? "true" : "false", "default", true),
                   SetVariableStatusEnum::Accepted);
     }
 
@@ -238,6 +292,96 @@ TEST_F(SecurityTest, handle_message_certificate_signed_chargingstationcertificat
     security.handle_message(create_example_certificate_signed_request("", std::nullopt));
 }
 
+TEST_F(SecurityTest, handle_message_install_certificate_csms_root_not_allowed_on_unsecure_connection) {
+    set_security_profile(this->device_model, 1);
+    set_bool_variable(this->device_model, ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection,
+                      false);
+
+    // The certificate is never looked at.
+    EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
+        EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
+        ASSERT_TRUE(response.statusInfo.has_value());
+        EXPECT_EQ(response.statusInfo->reasonCode.get(), "Unspecified");
+        ASSERT_TRUE(response.statusInfo->additionalInfo.has_value());
+        EXPECT_EQ(response.statusInfo->additionalInfo->get(),
+                  "CSMSRootCertificateInstallationNotAllowedWithUnsecureConnection");
+    }));
+
+    security.handle_message(create_example_install_certificate_request(InstallCertificateUseEnum::CSMSRootCertificate));
+}
+
+TEST_F(SecurityTest, handle_message_install_certificate_manufacturer_root_not_allowed_on_unsecure_connection) {
+    set_security_profile(this->device_model, 1);
+    set_bool_variable(this->device_model, ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection,
+                      false);
+
+    EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
+        EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
+        ASSERT_TRUE(response.statusInfo.has_value());
+        EXPECT_EQ(response.statusInfo->reasonCode.get(), "Unspecified");
+        ASSERT_TRUE(response.statusInfo->additionalInfo.has_value());
+        EXPECT_EQ(response.statusInfo->additionalInfo->get(),
+                  "ManufacturerRootCertificateInstallationNotAllowedWithUnsecureConnection");
+    }));
+
+    security.handle_message(
+        create_example_install_certificate_request(InstallCertificateUseEnum::ManufacturerRootCertificate));
+}
+
+TEST_F(SecurityTest, handle_message_install_certificate_csms_root_allowed_on_unsecure_connection) {
+    set_security_profile(this->device_model, 1);
+    set_bool_variable(this->device_model, ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection,
+                      true);
+
+    EXPECT_CALL(evse_security, install_ca_certificate("", ocpp::CaCertificateType::CSMS))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
+        EXPECT_EQ(response.status, InstallCertificateStatusEnum::Accepted);
+        EXPECT_FALSE(response.statusInfo.has_value());
+    }));
+    EXPECT_CALL(security_event_callback_mock, Call(CiString<50>("ReconfigurationOfSecurityParameters"), _));
+
+    security.handle_message(create_example_install_certificate_request(InstallCertificateUseEnum::CSMSRootCertificate));
+}
+
+TEST_F(SecurityTest, handle_message_install_certificate_oem_root_not_supported_unsecure_connection) {
+    set_security_profile(this->device_model, 1);
+
+    // Installing an OEM root certificate is not implemented, the refusal has nothing to do with the connection.
+    EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
+        EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
+        ASSERT_TRUE(response.statusInfo.has_value());
+        EXPECT_EQ(response.statusInfo->reasonCode.get(), "UnsupportedRequest");
+        ASSERT_TRUE(response.statusInfo->additionalInfo.has_value());
+        EXPECT_EQ(response.statusInfo->additionalInfo->get(), "OEMRootCertificateInstallationNotSupported");
+    }));
+
+    security.handle_message(create_example_install_certificate_request(InstallCertificateUseEnum::OEMRootCertificate));
+}
+
+TEST_F(SecurityTest, handle_message_install_certificate_oem_root_not_supported_secure_connection) {
+    set_security_profile(this->device_model, 3);
+
+    // On a secure connection the request used to reach evse_security, where the conversion of the OEM certificate
+    // type throws. It has to be rejected before that.
+    EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
+        EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
+        ASSERT_TRUE(response.statusInfo.has_value());
+        EXPECT_EQ(response.statusInfo->reasonCode.get(), "UnsupportedRequest");
+    }));
+
+    security.handle_message(create_example_install_certificate_request(InstallCertificateUseEnum::OEMRootCertificate));
+}
+
 TEST_F(SecurityTest, sign_certificate_request_accepted) {
     this->device_model->set_value(ControllerComponentVariables::ChargeBoxSerialNumber.component,
                                   ControllerComponentVariables::ChargeBoxSerialNumber.variable.value(),
@@ -313,6 +457,105 @@ TEST_F(SecurityTest, sign_certificate_request_twice) {
     EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).Times(0);
 
     security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate, false);
+}
+
+TEST_F(SecurityTest, sign_certificate_request_triggered_dropped_while_awaiting) {
+    // A TriggerMessage must not supersede an in-flight request. handle_trigger_message rejects the trigger while a
+    // CertificateSigned.req is awaited, and the send path has to agree with that answer: no new request, and the
+    // attempt chain of the in-flight request left alone. Triggered mirror of sign_certificate_request_twice.
+    set_charging_station_csr_inputs();
+
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+
+    EXPECT_CALL(this->evse_security,
+                generate_certificate_signing_request(ocpp::CertificateSigningUseEnum::ChargingStationCertificate,
+                                                     "testCountry", "testOrganization", "testserialnumber", false))
+        .Times(1)
+        .WillOnce(Return(sign_request_result));
+
+    // Only the initial, non-triggered request reaches the CSMS.
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).Times(1);
+
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate, false);
+    ASSERT_TRUE(security.awaited_certificate_signing_use_enum.has_value());
+
+    // A retry chain is already in progress; the dropped trigger must not restart it.
+    security.csr_attempt = 4;
+
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate, true);
+
+    EXPECT_TRUE(security.awaited_certificate_signing_use_enum.has_value());
+    EXPECT_EQ(security.csr_attempt, 4);
+}
+
+TEST_F(SecurityTest, is_sign_certificate_possible_absent_with_complete_configuration) {
+    this->device_model->set_value(ControllerComponentVariables::ChargeBoxSerialNumber.component,
+                                  ControllerComponentVariables::ChargeBoxSerialNumber.variable.value(),
+                                  AttributeEnum::Actual, "testserialnumber", "test", true);
+    this->device_model->set_value(ControllerComponentVariables::OrganizationName.component,
+                                  ControllerComponentVariables::OrganizationName.variable.value(),
+                                  AttributeEnum::Actual, "testOrganization", "test", true);
+    this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrCountryName.component,
+                                  ControllerComponentVariables::ISO15118CtrlrCountryName.variable.value(),
+                                  AttributeEnum::Actual, "testCountry", "test", true);
+
+    EXPECT_FALSE(
+        security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::ChargingStationCertificate).has_value());
+}
+
+TEST_F(SecurityTest, is_sign_certificate_possible_without_country) {
+    // Mirrors sign_certificate_request_no_country, but asserts the gate the TriggerMessage handler consults rather
+    // than the silent return.
+    this->device_model->set_value(ControllerComponentVariables::ChargeBoxSerialNumber.component,
+                                  ControllerComponentVariables::ChargeBoxSerialNumber.variable.value(),
+                                  AttributeEnum::Actual, "testserialnumber", "test", true);
+    this->device_model->set_value(ControllerComponentVariables::OrganizationName.component,
+                                  ControllerComponentVariables::OrganizationName.variable.value(),
+                                  AttributeEnum::Actual, "testOrganization", "test", true);
+
+    const auto rejection =
+        security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+    ASSERT_TRUE(rejection.has_value());
+    EXPECT_EQ(rejection->reasonCode.get(), "MissingDevModelInfo");
+    // The CSMS is told which input is missing, not just that something is.
+    ASSERT_TRUE(rejection->additionalInfo.has_value());
+    EXPECT_EQ(rejection->additionalInfo->get(), "Missing country");
+}
+
+TEST_F(SecurityTest, is_sign_certificate_possible_lists_every_missing_input) {
+    // None of the ISO15118Ctrlr inputs a V2G CSR needs are configured. Reporting only the first missing one would send
+    // the operator round the loop once per input, so all of them are listed at once.
+    const auto rejection = security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::V2GCertificate);
+    ASSERT_TRUE(rejection.has_value());
+    ASSERT_TRUE(rejection->additionalInfo.has_value());
+    EXPECT_EQ(rejection->additionalInfo->get(), "Missing commonName, country, organizationName");
+}
+
+TEST_F(SecurityTest, is_sign_certificate_possible_while_awaiting) {
+    // The configuration is complete, so the only thing standing in the way is the awaited CertificateSigned.req. The
+    // send path would drop a request in that state, so the gate the TriggerMessage handler consults has to report it
+    // and let the handler reject instead of accepting and then staying silent.
+    set_charging_station_csr_inputs();
+
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillOnce(Return(sign_request_result));
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).Times(1);
+
+    ASSERT_FALSE(
+        security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::ChargingStationCertificate).has_value());
+
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate, false);
+    ASSERT_TRUE(security.awaited_certificate_signing_use_enum.has_value());
+
+    const auto rejection =
+        security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+    ASSERT_TRUE(rejection.has_value());
+    EXPECT_EQ(rejection->reasonCode.get(), "Unspecified");
 }
 
 TEST_F(SecurityTest, sign_certificate_request_accepted_no_csr) {
@@ -983,4 +1226,76 @@ TEST_F(SecurityTest, handle_sign_certificate_response_backoff_floor) {
 
     // First timeout should be 10s (max(10, 0) * 2^0 = 10s floor)
     EXPECT_EQ(timer_stub_get_timeout_interval_ms(), 10000);
+}
+
+/// \brief Device model without CertSigningWaitMinimum, so no retry timer can be armed for an awaited
+/// CertificateSigned.req .
+class SecurityWithoutCertSigningWaitMinimumTest : public SecurityTest {
+protected:
+    SecurityWithoutCertSigningWaitMinimumTest() : SecurityTest({"CertSigningWaitMinimum"}) {
+    }
+};
+
+/// \brief Device model without CertSigningRepeatTimes, so no retry timer can be armed for an awaited
+/// CertificateSigned.req .
+class SecurityWithoutCertSigningRepeatTimesTest : public SecurityTest {
+protected:
+    SecurityWithoutCertSigningRepeatTimesTest() : SecurityTest({"CertSigningRepeatTimes"}) {
+    }
+};
+
+TEST_F(SecurityWithoutCertSigningWaitMinimumTest, sign_certificate_response_does_not_block_later_requests) {
+    // Without CertSigningWaitMinimum no retry timer is armed, so nothing else will ever clear the awaited state.
+    // Leaving it set silences every later SignCertificate.req for the lifetime of the process.
+    timer_stub_reset_timeout_called_count();
+    set_charging_station_csr_inputs();
+
+    ASSERT_FALSE(
+        this->device_model->get_optional_value<int>(ControllerComponentVariables::CertSigningWaitMinimum).has_value());
+
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+    EXPECT_CALL(this->evse_security,
+                generate_certificate_signing_request(ocpp::CertificateSigningUseEnum::ChargingStationCertificate,
+                                                     "testCountry", "testOrganization", "testserialnumber", false))
+        .Times(2)
+        .WillRepeatedly(Return(sign_request_result));
+
+    // Both the initial request and the one issued after the response must reach the CSMS.
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).Times(2);
+
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate, false);
+    security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Accepted));
+
+    EXPECT_EQ(timer_stub_get_timeout_called_count(), 0);
+
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate, false);
+}
+
+TEST_F(SecurityWithoutCertSigningRepeatTimesTest, sign_certificate_response_does_not_block_later_requests) {
+    // Same wedge as the CertSigningWaitMinimum case, reached through the second early return.
+    timer_stub_reset_timeout_called_count();
+    set_charging_station_csr_inputs();
+
+    ASSERT_FALSE(
+        this->device_model->get_optional_value<int>(ControllerComponentVariables::CertSigningRepeatTimes).has_value());
+
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+    EXPECT_CALL(this->evse_security,
+                generate_certificate_signing_request(ocpp::CertificateSigningUseEnum::ChargingStationCertificate,
+                                                     "testCountry", "testOrganization", "testserialnumber", false))
+        .Times(2)
+        .WillRepeatedly(Return(sign_request_result));
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).Times(2);
+
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate, false);
+    security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Accepted));
+
+    EXPECT_EQ(timer_stub_get_timeout_called_count(), 0);
+
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate, false);
 }

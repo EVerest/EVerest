@@ -32,4 +32,9 @@ ocpp::v2::UpdateFirmwareRequest convert(const ocpp::v16::UpdateFirmwareRequest& 
 ocpp::v2::UpdateFirmwareRequest convert(const ocpp::v16::SignedUpdateFirmwareRequest& value);
 ocpp::v16::UpdateFirmwareStatusEnumType convert(const ocpp::v2::UpdateFirmwareResponse& value);
 
+// OCPP 2.x carries DataTransfer `data` as anyType (json); OCPP 1.6 requires a string. Returns the
+// raw string for json strings and the serialized json otherwise, instead of relying on nlohmann's
+// implicit conversion, which throws type_error.302 on objects and arrays.
+std::optional<std::string> to_v16_data_string(const std::optional<nlohmann::json>& data);
+
 } // namespace ocpp_multi::v16_conversions

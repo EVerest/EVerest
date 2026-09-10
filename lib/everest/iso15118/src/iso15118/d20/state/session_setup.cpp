@@ -75,7 +75,7 @@ message_20::SessionSetupResponse handle_request([[maybe_unused]] const message_2
 }
 
 void SessionSetup::enter() {
-    m_ctx.log.enter_state("SessionSetup");
+    logf_debug("Enter state: SessionSetup");
 }
 
 Result SessionSetup::feed(Event ev) {
@@ -91,8 +91,12 @@ Result SessionSetup::feed(Event ev) {
         logf_info("Received session setup with evccid: %s", req->evccid.c_str());
         m_ctx.feedback.evcc_id(req->evccid);
         m_ctx.ev_info.evcc_id = req->evccid;
-        m_ctx.feedback.ev_information(m_ctx.ev_info);
 
+        // Only emit ev_information feedback when the sap negotiation is handled here. When SAP is skipped the
+        // application already has the information.
+        if (not skip_app_protocol_negotiation) {
+            m_ctx.feedback.ev_information(m_ctx.ev_info);
+        }
         bool new_session{false};
 
         const auto vehicle_cert_hash = m_ctx.get_new_vehicle_cert_hash();
@@ -152,7 +156,7 @@ Result SessionSetup::feed(Event ev) {
         return m_ctx.create_state<AuthorizationSetup>();
 
     } else {
-        m_ctx.log("expected SessionSetupReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected SessionSetupReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

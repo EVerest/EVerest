@@ -1,3 +1,5 @@
+add_subdirectory(management_api)
+
 add_executable(manager)
 target_sources(manager
     PRIVATE
@@ -16,6 +18,7 @@ target_link_libraries(manager
     PRIVATE
         everest::framework
         Boost::program_options
+        management_api
         PkgConfig::libcap
 )
 

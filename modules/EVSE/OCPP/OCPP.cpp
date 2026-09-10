@@ -59,7 +59,11 @@ static ocpp::v16::ErrorInfo get_error_info(const Everest::error::Error& error) {
     if (mrec_it != MREC_ERROR_MAP.end()) {
         // lambda to create MREC error info
         auto make_mrec_error_info = [&](ocpp::v16::ChargePointErrorCode code, const std::string& vendor_error_code) {
-            return ocpp::v16::ErrorInfo{uuid, code, false, std::nullopt, CHARGE_X_MREC_VENDOR_ID, vendor_error_code};
+            std::optional<std::string> info = std::nullopt;
+            if (!error.message.empty()) {
+                info = error.message;
+            }
+            return ocpp::v16::ErrorInfo{uuid, code, false, info, CHARGE_X_MREC_VENDOR_ID, vendor_error_code};
         };
         return make_mrec_error_info(mrec_it->second.first, mrec_it->second.second);
     }
@@ -71,7 +75,7 @@ static ocpp::v16::ErrorInfo get_error_info(const Everest::error::Error& error) {
     if (ocpp_it != OCPP_ERROR_MAP.end()) {
         // lambda to create OCPP error info
         auto make_ocpp_error_info = [&](ocpp::v16::ChargePointErrorCode code) {
-            return ocpp::v16::ErrorInfo{uuid, code, false, std::nullopt};
+            return ocpp::v16::ErrorInfo{uuid, code, false, std::nullopt, error.message};
         };
         return make_ocpp_error_info(ocpp_it->second);
     }
@@ -903,7 +907,12 @@ void OCPP::ready() {
     });
 
     this->charge_point->register_connection_state_changed_callback(
-        [this](bool is_connected) { this->p_ocpp_generic->publish_is_connected(is_connected); });
+        [this](const bool is_connected, const int configuration_slot,
+               const ocpp::v2::NetworkConnectionProfile& network_connection_profile) {
+            this->p_ocpp_generic->publish_connection_status(
+                ocpp_module_common::conversions::to_everest_connection_status(
+                    is_connected, configuration_slot, network_connection_profile, ocpp::OcppProtocolVersion::v16));
+        });
 
     this->charge_point->register_get_15118_ev_certificate_response_callback(
         [this](const int32_t connector_id, const ocpp::v2::Get15118EVCertificateResponse& certificate_response,
@@ -1127,6 +1136,7 @@ void OCPP::ready() {
             queued_event.data);
     }
     this->started = true;
+    this->p_ocpp_generic->publish_ready(true);
 }
 
 int32_t OCPP::get_ocpp_connector_id(int32_t evse_id, int32_t connector_id) {

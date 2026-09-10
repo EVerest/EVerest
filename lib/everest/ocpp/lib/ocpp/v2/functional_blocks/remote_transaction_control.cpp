@@ -322,21 +322,47 @@ void RemoteTransactionControl::handle_trigger_message(Call<TriggerMessageRequest
         }
         break;
 
-    case MessageTriggerEnum::SignChargingStationCertificate:
-        response.status = TriggerMessageStatusEnum::Accepted;
-        break;
-    case MessageTriggerEnum::SignV2GCertificate:
-        if (this->context.device_model
-                .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
-                .value_or(false)) {
-            response.status = TriggerMessageStatusEnum::Accepted;
+    case MessageTriggerEnum::SignChargingStationCertificate: {
+        const auto rejection =
+            this->security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+        if (rejection.has_value()) {
+            EVLOG_warning << "CSMS requested SignChargingStationCertificate but the SignCertificate.req cannot be sent "
+                             "right now, so the TriggerMessage is rejected: "
+                          << rejection->reasonCode.get();
+            response.status = TriggerMessageStatusEnum::Rejected;
+            response.statusInfo = rejection;
         } else {
+            response.status = TriggerMessageStatusEnum::Accepted;
+        }
+        break;
+    }
+    case MessageTriggerEnum::SignV2GCertificate: {
+        if (!this->context.device_model
+                 .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
+                 .value_or(false)) {
             EVLOG_warning << "CSMS requested SignV2GCertificate but V2GCertificateInstallationEnabled is configured as "
                              "false, so the TriggerMessage is rejected!";
             response.status = TriggerMessageStatusEnum::Rejected;
+            StatusInfo status_info;
+            status_info.reasonCode = "NotEnabled";
+            status_info.additionalInfo = "V2GCertificateInstallationEnabled is false";
+            response.statusInfo = status_info;
+            break;
         }
 
+        const auto rejection =
+            this->security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::V2GCertificate);
+        if (rejection.has_value()) {
+            EVLOG_warning << "CSMS requested SignV2GCertificate but the SignCertificate.req cannot be sent right now, "
+                             "so the TriggerMessage is rejected: "
+                          << rejection->reasonCode.get();
+            response.status = TriggerMessageStatusEnum::Rejected;
+            response.statusInfo = rejection;
+        } else {
+            response.status = TriggerMessageStatusEnum::Accepted;
+        }
         break;
+    }
         // TODO:
         // PublishFirmwareStatusNotification
         // SignCombinedCertificate

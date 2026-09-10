@@ -47,6 +47,12 @@ Project & Community
 
       The current list of deprecated public API components, removal timelines, and migration guides.
 
+   .. grid-item-card:: Experimental Feature Index
+      :link: releases/experimental-index
+      :link-type: doc
+
+      The current list of experimental public API components and what the missing guarantees mean.
+
    .. grid-item-card:: Security Policy
       :link: governance/security
       :link-type: doc
@@ -73,3 +79,4 @@ Project & Community
     releases/breaking-changes
     releases/deprecation-policy
     releases/deprecation-index
+    releases/experimental-index

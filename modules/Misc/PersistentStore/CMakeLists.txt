@@ -10,10 +10,14 @@ ev_setup_cpp_module()
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
 # insert your custom targets and additional config variables here
 find_package(SQLite3 REQUIRED)
+if(NOT TARGET SQLite3::SQLite3) # CMake < 4.3
+  set_target_properties(SQLite::SQLite3 PROPERTIES IMPORTED_GLOBAL TRUE)
+  add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
+endif()
 
 target_link_libraries(${MODULE_NAME}
     PRIVATE
-        SQLite::SQLite3
+        SQLite3::SQLite3
 )
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
 

@@ -6,13 +6,59 @@
 #pragma once
 
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 #include <everest/io/event/unique_fd.hpp>
 #include <everest/io/udp/endpoint.hpp>
 
+namespace everest::lib::io::event {
+// Declared opaquely, and without an underlying type, to keep this header out of an include cycle:
+// event/fd_event_handler.hpp defines poll_events with its implicit type and
+// event/fd_event_client.hpp already includes this header.
+enum class poll_events;
+} // namespace everest::lib::io::event
+
 namespace everest::lib::io::socket {
+
+/**
+ * @brief A failed socket operation, carrying the errno that caused it.
+ * @details Thrown instead of a bare std::runtime_error wherever the cause is an
+ * errno: `errno` itself does not survive the unwind, because cleanup on the way
+ * out (close(), freeaddrinfo()) may overwrite it. The value is captured at the
+ * failure site.
+ */
+class socket_error : public std::runtime_error {
+public:
+    /**
+     * @param[in] what Human readable description.
+     * @param[in] error The errno captured at the failure site.
+     */
+    socket_error(std::string const& what, int error) : std::runtime_error(what), m_error(error) {
+    }
+
+    /**
+     * @brief The errno captured at the failure site.
+     */
+    int error() const {
+        return m_error;
+    }
+
+private:
+    int m_error;
+};
+
+/**
+ * @var reconnect_delay_ms
+ * @brief Throttle applied by a client between failed connect attempts.
+ * @details Deliberately independent of the connect timeout. A connect can fail
+ * without spending any of that timeout (refused peer, local bind failure), and
+ * consumers reset from the error handler, so without a throttle a client spins
+ * against the peer. Charging the connect timeout instead would double failure
+ * latency for the leg that did spend it.
+ */
+constexpr int reconnect_delay_ms{100};
 
 /**
  * @brief Open a UDP socket in server mode
@@ -20,7 +66,8 @@ namespace everest::lib::io::socket {
  * @param[in] device Optional interface name (e.g. "eth0"). When non-empty the socket is bound
  * to that device via SO_BINDTODEVICE. Requires CAP_NET_RAW or root.
  * @return The managed file descriptor of the socket
- * @throws std::runtime_error if the operation fails.
+ * @throws socket_error if the operation fails. Catch it rather than
+ * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& device = {});
 
@@ -31,7 +78,8 @@ event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& d
  * @param[in] device Optional interface name (e.g. "eth0"). When non-empty the socket is bound
  * to that device via SO_BINDTODEVICE before connect. Requires CAP_NET_RAW or root.
  * @return The managed file descriptor of the socket
- * @throws std::runtime_error if the operation fails.
+ * @throws socket_error if the operation fails. Catch it rather than
+ * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t port, std::string const& device = {});
 
@@ -98,11 +146,26 @@ event::unique_fd open_udp_multicast_socket(std::string const& multicast_group, s
 event::unique_fd open_mdns_socket(std::string const& interface_name);
 
 /**
+ * @brief Open an IPv6 UDP socket for
+ * <a href="https://datatracker.ietf.org/doc/html/rfc6762">Multicast DNS</a>
+ * @details AF_INET6/IPV6_V6ONLY socket bound to [::]:5353, joined to the
+ * mDNS group ff02::fb on the specified interface (by interface index, so no
+ * IPv4 address is required on the interface). Multicast egress is pinned to
+ * the interface and messages are only sent on that interface.
+ * @param[in] interface_name The name of interface
+ * @return The managed file descriptor of the socket
+ * @throws std::runtime_error if the operation fails (including when the host
+ * or interface has no IPv6 support).
+ */
+event::unique_fd open_mdns_socket6(std::string const& interface_name);
+
+/**
  * @brief Open a TCP socket in client mode
  * @param[in] host The host to connect to
  * @param[in] port The port to listen to
  * @return The managed file descriptor of the socket
- * @throws std::runtime_error if the operation fails.
+ * @throws socket_error if the operation fails. Catch it rather than
+ * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, const std::string& device = {});
 
@@ -115,10 +178,23 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, co
  * to that device via SO_BINDTODEVICE before connect. If the caller lacks CAP_NET_RAW, falls back
  * to source-IP bind using the interface's IPv4 address (no privilege needed).
  * @return The managed file descriptor of the socket
- * @throws std::runtime_error if the operation fails.
+ * @throws socket_error if the operation fails. Catch it rather than
+ * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms,
                                               const std::string& device = {});
+
+/**
+ * @brief Open a TCP socket in server mode (bound and listening).
+ * @details Non-blocking, close-on-exec, with SO_REUSEADDR and SO_REUSEPORT set. The family is
+ * AF_INET6 when @p ipv6_only is set or @p bind_addr contains a ':', otherwise AF_INET.
+ * @param[in] bind_addr Numeric bind address (e.g. "0.0.0.0", "127.0.0.1", "::", "::1").
+ * @param[in] port The port to listen on (0 for an ephemeral port).
+ * @param[in] ipv6_only When true, force an IPv6 socket and set IPV6_V6ONLY.
+ * @return The managed file descriptor of the listening socket.
+ * @throws std::runtime_error if any step (socket, setsockopt, inet_pton, bind, listen) fails.
+ */
+event::unique_fd open_tcp_server_socket(std::string const& bind_addr, std::uint16_t port, bool ipv6_only);
 
 /**
  * @brief Bind a socket to a specific network interface.
@@ -225,6 +301,16 @@ void set_socket_send_buffer_to_min(int fd);
  * @return Description
  */
 int get_pending_error(int fd);
+
+/**
+ * @brief Resolve the error behind an error or hangup notification on a descriptor
+ * @details Reads <a href="https://man7.org/linux/man-pages/man7/socket.7.html">SO_ERROR</a>, which
+ * clears it, so only the first call for a given failure can answer with the real code. Descriptors
+ * that are not sockets (pty, tun/tap) fail getsockopt outright and resolve to @p fallback, or, when
+ * that is 0, to a code derived from @p kind: ENOTCONN for a hangup, EIO for an error.
+ * @return A nonzero error code
+ */
+int consume_poll_error(int fd, event::poll_events kind, int fallback);
 
 /**
  * @brief Checks if a TCP socket is still connected and operational without consuming any incoming data.
@@ -395,7 +481,17 @@ std::uint32_t ip_to_s_addr(std::string const& ip);
 
 struct if_info {
     std::string name;
+    /** First IPv4 address of the interface; empty if it has none */
     std::string ipv4;
+    /** IPv6 address of the interface: first global address, falling back to the
+     *  first link-local one; without \%scope suffix; empty if it has none */
+    std::string ipv6;
+    bool has_v4() const {
+        return not ipv4.empty();
+    }
+    bool has_v6() const {
+        return not ipv6.empty();
+    }
 };
 
 /**

@@ -25,6 +25,20 @@ if (EVC_UTIL_DIR AND NOT DISABLE_ISO15118_LOCAL_DEPENDENCIES)
     endif()
 endif()
 
+set(BUILD_TZ_LIB ON CACHE BOOL "" FORCE)
+set(HAS_REMOTE_API 0 CACHE STRING "" FORCE)
+set(USE_AUTOLOAD 0 CACHE STRING "" FORCE)
+set(USE_SYSTEM_TZ_DB ON CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    date
+    GIT_REPOSITORY https://github.com/HowardHinnant/date.git
+    GIT_TAG v3.0.4
+)
+
+FetchContent_MakeAvailable(date)
+
 # The ISO 15118 SECC TLS adapter pulls in tls -> evse_security -> {log, timer,
 # util}. Add the everest-core sibling libraries in dependency order, the same
 # way as util/cbv2g above (util is already added).

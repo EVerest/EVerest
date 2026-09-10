@@ -187,6 +187,17 @@ TEST(VariableResolver, CustomMappingReverseAmbiguousCollidesWithStandard) {
     EXPECT_EQ(reverse.key.value(), "HeartbeatInterval");
 }
 
+TEST(VariableResolver, IsConnectionConfigCvPredicate) {
+    // the public predicate backs both classify() and the custom-mapping load-time rejection
+    using ocpp::v16::is_connection_config_cv;
+    EXPECT_TRUE(is_connection_config_cv(make_component("NetworkConfiguration", "1"), make_variable("OcppCsmsUrl")));
+    EXPECT_TRUE(is_connection_config_cv(make_component("OCPPCommCtrlr"), make_variable("ActiveNetworkProfile")));
+    EXPECT_TRUE(is_connection_config_cv(make_component("SecurityCtrlr"), make_variable("BasicAuthPassword")));
+    EXPECT_FALSE(is_connection_config_cv(make_component("SecurityCtrlr"), make_variable("CertificateEntries")));
+    EXPECT_FALSE(is_connection_config_cv(make_component("OCPPCommCtrlr"), make_variable("HeartbeatInterval")));
+    EXPECT_FALSE(is_connection_config_cv(make_component("VendorCtrlr"), make_variable("BarSetting")));
+}
+
 TEST(VariableResolver, ClassifyConnectionConfig) {
     const VariableResolver resolver{{}};
     EXPECT_EQ(resolver.classify(make_component("NetworkConfiguration", "1"), make_variable("OcppCsmsUrl")),

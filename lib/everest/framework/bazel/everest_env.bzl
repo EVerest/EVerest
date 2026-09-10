@@ -93,6 +93,15 @@ def _everest_env(ctx):
             for file in ctx.attr.schemas[DefaultInfo].files.to_list()
         },
     )
+    # The manager boots its configuration from a SQLite database and applies the
+    # migration files from `data_dir/migrations` on startup (see
+    # init_database_bootstrap()); without them it aborts with "SQL migration failed".
+    symlinks.update(
+        {
+            "share/everest/migrations/{0}".format(file.basename): file
+            for file in ctx.attr.migrations[DefaultInfo].files.to_list()
+        },
+    )
     symlinks.update(
         {
             "share/everest/interfaces/{0}".format(file.basename): file
@@ -181,6 +190,12 @@ The EVerest configuration file. It will be linked to
     "schemas": attr.label(
         doc = "The target with the EVerest schemas.",
         default = Label("//lib/everest/framework/schemas"),
+    ),
+    "migrations": attr.label(
+        doc = """
+The target with the SQL migration files for the configuration database. The
+manager applies them on startup and refuses to boot without them.""",
+        default = Label("//lib/everest/framework/schemas/migrations"),
     ),
     "interfaces": attr.label_list(
         doc = "A list of targets with EVerest interfaces.",

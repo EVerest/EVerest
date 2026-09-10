@@ -439,6 +439,7 @@ components:
             "min_phase_count_export": 1
             "supports_changing_phases_during_charging": true
             "max_plug_temperature_C": 80
+            "supports_cp_state_E": true
             "connector_type": "IEC62196Type2Cable"
     send_ac_pp_ampacity:
       name: send_ac_pp_ampacity
@@ -476,7 +477,8 @@ components:
     receive_request_reset:
       name: receive_request_reset
       title: 'Request to reset RCD'
-      summary: 'Reply to provided topic.'
+      summary: >-
+        Resets the RCD after a trigger. May not be supported by actual hardware.
       contentType: application/json
       payload:
         type: object
@@ -495,8 +497,7 @@ components:
     send_reply_reset:
       name: send_reply_reset
       title: 'Reply to request for RCD reset'
-      summary: >-
-        Resets the RCD after a trigger. May not be supported by actual hardware.
+      summary: 'Reply to provided topic.'
       contentType: application/json
       payload:
         $ref: '#/components/schemas/Success'
@@ -611,10 +612,6 @@ components:
     Current:
       description: Electrical current in milliampere (mA)
       type: number
-    Duration:
-      description: Duration in milliseconds (ms)
-      type: integer
-      minimum: 0
     Enabled:
       description: 'True: enabled. False: disabled.'
       type: boolean
@@ -677,6 +674,12 @@ components:
           type: boolean
         max_plug_temperature_C:
           type: number
+        supports_cp_state_E:
+          description: >-
+            Indicates whether setting Control Pilot to state E is supported (true) or not
+            (false). Treated as false when omitted.
+          type: boolean
+          default: false
         connector_type:
           description: Type of charging connector available at this EVSE
           type: string
@@ -832,7 +835,19 @@ components:
           description: The subtype of the error
           type: string
         message:
-          description: Addition information about the error
+          description: |-
+            Optional free-text detail about this specific occurrence of the error,
+            e.g. a measured value or a diagnostic string from the hardware. Unlike
+            the fixed per-error-type description, this is chosen by the caller.
+            If an OCPP module is part of the EVerest configuration, the message is
+            forwarded to the CSMS:
+            * OCPP 1.6 (`StatusNotification.req`):
+              * MREC errors: sent as `info`, truncated to 50 characters.
+                Omitted entirely when the message is empty.
+              * all other errors: sent as `vendorId`, truncated to 255 characters.
+            * OCPP 2.x (`NotifyEvent.req`): sent as `techInfo`, truncated to 500
+              characters. When the message is empty, the error description is sent
+              instead.
           type: string
 
     CommunicationCheck:

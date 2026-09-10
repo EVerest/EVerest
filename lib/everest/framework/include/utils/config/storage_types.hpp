@@ -41,11 +41,6 @@ struct GetModuleConfigsResponse {
     ModuleConfigurations module_configs;
 };
 
-struct GetSettingsResponse {
-    GenericResponseStatus status = GenericResponseStatus::Failed;
-    std::optional<Settings> settings;
-};
-
 struct GetModuleFulfillmentsResponse {
     GenericResponseStatus status = GenericResponseStatus::Failed;
     std::vector<Fulfillment> module_fulfillments;
@@ -74,14 +69,6 @@ struct GetModuleConfigurationResponse {
 struct GetModuleDataResponse {
     GenericResponseStatus status = GenericResponseStatus::Failed;
     std::optional<ModuleData> module_data;
-};
-
-struct ConfigurationParameterIdentifier {
-    std::string module_id;
-    std::string configuration_parameter_name;
-    std::optional<std::string> module_implementation_id;
-
-    bool operator<(const ConfigurationParameterIdentifier& rhs) const;
 };
 
 } // namespace everest::config

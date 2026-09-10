@@ -221,6 +221,8 @@ struct Connector {
 struct Evse {
     int32_t id;
     std::vector<Connector> connectors;
+    std::optional<std::string> evse_id;
+    std::optional<std::string> evse_id_din;
 };
 
 enum class EnableSourceEnum {

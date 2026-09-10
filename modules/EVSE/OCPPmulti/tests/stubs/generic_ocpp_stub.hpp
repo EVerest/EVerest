@@ -9,7 +9,12 @@
 #include "config_stub.hpp"
 #include "interfaces_stub.hpp"
 #include <generic_ocpp.hpp>
+
+#include <nlohmann/json.hpp>
+
+#include <cstddef>
 #include <memory>
+#include <vector>
 
 namespace stubs {
 
@@ -121,6 +126,12 @@ protected:
     std::unique_ptr<stubs::ModuleInterfaces> interfaces;
     std::unique_ptr<stubs::GenericOcppTester> ocpp;
 
+    // the ocpp_generic "ready" var is published from within ready(), hence it must be recorded
+    // during SetUp() - a test subscribing afterwards would already have missed it
+    std::vector<nlohmann::json> published_ready;
+    // number of "ready" publications observed at the time connect_websocket() was called
+    std::size_t published_ready_before_websocket{0};
+
     void SetUp() override {
         using ::testing::_;
         interfaces = std::make_unique<stubs::ModuleInterfaces>();
@@ -141,7 +152,12 @@ protected:
         EXPECT_CALL(chargepoint, set_message_queue_resume_delay(std::chrono::seconds(config.MessageQueueResumeDelay)))
             .Times(1);
         EXPECT_CALL(chargepoint, start(_, _, false)).Times(1);
-        EXPECT_CALL(chargepoint, connect_websocket()).Times(1);
+        EXPECT_CALL(chargepoint, connect_websocket()).Times(1).WillOnce([this]() {
+            published_ready_before_websocket = published_ready.size();
+        });
+        interfaces->subscribe_var("ocpp_generic", "ready", [this](const auto&, const auto&, const auto& data) {
+            published_ready.push_back(data);
+        });
         ocpp->init();
         // ocpp.ready() waits for the EVSE managers to be ready
         interfaces->publish_ready(0, true);

@@ -72,7 +72,7 @@ auto get_default_ac_bpt_parameter_list(const std::vector<ControlMobilityNeedsMod
 
 auto get_default_ac_der_iec_parameter_list(const std::vector<ControlMobilityNeedsModes>& control_mobility_modes,
                                            const AcSetupConfig& ac_setup_config,
-                                           const DerSetupConfig& der_setup_config) {
+                                           const DerIecSetupConfig& der_setup_config) {
     using namespace dt;
 
     std::vector<AcDerParameterList> param_list;
@@ -192,10 +192,10 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
     authorization_services(std::move(config.authorization_services)),
     supported_energy_transfer_services(std::move(config.supported_energy_services)),
     supported_vas_services(std::move(config.supported_vas_services)),
-    dc_limits(std::move(config.dc_limits)),
-    ac_limits(std::move(config.ac_limits)),
-    der_limits(std::move(config.der_limits)),
-    powersupply_limits(std::move(config.powersupply_limits)),
+    dc_limits(config.dc_limits),
+    ac_limits(config.ac_limits),
+    der_limits(config.der_limits),
+    powersupply_limits(config.powersupply_limits),
     supported_control_mobility_modes(std::move(config.control_mobility_modes)),
     custom_protocol(std::move(config.custom_protocol)),
     selecting_sap_based_on_energy_service(config.selecting_sap_based_on_energy_service) {
@@ -241,14 +241,14 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
         {dt::BptChannel::Unified, dt::GeneratorMode::GridFollowing, dt::GridCodeIslandingDetectionMethod::Passive}));
     const auto dc_bpt_setup_config = config.bpt_setup_config.value_or(
         BptSetupConfig({dt::BptChannel::Unified, dt::GeneratorMode::GridFollowing, std::nullopt}));
-    der_setup_config = config.der_setup_config.value_or(
-        DerSetupConfig({{}, iec::OperatingMode::GridFollowing, iec::GridConnectionMode::GridConnected}));
+    der_iec_setup_config = config.der_iec_setup_config.value_or(
+        DerIecSetupConfig({{}, iec::OperatingMode::GridFollowing, iec::GridConnectionMode::GridConnected}));
 
     ac_parameter_list = get_default_ac_parameter_list(supported_control_mobility_modes, ac_setup_config);
     ac_bpt_parameter_list =
         get_default_ac_bpt_parameter_list(supported_control_mobility_modes, ac_setup_config, ac_bpt_setup_config);
     ac_der_iec_parameter_list =
-        get_default_ac_der_iec_parameter_list(supported_control_mobility_modes, ac_setup_config, der_setup_config);
+        get_default_ac_der_iec_parameter_list(supported_control_mobility_modes, ac_setup_config, der_iec_setup_config);
 
     dc_parameter_list = get_default_dc_parameter_list(supported_control_mobility_modes);
     dc_bpt_parameter_list = get_default_dc_bpt_parameter_list(supported_control_mobility_modes, dc_bpt_setup_config);

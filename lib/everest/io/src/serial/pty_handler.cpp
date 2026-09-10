@@ -4,6 +4,8 @@
 #include <cstring>
 #include <errno.h>
 #include <everest/io/serial/pty_handler.hpp>
+#include <everest/io/socket/socket.hpp>
+#include <exception>
 #include <iostream>
 #include <sys/types.h>
 #include <termios.h>
@@ -14,14 +16,19 @@ namespace everest::lib::io::serial {
 bool pty_handler::tx(PayloadT& data) {
     auto status = ::write(m_dev.master_fd, data.data(), data.size());
     if (status == -1) {
+        if (errno == EAGAIN or errno == EWOULDBLOCK) {
+            // Slave has not read enough; retried on the next writable event. Not an error.
+            error_id = 0;
+            return false;
+        }
         error_id = errno;
         std::cout << "ERROR: Failed to write to pty master." << std::endl;
         return false;
     }
     if (status < static_cast<ssize_t>(data.size())) {
-        // We have a reference to the current data. Replace it with what is left to be written
-        // and return false. This signals the current block cannot be removed from the buffer.
-        data = {data.begin() + status, data.end()};
+        // Keep the unsent bytes in place and return false: the block stays in the buffer. Not an error.
+        data.erase(data.begin(), data.begin() + status);
+        error_id = 0;
         return false;
     }
     error_id = 0;
@@ -34,6 +41,11 @@ bool pty_handler::rx(PayloadT& data) {
     data.resize(buffer_size_limit);
     auto n_bytes = ::read(m_dev.master_fd, data.data(), data.size());
     if (n_bytes == -1) {
+        if (errno == EAGAIN or errno == EWOULDBLOCK) {
+            // Wakeup without data. Not an error.
+            error_id = 0;
+            return false;
+        }
         error_id = errno;
         return false;
     }
@@ -46,6 +58,14 @@ bool pty_handler::open() {
     auto mypty = serial::openpty();
     if (not mypty.has_value()) {
         error_id = errno;
+        return false;
+    }
+    // Driven from an event loop: a full slave buffer must yield EAGAIN, not block.
+    try {
+        socket::set_non_blocking(mypty->master_fd);
+    } catch (std::exception const&) {
+        error_id = errno;
+        std::cout << "ERROR: Preparing pty master for non blocking operation" << std::endl;
         return false;
     }
 
@@ -75,7 +95,7 @@ pty_status pty_handler::get_status() {
     struct termios status;
     auto attr_res = tcgetattr(m_dev.master_fd, &status);
     if (attr_res == -1) {
-        error_id = errno;
+        // Not part of the connection: error_id describes open, tx and rx only.
         std::cout << "Failed to get attributes" << std::endl;
         return result;
     }
@@ -84,8 +104,6 @@ pty_status pty_handler::get_status() {
     result.ixoff = status.c_iflag & IXOFF;   // enable xon/xoff flow control on input
     result.cstopb = status.c_cflag & CSTOPB; // two stop bits instead of one
     result.cbaud = cfgetospeed(&status);
-
-    error_id = 0;
     return result;
 }
 

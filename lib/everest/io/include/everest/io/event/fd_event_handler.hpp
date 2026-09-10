@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 /** \file */
 
@@ -9,12 +9,14 @@
 #include <everest/io/event/event_fd.hpp>
 #include <everest/io/event/fd_event_client.hpp>
 #include <everest/io/event/fd_event_register_interface.hpp>
+#include <everest/io/event/handler_liveness.hpp>
 #include <everest/util/queue/thread_safe_queue.hpp>
 
 #include <atomic>
 #include <functional>
 #include <memory>
 #include <set>
+#include <type_traits>
 
 namespace everest::lib::io::event {
 
@@ -28,7 +30,16 @@ enum class poll_events {
     write = 2,
     error = 3,
     hungup = 4,
+    /// Peer closed its writing side (EPOLLRDHUP). Only when monitored for, stream sockets only.
+    read_hungup = 5,
 };
+
+// event/fd_event_client.hpp and socket/socket.hpp declare poll_events opaquely to break the
+// include cycle with this header. Those declarations are compatible only while the definition
+// keeps its implicit type.
+static_assert(std::is_same_v<std::underlying_type_t<poll_events>, int>,
+              "poll_events must keep its implicit underlying type: event/fd_event_client.hpp and "
+              "socket/socket.hpp declare it without one");
 
 std::set<poll_events> operator|(poll_events lhs, poll_events rhs);
 std::set<poll_events>& operator|(std::set<poll_events>& lhs, poll_events rhs);
@@ -55,6 +66,9 @@ class generic_fd_event_client_impl;
  * be registered together with a list of the events of interest and a callback.
  * This class provides itself a filedescriptor that can be added to other event handlers. This way
  * concerns may be separated and event handlers nested.
+ *
+ * Registration, removal and \ref poll must all run on one thread. \ref add_action is the only
+ * member safe to call from another thread.
  */
 class fd_event_handler {
 public:
@@ -140,7 +154,9 @@ public:
     /**
      * @brief Register an \ref timer_fd for event handling
      * @details Reading from the event happens internally to acknowledge event handling.
-     * If manual handling is necessary use \ref timer_fd filedecriptor directly
+     * If manual handling is necessary use \ref timer_fd filedecriptor directly.
+     * \p handler is not called for an expiry that a rearm or a disarm retired since its poll
+     * batch was harvested: rearming a timer from another handler suppresses its pending tick.
      * @param[in] obj The object to be registerd for event handling
      * @param[in] handler Callback for handling the events on \p obj
      * @return True on success, false otherwise
@@ -155,7 +171,8 @@ public:
     /**
      * @brief Register a client implementing \ref fd_event_sync_interface for event handling
      * @details On notification from the file descriptor of the client, its sync method is called
-     * If manual handling is necessary use \ref fd_event_client filedescriptor directly
+     * If manual handling is necessary use \ref fd_event_client filedescriptor directly.
+     * The client records this handler and removes its registration when destroyed.
      * @param[in] obj The object to be registerd for event handling
      * @return True on success, false otherwise
      */
@@ -187,16 +204,16 @@ public:
 
     /**
      * @brief Unregister object implementing \ref fd_event_sync_interface from event handling
+     * @details Removes the descriptor recorded at registration time, not the current get_poll_fd.
      * @param[in] obj The object to be removed from event handling
-     * @return True on success, false otherwise
+     * @return True if a registration with this handler was removed, false otherwise
      */
-
     bool unregister_event_handler(fd_event_sync_interface* obj);
 
     /**
      * @brief Unregister timer_fd from event handling
      * @param[in] obj The timer to be removed
-     * @return True on success, false otherwise
+     * @return True if a registration with this handler was removed, false otherwise
      */
     bool unregister_event_handler(timer_fd* obj);
 
@@ -239,11 +256,37 @@ public:
     bool modify_event_handler(int fd, poll_events event, event_modification change);
 
     /**
+     * @brief Enable one set of events and disable another in a single EPOLL_CTL_MOD.
+     * @details Both changes take effect or neither. An event in both lists ends up enabled.
+     * @param[in] fd The file descriptor
+     * @param[in] enable Events to monitor
+     * @param[in] disable Events to stop monitoring
+     * @return True on success, false otherwise (unregistered fd, or epoll failure with events unchanged)
+     */
+    bool modify_event_handler(int fd, event_list const& enable, event_list const& disable);
+
+    /**
      * @brief Stop monitoring of events on the file descriptor.
      * @param[in] fd The file descriptor
      * @return True on success, false otherwise
      */
     bool remove_event_handler(int fd);
+
+    /**
+     * @brief Check whether a file descriptor has a registered handler
+     * @details Reports the handler map only, so it stays meaningful for an already closed descriptor.
+     * @param[in] fd The file descriptor
+     * @return True if \p fd has a registered handler, false otherwise
+     */
+    bool is_registered(int fd) const;
+
+    /**
+     * @brief The block a registration with this handler is recorded against
+     * @details Cleared in \ref ~fd_event_handler before any member is destroyed. A recorder keeps a
+     * \p std::weak_ptr to it and drops its registration only while the block still names a handler.
+     * @return The liveness block of this handler
+     */
+    std::shared_ptr<handler_liveness> liveness() const;
     /**
      * @}
      */
@@ -315,7 +358,11 @@ private:
      * \return false in case of timeout, true otherwise
      */
     bool poll_impl(int timeout_ms);
+
+    // Not shared_ptr: EventHandlerMap owns the epoll descriptor, and a registrant outliving this
+    // handler must not keep it open.
     std::unique_ptr<EventHandlerMap> m_handlers{nullptr};
+    std::shared_ptr<handler_liveness> m_liveness;
     util::thread_safe_queue<task> task_pool;
     event_fd m_action_event;
 };

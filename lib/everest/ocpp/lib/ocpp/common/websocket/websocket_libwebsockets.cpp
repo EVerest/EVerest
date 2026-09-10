@@ -130,7 +130,11 @@ struct ConnectionData {
     }
 
     /// \brief Requests the threads that are processing to exit as soon as possible
-    /// in a ordered manner
+    /// in a ordered manner.
+    /// Note: this only flips is_running (behind this->mutex); it does not wake the recv thread,
+    /// which waits on the recv_message_queue condition variable behind a different lock. Callers
+    /// must follow this with recv_message_queue notification (safe_close_threads() does so via
+    /// clear_all_queues()) or the recv thread only observes the interrupt on its next poll timeout.
     void do_interrupt_and_exit() {
         if (std::this_thread::get_id() == this->websocket_client_thread_id) {
             EVLOG_AND_THROW(std::runtime_error("Attempted to interrupt connection from websocket thread!"));
@@ -610,7 +614,11 @@ void WebsocketLibwebsockets::thread_websocket_message_recv_loop(std::shared_ptr<
         // if we receive a certain message type that will cause the implementation
         // in the charge point to attempt a reconnect (BasicAuthPass for example)
         if (!local_data->is_interupted()) {
-            recv_message_queue.wait_on_queue_element(1s);
+            // Wake immediately when interrupted: the interrupt flag lives behind a different lock, so
+            // without this predicate a teardown that races the thread into the wait is only observed
+            // when the poll times out, stalling disconnect() for the poll interval.
+            recv_message_queue.wait_on_queue_element_or_predicate([&local_data] { return local_data->is_interupted(); },
+                                                                  1s);
         }
     }
 
@@ -809,7 +817,7 @@ void WebsocketLibwebsockets::thread_websocket_client_loop(std::shared_ptr<Connec
                     processing = (!local_data->is_interupted()) &&
                                  (state != EConnectionState::FINALIZED && state != EConnectionState::ERROR);
 
-                    if (processing && !message_queue.empty()) {
+                    if (processing && !send_message_queue.empty()) {
                         lws_callback_on_writable(local_data->get_conn());
                     }
                 } while (n >= 0 && processing);
@@ -832,9 +840,7 @@ void WebsocketLibwebsockets::thread_websocket_client_loop(std::shared_ptr<Connec
         } else if (local_data->get_state() != EConnectionState::CONNECTED) {
             // Any other failure than a successful connect
 
-            // -1 indicates to always attempt to reconnect
-            if (this->connection_options.max_connection_attempts == -1 or
-                this->connection_attempts <= this->connection_options.max_connection_attempts) {
+            if (this->should_reconnect()) {
                 local_data->update_state(EConnectionState::RECONNECTING);
                 reconnect_delay = this->get_reconnect_interval();
                 try_reconnect = true;
@@ -857,13 +863,17 @@ void WebsocketLibwebsockets::thread_websocket_client_loop(std::shared_ptr<Connec
         if (local_data->get_state() == EConnectionState::RECONNECTING) {
             auto end_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(reconnect_delay);
 
-            while ((std::chrono::steady_clock::now() < end_time) && (false == local_data->is_interupted())) {
+            // Exit the wait early on interrupt or if reconnect gets suppressed mid-wait, so a
+            // suppress_reconnect() landing during the backoff cancels the scheduled re-dial. Only
+            // suppression is re-checked here: the attempt budget cannot change during the wait.
+            while ((std::chrono::steady_clock::now() < end_time) && (false == local_data->is_interupted()) &&
+                   (false == this->reconnect_suppressed)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
 
-            if (true == local_data->is_interupted()) {
+            if (local_data->is_interupted() || this->reconnect_suppressed) {
                 try_reconnect = false;
-                EVLOG_info << "Interrupred reconnect attempt, not reconnecting!";
+                EVLOG_info << "Interrupted or suppressed reconnect attempt, not reconnecting!";
             } else {
                 EVLOG_info << "Attempting reconnect after a wait of: " << reconnect_delay << "ms";
             }
@@ -892,7 +902,7 @@ void WebsocketLibwebsockets::thread_websocket_client_loop(std::shared_ptr<Connec
 }
 
 void WebsocketLibwebsockets::clear_all_queues() {
-    this->message_queue.clear();
+    this->send_message_queue.clear();
     this->recv_buffered_message.clear();
     this->recv_message_queue.clear();
 }
@@ -972,6 +982,10 @@ bool WebsocketLibwebsockets::start_connecting() {
     // Clear shutting down so we allow to reconnect again as well
     this->shutting_down = false;
 
+    // A fresh connect is the single point that clears any reconnect suppression armed before a
+    // reset, mirroring the connection_attempts reset below.
+    this->clear_reconnect_suppression();
+
     EVLOG_info << "Starting connection attempts to uri: " << this->connection_options.csms_uri.string()
                << " with security-profile " << this->connection_options.security_profile
                << (this->connection_options.use_tpm_tls ? " with TPM keys" : "");
@@ -1029,6 +1043,10 @@ void WebsocketLibwebsockets::close_internal(const WebsocketCloseReason code, con
     if (!trying_connecting) {
         EVLOG_warning << "Trying to close inactive websocket with code: " << (int)code << " and reason: " << reason
                       << ", returning";
+        // The client loop can self-exit once reconnect attempts are exhausted, leaving its worker
+        // threads finished but still joinable. Join them here so a later close or destruction cannot
+        // destroy a joinable std::thread and terminate.
+        safe_close_threads();
         return;
     }
 
@@ -1163,13 +1181,13 @@ void WebsocketLibwebsockets::poll_message(const std::shared_ptr<WebsocketMessage
     }
 
     EVLOG_debug << "Queueing message: " << msg->payload;
-    message_queue.push(msg);
+    send_message_queue.push(msg);
 
     // Request a write callback
     request_write();
 
-    message_queue.wait_on_custom_event([&] { return (true == msg->message_sent); },
-                                       this->connection_options.message_timeout);
+    send_message_queue.wait_on_custom_event([&] { return (true == msg->message_sent); },
+                                            this->connection_options.message_timeout);
 
     if (msg->message_sent) {
         EVLOG_debug << "Successfully sent last message!";
@@ -1400,7 +1418,7 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
 
     case LWS_CALLBACK_CLIENT_WRITEABLE:
         on_conn_writable();
-        if (false == message_queue.empty()) {
+        if (false == send_message_queue.empty()) {
             lws_callback_on_writable(wsi);
         }
         break;
@@ -1409,7 +1427,7 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
         // Clear the ping when we receive the pong
         ping_cleared.store(true);
 
-        if (false == message_queue.empty()) {
+        if (false == send_message_queue.empty()) {
             lws_callback_on_writable(data->get_conn());
         }
     } break;
@@ -1424,13 +1442,13 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
             recv_buffered_message.clear();
         }
 
-        if (false == message_queue.empty()) {
+        if (false == send_message_queue.empty()) {
             lws_callback_on_writable(data->get_conn());
         }
         break;
 
     case LWS_CALLBACK_EVENT_WAIT_CANCELLED: {
-        if (false == message_queue.empty()) {
+        if (false == send_message_queue.empty()) {
             lws_callback_on_writable(data->get_conn());
         }
     } break;
@@ -1675,11 +1693,11 @@ void WebsocketLibwebsockets::on_conn_writable() {
     // Execute while we have messages that were polled
     while (true) {
         // Break if we have en empty queue
-        if (message_queue.empty()) {
+        if (send_message_queue.empty()) {
             break;
         }
 
-        auto message = message_queue.front();
+        auto message = send_message_queue.front();
 
         if (message == nullptr) {
             EVLOG_AND_THROW(std::runtime_error("Null message in queue, fatal error!"));
@@ -1692,7 +1710,7 @@ void WebsocketLibwebsockets::on_conn_writable() {
             // If we have written all bytes to libwebsockets it means that if we received
             // this writable callback everything is sent over the wire, mark it as sent and remove
             message->message_sent = true;
-            message_queue.pop();
+            send_message_queue.pop();
         } else {
             // If the message was not polled, we reached the first unpolled and break
             break;
@@ -1702,11 +1720,11 @@ void WebsocketLibwebsockets::on_conn_writable() {
     // If we still have message ONLY poll a single one that can be processed in the invoke of the function
     // libwebsockets is designed so that when a message is sent to the wire from the internal buffer it
     // will invoke 'on_conn_writable' again and we can execute the code above
-    if (!message_queue.empty()) {
+    if (!send_message_queue.empty()) {
         // Poll a single message
         EVLOG_debug << "Client writable, sending message part!";
 
-        auto message = message_queue.front();
+        auto message = send_message_queue.front();
 
         if (message == nullptr) {
             EVLOG_AND_THROW(std::runtime_error("Null message in queue, fatal error!"));

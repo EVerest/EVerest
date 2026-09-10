@@ -687,4 +687,18 @@ RequestStartTransaction_External to_external_api(const RequestStartTransaction_I
     return result;
 }
 
+Capabilities_Internal to_internal_api(Capabilities_External const& val) {
+    Capabilities_Internal result;
+    result.min_export_current_A = val.min_export_current_A;
+    result.min_import_current_A = val.min_import_current_A;
+    return result;
+}
+
+Capabilities_External to_external_api(Capabilities_Internal const& val) {
+    Capabilities_External result;
+    result.min_export_current_A = val.min_export_current_A;
+    result.min_import_current_A = val.min_import_current_A;
+    return result;
+}
+
 } // namespace everest::lib::API::V1_0::types::powermeter

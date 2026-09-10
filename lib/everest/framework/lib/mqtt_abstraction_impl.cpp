@@ -149,10 +149,11 @@ void MQTTAbstractionImpl::publish(const std::string& topic, const json& json) {
     publish(topic, json, QOS::QOS2);
 }
 
-void MQTTAbstractionImpl::publish(const std::string& topic, const json& json, QOS qos, bool retain) {
+void MQTTAbstractionImpl::publish(const std::string& topic, const json& json, QOS qos, bool retain,
+                                  bool record_retained) {
     BOOST_LOG_FUNCTION();
 
-    publish(topic, json.dump(), qos, retain);
+    publish(topic, json.dump(), qos, retain, record_retained);
 }
 
 void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& data) {
@@ -161,7 +162,8 @@ void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& d
     publish(topic, data, QOS::QOS0);
 }
 
-void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& data, QOS qos, bool retain) {
+void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& data, QOS qos, bool retain,
+                                  bool record_retained) {
     BOOST_LOG_FUNCTION();
 
     if (topic.empty()) {
@@ -170,7 +172,7 @@ void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& d
 
     auto mqtt_qos = to_io_qos(qos, everest::lib::io::mqtt::mqtt_client::QoS::at_most_once);
 
-    if (retain) {
+    if (retain and record_retained) {
         if (not(data.empty() and qos == QOS::QOS0)) {
             // topic should be retained, so save the topic in retained_topics
             // do not save the topic when the payload is empty and QOS is set to 0 which means a retained topic is to be
@@ -253,7 +255,7 @@ void MQTTAbstractionImpl::subscribe(const std::string& topic, QOS qos) {
             topic,
             [this, topic]([[maybe_unused]] everest::lib::io::mqtt::mosquitto_cpp& client,
                           everest::lib::io::mqtt::mosquitto_cpp::message const& message) {
-                this->message_queue.emplace(topic, message.payload);
+                this->message_queue.emplace(message.topic, message.payload);
                 this->new_message_event.notify();
             },
             max_qos_level);
@@ -337,14 +339,15 @@ nlohmann::json MQTTAbstractionImpl::get_internal(const MQTTRequest& request) {
 
     // FIXME: use configurable HandlerType?
     const auto res_token =
-        std::make_shared<TypedHandler>(HandlerType::GetConfigResponse, std::make_shared<Handler>(res_handler));
+        std::make_shared<TypedHandler>(HandlerType::ConfigurationResponse, std::make_shared<Handler>(res_handler));
     this->register_handler(request.response_topic, res_token, request.qos);
     if (request.request_topic.has_value()) {
         if (request.request_data.has_value()) {
-            MqttMessagePayload payload{MqttMessageType::GetConfig, json::parse(request.request_data.value())};
+            MqttMessagePayload payload{MqttMessageType::ConfigurationRequest,
+                                       json::parse(request.request_data.value())};
             this->publish(request.request_topic.value(), payload, request.qos);
         } else {
-            MqttMessagePayload payload{MqttMessageType::GetConfig, json{}};
+            MqttMessagePayload payload{MqttMessageType::ConfigurationRequest, json{}};
             this->publish(request.request_topic.value(), payload, request.qos);
         }
     }

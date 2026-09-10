@@ -452,21 +452,21 @@ std::string ConfigBase::printable_identifier(std::string_view module_id) const {
 std::string ConfigBase::printable_identifier(std::string_view module_id, std::string_view impl_id) const {
     BOOST_LOG_FUNCTION();
 
-    const auto info = extract_implementation_info(this->module_names, this->manifests, module_id, impl_id);
+    const auto info = extract_implementation_info(m_module_names, m_manifests, module_id, impl_id);
     return create_printable_identifier(info, module_id, impl_id);
 }
 
 std::string ConfigBase::get_module_name(std::string_view module_id) const {
-    auto it = this->module_names.find(module_id);
-    if (it == this->module_names.end()) {
+    auto it = m_module_names.find(module_id);
+    if (it == m_module_names.end()) {
         EVLOG_AND_THROW(EverestConfigError(fmt::format("Module id '{}' not found in config", module_id)));
     }
     return it->second;
 }
 
-std::string ConfigBase::mqtt_prefix(std::string_view module_id, std::string_view impl_id) {
+std::string ConfigBase::mqtt_prefix(std::string_view module_id, std::string_view impl_id) const {
     BOOST_LOG_FUNCTION();
-    const auto& prefix = this->mqtt_settings.everest_prefix;
+    const auto& prefix = m_mqtt_settings.everest_prefix;
     std::string result;
     result.reserve(prefix.size() + path_modules.size() + module_id.size() + path_impl.size() + impl_id.size());
 
@@ -477,7 +477,7 @@ std::string ConfigBase::mqtt_prefix(std::string_view module_id, std::string_view
 std::string ConfigBase::mqtt_module_prefix(std::string_view module_id) const {
     BOOST_LOG_FUNCTION();
 
-    const auto& prefix = this->mqtt_settings.everest_prefix;
+    const auto& prefix = m_mqtt_settings.everest_prefix;
     std::string result;
     result.reserve(prefix.size() + path_modules.size() + module_id.size());
     fmt::format_to(std::back_inserter(result), "{}{}{}", prefix, path_modules, module_id);
@@ -486,51 +486,51 @@ std::string ConfigBase::mqtt_module_prefix(std::string_view module_id) const {
 
 const ModuleConfigurations& ConfigBase::get_module_configurations() const {
     BOOST_LOG_FUNCTION();
-    return this->module_configs;
+    return m_module_configs;
 }
 
 bool ConfigBase::contains(std::string_view module_id) const {
     BOOST_LOG_FUNCTION();
-    return this->module_configs.find(module_id) != this->module_configs.end();
+    return m_module_configs.find(module_id) != m_module_configs.end();
 }
 
 const json& ConfigBase::get_manifests() const {
     BOOST_LOG_FUNCTION();
-    return this->manifests;
+    return m_manifests;
 }
 
 const json& ConfigBase::get_interface_definitions() const {
     BOOST_LOG_FUNCTION();
-    return this->interface_definitions;
+    return m_interface_definitions;
 }
 
 const json& ConfigBase::get_interfaces() const {
     BOOST_LOG_FUNCTION();
-    return this->interfaces;
+    return m_interfaces;
 }
 
 const json& ConfigBase::get_settings() const {
     BOOST_LOG_FUNCTION();
-    return this->settings;
+    return m_settings;
 }
 
 const Schemas& ConfigBase::get_schemas() const {
     BOOST_LOG_FUNCTION();
-    return this->schemas;
+    return m_schemas;
 }
 
 const error::ErrorTypes& ConfigBase::get_error_types() const {
     BOOST_LOG_FUNCTION();
-    return this->error_map.get_error_types();
+    return m_error_map.get_error_types();
 }
 
 const json& ConfigBase::get_types() const {
     BOOST_LOG_FUNCTION();
-    return this->types;
+    return m_types;
 }
 
 const std::map<std::string, std::string, std::less<>>& ConfigBase::get_module_names() const {
-    return this->module_names;
+    return m_module_names;
 }
 
 std::vector<Fulfillment> ConfigBase::resolve_requirement(std::string_view module_id,
@@ -541,14 +541,14 @@ std::vector<Fulfillment> ConfigBase::resolve_requirement(std::string_view module
     //             isn't even listed in the module manifest
     // FIXME (aw): the following if doesn't check for the requirement id
     //             at all
-    const auto module_name_it = this->module_names.find(module_id);
-    if (module_name_it == this->module_names.end()) {
+    const auto module_name_it = m_module_names.find(module_id);
+    if (module_name_it == m_module_names.end()) {
         EVLOG_AND_THROW(EverestApiError(fmt::format("Requested requirement id '{}' of module {} not found in config!",
                                                     requirement_id, printable_identifier(module_id))));
     }
 
     // check for connections for this requirement
-    auto module_config_it = this->module_configs.find(module_id);
+    auto module_config_it = m_module_configs.find(module_id);
     const auto& module_config = module_config_it->second;
     auto connections_it = module_config.connections.find(requirement_id);
     if (connections_it == module_config.connections.end()) {
@@ -563,8 +563,8 @@ std::map<Requirement, Fulfillment> ConfigBase::resolve_requirements(std::string_
     std::map<Requirement, Fulfillment> requirements;
 
     const auto& module_name = get_module_name(module_id);
-    for (const auto& req_id : Config::keys(this->manifests.at(module_name).at("requires"))) {
-        const auto& resolved_req = this->resolve_requirement(module_id, req_id);
+    for (const auto& req_id : Config::keys(m_manifests.at(module_name).at("requires"))) {
+        const auto& resolved_req = resolve_requirement(module_id, req_id);
 
         size_t index = 0;
         for (const auto& fulfillment : resolved_req) {
@@ -584,7 +584,7 @@ std::list<Requirement> ConfigBase::get_requirements(std::string_view module_id) 
 
     std::list<Requirement> res;
 
-    for (const auto& [requirement, fulfillment] : this->resolve_requirements(module_id)) {
+    for (const auto& [requirement, fulfillment] : resolve_requirements(module_id)) {
         res.push_back(requirement);
     }
 
@@ -596,7 +596,7 @@ std::map<std::string, std::vector<Fulfillment>> ConfigBase::get_fulfillments(std
 
     std::map<std::string, std::vector<Fulfillment>> res;
 
-    for (const auto& [requirement, fulfillment] : this->resolve_requirements(module_id)) {
+    for (const auto& [requirement, fulfillment] : resolve_requirements(module_id)) {
         res[requirement.id].push_back(fulfillment);
     }
 
@@ -607,24 +607,24 @@ std::map<std::string, std::vector<Fulfillment>> ConfigBase::get_fulfillments(std
 void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
     const auto module_id = module_config.module_id;
     const auto module_name = module_config.module_name;
-    this->module_names[module_id] = module_name;
+    m_module_names[module_id] = module_name;
     EVLOG_debug << fmt::format("Found module {}, loading and verifying manifest...", printable_identifier(module_id));
 
     // load and validate module manifest.json
-    const fs::path manifest_path = this->ms.runtime_settings.modules_dir / module_name / "manifest.yaml";
+    const fs::path manifest_path = m_ps.modules_dir / module_name / "manifest.yaml";
     try {
 
         if (module_name != "ProbeModule") {
             // FIXME (aw): this is implicit logic, because we know, that the ProbeModule manifest had been set up
             // manually already
             EVLOG_debug << fmt::format("Loading module manifest file at: {}", fs::canonical(manifest_path).string());
-            this->manifests[module_name] = load_yaml(manifest_path);
+            m_manifests[module_name] = load_yaml(manifest_path);
         }
 
-        const auto patch = this->validators.manifest.validate(this->manifests[module_name]);
+        const auto patch = m_validators.manifest.validate(m_manifests[module_name]);
         if (!patch.is_null()) {
             // extend manifest with default values
-            this->manifests[module_name] = this->manifests[module_name].patch(patch);
+            m_manifests[module_name] = m_manifests[module_name].patch(patch);
         }
     } catch (const std::exception& e) {
         EVLOG_AND_THROW(EverestConfigError(fmt::format("Failed to load and parse manifest file {}: {}",
@@ -633,14 +633,14 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
 
     // validate user-defined default values for the config meta-schemas
     try {
-        validate_config_schema(this->manifests[module_name]["config"]);
+        validate_config_schema(m_manifests[module_name]["config"]);
     } catch (const std::exception& e) {
         EVLOG_AND_THROW(EverestConfigError(
             fmt::format("Failed to validate the module configuration meta-schema for module '{}'. Reason:\n{}",
                         module_name, e.what())));
     }
 
-    for (const auto& impl : this->manifests[module_name]["provides"].items()) {
+    for (const auto& impl : m_manifests[module_name]["provides"].items()) {
         try {
             validate_config_schema(impl.value().at("config"));
         } catch (const std::exception& e) {
@@ -651,14 +651,14 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
         }
     }
 
-    const everest::config::Keys& provided_impls = Config::keys(this->manifests[module_name]["provides"]);
+    const everest::config::Keys& provided_impls = Config::keys(m_manifests[module_name]["provides"]);
 
-    this->interfaces[module_name] = json({});
+    m_interfaces[module_name] = json({});
 
     for (const auto& impl_id : provided_impls) {
         EVLOG_debug << fmt::format("Loading interface for implementation: {}", impl_id);
-        auto intf_name = this->manifests[module_name]["provides"][impl_id]["interface"].get<std::string>();
-        this->interfaces[module_name][impl_id] = intf_name;
+        auto intf_name = m_manifests[module_name]["provides"][impl_id]["interface"].get<std::string>();
+        m_interfaces[module_name][impl_id] = intf_name;
         resolve_interface(intf_name);
     }
 
@@ -691,7 +691,7 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
         if (module_config.configuration_parameters.find(impl_id) != module_config.configuration_parameters.end()) {
             configuration_parameters = module_config.configuration_parameters.at(impl_id);
         }
-        const json config_map_schema = this->manifests[module_name]["provides"][impl_id]["config"];
+        const json config_map_schema = m_manifests[module_name]["provides"][impl_id]["config"];
 
         try {
             const auto parsed_config_map = parse_config_map(config_map_schema, configuration_parameters);
@@ -723,7 +723,7 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
         if (module_config.configuration_parameters.find("!module") != module_config.configuration_parameters.end()) {
             configuration_parameters = module_config.configuration_parameters.at("!module");
         }
-        const json config_map_schema = this->manifests[module_name]["config"];
+        const json config_map_schema = m_manifests[module_name]["config"];
 
         try {
             auto parsed_config_map = parse_config_map(config_map_schema, configuration_parameters);
@@ -775,13 +775,13 @@ json ManagerConfig::resolve_interface(std::string_view intf_name) {
     // load and validate interface.json and mark interface as seen
     const auto intf_definition = load_interface_file(intf_name);
 
-    this->interface_definitions[intf_name] = intf_definition;
+    m_interface_definitions[intf_name] = intf_definition;
     return intf_definition;
 }
 
 json ManagerConfig::load_interface_file(std::string_view intf_name) {
     BOOST_LOG_FUNCTION();
-    const fs::path intf_path = this->ms.interfaces_dir / fmt::format("{}{}", intf_name, ext_yaml);
+    const fs::path intf_path = m_ps.interfaces_dir / fmt::format("{}{}", intf_name, ext_yaml);
     try {
         EVLOG_debug << fmt::format("Loading interface file at: {}", fs::canonical(intf_path).string());
 
@@ -790,7 +790,7 @@ json ManagerConfig::load_interface_file(std::string_view intf_name) {
         // this subschema can not use allOf with the draft-07 schema because that will cause our validator to
         // add all draft-07 default values which never validate (the {"not": true} default contradicts everything)
         // --> validating against draft-07 will be done in an extra step below
-        auto patch = this->validators.interface.validate(interface_json);
+        auto patch = m_validators.interface.validate(interface_json);
         if (!patch.is_null()) {
             // extend config entry with default values
             interface_json = interface_json.patch(patch);
@@ -823,7 +823,7 @@ json ManagerConfig::load_interface_file(std::string_view intf_name) {
                     }
                 }
             }
-            this->draft7_validator->validate(var_value);
+            m_draft7_validator->validate(var_value);
         }
         for (auto& cmd_entry : interface_json["cmds"].items()) {
             auto& cmd = interface_json["cmds"][cmd_entry.key()];
@@ -837,14 +837,14 @@ json ManagerConfig::load_interface_file(std::string_view intf_name) {
                 if (arg_entry.contains("description")) {
                     arg_entry.erase("description");
                 }
-                this->draft7_validator->validate(arg_entry);
+                m_draft7_validator->validate(arg_entry);
             }
             auto& result = interface_json["cmds"][cmd_entry.key()]["result"];
             // erase "description"
             if (result.contains("description")) {
                 result.erase("description");
             }
-            this->draft7_validator->validate(result);
+            m_draft7_validator->validate(result);
         }
 
         return interface_json;
@@ -870,7 +870,7 @@ std::list<json> ManagerConfig::resolve_error_ref(std::string_view reference) {
         err_name = err_ref.substr(result + 2);
         is_error_list = false;
     }
-    const fs::path path = this->ms.errors_dir / (err_namespace + ".yaml");
+    const fs::path path = m_ps.errors_dir / (err_namespace + ".yaml");
     json error_json = load_yaml(path);
     std::list<json> errors;
     if (is_error_list) {
@@ -919,14 +919,14 @@ void ManagerConfig::resolve_all_requirements() {
     EVLOG_debug << "Resolving module requirements...";
     // this whole code will not check existence of keys defined by config or
     // manifest metaschemas these have already been checked by schema validation
-    for (auto& [module_id, module_config] : this->module_configs) {
+    for (auto& [module_id, module_config] : m_module_configs) {
         std::set<std::string> module_config_connections_set;
         for (const auto& [req_id, fulfillments] : module_config.connections) {
             module_config_connections_set.insert(req_id);
         }
         std::set<std::string> unknown_requirement_entries;
         const everest::config::Keys& manifest_module_requires_set =
-            Config::keys(this->manifests[module_config.module_name]["requires"]);
+            Config::keys(m_manifests[module_config.module_name]["requires"]);
 
         std::set_difference(module_config_connections_set.begin(), module_config_connections_set.end(),
                             manifest_module_requires_set.begin(), manifest_module_requires_set.end(),
@@ -939,7 +939,7 @@ void ManagerConfig::resolve_all_requirements() {
                                                         printable_identifier(module_id), module_config.module_name)));
         }
 
-        for (auto& element : this->manifests[module_config.module_name]["requires"].items()) {
+        for (auto& element : m_manifests[module_config.module_name]["requires"].items()) {
             const auto& requirement_id = element.key();
             const auto& requirement = element.value();
 
@@ -968,15 +968,15 @@ void ManagerConfig::resolve_all_requirements() {
 
             for (const auto& fulfillment : fulfillments) {
                 const std::string& connection_module_id = fulfillment.module_id;
-                if (this->module_configs.find(connection_module_id) == this->module_configs.end()) {
+                if (m_module_configs.find(connection_module_id) == m_module_configs.end()) {
                     EVLOG_AND_THROW(EverestConfigError(
                         fmt::format("Requirement '{}' of module {} not fulfilled: module id '{}' not loaded in config!",
                                     requirement_id, printable_identifier(module_id), connection_module_id)));
                 }
 
-                const auto& connection_module_name = this->module_configs.at(connection_module_id).module_name;
+                const auto& connection_module_name = m_module_configs.at(connection_module_id).module_name;
                 const auto& connection_impl_id = fulfillment.implementation_id;
-                const auto& connection_manifest = this->manifests[connection_module_name];
+                const auto& connection_manifest = m_manifests[connection_module_name];
                 if (!connection_manifest.at("provides").contains(connection_impl_id)) {
                     EVLOG_AND_THROW(EverestConfigError(
                         fmt::format("Requirement '{}' of module {} not fulfilled: required module {} does not provide "
@@ -1019,24 +1019,22 @@ void ManagerConfig::resolve_all_requirements() {
 
 void ManagerConfig::parse(ModuleConfigurations& module_configs) {
     // load type files
-    if (this->ms.runtime_settings.validate_schema) {
+    if (m_ps.validate_schema) {
         int64_t total_time_validation_ms = 0, total_time_parsing_ms = 0;
-        for (auto const& types_entry : fs::recursive_directory_iterator(this->ms.types_dir)) {
+        for (auto const& types_entry : fs::recursive_directory_iterator(m_ps.types_dir)) {
             const auto start_time = std::chrono::steady_clock::now();
             const auto& type_file_path = types_entry.path();
             if (fs::is_regular_file(type_file_path) && type_file_path.extension() == ".yaml") {
-                const auto type_path =
-                    std::string("/") + fs::relative(type_file_path, this->ms.types_dir).stem().string();
+                const auto type_path = std::string("/") + fs::relative(type_file_path, m_ps.types_dir).stem().string();
 
                 try {
-                    // load and validate type file, store validated result in this->types
+                    // load and validate type file, store validated result in m_types
                     EVLOG_verbose << fmt::format("Loading type file at: {}", fs::canonical(type_file_path).c_str());
 
-                    const auto [type_json, validate_ms] =
-                        load_and_validate_with_schema(type_file_path, this->schemas.type);
+                    const auto [type_json, validate_ms] = load_and_validate_with_schema(type_file_path, m_schemas.type);
                     total_time_validation_ms += validate_ms;
 
-                    this->types[type_path] = type_json.at("types");
+                    m_types[type_path] = type_json.at("types");
                 } catch (const std::exception& e) {
                     EVLOG_AND_THROW(EverestConfigError(fmt::format(
                         "Failed to load and parse type file '{}', reason: {}", type_file_path.string(), e.what())));
@@ -1053,9 +1051,9 @@ void ManagerConfig::parse(ModuleConfigurations& module_configs) {
     }
 
     // load error files
-    if (this->ms.runtime_settings.validate_schema) {
+    if (m_ps.validate_schema) {
         int64_t total_time_validation_ms = 0, total_time_parsing_ms = 0;
-        for (auto const& errors_entry : fs::recursive_directory_iterator(this->ms.errors_dir)) {
+        for (auto const& errors_entry : fs::recursive_directory_iterator(m_ps.errors_dir)) {
             const auto start_time = std::chrono::steady_clock::now();
             const auto& error_file_path = errors_entry.path();
             if (fs::is_regular_file(error_file_path) && error_file_path.extension() == ".yaml") {
@@ -1064,7 +1062,7 @@ void ManagerConfig::parse(ModuleConfigurations& module_configs) {
                     EVLOG_verbose << fmt::format("Loading error file at: {}", fs::canonical(error_file_path).c_str());
 
                     const auto [error_json, validate_ms] =
-                        load_and_validate_with_schema(error_file_path, this->schemas.error_declaration_list);
+                        load_and_validate_with_schema(error_file_path, m_schemas.error_declaration_list);
                     total_time_validation_ms += validate_ms;
 
                 } catch (const std::exception& e) {
@@ -1099,13 +1097,13 @@ void ManagerConfig::parse(ModuleConfigurations& module_configs) {
 
     if (probe_module_id) {
         auto& probe_module_config = module_configs.at(probe_module_id.value());
-        setup_probe_module_manifest(probe_module_config.module_id, module_configs, this->manifests);
+        setup_probe_module_manifest(probe_module_config.module_id, module_configs, m_manifests);
 
         load_and_validate_manifest(probe_module_config);
     }
 
     for (const auto& [module_id, module_config] : module_configs) {
-        this->module_configs[module_id] = module_config;
+        m_module_configs[module_id] = module_config;
     }
 
     resolve_all_requirements();
@@ -1115,9 +1113,9 @@ void ManagerConfig::parse(ModuleConfigurations& module_configs) {
 }
 
 void ManagerConfig::parse_3_tier_model_mapping() {
-    for (const auto& [module_id, module_config] : this->module_configs) {
+    for (const auto& [module_id, module_config] : m_module_configs) {
         const auto& module_name = module_config.module_name;
-        const auto& provides = this->manifests.at(module_name).at("provides");
+        const auto& provides = m_manifests.at(module_name).at("provides");
 
         const auto& config_mapping = module_config.mapping;
         // an empty mapping means it is mapped to the charging station and gets no specific mapping attached
@@ -1136,113 +1134,111 @@ void ManagerConfig::parse_3_tier_model_mapping() {
     }
 }
 
-ManagerConfig::ManagerConfig(const ManagerSettings& ms) : ConfigBase(ms.mqtt_settings), ms(ms) {
+ManagerConfig::ManagerConfig(const ManagerSettings& ms, everest::config::ModuleConfigurations preloaded_configs) :
+    ConfigBase(ms.mqtt_settings), m_ps(ms) {
     BOOST_LOG_FUNCTION();
+    m_settings = ms.runtime_settings;
+    init_from_preloaded(std::move(preloaded_configs));
+}
 
-    this->manifests = json({});
-    this->interfaces = json({});
-    this->interface_definitions = json({});
-    this->types = json({});
-    auto schema_validation = load_schemas(this->ms.schemas_dir);
-    this->schemas = schema_validation.schemas;
-    this->validators = std::move(schema_validation.validators);
-    this->error_map = error::ErrorTypeMap(this->ms.errors_dir);
-    this->draft7_validator = std::make_unique<json_validator>(loader, format_checker);
+ManagerConfig::ManagerConfig(const ManagerSettings& ms) : ConfigBase(ms.mqtt_settings), m_ps(ms) {
+    BOOST_LOG_FUNCTION();
+    m_settings = ms.runtime_settings;
+    init_from_yaml();
+}
+
+ManagerConfig::ManagerConfig(const ConfigParseSettings& ps) : ConfigBase(MQTTSettings{}), m_ps(ps) {
+    BOOST_LOG_FUNCTION();
+    init_from_yaml();
+}
+
+ManagerConfig::ManagerConfig(const ConfigParseSettings& ps, everest::config::ModuleConfigurations preloaded_configs) :
+    ConfigBase(MQTTSettings{}), m_ps(ps) {
+    BOOST_LOG_FUNCTION();
+    init_from_preloaded(std::move(preloaded_configs));
+}
+
+ModuleConfigurations validate_module_configs(const ConfigParseSettings& ps, const nlohmann::json& json_config) {
+    ConfigParseSettings val_ps = ps;
+    val_ps.config = json_config;
+    val_ps.config_file.clear(); // no file; skip canonical() and user-config lookup
+    ManagerConfig tmp(val_ps);  // validation-only path; validates manifests and requirements
+    return tmp.get_module_configurations();
+}
+
+ModuleConfigurations validate_preloaded_module_configs(const ConfigParseSettings& ps,
+                                                       ModuleConfigurations module_configs) {
+    ManagerConfig tmp(ps, std::move(module_configs)); // validation-only path; validates manifests and requirements
+    return tmp.get_module_configurations();
+}
+
+void ManagerConfig::init_schemas() {
+    m_manifests = json({});
+    m_interfaces = json({});
+    m_interface_definitions = json({});
+    m_types = json({});
+    auto schema_validation = load_schemas(m_ps.schemas_dir);
+    m_schemas = schema_validation.schemas;
+    m_validators = std::move(schema_validation.validators);
+    m_error_map = error::ErrorTypeMap(m_ps.errors_dir);
+    m_draft7_validator = std::make_unique<json_validator>(loader, format_checker);
     const static json draft07 = R"(
         {
             "$ref": "http://json-schema.org/draft-07/schema#"
         }
-        
         )"_json;
-    this->draft7_validator->set_root_schema(draft07);
+    m_draft7_validator->set_root_schema(draft07);
+}
 
-    ModuleConfigurations module_configs;
-    this->settings = this->ms.runtime_settings;
-    bool write_config_to_storage = false;
+void ManagerConfig::init_from_preloaded(everest::config::ModuleConfigurations preloaded_configs) {
     try {
-        if (this->ms.boot_mode == ConfigBootMode::YamlFile) {
-            EVLOG_info << "Boot mode is set to YamlFile, loading module configs from YAML file";
-            const auto complete_config = this->apply_user_config_and_defaults();
-            module_configs = parse_module_configs(complete_config.value("active_modules", json::object()));
-        } else if (this->ms.boot_mode == ConfigBootMode::Database) {
-            EVLOG_info << "Boot mode is set to Database, loading module configs from database";
-            if (this->ms.storage == nullptr) {
-                EVLOG_AND_THROW(EverestConfigError("No storage configured, cannot load module configs from database!"));
-            }
-            if (!this->ms.storage->contains_valid_config()) {
-                EVLOG_AND_THROW(EverestConfigError("No valid config found in database"));
-            }
-            const auto module_configs_response = this->ms.storage->get_module_configs();
-            if (module_configs_response.status == GenericResponseStatus::Failed) {
-                EVLOG_AND_THROW(EverestConfigError("Failed to load module configs from database"));
-            }
-            module_configs = module_configs_response.module_configs;
-        } else if (this->ms.boot_mode == ConfigBootMode::DatabaseInit) {
-            EVLOG_info << "Boot mode is set to DatabaseInit";
-            if (this->ms.storage == nullptr) {
-                EVLOG_AND_THROW(EverestConfigError("No storage configured, cannot load module configs from database!"));
-            }
-            if (this->ms.storage->contains_valid_config()) {
-                EVLOG_info << "Storage contains valid config, loading module configs from database";
-                const auto module_configs_response = this->ms.storage->get_module_configs();
-                if (module_configs_response.status == GenericResponseStatus::Failed) {
-                    EVLOG_AND_THROW(EverestConfigError("Failed to load module configs from database"));
-                } else {
-                    module_configs = module_configs_response.module_configs;
-                }
-            } else {
-                EVLOG_info << "Storage does not contain valid config, "
-                              "loading module configs from YAML file as fallback";
-                this->ms.storage->wipe();       // make sure we write a fresh config
-                write_config_to_storage = true; // we can only write the config to the storage after the parse()
-                                                // function, since this adds meta data like characteristics to the
-                                                // module_configs that is required for writing to the storage
-                // fallback to loading from YAML file
-                const auto complete_config = this->apply_user_config_and_defaults();
-                module_configs = parse_module_configs(complete_config.value("active_modules", json::object()));
-            }
-        }
+        init_schemas();
+        EVLOG_info << "Loading module configs from pre-loaded database configuration";
+        parse(preloaded_configs);
+    } catch (const std::exception& e) {
+        EVLOG_AND_THROW(EverestConfigError(fmt::format("Failed to load and parse configuration: {}", e.what())));
+    }
+}
 
-        this->parse(module_configs);
-        // now the config is parsed, validated and patched!
-
-        if (!write_config_to_storage) {
+void ManagerConfig::init_from_yaml() {
+    try {
+        init_schemas();
+        const auto complete_config = apply_user_config_and_defaults();
+        if (!complete_config.contains("active_modules") or complete_config.empty()) {
+            EVLOG_info << "YAML does not contain module configurations.";
             return;
         }
-
-        if (this->ms.storage->write_module_configs(module_configs) != GenericResponseStatus::Failed) {
-            EVLOG_info << "Module configs written to database successfully, marking config as valid";
-            this->ms.storage->mark_valid(true, json(module_configs).dump(), this->ms.config_file);
-        } else {
-            EVLOG_warning << "Failed to write module configs to database, marking config as invalid";
-            this->ms.storage->mark_valid(false, json(module_configs).dump(), this->ms.config_file);
-        }
+        auto module_configs = parse_module_configs(complete_config.value("active_modules", json::object()));
+        parse(module_configs);
+        // now the config is parsed, validated and patched!
     } catch (const std::exception& e) {
         EVLOG_AND_THROW(EverestConfigError(fmt::format("Failed to load and parse configuration: {}", e.what())));
     }
 }
 
 json ManagerConfig::apply_user_config_and_defaults() {
-    // load and process config file
-    const fs::path config_path = this->ms.config_file;
-    EVLOG_info << fmt::format("Loading config file at: {}", fs::canonical(config_path).string());
     // this config is parsed from the file, it doesnt contain any defaults or patches!
-    auto complete_config = this->ms.config;
-    // try to load user config from a directory "user-config" that might be in the same parent directory as the
-    // config_file. The config is supposed to have the same name as the parent config.
-    // TODO(kai): introduce a parameter that can overwrite the location of the user config?
-    // TODO(kai): or should we introduce a "meta-config" that references all configs that should be merged here?
-    const auto user_config_path = config_path.parent_path() / "user-config" / config_path.filename();
-    this->user_config_storage = std::make_unique<everest::config::UserConfigStorage>(user_config_path);
-    if (fs::exists(user_config_path)) {
-        EVLOG_info << fmt::format("Loading user-config file at: {}", fs::canonical(user_config_path).string());
-        EVLOG_debug << "Augmenting main config with user-config entries";
-        complete_config.merge_patch(this->user_config_storage->get_user_config());
-    } else {
-        EVLOG_verbose << "No user-config provided.";
+    auto complete_config = m_ps.config;
+
+    const fs::path config_path = m_ps.config_file;
+    if (!config_path.empty()) {
+        EVLOG_info << fmt::format("Loading config file at: {}", fs::canonical(config_path).string());
+        // try to load user config from a directory "user-config" that might be in the same parent directory as the
+        // config_file. The config is supposed to have the same name as the parent config.
+        // TODO(kai): introduce a parameter that can overwrite the location of the user config?
+        // TODO(kai): or should we introduce a "meta-config" that references all configs that should be merged here?
+        const auto user_config_path = config_path.parent_path() / "user-config" / config_path.filename();
+        m_user_config_storage = std::make_unique<everest::config::UserConfigStorage>(user_config_path);
+        if (fs::exists(user_config_path)) {
+            EVLOG_info << fmt::format("Loading user-config file at: {}", fs::canonical(user_config_path).string());
+            EVLOG_debug << "Augmenting main config with user-config entries";
+            complete_config.merge_patch(m_user_config_storage->get_user_config());
+        } else {
+            EVLOG_verbose << "No user-config provided.";
+        }
     }
 
-    const auto patch = this->validators.config.validate(complete_config);
+    const auto patch = m_validators.config.validate(complete_config);
     if (!patch.is_null()) {
         // extend config with default values
         complete_config = complete_config.patch(patch);
@@ -1253,14 +1249,14 @@ json ManagerConfig::apply_user_config_and_defaults() {
 // Config
 
 Config::Config(const MQTTSettings& mqtt_settings, const json& serialized_config) : ConfigBase(mqtt_settings) {
-    this->module_config = serialized_config.at("module_config"); // implicit conversion from JSON
-    this->module_configs[this->module_config.module_id] = this->module_config;
-    this->manifests = serialized_config.value("manifests", json({}));
-    this->interface_definitions = serialized_config.value("interface_definitions", json({}));
-    this->types = serialized_config.value("types", json({}));
-    this->module_names = serialized_config.at("module_names");
+    m_module_config = serialized_config.at("module_config"); // implicit conversion from JSON
+    m_module_configs[m_module_config.module_id] = m_module_config;
+    m_manifests = serialized_config.value("manifests", json({}));
+    m_interface_definitions = serialized_config.value("interface_definitions", json({}));
+    m_types = serialized_config.value("types", json({}));
+    m_module_names = serialized_config.at("module_names");
 
-    this->populate_module_config_cache();
+    populate_module_config_cache();
 
     if (serialized_config.contains("mappings") and !serialized_config.at("mappings").is_null()) {
         auto mapping_json = serialized_config.at("mappings");
@@ -1268,20 +1264,20 @@ Config::Config(const MQTTSettings& mqtt_settings, const json& serialized_config)
             const auto& mapping_name = mapping.key();
             const auto& mapping_value = mapping.value();
             if (!mapping_value.is_null()) {
-                this->tier_mappings.emplace(mapping_name, mapping_value.get<ModuleTierMappings>());
+                m_tier_mappings.emplace(mapping_name, mapping_value.get<ModuleTierMappings>());
             }
         }
     }
     if (serialized_config.contains("telemetry_config") and !serialized_config.at("telemetry_config").is_null()) {
-        this->telemetry_config = serialized_config.at("telemetry_config");
+        m_telemetry_config = serialized_config.at("telemetry_config");
     }
 
     if (serialized_config.contains("schemas")) {
-        this->schemas = serialized_config.at("schemas");
+        m_schemas = serialized_config.at("schemas");
     }
 
     // create error type map from interface definitions
-    this->populate_error_map();
+    populate_error_map();
 }
 
 namespace {
@@ -1297,97 +1293,37 @@ get_characteristics(std::string_view name,
 }
 } // namespace
 
-everest::config::SetConfigStatus
-ManagerConfig::set_config_value(const everest::config::ConfigurationParameterIdentifier& identifier,
-                                const everest::config::ConfigEntry& value) {
-    try {
-        const auto& module_config = this->module_configs.at(identifier.module_id);
-        const auto& configuration_parameters =
-            module_config.configuration_parameters.at(identifier.module_implementation_id.value_or("!module"));
-        const auto& characteristics =
-            get_characteristics(identifier.configuration_parameter_name, configuration_parameters);
-
-        switch (this->ms.boot_mode) {
-        case ConfigBootMode::YamlFile: {
-            const auto write_response = this->user_config_storage->write_configuration_parameter(
-                identifier, characteristics, everest::config::config_entry_to_string(value));
-            if (write_response == GetSetResponseStatus::OK) {
-                return everest::config::SetConfigStatus::RebootRequired;
-            }
-            break;
-        }
-        case ConfigBootMode::Database:
-        case ConfigBootMode::DatabaseInit:
-            const auto& cached_value_it = this->database_get_config_parameter_response_cache.find(identifier);
-            const auto cached_value = this->ms.storage->get_configuration_parameter(identifier);
-            const auto write_response = this->ms.storage->write_configuration_parameter(
-                identifier, characteristics, everest::config::config_entry_to_string(value));
-            if (write_response == GetSetResponseStatus::OK) {
-                if (cached_value_it == this->database_get_config_parameter_response_cache.end()) {
-                    // cache initial config value in case it is only valid after a reboot
-                    this->database_get_config_parameter_response_cache[identifier] = cached_value;
-                }
-                return everest::config::SetConfigStatus::RebootRequired;
-            }
-            return everest::config::SetConfigStatus::Rejected;
-        }
-    } catch (const std::exception& e) {
-        return everest::config::SetConfigStatus::Rejected;
-    }
-
-    return everest::config::SetConfigStatus::Rejected;
-}
-
 everest::config::GetConfigurationParameterResponse
-ManagerConfig::get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier) {
+ManagerConfig::get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier) const {
     everest::config::GetConfigurationParameterResponse response;
     response.status = GetSetResponseStatus::Failed;
 
     try {
-        switch (this->ms.boot_mode) {
-        case ConfigBootMode::YamlFile: {
-            const auto& module_config = this->module_configs.at(identifier.module_id);
-            const auto& configuration_parameters =
-                module_config.configuration_parameters.at(identifier.module_implementation_id.value_or("!module"));
-            for (const auto& configuration_parameter : configuration_parameters) {
-                if (configuration_parameter.name == identifier.configuration_parameter_name) {
-                    response.status = GetSetResponseStatus::OK;
-                    response.configuration_parameter = configuration_parameter;
-                    break;
-                }
+        const auto& configuration_parameters =
+            m_module_configs.at(identifier.module_id)
+                .configuration_parameters.at(identifier.module_implementation_id.value_or("!module"));
+        for (const auto& p : configuration_parameters) {
+            if (p.name == identifier.configuration_parameter_name) {
+                response.status = GetSetResponseStatus::OK;
+                response.configuration_parameter = p;
+                return response;
             }
-            if (response.status != GetSetResponseStatus::OK) {
-                response.status = GetSetResponseStatus::NotFound;
-            }
-            break;
         }
-        case ConfigBootMode::Database:
-        case ConfigBootMode::DatabaseInit: {
-            // ensure that we do not return database values that are only valid after a reboot
-            const auto& cached_value_it = this->database_get_config_parameter_response_cache.find(identifier);
-            if (cached_value_it != this->database_get_config_parameter_response_cache.end()) {
-                return cached_value_it->second;
-            }
-            response = this->ms.storage->get_configuration_parameter(identifier);
-            break;
-        }
-        }
-    } catch (const std::exception& e) {
-        everest::config::GetConfigurationParameterResponse failed_response;
-        failed_response.status = GetSetResponseStatus::Failed;
-        return failed_response;
+        response.status = GetSetResponseStatus::NotFound;
+    } catch (const std::exception&) {
+        response.status = GetSetResponseStatus::Failed;
     }
 
     return response;
 }
 
 error::ErrorTypeMap Config::get_error_map() const {
-    return this->error_map;
+    return m_error_map;
 }
 
 bool Config::module_provides(std::string_view module_name, std::string_view impl_id) {
-    auto module_config_cache_it = this->module_config_cache.find(module_name);
-    if (module_config_cache_it != this->module_config_cache.end()) {
+    auto module_config_cache_it = m_module_config_cache.find(module_name);
+    if (module_config_cache_it != m_module_config_cache.end()) {
         const auto& provides = module_config_cache_it->second.provides_impl;
         return (provides.find(impl_id) != provides.end());
     }
@@ -1395,7 +1331,7 @@ bool Config::module_provides(std::string_view module_name, std::string_view impl
 }
 
 const json& Config::get_module_cmds(std::string_view module_name, std::string_view impl_id) {
-    auto module_config_cache_it = this->module_config_cache.find(module_name);
+    auto module_config_cache_it = m_module_config_cache.find(module_name);
     auto cmds_it = module_config_cache_it->second.cmds.find(impl_id);
     return cmds_it->second;
 }
@@ -1405,8 +1341,8 @@ RequirementInitialization Config::get_requirement_initialization(std::string_vie
 
     RequirementInitialization res;
 
-    for (const auto& [requirement, fulfillment] : this->resolve_requirements(module_id)) {
-        const auto& mapping = this->get_3_tier_model_mapping(fulfillment.module_id, fulfillment.implementation_id);
+    for (const auto& [requirement, fulfillment] : resolve_requirements(module_id)) {
+        const auto& mapping = get_3_tier_model_mapping(fulfillment.module_id, fulfillment.implementation_id);
         res[requirement.id].push_back({requirement, fulfillment, mapping});
     }
 
@@ -1419,7 +1355,7 @@ ModuleConfigs Config::get_module_configs(std::string_view module_id) const {
 
     // FIXME (aw): throw exception if module_id does not exist
     if (contains(module_id)) {
-        for (const auto& [impl_id, config_parameters] : this->module_config.configuration_parameters) {
+        for (const auto& [impl_id, config_parameters] : m_module_config.configuration_parameters) {
             ConfigMap processed_conf_map;
             for (const auto& config_parameter : config_parameters) {
                 processed_conf_map[config_parameter.name] = config_parameter.value;
@@ -1433,19 +1369,19 @@ ModuleConfigs Config::get_module_configs(std::string_view module_id) const {
 
 ModuleConfig Config::get_module_config() const {
     BOOST_LOG_FUNCTION();
-    return this->module_config;
+    return m_module_config;
 }
 
 std::optional<ModuleTierMappings> Config::get_module_3_tier_model_mappings(std::string_view module_id) const {
-    auto tier_mappings_it = this->tier_mappings.find(module_id);
-    if (tier_mappings_it == this->tier_mappings.end()) {
+    auto tier_mappings_it = m_tier_mappings.find(module_id);
+    if (tier_mappings_it == m_tier_mappings.end()) {
         return std::nullopt;
     }
     return tier_mappings_it->second;
 }
 
 std::optional<Mapping> Config::get_3_tier_model_mapping(std::string_view module_id, std::string_view impl_id) const {
-    const auto module_tier_mappings = this->get_module_3_tier_model_mappings(module_id);
+    const auto module_tier_mappings = get_module_3_tier_model_mappings(module_id);
     if (not module_tier_mappings.has_value()) {
         return std::nullopt;
     }
@@ -1463,9 +1399,9 @@ ModuleInfo Config::get_module_info(std::string_view module_id) const {
 
     ModuleInfo module_info;
     module_info.id = module_id;
-    module_info.name = this->module_config.module_name;
-    module_info.global_errors_enabled = this->manifests.at(module_info.name).at("enable_global_errors");
-    const auto& module_metadata = this->manifests.at(module_info.name).at("metadata");
+    module_info.name = m_module_config.module_name;
+    module_info.global_errors_enabled = m_manifests.at(module_info.name).at("enable_global_errors");
+    const auto& module_metadata = m_manifests.at(module_info.name).at("metadata");
     for (auto& author : module_metadata.at("authors")) {
         module_info.authors.emplace_back(author.get<std::string>());
     }
@@ -1475,25 +1411,24 @@ ModuleInfo Config::get_module_info(std::string_view module_id) const {
 }
 
 std::optional<TelemetryConfig> Config::get_telemetry_config() {
-    return this->module_config.telemetry_config;
+    return m_module_config.telemetry_config;
 }
 
 json Config::get_interface_definition(std::string_view interface_name) const {
     BOOST_LOG_FUNCTION();
-    return this->interface_definitions.value(interface_name, json());
+    return m_interface_definitions.value(interface_name, json());
 }
 
 void Config::populate_module_config_cache() {
-    for (const auto& [module_id, module_name] : this->module_names) {
-        this->module_config_cache[module_name] = ConfigCache();
-        const everest::config::Keys& provided_impls = Config::keys(this->manifests.at(module_name).at("provides"));
-        this->interfaces[module_name] = json({});
-        this->module_config_cache[module_name].provides_impl = provided_impls;
+    for (const auto& [module_id, module_name] : m_module_names) {
+        m_module_config_cache[module_name] = ConfigCache();
+        const everest::config::Keys& provided_impls = Config::keys(m_manifests.at(module_name).at("provides"));
+        m_interfaces[module_name] = json({});
+        m_module_config_cache[module_name].provides_impl = provided_impls;
         for (const auto& impl_id : provided_impls) {
-            auto intf_name =
-                this->manifests.at(module_name).at("provides").at(impl_id).at("interface").get<std::string>();
-            this->interfaces[module_name][impl_id] = intf_name;
-            this->module_config_cache[module_name].cmds[impl_id] = this->interface_definitions.at(intf_name).at("cmds");
+            auto intf_name = m_manifests.at(module_name).at("provides").at(impl_id).at("interface").get<std::string>();
+            m_interfaces[module_name][impl_id] = intf_name;
+            m_module_config_cache[module_name].cmds[impl_id] = m_interface_definitions.at(intf_name).at("cmds");
         }
     }
 }
@@ -1504,7 +1439,7 @@ void Config::populate_error_map() {
     // then remove the "errors" entry from the interface definitions that are shared via MQTT, this could reduce their
     // size a bit since it limits the amount of shared redundant information
     json error_types_map = json({});
-    for (const auto& [interface_name, interface_definition] : this->interface_definitions.items()) {
+    for (const auto& [interface_name, interface_definition] : m_interface_definitions.items()) {
         for (const auto& [error_namespace, errors] : interface_definition.at("errors").items()) {
             for (const auto& [error_key, error_definition] : errors.items()) {
                 const auto error_type_name = fmt::format("{}/{}", error_definition.at("namespace").get<std::string>(),
@@ -1515,8 +1450,8 @@ void Config::populate_error_map() {
             }
         }
     }
-    this->error_map = error::ErrorTypeMap();
-    this->error_map.load_error_types_map(error_types_map);
+    m_error_map = error::ErrorTypeMap();
+    m_error_map.load_error_types_map(error_types_map);
 }
 
 void Config::ref_loader(const json_uri& uri, json& schema) {
@@ -1527,8 +1462,8 @@ void Config::ref_loader(const json_uri& uri, json& schema) {
         return;
     } else {
         const auto& path = uri.path();
-        if (this->types.contains(path)) {
-            schema = this->types[path];
+        if (m_types.contains(path)) {
+            schema = m_types[path];
             EVLOG_verbose << fmt::format("ref path \"{}\" schema has been found.", path);
             return;
         } else {

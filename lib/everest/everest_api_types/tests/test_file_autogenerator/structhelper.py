@@ -7,11 +7,22 @@ from helper import Helper
 from valuegenerator import ValueGenerator
 
 
+def _djb2_hash(s: str) -> int:
+    """Stable, deterministic hash of a string to a signed 32-bit int."""
+    h = 5381
+    for c in s:
+        h = ((h * 33) ^ ord(c)) & 0xFFFFFFFF
+    return h if h < 0x80000000 else h - 0x100000000
+
+
 class StructHelper(Helper):
     w = Helper.regex_whitespaces
-    default_value = r"\{[A-z:_<>0-9\.]+\}?"
-    regex_single_field = r"([A-z:_<>0-9]+" + w + Helper.regex_field_or_class_name + \
-        r"(" + r"\{[A-z:_<>0-9\.]+\}?" + r")?" + r";)" + w
+    # Brace initializer: allow empty "{}" as well as "{...}" (use * instead of +
+    # so a struct field like `std::optional<std::string> tstamp{};` still matches
+    # and does not silently drop its whole struct from test generation).
+    default_value = r"\{[A-Za-z:_<>0-9\.]*\}?"
+    regex_single_field = r"([A-Za-z:_<>0-9]+" + w + Helper.regex_field_or_class_name + \
+        r"(" + default_value + r")?" + r";)" + w
     regex_fields = r"(" + w + regex_single_field + r")*"
 
     def __init__(self, representation, across_file_generator, namespace=None, enum_map=None):
@@ -78,13 +89,13 @@ class StructHelper(Helper):
 
     def get_code_generate_function(self, signature_only=False):
         code = "\ntemplate <> " + self.get_type_with_namespace() + " generate<" + \
-            self.get_type_with_namespace() + ">(bool set_optional_fields"
+            self.get_type_with_namespace() + ">(bool set_optional_fields, int seed"
         if signature_only:
             return code + ");\n"
         token = "generated_object"
-        code += ") { \n" + self.get_type() + " " + token + ";\n"
-        code += self.generate_set_fields(self.get_fields_mandatory(), token) + "if (set_optional_fields) {"
-        code += self.generate_set_fields(self.get_fields_optional(), token) + "}\n" + "return " + token + ";\n" + "}\n"
+        code += ") { \n(void)seed;  // May be unused depending on field types; silences the compiler warning when so;\n " + self.get_type() + " " + token + ";\n"
+        code += self.generate_set_fields(self.get_fields_mandatory(), token, use_runtime_seed=True) + "if (set_optional_fields) {"
+        code += self.generate_set_fields(self.get_fields_optional(), token, use_runtime_seed=True) + "}\n" + "return " + token + ";\n" + "}\n"
         return code
 
     def get_code_verify_function(self, signature_only=False):
@@ -97,11 +108,12 @@ class StructHelper(Helper):
         ), False) + self.generate_test_fields(self.get_fields_optional(), True) + "}\n"
         return code
 
-    def generate_set_fields(self, fields, token):
+    def generate_set_fields(self, fields, token, use_runtime_seed=False):
         code = ""
         for i in fields:
             code += self.value_generator.generate_corresponding_value(token + "." + i[1],
-                                                                      i[0], i[1], struct_helper=self)
+                                                                      i[0], i[1], struct_helper=self,
+                                                                      use_runtime_seed=use_runtime_seed)
         return code
 
     def generate_test_fields(self, fields, is_optional):
@@ -129,7 +141,8 @@ class StructHelper(Helper):
         self.generate_test_helper_headers()
 
     def get_value_generation(self, a, seed=""):
-        return "generate<" + a + ">();\n        "
+        seed_int = _djb2_hash(seed) if seed else 0
+        return "generate<" + a + ">(true, " + str(seed_int) + ");\n        "
 
     def get_comparison(self, a, b):
         return "verify(" + a + ", " + b + ");\n        "

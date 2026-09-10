@@ -554,11 +554,11 @@ void ISO15118_chargerImpl::handle_set_charging_parameters(types::iso15118::Setup
 
 void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::PaymentOption>& payment_options,
                                                 bool& supported_certificate_service,
-                                                bool& central_contract_validation_allowed) {
+                                                bool& central_contract_validation_allowed, bool& fake_dc_enabled) {
     mod->r_iso20->call_session_setup(payment_options, supported_certificate_service,
-                                     central_contract_validation_allowed);
-    mod->r_iso2->call_session_setup(payment_options, supported_certificate_service,
-                                    central_contract_validation_allowed);
+                                     central_contract_validation_allowed, fake_dc_enabled);
+    mod->r_iso2->call_session_setup(payment_options, supported_certificate_service, central_contract_validation_allowed,
+                                    fake_dc_enabled);
 }
 
 void ISO15118_chargerImpl::handle_bpt_setup(types::iso15118::BptSetup& bpt_config) {

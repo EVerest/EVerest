@@ -33,7 +33,10 @@ api_connector::api_connector(everest_api_config const& config, std::string const
     if (m_evse_bsp_enabled && m_ev_bsp_enabled) {
         throw std::runtime_error("Configuration error: Cannot enable EV and EVSE BSP at the same time");
     }
-    utilities::print_error(m_cb_identifier, "BSP/CB", 0) << "ChargeBridge connected." << std::endl;
+
+    // The ChargeBridge connection is reported from handle_cb_connection_state(), which runs the
+    // initial check on the first sync tick. Announcing it here would claim a connection before
+    // a single heartbeat was seen.
 
     if (m_evse_bsp_enabled) {
         api_topics.setup(config.evse.module_id, "evse_board_support", 1);
@@ -85,6 +88,14 @@ bool api_connector::register_events(everest::lib::io::event::fd_event_handler& h
     }
     result = handler.register_event_handler(&m_mqtt) && result;
     result = handler.register_event_handler(&m_sync_timer, [this](auto&) {
+        // The ChargeBridge state is evaluated first, so the adapters are sync'd with this tick's
+        // value and not with the previous one. The adapters decide from it whether an EVerest that
+        // just came back gets the device state replayed or a communication fault, and both edges can
+        // fall into the same 1 s tick: with the old order a coincident CB-connect + EVerest-connect
+        // lost the replay entirely (fault raised, then cleared by the CB edge, EVerest left blank),
+        // and a coincident CB-disconnect replayed a snapshot of a device that had just gone away.
+        // Re-raising a fault the CB edge already raised is a no-op in the EVerest error framework.
+        handle_cb_connection_state();
         if (m_evse_bsp_enabled) {
             m_evse_bsp.sync(m_cb_connected);
         }
@@ -94,7 +105,6 @@ bool api_connector::register_events(everest::lib::io::event::fd_event_handler& h
         if (m_ev_bsp_enabled) {
             m_ev_bsp.sync(m_cb_connected);
         }
-        handle_cb_connection_state();
     }) && result;
     return result;
 }
@@ -132,6 +142,10 @@ void api_connector::set_cb_message(evse_bsp_cb_to_host const& msg) {
     if (m_ovm_enabled) {
         m_ovm.set_cb_message(msg);
     }
+}
+
+void api_connector::set_error_handler(error_ftor const& handler) {
+    m_ready.setCallback([handler](bool, bool new_value) { handler(new_value); });
 }
 
 bool api_connector::check_cb_heartbeat() {
@@ -204,11 +218,11 @@ void api_connector::handle_cb_connection_state() {
     if (m_cb_initial_comm_check) {
         handle_status(current);
         m_cb_initial_comm_check = false;
-    }
-    if (m_cb_connected != current) {
+    } else if (m_cb_connected != current) {
         handle_status(not m_cb_connected);
     }
     m_cb_connected = current;
+    m_ready.set(m_cb_connected);
 }
 
 } // namespace charge_bridge::evse_bsp

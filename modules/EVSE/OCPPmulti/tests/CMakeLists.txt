@@ -38,6 +38,7 @@ target_sources(${TEST_TARGET_NAME}
     systemIntf_tests.cpp
 
     # general
+    charge_point_config_factory_v16_tests.cpp
     generic_ocpp_tests.cpp
     grid_support_der_tests.cpp
     grid_support_state_test.cpp
@@ -53,6 +54,7 @@ target_sources(${TEST_TARGET_NAME}
     ../generic_ocpp.cpp
     ../grid_support/grid_support_state.cpp
     ../v16_chargepoint.cpp
+    ../v16_connection_config_validator.cpp
     ../v16_conversions.cpp
     ../v16_variable_access.cpp
     ../v2_chargepoint.cpp
@@ -62,6 +64,15 @@ target_sources(${TEST_TARGET_NAME}
 target_compile_definitions(${TEST_TARGET_NAME}
     PRIVATE
     UNIT_TESTS
+)
+
+set_property(
+    SOURCE charge_point_config_factory_v16_tests.cpp
+    APPEND
+    PROPERTY COMPILE_DEFINITIONS
+        LIBOCPP_COMPONENT_CONFIG_DIR="${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/common/component_config"
+        LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR="${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/common/device_model_migrations"
+
 )
 
 target_link_libraries(${TEST_TARGET_NAME}

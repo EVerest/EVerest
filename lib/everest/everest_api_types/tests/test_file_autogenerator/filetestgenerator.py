@@ -2,6 +2,7 @@
 # Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
 
 import re
+import sys
 import warnings
 
 from enumhelper import EnumHelper
@@ -37,6 +38,16 @@ class FileTestGenerator:
             StructHelper.get_regex_find_in_file(), sanitized)
         enum_matches = re.finditer(
             EnumHelper.get_regex_find_in_file(), sanitized)
+
+        # Cheap detection of structs that were seen (by name) but whose body did
+        # not fully match the field regex, so they get silently dropped from test
+        # generation. Compare all "struct <Name> {" headers against the structs
+        # that produced a full StructHelper match, and warn loudly about the gap.
+        struct_header_regex = r"struct" + Helper.regex_whitespaces + \
+            r"([A-z_][A-z0-9_]*)" + Helper.regex_whitespaces + r"\{"
+        declared_struct_names = set(
+            m.group(1) for m in re.finditer(struct_header_regex, sanitized))
+        matched_struct_names = set()
         for x in enum_matches:
             enum_helper = EnumHelper(
                 x.group(), across_file_generator, namespace)
@@ -47,9 +58,20 @@ class FileTestGenerator:
         for x in struct_matches:
             struct_helper = StructHelper(
                 x.group(), across_file_generator, namespace, enums_map)
+            matched_struct_names.add(struct_helper.get_type())
             if not (struct_helper.get_type() in deny_list):
                 helpers.append(struct_helper)
                 FileTestGenerator.structs_found = True
+
+        skipped_struct_names = declared_struct_names - matched_struct_names
+        for skipped in sorted(skipped_struct_names):
+            print(
+                "WARNING: struct '%s' in '%s' was found but not all of its "
+                "fields matched the field regex; NO serialization test will be "
+                "generated for it. Check the field declarations (e.g. brace "
+                "initializers or unusual types)." % (skipped, api_file_path),
+                file=sys.stderr)
+
         self.helpers = helpers
         self.name = re.search(r"([^/]+)/API.hpp", api_file_path).group(1)
         self.code_cpp = ""

@@ -10,6 +10,8 @@ find_package(everest-evse_security REQUIRED)
 find_package(everest-api-types REQUIRED)
 find_dependency(ryml REQUIRED)
 
+set(EV_PROJECT_INFO_SOURCE_DIR "@PACKAGE_EVEREST_DATADIR@/project_info")
+
 include(${CMAKE_CURRENT_LIST_DIR}/ev-project-bootstrap.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/everest-core-targets.cmake)
 

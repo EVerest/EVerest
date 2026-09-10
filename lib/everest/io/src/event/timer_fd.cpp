@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <sys/timerfd.h>
 #include <unistd.h>
+#include <utility>
 
 namespace everest::lib::io::event {
 
@@ -13,6 +14,11 @@ timer_fd::timer_fd() : m_fd(::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK)) {
     if (m_fd == -1) {
         throw std::runtime_error("failed to create an timerfd");
     }
+}
+
+// Runs before m_fd is destroyed, so the recorded descriptor is still the one the handler holds.
+timer_fd::~timer_fd() {
+    unregister_recorded_events();
 }
 
 timer_fd::operator int() const {
@@ -70,6 +76,22 @@ bool timer_fd::set_timeout_ns(long long to) {
     }
 
     return ::timerfd_settime(m_fd, 0, &timer, nullptr) == 0;
+}
+
+bool timer_fd::has_recorded_registration() const {
+    return m_record.active();
+}
+
+void timer_fd::record_registration(std::shared_ptr<handler_liveness> handler, int fd) {
+    m_record.record(std::move(handler), fd);
+}
+
+bool timer_fd::unregister_recorded_events(std::shared_ptr<handler_liveness> const& handler) {
+    return m_record.drop_if(handler);
+}
+
+bool timer_fd::unregister_recorded_events() {
+    return m_record.drop();
 }
 
 } // namespace everest::lib::io::event

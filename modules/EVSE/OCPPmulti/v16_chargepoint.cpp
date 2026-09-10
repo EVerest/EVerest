@@ -11,7 +11,12 @@
 #include <everest/ocpp_module_common/v16/conversions.hpp>
 #include <everest/ocpp_module_common/v16/error_mapping.hpp>
 
+#include <algorithm>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace conversions_v16 = ocpp_module_common::v16::conversions;
 
@@ -30,6 +35,7 @@ constexpr const auto ISO15118_PNC_ENABLED_VARIABLE = "PnCEnabled";
 
 constexpr const auto INOPERATIVE_ERROR_TYPE = "evse_manager/Inoperative";
 constexpr const auto SWITCHING_PHASES_REASON = "SwitchingPhases";
+constexpr const auto REPORT_SUSPENDED_EVSE_REASON_CHANGE_CONFIG_KEY = "ReportSuspendedEVSEReasonChange";
 
 template <typename T> std::optional<T> get(ocpp::v16::ChargePoint& charge_point, const std::string_view& variable) {
     std::optional<T> result;
@@ -40,7 +46,12 @@ template <typename T> std::optional<T> get(ocpp::v16::ChargePoint& charge_point,
         for (const auto& key_value : response.configurationKey.value()) {
             if (static_cast<std::string>(key_value.key) == variable) {
                 if (key_value.value) {
-                    result = ocpp::v2::to_specific_type<T>(key_value.value.value());
+                    try {
+                        result = ocpp::v2::to_specific_type<T>(key_value.value.value());
+                    } catch (const std::exception& e) {
+                        EVLOG_warning << "Configuration key " << variable << " holds an unusable value '"
+                                      << key_value.value.value() << "': " << e.what();
+                    }
                 }
             }
         }
@@ -76,6 +87,14 @@ inline std::int32_t ocpp_connector_id(const ocpp_multi::GenericChargePointInterf
                                       std::int32_t evse_id, std::optional<int32_t> connector_id) {
     const auto everest_connector_id = connector_id.value_or(1);
     return mapping.at(evse_id).at(everest_connector_id);
+}
+
+std::optional<std::string_view> to_pause_reason_string(types::evse_manager::PauseChargingEVSEReasonEnum reason) {
+    try {
+        return types::evse_manager::pause_charging_evsereason_enum_to_string_view(reason);
+    } catch (const std::out_of_range&) {
+        return std::nullopt;
+    }
 }
 
 } // namespace
@@ -114,8 +133,12 @@ void ChargePointV16::cb_boot_notification_response(
     m_callbacks_ptr->cb_boot_notification(response);
 }
 
-void ChargePointV16::cb_connection_state_changed(bool is_connected) {
-    m_callbacks_ptr->cb_connection_state_changed(is_connected, ocpp::OcppProtocolVersion::v16);
+void ChargePointV16::cb_connection_state_changed(bool is_connected, int configuration_slot,
+                                                 const ocpp::v2::NetworkConnectionProfile& network_connection_profile) {
+    m_callbacks_ptr->cb_connection_state_changed(
+        module::conversions::to_everest_connection_status(is_connected, configuration_slot, network_connection_profile,
+                                                          ocpp::OcppProtocolVersion::v16),
+        ocpp::OcppProtocolVersion::v16);
 }
 
 ocpp::v16::DataTransferResponse ChargePointV16::cb_data_transfer(const ocpp::v16::DataTransferRequest& request) {
@@ -393,6 +416,9 @@ ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& 
         result.error_code = error_code;
         result.vendor_id = ocpp_module_common::v16::CHARGE_X_MREC_VENDOR_ID;
         result.vendor_error_code = ocpp::CiString<50>(vendor_error_code, ocpp::StringTooLarge::Truncate);
+        if (not error.message.empty()) {
+            result.info = ocpp::CiString<50>(error.message, ocpp::StringTooLarge::Truncate);
+        }
         incomplete = false;
     }
 
@@ -406,6 +432,7 @@ ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& 
         if (ocpp_it != ocpp_module_common::v16::OCPP_ERROR_MAP.end()) {
             // update the result
             result.error_code = ocpp_it->second;
+            result.vendor_id = ocpp::CiString<255>(error.message, ocpp::StringTooLarge::Truncate);
             incomplete = false;
         }
     }
@@ -484,6 +511,8 @@ void ChargePointV16::configure_callbacks() {
         [this](auto&&... args) { return m_callbacks_ptr->cb_all_connectors_unavailable(args...); });
     m_charge_point->register_cancel_reservation_callback(
         [this](auto&&... args) { return m_callbacks_ptr->cb_cancel_reservation(args...); });
+    m_charge_point->register_configure_network_connection_profile_callback(
+        [this](auto&&... args) { return m_callbacks_ptr->cb_configure_network_connection_profile(args...); });
     m_charge_point->register_get_15118_ev_certificate_response_callback(
         [this](auto&&... args) { return m_callbacks_ptr->cb_get_15118_ev_certificate_response(args...); });
     m_charge_point->register_pause_charging_callback([this](std::int32_t ocpp_connector_id) {
@@ -552,7 +581,7 @@ void ChargePointV16::configure_data_model(const config_info_t& config) {
     };
 
     auto factory_result = module::config_factory_v16::create_charge_point_configuration(
-        ocpp_share_path, params, static_cast<int32_t>(config.number_of_connectors));
+        ocpp_share_path, params, static_cast<int32_t>(config.number_of_connectors), config.everest_device_model);
     m_charge_point_configuration = std::move(factory_result.configuration);
     m_custom_mappings = std::move(factory_result.custom_mappings);
 
@@ -571,6 +600,11 @@ void ChargePointV16::configure_data_model(const config_info_t& config) {
         },
         [this](const ocpp::CiString<50>& key, const ocpp::CiString<500>& value) {
             return m_charge_point->set_configuration_key(key, value);
+        },
+        [this]() {
+            // Connection-config write via the EVerest ocpp interface: refresh the stack's cached network
+            // profiles so priority/slot changes take effect on the next (re)connect; 2.x parity.
+            m_charge_point->reload_network_profiles();
         });
 
     // The factory does not create the message-log directory; retain that here.
@@ -608,6 +642,7 @@ void ChargePointV16::init(init_args_t& args) {
         args.v16_device_model_config_mappings,
         args.v16_ocpp16_network_config_slot,
         args.v16_enable_legacy_config_migration,
+        args.everest_device_model,
     };
 
     configure_data_model(config);
@@ -666,7 +701,8 @@ void ChargePointV16::stop() {
 std::optional<ocpp::v2::DataTransferResponse>
 ChargePointV16::data_transfer_req(const ocpp::v2::DataTransferRequest& request) {
     check_configured("data_transfer_req");
-    const auto res = m_charge_point->data_transfer(request.vendorId, request.messageId, request.data);
+    const auto res =
+        m_charge_point->data_transfer(request.vendorId, request.messageId, to_v16_data_string(request.data));
     std::optional<ocpp::v2::DataTransferResponse> result;
     if (res) {
         ocpp::v2::DataTransferResponse response;
@@ -811,7 +847,10 @@ void ChargePointV16::on_event_charging_paused_evse(std::int32_t evse_id, std::in
                                                    const types::evse_manager::SessionEvent& session_event) {
     check_configured("on_event_charging_paused_evse");
     const auto cid = ocpp_connector_id(m_connector_mapping, evse_id, session_event.connector_id);
-    m_charge_point->on_suspend_charging_evse(cid);
+    const auto report_reason =
+        get<bool>(*m_charge_point, REPORT_SUSPENDED_EVSE_REASON_CHANGE_CONFIG_KEY).value_or(false);
+    m_charge_point->on_suspend_charging_evse(
+        cid, report_reason ? encode_pause_reasons(session_event.charging_paused_evse) : std::nullopt);
 }
 void ChargePointV16::on_event_charging_started(std::int32_t evse_id, std::int32_t connector_id,
                                                const types::evse_manager::SessionEvent& session_event) {
@@ -1071,6 +1110,46 @@ ChargePointV16::validate_token(const types::authorization::ProvidedIdToken& prov
 
 bool ChargePointV16::default_is_fault(const Everest::error::Error& error) {
     return false;
+}
+
+std::optional<ocpp::CiString<50>>
+ChargePointV16::encode_pause_reasons(const std::optional<types::evse_manager::ChargingPausedEVSEReasons>& reasons) {
+    if (!reasons.has_value()) {
+        return std::nullopt;
+    }
+    if (reasons->reasons.empty()) {
+        EVLOG_warning << "ChargingPausedEVSEReasons published with an empty reason list, which violates the "
+                         "evse_manager minItems: 1 contract; omitting StatusNotification.info";
+        return std::nullopt;
+    }
+
+    std::vector<std::string_view> encoded;
+    encoded.reserve(reasons->reasons.size());
+    for (const auto& reason : reasons->reasons) {
+        const auto item = to_pause_reason_string(reason);
+        if (!item.has_value()) {
+            EVLOG_error << "OCPP 1.6 StatusNotification.info: no wire encoding for PauseChargingEVSEReasonEnum value "
+                        << static_cast<int>(reason) << ", omitting from pause reason list";
+            continue;
+        }
+        encoded.push_back(item.value());
+    }
+    std::sort(encoded.begin(), encoded.end());
+    encoded.erase(std::unique(encoded.begin(), encoded.end()), encoded.end());
+
+    if (encoded.empty()) {
+        return std::nullopt;
+    }
+
+    std::string result;
+    for (const auto& item : encoded) {
+        if (!result.empty()) {
+            result.push_back(',');
+        }
+        result.append(item);
+    }
+
+    return ocpp::CiString<50>{result, ocpp::StringTooLarge::Truncate};
 }
 
 std::string ChargePointV16::default_vendor_error_code(const Everest::error::Error& error) {

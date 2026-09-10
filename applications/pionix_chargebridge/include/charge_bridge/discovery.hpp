@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <set>
+#include <string>
 
 namespace charge_bridge {
 
@@ -20,10 +21,13 @@ enum class discovery_device_type {
 
 class discovery : public everest::lib::io::event::fd_event_register_interface {
 public:
-    using discovery_cb = std::function<void(std::string const&)>;
+    using discovery_cb = std::function<void(everest::lib::io::mdns::mDNS_discovery const&)>;
 
-    discovery(discovery_device_type type);
-    discovery(discovery_device_type type, std::set<std::string> const& interfaces, bool excluding);
+    // instance_name is the charge_bridge name this discovery belongs to; it is only used to attribute
+    // log lines to the right instance (and row in the terminal UI).
+    discovery(discovery_device_type type, std::string instance_name = {});
+    discovery(discovery_device_type type, std::set<std::string> const& interfaces, bool excluding,
+              std::string instance_name = {});
 
     bool register_events(everest::lib::io::event::fd_event_handler& handler) override;
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
@@ -31,7 +35,7 @@ public:
     void set_discovery_callback(discovery_cb const& cb);
 
 private:
-    void add_client(std::string const& interface);
+    void add_client(std::string const& interface, int family);
     void query_registry();
 
     std::vector<std::unique_ptr<everest::lib::io::mdns::mdns_client>> m_mdns;
@@ -39,6 +43,7 @@ private:
     discovery_cb m_on_discover;
     everest::lib::io::mdns::mDNS_registry m_registry;
     discovery_device_type m_type;
+    std::string m_instance_name;
     static const std::string discovery_id;
 };
 

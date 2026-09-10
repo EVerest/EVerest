@@ -155,7 +155,9 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
         case RawCPState::Disabled:
             if (last_cp_state != RawCPState::Disabled) {
                 pwm_running = false;
-                r_bsp->call_cp_state_X1();
+                if (not cp_state_f_requested) {
+                    r_bsp->call_cp_state_X1();
+                }
                 ev_simplified_mode = false;
                 timer_state_C1 = TimerControl::stop;
                 call_allow_power_on_bsp(false);
@@ -166,7 +168,9 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
         case RawCPState::A:
             if (last_cp_state != RawCPState::A) {
                 pwm_running = false;
-                r_bsp->call_cp_state_X1();
+                if (not cp_state_f_requested) {
+                    r_bsp->call_cp_state_X1();
+                }
                 ev_simplified_mode = false;
                 car_plugged_in = false;
                 call_allow_power_on_bsp(false);
@@ -191,7 +195,7 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
                 connector_unlock();
             }
 
-            if (last_cp_state != RawCPState::A && last_cp_state != RawCPState::B) {
+            if (last_cp_state == RawCPState::C || last_cp_state == RawCPState::D) {
 
                 events.push(CPEvent::CarRequestedStopPower);
                 // Need to switch off according to Table A.6 Sequence 8.1
@@ -285,20 +289,29 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
             }
             break;
 
-        case RawCPState::E:
-            connector_unlock();
+        case RawCPState::E: {
+            const bool state_e_triggered_by_evse = state_e_triggered_through_handle.exchange(false);
+
+            if (!state_e_triggered_by_evse) {
+                connector_unlock();
+            }
             if (last_cp_state != RawCPState::E) {
                 timer_state_C1 = TimerControl::stop;
                 call_allow_power_on_bsp(false);
                 pwm_running = false;
-                r_bsp->call_cp_state_X1();
+                if (not state_e_triggered_by_evse and not cp_state_f_requested) {
+                    r_bsp->call_cp_state_X1();
+                }
                 if (last_cp_state == RawCPState::B || last_cp_state == RawCPState::C ||
                     last_cp_state == RawCPState::D) {
                     events.push(CPEvent::BCDtoEF);
-                    events.push(CPEvent::BCDtoE);
+                    if (!state_e_triggered_by_evse) {
+                        events.push(CPEvent::BCDtoE);
+                    }
                 }
             }
             break;
+        }
 
         case RawCPState::F:
             timer_state_C1 = TimerControl::stop;
@@ -363,6 +376,7 @@ void IECStateMachine::set_pwm(double value) {
         } else {
             pwm_running = false;
         }
+        cp_state_f_requested = false;
     }
 
     if (ev_simplified_mode_evse_limit and ev_simplified_mode and value > ev_simplified_mode_evse_limit_pwm) {
@@ -381,6 +395,7 @@ void IECStateMachine::set_cp_state_X1() {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_set_cp_state_X1);
         pwm_running = false;
+        cp_state_f_requested = false;
     }
     r_bsp->call_cp_state_X1();
     // Don't run the state machine in the callers context
@@ -392,8 +407,21 @@ void IECStateMachine::set_cp_state_F() {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_set_cp_state_F);
         pwm_running = false;
+        cp_state_f_requested = true;
     }
     r_bsp->call_cp_state_F();
+    // Don't run the state machine in the callers context
+    feed_state_machine(std::nullopt);
+}
+
+// High level state machine sets state E
+void IECStateMachine::set_cp_state_E() {
+    {
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_set_cp_state_E);
+        pwm_running = false;
+        state_e_triggered_through_handle = true;
+    }
+    r_bsp->call_cp_state_E();
     // Don't run the state machine in the callers context
     feed_state_machine(std::nullopt);
 }

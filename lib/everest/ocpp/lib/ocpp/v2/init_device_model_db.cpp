@@ -120,9 +120,9 @@ void InitDeviceModelDb::initialize_database(
         existing_components = get_all_components_from_db();
     }
 
-    // If OCPP16LegacyCtrlr is not present in the config files nor the database, add the built-in default config for it.
-    // This ensures the OCPP 1.6 device model bridge works even with a custom DeviceModelConfigPath that does not
-    // include the file.
+    // If OCPP16LegacyCtrlr is not present in the config files, add the built-in default config for it so the
+    // component is inserted and kept up to date like any other component. This keeps the OCPP 1.6 device model
+    // bridge working with a custom DeviceModelConfigPath that does not include the file.
     const bool config_files_contain_ocpp16_legacy_ctrlr =
         std::any_of(component_configs.begin(), component_configs.end(),
                     [](const auto& c) { return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG; });
@@ -130,34 +130,27 @@ void InitDeviceModelDb::initialize_database(
         std::any_of(existing_components.begin(), existing_components.end(),
                     [](const auto& c) { return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG; });
 
+    // Only allocate an augmented copy when the fallback component is actually missing from the config.
+    std::optional<std::map<ComponentKey, std::vector<DeviceModelVariable>>> augmented;
+    if (inject_ocpp16_legacy_ctrlr_fallback && !config_files_contain_ocpp16_legacy_ctrlr) {
+        if (!db_contains_ocpp16_legacy_ctrlr) {
+            EVLOG_warning
+                << "OCPP16LegacyCtrlr not found in component config directory or database, using built-in defaults";
+        }
+        augmented = component_configs;
+        ensure_ocpp16_legacy_ctrlr(*augmented);
+    }
+
+    const auto& configs = augmented.has_value() ? *augmented : component_configs;
+
     // Components in the database that no longer have a matching entry in the component
     // config (e.g. NetworkConfiguration_<N>.json was removed from the install) are kept
     // in place and reported via a warning. Pruning these rows used to drop migration
     // targets, so the operator could end up with a populated NetworkConnectionProfiles
     // blob and no per-slot components to migrate it into.
     if (this->database_exists) {
-        warn_about_components_missing_from_config(component_configs, existing_components);
+        warn_about_components_missing_from_config(configs, existing_components);
     }
-
-    // Only allocate an augmented copy when the fallback component is actually missing.
-    std::optional<std::map<ComponentKey, std::vector<DeviceModelVariable>>> augmented;
-    if (inject_ocpp16_legacy_ctrlr_fallback && !config_files_contain_ocpp16_legacy_ctrlr &&
-        !db_contains_ocpp16_legacy_ctrlr) {
-        EVLOG_warning
-            << "OCPP16LegacyCtrlr not found in component config directory or database, using built-in defaults";
-        try {
-            const json fallback_json = json::parse(get_default_ocpp16_legacy_ctrlr_schema());
-            const ComponentKey key = fallback_json;
-            const std::vector<DeviceModelVariable> variables =
-                get_all_component_properties(fallback_json.at("properties"));
-            augmented = component_configs;
-            augmented->insert({key, variables});
-        } catch (const json::parse_error& e) {
-            EVLOG_error << "Failed to parse built-in OCPP16LegacyCtrlr fallback: " << e.what();
-        }
-    }
-
-    const auto& configs = augmented.has_value() ? *augmented : component_configs;
 
     // Check if the config is consistent.
     check_integrity(configs);

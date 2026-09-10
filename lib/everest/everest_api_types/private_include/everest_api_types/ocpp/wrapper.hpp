@@ -49,10 +49,15 @@ create_interface2(SetVariableRequestList, std::vector<::types::ocpp::SetVariable
 create_interface2(SetVariableResultList, std::vector<::types::ocpp::SetVariableResult>);
 create_interface(SecurityEvent);
 create_interface(StatusInfoType);
+create_interface(OperationalStatusEnumType);
+create_interface(ChangeAvailabilityStatusEnumType);
+create_interface(ChangeAvailabilityRequest);
+create_interface(ChangeAvailabilityResponse);
 create_interface(BootNotificationResponse);
 create_interface(OcppTransactionEvent);
 create_interface(MessageDirection);
 create_interface(Message);
+create_interface(ConnectionStatus);
 
 // MonitorVariableRequest is a ComponentVariable
 using MonitorVariableRequest_Internal = ::types::ocpp::ComponentVariable;

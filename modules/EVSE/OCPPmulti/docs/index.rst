@@ -137,9 +137,64 @@ In both paths, the built-in mappings from OCPP 1.6 configuration keys to device 
 combinations are documented in
 `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_.
 ``DeviceModelConfigMappings`` can point to a YAML file with custom mappings on top; it is applied both when migrating
-the legacy JSON into the device model and when serving the device-model-backed configuration at runtime. OCPP 1.6
+the legacy JSON into the device model and when serving the device-model-backed configuration at runtime. Custom
+mappings must not target the connection configuration (the ``NetworkConfiguration`` slots, the ``OCPPCommCtrlr``
+network profile selectors, or the ``SecurityCtrlr`` connection fallbacks ``Identity`` and ``BasicAuthPassword``):
+those are managed via the standardized OCPP 1.6 keys with their reboot/reconnect semantics, and a mapping file
+containing such a target is rejected at startup. OCPP 1.6
 keys without a standardized device model counterpart are kept in a dedicated ``OCPP16LegacyCtrlr`` component, whose
-``NumberOfConnectors`` value is automatically patched to the actual number of connected EVSEs.
+``NumberOfConnectors`` value is automatically patched to the actual number of connected EVSEs. This component is
+required for OCPP 2.x operation as well: the device model is shared between all supported OCPP versions so that the
+station can switch between OCPP 1.6 and OCPP 2.x seamlessly, which requires the full set of components for every
+version to be present. If ``standardized/OCPP16LegacyCtrlr.json`` is absent from ``DeviceModelConfigPath``, a
+built-in default schema for it is injected automatically.
+
+.. _handwritten_ocppmulti_network-profiles-ocpp16:
+
+Network connection profiles (OCPP 1.6)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In device-model-backed configuration, OCPP 1.6 sources its network connection profiles from the same per-slot
+``NetworkConfiguration_<N>`` components as OCPP 2.x rather than from the single-URL legacy keys. The slot model,
+the failover behavior, the runtime reconfiguration workflow and the few points where the two protocol versions
+behave differently are described once in
+:ref:`Network connection configuration <handwritten_ocppmulti_network-connection-configuration>`; what follows
+here is only what is specific to OCPP 1.6.
+
+``Ocpp16NetworkConfigSlot`` selects the slot the legacy migration writes into (default ``1``). It populates that one
+slot (``CentralSystemURI`` → ``OcppCsmsUrl``, ``SecurityProfile`` → ``SecurityProfile``, ``AuthorizationKey`` →
+``BasicAuthPassword``, ``HostName`` → ``HostName``, ``ChargePointId`` → ``Identity``), sets that slot's
+``OcppInterface`` to ``"Any"`` unless the component config sets an explicit attribute ``value`` (a ``default``,
+like slot 1's ``"Wired0"``, does not count and applies only when the slot is not migrated into), and points
+``OCPPCommCtrlr/ActiveNetworkProfile`` at the slot. The target slot must be defined by the component configuration:
+when no ``NetworkConfiguration_<N>`` component config exists for it, the network connection migration is skipped
+with an error log, and when the slot is missing from ``NetworkConfigurationPriority`` (or its ``valuesList``), a
+warning is logged and the migrated profile is not used until the priority is configured accordingly. The shipped
+example configs cover the default slot ``1``, so a migrated legacy deployment connects as before with a single
+profile on interface ``"Any"``; for any other slot, ship the matching component config and priority.
+
+The migration also initializes the *confirmed* security profile (``SecurityCtrlr``/``SecurityProfile``) from the
+legacy config's ``SecurityProfile``. Setups configured purely through the device model (no migration) that use
+security profile ``0`` must set ``SecurityCtrlr``/``SecurityProfile`` to ``0`` in their component config, since the
+shipped default is ``1`` and every profile below the confirmed one is pruned from the failover list.
+
+A slot whose ``NetworkConfiguration_<N>.OcppVersion`` names any version other than ``"OCPP16"`` is ignored in OCPP
+1.6 mode; leaving ``OcppVersion`` unset or setting it to ``"OCPP16"`` makes the slot usable. Runtime writes of
+``OcppVersion`` are validated against the variable's ``valuesList``, so a custom component config must list
+``OCPP16`` there for such a write to be accepted (the shipped slot configs do). The *active* slot is exempt from
+this filter: when every listed slot is version-filtered (typically because the device model database was
+previously used with OCPP 2.x, which writes back the negotiated version; OCPP 1.6 itself never writes
+``OcppVersion``), the active slot still connects using the legacy single-profile connection settings instead of
+leaving the charge point unable to connect. The same fallback applies when the active slot's profile is
+incomplete; in OCPP 2.x an incomplete slot is simply skipped.
+
+The ``interface_address`` returned by the ``system`` provider's **configure_network** *replaces* the static
+``Internal``/``IFace`` configuration key when binding the websocket - including clearing it when the provider
+answers ``Ready`` or ``NotSupported`` without an address. Since this module always performs the configure_network
+round-trip, ``IFace`` is effectively not used on successful attempts.
+
+The legacy JSON configuration backend (OCPP 1.6 without a device model, as used by the ``OCPP`` module) is
+unaffected by this and keeps the previous single-profile behavior.
 
 OCPP device model vs. EVerest device model
 ==========================================
@@ -157,6 +212,19 @@ The module composes two device model storages behind libocpp's ``DeviceModelStor
 
 The ``ComposedDeviceModelStorage`` routes each variable access to its owning storage by the variable's ``source``
 field, which defaults to ``OCPP``.
+
+The composed storage backs **both** protocol paths: in OCPP 2.x it is the device model of the libocpp
+``ChargePoint``, and in OCPP 1.6 it backs the device-model-based charge point configuration. Variables of both
+sources are therefore visible and settable through the EVerest ``ocpp`` interface (``get_variables`` /
+``set_variables``, e.g. via the ``ocpp_consumer_API`` module) regardless of the active protocol version. Note that
+an OCPP 1.6 **CSMS** still cannot address EVerest device model variables directly: ``GetConfiguration`` /
+``ChangeConfiguration`` are key-based, and only keys with a device model mapping (built-in or via
+``DeviceModelConfigMappings``) reach the device model. Also note that variables of source ``EVEREST`` are updated
+by the module at runtime directly in the ``EverestDeviceModelStorage``; such updates do not trigger
+``monitor_variables`` events on the ``ocpp`` interface (in either protocol version) — only writes performed through
+the OCPP stack or the ``ocpp`` interface do. If a component/variable is defined in both storages, the EVerest
+device model takes precedence for that variable and a warning is logged at startup; the integrator is
+responsible for avoiding such overlaps.
 
 .. mermaid::
 
@@ -209,6 +277,30 @@ module via the interfaces it provides and requires.
 📌 **Note:** The ``ocpp_1_6_charge_point`` interface (``main`` implementation) of the deprecated
 :ref:`OCPP <everest_modules_OCPP>` module is NOT provided by this module. The ``ocpp_generic`` interface
 covers the same functionality.
+
+.. _handwritten_ocppmulti_control-from-outside-everest:
+
+Control from outside EVerest
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The interfaces below are EVerest-internal: they are consumed by other modules
+in the same EVerest configuration. To drive OCPPmulti from outside EVerest -
+a web interface, a commissioning tool, a factory test rig, a vendor cloud
+agent - add the :ref:`ocpp_consumer_API
+<everest_modules_handwritten_ocpp_consumer_API>` module to the configuration.
+It requires OCPPmulti's ``ocpp`` interface and republishes it on the EVerest
+API MQTT surface, so the OCPP stack is controllable without writing an EVerest
+module: device model access (and with it the whole configuration surface
+described under `Configuration access`_), DataTransfer, and the stack state
+OCPPmulti publishes. Its documentation and the generated API reference it
+links to are authoritative for the exact commands, variables and payloads.
+
+The API is a trusted local integrator channel and is not rate-limited or
+authenticated by OCPPmulti; expose it accordingly. Its writes are subject to
+the same validation as any other EVerest-side write, including the in-use
+network configuration protection described under
+:ref:`Network connection configuration
+<handwritten_ocppmulti_network-connection-configuration>`.
 
 Provides: auth_validator
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -402,9 +494,13 @@ for production use without modification). Used to execute and control system-wid
 * **is_reset_allowed** and **reset** for reset requests
 * **set_system_time** to apply the time communicated by the CSMS
 * **get_boot_reason** for the boot notification at startup
+* **configure_network** to prepare the network for a connection attempt on a network profile slot (see
+  :ref:`Network connection configuration <handwritten_ocppmulti_network-connection-configuration>`); a provider
+  without special network handling answers ``NotSupported``
 
 The **log_status** and **firmware_update_status** variables are received to report the corresponding status
-notifications to the CSMS.
+notifications to the CSMS, and **configure_network_status** reports the asynchronous outcome of
+**configure_network** requests.
 
 Error reporting
 ===============
@@ -431,8 +527,10 @@ as follows:
 
 * If the EVerest error type has a (built-in) MREC mapping, ``errorCode`` is taken from that mapping, ``vendorId`` is
   set to the MREC vendor id, and ``vendorErrorCode`` carries the MREC techCode. (The OCPP 1.6 path uses a fixed
-  built-in table; ``CustomMrecErrorMapPath`` is not applied here.)
-* Otherwise, if it maps to a standard OCPP 1.6 error code, ``errorCode`` is set accordingly.
+  built-in table; ``CustomMrecErrorMapPath`` is not applied here.) The error message is written to ``info`` instead
+  of ``vendorId``, truncated to 50 characters; if the error was raised without a message, ``info`` is omitted.
+* Otherwise, if it maps to a standard OCPP 1.6 error code, ``errorCode`` is set accordingly and ``vendorId`` carries
+  the error message (up to 255 characters).
 * Otherwise, ``errorCode`` is ``OtherError``, ``info`` carries the error origin, ``vendorId`` the error message
   (up to 255 characters, the largest field), and ``vendorErrorCode`` a code derived from the EVerest error type
   (``info`` and ``vendorErrorCode`` are limited to 50 characters).
@@ -440,6 +538,9 @@ as follows:
 OCPP 1.6 limitations: individual errors cannot be cleared selectively via **StatusNotification.req**, and, deviating
 from MREC, simultaneous errors are reported in one message per error instead of a single semicolon-separated
 message, because of the field length limits.
+
+The ``info`` field has a second, unrelated use: reporting why a connector is suspended. See
+:ref:`suspend reason reporting <handwritten_ocppmulti_suspend-reason-reporting>` below.
 
 OCPP 2.x
 ^^^^^^^^
@@ -454,6 +555,46 @@ status **Faulted** for the Inoperative case above). All other errors are reporte
 
 The variable is constantly set to **Problem** for now; a more fine-grained mapping of errors to component-variable
 combinations may be added in the future.
+
+The remaining **eventData** properties are filled as follows:
+
+* ``techCode`` is set to the MREC techCode if the EVerest error type has an MREC mapping, and to the EVerest error
+  type itself otherwise.
+* ``techInfo`` is set to the message of the EVerest error, truncated to 500 characters. If the error was raised
+  without a message, the description of the error type is sent instead.
+* ``actualValue`` is ``"true"`` when the error is raised and ``"false"`` when it is cleared. The ``cleared``
+  property is set accordingly.
+
+.. _handwritten_ocppmulti_suspend-reason-reporting:
+
+Suspend reason reporting in OCPP 1.6
+====================================
+
+While a connector sits in **SuspendedEVSE**, the reason can change without the status changing: a user pause during an
+energy shortage, or a fault raised on an already suspended connector. OCPP 1.6 has no field for that, so the reason set
+is reported in the free-text ``info`` field of a further **StatusNotification.req**, reusing the field the error path
+above writes.
+
+The feature is off by default. Set the ``InternalCtrlr`` variable ``ReportSuspendedEVSEReasonChange`` (boolean,
+ReadWrite, default ``false``) to enable it. It doubles as an OCPP 1.6 configuration key of the same name and is read on
+every suspend event, so **ChangeConfiguration** takes effect without a restart.
+
+With it enabled, a reason change on an already suspended connector emits one **StatusNotification.req** with ``status``
+unchanged at **SuspendedEVSE**, ``errorCode`` **NoError** (or the most recent active error's code), and the reasons in
+``info``: ``UserPause``, ``Error`` and/or ``NoEnergy``, comma joined. Repeats are suppressed, and an empty set omits
+``info`` rather than sending an empty string. **TriggerMessage(StatusNotification)** reports the current reason when
+no error is active.
+
+Limitations:
+
+* All energy-related causes collapse into the single ``NoEnergy`` value. A schedule limit, load balancing and a
+  missing PV surplus are not distinguishable at the CSMS.
+* ``SwitchingPhases`` shares the ``info`` field with the pause reasons, so a phase switch followed by a pause
+  alternates between the two, one message per cycle.
+* When a fault clears while the connector is paused, the notification carries the cleared error's ``info`` rather than
+  the live pause reason; a **TriggerMessage(StatusNotification)** recovers it.
+* Turning the variable off at runtime does not clear a reason already reported; the CSMS holds it until the connector
+  leaves **SuspendedEVSE**.
 
 Energy management and smart charging
 ====================================
@@ -508,9 +649,16 @@ OCPP configuration can be read, written and monitored through three channels:
 - **EVerest modules**: require the ``ocpp`` interface and call
   ``call_get_variables`` / ``call_set_variables`` / ``call_monitor_variables``;
   subscribe ``event_data`` for monitor notifications.
-- **External integrations** (web interface, configuration tools): the
-  ``ocpp_consumer_API``; see its own documentation for transport and message
-  details.
+- **External integrations** (web interface, configuration tools, vendor cloud
+  agents): the :ref:`ocpp_consumer_API
+  <everest_modules_handwritten_ocpp_consumer_API>` module, which republishes
+  OCPPmulti's ``ocpp`` interface on the EVerest API MQTT surface. Every
+  ``get_variables`` / ``set_variables`` / ``monitor_variables`` example in this
+  section applies verbatim there; the payloads shown *are* the API payloads.
+  Configuration access is only part of what it exposes; see
+  :ref:`Control from outside EVerest
+  <handwritten_ocppmulti_control-from-outside-everest>`, and its own
+  documentation for the full surface and the transport details.
 
 On the two EVerest-side channels, addressing and semantics are identical,
 regardless of whether OCPP 1.6 or 2.x is active. The CSMS channel
@@ -519,7 +667,7 @@ uses whatever the active protocol version prescribes (configuration keys in
 EVerest-side channels.
 
 Reading and writing (canonical form)
-------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Read (``get_variables``):
 
@@ -540,9 +688,14 @@ Write (``set_variables``):
 
 Results echo the requested ``component_variable`` and carry a status:
 ``Accepted``, ``RebootRequired`` (writes only; persisted; takes effect on next
-(re)connect or reboot), ``Rejected`` (with ``statusInfo`` explaining why and, where
-applicable, what to use instead), ``UnknownComponent`` / ``UnknownVariable``,
+(re)connect or reboot), ``Rejected``, ``UnknownComponent`` / ``UnknownVariable``,
 or ``NotSupportedAttributeType``.
+
+The status is the whole answer: the reason codes the stack computes internally
+(``PriorityNetworkConf``, ``NoSecurityDowngrade``, ``InvalidNetworkConf``, ...)
+are **currently not** carried on this interface; its result has no ``statusInfo`` field,
+in either protocol mode. A rejected write therefore has to be diagnosed from the
+module log, which names the reason code and the offending component/variable.
 
 Addressing rules:
 
@@ -554,13 +707,40 @@ Addressing rules:
 - The deprecation warning emitted for legacy requests names the canonical
   address for each key in use — the simplest migration discovery mechanism.
 
-Changing OCPP connection details
---------------------------------
+.. _handwritten_ocppmulti_network-connection-configuration:
 
-Connection settings live in network profile **slots**, addressed as component
-``NetworkConfiguration`` with the slot number as component ``instance``. Both
-protocol stacks read this same representation (shared connectivity manager),
-so the workflow below is identical for OCPP 1.6 and 2.x.
+Network connection configuration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Connection settings live in network profile **slots**: one
+``NetworkConfiguration`` component per slot, addressed with the slot number as
+component ``instance``, plus
+``OCPPCommCtrlr``/``NetworkConfigurationPriority`` - a comma-separated, ordered
+list of the slots to try. Slots are set up in the component configuration and can be changed at runtime through this API. Both
+protocol versions read this same representation, so everything below applies to
+OCPP 1.6 and 2.x alike; the handful of behavioral differences is collected at
+the end of this section.
+
+Setting up slots
+""""""""""""""""
+
+Which slots exist is decided by the component configuration: ship one
+``NetworkConfiguration_<N>.json`` per slot and list every usable slot in
+``NetworkConfigurationPriority`` - both in its value (or default) and in its
+``valuesList``, which gates runtime priority writes. The shipped configuration
+contains two slots as an example; provide as many as your setup needs. A
+typical setup is slot 1 on a cellular modem (``OcppInterface`` ``"Wireless0"``
+plus APN settings) with slot 2 as a wired fallback (``"Wired0"``).
+
+A slot is only usable once its profile is complete: ``OcppCsmsUrl``,
+``SecurityProfile``, ``OcppInterface``, ``OcppTransport`` and ``MessageTimeout``
+are all mandatory, and a slot missing any of them is skipped. The example
+``NetworkConfiguration_1.json`` carries defaults for everything except the URL
+(``SecurityProfile`` ``1``, ``OcppInterface`` ``"Wired0"``, ``OcppTransport``
+``"JSON"``, ``MessageTimeout`` ``30``), so slot 1 only needs an
+``OcppCsmsUrl``; ``NetworkConfiguration_2.json`` deliberately carries no
+defaults for the mandatory fields, so each of them must be set explicitly - in
+the component config or at runtime.
 
 .. list-table::
    :header-rows: 1
@@ -571,9 +751,15 @@ so the workflow below is identical for OCPP 1.6 and 2.x.
    * - CSMS endpoint URL
      - ``NetworkConfiguration`` / instance ``<slot>``
      - ``OcppCsmsUrl``
-   * - Security profile (1–3)
+   * - Security profile (0–3)
      - ``NetworkConfiguration`` / instance ``<slot>``
      - ``SecurityProfile``
+   * - Network interface
+     - ``NetworkConfiguration`` / instance ``<slot>``
+     - ``OcppInterface``
+   * - Transport and message timeout
+     - ``NetworkConfiguration`` / instance ``<slot>``
+     - ``OcppTransport``, ``MessageTimeout``
    * - Basic-auth password (AuthorizationKey)
      - ``NetworkConfiguration`` / instance ``<slot>``
      - ``BasicAuthPassword`` (write-only)
@@ -590,7 +776,46 @@ so the workflow below is identical for OCPP 1.6 and 2.x.
      - ``OCPPCommCtrlr``
      - ``ActiveNetworkProfile`` (ReadOnly)
 
-Workflow — prepare a profile (here: slot 2):
+Failover between slots
+""""""""""""""""""""""
+
+Slots are tried in priority order, and the list wraps around. A slot is skipped
+when the ``system`` provider's **configure_network** answers
+``Failed``/``Rejected`` (or does not respond within
+``InternalCtrlr``/``NetworkConfigTimeout`` seconds, default 60), when the
+resulting profile is invalid, or when the websocket connection fails
+``OCPPCommCtrlr``/``NetworkProfileConnectionAttempts`` times in a row. Setting
+``NetworkProfileConnectionAttempts`` to ``-1`` means retry-forever and thereby
+disables the websocket-failure-driven part of the failover; only do that
+deliberately. There is no automatic fall-back to a higher-priority slot while a
+lower-priority one is connected. The address the ``system`` provider returns
+from **configure_network** is what the websocket is bound to for that attempt.
+
+Profiles with a ``SecurityProfile`` below the *confirmed* security profile -
+the ``SecurityCtrlr``/``SecurityProfile`` value, which is raised only after a
+successful connect - are pruned from the failover list, so security profile
+upgrades are one-way. Failed attempts on a higher-security-profile slot do not
+prune anything.
+
+Changing connection details at runtime
+""""""""""""""""""""""""""""""""""""""
+
+The whole reconfiguration below is doable from outside EVerest: the
+:ref:`ocpp_consumer_API <everest_modules_handwritten_ocpp_consumer_API>`
+module exposes ``get_variables`` / ``set_variables`` / ``monitor_variables``
+on the EVerest API MQTT surface, and the payloads in this section are exactly
+what that API takes. A web interface or commissioning tool can therefore
+repoint the charging station at a different CSMS, rotate credentials or switch
+to a fallback interface without an EVerest module and without CSMS
+involvement. The same API is the natural way to *observe* the result; monitor
+``OCPPCommCtrlr``/``ActiveNetworkProfile`` for the slot actually in use. It
+controls the OCPP stack well beyond network configuration; see
+:ref:`Control from outside EVerest
+<handwritten_ocppmulti_control-from-outside-everest>`.
+
+Workflow - fully populate a spare profile slot (here: slot 2, which ships
+without defaults, so every field has to be written; an incomplete slot cannot
+be put into the priority):
 
 .. code-block:: json
 
@@ -601,6 +826,15 @@ Workflow — prepare a profile (here: slot 2):
      {"component_variable": {"component": {"name": "NetworkConfiguration", "instance": "2"},
                              "variable": {"name": "SecurityProfile"}},
       "value": "2"},
+     {"component_variable": {"component": {"name": "NetworkConfiguration", "instance": "2"},
+                             "variable": {"name": "OcppInterface"}},
+      "value": "Any"},
+     {"component_variable": {"component": {"name": "NetworkConfiguration", "instance": "2"},
+                             "variable": {"name": "OcppTransport"}},
+      "value": "JSON"},
+     {"component_variable": {"component": {"name": "NetworkConfiguration", "instance": "2"},
+                             "variable": {"name": "MessageTimeout"}},
+      "value": "30"},
      {"component_variable": {"component": {"name": "NetworkConfiguration", "instance": "2"},
                              "variable": {"name": "BasicAuthPassword"}},
       "value": "0123456789abcdef"}
@@ -615,18 +849,85 @@ then activate it by putting slot 2 first in the priority order:
       "value": "2,1"}
    ]}, "source": "webinterface"}
 
-Each of these returns ``RebootRequired``: the values are validated and
-persisted immediately and take effect on the next (re)connect or reboot.
-Editing the currently active slot in place is equally allowed (same
-``RebootRequired`` semantics). ``BasicAuthPassword`` is write-only — reads do
-not return it. ``ActiveNetworkProfile`` reports which slot is in use and is
-ReadOnly (per OCPP 2.x); writes to it are rejected by mutability in both
-modes. In v16 mode this workflow is semantically equivalent to the legacy
-``CentralSystemURI`` / ``SecurityProfile`` / ``AuthorizationKey`` key writes,
-which remain available (deprecated) and operate on the active slot.
+Keeping slot 1 in the list retains it as a fallback, but with only the two
+shipped slots it also means no slot is left that can be rewritten (see the
+protection rules below). Write ``"2"`` instead if you want to keep slot 1 free
+for the next reconfiguration, or ship a third slot to rotate through.
+
+Committed writes persist immediately, are picked up right away and take effect
+on the next (re)connect; an already-established connection is not interrupted.
+The status returned for a connection-config write differs between the protocol
+versions (see below), but in neither case is a reboot actually required.
+
+The in-use configuration is protected (B09.FR.21/22), which is why the workflow
+above prepares a spare slot first:
+
+- Writes targeting the currently *active* slot, or any slot listed in
+  ``NetworkConfigurationPriority``, are rejected with ``PriorityNetworkConf``.
+  Keep at least one slot out of the priority list so there is always a slot you
+  can rewrite.
+- A ``NetworkConfigurationPriority`` write naming a slot without a complete
+  profile is rejected with ``InvalidNetworkConf``, as is a change that would
+  make a slot's URL scheme inconsistent with its security profile (``ws://``
+  needs profile < 2, ``wss://`` needs >= 2).
+- Lowering a slot's ``SecurityProfile`` below the confirmed one is rejected
+  with ``NoSecurityDowngrade``.
+
+Because the active slot is always protected, credentials for the running
+connection cannot be rotated per slot. Write the ``SecurityCtrlr`` globals
+instead: a committed write to ``SecurityCtrlr``/``Identity`` or
+``SecurityCtrlr``/``BasicAuthPassword`` clears the corresponding per-slot
+override on the active slot (B09.FR.26/27), so the new global value is what the
+next connection attempt uses - even when a legacy migration had populated the
+per-slot value. ``BasicAuthPassword`` is write-only; reads do not return it.
+
+``set_variables`` on this API may write ReadOnly variables: it is a trusted
+local integrator channel, and ReadOnly mutability models the CSMS-facing
+contract, not this API (the protection above still applies regardless of
+mutability). Some cells are nevertheless stack-owned runtime state, written on
+every successful connect; writing them here desyncs the device model from the
+connection logic. Do not write:
+
+- ``OCPPCommCtrlr``/``ActiveNetworkProfile`` - reports which slot is in use;
+  a manual write is corrected only on the next successful connect.
+- ``SecurityCtrlr``/``SecurityProfile`` - the *confirmed* security profile,
+  raised after a successful connect and used to permanently prune slots below
+  it from the failover list; raising it by hand can leave no attemptable slot.
+- ``NetworkConfiguration``/``OcppVersion`` - written back with the negotiated
+  version on 2.x connects; a value other than ``"OCPP16"`` removes the slot
+  from the usable set in OCPP 1.6 mode.
+
+Where the protocol versions differ
+""""""""""""""""""""""""""""""""""
+
+- **Status of a committed write.** OCPP 1.6 answers connection-config writes
+  with ``RebootRequired``, OCPP 2.x with ``Accepted``. The persisted value and
+  the moment it takes effect are the same.
+- **Priority changes.** In OCPP 1.6 a ``NetworkConfigurationPriority`` write is
+  picked up immediately and is effective on the next (re)connect. In OCPP 2.x
+  it is persisted but only taken into account after a reboot; plan one when
+  switching slots this way.
+- **Unusable slots.** OCPP 1.6 additionally ignores slots whose ``OcppVersion``
+  names another version, and falls back to the legacy single-profile settings
+  when the *active* slot is filtered out or incomplete; OCPP 2.x uses every
+  listed slot and simply skips incomplete ones. See
+  :ref:`Network connection profiles (OCPP 1.6) <handwritten_ocppmulti_network-profiles-ocpp16>`
+  for the details.
+- **Deprecated key-only writes.** Only in OCPP 1.6 mode, the legacy
+  ``SecurityProfile`` and ``AuthorizationKey`` keys can still be written
+  (empty component name); they act on the active slot and bypass the validation
+  above, and the profile used for **configure_network** and for
+  security-profile pruning keeps its previous contents until a canonical write,
+  a security-profile switch or a restart. ``SecurityProfile`` is not a quiet
+  write either: it triggers the 1.6 security-profile switch, which reconnects
+  immediately and falls back to the previous profile if the new one does not
+  connect within ``SwitchSecurityProfileConnectionTimeout``.
+  ``CentralSystemURI`` is *not* writable this way; it is read-only in the key
+  path, so the canonical ``NetworkConfiguration`` addressing is the only way to
+  change a CSMS URL.
 
 Monitoring configuration changes
---------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ``monitor_variables`` with canonical addresses; changes are published on
 ``event_data`` with the same ``component_variable`` used at registration:
@@ -639,6 +940,8 @@ Monitoring configuration changes
 
 Legacy-form registrations (empty component name) receive legacy-shaped events.
 Registrations are additive across calls.
+
+.. _handwritten_ocppmulti_migration-from-ocpp16-key-addressing:
 
 Migration from OCPP 1.6 key addressing
 ======================================
@@ -659,7 +962,7 @@ to canonical addressing. Requests with a non-empty component name are never
 reinterpreted as configuration keys.
 
 Behavioral difference to the legacy OCPP module
------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The legacy ``OCPP`` module ignores ``component.name`` entirely and always
 treats ``variable.name`` as a configuration key. OCPPmulti resolves the

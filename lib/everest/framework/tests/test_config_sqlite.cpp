@@ -7,15 +7,10 @@
 #include <everest/database/sqlite/connection.hpp>
 #include <everest/utils/yaml_loader.hpp>
 #include <tests/helpers.hpp>
-#include <utils/config/settings.hpp>
+#include <utils/config/slot_manager.hpp>
 #include <utils/config/storage_sqlite.hpp>
 
 using namespace everest::config;
-
-Everest::ManagerSettings get_example_settings() {
-    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
-    return Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml");
-}
 
 ModuleConfigurations get_example_module_configs() {
     ModuleConfigurations module_configs;
@@ -27,10 +22,35 @@ ModuleConfigurations get_example_module_configs() {
     module_config.telemetry_config = TelemetryConfig(1);
 
     Fulfillment fulfillment;
-    fulfillment.module_id = "module_id1";
+    fulfillment.module_id = "example_module";
     fulfillment.implementation_id = "implementation_id1";
     fulfillment.requirement = {"requirement_id1", 0};
     module_config.connections.insert({"connection1", {fulfillment}});
+
+    // Two fulfillments of the same requirement, listed in an order that does not match how the
+    // database would sort them (module1 first, even though "example_module" < "module1"). The
+    // index is deliberately left at its default so the write path has to derive it from the
+    // position in this vector.
+    Fulfillment evse_manager_1;
+    evse_manager_1.module_id = "module1";
+    evse_manager_1.implementation_id = "evse";
+    evse_manager_1.requirement = {"evse_manager"};
+
+    Fulfillment evse_manager_2;
+    evse_manager_2.module_id = "example_module";
+    evse_manager_2.implementation_id = "evse";
+    evse_manager_2.requirement = {"evse_manager"};
+
+    module_config.connections.insert({"evse_manager", {evse_manager_1, evse_manager_2}});
+
+    // A second requirement sorting before "evse_manager", to catch an index that is not reset
+    // per requirement.
+    Fulfillment auth_fulfillment;
+    auth_fulfillment.module_id = "example_module";
+    auth_fulfillment.implementation_id = "main";
+    auth_fulfillment.requirement = {"auth"};
+
+    module_config.connections.insert({"auth", {auth_fulfillment}});
 
     Mapping module_mapping = {1};
     Mapping impl_mapping = {1, 1};
@@ -112,12 +132,11 @@ TEST_CASE("Database operations", "[db_operation]") {
     const auto migrations_dir = bin_dir + "migrations";
     everest::db::sqlite::Connection c("file::memory:?cache=shared");
     c.open_connection(); // keep at least one connection to keep the in-memory database alive
-    SqliteStorage storage("file::memory:?cache=shared", migrations_dir);
 
-    SECTION("Empty settings can not be retrieved") {
-        auto response = storage.get_settings();
-        REQUIRE(response.status == GenericResponseStatus::Failed);
-    }
+    // Slot manager is used for slot lifecycle management
+    SqliteConfigSlotManager slot_mgr("file::memory:?cache=shared", migrations_dir);
+    // Storage is scoped to DEFAULT_CONFIG_ID for runtime data access
+    SqliteStorage storage("file::memory:?cache=shared", migrations_dir, SqliteStorage::DEFAULT_CONFIG_ID);
 
     SECTION("Empty module config can be retrieved") {
         auto response = storage.get_module_configs();
@@ -126,16 +145,41 @@ TEST_CASE("Database operations", "[db_operation]") {
     }
 
     const auto module_configs = get_example_module_configs();
-    const auto settings = get_example_settings();
 
-    // valid config and settings can be successfully written
+    // config slot must be written via slot manager first so the CONFIG row exists before module data is written
+    REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, "Test", std::nullopt, std::nullopt) ==
+            GenericResponseStatus::OK);
     REQUIRE(storage.write_module_configs(module_configs) == GenericResponseStatus::OK);
-    REQUIRE(storage.write_settings(settings) == GenericResponseStatus::OK);
 
     SECTION("Module configurations can be written and correctly retrieved") {
         auto response = storage.get_module_configs();
         REQUIRE(response.status == GenericResponseStatus::OK);
         REQUIRE(response.module_configs.size() == 2);
+    }
+    SECTION("Fulfillment order within a requirement survives the round trip") {
+        auto response = storage.get_module_config("example_module");
+        REQUIRE(response.status == GenericResponseStatus::OK);
+        REQUIRE(response.config.has_value());
+
+        const auto& connections = response.config.value().connections;
+
+        const auto evse_manager = connections.find("evse_manager");
+        REQUIRE(evse_manager != connections.end());
+        REQUIRE(evse_manager->second.size() == 2);
+
+        // as listed in the config, not sorted by module id
+        CHECK(evse_manager->second.at(0).module_id == "module1");
+        CHECK(evse_manager->second.at(1).module_id == "example_module");
+
+        // the index is the position within this requirement
+        CHECK(evse_manager->second.at(0).requirement.index == 0);
+        CHECK(evse_manager->second.at(1).requirement.index == 1);
+
+        // and it restarts for every requirement, rather than continuing across the module
+        const auto auth = connections.find("auth");
+        REQUIRE(auth != connections.end());
+        REQUIRE(auth->second.size() == 1);
+        CHECK(auth->second.at(0).requirement.index == 0);
     }
     SECTION("Configuration parameters can be retrieved") {
         auto response1 = storage.get_configuration_parameter({"example_module", "integer_param"});
@@ -172,11 +216,6 @@ TEST_CASE("Database operations", "[db_operation]") {
             storage.update_configuration_parameter({"module_that_does_not_exist", "param_that_does_not_exist"}, "20");
         REQUIRE(response == GetSetResponseStatus::NotFound);
     }
-    SECTION("Settings can be retrieved") {
-        auto response = storage.get_settings();
-        REQUIRE(response.status == GenericResponseStatus::OK);
-        REQUIRE(response.settings.has_value());
-    }
     SECTION("Unknown module config can not be retrieved") {
         auto response = storage.get_module_config("unknown_module_id");
         REQUIRE(response.status == GenericResponseStatus::Failed);
@@ -209,16 +248,146 @@ TEST_CASE("Database operations", "[db_operation]") {
         auto get_response = storage.get_configuration_parameter(id);
         REQUIRE(get_response.status == GetSetResponseStatus::Failed);
     }
-    SECTION("Config is not valid if not marked as valid") {
-        REQUIRE(storage.contains_valid_config() == false);
-        storage.mark_valid(false, "Test", std::nullopt);
-        REQUIRE(storage.contains_valid_config() == false);
+    SECTION("Slot can be deleted from the database") {
+        REQUIRE(slot_mgr.delete_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == GenericResponseStatus::OK);
     }
-    SECTION("Config is valid if marked as valid") {
-        storage.mark_valid(true, "Test", "Test");
-        REQUIRE(storage.contains_valid_config() == true);
+    SECTION("list_slots returns one entry after write_config_slot") {
+        auto slots = slot_mgr.list_slots();
+        REQUIRE(slots.size() == 1);
+        REQUIRE(slots.at(0).id == SqliteConfigSlotManager::DEFAULT_SLOT_ID);
     }
-    SECTION("Config can be wiped from the database") {
-        REQUIRE(storage.wipe() == GenericResponseStatus::OK);
+    SECTION("delete_slot removes the slot and its module data") {
+        REQUIRE(slot_mgr.delete_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == GenericResponseStatus::OK);
+        REQUIRE(slot_mgr.list_slots().empty());
+    }
+}
+
+TEST_CASE("Partial write failures roll back instead of committing", "[db_operation]") {
+    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+    const auto migrations_dir = bin_dir + "migrations";
+    everest::db::sqlite::Connection c("file::memory:?cache=shared");
+    c.open_connection(); // keep at least one connection to keep the in-memory database alive
+    SqliteConfigSlotManager slot_mgr("file::memory:?cache=shared", migrations_dir);
+    SqliteStorage storage("file::memory:?cache=shared", migrations_dir, SqliteStorage::DEFAULT_CONFIG_ID);
+
+    REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, "Test", std::nullopt, std::nullopt) ==
+            GenericResponseStatus::OK);
+    const auto module_configs = get_example_module_configs();
+
+    SECTION("write_module_configs commits nothing when a sub-write fails") {
+        // Make every configuration-parameter insert fail with a status error (not an
+        // exception), after module rows have already been written inside the transaction.
+        REQUIRE(c.execute_statement("CREATE TRIGGER sabotage_insert BEFORE INSERT ON CONFIGURATION "
+                                    "BEGIN SELECT RAISE(ABORT, 'sabotaged'); END;"));
+
+        REQUIRE(storage.write_module_configs(module_configs) == GenericResponseStatus::Failed);
+
+        REQUIRE(c.execute_statement("DROP TRIGGER sabotage_insert;"));
+        auto response = storage.get_module_configs();
+        REQUIRE(response.status == GenericResponseStatus::OK);
+        REQUIRE(response.module_configs.empty());
+    }
+
+    SECTION("replace_module_configs keeps the old config when deletion fails") {
+        REQUIRE(storage.write_module_configs(module_configs) == GenericResponseStatus::OK);
+
+        REQUIRE(c.execute_statement("CREATE TRIGGER sabotage_delete BEFORE DELETE ON CONFIGURATION "
+                                    "BEGIN SELECT RAISE(ABORT, 'sabotaged'); END;"));
+
+        REQUIRE(storage.replace_module_configs(module_configs) == GenericResponseStatus::Failed);
+
+        REQUIRE(c.execute_statement("DROP TRIGGER sabotage_delete;"));
+        auto response = storage.get_module_configs();
+        REQUIRE(response.status == GenericResponseStatus::OK);
+        REQUIRE(response.module_configs.size() == 2);
+        auto param = storage.get_configuration_parameter({"example_module", "integer_param"});
+        REQUIRE(param.status == GetSetResponseStatus::OK);
+    }
+
+    SECTION("replace_module_configs keeps the old config when a re-write fails") {
+        REQUIRE(storage.write_module_configs(module_configs) == GenericResponseStatus::OK);
+
+        // Deletion succeeds, but re-inserting the parameters fails: the delete must be
+        // rolled back together with the partial write, leaving the old config intact.
+        REQUIRE(c.execute_statement("CREATE TRIGGER sabotage_insert BEFORE INSERT ON CONFIGURATION "
+                                    "BEGIN SELECT RAISE(ABORT, 'sabotaged'); END;"));
+
+        REQUIRE(storage.replace_module_configs(module_configs) == GenericResponseStatus::Failed);
+
+        REQUIRE(c.execute_statement("DROP TRIGGER sabotage_insert;"));
+        auto param = storage.get_configuration_parameter({"example_module", "integer_param"});
+        REQUIRE(param.status == GetSetResponseStatus::OK);
+        REQUIRE(std::get<int>(param.configuration_parameter.value().value) == 10);
+    }
+}
+
+TEST_CASE("write_config_slot manages CONFIG identity row", "[db_operation]") {
+    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+    const auto migrations_dir = bin_dir + "migrations";
+    everest::db::sqlite::Connection c("file::memory:?cache=shared");
+    c.open_connection();
+    SqliteConfigSlotManager slot_mgr("file::memory:?cache=shared", migrations_dir);
+    SqliteStorage storage("file::memory:?cache=shared", migrations_dir, SqliteStorage::DEFAULT_CONFIG_ID);
+
+    REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, "dump", std::nullopt, std::nullopt) ==
+            GenericResponseStatus::OK);
+
+    SECTION("delete_slot allows re-initializing the slot via write_config_slot") {
+        slot_mgr.delete_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID);
+        REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, "dump", std::nullopt,
+                                           std::nullopt) == GenericResponseStatus::OK);
+        REQUIRE(slot_mgr.list_slots().size() == 1);
+    }
+}
+
+TEST_CASE("Next boot slot selection", "[db_operation]") {
+    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+    const auto migrations_dir = bin_dir + "migrations";
+    everest::db::sqlite::Connection c("file::memory:?cache=shared");
+    c.open_connection();
+    SqliteConfigSlotManager slot_mgr("file::memory:?cache=shared", migrations_dir);
+
+    constexpr int default_slot = SqliteConfigSlotManager::DEFAULT_SLOT_ID;
+
+    SECTION("defaults to DEFAULT_SLOT_ID before anything was selected explicitly") {
+        REQUIRE(slot_mgr.get_next_boot_slot_id() == default_slot);
+    }
+
+    SECTION("selecting a non-existing slot fails and leaves the selection untouched") {
+        REQUIRE(slot_mgr.set_next_boot_slot_id(42) == GenericResponseStatus::Failed);
+        REQUIRE(slot_mgr.get_next_boot_slot_id() == default_slot);
+    }
+
+    REQUIRE(slot_mgr.write_config_slot(default_slot, "dump", std::nullopt, std::nullopt) == GenericResponseStatus::OK);
+    const int second_slot = slot_mgr.next_slot_id();
+    REQUIRE(slot_mgr.write_config_slot(second_slot, "dump", std::nullopt, std::nullopt) == GenericResponseStatus::OK);
+
+    SECTION("the first selection is stored even though BOOT_CONFIG holds no row yet") {
+        REQUIRE(slot_mgr.set_next_boot_slot_id(second_slot) == GenericResponseStatus::OK);
+        REQUIRE(slot_mgr.get_next_boot_slot_id() == second_slot);
+    }
+
+    SECTION("a following selection replaces the previous one") {
+        REQUIRE(slot_mgr.set_next_boot_slot_id(second_slot) == GenericResponseStatus::OK);
+        REQUIRE(slot_mgr.set_next_boot_slot_id(default_slot) == GenericResponseStatus::OK);
+        REQUIRE(slot_mgr.get_next_boot_slot_id() == default_slot);
+    }
+
+    SECTION("the selected slot cannot be deleted, so the selection never dangles") {
+        REQUIRE(slot_mgr.set_next_boot_slot_id(second_slot) == GenericResponseStatus::OK);
+
+        REQUIRE(slot_mgr.delete_slot(second_slot) == GenericResponseStatus::Failed);
+        REQUIRE(slot_mgr.exists(second_slot));
+        REQUIRE(slot_mgr.get_next_boot_slot_id() == second_slot);
+
+        // unrelated slots are unaffected by the constraint
+        REQUIRE(slot_mgr.delete_slot(default_slot) == GenericResponseStatus::OK);
+
+        // once a different slot is selected, the previously protected one can be deleted
+        REQUIRE(slot_mgr.write_config_slot(default_slot, "dump", std::nullopt, std::nullopt) ==
+                GenericResponseStatus::OK);
+        REQUIRE(slot_mgr.set_next_boot_slot_id(default_slot) == GenericResponseStatus::OK);
+        REQUIRE(slot_mgr.delete_slot(second_slot) == GenericResponseStatus::OK);
+        REQUIRE_FALSE(slot_mgr.exists(second_slot));
     }
 }

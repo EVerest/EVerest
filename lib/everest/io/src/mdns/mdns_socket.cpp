@@ -24,26 +24,49 @@ namespace everest::lib::io::mdns {
 
 /////////////////////////////////////////////////
 
-bool mdns_socket::open(std::string const& interface) {
-    auto const mdns_port = 5353;
-    auto const* const mdns_ip = "224.0.0.251";
+bool mdns_socket::open(std::string const& interface, int family) {
+    // "family not available on this interface" is an expected condition with
+    // dual-stack discovery, so socket setup failures map to a false return.
+    int error = 0;
+    try {
+        if (family == AF_INET6) {
+            auto socket = socket::open_mdns_socket6(interface);
+            adopt(std::move(socket));
+            // the endpoint resolves the interface to sin6_scope_id, required
+            // to send to the link-scoped group
+            m_target = udp::endpoint(mdns_multicast_ipv6, mdns_port, interface);
+        } else {
+            auto socket = socket::open_mdns_socket(interface);
+            adopt(std::move(socket));
+            m_target = udp::endpoint(mdns_multicast_ipv4, mdns_port);
+        }
 
-    auto socket = socket::open_mdns_socket(interface);
-    m_owned_udp_fd = std::move(socket);
-
-    target.addr = inet_addr(mdns_ip);
-    target.port = htons(mdns_port);
-    target.family = AF_INET;
-
-    return socket::get_pending_error(m_owned_udp_fd) == 0;
+        // SO_ERROR is read-and-clear. The pending error is read once and kept, so a
+        // false return still carries the reason instead of a value already consumed.
+        error = socket::get_pending_error(get_fd());
+        if (error == 0) {
+            return true;
+        }
+    } catch (socket::socket_error const& e) {
+        error = e.error();
+    } catch (...) {
+        // An unusable interface fails the address lookup, which carries no errno.
+        // get_error() then falls through to probing an unassigned descriptor, which
+        // is nonzero, so the client still resets.
+    }
+    record_connect_failure(error);
+    return false;
 }
 
 bool mdns_socket::tx(PayloadT const& payload) {
-    return tx_impl(payload.buffer.data(), payload.size(), target);
+    return tx_impl(payload.buffer.data(), payload.size(), m_target);
 }
 
 bool mdns_socket::rx(PayloadT& payload) {
     ssize_t msg_size = 0;
+    // Note: rx_impl uses a sockaddr_in-sized peer buffer; on an AF_INET6 socket
+    // the peer address gets truncated while the payload stays intact. The peer
+    // udp_info is discarded here and must not be trusted for v6 mdns sockets.
     auto result = rx_impl(rx_buffer.data(), rx_buffer.size(), msg_size);
     if (result) {
         payload.set_message(rx_buffer.data(), msg_size);

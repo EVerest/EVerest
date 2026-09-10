@@ -48,6 +48,14 @@ characteristics, attributes, and monitors. Please see `the documentation for the
 
 To add a custom component, you can simply add another JSON configuration file for it, and it will automatically be applied and reported.
 
+The ``OCPP16LegacyCtrlr`` component (``standardized/OCPP16LegacyCtrlr.json``) is always required, also for pure OCPP 2.x
+operation. The device model is shared between all supported OCPP versions so that a station can switch between OCPP 1.6 and
+OCPP 2.x seamlessly, and this requires the full set of components for every version to be present. If the component is absent
+from **DeviceModelConfigPath** (for example in a directory copied from a release before this component existed), the module
+injects a built-in default schema for it automatically.
+``InternalCtrlr/NumberOfConnectors`` and ``InternalCtrlr/ChargePointId`` are no longer part of the device model; leftover entries
+in custom component configs are tolerated but not used.
+
 Configuring the OCPP2 version
 =============================
 
@@ -302,6 +310,18 @@ A **StatusNotification.req** with status **Faulted** will be set to faulted only
 This indicates that the EVSE is inoperative (not ready for energy transfer).
 
 In OCPP2 errors can be reported using the **NotifyEventRequest.req**. This message is used to report all other errros received.  
+
+NotifyEvent
+^^^^^^^^^^^
+
+The **eventData** property of the **NotifyEvent.req** carries the details of the reported error:
+
+* ``techCode`` is set to the MREC techCode if the EVerest error type has an MREC mapping, and to the EVerest error
+  type itself otherwise.
+* ``techInfo`` is set to the message of the EVerest error, truncated to 500 characters. If the error was raised
+  without a message, the description of the error type is sent instead.
+* ``actualValue`` is ``"true"`` when the error is raised and ``"false"`` when it is cleared. The ``cleared``
+  property is set accordingly.
 
 Current Limitation
 ^^^^^^^^^^^^^^^^^^

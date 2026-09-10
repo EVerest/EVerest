@@ -168,6 +168,27 @@ struct StatusInfoType {
     std::optional<std::string> additional_info;
 };
 
+enum class OperationalStatusEnumType {
+    Inoperative,
+    Operative,
+};
+
+enum class ChangeAvailabilityStatusEnumType {
+    Accepted,
+    Rejected,
+    Scheduled,
+};
+
+struct ChangeAvailabilityRequest {
+    OperationalStatusEnumType operational_status;
+    std::optional<EVSE> evse;
+};
+
+struct ChangeAvailabilityResponse {
+    ChangeAvailabilityStatusEnumType status;
+    std::optional<StatusInfoType> status_info;
+};
+
 struct BootNotificationResponse {
     RegistrationStatus status;
     std::string current_time;
@@ -265,6 +286,17 @@ struct Message {
     std::string message;
     MessageDirection direction;
     std::optional<std::string> version;
+};
+
+struct ConnectionStatus {
+    bool connected;
+    std::optional<std::string> csms_url;
+    std::optional<std::string> identity;
+    std::optional<int32_t> security_profile;
+    std::optional<int32_t> configuration_slot;
+    std::optional<std::string> ocpp_interface;
+    std::optional<std::string> ocpp_transport;
+    std::optional<std::string> ocpp_version;
 };
 
 } // namespace everest::lib::API::V1_0::types::ocpp

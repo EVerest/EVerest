@@ -33,5 +33,13 @@ vars:
   public_key_ocmf:
     description: The public key for OCMF
     type: string
+  capabilities:
+    description: >-
+      Capabilities of this power meter. Optional: meters without restrictions do
+      not need to publish this. If supported, publish at least once during start up
+      and on every change. Absence of this var or of individual fields means no
+      restriction.
+    type: object
+    $ref: /powermeter#/Capabilities
 errors:
   - reference: /errors/powermeter

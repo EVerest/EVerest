@@ -35,13 +35,20 @@ public:
     virtual void publish(const std::string& topic, const nlohmann::json& json) = 0;
 
     /// \brief publishes the given \p json on the given \p topic with the given \p qos
-    virtual void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false) = 0;
+    ///
+    /// A retained publish is remembered for clear_retained_topics() unless \p record_retained is false, which
+    /// is for retained topics that have to outlive the clear
+    virtual void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false,
+                         bool record_retained = true) = 0;
 
     /// \brief publishes the given \p data on the given \p topic with QOS level 0
     virtual void publish(const std::string& topic, const std::string& data) = 0;
 
     /// \brief publishes the given \p data on the given \p topic with the given \p qos
-    virtual void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false) = 0;
+    ///
+    /// \see publish(const std::string&, const nlohmann::json&, QOS, bool, bool) for \p record_retained.
+    virtual void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false,
+                         bool record_retained = true) = 0;
 
     /// \brief subscribes to the given \p topic with QOS level 0
     virtual void subscribe(const std::string& topic) = 0;

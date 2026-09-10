@@ -11,6 +11,7 @@
 #include "SessionLog.hpp"
 #include "Timeout.hpp"
 #include "energy_transfer_modes.hpp"
+#include "powermeter_limits.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "utils.hpp"
 
@@ -198,6 +199,7 @@ void EvseManager::init() {
     pnc_enabled = config.payment_enable_contract;
     central_contract_validation_allowed = config.central_contract_validation_allowed;
     contract_certificate_installation_enabled = config.contract_certificate_installation_enabled;
+    fake_dc_enabled = config.ac_with_soc;
 
     reserved = false;
     reservation_id = -1;
@@ -240,6 +242,14 @@ void EvseManager::init() {
         }
     }
 
+    if (config.charge_mode == "DC" and not r_powermeter_car_side.empty()) {
+        // The car side power meter may restrict the minimum current (e.g. it is only precise above a
+        // minimum current according to calibration law). Merged into the limits advertised to the EV
+        // via HLC; internal power supply control is unaffected.
+        r_powermeter_car_side[0]->subscribe_capabilities(
+            [this](const types::powermeter::Capabilities& caps) { update_powermeter_capabilities(caps); });
+    }
+
     r_bsp->subscribe_request_stop_transaction(
         [this](types::evse_manager::StopTransactionRequest r) { charger->cancel_transaction(r); });
 
@@ -249,6 +259,7 @@ void EvseManager::init() {
             hw_caps_handle.wait([this]() { return ready_for_capabilities.load(); });
             *hw_caps_handle = c;
         }
+        charger->set_supports_cp_state_E(c.supports_cp_state_E);
 
         if (ac_nr_phases_active == 0) {
             ac_nr_phases_active = c.max_phase_count_import;
@@ -360,7 +371,7 @@ void EvseManager::ready() {
             payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
         }
         r_hlc[0]->call_session_setup(payment_options, _contract_certificate_installation_enabled,
-                                     _central_contract_validation_allowed);
+                                     _central_contract_validation_allowed, fake_dc_enabled);
 
         r_hlc[0]->subscribe_hlc_session_failed([this](types::evse_manager::HlcSessionFailedReasonEnum reason) {
             types::evse_manager::HlcSessionFailedEvent ev;
@@ -371,6 +382,11 @@ void EvseManager::ready() {
 
         r_hlc[0]->subscribe_dlink_error([this] {
             session_log.evse(true, "D-LINK_ERROR.req");
+            // In case the fake DC unexpectedly disconnects due to a d-link error, we'll need to switch
+            // back to AC basic mode.
+            if (fake_dc_enabled and config.ac_with_soc) {
+                setup_AC_mode(false);
+            }
             // Inform charger
             charger->dlink_error();
             // Inform SLAC layer, it will leave the logical network
@@ -543,7 +559,9 @@ void EvseManager::ready() {
             }
 
             const auto caps = get_powersupply_capabilities();
-            update_powersupply_capabilities(caps);
+            // Push directly: update_powersupply_capabilities() would store an active derate as
+            // raw PSU capabilities.
+            push_powersupply_capabilities_to_hlc();
 
             if (caps.bidirectional) {
                 if (connector_type.has_value() and
@@ -1182,31 +1200,34 @@ void EvseManager::ready() {
             powermeter_cv.notify_one();
 
             // External Nodered interface
-            if (p.phase_seq_error) {
-                mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/phaseSeqError", config.connector_id),
-                             p.phase_seq_error.value());
+            if (config.enable_nodered_interface) {
+                if (p.phase_seq_error) {
+                    mqtt.publish(
+                        fmt::format("everest_external/nodered/{}/powermeter/phaseSeqError", config.connector_id),
+                        p.phase_seq_error.value());
+                }
+
+                mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/time_stamp", config.connector_id),
+                             p.timestamp);
+
+                if (p.power_W) {
+                    mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/totalKw", config.connector_id),
+                                 p.power_W.value().total / 1000., 1);
+                }
+
+                mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/totalKWattHr", config.connector_id),
+                             p.energy_Wh_import.total / 1000.);
+
+                if (p.energy_Wh_export.has_value()) {
+                    mqtt.publish(
+                        fmt::format("everest_external/nodered/{}/powermeter/totalExportKWattHr", config.connector_id),
+                        p.energy_Wh_export.value().total / 1000.);
+                }
+
+                json j;
+                to_json(j, p);
+                mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter_json", config.connector_id), j.dump());
             }
-
-            mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/time_stamp", config.connector_id),
-                         p.timestamp);
-
-            if (p.power_W) {
-                mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/totalKw", config.connector_id),
-                             p.power_W.value().total / 1000., 1);
-            }
-
-            mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter/totalKWattHr", config.connector_id),
-                         p.energy_Wh_import.total / 1000.);
-
-            if (p.energy_Wh_export.has_value()) {
-                mqtt.publish(
-                    fmt::format("everest_external/nodered/{}/powermeter/totalExportKWattHr", config.connector_id),
-                    p.energy_Wh_export.value().total / 1000.);
-            }
-
-            json j;
-            to_json(j, p);
-            mqtt.publish(fmt::format("everest_external/nodered/{}/powermeter_json", config.connector_id), j.dump());
             // /External Nodered interface
         });
     }
@@ -1217,9 +1238,14 @@ void EvseManager::ready() {
             // Notify charger whether matching was started (or is done) or not
             if (s == types::slac::State::UNMATCHED) {
                 charger->set_matching_started(false);
+                charger->set_slac_matched(false);
                 slac_unmatched = true;
+            } else if (s == types::slac::State::MATCHED) {
+                charger->set_slac_matched(true);
+                slac_unmatched = false;
             } else {
                 charger->set_matching_started(true);
+                charger->set_slac_matched(false);
                 slac_unmatched = false;
             }
         });
@@ -1305,7 +1331,7 @@ void EvseManager::ready() {
             payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
         }
         r_hlc[0]->call_session_setup(payment_options, _contract_certificate_installation_enabled,
-                                     _central_contract_validation_allowed);
+                                     _central_contract_validation_allowed, fake_dc_enabled);
     });
 
     charger->signal_session_started_event.connect(
@@ -1341,7 +1367,7 @@ void EvseManager::ready() {
                 }
             }
             r_hlc[0]->call_session_setup(payment_options, _contract_certificate_installation_enabled,
-                                         _central_contract_validation_allowed);
+                                         _central_contract_validation_allowed, fake_dc_enabled);
         });
 
     invoke_ready(*p_evse);
@@ -1352,15 +1378,15 @@ void EvseManager::ready() {
     if (config.ac_with_soc) {
         setup_fake_DC_mode();
     } else {
-        charger->setup(config.has_ventilation,
-                       (config.charge_mode == "DC" ? Charger::ChargeMode::DC : Charger::ChargeMode::AC), hlc_enabled,
-                       config.ac_hlc_use_5percent, config.ac_enforce_hlc, false,
-                       config.soft_over_current_tolerance_percent, config.soft_over_current_measurement_noise_A,
-                       config.switch_3ph1ph_delay_s, config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms,
-                       config.state_F_after_fault_ms, config.fail_on_powermeter_errors, config.raise_mrec9,
-                       config.sleep_before_enabling_pwm_hlc_mode_ms,
-                       utils::get_session_id_type_from_string(config.session_id_type),
-                       config.hlc_charge_loop_without_energy_timeout_s);
+        charger->setup(
+            config.has_ventilation, (config.charge_mode == "DC" ? Charger::ChargeMode::DC : Charger::ChargeMode::AC),
+            hlc_enabled, config.ac_hlc_use_5percent, config.ac_enforce_hlc, false,
+            config.soft_over_current_tolerance_percent, config.soft_over_current_measurement_noise_A,
+            config.switch_3ph1ph_delay_s, config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms,
+            config.state_F_after_fault_ms, config.reinit_duration_ms, config.reinit_method,
+            config.fail_on_powermeter_errors, config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms,
+            utils::get_session_id_type_from_string(config.session_id_type),
+            config.hlc_charge_loop_without_energy_timeout_s);
     }
 
     telemetryThreadHandle = std::thread([this]() {
@@ -1537,17 +1563,20 @@ void EvseManager::switch_DC_mode() {
 }
 
 void EvseManager::switch_AC_mode() {
-    setup_AC_mode();
+    setup_AC_mode(false);
+    charger->start_reinit();
 }
 
 // This sets up a fake DC mode that is just supposed to work until we get the SoC.
 // It is only used for AC<>DC<>AC<>DC mode to get AC charging with SoC.
 void EvseManager::setup_fake_DC_mode() {
+    fake_dc_enabled = true;
     charger->setup(config.has_ventilation, Charger::ChargeMode::DC, hlc_enabled, config.ac_hlc_use_5percent,
                    config.ac_enforce_hlc, false, config.soft_over_current_tolerance_percent,
                    config.soft_over_current_measurement_noise_A, config.switch_3ph1ph_delay_s,
                    config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms, config.state_F_after_fault_ms,
-                   config.fail_on_powermeter_errors, config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms,
+                   config.reinit_duration_ms, config.reinit_method, config.fail_on_powermeter_errors,
+                   config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms,
                    utils::get_session_id_type_from_string(config.session_id_type),
                    config.hlc_charge_loop_without_energy_timeout_s);
 
@@ -1556,10 +1585,8 @@ void EvseManager::setup_fake_DC_mode() {
     // Set up energy transfer modes for HLC. For now we only support either DC or AC, not both at the same time.
     std::vector<types::iso15118::EnergyTransferMode> transfer_modes;
 
-    transfer_modes.push_back(types::iso15118::EnergyTransferMode::DC_core);
     transfer_modes.push_back(types::iso15118::EnergyTransferMode::DC_extended);
-    transfer_modes.push_back(types::iso15118::EnergyTransferMode::DC_combo_core);
-    transfer_modes.push_back(types::iso15118::EnergyTransferMode::DC_unique);
+    transfer_modes.push_back(types::iso15118::EnergyTransferMode::DC_core);
 
     types::iso15118::DcEvsePresentVoltageCurrent present_values;
     present_values.evse_present_voltage = 400; // FIXME: set a correct values
@@ -1576,6 +1603,7 @@ void EvseManager::setup_fake_DC_mode() {
     types::iso15118::DcEvseMinimumLimits evse_min_limits;
     evse_min_limits.evse_minimum_current_limit = 0;
     evse_min_limits.evse_minimum_voltage_limit = 0;
+    evse_min_limits.evse_minimum_power_limit = 0;
     r_hlc[0]->call_update_dc_minimum_limits(evse_min_limits);
 
     constexpr auto sae_mode = types::iso15118::SaeJ2847BidiMode::None;
@@ -1585,12 +1613,14 @@ void EvseManager::setup_fake_DC_mode() {
     this->publish_and_update_supported_energy_transfers();
 }
 
-void EvseManager::setup_AC_mode() {
-    charger->setup(config.has_ventilation, Charger::ChargeMode::AC, hlc_enabled, config.ac_hlc_use_5percent,
+void EvseManager::setup_AC_mode(bool ac_hlc_enabled) {
+    fake_dc_enabled = false;
+    charger->setup(config.has_ventilation, Charger::ChargeMode::AC, ac_hlc_enabled, config.ac_hlc_use_5percent,
                    config.ac_enforce_hlc, true, config.soft_over_current_tolerance_percent,
                    config.soft_over_current_measurement_noise_A, config.switch_3ph1ph_delay_s,
                    config.switch_3ph1ph_cp_state, config.soft_over_current_timeout_ms, config.state_F_after_fault_ms,
-                   config.fail_on_powermeter_errors, config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms,
+                   config.reinit_duration_ms, config.reinit_method, config.fail_on_powermeter_errors,
+                   config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms,
                    utils::get_session_id_type_from_string(config.session_id_type),
                    config.hlc_charge_loop_without_energy_timeout_s);
 
@@ -1609,10 +1639,12 @@ void EvseManager::setup_AC_mode() {
 
     constexpr auto sae_mode = types::iso15118::SaeJ2847BidiMode::None;
 
-    if (hlc_enabled) {
+    if (ac_hlc_enabled) {
         r_hlc[0]->call_setup(evseid, sae_mode, config.session_logging);
         this->update_supported_energy_transfers(transfer_modes);
         this->publish_and_update_supported_energy_transfers();
+    } else {
+        selected_protocol = "IEC61851-1";
     }
 }
 
@@ -2539,17 +2571,26 @@ void EvseManager::fail_cable_check(const std::string& reason) {
         r_hlc[0]->call_cable_check_finished(false);
     }
     // Raising a cable check fault should not happen if:
-    // - a cancel_transaction (DeAuthorized) is triggered during cable check
+    // - the transaction was stopped on request (DeAuthorized, or a regular local/remote stop)
+    //   during cable check: this is a regular termination, not a fault
     // - the car has already been unplugged (Idle/Finished), which prevents a race condition
     //   where the detached cable check thread raises an error after clear_errors_on_unplug()
     //   has already run, leaving the charger permanently inoperative (see GitHub issue #1392)
     const auto current_state = charger->get_current_state();
     const auto last_stop_transaction_reason = charger->get_last_stop_transaction_reason();
+    const bool stop_requested =
+        last_stop_transaction_reason.has_value() and
+        (last_stop_transaction_reason.value() == types::evse_manager::StopTransactionReason::DeAuthorized or
+         last_stop_transaction_reason.value() == types::evse_manager::StopTransactionReason::Local or
+         last_stop_transaction_reason.value() == types::evse_manager::StopTransactionReason::Remote or
+         last_stop_transaction_reason.value() == types::evse_manager::StopTransactionReason::EVSEDisabled);
     if (current_state == Charger::EvseState::Idle || current_state == Charger::EvseState::Finished) {
         EVLOG_info << "Cable check failed due to: " << reason
                    << ", but session already ended (car unplugged). Not raising cable check fault error.";
-    } else if (not last_stop_transaction_reason.has_value() or
-               last_stop_transaction_reason.value() != types::evse_manager::StopTransactionReason::DeAuthorized) {
+    } else if (stop_requested) {
+        EVLOG_info << "Cable check failed due to: " << reason
+                   << ", but transaction was stopped on request. Not raising cable check fault error.";
+    } else {
         // Raising the cable check error also causes the HLC stack to get notified
         this->error_handling->raise_cable_check_fault(reason);
     }
@@ -2678,18 +2719,22 @@ bool EvseManager::session_is_iso_d20_dc_bpt() {
 
 types::power_supply_DC::Capabilities EvseManager::get_powersupply_capabilities() {
     types::power_supply_DC::Capabilities caps;
-    types::dc_external_derate::ExternalDerating derate;
 
     {
         std::scoped_lock lock(powersupply_capabilities_mutex);
         caps = powersupply_capabilities;
     }
+
+    return apply_external_derating(std::move(caps));
+}
+
+types::power_supply_DC::Capabilities EvseManager::apply_external_derating(types::power_supply_DC::Capabilities caps) {
+    types::dc_external_derate::ExternalDerating derate;
     {
         std::scoped_lock lock(dc_external_derate_mutex);
         derate = get_dc_external_derate(this->ev_info.present_voltage, dc_external_derate);
     }
 
-    // Apply external derating if set
     caps.max_export_current_A = min_optional(caps.max_export_current_A, derate.max_export_current_A);
     caps.max_import_current_A = min_optional(caps.max_import_current_A, derate.max_import_current_A);
     caps.max_export_power_W = min_optional(caps.max_export_power_W, derate.max_export_power_W);
@@ -2698,9 +2743,98 @@ types::power_supply_DC::Capabilities EvseManager::get_powersupply_capabilities()
     return caps;
 }
 
+types::power_supply_DC::Capabilities EvseManager::get_powersupply_capabilities_for_hlc() {
+    return apply_powermeter_limits(get_powersupply_capabilities());
+}
+
+types::power_supply_DC::Capabilities EvseManager::apply_powermeter_limits(types::power_supply_DC::Capabilities caps,
+                                                                          bool log_warnings) {
+    std::optional<types::powermeter::Capabilities> meter;
+    {
+        std::scoped_lock lock(powermeter_capabilities_mutex);
+        meter = powermeter_capabilities;
+    }
+
+    return module::apply_powermeter_limits(std::move(caps), meter, log_warnings);
+}
+
+void EvseManager::update_powersupply_capabilities(types::power_supply_DC::Capabilities caps) {
+    {
+        std::scoped_lock lock(powersupply_capabilities_mutex);
+        if (powersupply_capabilities == caps and last_hlc_capabilities.has_value()) {
+            // unchanged and already pushed at least once
+            return;
+        }
+        powersupply_capabilities = caps;
+    }
+    push_powersupply_capabilities_to_hlc();
+}
+
+void EvseManager::update_powermeter_capabilities(const types::powermeter::Capabilities& caps) {
+    {
+        std::scoped_lock lock(powermeter_capabilities_mutex);
+        if (powermeter_capabilities.has_value() and powermeter_capabilities.value() == caps) {
+            return;
+        }
+        powermeter_capabilities = caps;
+    }
+
+    session_log.evse(
+        false, fmt::format("Received power meter capabilities: min_import_current_A (charging): {}, "
+                           "min_export_current_A (discharging): {}",
+                           caps.min_import_current_A.has_value() ? std::to_string(*caps.min_import_current_A) : "N/A",
+                           caps.min_export_current_A.has_value() ? std::to_string(*caps.min_export_current_A) : "N/A"));
+
+    if (hlc_enabled and config.charge_mode == "DC") {
+        push_powersupply_capabilities_to_hlc();
+    }
+}
+
+void EvseManager::push_powersupply_capabilities_to_hlc() {
+    // Hold the lock across merge and send so concurrent pushes cannot reach HLC out of order.
+    // Derating is applied before the power meter limits so that a meter minimum above a derated
+    // maximum is clamped consistently with the enforce_limits path.
+    std::scoped_lock lock(powersupply_capabilities_mutex);
+    const auto caps = apply_powermeter_limits(apply_external_derating(powersupply_capabilities), true);
+
+    if (not last_hlc_capabilities.has_value() or caps != last_hlc_capabilities.value()) {
+        r_hlc[0]->call_set_powersupply_capabilities(caps);
+    }
+    last_hlc_capabilities = caps;
+
+    // Inform HLC layer about update of physical values
+    types::iso15118::SetupPhysicalValues setup_physical_values;
+    setup_physical_values.dc_current_regulation_tolerance = caps.current_regulation_tolerance_A;
+    setup_physical_values.dc_peak_current_ripple = caps.peak_current_ripple_A;
+    setup_physical_values.dc_energy_to_be_delivered = 10000;
+    r_hlc[0]->call_set_charging_parameters(setup_physical_values);
+
+    types::iso15118::DcEvseMinimumLimits evse_min_limits;
+    evse_min_limits.evse_minimum_current_limit = caps.min_export_current_A;
+    evse_min_limits.evse_minimum_voltage_limit = caps.min_export_voltage_V;
+    evse_min_limits.evse_minimum_power_limit =
+        evse_min_limits.evse_minimum_current_limit * evse_min_limits.evse_minimum_voltage_limit;
+    r_hlc[0]->call_update_dc_minimum_limits(evse_min_limits);
+
+    // HLC layer will also get new maximum current/voltage/watt limits etc, but those will need to run through
+    // energy management first. Those limits will be applied in energy_grid implementation when requesting
+    // energy, so it is enough to set the powersupply_capabilities here.
+    // FIXME: this is not implemented yet: enforce_limits uses the enforced limits to tell HLC, but capabilities
+    // limits are not yet included in request.
+}
+
 void EvseManager::set_external_derating(types::dc_external_derate::ExternalDerating d) {
-    std::scoped_lock lock(dc_external_derate_mutex);
-    dc_external_derate = d;
+    {
+        std::scoped_lock lock(dc_external_derate_mutex);
+        if (dc_external_derate == d) {
+            return;
+        }
+        dc_external_derate = d;
+    }
+
+    if (hlc_enabled and config.charge_mode == "DC") {
+        push_powersupply_capabilities_to_hlc();
+    }
 }
 
 } // namespace module

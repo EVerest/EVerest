@@ -32,7 +32,7 @@ auto display_messageImpl::generic_request_reply(T const& default_value, ReqT con
     if (!result) {
         return default_value;
     }
-    return result.value();
+    return std::move(*result);
 }
 
 types::display_message::SetDisplayMessageResponse

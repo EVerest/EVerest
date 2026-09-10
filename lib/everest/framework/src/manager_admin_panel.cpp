@@ -32,26 +32,26 @@ const int CONTROLLER_IPC_READ_TIMEOUT_MS = 50;
 
 #ifdef ENABLE_ADMIN_PANEL
 struct ControllerHandle {
-    ControllerHandle(pid_t pid, int socket_fd) : pid(pid), socket_fd(socket_fd) {
+    ControllerHandle(pid_t pid, int socket_fd) : pid(pid), m_socket_fd(socket_fd) {
         controller_ipc::set_read_timeout(socket_fd, CONTROLLER_IPC_READ_TIMEOUT_MS);
     }
 
     void send_message(const nlohmann::json& msg) {
-        controller_ipc::send_message(socket_fd, msg);
+        controller_ipc::send_message(m_socket_fd, msg);
     }
 
     controller_ipc::Message receive_message() {
-        return controller_ipc::receive_message(socket_fd);
+        return controller_ipc::receive_message(m_socket_fd);
     }
 
     int fd() const {
-        return socket_fd;
+        return m_socket_fd;
     }
 
     const pid_t pid;
 
 private:
-    const int socket_fd;
+    const int m_socket_fd;
 };
 
 struct ManagerAdminPanel::Impl {
@@ -115,7 +115,7 @@ struct ManagerAdminPanel::Impl {
     ControllerHandle handle;
 };
 
-ManagerAdminPanel::ManagerAdminPanel(std::unique_ptr<Impl> impl_) : impl(std::move(impl_)) {
+ManagerAdminPanel::ManagerAdminPanel(std::unique_ptr<Impl> impl) : m_impl(std::move(impl)) {
 }
 #endif
 
@@ -137,10 +137,10 @@ ManagerAdminPanel ManagerAdminPanel::create(const ManagerSettings& ms) {
 
 void ManagerAdminPanel::throw_if_controller_exited(pid_t pid) const {
 #ifdef ENABLE_ADMIN_PANEL
-    if (not impl) {
+    if (not m_impl) {
         throw std::runtime_error("ManagerAdminPanel is not initialized.");
     }
-    if (pid == impl->handle.pid) {
+    if (pid == m_impl->handle.pid) {
         throw std::runtime_error("The controller process exited.");
     }
 #else
@@ -150,10 +150,10 @@ void ManagerAdminPanel::throw_if_controller_exited(pid_t pid) const {
 
 bool ManagerAdminPanel::is_controller_process(pid_t pid) const {
 #ifdef ENABLE_ADMIN_PANEL
-    if (not impl) {
+    if (not m_impl) {
         return false;
     }
-    return pid == impl->handle.pid;
+    return pid == m_impl->handle.pid;
 #else
     static_cast<void>(pid);
     return false;
@@ -162,11 +162,12 @@ bool ManagerAdminPanel::is_controller_process(pid_t pid) const {
 
 void ManagerAdminPanel::shutdown_controller() const {
 #ifdef ENABLE_ADMIN_PANEL
-    if (not impl) {
+    if (not m_impl) {
         return;
     }
-    if (kill(impl->handle.pid, SIGTERM) != 0 && errno != ESRCH) {
-        EVLOG_warning << fmt::format("Failed to SIGTERM controller process {} ({})", impl->handle.pid, strerror(errno));
+    if (kill(m_impl->handle.pid, SIGTERM) != 0 && errno != ESRCH) {
+        EVLOG_warning << fmt::format("Failed to SIGTERM controller process {} ({})", m_impl->handle.pid,
+                                     strerror(errno));
     }
 #endif
 }
@@ -174,10 +175,10 @@ void ManagerAdminPanel::shutdown_controller() const {
 std::optional<int> ManagerAdminPanel::poll_controller_ipc(bool& restart_modules, bool& modules_started,
                                                           const std::string& prefix_opt) {
 #ifdef ENABLE_ADMIN_PANEL
-    if (not impl) {
+    if (not m_impl) {
         return EXIT_FAILURE;
     }
-    const auto msg = impl->handle.receive_message();
+    const auto msg = m_impl->handle.receive_message();
     if (msg.status == controller_ipc::MESSAGE_RETURN_STATUS::OK) {
         const auto& payload = msg.json;
         if (payload.at("method") == "restart_modules") {
@@ -192,9 +193,9 @@ std::optional<int> ManagerAdminPanel::poll_controller_ipc(bool& restart_modules,
             try {
                 auto cfg = ManagerConfig(ManagerSettings(prefix_opt, check_config_file_path));
                 static_cast<void>(cfg);
-                impl->handle.send_message({{"id", payload.at("id")}, {"result", {{"ok", true}}}});
+                m_impl->handle.send_message({{"id", payload.at("id")}, {"result", {{"ok", true}}}});
             } catch (const std::exception& e) {
-                impl->handle.send_message({{"result", e.what()}, {"id", payload.at("id")}});
+                m_impl->handle.send_message({{"result", e.what()}, {"id", payload.at("id")}});
             }
         } else {
             EVLOG_error << fmt::format("Received unknown command via controller ipc:\n{}\n... ignoring",
@@ -215,10 +216,10 @@ std::optional<int> ManagerAdminPanel::poll_controller_ipc(bool& restart_modules,
 
 std::optional<int> ManagerAdminPanel::controller_ipc_fd() const {
 #ifdef ENABLE_ADMIN_PANEL
-    if (not impl) {
+    if (not m_impl) {
         return std::nullopt;
     }
-    return impl->handle.fd();
+    return m_impl->handle.fd();
 #else
     return std::nullopt;
 #endif

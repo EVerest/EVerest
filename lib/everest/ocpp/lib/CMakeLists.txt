@@ -228,7 +228,7 @@ target_link_libraries(ocpp
     PRIVATE
         OpenSSL::SSL
         OpenSSL::Crypto
-        SQLite::SQLite3
+        SQLite3::SQLite3
         Threads::Threads
         nlohmann_json::nlohmann_json
         ryml::ryml

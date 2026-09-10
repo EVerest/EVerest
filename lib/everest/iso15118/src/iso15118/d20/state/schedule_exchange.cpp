@@ -108,7 +108,7 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
 }
 
 void ScheduleExchange::enter() {
-    m_ctx.log.enter_state("ScheduleExchange");
+    logf_debug("Enter state: ScheduleExchange");
 }
 
 Result ScheduleExchange::feed(Event ev) {
@@ -201,8 +201,8 @@ Result ScheduleExchange::feed(Event ev) {
         if (m_ctx.session.is_dc_charger()) {
             return m_ctx.create_state<DC_CableCheck>();
         }
-        m_ctx.log("expected selected_energy_service AC, AC_BPT, DC, DC_BPT! But code type id: %d",
-                  static_cast<int>(selected_energy_service));
+        logf_warning("Expected selected_energy_service AC, AC_BPT, DC, DC_BPT! But code type id: %d",
+                     static_cast<int>(selected_energy_service));
 
         m_ctx.session_stopped = true;
         return {};
@@ -215,7 +215,7 @@ Result ScheduleExchange::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("expected ScheduleExchangeReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected ScheduleExchangeReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

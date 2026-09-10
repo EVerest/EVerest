@@ -129,6 +129,9 @@ public:
     bool getVerifyCsmsAllowWildcards() override;
     void setVerifyCsmsAllowWildcards(bool verify_csms_allow_wildcards) override;
     KeyValue getVerifyCsmsAllowWildcardsKeyValue() override;
+    bool getReportSuspendedEVSEReasonChange() override;
+    void setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) override;
+    KeyValue getReportSuspendedEVSEReasonChangeKeyValue() override;
     bool getUseTPM() override;
     KeyValue getUseTPMKeyValue() override;
     bool getUseTPMSeccLeafCertificate() override;
@@ -177,6 +180,9 @@ public:
 
     std::optional<bool> getQueueAllMessages() override;
     std::optional<KeyValue> getQueueAllMessagesKeyValue() override;
+
+    std::optional<bool> getReportClearedErrors() override;
+    std::optional<KeyValue> getReportClearedErrorsKeyValue() override;
 
     std::optional<std::string> getMessageTypesDiscardForQueueing() override;
     std::optional<KeyValue> getMessageTypesDiscardForQueueingKeyValue() override;

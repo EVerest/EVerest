@@ -45,6 +45,9 @@ constexpr const std::string_view cost_and_price_feature{"CostAndPrice"};
 constexpr const std::string_view custom_feature{"Custom"};
 constexpr const std::string_view pnc_feature{"PnC"};
 
+// Matches the shipped OCPPCommCtrlr.NetworkProfileConnectionAttempts component-config default.
+constexpr std::int32_t default_network_profile_connection_attempts{3};
+
 constexpr v16::ConfigurationStatus convert(SetResult res) {
     switch (res) {
     case SetResult::Accepted:
@@ -555,6 +558,11 @@ ChargePointConfigurationDeviceModel::setInternalRemoteStartTransactionWithoutCon
         return SetResult::Rejected;
     }
     return set_value_check(*storage, keys::valid_keys::RemoteStartTransactionWithoutConnectorIdFindFirst, value);
+}
+
+ChargePointConfigurationDeviceModel::SetResult
+ChargePointConfigurationDeviceModel::setInternalReportSuspendedEVSEReasonChange(const std::string& value) {
+    return set_value(isBool, *storage, keys::valid_keys::ReportSuspendedEVSEReasonChange, value);
 }
 
 ChargePointConfigurationDeviceModel::SetResult
@@ -1596,6 +1604,201 @@ std::string ChargePointConfigurationDeviceModel::getCentralSystemURI() {
     return get_value<std::string>(*storage, cv, v2::AttributeEnum::Actual);
 }
 
+// ----------------------------------------------------------------------------
+// Connectivity: device-model-backed multi-slot network profiles
+
+bool ChargePointConfigurationDeviceModel::is_slot_usable_for_ocpp16(int32_t slot) {
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const auto ocpp_version = get_optional<std::string>(*storage, NC::get_component_variable(slot, NC::OcppVersion),
+                                                        v2::AttributeEnum::Actual);
+    // Unset/empty means no protocol restriction; a slot pinned to any other version is not usable for 1.6.
+    return !ocpp_version.has_value() || ocpp_version->empty() || *ocpp_version == "OCPP16";
+}
+
+std::int32_t ChargePointConfigurationDeviceModel::getNetworkProfileConnectionAttempts() {
+    const auto attempts = get_optional<std::int32_t>(*storage, "OCPPCommCtrlr", "NetworkProfileConnectionAttempts",
+                                                     v2::AttributeEnum::Actual);
+    if (!attempts.has_value()) {
+        // -1 (retry forever) would silently disable websocket-failure-driven slot failover.
+        EVLOG_warning << "OCPPCommCtrlr.NetworkProfileConnectionAttempts is not set in the device model; defaulting "
+                      << "to " << default_network_profile_connection_attempts << " attempts per slot";
+        return default_network_profile_connection_attempts;
+    }
+    return attempts.value();
+}
+
+std::optional<int32_t> ChargePointConfigurationDeviceModel::get_network_config_timeout() {
+    return get_optional<std::int32_t>(*storage, "InternalCtrlr", "NetworkConfigTimeout", v2::AttributeEnum::Actual);
+}
+
+std::string ChargePointConfigurationDeviceModel::get_network_configuration_priority() {
+    const auto priority =
+        get_optional<std::string>(*storage, "OCPPCommCtrlr", "NetworkConfigurationPriority", v2::AttributeEnum::Actual);
+    std::vector<std::string> usable_slots;
+    if (priority.has_value()) {
+        for (const auto& token : utils::split_string(',', *priority)) {
+            try {
+                const auto slot = std::stoi(token);
+                if (is_slot_usable_for_ocpp16(slot)) {
+                    usable_slots.push_back(std::to_string(slot));
+                }
+            } catch (const std::exception& e) {
+                EVLOG_warning << "Ignoring non-integer NetworkConfigurationPriority token '" << token
+                              << "': " << e.what();
+            }
+        }
+    }
+    if (usable_slots.empty()) {
+        // No usable slot configured: fall back to the single active slot (legacy single-profile behavior).
+        return std::to_string(get_active_network_slot(*storage));
+    }
+    return utils::to_csl(usable_slots);
+}
+
+std::optional<ocpp::v2::NetworkConnectionProfile>
+ChargePointConfigurationDeviceModel::read_network_connection_profile(int32_t slot) {
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const bool usable_for_ocpp16 = is_slot_usable_for_ocpp16(slot);
+    if (usable_for_ocpp16) {
+        if (auto profile = NC::read_profile_from_device_model(*storage, slot); profile.has_value()) {
+            return profile;
+        }
+    }
+
+    if (slot == get_active_network_slot(*storage)) {
+        if (!usable_for_ocpp16) {
+            EVLOG_warning << "NetworkConfiguration slot " << slot
+                          << " is pinned to a non-OCPP16 OcppVersion but is the active slot; using the legacy "
+                             "single-profile synthesis for OCPP 1.6";
+        }
+        try {
+            return synthesize_legacy_network_connection_profile();
+        } catch (const std::exception& e) {
+            EVLOG_error << "Could not synthesize legacy network connection profile for slot " << slot << ": "
+                        << e.what();
+            return std::nullopt;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<WebsocketConnectionOptions>
+ChargePointConfigurationDeviceModel::get_websocket_connection_options(int32_t slot) {
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    namespace CC = ocpp::v2::ControllerComponentVariables;
+
+    const auto profile =
+        is_slot_usable_for_ocpp16(slot) ? NC::read_profile_from_device_model(*storage, slot) : std::nullopt;
+    if (!profile.has_value()) {
+        // Unconfigured (or version-filtered) slot -> legacy single-profile connection options.
+        auto fallback = ChargePointConfigurationConnectivity::get_websocket_connection_options(slot);
+        if (fallback.has_value()) {
+            // The legacy options retry forever (-1), which would pin the connection to this slot and
+            // disable websocket-failure-driven failover to the other configured slots.
+            fallback->max_connection_attempts = getNetworkProfileConnectionAttempts();
+        }
+        return fallback;
+    }
+
+    try {
+        // Identity: per-slot value, else the global SecurityCtrlr.Identity. ':' is invalid in the basic-auth user.
+        std::string identity = profile->identity.has_value() ? profile->identity->get() : std::string{};
+        if (identity.empty()) {
+            identity =
+                get_optional<std::string>(*storage, CC::SecurityCtrlrIdentity, v2::AttributeEnum::Actual).value_or("");
+        }
+        if (identity.find(':') != std::string::npos) {
+            // Returning std::nullopt lets the caller fall back to another profile instead.
+            EVLOG_error << "ChargePointId must not contain ':'";
+            return std::nullopt;
+        }
+
+        // Password: per-slot value, else the global SecurityCtrlr.BasicAuthPassword. Kept optional.
+        std::optional<std::string> basic_auth_password;
+        if (profile->basicAuthPassword.has_value()) {
+            basic_auth_password = profile->basicAuthPassword->get();
+        } else {
+            basic_auth_password =
+                get_optional<std::string>(*storage, CC::BasicAuthPassword, v2::AttributeEnum::Actual, true);
+        }
+
+        const auto hostname = get_optional<std::string>(*storage, NC::get_component_variable(slot, NC::HostName),
+                                                        v2::AttributeEnum::Actual);
+
+        auto uri = Uri::parse_and_validate(profile->ocppCsmsUrl.get(), identity, profile->securityProfile);
+
+        WebsocketConnectionOptions opts{{OcppProtocolVersion::v16},
+                                        uri,
+                                        profile->securityProfile,
+                                        basic_auth_password,
+                                        // Per-slot NetworkConfiguration[N].MessageTimeout, as in the 2.x path.
+                                        std::chrono::seconds(std::max(profile->messageTimeout, 1)),
+                                        getRetryBackoffRandomRange(),
+                                        getRetryBackoffRepeatTimes(),
+                                        getRetryBackoffWaitMinimum(),
+                                        getNetworkProfileConnectionAttempts(),
+                                        getSupportedCiphers12(),
+                                        getSupportedCiphers13(),
+                                        getWebsocketPingInterval().value_or(0),
+                                        getWebsocketPingPayload(),
+                                        getWebsocketPongTimeout(),
+                                        getUseSslDefaultVerifyPaths(),
+                                        getAdditionalRootCertificateCheck().value_or(false),
+                                        hostname,
+                                        getVerifyCsmsCommonName(),
+                                        getUseTPM(),
+                                        getVerifyCsmsAllowWildcards(),
+                                        getIFace(),
+                                        getEnableTLSKeylog(),
+                                        getTLSKeylogFile()};
+        return opts;
+    } catch (const ocpp::v2::DeviceModelError& e) {
+        EVLOG_error << "Could not configure v1.6 connection options, device model error: " << e.what();
+        return std::nullopt;
+    } catch (const std::invalid_argument& e) {
+        EVLOG_error << "Could not configure v1.6 connection options, invalid argument: " << e.what();
+        return std::nullopt;
+    } catch (const std::exception& e) {
+        EVLOG_error << "Could not configure v1.6 connection options: " << e.what();
+        return std::nullopt;
+    }
+}
+
+void ChargePointConfigurationDeviceModel::set_active_network_profile_slot(int32_t slot, const std::string& source) {
+    const auto& cv = ocpp::v2::ControllerComponentVariables::ActiveNetworkProfile;
+    if (cv.variable.has_value()) {
+        storage->set_read_only_value(cv.component, cv.variable.value(), v2::AttributeEnum::Actual, std::to_string(slot),
+                                     source);
+    }
+}
+
+int32_t ChargePointConfigurationDeviceModel::get_security_profile() {
+    const auto& cv = ocpp::v2::ControllerComponentVariables::SecurityProfile;
+    const auto confirmed = get_optional<std::int32_t>(*storage, cv, v2::AttributeEnum::Actual);
+    if (!confirmed.has_value()) {
+        // 0 = "nothing confirmed yet": never prunes, so all configured slots stay attemptable.
+        EVLOG_warning << "SecurityCtrlr.SecurityProfile is not set in the device model; "
+                         "treating the confirmed security profile as 0";
+        return 0;
+    }
+    return confirmed.value();
+}
+
+void ChargePointConfigurationDeviceModel::set_active_security_profile(int32_t security_profile,
+                                                                      const std::string& source) {
+    const auto& cv = ocpp::v2::ControllerComponentVariables::SecurityProfile;
+    if (cv.variable.has_value()) {
+        storage->set_read_only_value(cv.component, cv.variable.value(), v2::AttributeEnum::Actual,
+                                     std::to_string(security_profile), source);
+    }
+}
+
+void ChargePointConfigurationDeviceModel::set_security_ctrl_security_profile(int32_t security_profile,
+                                                                             const std::string& source) {
+    // Same cell as set_active_security_profile, mirroring the 2.x device model.
+    set_active_security_profile(security_profile, source);
+}
+
 std::string ChargePointConfigurationDeviceModel::getChargePointId() {
     namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
     namespace CC = ocpp::v2::ControllerComponentVariables;
@@ -1662,6 +1865,10 @@ bool ChargePointConfigurationDeviceModel::getLogRotation() {
 
 bool ChargePointConfigurationDeviceModel::getLogRotationDateSuffix() {
     return get_value<bool>(*storage, keys::valid_keys::LogRotationDateSuffix);
+}
+
+bool ChargePointConfigurationDeviceModel::getReportSuspendedEVSEReasonChange() {
+    return get_value<bool>(*storage, keys::valid_keys::ReportSuspendedEVSEReasonChange);
 }
 
 bool ChargePointConfigurationDeviceModel::getStopTransactionIfUnlockNotSupported() {
@@ -1823,6 +2030,10 @@ std::optional<bool> ChargePointConfigurationDeviceModel::getAllowOfflineTxForUnk
 
 std::optional<bool> ChargePointConfigurationDeviceModel::getQueueAllMessages() {
     return get_optional<bool>(*storage, keys::valid_keys::QueueAllMessages);
+}
+
+std::optional<bool> ChargePointConfigurationDeviceModel::getReportClearedErrors() {
+    return get_optional<bool>(*storage, keys::valid_keys::ReportClearedErrors);
 }
 
 std::optional<int> ChargePointConfigurationDeviceModel::getMessageQueueSizeThreshold() {
@@ -2002,6 +2213,10 @@ KeyValue ChargePointConfigurationDeviceModel::getVerifyCsmsAllowWildcardsKeyValu
     return get_key_value(*storage, keys::valid_keys::VerifyCsmsAllowWildcards);
 }
 
+KeyValue ChargePointConfigurationDeviceModel::getReportSuspendedEVSEReasonChangeKeyValue() {
+    return get_key_value(*storage, keys::valid_keys::ReportSuspendedEVSEReasonChange);
+}
+
 KeyValue ChargePointConfigurationDeviceModel::getWaitForStopTransactionsOnResetTimeoutKeyValue() {
     return get_key_value(*storage, keys::valid_keys::WaitForStopTransactionsOnResetTimeout);
 }
@@ -2121,6 +2336,10 @@ std::optional<std::vector<KeyValue>> ChargePointConfigurationDeviceModel::getAll
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getQueueAllMessagesKeyValue() {
     return get_key_value_optional(*storage, keys::valid_keys::QueueAllMessages);
+}
+
+std::optional<KeyValue> ChargePointConfigurationDeviceModel::getReportClearedErrorsKeyValue() {
+    return get_key_value_optional(*storage, keys::valid_keys::ReportClearedErrors);
 }
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getSeccLeafSubjectCommonNameKeyValue() {
@@ -2244,6 +2463,10 @@ void ChargePointConfigurationDeviceModel::setSwitchSecurityProfileConnectionTime
 
 void ChargePointConfigurationDeviceModel::setVerifyCsmsAllowWildcards(bool verify_csms_allow_wildcards) {
     setInternalVerifyCsmsAllowWildcards(to_string(verify_csms_allow_wildcards));
+}
+
+void ChargePointConfigurationDeviceModel::setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) {
+    setInternalReportSuspendedEVSEReasonChange(to_string(report_suspended_evse_reason_change));
 }
 
 void ChargePointConfigurationDeviceModel::setWaitForStopTransactionsOnResetTimeout(
@@ -2846,6 +3069,13 @@ void ChargePointConfigurationDeviceModel::setSecurityProfile(std::int32_t securi
     setInternalSecurityProfile(std::to_string(security_profile));
 }
 
+void ChargePointConfigurationDeviceModel::set_security_profile_for_slot(std::int32_t slot,
+                                                                        std::int32_t security_profile) {
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const auto cv = NC::get_component_variable(slot, NC::SecurityProfile);
+    set_value(*storage, cv.component, cv.variable.value(), std::to_string(security_profile));
+}
+
 // ----------------------------------------------------------------------------
 // Local Auth List Management
 
@@ -3364,6 +3594,9 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::RemoteStartTransactionWithoutConnectorIdFindFirst:
             result = convert(setInternalRemoteStartTransactionWithoutConnectorIdFindFirst(value_str));
             break;
+        case keys::valid_keys::ReportSuspendedEVSEReasonChange:
+            result = convert(setInternalReportSuspendedEVSEReasonChange(value_str));
+            break;
         case keys::valid_keys::RetryBackoffRandomRange:
             result = convert(setInternalRetryBackoffRandomRange(value_str));
             break;
@@ -3582,6 +3815,7 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::MessageTypesDiscardForQueueing:
         case keys::valid_keys::MeterType:
         case keys::valid_keys::QueueAllMessages:
+        case keys::valid_keys::ReportClearedErrors:
         case keys::valid_keys::SupportedChargingProfilePurposeTypes:
         case keys::valid_keys::SupportedCiphers12:
         case keys::valid_keys::SupportedCiphers13:

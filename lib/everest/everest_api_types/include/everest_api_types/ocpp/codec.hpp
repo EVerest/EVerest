@@ -39,6 +39,10 @@ create_serialize_interface(SetVariableRequestList);
 create_serialize_interface(SetVariableResultList);
 create_serialize_interface(SecurityEvent);
 create_serialize_interface(StatusInfoType);
+create_serialize_interface(OperationalStatusEnumType);
+create_serialize_interface(ChangeAvailabilityStatusEnumType);
+create_serialize_interface(ChangeAvailabilityRequest);
+create_serialize_interface(ChangeAvailabilityResponse);
 create_serialize_interface(BootNotificationResponse);
 create_serialize_interface(OcppTransactionEvent);
 create_serialize_interface(MonitorVariableRequestList);
@@ -52,6 +56,7 @@ create_serialize_interface(V2XSignalWattPointCurve);
 create_serialize_interface(V2XFreqWattPointType);
 create_serialize_interface(MessageDirection);
 create_serialize_interface(Message);
+create_serialize_interface(ConnectionStatus);
 
 #undef create_serialize_interface
 

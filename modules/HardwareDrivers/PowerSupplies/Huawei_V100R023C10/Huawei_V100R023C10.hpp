@@ -38,6 +38,7 @@ struct Conf {
     std::string client_cert;
     std::string client_key;
     int module_placeholder_allocation_timeout_s;
+    int modbus_timeout_s;
     std::string esn;
     bool HACK_publish_requested_voltage_current;
     bool HACK_use_ovm_while_cable_check;

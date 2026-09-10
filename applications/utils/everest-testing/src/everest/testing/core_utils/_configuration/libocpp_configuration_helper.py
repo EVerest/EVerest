@@ -128,6 +128,49 @@ class _OCPP2XNetworkConnectionProfileAdjustment(OCPPConfigAdjustmentStrategy):
         return config
 
 
+class _OCPP16ComponentConfigCsmsUrlAdjustment(OCPPConfigAdjustmentStrategy):
+    """ Rewrites the ``OcppCsmsUrl`` of every ``NetworkConfiguration_N`` component (device-model
+    backed OCPP1.6 configuration) that carries a non-empty value or non-empty default to the test
+    CSMS URL.
+
+    The URL is written as an explicit ``Actual`` attribute value (which the device-model DB init
+    treats as operator-set), using the exact same scheme-less ``{host}:{port}/{charge_point_id}``
+    format ``LibOCPP16ConfigurationHelper`` writes to ``Internal/CentralSystemURI``. This keeps
+    multi-slot 1.6 tests pointed at the mock CSMS.
+
+    The component config is the ``{file_stem: component_json}`` dict (same shape as
+    ``LibOCPP2XConfigurationHelper._get_config``).
+    """
+
+    def __init__(self, central_system_host: str, central_system_port: int | str, charge_point_id: str):
+        self._central_system_host = central_system_host
+        self._central_system_port = central_system_port
+        self._charge_point_id = charge_point_id
+
+    def adjust_ocpp_configuration(self, config: dict) -> dict:
+        config = deepcopy(config)
+        url = f"{self._central_system_host}:{self._central_system_port}/{self._charge_point_id}"
+        for component_name, component in config.items():
+            if not component_name.startswith("NetworkConfiguration"):
+                continue
+            ocpp_csms_url = component.get("properties", {}).get("OcppCsmsUrl")
+            if not ocpp_csms_url:
+                continue
+            attributes = ocpp_csms_url.get("attributes", [])
+            current_value = None
+            for attribute in attributes:
+                if attribute.get("type") == "Actual" and "value" in attribute:
+                    current_value = attribute["value"]
+            if current_value is None:
+                current_value = ocpp_csms_url.get("default")
+            if current_value in (None, ""):
+                continue
+            for attribute in attributes:
+                if attribute.get("type") == "Actual":
+                    attribute["value"] = url
+        return config
+
+
 class LibOCPPConfigurationHelperBase(ABC):
     """ Helper for parsing / adapting the LibOCPP configuration and dumping it a database file. """
 

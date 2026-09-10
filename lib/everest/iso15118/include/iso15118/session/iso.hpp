@@ -19,7 +19,6 @@
 #include <iso15118/io/time.hpp>
 
 #include <iso15118/session/feedback.hpp>
-#include <iso15118/session/logger.hpp>
 
 #include <iso15118/d20/timeout.hpp>
 
@@ -35,6 +34,8 @@ class Session {
 public:
     Session(std::unique_ptr<io::IConnection>, d20::SessionConfig, const session::feedback::Callbacks&,
             std::optional<d20::PauseContext>&);
+    Session(std::unique_ptr<io::IConnection>, d20::SessionConfig, const session::feedback::Callbacks&,
+            std::optional<d20::PauseContext>&, bool skip_app_protocol_negotiation);
     ~Session();
 
     TimePoint const& poll();
@@ -50,7 +51,6 @@ public:
 
 private:
     std::unique_ptr<io::IConnection> connection;
-    session::SessionLogger log;
 
     SessionState state;
     // input buffer

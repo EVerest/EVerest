@@ -78,4 +78,70 @@ TEST(ChargePointV16, defaultVendorErrorCodeOriginal) {
     EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "def/ghi/apples");
 }
 
+TEST(ChargePointV16, encodePauseReasonsEmpty) {
+    EXPECT_EQ(ChargePointV16::encode_pause_reasons(std::nullopt), std::nullopt);
+
+    types::evse_manager::ChargingPausedEVSEReasons reasons;
+    EXPECT_TRUE(reasons.reasons.empty());
+    EXPECT_EQ(ChargePointV16::encode_pause_reasons(reasons), std::nullopt);
+}
+
+TEST(ChargePointV16, encodePauseReasonsSingle) {
+    types::evse_manager::ChargingPausedEVSEReasons reasons;
+
+    reasons.reasons = {types::evse_manager::PauseChargingEVSEReasonEnum::NoEnergy};
+    auto encoded = ChargePointV16::encode_pause_reasons(reasons);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(static_cast<std::string>(encoded.value()), "NoEnergy");
+
+    reasons.reasons = {types::evse_manager::PauseChargingEVSEReasonEnum::Error};
+    encoded = ChargePointV16::encode_pause_reasons(reasons);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(static_cast<std::string>(encoded.value()), "Error");
+
+    reasons.reasons = {types::evse_manager::PauseChargingEVSEReasonEnum::UserPause};
+    encoded = ChargePointV16::encode_pause_reasons(reasons);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(static_cast<std::string>(encoded.value()), "UserPause");
+}
+
+TEST(ChargePointV16, encodePauseReasonsDeduplicates) {
+    types::evse_manager::ChargingPausedEVSEReasons reasons;
+    reasons.reasons = {types::evse_manager::PauseChargingEVSEReasonEnum::UserPause,
+                       types::evse_manager::PauseChargingEVSEReasonEnum::UserPause,
+                       types::evse_manager::PauseChargingEVSEReasonEnum::Error};
+    const auto encoded = ChargePointV16::encode_pause_reasons(reasons);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(static_cast<std::string>(encoded.value()), "Error,UserPause");
+}
+
+TEST(ChargePointV16, encodePauseReasonsSortedAlphabetically) {
+    types::evse_manager::ChargingPausedEVSEReasons reasons;
+
+    reasons.reasons = {types::evse_manager::PauseChargingEVSEReasonEnum::Error,
+                       types::evse_manager::PauseChargingEVSEReasonEnum::NoEnergy,
+                       types::evse_manager::PauseChargingEVSEReasonEnum::UserPause};
+    const auto encoded = ChargePointV16::encode_pause_reasons(reasons);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(static_cast<std::string>(encoded.value()), "Error,NoEnergy,UserPause");
+
+    reasons.reasons = {types::evse_manager::PauseChargingEVSEReasonEnum::UserPause,
+                       types::evse_manager::PauseChargingEVSEReasonEnum::NoEnergy,
+                       types::evse_manager::PauseChargingEVSEReasonEnum::Error};
+    const auto reversed = ChargePointV16::encode_pause_reasons(reasons);
+    ASSERT_TRUE(reversed.has_value());
+    EXPECT_EQ(static_cast<std::string>(reversed.value()), "Error,NoEnergy,UserPause");
+}
+
+TEST(ChargePointV16, encodePauseReasonsFitsCiString) {
+    types::evse_manager::ChargingPausedEVSEReasons reasons;
+    reasons.reasons = {types::evse_manager::PauseChargingEVSEReasonEnum::UserPause,
+                       types::evse_manager::PauseChargingEVSEReasonEnum::Error,
+                       types::evse_manager::PauseChargingEVSEReasonEnum::NoEnergy};
+    const auto encoded = ChargePointV16::encode_pause_reasons(reasons);
+    ASSERT_TRUE(encoded.has_value());
+    EXPECT_EQ(static_cast<std::string>(encoded.value()).size(), 24u);
+    EXPECT_EQ(static_cast<std::string>(encoded.value()), "Error,NoEnergy,UserPause");
+}
+
 } // namespace

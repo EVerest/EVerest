@@ -15,7 +15,7 @@
 #include <ocpp/v2/device_model_storage_interface.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
-#include <utils/config_service.hpp>
+#include <utils/mqtt_config_service.hpp>
 
 namespace ocpp_module_common::device_model {
 

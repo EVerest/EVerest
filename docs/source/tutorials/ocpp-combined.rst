@@ -69,7 +69,10 @@ configuration parameter (see :ref:`tutorial-ocpp-combined-version`). The
 example configuration ships with ``Mode: Only1.6``; switch it to
 ``Mode: Only2`` to run OCPP 2.x:
 
-- With OCPP 1.6, the example configuration connects to SteVe. You have to add
+- With OCPP 1.6, the example configuration connects to SteVe: the SteVe URL
+  lives in the legacy 1.6 JSON config (``ChargePointConfigPath``), which
+  enters the device model via the one-time migration enabled by
+  ``EnableLegacyConfigMigration`` in the example configuration. You have to add
   the chargepoint id *cp001* in SteVe's webinterface to allow the charging
   station to connect. If you want to simulate charging sessions, you also need
   to add OCPP tags for the authorization in SteVe.
@@ -274,8 +277,11 @@ device model, so there are two ways to configure OCPP 1.6:
    into the device model database once. Network connection details
    (``CentralSystemURI``, ``SecurityProfile``, ``AuthorizationKey``, ...) are
    migrated to the NetworkConfiguration slot given by
-   ``Ocpp16NetworkConfigSlot``. Once the database is initialized, the
-   migration is skipped and the legacy JSON is no longer read.
+   ``Ocpp16NetworkConfigSlot``. The ``NetworkConfiguration_<N>`` component
+   config for that slot must exist and the slot must be listed in
+   ``NetworkConfigurationPriority`` (the shipped example configs cover the
+   default slot ``1``). Once the database is initialized, the migration is
+   skipped and the legacy JSON is no longer read.
 
 For a detailed walkthrough of migrating an existing OCPP 1.6 deployment,
 please see the
@@ -298,9 +304,10 @@ Connect to a different CSMS
 ---------------------------
 
 Each connection profile is defined in its own JSON file under the device model
-configuration directory. At least two slots must be configured; you may add as
-many additional slots as you need (see
-:ref:`tutorial-ocpp-combined-adding-slots`). The default profiles are:
+configuration directory. The number of slots is defined by your component
+configuration - one JSON file per slot, as many as you need (see
+:ref:`tutorial-ocpp-combined-adding-slots`). The shipped configuration
+provides two slots as an example:
 
 - ``component_config/standardized/NetworkConfiguration_1.json`` (slot 1)
 - ``component_config/standardized/NetworkConfiguration_2.json`` (slot 2)
@@ -320,6 +327,13 @@ appropriate slot's JSON file:
   - ``3``: TLS with mutual authentication (client + server certificates) over ``wss://``
 
 - ``MessageTimeout``: Message timeout in seconds (minimum 1)
+- ``OcppInterface``: The network interface to use for this profile (e.g.
+  ``Wired0``, ``Wireless0``, or ``Any``)
+- ``OcppTransport``: The OCPP transport encoding; use ``JSON``
+
+Together with ``OcppCsmsUrl`` and ``SecurityProfile``, the last three are
+mandatory for a usable profile; a slot missing any of them is silently
+skipped by the failover.
 
 Each slot can optionally override the charging station's identity and
 authentication credentials:
@@ -336,7 +350,12 @@ The **connection priority** is controlled by the ``NetworkConfigurationPriority`
 variable in ``OCPPCommCtrlr``. This is a comma-separated list of slot numbers
 that determines the order in which profiles are tried. For example, ``"1,2"``
 means slot 1 is tried first; if it fails, slot 2 is tried, then back to slot 1
-(round-robin failover).
+(round-robin failover). Only slots listed in the priority are used: the shipped
+configuration lists only slot 1 (value ``"1"``) and deliberately keeps slot 2 as
+an unlisted spare, because a slot listed in the priority (or currently active)
+is write-protected at runtime; the runtime reconfiguration workflow relies on
+populating a spare slot first (see the
+:ref:`OCPPmulti module documentation <everest_modules_OCPPmulti>`).
 
 .. note::
 
@@ -350,7 +369,8 @@ means slot 1 is tried first; if it fails, slot 2 is tried, then back to slot 1
 Adding more network configuration slots
 ---------------------------------------
 
-By default, two NetworkConfiguration slots are shipped. To add more:
+The component configuration defines which slots exist; the shipped
+configuration contains two as an example. To add more:
 
 1. **Create the JSON file.** Copy an existing slot file (e.g. ``NetworkConfiguration_1.json``)
    to a new file named ``NetworkConfiguration_N.json`` where ``N`` is your slot number.
@@ -366,15 +386,25 @@ By default, two NetworkConfiguration slots are shipped. To add more:
        ...
      }
 
-3. **Configure the slot's variables.** Set ``OcppCsmsUrl``, ``SecurityProfile``,
-   and other variables as needed for this connection profile.
+3. **Configure the slot's variables.** ``OcppCsmsUrl``, ``SecurityProfile``,
+   ``OcppInterface``, ``OcppTransport`` and ``MessageTimeout`` are all mandatory
+   for a usable profile; a slot missing any of them is silently skipped by the
+   failover. Note that ``NetworkConfiguration_2.json`` carries no defaults for
+   these fields, so when copying it every one must be set explicitly;
+   ``NetworkConfiguration_1.json`` carries defaults for everything except the URL.
 
 4. **Add the slot to the priority list.** In ``OCPPCommCtrlr.json``, append the new
-   slot number to the ``NetworkConfigurationPriority`` value. For example, change
-   ``"1,2"`` to ``"1,2,3"``.
+   slot number to the ``NetworkConfigurationPriority`` value (for example, change
+   ``"1"`` to ``"1,3"``) - or leave it out to keep the slot as a runtime-writable
+   spare. Also append it to the variable's characteristics
+   ``valuesList``; runtime writes of the priority are validated against it, so a
+   slot missing there cannot be added to the priority at runtime.
 
-5. **Rebuild and restart.** The device model database will be re-initialized with the
-   new slot on next startup.
+5. **Rebuild and restart.** The device model database is updated with the
+   new slot on next startup. Values that were already changed at runtime (by the
+   CSMS or via the consumer API) are protected from being overwritten by
+   component-config values; editing an already-changed value in the JSON has no
+   effect on a deployed station (see :ref:`howto-ocpp-storage-migration`).
 
 .. _tutorial-ocpp-combined-enable-pnc:
 

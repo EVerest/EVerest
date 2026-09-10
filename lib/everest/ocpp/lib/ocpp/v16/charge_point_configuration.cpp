@@ -536,6 +536,15 @@ void ChargePointConfiguration::setVerifyCsmsAllowWildcards(bool verify_csms_allo
     this->setInUserConfig("Internal", "VerifyCsmsAllowWildcards", verify_csms_allow_wildcards);
 }
 
+bool ChargePointConfiguration::getReportSuspendedEVSEReasonChange() {
+    return this->config["Internal"]["ReportSuspendedEVSEReasonChange"];
+}
+
+void ChargePointConfiguration::setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) {
+    this->config["Internal"]["ReportSuspendedEVSEReasonChange"] = report_suspended_evse_reason_change;
+    this->setInUserConfig("Internal", "ReportSuspendedEVSEReasonChange", report_suspended_evse_reason_change);
+}
+
 std::string ChargePointConfiguration::getSupportedMeasurands() {
     return this->config["Internal"]["SupportedMeasurands"];
 }
@@ -801,6 +810,14 @@ KeyValue ChargePointConfiguration::getVerifyCsmsAllowWildcardsKeyValue() {
     return kv;
 }
 
+KeyValue ChargePointConfiguration::getReportSuspendedEVSEReasonChangeKeyValue() {
+    KeyValue kv;
+    kv.key = "ReportSuspendedEVSEReasonChange";
+    kv.readonly = false;
+    kv.value.emplace(ocpp::conversions::bool_to_string(this->getReportSuspendedEVSEReasonChange()));
+    return kv;
+}
+
 KeyValue ChargePointConfiguration::getSupportedMeasurandsKeyValue() {
     KeyValue kv;
     kv.key = "SupportedMeasurands";
@@ -997,6 +1014,27 @@ std::optional<KeyValue> ChargePointConfiguration::getQueueAllMessagesKeyValue() 
         queue_all_messages_kv.emplace(kv);
     }
     return queue_all_messages_kv;
+}
+
+std::optional<bool> ChargePointConfiguration::getReportClearedErrors() {
+    std::optional<bool> report_cleared_errors = std::nullopt;
+    if (this->config["Internal"].contains("ReportClearedErrors")) {
+        report_cleared_errors.emplace(this->config["Internal"]["ReportClearedErrors"]);
+    }
+    return report_cleared_errors;
+}
+
+std::optional<KeyValue> ChargePointConfiguration::getReportClearedErrorsKeyValue() {
+    std::optional<KeyValue> report_cleared_errors_kv = std::nullopt;
+    auto report_cleared_errors = this->getReportClearedErrors();
+    if (report_cleared_errors.has_value()) {
+        KeyValue kv;
+        kv.key = "ReportClearedErrors";
+        kv.readonly = true;
+        kv.value.emplace(ocpp::conversions::bool_to_string(report_cleared_errors.value()));
+        report_cleared_errors_kv.emplace(kv);
+    }
+    return report_cleared_errors_kv;
 }
 
 std::optional<std::string> ChargePointConfiguration::getMessageTypesDiscardForQueueing() {
@@ -3316,6 +3354,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     if (key == "VerifyCsmsAllowWildcards") {
         return this->getVerifyCsmsAllowWildcardsKeyValue();
     }
+    if (key == "ReportSuspendedEVSEReasonChange") {
+        return this->getReportSuspendedEVSEReasonChangeKeyValue();
+    }
     if (key == "OcspRequestInterval") {
         return this->getOcspRequestIntervalKeyValue();
     }
@@ -3354,6 +3395,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     }
     if (key == "QueueAllMessages") {
         return this->getQueueAllMessagesKeyValue();
+    }
+    if (key == "ReportClearedErrors") {
+        return this->getReportClearedErrorsKeyValue();
     }
     if (key == "MessageTypesDiscardForQueueing") {
         return this->getMessageTypesDiscardForQueueingKeyValue();
@@ -4119,6 +4163,12 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
     } else if (key == "VerifyCsmsAllowWildcards") {
         if (isBool(value.get())) {
             this->setVerifyCsmsAllowWildcards(ocpp::conversions::string_to_bool(value.get()));
+        } else {
+            return ConfigurationStatus::Rejected;
+        }
+    } else if (key == "ReportSuspendedEVSEReasonChange") {
+        if (isBool(value.get())) {
+            this->setReportSuspendedEVSEReasonChange(ocpp::conversions::string_to_bool(value.get()));
         } else {
             return ConfigurationStatus::Rejected;
         }

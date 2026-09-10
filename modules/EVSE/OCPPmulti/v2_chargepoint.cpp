@@ -427,9 +427,14 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
     };
     callbacks.set_running_cost_callback = [this](auto&&... args) { m_callbacks_ptr->cb_set_running_cost(args...); };
     callbacks.data_transfer_callback = [this](auto&&... args) { return m_callbacks_ptr->cb_data_transfer(args...); };
-    callbacks.connection_state_changed_callback =
-        [this](auto is_connected, auto /*configuration_slot*/, const auto& /*network_connection_profile*/,
-               auto protocol_version) { m_callbacks_ptr->cb_connection_state_changed(is_connected, protocol_version); };
+    callbacks.connection_state_changed_callback = [this](auto is_connected, auto configuration_slot,
+                                                         const auto& network_connection_profile,
+                                                         auto protocol_version) {
+        m_callbacks_ptr->cb_connection_state_changed(
+            module::conversions::to_everest_connection_status(is_connected, configuration_slot,
+                                                              network_connection_profile, protocol_version),
+            protocol_version);
+    };
     callbacks.security_event_callback = [this](const auto& event_type, const auto& tech_info) {
         m_callbacks_ptr->cb_security_event(event_type, tech_info);
     };
@@ -460,12 +465,8 @@ void ChargePointV2::init(init_args_t& args) {
         args.v2_device_model_config_path);
 
     // initialise composed device model, this will be provided to the ChargePoint constructor
-    auto composed_device_model_storage = std::make_unique<module::device_model::ComposedDeviceModelStorage>();
-
-    // register both device model storages
-    // note - this processing causes a slight delay, scope for performance tuning
-    composed_device_model_storage->register_device_model_storage("OCPP", std::move(libocpp_device_model_storage));
-    composed_device_model_storage->register_device_model_storage("EVEREST", args.everest_device_model);
+    auto composed_device_model_storage = module::device_model::make_composed_device_model_storage(
+        std::move(libocpp_device_model_storage), args.everest_device_model);
 
     const auto ocpp_share_path = args.share_path / "OCPP201";
     const auto sql_init_path = ocpp_share_path / SQL_CORE_MIGRATIONS;

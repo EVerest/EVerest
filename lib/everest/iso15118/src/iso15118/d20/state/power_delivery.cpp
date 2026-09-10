@@ -15,6 +15,10 @@
 
 namespace iso15118::d20::state {
 
+// Secc performance timer for PowerDelivery is 1.5s.
+// 100ms is resevered for polling timeout and sending the response.
+constexpr uint32_t AC_CLOSE_CONTACTOR_TIMEOUT = 1400;
+
 namespace dt = message_20::datatypes;
 
 message_20::PowerDeliveryResponse handle_request(const message_20::PowerDeliveryRequest& req,
@@ -48,7 +52,7 @@ message_20::PowerDeliveryResponse handle_request(const message_20::PowerDelivery
 }
 
 void PowerDelivery::enter() {
-    m_ctx.log.enter_state("PowerDelivery");
+    logf_debug("Enter state: PowerDelivery");
 }
 
 Result PowerDelivery::feed(Event ev) {
@@ -95,6 +99,8 @@ Result PowerDelivery::feed(Event ev) {
     if (ev == Event::TIMEOUT) {
         const auto timeout = m_ctx.get_active_timeout();
         if (timeout and *timeout == d20::TimeoutType::CONTACTOR) {
+            logf_error("AC contactor is not closed within %ums, sending failure response code and stop the session",
+                       AC_CLOSE_CONTACTOR_TIMEOUT);
             // TODO(SL): Check if value_or is the correct way
             const auto& res =
                 handle_request(previous_req.value_or(message_20::PowerDeliveryRequest{}), m_ctx.session, true, false);
@@ -126,7 +132,7 @@ Result PowerDelivery::feed(Event ev) {
                 previous_req = *req;
                 // Close the AC contactor so that charging can start
                 m_ctx.feedback.signal(session::feedback::Signal::AC_CLOSE_CONTACTOR);
-                m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, 3000);
+                m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, AC_CLOSE_CONTACTOR_TIMEOUT);
                 logf_info("Waiting for contactor is closed");
                 return {};
             }
@@ -143,7 +149,7 @@ Result PowerDelivery::feed(Event ev) {
 
         if (shutdown_requested) {
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
-            if (m_ctx.session.is_ac_charger()) {
+            if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger()) {
                 m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
                 return m_ctx.create_state<SessionStop>();
             }
@@ -162,14 +168,14 @@ Result PowerDelivery::feed(Event ev) {
         if (m_ctx.session.is_dc_charger()) {
             return m_ctx.create_state<DC_ChargeLoop>();
         }
-        m_ctx.log("expected selected_energy_service AC, AC_BPT, DC, DC_BPT! But code type id: %d",
-                  static_cast<int>(selected_energy_service));
+        logf_warning("Expected selected_energy_service AC, AC_BPT, DC, DC_BPT! But code type id: %d",
+                     static_cast<int>(selected_energy_service));
 
         m_ctx.session_stopped = true;
         return {};
 
     } else {
-        m_ctx.log("Expected PowerDeliveryReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected PowerDeliveryReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

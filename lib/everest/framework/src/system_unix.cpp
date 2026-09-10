@@ -44,7 +44,7 @@ struct GetPasswdEntryResult {
     std::vector<gid_t> groups;
 
     operator bool() const {
-        return this->error.empty();
+        return error.empty();
     }
 };
 
@@ -151,25 +151,25 @@ std::string set_real_user(const std::string& user_name) {
 }
 
 void SubProcess::send_error_and_exit(const std::string& message) {
-    assert(pid == 0);
+    assert(m_pid == 0);
 
     // There isn't  much we can do if writing the error message fails, just exit
-    [[maybe_unused]] auto _write = write(fd, message.c_str(), std::min(message.size(), MAX_PIPE_MESSAGE_SIZE - 1));
-    close(fd);
+    [[maybe_unused]] auto _write = write(m_fd, message.c_str(), std::min(message.size(), MAX_PIPE_MESSAGE_SIZE - 1));
+    close(m_fd);
     _exit(EXIT_FAILURE);
 }
 
 pid_t SubProcess::check_child_executed() {
-    assert(pid != 0);
+    assert(m_pid != 0);
 
-    if (check_child_executed_done) {
-        return pid;
+    if (m_check_child_executed_done) {
+        return m_pid;
     }
-    check_child_executed_done = true;
+    m_check_child_executed_done = true;
 
     std::string message(MAX_PIPE_MESSAGE_SIZE, 0);
 
-    auto retval = read(fd, message.data(), MAX_PIPE_MESSAGE_SIZE);
+    auto retval = read(m_fd, message.data(), MAX_PIPE_MESSAGE_SIZE);
     if (retval == -1) {
         throw std::runtime_error(fmt::format(
             "Failed to communicate via pipe with forked child process. Syscall to read() failed ({}), exiting",
@@ -178,8 +178,8 @@ pid_t SubProcess::check_child_executed() {
         throw std::runtime_error(fmt::format("Forked child process did not complete exec():\n{}", message.c_str()));
     }
 
-    close(fd);
-    return pid;
+    close(m_fd);
+    return m_pid;
 }
 
 std::string set_user_and_capabilities(const std::string& run_as_user, const std::vector<std::string>& capabilities) {
@@ -310,31 +310,37 @@ int setup_signal_fd() {
 } // namespace
 
 SignalPolling::SignalPolling() {
-    signal_fd = setup_signal_fd();
-    if (signal_fd != -1) {
-        available = true;
+    m_signal_fd = setup_signal_fd();
+    if (m_signal_fd != -1) {
+        m_available = true;
     }
 }
 
-std::optional<uint32_t> SignalPolling::poll_signal(int timeout_ms, int extra_wakeup_fd) {
-    if (not available) {
+std::optional<uint32_t> SignalPolling::poll_signal(int timeout_ms, int extra_wakeup_fd, int extra_wakeup_fd2) {
+    if (not m_available) {
         // no signal fd: sleep instead of poll so the caller's loop does not busy-spin; signals
-        // use their default disposition since the mask was restored in setup_signal_fd()
+        // use their default disposition since the mask was restored in setup_signal_fd().
+        // NOTE: this fallback cannot observe the extra wakeup fds, so a fd that becomes readable
+        // during the sleep is only serviced on the caller's next loop iteration (after the sleep).
         std::this_thread::sleep_for(std::chrono::milliseconds(std::min(timeout_ms, SIGNAL_POLL_TIMEOUT_MS)));
         return std::nullopt;
     }
-    std::array<struct pollfd, 2> pollfds{};
-    pollfds[0] = {signal_fd, POLLIN, 0};
+    std::array<struct pollfd, 3> pollfds{};
+    pollfds[0] = {m_signal_fd, POLLIN, 0};
     nfds_t nfds = 1;
     if (extra_wakeup_fd != -1) {
-        pollfds[1] = {extra_wakeup_fd, POLLIN, 0};
-        nfds = 2;
+        pollfds.at(nfds) = {extra_wakeup_fd, POLLIN, 0};
+        ++nfds;
+    }
+    if (extra_wakeup_fd2 != -1) {
+        pollfds.at(nfds) = {extra_wakeup_fd2, POLLIN, 0};
+        ++nfds;
     }
     std::optional<uint32_t> received_signal = std::nullopt;
     auto poll_retval = poll(pollfds.data(), nfds, timeout_ms);
     if (poll_retval > 0 && (pollfds[0].revents & POLLIN) != 0) {
         struct signalfd_siginfo siginfo;
-        auto read_retval = read(signal_fd, &siginfo, sizeof(siginfo));
+        auto read_retval = read(m_signal_fd, &siginfo, sizeof(siginfo));
         if (read_retval == sizeof(siginfo)) {
             received_signal.emplace(siginfo.ssi_signo);
         } // TODO(kai): should we go to not available in this case?

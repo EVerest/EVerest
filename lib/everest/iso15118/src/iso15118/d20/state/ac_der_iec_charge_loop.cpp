@@ -201,7 +201,7 @@ handle_request(const message_20::DER_AC_ChargeLoopRequest& req, const d20::Sessi
 } // namespace
 
 void AC_DER_IEC_ChargeLoop::enter() {
-    m_ctx.log.enter_state("AC_DER_IEC_ChargeLoop");
+    logf_debug("Enter state: AC_DER_IEC_ChargeLoop");
     dynamic_parameters = m_ctx.cache_dynamic_mode_parameters.value_or(UpdateDynamicModeParameters{});
     target_powers = m_ctx.cache_ac_target_power.value_or(AcTargetPower{});
     present_powers = m_ctx.cache_ac_present_power.value_or(AcPresentPower{});
@@ -270,7 +270,7 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
         const auto selected_dso_cos_phi =
             selected_der_control_functions.test(static_cast<size_t>(iec::DERControlName::DSOCosPhiSetpointProvision));
 
-        const auto& der_functions = m_ctx.session_config.der_setup_config.supported_der_control_functions;
+        const auto& der_functions = m_ctx.session_config.der_iec_setup_config.supported_der_control_functions;
 
         if (selected_dsoq and der_functions.find(iec::DERControlName::DSOQSetpointProvision) != der_functions.end()) {
             const auto& func_dso_q_setpoint = der_functions.at(iec::DERControlName::DSOQSetpointProvision);
@@ -310,7 +310,7 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
 
         return {};
     }
-    m_ctx.log("Expected PowerDeliveryReq or AC_ChargeLoopRequest! But code type id: %d", variant->get_type());
+    logf_warning("Expected PowerDeliveryReq or AC_ChargeLoopRequest! But code type id: %d", variant->get_type());
 
     // Sequence Error
     const message_20::Type req_type = variant->get_type();

@@ -6,14 +6,12 @@
 
 #include "der_setup.hpp"
 #include "grid_event.hpp"
-#include "session_logger.hpp"
 #include "utils.hpp"
 
 #include <utils/date.hpp>
 
 #include <iso15118/config.hpp>
 #include <iso15118/io/logging.hpp>
-#include <iso15118/session/logger.hpp>
 
 namespace module {
 namespace charger {
@@ -236,7 +234,10 @@ void ISO15118_chargerImpl::ready() {
         std::this_thread::sleep_for(WAIT_FOR_SETUP_DONE_MS);
     }
 
-    const auto session_logger = std::make_unique<SessionLogger>(mod->config.logging_path);
+    if (mod->config.logging_path != ".") {
+        EVLOG_warning << "The config option `logging_path` should no longer be used and will be removed in the future. "
+                         "Instead use the PacketSniffer module, tpcdump or Wireshark to log the v2gtp messages";
+    }
 
     // Obtain certificate location from the security module
     const auto certificate_response = mod->r_security->call_get_leaf_certificate_info(
@@ -849,7 +850,8 @@ void ISO15118_chargerImpl::handle_set_charging_parameters(types::iso15118::Setup
 
 void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::PaymentOption>& payment_options,
                                                 bool& supported_certificate_service,
-                                                [[maybe_unused]] bool& central_contract_validation_allowed) {
+                                                [[maybe_unused]] bool& central_contract_validation_allowed,
+                                                [[maybe_unused]] bool& fake_dc_enabled) {
     std::scoped_lock lock(GEL);
 
     std::vector<dt::Authorization> auth_services;

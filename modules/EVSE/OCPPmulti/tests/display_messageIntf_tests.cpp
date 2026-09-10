@@ -199,7 +199,7 @@ TEST_F(GenericOcppRequiresTester, callGetDisplayMessages) {
     const auto response = ocpp->cb_get_display_message(request);
 
     ASSERT_EQ(received.size(), 1);
-    EXPECT_EQ(received[0], R"({"request":{"id":[],"priority":"AlwaysFront","state":"Charging"}})"_json);
+    EXPECT_EQ(received[0], R"({"request":{"id":[1,2,3],"priority":"AlwaysFront","state":"Charging"}})"_json);
 
     // response is std::vector<ocpp::DisplayMessage>
     ASSERT_EQ(response.size(), 1);

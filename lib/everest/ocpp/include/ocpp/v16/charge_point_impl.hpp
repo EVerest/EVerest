@@ -180,7 +180,9 @@ private:
     std::function<void(const std::string& system_time)> set_system_time_callback;
     std::function<void(const BootNotificationResponse& boot_notification_response)> boot_notification_response_callback;
     std::function<void()> signal_set_charging_profiles_callback;
-    std::function<void(bool is_connected)> connection_state_changed_callback;
+    std::function<void(const bool is_connected, const int configuration_slot,
+                       const ocpp::v2::NetworkConnectionProfile& network_connection_profile)>
+        connection_state_changed_callback;
 
     std::function<GetLogResponse(const GetDiagnosticsRequest& request)> upload_diagnostics_callback;
     std::function<void(const UpdateFirmwareRequest msg)> update_firmware_callback;
@@ -252,6 +254,9 @@ private:
                              const std::optional<CiString<255>>& vendor_id = std::nullopt,
                              const std::optional<CiString<50>>& vendor_error_code = std::nullopt,
                              bool initiated_by_trigger_message = false);
+    /// \brief Answers a TriggerMessage(StatusNotification) for \p connector . An active error owns the info field; in
+    /// its absence a suspended connector reports its suspend reason if ReportSuspendedEVSEReasonChange is set.
+    void triggered_status_notification(const std::int32_t connector);
     void diagnostic_status_notification(DiagnosticsStatus status, bool initiated_by_trigger_message = false);
     void firmware_status_notification(FirmwareStatus status, bool initiated_by_trigger_message = false,
                                       bool disable_connectors_during_install = true);
@@ -462,7 +467,9 @@ public:
         const std::optional<SecurityConfiguration>& security_configuration,
         const std::function<void(const std::string& message, MessageDirection direction)>& message_callback);
 
-    virtual ~ChargePointImpl() override = default;
+    /// \brief Disarms the connection callbacks so a deferred websocket callback cannot reach a
+    /// partly destroyed charge point.
+    virtual ~ChargePointImpl() override;
 
     /// \brief Allow to update the ChargePoint core information which will be sent in BootNotification.req
     void update_chargepoint_information(const std::string& vendor, const std::string& model,
@@ -529,6 +536,10 @@ public:
 
     /// \brief Disconnects the the websocket connection to the CSMS if it is connected
     void disconnect_websocket();
+
+    /// \brief Rebuilds the ConnectivityManager's cached network connection profiles and slot priority list.
+    /// \see ocpp::v16::ChargePoint::reload_network_profiles
+    void reload_network_profiles();
 
     /// \brief Calls the set_connection_timeout_callback that can be registered. This function is used to notify an
     /// Authorization mechanism about a changed ConnectionTimeout configuration key.
@@ -672,6 +683,8 @@ public:
     void on_suspend_charging_ev(std::int32_t connector, const std::optional<CiString<50>> info = std::nullopt);
 
     /// \brief This function should be called when EVSE indicates that it suspends charging on the given \p connector
+    /// . The \p info is always forwarded verbatim, but unless ReportSuspendedEVSEReasonChange is set a suspend on an
+    /// already suspended connector is discarded.
     /// \param connector
     /// \param info
     void on_suspend_charging_evse(std::int32_t connector, const std::optional<CiString<50>> info = std::nullopt);
@@ -876,6 +889,12 @@ public:
     /// \param callback
     void register_set_connection_timeout_callback(const std::function<void(std::int32_t connection_timeout)>& callback);
 
+    /// \brief registers a \p callback on the connectivity manager that is called before each websocket connection
+    /// attempt so the host can configure the network interface for the network connection profile. Must be called
+    /// before start(). \see ocpp::v16::ChargePoint::register_configure_network_connection_profile_callback
+    /// \param callback
+    void register_configure_network_connection_profile_callback(ConfigureNetworkConnectionProfileCallback callback);
+
     /// \brief registers a \p callback function that can be used to check if a reset is allowed . The
     /// is_reset_allowed_callback is called when a Reset.req is received.
     /// \param callback
@@ -906,7 +925,9 @@ public:
     /// \brief registers a \p callback function that can be used when the connection state to CSMS changes. The
     /// connection_state_changed_callback is called when chargepoint has connected to or disconnected from the CSMS.
     /// \param callback
-    void register_connection_state_changed_callback(const std::function<void(bool is_connected)>& callback);
+    void register_connection_state_changed_callback(
+        const std::function<void(const bool is_connected, const int configuration_slot,
+                                 const ocpp::v2::NetworkConnectionProfile& network_connection_profile)>& callback);
 
     /// \brief registers a \p callback function that can be used to publish the response to a Get15118Certificate.req
     /// wrapped in a DataTransfer.req . The get_15118_ev_certificate_response_callback is called after the response to a

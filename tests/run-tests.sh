@@ -8,10 +8,11 @@ set -euo pipefail
 # Suites:
 #   all             All tests
 #
-#   integration     Core, framework, async API, and EEBUS tests
+#   integration     Core, framework, async API, management API, and EEBUS tests
 #   core            Core tests only
 #   framework       Framework tests only
 #   asyncapi        Async API tests only
+#   management      Management API tests only
 #
 #   ocpp            All OCPP tests (1.6, 2.0.1, 2.1)
 #   ocpp16          OCPP 1.6 tests only
@@ -213,6 +214,7 @@ case "$SUITE" in
             core_tests/*.py \
             framework_tests/*.py \
             async_api_tests/*.py \
+            management_api_tests/*_tests.py \
             ocpp_tests/test_sets/ocpp16/*.py \
             ocpp_tests/test_sets/ocpp201/*.py \
             ocpp_tests/test_sets/ocpp21/*.py \
@@ -225,6 +227,7 @@ case "$SUITE" in
             core_tests/*.py \
             framework_tests/*.py \
             async_api_tests/*.py \
+            management_api_tests/*_tests.py \
             eebus_tests/eebus_tests.py
         ;;
 
@@ -244,6 +247,12 @@ case "$SUITE" in
         cd "$SCRIPT_DIR"
         run_pytest_suite \
             async_api_tests/*.py
+        ;;
+
+    management)
+        cd "$SCRIPT_DIR"
+        run_pytest_suite \
+            management_api_tests/*_tests.py
         ;;
 
     ocpp)
@@ -289,7 +298,7 @@ case "$SUITE" in
 
     *)
         echo "Unknown suite: $SUITE" >&2
-        echo "Valid suites: all, integration, core, framework, asyncapi, ocpp, ocpp16, ocpp201, ocpp21, eebus" >&2
+        echo "Valid suites: all, integration, core, framework, asyncapi, management, ocpp, ocpp16, ocpp201, ocpp21, eebus" >&2
         exit 1
         ;;
 

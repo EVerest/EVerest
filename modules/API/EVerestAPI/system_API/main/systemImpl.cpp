@@ -37,7 +37,7 @@ auto systemImpl::generic_request_reply(T const& default_value, ReqT const& reque
     if (!result) {
         return default_value;
     }
-    return result.value();
+    return std::move(*result);
 }
 
 types::system::UpdateFirmwareResponse
@@ -83,9 +83,10 @@ types::system::BootReason systemImpl::handle_get_boot_reason() {
 
 types::network::ConfigureNetworkResponse
 systemImpl::handle_configure_network(types::network::ConfigureNetworkRequest& request) {
-    types::network::ConfigureNetworkResponse response;
-    response.status = types::network::ConfigureNetworkStatusEnum::NotSupported;
-    return response;
+    // Absent/non-answering external agent degrades to NotSupported after cfg_request_reply_to_s.
+    static const types::network::ConfigureNetworkResponse default_response =
+        types::network::ConfigureNetworkResponse{types::network::ConfigureNetworkStatusEnum::NotSupported, {}};
+    return generic_request_reply(default_response, API_types_ext::to_external_api(request), "configure_network");
 }
 
 } // namespace main

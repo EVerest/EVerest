@@ -64,6 +64,7 @@ struct Conf {
     bool prioritize_authorization_over_stopping_transaction;
     bool ignore_connector_faults;
     bool plug_in_timeout_enabled;
+    bool stop_transaction_on_reswipe;
 };
 
 class Auth : public Everest::ModuleBase {

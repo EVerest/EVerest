@@ -11,6 +11,7 @@
 #include <everest_api_types/evse_board_support/wrapper.hpp>
 #include <everest_api_types/evse_manager/API.hpp>
 #include <everest_api_types/evse_manager/codec.hpp>
+#include <everest_api_types/evse_manager/json_codec.hpp>
 #include <everest_api_types/evse_manager/wrapper.hpp>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/generic/string.hpp>
@@ -30,6 +31,7 @@
 #include <everest_api_types/uk_random_delay/wrapper.hpp>
 #include <everest_api_types/utilities/AsyncApiRequestReply.hpp>
 #include <everest_api_types/utilities/codec.hpp>
+#include <everest_api_types/utilities/request_reply.hpp>
 
 #include <everest/logging.hpp>
 
@@ -52,6 +54,7 @@ namespace API_dc = API_types::power_supply_DC;
 namespace API_random_delay = API_types::uk_random_delay;
 namespace API_generic = API_types::generic;
 using ev_API::deserialize;
+using ev_API::deserialize_request;
 
 void evse_manager_consumer_API::init() {
     invoke_init(*p_main);
@@ -106,27 +109,31 @@ void evse_manager_consumer_API::ready() {
     helper.publish_ready_beacon();
 }
 
-auto evse_manager_consumer_API::forward_and_cache_api_var(std::string const& var) {
-    return helper.forward_and_cache_api_var(var, config.latch_variable_values, [var = var](auto const& val) {
-        using namespace API_types_ext;
-        using namespace API_powermeter;
-        using namespace API_generic;
-        using namespace API_energy;
-        using namespace API_evse_bsp;
-        using namespace API_iso;
-        using namespace API_imd;
-        using namespace API_dc;
-        using namespace API_random_delay;
-        return serialize(to_external_api(val));
-    });
+auto evse_manager_consumer_API::forward_and_cache_api_var(std::string const& var,
+                                                          std::optional<std::string> deprecation_notice) {
+    return helper.forward_and_cache_api_var(
+        var, config.latch_variable_values,
+        [var = var](auto const& val) {
+            using namespace API_types_ext;
+            using namespace API_powermeter;
+            using namespace API_generic;
+            using namespace API_energy;
+            using namespace API_evse_bsp;
+            using namespace API_iso;
+            using namespace API_imd;
+            using namespace API_dc;
+            using namespace API_random_delay;
+            return serialize(to_external_api(val));
+        },
+        std::move(deprecation_notice));
 }
 
 void evse_manager_consumer_API::generate_api_cmd_get_evse() {
     helper.subscribe_api_topic("get_evse", [this](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
+        std::string reply_to;
+        if (deserialize_request(data, reply_to)) {
             auto reply = API_types_ext::to_external_api(r_evse_manager->call_get_evse());
-            mqtt_v.publish(msg.replyTo, serialize(reply));
+            mqtt_v.publish(reply_to, serialize(reply));
             return true;
         }
         return false;
@@ -135,14 +142,12 @@ void evse_manager_consumer_API::generate_api_cmd_get_evse() {
 
 void evse_manager_consumer_API::generate_api_cmd_enable_disable() {
     helper.subscribe_api_topic("enable_disable", [this](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
-            API_types_ext::EnableDisableRequest payload;
-            if (deserialize(msg.payload, payload)) {
-                auto reply = r_evse_manager->call_enable_disable(payload.connector_id, to_internal_api(payload.source));
-                mqtt_v.publish(msg.replyTo, API_generic::serialize(reply));
-                return true;
-            }
+        std::string reply_to;
+        API_types_ext::EnableDisableRequest payload;
+        if (deserialize_request(data, reply_to, payload)) {
+            auto reply = r_evse_manager->call_enable_disable(payload.connector_id, to_internal_api(payload.source));
+            mqtt_v.publish(reply_to, API_generic::serialize(reply));
+            return true;
         }
         return false;
     });
@@ -150,10 +155,10 @@ void evse_manager_consumer_API::generate_api_cmd_enable_disable() {
 
 void evse_manager_consumer_API::generate_api_cmd_pause_charging() {
     helper.subscribe_api_topic("pause_charging", [this](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
+        std::string reply_to;
+        if (deserialize_request(data, reply_to)) {
             auto result = r_evse_manager->call_pause_charging();
-            mqtt_v.publish(msg.replyTo, result);
+            mqtt_v.publish(reply_to, result);
             return true;
         }
         return false;
@@ -162,10 +167,10 @@ void evse_manager_consumer_API::generate_api_cmd_pause_charging() {
 
 void evse_manager_consumer_API::generate_api_cmd_resume_charging() {
     helper.subscribe_api_topic("resume_charging", [this](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
+        std::string reply_to;
+        if (deserialize_request(data, reply_to)) {
             auto result = r_evse_manager->call_resume_charging();
-            mqtt_v.publish(msg.replyTo, result);
+            mqtt_v.publish(reply_to, result);
             return true;
         }
         return false;
@@ -174,15 +179,12 @@ void evse_manager_consumer_API::generate_api_cmd_resume_charging() {
 
 void evse_manager_consumer_API::generate_api_cmd_stop_transaction() {
     helper.subscribe_api_topic("stop_transaction", [this](std::string const& data) {
-        auto result = false;
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
-            API_types_ext::StopTransactionRequest_External payload;
-            if (deserialize(msg.payload, payload)) {
-                result = r_evse_manager->call_stop_transaction(API_types_ext::to_internal_api(payload));
-                mqtt_v.publish(msg.replyTo, result);
-                return true;
-            }
+        std::string reply_to;
+        API_types_ext::StopTransactionRequest_External payload;
+        if (deserialize_request(data, reply_to, payload)) {
+            auto result = r_evse_manager->call_stop_transaction(API_types_ext::to_internal_api(payload));
+            mqtt_v.publish(reply_to, result);
+            return true;
         }
         return false;
     });
@@ -190,13 +192,11 @@ void evse_manager_consumer_API::generate_api_cmd_stop_transaction() {
 
 void evse_manager_consumer_API::generate_api_cmd_force_unlock() {
     helper.subscribe_api_topic("force_unlock", [this](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
-            int payload;
-            if (deserialize(msg.payload, payload)) {
-                auto result = r_evse_manager->call_force_unlock(payload);
-                mqtt_v.publish(msg.replyTo, result);
-            }
+        std::string reply_to;
+        int payload{};
+        if (deserialize_request(data, reply_to, payload)) {
+            auto result = r_evse_manager->call_force_unlock(payload);
+            mqtt_v.publish(reply_to, result);
             return true;
         }
         return false;
@@ -259,7 +259,8 @@ void evse_manager_consumer_API::generate_api_var_powermeter() {
 }
 
 void evse_manager_consumer_API::generate_api_var_evse_id() {
-    r_evse_manager->subscribe_evse_id(forward_and_cache_api_var("evse_id"));
+    r_evse_manager->subscribe_evse_id(forward_and_cache_api_var(
+        "evse_id", "The evse_id var is deprecated and will be removed in 2027.04.0, use the get_evse command instead"));
 }
 
 void evse_manager_consumer_API::generate_api_var_hw_capabilities() {

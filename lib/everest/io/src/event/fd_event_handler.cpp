@@ -8,6 +8,7 @@
 #include <everest/io/event/timer_fd.hpp>
 #include <everest/io/event/unique_fd.hpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <fcntl.h>
 #include <map>
@@ -31,6 +32,8 @@ uint32_t poll_event_to_bitmask(poll_events e) {
         return EPOLLERR;
     case poll_events::hungup:
         return EPOLLHUP;
+    case poll_events::read_hungup:
+        return EPOLLRDHUP;
     }
     return 0;
 }
@@ -51,6 +54,9 @@ std::set<poll_events> bitmask_to_poll_events(uint32_t bitmask) {
     }
     if (bitmask & EPOLLHUP) {
         result.insert(poll_events::hungup);
+    }
+    if (bitmask & EPOLLRDHUP) {
+        result.insert(poll_events::read_hungup);
     }
     return result;
 }
@@ -92,19 +98,22 @@ public:
         auto result = epoll_ctl(m_epoll_fd, EPOLL_CTL_ADD, fd, &event) == 0;
         if (result) {
             m_event_map[fd] = {std::move(handler), event};
-            m_pollfds.resize(m_pollfds.size() + 1);
+            // Never shrinks, so a handler cannot destroy an entry of the array the running poll
+            // is dispatching. epoll_wait accepts a maxevents larger than the descriptor count.
+            m_pollfds.resize(std::max(m_pollfds.size(), m_event_map.size()));
         }
         return result;
     }
 
     bool remove(int fd) {
-        auto epoll_result = epoll_ctl(m_epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
-        auto handler_result = m_event_map.count(fd);
-        if (handler_result) {
+        auto epoll_removed = epoll_ctl(m_epoll_fd, EPOLL_CTL_DEL, fd, nullptr) == 0;
+        auto handler_removed = m_event_map.count(fd) != 0;
+        if (handler_removed) {
             m_event_map.erase(fd);
-            m_pollfds.resize(m_pollfds.size() - 1);
         }
-        return epoll_result or handler_result;
+        // Closing a descriptor drops it from the epoll set, so EPOLL_CTL_DEL then fails
+        // EBADF on a live registration. Erasing the map entry alone is still a removal.
+        return epoll_removed or handler_removed;
     }
     bool modify_remove(int fd, fd_event_handler::event_list const& events) {
         auto action = [](uint32_t current, fd_event_handler::event_list const& change) {
@@ -124,6 +133,16 @@ public:
         return modify(fd, events, action);
     }
 
+    bool modify_swap(int fd, fd_event_handler::event_list const& enable, fd_event_handler::event_list const& disable) {
+        auto const raw_disable = sum_events(disable);
+        auto action = [raw_disable](uint32_t current, fd_event_handler::event_list const& change) {
+            auto raw_change = sum_events(change);
+            auto result = (current & (~raw_disable)) | raw_change;
+            return result;
+        };
+        return modify(fd, enable, action);
+    }
+
     bool modify_replace(int fd, fd_event_handler::event_list const& events) {
         auto action = [](uint32_t, fd_event_handler::event_list const& change) {
             auto raw_change = sum_events(change);
@@ -133,7 +152,8 @@ public:
         return modify(fd, events, action);
     }
 
-    const auto& get(int fd) const {
+    // A handler may erase its own entry, destroying the std::function the caller is executing.
+    auto get(int fd) const {
         return std::get<fd_event_handler::event_handler_type>(m_event_map.at(fd));
     }
 
@@ -171,19 +191,26 @@ private:
     unique_fd m_epoll_fd;
 };
 
-fd_event_handler::~fd_event_handler() = default;
+// Runs before any member, so every outstanding record is inert before the epoll descriptor closes.
+fd_event_handler::~fd_event_handler() {
+    m_liveness->handler = nullptr;
+}
 
-fd_event_handler::fd_event_handler() {
+fd_event_handler::fd_event_handler() : m_liveness(std::make_shared<handler_liveness>()) {
+    m_liveness->handler = this;
     m_handlers = std::make_unique<EventHandlerMap>();
     register_event_handler(&m_action_event, [](auto&&) {});
+}
+
+std::shared_ptr<handler_liveness> fd_event_handler::liveness() const {
+    return m_liveness;
 }
 
 bool fd_event_handler::register_event_handler(int fd, event_handler_type const& handler, event_list const& events) {
     if (fd == -1 or not handler or m_handlers->exists(fd)) {
         return false;
     }
-    m_handlers->add(fd, handler, events);
-    return true;
+    return m_handlers->add(fd, handler, events);
 }
 
 bool fd_event_handler::register_event_handler(int fd, event_handler_type const& handler, poll_events event) {
@@ -209,17 +236,29 @@ bool fd_event_handler::register_event_handler(event_fd* fd, event_handler_simple
 }
 
 bool fd_event_handler::register_event_handler(timer_fd* fd, event_handler_type const& handler) {
-    if (not fd) {
+    // One record per object. A second registration would leave the first unrecorded and therefore
+    // unremovable.
+    if (not fd or fd->has_recorded_registration()) {
         return false;
     }
     auto raw = fd->get_raw_fd();
-    return register_event_handler(
+    auto const registered = register_event_handler(
         raw,
         [handler, fd](event_list const& e) {
-            fd->read();
-            handler(e);
+            // A poll batch is harvested before any of it is dispatched, so a rearm or disarm by an
+            // earlier handler retires an expiry still queued here. timerfd_settime clears the tick
+            // counter, the only identity an expiry carries, so a read of 0 marks it stale.
+            // The event_fd overload keeps its unconditional read: an eventfd is blocking and counts
+            // notifications rather than identifying an arm.
+            if (fd->read() > 0) {
+                handler(e);
+            }
         },
         poll_events::read);
+    if (registered) {
+        fd->record_registration(m_liveness, raw);
+    }
+    return registered;
 }
 
 bool fd_event_handler::register_event_handler(timer_fd* fd, event_handler_simple_type const& handler) {
@@ -230,9 +269,7 @@ bool fd_event_handler::register_event_handler(fd_event_sync_interface* obj) {
     if (not obj) {
         return false;
     }
-    auto raw = obj->get_poll_fd();
-    return register_event_handler(
-        raw, [obj](event_list const&) { obj->sync(); }, poll_events::read);
+    return obj->register_events(*this);
 }
 
 bool fd_event_handler::register_event_handler(fd_event_register_interface* obj) {
@@ -267,14 +304,14 @@ bool fd_event_handler::unregister_event_handler(fd_event_sync_interface* obj) {
     if (not obj) {
         return false;
     }
-    return remove_event_handler(obj->get_poll_fd());
+    return obj->unregister_events(*this);
 }
 
 bool fd_event_handler::unregister_event_handler(timer_fd* obj) {
     if (not obj) {
         return false;
     }
-    return remove_event_handler(obj->get_raw_fd());
+    return obj->unregister_recorded_events(m_liveness);
 }
 
 bool fd_event_handler::unregister_event_handler(event_fd* obj) {
@@ -310,12 +347,25 @@ bool fd_event_handler::modify_event_handler(int fd, event_list const& events, ev
 bool fd_event_handler::modify_event_handler(int fd, poll_events event, event_modification change) {
     return modify_event_handler(fd, event_list{event}, change);
 }
+bool fd_event_handler::modify_event_handler(int fd, event_list const& enable, event_list const& disable) {
+    if (fd == -1) {
+        return false;
+    }
+    return m_handlers->modify_swap(fd, enable, disable);
+}
 
 bool fd_event_handler::remove_event_handler(int fd) {
     if (fd == -1) {
         return false;
     }
     return m_handlers->remove(fd);
+}
+
+bool fd_event_handler::is_registered(int fd) const {
+    if (fd == -1) {
+        return false;
+    }
+    return m_handlers->exists(fd);
 }
 
 void fd_event_handler::poll() {
@@ -328,8 +378,14 @@ bool fd_event_handler::poll_impl(int timeout_ms) {
 
     if (status > 0) {
         for (int i = 0; i < status; ++i) {
-            auto& item = pollfds[i];
-            m_handlers->get(item.data.fd)(bitmask_to_poll_events(item.events));
+            auto const item = pollfds[i];
+            // A handler may unregister any descriptor, including one later in this batch.
+            // Such an entry has no handler left to call and must not be dispatched.
+            if (not m_handlers->exists(item.data.fd)) {
+                continue;
+            }
+            auto const handler = m_handlers->get(item.data.fd);
+            handler(bitmask_to_poll_events(item.events));
         }
         return true;
     }

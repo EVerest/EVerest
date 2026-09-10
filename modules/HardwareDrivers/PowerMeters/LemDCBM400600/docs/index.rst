@@ -27,8 +27,26 @@ during the module's "ready" thread loop), cf. also the notes on time synchroniza
 Variable Powermeter
 -------------------
 
-Publication of the ``powermeter`` var is done with approx. frequency 1/second. This fetches the current ``livemeasure``
+Publication of the ``powermeter`` var is done with an approx. frequency of 1/second by default; the interval is
+configurable via the ``poll_interval_ms`` config option. This fetches the current ``livemeasure``
 values from the device's ``/v1/livemeasure`` endpoint and injects the meter id as determined at initialization.
+
+The poll loop runs at a fixed rate: the time spent performing the requests is subtracted from the wait before the
+next poll, so the interval between two publications stays at ``poll_interval_ms`` instead of growing with the
+latency of the device. This matters because consumers watch this stream for gaps - EvseManager, for instance, aborts
+a DC cable check if it sees no power supply measurement for two seconds. If a gap of more than 1.5 times the
+configured interval does occur, a warning is logged with the measured gap and the duration of the live measurement
+request, so a slow device or network can be identified from the logs.
+
+While a transaction is active, the current OCMF record is additionally fetched as a fallback so that a signed meter
+value is available even if the device becomes unreachable at transaction stop. This fetch is performed *after* the
+live measurements have been published, so that its round trip is not added to the gap between two publications. By
+default it happens on every poll; it can be throttled with the ``transaction_ocmf_fetch_interval_s`` config option.
+Throttling applies to attempts rather than successes, so a failing OCMF endpoint cannot cause a request on every
+single poll.
+
+By default, HTTP(S) connections to the device are kept alive and reused across requests. Set ``http_connection_reuse``
+to ``false`` to restore the previous behavior of one fresh connection per request.
 
 Command start_transaction
 -------------------------

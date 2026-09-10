@@ -100,7 +100,7 @@ handle_request(const message_20::AC_ChargeParameterDiscoveryRequest& req, const 
 }
 
 void AC_ChargeParameterDiscovery::enter() {
-    m_ctx.log.enter_state("AC_ChargeParameterDiscovery");
+    logf_debug("Enter state: AC_ChargeParameterDiscovery");
     present_powers = m_ctx.cache_ac_present_power.value_or(AcPresentPower{});
 }
 
@@ -148,7 +148,7 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("expected AC_ChargeParameterDiscovery! But code type id: %d", variant->get_type());
+        logf_warning("Expected AC_ChargeParameterDiscovery! But code type id: %d", variant->get_type());
         m_ctx.session_stopped = true;
 
         // Sequence Error

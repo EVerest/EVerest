@@ -417,6 +417,66 @@ void from_json(const json& j, StatusInfoType& k) {
     set_obj_optional(additional_info);
 }
 
+void to_json(json& j, OperationalStatusEnumType const& k) noexcept {
+    switch (k) {
+        set_json_enum(OperationalStatusEnumType, Inoperative);
+        set_json_enum(OperationalStatusEnumType, Operative);
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::ocpp::OperationalStatusEnumType";
+}
+
+void from_json(const json& j, OperationalStatusEnumType& k) {
+    std::string s = j;
+    set_string_enum(OperationalStatusEnumType, Inoperative);
+    set_string_enum(OperationalStatusEnumType, Operative);
+    throw std::out_of_range(
+        "Provided string " + s +
+        " could not be converted to enum of type everest::lib::API::V1_0::types::ocpp::OperationalStatusEnumType");
+}
+
+void to_json(json& j, ChangeAvailabilityStatusEnumType const& k) noexcept {
+    switch (k) {
+        set_json_enum(ChangeAvailabilityStatusEnumType, Accepted);
+        set_json_enum(ChangeAvailabilityStatusEnumType, Rejected);
+        set_json_enum(ChangeAvailabilityStatusEnumType, Scheduled);
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::ocpp::ChangeAvailabilityStatusEnumType";
+}
+
+void from_json(const json& j, ChangeAvailabilityStatusEnumType& k) {
+    std::string s = j;
+    set_string_enum(ChangeAvailabilityStatusEnumType, Accepted);
+    set_string_enum(ChangeAvailabilityStatusEnumType, Rejected);
+    set_string_enum(ChangeAvailabilityStatusEnumType, Scheduled);
+    throw std::out_of_range("Provided string " + s +
+                            " could not be converted to enum of type "
+                            "everest::lib::API::V1_0::types::ocpp::ChangeAvailabilityStatusEnumType");
+}
+
+void to_json(json& j, ChangeAvailabilityRequest const& k) noexcept {
+    j = json{
+        {"operational_status", k.operational_status},
+    };
+    set_json_optional(evse);
+}
+
+void from_json(const json& j, ChangeAvailabilityRequest& k) {
+    set_obj(operational_status);
+    set_obj_optional(evse);
+}
+
+void to_json(json& j, ChangeAvailabilityResponse const& k) noexcept {
+    j = json{
+        {"status", k.status},
+    };
+    set_json_optional(status_info);
+}
+
+void from_json(const json& j, ChangeAvailabilityResponse& k) {
+    set_obj(status);
+    set_obj_optional(status_info);
+}
+
 void to_json(json& j, BootNotificationResponse const& k) noexcept {
     j = json{
         {"status", k.status},
@@ -691,6 +751,30 @@ void from_json(const json& j, Message& k) {
     set_obj(message);
     set_obj(direction);
     set_obj_optional(version);
+}
+
+void to_json(json& j, ConnectionStatus const& k) noexcept {
+    j = json{
+        {"connected", k.connected},
+    };
+    set_json_optional(csms_url);
+    set_json_optional(identity);
+    set_json_optional(security_profile);
+    set_json_optional(configuration_slot);
+    set_json_optional(ocpp_interface);
+    set_json_optional(ocpp_transport);
+    set_json_optional(ocpp_version);
+}
+
+void from_json(const json& j, ConnectionStatus& k) {
+    set_obj(connected);
+    set_obj_optional(csms_url);
+    set_obj_optional(identity);
+    set_obj_optional(security_profile);
+    set_obj_optional(configuration_slot);
+    set_obj_optional(ocpp_interface);
+    set_obj_optional(ocpp_transport);
+    set_obj_optional(ocpp_version);
 }
 
 } // namespace everest::lib::API::V1_0::types::ocpp

@@ -72,10 +72,18 @@ public:
     TlsKeyLoggingServer(const std::string& interface_name, uint16_t port_);
     ~TlsKeyLoggingServer();
 
-    ssize_t send(const char* line);
+    /**
+     * \brief send one key-log line to the multicast destination
+     * \returns false when the socket is unusable or the line was not sent in full
+     */
+    bool send(const char* line);
 
-    auto get_fd() const {
-        return fd;
+    /**
+     * \brief whether the multicast socket was set up
+     * \returns false when the constructor failed, in which case the object cannot send
+     */
+    [[nodiscard]] bool is_valid() const {
+        return fd != -1;
     }
 
     auto get_port() const {
@@ -138,7 +146,7 @@ public:
 protected:
     std::unique_ptr<connection_ctx> m_context; //!< opaque connection data
     state_t m_state{state_t::idle};            //!< connection state
-    std::string m_ip;                          //!< peer IP address
+    std::string m_peer_host;                   //!< peer host, a DNS hostname or IP literal
     std::string m_service;                     //!< peer port
     std::int32_t m_timeout_ms;                 //!< default operation timeout
     std::string
@@ -225,10 +233,11 @@ public:
     }
 
     /**
-     * IP address of the connection's peer
+     * Host of the connection's peer: a DNS hostname or IP literal. The name is
+     * kept for API stability.
      */
     [[nodiscard]] const std::string& ip_address() const {
-        return m_ip;
+        return m_peer_host;
     }
 
     /**
@@ -261,6 +270,25 @@ public:
      * \returns the underlying socket or INVALID_SOCKET on error
      */
     [[nodiscard]] int socket() const;
+
+    /**
+     * \brief whether the SSL object and its socket BIO were allocated
+     * \returns false when allocation failed, in which case no BIO_CLOSE owner
+     *          adopted the socket fd and the caller still owns it
+     */
+    [[nodiscard]] bool is_valid() const;
+
+    /**
+     * \brief whether the TLS record layer still holds buffered data
+     * \returns true when a further read() can return data without the socket
+     *          becoming readable again
+     * \note SSL_has_pending() is used rather than SSL_pending(): the latter
+     *       counts only the decrypted remainder of the record being processed
+     *       and returns 0 while a complete but still unprocessed record sits in
+     *       the read buffer. A drain loop guarded on that count would stop with
+     *       data stranded in userspace and never be woken again.
+     */
+    [[nodiscard]] bool has_pending() const;
 
     /**
      * \brief obtain the peer certificate
@@ -353,7 +381,8 @@ public:
  */
 class ClientConnection : public Connection {
 public:
-    ClientConnection(SslContext* ctx, int soc, const char* ip_in, const char* service_in, std::int32_t timeout_ms);
+    ClientConnection(SslContext* ctx, int soc, const char* ip_in, const char* service_in, std::int32_t timeout_ms,
+                     bool verify_subject_name);
     ClientConnection() = delete;
     ClientConnection(const ClientConnection&) = delete;
     ClientConnection(ClientConnection&&) = delete;
@@ -699,7 +728,14 @@ public:
         std::int32_t io_timeout_ms{-1};              //!< default socket timeout in milliseconds (recommend > 1 sec)
         //!< minimum TLS protocol version, e.g. TLS1_2_VERSION or TLS1_3_VERSION; 0 means use default
         int min_proto_version{0};
-        bool verify_server{true};      //!< verify the server certificate
+        bool verify_server{true}; //!< verify the server certificate
+
+        //! verify_subject_name: match the peer certificate subject/SAN against the SNI host via
+        //! SSL_set1_host. Requires verify_server, init() rejects the combination without it because the
+        //! host cannot be enforced. The default (false) is chain-of-trust ONLY: a certificate signed by
+        //! any trusted CA is accepted whatever host it was issued for. Leave it false for a PKI whose
+        //! certificates carry no hostname; set true for a hostname-bearing PKI.
+        bool verify_subject_name{false};
         bool status_request{false};    //!< include a status request extension in the client hello
         bool status_request_v2{false}; //!< include a status request v2 extension in the client hello
         bool trusted_ca_keys{false};   //!< include a trusted ca keys extension in the client hello
@@ -710,6 +746,7 @@ public:
 private:
     std::unique_ptr<client_ctx> m_context;                      //!< opaque object data
     std::int32_t m_timeout_ms{-1};                              //!< default operation timeout
+    bool m_verify_subject_name{false};                          //!< applied to new connections
     trusted_ca_keys_t m_trusted_ca_keys;                        //!< trusted CA keys configuration data
     std::unique_ptr<ClientStatusRequestV2> m_status_request_v2; //!< status request extension handler
 
@@ -749,6 +786,19 @@ public:
     [[nodiscard]] inline ConnectionPtr connect(const char* host, const char* service, bool ipv6_only) {
         return connect(host, service, ipv6_only, m_timeout_ms);
     }
+
+    /**
+     * \brief wrap an already-connected or still-connecting TCP socket as a TLS client connection
+     * \param[in] fd TCP socket file descriptor
+     * \param[in] host_for_sni host for the peer-id / SNI slot, may be nullptr
+     * \return nullptr if the SSL_CTX is not initialised or SSL/BIO allocation fails
+     * \note A DNS \p host_for_sni is sent in the SNI extension, an IP literal is not
+     *       (RFC 6066 §3). With config_t::verify_subject_name the peer certificate is
+     *       pinned to \p host_for_sni and a pin failure fails the handshake closed.
+     * \note Ownership: on success the connection owns \p fd and closes it. On a
+     *       nullptr return the caller still owns \p fd; this factory never closes it.
+     */
+    [[nodiscard]] ConnectionPtr wrap_connecting_fd(int fd, const char* host_for_sni);
 
     /**
      * \brief the default SSL callbacks

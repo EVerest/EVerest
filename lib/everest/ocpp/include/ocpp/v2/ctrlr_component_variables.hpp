@@ -140,6 +140,7 @@ extern const ComponentVariable VerifyCsmsCommonName;
 extern const ComponentVariable UseTPM;
 extern const ComponentVariable UseTPMSeccLeafCertificate;
 extern const ComponentVariable VerifyCsmsAllowWildcards;
+extern const ComponentVariable ReportSuspendedEVSEReasonChange;
 extern const ComponentVariable IFace;
 extern const ComponentVariable EnableTLSKeylog;
 extern const ComponentVariable TLSKeylogFile;
@@ -156,6 +157,7 @@ extern const ComponentVariable MessageQueueSizeThreshold;
 extern const ComponentVariable MaxMessageSize;
 extern const ComponentVariable ResumeTransactionsOnBoot;
 extern const ComponentVariable AllowSecurityLevelZeroConnections;
+extern const ComponentVariable DeferFirmwareDownloadDuringTransaction;
 extern const RequiredComponentVariable SupportedOcppVersions;
 extern const ComponentVariable AlignedDataCtrlrEnabled;
 extern const ComponentVariable AlignedDataCtrlrAvailable;
@@ -351,6 +353,7 @@ extern const ComponentVariable SupportedLanguages;
 extern const ComponentVariable CustomMultiLanguageMessages;
 extern const ComponentVariable Language;
 extern const ComponentVariable WaitForSetUserPriceTimeout;
+extern const ComponentVariable ReportClearedErrors;
 } // namespace ControllerComponentVariables
 
 namespace EvseComponentVariables {

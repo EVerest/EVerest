@@ -359,4 +359,36 @@ SCENARIO("Se/Deserialize ac der iec charge parameter discovery messages") {
             REQUIRE(serialize_helper(res) == expected);
         }
     }
+
+    GIVEN("Round trip ac_der_iec_charge_parameter_discovery_res with a rejecting response code") {
+
+        // ResponseCode is value-initialized to OK, so asserting OK on a decoded message cannot
+        // distinguish a decoded value from an undecoded one. Use a rejecting code instead.
+        message_20::DER_AC_ChargeParameterDiscoveryResponse res;
+
+        res.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456324};
+        res.response_code = dt::ResponseCode::FAILED;
+        auto& mode = res.transfer_mode;
+        mode.max_charge_power = {3200, -2};
+        mode.min_charge_power = {2000, -2};
+        mode.nominal_frequency = {50, 0};
+        mode.nominal_charge_power = {3200, -2};
+        mode.nominal_discharge_power = {3200, -2};
+        mode.max_discharge_power = {3200, -2};
+        mode.operating_mode = dt::OperatingMode::GridFollowing;
+        mode.grid_connection_mode = dt::GridConnectionMode::GridConnected;
+        mode.der_control = {};
+
+        const auto encoded = serialize_helper(res);
+
+        THEN("The decoded response code should survive the round trip") {
+            const io::StreamInputView stream_view{encoded.data(), encoded.size()};
+            message_20::Variant variant(io::v2gtp::PayloadType::Part20DerIec, stream_view);
+
+            REQUIRE(variant.get_type() == message_20::Type::DER_AC_ChargeParameterDiscoveryRes);
+
+            const auto& msg = variant.get<message_20::DER_AC_ChargeParameterDiscoveryResponse>();
+            REQUIRE(msg.response_code == dt::ResponseCode::FAILED);
+        }
+    }
 }

@@ -38,6 +38,8 @@ std::string token_handling_result_to_string(const TokenHandlingResult& result) {
         return "USED_TO_STOP_TRANSACTION";
     case TokenHandlingResult::WITHDRAWN:
         return "WITHDRAWN";
+    case TokenHandlingResult::USED_TO_REAUTHORIZE:
+        return "USED_TO_REAUTHORIZE";
     default:
         throw std::runtime_error("No known conversion for the given token handling result");
     }
@@ -46,12 +48,13 @@ std::string token_handling_result_to_string(const TokenHandlingResult& result) {
 
 AuthHandler::AuthHandler(const SelectionAlgorithm& selection_algorithm, const int connection_timeout,
                          bool plug_in_timeout_enabled, bool prioritize_authorization_over_stopping_transaction,
-                         bool ignore_faults, const std::string& id, kvsIntf* store) :
+                         bool ignore_faults, bool stop_transaction_on_reswipe, const std::string& id, kvsIntf* store) :
     selection_algorithm(selection_algorithm),
     connection_timeout(connection_timeout),
     plug_in_timeout_enabled(plug_in_timeout_enabled),
     prioritize_authorization_over_stopping_transaction(prioritize_authorization_over_stopping_transaction),
     ignore_faults(ignore_faults),
+    stop_transaction_on_reswipe(stop_transaction_on_reswipe),
     reservation_handler(evses, id, store) {
 }
 
@@ -130,6 +133,9 @@ TokenHandlingResult AuthHandler::on_token(const ProvidedIdToken& provided_token)
     case TokenHandlingResult::WITHDRAWN:
         this->publish_token_validation_status(provided_token_copy, TokenValidationStatus::Withdrawn);
         break;
+    case TokenHandlingResult::USED_TO_REAUTHORIZE:
+        this->publish_token_validation_status(provided_token_copy, TokenValidationStatus::UsedToReauthorize);
+        break;
     }
 
     if (result != TokenHandlingResult::ALREADY_IN_PROCESS) {
@@ -177,6 +183,16 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
         const auto evse_used_for_transaction =
             this->used_for_transaction(referenced_evses, provided_token.id_token.value);
         if (evse_used_for_transaction != -1) {
+            if (!this->stop_transaction_on_reswipe) {
+                if (this->evses.at(evse_used_for_transaction)->identifier->parent_id_token.has_value()) {
+                    provided_token.parent_id_token =
+                        this->evses.at(evse_used_for_transaction)->identifier->parent_id_token.value();
+                }
+                provided_token.connectors = std::vector<int32_t>{evse_used_for_transaction};
+                EVLOG_info << "Transaction was not stopped by renewed presentation of id_token for evse#"
+                           << evse_used_for_transaction << " because stop_transaction_on_reswipe is false";
+                return TokenHandlingResult::USED_TO_REAUTHORIZE;
+            }
             StopTransactionRequest req;
             req.reason = StopTransactionReason::Local;
             req.id_tag.emplace(provided_token);
@@ -298,6 +314,12 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
                     if (!this->evses[evse_used_for_transaction]->transaction_active) {
                         return TokenHandlingResult::ALREADY_IN_PROCESS;
                     } else {
+                        if (!this->stop_transaction_on_reswipe) {
+                            provided_token.parent_id_token = validation_result.parent_id_token.value();
+                            EVLOG_info << "Transaction was not stopped by parent_id_token match because "
+                                          "stop_transaction_on_reswipe is false";
+                            return TokenHandlingResult::USED_TO_REAUTHORIZE;
+                        }
                         StopTransactionRequest req;
                         req.reason = StopTransactionReason::Local;
                         req.id_tag.emplace(provided_token);
@@ -935,6 +957,11 @@ void AuthHandler::set_master_pass_group_id(const std::string& master_pass_group_
 void AuthHandler::set_prioritize_authorization_over_stopping_transaction(bool b) {
     std::lock_guard<std::mutex> lk(this->event_mutex);
     this->prioritize_authorization_over_stopping_transaction = b;
+}
+
+void AuthHandler::set_stop_transaction_on_reswipe(bool stop_transaction_on_reswipe) {
+    std::lock_guard<std::mutex> lk(this->event_mutex);
+    this->stop_transaction_on_reswipe = stop_transaction_on_reswipe;
 }
 
 void AuthHandler::register_notify_evse_callback(

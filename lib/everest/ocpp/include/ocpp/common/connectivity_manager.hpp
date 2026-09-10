@@ -13,6 +13,7 @@
 #include <chrono>
 #include <functional>
 #include <future>
+#include <mutex>
 #include <optional>
 
 namespace ocpp {
@@ -22,6 +23,31 @@ struct ConfigNetworkResult {
     std::optional<std::string> interface_address; ///< ip address or interface string
     bool success;                                 ///< true if the configuration was successful
 };
+
+/// \brief The next configuration slot to dial after the active slot's attempts were exhausted.
+struct NextSlotSelection {
+    std::int32_t slot; ///< configuration slot to attempt next
+    bool is_fallback;  ///< true when this is the B10.FR.07 last-successful fallback target
+};
+
+/// \brief Decide which configuration slot to dial after the active slot exhausted its attempts.
+///
+/// Implements OCPP 2.0.1 B10.FR.07: once every entry of the priority list has been tried since the
+/// last successful connection (\p failed_slots_since_success reached the list size), fall back to
+/// \p last_successful_slot independent of the priority list and keep reconnecting to it. Otherwise
+/// the next entry in the priority list is selected (wrapping around).
+///
+/// \param priority_slots Ordered configuration slots (highest priority first).
+/// \param current_slot The slot whose attempts were just exhausted.
+/// \param failed_slots_since_success Number of slots exhausted since the last successful connection,
+///        including \p current_slot.
+/// \param last_successful_slot Slot of the last successful connection, or std::nullopt if none.
+/// \param in_fallback True if the manager is already reconnecting to the fallback profile.
+/// \return The next slot to dial, or std::nullopt if \p priority_slots is empty.
+std::optional<NextSlotSelection> select_next_network_slot(const std::vector<std::int32_t>& priority_slots,
+                                                          std::int32_t current_slot, int failed_slots_since_success,
+                                                          std::optional<std::int32_t> last_successful_slot,
+                                                          bool in_fallback);
 
 using WebsocketConnectionCallback =
     std::function<void(int configuration_slot, const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
@@ -93,6 +119,14 @@ public:
     virtual std::optional<std::int32_t>
     get_priority_from_configuration_slot(const std::int32_t configuration_slot) const = 0;
 
+    /// \brief Get the active network configuration slot in use.
+    /// \return The active slot (or pending slot override) if one is available, std::nullopt if the slot
+    ///         list is empty or the current priority index would be out of range.
+    ///
+    virtual std::optional<int> get_active_network_configuration_slot() const {
+        return std::nullopt;
+    }
+
     /// @brief Get a snapshot of the network connection slots sorted by priority.
     /// Each item in the vector contains the configured configuration slots, where the slot with index 0 has the highest
     /// priority. A copy is returned so callers do not observe mid-mutation state through a reference.
@@ -119,6 +153,27 @@ public:
     /// \brief Disconnect the websocket
     ///
     virtual void disconnect() = 0;
+
+    /// \brief Permanently suppress the connected/disconnected callbacks.
+    ///
+    /// Called from the ChargePoint destructor: the websocket delivers these from a deferred thread, so
+    /// one can be in flight while members are destroyed (use-after-free). Blocks on an in-flight call.
+    ///
+    /// One-way by design, never call it on the stop()/restart() path: the owner is still entitled to
+    /// the connection state there.
+    virtual void disarm_connection_callbacks() = 0;
+
+    /// \brief Suppress automatic reconnection without closing the current websocket.
+    ///
+    /// Unlike disconnect(), this does NOT close the live websocket: it only clears the internal
+    /// "wants to be connected" intent and cancels any pending reconnect timer. A subsequent close
+    /// initiated elsewhere (e.g. the CSMS closing the socket, or the regular post-transaction
+    /// shutdown path) will therefore not trigger an auto-reconnect. Used just before an imminent
+    /// whole-station reset so that any in-flight messages (e.g. the graceful
+    /// TransactionEvent(Ended) of an ongoing transaction) can still be flushed on the live
+    /// connection before it is closed for the reboot.
+    ///
+    virtual void suppress_reconnect() = 0;
 
     /// \brief send a \p message over the websocket
     /// \returns true if the message was sent successfully
@@ -178,7 +233,14 @@ private:
     std::optional<ConfigureNetworkConnectionProfileCallback> configure_network_connection_profile_callback;
 
     Everest::SteadyTimer websocket_timer;
-    bool wants_to_be_connected;
+
+    // Serializes the connected/disconnected callbacks (websocket deferred thread) with
+    // disarm_connection_callbacks() (destroying thread). Disarming is permanent.
+    std::mutex connection_callbacks_mutex;
+    bool connection_callbacks_disarmed{false};
+    // Written from the OCPP message-handler thread (suppress_reconnect/disconnect) and read from the
+    // websocket callback and websocket_timer threads, so it must be atomic.
+    std::atomic<bool> wants_to_be_connected;
     OcppProtocolVersion connected_ocpp_version;
 
     /// @brief Mutable shared state, accessed concurrently from the OCPP message-handling thread,
@@ -195,6 +257,18 @@ private:
         std::optional<std::int32_t> pending_configuration_slot;
         /// Last SecurityProfile value observed when pruning invalid profiles from the cache.
         int last_known_security_level{0};
+        /// Slot of the last successful connection, used as the B10.FR.07 fallback target.
+        std::optional<std::int32_t> last_successful_slot;
+        /// Number of slots whose attempts were exhausted since the last successful connection.
+        int failed_slots_since_success{0};
+        /// True while reconnecting to the fallback (last-successful) profile after full-list exhaustion.
+        bool in_fallback{false};
+        /// Consecutive failed reconnect cycles since the last successful connection, used to drive the
+        /// OCPP part 4 section 5.3 backoff between cross-attempt/fallback re-dials. Reset to 0 on success.
+        int reconnect_attempts{0};
+        /// Backoff (milliseconds) computed for the most recent reconnect cycle; base that get_reconnect_backoff_ms
+        /// doubles for the next cycle. Reset to 0 on success.
+        long reconnect_backoff_ms{0};
     };
     mutable everest::lib::util::monitor<NetworkProfileCacheState, std::recursive_mutex> m_state;
 
@@ -225,6 +299,8 @@ public:
     std::chrono::time_point<std::chrono::steady_clock> get_time_disconnected() const override;
     void connect(std::optional<std::int32_t> network_profile_slot = std::nullopt) override;
     void disconnect() override;
+    void disarm_connection_callbacks() override;
+    void suppress_reconnect() override;
     bool send_to_websocket(const std::string& message) override;
     void on_network_disconnected(ocpp::v2::OCPPInterfaceEnum ocpp_interface) override;
     void on_charging_station_certificate_changed() override;
@@ -233,6 +309,13 @@ public:
     /// \brief Removes all connection profiles from the cache that have a security profile lower than the currently
     /// connected security profile
     void check_cache_for_invalid_security_profiles();
+
+    ///
+    /// \brief Get the active network configuration slot in use.
+    /// \return The active slot (or pending slot override) if one is available, std::nullopt if the slot
+    ///         list is empty or the current priority index would be out of range.
+    ///
+    std::optional<int> get_active_network_configuration_slot() const override;
 
 private:
     std::atomic<std::chrono::time_point<std::chrono::steady_clock>> time_disconnected{};
@@ -279,13 +362,6 @@ private:
     void on_websocket_stopped_connecting(ocpp::WebsocketCloseReason reason);
 
     ///
-    /// \brief Get the active network configuration slot in use.
-    /// \return The active slot (or pending slot override) if one is available, std::nullopt if the slot
-    ///         list is empty or the current priority index would be out of range.
-    ///
-    std::optional<int> get_active_network_configuration_slot() const;
-
-    ///
     /// \brief Get the network configuration slot of the given priority.
     /// \param priority The priority to get the configuration slot.
     /// \return The configuration slot if \p priority is a valid index, std::nullopt otherwise.
@@ -301,6 +377,20 @@ private:
 
     /// \brief Append the given slot to NetworkConfigurationPriority if it is not already listed.
     void append_slot_to_network_configuration_priority_if_absent(int32_t slot, const std::string& source);
+
+    /// \brief Ensure the fallback slot is present in the in-memory working set (slots + cached
+    ///        profiles) so try_connect_websocket() can dial it even when it is absent from the
+    ///        current NetworkConfigurationPriority list. Reads the profile from the configuration
+    ///        when not already cached. Caller must hold the state lock.
+    void ensure_slot_in_working_set(NetworkProfileCacheState& state, std::int32_t slot);
+
+    /// \brief Advance the section 5.3 reconnect-backoff counter for one failed reconnect cycle and return the
+    ///        wait before the next re-dial. Reads RetryBackOff* from the connection options of \p slot
+    ///        (these are global device-model values, identical across slots) and mutates
+    ///        \c state.reconnect_attempts / \c state.reconnect_backoff_ms. The returned delay is
+    ///        max(WEBSOCKET_INIT_DELAY, computed backoff) so genuine reconnection waits never dip below
+    ///        the quick-advance floor. Caller must hold the state lock.
+    std::chrono::milliseconds advance_reconnect_backoff(NetworkProfileCacheState& state, std::int32_t slot);
 
     /// \brief Cache all the network connection profiles
     void cache_network_connection_profiles();

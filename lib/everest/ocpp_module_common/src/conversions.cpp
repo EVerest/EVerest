@@ -100,16 +100,27 @@ ocpp::v2::DataTransferResponse to_ocpp_data_transfer_response(types::ocpp::DataT
     ocpp::v2::DataTransferResponse ocpp_response;
     ocpp_response.status = conversions::to_ocpp_data_transfer_status_enum(response.status);
     if (response.data.has_value()) {
-        ocpp_response.data = json::parse(response.data.value());
+        try {
+            ocpp_response.data = json::parse(response.data.value());
+        } catch (const json::exception&) {
+            // Modules may answer with plain text; pass it on as a json string instead of dropping it.
+            ocpp_response.data = json(response.data.value());
+        }
     }
     if (response.custom_data.has_value()) {
         auto custom_data = response.custom_data.value();
-        json custom_data_json = json::parse(custom_data.data);
-        if (not custom_data_json.contains("vendorId")) {
-            EVLOG_warning << "DataTransferResponse custom_data.data does not contain vendorId, automatically adding it";
-            custom_data_json["vendorId"] = custom_data.vendor_id;
+        try {
+            json custom_data_json = json::parse(custom_data.data);
+            if (not custom_data_json.contains("vendorId")) {
+                EVLOG_warning
+                    << "DataTransferResponse custom_data.data does not contain vendorId, automatically adding it";
+                custom_data_json["vendorId"] = custom_data.vendor_id;
+            }
+            ocpp_response.customData = custom_data_json;
+        } catch (const json::exception& e) {
+            EVLOG_error << "Parsing of data transfer response custom_data json failed because: "
+                        << "(" << e.what() << ")";
         }
-        ocpp_response.customData = custom_data_json;
     }
     return ocpp_response;
 }
@@ -1501,6 +1512,43 @@ types::ocpp::StatusInfoType to_everest_status_info_type(const ocpp::v2::StatusIn
     everest_status_info.reason_code = status_info.reasonCode;
     everest_status_info.additional_info = status_info.additionalInfo;
     return everest_status_info;
+}
+
+std::optional<std::string> to_everest_ocpp_version(const ocpp::OcppProtocolVersion protocol_version) {
+    switch (protocol_version) {
+    case ocpp::OcppProtocolVersion::v16:
+        return "1.6";
+    case ocpp::OcppProtocolVersion::v201:
+        return "2.0.1";
+    case ocpp::OcppProtocolVersion::v21:
+        return "2.1";
+    case ocpp::OcppProtocolVersion::Unknown:
+        break;
+    }
+    return std::nullopt;
+}
+
+types::ocpp::ConnectionStatus
+to_everest_connection_status(const bool is_connected, const int32_t configuration_slot,
+                             const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
+                             const ocpp::OcppProtocolVersion protocol_version) {
+    types::ocpp::ConnectionStatus connection_status;
+    connection_status.connected = is_connected;
+    if (not network_connection_profile.ocppCsmsUrl.get().empty()) {
+        connection_status.csms_url = network_connection_profile.ocppCsmsUrl.get();
+    }
+    connection_status.security_profile = network_connection_profile.securityProfile;
+    if (network_connection_profile.identity.has_value() and
+        not network_connection_profile.identity.value().get().empty()) {
+        connection_status.identity = network_connection_profile.identity.value().get();
+    }
+    connection_status.ocpp_version = to_everest_ocpp_version(protocol_version);
+    connection_status.configuration_slot = configuration_slot;
+    connection_status.ocpp_interface =
+        ocpp::v2::conversions::ocppinterface_enum_to_string(network_connection_profile.ocppInterface);
+    connection_status.ocpp_transport =
+        ocpp::v2::conversions::ocpptransport_enum_to_string(network_connection_profile.ocppTransport);
+    return connection_status;
 }
 
 std::vector<types::ocpp::GetVariableResult>

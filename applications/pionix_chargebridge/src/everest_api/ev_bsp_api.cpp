@@ -24,6 +24,13 @@ using namespace everest::lib::API;
 
 namespace charge_bridge::evse_bsp {
 
+namespace {
+// There is exactly one source for the communication fault, so it does not need a sub_type to
+// tell instances apart. Raise and clear must agree on it, otherwise the clear does not match
+// the raised instance.
+constexpr auto comm_fault_subtype = "";
+} // namespace
+
 ev_bsp_api::ev_bsp_api([[maybe_unused]] evse_ev_bsp_config const& config, std::string const& cb_identifier,
                        evse_bsp_host_to_cb& host_status) :
     host_status(host_status), m_cb_identifier(cb_identifier) {
@@ -195,6 +202,7 @@ enum class SafetyErrorMask : std::uint32_t {
     external_allow_power_on = (1 << 12),
     config_mem_error = (1 << 13),
     dc_hv_ov = (1 << 14),
+    rcd_error = (1 << 16),
 };
 
 // Table that maps a mask to our API error + message
@@ -216,6 +224,7 @@ static constexpr FlagSpec error_specs[] = {
     {SafetyErrorMask::vdd_refint_out_of_range, "Internal supply VREF voltage out of range"},
     {SafetyErrorMask::config_mem_error, "Internal config memory error"},
     {SafetyErrorMask::dc_hv_ov, "DC HV OVM. FIXME: This should be on OVM not EVSE interface"},
+    {SafetyErrorMask::rcd_error, "RCD error detected"},
 };
 
 static constexpr FlagSpec print_warning_specs[] = {
@@ -267,16 +276,17 @@ void ev_bsp_api::dispatch(std::string const& operation, std::string const& paylo
     } else if (operation == "heartbeat") {
         receive_heartbeat(payload);
     } else {
-        std::cerr << "ev_bsp_api: RECEIVE invalid operation: " << operation << std::endl;
+        utilities::print_error(m_cb_identifier, "EV_BSP/EVEREST", -1)
+            << "RECEIVE invalid operation: " << operation << std::endl;
     }
 }
 
 void ev_bsp_api::raise_comm_fault() {
-    send_raise_error(API_GENERIC::ErrorEnum::CommunicationFault, "ChargeBridge not available", "");
+    send_raise_error(API_GENERIC::ErrorEnum::CommunicationFault, comm_fault_subtype, "ChargeBridge not available");
 }
 
 void ev_bsp_api::clear_comm_fault() {
-    send_clear_error(API_GENERIC::ErrorEnum::CommunicationFault, "ChargeBridge not available");
+    send_clear_error(API_GENERIC::ErrorEnum::CommunicationFault, comm_fault_subtype);
 }
 
 void ev_bsp_api::receive_enable([[maybe_unused]] std::string const& payload) {
@@ -307,7 +317,8 @@ void ev_bsp_api::receive_set_cp_state(std::string const& payload) {
         host_status.ev_set_cp_state = evcpstate_to_cpstate(cp);
         tx(host_status);
     } else {
-        std::cerr << "ev_bsp_api::receive_set_cp_state: payload invalid -> " << payload << std::endl;
+        utilities::print_error(m_cb_identifier, "EV_BSP/EVEREST", -1)
+            << "receive_set_cp_state: payload invalid -> " << payload << std::endl;
     }
 }
 
@@ -318,7 +329,8 @@ void ev_bsp_api::receive_allow_power_on(std::string const& payload) {
         host_status.allow_power_on = static_cast<std::uint8_t>(on);
         tx(host_status);
     } else {
-        std::cerr << "ev_bsp_api::receive_allow_power_on: payload invalid -> " << payload << std::endl;
+        utilities::print_error(m_cb_identifier, "EV_BSP/EVEREST", -1)
+            << "receive_allow_power_on: payload invalid -> " << payload << std::endl;
     }
 }
 
@@ -329,7 +341,8 @@ void ev_bsp_api::receive_diode_fail(std::string const& payload) {
         host_status.ev_set_diodefault = static_cast<std::uint8_t>(on);
         tx(host_status);
     } else {
-        std::cerr << "ev_bsp_api::receive_diode_fail: payload invalid -> " << payload << std::endl;
+        utilities::print_error(m_cb_identifier, "EV_BSP/EVEREST", -1)
+            << "receive_diode_fail: payload invalid -> " << payload << std::endl;
     }
 }
 
@@ -381,8 +394,24 @@ void ev_bsp_api::handle_everest_connection_state() {
     auto handle_status = [this](bool status) {
         if (status) {
             utilities::print_error(m_cb_identifier, "EV/EVEREST", 0) << "EVerest connected" << std::endl;
-            // re-send last CP state event
-            send_bsp_event(last_cp_event);
+            if (m_cb_connected) {
+                // re-send last CP state event. Only meaningful with a live ChargeBridge:
+                // otherwise 'last_cp_event' is the initial 'Disconnected' or a stale event of a
+                // device that is gone, and replaying it would describe the wrong device.
+                send_bsp_event(last_cp_event);
+                // The relay state is a bsp_event too and equally published on change only, so a
+                // restarted EVerest would otherwise not learn about closed contactors until the MCU
+                // happens to open them. Replayed through the same handler set_cb_message() uses,
+                // which does not latch on a previous state (and ignores an invalid relay value).
+                handle_event_relay(m_cb_status.relay_state);
+            } else {
+                // The communication fault is edge triggered on the ChargeBridge connection, so a
+                // freshly (re)started EVerest does not know about it. Re-assert it here,
+                // otherwise the board support reads as fault free for an unreachable
+                // ChargeBridge. Raising an already active error is a no-op in the EVerest error
+                // framework.
+                raise_comm_fault();
+            }
         } else {
             utilities::print_error(m_cb_identifier, "EV/EVEREST", 1) << "Waiting for EVerest..." << std::endl;
             // unplug CP if EVerest disconnects

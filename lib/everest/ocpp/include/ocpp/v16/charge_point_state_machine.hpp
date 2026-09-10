@@ -70,7 +70,8 @@ public:
         const ChargePointStatus status, const ChargePointErrorCode error_code, const ocpp::DateTime& timestamp,
         const std::optional<CiString<50>>& info, const std::optional<CiString<255>>& vendor_id,
         const std::optional<CiString<50>>& vendor_error_code)>;
-    explicit ChargePointFSM(const StatusNotificationCallback& status_notification_callback, FSMState initial_state);
+    explicit ChargePointFSM(const StatusNotificationCallback& status_notification_callback, FSMState initial_state,
+                            bool report_cleared_errors);
 
     bool handle_event(FSMEvent event, const ocpp::DateTime timestamp, const std::optional<CiString<50>>& info);
     bool handle_error(const ErrorInfo& error_info);
@@ -81,14 +82,24 @@ public:
     FSMState get_state();
     std::optional<ErrorInfo> get_latest_error();
 
+    /// \brief The info of the transition that put the connector into SuspendedEVSE, empty in any other state
+    std::optional<CiString<50>> get_suspend_reason() const;
+
 private:
     StatusNotificationCallback status_notification_callback;
     // track current state
 
     FSMState state;
     std::unordered_map<std::string, ErrorInfo> active_errors;
+    const bool report_cleared_errors;
+    std::optional<CiString<50>> last_emitted_info;
+    std::optional<CiString<50>> suspend_reason;
 
     bool is_faulted();
+    void emit_status_notification(FSMState reported_state, ChargePointErrorCode error_code,
+                                  const ocpp::DateTime& timestamp, const std::optional<CiString<50>>& info,
+                                  const std::optional<CiString<255>>& vendor_id,
+                                  const std::optional<CiString<50>>& vendor_error_code);
 };
 
 class ChargePointStates {
@@ -97,7 +108,7 @@ public:
         const int connector_id, const ChargePointErrorCode errorCode, const ChargePointStatus status,
         const ocpp::DateTime& timestamp, const std::optional<CiString<50>>& info,
         const std::optional<CiString<255>>& vendor_id, const std::optional<CiString<50>>& vendor_error_code)>;
-    ChargePointStates(const ConnectorStatusCallback& connector_status_callback);
+    ChargePointStates(const ConnectorStatusCallback& connector_status_callback, bool report_cleared_errors);
     void reset(std::map<int, ChargePointStatus> connector_status_map);
 
     void submit_event(const int connector_id, FSMEvent event, const ocpp::DateTime& timestamp,
@@ -111,8 +122,12 @@ public:
     ChargePointStatus get_state(int connector_id);
     std::optional<ErrorInfo> get_latest_error(int connector_id);
 
+    /// \brief The info of the transition that put \p connector_id into SuspendedEVSE, empty in any other state
+    std::optional<CiString<50>> get_suspend_reason(int connector_id);
+
 private:
     ConnectorStatusCallback connector_status_callback;
+    const bool report_cleared_errors;
 
     std::unique_ptr<ChargePointFSM> state_machine_connector_zero;
     std::vector<ChargePointFSM> state_machines;

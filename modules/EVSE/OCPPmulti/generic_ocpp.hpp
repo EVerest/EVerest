@@ -352,7 +352,8 @@ protected:
         std::int32_t configuration_slot, const ocpp::v2::NetworkConnectionProfile& network_connection_profile) override;
     bool cb_connector_effective_operative_status(std::int32_t evse_id, std::int32_t connector_id,
                                                  ocpp::v2::OperationalStatusEnum new_status) override;
-    void cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version) override;
+    void cb_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status,
+                                     ocpp::OcppProtocolVersion protocol_version) override;
     ocpp::v2::DataTransferResponse cb_data_transfer(const ocpp::v2::DataTransferRequest& request) override;
     void cb_default_price(const types::session_cost::DefaultPrice& messages) override;
     void cb_der_active_directives(const std::vector<ocpp::v21::SetDERControlRequest>& active_controls) override;

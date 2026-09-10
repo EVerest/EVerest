@@ -629,7 +629,9 @@ types:
       - connectors
     properties:
       id:
-        description: ID of the EVSE
+        description: >-
+          ID of this EVSE within the charging station, according to the 3-tier model of OCPP
+          (charging station > EVSE > connector)
         type: integer
         minimum: 1
         maximum: 128
@@ -642,6 +644,20 @@ types:
           $ref: /evse_manager#/Connector
         minItems: 1
         maxItems: 128
+      evse_id:
+        description: >-
+          EVSE ID that uniquely identifies this EVSE, e.g. DE*PNX*E123456*1. It has a special
+          format that includes the country code, the operator id and a power outlet id
+          (eMI3 format, normatively specified in ISO 15118-2 Annex H) and is sent as the
+          EVSEID field in ISO 15118 messages.
+          Not to be confused with the numeric id, which identifies this EVSE within the charging
+          station according to the 3-tier model of OCPP.
+        type: string
+      evse_id_din:
+        description: >-
+          EVSE ID used for DIN 70121 sessions (format according to DIN SPEC 91286,
+          hexBinary-encoded), e.g. 49A80737A45678
+        type: string
   PlugAndChargeConfiguration:
     description: Configuration for contract authorization
     type: object

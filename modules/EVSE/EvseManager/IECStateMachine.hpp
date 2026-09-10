@@ -90,6 +90,7 @@ public:
 
     void set_pwm(double value);
     void set_cp_state_X1();
+    void set_cp_state_E();
     void set_cp_state_F();
 
     void set_max_phases(AcPhases phases) {
@@ -135,6 +136,9 @@ private:
     bool car_plugged_in{false};
 
     RawCPState last_cp_state{RawCPState::Disabled};
+    // True while the high level state machine wants CP state F. Guards the automatic X1 reset on
+    // Disabled/A/E events, which could otherwise undo a concurrently commanded F on the BSP.
+    bool cp_state_f_requested{false};
     AsyncTimeout timeout_state_c1;
     AsyncTimeout timeout_unlock_state_F;
 
@@ -155,6 +159,7 @@ private:
 
     std::atomic_bool enabled{false};
     std::atomic_bool relais_on{false};
+    std::atomic_bool state_e_triggered_through_handle{false};
 
     static constexpr std::chrono::seconds power_off_under_load_in_c1_timeout{6};
     static constexpr std::chrono::seconds unlock_in_state_f_timeout{5};

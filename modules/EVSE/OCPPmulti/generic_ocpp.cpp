@@ -10,6 +10,7 @@
 #include <everest/external_energy_limits/external_energy_limits.hpp>
 #include <everest/ocpp_module_common/conversions.hpp>
 #include <ld-ev.hpp>
+#include <ocpp/v2/component_state_manager.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 
 #include <thread>
@@ -325,7 +326,15 @@ GenericOcpp::handle_change_availability(const types::ocpp::ChangeAvailabilityReq
 
     if (mv_started.load()) {
         const auto ocpp_request = to_ocpp_change_availability_request(request);
-        result = mv_charge_point.on_change_availability(ocpp_request);
+        try {
+            result = mv_charge_point.on_change_availability(ocpp_request);
+        } catch (const ocpp::v2::EvseOutOfRangeException& e) {
+            result.status = ChangeAvailabilityStatusEnum::Rejected;
+            result.statusInfo = ocpp::v2::StatusInfo{"InvalidInput", e.what()};
+        } catch (const ocpp::v2::ConnectorOutOfRangeException& e) {
+            result.status = ChangeAvailabilityStatusEnum::Rejected;
+            result.statusInfo = ocpp::v2::StatusInfo{"InvalidInput", e.what()};
+        }
     } else {
         EVLOG_warning << "ChargePoint not initialized, cannot handle change availability command";
     }
@@ -516,6 +525,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     // observed empty, so queued events always stay ahead of live-path events
     ready_event_queue();
     EVLOG_info << "OCPP started";
+    mv_provides.ocpp_generic.publish_ready(true);
 
     // Signal to EVSEs to start their internal state machines
     for (const auto& evse : mv_requires.evse_manager) {
@@ -1011,13 +1021,14 @@ bool GenericOcpp::cb_connector_effective_operative_status(std::int32_t evse_id, 
     return result;
 }
 
-void GenericOcpp::cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version) {
-    if (is_connected) {
+void GenericOcpp::cb_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status,
+                                              ocpp::OcppProtocolVersion protocol_version) {
+    if (connection_status.connected) {
         mv_ocpp_protocol_version = protocol_version;
     } else {
         mv_ocpp_protocol_version = ocpp::OcppProtocolVersion::Unknown;
     }
-    mv_provides.ocpp_generic.publish_is_connected(is_connected);
+    mv_provides.ocpp_generic.publish_connection_status(connection_status);
 }
 
 ocpp::v2::DataTransferResponse GenericOcpp::cb_data_transfer(const ocpp::v2::DataTransferRequest& request) {

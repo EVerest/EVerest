@@ -8,6 +8,20 @@ endif()
 
 set (EV_CORE_CMAKE_SCRIPT_DIR ${CMAKE_CURRENT_LIST_DIR} CACHE FILEPATH "")
 
+# The project_info sources are compiled per project (see _ev_setup_project_info), so that every
+# project - everest-core as well as out-of-tree module projects - reports its own version
+# information.  When everest-core is consumed as an installed package, its project-config.cmake
+# sets this variable to the location the sources got installed to.
+if (NOT EV_PROJECT_INFO_SOURCE_DIR)
+    set (EV_PROJECT_INFO_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../lib/everest/project_info")
+endif()
+
+set (EV_PROJECT_INFO_SOURCE_DIR ${EV_PROJECT_INFO_SOURCE_DIR} CACHE FILEPATH "")
+
+if (NOT EXISTS "${EV_PROJECT_INFO_SOURCE_DIR}/src/project_info.cpp")
+    message(FATAL_ERROR "Could not locate the project_info sources at ${EV_PROJECT_INFO_SOURCE_DIR}")
+endif()
+
 # FIXME (aw): where should this go, should it be global?
 string(ASCII 27 ESCAPE)
 set(FMT_RESET "${ESCAPE}[m")
@@ -38,6 +52,31 @@ install(TARGETS generate_cpp_files
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
+
+function(_ev_setup_project_info)
+    if (TARGET everest_project_info)
+        return()
+    endif()
+
+    add_library(everest_project_info STATIC "${EV_PROJECT_INFO_SOURCE_DIR}/src/project_info.cpp")
+    add_library(everest::project_info ALIAS everest_project_info)
+
+    target_include_directories(everest_project_info
+        PUBLIC
+            $<BUILD_INTERFACE:${EV_PROJECT_INFO_SOURCE_DIR}/include>
+        PRIVATE
+            "$<TARGET_PROPERTY:generate_cpp_files,EVEREST_GENERATED_INCLUDE_DIR>"
+    )
+
+    target_compile_features(everest_project_info PRIVATE cxx_std_17)
+
+    set_target_properties(everest_project_info
+        PROPERTIES
+            POSITION_INDEPENDENT_CODE ON
+    )
+
+    add_dependencies(everest_project_info generate_cpp_files)
+endfunction()
 
 #
 # out-of-tree interfaces/types/modules support
@@ -71,6 +110,8 @@ function(_ev_add_project)
     if (NOT EXISTS ${EVEREST_PROJECT_DIR})
         message(FATAL_ERROR "${CMAKE_CURRENT_FUNCTION} got non-existing project path: ${EVEREST_PROJECT_DIR}")
     endif ()
+
+    _ev_setup_project_info()
 
     message(STATUS "APPENDING ${EVEREST_PROJECT_DIR} to EVEREST_PROJECT_DIRS")
     set_property(TARGET generate_cpp_files
@@ -685,6 +726,7 @@ function (ev_add_cpp_module MODULE_NAME)
             target_link_libraries(${MODULE_NAME}
                 PRIVATE
                     everest::framework
+                    everest::project_info
                     ${ATOMIC_LIBS}
             )
 
@@ -905,6 +947,18 @@ function(ev_install_project)
             ${EV_CORE_CMAKE_SCRIPT_DIR}/config-tmux-run-script.cmake
         DESTINATION
             ${CMAKE_INSTALL_LIBDIR}/cmake/${LIBRARY_PACKAGE_NAME}
+    )
+
+    # the project_info sources are shipped as build assets, because consuming projects need to
+    # compile them against their own generated version information
+    install(
+        FILES ${EV_PROJECT_INFO_SOURCE_DIR}/src/project_info.cpp
+        DESTINATION ${EVEREST_DATADIR}/project_info/src
+    )
+
+    install(
+        FILES ${EV_PROJECT_INFO_SOURCE_DIR}/include/everest/project_info.hpp
+        DESTINATION ${EVEREST_DATADIR}/project_info/include/everest
     )
 endfunction()
 

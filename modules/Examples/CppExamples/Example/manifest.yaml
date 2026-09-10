@@ -1,4 +1,21 @@
 description: Simple example module written in C++
+config:
+  log_interval:
+    description: A logging interval
+    type: integer
+    minimum: 1
+    maximum: 60
+    default: 10
+    mutability: ReadWrite
+  enum_test:
+    description: A config value that tests the enum type on the module level
+    type: string
+    default: one
+    enum:
+      - one
+      - two
+      - three
+    mutability: ReadWrite
 provides:
   example:
     interface: example
@@ -9,6 +26,7 @@ provides:
         type: number
         minimum: 1
         maximum: 60
+        mutability: ReadWrite
       enum_test:
         description: A config value that tests the enum type
         type: string
@@ -16,6 +34,7 @@ provides:
           - one
           - two
           - three
+        mutability: ReadWrite
       enum_test2:
         description: Another config value that tests the enum type
         type: integer
@@ -23,6 +42,12 @@ provides:
           - 1
           - 2
           - 3
+        mutability: ReadWrite
+      read_only:
+        description: A read-only config option
+        type: integer
+        default: 1
+        mutability: ReadOnly
   store:
     interface: kvs
     description: This implements the kvs interface, mostly for testing multiple interfaces in one manifest

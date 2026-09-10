@@ -42,6 +42,7 @@ protected:
     SetResult setInternalOcspRequestInterval(const std::string& value);
     SetResult setInternalRejectRemoteStartTransactionWithoutConnectorId(const std::string& value);
     SetResult setInternalRemoteStartTransactionWithoutConnectorIdFindFirst(const std::string& value);
+    SetResult setInternalReportSuspendedEVSEReasonChange(const std::string& value);
     SetResult setInternalRetryBackoffRandomRange(const std::string& value);
     SetResult setInternalRetryBackoffRepeatTimes(const std::string& value);
     SetResult setInternalRetryBackoffWaitMinimum(const std::string& value);
@@ -162,6 +163,7 @@ public:
     bool getLogMessagesRaw() override;
     bool getLogRotation() override;
     bool getLogRotationDateSuffix() override;
+    bool getReportSuspendedEVSEReasonChange() override;
     bool getStopTransactionIfUnlockNotSupported() override;
     bool getUseSslDefaultVerifyPaths() override;
     bool getUseTPM() override;
@@ -197,6 +199,7 @@ public:
     std::optional<bool> getQueueAllMessages() override;
     std::optional<bool> getRejectRemoteStartTransactionWithoutConnectorId() override;
     std::optional<bool> getRemoteStartTransactionWithoutConnectorIdFindFirst() override;
+    std::optional<bool> getReportClearedErrors() override;
     std::optional<int> getMessageQueueSizeThreshold() override;
     std::optional<std::int32_t> getCompositeScheduleDefaultLimitAmps() override;
     std::optional<std::int32_t> getCompositeScheduleDefaultLimitWatts() override;
@@ -223,6 +226,7 @@ public:
     KeyValue getMaxCompositeScheduleDurationKeyValue() override;
     KeyValue getMaxMessageSizeKeyValue() override;
     KeyValue getOcspRequestIntervalKeyValue() override;
+    KeyValue getReportSuspendedEVSEReasonChangeKeyValue() override;
     KeyValue getRetryBackoffRandomRangeKeyValue() override;
     KeyValue getRetryBackoffRepeatTimesKeyValue() override;
     KeyValue getRetryBackoffWaitMinimumKeyValue() override;
@@ -256,6 +260,7 @@ public:
     std::optional<KeyValue> getQueueAllMessagesKeyValue() override;
     std::optional<KeyValue> getRejectRemoteStartTransactionWithoutConnectorIdKeyValue() override;
     std::optional<KeyValue> getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue() override;
+    std::optional<KeyValue> getReportClearedErrorsKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectCommonNameKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectCountryKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectOrganizationKeyValue() override;
@@ -273,6 +278,7 @@ public:
     void setOcspRequestInterval(std::int32_t ocsp_request_interval) override;
     void setRejectRemoteStartTransactionWithoutConnectorId(bool reject) override;
     void setRemoteStartTransactionWithoutConnectorIdFindFirst(bool find_first) override;
+    void setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) override;
     void setRetryBackoffRandomRange(std::int32_t retry_backoff_random_range) override;
     void setRetryBackoffRepeatTimes(std::int32_t retry_backoff_repeat_times) override;
     void setRetryBackoffWaitMinimum(std::int32_t retry_backoff_wait_minimum) override;
@@ -519,7 +525,35 @@ public:
 
     std::optional<ConfigurationStatus> set(const CiString<50>& key, const CiString<500>& value) override;
 
+    // Connectivity: device-model-backed multi-slot network profiles.
+    //
+    // Unlike the JSON backend (single slot-1 profile), these overrides source per-slot connection details from the
+    // v2 device-model NetworkConfiguration[N] components (the same data 2.x uses)
+    // Slots without a configured NetworkConfiguration component fall back to the legacy single-profile behavior
+    // synthesized from the global v1.6 getters.
+    std::string get_network_configuration_priority() override;
+    std::optional<ocpp::v2::NetworkConnectionProfile> read_network_connection_profile(int32_t slot) override;
+    std::optional<WebsocketConnectionOptions> get_websocket_connection_options(int32_t slot) override;
+    void set_active_network_profile_slot(int32_t slot, const std::string& source) override;
+    std::optional<int32_t> get_network_config_timeout() override;
+
+    // Returns the confirmed security profile (SecurityCtrlr.SecurityProfile, set on successful connect),
+    // not the attempt-time value served by getSecurityProfile().
+    int32_t get_security_profile() override;
+    // Writes NetworkConfiguration[slot].SecurityProfile, unlike setSecurityProfile() which targets the
+    // active slot at call time.
+    void set_security_profile_for_slot(std::int32_t slot, std::int32_t security_profile) override;
+    void set_active_security_profile(int32_t security_profile, const std::string& source) override;
+    void set_security_ctrl_security_profile(int32_t security_profile, const std::string& source) override;
+
 private:
+    /// \brief A slot is usable for OCPP 1.6 when its NetworkConfiguration[slot].OcppVersion is unset/empty or
+    /// names "OCPP16"; slots pinned to any other version are filtered out of priority and profile lookups.
+    bool is_slot_usable_for_ocpp16(int32_t slot);
+    /// \brief OCPPCommCtrlr/NetworkProfileConnectionAttempts, or 3 (the shipped component-config default) when
+    /// absent. A finite value is what lets the ConnectivityManager fail over to the next priority slot instead of
+    /// retrying forever.
+    std::int32_t getNetworkProfileConnectionAttempts();
     bool shouldExposeKey(keys::valid_keys key) const;
     std::optional<KeyValue> getCustomKeyValue(const std::string& key);
     void appendDefaultPriceTextKeyValues(std::vector<KeyValue>& all);

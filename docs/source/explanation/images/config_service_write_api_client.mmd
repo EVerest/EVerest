@@ -1,0 +1,40 @@
+sequenceDiagram
+    participant Client as Configuration API Client
+    participant Manager as EVerest Manager + ConfigServiceCore
+    participant TargetModule as EVerestModule (target)
+ 
+    Client->>Manager: [Configuration API] SetConfigParameters(slot_id, updates[])
+    Manager->Manager: Validate request, Access control
+    alt is invalid or not allowed
+      Manager-->>Client: [Configuration API] SetConfigParameterResult(status, [Rejected, ...])
+    else slot_id is active slot AND modules are mid-transition
+      Manager-->>Client: [Configuration API] SetConfigParameterResult(ModulesInTransientState, [RetryLater, ...])
+    else is valid and allowed
+      loop for every update in updates
+        alt slot_id is active slot
+            Manager->Manager: Validate value against the parameter datatype
+            Manager->Manager: Persist change (user-config mirror, then database)
+            note right of Manager: Default result: WillApplyOnRestart
+            opt modules are running AND param is ReadWrite
+                Manager->>TargetModule: [Internal API] set_request(identifier, value)
+                alt Module replies Applied
+                    TargetModule-->>Manager: [Internal API] set_response(Accepted)
+                    Manager->Manager: Update in-memory config
+                    note right of Manager: Final result for param: Applied
+                else Module replies RequiresRestart
+                    TargetModule-->>Manager: [Internal API] set_response(RebootRequired)
+                    note right of Manager: Final result for param: WillApplyOnRestart
+                else Module replies Rejected
+                    TargetModule-->>Manager: [Internal API] set_response(Rejected)
+                    note right of Manager: Final result for param: WillApplyOnRestart<br/>(runtime change rejected)
+                end
+            end
+        else slot_id is not active
+            Manager->Manager: Validate value against the parameter datatype
+            Manager->Manager: Persist change to the slot's storage
+            note right of Manager: Final result for param: WillApplyOnRestart
+        end
+      end
+      Manager->Manager: publish ConfigurationUpdate (if anything was written)
+      Manager-->>Client: [Configuration API] SetConfigParameterResult(status, [Applied, WillApplyOnRestart, ...])
+    end

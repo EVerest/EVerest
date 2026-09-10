@@ -147,19 +147,8 @@ struct {{ parsed_type.name }} {
         {% if not property.required %}
         if (k.{{property.name}}) {
                     {% if property.type.startswith('std::vector<') %}
-                    {%- if parsed_type.properties|selectattr('required')|list|length %}
             j.emplace("{{property.name}}", *k.{{property.name}});
-                    {%- else %}
-        {#only optional keys in json#}
-        {#TODO: add key to json when there are no required keys but multiple optional keys#}
-        {# FIXME: this is never generated?#}
-            if (j.size() == 0) {
-                j = json{{'{{"'+property.name+'", json::array()}};'}}
-            } else {
-                j.emplace("{{property.name}}", *k.{{property.name}});
-            }
-        {% endif %}
-        {% else %}
+        {%- else %}
         {%- if property.enum %}
         j.emplace("{{property.name}}", {{ enum_to_string_view(property.type) }}(*k.{{ property.name }}));
             {%- else %}

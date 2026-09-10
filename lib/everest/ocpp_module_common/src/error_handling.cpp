@@ -114,7 +114,11 @@ ocpp::v2::EventData get_event_data(const Everest::error::Error& error, const boo
         event_data.techCode = error.type;
     }
 
-    event_data.techInfo = error.description;
+    if (!error.message.empty()) {
+        event_data.techInfo = ocpp::CiString<500>(error.message, ocpp::StringTooLarge::Truncate);
+    } else {
+        event_data.techInfo = ocpp::CiString<500>(error.description, ocpp::StringTooLarge::Truncate);
+    }
     event_data.cleared = cleared;
     event_data.transactionId = std::nullopt;        // TODO: Do we need to set this here?
     event_data.variableMonitoringId = std::nullopt; // We dont need to set this for HardwiredNotification

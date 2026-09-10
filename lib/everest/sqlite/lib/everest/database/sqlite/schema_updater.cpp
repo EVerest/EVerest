@@ -153,14 +153,14 @@ bool SchemaUpdater::apply_migration_files(const fs::path& migration_file_directo
     try {
         this->database->open_connection();
         current_version = this->database->get_user_version();
-        EVLOG_info << "Target version: " << target_schema_version << ", current version: " << current_version;
+        EVLOG_debug << "Target version: " << target_schema_version << ", current version: " << current_version;
     } catch (std::runtime_error& e) {
         EVLOG_error << "Failure during migration file apply: " << e.what();
         return false;
     }
 
     if (current_version == target_schema_version) {
-        EVLOG_info << "No migrations to apply since versions match";
+        EVLOG_debug << "No migrations to apply since versions match";
         this->database->close_connection();
         return true;
     }
@@ -182,7 +182,12 @@ bool SchemaUpdater::apply_migration_files(const fs::path& migration_file_directo
 
     bool retval = true;
     try {
-        auto transaction = this->database->begin_transaction();
+        // Migrations may drop and recreate tables that other tables reference, so foreign-key
+        // enforcement must be disabled for the duration of the migration transaction. Setting
+        // the mode here is authoritative: "PRAGMA foreign_keys" statements inside the migration
+        // files themselves would be silent no-ops, because that pragma does nothing while a
+        // transaction is pending.
+        auto transaction = this->database->begin_transaction_with_disabled_fkeys();
 
         for (const auto& item : list.value()) {
             const std::ifstream stream{item.path.string()};

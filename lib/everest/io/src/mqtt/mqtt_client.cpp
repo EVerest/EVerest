@@ -29,6 +29,7 @@ std::string mqtt_client::get_client_id() const {
 }
 
 mqtt_client::~mqtt_client() {
+    unregister_recorded_events();
     // This fixes late adding actions to the event_handler
     mosquitto_cpp::set_callback_disconnect_impl([](auto&, auto, auto const&) {});
 }

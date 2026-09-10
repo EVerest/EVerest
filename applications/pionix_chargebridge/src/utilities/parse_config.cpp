@@ -170,10 +170,22 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
     };
 
     get_node(c.cb_name, "charge_bridge", "name");
-
     get_node(c.cb_remote, "charge_bridge", "ip");
-
+    // accept the bracketed IPv6 spelling ("[fd00::1]"); sentinels (ANY_EVSE/ANY_EV)
+    // and everything else pass through unchanged. Normalized here, before cb_remote
+    // is copied into the per-bridge configs below.
+    if (not string_starts_with(c.cb_remote, "ANY_EV")) {
+        c.cb_remote = strip_brackets(c.cb_remote);
+    }
     c.cb_port = g_cb_port_management;
+
+    get_block("telemetry", c.telemetry, [&](auto& cfg, auto const& main) {
+        get_node(cfg.mqtt_remote, main, "mqtt_remote");
+        get_node(cfg.mqtt_port, main, "mqtt_port");
+        get_node_or_default(cfg.mqtt_bind, main, "mqtt_bind", "");
+        get_node_or_default(cfg.mqtt_ping_interval_ms, main, "mqtt_ping_interval_ms", default_mqtt_ping_interval_ms);
+        get_node(cfg.telemetry_topic, main, "telemetry_topic");
+    });
 
     get_block("can_0", c.can0, [&](auto& cfg, auto const& main) {
         get_node(cfg.can_device, main, "local");
@@ -251,7 +263,17 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         });
     }
 
-    get_block("gpio", c.gpio, [&](auto& cfg, auto const& main) {
+    // The section was renamed "gpio" -> "io". Reject the old name explicitly: silently ignoring it
+    // would leave c.io unset and send a zeroed GPIO config to the MCU (all pins disabled, IO MQTT
+    // topics dead) with no warning.
+    if (not config.find_child(ryml::to_csubstr("gpio")).invalid()) {
+        std::cerr << "Config error: the 'gpio' section was renamed to 'io'; please update the config" << std::endl;
+        throw std::runtime_error("");
+    }
+
+    // Combined GPIO + ADC bridge: a single "io" config section drives one bridge that both
+    // writes GPIO outputs and republishes the GPIO inputs + ADC values from the combined packet.
+    get_block("io", c.io, [&](auto& cfg, auto const& main) {
         get_node(cfg.interval_s, main, "interval_s");
         get_node(cfg.mqtt_remote, main, "mqtt_remote");
         get_node_or_default(cfg.mqtt_bind, main, "mqtt_bind", "");
@@ -264,13 +286,15 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
     get_block("heartbeat", c.heartbeat, [&](auto& cfg, auto const& main) {
         get_node_or_default(cfg.interval_s, main, "interval_s", 1);
         get_node_or_default(cfg.connection_to_s, main, "connection_to_s", 3 * cfg.interval_s);
+        // cb-session-v1: steal the MCU even if a healthy session on another host owns it
+        get_node_or_default(cfg.force_takeover, main, "force_takeover", false);
         cfg.cb_remote = c.cb_remote;
         cfg.cb_port = c.cb_port;
-        get_node(cfg.cb_config.network, "charge_bridge");
         get_node(cfg.cb_config.safety, "safety");
 
         std::memset(cfg.cb_config.gpios, 0, CB_NUMBER_OF_GPIOS * sizeof(CbGpioConfig));
         std::memset(cfg.cb_config.uarts, 0, CB_NUMBER_OF_UARTS * sizeof(CbUartConfig));
+        std::memset(cfg.cb_config.adcs, 0, CB_NUMBER_OF_ADCS * sizeof(CbAdcConfig));
         if (c.serial1) {
             get_node(cfg.cb_config.uarts[0], "serial_1");
         }
@@ -281,15 +305,26 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         // if (c.serial3) {
         //     get_main_node("serial_3", cfg.cb_config.uarts[2]);
         // }
-        if (c.gpio) {
+        if (c.io) {
             for (auto i = 0; i < CB_NUMBER_OF_GPIOS; ++i) {
-                get_node(cfg.cb_config.gpios[i], "gpio", "gpio_" + std::to_string(i));
+                get_node(cfg.cb_config.gpios[i], "io", "gpio_" + std::to_string(i));
+            }
+            for (auto i = 0; i < CB_NUMBER_OF_ADCS; ++i) {
+                get_node(cfg.cb_config.adcs[i], "io", "adc_" + std::to_string(i));
             }
         }
+
         if (c.can0) {
             get_node(cfg.cb_config.can, "can_0");
         }
         get_node(cfg.cb_config.plc_powersaving_mode, "plc", "powersaving_mode");
+
+        // Optional: forward the MCU's debug-UART (printf) output to this host over UDP. Off by
+        // default; the bridge logs each received line to the console prefixed with "[MCU]".
+        bool enable_debug_uart_udp = false;
+        get_node_or_default(enable_debug_uart_udp, main, "enable_debug_uart_udp", false);
+        cfg.cb_config.debug_uart_udp_enabled = enable_debug_uart_udp ? 1 : 0;
+
         cfg.cb_config.config_version = CB_CONFIG_VERSION;
     });
 
@@ -341,6 +376,8 @@ charge_bridge_config set_config_placeholders(charge_bridge_config const& src, ch
         result.plc->cb_remote = ip;
         result.plc->cb = result.cb_name;
         replace(result.plc->plc_tap);
+        replace(result.plc->plc_ip);
+        replace(result.plc->plc_netmaks);
     }
     if (result.bsp.has_value()) {
         result.bsp->cb_remote = ip;
@@ -353,25 +390,9 @@ charge_bridge_config set_config_placeholders(charge_bridge_config const& src, ch
         result.heartbeat->cb = result.cb_name;
         result.heartbeat->cb_remote = ip;
     }
-    if (result.gpio.has_value()) {
-        result.gpio->cb = result.cb_name;
-        result.gpio->cb_remote = ip;
-    }
-
-    if (result.heartbeat.has_value()) {
-        auto& raw = result.heartbeat->cb_config.network.mdns_name;
-        std::string item = raw;
-        replace(item);
-        auto limit = sizeof(raw);
-        if (item.size() > limit) {
-            item = "cb_" + index_str;
-            std::cout << "WARNING: Replacement for mdns_name is too long. Fallback to '" + item + "'" << std::endl;
-        }
-        std::memset(raw, 0, limit);
-        std::memcpy(raw, item.c_str(), std::min(item.size(), limit));
-
-        result.heartbeat->cb_remote = ip;
-        result.heartbeat->cb = result.cb_name;
+    if (result.io.has_value()) {
+        result.io->cb = result.cb_name;
+        result.io->cb_remote = ip;
     }
 
     return result;
@@ -401,8 +422,10 @@ std::vector<charge_bridge_config> parse_config_multi(std::string const& config_f
         ip_list_node >> ip_list;
         std::vector<charge_bridge_config> cb_config_list(ip_list.size());
 
+        // The "##" placeholder counts from 1, not 0: it is also used as the last octet of the
+        // tap's IPv4 address (e.g. "172.25.5.##"), where 0 is the network address.
         for (std::size_t i = 0; i < ip_list.size(); ++i) {
-            set_config_placeholders(base_config, cb_config_list[i], ip_list[i], i);
+            set_config_placeholders(base_config, cb_config_list[i], strip_brackets(ip_list[i]), i + 1);
         }
 
         return cb_config_list;

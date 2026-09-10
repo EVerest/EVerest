@@ -82,7 +82,11 @@ private:
     void handle_everest_connection_state();
 
     evse_bsp_host_to_cb& host_status;
-    evse_bsp_cb_to_host m_cb_status;
+    // Zero initialized, like the evse adapter does in its constructor: the first set_cb_message()
+    // diffs the incoming message against this, so indeterminate bytes are not just undefined
+    // behaviour - a garbage error-flag bit would make the first real error look unchanged and mask it
+    // for as long as it stays raised.
+    evse_bsp_cb_to_host m_cb_status{};
 
     tx_ftor m_tx;
     bool m_everest_connected{false};

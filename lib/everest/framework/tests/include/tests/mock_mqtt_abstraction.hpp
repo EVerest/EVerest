@@ -36,6 +36,15 @@ public:
 
     // --- Recorded state ---
 
+    /// \brief A single publish() call with the QOS/retain flags it carried.
+    struct PublishRecord {
+        std::string topic;
+        nlohmann::json payload;
+        QOS qos;
+        bool retain;
+        bool record_retained;
+    };
+
     /// \brief Returns the MQTTRequest passed to the last get() call, if any.
     const std::optional<MQTTRequest>& last_get_request() const {
         return m_last_get_request;
@@ -44,6 +53,17 @@ public:
     /// \brief Returns all (topic, payload) pairs passed to publish().
     const std::vector<std::pair<std::string, nlohmann::json>>& published() const {
         return m_published;
+    }
+
+    /// \brief Returns all publish() calls including the QOS/retain flags they carried.
+    const std::vector<PublishRecord>& publish_records() const {
+        return m_publish_records;
+    }
+
+    /// \brief Forget all recorded publish() calls (both published() and publish_records()).
+    void clear_published() {
+        m_published.clear();
+        m_publish_records.clear();
     }
 
     /// \brief Returns all handlers registered via register_handler(), keyed by topic.
@@ -71,19 +91,21 @@ public:
     }
 
     void publish(const std::string& topic, const nlohmann::json& json) override {
-        m_published.emplace_back(topic, json);
+        record_publish(topic, json, QOS::QOS2, false, true);
     }
 
-    void publish(const std::string& topic, const nlohmann::json& json, QOS /*qos*/, bool /*retain*/ = false) override {
-        m_published.emplace_back(topic, json);
+    void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false,
+                 bool record_retained = true) override {
+        record_publish(topic, json, qos, retain, record_retained);
     }
 
     void publish(const std::string& topic, const std::string& data) override {
-        m_published.emplace_back(topic, nlohmann::json(data));
+        record_publish(topic, nlohmann::json(data), QOS::QOS2, false, true);
     }
 
-    void publish(const std::string& topic, const std::string& data, QOS /*qos*/, bool /*retain*/ = false) override {
-        m_published.emplace_back(topic, nlohmann::json(data));
+    void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false,
+                 bool record_retained = true) override {
+        record_publish(topic, nlohmann::json(data), qos, retain, record_retained);
     }
 
     void register_handler(const std::string& topic, std::shared_ptr<TypedHandler> handler, QOS /*qos*/) override {
@@ -136,10 +158,16 @@ public:
     }
 
 private:
+    void record_publish(const std::string& topic, nlohmann::json payload, QOS qos, bool retain, bool record_retained) {
+        m_published.emplace_back(topic, payload);
+        m_publish_records.push_back(PublishRecord{topic, std::move(payload), qos, retain, record_retained});
+    }
+
     std::string m_everest_prefix;
     nlohmann::json m_get_response;
     std::optional<MQTTRequest> m_last_get_request;
     std::vector<std::pair<std::string, nlohmann::json>> m_published;
+    std::vector<PublishRecord> m_publish_records;
     std::unordered_map<std::string, std::shared_ptr<TypedHandler>> m_handlers;
     std::optional<std::pair<std::string, nlohmann::json>> m_lwt;
 };

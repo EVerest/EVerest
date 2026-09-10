@@ -3,22 +3,21 @@
 
 #pragma once
 
+#include <filesystem>
 #include <map>
+#include <optional>
 #include <string>
 
 #include <nlohmann/json.hpp>
 
 #include <utils/config/storage_types.hpp>
 
-namespace Everest {
-struct ManagerSettings;
-}
-
 namespace everest::config {
 
 /// \brief EVerest Storage Interface providing read and write access to configurations
 class StorageInterface {
 public:
+    /// \brief Default virtual destructor
     virtual ~StorageInterface() = default;
 
     /// \brief Writes given EVerest \p module_configs to persistent storage
@@ -26,22 +25,15 @@ public:
     /// \return
     virtual GenericResponseStatus write_module_configs(const ModuleConfigurations& module_configs) = 0;
 
-    /// \brief Writes EVerest config \p settings to persistent storage
-    /// \param settings EVerest settings configuration
+    /// \brief Replaces given EVerest \p module_configs in persistent storage
+    /// \param config EVerest config
     /// \return
-    virtual GenericResponseStatus write_settings(const Everest::ManagerSettings& manager_settings) = 0;
-
-    /// \brief Wipes all configuration entries from persistent storage
-    virtual GenericResponseStatus wipe() = 0;
+    virtual GenericResponseStatus replace_module_configs(const ModuleConfigurations& module_configs) = 0;
 
     /// \brief Gets EVerest config from persistent storage
     /// \return Response with status of operation and config. config is only set if status is OK. Config contains all
     /// module configurations and manager settings
     virtual GetModuleConfigsResponse get_module_configs() = 0;
-
-    /// \brief Gets EVerest manager settings from persistent storage
-    /// \return
-    virtual GetSettingsResponse get_settings() = 0;
 
     /// \brief Gets EVerest config from persistent storage for a single module
     /// \param module_id

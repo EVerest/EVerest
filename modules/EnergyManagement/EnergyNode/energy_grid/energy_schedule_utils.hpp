@@ -6,6 +6,7 @@
 
 #include <generated/types/energy.hpp>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace module {
@@ -27,6 +28,15 @@ namespace energy_grid {
 void process_schedule_with_limits(std::vector<types::energy::ScheduleReqEntry>& schedule, const std::string& source,
                                   double fuse_limit_A, int phase_count, double nominal_voltage_V,
                                   bool enhance_with_current_limits);
+
+/**
+ * @brief Checks whether an energy flow request tree contains a node with the given uuid
+ *
+ * @param request The root of the (sub)tree to search
+ * @param uuid The uuid to search for
+ * @return true if the request itself or any of its descendants has the given uuid
+ */
+bool energy_flow_request_contains_uuid(const types::energy::EnergyFlowRequest& request, std::string_view uuid);
 
 } // namespace energy_grid
 } // namespace module

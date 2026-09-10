@@ -48,6 +48,8 @@ public:
     virtual bool close_connection() = 0;
 
     /// \brief Start a transaction on the database. Returns an object holding the transaction.
+    ///        The connection's current foreign-key enforcement state is inherited and left
+    ///        untouched.
     /// \note This function can block until the previous transaction is finished.
     [[nodiscard]] virtual std::unique_ptr<TransactionInterface> begin_transaction() = 0;
 
@@ -72,6 +74,21 @@ public:
 
     /// \brief Helper function to get the user version of the database.
     virtual uint32_t get_user_version() = 0;
+
+    /// \brief Same as begin_transaction() but foreign_keys constraints are enforced for the
+    ///        duration of the transaction; the connection's previous foreign-key state is
+    ///        restored when the transaction ends
+    [[nodiscard]] virtual std::unique_ptr<TransactionInterface> begin_transaction_with_enforced_fkeys() = 0;
+
+    /// \brief Same as begin_transaction_with_enforced_fkeys() but constraints are only checked
+    ///        at commit time (deferred)
+    [[nodiscard]] virtual std::unique_ptr<TransactionInterface> begin_transaction_with_deferred_fkeys() = 0;
+
+    /// \brief Same as begin_transaction() but foreign_keys constraints are disabled for the
+    ///        duration of the transaction; the connection's previous foreign-key state is
+    ///        restored when the transaction ends. Intended for schema migrations that drop and
+    ///        recreate referenced tables.
+    [[nodiscard]] virtual std::unique_ptr<TransactionInterface> begin_transaction_with_disabled_fkeys() = 0;
 };
 
 class Connection : public ConnectionInterface {
@@ -92,11 +109,17 @@ public:
     bool close_connection() override;
 
     [[nodiscard]] std::unique_ptr<TransactionInterface> begin_transaction() override;
+    [[nodiscard]] std::unique_ptr<TransactionInterface> begin_transaction_with_enforced_fkeys() override;
+    [[nodiscard]] std::unique_ptr<TransactionInterface> begin_transaction_with_deferred_fkeys() override;
+    [[nodiscard]] std::unique_ptr<TransactionInterface> begin_transaction_with_disabled_fkeys() override;
 
     bool execute_statement(const std::string& statement) override;
     std::unique_ptr<StatementInterface> new_statement(const std::string& sql) override;
 
     const char* get_error_message() override;
+
+    /// \brief Returns true while a transaction is open on this connection (autocommit disabled).
+    [[nodiscard]] bool has_pending_transaction() const;
 
     bool clear_table(const std::string& table) override;
 

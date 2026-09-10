@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <everest/util/async/monitor.hpp>
+
 #include <ocpp/v2/message_handler.hpp>
 
 namespace ocpp::v2 {
@@ -128,7 +130,9 @@ private:
     std::optional<TransactionEventResponseCallback> transaction_event_response_callback;
     ResetCallback reset_callback;
 
-    std::map<std::int32_t, std::pair<IdToken, std::int32_t>> remote_start_id_per_evse;
+    /// \brief Written by the message-handler thread (handle_remote_start_transaction_request), read and
+    /// erased by the EVerest module thread (on_authorized / on_charging_state_changed via transaction_event_req).
+    everest::lib::util::monitor<std::map<std::int32_t, std::pair<IdToken, std::int32_t>>> remote_start_id_per_evse;
     /// \brief Used when an 'OnIdle' reset is requested, to perform the reset after the charging has stopped.
     bool reset_scheduled;
     /// \brief If `reset_scheduled` is true and the reset is for a specific evse id, it will be stored in this member.

@@ -20,6 +20,9 @@ public:
     ComposedDeviceModelStorage() = default;
 
     /// \brief Register a device model storage.
+    /// If a component/variable combination is already provided by a previously registered storage, the storage
+    /// registered last takes precedence for that variable and a warning is logged. The integrator is responsible
+    /// for avoiding such overlaps.
     /// \param device_model_storage_id   The id of the device model storage. Component variable combinations can be
     /// used to map to this id to identify which device model is adressed for certain requests.
     /// \param  device_model_storage The device model storage to register.
@@ -59,4 +62,17 @@ private:
     ///
     std::string get_variable_source(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
 };
+
+/// \brief Builds the module-standard composed device model storage: \p ocpp_storage registered under
+/// source id "OCPP" (the default source) and \p everest_storage under "EVEREST". For component/variable
+/// combinations defined in both storages, the EVerest device model takes precedence and a warning is
+/// logged; the integrator is responsible for avoiding overlaps.
+/// \param ocpp_storage     Must have a fully seeded backing database, because registration snapshots
+///                         get_device_model() to build the per-variable source map. A null pointer
+///                         raises std::invalid_argument.
+/// \param everest_storage  Registered under "EVEREST"; a null pointer is skipped with a warning.
+/// \return The composed storage with both sources registered.
+std::unique_ptr<ComposedDeviceModelStorage>
+make_composed_device_model_storage(std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> ocpp_storage,
+                                   std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> everest_storage);
 } // namespace ocpp_module_common::device_model

@@ -31,6 +31,8 @@ static void handle_sap(VariantAccess& va) {
 
     if (doc.supportedAppProtocolReq_isUsed) {
         insert_type(va, doc.supportedAppProtocolReq);
+    } else if (doc.supportedAppProtocolRes_isUsed) {
+        insert_type(va, doc.supportedAppProtocolRes);
     } else {
         va.error = "chosen message type unhandled";
     }

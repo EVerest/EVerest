@@ -16,7 +16,6 @@
                     "mutability": "ReadWrite"
                 }
             ],
-            "instance": "BytesPerMessage",
             "description": "Indicates whether new sessions can be started on EVSEs, while Charging Station is waiting for all EVSEs to become Available in order to start a pending firmware update",
             "type": "boolean"
         },

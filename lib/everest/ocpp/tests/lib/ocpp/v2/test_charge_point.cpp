@@ -2,6 +2,7 @@
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
 
 #include "comparators.hpp"
+#include "connectivity_manager_mock.hpp"
 #include "device_model_test_helper.hpp"
 #include "everest/logging.hpp"
 #include "evse_security_mock.hpp"
@@ -18,6 +19,7 @@
 #include "ocpp/v21/messages/NotifyDERAlarm.hpp"
 #include "ocpp/v21/messages/SetDERControl.hpp"
 #include "smart_charging_test_utils.hpp"
+#include "test_temp_paths.hpp"
 
 #include "gmock/gmock.h"
 #include <boost/uuid/uuid_generators.hpp>
@@ -28,7 +30,7 @@
 
 static const ocpp::v2::AddChargingProfileSource DEFAULT_REQUEST_TO_ADD_PROFILE_SOURCE =
     ocpp::v2::AddChargingProfileSource::SetChargingProfile;
-static const std::string TEMP_OUTPUT_PATH = "/tmp/ocpp201";
+static const std::string TEMP_OUTPUT_PATH = libocpp_test::unique_temp_directory("ocpp201_message_log").string();
 static const std::string DEFAULT_TX_ID = "10c75ff7-74f5-44f5-9d01-f649f3ac7b78";
 
 namespace ocpp::v2 {
@@ -150,7 +152,7 @@ public:
 
     std::shared_ptr<DatabaseHandler> create_database_handler() {
         auto database_connection =
-            std::make_unique<everest::db::sqlite::Connection>(fs::path("/tmp/ocpp201") / "cp.db");
+            std::make_unique<everest::db::sqlite::Connection>(libocpp_test::unique_temp_path("ocpp201_cp", ".db"));
         return std::make_shared<DatabaseHandler>(std::move(database_connection), MIGRATION_FILES_LOCATION_V2);
     }
 
@@ -1133,5 +1135,46 @@ TEST_F(ChargePointConstructorTestFixtureV2, DerBlock_NotBuiltAtBoot_WhenNoEnable
                                        create_message_queue(database_handler), "/tmp", evse_security, callbacks);
 
     EXPECT_EQ(this->der_active_directives_emit_count, 0);
+}
+
+// stop() is the external "stop OCPP communication" control, not destruction: the charge point stays alive
+// and restartable, and its owner still gets the disconnect notification. Disarming here raced the deferred
+// delivery of that notification and swallowed it.
+TEST_F(ChargePointConstructorTestFixtureV2, StopKeepsConnectionCallbacksArmed) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+
+    EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(0);
+
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                       connectivity_manager, "/tmp", callbacks);
+
+    charge_point.start(BootReasonEnum::PowerUp);
+    charge_point.stop();
+    charge_point.start(BootReasonEnum::ApplicationReset);
+    charge_point.stop();
+
+    // Verify while still alive: destruction is the only disarm site.
+    ::testing::Mock::VerifyAndClearExpectations(connectivity_manager.get());
+}
+
+// The use-after-free is at destruction: a deferred callback landing while members are destroyed. The
+// destructor body runs before any member is gone and blocks on an in-flight callback.
+TEST_F(ChargePointConstructorTestFixtureV2, DestructionDisarmsConnectionCallbacks) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+
+    {
+        ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                           connectivity_manager, "/tmp", callbacks);
+        charge_point.start(BootReasonEnum::PowerUp);
+        charge_point.stop();
+
+        EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(1);
+    }
 }
 } // namespace ocpp::v2

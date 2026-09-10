@@ -168,6 +168,61 @@ TEST_F(DeviceModelTest, test_set_monitors) {
     ASSERT_EQ(results[1].status, SetMonitoringStatusEnum::Rejected);
 }
 
+TEST_F(DeviceModelTest, test_set_threshold_and_delta_monitors_on_integer_variable) {
+    Component component;
+    component.name = "AlignedDataCtrlr";
+
+    Variable variable;
+    variable.name = "Interval";
+
+    // Clear all existing monitors for a clean test state
+    auto existing_monitors = dm->get_monitors({}, {{component, variable}});
+    for (auto& result : existing_monitors) {
+        std::vector<std::int32_t> ids;
+        for (auto& monitor : result.variableMonitoring) {
+            ids.push_back(monitor.id);
+        }
+        dm->clear_monitors(ids, true);
+    }
+
+    SetMonitoringData upper_threshold;
+    upper_threshold.value = 950.0;
+    upper_threshold.type = MonitorEnum::UpperThreshold;
+    upper_threshold.severity = 3;
+    upper_threshold.component = component;
+    upper_threshold.variable = variable;
+
+    SetMonitoringData lower_threshold;
+    lower_threshold.value = 10.0;
+    lower_threshold.type = MonitorEnum::LowerThreshold;
+    lower_threshold.severity = 3;
+    lower_threshold.component = component;
+    lower_threshold.variable = variable;
+
+    SetMonitoringData delta;
+    delta.value = 30.0;
+    delta.type = MonitorEnum::Delta;
+    delta.severity = 3;
+    delta.component = component;
+    delta.variable = variable;
+
+    // Non-integral values remain invalid for integer-typed variables
+    SetMonitoringData non_integral;
+    non_integral.value = 4.579;
+    non_integral.type = MonitorEnum::UpperThreshold;
+    non_integral.severity = 4;
+    non_integral.component = component;
+    non_integral.variable = variable;
+
+    auto results = dm->set_monitors({upper_threshold, lower_threshold, delta, non_integral});
+    ASSERT_EQ(results.size(), 4);
+
+    EXPECT_EQ(results[0].status, SetMonitoringStatusEnum::Accepted);
+    EXPECT_EQ(results[1].status, SetMonitoringStatusEnum::Accepted);
+    EXPECT_EQ(results[2].status, SetMonitoringStatusEnum::Accepted);
+    EXPECT_EQ(results[3].status, SetMonitoringStatusEnum::Rejected);
+}
+
 TEST_F(DeviceModelTest, test_get_monitors) {
     // Set 'Interval' to not support monitoring.
     VariableCharacteristics c;

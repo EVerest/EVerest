@@ -25,9 +25,9 @@ def _create_cpp_toolchains():
     # to cross compile for phyverso.
     http_archive(
         name = "cc_toolchain_aarch64-linux-gnu-x86_64-linux",
-        urls = ["https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--glibc--stable-2022.08-1.tar.bz2"],
-        sha256 = "844df3c99508030ee9cb1152cb182500bb9816ff01968f2e18591d51d766c9e7",
-        strip_prefix = "aarch64--glibc--stable-2022.08-1",
+        urls = ["https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--glibc--bleeding-edge-2024.02-1.tar.bz2"],
+        sha256 = "09a5a8a59403e3df7a557014d0f9463e8e366c5431656252f0ce3fc00ecfc050",
+        strip_prefix = "aarch64--glibc--bleeding-edge-2024.02-1",
         build_file_content = """
 load("@@rules_cc+//cc:defs.bzl", "cc_toolchain")
 load("@bazel_tools//tools/cpp:unix_cc_toolchain_config.bzl", "cc_toolchain_config")
@@ -39,17 +39,17 @@ SYSROOT = REPO + "/aarch64-buildroot-linux-gnu/sysroot"
 
 cc_toolchain_config(
     name = "aarch64-linux-glibc_toolchain_config",
-    abi_libc_version = "2.35",
+    abi_libc_version = "2.39",
     abi_version = "unknown",
     compile_flags = [
         "-nostdinc++",
         "-fPIC",
         "-mno-outline-atomics",
-        "-isystem", REPO + "/aarch64-buildroot-linux-gnu/include/c++/11.3.0/",
-        "-isystem", REPO + "/aarch64-buildroot-linux-gnu/include/c++/11.3.0/aarch64-buildroot-linux-gnu/",
+        "-isystem", REPO + "/aarch64-buildroot-linux-gnu/include/c++/13.2.0/",
+        "-isystem", REPO + "/aarch64-buildroot-linux-gnu/include/c++/13.2.0/aarch64-buildroot-linux-gnu/",
         "-isystem", REPO + "/aarch64-buildroot-linux-gnu/sysroot/usr/include/",
-        "-isystem", REPO + "/lib/gcc/aarch64-buildroot-linux-gnu/11.3.0/include/",
-        "-isystem", REPO + "/lib/gcc/aarch64-buildroot-linux-gnu/11.3.0/include-fixed/",
+        "-isystem", REPO + "/lib/gcc/aarch64-buildroot-linux-gnu/13.2.0/include/",
+        "-isystem", REPO + "/lib/gcc/aarch64-buildroot-linux-gnu/13.2.0/include-fixed/",
     ],
     compiler = "gcc",
     cpu = "aarch64",
@@ -60,7 +60,7 @@ cc_toolchain_config(
     tool_paths = {
         "ar": BIN_PREFIX + "ar",
         "cpp": BIN_PREFIX + "g++.br_real",
-        "gcc": BIN_PREFIX + "gcc-11.3.0.br_real",
+        "gcc": BIN_PREFIX + "gcc-13.2.0.br_real",
         "dwp": BIN_PREFIX + "dwp",
         "gcov": BIN_PREFIX + "gcov",
         "ld": BIN_PREFIX + "ld",
@@ -115,9 +115,9 @@ toolchain(
 
     http_archive(
         name = "cc_toolchain_aarch64-linux-musl-x86_64-linux",
-        urls = ["https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--stable-2023.08-1.tar.bz2"],
-        sha256 = "25767ae9ca70a76e9a71a13c6bc145532066a36d118d8f0ef14bd474784095ce",
-        strip_prefix = "aarch64--musl--stable-2023.08-1",
+        urls = ["https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--bleeding-edge-2024.02-1.tar.bz2"],
+        sha256 = "d81e3517b69ebc49bec9e130952cd7c18fd0f84e992720e18e9cd02110c00296",
+        strip_prefix = "aarch64--musl--bleeding-edge-2024.02-1",
         build_file_content = """
 load("@@rules_cc+//cc:defs.bzl", "cc_toolchain")
 load("@bazel_tools//tools/cpp:unix_cc_toolchain_config.bzl", "cc_toolchain_config")
@@ -129,16 +129,16 @@ SYSROOT = REPO + "/aarch64-buildroot-linux-musl/sysroot"
 
 cc_toolchain_config(
     name = "aarch64-linux-musl_toolchain_config",
-    abi_libc_version = "1.2.4",
+    abi_libc_version = "1.2.5",
     abi_version = "unknown",
     compile_flags = [
         "-nostdinc++",
         "-flto", "-ffat-lto-objects",
-        "-isystem", REPO + "/aarch64-buildroot-linux-musl/include/c++/12.3.0/",
-        "-isystem", REPO + "/aarch64-buildroot-linux-musl/include/c++/12.3.0/aarch64-buildroot-linux-musl/",
+        "-isystem", REPO + "/aarch64-buildroot-linux-musl/include/c++/13.2.0/",
+        "-isystem", REPO + "/aarch64-buildroot-linux-musl/include/c++/13.2.0/aarch64-buildroot-linux-musl/",
         "-isystem", REPO + "/aarch64-buildroot-linux-musl/sysroot/usr/include/",
-        "-isystem", REPO + "/lib/gcc/aarch64-buildroot-linux-musl/12.3.0/include/",
-        "-isystem", REPO + "/lib/gcc/aarch64-buildroot-linux-musl/12.3.0/include-fixed/",
+        "-isystem", REPO + "/lib/gcc/aarch64-buildroot-linux-musl/13.2.0/include/",
+        "-isystem", REPO + "/lib/gcc/aarch64-buildroot-linux-musl/13.2.0/include-fixed/",
     ],
     compiler = "gcc",
     cpu = "aarch64",
@@ -149,7 +149,7 @@ cc_toolchain_config(
     tool_paths = {
         "ar": BIN_PREFIX + "ar",
         "cpp": BIN_PREFIX + "g++.br_real",
-        "gcc": BIN_PREFIX + "gcc-12.3.0.br_real",
+        "gcc": BIN_PREFIX + "gcc-13.2.0.br_real",
         "dwp": BIN_PREFIX + "dwp",
         "gcov": BIN_PREFIX + "gcov",
         "ld": BIN_PREFIX + "ld",

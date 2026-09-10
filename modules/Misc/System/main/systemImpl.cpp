@@ -530,10 +530,10 @@ void systemImpl::handle_reset(types::system::ResetType& type, bool& scheduled) {
 
         if (type == types::system::ResetType::Soft) {
             EVLOG_info << "Performing soft reset now.";
-            kill(getpid(), SIGINT);
+            kill(getpid(), SIGTERM);
         } else {
             EVLOG_info << "Performing hard reset now.";
-            kill(getpid(), SIGINT); // FIXME(piet): Define appropriate behavior for hard reset
+            kill(getpid(), SIGTERM); // FIXME(piet): Define appropriate behavior for hard reset
         }
     }).detach();
 }

@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
 
+#include <cmath>
+#include <cstdint>
+#include <limits>
+
 #include <everest/database/exceptions.hpp>
 #include <ocpp/common/constants.hpp>
 #include <ocpp/common/utils.hpp>
@@ -82,6 +86,20 @@ bool component_variables_match(const std::vector<ComponentVariable>& component_v
                            (component.instance == v.component.instance) and (variable == v.variable)); // B08.FR.23
                }) != component_variables.end();
 }
+
+std::string format_missing_required_variable(const RequiredComponentVariable& required_variable,
+                                             const std::string& reason) {
+    std::stringstream ss;
+    ss << required_variable.component.name << "/"
+       << (required_variable.variable.has_value() ? required_variable.variable.value().name : "<unnamed>") << ": "
+       << reason;
+    if (required_variable.component.name == ControllerComponents::OCPP16LegacyCtrlr.name) {
+        ss << " (the OCPP16LegacyCtrlr component is required for every OCPP version so the device model supports "
+              "switching between OCPP 1.6 and 2.x; add standardized/OCPP16LegacyCtrlr.json to the device model "
+              "config directory or initialize the database with the built-in OCPP16LegacyCtrlr fallback enabled)";
+    }
+    return ss.str();
+}
 } // namespace
 
 void DeviceModel::check_variable_has_value(const ComponentVariable& component_variable, const AttributeEnum attribute) {
@@ -140,11 +158,7 @@ void DeviceModel::check_required_variables() {
         try {
             check_required_variable(required_variable, supported_versions);
         } catch (const std::exception& e) {
-            std::stringstream ss;
-            ss << required_variable.component.name << "/"
-               << (required_variable.variable.has_value() ? required_variable.variable.value().name : "<unnamed>")
-               << ": " << e.what();
-            missing_var_errors.push_back(ss.str());
+            missing_var_errors.push_back(format_missing_required_variable(required_variable, e.what()));
         }
     }
 
@@ -159,11 +173,7 @@ void DeviceModel::check_required_variables() {
             try {
                 check_required_variable(required_variable, supported_versions);
             } catch (const std::exception& e) {
-                std::stringstream ss;
-                ss << required_variable.component.name << "/"
-                   << (required_variable.variable.has_value() ? required_variable.variable.value().name : "<unnamed>")
-                   << ": " << e.what();
-                missing_var_errors.push_back(ss.str());
+                missing_var_errors.push_back(format_missing_required_variable(required_variable, e.what()));
             }
         }
     }
@@ -260,6 +270,17 @@ bool validate_value(const VariableCharacteristics& characteristics, const std::s
         }
     }
     return false;
+}
+
+/// \brief Converts a monitor \p value to a string suitable for validate_value() given the variable's \p data_type.
+/// std::to_string(float) always renders six decimals (e.g. "950.000000"), which would fail integer validation even
+/// for integral values, so integral values for integer-typed variables are rendered without decimals.
+std::string monitor_value_to_string(const float value, const DataEnum data_type) {
+    if (data_type == DataEnum::integer and std::rint(value) == value and
+        std::abs(value) < static_cast<float>(std::numeric_limits<std::int32_t>::max())) {
+        return std::to_string(static_cast<std::int32_t>(value));
+    }
+    return std::to_string(value);
 }
 
 bool include_in_summary_inventory(const ComponentVariable& cv, const VariableAttribute& attribute) {
@@ -831,7 +852,8 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
                 valid_value = true;
             } else {
                 try {
-                    valid_value = validate_value(characteristics, std::to_string(request.value),
+                    valid_value = validate_value(characteristics,
+                                                 monitor_value_to_string(request.value, characteristics.dataType),
                                                  allow_zero(request.component, request.variable));
                 } catch (const std::exception& e) {
                     EVLOG_warning << "Could not validate monitor value: " << request.value
@@ -1226,6 +1248,10 @@ void DeviceModel::set_active_network_profile_slot(int32_t slot, const std::strin
     if (cv.variable.has_value()) {
         set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, std::to_string(slot), source);
     }
+}
+
+std::optional<std::int32_t> DeviceModel::get_active_network_profile_slot() {
+    return this->get_optional_value<std::int32_t>(ControllerComponentVariables::ActiveNetworkProfile);
 }
 
 void DeviceModel::set_per_slot_ocpp_version(int32_t slot, const std::string& version, const std::string& source) {

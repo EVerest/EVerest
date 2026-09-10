@@ -39,6 +39,10 @@ types:
       - UsedToStart
       - UsedToStop
       - Withdrawn
+      # Occurs when the token (or its parent id token) matches an ongoing transaction and the implementation is
+      # configured to not stop the transaction on a renewed presentation of the token. Consumers can use this event
+      # e.g. to allow the user to stop the transaction manually
+      - UsedToReauthorize
   CustomIdToken:
     description: Type for a custom id token with a free-form type
     type: object

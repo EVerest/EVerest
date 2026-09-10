@@ -42,6 +42,20 @@ std::string replace_all(std::string const& source, std::string const& placeholde
     return replace_all_in_place(result, placeholder, substitute);
 }
 
+std::string strip_brackets(std::string const& host) {
+    if (host.size() >= 2 && host.front() == '[' && host.back() == ']') {
+        return host.substr(1, host.size() - 2);
+    }
+    return host;
+}
+
+std::string format_host_port(std::string const& host, std::uint16_t port) {
+    if (host.find(':') != std::string::npos) {
+        return "[" + host + "]:" + std::to_string(port);
+    }
+    return host + ":" + std::to_string(port);
+}
+
 std::set<std::string> csv_to_set(std::string const& str) {
     std::set<std::string> result;
     std::stringstream ss(str);

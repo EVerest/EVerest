@@ -40,7 +40,7 @@ def clear_status_fifo_pending(everest_core: EverestCore) -> None:
         listener._read_buffer = b""
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 def test_manager_stop_during_startup(everest_core: EverestCore):
     start_exception = []
     shutdown_errors = []
@@ -71,7 +71,7 @@ def test_manager_stop_during_startup(everest_core: EverestCore):
     assert not starter_thread.is_alive(), "Startup thread did not exit after stop()."
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 @pytest.mark.everest_manager_args("--graceful-shutdown")
 def test_manager_graceful_shutdown_from_running(everest_core: EverestCore):
     shutdown_errors = []
@@ -93,7 +93,7 @@ def test_manager_graceful_shutdown_from_running(everest_core: EverestCore):
     assert not shutdown_errors, shutdown_errors
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 @pytest.mark.everest_manager_args("--into-idle")
 def test_manager_into_idle_skips_module_startup(everest_core: EverestCore):
     start_exception = []
@@ -119,7 +119,7 @@ def test_manager_into_idle_skips_module_startup(everest_core: EverestCore):
     )
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 @pytest.mark.everest_manager_args("--recover-module-crashes", "--graceful-shutdown")
 def test_manager_restarts_modules_after_unexpected_exit(
     everest_core: EverestCore, connected_mqtt_client
@@ -156,8 +156,8 @@ def test_manager_restarts_modules_after_unexpected_exit(
     )
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
-@pytest.mark.everest_manager_args("--recover-module-crashes", "--graceful-shutdown")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
+@pytest.mark.everest_manager_args("--recover-module-crashes", "--graceful-shutdown", "--idle-on-failure")
 def test_manager_restarts_modules_after_unexpected_exit_max_3_times(
     everest_core: EverestCore, connected_mqtt_client
 ):
@@ -197,7 +197,7 @@ def test_manager_restarts_modules_after_unexpected_exit_max_3_times(
     everest_core.assert_no_manager_status(ManagerStatusFifo.ALL_MODULES_STARTED, timeout_s=10.0)
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 def test_manager_does_not_transition_back_to_running_when_stopped_during_startup(
     everest_core: EverestCore
 ):
@@ -231,7 +231,7 @@ def test_manager_does_not_transition_back_to_running_when_stopped_during_startup
     everest_core.assert_no_manager_status(ManagerStatusFifo.MANAGER_RUNNING, timeout_s=5.0)
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 @pytest.mark.everest_manager_args("--recover-module-crashes", "--graceful-shutdown")
 def test_manager_recovers_after_crash_with_blocked_module_timeout(
     everest_core: EverestCore, connected_mqtt_client
@@ -274,7 +274,7 @@ def test_manager_recovers_after_crash_with_blocked_module_timeout(
     )
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 def test_manager_default_stop_terminates_modules_immediately(everest_core: EverestCore):
     """Without --graceful-shutdown, stop() must force-terminate modules right away:
     no MQTT shutdown drain, no FORCE_SHUTDOWN_TIMEOUT event, no clean-stop event."""
@@ -291,7 +291,7 @@ def test_manager_default_stop_terminates_modules_immediately(everest_core: Evere
     assert everest_core.process.returncode == 0
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 def test_manager_default_crash_terminates_remaining_modules_and_exits(
     everest_core: EverestCore, connected_mqtt_client
 ):
@@ -314,3 +314,137 @@ def test_manager_default_crash_terminates_remaining_modules_and_exits(
     )
 
     assert everest_core.process.wait(timeout=60.0) != 0
+
+
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
+@pytest.mark.everest_manager_args("--recover-module-crashes", "--graceful-shutdown")
+def test_manager_crash_recovery_exhausted_exits_without_idle_on_failure(
+    everest_core: EverestCore, connected_mqtt_client
+):
+    """Without --idle-on-failure, the manager must exit with a failure code once the crash
+    recovery retry cap is exhausted, instead of staying alive in Idle."""
+    mqtt_external_prefix = everest_core.mqtt_external_prefix
+    exit_cmd_topic = f"{mqtt_external_prefix}everest_api/exit_simulator/cmd/exit"
+
+    everest_core.start()
+
+    expected_status_sets = [
+        [ManagerStatusFifo.crash_recovery_attempt(1, 3), ManagerStatusFifo.ALL_MODULES_STARTED],
+        [ManagerStatusFifo.crash_recovery_attempt(2, 3), ManagerStatusFifo.ALL_MODULES_STARTED],
+        [ManagerStatusFifo.crash_recovery_attempt(3, 3), ManagerStatusFifo.ALL_MODULES_STARTED],
+        [ManagerStatusFifo.CRASH_RECOVERY_EXHAUSTED, ManagerStatusFifo.MANAGER_EXITING],
+    ]
+
+    for status_set in expected_status_sets:
+        connected_mqtt_client.publish(exit_cmd_topic, "1")
+        for status in status_set:
+            everest_core.wait_for_manager_status(status, timeout_s=60.0)
+
+    assert everest_core.process.wait(timeout=60.0) != 0
+
+
+@pytest.mark.everest_core_config("config-empty-modules.yaml")
+def test_manager_exits_on_empty_module_config(everest_core: EverestCore):
+    """A configuration without modules must make the manager exit with a failure code
+    (instead of idling or reporting Running with zero modules)."""
+    start_exception = []
+
+    def start_core():
+        try:
+            everest_core.start()
+        except Exception as exc:
+            start_exception.append(exc)
+
+    starter_thread = threading.Thread(target=start_core)
+    starter_thread.start()
+
+    everest_core.wait_for_manager_status(ManagerStatusFifo.MANAGER_EXITING, timeout_s=60.0)
+    everest_core.assert_no_manager_status(ManagerStatusFifo.ALL_MODULES_STARTED, timeout_s=1.0)
+    everest_core.assert_no_manager_status(ManagerStatusFifo.MANAGER_IDLE, timeout_s=1.0)
+    assert everest_core.process.wait(timeout=60.0) != 0
+
+    starter_thread.join(timeout=60.0)
+    assert not starter_thread.is_alive(), "Startup thread did not exit."
+    assert start_exception, "Expected start() to fail because the manager exits on an empty module config."
+    assert all(isinstance(exc, TimeoutError) for exc in start_exception), (
+        f"Unexpected startup exception(s): {start_exception}"
+    )
+
+
+@pytest.mark.everest_core_config("config-empty-modules.yaml")
+@pytest.mark.everest_manager_args("--into-idle")
+def test_manager_enters_idle_on_empty_module_config_with_into_idle(everest_core: EverestCore):
+    """--into-idle keeps the manager alive in Idle for a configuration without modules."""
+    everest_core.start(expected_status=ManagerStatusFifo.MANAGER_IDLE)
+
+    everest_core.assert_no_manager_status(ManagerStatusFifo.MANAGER_EXITING, timeout_s=5.0)
+    everest_core.stop()
+
+
+@pytest.mark.everest_core_config("config-empty-modules.yaml")
+@pytest.mark.everest_manager_args("--idle-on-failure")
+def test_manager_enters_idle_on_empty_module_config_with_idle_on_failure(everest_core: EverestCore):
+    """--idle-on-failure keeps the manager alive in Idle when the boot configuration contains
+    no modules, instead of exiting with a failure code (and without pretending to be Running)."""
+    everest_core.start(expected_status=ManagerStatusFifo.MANAGER_IDLE)
+
+    everest_core.assert_no_manager_status(ManagerStatusFifo.ALL_MODULES_STARTED, timeout_s=1.0)
+    everest_core.assert_no_manager_status(ManagerStatusFifo.MANAGER_EXITING, timeout_s=5.0)
+    everest_core.stop()
+
+
+def start_core_in_thread(everest_core: EverestCore):
+    """Call everest_core.start() off the main thread, so a manager that exits during startup (and
+    therefore never reports the status start() waits for) does not block the assertions.
+
+    :return: the started thread and a list that collects the exception start() raised, if any.
+    """
+    start_exception = []
+
+    def start_core():
+        try:
+            everest_core.start()
+        except Exception as exc:
+            start_exception.append(exc)
+
+    starter_thread = threading.Thread(target=start_core)
+    starter_thread.start()
+    return starter_thread, start_exception
+
+
+@pytest.mark.everest_core_config("config-test-invalid-module-config.yaml")
+def test_manager_exits_on_invalid_module_config(everest_core: EverestCore):
+    """A configuration that fails validation must make the manager exit with a failure code."""
+    starter_thread, start_exception = start_core_in_thread(everest_core)
+
+    everest_core.assert_no_manager_status(ManagerStatusFifo.ALL_MODULES_STARTED, timeout_s=1.0)
+    everest_core.assert_no_manager_status(ManagerStatusFifo.MANAGER_IDLE, timeout_s=1.0)
+    assert everest_core.process.wait(timeout=60.0) != 0
+
+    starter_thread.join(timeout=60.0)
+    assert not starter_thread.is_alive(), "Startup thread did not exit."
+    assert start_exception, "Expected start() to fail because the manager exits on an invalid config."
+
+
+@pytest.mark.everest_core_config("config-test-invalid-module-config.yaml")
+@pytest.mark.everest_manager_args("--idle-on-failure")
+def test_manager_enters_idle_on_invalid_module_config_with_idle_on_failure(everest_core: EverestCore):
+    """--idle-on-failure keeps the manager alive in Idle for a configuration that fails validation.
+    The boot then continues with no active configuration slot, so it reaches the lifecycle with no
+    modules and the Configuration API stays available to push a corrected configuration."""
+    everest_core.start(expected_status=ManagerStatusFifo.MANAGER_IDLE)
+
+    everest_core.assert_no_manager_status(ManagerStatusFifo.ALL_MODULES_STARTED, timeout_s=1.0)
+    everest_core.assert_no_manager_status(ManagerStatusFifo.MANAGER_EXITING, timeout_s=5.0)
+    everest_core.stop()
+
+
+@pytest.mark.everest_core_config("config-test-invalid-module-config.yaml")
+@pytest.mark.everest_manager_args("--into-idle")
+def test_manager_enters_idle_on_invalid_module_config_with_into_idle(everest_core: EverestCore):
+    """--into-idle keeps the manager alive in Idle for a configuration that fails validation, which
+    is what its documented "whatever the config is" behavior promises."""
+    everest_core.start(expected_status=ManagerStatusFifo.MANAGER_IDLE)
+
+    everest_core.assert_no_manager_status(ManagerStatusFifo.MANAGER_EXITING, timeout_s=5.0)
+    everest_core.stop()

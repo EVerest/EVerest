@@ -4,18 +4,27 @@ description: >-
   Will be used for billing if present.
 config:
   connector_id:
-    description: Connector id of this evse manager
+    description: >-
+      ID of this EVSE within the charging station, according to the 3-tier model of OCPP
+      (charging station > EVSE > connector). The parameter is named connector_id for
+      backwards compatibility reasons only; it does not identify a connector.
     type: integer
   connector_type:
     description: The connector type of this evse manager (/evse_manager#/ConnectorTypeEnum)
     type: string
     default: "Unknown"
   evse_id:
-    description: EVSE ID
+    description: >-
+      EVSE ID that uniquely identifies this EVSE, e.g. DE*PNX*E1234567*1. It has a special
+      format that includes the country code, the operator id and a power outlet id
+      (eMI3 format, normatively specified in ISO 15118-2 Annex H) and is sent as the
+      EVSEID field in ISO 15118 messages.
     type: string
     default: DE*PNX*E1234567*1
   evse_id_din:
-    description: EVSE ID DIN after DIN SPEC 91286
+    description: >-
+      EVSE ID used for DIN 70121 sessions (format according to DIN SPEC 91286,
+      hexBinary-encoded), e.g. 49A80737A45678
     type: string
     default: 49A80737A45678
   payment_enable_eim:
@@ -90,6 +99,24 @@ config:
       Special mode that switches between AC and DC charging to get SoC percentage with AC charging
     type: boolean
     default: false
+  reinit_duration_ms:
+    description: Duration in milliseconds of the reinit state before going back to normal operation
+    type: integer
+    default: 3000
+  reinit_method:
+    description: >-
+      Configures the control pilot behaviour during reinitialization of the connection to the EV. Reinitialization
+      may be used to recover from an unsuccessful PLC link setup, wake up the EV, or switch between HLC and basic AC
+      charging in AC with SoC mode.
+        CPStateE: set CP to state E (0 V) to simulate an unplug. This requires BSP support for CP state E.
+        CPStateF: set CP to state F (-12 V) to signal a temporary unavailability.
+        CPStateX1: keep CP powered with 100% duty cycle to signal that no energy is available.
+    type: string
+    enum:
+      - CPStateE
+      - CPStateF
+      - CPStateX1
+    default: CPStateF
   internal_over_voltage_duration_ms:
     description: >-
       Time in milliseconds the internal software over voltage monitor waits before raising MREC5 once the measured
@@ -245,8 +272,9 @@ config:
     default: V2G
   request_zero_power_in_idle:
     description: >-
-      "true: In Idle mode (no car connected), request 0A from energy management. In installations with many charging stations this should be set"
-      "to allow the power to be distributed to the chargers that are connected to a car."
+      "true: In Idle mode (no car connected) and while charging is paused by the EVSE for a user pause or an error, request 0A from"
+      "energy management. In installations with many charging stations this should be set to allow the power to be distributed to the"
+      "chargers that are connected to a car. A pause because of missing energy keeps requesting energy so that charging can resume."
       "false: Request the normal current even if no car is connected. This speeds up the start of charging on AC BASIC charging as"
       "EvseManager does not need to wait for energy from the energy manager after plug in."
     type: boolean
@@ -293,6 +321,7 @@ config:
     type: string
     enum:
       - X1
+      - E
       - F
     default: X1
   soft_over_current_timeout_ms:
@@ -446,6 +475,28 @@ config:
       Maximum ampere per second limit for up/down ramping of current in charging loop.
     type: integer
     default: 25
+  enable_nodered_interface:
+    description: >-
+      Enable the external MQTT interface to the Node-RED debug UI (topics below
+      everest_external/nodered/<connector_id>/). This publishes powermeter and state
+      updates and subscribes to UI commands (enable/disable/pause/resume/phase switch).
+      Only needed when the Node-RED simulation/debug UI is used.
+    type: boolean
+    default: false
+  phase_rotation_grid_side:
+    description: >-
+      Corrects for a physical L1/L2/L3 wiring rotation at the grid side powermeter
+      by remapping its per-phase voltage/current/power/energy/VAR values before
+      they are used in energy_flow_request.energy_usage_root. RST means no rotation,
+      i.e. reported L1/L2/L3 already matches grid L1/L2/L3. STR means reported L1 is
+      grid L2, reported L2 is grid L3, reported L3 is grid L1. TRS means reported L1
+      is grid L3, reported L2 is grid L1, reported L3 is grid L2.
+    type: string
+    enum:
+      - 'RST'
+      - 'STR'
+      - 'TRS'
+    default: 'RST'
 provides:
   evse:
     interface: evse_manager

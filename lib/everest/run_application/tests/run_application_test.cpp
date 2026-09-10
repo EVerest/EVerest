@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -49,9 +50,31 @@ TEST(RunApplication, StopRequestedTerminatesSilentChild) {
     EXPECT_LT(elapsed, std::chrono::seconds(5));
 }
 
+namespace {
+// Sets the SIGTERM disposition to SIG_IGN for the lifetime of the scope. A SIG_IGN disposition
+// survives fork+exec, so a child spawned inside the scope ignores SIGTERM from its very first
+// instruction -- no race against the child installing a handler during its own startup.
+struct ScopedIgnoreSigterm {
+    ScopedIgnoreSigterm() : previous(std::signal(SIGTERM, SIG_IGN)) {
+    }
+    ~ScopedIgnoreSigterm() {
+        std::signal(SIGTERM, previous);
+    }
+    void (*previous)(int);
+};
+} // namespace
+
 TEST(RunApplication, StopRequestedEscalatesToSigkill) {
     // The child ignores SIGTERM, so the 2 s grace must elapse and SIGKILL must be used. This
     // exercises the escalation path that a SIGTERM-responsive child would skip.
+    //
+    // The child must ignore SIGTERM from its first instruction: a handler installed by the child
+    // itself (previously a python one-liner calling signal.signal) races its own startup against
+    // the stop trigger below and loses on loaded CI runners (the child then dies on the first
+    // SIGTERM and elapsed stays far below the grace time). SIG_IGN inherited through fork+exec
+    // closes that window.
+    ScopedIgnoreSigterm ignore_sigterm;
+
     auto stop = std::make_shared<std::atomic_bool>(false);
 
     std::thread setter([stop] {
@@ -63,8 +86,7 @@ TEST(RunApplication, StopRequestedEscalatesToSigkill) {
     opts.stop_requested = stop;
 
     const auto start = std::chrono::steady_clock::now();
-    run_application("/usr/bin/python3",
-                    {"-c", "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"}, opts);
+    run_application("/usr/bin/sleep", {"60"}, opts);
     const auto elapsed = std::chrono::steady_clock::now() - start;
 
     setter.join();

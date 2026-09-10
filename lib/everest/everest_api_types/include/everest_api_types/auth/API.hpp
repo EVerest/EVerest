@@ -44,6 +44,7 @@ enum class TokenValidationStatus {
     UsedToStart,
     UsedToStop,
     Withdrawn,
+    UsedToReauthorize,
 };
 
 enum class SelectionAlgorithm {

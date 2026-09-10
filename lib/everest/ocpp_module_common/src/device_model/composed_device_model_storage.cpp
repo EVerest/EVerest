@@ -3,7 +3,10 @@
 
 #include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
 
+#include <stdexcept>
+
 static constexpr auto VARIABLE_SOURCE_OCPP = "OCPP";
+static constexpr auto VARIABLE_SOURCE_EVEREST = "EVEREST";
 
 namespace ocpp_module_common::device_model {
 
@@ -17,17 +20,21 @@ bool ComposedDeviceModelStorage::register_device_model_storage(
     // store the sources of each variable to be able to lookup requests to the device model storage
     for (const auto& [component, variable_map] : device_model_map) {
         for (const auto& [variable, variable_meta] : variable_map) {
-            // check if component variable source is already exist in the map
-            if (this->component_variable_source_map.find(component) != this->component_variable_source_map.end() &&
-                this->component_variable_source_map.at(component).find(variable) !=
-                    this->component_variable_source_map.at(component).end()) {
-                EVLOG_warning << "Component variable source already exists for component: " << component.name
-                              << ", variable: " << variable.name << ". Fix your device model configuration.";
+            // Note: Source should not be optional, should be changed in libocpp
+            const auto source = variable_meta.source.value_or(VARIABLE_SOURCE_OCPP);
+
+            // On overlap, the storage registered last takes precedence. The integrator is responsible for
+            // avoiding overlaps.
+            const auto component_it = this->component_variable_source_map.find(component);
+            if (component_it != this->component_variable_source_map.end() &&
+                component_it->second.find(variable) != component_it->second.end()) {
+                EVLOG_warning << "Variable " << variable.name << " of component " << component.name
+                              << " is defined in multiple device model storages; source " << source
+                              << " takes precedence. The integrator is responsible for avoiding overlapping "
+                                 "device model definitions.";
             }
 
-            // Note: Source should not be optional, should be changed in libocpp
-            this->component_variable_source_map[component][variable] =
-                variable_meta.source.value_or(VARIABLE_SOURCE_OCPP);
+            this->component_variable_source_map[component][variable] = source;
         }
     }
 
@@ -37,8 +44,17 @@ bool ComposedDeviceModelStorage::register_device_model_storage(
 
 ocpp::v2::DeviceModelMap ComposedDeviceModelStorage::get_device_model() {
     ocpp::v2::DeviceModelMap device_model_map;
-    for (const auto& [name, device_model_storage] : this->device_model_storages) {
-        device_model_map.merge(device_model_storage->get_device_model());
+    // Merge per variable, not per component: each variable is contributed only by the storage that owns it
+    // according to the source map, so the merged model is consistent with request routing when storages
+    // define overlapping components or variables.
+    for (const auto& [storage_id, device_model_storage] : this->device_model_storages) {
+        for (auto& [component, variable_map] : device_model_storage->get_device_model()) {
+            for (auto& [variable, variable_meta] : variable_map) {
+                if (get_variable_source(component, variable) == storage_id) {
+                    device_model_map[component].insert_or_assign(variable, std::move(variable_meta));
+                }
+            }
+        }
     }
     return device_model_map;
 }
@@ -158,6 +174,26 @@ ocpp_module_common::device_model::ComposedDeviceModelStorage::get_variable_sourc
         return VARIABLE_SOURCE_OCPP; // default source
     }
     return variable_map.at(variable);
+}
+
+std::unique_ptr<ComposedDeviceModelStorage>
+make_composed_device_model_storage(std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> ocpp_storage,
+                                   std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> everest_storage) {
+    if (ocpp_storage == nullptr) {
+        throw std::invalid_argument("Cannot compose device model storage: the OCPP device model storage is null");
+    }
+
+    auto composed_device_model_storage = std::make_unique<ComposedDeviceModelStorage>();
+    // note - registration snapshots get_device_model(), which causes a slight delay; scope for performance tuning
+    composed_device_model_storage->register_device_model_storage(VARIABLE_SOURCE_OCPP, std::move(ocpp_storage));
+    if (everest_storage != nullptr) {
+        composed_device_model_storage->register_device_model_storage(VARIABLE_SOURCE_EVEREST,
+                                                                     std::move(everest_storage));
+    } else {
+        EVLOG_warning << "No EVerest device model storage provided; composed device model contains only the "
+                         "OCPP source";
+    }
+    return composed_device_model_storage;
 }
 
 } // namespace ocpp_module_common::device_model
