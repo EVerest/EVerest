@@ -33,6 +33,13 @@ void Unplugged::enter() {
     // Clear the SLAC torn-down latch so a teardown observed in a prior session
     // cannot force a redundant re-match on the first resume of a fresh one.
     ctx.vars.slac_unmatched = false;
+    // Clear the teardown selector and the present-value overrides so a
+    // scenario that staged an abrupt teardown or a divergent measurement
+    // cannot decide how the next session ends or what it reports. Stopping
+    // has already consumed the selector by the time this runs.
+    ctx.vars.abort_on_stop = false;
+    ctx.vars.present_voltage_override.reset();
+    ctx.vars.present_active_power_override.reset();
     ctx.mark_plugged_in(false);
     ctx.scenario.reset();
     ctx.kvs_save();
@@ -93,6 +100,7 @@ StateBase::Result Unplugged::feed(EventType ev) {
     // an internal Plugged-only self-advance. Listed for switch exhaustiveness.
     case EK::ConfigureSession:
     case EK::BeginSession:
+    case EK::SetPresentValues:
     case EK::RaiseError:
     case EK::ClearError:
     case EK::Shutdown:

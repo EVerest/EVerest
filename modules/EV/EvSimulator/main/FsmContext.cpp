@@ -97,9 +97,39 @@ FsmContext::FsmContext(PeerActions actions, Publisher pub, TimerArm timer_arm, T
 
 // ---- CP / power shortcuts ----------------------------------------------
 
+namespace {
+// EvCpState carries no F, so this is total over the five states the BSP side
+// can apply and needs no default arm (-Werror=switch catches a future member).
+::types::iso15118::CpState to_iso_cp_state(::types::ev_board_support::EvCpState s) {
+    using Ev = ::types::ev_board_support::EvCpState;
+    using Iso = ::types::iso15118::CpState;
+    switch (s) {
+    case Ev::A:
+        return Iso::A;
+    case Ev::B:
+        return Iso::B;
+    case Ev::C:
+        return Iso::C;
+    case Ev::D:
+        return Iso::D;
+    case Ev::E:
+        return Iso::E;
+    }
+    return Iso::A;
+}
+} // namespace
+
 void FsmContext::set_cp(::types::ev_board_support::EvCpState s) {
     if (peer_actions.bsp.present) {
         peer_actions.bsp.set_cp(s);
+    }
+    // The HLC stack has no board support connection, so it only learns the CP
+    // state the vehicle applied by being told. Reporting it at all is what
+    // enables the peer's CP-dependent checks, e.g. C/D before CableCheckReq.
+    // Guarded on the ISO peer independently of the BSP: either peer may be
+    // absent, and the CP state is the same fact for both.
+    if (peer_actions.iso.present) {
+        peer_actions.iso.cp_state_changed(to_iso_cp_state(s));
     }
 }
 
@@ -283,6 +313,43 @@ void FsmContext::iso_stop_charging() {
     if (peer_actions.iso.present) {
         peer_actions.iso.stop_charging();
     }
+}
+
+void FsmContext::iso_end_session() {
+    if (!peer_actions.iso.present) {
+        return;
+    }
+    if (vars.abort_on_stop) {
+        peer_actions.iso.abort_charging();
+        return;
+    }
+    peer_actions.iso.stop_charging();
+}
+
+void FsmContext::iso_report_present_values(float power_w) {
+    if (!peer_actions.iso.present) {
+        return;
+    }
+    const auto mode = vars.charge_mode();
+    if (!mode) {
+        return;
+    }
+    ::types::iso15118::EvPresentValues values;
+    values.present_active_power = vars.present_active_power_override.value_or(power_w);
+    // Only DC adds the bus voltage; the switch (not a predicate) so a new
+    // charge mode has to decide rather than silently omit it.
+    using CM = API_types::ev_simulator::ChargeMode;
+    switch (*mode) {
+    case CM::AcIec:
+    case CM::AcIso2:
+    case CM::AcIsoD20:
+        break;
+    case CM::DcIso2:
+    case CM::DcIsoD20:
+        values.present_voltage = vars.present_voltage_override.value_or(vars.dc_present_voltage_v);
+        break;
+    }
+    peer_actions.iso.update_present_values(values);
 }
 
 void FsmContext::iso_pause_charging() {

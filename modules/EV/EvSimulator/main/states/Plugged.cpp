@@ -210,6 +210,7 @@ StateBase::Result Plugged::feed(EventType ev) {
     // ClearError likewise. Listed only to keep the switch exhaustive
     // (-Werror=switch).
     case EK::ConfigureSession:
+    case EK::SetPresentValues:
     case EK::RaiseError:
     case EK::ClearError:
     case EK::Shutdown:

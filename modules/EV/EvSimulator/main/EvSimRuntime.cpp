@@ -110,7 +110,7 @@ PeerActions EvSimRuntime::build_peer_actions() {
     a.bsp.enable = [bsp](bool on) { bsp->call_enable(on); };
     a.bsp.present = true;
 
-    // ISO — optional. All seven functions and `present` are set in this block,
+    // ISO — optional. All ten functions and `present` are set in this block,
     // never separately, so `iso.present` IFF the whole peer is wired.
     if (!mod.r_ev.empty()) {
         auto* iso = mod.r_ev[0].get();
@@ -131,6 +131,11 @@ PeerActions EvSimRuntime::build_peer_actions() {
         };
         a.iso.set_dc_params = [iso](const ::types::iso15118::DcEvParameters& params) {
             iso->call_set_dc_params(params);
+        };
+        a.iso.abort_charging = [iso]() { iso->call_abort_charging(); };
+        a.iso.cp_state_changed = [iso](::types::iso15118::CpState s) { iso->call_cp_state_changed(s); };
+        a.iso.update_present_values = [iso](const ::types::iso15118::EvPresentValues& values) {
+            iso->call_update_present_values(values);
         };
         a.iso.present = true;
     }
@@ -385,6 +390,26 @@ void EvSimRuntime::apply_passthrough_vars(const Event& ev) {
     case K::DcEvsePresentVoltage:
         if (auto* p = std::get_if<DcEvsePresentVoltagePayload>(&ev.payload)) {
             ctx->vars.dc_present_voltage_v = static_cast<float>(p->voltage_v);
+        }
+        break;
+    case K::StopSession:
+        // Latch the teardown selector before the FSM feed so Stopping::enter
+        // sees it however the transition into Stopping is reached.
+        if (auto* p = std::get_if<StopSessionCmd>(&ev.payload)) {
+            ctx->vars.abort_on_stop = p->abort;
+        }
+        break;
+    case K::SetPresentValues:
+        // Per-field: an unset field leaves that override alone rather than
+        // clearing it, so one command cannot silently drop the other value
+        // back to the echoed one.
+        if (auto* p = std::get_if<API_types::ev_simulator::SetPresentValuesParams>(&ev.payload)) {
+            if (p->present_voltage) {
+                ctx->vars.present_voltage_override = p->present_voltage;
+            }
+            if (p->present_active_power) {
+                ctx->vars.present_active_power_override = p->present_active_power;
+            }
         }
         break;
     case K::IsoV2GFinished:

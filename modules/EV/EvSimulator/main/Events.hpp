@@ -36,6 +36,7 @@ enum class EventKind {
     PauseSession,
     ResumeSession,
     SetChargingCurrent,
+    SetPresentValues,
     InjectFault,
     ClearFault,
     BcbToggle,
@@ -70,7 +71,13 @@ struct EnableCmd {};
 struct DisableCmd {};
 struct PlugCmd {};
 struct UnplugCmd {};
-struct StopSessionCmd {};
+// `abort` selects an immediate V2G termination over the SessionStop exchange.
+// The scenario chooses: the MQTT stop_session payload sets it, while the
+// internal enqueues (the on_battery_full stop policy, the scenario preset's
+// stop step) leave the default clean stop.
+struct StopSessionCmd {
+    bool abort{false};
+};
 struct PauseSessionCmd {};
 struct ResumeSessionCmd {};
 struct ClearFaultCmd {};
@@ -155,7 +162,8 @@ struct ClearErrorCmd {
 using EventPayload =
     std::variant<EnableCmd, DisableCmd, PlugCmd, UnplugCmd, API_types::ev_simulator::SetSocParams,
                  API_types::ev_simulator::SessionConfigParams, StopSessionCmd, PauseSessionCmd, ResumeSessionCmd,
-                 API_types::ev_simulator::SetChargingCurrentParams, API_types::ev_simulator::InjectFaultParams,
+                 API_types::ev_simulator::SetChargingCurrentParams,
+                 API_types::ev_simulator::SetPresentValuesParams, API_types::ev_simulator::InjectFaultParams,
                  ClearFaultCmd, API_types::ev_simulator::BcbToggleParams, API_types::ev_simulator::RunScenarioParams,
                  RaiseErrorCmd, ClearErrorCmd, QueryStateCmd, BspEventPayload, BspMeasurementPayload, EvInfoPayload,
                  SlacStatePayload, IsoPowerReadyEvt, IsoAcMaxCurrentEvt, IsoAcTargetPowerEvt, IsoStopFromChargerEvt,
@@ -164,7 +172,7 @@ using EventPayload =
 
 // One variant alternative per EventKind value. If a future alternative is
 // added without a matching EventKind (or vice versa) this fails to compile.
-static_assert(std::variant_size_v<EventPayload> == 34,
+static_assert(std::variant_size_v<EventPayload> == 35,
               "EventPayload alternatives and EventKind values must stay in lockstep");
 
 namespace detail {

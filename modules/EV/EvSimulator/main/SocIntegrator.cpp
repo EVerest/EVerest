@@ -171,6 +171,11 @@ void soc_step(FsmContext& ctx) {
     ctx.publish_e2m_ev_info();
     ctx.publish_internal_ev_info();
     ctx.iso_update_soc(ctx.vars.soc_pct);
+    // The values the EV "measures", from the same delivered current and
+    // voltage this tick already integrated. Reported every tick: the consumer
+    // keeps a field's last value, but a value never reported at all goes onto
+    // the wire as zero and reads at the SECC as a measured zero.
+    ctx.iso_report_present_values(static_cast<float>(power));
 }
 
 } // namespace module

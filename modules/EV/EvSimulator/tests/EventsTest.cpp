@@ -25,6 +25,7 @@ TEST_CASE("kind_of maps every variant alternative to its EventKind", "[evsim][ev
     CHECK(kind_of(Event{PauseSessionCmd{}}) == EventKind::PauseSession);
     CHECK(kind_of(Event{ResumeSessionCmd{}}) == EventKind::ResumeSession);
     CHECK(kind_of(Event{api::SetChargingCurrentParams{}}) == EventKind::SetChargingCurrent);
+    CHECK(kind_of(Event{api::SetPresentValuesParams{}}) == EventKind::SetPresentValues);
     CHECK(kind_of(Event{api::InjectFaultParams{}}) == EventKind::InjectFault);
     CHECK(kind_of(Event{ClearFaultCmd{}}) == EventKind::ClearFault);
     CHECK(kind_of(Event{api::BcbToggleParams{}}) == EventKind::BcbToggle);
