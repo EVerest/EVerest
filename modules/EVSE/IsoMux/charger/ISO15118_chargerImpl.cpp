@@ -562,6 +562,13 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
 }
 
 void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {
+    if (not value) {
+        // Data-link loss is a broadcast teardown: forward to both children so the
+        // active session's owner tears down regardless of the current selection.
+        mod->r_iso20->call_dlink_ready(value);
+        mod->r_iso2->call_dlink_ready(value);
+        return;
+    }
     if (mod->selected_iso20()) {
         mod->r_iso20->call_dlink_ready(value);
     } else {
