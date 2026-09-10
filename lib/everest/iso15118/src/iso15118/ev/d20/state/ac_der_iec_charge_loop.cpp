@@ -72,12 +72,20 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
         return Result::stopping();
     }
 
-    if (res->status.has_value() and res->status->notification == dt::EvseNotification::Terminate) {
-        m_ctx.feedback.stop_from_charger();
-        return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
+    if (res->status.has_value()) {
+        if (res->status->notification == dt::EvseNotification::Terminate) {
+            m_ctx.feedback.stop_from_charger();
+            return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
+        }
+        if (res->status->notification == dt::EvseNotification::Pause) {
+            m_ctx.feedback.pause_from_charger();
+            // SessionStop carries Pause, so the session id may be re-joined.
+            m_ctx.set_pause_charging_requested(true);
+            return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
+        }
     }
 
-    if (m_ctx.is_stop_charging_requested()) {
+    if (m_ctx.is_stop_charging_requested() or m_ctx.is_pause_charging_requested()) {
         return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
     }
 

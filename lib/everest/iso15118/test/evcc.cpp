@@ -15,6 +15,8 @@
 #include <iso15118/message/type.hpp>
 
 #include <iso15118/ev/config.hpp>
+#include <variant>
+
 #include <iso15118/ev/controller.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 
@@ -31,8 +33,9 @@ int main(int argc, char* argv[]) {
     callbacks.connected = [](const iso15118::io::Ipv6EndPoint&) {
         iso15118::logf_info("EV: connected to SECC data endpoint");
     };
-    callbacks.v2g_message = [](iso15118::message_20::Type type) {
-        iso15118::logf_info("EV: received V2G message type %d", static_cast<int>(type));
+    callbacks.v2g_message = [](const iso15118::V2gMessageType& type) {
+        iso15118::logf_info("EV: received V2G message type %d",
+                            static_cast<int>(std::get<iso15118::message_20::Type>(type)));
     };
     callbacks.stopped = []() { iso15118::logf_info("EV: session stopped"); };
 

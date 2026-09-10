@@ -29,6 +29,12 @@ constexpr size_t SDP_RESPONSE_PAYLOAD_LEN = 20;
 constexpr size_t RESPONSE_ADDRESS_OFFSET = 8;
 constexpr size_t RESPONSE_PORT_OFFSET = 24;
 constexpr size_t RESPONSE_SECURITY_OFFSET = 26;
+constexpr size_t RESPONSE_TRANSPORT_OFFSET = 27;
+
+bool is_known_security(uint8_t value) {
+    return value == static_cast<uint8_t>(iso15118::io::v2gtp::Security::TLS) or
+           value == static_cast<uint8_t>(iso15118::io::v2gtp::Security::NO_TRANSPORT_SECURITY);
+}
 } // namespace
 
 SdpClient::SdpClient(std::string interface_name_, iso15118::io::v2gtp::Security security_) :
@@ -73,7 +79,17 @@ std::optional<SdpResponse> SdpClient::parse_response(const uint8_t* buf, size_t 
     std::memcpy(&port_net, buf + RESPONSE_PORT_OFFSET, sizeof(port_net));
     response.endpoint.port = ntohs(port_net);
 
+    // Only TLS and no-security are defined [V2G2-142]; anything else names a transport this EV
+    // cannot build.
+    if (not is_known_security(buf[RESPONSE_SECURITY_OFFSET])) {
+        return std::nullopt;
+    }
     response.security = static_cast<iso15118::io::v2gtp::Security>(buf[RESPONSE_SECURITY_OFFSET]);
+
+    // Only TCP is a valid transport [V2G2-142].
+    if (buf[RESPONSE_TRANSPORT_OFFSET] != static_cast<uint8_t>(iso15118::io::v2gtp::TransportProtocol::TCP)) {
+        return std::nullopt;
+    }
 
     return response;
 }
@@ -125,7 +141,13 @@ bool SdpClient::register_events(everest::lib::io::event::fd_event_handler& handl
 
 void SdpClient::discover(std::function<void(SdpResponse)> on_found_) {
     on_found = std::move(on_found_);
-    send_request();
+    if (registered_handler == nullptr) {
+        send_request();
+        return;
+    }
+    // The libio udp client only reaches its connected state once the reactor has polled it, so a
+    // synchronous send here would be rejected. Queue the first request as a reactor action.
+    registered_handler->add_action([this]() { send_request(); });
 }
 
 void SdpClient::send_request() {

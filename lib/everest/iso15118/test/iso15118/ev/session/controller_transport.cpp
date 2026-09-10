@@ -443,6 +443,14 @@ ev::EvConfig link_config() {
     return config;
 }
 
+// The SECC listener as a direct endpoint, in the raw wire byte order parse_response yields.
+io::Ipv6EndPoint loopback_endpoint(uint16_t port) {
+    io::Ipv6EndPoint endpoint{};
+    endpoint.port = port;
+    std::memcpy(endpoint.address, &in6addr_loopback, sizeof(endpoint.address));
+    return endpoint;
+}
+
 ev::DcChargeParams link_dc_params() {
     ev::DcChargeParams params{};
     params.target_voltage = PRECHARGE_VOLTAGE;
@@ -548,6 +556,90 @@ SCENARIO("ISO15118-20 EV Controller fires stopped once when the connected callba
                 REQUIRE(connected_count == 1);
                 REQUIRE(stopped_count == 1);
                 // The throw pre-empted the data client, so the EV never connected.
+                REQUIRE_FALSE(secc.accepted());
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Controller connects to a direct endpoint with SDP disabled") {
+    // enable_sdp=false skips discovery entirely: loop() must establish the data path
+    // against direct_secc_endpoint and start the session there.
+    GIVEN("a Controller pointed straight at a loopback SECC listener") {
+        SeccLink secc;
+
+        auto config = link_config();
+        config.enable_sdp = false;
+        config.direct_secc_endpoint = loopback_endpoint(secc.port());
+        config.direct_security = io::v2gtp::Security::NO_TRANSPORT_SECURITY;
+
+        ev::feedback::Callbacks callbacks{};
+        std::atomic_int connected_count{0};
+        std::atomic_int stopped_count{0};
+        callbacks.connected = [&connected_count](const io::Ipv6EndPoint&) { ++connected_count; };
+        callbacks.stopped = [&stopped_count]() { ++stopped_count; };
+
+        ev::Controller controller{config, callbacks, link_dc_params()};
+
+        WHEN("the loop runs and the SECC answers the entry sequence") {
+            ControllerRun run{controller};
+
+            THEN("the EV connects without any SDP exchange and walks to the charge loop") {
+                const auto walked = poll_until(
+                    [&]() {
+                        secc.service();
+                        return secc.charge_loop_requests() >= 1;
+                    },
+                    5s);
+
+                REQUIRE(walked);
+                REQUIRE(secc.accepted());
+                REQUIRE(connected_count == 1);
+                REQUIRE(secc.unanswered() == 0);
+                REQUIRE(stopped_count == 0);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Controller ignores a plaintext SDP response when enforce_tls is set") {
+    // The downgrade guard drops the response instead of connecting; the run then only
+    // ends on the 18 s setup timeout, so this asserts the non-connect inside a short window.
+    GIVEN("a Controller with enforce_tls and a SECC advertising NO_TRANSPORT_SECURITY") {
+        SdpResponder responder;
+        SeccLink secc;
+        const std::set<int> own_sockets{responder.descriptor()};
+
+        auto config = link_config();
+        config.tls.enforce_tls = true;
+
+        ev::feedback::Callbacks callbacks{};
+        std::atomic_int connected_count{0};
+        callbacks.connected = [&connected_count](const io::Ipv6EndPoint&) { ++connected_count; };
+
+        ev::Controller controller{config, callbacks, link_dc_params()};
+        ControllerRun run{controller};
+
+        std::optional<uint16_t> ev_port;
+        REQUIRE(poll_until(
+            [&]() {
+                ev_port = sdp_rx_port(own_sockets);
+                return ev_port.has_value();
+            },
+            5s));
+
+        WHEN("the plaintext SDP response arrives") {
+            REQUIRE(responder.respond(*ev_port, secc.port()));
+
+            THEN("no data path is established") {
+                const auto connected = poll_until(
+                    [&]() {
+                        secc.service();
+                        return connected_count > 0 or secc.accepted();
+                    },
+                    500ms);
+                REQUIRE_FALSE(connected);
+                REQUIRE(connected_count == 0);
                 REQUIRE_FALSE(secc.accepted());
             }
         }

@@ -78,37 +78,79 @@ struct DynamicSetChoice {
     std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> mask;
 };
 
+// One offered parameter set, reduced to what the selection turns on.
+struct SetChoice {
+    uint16_t id{};
+    message_20::datatypes::ControlMode control_mode{};
+    // Unset when no AC connector was looked for (DC).
+    std::optional<message_20::datatypes::AcConnector> connector;
+};
+
 // An AC set without a readable Connector cannot be matched; treat it as single-phase, the
 // reading under which the base element is never a sum.
 message_20::datatypes::AcConnector ac_connector_of(const message_20::datatypes::ParameterSet& set) {
     return get_connector(set).value_or(message_20::datatypes::AcConnector::SinglePhase);
 }
 
-// First offered Dynamic set whose Connector matches \p preferred, else the first Dynamic set;
-// nullopt if none is Dynamic. The EVSE lists SinglePhase first even on three-phase hardware, so
-// taking the first Dynamic set unconditionally would put a three-phase EV on one line. Without a
-// preference the first Dynamic set wins and no connector is recorded.
-std::optional<DynamicSetChoice>
-find_dynamic_parameter_set(const message_20::datatypes::ServiceParameterList& sets,
-                           std::optional<message_20::datatypes::AcConnector> preferred) {
-    std::optional<DynamicSetChoice> fallback;
+std::optional<message_20::datatypes::ControlMode> get_control_mode(const message_20::datatypes::ParameterSet& set) {
+    const auto value = get_int_parameter(set, "ControlMode");
+    if (not value.has_value()) {
+        return std::nullopt;
+    }
+    switch (*value) {
+    case message_20::to_underlying_value(message_20::datatypes::ControlMode::Scheduled):
+        return message_20::datatypes::ControlMode::Scheduled;
+    case message_20::to_underlying_value(message_20::datatypes::ControlMode::Dynamic):
+        return message_20::datatypes::ControlMode::Dynamic;
+    default:
+        return std::nullopt;
+    }
+}
+
+const char* control_mode_name(message_20::datatypes::ControlMode mode) {
+    return (mode == message_20::datatypes::ControlMode::Scheduled) ? "Scheduled" : "Dynamic";
+}
+
+// Ranking: preferred control mode, then matching connector, then offer order. The EVSE lists
+// SinglePhase first even on three-phase hardware.
+std::optional<SetChoice> find_parameter_set(const message_20::datatypes::ServiceParameterList& sets,
+                                            message_20::datatypes::ControlMode preferred_mode,
+                                            std::optional<message_20::datatypes::AcConnector> preferred_connector) {
+    std::optional<SetChoice> preferred_matched;
+    std::optional<SetChoice> preferred_first;
+    std::optional<SetChoice> other_matched;
+    std::optional<SetChoice> other_first;
+
     for (const auto& set : sets) {
-        const auto control_mode = get_int_parameter(set, "ControlMode");
-        if (control_mode != message_20::to_underlying_value(message_20::datatypes::ControlMode::Dynamic)) {
+        const auto control_mode = get_control_mode(set);
+        if (not control_mode.has_value()) {
             continue;
         }
-        if (not preferred.has_value()) {
-            return DynamicSetChoice{set.id, std::nullopt, {}};
+        std::optional<message_20::datatypes::AcConnector> connector;
+        if (preferred_connector.has_value()) {
+            connector = ac_connector_of(set);
         }
-        const auto connector = ac_connector_of(set);
-        if (connector == *preferred) {
-            return DynamicSetChoice{set.id, connector, {}};
+        const SetChoice choice{set.id, *control_mode, connector};
+        auto& matched = (*control_mode == preferred_mode) ? preferred_matched : other_matched;
+        auto& first = (*control_mode == preferred_mode) ? preferred_first : other_first;
+        if (not first.has_value()) {
+            first = choice;
         }
-        if (not fallback.has_value()) {
-            fallback = DynamicSetChoice{set.id, connector, {}};
+        if (connector.has_value() and connector == preferred_connector and not matched.has_value()) {
+            matched = choice;
         }
     }
-    return fallback;
+
+    if (preferred_matched.has_value()) {
+        return preferred_matched;
+    }
+    if (preferred_first.has_value()) {
+        return preferred_first;
+    }
+    if (other_matched.has_value()) {
+        return other_matched;
+    }
+    return other_first;
 }
 
 bool is_dynamic(const message_20::datatypes::ParameterSet& set) {
@@ -234,6 +276,8 @@ Result ServiceDetail::feed(Event ev) {
         const auto select = [this](const DynamicSetChoice& choice) {
             m_ctx.set_der_negotiated_functions(choice.mask);
             m_ctx.set_selected_ac_connector(choice.connector.value());
+            // AC_DER_IEC only ever selects a Dynamic set, whatever the configured preference.
+            m_ctx.set_selected_control_mode(message_20::datatypes::ControlMode::Dynamic);
             return m_ctx.create_state<ServiceSelection>(choice.id);
         };
 
@@ -291,22 +335,30 @@ Result ServiceDetail::feed(Event ev) {
     }
 
     const auto preferred = preferred_connector(m_ctx);
-    const auto dynamic_set = find_dynamic_parameter_set(res->service_parameter_list, preferred);
-    if (not dynamic_set.has_value()) {
-        logf_error("ServiceDetailResponse offers no Dynamic control-mode parameter set");
+    const auto preferred_mode = m_ctx.preferred_control_mode();
+    const auto selected_set = find_parameter_set(res->service_parameter_list, preferred_mode, preferred);
+    if (not selected_set.has_value()) {
+        logf_error("ServiceDetailResponse offers no parameter set with a readable control mode");
         m_ctx.stop_session();
         return Result::stopping();
     }
 
-    if (preferred.has_value()) {
-        if (dynamic_set->connector != preferred) {
-            logf_warning("No Dynamic parameter set offers the preferred %s connector; selecting %s, and the "
-                         "advertised limits are split for that connector",
-                         connector_name(*preferred), connector_name(dynamic_set->connector.value()));
-        }
-        m_ctx.set_selected_ac_connector(dynamic_set->connector.value());
+    if (selected_set->control_mode != preferred_mode) {
+        logf_warning("No parameter set offers the preferred %s control mode; selecting a %s set",
+                     control_mode_name(preferred_mode), control_mode_name(selected_set->control_mode));
     }
-    return m_ctx.create_state<ServiceSelection>(dynamic_set->id);
+    m_ctx.set_selected_control_mode(selected_set->control_mode);
+
+    if (preferred.has_value()) {
+        if (selected_set->connector != preferred) {
+            logf_warning("No %s parameter set offers the preferred %s connector; selecting %s, and the "
+                         "advertised limits are split for that connector",
+                         control_mode_name(selected_set->control_mode), connector_name(*preferred),
+                         connector_name(selected_set->connector.value()));
+        }
+        m_ctx.set_selected_ac_connector(selected_set->connector.value());
+    }
+    return m_ctx.create_state<ServiceSelection>(selected_set->id);
 }
 
 } // namespace iso15118::ev::d20::state

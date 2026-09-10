@@ -13,6 +13,10 @@ public:
 
     void enter() final;
     Result feed(Event) final;
+
+private:
+    // [V2G2-847]: with CP-state feedback the first request waits for state C or D.
+    bool request_sent{false};
 };
 
 } // namespace iso15118::ev::d20::state

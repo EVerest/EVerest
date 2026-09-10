@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -24,13 +25,16 @@
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/util/async/monitor.hpp>
 
+#include <iso15118/d20/ac_powers.hpp>
 #include <iso15118/io/sdp.hpp>
 #include <iso15118/io/sdp_packet.hpp>
 #include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/message/type.hpp>
+#include <iso15118/message/v2g_message_type.hpp>
 #include <iso15118/message/variant.hpp>
+#include <iso15118/session/protocol.hpp>
 
 #include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/controller.hpp>
@@ -156,11 +160,12 @@ public:
         message_20::datatypes::ServiceCategory energy_service = message_20::datatypes::ServiceCategory::DC,
         AcChargeParams ac_seed = AcChargeParams{},
         DerControlFunctions der_control_functions = default_der_control_functions(),
-        bool der_stop_on_unsupported_functions = true) :
+        bool der_stop_on_unsupported_functions = true, d20::SessionOptions options = {}) :
         dc_params(std::move(params)),
         ac_params(std::move(ac_seed)),
         session(make_callbacks(), make_send(), reactor, timing, std::move(evcc_id), std::move(protocols), &dc_params,
-                &ac_params, energy_service, der_control_functions, der_stop_on_unsupported_functions) {
+                &ac_params, energy_service, der_control_functions, der_stop_on_unsupported_functions,
+                std::move(options)) {
     }
 
     everest::lib::io::event::fd_event_handler reactor;
@@ -177,6 +182,13 @@ public:
     bool dc_bpt_limits = false;
     bool ac_target_power = false;
     bool der_control = false;
+
+    // Session-level feedback observation.
+    std::vector<feedback::Signal> signals;
+    std::optional<ProtocolId> selected_protocol{std::nullopt};
+    std::string evse_id;
+    int pause_from_charger_count = 0;
+    std::vector<V2gMessageType> v2g_messages;
 
     // Outbound seam observation / control.
     int send_attempts = 0;
@@ -213,10 +225,13 @@ private:
         cb.dc_bpt_limits = [this](const message_20::datatypes::BPT_DC_CPDResEnergyTransferMode&) {
             dc_bpt_limits = true;
         };
-        cb.ac_target_power = [this](const message_20::datatypes::Dynamic_AC_CLResControlMode&) {
-            ac_target_power = true;
-        };
+        cb.ac_target_power = [this](const iso15118::d20::AcTargetPower&) { ac_target_power = true; };
         cb.der_control = [this](const message_20::datatypes::DER_Dynamic_AC_CLResControlMode&) { der_control = true; };
+        cb.signal = [this](feedback::Signal s) { signals.push_back(s); };
+        cb.selected_protocol = [this](ProtocolId p) { selected_protocol = p; };
+        cb.evse_id = [this](const std::string& id) { evse_id = id; };
+        cb.pause_from_charger = [this]() { ++pause_from_charger_count; };
+        cb.v2g_message = [this](const V2gMessageType& type) { v2g_messages.push_back(type); };
         return cb;
     }
 

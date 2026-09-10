@@ -9,30 +9,6 @@ namespace iso15118::ev {
 
 namespace {
 
-constexpr std::size_t MAC_LENGTH = 17;
-
-bool is_hex_digit(char c) {
-    return std::isxdigit(static_cast<unsigned char>(c)) != 0;
-}
-
-// "aa:bb:cc:dd:ee:ff", either case: six colon-separated hex pairs.
-bool is_mac_formatted(const std::string& value) {
-    if (value.size() != MAC_LENGTH) {
-        return false;
-    }
-    for (std::size_t i = 0; i < value.size(); ++i) {
-        const bool separator_position = (i % 3) == 2;
-        if (separator_position) {
-            if (value[i] != ':') {
-                return false;
-            }
-        } else if (not is_hex_digit(value[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
 void check_non_negative(std::vector<std::string>& problems, const char* name, float value) {
     if (value < 0.0f) {
         problems.emplace_back(std::string{name} + " must not be negative (is " + std::to_string(value) + ")");
@@ -52,14 +28,23 @@ void check_min_not_above_max(std::vector<std::string>& problems, const char* min
 std::vector<std::string> validate_config(const EvConfig& config) {
     std::vector<std::string> problems;
 
-    if (config.response_timeout.count() <= 0) {
-        problems.emplace_back("response_timeout must be positive (is " +
+    if (config.response_timeout.count() < 0) {
+        problems.emplace_back("response_timeout must not be negative (is " +
                               std::to_string(config.response_timeout.count()) + " ms)");
     }
 
-    if (not is_mac_formatted(config.evcc_id)) {
-        problems.emplace_back("evcc_id must be MAC-formatted, six colon-separated hex pairs (is '" + config.evcc_id +
-                              "')");
+    // -20 identifierType: 1..255 characters. A MAC string is one valid form of it.
+    if (config.evcc_id.empty() or config.evcc_id.size() > 255) {
+        problems.emplace_back("evcc_id must be 1 to 255 characters (is '" + config.evcc_id + "')");
+    }
+
+    if (config.supported_protocols.empty() and config.advertised_app_protocols.empty()) {
+        problems.emplace_back("supported_protocols is empty; nothing to offer in SupportedAppProtocolReq");
+    }
+
+    // Without SDP there is no security byte to reject, so the configured one has to satisfy the policy.
+    if (config.tls.enforce_tls and not config.enable_sdp and config.direct_security != io::v2gtp::Security::TLS) {
+        problems.emplace_back("enforce_tls is set but direct_security is not TLS");
     }
 
     return problems;

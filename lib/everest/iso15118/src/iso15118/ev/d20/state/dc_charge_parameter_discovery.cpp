@@ -24,6 +24,15 @@ void fill_charge_limits(dt::DC_CPDReqEnergyTransferMode& mode, const DcChargePar
     mode.target_soc = std::nullopt;
 }
 
+// SECC limits the EVSE advertised, in the shape the module consumes.
+feedback::DcMaximumLimits evse_present_limits(const dt::DC_CPDResEnergyTransferMode& mode) {
+    feedback::DcMaximumLimits limits{};
+    limits.voltage = dt::from_RationalNumber(mode.max_voltage);
+    limits.current = dt::from_RationalNumber(mode.max_charge_current);
+    limits.power = dt::from_RationalNumber(mode.max_charge_power);
+    return limits;
+}
+
 } // namespace
 
 void DC_ChargeParameterDiscovery::enter() {
@@ -75,6 +84,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
             return Result::stopping();
         }
         m_ctx.feedback.dc_bpt_limits(*mode);
+        m_ctx.feedback.dc_evse_present_limits(evse_present_limits(*mode));
         return m_ctx.create_state<ScheduleExchange>();
     }
 
@@ -85,6 +95,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
         return Result::stopping();
     }
 
+    m_ctx.feedback.dc_evse_present_limits(evse_present_limits(*mode));
     return m_ctx.create_state<ScheduleExchange>();
 }
 
