@@ -81,14 +81,9 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
                 true); // L01.FR.03 - critical because TC_L_06_CS requires this message to be sent
         }
 
-        if (is_firmware_status_end_state(req.status)) {
+        if (is_firmware_status_end_state(req.status) || req.status == FirmwareStatusEnum::Idle) {
             // One of the end states is reached. Restore all connector states.
-            this->restore_all_connector_states();
-        } else if (req.status == FirmwareStatusEnum::Idle) {
-            // An update that dies or an OCPP restart can re-announce Idle without ever reaching an end state,
-            // which would leave the connectors disabled for the install stuck Unavailable. Not folded into
-            // is_firmware_status_end_state(), because that also resets the all-connectors-unavailable guard,
-            // which Idle must not do
+            // Also restore if the firmware update status is Idle (for example if an update died)
             this->restore_all_connector_states();
         }
 
@@ -113,8 +108,7 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
         }
     }
 
-    // Opt-in only, because an install can stay scheduled for a long time and the connectors would be unavailable
-    // for all of it
+    // Explicitly allow disabling the connectors when an update is scheduled
     if (firmware_update_status == FirmwareStatusEnum::InstallScheduled and
         disable_connectors_during_install.value_or(false)) {
         this->change_all_connectors_to_unavailable_for_firmware_update(is_duplicate);
