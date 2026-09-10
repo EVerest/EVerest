@@ -35,7 +35,7 @@ SCENARIO("DIN SECC WeldingDetection state handling") {
     GIVEN("An EVSE-initiated stop during welding detection") {
         message_din::WeldingDetectionRequest req;
         req.header.session_id = session;
-        // The stop request reaches the EV in every state (EvseV2G parity); notification None [V2G-DC-500].
+        // A stop reaches the EV in every state; notification None for DC [V2G-DC-500].
         const auto res = din::state::handle_request(req, 42.0f, session, std::nullopt, /*charger_stop=*/true);
         THEN("the response signals EVSE_Shutdown") {
             REQUIRE(res.response_code == dt::ResponseCode::OK);

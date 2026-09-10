@@ -7,6 +7,7 @@
 
 #include <iso15118/detail/din/state/sequence_error.hpp>
 #include <iso15118/detail/din/state/service_payment_selection.hpp>
+#include <iso15118/detail/din/state/session_stop.hpp>
 #include <iso15118/detail/din/state/state_helper.hpp>
 #include <iso15118/detail/helper.hpp>
 
@@ -17,16 +18,14 @@ message_din::ServicePaymentSelectionResponse handle_request(const message_din::S
                                                             const dt::SessionId& session_id) {
     message_din::ServicePaymentSelectionResponse res;
 
-    if (not validate_and_setup_header(res.header, session_id, req.header.session_id)) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
-    }
+    setup_header(res.header, session_id);
 
     // [V2G-DC-395] Only ExternalPayment is allowed in DIN 70121.
     if (req.selected_payment_option != dt::PaymentOption::ExternalPayment) {
         return response_with_code(res, dt::ResponseCode::FAILED_PaymentSelectionInvalid);
     }
 
-    // [V2G-DC-396/635] The selected service list shall contain exactly the charge service.
+    // [V2G-DC-396/635]: the selected service list contains exactly the charge service.
     if (req.selected_service_list.size() != 1 or req.selected_service_list.front().service_id != charge_service_id) {
         return response_with_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
     }
@@ -38,19 +37,8 @@ void ServicePaymentSelection::enter() {
     logf_debug("Enter state: ServicePaymentSelection");
 }
 
-Result ServicePaymentSelection::feed(Event ev) {
-    if (ev != Event::V2GTP_MESSAGE) {
-        return {};
-    }
-
-    // An EV aborting mid-handshake sends SessionStopReq; hand it to SessionStop for a clean SessionStopRes.
-    if (m_ctx.peek_request_type() == message_din::Type::SessionStopReq) {
-        return m_ctx.create_state<SessionStop>();
-    }
-
-    const auto variant = m_ctx.pull_request();
-
-    if (const auto req = variant->get_if<message_din::ServicePaymentSelectionRequest>()) {
+Result ServicePaymentSelection::on_request(const message_din::Variant& received) {
+    if (const auto req = received.get_if<message_din::ServicePaymentSelectionRequest>()) {
         const auto res = handle_request(*req, m_ctx.session_config.charge_service_id, m_ctx.get_session_id());
         m_ctx.respond(res);
 
@@ -59,17 +47,19 @@ Result ServicePaymentSelection::feed(Event ev) {
             return {};
         }
 
-        // Report the accepted payment option, matching what the ISO 15118-2 state does. Always
-        // ExternalPayment in DIN 70121 [V2G-DC-395]; EvseV2G leaves this unpublished on its DIN path
-        // (din_server.cpp:182 lists it as a value that could be published).
+        // Always ExternalPayment in DIN 70121 [V2G-DC-395]; EvseV2G leaves this unpublished on its DIN path.
         m_ctx.feedback.selected_payment_option(req->selected_payment_option);
 
         return m_ctx.create_state<ContractAuthentication>();
     }
 
-    logf_warning("Expected ServicePaymentSelectionReq! But code type id: %d", variant->get_type());
-    // [V2G-DC-539]: answer with the received-type response carrying FAILED_SequenceError, then close.
-    respond_sequence_error(m_ctx, *variant);
+    // [V2G-DC-441] admits a SessionStopReq here.
+    if (const auto stop = received.get_if<message_din::SessionStopRequest>()) {
+        return process_session_stop(m_ctx, *stop);
+    }
+
+    logf_warning("Expected ServicePaymentSelectionReq or SessionStopReq! But code type id: %d", received.get_type());
+    respond_sequence_error(m_ctx, received);
     m_ctx.session_stopped = true;
     return {};
 }
