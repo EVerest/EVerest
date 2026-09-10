@@ -99,6 +99,11 @@ void Availability::drop_non_persistent_scheduled_changes() {
     }
 }
 
+bool Availability::has_persistent_scheduled_change(const std::int32_t evse_id) const {
+    const auto it = this->scheduled_change_availability_requests.find(evse_id);
+    return it != this->scheduled_change_availability_requests.end() and it->second.persist;
+}
+
 void Availability::set_heartbeat_timer_interval(const std::chrono::seconds& interval) {
     this->heartbeat_timer.interval([this]() { this->heartbeat_req(); }, interval);
 }

@@ -63,6 +63,12 @@ public:
     virtual void drop_non_persistent_scheduled_changes() = 0;
 
     ///
+    /// \brief Whether a scheduled change availability request queued with persist == true is waiting for \p evse_id.
+    /// \param evse_id  The evse id.
+    ///
+    virtual bool has_persistent_scheduled_change(const std::int32_t evse_id) const = 0;
+
+    ///
     /// \brief Set the heartbeat timer interval.
     /// \param interval The interval in seconds.
     ///
@@ -121,6 +127,7 @@ public:
     void set_scheduled_change_availability_requests(const std::int32_t evse_id,
                                                     AvailabilityChange availability_change) override;
     void drop_non_persistent_scheduled_changes() override;
+    bool has_persistent_scheduled_change(const std::int32_t evse_id) const override;
 
     void set_heartbeat_timer_interval(const std::chrono::seconds& interval) override;
     void stop_heartbeat_timer() override;
