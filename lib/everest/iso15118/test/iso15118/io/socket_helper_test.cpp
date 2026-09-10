@@ -143,8 +143,7 @@ TEST_CASE("socket_helper: write_all surfaces a closed peer as EPIPE instead of r
     REQUIRE(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fds) == 0);
     close(fds[1]);
 
-    // Two writes: the first may be swallowed by the send buffer before the kernel notices the
-    // closed peer; the second reliably fails.
+    // The first write may be swallowed by the send buffer before the kernel notices the closed peer.
     std::array<uint8_t, 16> payload{};
     errno = 0;
     bool ok = iso15118::io::write_all(fds[0], payload.data(), payload.size(), /*timeout_ms=*/100);

@@ -64,8 +64,7 @@ SCENARIO("ISO 15118-2 SECC PaymentServiceSelection handling") {
     }
 
     GIVEN("A resumed EIM session where the EV switches to Contract") {
-        // [V2G2-741]: only the previously selected option was offered on resume; switching requires a
-        // terminated session, not a resume.
+        // [V2G2-741]: switching requires a terminated session, not a resume.
         message_2::PaymentServiceSelectionRequest req;
         req.selected_payment_option = dt::PaymentOption::Contract;
         req.selected_service_list.push_back(dt::SelectedService{1, std::nullopt});

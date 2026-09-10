@@ -13,10 +13,8 @@ namespace iso15118::io {
 static constexpr uint8_t SDP_PROTOCOL_VERSION = 0x01;
 static constexpr uint8_t SDP_INVERSE_PROTOCOL_VERSION = 0xFE;
 
-// Maximum V2G message size (V2GTP header included) for both directions: sized to hold an ISO 15118-2
-// Plug-and-Charge CertificateInstallationReq/Res (OEM provisioning cert + root list on the way in,
-// contract certificate chains on the way out; ~4.2 kB observed) as well as every other V2G message.
-// Matches EvseV2G's DEFAULT_BUFFER_SIZE.
+// Sized to hold an ISO 15118-2 Plug-and-Charge CertificateInstallationReq/Res (~4.2 kB observed) as
+// well as every other V2G message; matches EvseV2G's DEFAULT_BUFFER_SIZE.
 static constexpr std::size_t MAX_V2G_PACKET_SIZE = 8192;
 
 // FIXME (aw): should be called V2GTP or SDP buffer
@@ -67,9 +65,8 @@ public:
 
     void update_read_bytes(size_t len);
 
-    // Make the packet ready for the next incoming message. Only the bookkeeping fields need
-    // clearing (the buffer contents are dead once state is BUFFER_EMPTY); copy-assigning a
-    // default-constructed SdpPacket would drag the whole 8 KiB buffer along.
+    // Only the bookkeeping fields need clearing; copy-assigning a default-constructed SdpPacket would
+    // drag the whole 8 KiB buffer along.
     void reset() {
         state = State::BUFFER_EMPTY;
         bytes_read = 0;

@@ -31,21 +31,18 @@ dt::SAScheduleList build_sa_schedule_list(const d2::SessionConfig& config, dt::E
     tuple.sa_schedule_tuple_id = 1; // [V2G2-773]: must be in 1..255
     auto& entry = tuple.pmax_schedule.emplace_back();
     entry.start = 0;
-    // [V2G2-303]: honour the EV's requested DepartureTime (seconds from now) as the schedule horizon when
-    // it provides one; otherwise fall back to the configured default (a full day). While pausing for lack
-    // of energy the EV is told to come back instead, so a short horizon is offered regardless
-    // (EvseV2G iso_server.cpp PAUSE_DURATION).
+    // [V2G2-303]: honour the EV's requested DepartureTime as the schedule horizon, else the configured
+    // default. While pausing for lack of energy a short horizon is offered regardless -- the EV is told
+    // to come back rather than to plan a day of charging.
     constexpr uint32_t PAUSE_DURATION = 60 * 30;
     entry.duration = (departure_time.has_value() and departure_time.value() > 0) ? departure_time.value()
                                                                                  : config.sa_schedule_duration;
     if (config.no_energy_pause != d20::NoEnergyPauseMode::None) {
         entry.duration = PAUSE_DURATION;
     }
-    // PMax advertises the hardware capability, not the current energy-management grant: DC uses the
-    // power-supply maximum, AC the per-phase nominal current at nominal voltage times the phase count of
-    // the requested transfer mode (EvseV2G iso_server.cpp; the live limits reach the EV in the charge
-    // loop). ac_capability_max_current is per phase, so a three-phase request lands back exactly on the
-    // hardware charge power the module reported -- see ac_capability_phase_count in d2_secc_engine.cpp.
+    // PMax advertises the hardware capability, not the current energy-management grant, which reaches
+    // the EV in the charge loop. ac_capability_max_current is per phase, so a three-phase request lands
+    // back exactly on the hardware charge power the module reported (see d2_secc_engine.cpp).
     const float ac_phases = (mode == dt::EnergyTransferMode::AC_single_phase_core) ? 1.0f : 3.0f;
     const float pmax = is_dc_mode(mode) ? config.dc_capability_max_power
                                         : (config.ac_capability_max_current * config.ac_nominal_voltage * ac_phases);
@@ -57,10 +54,8 @@ namespace {
 
 namespace m20dt = message_20::datatypes;
 
-// Forward the EV's advertised maxima to the module so the power supply is provisioned for the actual EV
-// limits instead of the SECC defaults (EvseV2G iso_server.cpp:390-403 DC / 320-346 AC), together with the
-// per-session EV facts the module surfaces as ev_info (battery capacity, energy request, full/bulk SoC,
-// departure time, the AC limits) and as the OCPP ChargingNeeds notification.
+// Provisions the power supply for the actual EV limits instead of the SECC defaults, and carries the
+// per-session EV facts the module surfaces as ev_info and as the OCPP ChargingNeeds notification.
 void forward_ev_limits(const message_2::ChargeParameterDiscoveryRequest& req, bool is_dc,
                        const session::Feedback& feedback) {
     session::feedback::EvChargeParameters parameters{};
@@ -74,11 +69,8 @@ void forward_ev_limits(const message_2::ChargeParameterDiscoveryRequest& req, bo
         session::feedback::DcMaximumLimits limits{};
         limits.voltage = static_cast<float>(dt::from_physical_value(p.ev_maximum_voltage_limit));
         limits.current = static_cast<float>(dt::from_physical_value(p.ev_maximum_current_limit));
-        // EVMaximumPowerLimit is optional in DC_EVChargeParameterType (unlike the voltage and current
-        // limits above); leave it unset when the EV omitted it rather
-        // than deriving voltage * current, which would put a number the EV never sent into
-        // dc_ev_maximum_limits and from there into ev_info.maximum_power_limit (EvseV2G iso_server.cpp:510
-        // forwards the EVMaximumPowerLimit_isUsed flag instead).
+        // EVMaximumPowerLimit is optional, unlike the limits above: leave it unset when the EV omitted it
+        // rather than deriving voltage * current, which would put a number the EV never sent into ev_info.
         if (p.ev_maximum_power_limit.has_value()) {
             limits.power = static_cast<float>(dt::from_physical_value(p.ev_maximum_power_limit.value()));
         }
@@ -100,8 +92,7 @@ void forward_ev_limits(const message_2::ChargeParameterDiscoveryRequest& req, bo
         parameters.departure_time = p.departure_time;
     } else if (req.ac_ev_charge_parameter.has_value()) {
         const auto& p = req.ac_ev_charge_parameter.value();
-        // The ISO-2 AC EV limits are voltage/current; the module's AC feedback carries charge power, so
-        // forward the derived max/min charge power (the EVSE-side V/I clamp still governs the setpoint).
+        // The ISO-2 AC EV limits are voltage/current while the module's AC feedback carries charge power.
         const auto max_v = dt::from_physical_value(p.ev_max_voltage);
         const auto max_i = dt::from_physical_value(p.ev_max_current);
         const auto min_i = dt::from_physical_value(p.ev_min_current);
@@ -129,9 +120,8 @@ void fill_dc(message_2::ChargeParameterDiscoveryResponse& res, const d2::Session
     dc.dc_evse_status.notification_max_delay = 0;
     dc.dc_evse_status.isolation_status = dt::IsolationLevel::Invalid;
     dc.dc_evse_status.status_code = dt::DC_EVSEStatusCode::EVSE_Ready;
-    // The maxima are the hardware capabilities: [V2G2-315] wants the maximum the EVSE can deliver, so a
-    // temporary energy-management restriction must not shrink the offer -- the live limits reach the EV
-    // in every CurrentDemandRes instead (EvseV2G parity: CPD announces power_capabilities).
+    // [V2G2-315] wants the maximum the EVSE can deliver, so a temporary energy-management restriction
+    // must not shrink the offer -- the live limits reach the EV in every CurrentDemandRes instead.
     dc.evse_maximum_current_limit = to_physical_value(config.dc_capability_max_current, Unit::A);
     dc.evse_maximum_power_limit = to_physical_value(config.dc_capability_max_power, Unit::W);
     dc.evse_maximum_voltage_limit = to_physical_value(config.dc_capability_max_voltage, Unit::V);
@@ -148,9 +138,9 @@ void fill_dc(message_2::ChargeParameterDiscoveryResponse& res, const d2::Session
     }
 }
 
-// IEC 61851-23:2023 CC.3.5.3: the charger has no energy for this session, so tell the EV to stop rather
-// than let it run into a charge loop with no power. A pause that stops before the cable check asks for an
-// immediate reaction; the later ones grant the EV a grace period (EvseV2G iso_server.cpp).
+// IEC 61851-23:2023 CC.3.5.3: no energy for this session, so tell the EV to stop rather than let it
+// run into a charge loop with no power. A pause before the cable check asks for an immediate
+// reaction; the later ones grant the EV a grace period.
 void apply_no_energy_pause(message_2::ChargeParameterDiscoveryResponse& res, const d2::SessionConfig& config) {
     if (config.no_energy_pause == d20::NoEnergyPauseMode::None or not res.dc_evse_charge_parameter.has_value()) {
         return;
@@ -166,18 +156,13 @@ void fill_ac(message_2::ChargeParameterDiscoveryResponse& res, const d2::Session
     auto& ac = res.ac_evse_charge_parameter.emplace();
     ac.ac_evse_status = make_ac_evse_status();
     ac.evse_nominal_voltage = to_physical_value(config.ac_nominal_voltage, Unit::V);
-    // Hardware capability, like the DC maxima above; the live per-phase limit is reported in every
-    // ChargingStatusRes instead.
+    // Hardware capability, like the DC maxima above; the live per-phase limit goes in ChargingStatusRes.
     ac.evse_max_current = to_physical_value(config.ac_capability_max_current, Unit::A);
 }
 
 } // namespace
 
 namespace {
-// An EVSE-initiated stop (stop_charging) reaches the EV whatever phase the session is in (EvseV2G stamps
-// its context notification/status into every response after handle_stop_charging): EVSENotification
-// StopCharging asking for an immediate reaction and, for DC, EVSEStatusCode EVSE_Shutdown. Applied to
-// every response this state builds, the FAILED ones included.
 void apply_charger_stop(message_2::ChargeParameterDiscoveryResponse& res, bool charger_stop) {
     if (not charger_stop) {
         return;
@@ -208,8 +193,7 @@ message_2::ChargeParameterDiscoveryResponse build_response(const message_2::Char
     if (not everest::lib::util::exists(modes, mode)) {
         res.response_code = dt::ResponseCode::FAILED_WrongEnergyTransferMode;
         res.evse_processing = dt::EVSEProcessing::Finished;
-        // [V2G2-736]: a FAILED response must still carry all XSD-mandatory parameters (arbitrary but
-        // XSD-conform values); EVSEChargeParameter is mandatory in ChargeParameterDiscoveryRes.
+        // [V2G2-736]: a FAILED response must still carry every XSD-mandatory parameter.
         if (is_dc) {
             fill_dc(res, config);
         } else {
@@ -228,10 +212,8 @@ message_2::ChargeParameterDiscoveryResponse build_response(const message_2::Char
             fill_dc(res, config); // [V2G2-736]: mandatory parameter even on FAILED
             return res;
         }
-        // EVMaximum{Current,Voltage,Power}Limit are non-negative physical quantities; a negative value
-        // (e.g. EVMaximumCurrentLimit -100 A) is a wrong charge parameter [V2G2-477], answered with
-        // FAILED_WrongChargeParameter (TC ..._charge_parameter_discovery_004). (DIN/-2 only: ISO 15118-20
-        // BPT permits negative setpoints, so its handler must not reject on sign.)
+        // A negative EVMaximum*Limit is a wrong charge parameter [V2G2-477] (TC ..._004). DIN/-2 only:
+        // ISO 15118-20 BPT permits negative setpoints, so its handler must not reject on sign.
         const auto& evp = req.dc_ev_charge_parameter.value();
         if (dt::from_physical_value(evp.ev_maximum_current_limit) < 0.0 or
             dt::from_physical_value(evp.ev_maximum_voltage_limit) < 0.0 or
@@ -241,9 +223,8 @@ message_2::ChargeParameterDiscoveryResponse build_response(const message_2::Char
             fill_dc(res, config); // [V2G2-736]: mandatory parameter even on FAILED
             return res;
         }
-        // An EV whose maximum current or voltage does not exceed the EVSE minimum cannot be served: the
-        // two ranges do not overlap. Wrong charge parameter, with the EVSE announcing that it shuts down
-        // (EvseV2G iso_server.cpp; the same rule as its DIN handler).
+        // An EV whose maximum does not exceed the EVSE minimum cannot be served -- the ranges do not
+        // overlap -- so answer wrong charge parameter with the EVSE announcing that it shuts down.
         if (dt::from_physical_value(evp.ev_maximum_current_limit) <= config.dc_min_current or
             dt::from_physical_value(evp.ev_maximum_voltage_limit) <= config.dc_min_voltage) {
             res.response_code = dt::ResponseCode::FAILED_WrongChargeParameter;
@@ -271,11 +252,9 @@ message_2::ChargeParameterDiscoveryResponse build_response(const message_2::Char
 }
 } // namespace
 
-// [V2G2-366] the SECC reports the Table 98 EVSEStatusCodes in every DC response: a module-reported fault
-// (send_error) belongs in the ChargeParameterDiscoveryRes too, and wins over both the EVSE_Ready this
-// state would otherwise claim and the EVSE_Shutdown of a charger-initiated stop -- it is the more
-// specific reason. The AC counterpart is the mandatory AC_EVSEStatus RCD flag. [V2G2-880] keeps this
-// informational: the codes do not steer the charging process, they tell the EV what is going on.
+// [V2G2-366]: a module-reported fault wins over both the EVSE_Ready this state would claim and the
+// EVSE_Shutdown of a charger-initiated stop, being the more specific reason. [V2G2-880] keeps it
+// informational: the codes tell the EV what is going on, they do not steer charging.
 void apply_evse_error(message_2::ChargeParameterDiscoveryResponse& res,
                       std::optional<dt::DC_EVSEStatusCode> error_status_code, bool rcd_error) {
     if (error_status_code.has_value() and res.dc_evse_charge_parameter.has_value()) {
@@ -301,44 +280,31 @@ void ChargeParameterDiscovery::enter() {
     logf_debug("Enter state: ChargeParameterDiscovery");
 }
 
-Result ChargeParameterDiscovery::feed(Event ev) {
-    if (ev != Event::V2GTP_MESSAGE) {
+Result ChargeParameterDiscovery::on_request(const message_2::Variant& received) {
+    // [V2G2-688] loops the request back here while the SECC still answers EVSEProcessing=Ongoing.
+    const auto type = received.get_type();
+    if (type == message_2::Type::ChargeParameterDiscoveryReq) {
+        return process_charge_parameter_discovery(m_ctx, received.get<message_2::ChargeParameterDiscoveryRequest>());
+    } else {
+        logf_warning("Expected ChargeParameterDiscoveryReq! But got type id: %d", received.get_type());
+        respond_sequence_error(m_ctx, received.get_type());
         return {};
     }
+}
 
-    // An EV aborting mid-handshake sends SessionStopReq; hand it to SessionStop for a clean SessionStopRes.
-    if (m_ctx.peek_request_type() == message_2::Type::SessionStopReq) {
-        return m_ctx.create_state<SessionStop>();
+// An action, not a wait state: also reached from PostCharge when the EV restarts the parameter
+// exchange after PowerDelivery(Stop) ([V2G2-601]).
+Result process_charge_parameter_discovery(Context& m_ctx, const message_2::ChargeParameterDiscoveryRequest& req) {
+    if (req.dc_ev_charge_parameter.has_value()) {
+        m_ctx.report_ev_status(req.dc_ev_charge_parameter->dc_ev_status);
     }
 
-    const auto variant = m_ctx.pull_request();
+    const bool is_dc = is_dc_mode(req.requested_energy_transfer_mode);
 
-    const auto req = variant->get_if<message_2::ChargeParameterDiscoveryRequest>();
-    if (req == nullptr) {
-        logf_warning("Expected ChargeParameterDiscoveryReq! But code type id: %d", variant->get_type());
-        // [V2G2-539]: answer with the received-type response carrying FAILED_SequenceError, then close.
-        respond_sequence_error(m_ctx, *variant);
-        m_ctx.session_stopped = true;
-        return {};
-    }
-
-    // The request must echo the assigned SessionID [V2G2-388]; a mismatch is answered with
-    // ChargeParameterDiscoveryRes/FAILED_UnknownSession and terminates the session.
-    if (reject_unknown_session(m_ctx, *variant)) {
-        return {};
-    }
-
-    if (req->dc_ev_charge_parameter.has_value()) {
-        m_ctx.report_ev_status(req->dc_ev_charge_parameter->dc_ev_status);
-    }
-
-    m_ctx.dc_charging = is_dc_mode(req->requested_energy_transfer_mode);
-
-    auto res = handle_request(*req, m_ctx.get_session_id(), m_ctx.session_config, m_ctx.charger_stop_requested,
+    auto res = handle_request(req, m_ctx.get_session_id(), m_ctx.session_config, m_ctx.evse().charger_stop_requested,
                               m_ctx.error_status_code(), m_ctx.rcd_error());
-    // The response builder reports Invalid isolation, correct for the initial exchange (no cable check
-    // yet). On the [V2G2-813] renegotiation path the isolation was verified and the module has reported
-    // it; report that instead of claiming it invalid (EvseV2G iso_server.cpp reports the module value).
+    // The builder reports Invalid isolation, correct for the initial exchange. On the [V2G2-813]
+    // renegotiation path the isolation was verified, so report the module's value instead.
     if (res.dc_evse_charge_parameter.has_value()) {
         apply_isolation_status(m_ctx, res.dc_evse_charge_parameter->dc_evse_status);
     }
@@ -349,29 +315,24 @@ Result ChargeParameterDiscovery::feed(Event ev) {
         return {};
     }
 
-    // Forward the EV's advertised maxima only after they validated OK, so a rejected (e.g. negative)
-    // limit is never pushed to the power supply.
-    forward_ev_limits(*req, m_ctx.dc_charging, m_ctx.feedback);
+    // Only after they validated OK, so a rejected limit is never pushed to the power supply.
+    forward_ev_limits(req, is_dc, m_ctx.feedback);
 
     if (res.sa_schedule_list.has_value() and not res.sa_schedule_list->empty()) {
-        m_ctx.sa_schedule_list = res.sa_schedule_list.value();
-        m_ctx.sa_schedule_tuple_id = res.sa_schedule_list->front().sa_schedule_tuple_id;
+        m_ctx.set_sa_schedules(res.sa_schedule_list.value(), res.sa_schedule_list->front().sa_schedule_tuple_id);
     }
 
-    if (m_ctx.dc_charging) {
-        // No energy for this session and the charger cannot even run the cable check: skip it and wait
-        // for the EV to react to the StopCharging notification. PreCharge hands any non-PreChargeReq
-        // straight to PowerDelivery, so this accepts both a stubborn PreChargeReq and the expected
-        // PowerDeliveryReq(Stop) / SessionStopReq -- EvseV2G's WAIT_FOR_PRECHARGE_POWERDELIVERY
-        // (IEC 61851-23:2023 CC.3.5.3). The later pause modes still run cable check and pre-charge and
-        // are stopped at PowerDelivery(Start) instead.
+    if (is_dc) {
+        // No energy, and the charger cannot even run the cable check: skip it and wait for the EV to react
+        // to the StopCharging notification. PreCharge hands any non-PreChargeReq to PowerDelivery, so both a
+        // stubborn PreChargeReq and the expected PowerDeliveryReq(Stop) / SessionStopReq are accepted.
         if (m_ctx.session_config.no_energy_pause == d20::NoEnergyPauseMode::BeforeCableCheck) {
             logf_info("No energy available, skipping the cable check (IEC 61851-23:2023 CC.3.5.3)");
-            return m_ctx.create_state<PreCharge>();
+            return m_ctx.create_state<PreChargeStart>();
         }
         return m_ctx.create_state<CableCheck>();
     }
-    return m_ctx.create_state<PowerDelivery>();
+    return m_ctx.create_state<AcPowerDelivery>();
 }
 
 } // namespace iso15118::d2::state

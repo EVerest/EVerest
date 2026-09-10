@@ -59,11 +59,9 @@ TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks cal
 
     if (config.enable_sdp_server) {
         sdp_server = std::make_unique<io::SdpServer>(interface_name);
-        // The SDP fd is registered exactly once and never re-registered, so the poll manager's
-        // throw-containment (which unregisters the offending fd) must never see an exception from
-        // this callback: it would silently kill SDP discovery until a process restart. Contain
-        // here instead -- get_peer_request() has consumed the datagram by the time anything below
-        // it can throw, so dropping the request cannot leave the level-triggered fd readable.
+        // The SDP fd is registered once and never re-registered, so the poll manager's throw-containment,
+        // which unregisters the offending fd, must never see an exception from here -- it would silently
+        // kill SDP discovery until a process restart. get_peer_request() has already consumed the datagram.
         poll_manager.register_fd(sdp_server->get_fd(), [this]() {
             try {
                 handle_sdp_server_input();
@@ -97,10 +95,8 @@ bool TbdController::poll_once() {
 void TbdController::service_active_session() {
     next_event = offset_time_point_by_ms(get_current_time_point(), POLL_MANAGER_TIMEOUT_MS);
 
-    // Apply dlink-ready requests from the module command thread. The loop thread owns
-    // communication_setup_timeout; the command thread only publishes its request via the
-    // generation counter / flag pair (seq_cst), so there is no cross-thread access to the
-    // std::optional<Timeout> itself.
+    // The loop thread owns communication_setup_timeout; the command thread only publishes its request
+    // via the generation counter / flag pair, so the std::optional<Timeout> is never touched across threads.
     const auto dlink_generation = dlink_ready_generation.load();
     if (dlink_generation != dlink_ready_applied) {
         dlink_ready_applied = dlink_generation;
@@ -125,10 +121,9 @@ void TbdController::service_active_session() {
         session->close();
     }
 
-    // Poll the session BEFORE evaluating the communication-setup timeout: a SessionSetupReq received
-    // in the last poll cycle is only processed here, setting is_v2g_session_established(). Evaluating
-    // the timeout first would tear down a session whose SessionSetupReq arrived just in time at the
-    // 18 s boundary.
+    // BEFORE evaluating the communication-setup timeout: a SessionSetupReq received in the last poll
+    // cycle is only processed here, and evaluating the timeout first would tear down a session whose
+    // request arrived just in time at the 18 s boundary.
     if (session) {
         try {
             const auto next_session_event = session->poll();
@@ -242,11 +237,9 @@ void TbdController::tick() {
     service_active_session();
 
     if (session and communication_setup_timeout and session->is_v2g_session_established()) {
-        // The EV sent its SessionSetupReq, so the communication-setup phase is over and the per-message
-        // sequence timeout takes over. Cancel the comm-setup timeout; otherwise it would fire mid-session
-        // (a full charging session far outlives 18 s) and tear down an active connection. Note the cancel
-        // point is SessionSetupReq, not TCP-accept: the wait for SupportedAppProtocolReq / SessionSetupReq
-        // after connecting is still part of communication setup (SupportedAppProtocol_003 / SessionSetup).
+        // The communication-setup phase is over and the per-message sequence timeout takes over; left armed
+        // it would fire mid-session and tear down an active connection. The cancel point is SessionSetupReq,
+        // not TCP-accept: the wait for SupportedAppProtocolReq is still part of communication setup.
         communication_setup_timeout.reset();
         logf_info("V2G session established (SessionSetupReq received); communication setup timeout cancelled");
     }
@@ -258,16 +251,11 @@ void TbdController::tick() {
             sdp_server->set_dlink_ready(false);
         }
         {
-            // A session that never established the V2G session (no SessionSetupReq) is torn down here.
-            // The timeout is cancelled on establishment above, so any session still present has NOT
-            // established and must go, covering three cases with one teardown:
-            //   - the EV never opened its TCP connection (SupportedAppProtocol_005): resetting closes the
-            //     still-listening socket, so a late connect is refused (RST) instead of accepted;
-            //   - the EV connected but sent no SupportedAppProtocolReq (SupportedAppProtocol_003);
-            //   - the EV completed SupportedAppProtocol but sent no SessionSetupReq (SessionSetup timeout).
-            // For the connected cases this closes the TCP connection within the termination budget instead
-            // of waiting out the 60 s V2G_SECC_Sequence_Timeout. ~Session -> ~ConnectionPlain closes the
-            // fd (listener or accepted connection) either way. reset() on a null session is a no-op.
+            // The timeout is cancelled on establishment above, so any session still here has NOT established:
+            // the EV never connected (resetting closes the still-listening socket, so a late connect is refused
+            // rather than accepted), connected but sent no SupportedAppProtocolReq, or completed the handshake
+            // but sent no SessionSetupReq. For the connected cases this closes within the termination budget
+            // instead of waiting out the 60 s sequence timeout.
             std::lock_guard<std::mutex> lock(session_mutex);
             session.reset();
         }
@@ -334,8 +322,7 @@ void TbdController::update_powersupply_limits(const d20::DcTransferLimits& limit
         s->powersupply_limits = limits;
     }
 
-    // A running session gets the update too: the capabilities feed the ChargeParameterDiscoveryRes
-    // offer, which a renegotiation re-sends mid-session (e.g. after an external derating change).
+    // They feed the ChargeParameterDiscoveryRes offer, which a renegotiation re-sends mid-session.
     std::lock_guard<std::mutex> lock(session_mutex);
     if (session) {
         session->push_control_event(d20::UpdatePowersupplyLimits{limits});
@@ -454,8 +441,7 @@ void TbdController::set_dlink_ready(bool ready) {
         sdp_server->set_dlink_ready(ready);
     }
 
-    // Publish the request for the loop thread (tick applies it to communication_setup_timeout);
-    // called from a module command thread, so the timeout object itself must not be touched here.
+    // Called from a module command thread, so the timeout object itself must not be touched here.
     dlink_ready_requested.store(ready);
     dlink_ready_generation.fetch_add(1);
 
@@ -535,12 +521,10 @@ void TbdController::handle_sdp_server_input() {
 
     if (not connection and request.security == io::v2gtp::Security::TLS and
         config.tls_negotiation_strategy == config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER) {
-        // The TLS endpoint cannot be set up (e.g. the SECC leaf certificate was deleted via OCPP
-        // DeleteCertificate). Under ACCEPT_CLIENT_OFFER (EvseV2G tls_security=allow parity), answer
-        // the SDP request with an unsecured endpoint instead of staying silent: the EV can then run
-        // an EIM session over plain TCP -- or abort, if it requires TLS -- instead of exhausting its
-        // SDP retries against a mute SECC. The session sees a plain connection (is_secure() false),
-        // so Contract payment is not offered on this fallback.
+        // The TLS endpoint cannot be set up (e.g. the SECC leaf certificate was deleted via OCPP). Under
+        // ACCEPT_CLIENT_OFFER, answer with an unsecured endpoint rather than stay silent, so the EV can run
+        // an EIM session over plain TCP -- or abort -- instead of exhausting its SDP retries against a mute
+        // SECC. The session sees a plain connection, so Contract payment is not offered on this fallback.
         logf_warning("TLS endpoint could not be set up; offering the EV a plain TCP endpoint instead");
         request.security = io::v2gtp::Security::NO_TRANSPORT_SECURITY;
         connection = make_connection(false);
@@ -553,10 +537,8 @@ void TbdController::handle_sdp_server_input() {
 
     const auto ipv6_endpoint = connection->get_public_endpoint();
 
-    // A no-energy pause armed before the session starts is one-shot: hand it to this session and clear
-    // it, so it cannot silently pause every later session as well. A pause armed while a session is
-    // already running reaches it as a NoEnergyPause control event instead. Built before taking
-    // session_mutex so the two locks are never held at once.
+    // One-shot: handing it to this session and clearing it keeps it from silently pausing every later
+    // session too. Built before taking session_mutex so the two locks are never held at once.
     auto session_config = [this] {
         auto setup = evse_setup.handle();
         session::SessionConfig config(*setup);
@@ -569,13 +551,9 @@ void TbdController::handle_sdp_server_input() {
         session = std::make_unique<Session>(std::move(connection), std::move(session_config), callbacks, pause_ctx,
                                             d2_pause_ctx);
     }
-    // Deliberately do NOT cancel communication_setup_timeout here. Sending the SDP response does not end
-    // the communication-setup phase: the EV has not yet opened TCP, nor sent SupportedAppProtocolReq /
-    // SessionSetupReq. The timeout keeps running so that if the EV never gets that far
-    // (V2G_SECC_CommunicationSetup_Timeout) the session is torn down in tick() -- closing the still-
-    // listening socket (SupportedAppProtocol_005) or the connected-but-idle TCP connection
-    // (SupportedAppProtocol_003 / SessionSetup timeout). It is cancelled once the SessionSetupReq
-    // establishes the V2G session (session->is_v2g_session_established() in tick()).
+    // Deliberately NOT cancelled here: sending the SDP response does not end the communication-setup
+    // phase, since the EV has not yet opened TCP. Leaving it running is what tears the session down in
+    // tick() if the EV never gets as far as a SessionSetupReq.
 
     // Deliberately do not clear terminate_session_requested here. A data-link
     // loss that races this session creation must win: tick() consumes the flag

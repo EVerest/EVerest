@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 //
-// The enums in message_2/common_types.hpp (including the shared -2/DIN ones aliased from
-// message/shared_datatypes.hpp) hand-mirror the cbv2g generated iso2_* enums so that cb_convert_enum
-// can static_cast between them. EXI encodes the numeric value, so a divergence (a typo here, or a
-// cbv2g regeneration) silently corrupts the wire format. This TU pins every mirrored enumerator to
-// its generated counterpart at compile time (same idea as the static_assert block in EvseV2G's
-// v2g_server.cpp); it intentionally contains no runtime code.
+// The enums in message_2/common_types.hpp hand-mirror the cbv2g generated iso2_* enums so
+// cb_convert_enum can static_cast between them. EXI encodes the numeric value, so a divergence (a
+// typo here, or a cbv2g regeneration) silently corrupts the wire format. This TU pins every mirrored
+// enumerator to its generated counterpart at compile time; it intentionally has no runtime code.
 
 #include <cbv2g/iso_2/iso2_msgDefDatatypes.h>
 

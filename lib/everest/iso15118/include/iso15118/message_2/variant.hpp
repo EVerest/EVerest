@@ -34,18 +34,16 @@ public:
 
     const datatypes::SessionId& get_session_id() const;
 
-    // Raw EXI payload the variant was decoded from (empty for a variant built directly from a C++
-    // message). Used by the PnC signature verification, which must re-decode the request to recover
-    // the cbv2g iso2 structs needed to rebuild the signed EXI fragment.
+    // Empty for a variant built directly from a C++ message. Used by the PnC signature verification,
+    // which must re-decode the request to rebuild the signed EXI fragment.
     const std::vector<uint8_t>& get_exi_payload() const {
         return exi_payload;
     }
 
     template <typename T> const T& get() const {
         static_assert(TypeTrait<T>::type != Type::None, "Unhandled type!");
-        // data is null for the relay-only types (CertificateInstallationReq / CertificateUpdateReq): the
-        // type is known but no message struct was decoded, so accessing one is a programming error
-        // rather than a null dereference. get_if() returns nullptr for them.
+        // data is null for the relay-only types: the type is known but no message struct was decoded, so
+        // get_if() returning nullptr for them is by design, not a null dereference.
         if (TypeTrait<T>::type != type or data == nullptr) {
             throw std::runtime_error("Illegal message type access");
         }
@@ -63,9 +61,8 @@ public:
     }
 
 private:
-    // Owning handle: binds the message pointer and its deleter together, so the two can never
-    // fall out of sync and no hand-written destructor is needed. Being move-only, it also deletes
-    // the implicit copy operations, which previously would have double-freed the message.
+    // Owning handle: binds the message pointer and its deleter together. Being move-only it also
+    // deletes the implicit copy operations, which previously would have double-freed the message.
     std::unique_ptr<void, CustomDeleter> data{nullptr, nullptr};
     Type type{Type::None};
     datatypes::SessionId session_id{};

@@ -13,8 +13,7 @@ d2::SessionConfig make_config() {
     config.evse_id = "DE*PNX*E12345*1";
     config.supported_energy_transfer_modes.push_back(dt::EnergyTransferMode::DC_extended);
     config.supported_energy_transfer_modes.push_back(dt::EnergyTransferMode::AC_three_phase_core);
-    // The charge-loop limits (what energy management currently grants) are deliberately lower than the
-    // hardware capabilities: ChargeParameterDiscoveryRes must advertise the capabilities.
+    // Deliberately lower than the hardware capabilities, which are what the response must advertise.
     config.dc_max_power = 150000.0f;
     config.dc_max_current = 300.0f;
     config.dc_max_voltage = 900.0f;
@@ -130,8 +129,7 @@ SCENARIO("ISO 15118-2 SECC ChargeParameterDiscovery handling") {
     }
 
     GIVEN("A DC request after an EVSE-initiated stop") {
-        // The stop request (stop_charging) reaches the EV in every state (EvseV2G parity), a
-        // renegotiated ChargeParameterDiscovery included.
+        // A stop reaches the EV in every state, a renegotiated ChargeParameterDiscovery included.
         message_2::ChargeParameterDiscoveryRequest req;
         req.requested_energy_transfer_mode = dt::EnergyTransferMode::DC_extended;
         auto& ev = req.dc_ev_charge_parameter.emplace();
@@ -219,8 +217,7 @@ SCENARIO("ISO 15118-2 SECC ChargeParameterDiscovery handling") {
         const auto res = d2::state::handle_request(req, id, single_phase_config);
         THEN("PMax covers the single requested phase only") {
             REQUIRE(res.response_code == dt::ResponseCode::OK);
-            // 32 A * 230 V * 1 phase; the capability current is per phase, so the mode the EV picked is
-            // what scales the offer.
+            // 32 A * 230 V * 1 phase: the capability current is per phase, so the EV's mode scales the offer.
             REQUIRE(dt::from_physical_value(res.sa_schedule_list->front().pmax_schedule.front().p_max) == 7360.0);
         }
     }
@@ -234,8 +231,7 @@ SCENARIO("ISO 15118-2 SECC ChargeParameterDiscovery handling") {
         }
     }
 
-    // [V2G2-366]: the module-reported EVSE error belongs in the ChargeParameterDiscoveryRes status too,
-    // not only in the charge-loop responses. [V2G2-880] keeps it informational -- the offer stands.
+    // [V2G2-366]: the module error belongs here too, and [V2G2-880] keeps it informational.
     GIVEN("A DC request while the module reports a utility interrupt") {
         message_2::ChargeParameterDiscoveryRequest req;
         req.requested_energy_transfer_mode = dt::EnergyTransferMode::DC_extended;

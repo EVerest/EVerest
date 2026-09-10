@@ -22,6 +22,8 @@
 #include <iso15118/session/feedback.hpp>
 
 #include "config.hpp"
+#include "evse_status.hpp"
+#include "session_parameters.hpp"
 
 namespace iso15118::d2 {
 
@@ -34,7 +36,6 @@ public:
 
     void set_request(std::unique_ptr<message_2::Variant> new_request);
     std::unique_ptr<message_2::Variant> pull_request();
-    message_2::Type peek_request_type() const;
     bool has_request() const {
         return request != nullptr;
     }
@@ -99,10 +100,6 @@ public:
     }
 
     std::unique_ptr<message_2::Variant> pull_request();
-    message_2::Type peek_request_type() const;
-    bool has_request() const {
-        return message_exchange.has_request();
-    }
 
     template <typename MessageType> void respond(const MessageType& msg) {
         // Two situations end the session by failing every response from here on, whatever state built
@@ -115,7 +112,7 @@ public:
         //     connection and leaving the EV without a reason. The physical shutdown itself runs over the
         //     control pilot, not over V2G ([V2G2-880] NOTE 1 / [V2G-DC-638] NOTE 2), so this response
         //     reports the emergency, it never enforces it.
-        if ((charger_stop_ignored or emergency_shutdown) and
+        if ((charger_stop_ignored or evse_status.emergency_shutdown) and
             msg.response_code < message_2::datatypes::ResponseCode::FAILED) {
             auto failed = msg;
             failed.response_code = message_2::datatypes::ResponseCode::FAILED;
@@ -153,13 +150,26 @@ public:
         return &std::get<T>(*current_control_event);
     }
 
-    // Fills the response header with the assigned session id.
-    void setup_header(message_2::Header& header) const;
-
     // Reports the EV's DC_EVStatus (ready flag, error code, RESS state of charge) to the module. Every DC
     // request of the charging sequence carries it, so this forwards on change only (EvseV2G
     // publish_iso_DcEvStatus parity); without it the EV state of charge never reaches EvseManager/OCPP.
     void report_ev_status(const dt::DC_EVStatus& status);
+
+    // The EV setpoint last forwarded via dc_charge_loop_req: target voltage/current plus the optional
+    // maximum V/I/P limits. The charge loop repeats it in every request and every forward makes the
+    // module republish, so the change filter lives here rather than in the loop state -- which is
+    // rebuilt around a metering receipt and would forget it (EvseV2G
+    // publish_dc_ev_target_voltage_current parity).
+    using DcSetpoint = std::tuple<double, double, std::optional<double>, std::optional<double>, std::optional<double>>;
+    void report_dc_setpoint(const DcSetpoint& setpoint, const session::feedback::DcReqControlMode& mode);
+
+    // Raised once per PowerDelivery(Start); see SessionParameters::charge_loop_started.
+    void set_charge_loop_started() {
+        session_params.charge_loop_started = true;
+    }
+    void clear_charge_loop_started() {
+        session_params.charge_loop_started = false;
+    }
 
     // Hands the EV's charge progress (remaining times, completion flags) to the module, on change only.
     // The EV repeats the values in every CurrentDemandReq, and PowerDeliveryReq carries the completion
@@ -169,8 +179,97 @@ public:
     void set_session_id(const dt::SessionId& id) {
         session_id = id;
     }
-    const dt::SessionId& get_session_id() const {
-        return session_id;
+    // What the module last reported about the charger, read-only to the states; see evse_status.hpp.
+    const EvseStatus& evse() const {
+        return evse_status;
+    }
+
+    // Recorded centrally from control events by the engine.
+    void set_present_values(float voltage, float current) {
+        evse_status.present_voltage = voltage;
+        evse_status.present_current = current;
+    }
+    void set_meter_info(const dt::MeterInfo& info) {
+        evse_status.latest_meter_info = info;
+    }
+    void set_active_error(d20::EvseErrorCode code) {
+        evse_status.active_error = code;
+    }
+    void set_emergency_shutdown() {
+        evse_status.emergency_shutdown = true;
+    }
+    void set_isolation_status(d20::IsolationStatus status) {
+        evse_status.reported_isolation_status = status;
+    }
+    void set_charger_stop_requested(bool requested) {
+        evse_status.charger_stop_requested = requested;
+    }
+    void set_cp_state(d20::CpState state) {
+        evse_status.current_cp_state = state;
+    }
+    // Latches: a reported success does not clear a previous fault, nor the other way round.
+    void set_cable_check_done() {
+        evse_status.cable_check_done = true;
+    }
+    void set_cable_check_fault() {
+        evse_status.cable_check_fault = true;
+    }
+    // PowerDelivery owns the open; the engine records the close from the ClosedContactor event.
+    void set_contactor_closed(bool closed) {
+        evse_status.ac_contactor_closed = closed;
+    }
+    // Opening the contactor invalidates a completed cable check (ISO 15118-2 8.7.4.3 NOTE 1).
+    void invalidate_cable_check() {
+        evse_status.cable_check_done = false;
+        evse_status.cable_check_fault = false;
+    }
+
+    // Session-scoped facts, read-only to the states; see session_parameters.hpp.
+    const SessionParameters& session() const {
+        return session_params;
+    }
+
+    void set_session_resumed() {
+        session_params.session_resumed = true;
+    }
+    void set_contract_selected() {
+        session_params.contract_selected = true;
+    }
+    void set_certificate_services(bool install, bool update) {
+        session_params.cert_install_selected = install;
+        session_params.cert_update_selected = update;
+    }
+    void set_contract_identity(std::vector<uint8_t> leaf_der, std::string emaid, std::string chain_pem) {
+        session_params.contract_leaf_der = std::move(leaf_der);
+        session_params.contract_emaid = std::move(emaid);
+        session_params.contract_chain_pem = std::move(chain_pem);
+    }
+    void set_sa_schedules(dt::SAScheduleList list, uint8_t tuple_id) {
+        session_params.sa_schedule_list = std::move(list);
+        session_params.sa_schedule_tuple_id = tuple_id;
+    }
+    void set_receipt_received() {
+        session_params.receipt_received = true;
+    }
+    void set_power_delivery_started() {
+        session_params.power_delivery_started = true;
+    }
+    void set_power_delivery_stopped() {
+        session_params.power_delivery_stopped = true;
+    }
+
+    // True once SessionSetup has assigned or re-joined a SessionID. Before that the SECC has no id to
+    // compare a request against, which is why an unexpected first message is a SequenceError and never
+    // FAILED_UnknownSession -- Table 112 does not list that code for SessionSetupRes at all.
+    bool session_established() const {
+        return session_id.has_value();
+    }
+
+    // The assigned SessionID, or all-zero while no session is established: zero is the wire value for
+    // "no session" ([V2G2-750]), so it is the correct thing to stamp into a response built before
+    // SessionSetup has run.
+    dt::SessionId get_session_id() const {
+        return session_id.value_or(dt::SessionId{});
     }
 
     void start_timeout(d20::TimeoutType type, uint32_t time_ms) {
@@ -180,10 +279,12 @@ public:
         timeouts.stop_timeout(type);
     }
 
-    // Arms V2G_SECC_CPState_Detection_Timeout for a request parked waiting on the CP state, always as a
-    // fresh window. Timeouts::start_timeout() refuses an already-occupied slot, so a state that hands
-    // over while it still has a request parked would otherwise leave the next state silently inheriting
-    // the leftover -- possibly already expired -- deadline instead of getting its own.
+    // Arms the V2G_SECC_Msg_Performance_Time window ([V2G2-916]..[V2G2-918] before a cable check,
+    // [V2G2-920]..[V2G2-922] before a welding detection or session stop) for a request parked waiting on
+    // the CP state, always as a fresh one. Timeouts::start_timeout() refuses an already-occupied slot,
+    // so a state that hands over while it still has a request parked would otherwise leave the next
+    // state silently inheriting the leftover -- possibly already expired -- deadline instead of getting
+    // its own.
     void arm_cp_state_timeout(uint32_t time_ms) {
         timeouts.reset_timeout(d20::TimeoutType::CPSTATE);
         timeouts.start_timeout(d20::TimeoutType::CPSTATE, time_ms);
@@ -204,64 +305,13 @@ public:
         current_timeout = timeout;
     }
 
-    void request_shutdown() {
-        requested_shutdown = true;
-    }
-    [[nodiscard]] bool shutdown_requested() const {
-        return requested_shutdown;
-    }
-
     const session::Feedback feedback;
     d2::SessionConfig session_config;
     std::optional<PauseContext>& pause_ctx;
 
-    // Runtime session state (SECC).
-    dt::SessionId session_id{};
-    float present_voltage{0.0f};
-    float present_current{0.0f};
-    // Latest meter reading forwarded by the module (latched by the engine in any state, so the first
-    // charge-loop response already carries one). Reported as MeterInfo in every ChargingStatusRes and, in
-    // PnC sessions only, in every CurrentDemandRes.
-    std::optional<dt::MeterInfo> latest_meter_info{};
-    bool authorized{false};
-
-    // Set in SessionSetup when the EV re-joins a paused session (OK_OldSessionJoined). The resumed
-    // session runs the full message sequence again, but [V2G2-741] constrains the SECC's values: only
-    // the previously selected payment option (pause_ctx->selected_payment_option) may be offered.
-    bool session_resumed{false};
-
-    // Plug-and-Charge (Contract) session state. Set in PaymentServiceSelection (contract_selected) and
-    // PaymentDetails (leaf DER + eMAID + chain PEM + GenChallenge); consumed by the Authorization state
-    // to verify the AuthorizationReq signature and challenge and to publish the require_auth_pnc token.
-    bool contract_selected{false};
-    // Certificate service selection from PaymentServiceSelectionReq (ISO 15118-2 VAS, ServiceID 2). Gate
-    // the certificate exchange in PaymentDetails: a CertificateInstallation/Update request is accepted only
-    // if the matching action was selected [V2G2-432]. Table 106 ParameterSetID 1 = Installation, 2 = Update;
-    // a SelectedService for the certificate service without a ParameterSetID permits either exchange.
-    bool cert_install_selected{false};
-    bool cert_update_selected{false};
-    // Set once the SUT has received and accepted a MeteringReceipt, so it stops setting ReceiptRequired
-    // in the subsequent charge-loop responses.
-    bool receipt_received{false};
-    std::vector<uint8_t> contract_leaf_der{};
-    std::string contract_emaid{};
-    std::string contract_chain_pem{};
-    dt::GenChallenge gen_challenge{};
-    bool cable_check_done{false};
-    // PnC only: the higher layer rejected the authorization because the contract certificate is revoked
-    // (AuthorizationResponse control event); answered with FAILED_CertificateRevoked instead of FAILED.
-    bool certificate_revoked{false};
-    // Set when the module reports a finished-but-failed cable check (isolation fault) via
-    // CableCheckFinished{success=false}; distinct from "not finished yet". Drives CableCheckRes FAILED.
-    bool cable_check_fault{false};
-
-    // Latest EVSE error reported by the module (send_error / reset_error). Stamped into DC charge
-    // responses; EmergencyShutdown aborts the session (handled in the engine).
-    d20::EvseErrorCode active_error{d20::EvseErrorCode::None};
-
     // Maps the active error to the DC_EVSEStatusCode to advertise, or nullopt when no override applies.
     std::optional<dt::DC_EVSEStatusCode> error_status_code() const {
-        switch (active_error) {
+        switch (evse_status.active_error) {
         case d20::EvseErrorCode::UtilityInterruptEvent:
             return dt::DC_EVSEStatusCode::EVSE_UtilityInterruptEvent;
         case d20::EvseErrorCode::Malfunction:
@@ -277,22 +327,21 @@ public:
     // is mandatory in every AC response ([Table 104]), not just the charge loop (EvseV2G
     // populate_ac_evse_status stamps it into all of them).
     bool rcd_error() const {
-        return active_error == d20::EvseErrorCode::RCD;
+        return evse_status.active_error == d20::EvseErrorCode::RCD;
     }
 
     // Latest isolation-monitoring result reported by the module (update_isolation_status). Absent until
     // the module reports one.
-    std::optional<d20::IsolationStatus> reported_isolation_status{std::nullopt};
 
     // The EVSEIsolationStatus to report in a DC response, or nullopt when the module has not reported one
     // and the caller should keep its own value. CableCheckRes takes it too: the level derived from the
     // cable check's own progress (Invalid while monitoring, Valid once finished) cannot express Warning,
     // Fault or No_IMD, and the module reports its result before signalling cable_check_finished.
     std::optional<dt::IsolationLevel> reported_isolation_level() const {
-        if (not reported_isolation_status.has_value()) {
+        if (not evse_status.reported_isolation_status.has_value()) {
             return std::nullopt;
         }
-        switch (reported_isolation_status.value()) {
+        switch (evse_status.reported_isolation_status.value()) {
         case d20::IsolationStatus::Invalid:
             return dt::IsolationLevel::Invalid;
         case d20::IsolationStatus::Valid:
@@ -310,31 +359,24 @@ public:
     // The EVSEIsolationStatus for a DC response after the cable check: the module's report when it made
     // one, else derived from whether the cable check has finished.
     dt::IsolationLevel isolation_level() const {
-        return reported_isolation_level().value_or(cable_check_done ? dt::IsolationLevel::Valid
-                                                                    : dt::IsolationLevel::Invalid);
+        return reported_isolation_level().value_or(evse_status.cable_check_done ? dt::IsolationLevel::Valid
+                                                                                : dt::IsolationLevel::Invalid);
     }
     // Tracks the AC contactor state as reported by ClosedContactor control events. A PowerDelivery(Start)
     // that resumes after a renegotiation finds it already closed (the contactor never re-opened), so the
     // SECC must respond OK immediately rather than wait for a fresh close confirmation that never comes.
-    bool ac_contactor_closed{false};
-    bool dc_charging{true};
     // Set once a PowerDeliveryReq with ChargeProgress=Start has been accepted. A PowerDeliveryReq with
     // ChargeProgress=Renegotiate received before any Start is illegal and answered FAILED [V2G2-812].
-    bool power_delivery_started{false};
     // EVSE-initiated stop (module stop_charging / driver shutdown), latched by the engine in ANY state:
     // every subsequent status-carrying response tells the EV to stop (EVSENotification StopCharging,
     // DC status code EVSE_Shutdown) -- EvseV2G parity, which stamps its context notification into every
     // response after handle_stop_charging.
-    bool charger_stop_requested{false};
     // The EV ignored the stop request beyond the STOP_CHARGING guard: respond() fails every further
     // response and ends the session (EvseV2G stop_hlc parity). Set by the engine on the guard timeout.
     bool charger_stop_ignored{false};
     // The module reported an emergency shutdown (send_error EmergencyShutdown): the next response is
     // failed and terminates the ISO 15118-2 session. Guarded by TIMEOUT_EMERGENCY_SHUTDOWN_GUARD in the engine so a
     // silent EV cannot hold the connection open.
-    bool emergency_shutdown{false};
-    uint8_t sa_schedule_tuple_id{1};
-    dt::SAScheduleList sa_schedule_list{};
 
     bool session_stopped{false};
     bool session_paused{false};
@@ -344,23 +386,25 @@ public:
     // Armed by the SessionStop state on a positive Res; drained by Session::send_response() right
     // after the response hit the wire to emit feedback.session_stop_res_sent ([V2G-DC-968] anchor).
     std::optional<session::feedback::SessionStopAction> session_stop_res_pending{};
-    // Last CP state reported by the module (CpStateChanged control event); updated by the engine.
-    d20::CpState current_cp_state{d20::CpState::A};
-    // A PowerDeliveryReq(Stop) was processed: the next WeldingDetection/SessionStop request requires
-    // CP State B within V2G_SECC_CPState_Detection_Timeout ([V2G2-920]..[V2G2-922]).
-    bool power_delivery_stopped{false};
 
 private:
+    // Assigned (or re-joined) exactly once, by the SessionSetup state. Empty until then, which is what
+    // separates "no session yet" from "a session whose id happens to be zero" -- see
+    // session_established().
+    std::optional<dt::SessionId> session_id{std::nullopt};
     // Last charge progress handed to the module; the change filter of report_charge_progress().
     std::optional<session::feedback::DcEvChargeProgress> last_reported_charge_progress{std::nullopt};
     // Last DC_EVStatus handed to the module; the change filter of report_ev_status().
     std::optional<dt::DC_EVStatus> last_reported_ev_status{std::nullopt};
+    // Change filter of report_dc_setpoint().
+    std::optional<DcSetpoint> last_forwarded_dc_setpoint{std::nullopt};
 
     const std::optional<d20::ControlEvent>& current_control_event;
     MessageExchange& message_exchange;
     d20::Timeouts& timeouts;
     std::optional<d20::TimeoutType> current_timeout{std::nullopt};
-    bool requested_shutdown{false};
+    EvseStatus evse_status{};
+    SessionParameters session_params{};
 };
 
 } // namespace iso15118::d2

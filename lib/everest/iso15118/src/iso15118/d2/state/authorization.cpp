@@ -19,9 +19,8 @@ message_2::AuthorizationResponse handle_request([[maybe_unused]] const message_2
     res.header.session_id = session_id;
 
     if (timeout_reached or rejected) {
-        // A rejected authorization must not spin Ongoing forever (EvseV2G din_server.cpp:482-489). A PnC
-        // rejection due to a revoked contract certificate names the reason [V2G2-475] (EvseV2G
-        // iso_server.cpp:1398); anything else stays a plain FAILED.
+        // A rejected authorization must not spin Ongoing forever. A PnC rejection due to a revoked contract
+        // certificate names the reason [V2G2-475]; anything else stays a plain FAILED.
         res.response_code = (rejected and contract_selected and certificate_revoked)
                                 ? dt::ResponseCode::FAILED_CertificateRevoked
                                 : dt::ResponseCode::FAILED;
@@ -46,11 +45,11 @@ void Authorization::enter() {
     logf_debug("Enter state: Authorization");
 }
 
-Result Authorization::feed(Event ev) {
+Result Authorization::on_event(Event ev) {
     if (ev == Event::CONTROL_MESSAGE) {
         if (const auto* control = m_ctx.get_control_event<d20::AuthorizationResponse>()) {
-            m_ctx.authorized = static_cast<bool>(*control);
-            m_ctx.certificate_revoked = control->is_certificate_revoked();
+            authorized = static_cast<bool>(*control);
+            certificate_revoked = control->is_certificate_revoked();
             auth_response_received = true;
         }
         return {};
@@ -64,38 +63,24 @@ Result Authorization::feed(Event ev) {
         return {};
     }
 
-    if (ev != Event::V2GTP_MESSAGE) {
-        return {};
-    }
+    return {};
+}
 
-    // An EV aborting mid-handshake sends SessionStopReq; hand it to SessionStop for a clean SessionStopRes.
-    if (m_ctx.peek_request_type() == message_2::Type::SessionStopReq) {
-        return m_ctx.create_state<SessionStop>();
-    }
+Result Authorization::on_request(const message_2::Variant& received) {
 
-    const auto variant = m_ctx.pull_request();
-
-    const auto req = variant->get_if<message_2::AuthorizationRequest>();
+    const auto req = received.get_if<message_2::AuthorizationRequest>();
     if (req == nullptr) {
-        logf_warning("Expected AuthorizationReq! But code type id: %d", variant->get_type());
-        // [V2G2-539]: answer with the received-type response carrying FAILED_SequenceError, then close.
-        respond_sequence_error(m_ctx, *variant);
-        m_ctx.session_stopped = true;
-        return {};
-    }
-
-    // The request must echo the assigned SessionID [V2G2-388]; a mismatch is answered with
-    // AuthorizationRes/FAILED_UnknownSession and terminates the session.
-    if (reject_unknown_session(m_ctx, *variant)) {
+        logf_warning("Expected AuthorizationReq! But code type id: %d", received.get_type());
+        respond_sequence_error(m_ctx, received.get_type());
         return {};
     }
 
     if (first_req_msg) {
-        if (m_ctx.contract_selected) {
-            // Plug-and-Charge [V2G2-684]: verify the GenChallenge echo and the AuthorizationReq signature
-            // against the contract public key before requesting authorization from the higher layer.
-            const bool challenge_ok =
-                req->gen_challenge.has_value() and req->gen_challenge.value() == m_ctx.gen_challenge;
+        if (m_ctx.session().contract_selected) {
+            // [V2G2-684]: verify the GenChallenge echo and the AuthorizationReq signature before requesting
+            // authorization. The challenge is the one PaymentDetails handed over, not shared session state.
+            const bool challenge_ok = req->gen_challenge.has_value() and gen_challenge.has_value() and
+                                      req->gen_challenge.value() == gen_challenge.value();
             if (not challenge_ok) {
                 logf_warning("PnC Authorization: GenChallenge invalid or missing");
                 message_2::AuthorizationResponse res;
@@ -107,7 +92,8 @@ Result Authorization::feed(Event ev) {
                 return {};
             }
 
-            if (not crypto::verify_authorization_signature(variant->get_exi_payload(), m_ctx.contract_leaf_der)) {
+            if (not crypto::verify_authorization_signature(received.get_exi_payload(),
+                                                           m_ctx.session().contract_leaf_der)) {
                 logf_warning("PnC Authorization: signature verification failed");
                 message_2::AuthorizationResponse res;
                 res.header.session_id = m_ctx.get_session_id();
@@ -118,19 +104,15 @@ Result Authorization::feed(Event ev) {
                 return {};
             }
 
-            // Signature verified: request PnC authorization for the contract eMAID from the higher layer.
-            m_ctx.feedback.require_auth_pnc(m_ctx.contract_emaid, m_ctx.contract_chain_pem);
+            m_ctx.feedback.require_auth_pnc(m_ctx.session().contract_emaid, m_ctx.session().contract_chain_pem);
         } else {
             m_ctx.feedback.signal(session::feedback::Signal::REQUIRE_AUTH_EIM);
         }
-        // [V2G2-712/713]: once the SECC has sent EVSEProcessing=Ongoing (or
-        // Ongoing_WaitingForCustomerInteraction) for the first time it starts the V2G_SECC_Ongoing_Timer;
-        // on expiry without Finished it terminates the session (best-effort FAILED on the next request).
-        // The window is configurable per payment option (EvseV2G auth_timeout_pnc / auth_timeout_eim):
-        // V2G_SECC_Ongoing_Performance_Time (55 s, Table 109) is the PnC default, while EIM defaults far
-        // higher because a human has to present a card or confirm in an app. 0 waits indefinitely.
-        const auto timeout_ms = m_ctx.contract_selected ? m_ctx.session_config.auth_timeout_pnc_ms
-                                                        : m_ctx.session_config.auth_timeout_eim_ms;
+        // [V2G2-712/713]: the V2G_SECC_Ongoing_Timer starts with the first Ongoing response and terminates
+        // the session on expiry. Configurable per payment option: V2G_SECC_Ongoing_Performance_Time (55 s) is
+        // the PnC default, while EIM defaults far higher because a human has to act. 0 waits indefinitely.
+        const auto timeout_ms = m_ctx.session().contract_selected ? m_ctx.session_config.auth_timeout_pnc_ms
+                                                                  : m_ctx.session_config.auth_timeout_eim_ms;
         if (timeout_ms > 0) {
             m_ctx.start_timeout(d20::TimeoutType::ONGOING, timeout_ms);
         } else {
@@ -139,9 +121,9 @@ Result Authorization::feed(Event ev) {
         first_req_msg = false;
     }
 
-    const bool rejected = auth_response_received and not m_ctx.authorized;
-    const auto res = handle_request(*req, m_ctx.get_session_id(), m_ctx.authorized, timeout_ongoing_reached, rejected,
-                                    m_ctx.contract_selected, m_ctx.certificate_revoked);
+    const bool rejected = auth_response_received and not authorized;
+    const auto res = handle_request(*req, m_ctx.get_session_id(), authorized, timeout_ongoing_reached, rejected,
+                                    m_ctx.session().contract_selected, certificate_revoked);
     m_ctx.respond(res);
 
     if (res.response_code >= dt::ResponseCode::FAILED) {
