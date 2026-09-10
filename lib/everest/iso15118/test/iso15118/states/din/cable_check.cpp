@@ -52,8 +52,7 @@ SCENARIO("DIN SECC CableCheck state handling") {
     GIVEN("A module reporting an isolation warning at the end of the cable check") {
         message_din::CableCheckRequest req;
         req.header.session_id = session;
-        // The module value wins over the level derived from the cable check's own progress. DIN has no
-        // No_IMD enumerator, so a charger without an IMD arrives here already mapped to Valid.
+        // The module value wins over the level derived from the check's own progress; DIN has no No_IMD.
         const auto res =
             din::state::handle_request(req, /*cable_check_done=*/true, /*cable_check_fault=*/false, session,
                                        std::nullopt, /*charger_stop=*/false, dt::IsolationLevel::Warning);
@@ -76,16 +75,6 @@ SCENARIO("DIN SECC CableCheck state handling") {
         }
     }
 
-    GIVEN("A mismatching session id") {
-        message_din::CableCheckRequest req;
-        req.header.session_id = dt::SessionId{};
-
-        const auto res = din::state::handle_request(req, true, false, session);
-        THEN("ResponseCode is FAILED_UnknownSession") {
-            REQUIRE(res.response_code == dt::ResponseCode::FAILED_UnknownSession);
-        }
-    }
-
     GIVEN("A module-reported EVSE error while the cable check is ongoing") {
         message_din::CableCheckRequest req;
         req.header.session_id = session;
@@ -101,8 +90,7 @@ SCENARIO("DIN SECC CableCheck state handling") {
     GIVEN("An EVSE-initiated stop during the cable check") {
         message_din::CableCheckRequest req;
         req.header.session_id = session;
-        // The stop request reaches the EV in every state (EvseV2G parity): EVSE_Shutdown, whatever the
-        // cable check's own progress. The EVSENotification stays None for DC [V2G-DC-500].
+        // A stop reaches the EV in every state: EVSE_Shutdown, notification None for DC [V2G-DC-500].
         const auto res = din::state::handle_request(req, /*cable_check_done=*/false, /*cable_check_fault=*/false,
                                                     session, std::nullopt, /*charger_stop=*/true);
         THEN("the response signals EVSE_Shutdown") {

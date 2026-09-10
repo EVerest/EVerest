@@ -14,7 +14,6 @@ enum class Event {
     CONTROL_MESSAGE,
     TIMEOUT,
 
-    // internal events
     FAILED,
 };
 
@@ -25,8 +24,9 @@ enum class StateID {
     ContractAuthentication,
     ChargeParameterDiscovery,
     CableCheck,
+    PreChargeStart,
     PreCharge,
-    PowerDelivery,
+    CurrentDemandStart,
     CurrentDemand,
     WeldingDetection,
     SessionStop,
@@ -54,10 +54,23 @@ struct StateBase {
     }
 
     virtual void enter(){};
-    virtual Result feed(Event) = 0;
+
+    // The one place a DIN request is consumed: it pulls the decoded request, reports its type and runs
+    // the [V2G-DC-391] SessionID check before handing the message to the state. Non-virtual on purpose,
+    // since an override could reintroduce a second consume point.
+    Result feed(Event ev);
+
     virtual void leave(){};
 
 protected:
+    // Control events and timeouts; four of the states wait on nothing but the wire.
+    virtual Result on_event(Event) {
+        return {};
+    }
+
+    // The state's accepted set, ending in respond_sequence_error [V2G-DC-666].
+    virtual Result on_request(const message_din::Variant& received) = 0;
+
     Context& m_ctx;
 
 private:

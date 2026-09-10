@@ -35,15 +35,4 @@ SCENARIO("DIN SECC ServiceDiscovery state handling") {
             REQUIRE(res.charge_service.energy_transfer_type == dt::SupportedEnergyTransferMode::DC_extended);
         }
     }
-
-    GIVEN("A mismatching session id") {
-        message_din::ServiceDiscoveryRequest req;
-        req.header.session_id = dt::SessionId{}; // all zero
-
-        const auto res = din::state::handle_request(req, make_config(), session);
-
-        THEN("ResponseCode is FAILED_UnknownSession") {
-            REQUIRE(res.response_code == dt::ResponseCode::FAILED_UnknownSession);
-        }
-    }
 }

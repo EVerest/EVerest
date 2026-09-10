@@ -33,6 +33,7 @@ target_sources(iso15118
         din/context.cpp
 
         # din (DIN SPEC 70121) SECC state machine
+        din/states.cpp
         din/state/session_setup.cpp
         din/state/service_discovery.cpp
         din/state/service_payment_selection.cpp

@@ -10,24 +10,19 @@ namespace iso15118::din::state {
 
 namespace dt = message_din::datatypes;
 
-// Builds the response message *corresponding to the received request type*, carrying the given
-// ResponseCode, with all schema-mandatory fields populated (so cbexigen actually EXI-encodes it), and
-// stages it via ctx.respond(). If the received message is not a known DIN request type, it logs and
-// stages nothing (the caller still stops the session). Mirrors d2::state::respond_with_code.
+// Builds the response corresponding to the *received* request type with all schema-mandatory fields
+// populated, so cbexigen actually EXI-encodes it. An unknown request type stages nothing.
 void respond_with_code(Context& ctx, const message_din::Variant& received, dt::ResponseCode code);
 
-// [V2G-DC-539] (DIN SPEC 70121 §9.5.2): when the SECC receives a valid but out-of-sequence request, it
-// must answer with the *received-type* response carrying ResponseCode FAILED_SequenceError, and then
-// terminate the session. Answering with the receiving state's own response type (as the per-state
-// fallbacks used to) is a conformance violation (TC_SECC_VTB_ServiceDiscovery_002 expects a
-// ContractAuthenticationRes when a ContractAuthenticationReq arrives in place of a ServiceDiscoveryReq).
+// [V2G-DC-666] (section 9.7.4.2.3): answer with the response corresponding to the *received* request
+// carrying FAILED_SequenceError, perform an EVSE-initiated emergency shutdown and close the TCP
+// connection ([V2G-DC-116]). Answering with the receiving state's own response type is a conformance
+// violation (TC_SECC_VTB_ServiceDiscovery_002).
 void respond_sequence_error(Context& ctx, const message_din::Variant& received);
 
-// [V2G-DC-391]: every request after SessionSetup must echo the assigned SessionID; a mismatch is
-// answered with the received-type response carrying FAILED_UnknownSession and terminates the session.
-// Returns true if the request was rejected -- the caller must return without processing the request,
-// so no side effect (feedback signal, power-supply setpoint, CP gate) fires for an unknown session.
-// Mirrors d2::state::reject_unknown_session.
+// [V2G-DC-391]: every request after SessionSetup must echo the assigned SessionID. Returns true if
+// the request was rejected -- the caller must then return without processing it, so no side effect
+// (feedback signal, power-supply setpoint, CP gate) fires for an unknown session.
 bool reject_unknown_session(Context& ctx, const message_din::Variant& received);
 
 } // namespace iso15118::din::state

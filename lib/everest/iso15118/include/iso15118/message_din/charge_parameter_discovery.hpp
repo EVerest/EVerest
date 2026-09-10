@@ -12,8 +12,7 @@ namespace iso15118::message_din {
 
 namespace datatypes {
 
-// Minimal SAScheduleList representation. DIN 70121 PMax is a raw short (watts, capped at SHRT_MAX); the
-// interval carries a start (0) and a mandatory duration. Only what a single advertised tuple needs.
+// DIN 70121 PMax is a raw short (watts, capped at SHRT_MAX); only what a single tuple needs.
 struct PMaxScheduleEntry {
     uint32_t start{0};
     uint32_t duration{0};
@@ -58,8 +57,7 @@ struct ChargeParameterDiscoveryRequest {
     datatypes::EnergyTransferMode ev_requested_energy_transfer_type{datatypes::EnergyTransferMode::DC_core};
     std::optional<datatypes::DcEvChargeParameter> dc_ev_charge_parameter;
     // Only whether the EV sent an AC_EVChargeParameter, not its content: this SECC is DC only and the
-    // element exists solely so [V2G-DC-398] can answer FAILED_WrongChargeParameter. Decode direction
-    // only -- the encoder never emits an AC_EVChargeParameter.
+    // element exists solely so [V2G-DC-398] can answer FAILED_WrongChargeParameter. Decode only.
     bool ac_ev_charge_parameter_present{false};
 };
 

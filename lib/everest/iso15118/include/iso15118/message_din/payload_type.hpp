@@ -8,11 +8,8 @@ namespace iso15118::message_din {
 
 template <typename T> struct PayloadTypeTrait;
 
-//
-// definitions of type traits
-//
-// All DIN SPEC 70121 messages use the V2GTP payload type 0x8001 (SAP). Dispatch happens
-// by protocol context at session level, not by payload type.
+// All DIN SPEC 70121 messages use the V2GTP payload type 0x8001 (SAP); dispatch happens by
+// protocol context at session level, not by payload type.
 #define CREATE_TYPE_TRAIT(struct_name)                                                                                 \
     struct struct_name;                                                                                                \
     template <> struct PayloadTypeTrait<struct_name> {                                                                 \

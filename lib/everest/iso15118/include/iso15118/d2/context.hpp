@@ -27,18 +27,14 @@
 
 namespace iso15118::d2 {
 
-// Message exchange for ISO 15118-2, mirroring d20::MessageExchange over the message_2 types. It serves
-// both roles: the SECC stores the incoming decoded request in the request slot and stages the outgoing
-// response in the response slot; the EV side uses it the other way around.
+// Serves both roles: the SECC stores the incoming request and stages the outgoing response, the EV
+// side the other way around.
 class MessageExchange {
 public:
     explicit MessageExchange(io::StreamOutputView);
 
     void set_request(std::unique_ptr<message_2::Variant> new_request);
     std::unique_ptr<message_2::Variant> pull_request();
-    bool has_request() const {
-        return request != nullptr;
-    }
 
     template <typename MessageType> void set_response(const MessageType& msg) {
         response_size = message_2::serialize(msg, response);
@@ -60,10 +56,8 @@ public:
         }
     }
 
-    // Stage an already-encoded message EXI verbatim, bypassing the message_2 codec. Used both by the SECC
-    // relay splice (Plug-and-Charge CertificateInstallationRes delivered by the backend) and by the EVCC
-    // to send a request it signed itself (AuthorizationReq/MeteringReceiptReq/CertificateInstallationReq).
-    // `type` is reported for logging only; it defaults to None (protocol-neutral, like every d2 response).
+    // Stage an already-encoded EXI verbatim, bypassing the message_2 codec: the SECC relay splice for a
+    // backend-delivered CertificateInstallationRes, and the EVCC for requests it signed itself.
     void set_raw_response(const uint8_t* data, size_t len, message_2::Type type = message_2::Type::None);
 
     std::tuple<bool, size_t, io::v2gtp::PayloadType, message_2::Type> check_and_clear_response();
@@ -72,10 +66,8 @@ public:
     }
 
 private:
-    // input
     std::unique_ptr<message_2::Variant> request{nullptr};
 
-    // output
     const io::StreamOutputView response;
     size_t response_size{0};
     bool response_available{false};
@@ -87,9 +79,6 @@ private:
 struct StateBase;
 using BasePointerType = std::unique_ptr<StateBase>;
 
-// SECC-side ISO 15118-2 context, the mirror of d20::Context. It holds the SECC session configuration,
-// the module-facing feedback (reused d20 callbacks), the reused d20 control event / timeouts, and the
-// runtime session state (assigned session id, present V/I, advertised SAScheduleList, ...).
 class Context {
 public:
     Context(session::feedback::Callbacks, d2::SessionConfig, std::optional<PauseContext>&,
@@ -102,16 +91,10 @@ public:
     std::unique_ptr<message_2::Variant> pull_request();
 
     template <typename MessageType> void respond(const MessageType& msg) {
-        // Two situations end the session by failing every response from here on, whatever state built
-        // it, and terminating with it. The state saw its own OK response, so session_stopped is set here
-        // as well.
-        //   - The EV kept the session going beyond the grace period after an EVSE-initiated stop
-        //     (charger_stop_ignored, armed by the engine's STOP_CHARGING guard, EvseV2G stop_hlc parity).
-        //   - The module reported an emergency shutdown (send_error). The standard has the SECC answer
-        //     FAILED and only then terminate the connection [V2G2-539]/[V2G2-034], rather than dropping the TCP
-        //     connection and leaving the EV without a reason. The physical shutdown itself runs over the
-        //     control pilot, not over V2G ([V2G2-880] NOTE 1 / [V2G-DC-638] NOTE 2), so this response
-        //     reports the emergency, it never enforces it.
+        // Two situations fail every response from here on and terminate with it: the EV kept the session
+        // going beyond the grace period after an EVSE-initiated stop, or the module reported an emergency
+        // shutdown. [V2G2-539]/[V2G2-034] have the SECC answer FAILED first rather than drop the TCP
+        // connection and leave the EV without a reason; the physical shutdown runs over the control pilot.
         if ((charger_stop_ignored or evse_status.emergency_shutdown) and
             msg.response_code < message_2::datatypes::ResponseCode::FAILED) {
             auto failed = msg;
@@ -121,17 +104,14 @@ public:
             message_exchange.set_response(failed);
             return;
         }
-        // Every FAILED_* response terminates an ISO-2 session (all states set session_stopped on
-        // FAILED). Arm the marker here centrally so Session::send_response() reports
-        // FailedTermination once the response hit the wire: oscillator off without delay and
-        // SECC-side TCP close (DIN [V2G-DC-942]/[V2G-DC-940] semantics, mirrored for ISO-2).
+        // Every FAILED_* response terminates an ISO-2 session, so arm the marker centrally here and let
+        // Session::send_response() report FailedTermination once the response hit the wire.
         if (msg.response_code >= message_2::datatypes::ResponseCode::FAILED) {
             session_stop_res_pending = session::feedback::SessionStopAction::FailedTermination;
         }
         message_exchange.set_response(msg);
     }
 
-    // Relay-only splice for the CertificateInstallation pass-through (see MessageExchange::set_raw_response).
     void respond_raw(const std::vector<uint8_t>& exi) {
         message_exchange.set_raw_response(exi.data(), exi.size());
     }
@@ -150,20 +130,15 @@ public:
         return &std::get<T>(*current_control_event);
     }
 
-    // Reports the EV's DC_EVStatus (ready flag, error code, RESS state of charge) to the module. Every DC
-    // request of the charging sequence carries it, so this forwards on change only (EvseV2G
-    // publish_iso_DcEvStatus parity); without it the EV state of charge never reaches EvseManager/OCPP.
+    // Forwarded on change only (every DC request carries it); without this the EV state of charge never
+    // reaches EvseManager/OCPP.
     void report_ev_status(const dt::DC_EVStatus& status);
 
-    // The EV setpoint last forwarded via dc_charge_loop_req: target voltage/current plus the optional
-    // maximum V/I/P limits. The charge loop repeats it in every request and every forward makes the
-    // module republish, so the change filter lives here rather than in the loop state -- which is
-    // rebuilt around a metering receipt and would forget it (EvseV2G
-    // publish_dc_ev_target_voltage_current parity).
+    // The change filter lives here rather than in the loop state, which is rebuilt around a metering
+    // receipt and would forget it (EvseV2G publish_dc_ev_target_voltage_current parity).
     using DcSetpoint = std::tuple<double, double, std::optional<double>, std::optional<double>, std::optional<double>>;
     void report_dc_setpoint(const DcSetpoint& setpoint, const session::feedback::DcReqControlMode& mode);
 
-    // Raised once per PowerDelivery(Start); see SessionParameters::charge_loop_started.
     void set_charge_loop_started() {
         session_params.charge_loop_started = true;
     }
@@ -171,9 +146,8 @@ public:
         session_params.charge_loop_started = false;
     }
 
-    // Hands the EV's charge progress (remaining times, completion flags) to the module, on change only.
-    // The EV repeats the values in every CurrentDemandReq, and PowerDeliveryReq carries the completion
-    // flags without the remaining times -- those stay absent there rather than being reported as zero.
+    // On change only. PowerDeliveryReq carries the completion flags without the remaining times, which
+    // stay absent there rather than being reported as zero.
     void report_charge_progress(const session::feedback::DcEvChargeProgress& progress);
 
     void set_session_id(const dt::SessionId& id) {
@@ -184,7 +158,6 @@ public:
         return evse_status;
     }
 
-    // Recorded centrally from control events by the engine.
     void set_present_values(float voltage, float current) {
         evse_status.present_voltage = voltage;
         evse_status.present_current = current;
@@ -258,16 +231,14 @@ public:
         session_params.power_delivery_stopped = true;
     }
 
-    // True once SessionSetup has assigned or re-joined a SessionID. Before that the SECC has no id to
-    // compare a request against, which is why an unexpected first message is a SequenceError and never
-    // FAILED_UnknownSession -- Table 112 does not list that code for SessionSetupRes at all.
+    // True once SessionSetup assigned or re-joined a SessionID. Before that an unexpected first message
+    // is a SequenceError, never FAILED_UnknownSession -- Table 112 does not list that code for SessionSetupRes.
     bool session_established() const {
         return session_id.has_value();
     }
 
-    // The assigned SessionID, or all-zero while no session is established: zero is the wire value for
-    // "no session" ([V2G2-750]), so it is the correct thing to stamp into a response built before
-    // SessionSetup has run.
+    // All-zero while no session is established: zero is the wire value for "no session" ([V2G2-750]),
+    // so it is what a response built before SessionSetup should carry.
     dt::SessionId get_session_id() const {
         return session_id.value_or(dt::SessionId{});
     }
@@ -279,19 +250,15 @@ public:
         timeouts.stop_timeout(type);
     }
 
-    // Arms the V2G_SECC_Msg_Performance_Time window ([V2G2-916]..[V2G2-918] before a cable check,
-    // [V2G2-920]..[V2G2-922] before a welding detection or session stop) for a request parked waiting on
-    // the CP state, always as a fresh one. Timeouts::start_timeout() refuses an already-occupied slot,
-    // so a state that hands over while it still has a request parked would otherwise leave the next
-    // state silently inheriting the leftover -- possibly already expired -- deadline instead of getting
-    // its own.
+    // Always armed fresh: Timeouts::start_timeout() refuses an occupied slot, so a state that hands
+    // over with a request still parked would otherwise leave the next state inheriting a leftover,
+    // possibly already expired, deadline.
     void arm_cp_state_timeout(uint32_t time_ms) {
         timeouts.reset_timeout(d20::TimeoutType::CPSTATE);
         timeouts.start_timeout(d20::TimeoutType::CPSTATE, time_ms);
     }
 
-    // Drops the CP-state timeout of a parked request (silent if none is armed). Used when a state hands
-    // over while parked, so no stale CPSTATE timeout can fire in the state that takes over.
+    // Silent if none is armed; used when a state hands over while parked.
     void clear_cp_state_timeout() {
         timeouts.reset_timeout(d20::TimeoutType::CPSTATE);
     }
@@ -309,7 +276,6 @@ public:
     d2::SessionConfig session_config;
     std::optional<PauseContext>& pause_ctx;
 
-    // Maps the active error to the DC_EVSEStatusCode to advertise, or nullopt when no override applies.
     std::optional<dt::DC_EVSEStatusCode> error_status_code() const {
         switch (evse_status.active_error) {
         case d20::EvseErrorCode::UtilityInterruptEvent:
@@ -323,20 +289,14 @@ public:
         }
     }
 
-    // An active RCD error has no DC_EVSEStatusCode; AC_EVSEStatus carries it in its own RCD flag, which
-    // is mandatory in every AC response ([Table 104]), not just the charge loop (EvseV2G
-    // populate_ac_evse_status stamps it into all of them).
+    // An active RCD error has no DC_EVSEStatusCode; AC_EVSEStatus carries it in its own flag, which
+    // [Table 104] makes mandatory in every AC response, not just the charge loop.
     bool rcd_error() const {
         return evse_status.active_error == d20::EvseErrorCode::RCD;
     }
 
-    // Latest isolation-monitoring result reported by the module (update_isolation_status). Absent until
-    // the module reports one.
-
-    // The EVSEIsolationStatus to report in a DC response, or nullopt when the module has not reported one
-    // and the caller should keep its own value. CableCheckRes takes it too: the level derived from the
-    // cable check's own progress (Invalid while monitoring, Valid once finished) cannot express Warning,
-    // Fault or No_IMD, and the module reports its result before signalling cable_check_finished.
+    // nullopt when the module has not reported one and the caller should keep its own value. The level
+    // derived from the cable check's own progress cannot express Warning, Fault or No_IMD.
     std::optional<dt::IsolationLevel> reported_isolation_level() const {
         if (not evse_status.reported_isolation_status.has_value()) {
             return std::nullopt;
@@ -356,47 +316,31 @@ public:
         return std::nullopt;
     }
 
-    // The EVSEIsolationStatus for a DC response after the cable check: the module's report when it made
-    // one, else derived from whether the cable check has finished.
     dt::IsolationLevel isolation_level() const {
         return reported_isolation_level().value_or(evse_status.cable_check_done ? dt::IsolationLevel::Valid
                                                                                 : dt::IsolationLevel::Invalid);
     }
-    // Tracks the AC contactor state as reported by ClosedContactor control events. A PowerDelivery(Start)
-    // that resumes after a renegotiation finds it already closed (the contactor never re-opened), so the
-    // SECC must respond OK immediately rather than wait for a fresh close confirmation that never comes.
-    // Set once a PowerDeliveryReq with ChargeProgress=Start has been accepted. A PowerDeliveryReq with
-    // ChargeProgress=Renegotiate received before any Start is illegal and answered FAILED [V2G2-812].
-    // EVSE-initiated stop (module stop_charging / driver shutdown), latched by the engine in ANY state:
-    // every subsequent status-carrying response tells the EV to stop (EVSENotification StopCharging,
-    // DC status code EVSE_Shutdown) -- EvseV2G parity, which stamps its context notification into every
-    // response after handle_stop_charging.
-    // The EV ignored the stop request beyond the STOP_CHARGING guard: respond() fails every further
-    // response and ends the session (EvseV2G stop_hlc parity). Set by the engine on the guard timeout.
+    // A PowerDelivery(Start) resuming after a renegotiation finds the contactor already closed, so the
+    // SECC must answer OK at once rather than wait for a close confirmation that never comes.
+    // A Renegotiate before any Start is illegal and answered FAILED [V2G2-812].
+    // Latched by the engine in ANY state: every later status-carrying response tells the EV to stop.
+    // Set by the engine on the STOP_CHARGING guard timeout; respond() then fails every further response.
     bool charger_stop_ignored{false};
-    // The module reported an emergency shutdown (send_error EmergencyShutdown): the next response is
-    // failed and terminates the ISO 15118-2 session. Guarded by TIMEOUT_EMERGENCY_SHUTDOWN_GUARD in the engine so a
-    // silent EV cannot hold the connection open.
+    // Guarded by TIMEOUT_EMERGENCY_SHUTDOWN_GUARD so a silent EV cannot hold the connection open.
 
     bool session_stopped{false};
     bool session_paused{false};
-    // The session ended on an error condition detected outside a response (CP State A / unplug):
-    // makes Session close the TCP connection immediately instead of granting the EV-first linger.
+    // Detected outside a response (CP State A / unplug): Session closes at once, with no EV-first linger.
     bool session_ended_with_error{false};
-    // Armed by the SessionStop state on a positive Res; drained by Session::send_response() right
-    // after the response hit the wire to emit feedback.session_stop_res_sent ([V2G-DC-968] anchor).
+    // Drained by Session::send_response() to emit feedback.session_stop_res_sent ([V2G-DC-968] anchor).
     std::optional<session::feedback::SessionStopAction> session_stop_res_pending{};
 
 private:
-    // Assigned (or re-joined) exactly once, by the SessionSetup state. Empty until then, which is what
-    // separates "no session yet" from "a session whose id happens to be zero" -- see
-    // session_established().
+    // Empty until SessionSetup assigns it, which is what separates "no session yet" from a session
+    // whose id happens to be zero.
     std::optional<dt::SessionId> session_id{std::nullopt};
-    // Last charge progress handed to the module; the change filter of report_charge_progress().
     std::optional<session::feedback::DcEvChargeProgress> last_reported_charge_progress{std::nullopt};
-    // Last DC_EVStatus handed to the module; the change filter of report_ev_status().
     std::optional<dt::DC_EVStatus> last_reported_ev_status{std::nullopt};
-    // Change filter of report_dc_setpoint().
     std::optional<DcSetpoint> last_forwarded_dc_setpoint{std::nullopt};
 
     const std::optional<d20::ControlEvent>& current_control_event;

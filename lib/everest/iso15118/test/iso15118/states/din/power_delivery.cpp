@@ -23,33 +23,21 @@ SCENARIO("DIN SECC PowerDelivery state handling") {
         }
     }
 
-    GIVEN("A mismatching session id") {
-        message_din::PowerDeliveryRequest req;
-        req.header.session_id = dt::SessionId{};
-
-        const auto res = din::state::handle_request(req, session);
-        THEN("ResponseCode is FAILED_UnknownSession") {
-            REQUIRE(res.response_code == dt::ResponseCode::FAILED_UnknownSession);
-        }
-    }
-
     GIVEN("An EVSE-initiated stop during the PowerDelivery handshake") {
         message_din::PowerDeliveryRequest req;
         req.header.session_id = session;
         req.ready_to_charge_state = true;
 
-        // The stop request reaches the EV in every state (EvseV2G parity); notification None [V2G-DC-500].
+        // A stop reaches the EV in every state; notification None for DC [V2G-DC-500].
         const auto res = din::state::handle_request(req, session, /*charger_stop=*/true);
         THEN("the response signals EVSE_Shutdown and still starts") {
-            // A stop REQUEST is not an inability to deliver energy, so no FAILED_PowerDeliveryNotApplied
-            // here; the STOP_CHARGING guard enforces the stop once the EV's grace window closes.
+            // A stop REQUEST is not an inability to deliver energy, so no FAILED_PowerDeliveryNotApplied here.
             REQUIRE(res.response_code == dt::ResponseCode::OK);
             REQUIRE(res.dc_evse_status->evse_status_code == dt::DcEvseStatusCode::EVSE_Shutdown);
         }
     }
 
-    // [V2G-DC-638] a module-reported EVSE error (send_error) is the EVSEStatusCode of every response, and
-    // [V2G-DC-401] refuses a ReadyToChargeState request while it stands.
+    // [V2G-DC-638]/[V2G-DC-401]: the module error is the status code and refuses a ReadyToChargeState.
     GIVEN("A module-reported malfunction while the EV asks to start charging") {
         message_din::PowerDeliveryRequest req;
         req.header.session_id = session;
