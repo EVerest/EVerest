@@ -942,6 +942,13 @@ void Charger::run_state_machine() {
                 // This is for HLC charging (both AC and DC)
 
                 if (bcb_toggle_detected()) {
+                    // The EV restarts the session. If the previous one ended with dlink_terminate the
+                    // slac provider was reset and sits in Idle, where only enter_bcd starts matching
+                    // again (the EV's own SLAC request is ignored there), and a B->C->B toggle raises
+                    // none of the CP events that issue it. After a dlink_pause the provider is still
+                    // Matched and ignores enter_bcd, so the call is harmless there - same as the
+                    // ChargingPausedEVSE resume path below.
+                    signal_slac_start();
                     shared_context.current_state = EvseState::PrepareCharging;
                 }
 
