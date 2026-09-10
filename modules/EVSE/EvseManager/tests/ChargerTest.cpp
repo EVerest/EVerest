@@ -768,6 +768,95 @@ TEST_F(ChargerTest, DisableDuringIdle) {
 }
 
 // ----------------------------------------------------------------------------
+// tests for restarting a new transaction from Finished (OCPP 1.6 F2:
+// Finishing -> Preparing). A new authorization while the cable is still plugged
+// in restarts a new transaction within the still active session.
+
+// helper: bring the charger into Finished with the cable still plugged in after an
+// externally cancelled transaction (e.g. OCPP RemoteStopTransaction)
+template <typename SharedContextT> void enter_finished_plugged_in(SharedContextT& ctx) {
+    ctx.current_state = Charger::EvseState::Finished;
+    ctx.session_active = true;
+    ctx.flag_ev_plugged_in = true;
+    ctx.flag_transaction_active = false;
+    ctx.flag_authorized = false;
+    ctx.flag_externally_cancelled = true;
+    ctx.session_uuid = "OLD_SESSION_UUID";
+}
+
+static types::authorization::ProvidedIdToken make_rfid_token() {
+    types::authorization::ProvidedIdToken token;
+    token.id_token.value = "NEW_TOKEN";
+    token.id_token.type = types::authorization::IdTokenType::ISO14443;
+    token.authorization_type = types::authorization::AuthorizationType::RFID;
+    return token;
+}
+
+TEST_F(ChargerTest, RestartFromFinishedWithNewAuthorization) {
+    auto& ctx = charger->get_shared_context();
+    enter_finished_plugged_in(ctx);
+    const auto old_uuid = ctx.session_uuid;
+
+    types::authorization::ValidationResult validation_result;
+    validation_result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
+
+    charger->authorize(true, make_rfid_token(), validation_result);
+
+    // The new authorization is accepted even though the previous transaction was externally cancelled
+    EXPECT_TRUE(ctx.flag_authorized);
+    EXPECT_FALSE(ctx.flag_externally_cancelled);
+
+    reset_last_event();
+    charger->run_state_machine();
+
+    // Restarted: back in WaitingForAuthentication with a fresh transaction id, session still active
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::WaitingForAuthentication);
+    EXPECT_TRUE(ctx.session_active);
+    EXPECT_NE(ctx.session_uuid, old_uuid);
+    EXPECT_FALSE(ctx.session_uuid.empty());
+    EXPECT_EQ(last_event, SessionEventEnum::AuthRequired);
+}
+
+// No restart from Finished without a new authorization: wait for unplug
+TEST_F(ChargerTest, NoRestartFromFinishedWithoutAuthorization) {
+    auto& ctx = charger->get_shared_context();
+    enter_finished_plugged_in(ctx);
+
+    charger->run_state_machine();
+
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Finished);
+    EXPECT_TRUE(ctx.session_active);
+}
+
+// No restart from Finished while a fatal error is active
+TEST_F(ChargerTest, NoRestartFromFinishedWithFatalError) {
+    auto& ctx = charger->get_shared_context();
+    enter_finished_plugged_in(ctx);
+    ctx.shutdown_type = ShutdownType::ErrorShutdown;
+
+    types::authorization::ValidationResult validation_result;
+    validation_result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
+    charger->authorize(true, make_rfid_token(), validation_result);
+
+    charger->run_state_machine();
+
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Finished);
+}
+
+// Unplugging in Finished still ends the session even if an authorization sneaked in
+TEST_F(ChargerTest, UnplugInFinishedEndsSession) {
+    auto& ctx = charger->get_shared_context();
+    enter_finished_plugged_in(ctx);
+    ctx.flag_ev_plugged_in = false;
+
+    reset_last_event();
+    charger->run_state_machine();
+
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Idle);
+    EXPECT_FALSE(ctx.session_active);
+}
+
+// ----------------------------------------------------------------------------
 // tests for dlink_error()
 // A D-LINK_ERROR normally restarts SLAC matching according to the ISO 15118-3
 // error recovery sequence ([V2G3-M07-05]). For an HLC session, CP is first
@@ -898,90 +987,6 @@ TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWithNominalPwm) {
     charger->dlink_error();
 
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
-// helper: bring the charger into Finished with the cable still plugged in after an
-// externally cancelled transaction (e.g. OCPP RemoteStopTransaction)
-template <typename SharedContextT> void enter_finished_plugged_in(SharedContextT& ctx) {
-    ctx.current_state = Charger::EvseState::Finished;
-    ctx.session_active = true;
-    ctx.flag_ev_plugged_in = true;
-    ctx.flag_transaction_active = false;
-    ctx.flag_authorized = false;
-    ctx.flag_externally_cancelled = true;
-    ctx.session_uuid = "OLD_SESSION_UUID";
-}
-
-static types::authorization::ProvidedIdToken make_rfid_token() {
-    types::authorization::ProvidedIdToken token;
-    token.id_token.value = "NEW_TOKEN";
-    token.id_token.type = types::authorization::IdTokenType::ISO14443;
-    token.authorization_type = types::authorization::AuthorizationType::RFID;
-    return token;
-}
-
-// F2 (OCPP 1.6): a new authorization while in Finished with the cable still plugged in
-// restarts a new transaction within the still active session
-TEST_F(ChargerTest, RestartFromFinishedWithNewAuthorization) {
-    auto& ctx = charger->get_shared_context();
-    enter_finished_plugged_in(ctx);
-    const auto old_uuid = ctx.session_uuid;
-
-    types::authorization::ValidationResult validation_result;
-    validation_result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
-
-    charger->authorize(true, make_rfid_token(), validation_result);
-
-    // The new authorization is accepted even though the previous transaction was externally cancelled
-    EXPECT_TRUE(ctx.flag_authorized);
-    EXPECT_FALSE(ctx.flag_externally_cancelled);
-
-    reset_last_event();
-    charger->run_state_machine();
-
-    // Restarted: back in WaitingForAuthentication with a fresh transaction id, session still active
-    EXPECT_EQ(ctx.current_state, Charger::EvseState::WaitingForAuthentication);
-    EXPECT_TRUE(ctx.session_active);
-    EXPECT_NE(ctx.session_uuid, old_uuid);
-    EXPECT_FALSE(ctx.session_uuid.empty());
-    EXPECT_EQ(last_event, SessionEventEnum::AuthRequired);
-}
-
-// No restart from Finished without a new authorization: wait for unplug
-TEST_F(ChargerTest, NoRestartFromFinishedWithoutAuthorization) {
-    auto& ctx = charger->get_shared_context();
-    enter_finished_plugged_in(ctx);
-
-    charger->run_state_machine();
-
-    EXPECT_EQ(ctx.current_state, Charger::EvseState::Finished);
-    EXPECT_TRUE(ctx.session_active);
-}
-
-// No restart from Finished while a fatal error is active
-TEST_F(ChargerTest, NoRestartFromFinishedWithFatalError) {
-    auto& ctx = charger->get_shared_context();
-    enter_finished_plugged_in(ctx);
-    ctx.shutdown_type = ShutdownType::ErrorShutdown;
-
-    types::authorization::ValidationResult validation_result;
-    validation_result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
-    charger->authorize(true, make_rfid_token(), validation_result);
-
-    charger->run_state_machine();
-
-    EXPECT_EQ(ctx.current_state, Charger::EvseState::Finished);
-}
-
-// Unplugging in Finished still ends the session even if an authorization sneaked in
-TEST_F(ChargerTest, UnplugInFinishedEndsSession) {
-    auto& ctx = charger->get_shared_context();
-    enter_finished_plugged_in(ctx);
-    ctx.flag_ev_plugged_in = false;
-
-    reset_last_event();
-    charger->run_state_machine();
-
-    EXPECT_EQ(ctx.current_state, Charger::EvseState::Idle);
-    EXPECT_FALSE(ctx.session_active);
 }
 
 } // namespace

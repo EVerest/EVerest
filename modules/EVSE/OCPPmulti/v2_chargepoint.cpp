@@ -845,10 +845,31 @@ ChargePointV2::on_event_transaction_started(std::int32_t evse_id, std::int32_t c
     if (session_event.transaction_started.has_value()) {
         auto transaction_data = m_callbacks_ptr->transaction_data(evse_id);
         if (transaction_data == nullptr) {
-            EVLOG_warning
-                << "Could not update transaction data because no transaction data is present. This might happen "
-                   "in case a TxStopPoint is already active when a TransactionStarted event occurs (e.g. "
-                   "TxStopPoint is EnergyTransfer or ParkingBayOccupied)";
+            // No SessionStarted preceded this TransactionStarted: either a TxStopPoint already ended the
+            // previous transaction early, or a new transaction is started while the EV stayed plugged in after
+            // the previous transaction finished (restart from Finishing). Recreate the transaction data from
+            // this event so a new OCPP transaction can be started.
+            EVLOG_info << "Received TransactionStarted without transaction data present. Creating new "
+                          "transaction data to start a new transaction within the ongoing session on evse "
+                       << evse_id;
+            const auto transaction_started = session_event.transaction_started.value();
+            const auto timestamp = ocpp_conversions::to_ocpp_datetime_or_now(session_event.timestamp);
+            auto trigger_reason = ocpp::v2::TriggerReasonEnum::Authorized;
+            if (transaction_started.id_tag.authorization_type == types::authorization::AuthorizationType::OCPP) {
+                trigger_reason = ocpp::v2::TriggerReasonEnum::RemoteStart;
+            }
+            transaction_data = std::make_shared<module::TransactionData>(
+                connector_id, session_event.uuid, timestamp, trigger_reason, ocpp::v2::ChargingStateEnum::EVConnected);
+            auto restart_id_token = to_ocpp_id_token(transaction_started.id_tag.id_token);
+            m_callbacks_ptr->update_evcc_id_token(evse_id, restart_id_token);
+            transaction_data->id_token = restart_id_token;
+            if (transaction_started.id_tag.parent_id_token.has_value()) {
+                transaction_data->group_id_token = to_ocpp_id_token(transaction_started.id_tag.parent_id_token.value());
+            }
+            transaction_data->remote_start_id = transaction_started.id_tag.request_id;
+            transaction_data->reservation_id = transaction_started.reservation_id;
+            m_callbacks_ptr->transaction_add(evse_id, transaction_data);
+
             m_charge_point->on_session_started(evse_id, connector_id);
             auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::AUTHORIZED);
             process_tx_event_effect(evse_id, tx_event_effect, session_event);
