@@ -29,6 +29,10 @@ config:
     description: Maximum voltage allowed by the EV
     type: integer
     default: 900
+  dc_min_voltage_limit:
+    description: Minimum voltage accepted by the EV in Volt
+    type: integer
+    default: 150
   dc_energy_capacity:
     description: Energy capacity of the EV
     type: integer

@@ -16,6 +16,7 @@
 #include "TestFixture.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <everest/util/fsm/fsm.hpp>
 #include <everest_api_types/ev_simulator/codec.hpp>
 
@@ -195,36 +196,23 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evsim][helpers]") {
         CHECK(set_bpt_idx < start_idx);
     }
 
-    SECTION("iso_start_charging(DcIso2) sets DC params from cfg with non-zero target current") {
+    SECTION("iso_start_charging sets configured DC limits and targets for both ISO modes") {
+        const auto mode = GENERATE(api::ChargeMode::DcIso2, api::ChargeMode::DcIsoD20);
         fx.cfg.dc_target_current = 5;
         fx.cfg.dc_target_voltage = 200;
         fx.cfg.dc_max_current_limit = 300;
         fx.cfg.dc_max_power_limit = 60000;
         fx.cfg.dc_max_voltage_limit = 500;
+        fx.cfg.dc_min_voltage_limit = 175;
         fx.cfg.dc_energy_capacity = 60000;
         auto ctx = fx.make_ctx();
 
-        auto ok = ctx->iso_start_charging(api::ChargeMode::DcIso2, std::nullopt, 0, 0);
+        auto ok = ctx->iso_start_charging(mode, std::nullopt, 0, 0);
         CHECK(ok == true);
         REQUIRE(index_of_substr(fx.mocks.iso.records, "set_dc_params(target_current=5") >= 0);
         CHECK(contains_substr(fx.mocks.iso.records, "target_voltage=200"));
         CHECK(contains_substr(fx.mocks.iso.records, "max_current_limit=300"));
-    }
-
-    SECTION("iso_start_charging(DcIsoD20) sets DC params from cfg with non-zero target current") {
-        fx.cfg.dc_target_current = 5;
-        fx.cfg.dc_target_voltage = 200;
-        fx.cfg.dc_max_current_limit = 300;
-        fx.cfg.dc_max_power_limit = 60000;
-        fx.cfg.dc_max_voltage_limit = 500;
-        fx.cfg.dc_energy_capacity = 60000;
-        auto ctx = fx.make_ctx();
-
-        auto ok = ctx->iso_start_charging(api::ChargeMode::DcIsoD20, std::nullopt, 0, 0);
-        CHECK(ok == true);
-        REQUIRE(index_of_substr(fx.mocks.iso.records, "set_dc_params(target_current=5") >= 0);
-        CHECK(contains_substr(fx.mocks.iso.records, "target_voltage=200"));
-        CHECK(contains_substr(fx.mocks.iso.records, "max_current_limit=300"));
+        CHECK(contains_substr(fx.mocks.iso.records, "min_voltage_limit=175"));
     }
 
     SECTION("iso_start_charging(AcIsoD20) with bpt selects AC_BPT etm") {

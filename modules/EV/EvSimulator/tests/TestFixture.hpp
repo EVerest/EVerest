@@ -170,6 +170,7 @@ struct TestFixture {
         cfg.dc_max_current_limit = 0;
         cfg.dc_max_power_limit = 0;
         cfg.dc_max_voltage_limit = 0;
+        cfg.dc_min_voltage_limit = 150;
         cfg.dc_energy_capacity = 60000;
         cfg.dc_target_current = 0;
         cfg.dc_target_voltage = 0;

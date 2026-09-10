@@ -94,6 +94,10 @@ Configuration
 ``dc_max_voltage_limit``
     Maximum voltage allowed by the EV. Default: ``900``.
 
+``dc_min_voltage_limit``
+    Minimum voltage accepted by the EV in Volt. Sent to the ISO peer for DC
+    sessions. Default: ``150``.
+
 ``dc_energy_capacity``
     Energy capacity of the EV. Default: ``60000``.
 
