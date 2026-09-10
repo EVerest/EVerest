@@ -827,23 +827,10 @@ TEST_CASE("EvSimulator group1 transitions", "[evsim][group1]") {
         CHECK(ctx->vars.pwm_duty_cycle == 50);
     }
 
-    SECTION("Plugged: BspMeasurement in PWM window in AcIsoD20 does NOT transition") {
+    SECTION("Plugged: BspMeasurement in PWM window does NOT transition") {
+        const auto mode = GENERATE(api::ChargeMode::AcIsoD20, api::ChargeMode::DcIso2);
         auto ctx = fx.make_ctx();
-        set_mode(*ctx, api::ChargeMode::AcIsoD20);
-        Plugged s{*ctx};
-        Event ev{EventKind::BspMeasurement};
-        BspMeasurementPayload m;
-        m.cp_pwm_duty_cycle = 50;
-        m.rcd_current_mA = std::nullopt;
-        ev.payload = m;
-        auto result = s.feed(ev);
-        CHECK(result.new_state == nullptr);
-        CHECK(ctx->vars.pwm_duty_cycle == 50);
-    }
-
-    SECTION("Plugged: BspMeasurement in PWM window in DcIso2 does NOT transition") {
-        auto ctx = fx.make_ctx();
-        set_mode(*ctx, api::ChargeMode::DcIso2);
+        set_mode(*ctx, mode);
         Plugged s{*ctx};
         Event ev{EventKind::BspMeasurement};
         BspMeasurementPayload m;
@@ -1129,48 +1116,30 @@ TEST_CASE("EvSimulator group1 transitions", "[evsim][group1]") {
         CHECK(fx.timer.state_timer_arms[0] == std::chrono::seconds(60));
     }
 
-    SECTION("V2GNegotiating: IsoPowerReady in AcIso2 -> Charging") {
+    SECTION("V2GNegotiating: IsoPowerReady in an AC mode -> Charging") {
         // AC ISO has no dc_power_on milestone, so ev_power_ready is the
         // charge-loop entry gate. Mirrors EvManager's AC path.
+        const auto mode = GENERATE(api::ChargeMode::AcIso2, api::ChargeMode::AcIsoD20);
         auto ctx = fx.make_ctx();
-        set_mode(*ctx, api::ChargeMode::AcIso2);
+        set_mode(*ctx, mode);
         V2GNegotiating s{*ctx};
         auto result = s.feed(Event{EventKind::IsoPowerReady});
         REQUIRE(result.new_state);
         CHECK(result.new_state->get_id() == api::FsmState::Charging);
     }
 
-    SECTION("V2GNegotiating: IsoPowerReady in AcIsoD20 -> Charging") {
-        auto ctx = fx.make_ctx();
-        set_mode(*ctx, api::ChargeMode::AcIsoD20);
-        V2GNegotiating s{*ctx};
-        auto result = s.feed(Event{EventKind::IsoPowerReady});
-        REQUIRE(result.new_state);
-        CHECK(result.new_state->get_id() == api::FsmState::Charging);
-    }
-
-    SECTION("V2GNegotiating: IsoPowerReady in DcIso2 asserts CP=C and STAYS (not Charging)") {
+    SECTION("V2GNegotiating: IsoPowerReady in a DC mode asserts CP=C and STAYS (not Charging)") {
         // DC ISO splits the charge-loop entry into two milestones, mirroring
         // EvManager: ev_power_ready (ISO_POWER_READY) asserts CP=C and holds
         // through CableCheck/PreCharge; only dc_power_on enters Charging.
         // Transitioning to Charging here is premature -- it signals "Charging"
         // while the SECC is still entering CableCheck and pausing then drops
         // CP to B mid-CableCheck, killing the PSU.
-        auto ctx = fx.make_ctx();
-        set_mode(*ctx, api::ChargeMode::DcIso2);
-        V2GNegotiating s{*ctx};
-        auto result = s.feed(Event{EventKind::IsoPowerReady});
-        CHECK(result.unhandled == false);
-        CHECK(result.new_state == nullptr);
-        CHECK(contains_substr(fx.mocks.bsp.records, "set_cp_state(cp_state=C)"));
-        CHECK(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=true)"));
-    }
-
-    SECTION("V2GNegotiating: IsoPowerReady in DcIsoD20 asserts CP=C and STAYS (not Charging)") {
         // DcIsoD20 also publishes dc_power_on (iso15118_20_states.py DCPreCharge),
         // so it follows the same two-milestone gate as DcIso2.
+        const auto mode = GENERATE(api::ChargeMode::DcIso2, api::ChargeMode::DcIsoD20);
         auto ctx = fx.make_ctx();
-        set_mode(*ctx, api::ChargeMode::DcIsoD20);
+        set_mode(*ctx, mode);
         V2GNegotiating s{*ctx};
         auto result = s.feed(Event{EventKind::IsoPowerReady});
         CHECK(result.unhandled == false);
@@ -1179,19 +1148,11 @@ TEST_CASE("EvSimulator group1 transitions", "[evsim][group1]") {
         CHECK(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=true)"));
     }
 
-    SECTION("V2GNegotiating: IsoDcPowerOn in DcIso2 -> Charging") {
+    SECTION("V2GNegotiating: IsoDcPowerOn in a DC mode -> Charging") {
         // dc_power_on (PreCharge complete) is the DC charging milestone.
+        const auto mode = GENERATE(api::ChargeMode::DcIso2, api::ChargeMode::DcIsoD20);
         auto ctx = fx.make_ctx();
-        set_mode(*ctx, api::ChargeMode::DcIso2);
-        V2GNegotiating s{*ctx};
-        auto result = s.feed(Event{EventKind::IsoDcPowerOn});
-        REQUIRE(result.new_state);
-        CHECK(result.new_state->get_id() == api::FsmState::Charging);
-    }
-
-    SECTION("V2GNegotiating: IsoDcPowerOn in DcIsoD20 -> Charging") {
-        auto ctx = fx.make_ctx();
-        set_mode(*ctx, api::ChargeMode::DcIsoD20);
+        set_mode(*ctx, mode);
         V2GNegotiating s{*ctx};
         auto result = s.feed(Event{EventKind::IsoDcPowerOn});
         REQUIRE(result.new_state);
@@ -1306,18 +1267,10 @@ TEST_CASE("EvSimulator group2 transitions", "[evsim][group2]") {
         CHECK(result.new_state->get_id() == api::FsmState::Unplugged);
     }
 
-    SECTION("Charging: StopSession in AcIso2 -> Stopping") {
+    SECTION("Charging: StopSession in an ISO mode -> Stopping") {
+        const auto mode = GENERATE(api::ChargeMode::AcIso2, api::ChargeMode::DcIso2);
         auto ctx = fx.make_ctx();
-        set_mode(*ctx, api::ChargeMode::AcIso2);
-        Charging s{*ctx};
-        auto result = s.feed(Event{EventKind::StopSession});
-        REQUIRE(result.new_state);
-        CHECK(result.new_state->get_id() == api::FsmState::Stopping);
-    }
-
-    SECTION("Charging: StopSession in DcIso2 -> Stopping") {
-        auto ctx = fx.make_ctx();
-        set_mode(*ctx, api::ChargeMode::DcIso2);
+        set_mode(*ctx, mode);
         Charging s{*ctx};
         auto result = s.feed(Event{EventKind::StopSession});
         REQUIRE(result.new_state);
