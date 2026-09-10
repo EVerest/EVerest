@@ -4,6 +4,7 @@
 
 #include <optional>
 
+#include <iso15118/message_din/session_stop.hpp>
 #include <iso15118/message_din/welding_detection.hpp>
 
 #include "../states.hpp"
@@ -15,17 +16,19 @@ struct WeldingDetection : public StateBase {
     }
 
     void enter() final;
-    Result feed(Event) final;
+    Result on_event(Event) final;
+    Result on_request(const message_din::Variant& received) final;
 
 private:
-    // Handle a WeldingDetectionReq that passed the CP State B gate and stage the response.
     void process_request(const message_din::WeldingDetectionRequest& req);
 
     // Arm the V2G_SECC_WeldingDetection supervision timer once, on the first WeldingDetectionReq.
     bool welding_started{false};
-    // Request parked while waiting for CP State B ([V2G-DC-988]): answered when B arrives, or with
-    // FAILED when V2G_SECC_CPState_Detection_Timeout expires ([V2G-DC-556]).
+    // Answered when B arrives, or with FAILED when the detection timeout expires ([V2G-DC-556]).
     std::optional<message_din::WeldingDetectionRequest> pending_req{};
+    // A SessionStopReq takes the same gate, so it is parked in its own slot: whichever arrived is the
+    // one answered when CP State B shows up.
+    std::optional<message_din::SessionStopRequest> pending_stop{};
 };
 
 } // namespace iso15118::din::state

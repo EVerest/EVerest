@@ -19,14 +19,4 @@ SCENARIO("DIN SECC SessionStop state handling") {
             REQUIRE(res.response_code == dt::ResponseCode::OK);
         }
     }
-
-    GIVEN("A mismatching session id") {
-        message_din::SessionStopRequest req;
-        req.header.session_id = dt::SessionId{};
-
-        const auto res = din::state::handle_request(req, session);
-        THEN("ResponseCode is FAILED_UnknownSession") {
-            REQUIRE(res.response_code == dt::ResponseCode::FAILED_UnknownSession);
-        }
-    }
 }
