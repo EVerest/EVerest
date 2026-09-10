@@ -133,13 +133,13 @@ SCENARIO("ISO15118-20 EV config validation rejects an AC phase count other than 
     }
 }
 
-SCENARIO("ISO15118-20 EV config validation rejects a non-positive response timeout") {
-    GIVEN("an EvConfig with a zero response timeout") {
+SCENARIO("ISO15118-20 EV config validation rejects a negative response timeout") {
+    GIVEN("an EvConfig with a zero response timeout (per-message table)") {
         auto config = sane_config();
         config.response_timeout = 0ms;
 
-        THEN("the problem is reported") {
-            REQUIRE(ev::validate_config(config).size() == 1);
+        THEN("nothing is reported") {
+            REQUIRE(ev::validate_config(config).empty());
         }
     }
 
@@ -153,36 +153,68 @@ SCENARIO("ISO15118-20 EV config validation rejects a non-positive response timeo
     }
 }
 
-// The EVCC id goes on the wire as the EVCCID and the SECC keys the session on it; a
-// non-MAC string is rejected by the SECC rather than silently tolerated.
-SCENARIO("ISO15118-20 EV config validation rejects a non MAC-formatted evcc_id") {
+// enforce_tls must hold on the direct-endpoint path too: there is no SDP security byte to reject.
+SCENARIO("ISO15118-20 EV config validation rejects enforce_tls on a plaintext direct endpoint") {
+    GIVEN("an EvConfig with enable_sdp false, enforce_tls set and no transport security") {
+        auto config = sane_config();
+        config.enable_sdp = false;
+        config.direct_secc_endpoint = io::Ipv6EndPoint{};
+        config.direct_security = io::v2gtp::Security::NO_TRANSPORT_SECURITY;
+        config.tls.enforce_tls = true;
+
+        THEN("the problem is reported") {
+            const auto problems = ev::validate_config(config);
+            REQUIRE(problems.size() == 1);
+            REQUIRE(problems.front() == "enforce_tls is set but direct_security is not TLS");
+        }
+    }
+
+    GIVEN("the same config with a TLS direct endpoint") {
+        auto config = sane_config();
+        config.enable_sdp = false;
+        config.direct_secc_endpoint = io::Ipv6EndPoint{};
+        config.direct_security = io::v2gtp::Security::TLS;
+        config.tls.enforce_tls = true;
+
+        THEN("nothing is reported") {
+            REQUIRE(ev::validate_config(config).empty());
+        }
+    }
+
+    GIVEN("enforce_tls with SDP enabled") {
+        auto config = sane_config();
+        config.tls.enforce_tls = true;
+
+        THEN("nothing is reported: the SDP response carries the security byte") {
+            REQUIRE(ev::validate_config(config).empty());
+        }
+    }
+}
+
+// -20 identifierType: 1..255 characters; a MAC string is one valid form.
+SCENARIO("ISO15118-20 EV config validation rejects an empty or oversized evcc_id") {
     const auto reports_one_problem = [](const std::string& evcc_id) {
         auto config = sane_config();
         config.evcc_id = evcc_id;
         return ev::validate_config(config).size() == 1;
     };
 
-    GIVEN("evcc_ids that are not MAC-formatted") {
+    GIVEN("an empty and an oversized evcc_id") {
         THEN("each is reported") {
             REQUIRE(reports_one_problem(""));
-            REQUIRE(reports_one_problem("EVTESTID01"));
-            REQUIRE(reports_one_problem("02:00:00:00:00"));
-            REQUIRE(reports_one_problem("02:00:00:00:00:01:02"));
-            REQUIRE(reports_one_problem("02-00-00-00-00-01"));
-            REQUIRE(reports_one_problem("02:00:00:00:00:0g"));
-            REQUIRE(reports_one_problem("020000000001"));
+            REQUIRE(reports_one_problem(std::string(256, 'A')));
         }
     }
 
-    GIVEN("MAC-formatted evcc_ids in either case") {
+    GIVEN("a MAC-formatted and a WMI-style evcc_id") {
         THEN("neither is reported") {
-            auto lower = sane_config();
-            lower.evcc_id = "ab:cd:ef:01:23:45";
-            REQUIRE(ev::validate_config(lower).empty());
+            auto mac = sane_config();
+            mac.evcc_id = "ab:cd:ef:01:23:45";
+            REQUIRE(ev::validate_config(mac).empty());
 
-            auto upper = sane_config();
-            upper.evcc_id = "AB:CD:EF:01:23:45";
-            REQUIRE(ev::validate_config(upper).empty());
+            auto wmi = sane_config();
+            wmi.evcc_id = "WMIV1234567890ABCDEX";
+            REQUIRE(ev::validate_config(wmi).empty());
         }
     }
 }

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <optional>
 
@@ -23,19 +24,9 @@
 namespace iso15118::ev {
 
 /**
- * EV-side entry point, mirroring the SECC \ref iso15118::TbdController.
- *
- * Owns the libio \ref everest::lib::io::event::fd_event_handler reactor, the
- * \ref transport::SdpClient, and the \ref Session. The data-path client is created at
- * runtime from the SDP response's transport security (see \ref establish_data_path)
- * so plain-TCP and a future TLS client are selected per session; once created it
- * is wired to the Session's outbound-send seam and its rx callback feeds
- * \ref Session::on_bytes_received.
- *
- * Unlike the SECC controller (whose loop() is blocking and infinite), \ref loop
- * drives the reactor's \c run loop and returns once the session finishes or a
- * single-shot timeout \ref everest::lib::io::event::timer_fd elapses (both clear
- * the \c online flag), so the integration tests terminate.
+ * One EV charging session attempt: reactor, SdpClient, DataClient, Session. Mirrors
+ * \ref iso15118::TbdController. A paused session is handed on via EvConfig::resume.
+ * The mutators must not be called after this object is destroyed; the owner clears its pointer first.
  */
 class Controller {
 public:
@@ -48,112 +39,70 @@ public:
     Controller& operator=(Controller&&) = delete;
 
     /**
-     * @brief Resolve the SECC endpoint, connect, and run the reactor.
-     * @details Runs SDP discovery to learn the endpoint, connects the data client,
-     * starts the session on connect, and runs the reactor until the session is
-     * finished or a bounded deadline elapses. Fires feedback.connected on
-     * endpoint resolution and feedback.stopped before returning. Unregisters the
-     * timers it registered on every exit path.
+     * @brief Discover the SECC (SDP, or the configured direct endpoint), connect, run the reactor.
+     * @details Returns on session end, setup deadline, SDP_max_request, a failed connect, or
+     * shutdown()/terminate(); fires feedback.stopped before returning.
      */
     void loop();
 
-    /**
-     * @brief Request a graceful EV-initiated stop of the charging session.
-     * @details Marshals a StopCharging control event onto the reactor thread (before
-     * PowerDelivery(Start) the FSM goes straight to SessionStop; afterwards it walks
-     * PowerDelivery(Stop) -> DC_WeldingDetection -> SessionStop) and arms a
-     * single-shot grace-period fallback that hard-stops the loop if the session
-     * has not finished in time. Unlike shutdown() this lets the session close down
-     * gracefully; the fallback bounds the wait.
-     */
+    // Graceful EV-initiated stop (StopCharging), bounded by a grace timer.
     void request_stop();
 
-    /**
-     * @brief Request the loop to stop.
-     * @details Records a stop request, clears `online`, and wakes the reactor (an
-     * empty action) so a run() blocked in poll() returns on the next iteration.
-     * Valid at ANY point in the object lifetime: called before loop(), the recorded stop
-     * makes loop() return without arming the reactor; called during, the wake ends
-     * run(). Single-session: this is a flag + wake, not a teardown of the session.
-     */
+    // Graceful EV-initiated pause (PauseCharging): SessionStop(Pause); paused_session() afterwards.
+    void request_pause();
+
+    // Immediate teardown without SessionStop (CP state E/F, unplug); also cancels discovery/connect.
+    void terminate();
+
+    // Stop the loop: flag + reactor wake. Valid before, during and after loop().
     void shutdown();
 
-    /**
-     * @brief Update the live present-SoC exposed to the FSM (module thread).
-     * @details Locks the DC-params monitor and mutates only the live field; the
-     * static params are left untouched. Safe to call while the FSM reads snapshots.
-     */
+    // Control pilot state applied by the EV (true: C or D). Latched and delivered as a CpState event.
+    void set_cp_state(bool c_or_d);
+
+    // Module -> FSM parameter channels (any thread).
     void update_present_soc(double present_soc);
-
-    /**
-     * @brief Update the live present-voltage exposed to the FSM (module thread).
-     * @details Locks the DC-params monitor and mutates only the live field; the
-     * static params are left untouched. Safe to call while the FSM reads snapshots.
-     */
     void update_present_voltage(float present_voltage);
-
-    /**
-     * @brief Update the live present-active-power exposed to the FSM (module thread).
-     * @details Locks the AC-params monitor and mutates only the live field; the
-     * static params are left untouched. Safe to call while the FSM reads snapshots.
-     */
     void update_present_active_power(float present_active_power);
+    // Replace the static DC fields; the live fields keep their current values.
+    void update_dc_params(const DcChargeParams& params);
+
+    // After loop(): the paused session to re-join, if the session ended with SessionStop(Pause).
+    std::optional<PausedSession> paused_session() const;
 
 private:
-    // Create the transport client matching @p security (plain TCP today; the TLS
-    // branch is the single seam for a future libio TLS client), wire it to the
-    // session, and connect to @p endpoint, starting the session on connect.
     void establish_data_path(const iso15118::io::Ipv6EndPoint& endpoint, iso15118::io::v2gtp::Security security);
-
-    // Reactor exception boundary: run @p f, on any throw log against @p op and clear
-    // `online` so run() returns (poll_impl has no try/catch). Defined in the .cpp.
+    void on_sdp_response(const transport::SdpResponse& response);
     template <typename F> void guarded(const char* op, F&& f);
-
-    // Fold the loop() setup-failure blocks: log @p reason and fire stopped once.
+    // Setup failure: log, DLINK_ERROR, stopped.
     void abort_loop(const char* reason);
+    void deliver(const d20::ControlEvent& event);
+    void arm_stop_grace();
 
     EvConfig config;
     const Feedback feedback;
 
-    // Cleared from the reactor to stop run(): by the session when it finishes, by
-    // the setup timeout if discovery/connect never completes, by a connect failure,
-    // or by shutdown().
     std::atomic_bool online{false};
-
-    // Set by shutdown(); honored by loop() so a stop issued before loop() runs
-    // is not clobbered by loop()'s `online = true`. Makes shutdown() valid at any
-    // point in the object lifetime.
     std::atomic_bool stop_requested{false};
 
-    // Bounds the pre-session phase (SDP discovery + TCP connect) only; disarmed
-    // once the session starts, after which the session's own response watchdog
-    // governs. Single-shot.
+    // Pre-session phase (SDP + connect + handshake); the session's watchdogs take over after start().
     everest::lib::io::event::timer_fd setup_timeout;
-
-    // Re-issues the SDP request on the standard retransmit interval until the SECC
-    // responds (on_found) or the setup timeout elapses. Periodic; disarmed on both.
     everest::lib::io::event::timer_fd sdp_retry;
-
-    // Grace-period fallback for request_stop(): registered on the reactor in loop(),
-    // armed only from request_stop()'s marshaled action. Hard-stops the loop if the
-    // graceful stop walk does not finish in time. Single-shot; disarmed on finish.
+    uint32_t sdp_requests_sent{0};
+    // Graceful stop/pause fallback: hard-stops the loop when the stop walk does not finish.
     everest::lib::io::event::timer_fd stop_grace_timer;
 
-    // Declaration order here isn't load-bearing: clients unregister in their own
-    // destructors. data_client is created lazily at runtime (in establish_data_path,
-    // once transport security is known); sdp_client is emplaced only after the ctor
-    // resolves config.interface_name.
+    // Set once a Session ran; a loop that ends without one reports DLINK_ERROR.
+    bool session_started{false};
+    // Transport security of the data path, recorded for paused_session().
+    iso15118::io::v2gtp::Security data_path_security{iso15118::io::v2gtp::Security::NO_TRANSPORT_SECURITY};
+
     everest::lib::io::event::fd_event_handler reactor;
     std::optional<transport::SdpClient> sdp_client;
     std::unique_ptr<transport::DataClient> data_client;
 
-    // Module -> FSM DC-params channel. Declared before `session`: the Session's
-    // Context holds a reference to it (passed as &dc_params at construction), so it
-    // must outlive the Session.
+    // Outlive the Session (its Context references them).
     everest::lib::util::monitor<DcChargeParams> dc_params;
-
-    // Module -> FSM AC-params channel; same lifetime constraint as dc_params (the
-    // Session's Context references it), so it stays in this declaration-order group.
     everest::lib::util::monitor<AcChargeParams> ac_params;
 
     std::unique_ptr<Session> session;

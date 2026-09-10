@@ -2,6 +2,8 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/ev/d20/state/supported_app_protocol.hpp>
 
+#include <algorithm>
+
 #include <iso15118/ev/d20/state/session_setup.hpp>
 
 #include <iso15118/message/supported_app_protocol.hpp>
@@ -49,9 +51,32 @@ Result SupportedAppProtocol::feed(Event ev) {
         return Result::stopping();
     }
 
-    // Deferred seam: the negotiated schema_id selects the protocol the rest of the
-    // FSM should speak (d2/DIN vs -20). Only -20 is wired today, so we unconditionally
-    // proceed into the -20 SessionSetup, whose enter() sends the SessionSetupRequest.
+    // schema_id -> protocol generation. An empty map means every offered entry was ISO 15118-20.
+    auto protocol = ProtocolId::ISO15118_20;
+    const auto& offered = m_ctx.options().offered_protocols;
+    if (not offered.empty()) {
+        if (not res->schema_id.has_value()) {
+            logf_error("SupportedAppProtocolRes accepted the negotiation but carries no schema_id");
+            m_ctx.stop_session();
+            return Result::stopping();
+        }
+        const auto it = std::find_if(offered.begin(), offered.end(),
+                                     [&](const auto& o) { return o.entry.schema_id == res->schema_id; });
+        if (it == offered.end()) {
+            logf_error("SupportedAppProtocolRes selected schema_id %d which was not offered",
+                       static_cast<int>(res->schema_id.value()));
+            m_ctx.stop_session();
+            return Result::stopping();
+        }
+        protocol = it->protocol;
+    }
+
+    m_ctx.set_negotiated_protocol(protocol);
+    m_ctx.feedback.selected_protocol(protocol);
+
+    if (protocol != ProtocolId::ISO15118_20) {
+        return Result::handover();
+    }
     return m_ctx.create_state<SessionSetup>();
 }
 

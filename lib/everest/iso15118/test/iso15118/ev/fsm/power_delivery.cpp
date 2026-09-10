@@ -196,3 +196,56 @@ SCENARIO("ISO15118-20 EV PowerDelivery rejects malformed responses") {
                                                          message_20::datatypes::Processing::Finished};
     check_rejection_paths(callbacks, ev::d20::StateID::PowerDelivery, make_fsm, make_ok, wrong);
 }
+
+namespace {
+using message_20::datatypes::ControlMode;
+
+// ScheduleExchange records the tuple the SECC offered before PowerDelivery is entered.
+const auto seed_scheduled_tuple = [](FsmStateHelper& helper) {
+    ev::DcChargeParams params{};
+    params.max_charge_power = 11000.0f;
+    helper.set_dc_params(params);
+    helper.get_context().set_selected_control_mode(ControlMode::Scheduled);
+    helper.get_context().set_selected_schedule_tuple_id(3);
+};
+
+// Scheduled mode without a recorded tuple id, which the state cannot reference.
+const auto seed_scheduled_without_tuple = [](FsmStateHelper& helper) {
+    helper.get_context().set_selected_control_mode(ControlMode::Scheduled);
+};
+} // namespace
+
+SCENARIO("ISO15118-20 EV PowerDelivery carries the selected ScheduleTupleID on Start in Scheduled mode") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_scheduled_tuple, Progress::Start};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->power_profile.has_value());
+    const auto& profile = request_message->power_profile.value();
+    REQUIRE(std::holds_alternative<message_20::datatypes::Scheduled_EVPPTControlMode>(profile.control_mode));
+    REQUIRE(std::get<message_20::datatypes::Scheduled_EVPPTControlMode>(profile.control_mode).selected_schedule == 3);
+    REQUIRE(profile.entries.size() == 1);
+    REQUIRE(message_20::datatypes::from_RationalNumber(profile.entries[0].power) == 11000.0f);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery omits the power profile on Stop in Scheduled mode") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_scheduled_tuple, Progress::Stop};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE_FALSE(request_message->power_profile.has_value());
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery omits the power profile when no ScheduleTupleID was recorded") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_scheduled_without_tuple, Progress::Start};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE_FALSE(request_message->power_profile.has_value());
+}
