@@ -19,12 +19,15 @@
 #include <iso15118/session/protocol.hpp>
 
 #include <iso15118/ev/ac_charge_params.hpp>
+#include <iso15118/ev/d2/engine.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/d20/engine.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/der_control_functions.hpp>
+#include <iso15118/ev/din/engine.hpp>
 #include <iso15118/ev/session/feedback.hpp>
+#include <iso15118/ev/session_params.hpp>
 
 namespace iso15118::ev {
 
@@ -54,7 +57,7 @@ public:
             everest::lib::util::monitor<AcChargeParams>* ac_params = nullptr,
             message_20::datatypes::ServiceCategory energy_service = message_20::datatypes::ServiceCategory::DC,
             DerControlFunctions der_control_functions = {}, bool der_stop_on_unsupported_functions = true,
-            d20::SessionOptions options = {});
+            d20::SessionOptions options = {}, EvSessionParams params = {});
 
     ~Session();
 
@@ -90,15 +93,17 @@ public:
 private:
     void handle_complete_frame();
     void feed_fsm(d20::Event ev);
-    // Switch to the engine of the protocol SAP negotiated. Only -20 exists here.
+    // Replace the -20 engine (which ran SAP) by the engine of the negotiated generation and start it.
     void switch_engine(ProtocolId protocol);
     void arm_send_delay();
     void transmit_pending();
     void on_send_delay_expired();
     void on_watchdog_expired();
     void on_ongoing_expired();
-    void update_ongoing_guard(const d20::FeedOutcome& outcome);
+    void update_ongoing_guard(bool transitioned);
     void check_finished();
+    // Watchdog window for the request in flight: the configured override, else the engine's table.
+    std::chrono::milliseconds effective_response_timeout() const;
 
     // Reactor exception boundary: on any throw log against @p op, stop the session, then
     // check_finished(). poll_impl has no try/catch.
@@ -109,10 +114,15 @@ private:
     everest::lib::util::monitor<DcChargeParams> owned_dc_params{DcChargeParams{}};
     everest::lib::util::monitor<AcChargeParams> owned_ac_params{AcChargeParams{}};
 
+    const feedback::Callbacks callbacks;
     const Feedback feedback;
+    everest::lib::util::monitor<DcChargeParams>& dc_params;
+    const EvSessionParams params;
+    const bool has_cp_state_feedback;
+    const std::optional<std::array<uint8_t, 8>> resumed_session_id;
 
     // Engine of the running protocol generation; never moved, only emplaced.
-    std::variant<std::monostate, d20::Engine> engine;
+    std::variant<std::monostate, d20::Engine, d2::Engine, din::Engine> engine;
 
     OutboundSend outbound_send;
 

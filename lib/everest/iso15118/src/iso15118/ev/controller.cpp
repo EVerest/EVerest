@@ -109,7 +109,7 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcCharg
         },
         reactor, SessionTiming{config.send_delay, config.response_timeout}, config.evcc_id, std::move(advertised),
         &dc_params, &ac_params, config.energy_service, config.der_control_functions,
-        config.der_stop_on_unsupported_functions, make_session_options(config, std::move(offer)));
+        config.der_stop_on_unsupported_functions, make_session_options(config, std::move(offer)), config.params);
 
     session->set_on_finished([this]() {
         online = false;
