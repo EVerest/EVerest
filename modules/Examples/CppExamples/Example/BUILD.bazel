@@ -1,0 +1,11 @@
+load("//modules:module.bzl", "cc_everest_module")
+
+IMPLS = [
+    "example",
+    "store",
+]
+
+cc_everest_module(
+    name = "Example",
+    impls = IMPLS,
+)
