@@ -2,7 +2,6 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <bitset>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -35,7 +34,7 @@ struct BptSetupConfig {
     std::optional<message_20::datatypes::GridCodeIslandingDetectionMethod> grid_code_detection_method;
 };
 
-struct DerSetupConfig {
+struct DerIecSetupConfig {
     std::map<iec::DERControlName, iec::DERControlFunction> supported_der_control_functions;
     iec::OperatingMode operating_mode;
     iec::GridConnectionMode grid_connection_mode;

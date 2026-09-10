@@ -74,7 +74,7 @@ auto get_default_ac_bpt_parameter_list(const std::vector<d20::ControlMobilityNee
 
 auto get_default_ac_der_iec_parameter_list(const std::vector<d20::ControlMobilityNeedsModes>& control_mobility_modes,
                                            const d20::AcSetupConfig& ac_setup_config,
-                                           const d20::DerSetupConfig& der_setup_config) {
+                                           const d20::DerIecSetupConfig& der_iec_setup_config) {
     using namespace dt;
 
     std::vector<AcDerParameterList> param_list;
@@ -86,7 +86,7 @@ auto get_default_ac_der_iec_parameter_list(const std::vector<d20::ControlMobilit
                       message_20::to_underlying_value(iec::DERControlName::UnderVoltageFaultRideThroughMode) + 1,
                   "MAX_IEC_CONTROL_FUNCTIONS should be in sync with the DERControlName enum definition");
 
-    for (const auto& function : der_setup_config.supported_der_control_functions) {
+    for (const auto& function : der_iec_setup_config.supported_der_control_functions) {
         control_functions.set(static_cast<size_t>(function.first), true);
     }
 
@@ -194,10 +194,10 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
     authorization_services(std::move(config.authorization_services)),
     supported_energy_transfer_services(std::move(config.supported_energy_services)),
     supported_vas_services(std::move(config.supported_vas_services)),
-    dc_limits(std::move(config.dc_limits)),
-    ac_limits(std::move(config.ac_limits)),
-    der_limits(std::move(config.der_limits)),
-    powersupply_limits(std::move(config.powersupply_limits)),
+    dc_limits(config.dc_limits),
+    ac_limits(config.ac_limits),
+    der_limits(config.der_limits),
+    powersupply_limits(config.powersupply_limits),
     supported_control_mobility_modes(std::move(config.control_mobility_modes)),
     custom_protocol(std::move(config.custom_protocol)),
     selecting_sap_based_on_energy_service(config.selecting_sap_based_on_energy_service),
@@ -257,14 +257,14 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
         {dt::BptChannel::Unified, dt::GeneratorMode::GridFollowing, dt::GridCodeIslandingDetectionMethod::Passive}));
     const auto dc_bpt_setup_config = config.bpt_setup_config.value_or(
         d20::BptSetupConfig({dt::BptChannel::Unified, dt::GeneratorMode::GridFollowing, std::nullopt}));
-    der_setup_config = config.der_setup_config.value_or(
-        d20::DerSetupConfig({{}, iec::OperatingMode::GridFollowing, iec::GridConnectionMode::GridConnected}));
+    der_iec_setup_config = config.der_iec_setup_config.value_or(
+        d20::DerIecSetupConfig({{}, iec::OperatingMode::GridFollowing, iec::GridConnectionMode::GridConnected}));
 
     ac_parameter_list = get_default_ac_parameter_list(supported_control_mobility_modes, ac_setup_config);
     ac_bpt_parameter_list =
         get_default_ac_bpt_parameter_list(supported_control_mobility_modes, ac_setup_config, ac_bpt_setup_config);
     ac_der_iec_parameter_list =
-        get_default_ac_der_iec_parameter_list(supported_control_mobility_modes, ac_setup_config, der_setup_config);
+        get_default_ac_der_iec_parameter_list(supported_control_mobility_modes, ac_setup_config, der_iec_setup_config);
 
     dc_parameter_list = get_default_dc_parameter_list(supported_control_mobility_modes);
     dc_bpt_parameter_list = get_default_dc_bpt_parameter_list(supported_control_mobility_modes, dc_bpt_setup_config);
