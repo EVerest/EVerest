@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "ISO15118_chargerImpl.hpp"
+#include <cmath>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
@@ -23,6 +24,21 @@ std::mutex GEL; // Global EVerest Lock
 namespace dt = iso15118::message_20::datatypes;
 
 namespace {
+
+types::iso15118::DcEvseMaximumLimits to_adjusted_evse_maximum_limits(const iso15118::d20::DcTransferLimits& limits) {
+    types::iso15118::DcEvseMaximumLimits out;
+    out.evse_maximum_current_limit = dt::from_RationalNumber(limits.charge_limits.current.max);
+    out.evse_maximum_power_limit = dt::from_RationalNumber(limits.charge_limits.power.max);
+    out.evse_maximum_voltage_limit = dt::from_RationalNumber(limits.voltage.max);
+
+    if (limits.discharge_limits.has_value()) {
+        const auto& discharge_limits = limits.discharge_limits.value();
+        out.evse_maximum_discharge_current_limit = std::fabs(dt::from_RationalNumber(discharge_limits.current.max));
+        out.evse_maximum_discharge_power_limit = std::fabs(dt::from_RationalNumber(discharge_limits.power.max));
+    }
+
+    return out;
+}
 
 iso15118::config::TlsNegotiationStrategy convert_tls_negotiation_strategy(const std::string& strategy) {
     using Strategy = iso15118::config::TlsNegotiationStrategy;
@@ -542,6 +558,10 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
 
     callbacks.dc_max_limits = [this](const feedback::DcMaximumLimits& max_limits) {
         publish_dc_ev_maximum_limits({max_limits.current, max_limits.power, max_limits.voltage});
+    };
+
+    callbacks.dc_evse_adjusted_limits = [this](const iso15118::d20::DcTransferLimits& adjusted_limits) {
+        publish_dc_evse_adjusted_maximum_limits(to_adjusted_evse_maximum_limits(adjusted_limits));
     };
 
     callbacks.ac_limits = [this](const feedback::AcLimits& limits) {

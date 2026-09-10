@@ -378,6 +378,17 @@ void ISO15118_chargerImpl::init() {
         }
     });
 
+    mod->r_iso2->subscribe_dc_evse_adjusted_maximum_limits([this](const auto o) {
+        if (not mod->selected_iso20()) {
+            publish_dc_evse_adjusted_maximum_limits(o);
+        }
+    });
+    mod->r_iso20->subscribe_dc_evse_adjusted_maximum_limits([this](const auto o) {
+        if (mod->selected_iso20()) {
+            publish_dc_evse_adjusted_maximum_limits(o);
+        }
+    });
+
     mod->r_iso2->subscribe_dc_ev_remaining_time([this](const auto o) {
         if (not mod->selected_iso20()) {
             publish_dc_ev_remaining_time(o);

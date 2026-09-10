@@ -202,6 +202,7 @@ public:
                                   float max_current_export);
     bool update_max_watt_limit(types::energy::ExternalLimits& limits, float max_watt_export,
                                std::optional<float> max_watt_import);
+    void apply_session_max_power_limit(types::energy::ExternalLimits& limits);
     void update_to_zero_discharge_limit(types::energy::ExternalLimits& limits);
     bool update_local_energy_limit(types::energy::ExternalLimits l);
     types::energy::ExternalLimits get_local_energy_limits();
@@ -323,6 +324,8 @@ private:
     everest::lib::util::monitor<types::evse_board_support::HardwareCapabilities> hw_capabilities;
 
     types::energy::ExternalLimits external_local_energy_limits;
+    std::optional<float> ev_local_max_charge_power_W;
+    std::optional<float> hlc_adjusted_max_charge_power_W;
     const float EVSE_ABSOLUTE_MAX_CURRENT = 80.0;
     bool slac_enabled;
 
