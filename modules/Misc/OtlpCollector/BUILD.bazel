@@ -1,0 +1,33 @@
+load("//lib/everest/framework/bazel:everest_env.bzl", "everest_env")
+load("//modules:module.bzl", "cc_everest_module")
+
+cc_everest_module(
+    name = "OtlpCollector",
+    srcs = [
+        "OtlpHttpServer.cpp",
+        "OtlpHttpServer.hpp",
+    ],
+    impls = ["main"],
+    deps = [
+        "@com_github_fmtlib_fmt//:fmt",
+        "@com_github_warmcatt_libwebsockets//:libwebsockets",
+        "@opentelemetry-proto//:metrics_service_proto_cc",
+    ],
+)
+
+# Demo: the Example module exports its metrics into this collector. No OCPP
+# module is connected, so the collector logs what it would write. See
+# docs/index.rst.
+everest_env(
+    name = "otel_env",
+    config_file = "config-otel.yaml",
+    errors = ["//errors"],
+    interfaces = ["//interfaces"],
+    modules = [
+        ":OtlpCollector",
+        "//modules/Examples/CppExamples/Example",
+        "//modules/Examples/CppExamples/ExampleUser",
+        "//modules/Misc/PersistentStore",
+    ],
+    types = ["//types"],
+)

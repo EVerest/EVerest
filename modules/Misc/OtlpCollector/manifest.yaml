@@ -1,0 +1,31 @@
+description: >-
+  Receives OpenTelemetry metrics over OTLP/HTTP (protobuf) and mirrors them into
+  the OCPP device model, so a CSMS can read and monitor them as variables.
+  Prototype, metrics only.
+config:
+  listen_port:
+    description: TCP port the OTLP/HTTP receiver listens on (POST /v1/metrics)
+    type: integer
+    minimum: 1
+    maximum: 65535
+    default: 4318
+  component_name:
+    description: >-
+      Name of the device model component the metrics are written to. The
+      component instance is the producer's service.instance.id (the EVerest
+      module id), the variable name is the metric name.
+    type: string
+    default: Telemetry
+provides:
+  main:
+    interface: empty
+    description: Config-only implementation, the module has no EVerest API of its own
+requires:
+  ocpp:
+    interface: ocpp
+    min_connections: 0
+    max_connections: 1
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Dima Dorezyuk

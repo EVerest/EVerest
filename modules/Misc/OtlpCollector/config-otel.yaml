@@ -1,0 +1,29 @@
+# Demo config for the OtlpCollector prototype, used by the `otel_env` target in
+# BUILD.bazel: the Example module produces OpenTelemetry metrics, the collector
+# receives them. Point the producers at it with
+#   OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4320/v1/metrics
+active_modules:
+  otlp_collector:
+    module: OtlpCollector
+    config_module:
+      # not the OTLP default 4318, so that a real collector can run next to it
+      listen_port: 4320
+  store:
+    module: PersistentStore
+  example:
+    module: Example
+    config_implementation:
+      example:
+        current: 42
+        enum_test: one
+        enum_test2: 2
+    connections:
+      kvs:
+        - module_id: store
+          implementation_id: main
+  example_user:
+    module: ExampleUser
+    connections:
+      example:
+        - module_id: example
+          implementation_id: example
