@@ -28,15 +28,48 @@ public:
         timepoint_last_update(std::chrono::steady_clock::now()){};
     ~CarSimulation() = default;
 
+    // Forget the session (command countdowns, V2G flags, SLAC bookkeeping, SoC) but not the
+    // vehicle's presence on the wire.
+    //
+    // A vehicle that is plugged in stays PLUGGED_IN, with nothing pending: the cable is still
+    // mated, so "reset" must not turn into an unplug. Staging UNPLUGGED here and letting the
+    // state machine apply it at the first tick of the NEXT command list is what made every
+    // execute_charging_session (and every finished queue) yank the pilot to A -- on an MCS bench
+    // the EV then vanished for the whole wake pulse and the EVSE saw a replug instead of the
+    // CC.5.2.4 wake (bench-found 2026-09-01, TEST_PLAN findings 7 and 9). Only a pilot that
+    // is genuinely gone resets the vehicle: unplug_vehicle() below, or the 'unplug' command.
+    //
+    // The control pilot measurement is the outside world, not simulation state: it survives the
+    // reset either way. Dropping it back to Disconnected would make wait_for_real_plugin -- which
+    // is level-triggered on purpose, so a vehicle that comes up on an already-energized pilot
+    // still starts a session -- wait for an edge that has already happened and never comes again.
     void reset() {
-        // Keep the measured CP state: reset() must not fake a plug-in edge.
         const auto measured_cp_state = sim_data.actual_bsp_event;
+        const auto was_plugged = sim_data.state != SimState::UNPLUGGED;
         sim_data = SimulationData();
         sim_data.actual_bsp_event = measured_cp_state;
         sim_data.last_logged_wait_event = measured_cp_state;
         sim_data.battery_capacity_wh = config.dc_energy_capacity;
         double soc = config.soc;
         sim_data.battery_charge_wh = config.dc_energy_capacity * (soc / 100.0);
+        if (was_plugged) {
+            sim_data.state = SimState::PLUGGED_IN;
+            sim_data.last_state = SimState::PLUGGED_IN;
+        }
+    }
+
+    // The vehicle lost its pilot (plug-out, or the EVSE signalling E/F): forget the session AND
+    // the presence. Leaves UNPLUGGED pending so the caller's next state_machine() tick runs the
+    // unplug branch (CP A, power off, matching stopped, charging stopped).
+    void unplug_vehicle() {
+        sim_data.state = SimState::UNPLUGGED;
+        reset();
+    }
+
+    // True while the vehicle is at most presenting itself (A or B on the pilot): no readiness
+    // claim, no power, no toggle in flight. The states a new command list may safely replace.
+    bool is_idle_on_the_wire() const {
+        return sim_data.state == SimState::UNPLUGGED or sim_data.state == SimState::PLUGGED_IN;
     }
 
     void set_soc(double soc) {

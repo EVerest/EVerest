@@ -64,6 +64,8 @@ private:
     void call_ev_board_support_functions();
     void subscribe_to_external_mqtt();
     void reset_car_simulation_defaults();
+    // Reset for a vehicle whose pilot is gone: UNPLUGGED, applied to the wire at once.
+    void apply_vehicle_unplug();
     void update_command_queue(std::string& value);
     void set_execution_active(bool value);
     void cancel_charging_session();
