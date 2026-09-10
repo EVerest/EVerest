@@ -94,9 +94,8 @@ SCENARIO("ISO 15118-2 SECC PowerDelivery handling") {
         req.sa_schedule_tuple_id = 1;
         const auto res = d2::state::handle_request(req, id, true, 1, dt::IsolationLevel::Valid, true, schedule);
         THEN("The response signals EVSENotification::StopCharging and EVSE_Shutdown, and still starts") {
-            // A stop REQUEST is not an inability to deliver energy: [V2G2-679] leaves the reaction to the
-            // EV, and the STOP_CHARGING guard enforces it once the grace window closes. So no
-            // FAILED_PowerDeliveryNotApplied here, unlike EvseV2G's "status != EVSE_Ready" formulation.
+            // A stop REQUEST is not an inability to deliver energy: [V2G2-679] leaves the reaction to the EV, so
+            // no FAILED_PowerDeliveryNotApplied here, unlike EvseV2G's "status != EVSE_Ready" formulation.
             REQUIRE(res.response_code == dt::ResponseCode::OK);
             REQUIRE(res.dc_evse_status.has_value());
             REQUIRE(res.dc_evse_status->notification == dt::EVSENotification::StopCharging);
@@ -104,8 +103,7 @@ SCENARIO("ISO 15118-2 SECC PowerDelivery handling") {
         }
     }
 
-    // [V2G2-366] the module-reported EVSE error (send_error) is reported as the DC EVSEStatusCode of every
-    // DC response, PowerDeliveryRes included, and [V2G2-480] refuses a Start while it stands.
+    // [V2G2-366]/[V2G2-480]: the module error is the DC status code and refuses a Start while it stands.
     GIVEN("A DC Start while the module reports a malfunction") {
         message_2::PowerDeliveryRequest req;
         req.charge_progress = dt::ChargeProgress::Start;

@@ -116,10 +116,8 @@ void SdpServer::close() {
     }
 }
 
-// The SDP request payload is a fixed 2 bytes (Security + TransportProtocol); the V2GTP header must
-// declare exactly this length.
+// The SDP request payload is a fixed 2 bytes, and the V2GTP header must declare exactly that.
 static constexpr uint32_t SDP_REQUEST_PAYLOAD_LEN = 2;
-// A complete SDP request datagram: 8-byte V2GTP header + the fixed 2-byte payload.
 static constexpr ssize_t SDP_REQUEST_DATAGRAM_LEN = 8 + SDP_REQUEST_PAYLOAD_LEN;
 
 PeerRequestContext SdpServer::get_peer_request() {
@@ -129,15 +127,13 @@ PeerRequestContext SdpServer::get_peer_request() {
     const auto read_result = recvfrom(fd, udp_buffer, sizeof(udp_buffer), 0,
                                       reinterpret_cast<struct sockaddr*>(&peer_address), &peer_addr_len);
     if (read_result <= 0) {
-        // A transient error (EINTR from a signal, EAGAIN on a spurious wakeup) must not kill the
-        // controller loop: skip this datagram and wait for the next one.
+        // A transient error must not kill the controller loop: skip this datagram.
         logf_warning("Read on sdp server socket failed with error code: %d", errno);
         return PeerRequestContext{false};
     }
 
     if (peer_addr_len > sizeof(peer_address)) {
-        // Truncated peer address: this datagram cannot be answered, but it must not kill the poll
-        // loop (or get the SDP fd unregistered) -- drop it and wait for the next request.
+        // Truncated peer address: unanswerable, but it must not kill the poll loop either.
         logf_warning("Unexpected address length during read on sdp server socket, ignoring request");
         return PeerRequestContext{false};
     }
@@ -149,9 +145,8 @@ PeerRequestContext SdpServer::get_peer_request() {
         return PeerRequestContext{false};
     }
 
-    // The datagram must actually contain the full V2GTP header and the 2-byte payload; otherwise
-    // V2GTP20_ReadHeader and the payload bytes below would be read from stale buffer content left
-    // over from a previous datagram.
+    // Otherwise V2GTP20_ReadHeader and the payload bytes below would be read from stale buffer content
+    // left over from a previous datagram.
     if (read_result < SDP_REQUEST_DATAGRAM_LEN) {
         logf_warning("Sdp server received a truncated request (%zd bytes), ignoring", read_result);
         return PeerRequestContext{false};
@@ -166,10 +161,9 @@ PeerRequestContext SdpServer::get_peer_request() {
         return PeerRequestContext{false};
     }
 
-    // V2GTP20_ReadHeader only checks the version and payload-type ID, not the length field. An SDP request
-    // must declare the fixed 2-byte payload length; a request with an invalid payloadLength (e.g.
-    // 0x00000000) is ignored so no SDP response is sent -- the EVCC detects it as an SDP message timeout
-    // (TC_SECC_CMN_VTB_V2GTPSDP_002).
+    // V2GTP20_ReadHeader checks the version and payload-type ID, not the length field. A request with
+    // an invalid payloadLength is ignored so no response is sent -- the EVCC then detects an SDP message
+    // timeout (TC_SECC_CMN_VTB_V2GTPSDP_002).
     if (sdp_payload_len != SDP_REQUEST_PAYLOAD_LEN) {
         logf_warning("Sdp server received a request with an invalid payload length (%u), ignoring", sdp_payload_len);
         return PeerRequestContext{false};

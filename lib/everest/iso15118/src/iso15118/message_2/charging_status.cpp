@@ -10,7 +10,6 @@
 namespace iso15118::message_2 {
 
 template <> void convert(const struct iso2_ChargingStatusReqType&, ChargingStatusRequest&) {
-    // empty request
 }
 
 template <> void convert(const struct iso2_ChargingStatusResType& in, ChargingStatusResponse& out) {

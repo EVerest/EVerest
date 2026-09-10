@@ -14,8 +14,7 @@ namespace iso15118::d2::state {
 
 namespace dt = message_2::datatypes;
 
-// resumed_payment_option: set on a resumed (OK_OldSessionJoined) session; the PaymentOptionList then
-// contains only the option selected in the paused session [V2G2-741].
+// resumed_payment_option: the PaymentOptionList then contains only that option [V2G2-741].
 message_2::ServiceDiscoveryResponse
 handle_request(const message_2::ServiceDiscoveryRequest& req, const dt::SessionId& session_id,
                uint16_t charge_service_id,

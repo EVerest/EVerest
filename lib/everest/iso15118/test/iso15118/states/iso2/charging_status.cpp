@@ -36,8 +36,8 @@ SCENARIO("ISO 15118-2 SECC ChargingStatus handling") {
         }
     }
 
-    // [V2G2-902]: MeterInfo must accompany a requested MeteringReceipt (PnC), but it is an independent
-    // optional element otherwise -- [Table 104] marks it "O" for the SECC in AC Charging EIM as well.
+    // [V2G2-902]: MeterInfo must accompany a requested receipt, but [Table 104] marks it optional for
+    // the SECC in AC Charging EIM as well.
     dt::MeterInfo meter{};
     meter.meter_id = "PNX-METER-1";
     meter.meter_reading = 777U;

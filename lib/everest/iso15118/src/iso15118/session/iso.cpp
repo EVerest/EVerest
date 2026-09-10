@@ -21,39 +21,23 @@ namespace iso15118 {
 
 static constexpr auto SESSION_IDLE_TIMEOUT_MS = 5000;
 // After the session ended (SessionStopRes sent), wait this long for the EVCC to close the TCP
-// connection first before we close it ourselves (DIN [V2G-DC-937/938], ISO 15118-20 [V2G20-1633]).
-// It bounds the SECC self-close for the cases that reach it: a graceful SessionStop (the EV normally
-// closes first, so this rarely fires) and engine-level FAILED/timeout terminations
-// (FAILED_SequenceError / FAILED_UnknownSession / V2G_Sequence_Timeout) which end via
-// engine->is_finished(). It MUST stay below par_CMN_TCP_Connection_Termination_Timeout -- the -4 ATS
-// upper bound of 5 s within which the SUT must close after a failure/timeout (asserted as
-// latency <= 5 s, an upper bound with no min-wait); 4 s leaves a 1 s margin while still giving a
-// compliant EV ample time to close first (it typically closes in < 1 s). SupportedAppProtocol
-// negotiation failures and plug-out/kill bypass this linger entirely and close immediately (the
-// driver_stopped branch in poll() and Session::close(); [V2G-DC-940] terminate without delay). Real
-// EVs commonly dislike an SECC-initiated close, so an EV-first close is still preferred. The wait is
-// poll-driven -- it must never block the controller loop (a blocked loop stalls the SDP server and
-// delays the D-LINK signal into the next plug-in cycle).
+// connection first (DIN [V2G-DC-937/938], ISO 15118-20 [V2G20-1633]). Must stay below the -4 ATS
+// par_CMN_TCP_Connection_Termination_Timeout of 5 s. Poll-driven: blocking here would stall the
+// shared SDP server. Negotiation failures and plug-out bypass it entirely ([V2G-DC-940]).
 static constexpr auto CONNECTION_CLOSE_LINGER_MS = 4000;
-// On an SECC-initiated error close ([V2G-DC-940]: FAILED end, CP State A) the TCP connection is
-// closed immediately (FIN out), but the DLINK_TERMINATE signal is held back this long: it makes
-// SLAC leave the logical network, and the FIN must traverse the AVLN first, otherwise the peer can
-// never observe the close (the SLAC leave itself has T_match_leave of budget, so a short grace is
-// standards-safe). An EV-first close (EOF) still finishes immediately via the not-connected path.
+// The TCP connection is closed immediately on an error end, but DLINK_TERMINATE is held back this
+// long: it makes SLAC leave the logical network, and the FIN must traverse the AVLN first or the
+// peer never observes the close.
 static constexpr auto DLINK_SIGNAL_GRACE_MS = 300;
 static constexpr auto MIN_RESPONSE_INTERVAL_MS = 100; // minimum time between two response messages
-// ISO 15118-2 / DIN 70121: send each response this long after its request was received (deducting the
-// internal processing time). Some EVs are not ready to receive the response immediately and their
-// controller may crash if the SECC answers too fast (mirrors EvseV2G's MAX_RES_TIME behaviour).
+// ISO 15118-2 / DIN 70121: send each response this long after its request (minus processing time).
+// Some EVs' controllers crash if the SECC answers too fast (EvseV2G MAX_RES_TIME parity).
 static constexpr auto RESPONSE_DELAY_AFTER_REQUEST_MS = 100;
 
-// DIN SPEC 70121 [V2G-DC-957], Table 75: after a CurrentDemandRes the SECC guards the wait for the next
-// CurrentDemandReq with V2G_SECC_Sequence_TimeoutCR = 5 s, tighter than the generic 60 s
-// V2G_SECC_Sequence_Timeout used for every other message.
+// DIN [V2G-DC-957], Table 75: 5 s guards the wait for the next CurrentDemandReq, against the
+// generic 60 s V2G_SECC_Sequence_Timeout.
 static constexpr auto DIN_SEQUENCE_TIMEOUT_CURRENT_DEMAND_MS = 5000;
 
-// Picks the SECC sequence timeout to arm after a response has been sent. Only DIN CurrentDemandRes
-// deviates from the generic 60 s value.
 static uint32_t sequence_timeout_after_response(const V2gMessageType& response_type) {
     if (const auto* din_type = std::get_if<message_din::Type>(&response_type)) {
         if (*din_type == message_din::Type::CurrentDemandRes) {
@@ -212,17 +196,14 @@ Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionC
     feedback(callbacks_),
     pause_ctx(pause_ctx_),
     d2_pause_ctx(d2_pause_ctx_),
-    // Every session starts on the SupportedAppProtocol handshake; is_secure() is a property of the
-    // connection type, so the TLS gating of plaintext-only protocols ([V2G-DC-869]) is known here.
     engine(std::in_place_type<SapEngine>, engine_output_view(), config, callbacks_, connection->is_secure()) {
 
     next_session_event = offset_time_point_by_ms(get_current_time_point(), SESSION_IDLE_TIMEOUT_MS);
     connection->set_event_callback([this](io::ConnectionEvent event) { this->handle_connection_event(event); });
 
-    // Latch the power-path signals on their way to the module, so an aborted teardown can undo them
-    // (open_power_path()). The protocol engines are handed this wrapped copy; the SapEngine keeps the
-    // plain one -- the handshake neither closes a contactor nor starts a charge loop. `feedback` keeps
-    // the plain one too, so the teardown signals the Session itself emits are not re-latched.
+    // Latch the power-path signals on their way to the module so an aborted teardown can undo them.
+    // The SapEngine and `feedback` keep the plain copy: the handshake closes no contactor, and the
+    // Session's own teardown signals must not be re-latched.
     callbacks.signal = [this, forward = callbacks_.signal](session::feedback::Signal signal) {
         power_path.observe(signal);
         if (forward) {
@@ -230,11 +211,9 @@ Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionC
         }
     };
 
-    // The engines know the decoded message type but not the bytes it arrived in -- they are handed the
-    // EXI payload alone, while the V2GTP header sits in the Session's packet buffer. Attach the frame
-    // the Session is currently dispatching, so the module can publish the whole thing (EvseV2G's
-    // v2g_messages carries header + payload, v2g_server.cpp:275-288). Responses do not go through here:
-    // the Session emits those itself from send_response(), where it has the frame in hand.
+    // The engines see only the EXI payload; attach the frame being dispatched so the module can
+    // publish header + payload (EvseV2G v2g_messages parity). Responses are emitted from
+    // send_response(), which has the frame in hand.
     callbacks.v2g_message = [this, forward = callbacks_.v2g_message](const V2gMessageType& type,
                                                                      const io::StreamInputView&) {
         if (forward) {
@@ -248,11 +227,9 @@ Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionC
                  std::optional<d2::PauseContext>& d2_pause_ctx_, bool skip_app_protocol_negotiation) :
     Session(std::move(connection_), std::move(session_config), callbacks_, pause_ctx_, d2_pause_ctx_) {
     if (skip_app_protocol_negotiation) {
-        // The caller already ran the SupportedAppProtocol handshake (external SAP on a handed-over
-        // socket): replace the SapEngine before anything runs and start directly on the ISO 15118-20
-        // engine, which expects a SessionSetupReq as the first message. No offered/selected protocol
-        // data exists on this path (the caller keeps it), and the vehicle certificate hash comes with
-        // the connection instead of the TLS OPEN event.
+        // External SAP on a handed-over socket: the handshake already ran, so start directly on the -20
+        // engine, which expects a SessionSetupReq first. The vehicle certificate hash arrives with the
+        // connection instead of the TLS OPEN event.
         vehicle_cert_hash = connection->get_vehicle_cert_hash();
         engine.emplace<D20SeccEngine>(engine_output_view(), config, pause_ctx, callbacks, timeouts,
                                       d20::EVSupportedAppProtocols{}, message_20::SupportedAppProtocol{},
@@ -268,49 +245,36 @@ io::StreamOutputView Session::engine_output_view() {
 }
 
 bool Session::is_finished() const {
-    // Controller-facing: true only once the end-of-session handling (waiting for an EV-initiated TCP
-    // close, closing the connection, sending the D-LINK signal) has completed and the session can be
-    // reaped. The logical end of the V2G session itself is session_over().
+    // True only once the end-of-session handling completed and the session can be reaped; the logical
+    // end of the V2G session is session_over().
     return finished_reported;
 }
 
 bool Session::session_over() const {
-    // The engines keep is_finished() false while a response is still staged, so a session-ending
-    // response (SessionStopRes, any FAILED_*, a failed SupportedAppProtocol negotiation) is always
-    // flushed before the teardown starts.
+    // The engines keep is_finished() false while a response is staged, so a session-ending response
+    // is always flushed before teardown starts.
     return driver_stopped or visit_engine([](const auto& e) { return e.is_finished(); });
 }
 
 session::feedback::Signal Session::teardown_signal() const {
     using Signal = session::feedback::Signal;
 
-    // A paused session keeps the logical network ("Matched") and only asks the lower layers for the
-    // power-saving mode: [V2G2-725] / [V2G20-1777], ISO 15118-3 Table 7. DIN 70121 has no pause.
+    // A paused session keeps the link Matched and only asks for power-saving mode [V2G2-725] /
+    // [V2G20-1777]. DIN 70121 has no pause.
     if (visit_engine([](const auto& e) { return e.is_paused(); })) {
         return Signal::DLINK_PAUSE;
     }
 
-    // The other regular end -- a positive SessionStopRes(Terminate) -- releases the link and nothing
-    // more: [V2G2-724] / [V2G20-1776] / DIN [V2G-DC-451], ISO 15118-3 Table 5.
+    // A positive SessionStopRes(Terminate) releases the link [V2G2-724] / [V2G20-1776] / [V2G-DC-451].
     if (clean_session_end) {
         return Signal::DLINK_TERMINATE;
     }
 
-    // Everything else ends the session on an error, and the standards are explicit that an error gets
-    // its own primitive: "If the SECC identifies any error it shall indicate a Data-Link error
-    // (D-LINK_ERROR.request())" -- [V2G2-727], repeated verbatim as [V2G20-727]. Per ISO 15118-3
-    // Table 6 that terminates the data link AND restarts the matching process through a control pilot
-    // transition via state E ([V2G3-M07-04..12]), so the EV can retry without being unplugged;
-    // D-LINK_TERMINATE would leave it stuck. This covers a FAILED_* response, a failed
-    // SupportedAppProtocol negotiation, an unexpected message, a sequence timeout and an EV that
-    // disconnects mid-session.
-    //
-    // DIN SPEC 70121 defines no D-LINK_ERROR primitive, but it asks for the same outcome: [V2G-DC-942]
-    // requires the CP oscillator to go off without delay on any error detection, and the NOTE at
-    // [V2G-DC-943] recommends switching it off precisely so the matching process can be restarted.
-    // D-LINK_ERROR delivers both, so all three generations are treated alike here (EvseV2G does the
-    // same -- its d_link_action defaults to D_LINK_ACTION_ERROR for every teardown that does not
-    // reach a SessionStop handler, DIN sessions included).
+    // Every other end is an error, and it gets D-LINK_ERROR rather than D-LINK_TERMINATE
+    // ([V2G2-727]/[V2G20-727]): per ISO 15118-3 Table 6 that also restarts matching through CP state E,
+    // so the EV can retry without being unplugged, where TERMINATE would leave it stuck. DIN defines no
+    // such primitive but wants the same outcome ([V2G-DC-942], NOTE at [V2G-DC-943]), so all three
+    // generations are treated alike (EvseV2G d_link_action parity).
     return Signal::DLINK_ERROR;
 }
 
@@ -341,17 +305,13 @@ TimePoint const& Session::poll() {
     // This is the default next session event, which is used when nothing else happens.
     next_session_event = offset_time_point_by_ms(now, SESSION_IDLE_TIMEOUT_MS);
 
-    // check for new data to read (never while a complete packet is still waiting to be handled: the
-    // SupportedAppProtocol handover below defers a request that arrived before the handshake response
-    // could be sent)
+    // Never read while a complete packet is still waiting: the handover below defers a request that
+    // arrived before the handshake response could be sent.
     if (state.connected and state.new_data and not packet.is_complete()) {
         switch (read_single_v2gtp_packet(*connection, packet)) {
         case V2GTPReadResult::connection_closed:
-            // TCP EOF / TLS close_notify: the peer (EV) closed the connection. This is the regular
-            // way a session ends -- the EVCC closes first (DIN [V2G-DC-937], ISO 15118-2 [V2G2-025])
-            // -- but it also covers a mid-session EV disconnect. Close our side now (idempotent);
-            // the not-connected path below completes the end-of-session handling if the V2G session
-            // is logically over, instead of running into a sequence timeout.
+            // TCP EOF / TLS close_notify: the EV closed first, which is the regular end (DIN [V2G-DC-937],
+            // [V2G2-025]), but also covers a mid-session disconnect. Closing now avoids a sequence timeout.
             logf_info("TCP connection closed by the peer");
             connection->close();
             break;
@@ -364,18 +324,14 @@ TimePoint const& Session::poll() {
     }
 
     if (not state.connected) {
-        // Either nothing happened so far (still waiting for the TCP accept), or the connection is
-        // gone (EV-initiated close or a local close). If the V2G session is logically over, complete
-        // the end-of-session handling now so the controller can reap the session; an EV closing
-        // right after SessionStopRes ends the linger early (DIN [V2G-DC-937]: EV-first close is the
-        // regular case).
+        // Nothing has happened yet, or the connection is gone. If the V2G session is logically over,
+        // complete the teardown now so the controller can reap it; this also ends the linger early.
         if (session_over()) {
             finish_session();
         }
         return next_session_event;
     }
 
-    // deliver queued control events to the engine (the handshake engine ignores them)
     while (const auto event = control_event_queue.try_pop()) {
         // Remember the latest StopCharging request: the handshake engine cannot act on it, so it is
         // re-delivered to the protocol engine once that takes over (see create_engine()).
@@ -397,40 +353,31 @@ TimePoint const& Session::poll() {
     // check for complete sdp packet
     if (packet.is_complete()) {
         if (session_over()) {
-            // The V2G session already ended (we are only waiting for the EV to close the TCP
-            // connection); no request is allowed anymore -- drop the data instead of feeding it to a
-            // finished engine.
+            // The V2G session already ended and we only await the EV's close: drop the data rather than feed
+            // a finished engine.
             logf_warning("Ignoring data received after the V2G session ended");
             packet.reset();
             state.new_data = false; // reset new_data flag
         } else if (in_sap_phase() and visit_engine([](const auto& e) { return e.has_outgoing(); })) {
-            // The SupportedAppProtocolRes is staged but not sent yet (it is paced), so the handover to
-            // the protocol engine has not happened either. An EV is not supposed to send its next
-            // request before receiving that response, but if it does, keep the packet for the engine
-            // that will own the protocol instead of failing it against the handshake engine. The
-            // response is already due within RESPONSE_DELAY_AFTER_REQUEST_MS, so this defers by one
-            // poll iteration.
+            // The SupportedAppProtocolRes is staged but paced, so the handover has not happened. Keep the
+            // packet for the engine that will own the protocol instead of failing it against the handshake
+            // engine; the response is due within RESPONSE_DELAY_AFTER_REQUEST_MS, so this defers by one poll.
         } else {
             const auto payload_type = packet.get_payload_type();
             const io::StreamInputView view{packet.get_payload_buffer(), packet.get_payload_length()};
 
-            // Timestamp the request so -2/DIN (and the SupportedAppProtocol handshake) can pace their
-            // response a fixed delay after it (see below).
+            // Timestamp the request so -2/DIN and the handshake can pace their response after it.
             last_request_rx_time = now;
 
             if (not in_sap_phase()) {
-                // The first request handed to a protocol engine is the SessionSetupReq: the V2G
-                // communication session is now established, so the controller stops
-                // V2G_SECC_CommunicationSetup_Timeout (from here the per-message
-                // V2G_SECC_Sequence_Timeout governs).
+                // The first request to a protocol engine is the SessionSetupReq: the session is established, so
+                // V2G_SECC_CommunicationSetup_Timeout stops and the per-message sequence timeout takes over.
                 v2g_session_established = true;
-                // A sequence timer is armed on every response we send; stop it as soon as the next request
-                // arrives (there is no sequence timer during the SupportedAppProtocol handshake).
+                // A sequence timer is armed on every response; stop it as soon as the next request arrives.
                 timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
             }
 
-            // Publish the frame the engine is about to decode, header included (see the callback
-            // wrapping in the constructor). Cleared right after: the packet buffer is reused.
+            // Publish the frame the engine is about to decode; cleared right after, the buffer is reused.
             current_request_frame = {packet.get_buffer(),
                                      packet.get_payload_length() + io::SdpPacket::V2GTP_HEADER_SIZE};
             visit_engine([payload_type, &view](auto& e) { e.on_packet(payload_type, view); });
@@ -441,16 +388,9 @@ TimePoint const& Session::poll() {
         }
     }
 
-    // Send a pending response, but not before it is due.
-    //
-    // ISO 15118-2 / DIN 70121 (delay_response_after_request()) and the shared SupportedAppProtocol
-    // handshake: send the response RESPONSE_DELAY_AFTER_REQUEST_MS after the request was received,
-    // deducting the time already spent processing it. If processing took longer than that window, send
-    // immediately and warn that the timing could not be met. This protects EVs whose controller crashes
-    // if the SECC answers too fast.
-    //
-    // Otherwise (ISO 15118-20): pace responses at least MIN_RESPONSE_INTERVAL_MS apart to avoid
-    // potential performance issues.
+    // Send a pending response, but not before it is due: -2/DIN and the handshake pace it
+    // RESPONSE_DELAY_AFTER_REQUEST_MS after the request, ISO 15118-20 only keeps responses
+    // MIN_RESPONSE_INTERVAL_MS apart. Overrunning the window sends immediately and warns.
     const bool has_outgoing = visit_engine([](const auto& e) { return e.has_outgoing(); });
     if (has_outgoing) {
         if (not response_send_after.has_value()) {
@@ -481,7 +421,6 @@ TimePoint const& Session::poll() {
             }
         }
 
-        // Send the response as soon as it is due
         if (response_send_after.has_value() && now < response_send_after.value()) {
             next_session_event = response_send_after.value();
         } else {
@@ -497,9 +436,7 @@ TimePoint const& Session::poll() {
 
     if (session_over() and not finished_reported) {
         if (error_termination or visit_engine([](const auto& e) { return e.is_finished_with_error(); })) {
-            // SECC-initiated error close: FIN out NOW ([V2G-DC-940]), but hold the D-LINK signal
-            // (DLINK_ERROR here, see teardown_signal()) back for DLINK_SIGNAL_GRACE_MS so the FIN
-            // traverses the AVLN before SLAC leaves it.
+            // FIN out now ([V2G-DC-940]) but hold the D-LINK signal for DLINK_SIGNAL_GRACE_MS.
             connection->close(); // idempotent
             if (not dlink_signal_deadline.has_value()) {
                 dlink_signal_deadline = offset_time_point_by_ms(now, DLINK_SIGNAL_GRACE_MS);
@@ -510,26 +447,16 @@ TimePoint const& Session::poll() {
                 next_session_event = std::min(next_session_event, dlink_signal_deadline.value());
             }
         } else if (driver_stopped) {
-            // Error / abnormal termination: the SupportedAppProtocol negotiation failed
-            // (FAILED_NoNegotiation), an unexpected message arrived, the handshake timed out, the
-            // negotiated namespace was unknown, or the engine could not be created. [V2G-DC-940]: the SECC
-            // terminates the session WITHOUT delay -- do not wait CONNECTION_CLOSE_LINGER_MS for the EV to
-            // close first (that grace is only for a normal successful end, DIN [V2G-DC-937/938]). The -4 ATS
-            // (e.g. TC_SECC_VTB_SupportedAppProtocol_002) checks the TCP close and CP oscillator shutdown
-            // happen within par_CMN_TCP_Connection_Termination_Timeout (5 s) /
-            // par_SECC_CPOscillator_Shutdown_Timeout. Any pending response was already flushed by
-            // send_response() earlier this poll(), and TCP delivers the queued bytes before the FIN, so the
-            // FAILED response still reaches the EV. finish_session() closes the socket and emits
-            // DLINK_ERROR ([V2G2-727]/[V2G20-727]: the SECC identified an error), which drops the CP
-            // oscillator and re-arms matching so the EV can retry without a replug.
+            // Error / abnormal termination. [V2G-DC-940]: terminate WITHOUT delay -- no EV-first linger, which
+            // is only for a normal end. The -4 ATS checks this (TC_SECC_VTB_SupportedAppProtocol_002) against
+            // par_CMN_TCP_Connection_Termination_Timeout and par_SECC_CPOscillator_Shutdown_Timeout. Any
+            // pending response was flushed earlier this poll() and TCP delivers queued bytes before the FIN,
+            // so the FAILED response still reaches the EV.
             finish_session();
         } else {
-            // Normal successful end (SessionStopRes sent) but the EV is still connected: give it
-            // CONNECTION_CLOSE_LINGER_MS to close the TCP connection first (DIN [V2G-DC-937/938],
-            // ISO 15118-20 [V2G20-1633]); an EV-initiated close lands as EOF -> CLOSED and finishes via
-            // the not-connected path above. A plug-out bypasses the linger entirely: D-LINK down ->
-            // TbdController kill -> Session::close() ([V2G-DC-940]: on error/HLE request terminate
-            // without delay). Never block here -- the poll loop is shared with the SDP server.
+            // Normal end but the EV is still connected: give it CONNECTION_CLOSE_LINGER_MS to close first;
+            // its close lands as EOF and finishes via the not-connected path. Never block -- the poll loop is
+            // shared with the SDP server.
             if (not connection_close_deadline.has_value()) {
                 connection_close_deadline = offset_time_point_by_ms(now, CONNECTION_CLOSE_LINGER_MS);
             }
@@ -554,9 +481,8 @@ void Session::advance_sap_handover() {
     }
 
     if (sap->has_outgoing()) {
-        // The SupportedAppProtocolRes has not been sent yet (it is paced): the engines share the
-        // Session's output buffer, and replacing the variant alternative destroys the engine that
-        // staged that response. Come back once it is on the wire.
+        // The paced SupportedAppProtocolRes is not on the wire yet, and replacing the variant alternative
+        // would destroy the engine that staged it. Come back once it is sent.
         return;
     }
 
@@ -566,18 +492,16 @@ void Session::advance_sap_handover() {
             logf_error("No engine available for the negotiated protocol, terminating session");
             driver_stopped = true;
         } else if (packet.is_complete()) {
-            // A request deferred while the handshake response was pending (see poll()) is now waiting
-            // for the engine that just took over. Nothing else would wake the driver for it, so poll
-            // again immediately instead of sitting on it until the idle timeout.
+            // A request deferred while the handshake response was pending is now waiting for the new engine;
+            // nothing else would wake the driver, so poll again immediately.
             next_session_event = get_current_time_point();
         }
         return;
     }
 
     if (sap->is_finished()) {
-        // Negotiation failed, an unexpected message arrived or the handshake timed out. Any FAILED_*
-        // response has been flushed above, so the session can be torn down now -- without the EV-first
-        // close linger ([V2G-DC-940]: terminate without delay).
+        // Negotiation failed or timed out; any FAILED_* was flushed above, so tear down without the
+        // EV-first linger ([V2G-DC-940]).
         driver_stopped = true;
     }
 }
@@ -601,9 +525,8 @@ bool Session::create_engine(const SapEngine::Negotiated& negotiated) {
         return false;
     }();
 
-    // A stop requested during the SupportedAppProtocol phase reached only the handshake engine, which
-    // ignores control events: hand it to the fresh protocol engine so the session it now runs tells the
-    // EV to stop from the first response on (EvseV2G reacts to stop_charging in any state).
+    // A stop requested during the handshake reached only the SapEngine, which ignores control events:
+    // hand it to the fresh protocol engine so the EV is told to stop from the first response on.
     if (created and pending_stop_charging) {
         const d20::ControlEvent stop_event{d20::StopCharging{true}};
         visit_engine([&stop_event](auto& e) { e.on_control_event(stop_event); });
@@ -626,18 +549,14 @@ void Session::send_response() {
 
     feedback.v2g_message(response_type, {response_buffer, response_size});
 
-    // A session-ending response just hit the wire (any protocol): report it. For a positive
-    // SessionStopRes this is the anchor of the CP-oscillator retain time [V2G-DC-968]; only the
-    // oscillator timing hangs off this feedback -- the connection-close linger and the DLINK_*
-    // signals keep their own anchors so the EV's TCP close can still complete over the intact link.
-    // A FAILED_* end (FailedTermination) additionally skips the EV-first close linger: the SECC
-    // closes the TCP connection itself without delay ([V2G-DC-940]).
+    // A session-ending response hit the wire. For a positive SessionStopRes this anchors the
+    // CP-oscillator retain time [V2G-DC-968]; only that timing hangs off this feedback, so the close
+    // linger and the DLINK_* signals keep their own anchors. A FAILED_* end skips the linger.
     if (const auto stop_action = visit_engine([](auto& e) { return e.pop_session_stop_res_pending(); })) {
         if (*stop_action == session::feedback::SessionStopAction::FailedTermination) {
             error_termination = true;
         } else {
-            // Terminate or Pause: the session reached one of the two regular ends, so the data link is
-            // released with D-LINK_TERMINATE / D-LINK_PAUSE rather than D-LINK_ERROR (teardown_signal()).
+            // One of the two regular ends, so release the link with D-LINK_TERMINATE / D-LINK_PAUSE.
             clean_session_end = true;
         }
         feedback.session_stop_res_sent(*stop_action);
@@ -651,11 +570,8 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
         assert(state.connected == false);
         state.connected = true;
         logf_info("Accepted connection on port %d", connection->get_public_endpoint().port);
-        // Guard the wait for the first (supportedAppProtocol) request with the
-        // V2G sequence timeout: if the EV connects but sends nothing, the timer
-        // fires and the session driver closes the connection (on par with the
-        // EvseV2G stack). Subsequent requests re-arm it via send_response(); it
-        // is stopped when the next request arrives (see poll()).
+        // Guard the wait for the first request with the sequence timeout, so an EV that connects and
+        // sends nothing is closed rather than left open (EvseV2G parity).
         timeouts.start_timeout(d20::TimeoutType::SEQUENCE, d20::TIMEOUT_SEQUENCE);
         return;
 
@@ -676,22 +592,18 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
     case Event::CLOSED:
         state.connected = false;
         logf_info("Connection is closed");
-        // The transport is gone, so this session cannot continue: mark the
-        // driver stopped so the controller reaps it. A lingering session
-        // otherwise blocks the SDP server (new discovery attempts are
-        // refused) until the 40 s sequence timeout finally fires.
+        // The transport is gone: mark the driver stopped so the controller reaps the session. A lingering
+        // session otherwise blocks the SDP server until the 40 s sequence timeout fires.
         driver_stopped = true;
         return;
     }
 }
 
 void Session::close() {
-    // Immediate close, bypassing the end-of-session linger: used on D-LINK loss (plug-out), session
-    // kill and shutdown ([V2G-DC-940]: terminate without delay). Always signals DLINK_TERMINATE -- a
-    // killed session is never a pause, and it is not an error the SECC identified either: the link is
-    // already gone or is being taken down from outside, so [V2G2-726] has the SECC simply go back to
-    // waiting rather than run the D-LINK_ERROR recovery ([V2G2-727]) at a connector that no longer has
-    // an EV on it.
+    // Immediate close, bypassing the linger: D-LINK loss (plug-out), kill and shutdown
+    // ([V2G-DC-940]). Always DLINK_TERMINATE -- a killed session is not a pause, and not an error the
+    // SECC identified either, so [V2G2-726] has it simply go back to waiting rather than run the
+    // D-LINK_ERROR recovery at a connector with no EV on it.
     driver_stopped = true;
     if (finished_reported) {
         return; // already closed and signaled

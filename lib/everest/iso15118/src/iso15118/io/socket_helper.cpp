@@ -170,33 +170,28 @@ bool set_tcp_keepalive(int fd) {
 AcceptResult accept_connection(int listen_fd, sockaddr_in6& peer_address) {
     socklen_t address_len = sizeof(peer_address);
 
-    // SOCK_NONBLOCK: the poll loop is shared (SDP server + connections), so nothing downstream may
-    // ever block on this fd -- the plain read() path and the TLS handshake/read paths all rely on it.
+    // The poll loop is shared (SDP server + connections), so nothing downstream may ever block here.
     const auto accept_fd =
         ::accept4(listen_fd, reinterpret_cast<sockaddr*>(&peer_address), &address_len, SOCK_NONBLOCK);
 
     if (accept_fd == -1) {
-        // A client that connects and RSTs quickly (e.g. a port scan) yields ECONNABORTED; EINTR and a
-        // spurious wakeup are equally transient. The listener stays usable, so the caller should just
-        // wait for the next connection.
+        // A client that connects and RSTs quickly (e.g. a port scan) yields ECONNABORTED; the listener
+        // stays usable, so the caller should just wait for the next connection.
         if (errno == EINTR or errno == EAGAIN or errno == EWOULDBLOCK or errno == ECONNABORTED) {
             logf_warning("accept4 failed with a transient error code: %d", errno);
             return {AcceptResult::Status::Transient, -1};
         }
         // A hard accept failure (e.g. EMFILE): the caller must contain this by tearing down its own
-        // connection instead of letting an exception escape the poll callback.
+        // connection rather than letting an exception escape the poll callback.
         //
-        // Deliberate deviation from accept(2)'s advice to retry the pending-connection network
-        // errnos (EPROTO, ENETDOWN, EHOSTUNREACH, ENETUNREACH, ENONET, EOPNOTSUPP): this listener
-        // serves exactly one EV over a point-to-point link-local connection, so a pending
-        // connection that died of a network error means the link itself is gone, and dlink-loss
-        // handling -- not an accept retry -- is the correct recovery.
+        // Deliberate deviation from accept(2)'s advice to retry the pending-connection network errnos: this
+        // listener serves exactly one EV over a point-to-point link-local connection, so such a failure
+        // means the link itself is gone and dlink-loss handling, not an accept retry, is the recovery.
         logf_error("accept4 failed with error code: %d", errno);
         return {AcceptResult::Status::Fatal, -1};
     }
 
-    // Dead-peer detection: the read() paths rely on the keepalive's ETIMEDOUT to tear down a
-    // session whose peer vanished without FIN/RST.
+    // The read() paths rely on the keepalive's ETIMEDOUT to tear down a peer that vanished without FIN.
     if (not set_tcp_keepalive(accept_fd)) {
         logf_warning("Failed to configure TCP keepalive on the accepted connection");
     }
@@ -210,8 +205,7 @@ bool write_all(int fd, const uint8_t* buf, size_t len, int timeout_ms) {
 
     size_t written = 0;
     while (written < len) {
-        // MSG_NOSIGNAL: a peer that closed mid-write must surface as EPIPE, not kill the process
-        // with SIGPIPE.
+        // MSG_NOSIGNAL: a peer that closed mid-write must surface as EPIPE, not kill the process.
         const auto write_result = ::send(fd, buf + written, len - written, MSG_NOSIGNAL);
 
         if (write_result >= 0) {
@@ -235,18 +229,15 @@ bool write_all(int fd, const uint8_t* buf, size_t len, int timeout_ms) {
         if (poll_result == -1 and errno != EINTR) {
             return false;
         }
-        // poll_result == 0 (timed out): the deadline check at the top of the next iteration
-        // converts it into ETIMEDOUT after one final write attempt.
+        // A timeout becomes ETIMEDOUT at the top of the next iteration, after one final write attempt.
     }
 
     return true;
 }
 
 int create_tcp_listen_socket(sockaddr_in6 address, uint16_t port, int backlog, const std::string& interface_name) {
-    // SOCK_NONBLOCK: accept_connection()'s Transient/EAGAIN contract depends on it. A pending
-    // connection the client aborts between poll() reporting the listener readable and accept4()
-    // running is silently dropped from the backlog; a blocking accept4 would then stall the shared
-    // controller poll loop (SDP server, session timers) until the next TCP connect arrives.
+    // accept_connection()'s Transient/EAGAIN contract depends on it: a blocking accept4 would stall the
+    // shared controller poll loop until the next TCP connect arrives.
     const auto fd = socket(AF_INET6, SOCK_STREAM | SOCK_NONBLOCK, 0);
     if (fd == -1) {
         log_and_throw("Failed to create an ipv6 socket");

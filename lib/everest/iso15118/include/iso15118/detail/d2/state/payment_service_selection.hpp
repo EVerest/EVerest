@@ -12,8 +12,7 @@ namespace iso15118::d2::state {
 
 namespace dt = message_2::datatypes;
 
-// resumed_payment_option: set on a resumed (OK_OldSessionJoined) session; only the option offered in
-// the resumed ServiceDiscoveryRes is accepted, anything else is FAILED_PaymentSelectionInvalid
+// resumed_payment_option: only the option offered in the resumed ServiceDiscoveryRes is accepted
 // [V2G2-741]/[V2G2-465].
 message_2::PaymentServiceSelectionResponse
 handle_request(const message_2::PaymentServiceSelectionRequest& req, const dt::SessionId& session_id,

@@ -4,9 +4,9 @@
 
 #include <algorithm>
 
+#include <iso15118/d2/state/ac_charge_loop.hpp>
 #include <iso15118/d2/state/charge_parameter_discovery.hpp>
-#include <iso15118/d2/state/charging_status.hpp>
-#include <iso15118/d2/state/current_demand.hpp>
+#include <iso15118/d2/state/dc_charge_loop.hpp>
 #include <iso15118/d2/state/session_stop.hpp>
 #include <iso15118/d2/state/welding_detection.hpp>
 
@@ -18,12 +18,14 @@
 namespace iso15118::d2::state {
 
 namespace {
-constexpr uint32_t CONTACTOR_TIMEOUT_MS = 3000;
+// V2G_SECC_Msg_Performance_Time(PowerDeliveryRes) = 4,5 s (Table 109), started on
+// PowerDeliveryReq(Start) per [V2G2-858]. Not [V2G2-860]'s 3 s, which is the deadline for the
+// charger to *close* the contactor -- a different quantity, and the value this used to carry.
+constexpr uint32_t CONTACTOR_PERFORMANCE_TIME_MS = 4500;
 } // namespace
 
 bool charging_profile_within_limits(const dt::ChargingProfile& profile, const dt::SAScheduleList& sa_schedule_list,
                                     uint8_t advertised_sa_schedule_tuple_id) {
-    // Locate the advertised tuple the EV echoed; fall back to the first tuple if none matches.
     const dt::SAScheduleTuple* tuple = nullptr;
     for (const auto& candidate : sa_schedule_list) {
         if (candidate.sa_schedule_tuple_id == advertised_sa_schedule_tuple_id) {
@@ -35,7 +37,6 @@ bool charging_profile_within_limits(const dt::ChargingProfile& profile, const dt
         tuple = &sa_schedule_list.front();
     }
     if (tuple == nullptr or tuple->pmax_schedule.empty()) {
-        // Without an advertised schedule there is nothing to validate against.
         return true;
     }
 
@@ -60,10 +61,8 @@ handle_request(const message_2::PowerDeliveryRequest& req, const dt::SessionId& 
     message_2::PowerDeliveryResponse res;
     res.header.session_id = session_id;
 
-    // [V2G2-366] the SECC reports the EVSEStatusCodes of Table 98 in every DC response, so a module-
-    // reported fault (send_error: Malfunction / UtilityInterruptEvent / EmergencyShutdown) wins over the
-    // EVSE_Ready this state would otherwise claim -- Table 98 defines EVSE_Ready as "charging procedure is
-    // running", which is exactly what is not true then (EvseV2G get_emergency_status_code parity).
+    // [V2G2-366]: a module-reported fault wins over the EVSE_Ready this state would otherwise claim,
+    // which per Table 98 means the charging procedure is running (EvseV2G parity).
     const auto dc_status_code = error_status_code.value_or(charger_stop ? dt::DC_EVSEStatusCode::EVSE_Shutdown
                                                                         : dt::DC_EVSEStatusCode::EVSE_Ready);
     const auto notification = charger_stop ? dt::EVSENotification::StopCharging : dt::EVSENotification::None;
@@ -89,28 +88,21 @@ handle_request(const message_2::PowerDeliveryRequest& req, const dt::SessionId& 
     }
 
     if (req.charge_progress == dt::ChargeProgress::Start) {
-        // AC PowerDelivery(Start) requires a ChargingProfile.
         if (not is_dc and not req.charging_profile.has_value()) {
             res.response_code = dt::ResponseCode::FAILED_ChargingProfileInvalid;
             return res;
         }
-        // A provided ChargingProfile must stay within the advertised PMax [V2G2-224/225] (AC and DC).
         if (req.charging_profile.has_value() and
             not charging_profile_within_limits(req.charging_profile.value(), sa_schedule_list,
                                                advertised_sa_schedule_tuple_id)) {
             res.response_code = dt::ResponseCode::FAILED_ChargingProfileInvalid;
             return res;
         }
-        // [V2G2-480] the response carries FAILED_PowerDeliveryNotApplied "if the EVSE is not able to
-        // deliver energy". A latched module error (send_error) is exactly that state, and the DC status
-        // code is the only place the EVSE can say so -- hence DC only, as in EvseV2G. Checked after the
-        // request-validation legs above so a malformed request still gets its own specific code.
-        //
-        // EvseV2G phrases the same rule as "Start and EVSEStatusCode != EVSE_Ready" (iso_server.cpp),
-        // which also catches the EVSE_Shutdown of a charger-initiated stop. We deliberately do not: a
-        // stop REQUEST is not an inability to deliver energy. [V2G2-679] only says the EV "should" stop
-        // on EVSENotification StopCharging, and NotificationMaxDelay grants it a window to do so -- the
-        // STOP_CHARGING guard enforces the stop once that window closes (charger_stop_ignored).
+        // [V2G2-480]: FAILED_PowerDeliveryNotApplied when the EVSE cannot deliver energy. A latched module
+        // error is exactly that, and only the DC status code can say so -- hence DC only, as in EvseV2G.
+        // EvseV2G phrases the rule as "Start and EVSEStatusCode != EVSE_Ready", which also catches the
+        // EVSE_Shutdown of a charger-initiated stop. We deliberately do not: a stop REQUEST is not an
+        // inability to deliver energy, and the STOP_CHARGING guard enforces it once the [V2G2-679] window closes.
         if (is_dc and error_status_code.has_value()) {
             res.response_code = dt::ResponseCode::FAILED_PowerDeliveryNotApplied;
             return res;
@@ -121,30 +113,82 @@ handle_request(const message_2::PowerDeliveryRequest& req, const dt::SessionId& 
     return res;
 }
 
-void PowerDelivery::enter() {
-    logf_debug("Enter state: PowerDelivery");
+namespace {
+
+void report_power_delivery_parameter(Context& ctx, const message_2::PowerDeliveryRequest& req) {
+    if (not req.dc_ev_power_delivery_parameter.has_value()) {
+        return;
+    }
+    const auto& param = req.dc_ev_power_delivery_parameter.value();
+    ctx.report_ev_status(param.dc_ev_status);
+
+    // No remaining times here, so they stay absent and the module does not overwrite the charge loop's
+    // values with zeroes.
+    session::feedback::DcEvChargeProgress progress{};
+    progress.charging_complete = param.charging_complete;
+    progress.bulk_charging_complete = param.bulk_charging_complete;
+    ctx.report_charge_progress(progress);
 }
 
-Result PowerDelivery::feed(Event ev) {
+// Runs on receipt rather than on response, so it happens whether the answer goes out immediately or
+// waits for the AC contactor.
+void mark_power_delivery_started(Context& ctx) {
+    ctx.feedback.signal(session::feedback::Signal::SETUP_FINISHED);
+    // Record that charging was started so a later Renegotiate is accepted [V2G2-812].
+    ctx.set_power_delivery_started();
+}
+
+bool respond(Context& ctx, const message_2::PowerDeliveryRequest& req, bool is_dc) {
+    const auto res = handle_request(req, ctx.get_session_id(), is_dc, ctx.session().sa_schedule_tuple_id,
+                                    ctx.isolation_level(), ctx.evse().charger_stop_requested,
+                                    ctx.session().sa_schedule_list, ctx.error_status_code(), ctx.rcd_error());
+    ctx.respond(res);
+    if (res.response_code >= dt::ResponseCode::FAILED) {
+        ctx.session_stopped = true;
+        return false;
+    }
+    return true;
+}
+
+Result renegotiate(Context& ctx, const message_2::PowerDeliveryRequest& req, bool is_dc) {
+    // [V2G2-812]: a Renegotiate before any PowerDelivery(Start) is illegal.
+    if (not ctx.session().power_delivery_started) {
+        logf_warning("PowerDelivery(Renegotiate) received before any Start; answering FAILED [V2G2-812]");
+        auto res = handle_request(req, ctx.get_session_id(), is_dc, ctx.session().sa_schedule_tuple_id,
+                                  ctx.isolation_level(), ctx.evse().charger_stop_requested,
+                                  ctx.session().sa_schedule_list, ctx.error_status_code(), ctx.rcd_error());
+        res.response_code = dt::ResponseCode::FAILED;
+        ctx.respond(res);
+        ctx.session_stopped = true;
+        return {};
+    }
+
+    if (not respond(ctx, req, is_dc)) {
+        return {};
+    }
+    return ctx.create_state<ChargeParameterDiscovery>();
+}
+
+} // namespace
+
+void AcPowerDelivery::enter() {
+    logf_debug("Enter state: AcPowerDelivery");
+}
+
+Result AcPowerDelivery::on_event(Event ev) {
     if (ev == Event::CONTROL_MESSAGE) {
         if (const auto* control = m_ctx.get_control_event<d20::PresentVoltageCurrent>()) {
-            m_ctx.present_voltage = control->voltage;
-            m_ctx.present_current = control->current;
+            m_ctx.set_present_values(control->voltage, control->current);
         } else if (const auto* closed = m_ctx.get_control_event<d20::ClosedContactor>()) {
-            m_ctx.ac_contactor_closed = static_cast<bool>(*closed);
-            if (m_ctx.ac_contactor_closed and saved_ac_start_req.has_value()) {
+            m_ctx.set_contactor_closed(static_cast<bool>(*closed));
+            if (m_ctx.evse().ac_contactor_closed and saved_start_req.has_value()) {
                 m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
-                const auto res =
-                    handle_request(saved_ac_start_req.value(), m_ctx.get_session_id(), false,
-                                   m_ctx.sa_schedule_tuple_id, m_ctx.isolation_level(), m_ctx.charger_stop_requested,
-                                   m_ctx.sa_schedule_list, m_ctx.error_status_code(), m_ctx.rcd_error());
-                saved_ac_start_req.reset();
-                m_ctx.respond(res);
-                if (res.response_code >= dt::ResponseCode::FAILED) {
-                    m_ctx.session_stopped = true;
+                const auto req = saved_start_req.value();
+                saved_start_req.reset();
+                if (not respond(m_ctx, req, false)) {
                     return {};
                 }
-                return m_ctx.create_state<ChargingStatus>();
+                return m_ctx.create_state<AcChargeLoopStart>();
             }
         }
         return {};
@@ -153,6 +197,7 @@ Result PowerDelivery::feed(Event ev) {
     if (ev == Event::TIMEOUT) {
         const auto* timeout = m_ctx.get_active_timeout();
         if (timeout and *timeout == d20::TimeoutType::CONTACTOR) {
+            // [V2G2-862]: the performance time expired with the contactor still open.
             logf_warning("PowerDelivery contactor timeout reached, terminating session");
             message_2::PowerDeliveryResponse res;
             res.header.session_id = m_ctx.get_session_id();
@@ -164,60 +209,76 @@ Result PowerDelivery::feed(Event ev) {
         return {};
     }
 
-    if (ev != Event::V2GTP_MESSAGE) {
+    return {};
+}
+
+Result AcPowerDelivery::on_request(const message_2::Variant& received) {
+    const auto type = received.get_type();
+    if (type == message_2::Type::PowerDeliveryReq) {
+        const auto& req = received.get<message_2::PowerDeliveryRequest>();
+
+        // The contactor gate ([V2G2-858]): hold the response here rather than in the shared action, so that
+        // action stays a plain function.
+        if (req.charge_progress == dt::ChargeProgress::Start and not m_ctx.evse().ac_contactor_closed) {
+            report_power_delivery_parameter(m_ctx, req);
+            mark_power_delivery_started(m_ctx);
+            saved_start_req = req;
+            m_ctx.feedback.signal(session::feedback::Signal::AC_CLOSE_CONTACTOR);
+            m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, CONTACTOR_PERFORMANCE_TIME_MS);
+            return {};
+        }
+
+        return process_ac_power_delivery(m_ctx, req);
+    } else {
+        logf_warning("Expected PowerDeliveryReq! But got type id: %d", received.get_type());
+        respond_sequence_error(m_ctx, received.get_type());
+        return {};
+    }
+}
+
+// An action on a transition, not a wait state. The caller has matched the type against its own
+// accepted set, and on AC has already satisfied the contactor gate.
+Result process_ac_power_delivery(Context& m_ctx, const message_2::PowerDeliveryRequest& req) {
+    report_power_delivery_parameter(m_ctx, req);
+
+    if (req.charge_progress == dt::ChargeProgress::Start) {
+        mark_power_delivery_started(m_ctx);
+        if (not respond(m_ctx, req, false)) {
+            return {};
+        }
+        return m_ctx.create_state<AcChargeLoopStart>();
+    }
+
+    if (req.charge_progress == dt::ChargeProgress::Renegotiate) {
+        return renegotiate(m_ctx, req, false);
+    }
+
+    // CHARGE_LOOP_FINISHED is DC-only, mirroring the is_dc_charger gate EvseV2G puts on it.
+    if (not respond(m_ctx, req, false)) {
         return {};
     }
 
-    // An EV aborting sends SessionStopReq; hand it to SessionStop for a clean SessionStopRes.
-    if (m_ctx.peek_request_type() == message_2::Type::SessionStopReq) {
-        return m_ctx.create_state<SessionStop>();
-    }
+    // [V2G2-913]: arm the CP State B gate for the following SessionStop ([V2G2-920]..[V2G2-922]).
+    m_ctx.set_power_delivery_stopped();
+    m_ctx.set_contactor_closed(false);
+    m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
+    return m_ctx.create_state<SessionStop>();
+}
 
-    const auto variant = m_ctx.pull_request();
+Result process_dc_power_delivery(Context& m_ctx, const message_2::PowerDeliveryRequest& req) {
+    report_power_delivery_parameter(m_ctx, req);
 
-    const auto req = variant->get_if<message_2::PowerDeliveryRequest>();
-    if (req == nullptr) {
-        logf_warning("Expected PowerDeliveryReq! But code type id: %d", variant->get_type());
-        // [V2G2-539]: answer with the received-type response carrying FAILED_SequenceError, then close.
-        respond_sequence_error(m_ctx, *variant);
-        m_ctx.session_stopped = true;
-        return {};
-    }
-
-    // The request must echo the assigned SessionID [V2G2-388]; a mismatch is answered with
-    // PowerDeliveryRes/FAILED_UnknownSession and terminates the session.
-    if (reject_unknown_session(m_ctx, *variant)) {
-        return {};
-    }
-
-    if (req->dc_ev_power_delivery_parameter.has_value()) {
-        const auto& param = req->dc_ev_power_delivery_parameter.value();
-        m_ctx.report_ev_status(param.dc_ev_status);
-
-        // DC_EVPowerDeliveryParameter carries the completion flags but no remaining times; those stay
-        // absent so the module does not overwrite the charge loop's values with zeroes.
-        session::feedback::DcEvChargeProgress progress{};
-        progress.charging_complete = param.charging_complete;
-        progress.bulk_charging_complete = param.bulk_charging_complete;
-        m_ctx.report_charge_progress(progress);
-    }
-
-    const bool is_dc = m_ctx.dc_charging;
-
-    if (req->charge_progress == dt::ChargeProgress::Start) {
-        // IEC 61851-23:2023 CC.3.5.3: the EV was told at ChargeParameterDiscovery that no energy is
-        // available, but asks to start charging anyway. Refuse instead of entering a charge loop the
-        // charger cannot serve (EvseV2G iso_server.cpp:1765). AllowEvToIgnorePause deliberately lets it
-        // through -- that is what the mode is for. DC only (EvseV2G parity): an AC EV is never told to
-        // pause (the CPD notification is DC-only in both stacks), so it may start and is throttled by the
-        // 0 A limit in every ChargingStatusRes instead.
-        if (is_dc and (m_ctx.session_config.no_energy_pause == d20::NoEnergyPauseMode::BeforeCableCheck or
-                       m_ctx.session_config.no_energy_pause == d20::NoEnergyPauseMode::AfterCableCheckPreCharge)) {
+    if (req.charge_progress == dt::ChargeProgress::Start) {
+        // IEC 61851-23:2023 CC.3.5.3: the EV was told no energy is available but asks to start anyway.
+        // AllowEvToIgnorePause deliberately lets it through -- that is what the mode is for. DC only: an AC
+        // EV is never told to pause, and is throttled by the 0 A limit in every ChargingStatusRes instead.
+        if (m_ctx.session_config.no_energy_pause == d20::NoEnergyPauseMode::BeforeCableCheck or
+            m_ctx.session_config.no_energy_pause == d20::NoEnergyPauseMode::AfterCableCheckPreCharge) {
             logf_warning("The EV did not pause the session although the EVSE signalled that no energy is "
                          "available; answering PowerDeliveryRes/FAILED");
-            auto res = handle_request(*req, m_ctx.get_session_id(), is_dc, m_ctx.sa_schedule_tuple_id,
-                                      m_ctx.isolation_level(), m_ctx.charger_stop_requested, m_ctx.sa_schedule_list,
-                                      m_ctx.error_status_code(), m_ctx.rcd_error());
+            auto res = handle_request(req, m_ctx.get_session_id(), true, m_ctx.session().sa_schedule_tuple_id,
+                                      m_ctx.isolation_level(), m_ctx.evse().charger_stop_requested,
+                                      m_ctx.session().sa_schedule_list, m_ctx.error_status_code(), m_ctx.rcd_error());
             res.response_code = dt::ResponseCode::FAILED;
             m_ctx.respond(res);
             m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
@@ -225,100 +286,37 @@ Result PowerDelivery::feed(Event ev) {
             return {};
         }
 
-        m_ctx.feedback.signal(session::feedback::Signal::SETUP_FINISHED);
-        // Record that charging was started so a later Renegotiate is accepted [V2G2-812].
-        m_ctx.power_delivery_started = true;
+        mark_power_delivery_started(m_ctx);
 
-        if (not is_dc) {
-            if (m_ctx.ac_contactor_closed) {
-                // Resuming after a renegotiation: the contactor never re-opened, so no fresh
-                // ClosedContactor confirmation will arrive. Respond OK immediately.
-                const auto res = handle_request(*req, m_ctx.get_session_id(), false, m_ctx.sa_schedule_tuple_id,
-                                                m_ctx.isolation_level(), m_ctx.charger_stop_requested,
-                                                m_ctx.sa_schedule_list, m_ctx.error_status_code(), m_ctx.rcd_error());
-                m_ctx.respond(res);
-                if (res.response_code >= dt::ResponseCode::FAILED) {
-                    m_ctx.session_stopped = true;
-                    return {};
-                }
-                return m_ctx.create_state<ChargingStatus>();
-            }
-            // AC: close the contactor first, respond once it is confirmed closed.
-            saved_ac_start_req = *req;
-            m_ctx.feedback.signal(session::feedback::Signal::AC_CLOSE_CONTACTOR);
-            m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, CONTACTOR_TIMEOUT_MS);
+        if (not respond(m_ctx, req, true)) {
             return {};
         }
-
-        const auto res = handle_request(*req, m_ctx.get_session_id(), true, m_ctx.sa_schedule_tuple_id,
-                                        m_ctx.isolation_level(), m_ctx.charger_stop_requested, m_ctx.sa_schedule_list,
-                                        m_ctx.error_status_code(), m_ctx.rcd_error());
-        m_ctx.respond(res);
-        if (res.response_code >= dt::ResponseCode::FAILED) {
-            m_ctx.session_stopped = true;
-            return {};
-        }
-        return m_ctx.create_state<CurrentDemand>();
+        // Due once from here on, not once per loop-state instance -- the loop state is rebuilt around a
+        // metering receipt.
+        m_ctx.clear_charge_loop_started();
+        return m_ctx.create_state<DcChargeLoop>();
     }
 
-    // Renegotiate: acknowledge and return to ChargeParameterDiscovery (EvseV2G iso_server.cpp:1596).
-    if (req->charge_progress == dt::ChargeProgress::Renegotiate) {
-        // [V2G2-812]: a Renegotiate received before any PowerDelivery(Start) is illegal. Answer FAILED
-        // (with a well-formed EVSE status) and terminate the session.
-        if (not m_ctx.power_delivery_started) {
-            logf_warning("PowerDelivery(Renegotiate) received before any Start; answering FAILED [V2G2-812]");
-            auto res = handle_request(*req, m_ctx.get_session_id(), is_dc, m_ctx.sa_schedule_tuple_id,
-                                      m_ctx.isolation_level(), m_ctx.charger_stop_requested, m_ctx.sa_schedule_list,
-                                      m_ctx.error_status_code(), m_ctx.rcd_error());
-            res.response_code = dt::ResponseCode::FAILED;
-            m_ctx.respond(res);
-            m_ctx.session_stopped = true;
-            return {};
-        }
-        const auto res = handle_request(*req, m_ctx.get_session_id(), is_dc, m_ctx.sa_schedule_tuple_id,
-                                        m_ctx.isolation_level(), m_ctx.charger_stop_requested, m_ctx.sa_schedule_list,
-                                        m_ctx.error_status_code(), m_ctx.rcd_error());
-        m_ctx.respond(res);
-        if (res.response_code >= dt::ResponseCode::FAILED) {
-            m_ctx.session_stopped = true;
-            return {};
-        }
-        return m_ctx.create_state<ChargeParameterDiscovery>();
+    if (req.charge_progress == dt::ChargeProgress::Renegotiate) {
+        return renegotiate(m_ctx, req, true);
     }
 
-    // Stop. CHARGE_LOOP_FINISHED is DC-only, mirroring the is_dc_charger gate EvseV2G puts on it
-    // (iso_server.cpp:1784): it tells EvseManager to switch the DC power supply off and stop the
-    // over-voltage monitor. An AC session just opens the contactor (below).
-    if (is_dc) {
-        m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
-    }
+    // Tells EvseManager to switch the DC supply off and stop the over-voltage monitor.
+    m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
 
-    const auto res = handle_request(*req, m_ctx.get_session_id(), is_dc, m_ctx.sa_schedule_tuple_id,
-                                    m_ctx.isolation_level(), m_ctx.charger_stop_requested, m_ctx.sa_schedule_list,
-                                    m_ctx.error_status_code(), m_ctx.rcd_error());
-    m_ctx.respond(res);
-    if (res.response_code >= dt::ResponseCode::FAILED) {
-        m_ctx.session_stopped = true;
+    if (not respond(m_ctx, req, true)) {
         return {};
     }
 
-    // [V2G2-913] After PowerDelivery(Stop) the EV must signal CP State B before the next request;
-    // arm the CP State B gate for the following WeldingDetection/SessionStop ([V2G2-920]..[V2G2-922]).
-    m_ctx.power_delivery_stopped = true;
+    // [V2G2-913]: arm the CP State B gate for the following WeldingDetection ([V2G2-920]..[V2G2-922]).
+    m_ctx.set_power_delivery_stopped();
 
-    if (is_dc) {
-        // With the contactor open the isolation status verified by the previous cable check no longer
-        // holds: a post-stop restart (WeldingDetection -> ChargeParameterDiscovery -> CableCheck) must
-        // re-run the physical isolation test. Renegotiation (above) keeps the contactor closed, so it
-        // keeps cable_check_done and still skips the re-test (ISO 15118-2 §8.7.4.3 NOTE 1).
-        m_ctx.cable_check_done = false;
-        m_ctx.cable_check_fault = false;
-        m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
-        return m_ctx.create_state<WeldingDetection>();
-    }
-    m_ctx.ac_contactor_closed = false;
-    m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
-    return m_ctx.create_state<SessionStop>();
+    // With the contactor open the verified isolation no longer holds, so a post-stop restart must re-run
+    // the physical test. Renegotiation keeps the contactor closed and so keeps cable_check_done (NOTE 1
+    // of 8.7.4.3).
+    m_ctx.invalidate_cable_check();
+    m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
+    return m_ctx.create_state<PostCharge>();
 }
 
 } // namespace iso15118::d2::state

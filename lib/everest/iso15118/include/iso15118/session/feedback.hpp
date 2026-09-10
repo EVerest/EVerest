@@ -50,17 +50,12 @@ enum class Signal {
 struct DcMaximumLimits {
     float voltage{NAN};
     float current{NAN};
-    // Optional, unlike voltage and current: DIN SPEC 70121 and ISO 15118-2 make EVMaximumPowerLimit an
-    // optional field of DC_EVChargeParameter (and of CurrentDemandReq), and ISO 15118-20 always sends it.
-    // An EV that omits it leaves this unset instead of having a voltage * current product invented for
-    // it -- EvseV2G passes the EVMaximumPowerLimit_isUsed flag straight through (iso_server.cpp:510,
-    // din_server.cpp:300), and the dc_ev_maximum_limits var declares all three fields optional.
+    // Optional, unlike voltage and current: an EV that omits EVMaximumPowerLimit leaves this unset
+    // rather than having a voltage * current product invented for it.
     std::optional<float> power{std::nullopt};
 };
 
-// The EV's DC_EVStatus as carried by every DC request of DIN SPEC 70121 and ISO 15118-2 (both message
-// layers use shared_datatypes::DcEvErrorCode). ISO 15118-20 has no counterpart -- it reports the state
-// of charge in DisplayParameters -- so this feedback exists only for the pre-20 protocols.
+// ISO 15118-20 has no counterpart -- it reports the state of charge in DisplayParameters.
 struct DcEvStatus {
     bool ready{false};
     shared_datatypes::DcEvErrorCode error_code{shared_datatypes::DcEvErrorCode::NO_ERROR};
@@ -70,7 +65,6 @@ struct DcEvStatus {
     std::optional<bool> ress_conditioning;
 };
 
-// The EV's DC_EVChargeParameter from a DIN SPEC 70121 / ISO 15118-2 ChargeParameterDiscoveryReq.
 struct DcEvChargeParameters {
     float max_current{0.0f};
     float max_voltage{0.0f};
@@ -79,13 +73,10 @@ struct DcEvChargeParameters {
     std::optional<float> energy_request;  // Wh
     std::optional<int8_t> full_soc;       // %
     std::optional<int8_t> bulk_soc;       // %
-    // DC_EVStatus.EVRESSSOC of the same request, so a consumer building an OCPP ChargingNeeds does not
-    // have to correlate it with the separate dc_ev_status feedback.
+    // Repeated from the same request so a consumer building an OCPP ChargingNeeds need not correlate it.
     int8_t ress_soc{0};
 };
 
-// The EV's AC_EVChargeParameter from an ISO 15118-2 ChargeParameterDiscoveryReq. DIN SPEC 70121 is DC
-// only and never carries this.
 struct AcEvChargeParameters {
     float e_amount{0.0f}; // Wh
     float max_voltage{0.0f};
@@ -93,24 +84,18 @@ struct AcEvChargeParameters {
     float min_current{0.0f};
 };
 
-// What the EV asked for in a DIN SPEC 70121 / ISO 15118-2 ChargeParameterDiscoveryReq: the requested
-// energy transfer mode plus whichever of the two EVChargeParameter variants it sent. ISO 15118-20
-// reports the equivalent through notify_ev_charging_needs, whose -20 datatypes have no pre-20
-// counterpart, hence this separate feedback.
+// ISO 15118-20 reports the equivalent through notify_ev_charging_needs, whose datatypes have no
+// pre-20 counterpart.
 struct EvChargeParameters {
     shared_datatypes::EnergyTransferMode requested_energy_transfer{shared_datatypes::EnergyTransferMode::DC_extended};
     std::optional<DcEvChargeParameters> dc;
     std::optional<AcEvChargeParameters> ac;
-    // Seconds from now until the EV intends to leave. ISO 15118-2 only: DIN SPEC 70121 has no
-    // DepartureTime element.
+    // ISO 15118-2 only: DIN SPEC 70121 has no DepartureTime element.
     std::optional<uint32_t> departure_time;
 };
 
-// EV-reported charge progress. The remaining times come from a DIN SPEC 70121 / ISO 15118-2
-// CurrentDemandReq; the two completion flags come from that request and from PowerDeliveryReq's
-// DC_EVPowerDeliveryParameter, which carries no remaining times -- there they stay absent rather than
-// being reported as zero. Emitted on change only, since the EV repeats the values in every charge-loop
-// request.
+// PowerDeliveryReq carries the completion flags without the remaining times, which stay absent
+// there rather than being reported as zero. Emitted on change only.
 struct DcEvChargeProgress {
     std::optional<float> remaining_time_to_full_soc; // s
     std::optional<float> remaining_time_to_bulk_soc; // s
@@ -140,18 +125,15 @@ using AcChargeLoopReq = std::variant<AcReqControlMode, dt::DisplayParameters, Me
 using AcLimits = std::variant<dt::AC_CPDReqEnergyTransferMode, dt::BPT_AC_CPDReqEnergyTransferMode,
                               dt::DER_AC_CPDReqEnergyTransferMode>;
 
-// Which PnC certificate exchange the SECC is relaying to the backend (ISO 15118-2).
 enum class CertificateExchangeAction {
     Install,
     Update,
 };
 
-// How the V2G session ended on the wire, reported right after the session-ending response was
-// written to the socket. Terminate/Pause mirror the ChargingSession of a positive SessionStopRes --
-// the anchor for the CP-oscillator retain time (DIN 70121 [V2G-DC-968]); DIN has no ChargingSession
-// parameter and always maps to Terminate. FailedTermination means the SECC ended the session with a
-// FAILED_* response (sequence error, unknown session): the oscillator must go off without delay
-// ([V2G-DC-942]) and the SECC closes the TCP connection itself ([V2G-DC-940], no linger).
+// Reported right after the session-ending response was written to the socket. Terminate/Pause
+// anchor the CP-oscillator retain time ([V2G-DC-968]); DIN has no ChargingSession and always maps to
+// Terminate. FailedTermination means the oscillator goes off without delay and the SECC closes the
+// TCP connection itself ([V2G-DC-942]/[V2G-DC-940], no linger).
 enum class SessionStopAction {
     Terminate,
     Pause,
@@ -164,27 +146,18 @@ struct Callbacks {
     std::function<void(const DcChargeLoopReq&)> dc_charge_loop_req;
     std::function<void(const DcMaximumLimits&)> dc_max_limits;
 
-    // DIN SPEC 70121 / ISO 15118-2: the EV's DC_EVStatus (ready flag, error code, RESS state of charge).
-    // Emitted on change only, since the EV repeats it in every DC request (EvseV2G publish_DIN_DcEvStatus
-    // / publish_iso_DcEvStatus parity).
+    // Emitted on change only, since the EV repeats it in every DC request.
     std::function<void(const DcEvStatus&)> dc_ev_status;
 
-    // DIN SPEC 70121 / ISO 15118-2: what the EV asked for in ChargeParameterDiscoveryReq. Carries the
-    // per-session EV facts the module surfaces as ev_info (battery capacity, energy request, full/bulk
-    // SoC, departure time, the AC limits) and as the OCPP ChargingNeeds notification.
+    // Surfaces as the module's ev_info and as the OCPP ChargingNeeds notification.
     std::function<void(const EvChargeParameters&)> ev_charge_parameters;
 
-    // DIN SPEC 70121 / ISO 15118-2: the EV's charge progress from the charge loop and from
-    // PowerDeliveryReq. Emitted on change only.
     std::function<void(const DcEvChargeProgress&)> dc_ev_charge_progress;
     std::function<void(const AcChargeLoopReq&)> ac_charge_loop_req;
-    // Every V2G message the session handled, request and response alike, together with the complete
-    // V2GTP frame it travelled in (8-byte header + EXI payload) exactly as it went over the wire --
-    // what EvseV2G publishes as v2g_messages.exi / .exi_base64 (v2g_server.cpp:271). The frame view is
-    // only valid for the duration of the call; it is empty when the bytes are not available.
+    // Request and response alike, with the complete V2GTP frame exactly as it went over the wire (what
+    // EvseV2G publishes as v2g_messages). The frame view is only valid for the duration of the call.
     std::function<void(const V2gMessageType&, const io::StreamInputView& exi_frame)> v2g_message;
-    // The protocol list the EV offered in SupportedAppProtocolReq, reported before the SECC picks one
-    // (so a failed negotiation is reported too, EvseV2G v2g_server.cpp:467 parity).
+    // Reported before the SECC picks one, so a failed negotiation is reported too (EvseV2G parity).
     std::function<void(const message_20::SupportedAppProtocolRequest&)> ev_app_protocols;
     std::function<void(const std::string&)> evccid;
     std::function<void(const std::string&)> selected_protocol;
@@ -200,23 +173,16 @@ struct Callbacks {
     std::function<void(const AcLimits&)> ac_limits;
     std::function<void(const std::string&, const std::string&)> ev_termination;
 
-    // A positive SessionStopRes was written to the socket (all protocols). Anchors the CP-oscillator
-    // retain time [V2G-DC-968]; does NOT imply link teardown (DLINK_* signals still follow later).
+    // Anchors the CP-oscillator retain time [V2G-DC-968]; does NOT imply link teardown.
     std::function<void(SessionStopAction)> session_stop_res_sent;
 
-    // DIN SPEC 70121 / ISO 15118-2: the payment option the EV selected and the SECC accepted
-    // (ServicePaymentSelectionReq / PaymentServiceSelectionReq). ISO 15118-20 has no counterpart -- it
-    // negotiates authorization services instead.
+    // ISO 15118-20 has no counterpart -- it negotiates authorization services instead.
     std::function<void(shared_datatypes::PaymentOption)> selected_payment_option;
 
-    // ISO 15118-2 Plug-and-Charge: the SECC verified a signed AuthorizationReq and requests PnC
-    // authorization for the given eMAID (and PEM contract certificate chain) from the higher layer.
     std::function<void(const std::string& emaid, const std::string& contract_chain_pem)> require_auth_pnc;
 
-    // ISO 15118-2 Plug-and-Charge certificate relay: the SECC received a CertificateInstallationReq or
-    // CertificateUpdateReq and forwards the raw request EXI (base64) plus which action it is to the higher
-    // layer (CSMS/CPS backend). The response is injected back asynchronously via a CertificateResponse
-    // control event.
+    // The raw request EXI (base64) goes to the CSMS/CPS backend; the response is injected back
+    // asynchronously via a CertificateResponse control event.
     std::function<void(const std::string& exi_request_base64, CertificateExchangeAction action)> certificate_request;
 };
 
@@ -234,8 +200,7 @@ public:
     void ev_charge_parameters(const feedback::EvChargeParameters&) const;
     void dc_ev_charge_progress(const feedback::DcEvChargeProgress&) const;
     void ac_charge_loop_req(const feedback::AcChargeLoopReq&) const;
-    // \p exi_frame is the full V2GTP frame the message travelled in; the engines omit it (the Session
-    // owns the wire bytes and attaches them on the way through, see Session's callback wrapping).
+    // \p exi_frame is the full V2GTP frame; the engines omit it, the Session attaches it on the way through.
     void v2g_message(const V2gMessageType&, const io::StreamInputView& exi_frame = {}) const;
     void ev_app_protocols(const message_20::SupportedAppProtocolRequest&) const;
     void evcc_id(const std::string&) const;

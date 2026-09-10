@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
-//
-// The SupportedAppProtocol negotiation is now run by the SECC session driver (not the FSM), so it is
-// covered here at function level against session::secc_sap::handle_request, the SECC counterpart of the
-// EVCC ev_sap free functions.
 #include <catch2/catch_test_macros.hpp>
 
 #include <optional>
@@ -109,8 +105,7 @@ SCENARIO("ISO15118-20 SECC supported app protocol negotiation") {
         req.app_protocol.push_back(make_app_protocol("urn:iso:std:iso:15118:-20:DC", 2, 2));
         req.app_protocol.push_back(make_app_protocol("urn:iso:std:iso:15118:-20:AC", 1, 1));
 
-        // With energy-service-based selection and a DC-only SECC, the higher-priority AC offer is
-        // rejected and the DC schema is chosen instead.
+        // With a DC-only SECC the higher-priority AC offer is rejected and the DC schema chosen instead.
         const auto result = session::secc_sap::handle_request(req, supported_protocols, supported_energy_services, true,
                                                               custom_namespace, /*tls_active=*/false);
 
@@ -125,7 +120,6 @@ SCENARIO("ISO15118-20 SECC supported app protocol negotiation") {
         message_20::SupportedAppProtocolRequest req;
         req.app_protocol.push_back(make_app_protocol("urn:iso:std:iso:15118:-20:DC", 1, 1));
 
-        // ISO 15118-20 is offered by the EV but the SECC is configured to only support ISO 15118-2.
         const auto result = session::secc_sap::handle_request(req, {ProtocolId::ISO15118_2}, supported_energy_services,
                                                               false, std::nullopt, /*tls_active=*/false);
 

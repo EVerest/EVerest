@@ -14,29 +14,28 @@ enum class Event {
     CONTROL_MESSAGE,
     TIMEOUT,
 
-    // internal events
     FAILED,
 };
 
 enum class StateID {
     SessionSetup,
     ServiceDiscovery,
-    ServiceDetail,
-    PaymentServiceSelection,
+    ServiceSelection,
+    Identification,
     PaymentDetails,
-    CertificateInstallation,
     Authorization,
     ChargeParameterDiscovery,
-    PowerDelivery,
-    SessionStop,
+    AcPowerDelivery,
     MeteringReceipt,
-    // DC branch
+    SessionStop,
     CableCheck,
+    PreChargeStart,
     PreCharge,
-    CurrentDemand,
+    DcChargeLoop,
+    PostCharge,
     WeldingDetection,
-    // AC branch
-    ChargingStatus,
+    AcChargeLoopStart,
+    AcChargeLoop,
 };
 
 struct Result {
@@ -61,10 +60,22 @@ struct StateBase {
     }
 
     virtual void enter(){};
-    virtual Result feed(Event) = 0;
+
+    // Consumes a V2GTP message once and applies what holds in every state -- the SessionID [V2G2-460].
+    Result feed(Event ev);
+
     virtual void leave(){};
 
 protected:
+    // Control events and timeouts; states that react to neither need not override it.
+    virtual Result on_event(Event) {
+        return {};
+    }
+
+    // The message is already consumed, so a state cannot hand it on: every state is a wait node and the
+    // action it takes is a function call, not a transition. Answering [V2G2-459] is its own business.
+    virtual Result on_request(const message_2::Variant& received) = 0;
+
     Context& m_ctx;
 
 private:

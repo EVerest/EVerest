@@ -85,7 +85,6 @@ bool run_resetting_client(std::atomic<bool>& reset_done) {
     return true;
 }
 
-// Connect to the server on loopback and close again; returns true once connected.
 bool run_connecting_client() {
     sockaddr_in6 addr{};
     addr.sin6_family = AF_INET6;
@@ -140,8 +139,7 @@ SCENARIO("ConnectionPlain survives a close() from the ACCEPTED event handler") {
             const bool got_closed = poll_until(
                 poll_manager, [&]() { return saw_closed.load(); }, 5s);
 
-            // Extra poll cycles: a closed fd wrongly re-registered by handle_connect would
-            // dispatch handle_data here and trip its connection_open assertion.
+            // A closed fd wrongly re-registered by handle_connect would trip handle_data's assertion here.
             for (int i = 0; i < 5; ++i) {
                 poll_manager.poll(10);
             }
