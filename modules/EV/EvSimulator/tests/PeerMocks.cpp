@@ -97,6 +97,7 @@ void MockIso15118Ev::call_set_dc_params(const ::types::iso15118::DcEvParameters&
        << ",max_current_limit=" << to_string(params.max_current_limit.value_or(-1))
        << ",max_power_limit=" << to_string(params.max_power_limit.value_or(-1))
        << ",max_voltage_limit=" << to_string(params.max_voltage_limit.value_or(-1))
+       << ",min_voltage_limit=" << to_string(params.min_voltage_limit.value_or(-1))
        << ",energy_capacity=" << to_string(params.energy_capacity.value_or(-1)) << ")";
     records.emplace_back(os.str());
 }

@@ -281,6 +281,7 @@ bool FsmContext::iso_start_charging(API_types::ev_simulator::ChargeMode mode,
         dc_params.max_current_limit = static_cast<float>(cfg.dc_max_current_limit);
         dc_params.max_power_limit = static_cast<float>(cfg.dc_max_power_limit);
         dc_params.max_voltage_limit = static_cast<float>(cfg.dc_max_voltage_limit);
+        dc_params.min_voltage_limit = static_cast<float>(cfg.dc_min_voltage_limit);
         dc_params.energy_capacity = static_cast<float>(cfg.dc_energy_capacity);
         peer_actions.iso.set_dc_params(dc_params);
     }
