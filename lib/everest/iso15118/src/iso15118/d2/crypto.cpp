@@ -14,10 +14,9 @@
 #include <cbv2g/iso_2/iso2_msgDefDecoder.h>
 #include <cbv2g/iso_2/iso2_msgDefEncoder.h>
 
-// The EVCC contract-key handling below uses the classic EC_KEY / EC_POINT API to parse the DHpublickey
-// point and rebuild the contract key from its raw scalar. These are marked deprecated in OpenSSL 3.0 but
-// remain fully supported; suppress the deprecation attribute for this translation unit (documented
-// OpenSSL mechanism) rather than reimplement point parsing via the more verbose OSSL_PARAM path.
+// The EVCC contract-key handling below uses the classic EC_KEY / EC_POINT API to parse the
+// DHpublickey point and rebuild the contract key from its raw scalar. Deprecated in OpenSSL 3.0 but
+// fully supported; suppressed here rather than reimplemented via the more verbose OSSL_PARAM path.
 #define OPENSSL_SUPPRESS_DEPRECATED
 
 #include <openssl/bn.h>
@@ -52,7 +51,6 @@ bool sha256(const uint8_t* data, std::size_t len, std::array<uint8_t, SHA256_LEN
     return EVP_Digest(data, len, out.data(), &md_len, EVP_sha256(), nullptr) == 1 and md_len == SHA256_LEN;
 }
 
-// ECDSA-P256 verify of a raw r||s signature (64 bytes) over a SHA-256 digest.
 bool ecdsa_verify(EVP_PKEY* pkey, const uint8_t* sig_rs, std::size_t sig_len,
                   const std::array<uint8_t, SHA256_LEN>& digest) {
     if (sig_len != ECDSA_SIG_LEN) {
@@ -86,10 +84,9 @@ bool ecdsa_verify(EVP_PKEY* pkey, const uint8_t* sig_rs, std::size_t sig_len,
     }
     EVP_PKEY_CTX_free(ctx);
     OPENSSL_free(der);
-    // A failed EVP_PKEY_verify pushes an entry onto OpenSSL's thread-local error queue. Left
-    // uncleared it poisons the next OpenSSL call on this thread -- the TLS SSL_read/SSL_write that
-    // should carry the FAILED_* response then aborts ("SSL_read_ex ... ECDSA verify"), so the SECC
-    // drops the connection instead of answering. Clear the queue on every exit path.
+    // A failed EVP_PKEY_verify pushes an entry onto OpenSSL's thread-local error queue. Left uncleared
+    // it poisons the next OpenSSL call on this thread -- the SSL_write that should carry the FAILED_*
+    // response aborts instead, so the SECC drops the connection rather than answering.
     ERR_clear_error();
     return ok;
 }
@@ -130,8 +127,6 @@ std::string strip_dashes(std::string in) {
     return in;
 }
 
-// --- EVCC signing / decryption helpers ---
-
 // xmldsig algorithm identifiers (ISO 15118-2 uses EXI canonicalization).
 constexpr char ALGO_CANONICAL_EXI[] = "http://www.w3.org/TR/canonical-exi/";
 constexpr char ALGO_ECDSA_SHA256[] = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256";
@@ -148,7 +143,6 @@ PKEY_ptr load_private_key(const PrivateKey& key) {
     if (bio == nullptr) {
         return PKEY_ptr(nullptr, &EVP_PKEY_free);
     }
-    // The password (if any) is passed as the OpenSSL PEM callback userdata.
     void* pw = key.password ? const_cast<char*>(key.password->c_str()) : nullptr;
     PKEY_ptr pkey(PEM_read_bio_PrivateKey(bio, nullptr, nullptr, pw), &EVP_PKEY_free);
     BIO_free(bio);
@@ -159,7 +153,6 @@ PKEY_ptr load_private_key(const PrivateKey& key) {
     return pkey;
 }
 
-// ECDSA-P256 sign a SHA-256 digest and return the raw r||s (64 bytes), or empty on failure.
 std::vector<uint8_t> ecdsa_sign(EVP_PKEY* pkey, const std::array<uint8_t, SHA256_LEN>& digest) {
     std::vector<uint8_t> out;
     EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(pkey, nullptr);
@@ -201,8 +194,7 @@ std::vector<uint8_t> ecdsa_sign(EVP_PKEY* pkey, const std::array<uint8_t, SHA256
     return out;
 }
 
-// ConcatKDF (NIST SP 800-56A) with SHA-256: single block (output <= 32 bytes) over
-// counter(0x00000001) || Z || OtherInfo. Returns `out_len` bytes.
+// ConcatKDF (NIST SP 800-56A) with SHA-256, single block over counter(0x00000001) || Z || OtherInfo.
 std::vector<uint8_t> concat_kdf_sha256(const std::vector<uint8_t>& shared_secret,
                                        const std::vector<uint8_t>& other_info, std::size_t out_len) {
     std::vector<uint8_t> input;
@@ -257,7 +249,6 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
         }
     }
 
-    // Build the untrusted intermediate stack from the SubCertificates.
     std::vector<X509_ptr> sub_x509;
     STACK_OF(X509)* untrusted = sk_X509_new_null();
     if (untrusted == nullptr) {
@@ -288,8 +279,7 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
         }
     }
 
-    // The leaf parsed and the eMAID matched: fill the contract identity so a forwardable failure can
-    // still hand the chain to the CSMS for central validation.
+    // Filled even on a forwardable failure, so the chain can still go to the CSMS.
     result.emaid = strip_dashes(cert_emaid);
     result.chain_pem = cert_to_pem(leaf.get());
     for (const auto& x : sub_x509) {
@@ -321,18 +311,15 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
             switch (err) {
             case X509_V_ERR_CERT_HAS_EXPIRED:
             case X509_V_ERR_CERT_NOT_YET_VALID:
-                // FAILED_CertificateExpired applies only to the contract (leaf) certificate itself
-                // (depth 0) -- ISO 15118-4 TC PaymentDetails_007. An expired/not-yet-valid Sub-CA
-                // (depth > 0) is a chain failure: report the generic FAILED, the code the ATS
-                // accepts for an expired issuer (PaymentDetails_009/_010, Tables 171/172).
+                // FAILED_CertificateExpired applies only to the contract leaf itself (TC PaymentDetails_007). An
+                // expired Sub-CA is a chain failure, reported as the generic FAILED the ATS accepts (_009/_010).
                 result.response_code =
                     (err_depth == 0) ? dt::ResponseCode::FAILED_CertificateExpired : dt::ResponseCode::FAILED;
                 break;
             case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT:
             case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY:
             case X509_V_ERR_SELF_SIGNED_CERT_IN_CHAIN:
-                // Local trust anchor missing (e.g. no MO root installed): eligible for central
-                // validation by the CSMS when allowed (EvseV2G NoCertificateAvailable parity).
+                // Eligible for central validation by the CSMS when allowed (EvseV2G NoCertificateAvailable parity).
                 result.response_code = dt::ResponseCode::FAILED;
                 result.forwardable = true;
                 break;
@@ -349,11 +336,9 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
     X509_STORE_free(store);
     sk_X509_free(untrusted);
 
-    // A verification failure (e.g. a malformed public key -> X509_PUBKEY_get0 decode error) leaves
-    // entries on OpenSSL's thread-local error queue. On TLS this queue is shared with the SECC's own
-    // SSL_read on the same thread, which would then misread the stale error as a connection fault and
-    // tear the TCP connection down before the FAILED PaymentDetailsRes is sent. Clear it so only this
-    // function's result (the ResponseCode) leaves the chain check.
+    // A verification failure leaves entries on OpenSSL's thread-local error queue, which on TLS is
+    // shared with the SECC's own SSL_read: it would misread the stale error as a connection fault and
+    // tear down the TCP connection before the FAILED PaymentDetailsRes is sent.
     ERR_clear_error();
 
     return result;
@@ -364,7 +349,6 @@ bool verify_authorization_signature(const std::vector<uint8_t>& request_exi, con
         return false;
     }
 
-    // Re-decode the raw request to recover the cbv2g iso2 structs (Header.Signature + AuthorizationReq).
     exi_bitstream_t in_stream;
     exi_bitstream_init(&in_stream, const_cast<uint8_t*>(request_exi.data()), request_exi.size(), 0, nullptr);
     auto doc = std::make_unique<iso2_exiDocument>();
@@ -499,7 +483,6 @@ bool verify_metering_receipt_signature(const std::vector<uint8_t>& request_exi, 
     std::array<uint8_t, MAX_EXI_SIZE> exi_buffer{};
     exi_bitstream_t stream;
 
-    // 1) digest over the signed MeteringReceiptReq EXI fragment; compare against Reference[0].DigestValue.
     {
         auto fragment = std::make_unique<iso2_exiFragment>();
         init_iso2_exiFragment(fragment.get());
@@ -526,7 +509,6 @@ bool verify_metering_receipt_signature(const std::vector<uint8_t>& request_exi, 
         }
     }
 
-    // 2) digest over the SignedInfo xmldsig fragment; ECDSA-verify against the contract public key.
     std::array<uint8_t, SHA256_LEN> si_digest{};
     {
         auto sig_fragment = std::make_unique<iso2_xmldsigFragment>();
@@ -567,7 +549,6 @@ bool verify_metering_receipt_signature(const std::vector<uint8_t>& request_exi, 
 
 namespace {
 
-// SHA-256 the EXI fragment of the single set request body element in `doc`.
 bool digest_request_fragment(const iso2_exiDocument& doc, std::array<uint8_t, SHA256_LEN>& out) {
     auto fragment = std::make_unique<iso2_exiFragment>();
     init_iso2_exiFragment(fragment.get());
@@ -597,15 +578,13 @@ bool digest_request_fragment(const iso2_exiDocument& doc, std::array<uint8_t, SH
     return sha256(buffer.data(), exi_bitstream_get_length(&stream), out);
 }
 
-// Build the xmldsig Signature over the single set request body element (already carrying its Id) and
-// attach it to the message header, then encode the whole document. Returns the EXI payload or empty.
+// Returns the EXI payload, or empty on failure.
 std::vector<uint8_t> finalize_signed(iso2_exiDocument& doc, const std::string& element_id, const PrivateKey& key) {
     std::array<uint8_t, SHA256_LEN> element_digest{};
     if (not digest_request_fragment(doc, element_digest)) {
         return {};
     }
 
-    // Build SignedInfo with a single Reference to "#<element_id>".
     auto& signature = doc.V2G_Message.Header.Signature;
     init_iso2_SignatureType(&signature);
     auto& signed_info = signature.SignedInfo;
@@ -708,7 +687,6 @@ std::vector<uint8_t> serialize_signed(const message_2::CertificateInstallationRe
     message_2::convert(req.header, doc.V2G_Message.Header);
     CB_SET_USED(doc.V2G_Message.Body.CertificateInstallationReq);
     message_2::convert(req, doc.V2G_Message.Body.CertificateInstallationReq);
-    // convert() already sets Id from req.id; reuse it as the signature reference.
     return finalize_signed(doc, req.id, key);
 }
 
@@ -749,7 +727,6 @@ bool verify_certificate_installation_res(const std::vector<uint8_t>& res_exi, co
         return false;
     }
 
-    // Chain-verify the SA provisioning leaf against the V2G root.
     {
         std::vector<X509_ptr> sub_x509;
         STACK_OF(X509)* untrusted = sk_X509_new_null();
@@ -794,7 +771,6 @@ bool verify_certificate_installation_res(const std::vector<uint8_t>& res_exi, co
         return false;
     }
 
-    // Digest over the SignedInfo xmldsig fragment (optional fields cleared per [V2G2-771]).
     std::array<uint8_t, MAX_EXI_SIZE> exi_buffer{};
     exi_bitstream_t stream;
     std::array<uint8_t, SHA256_LEN> si_digest{};
@@ -846,7 +822,6 @@ std::vector<uint8_t> decrypt_contract_private_key(const std::vector<uint8_t>& en
         return {};
     }
 
-    // Build the peer (sender ephemeral) public key on prime256v1 from the uncompressed point.
     EC_GROUP* group = EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1);
     EC_POINT* point = (group != nullptr) ? EC_POINT_new(group) : nullptr;
     EC_KEY* peer_ec = (group != nullptr) ? EC_KEY_new_by_curve_name(NID_X9_62_prime256v1) : nullptr;
@@ -876,7 +851,6 @@ std::vector<uint8_t> decrypt_contract_private_key(const std::vector<uint8_t>& en
         return {};
     }
 
-    // ECDH shared secret Z.
     std::vector<uint8_t> shared_secret;
     {
         EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(oem_key.get(), nullptr);

@@ -12,8 +12,8 @@ using namespace iso15118::message_2::datatypes;
 
 SCENARIO("Se/Deserialize ISO-2 certificate installation messages") {
 
-    // The SECC forwards the request to the backend as raw EXI, so the decoder marks the type but does not
-    // decode a message struct (see message_2::Variant). Encoding it is the EV side of the pair.
+    // The SECC forwards the request to the backend as raw EXI, so the decoder marks the type but does
+    // not decode a message struct. Encoding it is the EV side of the pair.
     GIVEN("Serialize certificate_installation_req") {
         message_2::CertificateInstallationRequest req;
         req.header.session_id = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
@@ -32,9 +32,8 @@ SCENARIO("Se/Deserialize ISO-2 certificate installation messages") {
         }
     }
 
-    // The SECC relays a successful CertificateInstallationRes from the backend as raw EXI, but it builds
-    // this response itself for an out-of-sequence request [V2G2-538]. Every element is schema-mandatory,
-    // so the placeholders it fills in have to survive a round trip.
+    // The SECC relays a successful response from the backend as raw EXI but builds this one itself for
+    // an out-of-sequence request, so the schema-mandatory placeholders have to survive a round trip.
     GIVEN("Round-trip certificate_installation_res with FAILED_SequenceError placeholders") {
         message_2::CertificateInstallationResponse res;
         res.header.session_id = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};

@@ -25,10 +25,6 @@ std::unique_ptr<message_2::Variant> Context::pull_request() {
     return message_exchange.pull_request();
 }
 
-message_2::Type Context::peek_request_type() const {
-    return message_exchange.peek_request_type();
-}
-
 void Context::report_ev_status(const dt::DC_EVStatus& status) {
     const auto unchanged = last_reported_ev_status.has_value() and
                            last_reported_ev_status->ev_ready == status.ev_ready and
@@ -61,8 +57,12 @@ void Context::report_charge_progress(const session::feedback::DcEvChargeProgress
     feedback.dc_ev_charge_progress(progress);
 }
 
-void Context::setup_header(message_2::Header& header) const {
-    header.session_id = session_id;
+void Context::report_dc_setpoint(const DcSetpoint& setpoint, const session::feedback::DcReqControlMode& mode) {
+    if (last_forwarded_dc_setpoint == setpoint) {
+        return;
+    }
+    last_forwarded_dc_setpoint = setpoint;
+    feedback.dc_charge_loop_req(mode);
 }
 
 } // namespace iso15118::d2
@@ -110,14 +110,6 @@ std::tuple<bool, size_t, io::v2gtp::PayloadType, message_2::Type> MessageExchang
     response_type = message_2::Type::None;
 
     return retval;
-}
-
-message_2::Type MessageExchange::peek_request_type() const {
-    if (not request) {
-        logf_warning("Tried to access V2G message, but there is none");
-        return message_2::Type::None;
-    }
-    return request->get_type();
 }
 
 } // namespace iso15118::d2

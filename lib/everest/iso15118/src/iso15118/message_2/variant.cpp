@@ -15,8 +15,7 @@ namespace iso15118::message_2 {
 
 Variant::Variant(const io::StreamInputView& buffer_view) {
 
-    // Retain the raw EXI payload so PnC signature verification can re-decode the request into the
-    // cbv2g iso2 structs (needed to rebuild the signed AuthorizationReq fragment).
+    // So PnC signature verification can re-decode the request into the cbv2g iso2 structs.
     exi_payload.assign(buffer_view.payload, buffer_view.payload + buffer_view.payload_len);
 
     auto input_stream = get_exi_input_stream(buffer_view);
@@ -100,17 +99,13 @@ Variant::Variant(const io::StreamInputView& buffer_view) {
     } else if (body.MeteringReceiptReq_isUsed) {
         insert_type(va, body.MeteringReceiptReq);
     } else if (body.CertificateInstallationRes_isUsed) {
-        // EVCC direction: fully decoded (contract chain, encrypted key, DHpublickey, eMAID) so the EV
-        // can verify + install the contract certificate.
         insert_type(va, body.CertificateInstallationRes);
     } else if (body.CertificateInstallationReq_isUsed) {
-        // Relay-only: mark the type so the d2 SECC engine can forward the raw request EXI
-        // (get_exi_payload()) to the module and splice the raw CertificateInstallationRes back. No
-        // message struct is decoded here (data stays null, no custom deleter).
+        // Relay-only: mark the type so the engine can forward the raw request EXI and splice the raw
+        // response back. No message struct is decoded (data stays null, no custom deleter).
         type = Type::CertificateInstallationReq;
     } else if (body.CertificateUpdateReq_isUsed) {
-        // Relay-only, same as CertificateInstallationReq: forward the raw request EXI and splice the raw
-        // CertificateUpdateRes back. The action (Update) is derived from this type in the relay state.
+        // Relay-only as well; the Update action is derived from this type in the relay state.
         type = Type::CertificateUpdateReq;
     } else {
         // MeteringReceipt is out of scope
@@ -122,8 +117,8 @@ Variant::Variant(const io::StreamInputView& buffer_view) {
         assert(data.get_deleter() != nullptr);
         assert(type != Type::None);
     } else if (type == Type::None) {
-        // A relay-only type (e.g. CertificateInstallationReq) carries no data but a valid type; only a
-        // genuinely unhandled message (type still None) is an error.
+        // A relay-only type carries no data but a valid type; only a genuinely unhandled message (type
+        // still None) is an error.
         logf_error("Failed due to: %s\n", error.c_str());
     }
 }

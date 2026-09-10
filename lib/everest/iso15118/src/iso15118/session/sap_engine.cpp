@@ -34,9 +34,7 @@ void SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamI
         return;
     }
 
-    // Report what the EV offered before deciding anything, so a failed negotiation is reported too
-    // (EvseV2G fills its list inside the same loop that evaluates the offer and publishes it
-    // regardless of the outcome, v2g_server.cpp:454-467).
+    // Reported before deciding anything, so a failed negotiation is reported too (EvseV2G parity).
     feedback.ev_app_protocols(*req);
 
     if (selecting_sap_based_on_energy_service) {
@@ -67,8 +65,7 @@ void SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamI
     } else if (selected_namespace == DIN70121_NAMESPACE) {
         feedback.selected_protocol("DIN70121");
     } else if (selected_namespace == ISO2_NAMESPACE) {
-        // EvseV2G-compatible string so downstream consumers (EvseManager / RpcApi) classify this as
-        // ISO 15118-2 exactly as the legacy stack does.
+        // EvseV2G-compatible string, so EvseManager / RpcApi classify this as ISO 15118-2 as before.
         feedback.selected_protocol("ISO15118-2-2013");
     } else if (custom_selected) {
         feedback.selected_protocol(custom_protocol.value());
@@ -86,13 +83,10 @@ void SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamI
         return;
     }
 
-    // ISO 15118-20 mandates TLS for all V2G communication -- [V2G20-2677]: "Only full-handshake TLS
-    // shall be used for V2G communication between EVCC and SECC" -- so there is no conformant plaintext
-    // -20 session. Unlike DIN SPEC 70121 (which secc_sap excludes on TLS outright) the negotiation is
-    // deliberately NOT refused here: unsecured -20 stays usable for bring-up and interop debugging, and
-    // ENFORCE_NO_TLS deployments that leave -20 in the offer keep working instead of failing every
-    // session with Failed_NoNegotiation. The deviation is logged so it cannot go unnoticed. A custom
-    // namespace runs on the -20 engine but is outside the standard, so it is not reported.
+    // ISO 15118-20 mandates TLS ([V2G20-2677]), so there is no conformant plaintext -20 session. Unlike
+    // DIN SPEC 70121, which secc_sap excludes on TLS outright, the negotiation is deliberately NOT
+    // refused: unsecured -20 stays usable for bring-up, and ENFORCE_NO_TLS deployments that leave -20 in
+    // the offer keep working instead of failing every session. The deviation is logged so it is noticed.
     if (protocol_id.value() == ProtocolId::ISO15118_20 and not custom_selected and not tls_active) {
         logf_warning("Negotiated ISO 15118-20 (%s) on an unsecured connection. ISO 15118-20 mandates TLS "
                      "[V2G20-2677], so this session is not standard-conformant",
@@ -109,14 +103,12 @@ void SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamI
 }
 
 void SapEngine::on_control_event(const d20::ControlEvent&) {
-    // No session exists yet, so there is nothing a charger-side event could act on. Events pushed
-    // during the handshake are dropped here (the module re-reports the ones that matter -- limits,
-    // errors, CP state -- to the protocol engine once the session runs).
+    // No session exists yet, so there is nothing a charger-side event could act on. The module
+    // re-reports the ones that matter to the protocol engine once the session runs.
 }
 
 void SapEngine::on_timeout(d20::TimeoutType) {
-    // The only timeout armed during the handshake is the sequence timeout guarding the wait for the
-    // SupportedAppProtocolReq (armed by the Session on TCP accept).
+    // The only timeout armed during the handshake is the sequence timeout guarding the first request.
     logf_error("Timeout reached during SupportedAppProtocol handshake. Stopping the session");
     stopped = true;
 }
@@ -130,14 +122,12 @@ std::optional<SeccOutgoing> SapEngine::take_outgoing() {
 }
 
 bool SapEngine::is_finished() const {
-    // Mirrors the protocol engines: never report finished while a response is still staged, so a
-    // FAILED_NoNegotiation still reaches the EV before the session is torn down.
+    // Never finished while a response is staged, so a FAILED_NoNegotiation still reaches the EV.
     return stopped and not has_outgoing();
 }
 
 void SapEngine::request_shutdown() {
     // There is no V2G session to end gracefully yet -- a SessionStop needs a running state machine.
-    // The controller's hard shutdown path (Session::close()) tears the connection down instead.
     logf_info("Shutdown requested during the SupportedAppProtocol handshake; no session to stop yet");
 }
 

@@ -9,18 +9,36 @@
 
 namespace iso15118::d2::state {
 
-struct PreCharge : public StateBase {
-    PreCharge(Context& ctx) : StateBase(ctx, StateID::PreCharge) {
+// PreChargeReq repeats every 25-250 ms and each forward makes the module republish, so the target is
+// forwarded on change only.
+using PreChargeTarget = std::optional<std::pair<double, double>>;
+
+// [V2G2-584]: a PowerDeliveryReq is not in sequence until the EV has pre-charged at least once.
+struct PreChargeStart : public StateBase {
+    PreChargeStart(Context& ctx) : StateBase(ctx, StateID::PreChargeStart) {
     }
 
     void enter() final;
-    Result feed(Event) final;
+    Result on_event(Event) final;
+    Result on_request(const message_2::Variant& received) final;
 
 private:
-    bool pre_charge_initiated{false};
-    // Last EV target (voltage, current) forwarded via dc_charge_loop_req; PreChargeReq repeats every
-    // 25-250 ms, so forward only on change (EvseV2G publish_dc_ev_target_voltage_current parity).
-    std::optional<std::pair<double, double>> last_forwarded_target;
+    PreChargeTarget forwarded_target{};
+};
+
+// [V2G2-587] widens the node to the PowerDeliveryReq that starts delivery.
+struct PreCharge : public StateBase {
+    // \p forwarded is handed over so the change filter is not reset by the transition.
+    PreCharge(Context& ctx, PreChargeTarget forwarded) :
+        StateBase(ctx, StateID::PreCharge), forwarded_target(std::move(forwarded)) {
+    }
+
+    void enter() final;
+    Result on_event(Event) final;
+    Result on_request(const message_2::Variant& received) final;
+
+private:
+    PreChargeTarget forwarded_target;
 };
 
 } // namespace iso15118::d2::state

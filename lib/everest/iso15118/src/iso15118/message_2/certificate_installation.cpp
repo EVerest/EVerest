@@ -38,9 +38,8 @@ template <> void convert(const struct iso2_CertificateInstallationResType& in, C
     out.emaid = std::string(in.eMAID.CONTENT.characters, in.eMAID.CONTENT.charactersLen);
 }
 
-// Encode direction of the chain, needed for the responses the SECC builds itself (an out-of-sequence
-// CertificateInstallationReq); a successful installation is relayed from the backend as raw EXI and
-// never passes through here.
+// Encode direction, needed for the responses the SECC builds itself; a successful installation is
+// relayed from the backend as raw EXI and never passes through here.
 template <> void convert(const CertificateChain& in, struct iso2_CertificateChainType& out) {
     init_iso2_CertificateChainType(&out);
     if (in.id.has_value()) {
@@ -69,8 +68,8 @@ template <> void convert(const CertificateInstallationResponse& in, struct iso2_
     CPP2CB_BYTES(in.encrypted_private_key, out.ContractSignatureEncryptedPrivateKey.CONTENT);
     CPP2CB_BYTES(in.dh_public_key, out.DHpublickey.CONTENT);
     CPP2CB_STRING(in.emaid, out.eMAID.CONTENT);
-    // The Id attributes are mandatory (the signature references them) but not modelled in the C++
-    // struct: a relayed response brings its own, a self-built one only needs them to be present.
+    // Mandatory (the signature references them) but not modelled in the C++ struct: a relayed response
+    // brings its own, a self-built one only needs them to be present.
     CPP2CB_STRING(std::string("contractSignatureEncryptedPrivateKey"), out.ContractSignatureEncryptedPrivateKey.Id);
     CPP2CB_STRING(std::string("dhPublicKey"), out.DHpublickey.Id);
     CPP2CB_STRING(std::string("eMAID"), out.eMAID.Id);
@@ -79,7 +78,6 @@ template <> void convert(const CertificateInstallationResponse& in, struct iso2_
 template <> void convert(const CertificateInstallationRequest& in, struct iso2_CertificateInstallationReqType& out) {
     init_iso2_CertificateInstallationReqType(&out);
 
-    // Id is a mandatory attribute of CertificateInstallationReq (no _isUsed flag).
     CPP2CB_STRING(in.id, out.Id);
 
     CPP2CB_BYTES(in.oem_provisioning_cert, out.OEMProvisioningCert);
@@ -100,8 +98,7 @@ template <> void insert_type(VariantAccess& va, const struct iso2_CertificateIns
 }
 
 template <> int serialize_to_exi(const CertificateInstallationRequest& in, exi_bitstream_t& out) {
-    // Unsigned serialization (used by tests). The production EV path signs the element with the OEM
-    // provisioning key via d2::crypto::serialize_signed, which attaches Header.Signature.
+    // Unsigned serialization, used by tests; the production EV path signs via serialize_signed.
     iso2_exiDocument doc{};
     convert(in.header, doc.V2G_Message.Header);
     CB_SET_USED(doc.V2G_Message.Body.CertificateInstallationReq);
