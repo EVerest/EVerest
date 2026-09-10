@@ -8,12 +8,8 @@ namespace iso15118::message_2 {
 
 template <typename T> struct PayloadTypeTrait;
 
-//
-// definitions of type traits
-//
-// All ISO 15118-2 messages use V2GTP payload type 0x8001 (SAP). Dispatch happens
-// by protocol context at the session level, not by payload type.
-//
+// All ISO 15118-2 messages use the V2GTP payload type 0x8001 (SAP); dispatch happens by
+// protocol context at session level, not by payload type.
 #define CREATE_TYPE_TRAIT(struct_name, payload_type)                                                                   \
     struct struct_name;                                                                                                \
     template <> struct PayloadTypeTrait<struct_name> {                                                                 \

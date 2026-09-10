@@ -57,9 +57,8 @@ ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, int connected_fd,
 }
 
 ConnectionPlain::~ConnectionPlain() {
-    // Make sure the socket is closed and unregistered from the poll manager even if the session was
-    // torn down without an explicit close(). The event callback targets the (dying) session, so
-    // silence it first.
+    // Also covers a session torn down without an explicit close(). The event callback targets the
+    // (dying) session, so silence it first.
     event_callback = nullptr;
     close();
 }
@@ -75,11 +74,9 @@ Ipv6EndPoint ConnectionPlain::get_public_endpoint() const {
 void ConnectionPlain::write(const uint8_t* buf, size_t len) {
     assert(connection_open);
 
-    // The fd is non-blocking, so a peer with a stalled receive window can make ::write() accept
-    // only part of a multi-kB response (or none, EAGAIN) -- that is backpressure, not an error.
-    // write_all waits for POLLOUT and continues, bounded by WRITE_TIMEOUT_MS so a peer that stays
-    // stalled ends the session (throw -> session teardown) instead of stalling the shared poll
-    // loop forever.
+    // The fd is non-blocking, so a stalled peer can make ::write() accept only part of a response --
+    // backpressure, not an error. write_all waits for POLLOUT, bounded by WRITE_TIMEOUT_MS so a peer
+    // that stays stalled ends the session instead of stalling the shared poll loop forever.
     if (not write_all(fd, buf, len, WRITE_TIMEOUT_MS)) {
         logf_error("write failed with error code: %d", errno);
         log_and_throw("Failed to write()");
@@ -120,13 +117,11 @@ void ConnectionPlain::handle_connect() {
     const auto accepted = accept_connection(fd, address);
 
     if (accepted.status == AcceptResult::Status::Transient) {
-        // The listener stays registered; just wait for the next connection.
         return;
     }
 
     if (accepted.status == AcceptResult::Status::Fatal) {
-        // Tear down just this connection (drops the listener, delivers CLOSED -> the session is
-        // reaped) instead of the whole controller loop.
+        // Tear down just this connection instead of the whole controller loop.
         logf_error("Closing the TCP listener after a fatal accept failure");
         close();
         return;
@@ -137,8 +132,7 @@ void ConnectionPlain::handle_connect() {
     const auto address_name = sockaddr_in6_to_name(address);
 
     if (not address_name) {
-        // Never fatal (and would leak the accepted fd if it threw): log, drop the accepted socket
-        // and tear down this connection.
+        // Never fatal, and would leak the accepted fd if it threw.
         logf_error("Failed to determine string representation of ipv6 socket address");
         ::close(accept_fd);
         close();
@@ -150,17 +144,15 @@ void ConnectionPlain::handle_connect() {
     poll_manager.unregister_fd(fd);
     ::close(fd);
 
-    // Point the member fd at the accepted socket BEFORE delivering events: an event handler
-    // reacting to ACCEPTED/OPEN with write()/read()/close() must not act on the just-closed
+    // BEFORE delivering events: a handler reacting to ACCEPTED/OPEN must not act on the just-closed
     // listener fd, whose number the kernel may already have reused.
     fd = accept_fd;
 
     call_if_available(event_callback, ConnectionEvent::ACCEPTED);
 
     if (closed) {
-        // An event handler closed the connection during ACCEPTED (e.g. protocol/TLS gating):
-        // CLOSED has already been delivered, so the connection must not be revived by setting
-        // connection_open, and OPEN must not be delivered after CLOSED.
+        // An event handler closed the connection during ACCEPTED: CLOSED is already delivered, so the
+        // connection must not be revived and OPEN must not follow it.
         return;
     }
 
@@ -185,8 +177,7 @@ void ConnectionPlain::handle_bootstrap() {
     call_if_available(event_callback, ConnectionEvent::ACCEPTED);
 
     if (closed) {
-        // Same guard as handle_connect: a close() from the ACCEPTED handler already delivered
-        // CLOSED and unregistered the fd; don't revive the connection or fire OPEN after it.
+        // Same guard as handle_connect: don't revive the connection or fire OPEN after CLOSED.
         return;
     }
 
@@ -194,7 +185,6 @@ void ConnectionPlain::handle_bootstrap() {
     call_if_available(event_callback, ConnectionEvent::OPEN);
 
     if (closed) {
-        // An event handler closed the connection; don't re-register the closed fd.
         return;
     }
 
@@ -215,9 +205,8 @@ void ConnectionPlain::close() {
     logf_info("Closing TCP connection");
 
     if (connection_open) {
-        // Established connection: send our FIN. The grace period for an EV-initiated close happens
-        // non-blocking in the session driver *before* this call (DIN [V2G-DC-937/938], ISO 15118-20
-        // [V2G20-1633]); close() itself must never stall the shared poll loop.
+        // The grace period for an EV-initiated close happens non-blocking in the session driver *before*
+        // this call; close() itself must never stall the shared poll loop.
         const auto shutdown_result = shutdown(fd, SHUT_RDWR);
 
         if (shutdown_result == -1) {

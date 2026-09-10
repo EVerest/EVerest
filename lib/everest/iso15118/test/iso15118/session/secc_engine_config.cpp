@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Pionix GmbH and Contributors to EVerest
 //
-// The config mappers the DIN SPEC 70121 and ISO 15118-2 engines share between building the session
-// config and applying a mid-session control event. EvseManager keeps pushing DC limits (energy
-// management) and physical values (power-supply capabilities) for the whole session, so both paths must
-// land on the same fields.
+// EvseManager keeps pushing DC limits and physical values for the whole session, so building the
+// session config and applying a mid-session control event must land on the same fields.
 #include <catch2/catch_test_macros.hpp>
 
 #include <limits>
@@ -117,9 +115,8 @@ SCENARIO("DIN SPEC 70121 SECC config mapping") {
             REQUIRE(config.evse_maximum_voltage_limit == 850.0);
         }
 
-        // This is the mid-session path: EvseManager lowers the site limit and the next
-        // CurrentDemandRes must announce the new value so the EV throttles; the
-        // ChargeParameterDiscoveryRes offer (the capabilities below) stays untouched.
+        // Mid-session path: the next CurrentDemandRes must announce the lowered site limit, while the
+        // ChargeParameterDiscoveryRes offer stays untouched.
         WHEN("Energy management lowers the limits") {
             apply_dc_limits(config, make_limits(60.0f, 30000.0f, 850.0f));
 

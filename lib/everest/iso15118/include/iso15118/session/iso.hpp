@@ -46,38 +46,28 @@ struct SessionState {
     bool fsm_needs_call{false};
 };
 
-// The power-path state the module currently holds, latched from the signals the engine sends it.
-//
-// A session that ends the regular way clears it with PowerDelivery(Stop). One that is torn down
-// instead -- mid-loop TCP drop, plug-out, session kill -- never gets there, so the state has to be
-// undone explicitly: EvseManager switches the DC supply off and stops the over-voltage and voltage
-// plausibility monitors on current_demand_finished, and drops the contactor on
-// dc_open_contactor/ac_open_contactor. EvseV2G does exactly this from connection_teardown()
-// (connection.cpp:507) off its session.is_charging flag; without it only EvseManager's CP-event
-// fallback is left.
+// The power-path state the module currently holds. A session that ends the regular way clears it
+// with PowerDelivery(Stop); one that is torn down instead -- mid-loop TCP drop, plug-out, kill --
+// never gets there, so it has to be undone explicitly, or only EvseManager's CP-event fallback is
+// left. EvseV2G does the same from connection_teardown() off its session.is_charging flag.
 struct PowerPath {
-    // Feed every signal the engine emits.
     void observe(session::feedback::Signal);
 
-    // The signals that undo whatever the module still holds, in the order they have to be sent.
-    // Clears the state, so a second call (close() after finish_session()) yields nothing.
+    // In the order they have to be sent. Clears the state, so a second call yields nothing.
     std::vector<session::feedback::Signal> take_teardown_signals();
 
     bool charge_loop_running{false};
     bool ac_contactor_closed{false};
 };
 
-// SECC-side session driver. It owns the transport, the shared in/out buffers and the timing rules, and
-// delegates the protocol itself to the engine it currently runs on: every session starts on the
-// SapEngine (SupportedAppProtocol handshake) and is handed over to the engine of the negotiated
-// generation once that handshake succeeded. See secc_engine.hpp for the engine contract.
+// Owns the transport, the shared buffers and the timing rules, and delegates the protocol to the
+// engine it currently runs on. See secc_engine.hpp for the engine contract.
 class Session {
 public:
     Session(std::unique_ptr<io::IConnection>, session::SessionConfig, const session::feedback::Callbacks&,
             std::optional<d20::PauseContext>&, std::optional<d2::PauseContext>&);
-    // Skip the SupportedAppProtocol handshake: the caller has already negotiated the protocol (external
-    // SAP, e.g. start_session() on a handed-over socket) and the session starts directly on the
-    // ISO 15118-20 engine, expecting a SessionSetupReq as the first message.
+    // Skip the SupportedAppProtocol handshake: the caller has already negotiated the protocol, so the
+    // session starts directly on the -20 engine and expects a SessionSetupReq first.
     Session(std::unique_ptr<io::IConnection>, session::SessionConfig, const session::feedback::Callbacks&,
             std::optional<d20::PauseContext>&, std::optional<d2::PauseContext>&, bool skip_app_protocol_negotiation);
     ~Session();
@@ -85,14 +75,11 @@ public:
     TimePoint const& poll();
     void push_control_event(const d20::ControlEvent&);
 
-    // True once the end-of-session handling completed (TCP closed, D-LINK signal sent) and the
-    // controller can reap the session.
+    // True once the end-of-session handling completed and the controller can reap the session.
     bool is_finished() const;
 
-    // True once the V2G communication session is established, i.e. the first application request
-    // (SessionSetupReq) has reached the engine after the SupportedAppProtocol handshake. Until then the
-    // controller keeps V2G_SECC_CommunicationSetup_Timeout armed (it spans SLAC -> SDP -> TCP -> SAP ->
-    // SessionSetupReq); it is cancelled here and the per-message V2G_SECC_Sequence_Timeout takes over.
+    // True once the first application request has reached the engine. Until then the controller keeps
+    // V2G_SECC_CommunicationSetup_Timeout armed, which spans SLAC -> SDP -> TCP -> SAP -> SessionSetupReq.
     bool is_v2g_session_established() const {
         return v2g_session_established;
     }
@@ -102,14 +89,10 @@ public:
     void request_shutdown();
 
 private:
-    // The V2G session is logically over (engine finished / driver stopped); the TCP connection may
-    // still be open while we wait for the EV to close it first.
+    // The TCP connection may still be open while we wait for the EV to close it first.
     bool session_over() const;
-    // Close the connection (if still open) and send the D-LINK signal; marks the session reapable.
     void finish_session();
-    // Which D-LINK primitive releases the data link for the way this session ended.
     session::feedback::Signal teardown_signal() const;
-    // Undo the power-path state the module still holds (see PowerPath); part of every teardown.
     void open_power_path();
 
     std::unique_ptr<io::IConnection> connection;
@@ -122,63 +105,45 @@ private:
     // input buffer
     io::SdpPacket packet;
 
-    // output buffer, shared with the engine (the SupportedAppProtocol response is staged here too);
-    // see MAX_V2G_PACKET_SIZE for the sizing rationale.
+    // Shared with the engine; see MAX_V2G_PACKET_SIZE for the sizing rationale.
     uint8_t response_buffer[io::MAX_V2G_PACKET_SIZE];
 
-    // control event buffer, filled from the module's command threads and drained in poll()
     everest::lib::util::thread_safe_queue<d20::ControlEvent> control_event_queue;
 
-    // Shared with the engine (the timeouts are protocol-agnostic).
     d20::Timeouts timeouts;
 
     std::optional<d20::PauseContext>& pause_ctx;
-    // d2 pause context, owned by the controller so it survives the engine teardown on pause (mirrors the
-    // d20 pause_ctx); a returning EV re-joins the retained ISO-2 session with OK_OldSessionJoined.
+    // Owned by the controller so it survives the engine teardown on pause (mirrors the d20 pause_ctx).
     std::optional<d2::PauseContext>& d2_pause_ctx;
 
-    // Vehicle certificate hash captured on connection OPEN, handed to the engine on creation.
     std::optional<io::sha512_hash_t> vehicle_cert_hash{std::nullopt};
 
-    // Latest StopCharging request seen in poll()'s control-event delivery. An EVSE-initiated stop
-    // applies in any state, including the SupportedAppProtocol phase whose handshake engine ignores
-    // control events -- so a still-pending stop is re-delivered to the protocol engine right after the
-    // handover (see create_engine()), which latches it and arms its ignore-guard.
+    // Latest StopCharging seen in poll(). The handshake engine ignores control events, so a pending
+    // stop is re-delivered to the protocol engine right after the handover (see create_engine()).
     bool pending_stop_charging{false};
 
-    // Latched from the signals the engines send the module, so a teardown can undo them.
     PowerPath power_path;
 
-    // The V2GTP frame (header + payload) currently being dispatched to the engine, attached to the
-    // engine's v2g_message feedback on its way to the module. Only set for the duration of the
-    // on_packet() call; the packet buffer is reused afterwards.
+    // Only set for the duration of the on_packet() call; the packet buffer is reused afterwards.
     io::StreamInputView current_request_frame{};
 
     bool driver_stopped{false};
-    // Set once the first application request (SessionSetupReq) has reached the engine; the V2G session
-    // is then established and the controller drops the communication-setup timeout (is_v2g_session_established()).
+    // The controller then drops the communication-setup timeout (is_v2g_session_established()).
     bool v2g_session_established{false};
-    // End-of-session handling done (finish_session()/close() ran); controller-facing via is_finished().
     bool finished_reported{false};
-    // Armed when the session ends while the EV is still connected: deadline for the EV-first TCP
-    // close (CONNECTION_CLOSE_LINGER_MS), after which we close the connection ourselves.
+    // Deadline for the EV-first TCP close, after which we close the connection ourselves.
     std::optional<TimePoint> connection_close_deadline{std::nullopt};
-    // The session ended with a FAILED_* response (sequence error, unknown session): the SECC closes
-    // the TCP connection itself without the EV-first linger ([V2G-DC-940]).
+    // The SECC closes the TCP connection itself without the EV-first linger ([V2G-DC-940]).
     bool error_termination{false};
-    // A positive SessionStopRes (Terminate or Pause) went out: the session reached one of the two ends
-    // the standards call regular, so the data link is released with D-LINK_TERMINATE / D-LINK_PAUSE
-    // ([V2G2-724]/[V2G2-725], [V2G20-1776]/[V2G20-1777], DIN [V2G-DC-451]). Anything else that ends a
-    // session is an error and releases the link with D-LINK_ERROR instead -- see teardown_signal().
+    // One of the two regular ends, so the link is released with D-LINK_TERMINATE / D-LINK_PAUSE.
+    // Anything else is an error and releases it with D-LINK_ERROR instead -- see teardown_signal().
     bool clean_session_end{false};
-    // Armed on an SECC-initiated error close: the TCP connection is already closed (FIN out), the
-    // D-LINK signal fires when this deadline passes (FIN-flush grace, DLINK_SIGNAL_GRACE_MS).
+    // The TCP connection is already closed; the D-LINK signal fires when this FIN-flush grace passes.
     std::optional<TimePoint> dlink_signal_deadline{std::nullopt};
 
-    // The engine the session currently runs on. Held by value: there is exactly one at any time, it is
-    // swapped in place at the SupportedAppProtocol handover (SapEngine -> protocol engine) and the
-    // alternatives have nothing in common but the contract in secc_engine.hpp, so the variant replaces
-    // both the allocation and the virtual dispatch of a base-class pointer.
+    // Held by value: there is exactly one at any time, swapped in place at the handover, and the
+    // alternatives have nothing in common but the contract, so the variant replaces both the allocation
+    // and the virtual dispatch of a base-class pointer.
     using Engine = std::variant<SapEngine, DinSeccEngine, D2SeccEngine, D20SeccEngine>;
     Engine engine;
 
@@ -191,22 +156,17 @@ private:
         return std::visit(std::forward<Function>(f), engine);
     }
 
-    // True while the session still runs on the SapEngine, i.e. no protocol has been negotiated yet.
     bool in_sap_phase() const {
         return std::holds_alternative<SapEngine>(engine);
     }
 
-    // The engines stage their responses in response_buffer, behind the V2GTP header the Session fills
-    // in on send.
+    // Staged in response_buffer, behind the V2GTP header the Session fills in on send.
     io::StreamOutputView engine_output_view();
 
     TimePoint next_session_event;
 
     void handle_connection_event(io::ConnectionEvent event);
-    // Swap the SapEngine for the engine of the negotiated protocol once the handshake response has been
-    // sent, or stop the driver if the handshake failed.
     void advance_sap_handover();
-    // Replace the active engine with the one for the negotiated protocol. False if there is none.
     bool create_engine(const SapEngine::Negotiated&);
     void send_response();
 

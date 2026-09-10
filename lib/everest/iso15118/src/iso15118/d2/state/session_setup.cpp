@@ -58,19 +58,12 @@ void SessionSetup::enter() {
     logf_debug("Enter state: SessionSetup");
 }
 
-Result SessionSetup::feed(Event ev) {
-    if (ev != Event::V2GTP_MESSAGE) {
-        return {};
-    }
+Result SessionSetup::on_request(const message_2::Variant& received) {
 
-    const auto variant = m_ctx.pull_request();
-
-    const auto req = variant->get_if<message_2::SessionSetupRequest>();
+    const auto req = received.get_if<message_2::SessionSetupRequest>();
     if (req == nullptr) {
-        logf_warning("Expected SessionSetupReq! But code type id: %d", variant->get_type());
-        // [V2G2-539]: answer with the received-type response carrying FAILED_SequenceError, then close.
-        respond_sequence_error(m_ctx, *variant);
-        m_ctx.session_stopped = true;
+        logf_warning("Expected SessionSetupReq! But code type id: %d", received.get_type());
+        respond_sequence_error(m_ctx, received.get_type());
         return {};
     }
 
@@ -89,7 +82,7 @@ Result SessionSetup::feed(Event ev) {
         // session still runs the full message sequence (ServiceDiscovery onwards; [V2G2-741] and
         // Annex I.2), but session_resumed constrains the offered payment options to the retained one.
         m_ctx.set_session_id(received_id);
-        m_ctx.session_resumed = true;
+        m_ctx.set_session_resumed();
         new_session = false;
         logf_info("ISO2 SessionSetup: old session joined");
     } else {
