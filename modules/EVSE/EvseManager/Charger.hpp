@@ -286,6 +286,7 @@ private:
 
     bool start_transaction();
     void stop_transaction();
+    void restart_from_finished();
 
     void process_event(CPEvent event);
 
