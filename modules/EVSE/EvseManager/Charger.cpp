@@ -2293,6 +2293,20 @@ void Charger::set_hlc_allow_close_contactor(bool on) {
     shared_context.hlc_allow_close_contactor = on;
 }
 
+void Charger::dc_open_contactor_request() {
+    // PowerDelivery(stop): the EV asked for the contactors to open, and welding detection
+    // (which follows immediately in DIN/-2/-20) measures against open contactors. The
+    // permissive must be withdrawn BEFORE the EV opens its readiness switch (IEC 61851-23-3
+    // Table CC.111: t103 before t105): an MCS board support treats a CE C-exit under a
+    // standing permissive as an unintended loss of power-transfer readiness (CC.4.3) and
+    // latches an emergency that only an unplug clears. The later C->B CP event still runs
+    // the regular session-stop path in the IEC state machine; cable check re-enables the
+    // hlc contactor permission on resume from pause.
+    session_log.car(true, "DC HLC Open contactor");
+    set_hlc_allow_close_contactor(false);
+    bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
+}
+
 std::optional<types::evse_manager::StopTransactionReason> Charger::get_last_stop_transaction_reason() {
     Everest::scoped_lock_timeout lock(state_machine_mutex,
                                       Everest::MutexDescription::Charger_get_last_stop_transaction);
