@@ -166,7 +166,7 @@ jobs:
           build-kit run-script run_unit_tests
       - name: Archive test results
         if: ${{ always() && (steps.run_unit_tests.outcome == 'success' || steps.run_unit_tests.outcome == 'failure') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           if-no-files-found: error
           name: ${{ env.CTEST_REPORT_ARTIFACT_NAME }}
