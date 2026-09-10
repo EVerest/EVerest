@@ -94,9 +94,10 @@ enum class role_latch_state {
     not_configured,
     // The MCU has had no ACCEPTED config heartbeat since it booted. Not an error: the first config
     // that reaches the MCU applies, so this normally resolves within a heartbeat interval. It only
-    // appears on an MCS board - a CCS board reports its strapped role from the start - and if it
-    // persists, the config is not being accepted at all (a config_version the MCU rejects is the
-    // likely cause, which ship-together makes a development-time state).
+    // appears on an MCS board - a CCS board reports its strapped role from the start, and an MCS
+    // board with the persisted-role firmware reports its stored boot role from the start too - and
+    // if it persists, the config is not being accepted at all (a config_version the MCU rejects is
+    // the likely cause, which ship-together makes a development-time state).
     not_latched,
     // The MCU runs the role this host asked for.
     matched,

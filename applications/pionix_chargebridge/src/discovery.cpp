@@ -10,16 +10,23 @@
 namespace charge_bridge {
 
 namespace {
-// The board_type TXT record is the hardware name the firmware derives from its strap pins
-// (board_type_name() in the firmware's NonSecure main.c), not the configured role. Both
-// CCS EVSE variants (LU and QCA modem) answer ANY_EVSE. MCS hardware announces
-// "CB-MCS-EVSE" regardless of the latched role and is therefore not matched here.
+// The board_type TXT record. On CCS boards it is the hardware name the firmware derives from its
+// strap pins (board_type_name() in the firmware's NonSecure main.c); both CCS EVSE variants (LU
+// and QCA modem) answer ANY_EVSE. MCS hardware has no role strapping, so there the firmware
+// announces the role it boots with (persisted in its EEPROM identity, overridable once per boot
+// by charge_bridge.type): CB-MCS-EVSE or CB-MCS-EV, and the neutral CB-MCS while it has never
+// been provisioned, which either intent accepts so a fresh board can be reached by the host
+// that is about to provision it. A board provisioned for the other role is invisible to this
+// instance until it has been re-provisioned once with a fixed address.
 bool is_cb_match(std::string const& board_type, discovery_device_type discriminator) {
+    if (board_type == "CB-MCS") {
+        return true;
+    }
     switch (discriminator) {
     case discovery_device_type::CB_EV:
-        return board_type == "CB-CCS-EV-LU";
+        return board_type == "CB-CCS-EV-LU" or board_type == "CB-MCS-EV";
     case discovery_device_type::CB_EVSE:
-        return board_type == "CB-CCS-EVSE-LU" or board_type == "CB-CCS-EVSE-QCA";
+        return board_type == "CB-CCS-EVSE-LU" or board_type == "CB-CCS-EVSE-QCA" or board_type == "CB-MCS-EVSE";
     }
     return false;
 }
