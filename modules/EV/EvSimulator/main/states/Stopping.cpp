@@ -12,7 +12,7 @@ namespace module {
 namespace api = API_types::ev_simulator;
 
 void Stopping::enter() {
-    ctx.iso_stop_charging();
+    ctx.iso_end_session();
     ctx.allow_power_on(false);
     ctx.set_cp(::types::ev_board_support::EvCpState::B);
     ctx.arm_timer(std::chrono::seconds(10));
@@ -67,6 +67,7 @@ StateBase::Result Stopping::feed(EventType ev) {
     // an internal Plugged-only self-advance. Listed for switch exhaustiveness.
     case EK::ConfigureSession:
     case EK::BeginSession:
+    case EK::SetPresentValues:
     case EK::RaiseError:
     case EK::ClearError:
     case EK::Shutdown:

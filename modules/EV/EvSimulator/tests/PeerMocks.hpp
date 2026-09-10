@@ -60,6 +60,9 @@ public:
     void call_set_bpt_dc_params(const ::types::iso15118::DcEvBPTParameters& params);
     void call_enable_sae_j2847_v2g_v2h();
     void call_update_soc(double soc);
+    void call_abort_charging();
+    void call_cp_state_changed(::types::iso15118::CpState cp_state);
+    void call_update_present_values(const ::types::iso15118::EvPresentValues& values);
 
     bool next_start_charging_result{true};
     std::vector<std::string> records;

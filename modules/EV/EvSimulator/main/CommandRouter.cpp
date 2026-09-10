@@ -36,7 +36,7 @@ std::vector<Everest::UnsubscribeToken> setup_command_router(EvSimRuntime& rt, Ev
     auto& mqtt = mod.mqtt;
 
     std::vector<Everest::UnsubscribeToken> tokens;
-    tokens.reserve(17);
+    tokens.reserve(18);
 
     // Common wrapper: resolves the topic, wraps the user handler in a
     // try/catch. Handler failures are logged at error and surfaced via a
@@ -90,13 +90,29 @@ std::vector<Everest::UnsubscribeToken> setup_command_router(EvSimRuntime& rt, Ev
     };
     sub_void("plug", PlugCmd{});
     sub_void("unplug", UnplugCmd{});
-    sub_void("stop_session", StopSessionCmd{});
     sub_void("pause_session", PauseSessionCmd{});
     sub_void("resume_session", ResumeSessionCmd{});
     sub_void("clear_fault", ClearFaultCmd{});
     sub_void("query_state", QueryStateCmd{});
 
     // ---- param-bearing verbs ------------------------------------------------
+    // stop_session carries the teardown selector. An empty object (what every
+    // existing caller publishes) leaves `abort` false, so the default stays the
+    // clean stop and only a scenario asking for it gets the abrupt teardown.
+    subscribe("stop_session", [&rt](const std::string& payload) {
+        API_evsim::StopSessionParams p;
+        if (!API_evsim::adl_deserialize(payload, p)) {
+            throw std::runtime_error("bad stop_session payload");
+        }
+        rt.enqueue(Event{StopSessionCmd{p.abort}});
+    });
+    subscribe("set_present_values", [&rt](const std::string& payload) {
+        API_evsim::SetPresentValuesParams p;
+        if (!API_evsim::adl_deserialize(payload, p)) {
+            throw std::runtime_error("bad set_present_values payload");
+        }
+        rt.enqueue(Event{p});
+    });
     subscribe("set_soc", [&rt](const std::string& payload) {
         API_evsim::SetSocParams p;
         if (!API_evsim::adl_deserialize(payload, p)) {

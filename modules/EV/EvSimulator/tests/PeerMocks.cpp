@@ -113,6 +113,31 @@ void MockIso15118Ev::call_update_soc(double soc) {
     records.emplace_back("update_soc(SoC=" + to_string(soc) + ")");
 }
 
+void MockIso15118Ev::call_abort_charging() {
+    records.emplace_back("abort_charging()");
+}
+
+void MockIso15118Ev::call_cp_state_changed(::types::iso15118::CpState cp_state) {
+    records.emplace_back("cp_state_changed(cp_state=" + ::types::iso15118::cp_state_to_string(cp_state) + ")");
+}
+
+void MockIso15118Ev::call_update_present_values(const ::types::iso15118::EvPresentValues& values) {
+    std::ostringstream os;
+    os << "update_present_values(";
+    if (values.present_voltage) {
+        os << "present_voltage=" << to_string(*values.present_voltage);
+    } else {
+        os << "present_voltage=unset";
+    }
+    if (values.present_active_power) {
+        os << ",present_active_power=" << to_string(*values.present_active_power);
+    } else {
+        os << ",present_active_power=unset";
+    }
+    os << ")";
+    records.emplace_back(os.str());
+}
+
 // ---- MockEvSlac ---------------------------------------------------------
 
 void MockEvSlac::call_reset() {

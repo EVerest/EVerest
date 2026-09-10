@@ -106,6 +106,13 @@ inline PeerActions make_peer_actions(ActionMocks& mocks) {
     actions.iso.set_dc_params = [&mocks](const ::types::iso15118::DcEvParameters& params) {
         mocks.iso.call_set_dc_params(params);
     };
+    actions.iso.abort_charging = [&mocks]() { mocks.iso.call_abort_charging(); };
+    actions.iso.cp_state_changed = [&mocks](::types::iso15118::CpState st) {
+        mocks.iso.call_cp_state_changed(st);
+    };
+    actions.iso.update_present_values = [&mocks](const ::types::iso15118::EvPresentValues& values) {
+        mocks.iso.call_update_present_values(values);
+    };
     actions.iso.present = true;
 
     actions.slac.trigger_matching = [&mocks]() -> bool { return mocks.slac.call_trigger_matching(); };

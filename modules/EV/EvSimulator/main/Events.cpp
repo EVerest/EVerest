@@ -45,6 +45,9 @@ struct KindVisitor {
     EventKind operator()(const api::SetChargingCurrentParams&) const {
         return EventKind::SetChargingCurrent;
     }
+    EventKind operator()(const api::SetPresentValuesParams&) const {
+        return EventKind::SetPresentValues;
+    }
     EventKind operator()(const api::InjectFaultParams&) const {
         return EventKind::InjectFault;
     }
@@ -145,6 +148,8 @@ EventPayload default_payload_for(EventKind kind) {
         return ResumeSessionCmd{};
     case EventKind::SetChargingCurrent:
         return api::SetChargingCurrentParams{};
+    case EventKind::SetPresentValues:
+        return api::SetPresentValuesParams{};
     case EventKind::InjectFault:
         return api::InjectFaultParams{};
     case EventKind::ClearFault:
@@ -223,6 +228,8 @@ std::string_view command_verb(EventKind kind) {
         return "resume_session";
     case EventKind::SetChargingCurrent:
         return "set_charging_current";
+    case EventKind::SetPresentValues:
+        return "set_present_values";
     case EventKind::InjectFault:
         return "inject_fault";
     case EventKind::ClearFault:

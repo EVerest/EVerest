@@ -119,6 +119,7 @@ StateBase::Result Faulted::feed(EventType ev) {
     // an internal Plugged-only self-advance. Listed for switch exhaustiveness.
     case EK::ConfigureSession:
     case EK::BeginSession:
+    case EK::SetPresentValues:
     case EK::RaiseError:
     case EK::ClearError:
     case EK::Shutdown:

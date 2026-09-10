@@ -71,6 +71,15 @@ struct IsoPeer {
     std::function<void()> enable_sae_j2847_v2g_v2h;
     std::function<void(const ::types::iso15118::DcEvBPTParameters&)> set_bpt_dc_params;
     std::function<void(const ::types::iso15118::DcEvParameters&)> set_dc_params;
+    // Terminate the V2G session immediately, with no SessionStop exchange.
+    std::function<void()> abort_charging;
+    // The control pilot state the vehicle applies. The HLC stack has no board
+    // support connection of its own, so this is the only way it learns the CP
+    // state its own message-sequence checks are gated on.
+    std::function<void(::types::iso15118::CpState)> cp_state_changed;
+    // The present values the EV measures. Absent fields keep their last value
+    // at the consumer, so a partial update is additive rather than a reset.
+    std::function<void(const ::types::iso15118::EvPresentValues&)> update_present_values;
     bool present{false};
 };
 
@@ -227,6 +236,16 @@ struct SimVars {
     // FsmContext ctor and overwritten by a live present voltage when reported.
     std::optional<float> evse_dc_present_current_a;
     float dc_present_voltage_v{0.0f};
+    // Per-field overrides of the present values reported over ISO 15118 (the
+    // set_present_values command). Unset means echo what the EVSE delivered,
+    // so overriding one value never zeroes the other.
+    std::optional<float> present_voltage_override;
+    std::optional<float> present_active_power_override;
+    // Teardown selector latched from the stop_session payload: abort the V2G
+    // session instead of exchanging SessionStop. Cleared on Unplugged::enter
+    // (after Stopping has consumed it) so one aborting scenario cannot decide
+    // how a later session ends.
+    bool abort_on_stop{false};
     // Edge-detection state for on_battery_full policies. SocIntegrator sets
     // this to true the first tick SoC reaches cfg.battery_full_threshold_pct
     // and clears it when SoC drops back below; the stop_session / pause_if_iso
@@ -360,6 +379,23 @@ public:
     void iso_stop_charging();
     void iso_pause_charging();
     void iso_update_soc(float pct);
+
+    // Session teardown: aborts when vars.abort_on_stop is latched, otherwise a
+    // clean stop. The single place the teardown choice is read, so every path
+    // into Stopping honors the scenario's selection without threading a flag
+    // through each transition.
+    void iso_end_session();
+
+    // Report the present values the EV measures: what the EVSE delivered this
+    // tick, with vars.*_override substituted per field. The DC voltage is only
+    // sent in a DC mode, where it is the field the wire carries; the active
+    // power is sent in every mode, as EvManager does. Both fall back to the
+    // configured target before the first delivered value arrives (the same
+    // fallback the SoC integrator uses) rather than being left unset, because
+    // a present value never reported is transmitted as zero and reads at the
+    // SECC as a measured zero. A mode is required, so nothing is reported
+    // outside a session.
+    void iso_report_present_values(float power_w);
 
     // SLAC shortcut (guard peer_actions.slac.present)
     bool slac_trigger_matching();
