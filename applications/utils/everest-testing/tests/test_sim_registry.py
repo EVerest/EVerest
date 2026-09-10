@@ -319,10 +319,21 @@ _CONFIG_YAML_TWO_EV = textwrap.dedent("""\
 """)
 
 
+class _FakeSocket:
+    """Stand-in for the connected socket paho exposes via `Client.socket()`."""
+
+    def getpeername(self):
+        return ("127.0.0.1", 1883)
+
+    def getsockname(self):
+        return ("127.0.0.1", 54321)
+
+
 class _FakeMqttClient:
     """Minimal paho stand-in that records subscriptions and can inject messages."""
 
     def __init__(self):
+        self._sock = None
         self.subscriptions = []
         self.published = []
         self.events = []
@@ -363,11 +374,24 @@ class _FakeMqttClient:
 
     on_connect = None
     on_subscribe = None
+    on_socket_open = None
+    on_socket_close = None
+    on_connect_fail = None
 
     def connect(self, *_a, **_kw):
         self.events.append(("connect", None))
+        # paho hands back a live socket from connect() onwards, and the
+        # controller reads the peer off it to record which broker answered.
+        # Modelling that here keeps the double honest about the difference
+        # between "transport up, no CONNACK" and "transport down".
+        self._sock = _FakeSocket()
+        if self.on_socket_open is not None:
+            self.on_socket_open(self, None, self._sock)
         if self.autoconnack:
             self.fire_connack()
+
+    def socket(self):
+        return self._sock
 
     def fire_connack(self):
         self.events.append(("connack", None))
@@ -381,7 +405,10 @@ class _FakeMqttClient:
         pass
 
     def disconnect(self):
-        pass
+        if self._sock is not None:
+            self._sock = None
+            if self.on_socket_close is not None:
+                self.on_socket_close(self, None, None)
 
     # -- test helpers ------------------------------------------------------
     def deliver(self, topic, payload=b"1"):
