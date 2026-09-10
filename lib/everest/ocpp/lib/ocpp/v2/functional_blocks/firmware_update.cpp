@@ -101,7 +101,7 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
                 this->context.message_dispatcher.dispatch_call_async(call);
             }
 
-            // Disabling the connectors right before installing is the default when the caller did not specify
+            // Disabling the connectors right before installing is the default when the caller did not specify otherwise
             if (disable_connectors_during_install.value_or(true)) {
                 this->change_all_connectors_to_unavailable_for_firmware_update();
             }
