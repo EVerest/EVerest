@@ -3,18 +3,26 @@
 
 #include "ISO15118_evImpl.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <iterator>
 #include <sstream>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include <iso15118/d20/ac_powers.hpp>
 #include <iso15118/ev/config_validation.hpp>
 #include <iso15118/ev/service_family.hpp>
 #include <iso15118/io/logging.hpp>
-#include <iso15118/io/sdp.hpp>
+#include <iso15118/message/type.hpp>
+#include <iso15118/message/v2g_message_type.hpp>
+#include <iso15118/session/protocol.hpp>
 
 namespace {
 template <class F> class ScopeGuard {
@@ -30,6 +38,141 @@ public:
 private:
     F m_f;
 };
+
+std::string resolve_path(const std::string& configured, const std::filesystem::path& fallback) {
+    return configured.empty() ? fallback.string() : configured;
+}
+
+// Empty for a missing or blank file, which means an unencrypted private key.
+std::string read_trimmed_file(const std::string& path) {
+    std::ifstream file(path);
+    if (not file.is_open()) {
+        return {};
+    }
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    auto content = buffer.str();
+    const auto not_space = [](unsigned char c) { return std::isspace(c) == 0; };
+    content.erase(content.begin(), std::find_if(content.begin(), content.end(), not_space));
+    content.erase(std::find_if(content.rbegin(), content.rend(), not_space).base(), content.end());
+    return content;
+}
+
+const char* signal_to_string(iso15118::ev::feedback::Signal signal) {
+    using Signal = iso15118::ev::feedback::Signal;
+    switch (signal) {
+    case Signal::DLINK_TERMINATE:
+        return "DLINK_TERMINATE";
+    case Signal::DLINK_PAUSE:
+        return "DLINK_PAUSE";
+    case Signal::DLINK_ERROR:
+        return "DLINK_ERROR";
+    }
+    return "unknown";
+}
+
+constexpr types::iso15118::V2gMessageId message_20_type_to_id(iso15118::message_20::Type type) {
+    using Type = iso15118::message_20::Type;
+    using Id = types::iso15118::V2gMessageId;
+
+    switch (type) {
+    case Type::None:
+        return Id::UnknownMessage;
+    case Type::SupportedAppProtocolReq:
+        return Id::SupportedAppProtocolReq;
+    case Type::SupportedAppProtocolRes:
+        return Id::SupportedAppProtocolRes;
+    case Type::SessionSetupReq:
+        return Id::SessionSetupReq;
+    case Type::SessionSetupRes:
+        return Id::SessionSetupRes;
+    case Type::AuthorizationSetupReq:
+        return Id::AuthorizationSetupReq;
+    case Type::AuthorizationSetupRes:
+        return Id::AuthorizationSetupRes;
+    case Type::AuthorizationReq:
+        return Id::AuthorizationReq;
+    case Type::AuthorizationRes:
+        return Id::AuthorizationRes;
+    case Type::ServiceDiscoveryReq:
+        return Id::ServiceDiscoveryReq;
+    case Type::ServiceDiscoveryRes:
+        return Id::ServiceDiscoveryRes;
+    case Type::ServiceDetailReq:
+        return Id::ServiceDetailReq;
+    case Type::ServiceDetailRes:
+        return Id::ServiceDetailRes;
+    case Type::ServiceSelectionReq:
+        return Id::ServiceSelectionReq;
+    case Type::ServiceSelectionRes:
+        return Id::ServiceSelectionRes;
+    case Type::DC_ChargeParameterDiscoveryReq:
+        return Id::DcChargeParameterDiscoveryReq;
+    case Type::DC_ChargeParameterDiscoveryRes:
+        return Id::DcChargeParameterDiscoveryRes;
+    case Type::ScheduleExchangeReq:
+        return Id::ScheduleExchangeReq;
+    case Type::ScheduleExchangeRes:
+        return Id::ScheduleExchangeRes;
+    case Type::DC_CableCheckReq:
+        return Id::DcCableCheckReq;
+    case Type::DC_CableCheckRes:
+        return Id::DcCableCheckRes;
+    case Type::DC_PreChargeReq:
+        return Id::DcPreChargeReq;
+    case Type::DC_PreChargeRes:
+        return Id::DcPreChargeRes;
+    case Type::PowerDeliveryReq:
+        return Id::PowerDeliveryReq;
+    case Type::PowerDeliveryRes:
+        return Id::PowerDeliveryRes;
+    case Type::DC_ChargeLoopReq:
+        return Id::DcChargeLoopReq;
+    case Type::DC_ChargeLoopRes:
+        return Id::DcChargeLoopRes;
+    case Type::DC_WeldingDetectionReq:
+        return Id::DcWeldingDetectionReq;
+    case Type::DC_WeldingDetectionRes:
+        return Id::DcWeldingDetectionRes;
+    case Type::SessionStopReq:
+        return Id::SessionStopReq;
+    case Type::SessionStopRes:
+        return Id::SessionStopRes;
+    case Type::AC_ChargeParameterDiscoveryReq:
+        return Id::AcChargeParameterDiscoveryReq;
+    case Type::AC_ChargeParameterDiscoveryRes:
+        return Id::AcChargeParameterDiscoveryRes;
+    case Type::AC_ChargeLoopReq:
+        return Id::AcChargeLoopReq;
+    case Type::AC_ChargeLoopRes:
+        return Id::AcChargeLoopRes;
+    case Type::DER_AC_ChargeParameterDiscoveryReq:
+        return Id::AcDerChargeParameterDiscoveryReq;
+    case Type::DER_AC_ChargeParameterDiscoveryRes:
+        return Id::AcDerChargeParameterDiscoveryRes;
+    case Type::DER_AC_ChargeLoopReq:
+        return Id::AcDerChargeLoopReq;
+    case Type::DER_AC_ChargeLoopRes:
+        return Id::AcDerChargeLoopRes;
+    case Type::DER_SAE_AC_ChargeParameterDiscoveryReq:
+        return Id::AcDerSaeChargeParameterDiscoveryReq;
+    case Type::DER_SAE_AC_ChargeParameterDiscoveryRes:
+        return Id::AcDerSaeChargeParameterDiscoveryRes;
+    case Type::DER_SAE_AC_ChargeLoopReq:
+        return Id::AcDerSaeChargeLoopReq;
+    case Type::DER_SAE_AC_ChargeLoopRes:
+        return Id::AcDerSaeChargeLoopRes;
+    }
+    return Id::UnknownMessage;
+}
+
+// ISO 15118-2 and DIN 70121 have no V2gMessageId mapping here yet.
+types::iso15118::V2gMessageId v2g_message_id(const iso15118::V2gMessageType& type) {
+    if (const auto* type_20 = std::get_if<iso15118::message_20::Type>(&type)) {
+        return message_20_type_to_id(*type_20);
+    }
+    return types::iso15118::V2gMessageId::UnknownMessage;
+}
 } // namespace
 
 namespace module {
@@ -83,26 +226,49 @@ ISO15118_evImpl::~ISO15118_evImpl() {
     shutdown();
 }
 
-iso15118::ev::EvConfig
-ISO15118_evImpl::make_ev_config(iso15118::message_20::datatypes::ServiceCategory energy_service) const {
+iso15118::ev::EvConfig ISO15118_evImpl::make_ev_config(const SessionState& state) const {
     iso15118::ev::EvConfig ev_config;
 
     // ev::Controller throws on an unresolvable interface (incl. "auto"); caught in run_one_session().
     ev_config.interface_name = mod->config.device;
     ev_config.evcc_id = mod->config.evcc_id;
     ev_config.response_timeout = std::chrono::milliseconds(mod->config.response_timeout_ms);
-    ev_config.advertised_security = iso15118::io::v2gtp::Security::NO_TRANSPORT_SECURITY;
 
-    namespace dt = iso15118::message_20::datatypes;
-    ev_config.energy_service = energy_service;
-    const bool dc_family = energy_service == dt::ServiceCategory::DC || energy_service == dt::ServiceCategory::DC_BPT;
-    if (iso15118::ev::is_ac_family(energy_service)) {
-        ev_config.advertised_app_protocols = {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}};
-    } else if (dc_family) {
-        ev_config.advertised_app_protocols = {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
+    // Priority order in the SAP offer; -2 and DIN 70121 have no engine yet, so an SECC
+    // selecting one of them ends the session.
+    ev_config.supported_protocols = {iso15118::ProtocolId::ISO15118_20};
+    if (mod->config.supported_ISO15118_2) {
+        ev_config.supported_protocols.push_back(iso15118::ProtocolId::ISO15118_2);
+    }
+    if (mod->config.supported_DIN70121) {
+        ev_config.supported_protocols.push_back(iso15118::ProtocolId::DIN70121);
     }
 
-    if (energy_service == iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC) {
+    auto& tls = ev_config.tls;
+    // enforce_tls implies a TLS connection regardless of tls_active.
+    tls.use_tls = mod->config.tls_active or mod->config.enforce_tls;
+    tls.enforce_tls = mod->config.enforce_tls;
+    tls.enable_tls_1_3 = mod->config.enable_tls_1_3;
+    tls.verify_server_certificate = mod->config.verify_server_certificate;
+    tls.enable_key_logging = mod->config.enable_tls_key_logging;
+    tls.key_logging_path = mod->config.tls_key_logging_path;
+    const auto certs = std::filesystem::path(mod->info.paths.etc) / "certs";
+    tls.v2g_root_cert_path = resolve_path(mod->config.v2g_root_cert_path, certs / "ca/v2g/V2G_ROOT_CA.pem");
+    tls.client_cert_chain_path =
+        resolve_path(mod->config.device_cert_chain_path, certs / "client/vehicle/VEHICLE_CERT_CHAIN.pem");
+    tls.client_key_path = resolve_path(mod->config.device_key_path, certs / "client/vehicle/VEHICLE_LEAF.key");
+    tls.client_key_password = read_trimmed_file(
+        resolve_path(mod->config.device_key_password_path, certs / "client/vehicle/VEHICLE_LEAF_PASSWORD.txt"));
+
+    namespace dt = iso15118::message_20::datatypes;
+    const auto energy_service = state.energy_service;
+    ev_config.energy_service = energy_service;
+    ev_config.control_mode =
+        (mod->config.d20_control_mode == "Scheduled") ? dt::ControlMode::Scheduled : dt::ControlMode::Dynamic;
+    ev_config.resume = state.paused;
+    ev_config.has_cp_state_feedback = state.cp_c_or_d.has_value();
+
+    if (energy_service == dt::ServiceCategory::AC_DER_IEC) {
         auto& functions = ev_config.der_control_functions;
         functions.over_frequency_watt_mode = mod->config.der_over_frequency_watt_mode;
         functions.under_frequency_watt_mode = mod->config.der_under_frequency_watt_mode;
@@ -125,19 +291,36 @@ ISO15118_evImpl::make_ev_config(iso15118::message_20::datatypes::ServiceCategory
 iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
     iso15118::ev::feedback::Callbacks callbacks;
 
-    callbacks.connected = [](const iso15118::io::Ipv6EndPoint&) { EVLOG_info << "EvIso15118D20: connected to SECC"; };
+    callbacks.connected = [](const iso15118::io::Ipv6EndPoint&) { EVLOG_info << "Ev15118: connected to SECC"; };
 
-    callbacks.v2g_message = [](iso15118::message_20::Type type) {
-        EVLOG_debug << "EvIso15118D20: V2G message " << static_cast<int>(type);
+    callbacks.v2g_message = [this](const iso15118::V2gMessageType& type) {
+        publish_v2g_messages(types::iso15118::V2gMessages{.id = v2g_message_id(type)});
+    };
+
+    callbacks.signal = [](iso15118::ev::feedback::Signal signal) {
+        EVLOG_debug << "Ev15118: signal " << signal_to_string(signal);
+    };
+
+    callbacks.selected_protocol = [](iso15118::ProtocolId protocol) {
+        EVLOG_info << "Ev15118: selected protocol " << iso15118::protocol_id_to_string(protocol);
+    };
+
+    callbacks.evse_id = [](const std::string& evse_id) { EVLOG_info << "Ev15118: EVSE id " << evse_id; };
+
+    callbacks.dc_evse_present_limits = [](const iso15118::ev::feedback::DcMaximumLimits& limits) {
+        EVLOG_debug << "Ev15118: DC EVSE present limits: " << limits.voltage << " V, " << limits.current << " A, "
+                    << limits.power << " W";
     };
 
     callbacks.evse_session_info = [](const iso15118::ev::d20::EVSESessionInfo&) {
-        EVLOG_debug << "EvIso15118D20: EVSE session info received";
+        EVLOG_debug << "Ev15118: EVSE session info received";
     };
 
-    callbacks.timed_out = [] { EVLOG_warning << "EvIso15118D20: response watchdog timed out"; };
+    callbacks.pause_from_charger = [this] { publish_pause_from_charger(nullptr); };
 
-    callbacks.stopped = [] { EVLOG_info << "EvIso15118D20: session stopped"; };
+    callbacks.timed_out = [] { EVLOG_warning << "Ev15118: response watchdog timed out"; };
+
+    callbacks.stopped = [] { EVLOG_info << "Ev15118: session stopped"; };
 
     callbacks.ev_power_ready = [this] { publish_ev_power_ready(true); };
 
@@ -147,35 +330,36 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
 
     callbacks.ac_limits = [](const iso15118::message_20::datatypes::AC_CPDResEnergyTransferMode& limits) {
         namespace dt = iso15118::message_20::datatypes;
-        EVLOG_info << "EvIso15118D20: AC EVSE limits: max charge power "
-                   << dt::from_RationalNumber(limits.max_charge_power) << " W, min charge power "
-                   << dt::from_RationalNumber(limits.min_charge_power) << " W";
+        EVLOG_info << "Ev15118: AC EVSE limits: max charge power " << dt::from_RationalNumber(limits.max_charge_power)
+                   << " W, min charge power " << dt::from_RationalNumber(limits.min_charge_power) << " W";
     };
 
     callbacks.ac_bpt_limits = [](const iso15118::message_20::datatypes::BPT_AC_CPDResEnergyTransferMode& limits) {
         namespace dt = iso15118::message_20::datatypes;
-        EVLOG_info << "EvIso15118D20: AC BPT EVSE limits: max discharge power "
+        EVLOG_info << "Ev15118: AC BPT EVSE limits: max discharge power "
                    << dt::from_RationalNumber(limits.max_discharge_power) << " W, min discharge power "
                    << dt::from_RationalNumber(limits.min_discharge_power) << " W";
     };
 
     callbacks.dc_bpt_limits = [](const iso15118::message_20::datatypes::BPT_DC_CPDResEnergyTransferMode& limits) {
         namespace dt = iso15118::message_20::datatypes;
-        EVLOG_info << "EvIso15118D20: DC BPT EVSE limits: max discharge power "
+        EVLOG_info << "Ev15118: DC BPT EVSE limits: max discharge power "
                    << dt::from_RationalNumber(limits.max_discharge_power) << " W, min discharge power "
                    << dt::from_RationalNumber(limits.min_discharge_power) << " W";
     };
 
-    callbacks.ac_target_power = [this](const iso15118::message_20::datatypes::Dynamic_AC_CLResControlMode& control) {
+    callbacks.ac_target_power = [this](const iso15118::d20::AcTargetPower& control) {
         namespace dt = iso15118::message_20::datatypes;
+        const auto convert = [](const std::optional<dt::RationalNumber>& value) -> std::optional<float> {
+            return value.has_value() ? std::make_optional(dt::from_RationalNumber(*value)) : std::nullopt;
+        };
         types::iso15118::AcTargetPower target;
-        target.target_active_power = dt::from_RationalNumber(control.target_active_power);
-        if (control.target_active_power_L2) {
-            target.target_active_power_L2 = dt::from_RationalNumber(*control.target_active_power_L2);
-        }
-        if (control.target_active_power_L3) {
-            target.target_active_power_L3 = dt::from_RationalNumber(*control.target_active_power_L3);
-        }
+        target.target_active_power = convert(control.target_active_power);
+        target.target_active_power_L2 = convert(control.target_active_power_L2);
+        target.target_active_power_L3 = convert(control.target_active_power_L3);
+        target.target_reactive_power = convert(control.target_reactive_power);
+        target.target_reactive_power_L2 = convert(control.target_reactive_power_L2);
+        target.target_reactive_power_L3 = convert(control.target_reactive_power_L3);
         publish_ac_evse_target_power(target);
     };
 
@@ -183,8 +367,8 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
     callbacks.der_control = [](const iso15118::message_20::datatypes::DER_Dynamic_AC_CLResControlMode& control) {
         namespace dt = iso15118::message_20::datatypes;
         std::ostringstream line;
-        line << "EvIso15118D20: DER directive: target active power "
-             << dt::from_RationalNumber(control.target_active_power) << " W";
+        line << "Ev15118: DER directive: target active power " << dt::from_RationalNumber(control.target_active_power)
+             << " W";
         if (control.dso_q_setpoint) {
             line << ", DSO Q setpoint " << dt::from_RationalNumber(control.dso_q_setpoint->dso_q_setpoint_value)
                  << " var";
@@ -199,7 +383,7 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
     // Dictated DER curves are observed, not applied
     callbacks.der_curves = [](const iso15118::message_20::datatypes::DerControl& control) {
         std::ostringstream line;
-        line << "EvIso15118D20: DER curves dictated:";
+        line << "Ev15118: DER curves dictated:";
         bool any = false;
         const auto append = [&](bool present, const char* name) {
             if (present) {
@@ -224,14 +408,23 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
 
 void ISO15118_evImpl::session_worker() {
     while (true) {
+        bool requested = false;
         {
             auto h = session.handle();
-            h.wait([&] { return (*h).phase == SessionPhase::requested || (*h).shutting_down; });
+            h.wait([&] { return (*h).phase == SessionPhase::requested || (*h).shutting_down || (*h).finish_pending; });
             if ((*h).shutting_down) {
                 return;
             }
+            requested = ((*h).phase == SessionPhase::requested);
+            // A cancelled request still owes its finish report; the publish below is it.
+            (*h).finish_pending = false;
         }
-        run_one_session();
+        if (requested) {
+            run_one_session();
+            auto h = session.handle();
+            // A cancel that landed during the session is answered by the same publish.
+            (*h).finish_pending = false;
+        }
         // Published after phase resets to idle, so a consumer starting a new session
         // in response isn't rejected by the phase guard.
         publish_v2g_session_finished(nullptr);
@@ -240,22 +433,7 @@ void ISO15118_evImpl::session_worker() {
 
 void ISO15118_evImpl::run_one_session() {
     try {
-        iso15118::ev::DcChargeParams cached_dc_params;
-        iso15118::ev::AcChargeParams cached_ac_params;
-        iso15118::message_20::datatypes::ServiceCategory energy_service{
-            iso15118::message_20::datatypes::ServiceCategory::DC};
-        {
-            auto h = session.handle();
-            // teardown or a stop in the requested window (phase reset to idle) beat us here
-            if ((*h).shutting_down || (*h).phase != SessionPhase::requested) {
-                return;
-            }
-            cached_dc_params = (*h).dc_params;
-            cached_ac_params = (*h).ac_params;
-            energy_service = (*h).energy_service;
-        }
-        iso15118::ev::Controller controller(make_ev_config(energy_service), make_callbacks(), cached_dc_params,
-                                            cached_ac_params);
+        std::optional<iso15118::ev::Controller> controller;
         // Declared after controller so it clears the off-thread pointer before ~Controller runs.
         ScopeGuard clear_current{[this] {
             auto h = session.handle();
@@ -263,21 +441,28 @@ void ISO15118_evImpl::run_one_session() {
         }};
         {
             auto h = session.handle();
-            // re-confirm under the lock: teardown or a cancel may have landed during construction
+            // teardown or a stop in the requested window (phase reset to idle) beat us here
             if ((*h).shutting_down || (*h).phase != SessionPhase::requested) {
                 return;
             }
-            (*h).current = &controller;
+            // Config, parameters and registration in one lock hold: a cp_state_changed or a
+            // parameter update landing in between would otherwise miss this session.
+            controller.emplace(make_ev_config(*h), make_callbacks(), (*h).dc_params, (*h).ac_params);
+            (*h).current = &controller.value();
             (*h).phase = SessionPhase::running;
-            // Values pushed between the snapshot above and this point would otherwise reach
-            // neither the snapshot nor the live controller.
-            controller.update_present_soc((*h).dc_params.present_soc);
-            controller.update_present_voltage((*h).dc_params.present_voltage);
-            controller.update_present_active_power((*h).ac_params.present_active_power);
+            // The CP report is latched, so a session starting after it still gets the state.
+            if ((*h).cp_c_or_d) {
+                controller->set_cp_state(*(*h).cp_c_or_d);
+            }
         }
-        controller.loop();
+        controller->loop();
+        {
+            auto h = session.handle();
+            // Empty unless the session ended with SessionStop(Pause); the next session resumes it.
+            (*h).paused = controller->paused_session();
+        }
     } catch (const std::exception& e) {
-        EVLOG_error << "EvIso15118D20: session failed: " << e.what();
+        EVLOG_error << "Ev15118: session failed: " << e.what();
     }
     auto h = session.handle();
     (*h).phase = SessionPhase::idle;
@@ -286,7 +471,7 @@ void ISO15118_evImpl::run_one_session() {
 bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode& EnergyTransferMode,
                                             types::iso15118::SelectedPaymentOption& SelectedPaymentOption,
                                             double& DepartureTime, double& EAmount) {
-    EVLOG_info << "EvIso15118D20: start_charging requested (negotiation arguments ignored)";
+    EVLOG_info << "Ev15118: start_charging requested (negotiation arguments ignored)";
 
     auto energy_service = iso15118::message_20::datatypes::ServiceCategory::DC;
     switch (EnergyTransferMode) {
@@ -321,7 +506,7 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     case types::iso15118::EnergyTransferMode::WPT:
     case types::iso15118::EnergyTransferMode::MCS:
     case types::iso15118::EnergyTransferMode::MCS_BPT:
-        EVLOG_warning << "EvIso15118D20: rejecting start_charging with unsupported EnergyTransferMode '"
+        EVLOG_warning << "Ev15118: rejecting start_charging with unsupported EnergyTransferMode '"
                       << types::iso15118::energy_transfer_mode_to_string(EnergyTransferMode)
                       << "'; only DC, DC BPT, AC single/three-phase, AC BPT and AC DER IEC are supported";
         return false;
@@ -329,7 +514,7 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     {
         auto h = session.handle();
         if ((*h).phase != SessionPhase::idle) {
-            EVLOG_warning << "EvIso15118D20: a session is already active; ignoring start_charging";
+            EVLOG_warning << "Ev15118: a session is already active; ignoring start_charging";
             return false;
         }
         (*h).energy_service = energy_service;
@@ -353,7 +538,7 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
                 (*h).cmd_max_discharge_current.value_or(static_cast<float>(mod->config.dc_max_discharge_current_a));
         }
         // Validate what actually goes on the wire: the merged params, not the raw config.
-        auto problems = iso15118::ev::validate_config(make_ev_config(energy_service));
+        auto problems = iso15118::ev::validate_config(make_ev_config(*h));
         const auto append = [&problems](std::vector<std::string> more) {
             problems.insert(problems.end(), std::make_move_iterator(more.begin()), std::make_move_iterator(more.end()));
         };
@@ -365,9 +550,9 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
         }
         if (not problems.empty()) {
             for (const auto& problem : problems) {
-                EVLOG_error << "EvIso15118D20: invalid session parameter: " << problem;
+                EVLOG_error << "Ev15118: invalid session parameter: " << problem;
             }
-            EVLOG_error << "EvIso15118D20: rejecting start_charging; the session parameters are invalid";
+            EVLOG_error << "Ev15118: rejecting start_charging; the session parameters are invalid";
             return false;
         }
         (*h).phase = SessionPhase::requested;
@@ -376,17 +561,24 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     return true;
 }
 
-void ISO15118_evImpl::handle_stop_charging() {
+void ISO15118_evImpl::end_session(ControllerAction action, bool drop_paused) {
     bool cancelled = false;
     {
         auto h = session.handle();
         if ((*h).current) {
-            (*h).current->request_stop();
-        } else if ((*h).phase == SessionPhase::requested) {
-            // stop arrived before the worker constructed the controller; cancel the
-            // pending session so run_one_session() skips it under the lock
-            (*h).phase = SessionPhase::idle;
-            cancelled = true;
+            ((*h).current->*action)();
+        } else {
+            if ((*h).phase == SessionPhase::requested) {
+                // the request arrived before the worker constructed the controller; cancel the
+                // pending session so run_one_session() skips it under the lock
+                (*h).phase = SessionPhase::idle;
+                // The worker still publishes v2g_session_finished for this start_charging.
+                (*h).finish_pending = true;
+                cancelled = true;
+            }
+            if (drop_paused) {
+                (*h).paused.reset();
+            }
         }
     }
     if (cancelled) {
@@ -394,16 +586,36 @@ void ISO15118_evImpl::handle_stop_charging() {
     }
 }
 
+void ISO15118_evImpl::handle_stop_charging() {
+    end_session(&iso15118::ev::Controller::request_stop, true);
+}
+
 void ISO15118_evImpl::handle_pause_charging() {
-    EVLOG_info << "EvIso15118D20: pause_charging is not supported";
+    end_session(&iso15118::ev::Controller::request_pause, false);
+}
+
+void ISO15118_evImpl::handle_abort_charging() {
+    end_session(&iso15118::ev::Controller::terminate, true);
+}
+
+void ISO15118_evImpl::handle_cp_state_changed(types::iso15118::CpState& cp_state) {
+    using types::iso15118::CpState;
+    const bool c_or_d = (cp_state == CpState::C) or (cp_state == CpState::D);
+    auto h = session.handle();
+    // Latched: the report may arrive before a controller exists, and reporting it at all is
+    // what enables the CP-dependent checks (EvConfig::has_cp_state_feedback).
+    (*h).cp_c_or_d = c_or_d;
+    if ((*h).current) {
+        (*h).current->set_cp_state(c_or_d);
+    }
 }
 
 void ISO15118_evImpl::handle_set_fault() {
-    EVLOG_info << "EvIso15118D20: set_fault";
+    EVLOG_info << "Ev15118: set_fault";
 }
 
 void ISO15118_evImpl::handle_set_dc_params(types::iso15118::DcEvParameters& EvParameters) {
-    EVLOG_info << "EvIso15118D20: set_dc_params";
+    EVLOG_info << "Ev15118: set_dc_params";
 
     std::string missing;
     const auto note_missing = [&missing](const char* name, bool present) {
@@ -420,7 +632,7 @@ void ISO15118_evImpl::handle_set_dc_params(types::iso15118::DcEvParameters& EvPa
     note_missing("target_current", EvParameters.target_current.has_value());
     if (not missing.empty()) {
         // absent fields fold to 0 and would advertise a 0 W limit to the SECC
-        EVLOG_warning << "EvIso15118D20: set_dc_params missing " << missing << "; defaulting to 0";
+        EVLOG_warning << "Ev15118: set_dc_params missing " << missing << "; defaulting to 0";
     }
 
     auto h = session.handle();
@@ -432,10 +644,14 @@ void ISO15118_evImpl::handle_set_dc_params(types::iso15118::DcEvParameters& EvPa
     params.energy_capacity = EvParameters.energy_capacity.value_or(0.0f);
     params.target_voltage = EvParameters.target_voltage.value_or(0.0f);
     params.target_current = EvParameters.target_current.value_or(0.0f);
+    if ((*h).current) {
+        // The targets steer the running Scheduled-mode charge loop.
+        (*h).current->update_dc_params(params);
+    }
 }
 
 void ISO15118_evImpl::handle_set_bpt_dc_params(types::iso15118::DcEvBPTParameters& EvBPTParameters) {
-    EVLOG_info << "EvIso15118D20: set_bpt_dc_params";
+    EVLOG_info << "Ev15118: set_bpt_dc_params";
 
     std::string missing;
     const auto note_missing = [&missing](const char* name, bool present) {
@@ -446,18 +662,18 @@ void ISO15118_evImpl::handle_set_bpt_dc_params(types::iso15118::DcEvBPTParameter
     note_missing("discharge_max_power_limit", EvBPTParameters.discharge_max_power_limit.has_value());
     note_missing("discharge_max_current_limit", EvBPTParameters.discharge_max_current_limit.has_value());
     if (not missing.empty()) {
-        EVLOG_warning << "EvIso15118D20: set_bpt_dc_params missing " << missing
+        EVLOG_warning << "Ev15118: set_bpt_dc_params missing " << missing
                       << "; keeping the configured discharge settings";
     }
 
     // discharge_target_current / discharge_minimal_soc are not consumed by the -20
     // Dynamic BPT request (reverse power flow is driven by SECC targets); log only
     if (EvBPTParameters.discharge_target_current) {
-        EVLOG_debug << "EvIso15118D20: ignoring discharge_target_current " << *EvBPTParameters.discharge_target_current
+        EVLOG_debug << "Ev15118: ignoring discharge_target_current " << *EvBPTParameters.discharge_target_current
                     << " A (SECC-target-driven)";
     }
     if (EvBPTParameters.discharge_minimal_soc) {
-        EVLOG_debug << "EvIso15118D20: ignoring discharge_minimal_soc " << *EvBPTParameters.discharge_minimal_soc
+        EVLOG_debug << "Ev15118: ignoring discharge_minimal_soc " << *EvBPTParameters.discharge_minimal_soc
                     << " % (SECC-target-driven)";
     }
 
@@ -472,7 +688,7 @@ void ISO15118_evImpl::handle_set_bpt_dc_params(types::iso15118::DcEvBPTParameter
 }
 
 void ISO15118_evImpl::handle_enable_sae_j2847_v2g_v2h() {
-    EVLOG_info << "EvIso15118D20: enable_sae_j2847_v2g_v2h is not supported";
+    EVLOG_info << "Ev15118: enable_sae_j2847_v2g_v2h is not supported";
 }
 
 void ISO15118_evImpl::handle_update_soc(double& SoC) {

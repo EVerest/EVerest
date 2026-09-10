@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include "EvIso15118D20.hpp"
+#include "Ev15118.hpp"
 
 namespace module {
 
-void EvIso15118D20::init() {
+void Ev15118::init() {
     invoke_init(*p_ev);
 }
 
-void EvIso15118D20::ready() {
+void Ev15118::ready() {
     invoke_ready(*p_ev);
 }
 
-void EvIso15118D20::shutdown() {
+void Ev15118::shutdown() {
     invoke_shutdown(*p_ev);
 }
 
