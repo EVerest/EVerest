@@ -1096,8 +1096,8 @@ void Charger::run_state_machine() {
             }
             break;
 
-        // Final state that may only wait for unplug, but does not allow session restart.
-        // Cleans the session up.
+        // Final state that waits for unplug and cleans the session up. A new authorization
+        // may restart a new transaction while the cable is still plugged in (OCPP 1.6 F2).
         case EvseState::Finished:
 
             if (initialize_state) {
@@ -1120,6 +1120,16 @@ void Charger::run_state_machine() {
             if (not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
                 stop_session();
                 set_state(shared_context.flag_disable_requested ? EvseState::Disabled : EvseState::Idle);
+                break;
+            }
+
+            // A new authorization was received (RFID swipe or RemoteStartTransaction):
+            // restart a new transaction within the still active session. Do not restart
+            // while a fatal error is active, WaitingForAuthentication would bail out
+            // right back to Finished (ping-pong).
+            if (shared_context.flag_authorized and shared_context.shutdown_type == ShutdownType::None) {
+                restart_from_finished();
+                set_state(EvseState::WaitingForAuthentication);
             }
             break;
         }
@@ -1550,6 +1560,30 @@ void Charger::stop_transaction() {
                                       shared_context.stop_transaction_id_token);
 }
 
+void Charger::restart_from_finished() {
+    session_log.evse(false, "Restarting a new transaction while still plugged in (Finishing -> Preparing)");
+
+    // The session stays active, but the new transaction needs its own id since the previous
+    // transaction of this session was billed with the current one (transaction id == session uuid)
+    shared_context.session_uuid = utils::generate_session_id(config_context.session_id_type);
+
+    // Re-initialize everything that is normally reset in Idle on a replug cycle,
+    // since Idle is skipped when going back to WaitingForAuthentication directly
+    bcb_toggle_reset();
+    shared_context.iec_allow_close_contactor = false;
+    shared_context.hlc_charging_active = config_context.charge_mode == ChargeMode::DC;
+    shared_context.hlc_allow_close_contactor = false;
+    shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Unknown;
+    shared_context.legacy_wakeup_done = false;
+    shared_context.hlc_d20_active = false;
+    shared_context.matching_started = false;
+    internal_context.dc_statistics_printed = false;
+
+    // The previous ISO session was terminated, so SLAC needs a fresh matching cycle
+    signal_slac_reset();
+    signal_slac_start();
+}
+
 void Charger::cleanup_transactions_on_startup() {
     // See if we have an open transaction in persistent storage
     auto session_uuid = store->get_session();
@@ -1757,7 +1791,14 @@ void Charger::authorize(bool a, const types::authorization::ProvidedIdToken& tok
                         const types::authorization::ValidationResult& result) {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_authorize);
     if (a) {
-        if (shared_context.flag_externally_cancelled || shared_context.flag_disable_requested) {
+        // In Finished with the cable still plugged in, a new authorization starts a new transaction
+        // (OCPP 1.6 F2: Finishing -> Preparing), even if the previous one was externally cancelled
+        const bool restart_from_finished_allowed =
+            shared_context.current_state == EvseState::Finished and shared_context.flag_ev_plugged_in and
+            not shared_context.flag_transaction_active and not shared_context.flag_disable_requested;
+
+        if ((shared_context.flag_externally_cancelled and not restart_from_finished_allowed) ||
+            shared_context.flag_disable_requested) {
             EVLOG_warning
                 << "Received an authorization after the session was externally cancelled. Ignoring this authorization.";
             // Ignore (delayed) authorization responses after an external cancellation or while EVSE is disabled.
@@ -1765,6 +1806,7 @@ void Charger::authorize(bool a, const types::authorization::ProvidedIdToken& tok
             // from routing to EvseState::Finished
             return;
         }
+        shared_context.flag_externally_cancelled = false;
         shared_context.id_token = token;
         shared_context.validation_result = result;
         // First user interaction was auth? Then start session already here and not at plug in

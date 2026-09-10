@@ -109,6 +109,35 @@ TEST_F(ChargePointV2Test, transactionStartedReportsTokenData) {
     m_chargepoint.on_event_transaction_started(EVSE_ID, CONNECTOR_ID, session_event);
 }
 
+// Restart from Finishing: a TransactionStarted event without preceding transaction data (previous
+// transaction already finished, cable stayed plugged in) creates fresh transaction data and starts a new
+// transaction instead of only warning
+TEST_F(ChargePointV2Test, transactionStartedWithoutTransactionDataRestartsTransaction) {
+    ON_CALL(m_callbacks, transaction_data(EVSE_ID)).WillByDefault(Return(nullptr));
+
+    types::evse_manager::SessionEvent session_event;
+    session_event.uuid = SESSION_ID;
+    session_event.timestamp = TIMESTAMP;
+    session_event.event = types::evse_manager::SessionEventEnum::TransactionStarted;
+    session_event.connector_id = CONNECTOR_ID;
+    types::evse_manager::TransactionStarted transaction_started;
+    transaction_started.id_tag = provided_id_token("TOKEN123");
+    transaction_started.id_tag.authorization_type = types::authorization::AuthorizationType::OCPP;
+    transaction_started.meter_value = meter_value_wh(0.0F);
+    session_event.transaction_started = transaction_started;
+
+    EXPECT_CALL(m_callbacks, transaction_add(EVSE_ID, _));
+    EXPECT_CALL(*m_libocpp, on_session_started(EVSE_ID, CONNECTOR_ID));
+    EXPECT_CALL(m_callbacks, transaction_event(EVSE_ID, module::TxEvent::AUTHORIZED))
+        .WillOnce(Return(module::TxEventEffect::NONE));
+    EXPECT_CALL(m_callbacks, transaction_event(EVSE_ID, module::TxEvent::EV_CONNECTED))
+        .WillOnce(Return(module::TxEventEffect::NONE));
+
+    const auto result = m_chargepoint.on_event_transaction_started(EVSE_ID, CONNECTOR_ID, session_event);
+
+    EXPECT_TRUE(result);
+}
+
 // TransactionEvent(Ended) reports the stop reason accumulated by the event handlers
 TEST_F(ChargePointV2Test, transactionStopReportsAccumulatedStopReason) {
     make_transaction_data(ocpp::v2::TriggerReasonEnum::ChargingStateChanged, ocpp::v2::ChargingStateEnum::Charging);
