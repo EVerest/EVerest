@@ -20,13 +20,9 @@ namespace iso15118::session {
 
 namespace dt = message_20::datatypes;
 
-// Protocol-neutral, universal SECC configuration. The per-service parameter list, DC/AC/DER limit and
-// setup sub-structs still live in the d20 namespace (they are expressed with the -20 RationalNumber
-// datatype), but the EvseSetupConfig / SessionConfig aggregates below are consumed by the ISO 15118-2
-// and DIN SPEC 70121 SECC engines as well, so they live in the protocol-neutral iso15118::session
-// namespace.
+// The sub-structs still live in the d20 namespace (they use the -20 RationalNumber datatype), but
+// these aggregates are consumed by the ISO 15118-2 and DIN SPEC 70121 engines too.
 
-// A value-added service offered by an external VAS provider, as ISO 15118-2 describes it (Table 105).
 struct VasService {
     uint16_t id{0};
     std::optional<std::string> name{std::nullopt};  // ServiceName, max 32 characters
@@ -34,7 +30,6 @@ struct VasService {
     bool free_service{true};
 };
 
-// Session-independent EVSE setup configuration
 struct EvseSetupConfig {
     std::string evse_id;
     std::vector<message_20::datatypes::ServiceCategory> supported_energy_services;
@@ -52,63 +47,38 @@ struct EvseSetupConfig {
     d20::DcTransferLimits powersupply_limits;
     bool selecting_sap_based_on_energy_service{false};
 
-    // Priority-ordered list of protocol generations the SECC accepts in the SupportedAppProtocol
-    // handshake. Lower index == higher priority. Defaults to ISO 15118-20 only.
+    // Priority-ordered: lower index == higher priority. Defaults to ISO 15118-20 only.
     std::vector<ProtocolId> supported_protocols{ProtocolId::ISO15118_20};
 
-    // ISO 15118-2 Plug-and-Charge (Contract payment). When enabled the ISO-2 SECC engine offers the
-    // Contract payment option and runs the PnC PaymentDetails/Authorization flow. The MO/V2G root paths
-    // are used to validate the contract certificate chain.
+    // The MO/V2G root paths validate the contract certificate chain.
     bool iso2_pnc_enabled{false};
-    // ISO 15118-2: request a (signed) MeteringReceipt from the EV (sets ReceiptRequired in the DC
-    // CurrentDemandRes / AC ChargingStatusRes charge loop). Only effective for PnC (Contract) sessions
-    // per [V2G2-691]. Driven by EvseManager's ev_receipt_required config via receipt_is_required.
+    // Only effective for PnC (Contract) sessions per [V2G2-691].
     bool iso2_receipt_required{false};
     std::string contract_mo_root_path{};
     std::string contract_v2g_root_path{};
-    // Accept a contract whose chain cannot be validated locally (missing MO root) and forward it to
-    // the CSMS for central validation (OCPP CentralContractValidationAllowed, EvseV2G parity).
+    // Forwarded to the CSMS instead (OCPP CentralContractValidationAllowed, EvseV2G parity).
     bool central_contract_validation_allowed{false};
-    // ISO 15118-2 AC: latest EVSE maximum current (per phase, A) from EvseManager's
-    // update_ac_max_current cmd. When set it overrides the power-derived default for the -2 session's
-    // EVSEMaxCurrent; mid-session changes additionally reach the running charge loop as an
-    // UpdateAcMaxCurrent control event.
+    // Per phase, in A. Overrides the power-derived default; mid-session changes additionally reach the
+    // running charge loop as an UpdateAcMaxCurrent control event.
     std::optional<float> iso2_ac_max_current{std::nullopt};
-    // Physical EVSE parameters from EvseManager's set_charging_parameters cmd. Used by the ISO 15118-2
-    // and DIN SPEC 70121 engines; see d20::PhysicalValues.
     d20::PhysicalValues physical_values{};
-    // Pending no-energy pause request (IEC 61851-23:2023 CC.3.5.3). Armed by the module's
-    // no_energy_pause_charging cmd and consumed by the next session that starts, so it never leaks into
-    // a later session; a request arriving while a session is running reaches it as a NoEnergyPause
-    // control event instead.
+    // Consumed by the next session that starts, so it never leaks into a later one; a request arriving
+    // while a session runs reaches it as a NoEnergyPause control event instead.
     d20::NoEnergyPauseMode no_energy_pause{d20::NoEnergyPauseMode::None};
-    // The pre-20 energy transfer modes the module configured (update_energy_transfer_modes), verbatim.
-    // supported_energy_services above is the -20 view (modes collapsed into service categories, which
-    // loses e.g. the DC_core/DC_extended distinction); the ISO 15118-2 and DIN SPEC 70121 engines
-    // advertise these instead when the module provided them. Applied at session start.
+    // Verbatim, because supported_energy_services above is the -20 view, which collapses modes into
+    // service categories and loses e.g. the DC_core/DC_extended distinction.
     std::vector<shared_datatypes::EnergyTransferMode> pre20_energy_transfer_modes{};
-    // Value-added services offered by external VAS providers, advertised in the ISO 15118-2
-    // ServiceDiscoveryRes ServiceList. supported_vas_services above is the -20 view (ids only, since a -20
-    // ServiceID is its category); ISO 15118-2 additionally needs name, scope and the free-of-charge flag
-    // per service. Parameter sets and selections travel through the (protocol-neutral) feedback
-    // callbacks get_vas_parameters / selected_vas_services. Applied at session start.
+    // supported_vas_services above is the -20 view (ids only); ISO 15118-2 also needs name, scope and
+    // the free-of-charge flag per service.
     std::vector<VasService> pre20_vas_services{};
 
-    // How long the SECC keeps answering EVSEProcessing=Ongoing while waiting for the authorization
-    // result before it fails the session, in SECONDS; 0 means wait indefinitely. Defaults are EvseV2G's
-    // (auth_timeout_eim / auth_timeout_pnc): EIM gets far more than the 55 s
-    // V2G_SECC_Ongoing_Performance_Time of [V2G2-712/713] on purpose, because the bottleneck is a human
-    // presenting an RFID card or confirming in an app, not SECC processing.
-    //
-    // Consumed by the ISO 15118-2 engine (EIM and PnC, selected by the payment option the EV chose) and,
-    // for EIM, by the DIN SPEC 70121 engine, which knows no other payment option. ISO 15118-20 is
-    // deliberately NOT covered: it keeps its own fixed d20::TIMEOUT_EIM_ONGOING.
+    // In SECONDS; 0 waits indefinitely. EIM gets far more than the 55 s V2G_SECC_Ongoing_Performance_Time
+    // of [V2G2-712/713] on purpose: the bottleneck is a human presenting a card, not SECC processing.
+    // ISO 15118-20 is deliberately not covered -- it keeps its own fixed d20::TIMEOUT_EIM_ONGOING.
     uint32_t auth_timeout_eim_s{300};
     uint32_t auth_timeout_pnc_s{55};
 };
 
-// Session-scoped SECC configuration. Constructed from EvseSetupConfig at the start of a session. This
-// should only have EVSE information.
 struct SessionConfig {
     explicit SessionConfig(EvseSetupConfig);
 
@@ -147,34 +117,23 @@ struct SessionConfig {
 
     std::vector<ProtocolId> supported_protocols{ProtocolId::ISO15118_20};
 
-    // ISO 15118-2 Plug-and-Charge (Contract payment); see EvseSetupConfig.
     bool iso2_pnc_enabled{false};
-    // ISO 15118-2: request a (signed) MeteringReceipt from the EV (sets ReceiptRequired in the DC
-    // CurrentDemandRes / AC ChargingStatusRes charge loop). Only effective for PnC (Contract) sessions
-    // per [V2G2-691]. Driven by EvseManager's ev_receipt_required config via receipt_is_required.
+    // Only effective for PnC (Contract) sessions per [V2G2-691].
     bool iso2_receipt_required{false};
     std::string contract_mo_root_path{};
     std::string contract_v2g_root_path{};
-    // See EvseSetupConfig::central_contract_validation_allowed.
     bool central_contract_validation_allowed{false};
-    // See EvseSetupConfig::iso2_ac_max_current.
     std::optional<float> iso2_ac_max_current{std::nullopt};
-    // See EvseSetupConfig::physical_values.
     d20::PhysicalValues physical_values{};
-    // See EvseSetupConfig::no_energy_pause.
     d20::NoEnergyPauseMode no_energy_pause{d20::NoEnergyPauseMode::None};
-    // See EvseSetupConfig::pre20_energy_transfer_modes.
     std::vector<shared_datatypes::EnergyTransferMode> pre20_energy_transfer_modes{};
-    // See EvseSetupConfig::pre20_vas_services.
     std::vector<VasService> pre20_vas_services{};
-    // See EvseSetupConfig::auth_timeout_eim_s / auth_timeout_pnc_s (seconds, 0 = indefinitely).
     uint32_t auth_timeout_eim_s{300};
     uint32_t auth_timeout_pnc_s{55};
 };
 
-// Converts one of the authorization timeouts above from seconds to the milliseconds the engines' timeout
-// slots take, saturating instead of wrapping (a configured value beyond ~49 days would overflow the
-// uint32_t millisecond counter). 0 passes through unchanged and means "no timeout".
+// Saturates instead of wrapping: a configured value beyond ~49 days would overflow the uint32_t
+// millisecond counter. 0 passes through unchanged and means "no timeout".
 uint32_t auth_timeout_to_ms(uint32_t timeout_s);
 
 } // namespace iso15118::session
