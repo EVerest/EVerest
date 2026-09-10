@@ -177,8 +177,11 @@ void AuthHandler::handle_token_validation_result_update(const ValidationResultUp
 TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, std::unique_lock<std::mutex>& lk) {
     std::vector<int> referenced_evses = this->get_referenced_evses(provided_token);
 
-    // Only provided token with type RFID can be used to stop a transaction
-    if (provided_token.authorization_type == AuthorizationType::RFID) {
+    // Only provided tokens with type RFID or BankCard can be used to stop a transaction. Bank card tokens can only
+    // match if the token provider publishes a stable, card-derived id_token; providers that publish a fresh token per
+    // presentation (e.g. per-session invoice tokens) never match an active transaction and are unaffected.
+    if (provided_token.authorization_type == AuthorizationType::RFID or
+        provided_token.authorization_type == AuthorizationType::BankCard) {
         // check if id_token is used for an active transaction
         const auto evse_used_for_transaction =
             this->used_for_transaction(referenced_evses, provided_token.id_token.value);
