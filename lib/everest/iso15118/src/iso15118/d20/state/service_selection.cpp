@@ -175,6 +175,7 @@ Result ServiceSelection::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config, custom_vas_parameters);
 
         m_ctx.respond(res);
+        m_ctx.feedback.response_code(res.response_code);
 
         if (res.response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
@@ -191,6 +192,7 @@ Result ServiceSelection::feed(Event ev) {
         }
 
         m_ctx.respond(res);
+        m_ctx.feedback.response_code(res.response_code);
 
         if (res.response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
@@ -223,6 +225,7 @@ Result ServiceSelection::feed(Event ev) {
 
         m_ctx.respond(res);
         m_ctx.session_stopped = true;
+        m_ctx.feedback.response_code(res.response_code);
 
         return {};
     } else {
@@ -232,6 +235,7 @@ Result ServiceSelection::feed(Event ev) {
         const message_20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
+        m_ctx.feedback.response_code(dt::ResponseCode::FAILED_SequenceError);
         m_ctx.session_stopped = true;
         return {};
     }

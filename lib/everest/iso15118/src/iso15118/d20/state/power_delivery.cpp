@@ -80,6 +80,7 @@ Result PowerDelivery::feed(Event ev) {
 
             const auto& res = handle_request(previous_req.value(), m_ctx.session, false, false);
             m_ctx.respond(res);
+            m_ctx.feedback.response_code(res.response_code);
 
             if (res.response_code >= dt::ResponseCode::FAILED) {
                 m_ctx.session_stopped = true;
@@ -106,6 +107,7 @@ Result PowerDelivery::feed(Event ev) {
                 handle_request(previous_req.value_or(message_20::PowerDeliveryRequest{}), m_ctx.session, true, false);
             m_ctx.respond(res);
             m_ctx.session_stopped = true;
+            m_ctx.feedback.response_code(res.response_code);
         }
         return {};
     }
@@ -141,6 +143,7 @@ Result PowerDelivery::feed(Event ev) {
         const auto& res = handle_request(*req, m_ctx.session, false, shutdown_requested);
 
         m_ctx.respond(res);
+        m_ctx.feedback.response_code(res.response_code);
 
         if (res.response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
@@ -181,6 +184,7 @@ Result PowerDelivery::feed(Event ev) {
         const message_20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
+        m_ctx.feedback.response_code(dt::ResponseCode::FAILED_SequenceError);
         m_ctx.session_stopped = true;
         return {};
     }
