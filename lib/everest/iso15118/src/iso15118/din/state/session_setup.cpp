@@ -23,7 +23,8 @@ bool session_is_zero(const dt::SessionId& session_id) {
 }
 
 dt::SessionId generate_session_id() {
-    // [V2G-DC-872]: session id must be cryptographically random and non-zero.
+    // [V2G2-DC-993]: a SessionSetupReq carrying SessionID 0 gets a new, not-stored, non-zero id. (The
+    // draft prints this one and 872 below with a "V2G2-DC-" prefix where its neighbours use "V2G-DC-".)
     dt::SessionId id{};
     do {
         fill_random(id.data(), id.size());
@@ -59,21 +60,14 @@ void SessionSetup::enter() {
     logf_debug("Enter state: SessionSetup");
 }
 
-Result SessionSetup::feed(Event ev) {
-    if (ev != Event::V2GTP_MESSAGE) {
-        return {};
-    }
-
-    const auto variant = m_ctx.pull_request();
-
-    if (const auto req = variant->get_if<message_din::SessionSetupRequest>()) {
+Result SessionSetup::on_request(const message_din::Variant& received) {
+    if (const auto req = received.get_if<message_din::SessionSetupRequest>()) {
         const auto evcc_id = to_mac_string(req->evcc_id);
         logf_info("Received DIN session setup with evccid: %s", evcc_id.c_str());
         m_ctx.feedback.evcc_id(evcc_id);
 
-        // [V2G-DC-872]: the SECC keeps no session store (no pause/resume in DIN), so every SessionSetupReq
-        // starts a new session. Always assign a freshly generated id (non-zero, and not the received one)
-        // and answer OK_NewSessionEstablished, rather than adopting an arbitrary non-zero id from the EV.
+        // [V2G2-DC-872]: the SECC keeps no session store (no pause/resume in DIN), so every SessionSetupReq
+        // starts a new session with a freshly generated id rather than adopting the EV's non-zero one.
         const auto session_id = generate_session_id();
         m_ctx.set_session_id(session_id);
 
@@ -83,9 +77,8 @@ Result SessionSetup::feed(Event ev) {
         return m_ctx.create_state<ServiceDiscovery>();
     }
 
-    logf_warning("Expected SessionSetupReq! But code type id: %d", variant->get_type());
-    // [V2G-DC-539]: answer with the received-type response carrying FAILED_SequenceError, then close.
-    respond_sequence_error(m_ctx, *variant);
+    logf_warning("Expected SessionSetupReq! But code type id: %d", received.get_type());
+    respond_sequence_error(m_ctx, received);
     m_ctx.session_stopped = true;
     return {};
 }

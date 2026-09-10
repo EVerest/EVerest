@@ -40,9 +40,6 @@ template <typename InType, typename OutType> void convert(const InType&, OutType
 
 template <typename MessageType> size_t serialize(const MessageType&, const io::StreamOutputView&);
 
-//
-// definitions of type traits
-//
 #define CREATE_TYPE_TRAIT(struct_name, enum_name)                                                                      \
     struct struct_name;                                                                                                \
     template <> struct TypeTrait<struct_name> {                                                                        \

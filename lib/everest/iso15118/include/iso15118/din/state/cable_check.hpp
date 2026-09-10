@@ -15,15 +15,14 @@ struct CableCheck : public StateBase {
     }
 
     void enter() final;
-    Result feed(Event) final;
+    Result on_event(Event) final;
+    Result on_request(const message_din::Variant& received) final;
 
 private:
-    // Handle a CableCheckReq that passed the CP State C/D gate and stage the response.
     Result process_request(const message_din::CableCheckRequest& req);
 
     bool cable_check_initiated{false};
-    // Request parked while waiting for CP State C/D ([V2G-DC-967]): answered when C/D arrives, or with
-    // FAILED when V2G_SECC_CPState_Detection_Timeout expires.
+    // Answered when C/D arrives, or with FAILED when the detection timeout expires ([V2G-DC-967]).
     std::optional<message_din::CableCheckRequest> pending_req{};
 };
 

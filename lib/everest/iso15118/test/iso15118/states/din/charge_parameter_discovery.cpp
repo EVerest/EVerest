@@ -22,8 +22,7 @@ make_request(const dt::SessionId& session, dt::EnergyTransferMode mode = dt::Ene
 
 din::SessionConfig make_config() {
     din::SessionConfig config;
-    // The charge-loop limits (what energy management currently grants) are deliberately lower than the
-    // hardware capabilities: ChargeParameterDiscoveryRes must advertise the capabilities.
+    // Deliberately lower than the hardware capabilities, which are what the response must advertise.
     config.evse_capability_maximum_current_limit = 400.0;
     config.evse_capability_maximum_power_limit = 360000.0;
     config.evse_capability_maximum_voltage_limit = 920.0;
@@ -73,7 +72,7 @@ SCENARIO("DIN SECC ChargeParameterDiscovery state handling") {
     GIVEN("A request after an EVSE-initiated stop") {
         auto req = make_request(session, dt::EnergyTransferMode::DC_extended);
 
-        // The stop request reaches the EV in every state (EvseV2G parity); notification None [V2G-DC-500].
+        // A stop reaches the EV in every state; notification None for DC [V2G-DC-500].
         const auto res = din::state::handle_request(req, make_config(), true, session, /*charger_stop=*/true);
         THEN("the response signals EVSE_Shutdown") {
             REQUIRE(res.response_code == dt::ResponseCode::OK);
@@ -215,8 +214,7 @@ SCENARIO("DIN SECC ChargeParameterDiscovery state handling") {
         }
     }
 
-    // [V2G-DC-638]: the module-reported EVSE error belongs in the ChargeParameterDiscoveryRes status too,
-    // not only in the charge-loop responses. [V2G-DC-637] keeps it informational -- the offer stands.
+    // [V2G-DC-638]: the module error belongs here too, and [V2G-DC-637] keeps it informational.
     GIVEN("A module-reported malfunction") {
         auto req = make_request(session);
 
