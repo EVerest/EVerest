@@ -36,6 +36,7 @@
 #include <ocpp/v2/messages/LogStatusNotification.hpp>
 #include <ocpp/v2/messages/RequestStopTransaction.hpp>
 #include <ocpp/v2/messages/TriggerMessage.hpp>
+#include <ocpp/v2/messages/UpdateFirmware.hpp>
 
 #include <optional>
 #include <stdexcept>
@@ -183,7 +184,16 @@ void ChargePoint::on_network_disconnected(OCPPInterfaceEnum ocpp_interface) {
 
 void ChargePoint::on_firmware_update_status_notification(std::int32_t request_id,
                                                          const FirmwareStatusEnum& firmware_update_status,
-                                                         const bool disable_connectors_during_install) {
+                                                         std::optional<bool> disable_connectors_during_install) {
+    if (is_firmware_status_end_state(firmware_update_status)) {
+        this->all_connectors_unavailable_notification_state = AllConnectorsUnavailableNotificationState::Idle;
+    } else if (firmware_update_status != FirmwareStatusEnum::Idle) {
+        // Whenever there is an update in progress (firmware_update_status is non-idle),
+        // set the notification state to non-Idle (Waiting) as well
+        auto expected = AllConnectorsUnavailableNotificationState::Idle;
+        this->all_connectors_unavailable_notification_state.compare_exchange_strong(
+            expected, AllConnectorsUnavailableNotificationState::Waiting);
+    }
     this->firmware_update->on_firmware_update_status_notification(request_id, firmware_update_status,
                                                                   disable_connectors_during_install);
 }
@@ -652,8 +662,20 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     this->meter_values = std::make_unique<MeterValues>(*this->functional_block_context);
 
+    // Wrap all_connectors_unavailable_callback so it can only fire once per update cycle
+    std::optional<AllConnectorsUnavailableCallback> guarded_all_connectors_unavailable_callback;
+    if (this->callbacks.all_connectors_unavailable_callback.has_value()) {
+        guarded_all_connectors_unavailable_callback = [this]() {
+            auto expected = AllConnectorsUnavailableNotificationState::Waiting;
+            if (this->all_connectors_unavailable_notification_state.compare_exchange_strong(
+                    expected, AllConnectorsUnavailableNotificationState::Notified)) {
+                this->callbacks.all_connectors_unavailable_callback.value()();
+            }
+        };
+    }
+
     this->availability = std::make_unique<Availability>(*functional_block_context, this->callbacks.time_sync_callback,
-                                                        this->callbacks.all_connectors_unavailable_callback);
+                                                        guarded_all_connectors_unavailable_callback);
 
     if (this->callbacks.configure_network_connection_profile_callback.has_value()) {
         this->connectivity_manager->set_configure_network_connection_profile_callback(
@@ -671,9 +693,23 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         *functional_block_context, *this->meter_values, this->callbacks.tariff_message_callback,
         this->callbacks.set_running_cost_callback, this->callbacks.default_price_callback, this->io_context);
 
-    this->firmware_update = std::make_unique<FirmwareUpdate>(
-        *this->functional_block_context, *this->availability, *this->security,
-        this->callbacks.update_firmware_request_callback, this->callbacks.all_connectors_unavailable_callback);
+    // Arm the guard if the request is accepted, so a rejected one does not disturb a running update
+    UpdateFirmwareRequestCallback update_firmware_request_callback = this->callbacks.update_firmware_request_callback;
+    if (update_firmware_request_callback) {
+        update_firmware_request_callback = [this](const UpdateFirmwareRequest& request) {
+            const auto response = this->callbacks.update_firmware_request_callback(request);
+            if (response.status == UpdateFirmwareStatusEnum::Accepted or
+                response.status == UpdateFirmwareStatusEnum::AcceptedCanceled) {
+                this->all_connectors_unavailable_notification_state =
+                    AllConnectorsUnavailableNotificationState::Waiting;
+            }
+            return response;
+        };
+    }
+
+    this->firmware_update =
+        std::make_unique<FirmwareUpdate>(*this->functional_block_context, *this->availability, *this->security,
+                                         update_firmware_request_callback, guarded_all_connectors_unavailable_callback);
 
     this->transaction = std::make_unique<TransactionBlock>(
         *this->functional_block_context, *this->message_queue, *this->authorization, *this->availability,

@@ -18,13 +18,15 @@ class SecurityInterface;
 using UpdateFirmwareRequestCallback = std::function<UpdateFirmwareResponse(const UpdateFirmwareRequest& request)>;
 using AllConnectorsUnavailableCallback = std::function<void()>;
 
+bool is_firmware_status_end_state(const FirmwareStatusEnum& status);
+
 class FirmwareUpdateInterface : public MessageHandlerInterface {
 public:
     ~FirmwareUpdateInterface() override = default;
 
-    virtual void on_firmware_update_status_notification(std::int32_t request_id,
-                                                        const FirmwareStatusEnum& firmware_update_status,
-                                                        const bool disable_connectors_during_install = true) = 0;
+    virtual void
+    on_firmware_update_status_notification(std::int32_t request_id, const FirmwareStatusEnum& firmware_update_status,
+                                           std::optional<bool> disable_connectors_during_install = std::nullopt) = 0;
     virtual void on_firmware_status_notification_request() = 0;
     virtual void on_transaction_finished() = 0;
 };
@@ -54,9 +56,9 @@ public:
                    SecurityInterface& security, UpdateFirmwareRequestCallback update_firmware_request_callback,
                    std::optional<AllConnectorsUnavailableCallback> all_connectors_unavailable_callback);
     void handle_message(const ocpp::EnhancedMessage<MessageType>& message) override;
-    void on_firmware_update_status_notification(std::int32_t request_id,
-                                                const FirmwareStatusEnum& firmware_update_status,
-                                                bool disable_connectors_during_install = true) override;
+    void on_firmware_update_status_notification(
+        std::int32_t request_id, const FirmwareStatusEnum& firmware_update_status,
+        std::optional<bool> disable_connectors_during_install = std::nullopt) override;
     void on_firmware_status_notification_request() override;
     void on_transaction_finished() override;
 
