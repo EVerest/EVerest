@@ -1,6 +1,8 @@
 # Device addresses: IPv4 or IPv6 literals (IPv6 also accepted bracketed "[fd00::5]";
 # link-local needs a scope: "fe80::5%eth0") or hostnames.
 charge_bridge_ip_list : [ "10.0.0.5", "10.0.0.6"]
+# "##" in any name, device path, tap name or tap IP below is replaced with the
+# 1-based position of the device in charge_bridge_ip_list (cb_1, cb_2, ...).
 
 charge_bridge:
   name: cb_##
