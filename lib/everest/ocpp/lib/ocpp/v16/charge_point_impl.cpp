@@ -4725,10 +4725,6 @@ void ChargePointImpl::on_firmware_update_status_notification(
         firmware_update_status == FirmwareStatusNotification::Installed or
         firmware_update_status == FirmwareStatusNotification::InstallVerificationFailed or
         firmware_update_status == FirmwareStatusNotification::Idle) {
-        // Restore connector status, since we did not save to db the status, we can just get the old status back
-        // using it. Idle is in here because an update that dies or an OCPP restart can re-announce it without
-        // ever reaching one of the terminal statuses, which would leave the connectors disabled for the install
-        // stuck Unavailable
         try {
             auto connector_availability = this->database_handler->get_connector_availability();
             for (const auto& [connector, availability] : connector_availability) {
