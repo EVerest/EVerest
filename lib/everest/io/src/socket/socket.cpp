@@ -17,6 +17,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string.h>
@@ -208,14 +209,20 @@ void set_multicast_if(int fd, std::string const& device, struct sockaddr* ai_add
     }
 }
 
-// IPv4 source-IP bind to the address belonging to @p device. Used as a fallback
-// when SO_BINDTODEVICE is not permitted. @p port == 0 picks an ephemeral port.
-void bind_socket_to_interface_address(int fd, std::string const& device, std::uint16_t port) {
+// The IPv4 address of @p device, for the source-IP fallback.
+std::string interface_address_or_throw(std::string const& device) {
     std::string ip = get_interface_address(device);
     if (ip.empty()) {
         throw std::runtime_error("Cannot bind socket to device " + device +
                                  ": no IPv4 address on interface (and SO_BINDTODEVICE not permitted)");
     }
+    return ip;
+}
+
+// IPv4 source-IP bind to the address belonging to @p device. Used as a fallback
+// when SO_BINDTODEVICE is not permitted. @p port == 0 picks an ephemeral port.
+void bind_socket_to_interface_address(int fd, std::string const& device, std::uint16_t port) {
+    std::string ip = interface_address_or_throw(device);
     sockaddr_in local{};
     local.sin_family = AF_INET;
     local.sin_port = htons(port);
@@ -226,23 +233,75 @@ void bind_socket_to_interface_address(int fd, std::string const& device, std::ui
         throw_errno("Fallback bind to interface " + device + " (" + ip + ":" + std::to_string(port) + ") failed");
     }
 }
-} // namespace
-
-void bind_socket_to_device(int fd, std::string const& device) {
+// Device binding without the source-IP fallback. Returns false when only that fallback is left,
+// so a caller that still has to bind a port can do both in a single bind().
+bool apply_device_binding(int fd, std::string const& device) {
     if (device.empty()) {
-        return;
+        return true;
     }
     if (apply_so_bindtodevice(fd, device)) {
-        return;
+        return true;
     }
     // Try IP[_V6]_UNICAST_IF for outgoing unicast routing without privilege. Works for both
     // IPv4 and IPv6 client sockets.
-    if (apply_unicast_if(fd, device)) {
-        return;
+    return apply_unicast_if(fd, device);
+}
+
+// Bind a random free port of @p range. @p source_ip empty binds the family wildcard address,
+// otherwise that IPv4 address (the source-IP fallback of apply_device_binding).
+void bind_source_port(int fd, int family, source_port_range const& range, std::string const& source_ip) {
+    // Bounded: a full range scan on a busy host would stall the connect.
+    constexpr int max_attempts{16};
+    if (range.min == 0 or range.max < range.min) {
+        throw socket_error("Invalid source port range", EINVAL);
     }
-    // Last resort for IPv4 sockets with an unusable family: bind a source IP belonging to the
-    // interface (IPv4 only).
-    bind_socket_to_interface_address(fd, device, 0);
+    static thread_local std::mt19937 generator{std::random_device{}()};
+    std::uniform_int_distribution<std::uint32_t> distribution(range.min, range.max);
+
+    int error = 0;
+    for (int attempt = 0; attempt < max_attempts; ++attempt) {
+        const auto port = static_cast<std::uint16_t>(distribution(generator));
+        int status = -1;
+        if (family == AF_INET6 and source_ip.empty()) {
+            sockaddr_in6 local{};
+            local.sin6_family = AF_INET6;
+            local.sin6_addr = in6addr_any;
+            local.sin6_port = htons(port);
+            status = ::bind(fd, reinterpret_cast<sockaddr*>(&local), sizeof(local));
+        } else {
+            sockaddr_in local{};
+            local.sin_family = AF_INET;
+            local.sin_addr.s_addr = htonl(INADDR_ANY);
+            if (not source_ip.empty() and inet_pton(AF_INET, source_ip.c_str(), &local.sin_addr) != 1) {
+                throw std::runtime_error("Failed to parse interface address " + source_ip);
+            }
+            local.sin_port = htons(port);
+            status = ::bind(fd, reinterpret_cast<sockaddr*>(&local), sizeof(local));
+        }
+        if (status == 0) {
+            return;
+        }
+        error = errno;
+        // Only a taken port is worth another draw, any other cause repeats identically.
+        if (error != EADDRINUSE) {
+            break;
+        }
+    }
+    throw_error("Failed to bind a source port in " + std::to_string(range.min) + "-" + std::to_string(range.max),
+                error);
+}
+} // namespace
+
+void bind_socket_to_device(int fd, std::string const& device) {
+    if (not apply_device_binding(fd, device)) {
+        // Last resort for IPv4 sockets with an unusable family: bind a source IP belonging to the
+        // interface (IPv4 only).
+        bind_socket_to_interface_address(fd, device, 0);
+    }
+}
+
+void bind_socket_to_source_port_range(int fd, int family, source_port_range const& range) {
+    bind_source_port(fd, family, range, {});
 }
 
 event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& device) {
@@ -332,7 +391,8 @@ event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t p
 }
 
 event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms,
-                                              const std::string& device) {
+                                              const std::string& device,
+                                              std::optional<source_port_range> const& source_ports) {
     struct addrinfo hints {};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -357,7 +417,15 @@ event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint
         }
 
         try {
-            bind_socket_to_device(socket_fd, device);
+            // A device that fell back to a source-IP bind() cannot be bound a second time:
+            // address and port go into one bind().
+            const bool device_bound = apply_device_binding(socket_fd, device);
+            if (source_ports.has_value()) {
+                bind_source_port(socket_fd, p->ai_family, *source_ports,
+                                 device_bound ? std::string{} : interface_address_or_throw(device));
+            } else if (not device_bound) {
+                bind_socket_to_interface_address(socket_fd, device, 0);
+            }
         } catch (...) {
             close(socket_fd);
             throw;
