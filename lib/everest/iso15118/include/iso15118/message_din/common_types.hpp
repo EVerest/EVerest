@@ -142,8 +142,7 @@ struct AcEvseStatus {
 
 } // namespace datatypes
 
-// helpers to convert between a physical quantity (as double) and the codec PhysicalValueType.
-// to_physical_value always sets Unit_isUsed=1, from_physical_value tolerates Unit_isUsed==0.
+// to_physical_value always sets Unit_isUsed=1; from_physical_value tolerates Unit_isUsed==0.
 ::din_PhysicalValueType to_physical_value(double value, datatypes::Unit unit);
 double from_physical_value(const ::din_PhysicalValueType& in);
 
