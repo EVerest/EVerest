@@ -490,10 +490,42 @@ class EvSimulatorTestController:
         del connector_id
         self._publish("unplug", {})
 
-    def plug_out_iso(self, connector_id: int = 1) -> None:
-        """Gracefully end an ISO 15118 session, wait for FSM to leave Charging, then unplug."""
+    def stop_session(self, connector_id: int = 1, abort: bool = False) -> None:
+        """End the active session.
+
+        With ``abort`` the V2G session is terminated immediately instead of
+        exchanging SessionStop, which is how a scenario stages a malformed
+        teardown. The default is the clean stop.
+        """
         del connector_id
-        self._publish("stop_session", {})
+        # `abort` is omitted unless asked for, so the default teardown keeps
+        # the exact payload every existing caller already publishes.
+        self._publish("stop_session", {"abort": True} if abort else {})
+
+    def set_present_values(
+        self,
+        present_voltage: float | None = None,
+        present_active_power: float | None = None,
+        connector_id: int = 1,
+    ) -> None:
+        """Override the present values the EV reports over ISO 15118.
+
+        EvSimulator otherwise echoes what the EVSE delivered, so this is how a
+        test makes the EV report a value the charger did not deliver. Each
+        argument left as None keeps echoing that field, so overriding one value
+        does not report the other as a measured zero.
+        """
+        del connector_id
+        payload: dict[str, float] = {}
+        if present_voltage is not None:
+            payload["present_voltage"] = present_voltage
+        if present_active_power is not None:
+            payload["present_active_power"] = present_active_power
+        self._publish("set_present_values", payload)
+
+    def plug_out_iso(self, connector_id: int = 1, abort: bool = False) -> None:
+        """Gracefully end an ISO 15118 session, wait for FSM to leave Charging, then unplug."""
+        self.stop_session(connector_id, abort=abort)
         self.state_collector.wait_for_state_not("Charging", timeout=30.0)
         self._publish("unplug", {})
 
