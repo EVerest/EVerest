@@ -13,8 +13,7 @@ namespace iso15118::message_2 {
 struct PaymentDetailsRequest {
     Header header;
     std::string emaid;
-    // ContractSignatureCertChain: the contract leaf certificate (DER) and the ordered SubCertificates
-    // (leaf-nearest first), both in raw DER form.
+    // Leaf certificate and ordered SubCertificates (leaf-nearest first), both in raw DER.
     std::vector<uint8_t> contract_certificate;
     std::vector<std::vector<uint8_t>> sub_certificates;
 };

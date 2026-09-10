@@ -38,8 +38,8 @@ struct PMaxScheduleEntry {
     PhysicalValue p_max;
 };
 
-// ISO 15118-2 SalesTariffEntryType (subset). The nested ConsumptionCost/Cost detail is not modelled --
-// the EVCC does not act on cost -- but the tariff structure is decoded rather than dropped [V2G2-659].
+// The nested ConsumptionCost/Cost detail is not modelled -- the EVCC does not act on cost -- but the
+// tariff structure is decoded rather than dropped [V2G2-659].
 struct SalesTariffEntry {
     uint32_t start{0};
     std::optional<uint32_t> duration;
@@ -56,7 +56,6 @@ struct SalesTariff {
 struct SAScheduleTuple {
     uint8_t sa_schedule_tuple_id;
     everest::lib::util::fixed_vector<PMaxScheduleEntry, 12> pmax_schedule;
-    // Optional cost-over-time tariff advertised alongside the PMaxSchedule; decoded but not acted upon.
     std::optional<SalesTariff> sales_tariff;
 };
 

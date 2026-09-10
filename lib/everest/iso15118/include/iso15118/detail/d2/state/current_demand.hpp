@@ -13,9 +13,7 @@ namespace iso15118::d2::state {
 
 namespace dt = message_2::datatypes;
 
-// Builds the CurrentDemandRes. Takes no request: every element of the response comes from the SECC's own
-// configuration and present output -- the SessionID is validated by the caller (reject_unknown_session),
-// and the *LimitAchieved flags describe the EVSE, not the EV's target [Table 71].
+// Takes no request: every element comes from the SECC's own configuration and present output.
 message_2::CurrentDemandResponse handle_request(const dt::SessionId& session_id, const d2::SessionConfig& config,
                                                 float present_voltage, float present_current,
                                                 uint8_t sa_schedule_tuple_id, bool charger_stop, bool request_receipt,
