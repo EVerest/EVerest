@@ -11,23 +11,34 @@
 #include <mutex>
 
 #include <Broker.hpp>
+#include <PowerMeterAggregator.hpp>
+
+#include <memory>
 
 namespace module {
 
+/// \brief The module's manifest options.
+///
+/// Every member carries its manifest default, so an option a caller forgets to set reads as
+/// that default instead of an indeterminate value. Production always assigns all of them
+/// from the generated config; the defaults exist for tests, where a missed option used to
+/// reach EnergyManagerImpl as garbage (a negative aggregation window silently switched the
+/// staleness filter off).
 struct EnergyManagerConfig {
-    double nominal_ac_voltage;
-    int update_interval;
-    int schedule_interval_duration;
-    int schedule_total_duration;
-    double slice_ampere;
-    double slice_watt;
-    bool debug;
-    std::string switch_3ph1ph_while_charging_mode;
-    int switch_3ph1ph_max_nr_of_switches_per_session;
-    std::string switch_3ph1ph_switch_limit_stickyness;
-    int switch_3ph1ph_power_hysteresis_W;
-    int switch_3ph1ph_time_hysteresis_s;
-    std::string broker_strategy;
+    double nominal_ac_voltage{230.0};
+    int update_interval{1};
+    int schedule_interval_duration{60};
+    int schedule_total_duration{1};
+    double slice_ampere{0.5};
+    double slice_watt{500};
+    bool debug{false};
+    std::string switch_3ph1ph_while_charging_mode{"Never"};
+    int switch_3ph1ph_max_nr_of_switches_per_session{0};
+    std::string switch_3ph1ph_switch_limit_stickyness{"DontChange"};
+    int switch_3ph1ph_power_hysteresis_W{200};
+    int switch_3ph1ph_time_hysteresis_s{600};
+    std::string broker_strategy{"FastCharging"};
+    int power_meter_aggregation_window_s{5};
 };
 
 /// \brief Broker selected by the broker_strategy config option (see manifest.yaml).
@@ -65,12 +76,20 @@ public:
     /// measurement is available, or no active session).
     ObservedMeasurement get_observed_measurement(const std::string& uuid);
 
+    /// \brief The aggregated leaf power meter reading computed during the most recent
+    /// run_optimizer() call. Readings older than power_meter_aggregation_window_s are
+    /// excluded from the sums.
+    /// Returned by value under the optimizer lock: run_optimizer() runs on a detached
+    /// thread once start() has been called, so a reference into the live state would be a
+    /// data race for any external caller.
+    PowerMeterAggregator::AggregateResult get_leaf_aggregate() const;
+
 private:
     EnergyManagerConfig config;
     BrokerStrategy broker_strategy;
     std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)> enforced_limits_callback;
 
-    std::mutex energy_mutex;
+    mutable std::mutex energy_mutex;
     std::condition_variable mainloop_sleep_condvar;
     std::mutex mainloop_sleep_mutex;
 
@@ -78,6 +97,10 @@ private:
     types::energy::EnergyFlowRequest energy_flow_request;
 
     std::map<std::string, BrokerContext> contexts;
+
+    // Aggregates the leaf power meter readings of the tree. Rebuilt on every optimizer run.
+    std::unique_ptr<PowerMeterAggregator> leaf_aggregator;
+    PowerMeterAggregator::AggregateResult leaf_aggregate;
 };
 
 } // namespace module
