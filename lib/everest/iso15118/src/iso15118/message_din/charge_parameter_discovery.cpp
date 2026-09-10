@@ -137,7 +137,7 @@ static void convert(const datatypes::SAScheduleList& in, struct din_SAScheduleLi
         init_din_SAScheduleTupleType(&out_tuple);
         out_tuple.SAScheduleTupleID = in_tuple.sa_schedule_tuple_id;
         out_tuple.PMaxSchedule.PMaxScheduleID = in_tuple.pmax_schedule_id;
-        // [V2G-DC-554] SalesTariff shall not be used in DIN 70121.
+        // [V2G-DC-554]: no SalesTariff in DIN 70121.
         out_tuple.SalesTariff_isUsed = 0;
 
         uint16_t entry_count = 0;

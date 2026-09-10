@@ -12,8 +12,7 @@ namespace iso15118::message_din {
 
 template <typename cb_HeaderType> void convert(const cb_HeaderType& in, Header& out) {
     std::copy(in.SessionID.bytes, in.SessionID.bytes + in.SessionID.bytesLen, out.session_id.begin());
-    // Notification and Signature are intentionally decoded-and-dropped: EvseV2G never populates the SECC
-    // header Notification/FaultCode, and the EVCC state tree does not consume it.
+    // Intentionally decoded-and-dropped: EvseV2G never populates the SECC header Notification/FaultCode.
 }
 
 template void convert(const struct din_MessageHeaderType& in, Header& out);

@@ -10,8 +10,8 @@ namespace iso15118::din::state {
 
 namespace dt = message_din::datatypes;
 
-message_din::PreChargeResponse handle_request(const message_din::PreChargeRequest& req, float present_voltage,
-                                              const dt::SessionId& session_id,
+message_din::PreChargeResponse handle_request([[maybe_unused]] const message_din::PreChargeRequest& req,
+                                              float present_voltage, const dt::SessionId& session_id,
                                               std::optional<dt::DcEvseStatusCode> error_status_code = std::nullopt,
                                               bool charger_stop = false);
 

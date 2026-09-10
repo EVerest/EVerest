@@ -11,7 +11,7 @@ struct SessionSetup : public StateBase {
     }
 
     void enter() final;
-    Result feed(Event) final;
+    Result on_request(const message_din::Variant& received) final;
 };
 
 } // namespace iso15118::din::state
