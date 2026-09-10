@@ -3,6 +3,7 @@
 
 #include <EnergyManagerImpl.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 
@@ -100,6 +101,127 @@ EnergyManagerImpl::EnergyManagerImpl(
 PowerMeterAggregator::AggregateResult EnergyManagerImpl::get_leaf_aggregate() const {
     std::scoped_lock lock(energy_mutex);
     return leaf_aggregate;
+}
+
+RedistributionInference EnergyManagerImpl::get_redistribution_inference() const {
+    std::scoped_lock lock(energy_mutex);
+    return redistribution_inference;
+}
+
+namespace {
+
+std::string format_W(const std::optional<float>& value) {
+    return value.has_value() ? fmt::format("{:.0f} W", value.value()) : std::string("n/a");
+}
+
+bool in_session(const types::energy::EnergyFlowRequest& node) {
+    return not node.evse_state.has_value() or (node.evse_state.value() != types::energy::EvseState::Unplugged and
+                                               node.evse_state.value() != types::energy::EvseState::Finished);
+}
+
+} // namespace
+
+void EnergyManagerImpl::infer_redistribution(const types::energy::EnergyFlowRequest& request,
+                                             const std::vector<std::shared_ptr<Broker>>& brokers,
+                                             const std::vector<types::energy::EnforcedLimits>& limits) {
+    const auto nominal_ac_voltage = static_cast<float>(config.nominal_ac_voltage);
+    const auto margin = static_cast<float>(config.power_redistribution_margin);
+    const auto gain = static_cast<float>(config.power_redistribution_gain);
+    const auto hold_time = std::chrono::seconds(config.power_redistribution_hold_time_s);
+    const auto now = globals.start_time;
+
+    RedistributionInference inference;
+    std::vector<SaturatedConnector> saturated;
+
+    for (const auto& broker : brokers) {
+        const auto& node = broker->get_local_market().energy_flow_request;
+        auto& ctx = contexts[node.uuid];
+        const auto bounds = get_static_bounds_W(node, nominal_ac_voltage);
+
+        // The measurement observed this run is the EV's response to what the previous run
+        // allotted, so those two are the pair to compare.
+        std::optional<float> measured_W;
+        if (ctx.last_observed_measurement.power_W.has_value()) {
+            measured_W = ctx.last_observed_measurement.power_W.value().total;
+        }
+        auto connector = classify_connector(ctx.last_allocated_W, measured_W, bounds, margin);
+
+        if (connector.connector_class == ConnectorClass::UnderConsuming) {
+            if (not ctx.under_consuming_since.has_value()) {
+                ctx.under_consuming_since = now;
+            }
+            connector.held = now - ctx.under_consuming_since.value() >= hold_time;
+            if (connector.held and not ctx.reduce_reported) {
+                ctx.reduce_reported = true;
+                EVLOG_info << fmt::format("{}: power can be reduced by {:.0f} W (allotted {}, measured {})", node.uuid,
+                                          connector.reducible_W, format_W(connector.allocated_W),
+                                          format_W(connector.measured_W));
+            }
+        } else {
+            ctx.under_consuming_since.reset();
+            if (ctx.reduce_reported) {
+                ctx.reduce_reported = false;
+                EVLOG_info << fmt::format("{}: power can no longer be reduced (allotted {}, measured {})", node.uuid,
+                                          format_W(connector.allocated_W), format_W(connector.measured_W));
+            }
+            if (connector.connector_class == ConnectorClass::Saturated) {
+                saturated.push_back({connector.allocated_W.value(), bounds.max_W});
+            }
+        }
+
+        // Remember this run's allocation for the next run's comparison. Only sessions count:
+        // what an unplugged connector is allotted has no consumption to compare against, and
+        // it must not leak into the first run of the next session as a false gap.
+        ctx.last_allocated_W.reset();
+        if (in_session(node)) {
+            const auto limit =
+                std::find_if(limits.begin(), limits.end(), [&node](const auto& l) { return l.uuid == node.uuid; });
+            if (limit != limits.end()) {
+                ctx.last_allocated_W = get_allocated_power_W(*limit, nominal_ac_voltage);
+            }
+        }
+
+        inference.connectors[node.uuid] = connector;
+    }
+
+    auto site = infer_site(get_grid_limit_W(request, nominal_ac_voltage), leaf_aggregate, saturated, margin, gain);
+
+    if (site.increase_W > 0.f) {
+        if (not headroom_since.has_value()) {
+            headroom_since = now;
+        }
+        site.held = now - headroom_since.value() >= hold_time;
+        if (site.held and not increase_reported) {
+            increase_reported = true;
+            EVLOG_info << fmt::format(
+                "power can be increased by {:.0f} W over {} connector(s) (grid limit {}, measured {})", site.increase_W,
+                site.saturated_connectors, format_W(site.grid_limit_W), format_W(site.measured_W));
+        }
+    } else {
+        headroom_since.reset();
+        if (increase_reported) {
+            increase_reported = false;
+            EVLOG_info << fmt::format("power can no longer be increased (grid limit {}, measured {}, headroom {})",
+                                      format_W(site.grid_limit_W), format_W(site.measured_W),
+                                      format_W(site.headroom_W));
+        }
+    }
+
+    if (globals.debug) {
+        EVLOG_info << fmt::format("Redistribution: grid limit {}, measured {}, headroom {}, {} saturated, "
+                                  "proposed increase {:.0f} W{}",
+                                  format_W(site.grid_limit_W), format_W(site.measured_W), format_W(site.headroom_W),
+                                  site.saturated_connectors, site.increase_W, site.held ? " (held)" : "");
+        for (const auto& [uuid, connector] : inference.connectors) {
+            EVLOG_info << fmt::format("  {}: {} allotted {}, measured {}, reducible {:.0f} W{}", uuid,
+                                      to_string(connector.connector_class), format_W(connector.allocated_W),
+                                      format_W(connector.measured_W), connector.reducible_W,
+                                      connector.held ? " (held)" : "");
+        }
+    }
+
+    inference.site = site;
+    redistribution_inference = inference;
 }
 
 void EnergyManagerImpl::start() {
@@ -263,6 +385,10 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
                 EVLOG_info << "Sending enforced limits (import) to :" << l.uuid << " " << l.limits_root_side;
             }
         }
+    }
+
+    if (broker_strategy == BrokerStrategy::PowerRedistribution) {
+        infer_redistribution(request, brokers, optimized_values);
     }
 
     // Print out test case file

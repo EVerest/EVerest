@@ -26,6 +26,9 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             {"switch_3ph1ph_time_hysteresis_s", config.switch_3ph1ph_time_hysteresis_s},
             {"broker_strategy", config.broker_strategy},
             {"power_meter_aggregation_window_s", config.power_meter_aggregation_window_s},
+            {"power_redistribution_margin", config.power_redistribution_margin},
+            {"power_redistribution_gain", config.power_redistribution_gain},
+            {"power_redistribution_hold_time_s", config.power_redistribution_hold_time_s},
         };
     }
     static module::EnergyManagerConfig from_json(const json& j) {
@@ -44,6 +47,9 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             j.at("switch_3ph1ph_time_hysteresis_s"),
             j.value("broker_strategy", std::string("FastCharging")),
             j.value("power_meter_aggregation_window_s", 5),
+            j.value("power_redistribution_margin", 0.1),
+            j.value("power_redistribution_gain", 0.5),
+            j.value("power_redistribution_hold_time_s", 10),
         };
     }
 };

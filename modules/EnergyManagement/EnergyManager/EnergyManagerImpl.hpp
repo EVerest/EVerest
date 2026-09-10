@@ -11,6 +11,7 @@
 #include <mutex>
 
 #include <Broker.hpp>
+#include <BrokerPowerRedistribution.hpp>
 #include <PowerMeterAggregator.hpp>
 
 #include <memory>
@@ -39,12 +40,23 @@ struct EnergyManagerConfig {
     int switch_3ph1ph_time_hysteresis_s{600};
     std::string broker_strategy{"FastCharging"};
     int power_meter_aggregation_window_s{5};
+    double power_redistribution_margin{0.1};
+    double power_redistribution_gain{0.5};
+    int power_redistribution_hold_time_s{10};
 };
 
 /// \brief Broker selected by the broker_strategy config option (see manifest.yaml).
 enum class BrokerStrategy {
     FastCharging,
     PowerRedistribution,
+};
+
+/// \brief What the power redistribution inference concluded in the most recent optimizer
+/// run: the site view and one entry per EVSE in the tree. Empty with the FastCharging
+/// strategy.
+struct RedistributionInference {
+    SiteInference site;
+    std::map<std::string, ConnectorInference> connectors;
 };
 
 class EnergyManagerImpl {
@@ -84,7 +96,19 @@ public:
     /// data race for any external caller.
     PowerMeterAggregator::AggregateResult get_leaf_aggregate() const;
 
+    /// \brief The power redistribution inference of the most recent run_optimizer() call.
+    /// Returned by value under the optimizer lock, like get_leaf_aggregate().
+    RedistributionInference get_redistribution_inference() const;
+
 private:
+    /// \brief Runs the log-only power redistribution inference for one optimizer run, after
+    /// trading. Compares each connector's measurement with the allocation of the previous
+    /// run, the site aggregate with the grid limit, applies the hold time and logs
+    /// candidates on change. Called under energy_mutex.
+    void infer_redistribution(const types::energy::EnergyFlowRequest& request,
+                              const std::vector<std::shared_ptr<Broker>>& brokers,
+                              const std::vector<types::energy::EnforcedLimits>& limits);
+
     EnergyManagerConfig config;
     BrokerStrategy broker_strategy;
     std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)> enforced_limits_callback;
@@ -101,6 +125,12 @@ private:
     // Aggregates the leaf power meter readings of the tree. Rebuilt on every optimizer run.
     std::unique_ptr<PowerMeterAggregator> leaf_aggregator;
     PowerMeterAggregator::AggregateResult leaf_aggregate;
+
+    RedistributionInference redistribution_inference;
+    // start_time of the run since which the site has continuously had headroom to hand
+    // out; nullopt while it has not. Site counterpart of BrokerContext::under_consuming_since.
+    std::optional<date::utc_clock::time_point> headroom_since;
+    bool increase_reported{false};
 };
 
 } // namespace module
