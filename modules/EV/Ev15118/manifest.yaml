@@ -8,8 +8,10 @@ config:
     default: eth0
   evcc_id:
     description:
-      EVCC identifier sent to the SECC, 1 to 255 characters. Both forms are valid,
-      a MAC address (02:00:00:00:00:01) and a vehicle identifier (WMIV1234567890ABCDEX).
+      EVCC identifier sent to the SECC in ISO 15118-20 SessionSetup, 1 to 255 characters.
+      Both forms are valid, a MAC address (02:00:00:00:00:01) and a vehicle identifier
+      (WMIV1234567890ABCDEX). ISO 15118-2 and DIN SPEC 70121 do not use it; their EVCCID
+      is the 6 byte MAC of `device`.
     type: string
     minLength: 1
     default: "02:00:00:00:00:01"
@@ -32,14 +34,13 @@ config:
     default: Dynamic
   supported_DIN70121:
     description:
-      Offer DIN SPEC 70121 in the SAP handshake, after ISO 15118-20. There is no
-      DIN 70121 engine yet, so an SECC selecting it ends the session.
+      Offer DIN SPEC 70121 (DC, plaintext only) in the SAP handshake, after ISO 15118-20.
     type: boolean
     default: false
   supported_ISO15118_2:
     description:
-      Offer ISO 15118-2 in the SAP handshake, after ISO 15118-20. There is no
-      ISO 15118-2 engine yet, so an SECC selecting it ends the session.
+      Offer ISO 15118-2 (AC and DC, EIM or Plug&Charge, TLS 1.2 or plaintext) in the
+      SAP handshake, after ISO 15118-20.
     type: boolean
     default: false
   tls_active:
@@ -97,6 +98,83 @@ config:
       empty file means no password.
     type: string
     default: ""
+  iso2_ac_e_amount_wh:
+    description:
+      ISO 15118-2 AC_EVChargeParameter EAmount, the energy the EV asks for, in watt-hours.
+      The -20 AC parameters below are power based and do not carry this value.
+    type: number
+    minimum: 0
+    default: 60000
+  iso2_ac_ev_max_voltage_v:
+    description: ISO 15118-2 AC_EVChargeParameter EVMaxVoltage in volts (per line).
+    type: number
+    minimum: 0
+    default: 400
+  iso2_ac_ev_max_current_a:
+    description: ISO 15118-2 AC_EVChargeParameter EVMaxCurrent in amperes (per line).
+    type: number
+    minimum: 0
+    default: 32
+  iso2_ac_ev_min_current_a:
+    description: ISO 15118-2 AC_EVChargeParameter EVMinCurrent in amperes (per line).
+    type: number
+    minimum: 0
+    default: 10
+  enable_pnc:
+    description:
+      Offer ISO 15118-2 Plug&Charge (Contract) next to EIM and select Contract whenever the
+      SECC offers it. Requires TLS; without it the EV falls back to EIM only. This is
+      config driven because EvManager's default payment option is `auto`; an explicit
+      ExternalPayment in start_charging turns the preference off for that session, and an
+      explicit Contract keeps it on. The contract certificate material below is used for
+      PaymentDetails and, when it is missing or pnc_force_cert_install is set, for a
+      CertificateInstallation.
+    type: boolean
+    default: false
+  pnc_contract_cert_chain_path:
+    description:
+      Path to one PEM file holding the whole PnC contract (MO) certificate chain, leaf first.
+      Empty resolves to <etc>/certs/client/mo/MO_LEAF.pem followed by
+      <etc>/certs/ca/mo/INTERMEDIATE_MO_CA_CERTS.pem.
+    type: string
+    default: ""
+  pnc_contract_key_path:
+    description:
+      Path to the PnC contract (MO) leaf private key (PEM); signs the PnC AuthorizationReq.
+      Empty resolves to <etc>/certs/client/mo/MO_LEAF.key.
+    type: string
+    default: ""
+  pnc_contract_key_password_path:
+    description:
+      Path to the file holding the password of the contract leaf private key. Empty resolves
+      to <etc>/certs/client/mo/MO_LEAF_PASSWORD.txt; a missing or empty file means no password.
+    type: string
+    default: ""
+  pnc_oem_prov_cert_path:
+    description:
+      Path to the OEM provisioning certificate (PEM). Signs CertificateInstallationReq and
+      holds the static ECDH key that decrypts the delivered contract key. Empty resolves to
+      <etc>/certs/client/oem/OEM_LEAF.pem.
+    type: string
+    default: ""
+  pnc_oem_prov_key_path:
+    description:
+      Path to the OEM provisioning private key (PEM). Empty resolves to
+      <etc>/certs/client/oem/OEM_LEAF.key.
+    type: string
+    default: ""
+  pnc_oem_prov_key_password_path:
+    description:
+      Path to the file holding the password of the OEM provisioning private key. Empty
+      resolves to <etc>/certs/client/oem/OEM_LEAF_PASSWORD.txt.
+    type: string
+    default: ""
+  pnc_force_cert_install:
+    description:
+      Run a CertificateInstallation even when a contract certificate is configured. Requires
+      the SECC to offer the Certificate service.
+    type: boolean
+    default: false
   ac_phase_count:
     description:
       Number of AC lines the EV draws on, 1 or 3. Selects which connector the EV
