@@ -1238,7 +1238,6 @@ void ChargePointImpl::change_all_connectors_to_unavailable_for_firmware_update()
     }
 
     if (!transaction_running) {
-        // Check for the callback first, so the guard is not burned while none is registered yet
         if (this->all_connectors_unavailable_callback and !this->all_connectors_unavailable_notified.exchange(true)) {
             this->all_connectors_unavailable_callback();
         }
@@ -4715,8 +4714,7 @@ void ChargePointImpl::on_firmware_update_status_notification(
         EVLOG_debug << "Could not convert incoming FirmwareStatusNotification to OCPP type";
     }
 
-    // Opt-in only, because an install can stay scheduled for a long time and the connectors would be unavailable
-    // for all of it
+    // Explicitly allow disabling the connectors when an update is scheduled
     if (firmware_update_status == FirmwareStatusNotification::InstallScheduled and
         disable_connectors_during_install.value_or(false)) {
         this->set_firmware_install_pending(true);
