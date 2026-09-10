@@ -20,6 +20,9 @@
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
 #include <mutex>
+
+#include <opentelemetry/sdk/metrics/meter_provider.h>
+#include <opentelemetry/sdk/trace/tracer_provider.h>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -107,6 +110,11 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
+    // OpenTelemetry SDK of this module process, see init_opentelemetry()
+    void init_opentelemetry();
+    void shutdown_opentelemetry();
+    opentelemetry::nostd::shared_ptr<opentelemetry::sdk::trace::TracerProvider> tracer_provider;
+    opentelemetry::nostd::shared_ptr<opentelemetry::sdk::metrics::MeterProvider> meter_provider;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

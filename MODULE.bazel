@@ -39,6 +39,11 @@ bazel_dep(name = "rules_rust", version = "0.67.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "pybind11_bazel", version = "3.0.0")
 bazel_dep(name = "sqlite3", version = "3.51.2")
+bazel_dep(name = "opentelemetry-cpp", version = "1.28.0")
+
+# Direct dependency only so that `@curl//:ssl_lib` can be set in .bazelrc;
+# curl itself is pulled in by opentelemetry-cpp's OTLP/HTTP exporter.
+bazel_dep(name = "curl", version = "8.12.0.bcr.1")
 
 single_version_override(
     module_name = "boost.context",
@@ -48,6 +53,22 @@ single_version_override(
 single_version_override(
     module_name = "sed",
     patches = ["//third-party/bazel/patches:sed_memchr.patch"],
+)
+
+# opentelemetry-cpp pulls in grpc@1.80.0, which asks for rules_swift 2.x, while
+# bazel_tools (Bazel 9) already depends on rules_swift 3.x. The compatibility
+# levels differ, so pin the version bazel_tools needs; nothing here builds Swift.
+single_version_override(
+    module_name = "rules_swift",
+    version = "3.1.2",
+)
+
+# opentelemetry-cpp asks for rapidyaml 0.15.x (only used by its file-based
+# configuration, which we do not build), while lib/everest/yaml is written
+# against the 0.10 callback API. Keep our version.
+single_version_override(
+    module_name = "rapidyaml",
+    version = "0.10.0",
 )
 
 ###############################################################################

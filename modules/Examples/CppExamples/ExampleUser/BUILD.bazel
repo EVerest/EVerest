@@ -1,0 +1,6 @@
+load("//modules:module.bzl", "cc_everest_module")
+
+cc_everest_module(
+    name = "ExampleUser",
+    impls = ["example_user"],
+)

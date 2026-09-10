@@ -22,3 +22,33 @@
 .. *******************************************
 
 Simple example module written in C++
+
+OpenTelemetry prototype
+=======================
+
+This module doubles as a prototype for exporting `OpenTelemetry
+<https://opentelemetry.io>`_ signals from an EVerest module. The code is split
+the way a framework integration would be:
+
+* ``Example::init_opentelemetry()`` installs the SDK for the module process: an
+  OTLP/HTTP exporter for traces and metrics plus a resource that tags every
+  signal with ``service.name`` (the module type), ``service.instance.id`` (the
+  module id) and ``service.namespace=everest``.
+  ``Example::shutdown_opentelemetry()`` flushes it on shutdown.
+* ``exampleImpl`` only uses the OpenTelemetry API: a server span around every
+  handled ``uses_something`` command with client spans for the ``kvs`` calls it
+  makes, and the counter ``everest.example.commands``.
+
+The exporters are configured through the standard environment variables, most
+importantly ``OTEL_EXPORTER_OTLP_ENDPOINT`` (default ``http://localhost:4318``)
+and ``OTEL_METRIC_EXPORT_INTERVAL`` (milliseconds, default ``60000``).
+
+To see it in action, start a collector that prints what it receives and run
+the demo environment from the everest-core root:
+
+.. code-block:: bash
+
+    docker run --rm -p 4318:4318 \
+        -v $PWD/modules/Examples/CppExamples/Example/otel-collector.yaml:/etc/otelcol/config.yaml \
+        otel/opentelemetry-collector
+    OTEL_METRIC_EXPORT_INTERVAL=5000 bazel run //modules/Examples/CppExamples/Example:otel_env

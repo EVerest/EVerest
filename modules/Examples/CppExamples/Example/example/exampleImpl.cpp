@@ -2,6 +2,9 @@
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include "exampleImpl.hpp"
 
+#include <opentelemetry/metrics/provider.h>
+#include <opentelemetry/trace/provider.h>
+
 // initial cpp template for interface example_child
 // this file should not be overwritten by the code generator again
 
@@ -15,6 +18,15 @@ bool is_valid_enum_test(const std::string& value) {
         return true;
     }
     return false;
+}
+
+// Runs fn inside a client span, i.e. marks it as a call into another module.
+template <typename Fn> auto with_client_span(opentelemetry::trace::Tracer& tracer, const char* name, Fn&& fn) {
+    opentelemetry::trace::StartSpanOptions options;
+    options.kind = opentelemetry::trace::SpanKind::kClient;
+    auto span = tracer.StartSpan(name, options);
+    auto scope = tracer.WithActiveSpan(span);
+    return fn(); // the span is ended when it goes out of scope
 }
 } // namespace
 
@@ -31,6 +43,16 @@ void exampleImpl::init() {
     }
     mod->mqtt.subscribe("external/a",
                         [](json data) { EVLOG_error << "received data from external MQTT handler: " << data.dump(); });
+
+    // Instrumentation only talks to the OpenTelemetry API. The SDK behind the
+    // global providers is installed by Example::init(); without one these
+    // calls are no-ops.
+    constexpr auto instrumentation_scope = "everest.modules.Example";
+    tracer = opentelemetry::trace::Provider::GetTracerProvider()->GetTracer(instrumentation_scope);
+    commands_counter =
+        opentelemetry::metrics::Provider::GetMeterProvider()
+            ->GetMeter(instrumentation_scope)
+            ->CreateUInt64Counter("everest.example.commands", "Commands handled by the example interface", "{command}");
 }
 
 void exampleImpl::ready() {
@@ -72,25 +94,35 @@ void exampleImpl::shutdown() {
 }
 
 bool exampleImpl::handle_uses_something(std::string& key) {
-    if (mod->r_kvs->call_exists(key)) {
+    // One server span per handled command. Making it the active span turns the
+    // kvs calls below into its children, so a trace shows what the command
+    // spent its time on.
+    opentelemetry::trace::StartSpanOptions options;
+    options.kind = opentelemetry::trace::SpanKind::kServer;
+    auto span = tracer->StartSpan("example.uses_something", {{"everest.cmd.key", key}}, options);
+    auto scope = tracer->WithActiveSpan(span);
+    commands_counter->Add(1, {{"everest.cmd", "uses_something"}});
+
+    if (with_client_span(*tracer, "kvs.exists", [&] { return mod->r_kvs->call_exists(key); })) {
         EVLOG_debug << "IT SHOULD NOT AND DOES NOT EXIST";
     }
 
     Array test_array = {1, 2, 3};
-    mod->r_kvs->call_store(key, test_array);
+    with_client_span(*tracer, "kvs.store", [&] { mod->r_kvs->call_store(key, test_array); });
 
-    bool exi = mod->r_kvs->call_exists(key);
+    bool exi = with_client_span(*tracer, "kvs.exists", [&] { return mod->r_kvs->call_exists(key); });
 
     if (exi) {
         EVLOG_debug << "IT ACTUALLY EXISTS";
     }
 
-    auto ret = mod->r_kvs->call_load(key);
+    auto ret = with_client_span(*tracer, "kvs.load", [&] { return mod->r_kvs->call_load(key); });
 
     Array arr = std::get<Array>(ret);
 
     EVLOG_debug << "loaded array: " << arr << ", original array: " << test_array;
 
+    span->SetAttribute("everest.example.exists", exi);
     return exi;
 };
 

@@ -17,6 +17,9 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+
+#include <opentelemetry/metrics/sync_instruments.h>
+#include <opentelemetry/trace/tracer.h>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -109,6 +112,9 @@ private:
     std::atomic<bool> ready_finished{false};
     std::condition_variable shutdown_cv;
     std::mutex shutdown_mutex;
+    // OpenTelemetry instruments of this implementation, see init()
+    opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> tracer;
+    opentelemetry::nostd::unique_ptr<opentelemetry::metrics::Counter<uint64_t>> commands_counter;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

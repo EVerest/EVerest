@@ -1,3 +1,4 @@
+load("//lib/everest/framework/bazel:everest_env.bzl", "everest_env")
 load("//modules:module.bzl", "cc_everest_module")
 
 IMPLS = [
@@ -7,5 +8,28 @@ IMPLS = [
 
 cc_everest_module(
     name = "Example",
+    deps = [
+        "@opentelemetry-cpp//api",
+        "@opentelemetry-cpp//exporters/otlp:otlp_http_exporter",
+        "@opentelemetry-cpp//exporters/otlp:otlp_http_metric_exporter",
+        "@opentelemetry-cpp//sdk/src/metrics",
+        "@opentelemetry-cpp//sdk/src/resource",
+        "@opentelemetry-cpp//sdk/src/trace",
+    ],
     impls = IMPLS,
+)
+
+# Demo setup for the OpenTelemetry prototype: `bazel run` it next to an OTLP
+# collector, see docs/index.rst.
+everest_env(
+    name = "otel_env",
+    config_file = "config-otel.yaml",
+    errors = ["//errors"],
+    interfaces = ["//interfaces"],
+    modules = [
+        ":Example",
+        "//modules/Examples/CppExamples/ExampleUser",
+        "//modules/Misc/PersistentStore",
+    ],
+    types = ["//types"],
 )

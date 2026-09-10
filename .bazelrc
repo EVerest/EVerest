@@ -10,6 +10,12 @@ build --incompatible_autoload_externally=+cc_library,+cc_binary,+cc_test,+cc_sha
 # binary therefore has to be position-independent.
 build --copt=-fPIC
 
+# opentelemetry-cpp's OTLP/HTTP exporter goes through curl, and the BCR curl
+# module defaults to BoringSSL. Module binaries already link OpenSSL (via
+# libwebsockets/mosquitto in the framework), and linking both fails with
+# duplicate SSL_* symbols, so make curl use the same OpenSSL.
+build --@curl//:ssl_lib=openssl
+
 # CI config: smaller binaries, shared repo cache, disk cache for artifacts.
 build:ci -c opt
 build:ci --strip=always

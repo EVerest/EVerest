@@ -6,6 +6,20 @@
 #include <mutex>
 #include <thread>
 
+#include <opentelemetry/exporters/otlp/otlp_http_exporter_factory.h>
+#include <opentelemetry/exporters/otlp/otlp_http_metric_exporter_factory.h>
+#include <opentelemetry/sdk/metrics/export/periodic_exporting_metric_reader_factory.h>
+#include <opentelemetry/sdk/metrics/export/periodic_exporting_metric_reader_options.h>
+#include <opentelemetry/sdk/metrics/meter_provider_factory.h>
+#include <opentelemetry/sdk/metrics/provider.h>
+#include <opentelemetry/sdk/metrics/view/view_registry.h>
+#include <opentelemetry/sdk/resource/resource.h>
+#include <opentelemetry/sdk/trace/batch_span_processor_factory.h>
+#include <opentelemetry/sdk/trace/batch_span_processor_options.h>
+#include <opentelemetry/sdk/trace/provider.h>
+#include <opentelemetry/sdk/trace/tracer_provider_factory.h>
+#include <opentelemetry/semconv/service_attributes.h>
+
 namespace {
 bool is_log_interval_in_range(const int& value) {
     return value >= 1 and value <= 60;
@@ -30,6 +44,9 @@ void Example::init() {
         original_config = rw_config;
     }
 
+    // before the implementations are initialized, so that they find the providers
+    init_opentelemetry();
+
     invoke_init(*p_example);
     invoke_init(*p_store);
 }
@@ -44,6 +61,52 @@ void Example::ready() {
 void Example::shutdown() {
     invoke_shutdown(*p_example);
     invoke_shutdown(*p_store);
+
+    shutdown_opentelemetry();
+}
+
+// Installs the OpenTelemetry SDK for this module process. Endpoints, intervals
+// and timeouts follow the standard OTEL_* environment variables (see
+// docs/index.rst), so the only EVerest specific part is the resource: every
+// exported signal carries the module type and the module id, which is what
+// lets a backend tell the modules of one EVerest instance apart.
+//
+// In a real integration this would live in the framework (once per module
+// process, where the module is loaded) instead of in every module.
+void Example::init_opentelemetry() {
+    namespace otlp = opentelemetry::exporter::otlp;
+    namespace sdk = opentelemetry::sdk;
+    namespace semconv = opentelemetry::semconv;
+
+    const auto resource = sdk::resource::Resource::Create({
+        {semconv::service::kServiceNamespace, "everest"},
+        {semconv::service::kServiceName, info.name},
+        {semconv::service::kServiceInstanceId, info.id},
+    });
+
+    tracer_provider = sdk::trace::TracerProviderFactory::Create(
+        sdk::trace::BatchSpanProcessorFactory::Create(otlp::OtlpHttpExporterFactory::Create(),
+                                                      sdk::trace::BatchSpanProcessorOptions{}),
+        resource);
+    sdk::trace::Provider::SetTracerProvider(tracer_provider);
+
+    meter_provider =
+        sdk::metrics::MeterProviderFactory::Create(std::make_unique<sdk::metrics::ViewRegistry>(), resource);
+    meter_provider->AddMetricReader(sdk::metrics::PeriodicExportingMetricReaderFactory::Create(
+        otlp::OtlpHttpMetricExporterFactory::Create(), sdk::metrics::PeriodicExportingMetricReaderOptions{}));
+    sdk::metrics::Provider::SetMeterProvider(meter_provider);
+}
+
+// Flushes what the exporters still have queued and stops their worker threads.
+// Bounded so that an unreachable collector cannot stall the EVerest shutdown.
+void Example::shutdown_opentelemetry() {
+    constexpr auto timeout = std::chrono::seconds(2);
+    if (tracer_provider) {
+        tracer_provider->Shutdown(timeout);
+    }
+    if (meter_provider) {
+        meter_provider->Shutdown(timeout);
+    }
 }
 
 Everest::config::ConfigChangeResult Example::on_log_interval_changed(const int& new_interval) {
