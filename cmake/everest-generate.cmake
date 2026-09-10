@@ -33,11 +33,6 @@ target_include_directories(generate_cpp_files
         $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/everest>
 )
-install(DIRECTORY ${CMAKE_BINARY_DIR}/generated/include/generated
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
-    FILES_MATCHING PATTERN "*.hpp"
-)
-
 set_target_properties(generate_cpp_files
     PROPERTIES
         EVEREST_SCHEMA_DIR "${EVEREST_SCHEMA_DIR}"
@@ -917,6 +912,11 @@ function(ev_install_project)
     include(CMakePackageConfigHelpers)
 
     set (EVEREST_DATADIR "${CMAKE_INSTALL_DATADIR}/everest")
+
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/generated/include/generated
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
+        FILES_MATCHING PATTERN "*.hpp"
+    )
 
     configure_package_config_file(
         ${EV_CORE_CMAKE_SCRIPT_DIR}/project-config.cmake.in
