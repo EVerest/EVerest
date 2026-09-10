@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Pionix GmbH and Contributors to EVerest
+
+mainmenu "hello_iso15118 sample"
+
+config APP_WIFI_STA
+	bool "Associate with a WiFi access point (station mode) at startup"
+	depends on WIFI
+	default y
+	help
+	  Before starting the ISO 15118 controller, main() connects to the
+	  access point named by APP_WIFI_SSID and hands the resulting WiFi
+	  interface to libiso15118. On a build without WIFI (e.g. native_sim)
+	  this is compiled out and the controller falls back to APP_IFACE_NAME.
+
+if APP_WIFI_STA
+
+config APP_WIFI_SSID
+	string "WiFi SSID"
+	default "changeme"
+
+config APP_WIFI_PSK
+	string "WiFi PSK (leave empty for an open network)"
+	default ""
+
+config APP_WIFI_CONNECT_TIMEOUT_S
+	int "Seconds to wait for association / link-local address"
+	default 30
+
+endif # APP_WIFI_STA
+
+config APP_IFACE_NAME
+	string "Network interface libiso15118 binds to when APP_WIFI_STA is unset"
+	default "eth0"
+	help
+	  Only used for non-WiFi builds. The WiFi path discovers the interface
+	  name at runtime (it is "wlan0" on this SoC, not "eth0").
+
+source "Kconfig.zephyr"
