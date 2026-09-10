@@ -9,7 +9,6 @@ namespace iso15118::d2::state {
 
 namespace dt = message_2::datatypes;
 
-// Generate a fresh 16-byte GenChallenge (mirrors the d20 authorization_setup approach).
 dt::GenChallenge generate_gen_challenge();
 
 } // namespace iso15118::d2::state

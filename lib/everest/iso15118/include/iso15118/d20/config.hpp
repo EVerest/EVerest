@@ -11,11 +11,9 @@
 #include <iso15118/d20/limits.hpp>
 #include <iso15118/message/common_types.hpp>
 
-// EvseSetupConfig / SessionConfig (the universal SECC-side session configuration consumed by the
-// ISO 15118-20, ISO 15118-2 and DIN SPEC 70121 SECC engines) live in the protocol-neutral
-// iso15118::session namespace (see include/iso15118/session/config.hpp). The structs below remain in
-// d20 as they are expressed with the -20 RationalNumber datatype / IEC 15118-20 DER control types, and
-// are referenced qualified (d20::...) from the session-side structs.
+// The universal SECC-side session configuration lives in the protocol-neutral iso15118::session
+// namespace. The structs below stay in d20 because they are expressed with the -20 RationalNumber
+// datatype and DER control types, and are referenced qualified from the session-side structs.
 namespace iso15118::d20 {
 
 struct ControlMobilityNeedsModes {

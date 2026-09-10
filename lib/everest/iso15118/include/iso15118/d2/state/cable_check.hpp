@@ -15,16 +15,16 @@ struct CableCheck : public StateBase {
     }
 
     void enter() final;
-    Result feed(Event) final;
+    Result on_event(Event) final;
+    Result on_request(const message_2::Variant& received) final;
+    void leave() final;
 
 private:
-    // Drive the cable check for a request that passed the CP State C/D gate: trigger the isolation
-    // test (initial check only) and stage the response.
+    // Triggers the isolation test (initial check only) and stages the response.
     Result process_request(const message_2::CableCheckRequest& req);
 
     bool cable_check_initiated{false};
-    // Initial CableCheckReq parked while waiting for CP State C/D ([V2G2-916]..[V2G2-918]): answered
-    // when C/D arrives, or FAILED when V2G_SECC_CPState_Detection_Timeout expires.
+    // Answered when C/D arrives, or FAILED when V2G_SECC_Msg_Performance_Time expires.
     std::optional<message_2::CableCheckRequest> pending_req{};
 };
 

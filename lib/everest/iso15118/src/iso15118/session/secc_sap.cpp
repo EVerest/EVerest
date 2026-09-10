@@ -15,8 +15,7 @@ using ResponseCode = message_20::SupportedAppProtocolResponse::ResponseCode;
 
 namespace {
 
-// The DC/AC -20 namespace literals have their single source in session/protocol.hpp; the DER variants
-// are specific to this SECC handler (they run on the -20 engine).
+// The DER variants are specific to this SECC handler; they run on the -20 engine.
 constexpr auto ISO20_DER_IEC_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-IEC";
 constexpr auto ISO20_DER_SAE_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-SAE";
 
@@ -37,12 +36,9 @@ bool is_ac_namespace(const std::string& protocol_namespace) {
     return everest::lib::util::exists(AcNamespaces, protocol_namespace);
 }
 
-// The protocol version this SECC implements for a given namespace, used to
-// decide OK_SuccessfulNegotiation vs OK_SuccessfulNegotiationWithMinorDeviation
-// ([V2G2-098]/[V2G20-149]): when the EV's matched protocol has the same major
-// but a different minor version, the SECC must answer with the minor-deviation
-// code. Returns nullopt for namespaces without a well-known version (e.g. a
-// custom protocol), in which case no deviation is reported.
+// Decides OK_SuccessfulNegotiation vs OK_SuccessfulNegotiationWithMinorDeviation
+// ([V2G2-098]/[V2G20-149]). Returns nullopt for namespaces without a well-known version (e.g. a
+// custom protocol), where no deviation is reported.
 std::optional<std::pair<uint32_t, uint32_t>> secc_protocol_version(const std::string& protocol_namespace) {
     if (protocol_namespace == ISO2_NAMESPACE) {
         return std::pair<uint32_t, uint32_t>{2, 0}; // ISO 15118-2:2013
@@ -105,12 +101,9 @@ HandleResult handle_request(const message_20::SupportedAppProtocolRequest& req,
             custom_protocol.has_value() ? protocol.protocol_namespace == custom_protocol.value() : false;
 
         if (is_dc or is_ac or is_iso2 or is_din or is_custom) {
-            // [V2G2-170]/[V2G20-149]: a protocol may only be confirmed when its VersionNumberMajor
-            // matches the SECC's (a differing VersionNumberMinor is still acceptable and is answered
-            // with OK_SuccessfulNegotiationWithMinorDeviation below). An entry with a non-matching
-            // major version is not a supported protocol and is skipped; if no entry remains, the
-            // SECC answers Failed_NoNegotiation [V2G2-172]. Namespaces without a well-known version
-            // (a custom protocol) are accepted as-is.
+            // [V2G2-170]/[V2G20-149]: a protocol may only be confirmed when its VersionNumberMajor matches the
+            // SECC's; a differing minor is answered with OK_SuccessfulNegotiationWithMinorDeviation below. With
+            // no entry left the SECC answers Failed_NoNegotiation [V2G2-172]; a custom namespace is accepted as-is.
             const auto secc_version = secc_protocol_version(protocol.protocol_namespace);
             if (secc_version.has_value() and protocol.version_number_major != secc_version->first) {
                 continue;
@@ -132,9 +125,7 @@ HandleResult handle_request(const message_20::SupportedAppProtocolRequest& req,
     result.response.schema_id = ev_supported_protocols.begin()->second;
     result.selected_namespace = ev_supported_namespaces.begin()->second;
 
-    // [V2G2-098] / [V2G20-149]: when the selected protocol matches the SECC's
-    // namespace and major version but the minor version differs, negotiation
-    // succeeds with a minor deviation. (On par with the EvseV2G stack.)
+    // [V2G2-098] / [V2G20-149]: same namespace and major version, different minor (EvseV2G parity).
     const auto& [offered_major, offered_minor] = ev_supported_versions.begin()->second;
     const auto secc_version = secc_protocol_version(result.selected_namespace.value());
     if (secc_version.has_value() and offered_major == secc_version->first and offered_minor != secc_version->second) {

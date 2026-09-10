@@ -2,20 +2,25 @@
 // Copyright 2025 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <iso15118/message_2/metering_receipt.hpp>
+
 #include "../states.hpp"
 
 namespace iso15118::d2::state {
 
-// ISO 15118-2 MeteringReceipt. Entered from the charge loop (CurrentDemand/ChargingStatus) when the EV
-// sends a MeteringReceiptReq (typically after the SECC set ReceiptRequired). For Plug-and-Charge the
-// request is signed with the contract certificate and the signature is verified here; the SECC answers
-// MeteringReceiptRes and returns to the charge loop.
+// Entered from the charge loop when the SECC set ReceiptRequired=TRUE, and the receipt is the only
+// request in sequence from then on ([V2G2-577] AC / [V2G2-795] DC). Being in this state is therefore
+// the proof that the receipt was requested, which the charge loop could not express on its own.
+// \p is_dc selects the loop to return to and the EVSE status block ([V2G2-580] / [V2G2-797]).
 struct MeteringReceipt : public StateBase {
-    MeteringReceipt(Context& ctx) : StateBase(ctx, StateID::MeteringReceipt) {
+    MeteringReceipt(Context& ctx, bool is_dc) : StateBase(ctx, StateID::MeteringReceipt), dc(is_dc) {
     }
 
     void enter() final;
-    Result feed(Event) final;
+    Result on_request(const message_2::Variant& received) final;
+
+private:
+    const bool dc;
 };
 
 } // namespace iso15118::d2::state

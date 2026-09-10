@@ -29,9 +29,8 @@ template <> void convert(const datatypes::Notification& in, struct iso2_Notifica
 }
 
 template <typename cb_HeaderType> void convert(const cb_HeaderType& in, Header& out) {
-    // The SessionID is modelled as a fixed SESSION_ID_LENGTH (8-byte) array. Clamp to that length (the
-    // wire type is hexBinary maxLength 8) and zero-pad a shorter id so the decode is deterministic and
-    // the SECC's session-id comparison is exact regardless of the received length.
+    // Clamp to the fixed 8-byte model and zero-pad a shorter id, so the SECC's session-id comparison is
+    // exact regardless of the received length.
     out.session_id.fill(0);
     const auto len = std::min<size_t>(in.SessionID.bytesLen, out.session_id.size());
     std::copy(in.SessionID.bytes, in.SessionID.bytes + len, out.session_id.begin());

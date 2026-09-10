@@ -51,8 +51,8 @@ SCENARIO("ISO 15118-2 SECC CableCheck handling") {
     }
 
     GIVEN("A charger without an insulation monitoring device") {
-        // EvseManager reports No_IMD and then cable_check_finished(true) straight away; the module value
-        // must reach the EV instead of the Valid the progress derivation would produce on its own.
+        // EvseManager reports No_IMD and then cable_check_finished(true) at once, so the module value must
+        // reach the EV instead of the Valid the progress derivation would produce.
         const auto res = d2::state::handle_request(req, id, /*cable_check_done=*/true, /*cable_check_fault=*/false,
                                                    std::nullopt, /*charger_stop=*/false, dt::IsolationLevel::No_IMD);
         THEN("CableCheckRes reports No_IMD") {
@@ -82,8 +82,7 @@ SCENARIO("ISO 15118-2 SECC CableCheck handling") {
     }
 
     GIVEN("An EVSE-initiated stop during the cable check") {
-        // The stop request reaches the EV in every state (EvseV2G parity): notification StopCharging and
-        // EVSE_Shutdown, whatever the cable check's own progress.
+        // A stop reaches the EV in every state: notification StopCharging and EVSE_Shutdown.
         const auto res = d2::state::handle_request(req, id, /*cable_check_done=*/false, /*cable_check_fault=*/false,
                                                    std::nullopt, /*charger_stop=*/true);
         THEN("the response signals EVSENotification StopCharging and EVSE_Shutdown") {

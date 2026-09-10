@@ -2,8 +2,8 @@
 // Copyright 2025 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d2/state/pre_charge.hpp>
 
-#include <iso15118/d2/state/power_delivery.hpp>
 #include <iso15118/d2/state/session_stop.hpp>
+#include <iso15118/detail/d2/state/power_delivery.hpp>
 
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/dc_charge_loop.hpp>
@@ -16,10 +16,9 @@
 namespace iso15118::d2::state {
 
 namespace {
-// ISO 15118-2 defines no SECC-side PreCharge supervision timer (unlike DIN's V2G_SECC_PowerDelivery_Timer
-// [V2G-DC-969]); the wait for the next request is bounded solely by V2G_SECC_Sequence_Timeout (60 s),
-// armed at the session layer after every response. The -4 ATS (TC_SECC_DC_VTB_PowerDelivery_009) asserts
-// no close happens before that timeout expires.
+// ISO 15118-2 defines no SECC-side PreCharge supervision timer (unlike DIN's
+// V2G_SECC_PowerDelivery_Timer [V2G-DC-969]): the wait is bounded solely by V2G_SECC_Sequence_Timeout,
+// and the -4 ATS (TC_SECC_DC_VTB_PowerDelivery_009) asserts no close happens before that expires.
 namespace m20dt = message_20::datatypes;
 } // namespace
 
@@ -30,13 +29,10 @@ message_2::PreChargeResponse handle_request([[maybe_unused]] const message_2::Pr
     res.header.session_id = session_id;
     res.response_code = dt::ResponseCode::OK;
 
-    // An EVSE-initiated stop (stop_charging) reaches the EV in every state, not just the charge loop:
-    // signal it here too (EvseV2G stamps its context notification/status into every response).
     res.dc_evse_status.notification = charger_stop ? dt::EVSENotification::StopCharging : dt::EVSENotification::None;
     res.dc_evse_status.notification_max_delay = 0;
     res.dc_evse_status.isolation_status = dt::IsolationLevel::Valid;
-    // A module-reported EVSE error (Malfunction / UtilityInterruptEvent) overrides the status code so the
-    // EV sees the fault during pre-charge (EvseV2G parity); EVSE_Shutdown on a stop, EVSE_Ready otherwise.
+    // EVSE_Shutdown on a stop, EVSE_Ready otherwise, and a module fault overrides both.
     res.dc_evse_status.status_code = error_status_code.value_or(charger_stop ? dt::DC_EVSEStatusCode::EVSE_Shutdown
                                                                              : dt::DC_EVSEStatusCode::EVSE_Ready);
 
@@ -44,69 +40,85 @@ message_2::PreChargeResponse handle_request([[maybe_unused]] const message_2::Pr
     return res;
 }
 
-void PreCharge::enter() {
-    logf_debug("Enter state: PreCharge");
+// Shared by both pre-charge nodes: they differ in which requests they accept, not in the answer.
+namespace {
+void answer_pre_charge(Context& ctx, const message_2::PreChargeRequest& req, PreChargeTarget& forwarded_target) {
+    ctx.report_ev_status(req.dc_ev_status);
+
+    const auto target =
+        std::make_pair(dt::from_physical_value(req.ev_target_voltage), dt::from_physical_value(req.ev_target_current));
+    if (forwarded_target != target) {
+        m20dt::Scheduled_DC_CLReqControlMode mode{};
+        mode.target_voltage = m20dt::from_float(static_cast<float>(target.first));
+        mode.target_current = m20dt::from_float(static_cast<float>(target.second));
+        ctx.feedback.dc_charge_loop_req(session::feedback::DcReqControlMode{mode});
+        forwarded_target = target;
+    }
+
+    auto res = handle_request(req, ctx.get_session_id(), ctx.evse().present_voltage, ctx.error_status_code(),
+                              ctx.evse().charger_stop_requested);
+    apply_isolation_status(ctx, res.dc_evse_status);
+    ctx.respond(res);
+}
+} // namespace
+
+void PreChargeStart::enter() {
+    logf_debug("Enter state: PreChargeStart");
 }
 
-Result PreCharge::feed(Event ev) {
+Result PreChargeStart::on_event(Event ev) {
     if (ev == Event::CONTROL_MESSAGE) {
         if (const auto* control = m_ctx.get_control_event<d20::PresentVoltageCurrent>()) {
-            m_ctx.present_voltage = control->voltage;
-            m_ctx.present_current = control->current;
+            m_ctx.set_present_values(control->voltage, control->current);
         }
         return {};
     }
 
-    if (ev != Event::V2GTP_MESSAGE) {
-        return {};
-    }
+    return {};
+}
 
-    // An EV aborting mid-handshake sends SessionStopReq; hand it to SessionStop for a clean SessionStopRes.
-    if (m_ctx.peek_request_type() == message_2::Type::SessionStopReq) {
-        return m_ctx.create_state<SessionStop>();
-    }
-
-    // The pre-charge loop ends when the EV converges and sends PowerDeliveryReq; hand it to the
-    // PowerDelivery state (transition without consuming; the engine re-feeds it).
-    if (m_ctx.peek_request_type() != message_2::Type::PreChargeReq) {
-        return m_ctx.create_state<PowerDelivery>();
-    }
-
-    const auto variant = m_ctx.pull_request();
-    const auto req = variant->get<message_2::PreChargeRequest>();
-
-    // The request must echo the assigned SessionID [V2G2-388]; a mismatch is answered with
-    // PreChargeRes/FAILED_UnknownSession and terminates the session.
-    if (reject_unknown_session(m_ctx, *variant)) {
-        return {};
-    }
-
-    m_ctx.report_ev_status(req.dc_ev_status);
-
-    if (not pre_charge_initiated) {
+Result PreChargeStart::on_request(const message_2::Variant& received) {
+    // [V2G2-584]: a PowerDeliveryReq is not in sequence until the EV has pre-charged at least once.
+    const auto type = received.get_type();
+    if (type == message_2::Type::PreChargeReq) {
         m_ctx.feedback.signal(session::feedback::Signal::PRE_CHARGE_STARTED);
-        pre_charge_initiated = true;
+        answer_pre_charge(m_ctx, received.get<message_2::PreChargeRequest>(), forwarded_target);
+        return m_ctx.create_state<PreCharge>(forwarded_target);
+    } else {
+        logf_warning("Expected PreChargeReq! But got type id: %d", received.get_type());
+        respond_sequence_error(m_ctx, received.get_type());
+        return {};
     }
+}
 
-    // Report both the EV pre-charge target voltage and current so the power supply can follow the EV
-    // (without the current the supply would stay at 0 A). Uses the dc_charge_loop_req scheduled-mode path;
-    // forwarded on change only (EvseV2G publish_dc_ev_target_voltage_current parity).
-    const auto target =
-        std::make_pair(dt::from_physical_value(req.ev_target_voltage), dt::from_physical_value(req.ev_target_current));
-    if (last_forwarded_target != target) {
-        m20dt::Scheduled_DC_CLReqControlMode mode{};
-        mode.target_voltage = m20dt::from_float(static_cast<float>(target.first));
-        mode.target_current = m20dt::from_float(static_cast<float>(target.second));
-        m_ctx.feedback.dc_charge_loop_req(session::feedback::DcReqControlMode{mode});
-        last_forwarded_target = target;
+void PreCharge::enter() {
+    logf_debug("Enter state: PreCharge");
+}
+
+Result PreCharge::on_event(Event ev) {
+    if (ev == Event::CONTROL_MESSAGE) {
+        if (const auto* control = m_ctx.get_control_event<d20::PresentVoltageCurrent>()) {
+            m_ctx.set_present_values(control->voltage, control->current);
+        }
+        return {};
     }
-
-    auto res = handle_request(req, m_ctx.get_session_id(), m_ctx.present_voltage, m_ctx.error_status_code(),
-                              m_ctx.charger_stop_requested);
-    apply_isolation_status(m_ctx, res.dc_evse_status);
-    m_ctx.respond(res);
 
     return {};
+}
+
+Result PreCharge::on_request(const message_2::Variant& received) {
+    // [V2G2-587] widens the node to a PowerDeliveryReq; SessionStopReq is not in it.
+    const auto type = received.get_type();
+    if (type == message_2::Type::PreChargeReq) {
+        answer_pre_charge(m_ctx, received.get<message_2::PreChargeRequest>(), forwarded_target);
+        return {};
+    } else if (type == message_2::Type::PowerDeliveryReq) {
+        return process_dc_power_delivery(m_ctx, received.get<message_2::PowerDeliveryRequest>());
+    } else {
+        logf_warning("Expected PreChargeReq or PowerDeliveryReq! But got type id: %d", received.get_type());
+        respond_sequence_error(m_ctx, received.get_type());
+        return {};
+    }
 }
 
 } // namespace iso15118::d2::state

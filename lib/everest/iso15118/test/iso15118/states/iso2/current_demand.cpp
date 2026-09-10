@@ -58,9 +58,8 @@ SCENARIO("ISO 15118-2 SECC CurrentDemand handling") {
         }
     }
 
-    // [V2G2-902]: when a MeteringReceipt is requested (PnC) the response must carry the MeterInfo the EV
-    // will sign. MeterInfo itself is a PnC-only element of CurrentDemandRes ([Table 104]: "-" for both
-    // peers in the Message Set "DC Charging EIM", [V2G2-666]).
+    // [V2G2-902]: a requested receipt needs the MeterInfo the EV will sign. MeterInfo itself is PnC-only
+    // in CurrentDemandRes ([Table 104] marks it "-" for both peers in DC Charging EIM, [V2G2-666]).
     dt::MeterInfo meter{};
     meter.meter_id = "PNX-METER-1";
     meter.meter_reading = 4211U;

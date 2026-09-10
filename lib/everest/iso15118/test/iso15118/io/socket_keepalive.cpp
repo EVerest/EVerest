@@ -48,7 +48,6 @@ SCENARIO("set_tcp_keepalive configures the socket") {
 
 namespace {
 
-// Checks that the keepalive parameters set_tcp_keepalive configures are present on fd.
 void require_keepalive_configured(int fd) {
     int value = 0;
     socklen_t len = sizeof(value);
