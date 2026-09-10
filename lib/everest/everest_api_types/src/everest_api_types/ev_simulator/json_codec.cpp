@@ -773,6 +773,34 @@ void from_json(json const& j, SetSocParams& k) {
     k.soc_pct = j.at("soc_pct");
 }
 
+void to_json(json& j, SetPresentValuesParams const& k) noexcept {
+    j = json::object();
+    if (k.present_voltage) {
+        j["present_voltage"] = k.present_voltage.value();
+    }
+    if (k.present_active_power) {
+        j["present_active_power"] = k.present_active_power.value();
+    }
+}
+void from_json(json const& j, SetPresentValuesParams& k) {
+    if (j.contains("present_voltage")) {
+        k.present_voltage.emplace(j.at("present_voltage"));
+    }
+    if (j.contains("present_active_power")) {
+        k.present_active_power.emplace(j.at("present_active_power"));
+    }
+}
+
+void to_json(json& j, StopSessionParams const& k) noexcept {
+    j = json::object();
+    j["abort"] = k.abort;
+}
+void from_json(json const& j, StopSessionParams& k) {
+    if (j.contains("abort")) {
+        k.abort = j.at("abort");
+    }
+}
+
 void to_json(json& j, BcbToggleParams const& k) noexcept {
     j = json::object();
     if (k.count) {

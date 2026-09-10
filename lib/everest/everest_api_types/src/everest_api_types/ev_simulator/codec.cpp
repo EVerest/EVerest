@@ -113,6 +113,14 @@ std::string serialize(BcbToggleParams const& val) noexcept {
     return nlohmann::json(val).dump(json_indent);
 }
 
+std::string serialize(SetPresentValuesParams const& val) noexcept {
+    return nlohmann::json(val).dump(json_indent);
+}
+
+std::string serialize(StopSessionParams const& val) noexcept {
+    return nlohmann::json(val).dump(json_indent);
+}
+
 std::string serialize(InjectFaultParams const& val) noexcept {
     return nlohmann::json(val).dump(json_indent);
 }
@@ -229,6 +237,16 @@ std::ostream& operator<<(std::ostream& os, BcbToggleParams const& val) {
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, SetPresentValuesParams const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, StopSessionParams const& val) {
+    os << serialize(val);
+    return os;
+}
+
 std::ostream& operator<<(std::ostream& os, InjectFaultParams const& val) {
     os << serialize(val);
     return os;
@@ -335,6 +353,14 @@ template <> SetSocParams deserialize(std::string_view val) {
 }
 
 template <> BcbToggleParams deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
+}
+
+template <> SetPresentValuesParams deserialize(std::string_view val) {
+    return json::parse(val.begin(), val.end());
+}
+
+template <> StopSessionParams deserialize(std::string_view val) {
     return json::parse(val.begin(), val.end());
 }
 
