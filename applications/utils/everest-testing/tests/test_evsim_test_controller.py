@@ -334,6 +334,62 @@ def test_plug_out_iso_stops_then_unplugs(monkeypatch, controller):
     assert publishes[1][1] == {}
 
 
+def test_stop_session_defaults_to_the_clean_teardown(controller):
+    controller.stop_session()
+    topic, payload = _last_publish(controller)
+    assert topic.endswith("/m2e/stop_session")
+    # The default payload stays exactly what callers published before the
+    # teardown selector existed; the C++ side reads a missing key as no abort.
+    assert payload == {}
+
+
+def test_stop_session_abort_asks_for_the_abrupt_teardown(controller):
+    controller.stop_session(abort=True)
+    topic, payload = _last_publish(controller)
+    assert topic.endswith("/m2e/stop_session")
+    assert payload == {"abort": True}
+
+
+def test_plug_out_iso_can_stage_an_aborted_teardown(monkeypatch, controller):
+    monkeypatch.setattr(
+        controller.state_collector, "wait_for_state_not", lambda *_a, **_k: True
+    )
+    controller.plug_out_iso(abort=True)
+    publishes = _all_publishes(controller)
+    assert publishes[0][0].endswith("/m2e/stop_session")
+    assert publishes[0][1] == {"abort": True}
+    assert publishes[1][0].endswith("/m2e/unplug")
+
+
+def test_set_present_values_sends_only_the_overridden_field(controller):
+    controller.set_present_values(present_voltage=350.0)
+    topic, payload = _last_publish(controller)
+    assert topic.endswith("/m2e/set_present_values")
+    # Omitting the other field is what keeps it echoing the delivered value
+    # instead of being reported as a measured zero.
+    assert payload == {"present_voltage": 350.0}
+
+
+def test_set_present_values_sends_both_when_both_are_given(controller):
+    controller.set_present_values(present_voltage=350.0, present_active_power=1000.0)
+    _topic, payload = _last_publish(controller)
+    assert payload == {"present_voltage": 350.0, "present_active_power": 1000.0}
+
+
+def test_set_present_values_with_no_arguments_overrides_nothing(controller):
+    controller.set_present_values()
+    _topic, payload = _last_publish(controller)
+    assert payload == {}
+
+
+def test_set_present_values_keeps_an_explicit_zero(controller):
+    # A deliberate zero is a measurement the test asked for, so it must be
+    # sent rather than dropped as if it were absent.
+    controller.set_present_values(present_voltage=0.0)
+    _topic, payload = _last_publish(controller)
+    assert payload == {"present_voltage": 0.0}
+
+
 def test_pause_session_publishes_pause_session(controller):
     controller.pause_session()
     topic, payload = _last_publish(controller)
