@@ -98,6 +98,11 @@ options. There are three cases.
   ``user-config/<config-name>.yaml`` merge, and seeded into a process-private
   **in-memory** database on every start. Nothing is persisted to disk except
   runtime configuration writes, which go to the user-config YAML.
+  The default config file ``<prefix>/etc/everest/default.yaml`` is optional: if
+  neither ``--config`` is given nor that file exists, the manager starts with an
+  empty configuration on built-in defaults (and exits with no modules unless
+  ``--into-idle`` or ``--idle-on-failure`` is given). Runtime writes are then
+  kept in memory only.
 
 ``--db`` **only**
   The database file is the only configuration source; manager settings come from

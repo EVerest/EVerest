@@ -913,8 +913,9 @@ int Manager::run() {
     const bool have_config = not config_path.empty();
     const auto boot_source = resolve_boot_source(config_path, db_opt, reset_from_yaml, m_vm.count("db-init") != 0);
 
-    // DatabaseOnly runs on built-in defaults (no default.yaml fallback); the other modes resolve
-    // the config file, falling back to the default config lookup when no --config was given.
+    // DatabaseOnly runs on built-in defaults and never looks for default.yaml; the other modes resolve
+    // the config file. Without --config the default config is looked up and, if it is absent, the
+    // manager also runs on built-in defaults with an empty config (ms.config_file is then empty).
     ManagerSettings ms = boot_source.mode == BootMode::DatabaseOnly
                              ? ManagerSettings(ManagerSettings::WithoutConfig{}, prefix_opt, boot_source.db_path)
                              : ManagerSettings(prefix_opt, boot_source.config_path, boot_source.db_path);
@@ -1036,8 +1037,15 @@ int Manager::run() {
     // merges back into the config on the next start (the pre-database write behavior).
     std::unique_ptr<everest::config::StorageInterface> persistence_mirror;
     if (boot_source.mode == BootMode::YamlWithInMemoryDb) {
-        const auto user_config_path = ms.config_file.parent_path() / "user-config" / ms.config_file.filename();
-        persistence_mirror = std::make_unique<everest::config::UserConfigStorage>(user_config_path);
+        if (not ms.config_file.empty()) {
+            const auto user_config_path = ms.config_file.parent_path() / "user-config" / ms.config_file.filename();
+            persistence_mirror = std::make_unique<everest::config::UserConfigStorage>(user_config_path);
+        } else {
+            // No --config and no default.yaml: there is no YAML to mirror into, and the loader would not read
+            // a user-config back without a main config file anyway.
+            EVLOG_warning << "No config file loaded and no --db given: runtime configuration changes are kept in "
+                             "memory only and are lost on restart. Use --db <path> for persistence.";
+        }
     }
     m_config_service_core =
         std::make_unique<config::ConfigServiceCore>(ms, m_db_connection, std::move(persistence_mirror));
@@ -2103,8 +2111,10 @@ int main(int argc, char* argv[]) {
     desc.add_options()("dontvalidateschema", "Don't validate json schema on every message");
     desc.add_options()("config", po::value<std::string>(),
                        "Full path to a config file.  If the file does not exist and has no extension, it will be "
-                       "looked up in the default config directory. Optional: defaults to the default config file in "
-                       "the default config directory. Without --db, the config is loaded from YAML on every start "
+                       "looked up in the default config directory. Optional: defaults to "
+                       "<prefix>/etc/everest/default.yaml if it exists; otherwise the manager starts with an empty "
+                       "configuration on built-in defaults (and exits with no modules unless --into-idle or "
+                       "--idle-on-failure is given). Without --db, the config is loaded from YAML on every start "
                        "and runtime configuration changes are persisted to user-config/<config-name>.yaml.");
     desc.add_options()("conf", po::value<std::string>(), "Deprecated: Same as --config. Do not use both.");
     desc.add_options()("configuration-api", po::value<std::string>()->implicit_value("ro"),

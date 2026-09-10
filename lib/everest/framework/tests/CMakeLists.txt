@@ -75,6 +75,11 @@ setup_test_directory(empty_yaml_object USE_FILESYSTEM_HIERARCHY_STANDARD)
 setup_test_directory(empty_yaml USE_FILESYSTEM_HIERARCHY_STANDARD)
 setup_test_directory(null_yaml USE_FILESYSTEM_HIERARCHY_STANDARD)
 setup_test_directory(string_yaml USE_FILESYSTEM_HIERARCHY_STANDARD)
+# FHS prefix that actually contains etc/everest/default.yaml (all other FHS fixtures do not)
+setup_test_directory(default_yaml USE_FILESYSTEM_HIERARCHY_STANDARD
+    CONFIG empty_yaml_object_config.yaml
+    DEFAULT_CONFIG empty_yaml_object_config.yaml
+)
 
 setup_test_directory(missing_module)
 setup_test_directory(broken_manifest_1 TESTBrokenManifest1 test_interface)

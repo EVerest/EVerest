@@ -63,7 +63,8 @@ namespace defaults {
 //   schemas_dir: ${DATAROOT_DIR}${EVEREST_NAMESPACE}/schemas
 //   configs_dir: ${SYSCONF_DIR}${EVEREST_NAMESPACE}
 //
-//   config_path: ${SYSCONF_DIR}${EVEREST_NAMESPACE}/default.yaml
+//   config_path: ${SYSCONF_DIR}${EVEREST_NAMESPACE}/default.yaml (optional: if absent and no --config is
+//                given, the manager runs with an empty config on built-in defaults)
 //   logging_config_path: ${SYSCONF_DIR}${EVEREST_NAMESPACE}/default_logging.cfg
 
 const std::string& prefix();
