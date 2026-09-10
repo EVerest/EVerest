@@ -2,7 +2,6 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
@@ -47,12 +46,12 @@ struct SSLConfig {
     std::string config_string;
     //!< Used by the EVEREST_LAYOUT: one or more server certificate chains
     std::vector<ChainConfig> chains;
-    std::string path_certificate_v2g_root;        //!< V2G root trust anchor (PEM)
-    std::string path_certificate_mo_root;         //!< MO root trust anchor (PEM)
-    bool enable_ssl_logging{false};               //!< verbose SSL logging
-    bool enable_tls_key_logging{false};           //!< write SSLKEYLOGFILE entries
-    bool enforce_tls_1_3{false};                  //!< require TLS 1.3 minimum
-    std::filesystem::path tls_key_logging_path{}; //!< destination directory for keylog
+    std::string path_certificate_v2g_root; //!< V2G root trust anchor (PEM)
+    std::string path_certificate_mo_root;  //!< MO root trust anchor (PEM)
+    bool enable_ssl_logging{false};        //!< verbose SSL logging
+    bool enable_tls_key_logging{false};    //!< write SSLKEYLOGFILE entries
+    bool enforce_tls_1_3{false};           //!< require TLS 1.3 minimum
+    std::string tls_key_logging_path{};    //!< destination directory for keylog
 };
 
 } // namespace iso15118::config

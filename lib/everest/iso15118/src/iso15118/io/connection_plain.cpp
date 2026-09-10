@@ -10,6 +10,7 @@
 #include <thread>
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <iso15118/detail/helper.hpp>
@@ -113,9 +114,12 @@ void ConnectionPlain::handle_connect() {
     sockaddr_in6 address;
     socklen_t address_len = sizeof(address);
 
-    const auto accept_fd = accept4(fd, reinterpret_cast<struct sockaddr*>(&address), &address_len, SOCK_NONBLOCK);
+    const auto accept_fd = accept(fd, reinterpret_cast<struct sockaddr*>(&address), &address_len);
     if (accept_fd == -1) {
-        log_and_throw("Failed to accept4");
+        log_and_throw("Failed to accept");
+    }
+    if (fcntl(accept_fd, F_SETFL, O_NONBLOCK) == -1) {
+        log_and_throw("Failed to set O_NONBLOCK on accepted socket");
     }
 
     if (not set_tcp_keepalive(accept_fd)) {

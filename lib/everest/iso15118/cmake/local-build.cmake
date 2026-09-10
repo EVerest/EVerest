@@ -42,13 +42,17 @@ FetchContent_MakeAvailable(date)
 # The ISO 15118 SECC TLS adapter pulls in tls -> evse_security -> {log, timer,
 # util}. Add the everest-core sibling libraries in dependency order, the same
 # way as util/cbv2g above (util is already added).
-foreach (EVC_DEP IN ITEMS log timer evse_security tls)
-    set(EVC_DEP_DIR "${EVC_EVEREST_LIB_DIR}/${EVC_DEP}")
-    if (EXISTS "${EVC_DEP_DIR}" AND NOT DISABLE_ISO15118_LOCAL_DEPENDENCIES)
-        message(STATUS "Detected ${EVC_DEP} in ${EVC_DEP_DIR}, if you do not want this set -DDISABLE_ISO15118_LOCAL_DEPENDENCIES=ON")
-        add_subdirectory("${EVC_DEP_DIR}" ${EVC_DEP})
-    endif()
-endforeach()
+if (ISO15118_ENABLE_TLS)
+    foreach (EVC_DEP IN ITEMS log timer evse_security tls)
+        set(EVC_DEP_DIR "${EVC_EVEREST_LIB_DIR}/${EVC_DEP}")
+        if (EXISTS "${EVC_DEP_DIR}" AND NOT DISABLE_ISO15118_LOCAL_DEPENDENCIES)
+            message(STATUS "Detected ${EVC_DEP} in ${EVC_DEP_DIR}, if you do not want this set -DDISABLE_ISO15118_LOCAL_DEPENDENCIES=ON")
+            add_subdirectory("${EVC_DEP_DIR}" ${EVC_DEP})
+        endif()
+    endforeach()
+else()
+    message(STATUS "ISO15118_ENABLE_TLS is OFF: skipping log/timer/evse_security/tls (Boost/OpenSSL) dependencies")
+endif()
 
 # set venv location
 set(${PROJECT_NAME}_PYTHON_VENV_PATH "${CMAKE_BINARY_DIR}/venv" CACHE PATH "Path to python venv")

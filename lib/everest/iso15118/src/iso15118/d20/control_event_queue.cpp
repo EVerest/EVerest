@@ -2,10 +2,12 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/control_event_queue.hpp>
 
+#include <mutex>
+
 namespace iso15118::d20 {
 
 std::optional<ControlEvent> ControlEventQueue::pop() {
-    std::lock_guard<std::mutex> lck(mutex);
+    std::lock_guard<detail::Mutex> lck(mutex);
 
     if (queue.empty()) {
         return std::nullopt;
@@ -18,7 +20,7 @@ std::optional<ControlEvent> ControlEventQueue::pop() {
 }
 
 void ControlEventQueue::push(ControlEvent event) {
-    std::lock_guard<std::mutex> lck(mutex);
+    std::lock_guard<detail::Mutex> lck(mutex);
 
     queue.push(std::move(event));
 }

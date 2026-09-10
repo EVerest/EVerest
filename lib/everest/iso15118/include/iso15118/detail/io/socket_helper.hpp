@@ -16,6 +16,12 @@ bool check_and_update_interface(std::string& interface_name);
 
 bool get_first_sockaddr_in6_for_interface(const std::string& interface_name, sockaddr_in6& address);
 
+void set_ipv6_mreq_interface(ipv6_mreq& mreq, unsigned int ifindex);
+
+bool bind_socket_to_interface(int fd, const std::string& interface_name);
+
+void ensure_link_local_scope(int fd, sockaddr_in6& address);
+
 // creates a listening ipv6 TCP socket; throws on failure.
 // interface_name names the interface address belongs to, for the bind failure message.
 int create_tcp_listen_socket(sockaddr_in6 address, uint16_t port, int backlog, const std::string& interface_name);

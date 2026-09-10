@@ -17,6 +17,7 @@ target_sources(iso15118
         io/poll_manager.cpp
         io/sdp_packet.cpp
         io/sdp_server.cpp
+        io/sha_hash.cpp
         io/socket_helper.cpp
 
         session/feedback.cpp
@@ -87,16 +88,37 @@ target_link_libraries(iso15118
         Threads::Threads
 )
 
-target_link_libraries(iso15118
-    PRIVATE
-        OpenSSL::SSL
-        OpenSSL::Crypto
-        everest::tls
-)
-target_sources(iso15118
-    PRIVATE
-    io/connection_ssl.cpp
-)
+if (ISO15118_ENABLE_TLS)
+    target_link_libraries(iso15118
+        PRIVATE
+            OpenSSL::SSL
+            OpenSSL::Crypto
+            everest::tls
+    )
+    target_sources(iso15118
+        PRIVATE
+        io/connection_ssl.cpp
+    )
+else()
+    target_sources(iso15118
+        PRIVATE
+        io/connection_ssl_stub.cpp
+    )
+endif()
+
+if (ISO15118_TARGET_ZEPHYR)
+    target_sources(iso15118
+        PRIVATE
+        io/socket_helper_zephyr.cpp
+        detail/mutex_zephyr.cpp
+    )
+else()
+    target_sources(iso15118
+        PRIVATE
+        io/socket_helper_posix.cpp
+        detail/mutex_libstdcxx.cpp
+    )
+endif()
 
 # FIXME (aw): do we want to have this public here?
 target_compile_features(iso15118 PUBLIC cxx_std_17)

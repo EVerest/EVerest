@@ -12,8 +12,6 @@ find_package(everest-cmake 0.5
 )
 find_package(everest-cmake 0.5)
 
-find_package(OpenSSL 3 REQUIRED)
-
 if (NOT everest-cmake_FOUND)
     message(STATUS "Retrieving everest-cmake using FetchContent")
     include(FetchContent)
@@ -33,7 +31,13 @@ option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
 option(ISO15118_INSTALL "Enable install target" ${EVC_MAIN_PROJECT})
 option(DISABLE_ISO15118_LOCAL_DEPENDENCIES "Disable local dependency lookup for libiso15118" OFF)
 option(ISO15118_USE_EXPORTED_BUILD "Use (experimental) exported build of libiso15118" OFF)
+option(ISO15118_ENABLE_TLS "Build the OpenSSL-backed TLS connection (io::ConnectionSSL) and its evse_security/tls/log dependencies" ON)
+option(ISO15118_TARGET_ZEPHYR "Build the Zephyr port of the interface-lookup socket helpers (no getifaddrs())" OFF)
 option(${PROJECT_NAME}_USE_PYTHON_VENV "Use python venv for pip install targets" ON)
+
+if (ISO15118_ENABLE_TLS)
+    find_package(OpenSSL 3 REQUIRED)
+endif()
 
 if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
     if(ISO15118_USE_EXPORTED_BUILD)

@@ -20,7 +20,8 @@ static constexpr auto POLL_MANAGER_TIMEOUT_MS = 50;
 
 namespace {
 bool fd_is_open(int fd) {
-    return fd >= 0 and fcntl(fd, F_GETFD) != -1;
+    // F_GETFL is the more portable choice
+    return fd >= 0 and fcntl(fd, F_GETFL) != -1;
 }
 
 // Resets the driver-running flag on scope exit, so it is released even if an exception
@@ -358,7 +359,7 @@ void TbdController::handle_sdp_server_input() {
     auto connection = [this](bool secure_connection) -> std::unique_ptr<io::IConnection> {
         try {
             if (secure_connection) {
-                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, config.ssl);
+                return io::make_tls_connection(poll_manager, interface_name, config.ssl);
             }
             return std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
         } catch (const std::runtime_error& e) {
