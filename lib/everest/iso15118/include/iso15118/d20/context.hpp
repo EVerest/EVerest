@@ -53,9 +53,6 @@ public:
     bool has_response() const {
         return response_available;
     }
-    bool has_request() const {
-        return request != nullptr;
-    }
 
 private:
     // input

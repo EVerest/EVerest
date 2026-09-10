@@ -22,27 +22,18 @@ namespace m2dt = message_2::datatypes;
 namespace m20dt = message_20::datatypes;
 
 namespace {
-// True when the limit set carries at least one positive maximum, i.e. the module actually reported it.
 bool has_dc_maxima(const d20::DcTransferLimits& dc) {
     return m20dt::from_RationalNumber(dc.charge_limits.power.max) > 0.0f or
            m20dt::from_RationalNumber(dc.charge_limits.current.max) > 0.0f or
            m20dt::from_RationalNumber(dc.voltage.max) > 0.0f;
 }
 
-// The number of phases the EVSE's AC hardware can energise, read back from the advertised energy
-// transfer modes (EvseManager derives those from max_phase_count_import).
-//
-// update_ac_maximum_limits reports the AC charge power SUMMED OVER ALL PHASES, while both consumers of
-// the derived capability current need it PER PHASE: AC_EVSEChargeParameter.EVSEMaxCurrent is a per-phase
-// value, and the SASchedule PMax multiplies it by the phase count of the mode the EV requested. Dividing
-// the reported power by the phase count here is what makes PMax(AC_three_phase_core) come out as the
-// hardware power instead of three times it. This is a deliberate deviation from EvseV2G, which divides
-// the total power by the nominal voltage alone (charger/ISO15118_chargerImpl.cpp
-// handle_update_ac_maximum_limits) and therefore over-reports both values by the phase count on a
-// three-phase charger.
+// update_ac_maximum_limits reports the AC charge power SUMMED OVER ALL PHASES, while both consumers
+// of the derived capability current need it PER PHASE. Dividing by the phase count here is a
+// deliberate deviation from EvseV2G, which divides by the nominal voltage alone and so over-reports
+// both values by the phase count on a three-phase charger.
 uint8_t ac_capability_phase_count(const d2::SessionConfig& out) {
-    // ISO 15118-2 knows single- and three-phase AC only; a two-phase charger is advertised as
-    // single-phase by EvseManager's mode mapping.
+    // A two-phase charger is advertised as single-phase by EvseManager's mode mapping.
     return everest::lib::util::exists(out.supported_energy_transfer_modes,
                                       m2dt::EnergyTransferMode::AC_three_phase_core)
                ? 3
@@ -50,12 +41,11 @@ uint8_t ac_capability_phase_count(const d2::SessionConfig& out) {
 }
 } // namespace
 
-// Builds the SECC-side ISO 15118-2 config from the generic d20 EvseSetupConfig-derived SessionConfig.
 d2::SessionConfig make_d2_config(const session::SessionConfig& config, bool tls_active) {
     d2::SessionConfig out;
 
-    // ISO 15118-2 evseIDType is a string of min length 7 (max 37). A shorter/empty configured id would
-    // encode a schema-invalid SessionSetupRes, so fall back to the library default in that case.
+    // evseIDType has a minimum length of 7, so a shorter or empty configured id would encode a
+    // schema-invalid SessionSetupRes.
     static constexpr size_t ISO2_EVSE_ID_MIN_LEN = 7;
     if (config.evse_id.size() >= ISO2_EVSE_ID_MIN_LEN) {
         out.evse_id = config.evse_id;
@@ -66,9 +56,8 @@ d2::SessionConfig make_d2_config(const session::SessionConfig& config, bool tls_
     }
     out.tls_active = tls_active;
 
-    // Advertise exactly the pre-20 modes the module configured (update_energy_transfer_modes). The
-    // -20 service categories below are a lossy fallback for a module that never provided them: they
-    // cannot distinguish DC_core from DC_extended, or carry DC_combo_core / DC_unique at all.
+    // The -20 service categories are a lossy fallback for a module that never configured pre-20 modes:
+    // they cannot distinguish DC_core from DC_extended, or carry DC_combo_core / DC_unique at all.
     if (not config.pre20_energy_transfer_modes.empty()) {
         for (const auto mode : config.pre20_energy_transfer_modes) {
             // Deduplicate: the advertised list is a fixed_vector sized for the six distinct modes.
@@ -87,7 +76,6 @@ d2::SessionConfig make_d2_config(const session::SessionConfig& config, bool tls_
                 has_ac = true;
             }
         }
-        // Fall back to DC when the config carries no recognised energy service.
         if (not has_dc and not has_ac) {
             has_dc = true;
         }
@@ -103,11 +91,9 @@ d2::SessionConfig make_d2_config(const session::SessionConfig& config, bool tls_
     }
 
     apply_dc_limits(out, config.dc_limits);
-    // The ChargeParameterDiscoveryRes offer is the maximum the EVSE could ever deliver: the power-supply
-    // hardware capabilities (set_powersupply_capabilities), not the live energy-management limits above.
-    // A module that never reported capabilities (e.g. EvseManager's fake-DC/AC-with-SoC mode only seeds
-    // update_dc_maximum_limits) falls back to those limits -- still reported data, never an invented
-    // value. With neither reported the offer is 0 (safety).
+    // The offer is the maximum the EVSE could ever deliver, not the live energy-management limits. A
+    // module that never reported capabilities falls back to those limits -- still reported data, never
+    // an invented value; with neither reported the offer is 0.
     apply_dc_capabilities(out, has_dc_maxima(config.powersupply_limits) ? config.powersupply_limits : config.dc_limits);
     const bool offers_dc = std::any_of(out.supported_energy_transfer_modes.begin(),
                                        out.supported_energy_transfer_modes.end(), [](const auto mode) {
@@ -120,27 +106,21 @@ d2::SessionConfig make_d2_config(const session::SessionConfig& config, bool tls_
     }
     apply_physical_values(out, config.physical_values);
 
-    // AC nominal voltage is not represented in the d20 limits; it comes from the module's
-    // set_charging_parameters (applied above) and otherwise stays at the 230 V default. The capability
-    // current (CPD EVSEMaxCurrent / PMax) is derived from the hardware AC charge power
-    // (update_ac_maximum_limits) at that voltage, per phase (see ac_capability_phase_count); when the
-    // module never reported it, the live limit -- already a per-phase current -- doubles as the
-    // capability. With neither reported both stay 0 (safety: no invented values).
+    // AC nominal voltage is not in the d20 limits; it comes from set_charging_parameters and otherwise
+    // stays at the 230 V default. Where the module reported no capability the live limit -- already a
+    // per-phase current -- doubles as one, and with neither reported both stay 0.
     const auto ac_power = m20dt::from_RationalNumber(config.ac_limits.charge_power.max);
     if (ac_power > 0.0f and out.ac_nominal_voltage > 0.0f) {
         out.ac_capability_max_current = ac_power / (out.ac_nominal_voltage * ac_capability_phase_count(out));
     } else if (config.iso2_ac_max_current.has_value()) {
         out.ac_capability_max_current = config.iso2_ac_max_current.value();
     }
-    // EvseManager's update_ac_max_current (the live per-phase current limit, following external energy
-    // limits) governs only the charge loop (ChargingStatusRes); mid-session changes arrive as
-    // UpdateAcMaxCurrent control events (see on_control_event).
+    // update_ac_max_current governs only the charge loop (ChargingStatusRes); mid-session changes
+    // arrive as UpdateAcMaxCurrent control events.
     out.ac_max_current = config.iso2_ac_max_current.value_or(out.ac_capability_max_current);
 
-    // Plug-and-Charge (Contract payment) config, threaded from the module via EvseSetupConfig.
     out.pnc_enabled = config.iso2_pnc_enabled;
-    // ExternalPayment is offered only when configured (session_setup payment_options containing
-    // ExternalPayment maps to Authorization::EIM); a Contract-only SECC is permitted (EvseV2G parity).
+    // A Contract-only SECC is permitted (EvseV2G parity), so ExternalPayment is offered only when configured.
     out.eim_enabled = std::find(config.authorization_services.begin(), config.authorization_services.end(),
                                 m20dt::Authorization::EIM) != config.authorization_services.end();
     out.cert_install_service = config.cert_install_service;
@@ -157,10 +137,9 @@ d2::SessionConfig make_d2_config(const session::SessionConfig& config, bool tls_
     return out;
 }
 
-// The external VAS offers as ISO 15118-2 Service entries (Table 105). ServiceID 1 is the charging service
-// and ServiceID 2 the library's own Certificate service, so both are refused here; ServiceID 3 is the
-// Internet access service. The ServiceList carries eight entries and the Certificate service takes one of
-// them whenever it can be offered, so seven external services fit at most.
+// ServiceID 1 is the charging service and 2 the library's own Certificate service, so both are
+// refused here. The ServiceList carries eight entries and Certificate takes one whenever it can be
+// offered, so at most seven external services fit.
 void apply_vas_services(d2::SessionConfig& out, const std::vector<session::VasService>& services) {
     static constexpr size_t NAME_MAX_LEN = 32;
     static constexpr size_t SCOPE_MAX_LEN = 64;
@@ -209,8 +188,6 @@ void apply_vas_services(d2::SessionConfig& out, const std::vector<session::VasSe
 }
 
 void apply_dc_limits(d2::SessionConfig& out, const d20::DcTransferLimits& dc) {
-    // Safety: no invented values. A negative (invalid) limit clamps to 0 and an unreported one stays 0
-    // -- only actually reported data ever tells the EV it may draw energy.
     const auto non_negative = [](float value) { return std::max(0.0f, value); };
     out.dc_max_power = non_negative(m20dt::from_RationalNumber(dc.charge_limits.power.max));
     out.dc_max_current = non_negative(m20dt::from_RationalNumber(dc.charge_limits.current.max));
@@ -218,9 +195,8 @@ void apply_dc_limits(d2::SessionConfig& out, const d20::DcTransferLimits& dc) {
 }
 
 void apply_dc_capabilities(d2::SessionConfig& out, const d20::DcTransferLimits& dc) {
-    // Safety: the advertised capability must never be invented. A negative (invalid) value clamps to 0
-    // and an unreported one stays 0 -- only actually reported data ever advertises a positive offer, so
-    // no default here (unlike the charge-loop values in apply_dc_limits).
+    // No default here, unlike the charge-loop values in apply_dc_limits: only reported data ever
+    // advertises a positive offer.
     const auto non_negative = [](float value) { return std::max(0.0f, value); };
     out.dc_capability_max_power = non_negative(m20dt::from_RationalNumber(dc.charge_limits.power.max));
     out.dc_capability_max_current = non_negative(m20dt::from_RationalNumber(dc.charge_limits.current.max));
@@ -254,24 +230,20 @@ D2SeccEngine::D2SeccEngine(io::StreamOutputView output_view, const session::Sess
 }
 
 void D2SeccEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
-    // All ISO 15118-2 messages share the single SAP payload type (0x8001); a frame carrying any other
-    // V2GTP payload type is ignored (on par with the EvseV2G stack / libiso15118 finding F-001).
+    // All ISO 15118-2 messages share the single SAP payload type (0x8001); any other V2GTP payload
+    // type is ignored (EvseV2G parity, libiso15118 finding F-001).
     if (payload_type != io::v2gtp::PayloadType::SAP) {
         return;
     }
-    // disambiguation of the concrete message happens at decode.
     message_exchange.set_request(std::make_unique<message_2::Variant>(view));
 
     // The request type is reported by StateBase::feed(), which consumes it.
-    drive_request(fsm, message_exchange, d2::Event::V2GTP_MESSAGE);
+    fsm.feed(d2::Event::V2GTP_MESSAGE);
 }
 
 void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
-    // An EVSE-initiated stop (module stop_charging command / driver shutdown) applies in every state,
-    // not just the charge loop: latch it on the context so each subsequent status-carrying response
-    // tells the EV to stop, and arm the guard against an EV that plainly ignores the request -- on its
-    // expiry every further response is FAILED and the session ends (EvseV2G handle_stop_charging: a
-    // 10 s graceful window, then stop_hlc fails everything). Context-level, not a per-state event.
+    // An EVSE-initiated stop is latched on the context, not delivered per state, so every later
+    // status-carrying response tells the EV to stop; the guard fails the session if the EV ignores it.
     if (const auto* stop = std::get_if<d20::StopCharging>(&event)) {
         const bool requested = static_cast<bool>(*stop);
         if (requested and not stop_charging_guard_armed) {
@@ -306,15 +278,13 @@ void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
         return;
     }
 
-    // The power-supply hardware capabilities changed (e.g. external derating): they feed the
-    // ChargeParameterDiscoveryRes offer, which a [V2G2-813] renegotiation re-sends mid-session.
+    // These feed the ChargeParameterDiscoveryRes offer, which a [V2G2-813] renegotiation re-sends.
     if (const auto* caps = std::get_if<d20::UpdatePowersupplyLimits>(&event)) {
         apply_dc_capabilities(ctx.session_config, caps->limits);
         return;
     }
 
-    // The hardware AC limits changed: re-derive the capability current the ChargeParameterDiscoveryRes
-    // advertises. The live per-phase limit (ChargingStatusRes) is owned by UpdateAcMaxCurrent above.
+    // Re-derives the advertised capability current; the live per-phase limit is owned by UpdateAcMaxCurrent.
     if (const auto* ac_limits = std::get_if<d20::AcTransferLimits>(&event)) {
         const auto ac_power = m20dt::from_RationalNumber(ac_limits->charge_power.max);
         if (ac_power > 0.0f and ctx.session_config.ac_nominal_voltage > 0.0f) {
@@ -324,25 +294,21 @@ void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
         return;
     }
 
-    // Updated physical EVSE parameters (set_charging_parameters); they are read when the next
-    // ChargeParameterDiscoveryRes is built. The AC max current is deliberately not re-derived here:
-    // UpdateAcMaxCurrent carries the live per-phase limit and must keep precedence.
+    // The AC max current is deliberately not re-derived here: UpdateAcMaxCurrent carries the live
+    // per-phase limit and must keep precedence.
     if (const auto* values = std::get_if<d20::PhysicalValues>(&event)) {
         apply_physical_values(ctx.session_config, *values);
         return;
     }
 
-    // The charger reports that no energy is available (IEC 61851-23:2023 CC.3.5.3).
     if (const auto* pause = std::get_if<d20::NoEnergyPause>(&event)) {
         ctx.session_config.no_energy_pause = pause->mode;
         return;
     }
 
-    // A new meter reading (update_meter_info, pushed once per powermeter update): latch it on the context
-    // so the charge loop reports MeterInfo from its very first response onwards. Context-level, not a
-    // per-state event -- readings pushed before the charge loop starts (the module publishes throughout
-    // the session) would otherwise be dropped, leaving the first ChargingStatusRes/CurrentDemandRes
-    // without a reading.
+    // Latched on the context rather than delivered per state: the module publishes readings throughout
+    // the session, so one arriving before the charge loop starts would otherwise be dropped and the
+    // first ChargingStatusRes/CurrentDemandRes would carry no reading.
     if (const auto* meter = std::get_if<d20::MeterInfo>(&event)) {
         m2dt::MeterInfo info{};
         info.meter_id = meter->meter_id;
@@ -351,30 +317,25 @@ void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
         return;
     }
 
-    // The module reported an isolation-monitoring result (update_isolation_status); the DC responses
-    // after the cable check report it as EVSEIsolationStatus.
     if (const auto* isolation = std::get_if<d20::UpdateIsolationStatus>(&event)) {
         ctx.set_isolation_status(isolation->status);
         return;
     }
 
-    // ISO 15118-2 has no SECC-initiated pause: the SECC can only tell the EV to stop (EVSENotification
-    // StopCharging via stop_charging). Say so instead of silently dropping the request (EvseV2G parity).
+    // ISO 15118-2 has no SECC-initiated pause -- the SECC can only ask the EV to stop. Say so rather
+    // than drop the request silently (EvseV2G parity).
     if (const auto* pause = std::get_if<d20::PauseCharging>(&event); pause and static_cast<bool>(*pause)) {
         logf_warning("A charger-initiated pause is not supported in ISO 15118-2; use stop_charging instead");
         return;
     }
 
-    // An EVSE error (module send_error / reset_error) is a persistent status override, not a per-state
-    // event: store it on the context so the DC charge responses reflect it, and abort on emergency.
+    // A persistent status override, not a per-state event, so it lives on the context.
     if (const auto* err = std::get_if<d20::EvseError>(&event)) {
         ctx.set_active_error(err->code);
         if (err->code == d20::EvseErrorCode::EmergencyShutdown and not ctx.evse().emergency_shutdown) {
-            // [V2G2-539]/[V2G2-034]: the SECC answers FAILED and terminates the connection with it, instead of
-            // dropping the TCP connection silently -- the EV would otherwise see a transport error and
-            // never learn the reason. active_error above already puts EVSE_EmergencyShutdown into the DC
-            // status of that response. The guard bounds the wait for the EV's next request; the physical
-            // shutdown does not wait on any of this, it runs over the control pilot.
+            // [V2G2-539]/[V2G2-034]: answer FAILED and terminate with it rather than dropping the TCP
+            // connection, which would leave the EV with a transport error and no reason. The physical shutdown
+            // does not wait on any of this -- it runs over the control pilot.
             logf_error("EVSE emergency shutdown reported; failing the next ISO 15118-2 response and terminating");
             ctx.set_emergency_shutdown();
             ctx.start_timeout(d20::TimeoutType::EMERGENCY_SHUTDOWN, d20::TIMEOUT_EMERGENCY_SHUTDOWN_GUARD);
@@ -382,14 +343,12 @@ void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
         return;
     }
 
-    // Track the measured CP state on the context ([V2G2-920]..[V2G2-922] checks); still feed the
-    // event to the FSM below so a state parked while waiting for CP State B resumes on it.
+    // Still feed the event to the FSM below, so a state parked waiting for CP State B resumes on it.
     if (const auto* cp = std::get_if<d20::CpStateChanged>(&event)) {
         ctx.set_cp_state(cp->state);
-        // CP State A (unplug) ends the session, mirroring the DIN engine ([V2G-DC-962] analog): the
-        // EV is gone, so close the TCP connection without the EV-first linger. Also applies while a
-        // normal end is still in its close linger — a lingering DLINK_TERMINATE would otherwise fire
-        // seconds later, into the SLAC matching of the next plug-in.
+        // CP State A (unplug) ends the session ([V2G-DC-962] analog): close without the EV-first linger.
+        // This also applies during a normal end's close linger -- a lingering DLINK_TERMINATE would
+        // otherwise fire seconds later, into the SLAC matching of the next plug-in.
         if (cp->state == d20::CpState::A) {
             if (not ctx.session_stopped) {
                 logf_info("CP State A detected, terminating the ISO 15118-2 session");
@@ -411,12 +370,9 @@ void D2SeccEngine::on_timeout(d20::TimeoutType timeout) {
         return;
     }
 
-    // The EV did not end the session within the grace period after the StopCharging request: enforce
-    // the stop -- the next response (the charge loop delivers one within a second) is answered FAILED
-    // and terminates the session (EvseV2G stop_hlc parity). An EV that sends nothing at all is bounded
-    // by the sequence timeout above.
-    // The EV sent nothing the emergency shutdown could be reported on: close anyway rather than hold
-    // the connection until the sequence timeout.
+    // The EV ignored the StopCharging request: the next response is answered FAILED and ends the
+    // session (EvseV2G stop_hlc parity). An EV that sends nothing is bounded by the sequence timeout.
+    // Nothing arrived that the emergency shutdown could be reported on, so close anyway.
     if (timeout == d20::TimeoutType::EMERGENCY_SHUTDOWN) {
         if (not ctx.session_stopped) {
             logf_warning("No request to answer within %%d ms of the emergency shutdown; closing the connection",
@@ -451,7 +407,6 @@ std::optional<SeccOutgoing> D2SeccEngine::take_outgoing() {
     if (not got_response) {
         return std::nullopt;
     }
-    // message_type is the concrete message_2::Type; report it so the module logs the real name.
     return SeccOutgoing{payload_size, payload_type, message_type};
 }
 
@@ -472,15 +427,11 @@ std::optional<session::feedback::SessionStopAction> D2SeccEngine::pop_session_st
 }
 
 void D2SeccEngine::request_shutdown() {
-    // Nothing to latch: Session::request_shutdown() also pushes StopCharging{true}, which on_control_event
-    // turns into charger_stop_requested, and both charge loops already act on that -- EVSENotification
-    // StopCharging plus the STOP_CHARGING guard that fails every response once NotificationMaxDelay has
-    // passed. The -20 and DIN contexts keep a separate shutdown_requested() flag because they use it for
-    // something this flow deliberately does not do: refuse to close the contactor on a PowerDeliveryReq
-    // (Start) that arrives during shutdown, terminating instead of asking the EV to stop
-    // (d20/state/power_delivery.cpp). ISO 15118-2 treats a charger-initiated stop as a request with a
-    // grace window in every state (see the [V2G2-679] reasoning in d2/state/power_delivery.cpp), so one
-    // signal covers it and there is no second flag to read. Kept because SeccEngine requires it.
+    // Nothing to latch: request_shutdown() also pushes StopCharging{true}, which both charge loops
+    // already act on. The -20 and DIN contexts keep a separate shutdown_requested() flag because they
+    // use it to refuse closing the contactor on a PowerDeliveryReq(Start) during shutdown; ISO 15118-2
+    // treats a charger-initiated stop as a request with a grace window instead. Kept because
+    // SeccEngine requires it.
 }
 
 } // namespace iso15118

@@ -9,7 +9,7 @@ namespace iso15118::din::state {
 
 namespace dt = message_din::datatypes;
 
-message_din::ServiceDiscoveryResponse handle_request(const message_din::ServiceDiscoveryRequest& req,
+message_din::ServiceDiscoveryResponse handle_request([[maybe_unused]] const message_din::ServiceDiscoveryRequest& req,
                                                      const SessionConfig& config, const dt::SessionId& session_id);
 
 } // namespace iso15118::din::state

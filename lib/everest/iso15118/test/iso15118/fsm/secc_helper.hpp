@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
-//
-// FSM-level harnesses for the pre-20 SECC state machines, the DIN SPEC 70121 / ISO 15118-2 counterparts
-// of FsmStateHelper (helper.hpp, ISO 15118-20). They own the same pieces the engines own -- message
-// exchange over a response buffer, control event slot, timeouts, context and FSM -- and drive requests
-// through the shared drive_request() the engines use, so a test sees the real state transitions
-// (including the peek-and-divert hops, e.g. PreCharge -> PowerDelivery) instead of a response builder.
 #pragma once
 
 #include <array>
@@ -33,15 +27,14 @@
 namespace iso15118::test {
 
 namespace detail {
-// Silences the state machines' logging. Called from a member initializer that runs before the context
-// is built, so even the initial state's enter() stays quiet.
+// Called from a member initializer that runs before the context is built, so even the initial
+// state's enter() stays quiet.
 inline bool silence_logging() {
     io::set_logging_callback([](LogLevel, std::string) {});
     return true;
 }
 } // namespace detail
 
-// DIN SPEC 70121 SECC state machine, started at SessionSetup like DinSeccEngine does.
 class DinSeccFsm {
 public:
     explicit DinSeccFsm(din::SessionConfig config, session::feedback::Callbacks callbacks = {}) :
@@ -57,16 +50,14 @@ public:
         return fsm.get_current_state_id();
     }
 
-    // Hand a request to the state machine the way the engine does: the previous response has been sent
-    // by now, so it is cleared first, and the request is re-fed while a resting state defers it to the
-    // state it transitioned to. The request goes through the real EXI codec -- a Variant built directly
-    // from a message struct carries no decoded header, so the states' SessionID checks would see none.
+    // Fed the way the engine does, through the real EXI codec: a Variant built directly from a message
+    // struct carries no decoded header, so the states' SessionID checks would see none.
     template <typename Request> void drive(const Request& request) {
         clear_response();
         const io::StreamOutputView view{request_buffer.data(), request_buffer.size()};
         const auto len = message_din::serialize(request, view);
         msg_exch.set_request(std::make_unique<message_din::Variant>(io::StreamInputView{request_buffer.data(), len}));
-        drive_request(fsm, msg_exch, din::Event::V2GTP_MESSAGE);
+        fsm.feed(din::Event::V2GTP_MESSAGE);
     }
 
     void control(const d20::ControlEvent& event) {
@@ -103,7 +94,6 @@ private:
     fsm::v2::FSM<din::StateBase> fsm;
 };
 
-// ISO 15118-2 SECC state machine, started at SessionSetup like D2SeccEngine does.
 class D2SeccFsm {
 public:
     explicit D2SeccFsm(d2::SessionConfig config, session::feedback::Callbacks callbacks = {}) :
@@ -119,14 +109,13 @@ public:
         return fsm.get_current_state_id();
     }
 
-    // See DinSeccFsm::drive(): the request is serialized and decoded back so the states see the same
-    // decoded header (SessionID) they see on the wire.
+    // See DinSeccFsm::drive(): serialized and decoded back so the states see the wire's SessionID.
     template <typename Request> void drive(const Request& request) {
         clear_response();
         const io::StreamOutputView view{request_buffer.data(), request_buffer.size()};
         const auto len = message_2::serialize(request, view);
         msg_exch.set_request(std::make_unique<message_2::Variant>(io::StreamInputView{request_buffer.data(), len}));
-        drive_request(fsm, msg_exch, d2::Event::V2GTP_MESSAGE);
+        fsm.feed(d2::Event::V2GTP_MESSAGE);
     }
 
     void control(const d20::ControlEvent& event) {

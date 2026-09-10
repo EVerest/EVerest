@@ -31,8 +31,7 @@ public:
 
     const std::string& get_error() const;
 
-    // The SessionID from the received V2G message header (all zeros if decoding failed). Used by
-    // reject_unknown_session to validate a request before any of its content takes effect.
+    // All zeros if decoding failed. Used by reject_unknown_session before any content takes effect.
     const datatypes::SessionId& get_session_id() const;
 
     template <typename T> const T& get() const {
@@ -54,9 +53,8 @@ public:
     }
 
 private:
-    // Owning handle: binds the message pointer and its deleter together, so the two can never
-    // fall out of sync and no hand-written destructor is needed. Being move-only, it also deletes
-    // the implicit copy operations, which previously would have double-freed the message.
+    // Owning handle: binds the message pointer and its deleter together. Being move-only it also
+    // deletes the implicit copy operations, which previously would have double-freed the message.
     std::unique_ptr<void, CustomDeleter> data{nullptr, nullptr};
     Type type{Type::None};
     std::string error;

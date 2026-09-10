@@ -11,14 +11,16 @@ struct ContractAuthentication : public StateBase {
     }
 
     void enter() final;
-    Result feed(Event) final;
+    Result on_event(Event) final;
+    Result on_request(const message_din::Variant& received) final;
 
 private:
     bool auth_requested{false};
+    // Local to this state: ContractAuthentication is entered once per session and never re-entered.
+    bool authorized{false};
     // "pending" (no AuthorizationResponse control event yet) vs "rejected" (AuthorizationResponse{false}).
     bool auth_response_received{false};
-    // The configured Ongoing window elapsed without an authorization result; the next request is answered
-    // with FAILED.
+    // The Ongoing window elapsed without a result; the next request is answered with FAILED.
     bool timeout_ongoing_reached{false};
 };
 
