@@ -69,8 +69,7 @@ SdpServer::SdpServer(const std::string& interface_name) {
     }
 
     // Bind only to specified device
-    result = setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, interface_name.c_str(), interface_name.length());
-    if (result == -1) {
+    if (not bind_socket_to_interface(fd, interface_name)) {
         const auto error_msg = adding_err_msg("Setsockopt(SO_BINDTODEVICE) failed");
         log_and_throw(error_msg.c_str());
     }

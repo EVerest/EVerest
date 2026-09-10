@@ -16,6 +16,7 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
 
 #include <iso15118/detail/helper.hpp>
 
@@ -117,6 +118,11 @@ bool get_first_sockaddr_in6_for_interface(const std::string& interface_name, soc
 
 void set_ipv6_mreq_interface(ipv6_mreq& mreq, unsigned int ifindex) {
     mreq.ipv6mr_interface = ifindex;
+}
+
+bool bind_socket_to_interface(int fd, const std::string& interface_name) {
+    // Linux/BSD SO_BINDTODEVICE takes the interface name directly as the option value.
+    return setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, interface_name.c_str(), interface_name.length()) != -1;
 }
 
 } // namespace iso15118::io

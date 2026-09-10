@@ -19,6 +19,7 @@
 
 #include <net/if.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
 
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_ip.h>
@@ -98,6 +99,12 @@ bool get_first_sockaddr_in6_for_interface(const std::string& interface_name, soc
 
 void set_ipv6_mreq_interface(ipv6_mreq& mreq, unsigned int ifindex) {
     mreq.ipv6mr_ifindex = static_cast<int>(ifindex);
+}
+
+bool bind_socket_to_interface(int fd, const std::string& interface_name) {
+    struct net_ifreq ifr {};
+    std::strncpy(ifr.ifr_name, interface_name.c_str(), sizeof(ifr.ifr_name) - 1);
+    return setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof(ifr)) != -1;
 }
 
 } // namespace iso15118::io
