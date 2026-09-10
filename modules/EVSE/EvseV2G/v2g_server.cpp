@@ -271,9 +271,14 @@ static types::iso15118::V2gMessageId get_v2g_message_id(enum V2gMsgTypeId v2g_ms
 static void publish_var_V2G_Message(v2g_connection* conn, bool is_req) {
     types::iso15118::V2gMessages v2g_message;
 
+    /* conn->payload_len only holds the length of the received request; responses are
+     * encoded into the same buffer and their length lives in the EXI stream position */
+    const size_t msg_len =
+        is_req ? static_cast<size_t>(conn->payload_len) + V2GTP_HEADER_LENGTH : exi_bitstream_get_length(&conn->stream);
+
     u_int8_t* tempbuff = conn->buffer;
     std::string msg_as_hex_string;
-    for (int i = 0; ((tempbuff != NULL) && (i < conn->payload_len + V2GTP_HEADER_LENGTH)); i++) {
+    for (size_t i = 0; ((tempbuff != NULL) && (i < msg_len)); i++) {
         char hex[4];
         snprintf(hex, 4, "%x", *tempbuff); // to hex
         if (std::string(hex).size() == 1)
@@ -284,7 +289,7 @@ static void publish_var_V2G_Message(v2g_connection* conn, bool is_req) {
 
     std::string EXI_Base64;
 
-    EXI_Base64 = openssl::base64_encode(conn->buffer, conn->payload_len + V2GTP_HEADER_LENGTH);
+    EXI_Base64 = openssl::base64_encode(conn->buffer, msg_len);
     if (EXI_Base64.size() == 0) {
         dlog(DLOG_LEVEL_WARNING, "Unable to base64 encode EXI buffer");
     }
@@ -583,16 +588,17 @@ int v2g_handle_connection(struct v2g_connection* conn) {
     /* stream setup for sending is done within v2g_handle_apphandshake */
     /* send supportedAppRes message */
     if ((rvAppHandshake == V2G_EVENT_SEND_AND_TERMINATE) || (rvAppHandshake == V2G_EVENT_NO_EVENT)) {
-        /* form the content of V2G_Message type and publish the response for debugging*/
-        if (conn->ctx->debugMode == true) {
-            publish_var_V2G_Message(conn, false);
-        }
-
         rv = v2g_outgoing_v2gtp(conn);
 
         if (rv == -1) {
             dlog(DLOG_LEVEL_ERROR, "v2g_outgoing_v2gtp() failed");
             goto error_out;
+        }
+
+        /* form the content of V2G_Message type and publish the response for debugging;
+         * after v2g_outgoing_v2gtp() so the V2GTP header of the response is written */
+        if (conn->ctx->debugMode == true) {
+            publish_var_V2G_Message(conn, false);
         }
     }
 
@@ -754,16 +760,17 @@ int v2g_handle_connection(struct v2g_connection* conn) {
             }
         }
         case V2G_EVENT_SEND_RECV_EXI_MSG: { // fall-through intended
-            /* form the content of V2G_Message type and publish the response for debugging*/
-            if (conn->ctx->debugMode == true) {
-                publish_var_V2G_Message(conn, false);
-            }
-
             /* Write header and send next res-msg */
             if ((rv != 0) || ((rv = v2g_outgoing_v2gtp(conn)) == -1)) {
                 dlog(DLOG_LEVEL_ERROR, "v2g_outgoing_v2gtp() \"%s\" failed: %d",
                      v2g_msg_type[conn->ctx->current_v2g_msg], rv);
                 break;
+            }
+
+            /* form the content of V2G_Message type and publish the response for debugging;
+             * after v2g_outgoing_v2gtp() so the V2GTP header of the response is written */
+            if (conn->ctx->debugMode == true) {
+                publish_var_V2G_Message(conn, false);
             }
             break;
         }
