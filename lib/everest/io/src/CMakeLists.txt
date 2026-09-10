@@ -22,6 +22,11 @@ target_sources(everest_io
         socket/socket.cpp
         utilities/generic_error_state.cpp
         event/fd_event_client.cpp
+        uds/uds_payload.cpp
+        uds/uds_socket.cpp
+        uds/uds_seqpacket_socket.cpp
+        uds/uds_seqpacket_listener.cpp
+        uds/uds_utils.cpp
         udp/udp_socket.cpp
         udp/udp_unconnected_socket.cpp
         udp/udp_dualstack_server_socket.cpp
