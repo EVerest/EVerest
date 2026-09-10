@@ -4748,17 +4748,6 @@ void ChargePointImpl::on_firmware_update_status_notification(
         firmware_update_status == FirmwareStatusNotification::InvalidSignature or
         firmware_update_status == FirmwareStatusNotification::InstallVerificationFailed or
         firmware_update_status == FirmwareStatusNotification::DownloadFailed) {
-        // Reset status to idle to avoid on trigger message sending an incorrect status
-        // Even if we have to retry the firmware update resetting to Idle won't cause an issue since we do not
-        // trigger a status notification and we don't have a state machine to block certain state transitions
-        //
-        // Idle is deliberately not in here, because this also re-arms the single-fire guard around
-        // all_connectors_unavailable_callback. An update that dies and only reports Idle has not started a new
-        // cycle, so only a fresh UpdateFirmware(.signed).req may re-arm it
-        //
-        // Both are reset regardless of which path this update took, because only one update runs at a time. A
-        // signed update that died without ever reporting a terminal status would otherwise keep reporting its
-        // stale status to an ExtendedTriggerMessage until the next SignedUpdateFirmware.req
         this->signed_firmware_status = FirmwareStatusEnumType::Idle;
         this->firmware_status = FirmwareStatus::Idle;
         this->clear_firmware_install_pending();
