@@ -107,4 +107,22 @@ bool bind_socket_to_interface(int fd, const std::string& interface_name) {
     return setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof(ifr)) != -1;
 }
 
+void ensure_link_local_scope(int fd, sockaddr_in6& address) {
+    if (address.sin6_family != AF_INET6 or address.sin6_scope_id != 0) {
+        return;
+    }
+    if (not IN6_IS_ADDR_LINKLOCAL(&address.sin6_addr)) {
+        return;
+    }
+
+    // Zephyr does not fill sin6_scope_id on recvfrom(); take the interface the socket was
+    // bound to via SO_BINDTODEVICE and turn its name into the scope id sendto() needs.
+    struct net_ifreq ifr {};
+    socklen_t ifr_len = sizeof(ifr);
+    if (getsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, &ifr, &ifr_len) != 0 or ifr.ifr_name[0] == '\0') {
+        return;
+    }
+    address.sin6_scope_id = if_nametoindex(ifr.ifr_name);
+}
+
 } // namespace iso15118::io

@@ -120,6 +120,11 @@ void set_ipv6_mreq_interface(ipv6_mreq& mreq, unsigned int ifindex) {
     mreq.ipv6mr_interface = ifindex;
 }
 
+void ensure_link_local_scope(int /* fd */, sockaddr_in6& /* address */) {
+    // Linux populates sin6_scope_id on recvfrom() for link-local sources, so the reply
+    // already routes to the right interface - nothing to do here.
+}
+
 bool bind_socket_to_interface(int fd, const std::string& interface_name) {
     // Linux/BSD SO_BINDTODEVICE takes the interface name directly as the option value.
     return setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, interface_name.c_str(), interface_name.length()) != -1;

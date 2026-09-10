@@ -128,6 +128,10 @@ PeerRequestContext SdpServer::get_peer_request() {
         log_and_throw("Unexpected address length during read on sdp server socket");
     }
 
+    // Make sure the reply has a scope id so sendto() can pick an egress interface 
+    // (needed on Zephyr, no-op on Linux).
+    ensure_link_local_scope(fd, peer_address);
+
     log_peer_hostname(peer_address);
 
     if (read_result == sizeof(udp_buffer)) {
