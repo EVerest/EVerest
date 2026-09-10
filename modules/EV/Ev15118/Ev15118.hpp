@@ -36,6 +36,18 @@ struct Conf {
     std::string device_cert_chain_path;
     std::string device_key_path;
     std::string device_key_password_path;
+    double iso2_ac_e_amount_wh;
+    double iso2_ac_ev_max_voltage_v;
+    double iso2_ac_ev_max_current_a;
+    double iso2_ac_ev_min_current_a;
+    bool enable_pnc;
+    std::string pnc_contract_cert_chain_path;
+    std::string pnc_contract_key_path;
+    std::string pnc_contract_key_password_path;
+    std::string pnc_oem_prov_cert_path;
+    std::string pnc_oem_prov_key_path;
+    std::string pnc_oem_prov_key_password_path;
+    bool pnc_force_cert_install;
     int ac_phase_count;
     double ac_max_charge_power_w;
     double ac_min_charge_power_w;
