@@ -22,6 +22,7 @@ namespace {
 
 template <typename F, typename V> auto with_engine(V& engine, F&& f) {
     using EngineRef = std::conditional_t<std::is_const_v<V>, const d20::Engine&, d20::Engine&>;
+    // Every engine offers the same surface; the -20 one names the return type.
     using R = std::invoke_result_t<F, EngineRef>;
     return std::visit(
         [&](auto& e) -> R {
@@ -34,6 +35,14 @@ template <typename F, typename V> auto with_engine(V& engine, F&& f) {
         engine);
 }
 
+// Engine-neutral view of one feed.
+struct NeutralOutcome {
+    Disposition output;
+    bool transitioned;
+    int state_before;
+    const char* violation;
+};
+
 } // namespace
 
 Session::Session(feedback::Callbacks callbacks_, OutboundSend outbound_send_,
@@ -43,13 +52,21 @@ Session::Session(feedback::Callbacks callbacks_, OutboundSend outbound_send_,
                  everest::lib::util::monitor<DcChargeParams>* dc_params_,
                  everest::lib::util::monitor<AcChargeParams>* ac_params_,
                  message_20::datatypes::ServiceCategory energy_service, DerControlFunctions der_control_functions,
-                 bool der_stop_on_unsupported_functions, d20::SessionOptions options) :
-    feedback(callbacks_), outbound_send(std::move(outbound_send_)), reactor(reactor_), timing(timing_) {
+                 bool der_stop_on_unsupported_functions, d20::SessionOptions options, EvSessionParams params_) :
+    callbacks(callbacks_),
+    feedback(callbacks_),
+    dc_params((dc_params_ != nullptr) ? *dc_params_ : owned_dc_params),
+    params(std::move(params_)),
+    has_cp_state_feedback(options.has_cp_state_feedback),
+    resumed_session_id(options.resumed_session_id),
+    outbound_send(std::move(outbound_send_)),
+    reactor(reactor_),
+    timing(timing_) {
 
     // The engine's Context keeps references to these monitors, so they must outlive it: the
     // caller's, or the owned fallbacks declared above the engine.
-    engine.emplace<d20::Engine>(std::move(callbacks_), std::move(evcc_id), std::move(advertised_app_protocols),
-                                active_control_event, (dc_params_ != nullptr) ? *dc_params_ : owned_dc_params,
+    engine.emplace<d20::Engine>(callbacks, std::move(evcc_id), std::move(advertised_app_protocols),
+                                active_control_event, dc_params,
                                 (ac_params_ != nullptr) ? *ac_params_ : owned_ac_params, energy_service,
                                 der_control_functions, der_stop_on_unsupported_functions, std::move(options));
 
@@ -88,13 +105,13 @@ template <typename F> void Session::guarded(const char* op, F&& f) {
         logf_error("EV %s failed (%s); stopping the session", op, ex.what());
         // A request left in the exchange would keep is_finished() false forever.
         with_engine(engine, [](auto& e) {
-            e.context().stop_session();
+            e.stop();
             e.discard_request();
         });
     } catch (...) {
         logf_error("EV %s failed (non-std exception); stopping the session", op);
         with_engine(engine, [](auto& e) {
-            e.context().stop_session();
+            e.stop();
             e.discard_request();
         });
     }
@@ -116,7 +133,7 @@ void Session::on_bytes_received(const std::vector<uint8_t>& bytes) {
         if (state == io::SdpPacket::State::INVALID_HEADER or state == io::SdpPacket::State::PAYLOAD_TOO_LONG) {
             logf_error("EV received a malformed V2GTP frame (SdpPacket state %d); stopping the session",
                        static_cast<int>(state));
-            with_engine(engine, [](auto& e) { e.context().stop_session(); });
+            with_engine(engine, [](auto& e) { e.stop(); });
             check_finished();
             return true;
         }
@@ -154,11 +171,11 @@ void Session::on_peer_closed() {
     if (is_finished()) {
         return;
     }
-    const bool stopped = with_engine(engine, [](auto& e) { return e.context().is_session_stopped(); });
+    const bool stopped = with_engine(engine, [](auto& e) { return e.is_stopped(); });
     if (not stopped) {
         logf_warning("EV peer closed the connection mid-session; stopping the session");
         with_engine(engine, [](auto& e) {
-            e.context().stop_session();
+            e.stop();
             e.discard_request();
         });
     } else {
@@ -185,24 +202,16 @@ void Session::deliver_control_event(const d20::ControlEvent& event) {
         } clear_on_exit{active_control_event};
 
         with_engine(engine, [&](auto& e) {
-            auto& ctx = e.context();
-            // Latched on the Context: the FSM state at delivery time may not consume the event.
-            if (const auto* stop = std::get_if<d20::StopCharging>(&event); stop != nullptr and *stop) {
-                ctx.set_stop_charging_requested(true);
-            }
-            if (const auto* pause = std::get_if<d20::PauseCharging>(&event); pause != nullptr and *pause) {
-                ctx.set_pause_charging_requested(true);
-            }
-            if (const auto* cp = std::get_if<d20::CpState>(&event)) {
-                ctx.set_cp_state(cp->c_or_d);
-            }
+            // Latched on the engine: the FSM state at delivery time may not consume the event.
+            e.latch(event);
             if (e.started()) {
                 feed_fsm(d20::Event::CONTROL_MESSAGE);
             }
-            if (e.has_request()) {
-                arm_send_delay();
-            }
         });
+        // feed_fsm() may switch_engine(); the engine reference above is dead by now.
+        if (with_engine(engine, [](auto& e) { return e.has_request(); })) {
+            arm_send_delay();
+        }
     });
 }
 
@@ -212,7 +221,7 @@ void Session::terminate() {
     }
     logf_warning("EV terminating the V2G session without SessionStop");
     with_engine(engine, [](auto& e) {
-        e.context().stop_session();
+        e.stop();
         e.discard_request();
     });
     send_delay_timer.disarm();
@@ -223,32 +232,72 @@ void Session::terminate() {
 }
 
 void Session::feed_fsm(d20::Event ev) {
-    const auto outcome = with_engine(engine, [&](auto& e) { return e.feed(ev); });
+    const auto outcome = with_engine(engine, [&](auto& e) {
+        const auto o = e.feed(ev);
+        return NeutralOutcome{o.output, o.transitioned, static_cast<int>(o.state_before), o.violation};
+    });
 
     if (outcome.violation != nullptr) {
-        logf_error("EV state %d declared %d but %s; stopping the session", static_cast<int>(outcome.state_before),
+        logf_error("EV state %d declared %d but %s; stopping the session", outcome.state_before,
                    static_cast<int>(outcome.output), outcome.violation);
-        with_engine(engine, [](auto& e) { e.context().stop_session(); });
+        with_engine(engine, [](auto& e) {
+            e.stop();
+            e.discard_request();
+        });
         return;
     }
 
-    if (outcome.output == d20::Disposition::Handover) {
-        const auto protocol = with_engine(engine, [](auto& e) { return e.context().negotiated_protocol(); });
+    if (outcome.output == Disposition::Handover) {
+        const auto protocol = with_engine(engine, [](auto& e) { return e.negotiated_protocol(); });
         switch_engine(protocol.value());
         return;
     }
 
-    update_ongoing_guard(outcome);
+    update_ongoing_guard(outcome.transitioned);
 }
 
 void Session::switch_engine(ProtocolId protocol) {
-    // Only the ISO 15118-20 engine exists; the SAP offer never contains another generation.
-    logf_error("EV negotiated %s but no engine implements it; stopping the session", protocol_id_to_string(protocol));
-    with_engine(engine, [](auto& e) { e.context().stop_session(); });
+    // Carry the latches of the SAP phase into the new engine.
+    const bool stop_requested = with_engine(engine, [](auto& e) { return e.context().is_stop_charging_requested(); });
+    const bool pause_requested = with_engine(engine, [](auto& e) { return e.context().is_pause_charging_requested(); });
+    const bool cp_c_or_d = with_engine(engine, [](auto& e) { return e.context().cp_state_c_or_d(); });
+
+    switch (protocol) {
+    case ProtocolId::ISO15118_2:
+        engine.emplace<d2::Engine>(callbacks, params, active_control_event, dc_params, has_cp_state_feedback,
+                                   resumed_session_id);
+        break;
+    case ProtocolId::DIN70121:
+        engine.emplace<din::Engine>(callbacks, params, active_control_event, dc_params, has_cp_state_feedback,
+                                    resumed_session_id);
+        break;
+    case ProtocolId::ISO15118_20:
+        logf_error("EV handover to ISO 15118-20 requested from the -20 engine; stopping the session");
+        with_engine(engine, [](auto& e) { e.stop(); });
+        return;
+    }
+    logf_info("EV switched to the %s engine", protocol_id_to_string(protocol));
+
+    with_engine(engine, [&](auto& e) {
+        if (stop_requested) {
+            e.latch(d20::ControlEvent{d20::StopCharging{true}});
+        }
+        if (pause_requested) {
+            e.latch(d20::ControlEvent{d20::PauseCharging{true}});
+        }
+        if (cp_c_or_d) {
+            e.latch(d20::ControlEvent{d20::CpState{true}});
+        }
+        e.start();
+    });
+    update_ongoing_guard(true);
+    if (with_engine(engine, [](auto& e) { return e.has_request(); })) {
+        arm_send_delay();
+    }
 }
 
-void Session::update_ongoing_guard(const d20::FeedOutcome& outcome) {
-    if (not outcome.transitioned) {
+void Session::update_ongoing_guard(bool transitioned) {
+    if (not transitioned) {
         return;
     }
     if (ongoing_armed) {
@@ -260,8 +309,7 @@ void Session::update_ongoing_guard(const d20::FeedOutcome& outcome) {
         if (ongoing_timer.set_timeout(bound.value())) {
             ongoing_armed = true;
         } else {
-            logf_warning("EV failed to arm the ongoing guard for state %d",
-                         static_cast<int>(with_engine(engine, [](auto& e) { return *e.current_state(); })));
+            logf_warning("EV failed to arm the ongoing guard");
         }
     }
 }
@@ -273,8 +321,14 @@ void Session::handle_complete_frame() {
 
     guarded("V2G response handling", [this]() {
         with_engine(engine, [&](auto& e) {
-            e.stage_response(packet.get_payload_type(),
-                             io::StreamInputView{packet.get_payload_buffer(), packet.get_payload_length()});
+            if (not e.stage_response(packet.get_payload_type(),
+                                     io::StreamInputView{packet.get_payload_buffer(), packet.get_payload_length()})) {
+                // Frame dropped: keep waiting for the real response.
+                if (not e.is_stopped()) {
+                    watchdog_timer.set_timeout(effective_response_timeout());
+                }
+                return;
+            }
             feedback.v2g_message(e.peek_response_type());
             if (e.started()) {
                 feed_fsm(d20::Event::V2GTP_MESSAGE);
@@ -287,14 +341,17 @@ void Session::handle_complete_frame() {
 }
 
 void Session::arm_send_delay() {
-    // A zero delay would disarm a timerfd (it_value == 0); clamp to the smallest positive duration.
-    const bool armed = (timing.send_delay.count() <= 0) ? send_delay_timer.set_timeout(std::chrono::nanoseconds(1))
-                                                        : send_delay_timer.set_timeout(timing.send_delay);
+    // Pre-20 engines pace requests (EvseV2G MAX_RES_TIME parity). A zero delay would disarm a timerfd
+    // (it_value == 0); clamp to the smallest positive duration.
+    const auto delay =
+        std::max(timing.send_delay, with_engine(engine, [](auto& e) { return e.min_request_interval(); }));
+    const bool armed = (delay.count() <= 0) ? send_delay_timer.set_timeout(std::chrono::nanoseconds(1))
+                                            : send_delay_timer.set_timeout(delay);
 
     if (not armed) {
         logf_error("EV failed to arm the send-delay timer; stopping the session");
         pending_request_unsendable = true;
-        with_engine(engine, [](auto& e) { e.context().stop_session(); });
+        with_engine(engine, [](auto& e) { e.stop(); });
         check_finished();
     }
 }
@@ -308,7 +365,7 @@ void Session::transmit_pending() {
     const auto taken = with_engine(engine, [](auto& e) { return e.take_request(); });
     if (not taken.has_value()) {
         logf_error("EV request encoding failed; stopping the session");
-        with_engine(engine, [](auto& e) { e.context().stop_session(); });
+        with_engine(engine, [](auto& e) { e.stop(); });
         check_finished();
         return;
     }
@@ -321,23 +378,26 @@ void Session::transmit_pending() {
 
     if (not outbound_send(std::move(frame))) {
         logf_error("EV failed to send the request frame; stopping the session");
-        with_engine(engine, [](auto& e) { e.context().stop_session(); });
+        with_engine(engine, [](auto& e) { e.stop(); });
         check_finished();
         return;
     }
 
     // No response is expected for a final message flushed after the stop.
-    const bool stopped = with_engine(engine, [](auto& e) { return e.context().is_session_stopped(); });
+    const bool stopped = with_engine(engine, [](auto& e) { return e.is_stopped(); });
     if (not stopped) {
-        const auto timeout = (timing.response_timeout.count() > 0)
-                                 ? timing.response_timeout
-                                 : with_engine(engine, [](auto& e) { return e.response_timeout(); });
-        if (not watchdog_timer.set_timeout(timeout)) {
+        if (not watchdog_timer.set_timeout(effective_response_timeout())) {
             logf_error("EV failed to arm the response watchdog; stopping the session");
-            with_engine(engine, [](auto& e) { e.context().stop_session(); });
+            with_engine(engine, [](auto& e) { e.stop(); });
             check_finished();
         }
     }
+}
+
+std::chrono::milliseconds Session::effective_response_timeout() const {
+    return (timing.response_timeout.count() > 0)
+               ? timing.response_timeout
+               : with_engine(engine, [](const auto& e) { return e.response_timeout(); });
 }
 
 void Session::on_send_delay_expired() {
@@ -346,7 +406,7 @@ void Session::on_send_delay_expired() {
 
 void Session::on_watchdog_expired() {
     logf_error("EV response watchdog expired; stopping the session");
-    with_engine(engine, [](auto& e) { e.context().stop_session(); });
+    with_engine(engine, [](auto& e) { e.stop(); });
     ongoing_timer.disarm();
     ongoing_armed = false;
 
@@ -364,12 +424,13 @@ void Session::on_watchdog_expired() {
 
 void Session::on_ongoing_expired() {
     ongoing_armed = false;
-    logf_error(
-        "EV ongoing guard expired in state %d; stopping the session",
-        static_cast<int>(with_engine(engine, [](auto& e) { return e.current_state().value_or(d20::StateID{}); })));
+    logf_error("EV ongoing guard expired in state %d; stopping the session", with_engine(engine, [](auto& e) {
+                   const auto state = e.current_state();
+                   return state.has_value() ? static_cast<int>(*state) : -1;
+               }));
     watchdog_timer.disarm();
     with_engine(engine, [](auto& e) {
-        e.context().stop_session();
+        e.stop();
         e.discard_request();
     });
     guarded("ongoing-guard FSM handling", [this]() {
@@ -411,7 +472,7 @@ bool Session::is_finished() const {
             if constexpr (std::is_same_v<std::decay_t<decltype(e)>, std::monostate>) {
                 return true;
             } else {
-                return e.context().is_session_stopped() and (pending_request_unsendable or not e.has_request());
+                return e.is_stopped() and (pending_request_unsendable or not e.has_request());
             }
         },
         engine);
@@ -423,7 +484,7 @@ bool Session::is_paused() const {
             if constexpr (std::is_same_v<std::decay_t<decltype(e)>, std::monostate>) {
                 return false;
             } else {
-                return e.context().is_session_paused();
+                return e.is_paused();
             }
         },
         engine);
@@ -435,7 +496,7 @@ std::optional<std::array<uint8_t, 8>> Session::session_id() const {
             if constexpr (std::is_same_v<std::decay_t<decltype(e)>, std::monostate>) {
                 return std::nullopt;
             } else {
-                return e.context().get_session().get_id();
+                return e.session_id();
             }
         },
         engine);
@@ -447,7 +508,7 @@ std::optional<ProtocolId> Session::selected_protocol() const {
             if constexpr (std::is_same_v<std::decay_t<decltype(e)>, std::monostate>) {
                 return std::nullopt;
             } else {
-                return e.context().negotiated_protocol();
+                return e.negotiated_protocol();
             }
         },
         engine);

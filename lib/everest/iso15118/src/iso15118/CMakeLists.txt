@@ -121,6 +121,7 @@ target_sources(iso15118
 if(ISO15118_BUILD_EV_SIDE)
     target_sources(iso15118
         PRIVATE
+        ev/fsm_base.cpp
         ev/d20/context.cpp
         ev/d20/context_helper.cpp
         ev/d20/engine.cpp
@@ -153,6 +154,9 @@ if(ISO15118_BUILD_EV_SIDE)
         ev/config_validation.cpp
         ev/ac_phase_split.cpp
     )
+
+    add_subdirectory(ev/d2)
+    add_subdirectory(ev/din)
 
     # Only the EV side uses everest::io.
     target_link_libraries(iso15118 PUBLIC everest::io)

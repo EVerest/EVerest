@@ -41,6 +41,7 @@
 #include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/session.hpp>
 #include <iso15118/ev/session/feedback.hpp>
+#include <iso15118/ev/session_params.hpp>
 
 namespace iso15118::ev::test {
 
@@ -160,12 +161,13 @@ public:
         message_20::datatypes::ServiceCategory energy_service = message_20::datatypes::ServiceCategory::DC,
         AcChargeParams ac_seed = AcChargeParams{},
         DerControlFunctions der_control_functions = default_der_control_functions(),
-        bool der_stop_on_unsupported_functions = true, d20::SessionOptions options = {}) :
+        bool der_stop_on_unsupported_functions = true, d20::SessionOptions options = {},
+        EvSessionParams session_params = {}) :
         dc_params(std::move(params)),
         ac_params(std::move(ac_seed)),
         session(make_callbacks(), make_send(), reactor, timing, std::move(evcc_id), std::move(protocols), &dc_params,
                 &ac_params, energy_service, der_control_functions, der_stop_on_unsupported_functions,
-                std::move(options)) {
+                std::move(options), std::move(session_params)) {
     }
 
     everest::lib::io::event::fd_event_handler reactor;
@@ -187,6 +189,7 @@ public:
     std::vector<feedback::Signal> signals;
     std::optional<ProtocolId> selected_protocol{std::nullopt};
     std::string evse_id;
+    std::optional<feedback::DcMaximumLimits> dc_present_limits{std::nullopt};
     int pause_from_charger_count = 0;
     std::vector<V2gMessageType> v2g_messages;
 
@@ -230,6 +233,7 @@ private:
         cb.signal = [this](feedback::Signal s) { signals.push_back(s); };
         cb.selected_protocol = [this](ProtocolId p) { selected_protocol = p; };
         cb.evse_id = [this](const std::string& id) { evse_id = id; };
+        cb.dc_evse_present_limits = [this](const feedback::DcMaximumLimits& limits) { dc_present_limits = limits; };
         cb.pause_from_charger = [this]() { ++pause_from_charger_count; };
         cb.v2g_message = [this](const V2gMessageType& type) { v2g_messages.push_back(type); };
         return cb;

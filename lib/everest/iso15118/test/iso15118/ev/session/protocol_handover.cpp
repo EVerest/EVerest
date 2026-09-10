@@ -13,6 +13,8 @@
 
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
+#include <iso15118/message_2/session_setup.hpp>
+#include <iso15118/message_2/variant.hpp>
 
 #include <iso15118/ev/sap_offer.hpp>
 
@@ -63,17 +65,19 @@ SCENARIO("ISO15118-20 EV Session maps the negotiated schema id back to a protoco
         WHEN("the SECC selects schema id 2") {
             fx->session.on_bytes_received(frame_payload(PT::SAP, serialize_msg(sap_response(2))));
 
-            THEN("ISO 15118-2 is reported and the session stops: no engine implements it") {
+            THEN("ISO 15118-2 is reported and the -2 engine takes over with a SessionSetupReq") {
                 REQUIRE(fx->selected_protocol == ProtocolId::ISO15118_2);
                 REQUIRE(fx->session.selected_protocol() == ProtocolId::ISO15118_2);
-                REQUIRE(fx->session.is_finished());
-                REQUIRE(fx->signals == std::vector<ev::feedback::Signal>{ev::feedback::Signal::DLINK_TERMINATE});
-            }
-
-            THEN("no SessionSetupRequest is emitted") {
-                run_reactor_until(
-                    fx->reactor, [&]() { return fx->captured.size() > 1; }, 100ms);
-                REQUIRE(fx->captured.size() == 1);
+                REQUIRE_FALSE(fx->session.is_finished());
+                REQUIRE(run_reactor_until(
+                    fx->reactor, [&]() { return fx->captured.size() > 1; }, 1s));
+                const auto& frame = fx->captured.back();
+                REQUIRE(header_payload_type(frame) == PT::SAP);
+                uint32_t len_be;
+                std::memcpy(&len_be, frame.data() + 4, sizeof(len_be));
+                const message_2::Variant variant{
+                    io::StreamInputView{frame.data() + io::SdpPacket::V2GTP_HEADER_SIZE, ntohl(len_be)}};
+                REQUIRE(variant.get_if<message_2::SessionSetupRequest>() != nullptr);
             }
         }
 
