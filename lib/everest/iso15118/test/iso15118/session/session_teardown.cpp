@@ -111,8 +111,7 @@ SCENARIO("Session teardown primitives") {
             dropped_session.poll();
 
             THEN("the data link is released with D-LINK_ERROR, not D-LINK_TERMINATE") {
-                // [V2G2-727] / [V2G20-727]: any error the SECC identifies is reported as a data-link
-                // error, which restarts matching (ISO 15118-3 Table 6) so the EV can try again.
+                // [V2G2-727]: an identified error is reported as a data-link error, which restarts matching.
                 REQUIRE(seen == std::vector<iso15118::session::feedback::Signal>{
                                     iso15118::session::feedback::Signal::DLINK_ERROR});
             }
@@ -131,9 +130,8 @@ SCENARIO("Session teardown primitives") {
         mid->fire(iso15118::io::ConnectionEvent::ACCEPTED);
         mid->queue_v2gtp_packet(iso15118::io::v2gtp::PayloadType::SAP, sap_req, sizeof(sap_req));
         mid->fire(iso15118::io::ConnectionEvent::NEW_DATA);
-        // The first poll consumes the request and stages the SupportedAppProtocolRes, which is paced
-        // RESPONSE_DELAY_AFTER_REQUEST_MS after the request; wait that out so the second poll writes it
-        // and hands the session over to the ISO 15118-20 engine.
+        // The SupportedAppProtocolRes is paced, so wait that out for the second poll to write it and hand
+        // the session over to the ISO 15118-20 engine.
         mid_session.poll();
         std::this_thread::sleep_for(std::chrono::milliseconds(120));
         mid_session.poll();
@@ -164,9 +162,8 @@ SCENARIO("Session teardown primitives") {
             idle_session.close();
 
             THEN("only the D-LINK signal is sent, no power path is opened") {
-                // close() is the plug-out / session-kill path: the link is already gone or is being
-                // taken down from outside, so it stays D-LINK_TERMINATE ([V2G2-726]) rather than
-                // running the D-LINK_ERROR matching restart at a connector with no EV on it.
+                // The plug-out / session-kill path: the link is already gone, so it stays D-LINK_TERMINATE
+                // ([V2G2-726]) rather than running the matching restart at a connector with no EV on it.
                 REQUIRE(seen == std::vector<iso15118::session::feedback::Signal>{
                                     iso15118::session::feedback::Signal::DLINK_TERMINATE});
             }
@@ -174,9 +171,8 @@ SCENARIO("Session teardown primitives") {
     }
 }
 
-// The teardown state machine behind Session::open_power_path(). Driving a real charge loop through the
-// Session needs a captured EXI recording of every message up to CurrentDemand, so the latch itself is
-// covered here and the Session only wires it into finish_session()/close().
+// Driving a real charge loop through the Session needs a captured EXI recording of every message up
+// to CurrentDemand, so the latch itself is covered here.
 SCENARIO("Power path teardown signals") {
     using Signal = iso15118::session::feedback::Signal;
     iso15118::PowerPath power_path;

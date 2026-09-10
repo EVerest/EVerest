@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2025 Pionix GmbH and Contributors to EVerest
-#include <iso15118/d2/state/certificate_installation.hpp>
+#include <iso15118/d2/state/identification.hpp>
 
 #include <array>
 #include <cstdint>
@@ -9,6 +9,7 @@
 
 #include <iso15118/d2/state/payment_details.hpp>
 #include <iso15118/d2/state/session_stop.hpp>
+#include <iso15118/detail/d2/state/sequence_error.hpp>
 
 #include <iso15118/detail/d2/state/sequence_error.hpp>
 #include <iso15118/detail/helper.hpp>
@@ -65,7 +66,6 @@ std::vector<uint8_t> base64_decode(const std::string& in) {
         }
         const int8_t value = lut[static_cast<uint8_t>(c)];
         if (value < 0) {
-            // Invalid character -> reject the whole payload.
             return {};
         }
         buffer = (buffer << 6) | static_cast<uint32_t>(value);
@@ -80,26 +80,25 @@ std::vector<uint8_t> base64_decode(const std::string& in) {
 
 } // namespace
 
-void CertificateInstallation::enter() {
-    logf_debug("Enter state: CertificateInstallation");
+void Identification::enter() {
+    logf_debug("Enter state: Identification");
 }
 
-Result CertificateInstallation::feed(Event ev) {
-    // Response injected by the module (CSMS/CPS backend): splice the raw CertificateInstallationRes EXI
-    // onto the wire verbatim and continue to PaymentDetails.
+Result Identification::on_event(Event ev) {
+    // Splice the raw CertificateInstallationRes EXI onto the wire verbatim.
     if (ev == Event::CONTROL_MESSAGE) {
         const auto* response = m_ctx.get_control_event<d20::CertificateResponse>();
         if (response == nullptr) {
             return {};
         }
         if (not response->status_accepted or response->exi_response_base64.empty()) {
-            logf_warning("CertificateInstallation: backend reported failure; terminating session");
+            logf_warning("Identification: backend reported failure; terminating session");
             m_ctx.session_stopped = true;
             return {};
         }
         const auto raw = base64_decode(response->exi_response_base64);
         if (raw.empty()) {
-            logf_warning("CertificateInstallation: failed to base64-decode the backend response");
+            logf_warning("Identification: failed to base64-decode the backend response");
             m_ctx.session_stopped = true;
             return {};
         }
@@ -107,48 +106,48 @@ Result CertificateInstallation::feed(Event ev) {
         return m_ctx.create_state<PaymentDetails>();
     }
 
-    if (ev != Event::V2GTP_MESSAGE) {
-        return {};
-    }
+    return {};
+}
 
-    // Forward the raw CertificateInstallationReq EXI to the module; the response arrives asynchronously
-    // as a CertificateResponse control event handled above. Guard against a re-feed re-forwarding it.
+Result Identification::on_request(const message_2::Variant& received) {
+    // [V2G2-551], the Plug-and-Charge branch; an EIM session never reaches here. While the certificate
+    // request is with the backend nothing is in sequence at all.
+    const auto type = received.get_type();
     if (request_forwarded) {
-        // Parked, waiting for the backend CertificateInstallationRes. The EV must wait for the
-        // response; any further request is out of sequence. It MUST be consumed here: leaving it in
-        // the MessageExchange would wedge the session until the sequence timeout, and the request
-        // after it would throw in set_request() ("Previous V2G message has not been handled yet").
-        // An EV aborting sends SessionStopReq; hand it to SessionStop for a clean SessionStopRes.
-        if (m_ctx.peek_request_type() == message_2::Type::SessionStopReq) {
-            return m_ctx.create_state<SessionStop>();
-        }
-        const auto parked_variant = m_ctx.pull_request();
-        logf_warning("CertificateInstallation: request (type id: %d) received while waiting for the backend "
+        logf_warning("Identification: request (type id: %d) received while waiting for the backend "
                      "response; answering FAILED_SequenceError",
-                     parked_variant->get_type());
-        respond_sequence_error(m_ctx, *parked_variant);
-        m_ctx.session_stopped = true;
+                     received.get_type());
+        respond_sequence_error(m_ctx, received.get_type());
+        return {};
+    } else if (type == message_2::Type::PaymentDetailsReq) {
+        return process_payment_details(m_ctx, received.get<message_2::PaymentDetailsRequest>());
+    } else if (type == message_2::Type::CertificateInstallationReq or type == message_2::Type::CertificateUpdateReq) {
+        // [V2G2-432]: only for an action the EV selected in the certificate service.
+        const bool selected = (type == message_2::Type::CertificateInstallationReq)
+                                  ? m_ctx.session().cert_install_selected
+                                  : m_ctx.session().cert_update_selected;
+        if (not selected) {
+            logf_warning("Identification: certificate exchange requested for an action that was not selected");
+            respond_sequence_error(m_ctx, received.get_type());
+            return {};
+        }
+        return forward_to_backend(received);
+    } else {
+        logf_warning("Identification: expected PaymentDetailsReq or a certificate exchange, got type id: %d",
+                     received.get_type());
+        respond_sequence_error(m_ctx, received.get_type());
         return {};
     }
+}
 
-    const auto variant = m_ctx.pull_request();
-    // This relay handles both PnC certificate exchanges (identical raw-EXI pass-through); the action
-    // tells the backend which one it is.
-    const auto type = variant->get_type();
-    if (type != message_2::Type::CertificateInstallationReq and type != message_2::Type::CertificateUpdateReq) {
-        logf_warning("CertificateInstallation: expected CertificateInstallationReq/CertificateUpdateReq, "
-                     "got type id: %d",
-                     type);
-        m_ctx.session_stopped = true;
-        return {};
-    }
-    const auto action = (type == message_2::Type::CertificateUpdateReq)
+Result Identification::forward_to_backend(const message_2::Variant& received) {
+    const auto action = (received.get_type() == message_2::Type::CertificateUpdateReq)
                             ? session::feedback::CertificateExchangeAction::Update
                             : session::feedback::CertificateExchangeAction::Install;
 
-    const auto& exi = variant->get_exi_payload();
+    const auto& exi = received.get_exi_payload();
     if (exi.empty()) {
-        logf_warning("CertificateInstallation: empty request EXI payload; terminating session");
+        logf_warning("Identification: empty request EXI payload; terminating session");
         m_ctx.session_stopped = true;
         return {};
     }

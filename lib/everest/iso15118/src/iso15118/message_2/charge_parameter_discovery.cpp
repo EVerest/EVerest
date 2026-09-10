@@ -130,8 +130,8 @@ static void convert(const struct iso2_SAScheduleListType& in, datatypes::SASched
             convert(entry.PMax, out_entry.p_max);
         }
 
-        // [V2G2-659] SalesTariff support is mandatory for the EVCC; decode it (structure only -- the
-        // nested ConsumptionCost detail is not modelled) instead of silently dropping it.
+        // [V2G2-659]: SalesTariff support is mandatory for the EVCC, so decode the structure rather than
+        // silently drop it.
         if (tuple.SalesTariff_isUsed) {
             auto& out_st = out_tuple.sales_tariff.emplace();
             out_st.sales_tariff_id = tuple.SalesTariff.SalesTariffID;

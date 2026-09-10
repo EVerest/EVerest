@@ -11,17 +11,13 @@
 
 namespace iso15118 {
 
-// Copies the (d20) DC transfer limits -- what energy management currently grants -- onto the ISO 15118-2
-// charge-loop values (CurrentDemandRes). Used both when the session config is built and when a
-// DcTransferLimits control event arrives mid-session; see the DIN counterpart. Safety: no defaults --
-// negative (invalid) values clamp to 0 and unreported ones stay 0, so the EV is never told it may draw
-// energy nobody reported.
+// Copies what energy management currently grants onto the ISO 15118-2 charge-loop values. No
+// defaults: negative values clamp to 0 and unreported ones stay 0, so the EV is never told it may
+// draw energy nobody reported.
 void apply_dc_limits(d2::SessionConfig& out, const d20::DcTransferLimits& dc);
 
-// Copies the power-supply hardware capabilities onto the values ChargeParameterDiscoveryRes advertises
-// (the EVSEMaximum*/EVSEMinimum* offer and the SAScheduleList PMax): the maximum the EVSE could ever
-// deliver, kept apart from the live limits above (EvseV2G parity). Safety: no defaults -- negative
-// (invalid) values clamp to 0 and unreported ones stay 0, so only real data advertises a positive offer.
+// Copies the power-supply hardware capabilities onto what ChargeParameterDiscoveryRes advertises --
+// the maximum the EVSE could ever deliver, kept apart from the live limits above (EvseV2G parity).
 void apply_dc_capabilities(d2::SessionConfig& out, const d20::DcTransferLimits& dc);
 
 // Copies the module-reported physical EVSE parameters (set_charging_parameters) into the ISO 15118-2

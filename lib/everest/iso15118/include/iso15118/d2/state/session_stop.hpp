@@ -15,14 +15,14 @@ struct SessionStop : public StateBase {
     }
 
     void enter() final;
-    Result feed(Event) final;
+    Result on_event(Event) final;
+    Result on_request(const message_2::Variant& received) final;
 
 private:
-    // Handle a SessionStopReq that passed the CP State B gate and stage the response.
-    void process_request(const message_2::SessionStopRequest& req);
+    // Applies the [V2G2-920] CP State B gate and either parks the request or answers it.
+    Result accept_request(const message_2::SessionStopRequest& req);
 
-    // Request parked while waiting for CP State B ([V2G2-920]..[V2G2-922]): answered when B arrives,
-    // or with FAILED when V2G_SECC_CPState_Detection_Timeout expires.
+    // Answered when B arrives, or with FAILED when V2G_SECC_Msg_Performance_Time expires [V2G2-922].
     std::optional<message_2::SessionStopRequest> pending_req{};
 };
 

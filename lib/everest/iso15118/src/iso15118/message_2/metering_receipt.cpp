@@ -12,8 +12,7 @@
 namespace iso15118::message_2 {
 
 template <> void convert(const struct iso2_MeteringReceiptReqType& in, MeteringReceiptRequest& out) {
-    // Decode the signed body SessionID (clamped + zero-padded into the fixed 8-byte model) so the SECC
-    // can verify it matches the assigned session id.
+    // Clamped and zero-padded into the fixed 8-byte model so the SECC can compare it exactly.
     out.session_id.fill(0);
     const auto len = std::min<size_t>(in.SessionID.bytesLen, out.session_id.size());
     std::copy(in.SessionID.bytes, in.SessionID.bytes + len, out.session_id.begin());
@@ -28,9 +27,7 @@ template <> void convert(const struct iso2_MeteringReceiptReqType& in, MeteringR
 
 template <> void convert(const MeteringReceiptRequest& in, struct iso2_MeteringReceiptReqType& out) {
     init_iso2_MeteringReceiptReqType(&out);
-    // The MeteringReceiptReq is signed under Plug-and-Charge; its Id attribute is referenced by the
-    // xmldsig SignedInfo, so it is always set (default "id1", assigned by the EV state).
-    // Body-level SessionID (fixed 8-byte model).
+    // Referenced by the xmldsig SignedInfo, so it is always set (default "id1", assigned by the EV state).
     std::copy(in.session_id.begin(), in.session_id.end(), out.SessionID.bytes);
     out.SessionID.bytesLen = datatypes::SESSION_ID_LENGTH;
     convert(in.meter_info, out.MeterInfo);
@@ -56,8 +53,7 @@ template <> void insert_type(VariantAccess& va, const struct iso2_MeteringReceip
     va.insert_type<MeteringReceiptRequest>(in);
 }
 
-// The EV side of the pair: only the request->cbv2g conversion existed, so a MeteringReceiptReq could be
-// decoded but not encoded (the only ISO 15118-2 message pair that was asymmetric).
+// Only the request->cbv2g direction existed, making this the one asymmetric ISO 15118-2 message pair.
 template <> int serialize_to_exi(const MeteringReceiptRequest& in, exi_bitstream_t& out) {
     iso2_exiDocument doc{};
     convert(in.header, doc.V2G_Message.Header);

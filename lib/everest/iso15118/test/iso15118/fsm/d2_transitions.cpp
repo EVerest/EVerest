@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
-//
-// FSM-level tests of the ISO 15118-2 SECC state machine: every state is entered for real and the
-// transition it takes is asserted, which the response-builder tests in states/iso2/ cannot cover. The
-// counterpart of d20_transitions.cpp for the -20 state machine.
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -44,9 +40,8 @@ d2::SessionConfig make_config(dt::EnergyTransferMode mode) {
     d2::SessionConfig config;
     config.charge_service_id = CHARGE_SERVICE_ID;
     config.supported_energy_transfer_modes.push_back(mode);
-    // The limits/capabilities all default to 0 (an unreported value is never advertised), which would
-    // make PowerDelivery reject the fixture EV's charging profile against a 0 W PMax -- report a
-    // realistic hardware capability and energy-management grant like a running module does.
+    // The limits default to 0 (an unreported value is never advertised), which would make PowerDelivery
+    // reject the fixture EV's charging profile against a 0 W PMax.
     config.dc_capability_max_power = 150000.0f;
     config.dc_capability_max_current = 300.0f;
     config.dc_capability_max_voltage = 900.0f;
@@ -58,9 +53,8 @@ d2::SessionConfig make_config(dt::EnergyTransferMode mode) {
     return config;
 }
 
-// Plug-and-Charge setup. tls_active is a plain config flag (the engine derives it from
-// IConnection::is_secure()), so the Contract paths need no TLS here -- only the crypto that validates a
-// contract chain or a signature needs real certificates, which is why the accepted-chain and
+// tls_active is a plain config flag, so the Contract paths need no TLS here. Only the crypto that
+// validates a chain or a signature needs real certificates, which is why the accepted-chain and
 // signed-receipt paths are not covered below.
 d2::SessionConfig make_pnc_config() {
     auto config = make_config(dt::EnergyTransferMode::DC_extended);
@@ -78,8 +72,7 @@ dt::PhysicalValue amps(double value) {
     return dt::to_physical_value(value, dt::Unit::A);
 }
 
-// The state machine under test plus the session id the SECC assigned, stamped into every following
-// request the way a real EVCC echoes it back.
+// The session id is stamped into every following request the way a real EVCC echoes it back.
 class Secc {
 public:
     explicit Secc(dt::EnergyTransferMode mode = dt::EnergyTransferMode::DC_extended) :
@@ -92,6 +85,12 @@ public:
 
     template <typename Request> void drive(Request request) {
         request.header.session_id = session_id;
+        fsm.drive(request);
+    }
+
+    template <typename Request> void drive_wrong_session(Request request) {
+        request.header.session_id = session_id;
+        request.header.session_id[0] ^= 0xFF;
         fsm.drive(request);
     }
 
@@ -113,6 +112,8 @@ public:
     std::vector<session::feedback::Signal> signals;
     std::optional<shared_datatypes::PaymentOption> selected_payment_option;
     int setpoints_forwarded{0};
+    // Reported as StateBase::feed() consumes the request, so this also proves each frame is consumed once.
+    std::vector<iso15118::V2gMessageType> v2g_messages;
     D2SeccFsm fsm;
     dt::SessionId session_id{};
 
@@ -120,6 +121,9 @@ private:
     session::feedback::Callbacks make_callbacks() {
         session::feedback::Callbacks callbacks;
         callbacks.signal = [this](session::feedback::Signal signal) { signals.push_back(signal); };
+        callbacks.v2g_message = [this](const iso15118::V2gMessageType& type, const iso15118::io::StreamInputView&) {
+            v2g_messages.push_back(type);
+        };
         callbacks.selected_payment_option = [this](shared_datatypes::PaymentOption option) {
             selected_payment_option = option;
         };
@@ -165,8 +169,7 @@ message_2::PreChargeRequest pre_charge_req() {
     return req;
 }
 
-// \p max_power_w must stay within the PMax the SECC advertised in its SAScheduleList, otherwise the
-// request is answered with FAILED_ChargingProfileInvalid [V2G2-224/225].
+// Must stay within the advertised PMax, or the request is answered FAILED_ChargingProfileInvalid.
 message_2::PowerDeliveryRequest power_delivery_req(dt::ChargeProgress progress, double max_power_w = 11000.0) {
     message_2::PowerDeliveryRequest req;
     req.charge_progress = progress;
@@ -180,7 +183,6 @@ message_2::PowerDeliveryRequest power_delivery_req(dt::ChargeProgress progress, 
 
 constexpr double AC_PROFILE_POWER_W = 1000.0;
 
-// The mandatory elements have to be present, otherwise the request does not encode.
 message_2::CertificateInstallationRequest certificate_installation_req() {
     message_2::CertificateInstallationRequest req;
     req.oem_provisioning_cert = {0x30, 0x82, 0x01, 0x02};
@@ -196,8 +198,6 @@ message_2::CurrentDemandRequest current_demand_req() {
     return req;
 }
 
-// --- advance helpers: drive the session up to (and not into) the state under test ---
-
 void to_service_discovery(Secc& secc) {
     secc.drive_session_setup();
 }
@@ -209,8 +209,7 @@ void to_service_detail(Secc& secc) {
 
 void to_authorization(Secc& secc) {
     to_service_detail(secc);
-    // ServiceDetail is optional: a PaymentServiceSelectionReq is deferred to PaymentServiceSelection,
-    // which answers it and moves on to Authorization.
+    // ServiceDetail is optional, so a PaymentServiceSelectionReq is deferred to PaymentServiceSelection.
     secc.drive(payment_selection_req());
 }
 
@@ -224,7 +223,7 @@ void to_charge_parameter_discovery(Secc& secc) {
 void to_cable_check(Secc& secc) {
     to_charge_parameter_discovery(secc);
     secc.drive(charge_parameter_req(dt::EnergyTransferMode::DC_extended));
-    secc.fsm.context().current_cp_state = d20::CpState::C;
+    secc.fsm.context().set_cp_state(d20::CpState::C);
 }
 
 void to_pre_charge(Secc& secc) {
@@ -234,19 +233,32 @@ void to_pre_charge(Secc& secc) {
     secc.drive(message_2::CableCheckRequest{});
 }
 
-void to_current_demand(Secc& secc) {
+// One PreChargeReq beyond to_pre_charge(), which lands on PreChargeStart.
+void to_pre_charge_loop(Secc& secc) {
     to_pre_charge(secc);
     secc.drive(pre_charge_req());
+}
+
+void to_current_demand(Secc& secc) {
+    to_pre_charge_loop(secc);
     secc.drive(power_delivery_req(dt::ChargeProgress::Start));
+}
+
+// The AC setup lands on AcChargeLoopStart; one ChargingStatusReq moves into the loop proper.
+void to_ac_charge_loop(Secc& secc) {
+    to_charge_parameter_discovery(secc);
+    secc.drive(charge_parameter_req(dt::EnergyTransferMode::AC_three_phase_core));
+    secc.drive(power_delivery_req(dt::ChargeProgress::Start, AC_PROFILE_POWER_W));
+    secc.fsm.control(d20::ClosedContactor{true});
+    secc.drive(message_2::ChargingStatusRequest{});
 }
 
 void to_welding_detection(Secc& secc) {
     to_current_demand(secc);
     secc.drive(current_demand_req());
     secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
-    // [V2G2-920]..[V2G2-922]: after PowerDelivery(Stop) the EV signals CP State B again; without it the
-    // WeldingDetectionReq is parked until the CP-state timeout.
-    secc.fsm.context().current_cp_state = d20::CpState::B;
+    // [V2G2-920]..[V2G2-922]: without CP State B the WeldingDetectionReq is parked until the timeout.
+    secc.fsm.context().set_cp_state(d20::CpState::B);
 }
 
 } // namespace
@@ -270,6 +282,19 @@ SCENARIO("ISO 15118-2 SECC handshake state transitions") {
             }
         }
 
+        // Regression pin: the type used to be reported by the engine ahead of the feed, back when that was
+        // the only code holding an unconsumed request. One entry per frame, in order, shows no double feed.
+        WHEN("The EV sends the first two requests of the handshake") {
+            secc.drive_session_setup();
+            secc.drive(message_2::ServiceDiscoveryRequest{});
+
+            THEN("Each request type is reported to the module exactly once, in order") {
+                const std::vector<iso15118::V2gMessageType> expected{message_2::Type::SessionSetupReq,
+                                                                     message_2::Type::ServiceDiscoveryReq};
+                REQUIRE(secc.v2g_messages == expected);
+            }
+        }
+
         WHEN("The EV skips SessionSetup and sends a charge loop request") {
             secc.fsm.drive(message_2::CurrentDemandRequest{});
 
@@ -290,8 +315,8 @@ SCENARIO("ISO 15118-2 SECC handshake state transitions") {
         WHEN("The EV sends ServiceDiscoveryReq") {
             secc.drive(message_2::ServiceDiscoveryRequest{});
 
-            THEN("The charge service is offered and the machine moves to ServiceDetail") {
-                REQUIRE(secc.fsm.state() == StateID::ServiceDetail);
+            THEN("The charge service is offered and the machine moves to ServiceSelection") {
+                REQUIRE(secc.fsm.state() == StateID::ServiceSelection);
                 const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::OK);
@@ -300,14 +325,14 @@ SCENARIO("ISO 15118-2 SECC handshake state transitions") {
         }
     }
 
-    GIVEN("A machine in ServiceDetail") {
+    GIVEN("A machine in ServiceSelection") {
         to_service_detail(secc);
-        REQUIRE(secc.fsm.state() == StateID::ServiceDetail);
+        REQUIRE(secc.fsm.state() == StateID::ServiceSelection);
 
         WHEN("The EV skips the optional ServiceDetailReq and selects a payment option") {
             secc.drive(payment_selection_req());
 
-            THEN("ServiceDetail defers to PaymentServiceSelection, which answers and moves to Authorization") {
+            THEN("ServiceSelection answers it and moves to Authorization") {
                 REQUIRE(secc.fsm.state() == StateID::Authorization);
                 const auto res = secc.fsm.response<message_2::PaymentServiceSelectionResponse>();
                 REQUIRE(res.has_value());
@@ -342,8 +367,7 @@ SCENARIO("ISO 15118-2 SECC handshake state transitions") {
                 const auto res = secc.fsm.response<message_2::AuthorizationResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::OK);
-                // [V2G2-854]: EIM (ExternalPayment) waits with Ongoing_WaitingForCustomerInteraction;
-                // plain Ongoing is the PnC (Contract) case [V2G2-855].
+                // [V2G2-854]: EIM waits with Ongoing_WaitingForCustomerInteraction; plain Ongoing is PnC [V2G2-855].
                 REQUIRE(res->evse_processing == dt::EVSEProcessing::Ongoing_WaitingForCustomerInteraction);
             }
         }
@@ -361,14 +385,17 @@ SCENARIO("ISO 15118-2 SECC handshake state transitions") {
             }
         }
 
-        WHEN("The EV aborts with SessionStopReq") {
+        WHEN("The EV sends SessionStopReq mid-negotiation") {
             secc.drive(message_2::SessionStopRequest{});
 
-            THEN("The machine hands over to SessionStop and answers it") {
-                REQUIRE(secc.fsm.state() == StateID::SessionStop);
+            // Figures 103/104 place SessionStopReq in two nodes only, so [V2G2-538] makes it out of sequence
+            // here. The spec's abort path is a connection teardown, not a SessionStopReq.
+            THEN("It is out of sequence and Authorization answers it") {
+                REQUIRE(secc.fsm.state() == StateID::Authorization);
                 const auto res = secc.fsm.response<message_2::SessionStopResponse>();
                 REQUIRE(res.has_value());
-                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+                REQUIRE(secc.fsm.context().session_stopped);
             }
         }
     }
@@ -391,7 +418,6 @@ SCENARIO("ISO 15118-2 SECC DC charging state transitions") {
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::OK);
                 REQUIRE(res->evse_processing == dt::EVSEProcessing::Finished);
-                REQUIRE(secc.fsm.context().dc_charging);
             }
         }
     }
@@ -416,8 +442,8 @@ SCENARIO("ISO 15118-2 SECC DC charging state transitions") {
             secc.fsm.control(d20::CableCheckFinished{true});
             secc.drive(message_2::CableCheckRequest{});
 
-            THEN("The machine moves to PreCharge") {
-                REQUIRE(secc.fsm.state() == StateID::PreCharge);
+            THEN("The machine moves to PreChargeStart [V2G2-584]") {
+                REQUIRE(secc.fsm.state() == StateID::PreChargeStart);
                 const auto res = secc.fsm.response<message_2::CableCheckResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->evse_processing == dt::EVSEProcessing::Finished);
@@ -425,14 +451,14 @@ SCENARIO("ISO 15118-2 SECC DC charging state transitions") {
         }
     }
 
-    GIVEN("A machine in PreCharge") {
+    GIVEN("A machine in PreChargeStart") {
         to_pre_charge(secc);
-        REQUIRE(secc.fsm.state() == StateID::PreCharge);
+        REQUIRE(secc.fsm.state() == StateID::PreChargeStart);
 
         WHEN("The EV pre-charges") {
             secc.drive(pre_charge_req());
 
-            THEN("The machine stays in PreCharge") {
+            THEN("The machine moves to the pre-charge loop [V2G2-587]") {
                 REQUIRE(secc.fsm.state() == StateID::PreCharge);
                 const auto res = secc.fsm.response<message_2::PreChargeResponse>();
                 REQUIRE(res.has_value());
@@ -445,7 +471,7 @@ SCENARIO("ISO 15118-2 SECC DC charging state transitions") {
             secc.drive(power_delivery_req(dt::ChargeProgress::Start));
 
             THEN("PreCharge defers to PowerDelivery, which answers and starts the DC charge loop") {
-                REQUIRE(secc.fsm.state() == StateID::CurrentDemand);
+                REQUIRE(secc.fsm.state() == StateID::DcChargeLoop);
                 const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::OK);
@@ -455,13 +481,13 @@ SCENARIO("ISO 15118-2 SECC DC charging state transitions") {
 
     GIVEN("A machine in the CurrentDemand charge loop") {
         to_current_demand(secc);
-        REQUIRE(secc.fsm.state() == StateID::CurrentDemand);
+        REQUIRE(secc.fsm.state() == StateID::DcChargeLoop);
 
         WHEN("The EV keeps demanding current") {
             secc.drive(current_demand_req());
 
             THEN("The machine stays in CurrentDemand") {
-                REQUIRE(secc.fsm.state() == StateID::CurrentDemand);
+                REQUIRE(secc.fsm.state() == StateID::DcChargeLoop);
                 const auto res = secc.fsm.response<message_2::CurrentDemandResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::OK);
@@ -474,8 +500,8 @@ SCENARIO("ISO 15118-2 SECC DC charging state transitions") {
             req.session_id = secc.session_id;
             secc.drive(req);
 
-            THEN("The charge loop hands over to MeteringReceipt, which sequence-errors it [V2G2-691]") {
-                REQUIRE(secc.fsm.state() == StateID::MeteringReceipt);
+            THEN("The charge loop answers it with a sequence error and stays [V2G2-691]") {
+                REQUIRE(secc.fsm.state() == StateID::DcChargeLoop);
                 const auto res = secc.fsm.response<message_2::MeteringReceiptResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
@@ -483,18 +509,46 @@ SCENARIO("ISO 15118-2 SECC DC charging state transitions") {
             }
         }
 
-        WHEN("The EV sends a MeteringReceipt bound to a different session") {
+        // Reaching MeteringReceipt needs ReceiptRequired=TRUE, which is PnC-only and gated on a meter
+        // reading [V2G2-902]. The fixture PKI has no contract chain, so the session facts are set directly.
+        WHEN("The SECC asks for a signed receipt") {
+            secc.fsm.context().session_config.receipt_required = true;
+            secc.fsm.context().set_contract_selected();
+            dt::MeterInfo meter;
+            meter.meter_id = "EVEREST";
+            meter.meter_reading = 4242;
+            secc.fsm.context().set_meter_info(meter);
             secc.drive(current_demand_req());
-            message_2::MeteringReceiptRequest req;
-            req.session_id = dt::SessionId{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11};
-            secc.drive(req);
 
-            THEN("The receipt is rejected with FAILED_UnknownSession [V2G2-909]") {
+            THEN("The response sets ReceiptRequired and the machine waits for the receipt [V2G2-795]") {
                 REQUIRE(secc.fsm.state() == StateID::MeteringReceipt);
-                const auto res = secc.fsm.response<message_2::MeteringReceiptResponse>();
+                const auto res = secc.fsm.response<message_2::CurrentDemandResponse>();
                 REQUIRE(res.has_value());
-                REQUIRE(res->response_code == dt::ResponseCode::FAILED_UnknownSession);
-                REQUIRE(secc.fsm.context().session_stopped);
+                REQUIRE(res->receipt_required.value_or(false));
+            }
+
+            AND_WHEN("The EV continues the loop instead of signing") {
+                secc.drive(current_demand_req());
+
+                THEN("It is out of sequence: the receipt is the only request allowed now") {
+                    const auto res = secc.fsm.response<message_2::CurrentDemandResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+                    REQUIRE(secc.fsm.context().session_stopped);
+                }
+            }
+
+            AND_WHEN("The EV sends a receipt bound to a different session") {
+                message_2::MeteringReceiptRequest req;
+                req.session_id = dt::SessionId{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11};
+                secc.drive(req);
+
+                THEN("The receipt is rejected with FAILED_UnknownSession [V2G2-909]") {
+                    const auto res = secc.fsm.response<message_2::MeteringReceiptResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED_UnknownSession);
+                    REQUIRE(secc.fsm.context().session_stopped);
+                }
             }
         }
 
@@ -502,8 +556,8 @@ SCENARIO("ISO 15118-2 SECC DC charging state transitions") {
             secc.drive(current_demand_req());
             secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
 
-            THEN("The charge loop defers to PowerDelivery and the machine moves to WeldingDetection") {
-                REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+            THEN("The charge loop defers to PowerDelivery and the machine moves to PostCharge") {
+                REQUIRE(secc.fsm.state() == StateID::PostCharge);
                 const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::OK);
@@ -513,14 +567,14 @@ SCENARIO("ISO 15118-2 SECC DC charging state transitions") {
         }
     }
 
-    GIVEN("A machine in WeldingDetection with the EV back in CP State B") {
+    GIVEN("A machine in PostCharge with the EV back in CP State B") {
         to_welding_detection(secc);
-        REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+        REQUIRE(secc.fsm.state() == StateID::PostCharge);
 
         WHEN("The EV runs welding detection") {
             secc.drive(message_2::WeldingDetectionRequest{});
 
-            THEN("The machine stays in WeldingDetection") {
+            THEN("The machine moves to WeldingDetection, where a restart is no longer in sequence") {
                 REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
                 const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
                 REQUIRE(res.has_value());
@@ -532,8 +586,9 @@ SCENARIO("ISO 15118-2 SECC DC charging state transitions") {
             secc.drive(message_2::WeldingDetectionRequest{});
             secc.drive(message_2::SessionStopRequest{});
 
-            THEN("WeldingDetection defers to SessionStop, which answers and ends the session") {
-                REQUIRE(secc.fsm.state() == StateID::SessionStop);
+            // The terminal is reached from the welding-detection node, so the SECC answers where it stands.
+            THEN("WeldingDetection answers it and the session ends") {
+                REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
                 const auto res = secc.fsm.response<message_2::SessionStopResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::OK);
@@ -660,7 +715,7 @@ SCENARIO("ISO 15118-2 SECC EV facts reported to the module") {
         to_pre_charge(secc);
 
         WHEN("The module reports that no insulation monitoring device is fitted") {
-            secc.fsm.context().reported_isolation_status = d20::IsolationStatus::NoImd;
+            secc.fsm.context().set_isolation_status(d20::IsolationStatus::NoImd);
             secc.drive(pre_charge_req());
 
             THEN("PreChargeRes carries No_IMD instead of the hardcoded Valid") {
@@ -671,7 +726,7 @@ SCENARIO("ISO 15118-2 SECC EV facts reported to the module") {
         }
 
         WHEN("The module reports an isolation warning") {
-            secc.fsm.context().reported_isolation_status = d20::IsolationStatus::Warning;
+            secc.fsm.context().set_isolation_status(d20::IsolationStatus::Warning);
             secc.drive(pre_charge_req());
 
             THEN("PreChargeRes carries it") {
@@ -758,7 +813,7 @@ SCENARIO("ISO 15118-2 SECC isolation status in ChargeParameterDiscoveryRes") {
     GIVEN("A charging machine whose module has reported a valid isolation") {
         Secc secc;
         to_current_demand(secc);
-        secc.fsm.context().reported_isolation_status = d20::IsolationStatus::Valid;
+        secc.fsm.context().set_isolation_status(d20::IsolationStatus::Valid);
 
         WHEN("The EV renegotiates [V2G2-813] and asks for charge parameters again") {
             secc.drive(current_demand_req());
@@ -791,7 +846,7 @@ SCENARIO("ISO 15118-2 SECC no-energy pause") {
             secc.drive(charge_parameter_req(dt::EnergyTransferMode::DC_extended));
 
             THEN("The EV is told to stop and the cable check is skipped") {
-                REQUIRE(secc.fsm.state() == StateID::PreCharge);
+                REQUIRE(secc.fsm.state() == StateID::PreChargeStart);
                 const auto res = secc.fsm.response<message_2::ChargeParameterDiscoveryResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::OK);
@@ -800,6 +855,9 @@ SCENARIO("ISO 15118-2 SECC no-energy pause") {
             }
 
             AND_WHEN("The EV ignores the stop and asks to start charging anyway") {
+                // One PreChargeReq first: a PowerDeliveryReq is only in sequence from PreCharge [V2G2-587], so
+                // without it the refusal under test would be masked by a sequence error.
+                secc.drive(pre_charge_req());
                 secc.drive(power_delivery_req(dt::ChargeProgress::Start));
 
                 THEN("PowerDelivery is refused and the session ends") {
@@ -813,9 +871,14 @@ SCENARIO("ISO 15118-2 SECC no-energy pause") {
             AND_WHEN("The EV reacts with SessionStopReq") {
                 secc.drive(message_2::SessionStopRequest{});
 
-                THEN("The session is stopped cleanly") {
-                    REQUIRE(secc.fsm.state() == StateID::SessionStop);
-                    REQUIRE(secc.fsm.response<message_2::SessionStopResponse>().has_value());
+                // An EV told there is no energy before charging began has no in-sequence way to close the session;
+                // the spec expects it to terminate the connection ([V2G2-728]), which the SECC reads as an error.
+                THEN("It is out of sequence and the session ends with the error") {
+                    REQUIRE(secc.fsm.state() == StateID::PreChargeStart);
+                    const auto res = secc.fsm.response<message_2::SessionStopResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+                    REQUIRE(secc.fsm.context().session_stopped);
                 }
             }
         }
@@ -849,7 +912,7 @@ SCENARIO("ISO 15118-2 SECC no-energy pause") {
             ac_secc.drive(charge_parameter_req(dt::EnergyTransferMode::AC_three_phase_core));
 
             THEN("No pause notification is sent") {
-                REQUIRE(ac_secc.fsm.state() == StateID::PowerDelivery);
+                REQUIRE(ac_secc.fsm.state() == StateID::AcPowerDelivery);
                 const auto res = ac_secc.fsm.response<message_2::ChargeParameterDiscoveryResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->ac_evse_charge_parameter->ac_evse_status.notification == dt::EVSENotification::None);
@@ -860,7 +923,7 @@ SCENARIO("ISO 15118-2 SECC no-energy pause") {
                 ac_secc.fsm.control(d20::ClosedContactor{true});
 
                 THEN("PowerDelivery is accepted") {
-                    REQUIRE(ac_secc.fsm.state() == StateID::ChargingStatus);
+                    REQUIRE(ac_secc.fsm.state() == StateID::AcChargeLoopStart);
                     const auto res = ac_secc.fsm.response<message_2::PowerDeliveryResponse>();
                     REQUIRE(res.has_value());
                     REQUIRE(res->response_code == dt::ResponseCode::OK);
@@ -883,11 +946,10 @@ SCENARIO("ISO 15118-2 SECC AC charging state transitions") {
             secc.drive(charge_parameter_req(dt::EnergyTransferMode::AC_three_phase_core));
 
             THEN("AC skips the cable check and the machine moves to PowerDelivery") {
-                REQUIRE(secc.fsm.state() == StateID::PowerDelivery);
+                REQUIRE(secc.fsm.state() == StateID::AcPowerDelivery);
                 const auto res = secc.fsm.response<message_2::ChargeParameterDiscoveryResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::OK);
-                REQUIRE_FALSE(secc.fsm.context().dc_charging);
             }
         }
 
@@ -896,15 +958,15 @@ SCENARIO("ISO 15118-2 SECC AC charging state transitions") {
             secc.drive(power_delivery_req(dt::ChargeProgress::Start, AC_PROFILE_POWER_W));
 
             THEN("The response is held back until the module reports the contactor closed") {
-                REQUIRE(secc.fsm.state() == StateID::PowerDelivery);
+                REQUIRE(secc.fsm.state() == StateID::AcPowerDelivery);
                 REQUIRE_FALSE(secc.fsm.has_response());
             }
 
             AND_WHEN("The contactor closes") {
                 secc.fsm.control(d20::ClosedContactor{true});
 
-                THEN("The held PowerDeliveryRes is sent and the machine moves to ChargingStatus") {
-                    REQUIRE(secc.fsm.state() == StateID::ChargingStatus);
+                THEN("The held PowerDeliveryRes is sent and the machine moves to the charge loop") {
+                    REQUIRE(secc.fsm.state() == StateID::AcChargeLoopStart);
                     const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
                     REQUIRE(res.has_value());
                     REQUIRE(res->response_code == dt::ResponseCode::OK);
@@ -912,10 +974,41 @@ SCENARIO("ISO 15118-2 SECC AC charging state transitions") {
             }
         }
 
-        // current_demand_started/-finished are DC-only notifications: EvseManager acts on them by driving
-        // the DC power supply and the over-voltage monitor, and EvseV2G raises them only from
-        // CurrentDemandReq / from PowerDelivery(Stop) behind its is_dc_charger gate. An AC charge loop
-        // must stay silent on both.
+        // [Table 104] makes RCD mandatory in every AC_EVSEStatus, and the receipt sits between two
+        // ChargingStatusRes that both carry it. Asserted on a rejected receipt because a successful one
+        // needs a signature the fixture PKI cannot produce.
+        WHEN("The SECC asks for a signed receipt while the module reports an RCD error") {
+            secc.drive(charge_parameter_req(dt::EnergyTransferMode::AC_three_phase_core));
+            secc.drive(power_delivery_req(dt::ChargeProgress::Start, AC_PROFILE_POWER_W));
+            secc.fsm.control(d20::ClosedContactor{true});
+
+            secc.fsm.context().session_config.receipt_required = true;
+            secc.fsm.context().set_contract_selected();
+            dt::MeterInfo meter;
+            meter.meter_id = "EVEREST";
+            meter.meter_reading = 4242;
+            secc.fsm.context().set_meter_info(meter);
+            secc.fsm.context().set_active_error(d20::EvseErrorCode::RCD);
+
+            secc.drive(message_2::ChargingStatusRequest{});
+            REQUIRE(secc.fsm.state() == StateID::MeteringReceipt);
+
+            AND_WHEN("The EV answers with a receipt") {
+                message_2::MeteringReceiptRequest req;
+                req.session_id = secc.session_id;
+                secc.drive(req);
+
+                THEN("The MeteringReceiptRes carries the RCD flag") {
+                    const auto res = secc.fsm.response<message_2::MeteringReceiptResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->ac_evse_status.has_value());
+                    REQUIRE(res->ac_evse_status->rcd == true);
+                }
+            }
+        }
+
+        // current_demand_started/-finished are DC-only: EvseManager acts on them by driving the DC supply
+        // and the over-voltage monitor, so an AC charge loop must stay silent on both.
         WHEN("The EV runs an AC charge loop and ends it with PowerDeliveryReq(Stop)") {
             secc.drive(charge_parameter_req(dt::EnergyTransferMode::AC_three_phase_core));
             secc.drive(power_delivery_req(dt::ChargeProgress::Start, AC_PROFILE_POWER_W));
@@ -935,7 +1028,6 @@ SCENARIO("ISO 15118-2 SECC AC charging state transitions") {
 
 SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
 
-    // What the module saw of the relayed certificate exchange.
     std::optional<std::string> forwarded_exi_request;
     std::optional<shared_datatypes::PaymentOption> reported_payment_option;
     session::feedback::Callbacks callbacks;
@@ -949,7 +1041,6 @@ SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
 
     Secc secc{make_pnc_config(), callbacks};
 
-    // Contract payment, with the certificate service selected for installation (parameter set 1).
     const auto contract_selection_req = [] {
         message_2::PaymentServiceSelectionRequest req;
         req.selected_payment_option = dt::PaymentOption::Contract;
@@ -969,21 +1060,21 @@ SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
         secc.drive(req);
     };
 
-    GIVEN("A machine in PaymentServiceSelection with PnC enabled") {
+    GIVEN("A machine in ServiceSelection with PnC enabled") {
         secc.drive_session_setup();
         secc.drive(message_2::ServiceDiscoveryRequest{});
-        REQUIRE(secc.fsm.state() == StateID::ServiceDetail);
+        REQUIRE(secc.fsm.state() == StateID::ServiceSelection);
 
         WHEN("The EV selects Contract payment") {
             secc.drive(contract_selection_req());
 
             THEN("The machine moves to PaymentDetails instead of Authorization [V2G2-432]") {
-                REQUIRE(secc.fsm.state() == StateID::PaymentDetails);
+                REQUIRE(secc.fsm.state() == StateID::Identification);
                 const auto res = secc.fsm.response<message_2::PaymentServiceSelectionResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::OK);
-                REQUIRE(secc.fsm.context().contract_selected);
-                REQUIRE(secc.fsm.context().cert_install_selected);
+                REQUIRE(secc.fsm.context().session().contract_selected);
+                REQUIRE(secc.fsm.context().session().cert_install_selected);
                 REQUIRE(reported_payment_option == shared_datatypes::PaymentOption::Contract);
             }
         }
@@ -991,7 +1082,7 @@ SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
 
     GIVEN("A machine in PaymentDetails") {
         to_payment_details(true);
-        REQUIRE(secc.fsm.state() == StateID::PaymentDetails);
+        REQUIRE(secc.fsm.state() == StateID::Identification);
 
         WHEN("The EV sends a contract certificate that does not parse") {
             message_2::PaymentDetailsRequest req;
@@ -1000,7 +1091,7 @@ SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
             secc.drive(req);
 
             THEN("The chain is rejected and the session ends without a transition") {
-                REQUIRE(secc.fsm.state() == StateID::PaymentDetails);
+                REQUIRE(secc.fsm.state() == StateID::Identification);
                 const auto res = secc.fsm.response<message_2::PaymentDetailsResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code >= dt::ResponseCode::FAILED);
@@ -1014,7 +1105,7 @@ SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
             secc.drive(certificate_installation_req());
 
             THEN("The machine moves to CertificateInstallation and forwards the request to the module") {
-                REQUIRE(secc.fsm.state() == StateID::CertificateInstallation);
+                REQUIRE(secc.fsm.state() == StateID::Identification);
                 REQUIRE(forwarded_exi_request.has_value());
                 REQUIRE_FALSE(forwarded_exi_request->empty());
                 // Nothing is answered until the backend responds.
@@ -1024,9 +1115,23 @@ SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
             AND_WHEN("The backend returns a CertificateInstallationRes") {
                 secc.fsm.control(d20::CertificateResponse{true, "3q2+7w=="}); // arbitrary EXI bytes
 
-                THEN("The raw response is spliced onto the wire and the machine returns to PaymentDetails") {
+                THEN("The raw response is spliced and the machine moves on to PaymentDetails [V2G2-554]") {
                     REQUIRE(secc.fsm.state() == StateID::PaymentDetails);
                     REQUIRE(secc.fsm.has_response());
+                }
+            }
+
+            AND_WHEN("The backend answers and the EV asks for a second certificate exchange") {
+                secc.fsm.control(d20::CertificateResponse{true, "3q2+7w=="});
+                REQUIRE(secc.fsm.state() == StateID::PaymentDetails);
+                secc.drive(certificate_installation_req());
+
+                // Node 6 accepts PaymentDetailsReq alone [V2G2-554]: the optional excursion is used up.
+                THEN("It is out of sequence") {
+                    REQUIRE(secc.fsm.state() == StateID::PaymentDetails);
+                    const auto res = secc.fsm.response<message_2::CertificateInstallationResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
                 }
             }
 
@@ -1043,13 +1148,13 @@ SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
 
     GIVEN("A machine in PaymentDetails without the certificate service selected") {
         to_payment_details(false);
-        REQUIRE(secc.fsm.state() == StateID::PaymentDetails);
+        REQUIRE(secc.fsm.state() == StateID::Identification);
 
         WHEN("The EV runs a certificate installation anyway") {
             secc.drive(certificate_installation_req());
 
             THEN("The unselected action is out of sequence [V2G2-539]") {
-                REQUIRE(secc.fsm.state() == StateID::PaymentDetails);
+                REQUIRE(secc.fsm.state() == StateID::Identification);
                 REQUIRE(secc.fsm.context().session_stopped);
                 // Not relayed to the module: the EV never selected this action [V2G2-432].
                 REQUIRE_FALSE(forwarded_exi_request.has_value());
@@ -1119,7 +1224,7 @@ SCENARIO("ISO 15118-2 SECC external VAS providers") {
                 REQUIRE(set.parameter[1].string_value == "Lot A");
                 REQUIRE(set.parameter[2].physical_value.has_value());
                 REQUIRE(set.parameter[2].physical_value->unit == dt::Unit::W);
-                REQUIRE(secc.fsm.state() == StateID::ServiceDetail);
+                REQUIRE(secc.fsm.state() == StateID::ServiceSelection);
             }
 
             AND_WHEN("The EV selects the charge service and the VAS with parameter set 7") {
@@ -1162,10 +1267,9 @@ SCENARIO("ISO 15118-2 SECC charger stop and shutdown paths") {
     GIVEN("A machine in PreCharge") {
         to_pre_charge(secc);
 
-        // The engine latches a StopCharging control event on the context in ANY state (EvseV2G parity);
-        // the FSM harness sets the flag the way the engine does.
+        // The engine latches a StopCharging control event in ANY state; the harness sets the flag likewise.
         WHEN("The module requests a stop during pre-charge") {
-            secc.fsm.context().charger_stop_requested = true;
+            secc.fsm.context().set_charger_stop_requested(true);
             secc.drive(pre_charge_req());
 
             THEN("The stop is signalled already in the PreChargeRes") {
@@ -1189,7 +1293,7 @@ SCENARIO("ISO 15118-2 SECC charger stop and shutdown paths") {
         }
 
         WHEN("The EV keeps the session going beyond the stop-charging guard") {
-            secc.fsm.context().charger_stop_requested = true;
+            secc.fsm.context().set_charger_stop_requested(true);
             secc.fsm.context().charger_stop_ignored = true; // set by the engine on the STOP_CHARGING timeout
             secc.drive(pre_charge_req());
 
@@ -1201,12 +1305,11 @@ SCENARIO("ISO 15118-2 SECC charger stop and shutdown paths") {
             }
         }
 
-        // [V2G2-539]: the SECC answers FAILED and terminates with that response, rather than dropping the
-        // TCP connection and leaving the EV without a reason. The engine sets both flags on the
-        // EmergencyShutdown control event.
+        // [V2G2-539]: answer FAILED and terminate with that response rather than drop the TCP connection
+        // and leave the EV without a reason.
         WHEN("The module reports an emergency shutdown") {
-            secc.fsm.context().active_error = d20::EvseErrorCode::EmergencyShutdown;
-            secc.fsm.context().emergency_shutdown = true;
+            secc.fsm.context().set_active_error(d20::EvseErrorCode::EmergencyShutdown);
+            secc.fsm.context().set_emergency_shutdown();
             secc.drive(pre_charge_req());
 
             THEN("The next response is FAILED, carries EVSE_EmergencyShutdown, and ends the session") {
@@ -1218,10 +1321,9 @@ SCENARIO("ISO 15118-2 SECC charger stop and shutdown paths") {
             }
         }
 
-        // [V2G2-880]: every other status code is informational, so a malfunction is reported but does not
-        // end the session on its own -- the EV decides (EvseV2G terminates only on an emergency too).
+        // [V2G2-880]: every other status code is informational, so the EV decides (EvseV2G parity).
         WHEN("The module reports a malfunction") {
-            secc.fsm.context().active_error = d20::EvseErrorCode::Malfunction;
+            secc.fsm.context().set_active_error(d20::EvseErrorCode::Malfunction);
             secc.drive(pre_charge_req());
 
             THEN("The response reports EVSE_Malfunction but stays OK and the session continues") {
@@ -1239,6 +1341,287 @@ SCENARIO("ISO 15118-2 SECC charger stop and shutdown paths") {
                     const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
                     REQUIRE(res.has_value());
                     REQUIRE(res->response_code == dt::ResponseCode::FAILED_PowerDeliveryNotApplied);
+                }
+            }
+        }
+    }
+}
+
+// The SessionID rule [V2G2-460] holds in every state, so StateBase::feed() checks it once for all of
+// them. These pin the two consequences that are not obvious: which error wins when a message breaks
+// both rules at once, and the two cases that must fall through to the per-state sequence check.
+SCENARIO("ISO 15118-2 SECC SessionID validation") {
+    GIVEN("An SECC that has not assigned a SessionID yet") {
+        Secc secc;
+
+        WHEN("The first message is not a SessionSetupReq") {
+            secc.drive(message_2::ServiceDiscoveryRequest{});
+
+            // No session exists, so there is nothing to compare against -- and Table 112 does not list
+            // FAILED_UnknownSession for SessionSetupRes at all, leaving only the sequence error.
+            THEN("FAILED_SequenceError, not FAILED_UnknownSession") {
+                const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+            }
+        }
+    }
+
+    GIVEN("A negotiated session sitting in Authorization") {
+        Secc secc;
+        to_authorization(secc);
+
+        WHEN("A request arrives that is both out of sequence and carries a foreign SessionID") {
+            secc.drive_wrong_session(current_demand_req());
+
+            // Both [V2G2-459] and [V2G2-460] apply and the spec orders neither. The SessionID is a header
+            // field, so the envelope is answered before the content.
+            THEN("The SessionID error wins") {
+                const auto res = secc.fsm.response<message_2::CurrentDemandResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_UnknownSession);
+                REQUIRE(secc.fsm.context().session_stopped);
+            }
+        }
+
+        WHEN("A SessionSetupReq arrives mid-session with a foreign SessionID") {
+            secc.drive_wrong_session(message_2::SessionSetupRequest{});
+
+            // [V2G2-460] exempts SessionSetupReq by name, so this falls through to the state's sequence check.
+            THEN("FAILED_SequenceError, not FAILED_UnknownSession") {
+                const auto res = secc.fsm.response<message_2::SessionSetupResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+            }
+        }
+    }
+
+    GIVEN("A DC session waiting in the pre-charge loop") {
+        Secc secc;
+        to_pre_charge_loop(secc);
+
+        WHEN("A foreign-session PowerDeliveryReq arrives") {
+            secc.drive_wrong_session(power_delivery_req(dt::ChargeProgress::Start));
+
+            // Regression pin: the old catch-all divert ran before the SessionID was looked at, so a request
+            // naming another session moved the state machine on.
+            THEN("The state does not advance and the request is rejected") {
+                REQUIRE(secc.fsm.state() == StateID::PreCharge);
+                const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_UnknownSession);
+                REQUIRE(secc.fsm.context().session_stopped);
+            }
+        }
+    }
+}
+
+// Regression pin: a loop state used to hand every unrecognised request to the state it can
+// transition to -- the same response, but after a transition the spec does not allow.
+SCENARIO("ISO 15118-2 SECC out-of-sequence requests are answered by the state that received them") {
+    GIVEN("A session in ServiceSelection") {
+        Secc secc;
+        to_service_detail(secc);
+        REQUIRE(secc.fsm.state() == StateID::ServiceSelection);
+
+        WHEN("A request arrives that is neither ServiceDetailReq nor PaymentServiceSelectionReq") {
+            secc.drive(message_2::AuthorizationRequest{});
+
+            THEN("ServiceSelection answers FAILED_SequenceError and does not advance") {
+                REQUIRE(secc.fsm.state() == StateID::ServiceSelection);
+                const auto res = secc.fsm.response<message_2::AuthorizationResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+                REQUIRE(secc.fsm.context().session_stopped);
+            }
+        }
+    }
+
+    GIVEN("A DC session in the pre-charge loop") {
+        Secc secc;
+        to_pre_charge_loop(secc);
+        REQUIRE(secc.fsm.state() == StateID::PreCharge);
+
+        WHEN("A request arrives that is neither PreChargeReq nor PowerDeliveryReq") {
+            secc.drive(message_2::CableCheckRequest{});
+
+            THEN("PreCharge answers FAILED_SequenceError and does not advance") {
+                REQUIRE(secc.fsm.state() == StateID::PreCharge);
+                const auto res = secc.fsm.response<message_2::CableCheckResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+                REQUIRE(secc.fsm.context().session_stopped);
+            }
+        }
+    }
+
+    GIVEN("A DC session in the CurrentDemand charge loop") {
+        Secc secc;
+        to_current_demand(secc);
+        REQUIRE(secc.fsm.state() == StateID::DcChargeLoop);
+
+        WHEN("A request arrives that is none of CurrentDemandReq, MeteringReceiptReq, PowerDeliveryReq") {
+            secc.drive(message_2::ServiceDiscoveryRequest{});
+
+            THEN("CurrentDemand answers FAILED_SequenceError and does not advance") {
+                REQUIRE(secc.fsm.state() == StateID::DcChargeLoop);
+                const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+                REQUIRE(secc.fsm.context().session_stopped);
+            }
+        }
+    }
+
+    // Figure 104 draws welding detection as one bubble, but the requirements narrow it: [V2G2-601]
+    // admits a restart after PowerDelivery(Stop), [V2G2-597] does not once it has begun.
+    GIVEN("A DC session that has just stopped power delivery") {
+        Secc secc;
+        to_welding_detection(secc);
+        REQUIRE(secc.fsm.state() == StateID::PostCharge);
+
+        WHEN("The EV restarts the parameter exchange instead of weld-detecting") {
+            secc.drive(charge_parameter_req(dt::EnergyTransferMode::DC_extended));
+
+            // PowerDelivery(Stop) opened the contactor, so the isolation test has to run again (8.7.4.3 NOTE 1).
+            THEN("It is in sequence [V2G2-601] and the cable check is re-run") {
+                REQUIRE(secc.fsm.state() == StateID::CableCheck);
+                const auto res = secc.fsm.response<message_2::ChargeParameterDiscoveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
+            }
+        }
+
+        AND_WHEN("The EV weld-detects first and only then tries to restart") {
+            secc.drive(message_2::WeldingDetectionRequest{});
+            REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+            secc.drive(charge_parameter_req(dt::EnergyTransferMode::DC_extended));
+
+            THEN("The restart is no longer in sequence [V2G2-597]") {
+                REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+                const auto res = secc.fsm.response<message_2::ChargeParameterDiscoveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+            }
+        }
+    }
+
+    GIVEN("An AC session in the charge loop") {
+        Secc secc{dt::EnergyTransferMode::AC_three_phase_core};
+        to_ac_charge_loop(secc);
+        REQUIRE(secc.fsm.state() == StateID::AcChargeLoop);
+
+        WHEN("A request arrives that is neither ChargingStatusReq nor PowerDeliveryReq") {
+            secc.drive(message_2::CableCheckRequest{});
+
+            THEN("AcChargeLoop answers FAILED_SequenceError and does not advance") {
+                REQUIRE(secc.fsm.state() == StateID::AcChargeLoop);
+                const auto res = secc.fsm.response<message_2::CableCheckResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+                REQUIRE(secc.fsm.context().session_stopped);
+            }
+        }
+    }
+}
+
+// Figures 103/104 place SessionStopReq in two states only, both entered after a PowerDeliveryRes
+// with ChargeProgress=Stop; [V2G2-538] makes it a sequence error everywhere else.
+SCENARIO("ISO 15118-2 SECC accepts SessionStopReq only after PowerDelivery(Stop)") {
+    GIVEN("A DC session in the charge loop") {
+        Secc secc;
+        to_current_demand(secc);
+        secc.drive(current_demand_req());
+        REQUIRE(secc.fsm.state() == StateID::DcChargeLoop);
+
+        WHEN("The EV sends SessionStopReq without stopping power delivery first") {
+            secc.drive(message_2::SessionStopRequest{});
+
+            THEN("It is out of sequence and the loop does not advance") {
+                REQUIRE(secc.fsm.state() == StateID::DcChargeLoop);
+                const auto res = secc.fsm.response<message_2::SessionStopResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+            }
+        }
+    }
+
+    GIVEN("An AC session in the charge loop, for SessionStopReq placement") {
+        Secc secc{dt::EnergyTransferMode::AC_three_phase_core};
+        to_ac_charge_loop(secc);
+        REQUIRE(secc.fsm.state() == StateID::AcChargeLoop);
+
+        WHEN("The EV sends SessionStopReq without stopping power delivery first") {
+            secc.drive(message_2::SessionStopRequest{});
+
+            THEN("It is out of sequence and the loop does not advance") {
+                REQUIRE(secc.fsm.state() == StateID::AcChargeLoop);
+                const auto res = secc.fsm.response<message_2::SessionStopResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+            }
+        }
+
+        WHEN("The EV stops power delivery first") {
+            secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
+            REQUIRE(secc.fsm.state() == StateID::SessionStop);
+
+            AND_WHEN("It then signals CP State B and sends SessionStopReq") {
+                // [V2G2-913]: PowerDelivery(Stop) arms the CP State B gate, so the request is parked until B.
+                secc.fsm.context().set_cp_state(d20::CpState::B);
+                secc.drive(message_2::SessionStopRequest{});
+
+                THEN("It is in sequence and answered OK [V2G2-568]") {
+                    const auto res = secc.fsm.response<message_2::SessionStopResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(secc.fsm.context().session_stopped);
+                }
+            }
+        }
+    }
+}
+
+// [V2G2-920] names both request types, so PostCharge gates a SessionStopReq as well. That gate used
+// to be applied by SessionStop, which PostCharge transitioned into, and had to move here once the
+// answer became a plain function call; this pins the behaviour against the node that now owns it.
+SCENARIO("ISO 15118-2 SECC gates a post-charge SessionStopReq on CP State B") {
+    GIVEN("A DC session that has stopped power delivery, with the EV not yet back in CP State B") {
+        Secc secc;
+        to_current_demand(secc);
+        secc.drive(current_demand_req());
+        secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
+        REQUIRE(secc.fsm.state() == StateID::PostCharge);
+
+        WHEN("The EV ends the session straight away") {
+            secc.drive(message_2::SessionStopRequest{});
+
+            THEN("The answer is held back until CP State B is measured [V2G2-920]") {
+                REQUIRE(secc.fsm.state() == StateID::PostCharge);
+                REQUIRE_FALSE(secc.fsm.has_response());
+                REQUIRE_FALSE(secc.fsm.context().session_stopped);
+            }
+
+            AND_WHEN("The EV signals CP State B") {
+                secc.fsm.context().set_cp_state(d20::CpState::B);
+                secc.fsm.control(d20::CpStateChanged{d20::CpState::B});
+
+                THEN("The held SessionStopRes goes out OK and the session ends [V2G2-921]") {
+                    const auto res = secc.fsm.response<message_2::SessionStopResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(secc.fsm.context().session_stopped);
+                }
+            }
+
+            AND_WHEN("CP State B never arrives and the gate expires") {
+                secc.fsm.timeout(d20::TimeoutType::CPSTATE);
+
+                THEN("SessionStopRes/FAILED ends the session [V2G2-922]") {
+                    const auto res = secc.fsm.response<message_2::SessionStopResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED);
+                    REQUIRE(secc.fsm.context().session_stopped);
                 }
             }
         }

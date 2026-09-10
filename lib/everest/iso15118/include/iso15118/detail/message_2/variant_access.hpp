@@ -16,10 +16,8 @@
 namespace iso15118::message_2 {
 
 struct VariantAccess {
-    // input (decoded once at the variant level, since ISO 15118-2 uses a single grammar)
     const iso15118::message_2::Header& header;
 
-    // output
     std::unique_ptr<void, iso15118::message_2::Variant::CustomDeleter>& data;
     iso15118::message_2::Type& type;
     std::string& error;
@@ -27,8 +25,7 @@ struct VariantAccess {
     template <typename MessageType, typename CbExiMessageType> void insert_type(const CbExiMessageType& in) {
         assert(data == nullptr);
 
-        // Build fully before publishing: if convert() throws, the message is released here and
-        // neither data nor type is touched, leaving the Variant unchanged.
+        // Build fully before publishing: if convert() throws, neither data nor type is touched.
         auto msg = std::make_unique<MessageType>();
         convert(in, *msg);
         msg->header = header;

@@ -31,9 +31,8 @@ struct PresentVoltageCurrent {
     float current;
 };
 
-// Latest meter reading pushed by the module (from types::powermeter::Powermeter), once per powermeter
-// update. Latched on the session context and reported as the MeterInfo element of the charge-loop
-// responses; the SECC must have sent one when it requests a signed MeteringReceipt ([V2G2-902]).
+// Latched on the session context and reported as the MeterInfo element of the charge-loop responses;
+// the SECC must have sent one when it requests a signed MeteringReceipt ([V2G2-902]).
 struct MeterInfo {
     std::string meter_id;
     uint64_t meter_reading_wh{0};
@@ -49,9 +48,8 @@ public:
         return authorized;
     }
 
-    // ISO 15118-2 Plug-and-Charge: a rejection because the contract certificate is revoked is answered
-    // with AuthorizationRes/FAILED_CertificateRevoked instead of a plain FAILED (EvseV2G parity). Only
-    // meaningful when authorized is false; the other protocols ignore it.
+    // ISO 15118-2 PnC: a revoked contract certificate is answered with FAILED_CertificateRevoked rather
+    // than a plain FAILED. Only meaningful when authorized is false; the other protocols ignore it.
     bool is_certificate_revoked() const {
         return certificate_revoked;
     }
@@ -105,18 +103,15 @@ private:
 // TODO(SL): Define this globally for message and states
 using SupportedVASs = std::vector<uint16_t>;
 
-// ISO 15118-2 Plug-and-Charge CertificateInstallation relay: the module injects the raw
-// CertificateInstallationRes EXI (base64, as delivered by the CSMS/CPS backend over the
-// iso15118_extensions interface) back into the d2 SECC engine, which splices it onto the wire verbatim.
+// The module injects the raw CertificateInstallationRes EXI (base64) back into the d2 engine, which
+// splices it onto the wire verbatim.
 struct CertificateResponse {
     bool status_accepted{false};
     std::string exi_response_base64{};
 };
 
-// EVSE-side error reported by the module (mirrors types::iso15118::EvseError). Consumed by the SECC
-// engines: Malfunction / UtilityInterruptEvent stamp the corresponding EVSEStatusCode into the DC charge
-// responses, RCD sets the AC RCD flag, EmergencyShutdown aborts the session, and None clears an active
-// error (reset). Contactor is informational (no wire effect), matching EvseV2G.
+// Malfunction / UtilityInterruptEvent become the DC EVSEStatusCode, RCD sets the AC RCD flag,
+// EmergencyShutdown aborts the session and None clears an active error. Contactor is informational.
 enum class EvseErrorCode : uint8_t {
     None,
     Contactor,
@@ -130,10 +125,8 @@ struct EvseError {
     EvseErrorCode code{EvseErrorCode::None};
 };
 
-// IEC 61851-1 CP state as measured by the EVSE (mirrors types::iso15118::CpState). Consumed by the
-// SECC engines for the CP checks tied to the message sequence, e.g. DIN 70121 [V2G-DC-988]/
-// [V2G-DC-556]: CP State B within V2G_SECC_CPState_Detection_Timeout after the request following
-// PowerDelivery(off), otherwise FAILED response + oscillator off + TCP close.
+// Used for the CP checks tied to the message sequence, e.g. DIN [V2G-DC-988]/[V2G-DC-556]: CP State
+// B within the detection timeout after the request following PowerDelivery(off), else FAILED.
 enum class CpState : uint8_t {
     A,
     B,
@@ -147,19 +140,15 @@ struct CpStateChanged {
     CpState state{CpState::A};
 };
 
-// EVSE maximum AC current (per phase, A) pushed by the module (EvseManager's update_ac_max_current
-// cmd, fired whenever the charger's current limit changes). Consumed by the ISO 15118-2 SECC engine,
-// which reflects it as EVSEMaxCurrent in the next ChargingStatusRes so the EV throttles accordingly
-// (EvseV2G parity; this is how a zero-power limit reaches the EV in the AC charge loop).
+// Per phase, in A. The ISO 15118-2 engine reflects it as EVSEMaxCurrent in the next
+// ChargingStatusRes, which is how a zero-power limit reaches the EV in the AC charge loop.
 struct UpdateAcMaxCurrent {
     float ampere{0.0f};
 };
 
-// EVSE physical parameters pushed by the module (EvseManager's set_charging_parameters cmd, mirroring
-// types::iso15118::SetupPhysicalValues). Consumed by the ISO 15118-2 and DIN SPEC 70121 SECC engines for
-// the AC/DC EVSEChargeParameter elements of ChargeParameterDiscoveryRes; ISO 15118-20 carries the same
-// information in its own limit structures and ignores this. Every field is optional on its own -- an
-// absent one leaves the engine default in place.
+// Feeds the AC/DC EVSEChargeParameter elements of ChargeParameterDiscoveryRes; ISO 15118-20 carries
+// the same information in its own limit structures and ignores this. Every field is optional on its
+// own -- an absent one leaves the engine default in place.
 struct PhysicalValues {
     std::optional<float> ac_nominal_voltage;
     std::optional<float> dc_current_regulation_tolerance;
@@ -167,26 +156,20 @@ struct PhysicalValues {
     std::optional<float> dc_energy_to_be_delivered;
 };
 
-// Power-supply hardware capabilities pushed by the module (EvseManager's set_powersupply_capabilities
-// cmd, re-sent whenever they change, e.g. on external derating). Wrapped so the variant can tell them
-// apart from the plain DcTransferLimits event, which carries the live energy-management limits: the
-// capabilities feed the ChargeParameterDiscoveryRes offer (the maximum the EVSE could ever deliver),
-// the live limits the charge loop.
+// Wrapped so the variant can tell them apart from the plain DcTransferLimits event: the capabilities
+// feed the ChargeParameterDiscoveryRes offer, the live limits the charge loop.
 struct UpdatePowersupplyLimits {
     DcTransferLimits limits{};
 };
 
-// The charger has no energy available and asks the SECC to pause the session before charging starts
-// (IEC 61851-23:2023 CC.3.5.3, EvseManager's no_energy_pause_charging cmd). Mirrors
-// types::iso15118::NoEnergyPauseMode plus a None state for "no pause requested".
+// IEC 61851-23:2023 CC.3.5.3, plus a None state for "no pause requested".
 enum class NoEnergyPauseMode : uint8_t {
     None,
     // Pause before the cable check: the charger has no power at all for this session.
     BeforeCableCheck,
     // The charger can still run cable check and pre-charge, but must not start the charge loop.
     AfterCableCheckPreCharge,
-    // Signal the pause to the EV but tolerate an EV that ignores it and charges anyway (against
-    // IEC 61851-23:2023).
+    // Signal the pause but tolerate an EV that ignores it and charges anyway.
     AllowEvToIgnorePause,
 };
 
@@ -194,17 +177,15 @@ struct NoEnergyPause {
     NoEnergyPauseMode mode{NoEnergyPauseMode::None};
 };
 
-// Isolation-monitoring result reported by the module (EvseManager's update_isolation_status cmd,
-// mirroring types::iso15118::IsolationStatus). Consumed by the ISO 15118-2 and DIN SPEC 70121 SECC
-// engines, which report it as DC_EVSEStatus.EVSEIsolationStatus in the DC responses that follow the
-// cable check. ISO 15118-20 has no such element.
+// Reported as DC_EVSEStatus.EVSEIsolationStatus in the DC responses that follow the cable check.
+// ISO 15118-20 has no such element.
 enum class IsolationStatus : uint8_t {
     Invalid,
     Valid,
     Warning,
     Fault,
-    // No insulation monitoring device fitted, so the cable check was skipped. ISO 15118-2 has a
-    // No_IMD enumerator for this; DIN SPEC 70121 does not and reports Valid instead.
+    // No insulation monitoring device fitted, so the cable check was skipped. ISO 15118-2 has a No_IMD
+    // enumerator for this; DIN SPEC 70121 does not and reports Valid instead.
     NoImd,
 };
 

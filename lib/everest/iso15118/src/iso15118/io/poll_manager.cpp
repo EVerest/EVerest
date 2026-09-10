@@ -56,8 +56,7 @@ void PollManager::poll(int timeout_ms) {
     const auto ret = ::poll(pollfds.data(), pollfds.size(), timeout_ms);
 
     if (ret == -1) {
-        // EINTR (a signal interrupted the syscall) is transient: report no events this round
-        // instead of killing the controller loop. Anything else is a genuine poll failure.
+        // EINTR is transient: report no events this round instead of killing the controller loop.
         if (errno == EINTR) {
             return;
         }
@@ -81,15 +80,10 @@ void PollManager::poll(int timeout_ms) {
     // check fds
     for (std::size_t i = 0; i < pollfds.size() - 1; ++i) {
         if (pollfds[i].revents & POLLIN) {
-            // Contain callback failures here instead of letting them escape into the controller
-            // loop, whose catch exits permanently and leaves the SECC dead until a process restart.
-            // Unregister the offending fd so a level-triggered readable fd whose callback keeps
-            // throwing cannot spin the loop hot. Unregistration is safe for every registrant: the
-            // SDP server callback contains its own exceptions (an unregistered SDP fd would never
-            // come back), and a session whose connection fd is unregistered is reaped by the
-            // controller's communication-setup timeout or its sequence timeout. Stop dispatching
-            // for this round afterwards: unregister_fd rebuilds poll_set, and poll() is
-            // level-triggered, so pending events on other fds re-surface next round.
+            // Contain callback failures here instead of letting them escape into the controller loop, whose
+            // catch exits permanently and leaves the SECC dead until a process restart. Unregister the offending
+            // fd so a level-triggered readable fd whose callback keeps throwing cannot spin the loop hot, then
+            // stop dispatching for this round: unregister_fd rebuilds poll_set, and pending events re-surface.
             const auto callback_fd = pollfds[i].fd;
             try {
                 (*poll_set.callbacks[i])();

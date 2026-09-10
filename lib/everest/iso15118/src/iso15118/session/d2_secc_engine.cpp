@@ -262,9 +262,7 @@ void D2SeccEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::Stre
     // disambiguation of the concrete message happens at decode.
     message_exchange.set_request(std::make_unique<message_2::Variant>(view));
 
-    // Report the concrete incoming ISO 15118-2 request type so the module logs its real name.
-    ctx.feedback.v2g_message(ctx.peek_request_type());
-
+    // The request type is reported by StateBase::feed(), which consumes it.
     drive_request(fsm, message_exchange, d2::Event::V2GTP_MESSAGE);
 }
 
@@ -283,7 +281,7 @@ void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
             ctx.stop_timeout(d20::TimeoutType::STOP_CHARGING);
             stop_charging_guard_armed = false;
         }
-        ctx.charger_stop_requested = requested;
+        ctx.set_charger_stop_requested(requested);
         if (not requested) {
             ctx.charger_stop_ignored = false;
         }
@@ -349,14 +347,14 @@ void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
         m2dt::MeterInfo info{};
         info.meter_id = meter->meter_id;
         info.meter_reading = meter->meter_reading_wh;
-        ctx.latest_meter_info = info;
+        ctx.set_meter_info(info);
         return;
     }
 
     // The module reported an isolation-monitoring result (update_isolation_status); the DC responses
     // after the cable check report it as EVSEIsolationStatus.
     if (const auto* isolation = std::get_if<d20::UpdateIsolationStatus>(&event)) {
-        ctx.reported_isolation_status = isolation->status;
+        ctx.set_isolation_status(isolation->status);
         return;
     }
 
@@ -370,15 +368,15 @@ void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
     // An EVSE error (module send_error / reset_error) is a persistent status override, not a per-state
     // event: store it on the context so the DC charge responses reflect it, and abort on emergency.
     if (const auto* err = std::get_if<d20::EvseError>(&event)) {
-        ctx.active_error = err->code;
-        if (err->code == d20::EvseErrorCode::EmergencyShutdown and not ctx.emergency_shutdown) {
+        ctx.set_active_error(err->code);
+        if (err->code == d20::EvseErrorCode::EmergencyShutdown and not ctx.evse().emergency_shutdown) {
             // [V2G2-539]/[V2G2-034]: the SECC answers FAILED and terminates the connection with it, instead of
             // dropping the TCP connection silently -- the EV would otherwise see a transport error and
             // never learn the reason. active_error above already puts EVSE_EmergencyShutdown into the DC
             // status of that response. The guard bounds the wait for the EV's next request; the physical
             // shutdown does not wait on any of this, it runs over the control pilot.
             logf_error("EVSE emergency shutdown reported; failing the next ISO 15118-2 response and terminating");
-            ctx.emergency_shutdown = true;
+            ctx.set_emergency_shutdown();
             ctx.start_timeout(d20::TimeoutType::EMERGENCY_SHUTDOWN, d20::TIMEOUT_EMERGENCY_SHUTDOWN_GUARD);
         }
         return;
@@ -387,7 +385,7 @@ void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {
     // Track the measured CP state on the context ([V2G2-920]..[V2G2-922] checks); still feed the
     // event to the FSM below so a state parked while waiting for CP State B resumes on it.
     if (const auto* cp = std::get_if<d20::CpStateChanged>(&event)) {
-        ctx.current_cp_state = cp->state;
+        ctx.set_cp_state(cp->state);
         // CP State A (unplug) ends the session, mirroring the DIN engine ([V2G-DC-962] analog): the
         // EV is gone, so close the TCP connection without the EV-first linger. Also applies while a
         // normal end is still in its close linger — a lingering DLINK_TERMINATE would otherwise fire
@@ -474,7 +472,15 @@ std::optional<session::feedback::SessionStopAction> D2SeccEngine::pop_session_st
 }
 
 void D2SeccEngine::request_shutdown() {
-    ctx.request_shutdown();
+    // Nothing to latch: Session::request_shutdown() also pushes StopCharging{true}, which on_control_event
+    // turns into charger_stop_requested, and both charge loops already act on that -- EVSENotification
+    // StopCharging plus the STOP_CHARGING guard that fails every response once NotificationMaxDelay has
+    // passed. The -20 and DIN contexts keep a separate shutdown_requested() flag because they use it for
+    // something this flow deliberately does not do: refuse to close the contactor on a PowerDeliveryReq
+    // (Start) that arrives during shutdown, terminating instead of asking the EV to stop
+    // (d20/state/power_delivery.cpp). ISO 15118-2 treats a charger-initiated stop as a request with a
+    // grace window in every state (see the [V2G2-679] reasoning in d2/state/power_delivery.cpp), so one
+    // signal covers it and there is no second flag to read. Kept because SeccEngine requires it.
 }
 
 } // namespace iso15118

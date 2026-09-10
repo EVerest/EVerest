@@ -40,10 +40,8 @@ enum class Type {
     SessionStopRes,
     MeteringReceiptReq,
     MeteringReceiptRes,
-    // CertificateInstallation/Update (Plug-and-Charge provisioning). On the SECC these are relay-only
-    // (the raw request EXI is forwarded to the module and the raw response EXI spliced back), so the
-    // SECC decode path only tags the request type. On the EVCC the request is built + signed and the
-    // response is decoded, so the message structs + TypeTraits below exist for the EV direction.
+    // Relay-only on the SECC (the raw request EXI is forwarded and the raw response spliced back), so
+    // its decode path only tags the type; the structs below exist for the EV direction.
     CertificateInstallationReq,
     CertificateInstallationRes,
     CertificateUpdateReq,
@@ -58,9 +56,6 @@ template <typename InType, typename OutType> void convert(const InType&, OutType
 
 template <typename MessageType> size_t serialize(const MessageType&, const io::StreamOutputView&);
 
-//
-// definitions of type traits
-//
 #define CREATE_TYPE_TRAIT(struct_name, enum_name)                                                                      \
     struct struct_name;                                                                                                \
     template <> struct TypeTrait<struct_name> {                                                                        \
