@@ -172,8 +172,7 @@ void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call
             this->firmware_status_before_installing = FirmwareStatusEnum::Downloaded;
         }
 
-        // Forget the previous cycle's status, so its leftovers cannot suppress this cycle's first notification
-        // as a duplicate
+        // Reset the last-seen firmware status to prevent accidental deduplication in a new update cycle
         this->firmware_status = FirmwareStatusEnum::Idle;
         this->firmware_status_id = std::nullopt;
     }

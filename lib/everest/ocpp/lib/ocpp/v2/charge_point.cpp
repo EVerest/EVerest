@@ -685,8 +685,7 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         *functional_block_context, *this->meter_values, this->callbacks.tariff_message_callback,
         this->callbacks.set_running_cost_callback, this->callbacks.default_price_callback, this->io_context);
 
-    // Arm the guard only for a request the application accepts, so a rejected one does not disturb a running
-    // update
+    // Arm the guard if the request is accepted, so a rejected one does not disturb a running update
     UpdateFirmwareRequestCallback update_firmware_request_callback = this->callbacks.update_firmware_request_callback;
     if (update_firmware_request_callback) {
         update_firmware_request_callback = [this](const UpdateFirmwareRequest& request) {
