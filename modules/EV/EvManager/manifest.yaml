@@ -24,6 +24,13 @@ config:
       Simulation commands, e.g. sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
     type: string
     default: ""
+  session_logging:
+    description: >-
+      Log every V2G message of the HLC session to the console, colored by
+      direction (car request / charger response) -- the EV-side counterpart of
+      the EvseManager option of the same name. Debug aid; off by default.
+    type: boolean
+    default: false
   ac_nominal_voltage:
     description: Nominal AC voltage between phase and neutral in Volt
     type: number

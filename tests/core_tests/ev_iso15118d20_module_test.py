@@ -41,7 +41,7 @@ EXPECTED_EVCC_ID = "AA:BB:CC:DD:EE:01"
 async def test_ev_iso15118d20_dc_session(
     test_controller: TestController, everest_core: EverestCore
 ):
-    """SIL gate: the C++ EvIso15118D20 module completes a DC ISO 15118-20 session.
+    """SIL gate: the C++ Ev15118 module completes a DC ISO 15118-20 session.
 
     Observes both sides of the V2G link via a two-connection probe:
       - charger.evcc_id and charger.selected_protocol (SECC view of the EVCC)
@@ -99,7 +99,7 @@ async def test_ev_iso15118d20_dc_session(
 async def test_ev_iso15118d20_full_dc_charge_loop(
     test_controller: TestController, everest_core: EverestCore
 ):
-    """SIL gate: EvIso15118D20 completes a full unidirectional DC charge loop.
+    """SIL gate: Ev15118 completes a full unidirectional DC charge loop.
 
     The EvManager auto_exec walks the whole DC flow to a clean SessionStop. The
     EV-side publishes drive the CarSimulation:

@@ -1,8 +1,12 @@
+# DC ISO 15118-20 SIL with the C++ EVCC (Ev15118) over TLS 1.3.
 active_modules:
   iso15118_charger:
     module: Evse15118D20
     config_module:
       device: auto
+      tls_negotiation_strategy: ENFORCE_TLS
+      enforce_tls_1_3: true
+      enable_tls_key_logging: true
     connections:
       security:
         - module_id: evse_security
@@ -13,9 +17,10 @@ active_modules:
       device: auto
       evcc_id: "AA:BB:CC:DD:EE:01"
       response_timeout_ms: 8000
-      dc_max_discharge_power_w: 150000
-      dc_min_discharge_power_w: 0
-      dc_max_discharge_current_a: 200
+      tls_active: true
+      enforce_tls: true
+      enable_tls_1_3: true
+      enable_tls_key_logging: true
   evse_manager:
     module: EvseManager
     config_module:
@@ -67,7 +72,7 @@ active_modules:
       connector_id: 1
       auto_enable: true
       auto_exec: false
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session DC_BPT;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 15;iso_wait_v2g_session_stopped;unplug;
+      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session DC;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 15;iso_wait_v2g_session_stopped;unplug;
       dc_target_current: 20
       dc_target_voltage: 400
     connections:

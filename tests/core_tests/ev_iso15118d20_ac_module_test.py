@@ -40,7 +40,7 @@ D20_AC_PROTOCOL = "ISO15118-20:AC and similar"
 async def test_ev_iso15118d20_ac_session(
     test_controller: TestController, everest_core: EverestCore
 ):
-    """SIL gate: the C++ EvIso15118D20 module negotiates an AC ISO 15118-20 session.
+    """SIL gate: the C++ Ev15118 module negotiates an AC ISO 15118-20 session.
 
     The two-connection probe observes the SECC view of protocol selection.
     """
@@ -85,7 +85,7 @@ async def test_ev_iso15118d20_ac_session(
 async def test_ev_iso15118d20_full_ac_charge_loop(
     test_controller: TestController, everest_core: EverestCore
 ):
-    """SIL gate: EvIso15118D20 completes a full AC ISO 15118-20 charge loop.
+    """SIL gate: Ev15118 completes a full AC ISO 15118-20 charge loop.
 
     The EvManager auto_exec walks the whole AC flow to a clean SessionStop. The
     EV-side publishes, in order, drive the charge loop:

@@ -17,15 +17,20 @@ void CarSimulation::state_machine() {
     switch (sim_data.state) {
     case SimState::UNPLUGGED:
         if (state_has_changed) {
+            EVLOG_info << "<<< UNPLUGGED: resetting the vehicle - CP state A (resistor released), power off, "
+                          "SLAC unmatched, charging stopped";
 
             r_ev_board_support->call_set_cp_state(EvCpState::A);
             r_ev_board_support->call_allow_power_on(false);
             // Wait for physical plugin (ev BSP sees state A on CP and not Disconnected)
 
-            sim_data.slac_state = types::slac::State::UNMATCHED;
+            // [V2G3-A09-126]: stop matching on plug out; the SLAC stack otherwise repeats it
+            // for TT_matching_repetition.
+            stop_matching();
             if (!r_ev.empty()) {
                 r_ev[0]->call_stop_charging();
             }
+            EVLOG_info << "Vehicle reset complete - ready for the next plug-in";
         }
         break;
     case SimState::PLUGGED_IN:
@@ -103,6 +108,19 @@ void CarSimulation::state_machine() {
     }
     timepoint_last_update = std::chrono::steady_clock::now();
 };
+
+bool CarSimulation::cp_state_allows_matching() const {
+    using types::board_support_common::Event;
+    const auto cp = sim_data.actual_bsp_event;
+    return cp == Event::B or cp == Event::C or cp == Event::D;
+}
+
+void CarSimulation::stop_matching() {
+    sim_data.slac_state = types::slac::State::UNMATCHED;
+    if (!r_slac.empty()) {
+        r_slac[0]->call_reset();
+    }
+}
 
 void CarSimulation::simulate_soc() {
     const double ms =
@@ -211,9 +229,31 @@ bool CarSimulation::iec_wait_pwr_ready(const CmdArguments& arguments) {
     return (sim_data.pwm_duty_cycle > 7.0f && sim_data.pwm_duty_cycle < 97.0f);
 }
 
-bool CarSimulation::iso_wait_pwm_is_running(const CmdArguments& arguments) {
+bool CarSimulation::iso_wait_pwm_is_running(const CmdArguments& arguments, size_t loop_interval_ms) {
     sim_data.state = SimState::PLUGGED_IN;
-    return (sim_data.pwm_duty_cycle > 4.0f && sim_data.pwm_duty_cycle < 97.0f);
+    if (sim_data.pwm_duty_cycle > 4.0f && sim_data.pwm_duty_cycle < 97.0f) {
+        sim_data.pwm_wait_ticks_left.reset();
+        return true;
+    }
+    if (arguments.empty()) {
+        // No fallback requested: wait for the PWM indefinitely (default).
+        return false;
+    }
+    // Optional fallback: [V2G3-M06-13] starts matching on the CP transition alone, so a static
+    // +12 V EVSE must not stall the EV.
+    if (not sim_data.pwm_wait_ticks_left.has_value()) {
+        const auto timeout_ms = std::stold(arguments[0]) * 1000;
+        sim_data.pwm_wait_ticks_left = static_cast<size_t>(timeout_ms / loop_interval_ms) + 1;
+    }
+    auto& ticks_left = sim_data.pwm_wait_ticks_left.value();
+    ticks_left -= 1;
+    if (ticks_left > 0) {
+        return false;
+    }
+    sim_data.pwm_wait_ticks_left.reset();
+    EVLOG_info << "iso_wait_pwm_is_running: no PWM within " << arguments[0]
+               << " s, starting the matching process on the CP state alone";
+    return true;
 }
 
 bool CarSimulation::draw_power_regulated(const CmdArguments& arguments) {
@@ -276,7 +316,8 @@ bool CarSimulation::iso_wait_slac_matched(const CmdArguments& arguments) {
 
     if (sim_data.slac_state == types::slac::State::UNMATCHED) {
         EVLOG_debug << "Slac UNMATCHED";
-        if (!r_slac.empty()) {
+        // [V2G3-A09-123]: only repeat matching while the pilot is in Bx/Cx/Dx.
+        if (!r_slac.empty() and cp_state_allows_matching()) {
             EVLOG_debug << "Slac trigger matching";
             r_slac[0]->call_reset();
             r_slac[0]->call_trigger_matching();
@@ -299,6 +340,13 @@ bool CarSimulation::iso_wait_pwr_ready(const CmdArguments& arguments) {
 }
 
 bool CarSimulation::iso_dc_power_on(const CmdArguments& arguments) {
+    // not iso_charger_paused: a pause ends the session too, but is resumed by the branch below.
+    if (sim_data.v2g_finished and not sim_data.iso_charger_paused) {
+        // Session already ended: stay in State B and let the sequence run on. Falling through
+        // would re-assert ISO_POWER_READY and drive the pilot back to C.
+        EVLOG_info << "V2G session already ended - not powering on";
+        return true;
+    }
     sim_data.state = SimState::ISO_POWER_READY;
     if (sim_data.dc_power_on) {
         sim_data.state = SimState::ISO_CHARGING_REGULATED;
@@ -362,6 +410,13 @@ bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool th
 
         return selected_payment_option;
     }(payment_option == "auto");
+
+    // Clear the per-session latches; a stale one short-circuits the matching iso_wait_* command.
+    sim_data.v2g_finished = false;
+    sim_data.iso_pwr_ready = false;
+    sim_data.iso_stopped = false;
+    sim_data.iso_charger_paused = false;
+    sim_data.dc_power_on = false;
 
     if (energy_mode == constants::AC) {
         sim_data.energy_mode = EnergyMode::AC;
@@ -445,6 +500,11 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
         sim_data.sleep_ticks_left.reset();
         return true;
     }
+    // not iso_charger_paused: see iso_dc_power_on.
+    if (sim_data.v2g_finished and not sim_data.iso_charger_paused) {
+        // Session already ended: nothing left to wait out. Bounded by the tick budget above.
+        return false;
+    }
 
     if (sim_data.iso_charger_paused) {
 
@@ -509,9 +569,15 @@ bool CarSimulation::iso_start_bcb_toggle(const CmdArguments& arguments) {
 bool CarSimulation::wait_for_real_plugin(const CmdArguments& arguments) {
     using types::board_support_common::Event;
     if (sim_data.actual_bsp_event == Event::A) {
-        EVLOG_info << "Real plugin detected";
+        EVLOG_info << ">>> PLUG-IN detected (CP energized, measured state A) - starting charging session";
         sim_data.state = SimState::PLUGGED_IN;
         return true;
+    }
+    // Log once per distinct CP state.
+    if (sim_data.actual_bsp_event != sim_data.last_logged_wait_event) {
+        sim_data.last_logged_wait_event = sim_data.actual_bsp_event;
+        EVLOG_info << "Waiting for plug-in: CP currently measures " << sim_data.actual_bsp_event
+                   << " (plug-in requires state A)";
     }
     return false;
 }

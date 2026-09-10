@@ -29,7 +29,11 @@ public:
     ~CarSimulation() = default;
 
     void reset() {
+        // Keep the measured CP state: reset() must not fake a plug-in edge.
+        const auto measured_cp_state = sim_data.actual_bsp_event;
         sim_data = SimulationData();
+        sim_data.actual_bsp_event = measured_cp_state;
+        sim_data.last_logged_wait_event = measured_cp_state;
         sim_data.battery_capacity_wh = config.dc_energy_capacity;
         double soc = config.soc;
         sim_data.battery_charge_wh = config.dc_energy_capacity * (soc / 100.0);
@@ -58,6 +62,10 @@ public:
         sim_data.state = state;
     }
 
+    types::board_support_common::Event get_bsp_event() const {
+        return sim_data.actual_bsp_event;
+    }
+
     void set_bsp_event(types::board_support_common::Event event) {
         sim_data.actual_bsp_event = event;
     }
@@ -77,6 +85,18 @@ public:
     void set_slac_state(types::slac::State slac_state) {
         sim_data.slac_state = slac_state;
     }
+
+    types::slac::State get_slac_state() const {
+        return sim_data.slac_state;
+    }
+
+    /// Stop a running matching process and leave the stack unmatched
+    /// ([V2G3-A09-123]/[V2G3-A09-126]).
+    void stop_matching();
+
+    /// Whether the measured control pilot is in Bx/Cx/Dx, the only states in
+    /// which a matching process may run ([V2G3-M06-13]/[V2G3-A09-123]).
+    bool cp_state_allows_matching() const;
 
     void set_iso_pwr_ready(bool iso_pwr_ready) {
         sim_data.iso_pwr_ready = iso_pwr_ready;
@@ -98,6 +118,25 @@ public:
         sim_data.v2g_finished = v2g_finished;
     }
 
+    // V2G ended with the contactor closed: open it and fall back to State B ([V2G2-526],
+    // [V2G2-728]).
+    void end_charging_session() {
+        switch (sim_data.state) {
+        case SimState::CHARGING_REGULATED:
+        case SimState::CHARGING_FIXED:
+        case SimState::ISO_POWER_READY:
+        case SimState::ISO_CHARGING_REGULATED:
+            EVLOG_info << "V2G session ended - opening the contactor and returning the control pilot to state B";
+            sim_data.dc_power_on = false;
+            sim_data.state = SimState::PLUGGED_IN;
+            break;
+        default:
+            // UNPLUGGED / PLUGGED_IN need nothing; ERROR_E, DIODE_FAIL and BCB_TOGGLE are
+            // deliberate pilot states the session end must not override.
+            break;
+        }
+    }
+
     void set_dc_power_on(bool dc_power_on) {
         sim_data.dc_power_on = dc_power_on;
     }
@@ -105,7 +144,7 @@ public:
     void state_machine();
     bool sleep(const CmdArguments&, size_t);
     bool iec_wait_pwr_ready(const CmdArguments&);
-    bool iso_wait_pwm_is_running(const CmdArguments&);
+    bool iso_wait_pwm_is_running(const CmdArguments&, size_t loop_interval_ms);
     bool draw_power_regulated(const CmdArguments&);
     bool draw_power_fixed(const CmdArguments&);
     bool pause(const CmdArguments&);
