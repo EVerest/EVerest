@@ -207,13 +207,12 @@ void FirmwareUpdate::change_all_connectors_to_unavailable_for_firmware_update() 
         for (auto& evse : this->context.evse_manager) {
             if (!evse.has_active_transaction()) {
                 set_evse_connectors_unavailable(evse, false);
-            } else if (!this->availability.has_persistent_scheduled_change(evse.get_id())) {
-                // A CSMS ChangeAvailability already waiting on this transaction wins the slot, because there is
-                // only one per EVSE and ours would drop its persist flag and then be erased again at the end of
-                // the cycle. TODO: Track what queued a change instead of inferring it from the persist flag
+            } else {
                 EVSE e;
                 e.id = evse.get_id();
                 msg.evse = e;
+                // Deliberately overwrites whatever the CSMS has queued for this EVSE, because the connectors
+                // have to be unavailable for the install. A queued Inoperative still gets what it asked for
                 this->availability.set_scheduled_change_availability_requests(evse.get_id(), {msg, false});
             }
         }

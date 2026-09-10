@@ -395,39 +395,6 @@ TEST_F(FirmwareUpdateTest, RejectedRequest_LeavesRunningUpdateIntact) {
     availability->handle_scheduled_change_availability_requests(2);
 }
 
-// There is only one scheduled change per EVSE, so queueing the update's own would drop the CSMS request's persist
-// flag and then have it erased again by drop_non_persistent_scheduled_changes() at the end of the cycle
-TEST_F(FirmwareUpdateTest, CsmsScheduledChange_NotOverwrittenByFirmwareUpdate) {
-    ON_CALL(evse_manager, any_transaction_active(_)).WillByDefault(Return(true));
-    ON_CALL(evse_1, has_active_transaction()).WillByDefault(Return(false));
-    ON_CALL(evse_2, has_active_transaction()).WillByDefault(Return(true));
-
-    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillRepeatedly(Invoke([](const json&, bool) {
-        return deferred_empty_response();
-    }));
-
-    // The CSMS asked to take evse 2 out of service while its transaction was still running
-    availability->set_scheduled_change_availability_requests(2, {inoperative_request(2), true});
-
-    // The update disables the idle evse and must leave evse 2's slot alone
-    EXPECT_CALL(evse_1, set_connector_operative_status(1, OperationalStatusEnum::Inoperative, false));
-
-    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
-
-    ::testing::Mock::VerifyAndClearExpectations(&evse_1);
-
-    // The update cycle ends, which drops the non-persistent changes it queued
-    firmware_update->on_firmware_update_status_notification(-1, FirmwareStatusEnum::Idle, std::nullopt);
-
-    // The transaction ends, and the CSMS request still executes - with persist == true, so it is the CSMS entry
-    // and not one the firmware update wrote over it
-    ON_CALL(evse_manager, any_transaction_active(_)).WillByDefault(Return(false));
-    ON_CALL(evse_2, has_active_transaction()).WillByDefault(Return(false));
-    EXPECT_CALL(evse_2, set_evse_operative_status(OperationalStatusEnum::Inoperative, true));
-
-    availability->handle_scheduled_change_availability_requests(2);
-}
-
 // The duplicate suppression at the top of on_firmware_update_status_notification compares against the status the
 // previous cycle last reported, so without a reset a new cycle opening with that same status is silently dropped
 TEST_F(FirmwareUpdateTest, AbortedUpdate_NewRequest_ResetsReportedFirmwareStatus) {

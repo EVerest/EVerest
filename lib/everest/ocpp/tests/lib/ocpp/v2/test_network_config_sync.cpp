@@ -1022,7 +1022,6 @@ public:
     MOCK_METHOD(void, handle_scheduled_change_availability_requests, (std::int32_t), (override));
     MOCK_METHOD(void, set_scheduled_change_availability_requests, (std::int32_t, AvailabilityChange), (override));
     MOCK_METHOD(void, drop_non_persistent_scheduled_changes, (), (override));
-    MOCK_METHOD(bool, has_persistent_scheduled_change, (const std::int32_t), (const, override));
     MOCK_METHOD(void, set_heartbeat_timer_interval, (const std::chrono::seconds&), (override));
     MOCK_METHOD(void, stop_heartbeat_timer, (), (override));
     MOCK_METHOD(ChangeAvailabilityResponse, change_availability_req, (bool&, const ChangeAvailabilityRequest&),
