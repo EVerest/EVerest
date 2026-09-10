@@ -183,7 +183,8 @@ void ChargePoint::on_firmware_update_status_notification(std::int32_t request_id
     if (is_firmware_status_end_state(firmware_update_status)) {
         this->all_connectors_unavailable_notification_state = AllConnectorsUnavailableNotificationState::Idle;
     } else if (firmware_update_status != FirmwareStatusEnum::Idle) {
-        // Only arm from Idle, so a cycle that has already notified is not armed again
+        // Whenever there is an update in progress (firmware_update_status is non-idle),
+        // set the notification state to non-Idle (Waiting) as well
         auto expected = AllConnectorsUnavailableNotificationState::Idle;
         this->all_connectors_unavailable_notification_state.compare_exchange_strong(
             expected, AllConnectorsUnavailableNotificationState::Waiting);
