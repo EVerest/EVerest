@@ -130,6 +130,48 @@ TEST(NetlinkPeerLiveness, RemovingTheLastEntryIsNoOpinionRatherThanALoss) {
     EXPECT_FALSE(tracker.peer_is_lost());
 }
 
+// The kernel also garbage collects FAILED entries, within seconds - usually before a grace period of
+// any useful length has expired. That removal is the dead peer being tidied away, and it must not
+// cancel the verdict the failure produced (bench-found: the loss was silently never reported).
+TEST(NetlinkPeerLiveness, RemovingTheLastFailedEntryKeepsTheLossVerdict) {
+    peer_liveness tracker;
+    (void)tracker.apply(make_neighbor("fe80::1", NUD_REACHABLE, "0A:1B:2C:D3:E4:F5"));
+    ASSERT_TRUE(tracker.apply(make_neighbor("fe80::1", NUD_FAILED)).arm_grace);
+
+    auto const verdict = tracker.apply(make_neighbor("fe80::1", NUD_FAILED, {}, true));
+
+    EXPECT_FALSE(verdict.cancel_grace) << "garbage collection of a dead entry is not evidence of life";
+    EXPECT_TRUE(verdict.arm_grace) << "and keeps (or starts) the grace period";
+    EXPECT_TRUE(tracker.empty());
+    EXPECT_TRUE(tracker.peer_is_lost()) << "the grace expiry must still find the peer lost";
+}
+
+// ... and the peer coming back afterwards is still a recovery.
+TEST(NetlinkPeerLiveness, APeerRecoveringAfterItsFailedEntryWasRemovedCancelsTheGrace) {
+    peer_liveness tracker;
+    (void)tracker.apply(make_neighbor("fe80::1", NUD_FAILED));
+    (void)tracker.apply(make_neighbor("fe80::1", NUD_FAILED, {}, true));
+    ASSERT_TRUE(tracker.peer_is_lost());
+
+    auto const verdict = tracker.apply(make_neighbor("fe80::1", NUD_REACHABLE, "0A:1B:2C:D3:E4:F5"));
+
+    EXPECT_TRUE(verdict.cancel_grace);
+    EXPECT_FALSE(tracker.peer_is_lost());
+}
+
+// A later removal of a healthy entry returns to "no opinion", the remembered loss included.
+TEST(NetlinkPeerLiveness, RemovingAHealthyEntryAfterARememberedLossClearsIt) {
+    peer_liveness tracker;
+    (void)tracker.apply(make_neighbor("fe80::1", NUD_FAILED));
+    (void)tracker.apply(make_neighbor("fe80::1", NUD_FAILED, {}, true));
+    (void)tracker.apply(make_neighbor("fe80::1", NUD_REACHABLE, "0A:1B:2C:D3:E4:F5"));
+
+    (void)tracker.apply(make_neighbor("fe80::1", NUD_REACHABLE, {}, true));
+
+    EXPECT_TRUE(tracker.empty());
+    EXPECT_FALSE(tracker.peer_is_lost());
+}
+
 TEST(NetlinkPeerLiveness, ResolutionInProgressNeitherArmsNorCancels) {
     peer_liveness tracker;
 
