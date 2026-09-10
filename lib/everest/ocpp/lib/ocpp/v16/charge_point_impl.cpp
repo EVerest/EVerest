@@ -4755,11 +4755,12 @@ void ChargePointImpl::on_firmware_update_status_notification(
         // Idle is deliberately not in here, because this also re-arms the single-fire guard around
         // all_connectors_unavailable_callback. An update that dies and only reports Idle has not started a new
         // cycle, so only a fresh UpdateFirmware(.signed).req may re-arm it
-        if (request_id != -1) {
-            this->signed_firmware_status = FirmwareStatusEnumType::Idle;
-        } else {
-            this->firmware_status = FirmwareStatus::Idle;
-        }
+        //
+        // Both are reset regardless of which path this update took, because only one update runs at a time. A
+        // signed update that died without ever reporting a terminal status would otherwise keep reporting its
+        // stale status to an ExtendedTriggerMessage until the next SignedUpdateFirmware.req
+        this->signed_firmware_status = FirmwareStatusEnumType::Idle;
+        this->firmware_status = FirmwareStatus::Idle;
         this->clear_firmware_install_pending();
     }
 }

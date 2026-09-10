@@ -157,10 +157,10 @@ private:
 
     std::thread reset_thread;
 
-    int log_status_request_id;
+    int log_status_request_id{-1};
 
-    FirmwareStatusEnumType signed_firmware_status;
-    int signed_firmware_status_request_id;
+    FirmwareStatusEnumType signed_firmware_status{FirmwareStatusEnumType::Idle};
+    int signed_firmware_status_request_id{-1};
 
     /// \brief optional delay to resumption of message queue after reconnecting to the CSMS
     std::chrono::seconds message_queue_resume_delay = std::chrono::seconds(0);
