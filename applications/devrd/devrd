@@ -303,7 +303,8 @@ purge_everything() {
     # Only use docker_compose down if purging the current project
     if [ "$purge_pattern" = "$current_project" ]; then
         echo "Stopping and removing containers for current project..."
-        docker_compose down -v --remove-orphans
+        # --profile all is required: services behind profiles are invisible to a plain 'down'
+        docker_compose --profile all down -v --remove-orphans
     else
         echo "Purging resources for different project pattern: $purge_pattern"
         echo "Skipping docker-compose cleanup (not current project)"
@@ -311,11 +312,12 @@ purge_everything() {
 
     # Remove all images related to the project
     echo "Removing devcontainer images..."
-    docker images --format "table {{.Repository}}:{{.Tag}}" | grep -E "($purge_pattern)" | awk '{print $1}' | xargs -r docker rmi -f
+    # -i: docker resource names are lowercased (everest_...) while the workspace folder may not be (EVerest)
+    docker images --format "table {{.Repository}}:{{.Tag}}" | grep -iE "($purge_pattern)" | awk '{print $1}' | xargs -r docker rmi -f
 
     # Remove all volumes related to the project (with force if needed)
     echo "Removing devcontainer volumes..."
-    docker volume ls --format "{{.Name}}" | grep -E "($purge_pattern)" | while read volume; do
+    docker volume ls --format "{{.Name}}" | grep -iE "($purge_pattern)" | grep -v "^everest-cpm-source-cache$" | while read volume; do
         echo "Removing volume: $volume"
         docker volume rm -f "$volume" 2>/dev/null || echo "Volume $volume could not be removed (may be in use)"
     done
@@ -323,7 +325,12 @@ purge_everything() {
     # Ask user if they want to purge CPM cache volume
     echo ""
     echo "CPM source cache volume (everest-cpm-source-cache) is shared across all workspaces."
-    read -p "Do you want to purge the CPM cache volume as well? [y/N]: " purge_cache
+    if [ -t 0 ]; then
+        read -p "Do you want to purge the CPM cache volume as well? [y/N]: " purge_cache
+    else
+        echo "(non-interactive shell: keeping CPM cache volume)"
+        purge_cache="N"
+    fi
     purge_cache="${purge_cache:-N}"
     if [[ "$purge_cache" =~ ^[Yy]$ ]]; then
         echo "Removing CPM cache volume..."
@@ -511,7 +518,9 @@ switch_nodered_flow() {
 
     # Process environment variables in the flow JSON
     # Replace "broker": "localhost" with "broker": "mqtt-server"
-    sed -i 's/"broker": "localhost"/"broker": "mqtt-server"/g' /tmp/flows.json
+    # (portable across GNU and BSD/macOS sed, which disagree on -i syntax)
+    sed 's/"broker": "localhost"/"broker": "mqtt-server"/g' /tmp/flows.json > /tmp/flows.json.tmp \
+        && mv /tmp/flows.json.tmp /tmp/flows.json
 
     # Deploy flow via Node-RED REST API
     echo "Deploying flow via Node-RED API..."
