@@ -23,7 +23,8 @@
 //   ServiceSelectionResponse             -> DC_ChargeParameterDiscoveryRequest
 //   DC_ChargeParameterDiscoveryResponse  -> ScheduleExchangeRequest
 //   ScheduleExchangeResponse(Finished)   -> DC_CableCheckRequest
-//   DC_CableCheckResponse(Finished)      -> DC_PreChargeRequest
+//   DC_CableCheckResponse(Finished)      -> DC_PreChargeRequest(Ongoing)
+//   DC_PreChargeResponse(OK, in tol.)    -> DC_PreChargeRequest(Finished)
 //   DC_PreChargeResponse(OK)             -> PowerDeliveryRequest(Start)
 //   PowerDeliveryResponse(OK)            -> DC_ChargeLoopRequest
 //   DC_ChargeLoopResponse(OK)            -> DC_ChargeLoopRequest (loop continues)
@@ -257,13 +258,28 @@ message_20::datatypes::SessionId walk_to_dc_charge_loop(SessionFixture& fx) {
         REQUIRE(req.processing == Processing::Ongoing);
     }
 
-    // DC_PreChargeResponse(OK, in-tolerance) -> PowerDeliveryRequest(Start); fires dc_power_on.
+    // DC_PreChargeResponse(OK, in-tolerance) -> DC_PreChargeRequest(Finished). While
+    // EVProcessing is Ongoing the SECC accepts only another DC_PreChargeReq
+    // [V2G20-2005]; Finished is what permits PowerDeliveryReq [V2G20-2006].
     REQUIRE_FALSE(fx.dc_power_on);
     auto pre_charge_res = ok_res<message_20::DC_PreChargeResponse>(sid);
     pre_charge_res.present_voltage = message_20::datatypes::from_float(400.0f);
     {
+        const auto req = inject_then_expect<message_20::DC_PreChargeRequest>(
+            fx, "DC_PreCharge(in tolerance) -> DC_PreCharge(Finished)", pre_charge_res, PT::Part20DC);
+        REQUIRE(req.header.session_id == sid);
+        REQUIRE(req.processing == Processing::Finished);
+    }
+    REQUIRE_FALSE(fx.dc_power_on);
+
+    // The response to that closing request is an acknowledgement, not another voltage
+    // reading, so an out-of-tolerance present voltage here must still advance: the
+    // converter may have settled away from the target by now.
+    auto pre_charge_ack = ok_res<message_20::DC_PreChargeResponse>(sid);
+    pre_charge_ack.present_voltage = message_20::datatypes::from_float(250.0f);
+    {
         const auto req = inject_then_expect<message_20::PowerDeliveryRequest>(
-            fx, "DC_PreCharge -> PowerDelivery(Start)", pre_charge_res, PT::Part20DC);
+            fx, "DC_PreCharge(Finished) -> PowerDelivery(Start)", pre_charge_ack, PT::Part20DC);
         REQUIRE(req.header.session_id == sid);
         REQUIRE(req.charge_progress == message_20::datatypes::Progress::Start);
     }
@@ -762,7 +778,8 @@ message_20::AC_ChargeLoopResponse make_ac_bpt_loop_res(const message_20::datatyp
 // Walk a DC_BPT-configured ev::Session from start() through the first BPT DC_ChargeLoop
 // request. Service id 6 uses the BPT request variants for parameter discovery and the
 // charge loop; cable-check and precharge stay the plain DC requests: ScheduleExchange ->
-// DC_CableCheck -> DC_PreCharge -> PowerDelivery(Start) -> DC_ChargeLoop (BPT).
+// DC_CableCheck -> DC_PreCharge(Ongoing) -> DC_PreCharge(Finished) -> PowerDelivery(Start)
+// -> DC_ChargeLoop (BPT).
 message_20::datatypes::SessionId walk_to_dc_bpt_charge_loop(SessionFixture& fx) {
     const auto sid = WALK_SESSION_ID;
     using SC = message_20::datatypes::ServiceCategory;
@@ -882,12 +899,19 @@ message_20::datatypes::SessionId walk_to_dc_bpt_charge_loop(SessionFixture& fx) 
         REQUIRE(req.processing == Processing::Ongoing);
     }
 
-    // DC_PreChargeResponse(OK, in-tolerance) -> PowerDeliveryRequest(Start).
+    // DC_PreChargeResponse(OK, in-tolerance) -> DC_PreChargeRequest(Finished), whose
+    // own response is what releases PowerDeliveryRequest(Start) [V2G20-2006].
     auto pre_charge_res = ok_res<message_20::DC_PreChargeResponse>(sid);
     pre_charge_res.present_voltage = message_20::datatypes::from_float(400.0f);
     {
+        const auto req = inject_then_expect<message_20::DC_PreChargeRequest>(
+            fx, "DC_PreCharge(in tolerance) -> DC_PreCharge(Finished)", pre_charge_res, PT::Part20DC);
+        REQUIRE(req.header.session_id == sid);
+        REQUIRE(req.processing == Processing::Finished);
+    }
+    {
         const auto req = inject_then_expect<message_20::PowerDeliveryRequest>(
-            fx, "DC_PreCharge -> PowerDelivery(Start)", pre_charge_res, PT::Part20DC);
+            fx, "DC_PreCharge(Finished) -> PowerDelivery(Start)", pre_charge_res, PT::Part20DC);
         REQUIRE(req.header.session_id == sid);
         REQUIRE(req.charge_progress == message_20::datatypes::Progress::Start);
     }
@@ -981,7 +1005,7 @@ SCENARIO("ISO15118-20 EV Session drives the states byte-by-byte through a full D
             const auto sid = walk_to_dc_charge_loop(fx);
 
             // The walk reached the charge loop without finishing or timing out.
-            REQUIRE(fx.captured.size() == 13);
+            REQUIRE(fx.captured.size() == 14);
             REQUIRE_FALSE(fx.session.is_finished());
             REQUIRE_FALSE(fx.timed_out);
 
@@ -1296,7 +1320,7 @@ SCENARIO("ISO15118-20 EV Session drives a full DC_BPT session through the BPT ch
         WHEN("the session is walked to an active BPT DC_ChargeLoop and the SECC then signals Terminate") {
             const auto sid = walk_to_dc_bpt_charge_loop(fx);
 
-            REQUIRE(fx.captured.size() == 13);
+            REQUIRE(fx.captured.size() == 14);
             REQUIRE_FALSE(fx.session.is_finished());
             REQUIRE_FALSE(fx.timed_out);
 
