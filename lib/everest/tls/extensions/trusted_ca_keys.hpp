@@ -7,6 +7,9 @@
 #include <everest/tls/openssl_util.hpp>
 #include <everest/tls/tls_types.hpp>
 
+#include <openssl/safestack.h>
+#include <openssl/x509.h>
+
 #include <mutex>
 
 namespace tls::trusted_ca_keys {
@@ -119,18 +122,56 @@ bool match(const trusted_ca_keys_t& extension, const chain_t& chain);
  */
 const chain_t* select(const trusted_ca_keys_t& extension, const chain_list& chains);
 
+/**
+ * \brief select the certificate chain to use based on a DN list
+ * \param[in] names the list of distinguished names from the peer
+ * \param[in] chains the list of certificate chains to check against
+ * \return a pointer to the chain (in chains) or nullptr when none match
+ *
+ * Used to drive TLS 1.3 chain selection from the peer's
+ * certificate_authorities extension via SSL_get0_peer_CA_list. A chain
+ * matches when any of its trust anchors' subject DN equals an entry in
+ * names. Returns nullptr for an empty or null DN list.
+ */
+const chain_t* select_by_dn_list(const STACK_OF(X509_NAME) * names, const chain_list& chains);
+
 /// \brief per connection data
 struct server_trusted_ca_keys_t {
     trusted_ca_keys_t& tck;  //!< parsed values
     tls::StatusFlags& flags; //!< flags to indicate which extensions were present
 };
 
-/// \brief trusted_ca_keys extension handler for a TLS server
+/**
+ * \brief server-side certificate-chain selection for the trusted_ca_keys /
+ *        certificate_authorities feature
+ *
+ * Despite the name, this handler drives chain selection for BOTH legs:
+ *  - TLS 1.2 and below: the legacy custom trusted_ca_keys extension
+ *    (cert/key SHA-1 hashes and x509 DNs), via select().
+ *  - TLS 1.3: the standard certificate_authorities extension exposed by
+ *    OpenSSL as the peer CA list, via select_by_dn_list().
+ * handle_certificate_cb() branches on SSL_version() and both legs converge
+ * on apply_selection_locked() for the apply / fall-back-to-default / abort
+ * sequence.
+ */
 class ServerTrustedCaKeys {
 private:
     static int s_index;  //!< index used for storing per connection data
     chain_list m_chains; //!< known certificate chains
     std::mutex m_mux;    //!< protects m_chains
+
+    /**
+     * \brief apply a selected chain, falling back to the default chain
+     * \param[in] ssl the connection context
+     * \param[in] lock witness that the caller holds m_mux
+     * \param[in] selected chain chosen by the per-version selector, or nullptr
+     * \param[in] context_label feature name used in the abort log line
+     * \return 1 to continue the handshake, 0 to abort it
+     * \note m_mux MUST be held by the caller: select + apply must be atomic
+     *       with respect to update() swapping m_chains.
+     */
+    int apply_selection_locked(SSL* ssl, const std::lock_guard<std::mutex>& lock, const chain_t* selected,
+                               const char* context_label);
 
 public:
     ServerTrustedCaKeys();
@@ -193,13 +234,16 @@ public:
                                   void* object);
 
     /**
-     * \brief the OpenSSL callback for the trusted_ca_keys extension
-     * \param[in] ctx the connection context
+     * \brief OpenSSL certificate callback driving chain selection for both the
+     *        TLS 1.2 trusted_ca_keys and TLS 1.3 certificate_authorities features
+     * \param[in] ssl the connection context
      * \param[in] arg A ServerTrustedCaKeys object
      * \return success = 1, error = zero or negative
      *
-     * Calls select() and select_default() after acquiring the mutex to ensure
-     * that calls to update() don't invalidate the pointers.
+     * Branches on SSL_version(): select() for TLS 1.2 and below,
+     * select_by_dn_list() for TLS 1.3. The chosen chain is applied via
+     * apply_selection_locked() (which may fall back to select_default()), all
+     * under the mutex so calls to update() don't invalidate the pointers.
      */
     static int handle_certificate_cb(Ssl* ssl, void* arg);
 
