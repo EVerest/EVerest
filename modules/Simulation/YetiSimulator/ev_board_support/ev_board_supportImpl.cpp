@@ -31,7 +31,8 @@ void ev_board_supportImpl::handle_set_cp_state(types::ev_board_support::EvCpStat
     using types::ev_board_support::EvCpState;
     auto& simdata_setting = mod->module_state->simdata_setting;
 
-    if (mod->module_state->pwm_error_f) {
+    // While the EVSE drives -12V the EV cannot signal B/C/D/E, but it can still be unplugged
+    if (mod->module_state->pwm_error_f and cp_state != EvCpState::A) {
         EVLOG_warning << "Cannot change CP state, because PWM F is active";
         return;
     }
