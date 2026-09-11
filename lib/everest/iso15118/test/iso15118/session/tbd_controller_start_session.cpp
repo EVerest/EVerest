@@ -287,7 +287,7 @@ ServiceDiscoveryRunResult run_service_discovery_round_trip(iso15118::TbdControll
     SessionWatchdog watchdog(controller, std::chrono::seconds(20));
 
     const auto exchange = [&fds](const std::vector<std::uint8_t>& frame) {
-        ::write(fds.at(1), frame.data(), frame.size());
+        [[maybe_unused]] auto unused1 = ::write(fds.at(1), frame.data(), frame.size());
         return read_v2gtp_frame(fds.at(1), std::chrono::seconds(5));
     };
 
