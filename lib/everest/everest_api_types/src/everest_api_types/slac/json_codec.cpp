@@ -99,5 +99,4 @@ void from_json(const json& j, Error& k) {
     }
 }
 
-
 } // namespace everest::lib::API::V1_0::types::slac
