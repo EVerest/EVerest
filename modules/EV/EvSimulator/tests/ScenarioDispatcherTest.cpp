@@ -986,3 +986,74 @@ TEST_CASE("ScenarioDispatcher forward-progress guard", "[evsim][scenario][loop-g
         CHECK_FALSE(ctx->scenario.active());
     }
 }
+
+TEST_CASE("ScenarioDispatcher splices a curve at its due time", "[evsim][scenario][curve][timing]") {
+    TestFixture fx;
+
+    // A curve is appended while the preset's teardown is still pending far in
+    // the future. Appending to the end of an index-ordered list would park the
+    // curve behind that teardown, and every point would then arrive past-due in
+    // one burst once it fired. These pin WHEN the points fire, not only that
+    // four of them eventually do.
+    auto seed_with_late_teardown = [](auto& ctx) {
+        std::vector<ScenarioStep> steps;
+        Event stop;
+        stop = Event{EventKind::StopSession};
+        steps.push_back({std::chrono::milliseconds(60000), std::move(stop)});
+        ctx->scenario.append_steps(std::move(steps), *ctx);
+    };
+
+    auto make_curve = []() {
+        std::vector<ScenarioStep> curve;
+        for (auto offset : {0, 100, 200, 300}) {
+            Event e;
+            e = Event{EventKind::Plug};
+            curve.push_back({std::chrono::milliseconds(offset), std::move(e)});
+        }
+        return curve;
+    };
+
+    SECTION("The curve lands ahead of a later pending step") {
+        auto ctx = fx.make_ctx();
+        seed_with_late_teardown(ctx);
+        REQUIRE(fx.timer.scenario_timer_arms.size() == 1);
+        // Armed for the teardown at +60s while it is the only step.
+        CHECK(fx.timer.scenario_timer_arms.back() > std::chrono::milliseconds(50000));
+
+        fx.timer.scenario_timer_arms.clear();
+        const auto placed = ctx->scenario.append_steps(make_curve(), *ctx);
+
+        // Spliced in front of the teardown, not appended after it.
+        CHECK(placed == 0);
+        CHECK(ctx->scenario.step_count() == 5);
+
+        // The offset-0 point is due now and fires inline.
+        REQUIRE(fx.timer.enqueued_events.size() == 1);
+
+        // The next arm is the following curve point, not the teardown. Without
+        // the splice this would still be the ~60s teardown delay.
+        REQUIRE(fx.timer.scenario_timer_arms.size() == 1);
+        CHECK(fx.timer.scenario_timer_arms.back() > std::chrono::milliseconds(0));
+        CHECK(fx.timer.scenario_timer_arms.back() <= std::chrono::milliseconds(100));
+    }
+
+    SECTION("Curve offsets are measured from the append, not from scenario start") {
+        auto ctx = fx.make_ctx();
+        seed_with_late_teardown(ctx);
+        fx.timer.scenario_timer_arms.clear();
+        fx.timer.enqueued_events.clear();
+
+        // A single point 200 ms after this call. Measured against scenario
+        // start it would be long past due and would fire immediately.
+        std::vector<ScenarioStep> curve;
+        Event e;
+        e = Event{EventKind::Plug};
+        curve.push_back({std::chrono::milliseconds(200), std::move(e)});
+        ctx->scenario.append_steps(std::move(curve), *ctx);
+
+        CHECK(fx.timer.enqueued_events.empty());
+        REQUIRE(fx.timer.scenario_timer_arms.size() == 1);
+        CHECK(fx.timer.scenario_timer_arms.back() > std::chrono::milliseconds(100));
+        CHECK(fx.timer.scenario_timer_arms.back() <= std::chrono::milliseconds(200));
+    }
+}
