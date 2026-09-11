@@ -42,20 +42,27 @@ if(EVEREST_CORE_BUILD_TESTING)
 endif()
 
 if(DISABLE_EDM AND TLS_INSTALL)
+    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
+        set(TLS_EXPORT_TARGETS everest-core-targets)
+    else()
+        set(TLS_EXPORT_TARGETS everest-tls-targets)
+    endif()
     install(
         TARGETS
             tls
-        EXPORT everest-tls-targets
+        EXPORT ${TLS_EXPORT_TARGETS}
         LIBRARY
     )
 
-    evc_setup_package(
-        NAME everest-tls
-        EXPORT everest-tls-targets
-        NAMESPACE everest
-        ADDITIONAL_CONTENT
-            "find_dependency(everest-util)"
-            "find_dependency(everest-evse_security)"
-            "find_dependency(OpenSSL)"
-    )
+    if (NOT EVEREST_CORE_BUILD)
+        evc_setup_package(
+            NAME everest-tls
+            EXPORT everest-tls-targets
+            NAMESPACE everest
+            ADDITIONAL_CONTENT
+                "find_dependency(everest-util)"
+                "find_dependency(everest-evse_security)"
+                "find_dependency(OpenSSL)"
+        )
+    endif()
 endif()

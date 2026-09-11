@@ -6,6 +6,9 @@ project(everest-core
 	LANGUAGES CXX C
 )
 
+# The aggregate package is the only export owner when the complete core is built.
+set(EVEREST_CORE_BUILD ON)
+
 find_package(everest-cmake 0.7
     COMPONENTS bundling
     PATHS ../everest-cmake
@@ -21,7 +24,8 @@ if (NOT everest-cmake_FOUND)
     FetchContent_Declare(
         everest-cmake
         GIT_REPOSITORY https://github.com/EVerest/everest-cmake.git
-        GIT_TAG        29fdd49cb9db7c4867f8e6aac6d810e79ad5b2a6 # v0.7.0
+        # FIXME before merge
+        GIT_TAG        e9dd69d912363e8fb52911f92c3f185d3c87ced4 # v0.7.0 +PR #36
     )
     FetchContent_MakeAvailable(everest-cmake)
     set(everest-cmake_DIR "${everest-cmake_SOURCE_DIR}")
