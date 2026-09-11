@@ -100,8 +100,10 @@ struct DerApplyTransitions {
 /// \brief Assign a derivation onto the currently applied DER limits.
 ///
 /// Only positive results are assigned: a service that is no longer advertised is not read by the library,
-/// and withheld SAE limits must not discard a previously derived set. Pure apart from mutating \p current,
-/// so the caller owns all logging and drives it from the returned transitions.
+/// and withheld SAE limits must not discard a previously derived set. The SAE setup config is filled while it
+/// is absent or still the seed (revision 0), so a grid code relayed from grid_support survives a
+/// re-derivation. Pure apart from mutating \p current, so the caller owns all logging and drives it from the
+/// returned transitions.
 DerApplyTransitions apply_derivation(const DerLimitsDerivation& derived, DerAppliedState& current);
 
 /// \brief Map an AC_DER_IEC EV's reported DER limits onto the OCPP-bound DERChargingParameters.

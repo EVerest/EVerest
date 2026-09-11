@@ -100,6 +100,7 @@ d20::Session make_session(dt::ControlMode control_mode, dt::MobilityNeedsMode mo
     if (ev_supported_modes.has_value()) {
         session.set_ev_supported_sae_functions(ev_supported_modes.value());
     }
+    session.record_der_modes_sent(sae::RequiredDEROperatingMode::GridFollowing, sae::GridConnectionMode::GridConnected);
     return session;
 }
 
@@ -348,6 +349,53 @@ SCENARIO("SAE AC DER charge loop scheduled mode") {
             REQUIRE(der_control.frequency_trip.has_value() == true);
             REQUIRE(der_control.reactive_power_support_cl_res.has_value() == true);
             REQUIRE(der_control.active_power_support_cl_res.has_value() == true);
+        }
+    }
+
+    GIVEN("The grid connection mode changed since the charge parameter discovery") {
+        Inputs in{};
+        in.der_config->grid_connection_mode = sae::GridConnectionMode::GridIslanded;
+
+        const auto res = call(req, session, in);
+
+        THEN("Exactly the grid connection mode is re-sent") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            const auto& res_mode = std::get<Scheduled_DER_Res>(res.control_mode);
+            REQUIRE(res_mode.grid_connection_mode.has_value() == true);
+            REQUIRE(res_mode.grid_connection_mode.value() == dt_sae::GridConnectionMode::GridIslanded);
+            REQUIRE(res_mode.required_der_operating_mode.has_value() == false);
+        }
+    }
+
+    GIVEN("The required operating mode changed since the charge parameter discovery") {
+        Inputs in{};
+        in.der_config->required_der_operating_mode = sae::RequiredDEROperatingMode::GridForming;
+
+        const auto res = call(req, session, in);
+
+        THEN("Exactly the required operating mode is re-sent") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            const auto& res_mode = std::get<Scheduled_DER_Res>(res.control_mode);
+            REQUIRE(res_mode.required_der_operating_mode.has_value() == true);
+            REQUIRE(res_mode.required_der_operating_mode.value() == dt_sae::RequiredDEROperatingMode::GridForming);
+            REQUIRE(res_mode.grid_connection_mode.has_value() == false);
+        }
+    }
+
+    GIVEN("A session that never recorded the modes") {
+        const d20::SelectedServiceParameters service_parameters(
+            dt::ServiceCategory::AC_DER_SAE, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
+            dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230);
+        d20::Session unrecorded{service_parameters};
+        unrecorded.set_ev_supported_sae_functions(CHARGE_AND_DISCHARGE_ONLY);
+
+        const auto res = call(make_scheduled_request(unrecorded), unrecorded, Inputs{});
+
+        THEN("Both modes are sent") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            const auto& res_mode = std::get<Scheduled_DER_Res>(res.control_mode);
+            REQUIRE(res_mode.required_der_operating_mode.has_value() == true);
+            REQUIRE(res_mode.grid_connection_mode.has_value() == true);
         }
     }
 

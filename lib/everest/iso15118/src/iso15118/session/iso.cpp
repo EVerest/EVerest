@@ -15,6 +15,7 @@
 #include <iso15118/session/sap_engine.hpp>
 #include <iso15118/session/secc_engine.hpp>
 
+#include <iso15118/detail/d20/config_validation.hpp>
 #include <iso15118/detail/helper.hpp>
 
 namespace iso15118 {

@@ -90,10 +90,23 @@ types:
       - y
     properties:
       x:
-        description: X-axis value; unit follows the curve's independent variable (e.g. volts, hertz, or percent) per directive_type.
+        description: >-
+          X-axis value, the curve's independent variable per directive_type: for
+          HVMustTrip, HVMayTrip, HVMomCess, LVMustTrip, LVMayTrip, LVMomCess the
+          voltage as percent of nominal; for HFMustTrip, HFMayTrip, LFMustTrip the
+          frequency in Hz; for VoltVar and VoltWatt the voltage as percent of
+          nominal; for WattVar the active power as percent of maximum. Curve types
+          not listed here (FreqWatt, WattPF, PowerMonitoringMustTrip,
+          OvervoltageFaultRideThrough, UndervoltageFaultRideThrough) are not
+          currently relayed to Annex M. Same orientation as OCPP 2.1
+          DERCurvePoints.x; the Annex M relay transposes trip curves to
+          duration-first.
         type: number
       y:
-        description: Y-axis value, in the unit given by the curve's y_unit.
+        description: >-
+          Y-axis value in y_unit. For the trip directive types (HV*/LV*/HF*/LF*) y
+          is the duration in seconds; the relay does not read y_unit there and sets
+          the Annex M units from directive_type, so producers send Not_Applicable.
         type: number
   Hysteresis:
     description: Hysteresis parameters applied to a DER curve.
@@ -236,7 +249,11 @@ types:
       - unit
     properties:
       setpoint:
-        description: Reactive power setpoint, expressed in the unit given by the unit field.
+        description: >-
+          Reactive power setpoint, expressed in the unit given by the unit field.
+          Negative = charging (absorbing reactive power), positive = discharging
+          (injecting), per OCPP 2.1 FixedVarType.setpoint; the Annex M relay
+          inverts the sign for ConstantVar.VarSetpoint (Table M.25).
         type: number
       unit:
         description: Unit of the setpoint value.
