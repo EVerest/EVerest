@@ -129,6 +129,12 @@ public:
         return m_current_state->get_id();
     }
 
+    // NOTE (aw): for callers that need more than the id, e.g. to let the active state describe
+    // itself for diagnostics or telemetry
+    const StateType& get_current_state() const {
+        return *m_current_state;
+    }
+
 private:
     StateContainerType m_current_state;
 };

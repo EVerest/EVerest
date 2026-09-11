@@ -10,6 +10,12 @@ cmds:
     description: Signal pilot state change to B/C/D from A/E/F.
   leave_bcd:
     description: Signal pilot state change to A/E/F from B/C/D.
+  count_bc:
+    description: Sets the count of B/C transitions.
+    arguments:
+      count:
+        description: Count of B/C transitions.
+        type: integer
   dlink_terminate:
     description: Terminate the data link and become UNMATCHED.
   dlink_error:

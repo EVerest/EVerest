@@ -1,0 +1,28 @@
+description: Implementation of EV SLAC data link negotiation according to ISO15118-3.
+provides:
+  main:
+    interface: ev_slac
+    description: SLAC interface implementation.
+    config:
+      device:
+        description: Ethernet device used for PLC.
+        type: string
+        default: eth1
+      set_key_timeout_ms:
+        description: Timeout for CM_SET_KEY.REQ. Default works for QCA7000/QCA7005/CG5317.
+        type: integer
+        default: 500
+      parm_req_attempts:
+        description: >-
+          Maximum number of CM_SLAC_PARM.REQ transmissions before matching fails. Each attempt
+          waits one CM_SLAC_PARM.REQ timeout (~200 ms) for a CM_SLAC_PARM.CNF. The ISO 15118-3
+          norm value proved insufficient with some EVSEs in the field, so the default matches the
+          legacy EvSlac behavior of retrying until the EVSE responds.
+        type: integer
+        minimum: 1
+        default: 100
+metadata:
+  base_license: https://directory.fsf.org/wiki/License:BSD-3-Clause-Clear
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - aw@pionix.de
