@@ -1,0 +1,157 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+#ifndef MAIN_SLAC_IMPL_HPP
+#define MAIN_SLAC_IMPL_HPP
+
+//
+// AUTO GENERATED - MARKED REGIONS WILL BE KEPT
+// template version 4
+//
+
+#include <generated/interfaces/slac/Implementation.hpp>
+
+#include "../EvseSlacNeo.hpp"
+
+// ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
+// insert your custom include headers here
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <string>
+
+#include <everest/io/event/event_fd.hpp>
+#include <everest/io/event/fd_event_handler.hpp>
+#include <everest/io/event/timer_fd.hpp>
+#include <everest/slac/fsm/evse/context.hpp>
+#include <everest/slac/slac_event.hpp>
+#include <everest/util/async/monitor.hpp>
+
+#include "fsm_controller.hpp"
+
+#include "lifecycle_gate.hpp"
+// ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
+
+namespace module {
+namespace main {
+
+struct Conf {
+    std::string device;
+    int number_of_sounds;
+    bool ac_mode_five_percent;
+    int set_key_timeout_ms;
+    std::string set_key_handling_mode;
+    std::string set_key_cnf_success_mode;
+    std::string nmk_generation_mode;
+    int set_key_max_attempts;
+    int sounding_attenuation_adjustment;
+    bool publish_mac_on_match_cnf;
+    bool publish_mac_on_first_parm_req;
+    bool do_chip_reset;
+    int chip_reset_delay_ms;
+    int chip_reset_timeout_ms;
+    bool link_status_detection;
+    int link_status_retry_ms;
+    int link_status_timeout_ms;
+    int link_status_poll_in_matched_state_ms;
+    int link_status_debounce_count;
+    bool debug_simulate_failed_matching;
+    bool reset_instead_of_fail;
+    int max_matching_sessions;
+    int startup_delay_ms;
+    int slac_init_timeout_ms;
+    bool print_state_transitions;
+    bool hack_disable_regenerate_key_on_reset;
+    bool initiate_amp_map;
+    std::string amp_map_file;
+};
+
+class slacImpl : public slacImplBase {
+public:
+    slacImpl() = delete;
+    slacImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<EvseSlacNeo>& mod, Conf& config) :
+        slacImplBase(ev, "main"), mod(mod), config(config){};
+
+    // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
+    // insert your public definitions here
+    // The framework calls shutdown() during orderly teardown; the destructor calls it again as an idempotent fallback.
+    ~slacImpl() override;
+    // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
+
+protected:
+    // command handler functions (virtual)
+    virtual void handle_reset(bool& enable) override;
+    virtual void handle_enter_bcd() override;
+    virtual void handle_leave_bcd() override;
+    virtual void handle_count_bc(int& count) override;
+    virtual void handle_dlink_terminate() override;
+    virtual void handle_dlink_error() override;
+    virtual void handle_dlink_pause() override;
+
+    // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
+    // insert your protected definitions here
+    std::map<std::string, Everest::TelemetryMap> telemetry_generic;
+    // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
+
+private:
+    const Everest::PtrContainer<EvseSlacNeo>& mod;
+    const Conf& config;
+
+    virtual void init() override;
+    virtual void ready() override;
+    void shutdown() override;
+
+    // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
+    bool wait_for_startup_delay_or_shutdown();
+    bool initialize_slac_io();
+    void configure_callbacks();
+    void configure_fsm_context();
+    bool create_fsm_controller();
+    void configure_slac_io_callbacks();
+    /// Puts slac_io, fsm_ctrl and exit_event onto event_handler. False (after the abort path) if
+    /// any registration failed.
+    bool register_event_handlers();
+    void unregister_event_handlers();
+    /// Runs the loop on the init thread until the PLC I/O bring-up settled or timed out.
+    void run_bring_up_loop();
+    /// Runs the loop on the caller's thread until shutdown() (or a fatal error) stops it.
+    void run_event_loop();
+    void handle_slac_io_ready();
+    void handle_slac_io_error(bool on_error, const std::string& detail);
+    void start_fsm_if_ready();
+    /// Hand a command to the FSM controller with the lifecycle monitor held for the whole call, or
+    /// drop it (with a warning naming \p command) if the controller or the PLC I/O is not usable.
+    void post_command(char const* command, std::function<void(FSMController&)> const& post);
+    void raise_communication_fault(const std::string& message);
+    void clear_communication_fault();
+    /// Fatal for the event loop: makes it return, tears the FSM down and (unless shutting down)
+    /// raises a CommunicationFault. Commands are dropped from then on. Loop thread only.
+    void abort_event_loop(const std::string& reason);
+
+    /// Loop-exit flag for fd_event_handler::run.
+    std::atomic<bool> online{true};
+    /// Loop-exit flag for the bring-up phase in init(); cleared by the I/O ready and error
+    /// callbacks, the bring-up timer and shutdown().
+    std::atomic<bool> bring_up_pending{false};
+    /// Wakes the loop out of poll() so it can observe the flags above.
+    everest::lib::io::event::event_fd exit_event;
+    /// Bounds the bring-up phase in init().
+    everest::lib::io::event::timer_fd bring_up_timer;
+    /// Driven on the init thread during bring-up, then on the framework's ready thread in ready().
+    everest::lib::io::event::fd_event_handler event_handler;
+    using LifecycleState = LifecycleStateT<FSMController>;
+    everest::lib::util::monitor<LifecycleState> lifecycle_state;
+    everest::lib::slac::fsm::evse::ContextCallbacks callbacks;
+    std::unique_ptr<everest::lib::slac::fsm::evse::Context> fsm_ctx;
+    std::unique_ptr<everest::lib::slac::SlacEvent> slac_io;
+    std::unique_ptr<FSMController> fsm_ctrl;
+    // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
+};
+
+// ev@3d7da0ad-02c2-493d-9920-0bbbd56b9876:v1
+// insert other definitions here
+// ev@3d7da0ad-02c2-493d-9920-0bbbd56b9876:v1
+
+} // namespace main
+} // namespace module
+
+#endif // MAIN_SLAC_IMPL_HPP
