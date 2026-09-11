@@ -31,8 +31,8 @@ protected:
     Everest::MqttProvider mqtt{adapter};
     Everest::TelemetryProvider telemetry{adapter};
     module::Conf config{};
-    module::YetiSimulator simulator{ModuleInfo{}, mqtt, telemetry, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                                   config};
+    module::YetiSimulator simulator{ModuleInfo{}, mqtt,    telemetry, nullptr, nullptr,
+                                    nullptr,      nullptr, nullptr,   nullptr, config};
     Everest::PtrContainer<module::YetiSimulator> simulator_ptr;
     module::ev_board_support::Conf ev_config;
     EvBoardSupport ev_bsp{&adapter, simulator_ptr, ev_config};
