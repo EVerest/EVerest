@@ -11,8 +11,8 @@
 
 namespace module {
 
-namespace API_types_ext = API_types::slac;
-namespace API_generic = API_types::generic;
+namespace API_types_entry = API_types::entrypoint;
+
 using ev_API::deserialize;
 
 void slac_API::init() {
@@ -63,7 +63,7 @@ void slac_API::generate_api_var_dlink_ready() {
 }
 
 void slac_API::generate_api_var_request_error_routine() {
-    helper.subscribe_api_topic("request_error_routine", [=](const std::string& data) {
+    helper.subscribe_api_topic("request_error_routine", [=](const std::string&) {
         p_main->publish_request_error_routine(nullptr);
         return true;
     });
@@ -82,7 +82,7 @@ void slac_API::generate_api_var_ev_mac_address() {
 
 void slac_API::generate_api_var_raise_error() {
     helper.subscribe_api_topic("raise_error", [=](std::string const& data) {
-        API_generic::Error error;
+        API_types_ext::Error error;
         if (deserialize(data, error)) {
             auto sub_type_str = error.sub_type ? error.sub_type.value() : "";
             auto message_str = error.message ? error.message.value() : "";
@@ -98,7 +98,7 @@ void slac_API::generate_api_var_raise_error() {
 
 void slac_API::generate_api_var_clear_error() {
     helper.subscribe_api_topic("clear_error", [=](std::string const& data) {
-        API_generic::Error error;
+        API_types_ext::Error error;
         if (deserialize(data, error)) {
             std::string error_str = make_error_string(error);
             if (error.sub_type) {
@@ -112,9 +112,9 @@ void slac_API::generate_api_var_clear_error() {
     });
 }
 
-std::string slac_API::make_error_string(API_generic::Error const& error) {
+std::string slac_API::make_error_string(API_types_ext::Error const& error) {
     auto error_str = API_generic::trimmed(serialize(error.type));
-    auto result = "generic/" + error_str;
+    auto result = "slac/" + error_str;
     return result;
 }
 

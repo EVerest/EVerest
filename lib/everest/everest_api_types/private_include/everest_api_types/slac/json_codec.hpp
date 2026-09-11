@@ -11,6 +11,10 @@ namespace everest::lib::API::V1_0::types::slac {
 using json = nlohmann::json;
 
 void to_json(json& j, State const& k) noexcept;
+void to_json(json& j, ErrorEnum const& k) noexcept;
+void to_json(json& j, Error const& k) noexcept;
 void from_json(json const& j, State& k);
+void from_json(json const& j, ErrorEnum& k);
+void from_json(json const& j, Error& k);
 
 } // namespace everest::lib::API::V1_0::types::slac

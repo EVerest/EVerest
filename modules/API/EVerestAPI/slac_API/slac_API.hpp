@@ -22,7 +22,7 @@
 
 namespace ev_API = everest::lib::API;
 namespace API_types = ev_API::V1_0::types;
-namespace API_types_entry = API_types::entrypoint;
+namespace API_types_ext = API_types::slac;
 namespace API_generic = API_types::generic;
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
@@ -70,7 +70,7 @@ private:
     void generate_api_var_raise_error();
     void generate_api_var_clear_error();
 
-    std::string make_error_string(API_generic::Error const& error);
+    std::string make_error_string(API_types_ext::Error const& error);
 
     ev_API::CommCheckHandler<slacImplBase> comm_check{"generic/CommunicationFault",
                                                       ev_API::bridge_connection_lost_message, p_main};
