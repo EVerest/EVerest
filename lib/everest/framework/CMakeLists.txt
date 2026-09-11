@@ -236,7 +236,7 @@ endif()
 
 # FIXME (aw): should this be installed or not?  Right now it is needed for the
 #             current packaging approach
-if (EVEREST_CORE_BUILD)
+if (EVEREST_CORE_BUILD AND DISABLE_EDM)
     set(FRAMEWORK_EXPORT_TARGETS everest-core-targets)
 else()
     set(FRAMEWORK_EXPORT_TARGETS framework-targets)

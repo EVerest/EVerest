@@ -41,7 +41,7 @@ endif()
 
 # packaging
 if (CB_V2G_INSTALL)
-    if (EVEREST_CORE_BUILD)
+    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
         set(CBV2G_EXPORT_TARGETS everest-core-targets)
     else()
         set(CBV2G_EXPORT_TARGETS cbv2g-targets)

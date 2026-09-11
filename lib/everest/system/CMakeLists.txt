@@ -36,7 +36,7 @@ target_compile_definitions(everest_system
 set_target_properties(everest_system PROPERTIES EXPORT_NAME system)
 
 if (DISABLE_EDM)
-    if (EVEREST_CORE_BUILD)
+    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
         set(SYSTEM_EXPORT_TARGETS everest-core-targets)
     else()
         set(SYSTEM_EXPORT_TARGETS everest_system-targets)

@@ -64,7 +64,7 @@ if (IEEE2030_BUILD_TESTING)
 endif()
 
 if (IEEE2030_INSTALL)
-    if (EVEREST_CORE_BUILD)
+    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
         set(IEEE2030_EXPORT_TARGETS everest-core-targets)
     else()
         set(IEEE2030_EXPORT_TARGETS ieee2030-targets)

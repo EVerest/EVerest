@@ -66,7 +66,7 @@ add_subdirectory(lib)
 
 # packaging
 if (EVSE_SECURITY_INSTALL)
-    if (EVEREST_CORE_BUILD)
+    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
         set(EVSE_SECURITY_EXPORT_TARGETS everest-core-targets)
     else()
         set(EVSE_SECURITY_EXPORT_TARGETS evse_security-targets)
