@@ -1,0 +1,6 @@
+description: Errors with a capitalized interface/group name
+errors:
+  - name: ExampleErrorA
+    description: >-
+      The same error as in example_errors.yaml. The error names are placed in a
+      namespace
