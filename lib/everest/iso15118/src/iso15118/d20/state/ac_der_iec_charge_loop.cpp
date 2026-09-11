@@ -48,12 +48,12 @@ void convert(dt::DsoCosPhiSetpoint& out, const iec::DSOCosPhiSetpoint& in) {
     out.step_response_time_constant_reactive_power = dt::from_float(in.step_response_time_constant_reactive_power);
 }
 
-void set_dynamic_parameters_in_res(Dynamic_DER_Res& res_mode, const UpdateDynamicModeParameters& parameters,
-                                   uint64_t header_timestamp) {
+void set_dynamic_parameters_in_res(Dynamic_DER_Res& res_mode, const UpdateDynamicModeParameters& parameters) {
     if (parameters.departure_time) {
         const auto departure_time = static_cast<uint64_t>(parameters.departure_time.value());
-        if (departure_time > header_timestamp) {
-            res_mode.departure_time = static_cast<uint32_t>(departure_time - header_timestamp);
+        const auto now = secc_time_s();
+        if (departure_time > now) {
+            res_mode.departure_time = static_cast<uint32_t>(departure_time - now);
         }
     }
     res_mode.target_soc = parameters.target_soc;
@@ -176,7 +176,7 @@ handle_request(const message_20::DER_AC_ChargeLoopRequest& req, const d20::Sessi
              dso_cos_phi_setpoint);
 
         if (selected_mobility_needs_mode == dt::MobilityNeedsMode::ProvidedBySecc) {
-            set_dynamic_parameters_in_res(res_mode, dynamic_parameters, res.header.timestamp);
+            set_dynamic_parameters_in_res(res_mode, dynamic_parameters);
         }
     }
 
