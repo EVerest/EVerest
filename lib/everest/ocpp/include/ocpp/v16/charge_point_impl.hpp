@@ -93,7 +93,6 @@ private:
     ChargePointConfigurationInterface& configuration;
     BootReasonEnum bootreason{BootReasonEnum::PowerUp};
     bool initialized{false};
-    bool InvalidCSMSCertificate_logged{false};
     ChargePointConnectionState connection_state{ChargePointConnectionState::Disconnected};
     std::atomic<RegistrationStatus> registration_status{RegistrationStatus::Pending};
     DiagnosticsStatus diagnostics_status{DiagnosticsStatus::Idle};
