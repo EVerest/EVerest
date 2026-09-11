@@ -8,8 +8,7 @@
 . "${1}"
 
 echo "$UPLOADING"
-sleep 2
-curl --progress-bar --ssl --proto =ftp,ftps,http,https --proto-default https --connect-timeout "$CONNECTION_TIMEOUT" -T "${4}" "${2}"
+curl --progress-bar --ssl --proto =sftp,ftp,ftps,http,https --proto-default https --connect-timeout "$CONNECTION_TIMEOUT" -T "${4}" "${2%/}/${3}"
 curl_exit_code=$?
 if [[ $curl_exit_code -eq 0 ]]; then
     echo "$UPLOADED"

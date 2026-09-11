@@ -7,8 +7,15 @@ sleep 2
 echo "$DOWNLOADING"
 
 sleep 2
-curl --progress-bar --ssl --connect-timeout "$CONNECTION_TIMEOUT" "${2}" -o "${3}"
+# Run the transfer in the background and wait on it so a TERM/INT reaching this
+# script is forwarded to curl instead of being deferred until curl exits. Without
+# this the cancelled transfer keeps its output pipe open and stalls the caller.
+trap 'kill "$curl_pid" 2>/dev/null' TERM INT
+curl --progress-bar --ssl --connect-timeout "$CONNECTION_TIMEOUT" "${2}" -o "${3}" &
+curl_pid=$!
+wait "$curl_pid"
 curl_exit_code=$?
+trap - TERM INT
 sleep 2
 if [[ $curl_exit_code -eq 0 ]]; then
     echo "$DOWNLOADED"
