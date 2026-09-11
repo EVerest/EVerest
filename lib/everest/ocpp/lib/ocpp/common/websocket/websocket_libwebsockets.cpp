@@ -1380,11 +1380,16 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
         break;
 
     case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE: {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed for appropriate type
-        std::string close_reason(reinterpret_cast<char*>(in), len);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed for appropriate type
-        const unsigned char* pp = reinterpret_cast<unsigned char*>(in);
-        const auto close_code = (unsigned short)((pp[0] << 8) | pp[1]);
+        std::string close_reason;
+        std::string close_code = "not provided";
+        if (len >= 2) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed for appropriate type
+            const auto* pp = reinterpret_cast<const unsigned char*>(in);
+            close_code = std::to_string(static_cast<unsigned short>((pp[0] << 8) | pp[1]));
+            // The first two bytes contain the close status in network byte order, not part of the reason.
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed for appropriate type
+            close_reason.assign(reinterpret_cast<const char*>(pp + 2), len - 2);
+        }
 
         // In the case that the websocket (server) has closed the
         // connection we  must ALWAYS try to reconnect
@@ -1393,7 +1398,7 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
         data->update_state(EConnectionState::ERROR);
         on_conn_fail(data);
 
-        // Return 0 to print peer close reason
+        // Return 0 to echo the peer close frame and close the connection
         return 0;
     }
 
