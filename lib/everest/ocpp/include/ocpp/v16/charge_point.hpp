@@ -641,6 +641,18 @@ public:
     void
     register_generic_configuration_key_changed_callback(const std::function<void(const KeyValue& key_value)>& callback);
 
+    /// \brief registers a \p callback that can veto a ChangeConfiguration before it is applied (e.g.
+    /// based on runtime charge-point state), for both Core and Custom-profile keys
+    /// \param callback returns true to allow the change, false to reject it
+    void register_custom_key_validation_callback(
+        const std::function<bool(const std::string& key, const std::string& value)>& callback);
+
+    /// \brief force-writes a Custom key's value, bypassing its readOnly flag (see
+    /// ChargePointConfigurationInterface::set_custom_key_forced for details)
+    /// \param key
+    /// \param value
+    ConfigurationStatus set_custom_key_forced(const CiString<50>& key, const CiString<500>& value);
+
     /// \brief registers a \p callback function that can be used to react to a security event callback. This callback is
     /// called only if the SecurityEvent occured internally within libocpp
     void register_security_event_callback(

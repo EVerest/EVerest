@@ -33,6 +33,7 @@ target_sources(libocpp_unit_tests PRIVATE
         test_config_validation.cpp
         utils_tests.cpp
         test_configuration.cpp
+        test_custom_key_hooks.cpp
         test_utils.cpp
         test_variable_resolver.cpp
 )

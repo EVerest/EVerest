@@ -3,6 +3,7 @@
 #ifndef OCPP_V16_CHARGE_POINT_CONFIGURATION_HPP
 #define OCPP_V16_CHARGE_POINT_CONFIGURATION_HPP
 
+#include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -554,6 +555,8 @@ public:
     std::vector<KeyValue> get_all_key_value() override;
 
     std::optional<ConfigurationStatus> set(const CiString<50>& key, const CiString<500>& value) override;
+
+    ConfigurationStatus set_custom_key_forced(const CiString<50>& key, const CiString<500>& value) override;
 };
 
 } // namespace v16
