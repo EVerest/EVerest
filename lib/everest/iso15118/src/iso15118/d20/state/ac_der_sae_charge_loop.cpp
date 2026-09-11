@@ -322,8 +322,8 @@ Result AC_DER_SAE_ChargeLoop::feed(Event ev) {
             // The re-sent control set replaces the enables the EV echoes from here on, so the stored ones are
             // read back out of the response that just went out rather than derived from the config a second
             // time.
-            const auto& der_control_cl_res =
-                std::visit([](const auto& mode) -> const dt::sae::DERControlCLRes& { return mode.der_control_cl_res; },
+            const auto der_control_cl_res =
+                std::visit([](const auto& mode) { return mode.der_control_cl_res; },
                            res.control_mode);
             m_ctx.session.set_enabled_der_control_modes(derive_enabled_modes(der_control_cl_res));
 
