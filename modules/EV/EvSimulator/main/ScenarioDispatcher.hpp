@@ -43,12 +43,21 @@ public:
         return steps_.size();
     }
 
-    // Append additional steps to the running (or to-be-started) step-list.
-    // Used by Plugged to splice a ChargingCurve's SetChargingCurrent events
-    // into the scenario at their `at` offsets. If the dispatcher is idle
-    // (no prior start()), this seeds the step-list and arms the timer for
-    // the first non-immediate step.
-    void append_steps(std::vector<ScenarioStep> steps, FsmContext& ctx);
+    // Splice additional steps into the running (or to-be-started) step-list.
+    // Used by Charging to add a ChargingCurve's SetChargingCurrent events.
+    //
+    // The incoming offsets are relative to THIS call, not to scenario start,
+    // because a curve is scheduled from the moment charging begins. They are
+    // rebased accordingly, and the block is inserted at the position its first
+    // step is due rather than at the end of the list: the dispatcher advances
+    // by index, so a block parked behind later steps could only fire once
+    // those had elapsed, arriving as one past-due burst instead of on schedule.
+    //
+    // Returns the index at which the block was placed; it stays contiguous, so
+    // the caller can mark [returned, returned + steps.size()) as a loop. A
+    // pending step falling inside the block's span fires after the block.
+    // If the dispatcher is idle (no prior start()), this seeds the step-list.
+    std::size_t append_steps(std::vector<ScenarioStep> steps, FsmContext& ctx);
 
     // Mark a contiguous range of step indices [begin, end) as a loop segment.
     // When the dispatcher would advance past `end`, it rewinds next_idx_ to

@@ -472,9 +472,9 @@ void ScenarioDispatcher::start(api::ScenarioName name, const std::optional<api::
     arm_next(ctx);
 }
 
-void ScenarioDispatcher::append_steps(std::vector<ScenarioStep> steps, FsmContext& ctx) {
+std::size_t ScenarioDispatcher::append_steps(std::vector<ScenarioStep> steps, FsmContext& ctx) {
     if (steps.empty()) {
-        return;
+        return steps_.size();
     }
     const bool was_idle = (next_idx_ >= steps_.size());
     if (was_idle) {
@@ -482,10 +482,42 @@ void ScenarioDispatcher::append_steps(std::vector<ScenarioStep> steps, FsmContex
         // are measured from this moment.
         start_at_ = std::chrono::steady_clock::now();
     }
+
+    // Rebase onto the running scenario's clock. The offsets arrive relative to
+    // this call; steps_ is keyed on time since start_at_.
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_at_);
     for (auto& s : steps) {
-        steps_.push_back(std::move(s));
+        s.at += elapsed;
     }
+
+    // Place the block where its first step is due, among the steps not yet
+    // dispatched. Appending to the end would park it behind later steps and
+    // the index-ordered dispatch could then only reach it once those had
+    // fired, flushing the whole block past-due at once.
+    const auto first_at = steps.front().at;
+    std::size_t insert_idx = steps_.size();
+    for (std::size_t i = next_idx_; i < steps_.size(); ++i) {
+        if (steps_[i].at > first_at) {
+            insert_idx = i;
+            break;
+        }
+    }
+
+    const auto n = steps.size();
+    steps_.insert(steps_.begin() + static_cast<std::ptrdiff_t>(insert_idx), std::make_move_iterator(steps.begin()),
+                  std::make_move_iterator(steps.end()));
+
+    // Keep an existing loop marker pointing at the same steps.
+    if (loop_start_idx_.has_value() && *loop_start_idx_ >= insert_idx) {
+        *loop_start_idx_ += n;
+    }
+    if (loop_end_idx_.has_value() && *loop_end_idx_ >= insert_idx) {
+        *loop_end_idx_ += n;
+    }
+
     arm_next(ctx);
+    return insert_idx;
 }
 
 void ScenarioDispatcher::mark_loop(std::size_t begin_idx, std::size_t end_idx) {

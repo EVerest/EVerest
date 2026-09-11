@@ -36,12 +36,14 @@ void Charging::enter() {
             sc.ramp_ms = cp.ramp_ms;
             curve_steps.push_back({std::chrono::milliseconds(cp.t_offset_ms), Event{std::move(sc)}});
         }
-        const std::size_t loop_begin = ctx.scenario.step_count();
-        const std::size_t loop_end = loop_begin + curve_steps.size();
         const bool should_loop = curve.loop;
-        ctx.scenario.append_steps(std::move(curve_steps), ctx);
+        const auto point_count = curve_steps.size();
+        // The block is spliced in at its due position, not appended, so the
+        // loop range comes back from the dispatcher rather than from the
+        // pre-append step count.
+        const std::size_t loop_begin = ctx.scenario.append_steps(std::move(curve_steps), ctx);
         if (should_loop) {
-            ctx.scenario.mark_loop(loop_begin, loop_end);
+            ctx.scenario.mark_loop(loop_begin, loop_begin + point_count);
         }
         ctx.vars.session->pending_curve.reset();
     }
