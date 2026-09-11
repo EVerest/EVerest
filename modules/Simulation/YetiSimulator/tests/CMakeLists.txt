@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+
 set(TEST_TARGET_NAME ${PROJECT_NAME}_YetiSimulator_tests)
 
 add_executable(${TEST_TARGET_NAME}
