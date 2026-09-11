@@ -8,7 +8,9 @@
 ev_setup_cpp_module()
 
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
-# insert your custom targets and additional config variables here
+if(EVEREST_CORE_BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
 
 target_sources(${MODULE_NAME}
