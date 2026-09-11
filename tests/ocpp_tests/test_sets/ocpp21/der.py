@@ -20,10 +20,11 @@ module stands in for the DER device. It:
 
 How DER gets enabled
 --------------------
-EverestDeviceModelStorage provisions a DER controller component (DCDERCtrlr for
-the DER-capable DC EVSE) disabled (Available=false, empty ModesSupported). When
+EverestDeviceModelStorage provisions a DER controller component from static
+connector facts and grid_support wiring (DCDERCtrlr for the wired DC EVSE), with
+Available=true and empty ModesSupported. When
 the device publishes a ``capability`` with a non-empty ``supported_types``,
-OCPP201 writes Available=true and ModesSupported (the CSV of supported control
+OCPP201 writes Enabled=true and ModesSupported (the CSV of supported control
 types) onto that component, which makes libocpp build the DERControl functional
 block and gate SetDERControl on the declared types.
 
@@ -85,9 +86,9 @@ PROBE_MODULE_ID = "probe"
 # requirement is wired to.
 GRID_SUPPORT_IMPL_ID = "grid_support"
 
-# The DER-capable EVSE in the d20 config: a DC EvseManager wired to a bidirectional
-# DCSupplySimulator publishes DC_BPT, which classifies it DER-capable so
-# EverestDeviceModelStorage provisions a DCDERCtrlr component (disabled).
+# The DC EVSE in the d20 config. Its static connector charge mode and the
+# grid_support connection below provision DCDERCtrlr independently of when
+# EvseManager publishes its supported energy transfer modes.
 DER_EVSE_ID = 1
 
 # Default control types a declared capability advertises as supported.
@@ -348,6 +349,67 @@ async def test_inverted_wiring_boots_and_handles_publishes(
 # -----------------------------------------------------------------------------
 # A published capability enables the EVSE and OCPP201 pushes its active set.
 # -----------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201-probe-module.yaml")
+@pytest.mark.everest_config_adaptions(GridSupportProbeWiringAdjustment())
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP2XConfigAdjustment(
+        [(OCPP2XConfigVariableIdentifier("InternalCtrlr", "SupportedOcppVersions", "Actual"), "ocpp2.1")]
+    )
+)
+@pytest.mark.probe_module
+@pytest.mark.parametrize("skip_implementation", [{
+    "ProbeModuleConnectorA": ["get_evse"], "ProbeModuleConnectorB": ["get_evse"],
+}])
+async def test_der_is_provisioned_before_energy_transfer_modes(
+    central_system_v21: CentralSystem, probe_module: ProbeModule, skip_implementation
+):
+    """DER presence must not depend on a variable arriving before device-model creation.
+
+    Unlike the SIL EVSE, the probe never publishes supported_energy_transfer_modes,
+    even after the controller has booted and accepted a capability. This deterministically
+    exercises the startup ordering that previously left DCDERCtrlr missing.
+    """
+    for evse_id, implementation in ((DER_EVSE_ID, "ProbeModuleConnectorA"), (2, "ProbeModuleConnectorB")):
+        probe_module.implement_command(
+            implementation, "get_evse",
+            lambda arg, evse_id=evse_id: {
+                "id": evse_id,
+                "connectors": [{"id": 1, "charge_mode": "DC", "hlc_capable": True}],
+            },
+        )
+    provide_grid_support(probe_module)
+    probe_module.start()
+    await probe_module.wait_to_be_ready()
+    probe_module.publish_variable("ProbeModuleConnectorA", "ready", True)
+    probe_module.publish_variable("ProbeModuleConnectorB", "ready", True)
+
+    charge_point = await central_system_v21.wait_for_chargepoint(wait_for_bootnotification=True)
+    assert charge_point is not None
+
+    async def available(evse_id):
+        response = await charge_point.get_variables_req(get_variable_data=[GetVariableDataType(
+            component=ComponentType(name="DCDERCtrlr", evse=EVSEType(id=evse_id)),
+            variable=VariableType(name="Available"),
+            attribute_type=AttributeEnumType.actual,
+        )])
+        assert response is not None
+        assert len(response.get_variable_result) == 1
+        return response.get_variable_result[0]
+
+    # Query immediately after boot: no polling can hide an absent component.
+    result = await available(DER_EVSE_ID)
+    assert result["attribute_status"] == "Accepted", result
+    assert result["attribute_value"] == "true", result
+    # The other EVSE has no grid_support connection and must not gain a controller.
+    result = await available(2)
+    assert result["attribute_status"] == "UnknownComponent", result
+
+    await enable_der(probe_module, charge_point)
+
 
 @grid_support_markers
 async def test_capability_enables_evse_and_pushes_active_set(
