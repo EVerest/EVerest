@@ -56,7 +56,7 @@ if (BUILD_TESTING)
 endif()
 
 if(DISABLE_EDM)
-    if (EVEREST_CORE_BUILD)
+    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
         set(HELPERS_EXPORT_TARGETS everest-core-targets)
     else()
         set(HELPERS_EXPORT_TARGETS everest-helpers-targets)

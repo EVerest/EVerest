@@ -66,7 +66,7 @@ if (ISO15118_BUILD_TESTING)
 endif()
 
 if (ISO15118_INSTALL)
-    if (EVEREST_CORE_BUILD)
+    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
         set(ISO15118_EXPORT_TARGETS everest-core-targets)
     else()
         set(ISO15118_EXPORT_TARGETS iso15118-targets)

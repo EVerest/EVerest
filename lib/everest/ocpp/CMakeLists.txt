@@ -74,7 +74,7 @@ add_subdirectory(lib)
 
 # packaging
 if (OCPP_INSTALL)
-    if (EVEREST_CORE_BUILD)
+    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
         set(OCPP_EXPORT_TARGETS everest-core-targets)
     else()
         set(OCPP_EXPORT_TARGETS ocpp-targets)
