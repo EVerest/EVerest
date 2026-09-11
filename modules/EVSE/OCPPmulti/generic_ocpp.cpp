@@ -585,17 +585,20 @@ void GenericOcpp::init_subscribe() {
     mv_requires.system.subscribe_firmware_update_status([this](auto arg) { cb_firmware_update_status(arg); });
     mv_requires.system.subscribe_log_status([this](auto arg) { cb_log_status(arg); });
 
-    mv_requires.system.subscribe_configure_network_status([this](const types::network::ConfigureNetworkStatus status) {
-        if (status.status != types::network::ConfigureNetworkFinalStatusEnum::Ready) {
-            EVLOG_warning << "configure_network_status for request_id " << status.request_id << " reported "
-                          << types::network::configure_network_final_status_enum_to_string(status.status)
-                          << "; treating as failure";
-        }
-        ocpp::ConfigNetworkResult result{};
-        result.success = (status.status == types::network::ConfigureNetworkFinalStatusEnum::Ready);
-        result.interface_address = status.interface_address;
-        fulfill_network_request(status.request_id, result);
-    });
+    if (mv_config.getDelegateNetworkConfigurationToSystem()) {
+        mv_requires.system.subscribe_configure_network_status(
+            [this](const types::network::ConfigureNetworkStatus status) {
+                if (status.status != types::network::ConfigureNetworkFinalStatusEnum::Ready) {
+                    EVLOG_warning << "configure_network_status for request_id " << status.request_id << " reported "
+                                  << types::network::configure_network_final_status_enum_to_string(status.status)
+                                  << "; treating as failure";
+                }
+                ocpp::ConfigNetworkResult result{};
+                result.success = (status.status == types::network::ConfigureNetworkFinalStatusEnum::Ready);
+                result.interface_address = status.interface_address;
+                fulfill_network_request(status.request_id, result);
+            });
+    }
 
     if (!mv_requires.reservation.empty() && mv_requires.reservation.at(0) != nullptr) {
         mv_requires.reservation.at(0)->subscribe_reservation_update([this](auto arg) { cb_reservation_update(arg); });
@@ -922,6 +925,14 @@ std::future<ocpp::ConfigNetworkResult> GenericOcpp::cb_configure_network_connect
     if (mv_shutting_down.load()) {
         ocpp::ConfigNetworkResult result{};
         result.success = false;
+        promise.set_value(result);
+        return future;
+    }
+
+    if (!mv_config.getDelegateNetworkConfigurationToSystem()) {
+        // no provider round-trip: connect as the OCPP201 module does, without an interface address
+        ocpp::ConfigNetworkResult result{};
+        result.success = true;
         promise.set_value(result);
         return future;
     }

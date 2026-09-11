@@ -26,6 +26,9 @@ std::string ConfigAccess::getDatabasePath() const {
 int ConfigAccess::getDelayOcppStart() const {
     return m_config.DelayOcppStart;
 }
+bool ConfigAccess::getDelegateNetworkConfigurationToSystem() const {
+    return m_config.DelegateNetworkConfigurationToSystem;
+}
 std::string ConfigAccess::getDeviceModelConfigMappings() const {
     return m_config.DeviceModelConfigMappings;
 }
