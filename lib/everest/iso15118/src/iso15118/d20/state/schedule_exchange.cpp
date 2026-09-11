@@ -26,7 +26,13 @@ namespace {
 auto create_default_scheduled_control_mode(const dt::RationalNumber& max_power) {
     dt::ScheduleTuple schedule;
     schedule.schedule_tuple_id = 1;
-    schedule.charging_schedule.power_schedule.time_anchor = secc_time_ms(); // [V2G20-310] PowerSchedule is now active
+    // [V2G20-1016] TimeAnchor marks when the first PowerScheduleEntry becomes active, i.e. now.
+    // Unit: Table 112 (PowerScheduleType) is the only TimeAnchor in ISO 15118-20 specified at "ms resolution"
+    // and it cross-references a subclause (8.3.3.2) that no longer exists. Every other TimeAnchor
+    // (EVPowerSchedule, EVPowerProfile, AbsolutePriceSchedule, PriceLevelSchedule, Receipt), MeterTimeStamp,
+    // the header TimeStamp [V2G20-1534] and the Annex J examples use microseconds. Milliseconds follows the
+    // literal text of Table 112; if a price schedule is added to this tuple its anchor must be microseconds.
+    schedule.charging_schedule.power_schedule.time_anchor = secc_time_ms();
 
     dt::PowerScheduleEntry power_schedule;
     power_schedule.power = max_power;
