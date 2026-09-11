@@ -44,4 +44,59 @@ void to_json(json& j, State const& k) noexcept {
 
     j = "INVALID_VALUE__everest::lib::API::V1_0::types::SLAC::STATE";
 }
+
+void to_json(json& j, ErrorEnum const& k) noexcept {
+    switch (k) {
+    case ErrorEnum::CommunicationFault:
+        j = "CommunicationFault";
+        return;
+    case ErrorEnum::VendorError:
+        j = "VendorError";
+        return;
+    case ErrorEnum::VendorWarning:
+        j = "VendorWarning";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::slac::ErrorEnum";
+}
+
+void from_json(json const& j, ErrorEnum& k) {
+    std::string s = j;
+    if (s == "CommunicationFault") {
+        k = ErrorEnum::CommunicationFault;
+        return;
+    }
+    if (s == "VendorError") {
+        k = ErrorEnum::VendorError;
+        return;
+    }
+    if (s == "VendorWarning") {
+        k = ErrorEnum::VendorWarning;
+        return;
+    }
+    throw std::out_of_range("Provided string " + s + " could not be converted to enum of type ErrorEnum_API_1_0");
+}
+
+void to_json(json& j, const Error& k) noexcept {
+    j = json{
+        {"type", k.type},
+    };
+    if (k.sub_type) {
+        j["sub_type"] = k.sub_type.value();
+    }
+    if (k.message) {
+        j["message"] = k.message.value();
+    };
+}
+
+void from_json(const json& j, Error& k) {
+    k.type = j.at("type");
+    if (j.contains("sub_type")) {
+        k.sub_type.emplace(j.at("sub_type"));
+    }
+    if (j.contains("message")) {
+        k.message.emplace(j.at("message"));
+    }
+}
+
 } // namespace everest::lib::API::V1_0::types::slac

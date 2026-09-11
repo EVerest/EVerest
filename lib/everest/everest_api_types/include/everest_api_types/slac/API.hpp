@@ -3,12 +3,27 @@
 
 #pragma once
 
+#include <optional>
+#include <string>
+
 namespace everest::lib::API::V1_0::types::slac {
 
 enum class State {
     UNMATCHED,
     MATCHING,
     MATCHED,
+};
+
+enum class ErrorEnum {
+    CommunicationFault,
+    VendorError,
+    VendorWarning,
+};
+
+struct Error {
+    ErrorEnum type;
+    std::optional<std::string> sub_type;
+    std::optional<std::string> message;
 };
 
 } // namespace everest::lib::API::V1_0::types::slac
