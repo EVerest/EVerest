@@ -156,7 +156,6 @@ class PyEVJosevModule():
     def _handler_update_soc(self, args):
         self._es.actual_soc = math.floor(args['SoC'])
 
-if __name__ == "__main__":
-    py_ev_josev = PyEVJosevModule()
-    py_ev_josev.start_evcc_handler()
+py_ev_josev = PyEVJosevModule()
+py_ev_josev.start_evcc_handler()
 

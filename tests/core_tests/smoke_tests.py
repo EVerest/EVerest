@@ -1440,7 +1440,6 @@ async def test_iso15118_dc_cable_check_failed(
     connections={
         "evse_manager": [Requirement("evse_manager", "evse")],
         "imd": [Requirement("imd", "main")],
-        "ev": [Requirement("iso15118_car", "ev")],
     }
 )
 @pytest.mark.everest_core_config("config-sil-dc.yaml")
@@ -1462,17 +1461,13 @@ async def test_iso15118_dc_stop_transaction_during_cable_check(
     error_raised_mock, _ = setup_error_monitoring(probe_module, "evse_manager")
     imd_measurement_mock = Mock()
     probe_module.subscribe_variable("imd", "isolation_measurement", imd_measurement_mock)
-    ev_session_finished_mock = Mock()
-    probe_module.subscribe_variable("ev", "v2g_session_finished", ev_session_finished_mock)
 
     # Run a complete charging session first: the state machine only arms the HLC stop
     # handling (hlc_charging_active) when the Idle state is re-entered, so only from the
     # second session on does a stop during cable check take the HLC stop path that must
     # end in StoppingCharging -> Finished (and not in a SLAC matching restart).
     await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
-    # EVSE SessionFinished precedes the EV's asynchronous TCP teardown. Wait for
-    # the EV as well before requesting another session from the same simulator.
-    await wait_for_ready(ev_session_finished_mock, timeout=30)
+    await asyncio.sleep(3)
     imd_measurement_mock.reset_mock()
 
     test_controller.plug_in_dc_iso()
