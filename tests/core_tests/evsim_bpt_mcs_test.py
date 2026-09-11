@@ -6,9 +6,15 @@
 These tests dispatch named scenarios (`DcIsoBpt`, `DcIsoMcs`) through
 the typed `m2e/run_scenario` API and assert the deployed
 `Evse15118D20` accepts the resulting BPT parameters and MCS power
-class envelope. Both load `config/config-sil-evsim-dc-bpt.yaml`, which
-wires EvSimulator into the DC stack alongside `Evse15118D20`,
-`EvseManager`, and the DC power supply / Yeti simulator stack.
+class envelope.
+
+They take one config each, because the two scenarios need the charger
+to advertise different energy transfer modes and `EvseManager` derives
+that set from a single `connector_type`. `DcIsoBpt` asks for DC_BPT and
+runs on `config-sil-evsim-dc-bpt.yaml`, which declares no connector
+type, so the charger offers DC and DC_BPT. `DcIsoMcs` asks for MCS and
+runs on `config-sil-mcs.yaml`, whose `connector_type: cMCS` is what
+makes the charger offer MCS and MCS_BPT instead.
 
 Observability:
 - FSM reaches `Charging` (no `Faulted` state) confirms the EVSE
@@ -115,7 +121,7 @@ def test_dc_iso_bpt_end_to_end(everest_core, evsim_test_controller):
     ), "SoC did not advance under DcIsoBpt; session not charging end to end"
 
 
-@pytest.mark.everest_core_config("config-sil-evsim-dc-bpt.yaml")
+@pytest.mark.everest_core_config("config-sil-mcs.yaml")
 def test_dc_iso_mcs_end_to_end(everest_core, evsim_test_controller):
     """Dispatch the `DcIsoMcs` scenario; assert MCS envelope is observable."""
     bsp_event_topic = f"{evsim_test_controller.base_e2m}/bsp_event"
