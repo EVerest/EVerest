@@ -13,6 +13,12 @@ public:
 
     void enter() final;
     Result feed(Event) final;
+
+private:
+    // Set once the closing EVProcessing=Finished request has been sent. The next
+    // response is the SECC's acknowledgement of it rather than another voltage
+    // reading, so it must not be re-checked against the tolerance.
+    bool finished_sent{false};
 };
 
 } // namespace iso15118::ev::d20::state
