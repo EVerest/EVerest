@@ -35,6 +35,8 @@ struct Conf {
     double ac_nominal_frequency;
     double max_current_A_import;
     double min_current_A_import;
+    int caps_min_current_A;
+    int caps_max_current_A;
 };
 
 class YetiSimulator : public Everest::ModuleBase {
