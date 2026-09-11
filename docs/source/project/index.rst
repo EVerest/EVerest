@@ -17,6 +17,13 @@ Project & Community
 
       Want to contribute to EVerest? Find guidelines and processes here. 
 
+   .. grid-item-card:: Roadmap
+      :link: roadmap
+      :link-type: doc
+
+      Where EVerest is heading, how the roadmap is aligned and where to get the
+      latest state.
+
    .. grid-item-card:: Governance
       :link: governance/governance
       :link-type: doc
@@ -71,6 +78,7 @@ Project & Community
 
     community
     contributing
+    roadmap
     governance/governance
     governance/code-of-conduct
     governance/security
