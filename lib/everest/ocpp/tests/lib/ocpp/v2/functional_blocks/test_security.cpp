@@ -89,10 +89,12 @@ protected: // Functions
 
     ocpp::EnhancedMessage<MessageType> create_example_certificate_signed_request(
         const std::string& certificate_chain = "",
-        const std::optional<ocpp::v2::CertificateSigningUseEnum> certificate_type = std::nullopt) {
+        const std::optional<ocpp::v2::CertificateSigningUseEnum> certificate_type = std::nullopt,
+        const std::optional<std::int32_t> request_id = std::nullopt) {
         CertificateSignedRequest request;
         request.certificateChain = certificate_chain;
         request.certificateType = certificate_type;
+        request.requestId = request_id;
         ocpp::Call<CertificateSignedRequest> call(request);
         ocpp::EnhancedMessage<MessageType> enhanced_message;
         enhanced_message.messageType = MessageType::CertificateSigned;
@@ -135,6 +137,19 @@ protected: // Functions
         this->device_model->set_value(ControllerComponentVariables::UseTPM.component,
                                       ControllerComponentVariables::UseTPM.variable.value(), AttributeEnum::Actual,
                                       "false", "test", true);
+    }
+
+    /// \brief Sets every device model value a SECC leaf (V2G / V2G20) CSR needs.
+    void set_secc_csr_inputs() {
+        this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrSeccId.component,
+                                      ControllerComponentVariables::ISO15118CtrlrSeccId.variable.value(),
+                                      AttributeEnum::Actual, "iso_testcommonname", "test", true);
+        this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrOrganizationName.component,
+                                      ControllerComponentVariables::ISO15118CtrlrOrganizationName.variable.value(),
+                                      AttributeEnum::Actual, "iso_testOrganization", "test", true);
+        this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrCountryName.component,
+                                      ControllerComponentVariables::ISO15118CtrlrCountryName.variable.value(),
+                                      AttributeEnum::Actual, "iso_testCountry", "test", true);
     }
 
     ocpp::EnhancedMessage<MessageType>
@@ -193,6 +208,25 @@ TEST_F(SecurityTest, handle_message_certificate_signed_v2gcertificate) {
 
     security.handle_message(
         create_example_certificate_signed_request("", ocpp::v2::CertificateSigningUseEnum::V2GCertificate));
+}
+
+TEST_F(SecurityTest, handle_message_certificate_signed_v2g20certificate) {
+    set_update_certificate_symlinks_enabled(this->device_model, true);
+
+    // The ISO 15118-20 leaf is installed as its own type ...
+    EXPECT_CALL(evse_security, update_leaf_certificate("", ocpp::CertificateSigningUseEnum::V2G20Certificate))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    // ... shares the SECC OCSP cache with the -2 leaf ...
+    EXPECT_CALL(ocsp_updater, trigger_ocsp_cache_update()).Times(1);
+    // ... but the legacy -2 symlinks are never repointed at it, even with symlink updates enabled
+    EXPECT_CALL(evse_security, update_certificate_links(_)).Times(0);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<CertificateSignedResponse>();
+        EXPECT_EQ(response.status, CertificateSignedStatusEnum::Accepted);
+    }));
+
+    security.handle_message(
+        create_example_certificate_signed_request("", ocpp::v2::CertificateSigningUseEnum::V2G20Certificate));
 }
 
 TEST_F(SecurityTest, handle_message_certificate_signed_v2gcertificate_symlinks_disabled) {
@@ -755,6 +789,332 @@ TEST_F(SecurityTest, sign_certificate_request_v2g_accepted) {
     }));
 
     security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate, true);
+}
+
+TEST_F(SecurityTest, sign_certificate_request_v2g20_accepted) {
+    // The ISO 15118-20 SECC leaf uses the same ISO15118Ctrlr CSR inputs and TPM setting as the -2 leaf, but is
+    // requested with the OCPP 2.1 certificateType V2G20Certificate.
+    this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrSeccId.component,
+                                  ControllerComponentVariables::ISO15118CtrlrSeccId.variable.value(),
+                                  AttributeEnum::Actual, "iso_testcommonname", "test", true);
+    this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrOrganizationName.component,
+                                  ControllerComponentVariables::ISO15118CtrlrOrganizationName.variable.value(),
+                                  AttributeEnum::Actual, "iso_testOrganization", "test", true);
+    this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrCountryName.component,
+                                  ControllerComponentVariables::ISO15118CtrlrCountryName.variable.value(),
+                                  AttributeEnum::Actual, "iso_testCountry", "test", true);
+    this->device_model->set_value(ControllerComponentVariables::UseTPMSeccLeafCertificate.component,
+                                  ControllerComponentVariables::UseTPMSeccLeafCertificate.variable.value(),
+                                  AttributeEnum::Actual, "true", "test", true);
+
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr20";
+
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(
+                                         ocpp::CertificateSigningUseEnum::V2G20Certificate, "iso_testCountry",
+                                         "iso_testOrganization", "iso_testcommonname", true))
+        .WillOnce(Return(sign_request_result));
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillOnce(Invoke([](const json& call, bool triggered) {
+        auto request = call[ocpp::CALL_PAYLOAD].get<SignCertificateRequest>();
+        ASSERT_TRUE(request.certificateType.has_value());
+        EXPECT_EQ(request.certificateType.value(), ocpp::v2::CertificateSigningUseEnum::V2G20Certificate);
+        EXPECT_EQ(request.csr, "csr20");
+        EXPECT_FALSE(triggered);
+    }));
+
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2G20Certificate);
+}
+
+TEST_F(SecurityTest, sign_certificate_request_carries_request_id_on_ocpp21_only) {
+    // A02.FR.24: on OCPP 2.1 every SignCertificate.req carries a fresh requestId; the 2.0.1 schema lacks the field.
+    set_charging_station_csr_inputs();
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillRepeatedly(Return(sign_request_result));
+
+    this->ocpp_version = ocpp::OcppProtocolVersion::v201;
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillOnce(Invoke([](const json& call, bool) {
+        auto request = call[ocpp::CALL_PAYLOAD].get<SignCertificateRequest>();
+        EXPECT_FALSE(request.requestId.has_value());
+    }));
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+    // the CSMS answers without requestId, as a 2.0.1 CSMS does
+    EXPECT_CALL(evse_security, update_leaf_certificate(_, _))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(1);
+    security.handle_message(create_example_certificate_signed_request(
+        "", ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate, std::nullopt));
+
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    std::vector<std::int32_t> request_ids;
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).Times(2).WillRepeatedly(Invoke([&](const json& call, bool) {
+        auto request = call[ocpp::CALL_PAYLOAD].get<SignCertificateRequest>();
+        ASSERT_TRUE(request.requestId.has_value());
+        request_ids.push_back(request.requestId.value());
+    }));
+    EXPECT_CALL(evse_security, update_leaf_certificate(_, _))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(1);
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+    ASSERT_EQ(request_ids.size(), 1);
+    // answering with the matching requestId completes the exchange ...
+    security.handle_message(create_example_certificate_signed_request(
+        "", ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate, request_ids.at(0)));
+    // ... and the next request gets a different requestId
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+    ASSERT_EQ(request_ids.size(), 2);
+    EXPECT_NE(request_ids.at(0), request_ids.at(1));
+}
+
+TEST_F(SecurityTest, certificate_signed_unknown_request_id_rejected_and_keeps_awaiting) {
+    // A02.FR.26: a CertificateSigned.req with a requestId that does not belong to the outstanding
+    // SignCertificate.req is rejected without installing anything, and the outstanding request stays outstanding.
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    set_secc_csr_inputs();
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillOnce(Return(sign_request_result));
+
+    std::int32_t request_id = -1;
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillOnce(Invoke([&](const json& call, bool) {
+        auto request = call[ocpp::CALL_PAYLOAD].get<SignCertificateRequest>();
+        ASSERT_TRUE(request.requestId.has_value());
+        request_id = request.requestId.value();
+    }));
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2G20Certificate);
+
+    EXPECT_CALL(evse_security, update_leaf_certificate(_, _)).Times(0);
+    EXPECT_CALL(ocsp_updater, trigger_ocsp_cache_update()).Times(0);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<CertificateSignedResponse>();
+        EXPECT_EQ(response.status, CertificateSignedStatusEnum::Rejected);
+        ASSERT_TRUE(response.statusInfo.has_value());
+        EXPECT_EQ(response.statusInfo->additionalInfo.value().get(), "Unknown requestId");
+    }));
+    security.handle_message(create_example_certificate_signed_request(
+        "", ocpp::v2::CertificateSigningUseEnum::V2G20Certificate, request_id + 1));
+
+    // still awaiting: a new SignCertificate.req is refused ...
+    EXPECT_TRUE(security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::V2GCertificate).has_value());
+
+    // ... and the matching answer is still installed
+    EXPECT_CALL(evse_security, update_leaf_certificate("", ocpp::CertificateSigningUseEnum::V2G20Certificate))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    EXPECT_CALL(ocsp_updater, trigger_ocsp_cache_update()).Times(1);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<CertificateSignedResponse>();
+        EXPECT_EQ(response.status, CertificateSignedStatusEnum::Accepted);
+    }));
+    security.handle_message(create_example_certificate_signed_request(
+        "", ocpp::v2::CertificateSigningUseEnum::V2G20Certificate, request_id));
+    EXPECT_FALSE(security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::V2GCertificate).has_value());
+}
+
+TEST_F(SecurityTest, certificate_signed_with_request_id_while_nothing_outstanding_rejected) {
+    // A02.FR.26 also applies when no SignCertificate.req is outstanding at all
+    EXPECT_CALL(evse_security, update_leaf_certificate(_, _)).Times(0);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<CertificateSignedResponse>();
+        EXPECT_EQ(response.status, CertificateSignedStatusEnum::Rejected);
+    }));
+    security.handle_message(
+        create_example_certificate_signed_request("", ocpp::v2::CertificateSigningUseEnum::V2GCertificate, 42));
+}
+
+namespace {
+ocpp::CertificateHashDataType make_hash(const std::string& name_hash, const std::string& key_hash,
+                                        const std::string& serial) {
+    ocpp::CertificateHashDataType hash;
+    hash.hashAlgorithm = ocpp::HashAlgorithmEnumType::SHA256;
+    hash.issuerNameHash = name_hash;
+    hash.issuerKeyHash = key_hash;
+    hash.serialNumber = serial;
+    return hash;
+}
+
+ocpp::CertificateHashDataChain make_root(const ocpp::CertificateHashDataType& hash) {
+    ocpp::CertificateHashDataChain root;
+    root.certificateType = ocpp::CertificateType::V2GRootCertificate;
+    root.certificateHashData = hash;
+    return root;
+}
+
+// A leaf whose chain is leaf -> sub-CA -> (root identified by root_name_hash / root_key_hash)
+ocpp::GetCertificateInfoResult make_leaf_under(const std::string& root_name_hash, const std::string& root_key_hash) {
+    ocpp::GetCertificateInfoResult result;
+    result.status = ocpp::GetCertificateInfoStatus::Accepted;
+    ocpp::CertificateInfo info;
+    info.certificate_count = 2;
+    info.ocsp.push_back({make_hash("subca_name", "subca_key", "01"), std::nullopt});
+    info.ocsp.push_back({make_hash(root_name_hash, root_key_hash, "02"), std::nullopt});
+    result.info = info;
+    return result;
+}
+
+// self-signed: the root's hash data names its own subject and key
+const auto root_a = make_hash("root_a_name", "root_a_key", "0a");
+const auto root_b = make_hash("root_b_name", "root_b_key", "0b");
+} // namespace
+
+TEST_F(SecurityTest, sign_certificate_request_v2g20_hash_root_certificate_from_installed_leaf) {
+    // A02.FR.27: the SECC CSR names the root the current leaf chains to, even when several V2G roots are installed
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    set_secc_csr_inputs();
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr20";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillOnce(Return(sign_request_result));
+    EXPECT_CALL(this->evse_security, get_installed_certificates(
+                                         std::vector<ocpp::CertificateType>{ocpp::CertificateType::V2GRootCertificate}))
+        .WillOnce(Return(std::vector<ocpp::CertificateHashDataChain>{make_root(root_a), make_root(root_b)}));
+    EXPECT_CALL(this->evse_security, get_leaf_certificate_info(ocpp::CertificateSigningUseEnum::V2G20Certificate, true))
+        .WillOnce(Return(make_leaf_under("root_b_name", "root_b_key")));
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillOnce(Invoke([](const json& call, bool) {
+        auto request = call[ocpp::CALL_PAYLOAD].get<SignCertificateRequest>();
+        ASSERT_TRUE(request.hashRootCertificate.has_value());
+        EXPECT_EQ(request.hashRootCertificate->issuerNameHash.get(), "root_b_name");
+        EXPECT_EQ(request.hashRootCertificate->issuerKeyHash.get(), "root_b_key");
+        EXPECT_EQ(request.hashRootCertificate->serialNumber.get(), "0b");
+    }));
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2G20Certificate);
+}
+
+TEST_F(SecurityTest, sign_certificate_request_v2g_hash_root_certificate_single_root_without_leaf) {
+    // initial provisioning: no leaf yet, one V2G root installed -> that root is named
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    set_secc_csr_inputs();
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillOnce(Return(sign_request_result));
+    EXPECT_CALL(this->evse_security, get_installed_certificates(_))
+        .WillOnce(Return(std::vector<ocpp::CertificateHashDataChain>{make_root(root_a)}));
+    EXPECT_CALL(this->evse_security, get_leaf_certificate_info(ocpp::CertificateSigningUseEnum::V2GCertificate, true))
+        .WillOnce(Return(ocpp::GetCertificateInfoResult{}));
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillOnce(Invoke([](const json& call, bool) {
+        auto request = call[ocpp::CALL_PAYLOAD].get<SignCertificateRequest>();
+        ASSERT_TRUE(request.hashRootCertificate.has_value());
+        EXPECT_EQ(request.hashRootCertificate->serialNumber.get(), "0a");
+    }));
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate);
+}
+
+TEST_F(SecurityTest, sign_certificate_request_no_hash_root_certificate_when_ambiguous_or_ocpp201) {
+    set_secc_csr_inputs();
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillRepeatedly(Return(sign_request_result));
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).Times(2).WillRepeatedly(Invoke([](const json& call, bool) {
+        auto request = call[ocpp::CALL_PAYLOAD].get<SignCertificateRequest>();
+        EXPECT_FALSE(request.hashRootCertificate.has_value());
+    }));
+
+    // two roots, no leaf -> the PKI choice is left to the CSMS
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    EXPECT_CALL(this->evse_security, get_installed_certificates(_))
+        .WillOnce(Return(std::vector<ocpp::CertificateHashDataChain>{make_root(root_a), make_root(root_b)}));
+    EXPECT_CALL(this->evse_security, get_leaf_certificate_info(_, true))
+        .WillOnce(Return(ocpp::GetCertificateInfoResult{}));
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate);
+    EXPECT_CALL(evse_security, update_leaf_certificate(_, _))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(1);
+    security.handle_message(
+        create_example_certificate_signed_request("", ocpp::v2::CertificateSigningUseEnum::V2GCertificate));
+
+    // OCPP 2.0.1 has no hashRootCertificate field, so the roots are not even queried
+    this->ocpp_version = ocpp::OcppProtocolVersion::v201;
+    EXPECT_CALL(this->evse_security, get_installed_certificates(_)).Times(0);
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate);
+}
+
+TEST_F(SecurityTest, certificate_signed_without_type_installs_as_awaited_secc_leaf) {
+    // The CSMS is only recommended to echo certificateType (A02.FR.14). Without it, the chain answers the
+    // outstanding SignCertificate.req instead of being mistaken for the CSMS client certificate.
+    set_secc_csr_inputs();
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr20";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillOnce(Return(sign_request_result));
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).Times(1);
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2G20Certificate);
+
+    EXPECT_CALL(evse_security, update_leaf_certificate("", ocpp::CertificateSigningUseEnum::V2G20Certificate))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    EXPECT_CALL(ocsp_updater, trigger_ocsp_cache_update()).Times(1);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<CertificateSignedResponse>();
+        EXPECT_EQ(response.status, CertificateSignedStatusEnum::Accepted);
+    }));
+    security.handle_message(create_example_certificate_signed_request("", std::nullopt));
+}
+
+TEST_F(SecurityTest, certificate_signed_without_type_and_nothing_awaited_is_charging_station_certificate) {
+    EXPECT_CALL(evse_security, update_leaf_certificate("", ocpp::CertificateSigningUseEnum::ChargingStationCertificate))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(1);
+    security.handle_message(create_example_certificate_signed_request("", std::nullopt));
+}
+
+TEST_F(SecurityTest, certificate_signed_matching_request_id_overrides_contradicting_type) {
+    // a matching requestId proves which SignCertificate.req is answered; a contradicting certificateType loses
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    set_secc_csr_inputs();
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr20";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillOnce(Return(sign_request_result));
+    std::int32_t request_id = -1;
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillOnce(Invoke([&](const json& call, bool) {
+        request_id = call[ocpp::CALL_PAYLOAD].get<SignCertificateRequest>().requestId.value();
+    }));
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2G20Certificate);
+
+    EXPECT_CALL(evse_security, update_leaf_certificate("", ocpp::CertificateSigningUseEnum::V2G20Certificate))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    EXPECT_CALL(ocsp_updater, trigger_ocsp_cache_update()).Times(1);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(1);
+    security.handle_message(create_example_certificate_signed_request(
+        "", ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate, request_id));
+}
+
+TEST_F(SecurityTest, v2g20_certificate_installation_enabled_requires_v21_and_both_flags) {
+    const auto set_bool = [this](const ComponentVariable& cv, const bool value) {
+        this->device_model->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual,
+                                      value ? "true" : "false", "test", true);
+    };
+    set_bool(ControllerComponentVariables::V2GCertificateInstallationEnabled, true);
+
+    // A 2.0.1 CSMS does not know V2G20Certificate
+    this->ocpp_version = ocpp::OcppProtocolVersion::v201;
+    EXPECT_FALSE(security.v2g20_certificate_installation_enabled());
+
+    // V2G20CertificateInstallationEnabled defaults to true: enabled without touching it
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    EXPECT_TRUE(security.v2g20_certificate_installation_enabled());
+    set_bool(ControllerComponentVariables::V2G20CertificateInstallationEnabled, true);
+    EXPECT_TRUE(security.v2g20_certificate_installation_enabled());
+
+    set_bool(ControllerComponentVariables::V2G20CertificateInstallationEnabled, false);
+    EXPECT_FALSE(security.v2g20_certificate_installation_enabled());
+
+    set_bool(ControllerComponentVariables::V2G20CertificateInstallationEnabled, true);
+    set_bool(ControllerComponentVariables::V2GCertificateInstallationEnabled, false);
+    EXPECT_FALSE(security.v2g20_certificate_installation_enabled());
 }
 
 TEST_F(SecurityTest, sign_certificate_request_manufacturer_cert_accepted) {

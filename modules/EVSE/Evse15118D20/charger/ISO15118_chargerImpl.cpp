@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -384,30 +385,6 @@ void ISO15118_chargerImpl::apply_active_der_directives() {
     }
 }
 
-std::optional<ISO15118_chargerImpl::TlsChain> ISO15118_chargerImpl::acquire_tls_chain() {
-    // include_ocsp=true so the leaf's cached OCSP responses come back and can be stapled during the TLS
-    // handshake (as EvseV2G does). Returns nullopt when the security module has no usable V2G leaf --
-    // the caller decides whether that is fatal (see ready()).
-    auto response = mod->r_security->call_get_leaf_certificate_info(types::evse_security::LeafCertificateType::V2G,
-                                                                    types::evse_security::EncodingFormat::PEM, true);
-
-    if (response.status != types::evse_security::GetCertificateInfoStatus::Accepted or not response.info.has_value()) {
-        return std::nullopt;
-    }
-
-    auto& info = response.info.value();
-    std::string path_chain;
-    if (info.certificate.has_value()) {
-        path_chain = info.certificate.value();
-    } else if (info.certificate_single.has_value()) {
-        path_chain = info.certificate_single.value();
-    } else {
-        return std::nullopt;
-    }
-
-    return TlsChain{std::move(path_chain), std::move(info)};
-}
-
 void ISO15118_chargerImpl::relay_sae_grid_code(const types::grid_support::ActiveDirectiveSet& directives,
                                                iso15118::TbdController& controller_ref, float nominal_voltage_v,
                                                float nominal_frequency_hz,
@@ -580,9 +557,13 @@ void ISO15118_chargerImpl::ready() {
     // connection) -- so the SECC still comes up for those. Determined before the protocol offer is built
     // because ISO 15118-20 depends on it.
     auto tls_strategy = convert_tls_negotiation_strategy(mod->config.tls_negotiation_strategy);
-    const auto tls_available = acquire_tls_chain();
+    // Built by the same path the certificate_store_update subscriber uses for live rotation (see
+    // build_current_ssl_config / map_valid_chains): every valid SECC leaf chain, each tagged with the TLS
+    // version it is presented on (ISO 15118-2 secp256r1 -> TLS 1.2, ISO 15118-20 secp521r1 / Ed448 -> TLS 1.3).
+    auto ssl_for_controller = build_current_ssl_config();
+    const bool tls_available = not ssl_for_controller.chains.empty();
 
-    if (not tls_available.has_value()) {
+    if (not tls_available) {
         if (tls_strategy == iso15118::config::TlsNegotiationStrategy::ENFORCE_TLS) {
             EVLOG_error << "Evse15118D20: no V2G leaf certificate is available, but tls_negotiation_strategy is "
                            "ENFORCE_TLS, so every session would have to be refused. The SECC will not start";
@@ -602,7 +583,7 @@ void ISO15118_chargerImpl::ready() {
     // ISO 15118-20 mandates TLS -- [V2G20-2677]: "Only full-handshake TLS shall be used for V2G
     // communication between EVCC and SECC" -- so without a certificate it cannot be offered at all. ISO
     // 15118-2 and DIN SPEC 70121 are offered either way and simply run unsecured.
-    const bool offer_iso15118_20 = mod->config.supported_ISO15118_20 and tls_available.has_value();
+    const bool offer_iso15118_20 = mod->config.supported_ISO15118_20 and tls_available;
     iso15118_20_offerable = offer_iso15118_20;
     if (mod->config.supported_ISO15118_20 and not offer_iso15118_20) {
         EVLOG_warning << "Evse15118D20: supported_ISO15118_20 is set but no V2G leaf certificate is available; "
@@ -622,6 +603,29 @@ void ISO15118_chargerImpl::ready() {
                          "tls_negotiation_strategy ENFORCE_NO_TLS. ISO 15118-20 mandates TLS [V2G20-2677], so any "
                          "negotiated -20 session will not be standard-conformant. Set supported_ISO15118_20 to false "
                          "to offer only ISO 15118-2 / DIN SPEC 70121 on unsecured connections";
+    }
+    // Each protocol generation needs its own SECC leaf: ISO 15118-2 a secp256r1 leaf on TLS 1.2, ISO
+    // 15118-20 a secp521r1 / Ed448 leaf on TLS 1.3. Without a leaf for a version the TLS server falls
+    // back to whatever is installed, which works with lenient EVs but is not standard-conformant, so
+    // say so once at startup.
+    if (tls_available and tls_strategy != iso15118::config::TlsNegotiationStrategy::ENFORCE_NO_TLS) {
+        const auto has_leaf_for = [&ssl_for_controller](iso15118::config::ChainTlsVersion version) {
+            return std::any_of(ssl_for_controller.chains.begin(), ssl_for_controller.chains.end(),
+                               [version](const iso15118::config::ChainConfig& chain) {
+                                   return chain.tls_version == version or
+                                          chain.tls_version == iso15118::config::ChainTlsVersion::ANY;
+                               });
+        };
+        if (offer_iso15118_20 and not has_leaf_for(iso15118::config::ChainTlsVersion::TLS_1_3)) {
+            EVLOG_warning << "Evse15118D20: ISO 15118-20 is offered but no secp521r1 / Ed448 SECC leaf certificate is "
+                             "installed; TLS 1.3 sessions will be presented the ISO 15118-2 (secp256r1) leaf, which "
+                             "ISO 15118-20 EVs may reject";
+        }
+        if (mod->config.supported_ISO15118_2 and not has_leaf_for(iso15118::config::ChainTlsVersion::TLS_1_2)) {
+            EVLOG_warning << "Evse15118D20: ISO 15118-2 is offered but no secp256r1 SECC leaf certificate is "
+                             "installed; TLS 1.2 sessions will be presented the ISO 15118-20 leaf, which ISO "
+                             "15118-2 EVs may reject";
+        }
     }
 
     std::vector<iso15118::ProtocolId> supported_protocols;
@@ -670,15 +674,9 @@ void ISO15118_chargerImpl::ready() {
     // TODO(mlitre): Should be updated once libiso supports service renegotiation
     this->mod->p_extensions->publish_service_renegotiation_supported(false);
 
-    // The SSL config (roots, logging flags, and every valid V2G leaf chain from the security module) is
-    // built by the same path the certificate_store_update subscriber uses for live rotation below. Without
-    // a leaf certificate no chain is configured and the controller only ever brings up plain endpoints
-    // (tls_strategy was forced to ENFORCE_NO_TLS above; ENFORCE_TLS already refused to start).
-    auto ssl_for_controller = build_current_ssl_config();
-    if (ssl_for_controller.chains.empty() and tls_available.has_value()) {
-        EVLOG_warning << "Evse15118D20: a V2G leaf certificate exists but no usable chain could be mapped; TLS "
-                         "connection attempts will fail until certificates are provisioned";
-    }
+    // ssl_for_controller was built above; without a leaf certificate it carries no chain and the controller
+    // only ever brings up plain endpoints (tls_strategy was forced to ENFORCE_NO_TLS above; ENFORCE_TLS
+    // already refused to start). The roots in it still gate contract-certificate validation.
 
     iso15118::TbdConfig tbd_config = {
         std::move(ssl_for_controller),
@@ -782,9 +780,16 @@ iso15118::config::SSLConfig ISO15118_chargerImpl::build_base_ssl_config() {
 
 iso15118::config::SSLConfig ISO15118_chargerImpl::build_current_ssl_config() {
     auto cfg = build_base_ssl_config();
-    const auto certs_result = mod->r_security->call_get_all_valid_certificates_info(
-        types::evse_security::LeafCertificateType::V2G, types::evse_security::EncodingFormat::PEM, true);
-    cfg.chains = map_valid_chains(certs_result);
+    // Both SECC leaf types: V2G is the ISO 15118-2 leaf (prime256v1, TLS 1.2), V2G20 the ISO 15118-20 leaf
+    // (secp521r1 / Ed448, TLS 1.3). Each query returns the newest valid leaf per issuing root of that profile,
+    // so a renewed leaf of either type is picked up by the same rebuild.
+    for (const auto leaf_type :
+         {types::evse_security::LeafCertificateType::V2G, types::evse_security::LeafCertificateType::V2G20}) {
+        const auto certs_result = mod->r_security->call_get_all_valid_certificates_info(
+            leaf_type, types::evse_security::EncodingFormat::PEM, true);
+        auto chains = map_valid_chains(certs_result);
+        std::move(chains.begin(), chains.end(), std::back_inserter(cfg.chains));
+    }
     return cfg;
 }
 

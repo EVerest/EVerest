@@ -15,13 +15,17 @@ types:
       - CSMS
       - MF
   LeafCertificateType:
-    description: Enum specifies the type of a leaf certificate
+    description: >-
+      Enum specifies the type of a leaf certificate. V2G is the ISO 15118-2 SECC leaf (TLS 1.2, prime256v1),
+      V2G20 the ISO 15118-20 SECC leaf (TLS 1.3, secp521r1 / Ed448); both live in the SECC leaf store and are
+      told apart by key algorithm.
     type: string
     enum:
       - CSMS
       - V2G
       - MF
       - MO
+      - V2G20
   CertificateType:
     description: Enum specifies certificate type of leaf and CA certificates
     type: string
@@ -249,6 +253,13 @@ types:
           minimum: 0
           type: object
           $ref: /evse_security#/CertificateOCSP
+      public_key_algorithm:
+        description: >-
+          Public key algorithm of the leaf: the named EC curve for EC keys (prime256v1, secp384r1,
+          secp521r1, ...), otherwise the key type (ED448, RSA, ...). ISO 15118-2 mandates prime256v1
+          for the SECC leaf and ISO 15118-20 mandates secp521r1 or ED448, so this tells the two apart
+          when both are installed.
+        type: string
   GetCertificateInfoResult:
     description: Response to the command get_leaf_certificate_info
     type: object

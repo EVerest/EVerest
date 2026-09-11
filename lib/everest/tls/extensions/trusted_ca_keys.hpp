@@ -135,6 +135,39 @@ const chain_t* select(const trusted_ca_keys_t& extension, const chain_list& chai
  */
 const chain_t* select_by_dn_list(const STACK_OF(X509_NAME) * names, const chain_list& chains);
 
+/**
+ * \brief select_by_dn_list() restricted to chains compatible with the negotiated TLS version
+ * \param[in] tls_version the negotiated version; 0 disables the version filter
+ */
+const chain_t* select_by_dn_list(const STACK_OF(X509_NAME) * names, const chain_list& chains, int tls_version);
+
+/**
+ * \brief whether a chain may be presented on a connection with the given negotiated TLS version
+ * \param[in] chain the candidate chain
+ * \param[in] tls_version the negotiated version (TLS1_2_VERSION, TLS1_3_VERSION, ...)
+ * \return true when the chain is untagged (tls_version == 0) or tagged for exactly that version
+ */
+bool compatible(const chain_t& chain, int tls_version);
+
+/**
+ * \brief select the certificate chain to use, restricted to chains compatible with the TLS version
+ * \param[in] extension is the parsed extension
+ * \param[in] chains is the list of chains to check
+ * \param[in] tls_version the negotiated version
+ * \return a pointer to the first matching compatible chain or nullptr when none match
+ */
+const chain_t* select(const trusted_ca_keys_t& extension, const chain_list& chains, int tls_version);
+
+/**
+ * \brief select the chain to present based on the negotiated TLS version alone
+ * \param[in] chains is the list of chains to check
+ * \param[in] tls_version the negotiated version
+ * \return the first chain tagged for exactly tls_version, else the first untagged chain, else nullptr
+ * \note returns nullptr when no chain in the list carries a version tag at all, so callers can keep
+ *       the SSL_CTX default certificate untouched in that case
+ */
+const chain_t* select_by_version(const chain_list& chains, int tls_version);
+
 /// \brief per connection data
 struct server_trusted_ca_keys_t {
     trusted_ca_keys_t& tck;  //!< parsed values
@@ -203,6 +236,23 @@ public:
      * \note pointer will be invalid if update() called before it is used
      */
     const chain_t* select(const trusted_ca_keys_t& extension);
+
+    /**
+     * \brief select chain to use based on parsed extension and negotiated TLS version
+     * \param[in] extension is the parsed extension
+     * \param[in] tls_version the negotiated version
+     * \return a pointer to the chain (in m_chains) or nullptr when none match
+     * \note pointer will be invalid if update() called before it is used
+     */
+    const chain_t* select(const trusted_ca_keys_t& extension, int tls_version);
+
+    /**
+     * \brief select chain to use based on the negotiated TLS version alone
+     * \param[in] tls_version the negotiated version
+     * \return see trusted_ca_keys::select_by_version()
+     * \note pointer will be invalid if update() called before it is used
+     */
+    const chain_t* select_by_version(int tls_version);
 
     /**
      * \brief select the default chain to use (first entry in m_chains)

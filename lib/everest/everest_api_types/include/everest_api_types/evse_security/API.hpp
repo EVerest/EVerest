@@ -22,6 +22,7 @@ enum class LeafCertificateType {
     V2G,
     MF,
     MO,
+    V2G20,
 };
 
 enum class EncodingFormat {
