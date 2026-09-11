@@ -114,7 +114,7 @@ jobs:
           fi
           ssh-add ~/.ssh/id_ed25519
       - name: Checkout local github actions
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.repository_owner }}/everest-ci
           ref: ${{ inputs.ref_everest_ci }}
@@ -124,7 +124,7 @@ jobs:
           BRANCH_NAME_FOR_CACHE="${GITHUB_REF_NAME//-/_}"
           echo "branch_name_for_cache=${BRANCH_NAME_FOR_CACHE}" >> "$GITHUB_ENV"
       - name: Setup cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: cache
           key: compile-${{ env.branch_name_for_cache }}-${{ github.sha }}
@@ -132,7 +132,7 @@ jobs:
             compile-${{ env.branch_name_for_cache }}-
             compile-
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: source
       - name: Setup run scripts
@@ -140,7 +140,7 @@ jobs:
           mkdir scripts
           rsync -a source/${{ inputs.build_kit_scripts_directory }}/ scripts
       - name: Download build-kit image
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.build-kit-artifact-name }}
       - name: Load build-kit image
@@ -166,7 +166,7 @@ jobs:
           build-kit run-script run_unit_tests
       - name: Archive test results
         if: ${{ always() && (steps.run_unit_tests.outcome == 'success' || steps.run_unit_tests.outcome == 'failure') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           if-no-files-found: error
           name: ${{ env.CTEST_REPORT_ARTIFACT_NAME }}
@@ -182,14 +182,14 @@ jobs:
       #     build-kit run-script run_coverage
       # - name: Archive coverage report
       #   if: ${{ always() && (steps.run_coverage.outcome == 'success' || steps.run_coverage.outcome == 'failure') }}
-      #   uses: actions/upload-artifact@v4
+      #   uses: actions/upload-artifact@v7
       #   with:
       #     if-no-files-found: error
       #     name: ${{ env.COVERAGE_REPORT_ARTIFACT_NAME }}
       #     path: ${{ inputs.coverage_report_path }}
       # - name: Archive coverage xml
       #   if: ${{ always() && (steps.run_coverage.outcome == 'success' || steps.run_coverage.outcome == 'failure') }}
-      #   uses: actions/upload-artifact@v4
+      #   uses: actions/upload-artifact@v7
       #   with:
       #     if-no-files-found: error
       #     name: ${{ env.COVERAGE_XML_ARTIFACT_NAME }}
@@ -222,7 +222,7 @@ jobs:
           tar -czf dist.tar.gz dist
       - name: Upload dist artifact
         if: ${{ always() && (steps.create_dist.outcome == 'success' || steps.create_dist.outcome == 'failure') }}
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           if-no-files-found: error
           path: dist.tar.gz
@@ -238,7 +238,7 @@ jobs:
           build-kit run-script install_wheels
       - name: Upload wheels artifact
         if: ${{ always() && (steps.create_wheels.outcome == 'success' || steps.create_wheels.outcome == 'failure') }}
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           if-no-files-found: error
           path: ${{ inputs.wheels_path }}

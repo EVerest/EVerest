@@ -23,23 +23,23 @@ jobs:
     steps:
       - name: Check actor permissions
         id: check-permissions
-        uses: prince-chrismc/check-actor-permissions-action@v3.0.2
+        uses: prince-chrismc/check-actor-permissions-action@v4.0.0
         with:
           permission: write
 
       - name: Generate App Token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.BACKPORT_APP_ID }}
           private-key: ${{ secrets.BACKPORT_APP_PRIVATE_KEY }}
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Create backport PR
         id: backport
-        uses: korthout/backport-action@v4.5.1
+        uses: korthout/backport-action@v4.6.0
         with:
           github_token: ${{ steps.app-token.outputs.token }}
           merge_commits: "skip"

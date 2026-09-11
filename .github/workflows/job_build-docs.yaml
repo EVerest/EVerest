@@ -99,7 +99,7 @@ jobs:
           git config --global user.name "Pionix Github Service Account"
           git config --global user.email "compiler@pionix.de"
       - name: Download build-kit image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.build_kit_artifact_name }}
       - name: Load build-kit image
@@ -111,7 +111,7 @@ jobs:
           BRANCH_NAME_FOR_CACHE="${GITHUB_REF_NAME//-/_}"
           echo "branch_name_for_cache=${BRANCH_NAME_FOR_CACHE}" >> "$GITHUB_ENV"
       - name: Setup cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: cache
           key: compile-${{ env.branch_name_for_cache }}-${{ github.sha }}
@@ -119,7 +119,7 @@ jobs:
             compile-${{ env.branch_name_for_cache }}-
             compile-
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: source
       - name: Setup run scripts
@@ -158,7 +158,7 @@ jobs:
           build-kit run-script build_docs
           docker commit build-docs-container build-docs-image
       - name: Upload Documentation Artifact
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           if-no-files-found: error
           path: ${{ github.workspace }}/build/docs/deployed_docs_repo/docs/
