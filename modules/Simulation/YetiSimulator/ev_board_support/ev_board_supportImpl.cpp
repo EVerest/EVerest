@@ -31,34 +31,41 @@ void ev_board_supportImpl::handle_set_cp_state(types::ev_board_support::EvCpStat
     using types::ev_board_support::EvCpState;
     auto& simdata_setting = mod->module_state->simdata_setting;
 
-    if (mod->module_state->pwm_error_f) {
-        EVLOG_warning << "Cannot change CP state, because PWM F is active";
-        return;
-    }
+    // Keep the EV's physical state even while the EVSE forces CP to F. In particular,
+    // unplugging during error recovery must become visible when F is released.
+    // read_from_car() applies the forced voltage independently of this setting.
 
+    types::board_support_common::Event event;
     switch (cp_state) {
     case EvCpState::A:
         simdata_setting.cp_voltage = CP_VOLTAGE_A;
-        publish_bsp_event({types::board_support_common::Event::A});
+        event = types::board_support_common::Event::A;
         break;
     case EvCpState::B:
         simdata_setting.cp_voltage = CP_VOLTAGE_B;
-        publish_bsp_event({types::board_support_common::Event::B});
+        event = types::board_support_common::Event::B;
         break;
     case EvCpState::C:
         simdata_setting.cp_voltage = CP_VOLTAGE_C;
-        publish_bsp_event({types::board_support_common::Event::C});
+        event = types::board_support_common::Event::C;
         break;
     case EvCpState::D:
         simdata_setting.cp_voltage = CP_VOLTAGE_D;
-        publish_bsp_event({types::board_support_common::Event::D});
+        event = types::board_support_common::Event::D;
         break;
     case EvCpState::E:
+        if (mod->module_state->pwm_error_f) {
+            return;
+        }
         simdata_setting.error_e = true;
-        publish_bsp_event({types::board_support_common::Event::E});
+        event = types::board_support_common::Event::E;
         break;
     default:
-        break;
+        return;
+    }
+
+    if (not mod->module_state->pwm_error_f) {
+        publish_bsp_event({event});
     }
 }
 
