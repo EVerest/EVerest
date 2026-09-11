@@ -23,6 +23,9 @@ types::evse_manager::Evse evse_managerImpl::handle_get_evse() {
 
     types::evse_manager::Connector connector;
     connector.id = 1;
+    // This stub simulates a basic AC EVSE and answers NoHlc to every HLC gated command.
+    connector.charge_mode = types::evse_manager::ChargeMode::AC;
+    connector.hlc_capable = false;
 
     if (const auto& mapping = get_mapping(); mapping.has_value()) {
         evse.id = mapping->evse;

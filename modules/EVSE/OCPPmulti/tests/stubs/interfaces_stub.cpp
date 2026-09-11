@@ -3,6 +3,7 @@
 
 #include "interfaces_stub.hpp"
 #include <everest/logging.hpp>
+#include <generated/types/evse_manager.hpp>
 #include <utils/error/error_database.hpp>
 #include <utils/error/error_manager_impl.hpp>
 #include <utils/error/error_manager_req.hpp>
@@ -411,6 +412,8 @@ std::optional<json> ModuleAdapter::evse_manager_call_get_evse(const Requirement&
     //   additionalProperties: false
     //   required:
     //     - id
+    //     - charge_mode
+    //     - hlc_capable
     //   properties:
     //     id:
     //       description: Id of the connector. Connectors should be numbered starting with 1 counting upwards
@@ -420,12 +423,29 @@ std::optional<json> ModuleAdapter::evse_manager_call_get_evse(const Requirement&
     //       description: Type of the connector
     //       type: string
     //       $ref: /evse_manager#/ConnectorTypeEnum
+    //     charge_mode:
+    //       description: AC or DC power topology of this connector's power path
+    //       type: string
+    //       $ref: /evse_manager#/ChargeMode
+    //     hlc_capable:
+    //       description: Whether an ISO 15118 session can ever occur on this connector
+    //       type: boolean
 
     EVLOG_debug << "Call call_get_evse: " << args.dump();
     publish_fn("evse_manager", "call_get_evse", req.index, args);
-    json default_result = R"({"id": 0,"connectors":[{"id":1}]})"_json;
-    default_result["id"] = req.index + 1;
-    auto result = get_cmd_response(default_result);
+    // Built from the generated type rather than a JSON literal: to_json always emits every required
+    // member, so adding a required field to Connector or Evse cannot leave this payload missing a
+    // key and undeserializable, which takes down the whole binary from fixture setup.
+    types::evse_manager::Connector connector;
+    connector.id = 1;
+    connector.charge_mode = types::evse_manager::ChargeMode::AC;
+    connector.hlc_capable = false;
+
+    types::evse_manager::Evse evse;
+    evse.id = req.index + 1;
+    evse.connectors = {connector};
+
+    auto result = get_cmd_response(json(evse));
     if (result) {
         EVLOG_debug << "result:             " << result.value().dump();
     }
