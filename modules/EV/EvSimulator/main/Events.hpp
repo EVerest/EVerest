@@ -162,13 +162,13 @@ struct ClearErrorCmd {
 using EventPayload =
     std::variant<EnableCmd, DisableCmd, PlugCmd, UnplugCmd, API_types::ev_simulator::SetSocParams,
                  API_types::ev_simulator::SessionConfigParams, StopSessionCmd, PauseSessionCmd, ResumeSessionCmd,
-                 API_types::ev_simulator::SetChargingCurrentParams,
-                 API_types::ev_simulator::SetPresentValuesParams, API_types::ev_simulator::InjectFaultParams,
-                 ClearFaultCmd, API_types::ev_simulator::BcbToggleParams, API_types::ev_simulator::RunScenarioParams,
-                 RaiseErrorCmd, ClearErrorCmd, QueryStateCmd, BspEventPayload, BspMeasurementPayload, EvInfoPayload,
-                 SlacStatePayload, IsoPowerReadyEvt, IsoAcMaxCurrentEvt, IsoAcTargetPowerEvt, IsoStopFromChargerEvt,
-                 IsoV2GFinishedEvt, IsoDcPowerOnEvt, IsoPauseFromChargerEvt, DcEvsePresentCurrentPayload,
-                 DcEvsePresentVoltagePayload, V2gMessagePayload, BeginSessionEvt, StateDeadlineEvt, ShutdownEvt>;
+                 API_types::ev_simulator::SetChargingCurrentParams, API_types::ev_simulator::SetPresentValuesParams,
+                 API_types::ev_simulator::InjectFaultParams, ClearFaultCmd, API_types::ev_simulator::BcbToggleParams,
+                 API_types::ev_simulator::RunScenarioParams, RaiseErrorCmd, ClearErrorCmd, QueryStateCmd,
+                 BspEventPayload, BspMeasurementPayload, EvInfoPayload, SlacStatePayload, IsoPowerReadyEvt,
+                 IsoAcMaxCurrentEvt, IsoAcTargetPowerEvt, IsoStopFromChargerEvt, IsoV2GFinishedEvt, IsoDcPowerOnEvt,
+                 IsoPauseFromChargerEvt, DcEvsePresentCurrentPayload, DcEvsePresentVoltagePayload, V2gMessagePayload,
+                 BeginSessionEvt, StateDeadlineEvt, ShutdownEvt>;
 
 // One variant alternative per EventKind value. If a future alternative is
 // added without a matching EventKind (or vice versa) this fails to compile.
