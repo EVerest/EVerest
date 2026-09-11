@@ -182,13 +182,13 @@ Startup Failure
   configuration; no modules are started) so the Configuration API stays
   available for loading a corrected configuration and requesting a restart.
 - Failures that happen before the lifecycle exists — a configuration database
-  that cannot be initialized, or a failed MQTT broker connection — abort the
-  startup directly with a failure exit code, **without** a transition to
-  ``Exiting`` and therefore without a ``MANAGER_EXITING`` status event. With
-  ``--idle-on-failure`` or ``--into-idle`` a database that holds no usable
-  configuration is not one of these cases: instead of aborting, the boot
-  continues with no active configuration slot — the database is left untouched —
-  so it reaches the lifecycle with no modules and the rules above apply.
+  whose boot slot cannot be written, or a failed MQTT broker connection — abort
+  the startup directly with a failure exit code, **without** a transition to
+  ``Exiting`` and therefore without a ``MANAGER_EXITING`` status event, and
+  regardless of ``--idle-on-failure``/``--into-idle``. A YAML that fails to load
+  or validate is **not** one of these cases: the boot slot is seeded as an empty
+  placeholder (its description records the error), so the boot reaches the
+  lifecycle with no modules and the rules above apply.
 
 .. _exp-manager-lifecycle-normal-shutdown:
 

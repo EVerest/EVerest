@@ -82,14 +82,17 @@ struct ManagerSettings : public ConfigParseSettings {
     ManagerSettings(const std::string& prefix, const std::string& config, const std::string& db_path);
 
     /// \brief Constructor that initializes the ManagerSettings without any config file: config_file stays empty,
-    /// config is an empty object and all settings come from compiled-in defaults (no default.yaml fallback).
-    /// An empty \p db_path falls back to an in-memory database.
+    /// config is an empty object and all settings come from compiled-in defaults. Unlike the other constructors
+    /// this one never looks for default.yaml, even if it exists. An empty \p db_path falls back to an in-memory
+    /// database.
     ManagerSettings(WithoutConfig, const std::string& prefix, const std::string& db_path);
 
     /// \brief Initializes the ManagerSettings with the given settings and prefix.
     void init_settings(const everest::config::Settings& settings);
 
-    /// \brief Initializes the ManagerSettings based on the user provided \p config file or fallback options
+    /// \brief Initializes the ManagerSettings based on the user provided \p config file or fallback options.
+    /// A user provided \p config (full path or short name) must exist. With an empty \p config the default
+    /// config file is looked up; if it is absent this is not an error and init_no_config() is used instead.
     void init_config_file(const std::string& config);
 
     /// \brief Initializes the ManagerSettings for the no-config case: config_file = "", config = empty object.
@@ -104,19 +107,20 @@ struct ManagerSettings : public ConfigParseSettings {
 enum class BootMode {
     /// No --db given (--config or the default config lookup): the YAML config is authoritative and
     /// seeds a process-private in-memory database on every start; runtime configuration writes are
-    /// persisted to the user-config YAML.
+    /// persisted to the user-config YAML. If no --config is given and the default config file does
+    /// not exist, the manager runs with an empty config on built-in defaults and nothing is persisted.
     YamlWithInMemoryDb,
     /// --db only: the database file is the only configuration source.
     DatabaseOnly,
-    /// --config and --db: the database wins when it holds a valid boot slot, otherwise it is
-    /// seeded from the YAML config (use --reset-from-yaml to force re-seeding).
+    /// --config and --db: the database wins when its boot slot holds at least one module, otherwise
+    /// the boot slot is (re-)seeded from the YAML config (use --reset-from-yaml to force re-seeding).
     DatabaseWithYamlSeed,
 };
 
 /// \brief Resolved configuration boot source, see resolve_boot_source().
 struct BootSource {
     BootMode mode = BootMode::YamlWithInMemoryDb;
-    /// Config file option as given; empty in DatabaseOnly mode, or to request the default config lookup.
+    /// Config file option as given; empty in DatabaseOnly mode, or to request the (optional) default config lookup.
     std::string config_path;
     /// Database path as given; empty means "use an in-memory database" (only in YamlWithInMemoryDb mode).
     std::string db_path;
@@ -132,14 +136,24 @@ BootSource resolve_boot_source(const std::string& config_path, const std::string
 
 /// \brief Result of a database bootstrap operation
 struct DatabaseBootstrap {
+    /// \brief True once the boot slot exists and is readable, possibly with zero modules. False only when the
+    /// boot slot could not be written (or --reset-from-yaml met an invalid YAML and kept the existing slot);
+    /// the manager must abort then.
     bool module_configs_initialized{false};
+    /// \brief Set when the YAML config failed to load or validate. Human-readable ("Seeding from <yaml>
+    /// failed: <first line of the error>"); it is also stored as the description of the empty placeholder
+    /// boot slot written in that case.
+    std::optional<std::string> seed_failure;
     /// \brief Shared connection to the config database (already migrated).
     std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection;
 };
 
 /// \brief Initialize a DatabaseBootstrap from an already-initialized ManagerSettings.
-/// Loads module configs from the database if it is already valid, or seeds the database from YAML if it is
-/// not yet valid or \p reset_from_yaml is true.
+///
+/// Invariant: after a successful bootstrap the boot slot exists. The database wins when the boot slot holds at
+/// least one module (and \p reset_from_yaml is false). Otherwise the boot slot is (re-)seeded from the YAML
+/// config; an invalid YAML yields an empty placeholder slot and sets DatabaseBootstrap::seed_failure. Without a
+/// YAML config a missing boot slot is created empty and an existing one is kept as it is.
 DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_from_yaml = false);
 
 } // namespace Everest

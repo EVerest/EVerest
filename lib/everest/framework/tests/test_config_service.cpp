@@ -650,6 +650,8 @@ active_modules:
     auto load_result = core.load_from_yaml(config_yaml, "integration", 0);
     INFO(load_result.error_message);
     REQUIRE(load_result.success);
+    // Slot 0 did not exist but is the default active slot: the load must already be effective.
+    CHECK(core.get_active_module_configurations()->count("target_module") == 1);
     core.mark_active_slot(0);
     core.reinitialize_from_db(true);
 

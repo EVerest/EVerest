@@ -430,8 +430,9 @@ def test_manager_exits_on_invalid_module_config(everest_core: EverestCore):
 @pytest.mark.everest_manager_args("--idle-on-failure")
 def test_manager_enters_idle_on_invalid_module_config_with_idle_on_failure(everest_core: EverestCore):
     """--idle-on-failure keeps the manager alive in Idle for a configuration that fails validation.
-    The boot then continues with no active configuration slot, so it reaches the lifecycle with no
-    modules and the Configuration API stays available to push a corrected configuration."""
+    The boot then continues on an empty placeholder boot slot (its description records the validation
+    error), so it reaches the lifecycle with no modules and the Configuration API stays available to
+    push a corrected configuration."""
     everest_core.start(expected_status=ManagerStatusFifo.MANAGER_IDLE)
 
     everest_core.assert_no_manager_status(ManagerStatusFifo.ALL_MODULES_STARTED, timeout_s=1.0)

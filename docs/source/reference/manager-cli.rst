@@ -56,17 +56,20 @@ Configuration and Storage
 ``--db <path>``
   Full path to the configuration database file. Optional: without ``--db`` an
   in-memory database is used and the YAML config is authoritative on every
-  start. With ``--db`` and ``--config``, the database wins when it holds a valid
-  configuration; otherwise it is seeded from the YAML config.
+  start. With ``--db`` and ``--config``, the database wins when its boot slot
+  holds at least one module; a missing or module-less boot slot is seeded from
+  the YAML config. An invalid YAML seeds an empty placeholder slot whose
+  description records the error.
 
 ``--reset-from-yaml``
-  **Experimental.** Discard the existing database slot and re-seed from the YAML
-  config file. Intended for development use when you want to reset to a known
-  YAML state. Requires ``--config``.
+  **Experimental.** Replace the contents of the boot slot with the YAML config
+  file, even if it holds modules; aborts without touching the database if the
+  YAML is invalid. Intended for development use when you want to reset to a
+  known YAML state. Requires ``--config``.
 
 ``--db-init``
-  **Deprecated, no effect.** Seeding the database from YAML when it holds no
-  valid configuration is now the default. Ignored unless both ``--config`` and
+  **Deprecated, no effect.** Seeding the database from YAML when its boot slot
+  holds no modules is now the default. Ignored unless both ``--config`` and
   ``--db`` are given. Use ``--reset-from-yaml`` to force re-seeding.
 
 ****************
