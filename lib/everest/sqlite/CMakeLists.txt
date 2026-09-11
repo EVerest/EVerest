@@ -55,7 +55,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 if (EVEREST_SQLITE_INSTALL)
     set_target_properties(everest_sqlite PROPERTIES EXPORT_NAME sqlite)
 
-    if (EVEREST_CORE_BUILD)
+    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
         set(SQLITE_EXPORT_TARGETS everest-core-targets)
     else()
         set(SQLITE_EXPORT_TARGETS everest_sqlite-targets)

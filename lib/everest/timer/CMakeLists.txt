@@ -57,7 +57,7 @@ endif()
 
 # packaging
 if (TIMER_INSTALL)
-    if (EVEREST_CORE_BUILD)
+    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
         set(TIMER_EXPORT_TARGETS everest-core-targets)
     else()
         set(TIMER_EXPORT_TARGETS timer-targets)

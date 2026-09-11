@@ -74,7 +74,7 @@ install(
 if (LOG_INSTALL)
     set_target_properties(everest_log PROPERTIES EXPORT_NAME log)
 
-    if (EVEREST_CORE_BUILD)
+    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
         set(LOG_EXPORT_TARGETS everest-core-targets)
     else()
         set(LOG_EXPORT_TARGETS log-targets)
