@@ -150,8 +150,7 @@ TEST_CASE("update_present_values defaults to the delivered values", "[evsim][iso
     }
 }
 
-TEST_CASE("a present-value override replaces one field and leaves the other echoing",
-          "[evsim][iso][present-values]") {
+TEST_CASE("a present-value override replaces one field and leaves the other echoing", "[evsim][iso][present-values]") {
     SECTION("overriding the voltage keeps the delivered power") {
         auto fx = dc_fixture();
         auto ctx = fx.make_ctx();
@@ -229,8 +228,7 @@ TEST_CASE("the scenario chooses abort over a clean stop", "[evsim][iso][abort]")
     }
 }
 
-TEST_CASE("a fresh session inherits neither the teardown selector nor an override",
-          "[evsim][iso][session-boundary]") {
+TEST_CASE("a fresh session inherits neither the teardown selector nor an override", "[evsim][iso][session-boundary]") {
     TestFixture fx;
     auto ctx = fx.make_ctx();
     ctx->vars.abort_on_stop = true;

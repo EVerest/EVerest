@@ -158,7 +158,6 @@ SCENARIO("ISO15118-2 EV PaymentServiceSelection rejects malformed responses") {
         return fsm::v2::FSM<ev::d2::StateBase>{ctx.create_state<ev::d2::state::PaymentServiceSelection>()};
     };
     const auto make_ok = [](const message_2::Header& header) { return make_response(header, dt::ResponseCode::OK); };
-    const message_2::AuthorizationResponse wrong{d2_header(), dt::ResponseCode::OK,
-                                                 dt::EVSEProcessing::Finished};
+    const message_2::AuthorizationResponse wrong{d2_header(), dt::ResponseCode::OK, dt::EVSEProcessing::Finished};
     check_rejection_paths(callbacks, ev::d2::StateID::PaymentServiceSelection, make_fsm, make_ok, wrong);
 }
