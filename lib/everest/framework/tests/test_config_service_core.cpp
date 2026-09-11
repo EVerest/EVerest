@@ -49,11 +49,11 @@ TEST_CASE("ConfigServiceCore Unit Tests", "[config_service_core]") {
     ConfigServiceCore config_service(parse_settings, db);
 
     SECTION("YAML Loading: into the non-existent active slot reloads the active configuration") {
-        // A freshly migrated database holds no slot, yet the default active slot id is 0. This is the
-        // state a manager reaches when it boots on an invalid configuration with --into-idle or
-        // --idle-on-failure: init_database_bootstrap seeds nothing and the database is left untouched.
-        // Loading a corrected configuration into that slot must make it the active in-memory
-        // configuration right away, exactly like loading into an already existing active slot does.
+        // A freshly migrated database holds no slot, yet the default active slot id is 0. The manager never
+        // runs in this state (init_database_bootstrap always writes the boot slot), but a service
+        // constructed directly on an empty database does. Loading a configuration into that slot must make
+        // it the active in-memory configuration right away, exactly like loading into an already existing
+        // active slot does.
         REQUIRE(config_service.list_all_slots().empty());
         REQUIRE(config_service.get_active_slot_id() == 0);
 

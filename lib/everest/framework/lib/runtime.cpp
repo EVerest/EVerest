@@ -64,9 +64,9 @@ void populate_module_info_path_from_runtime_settings(ModuleInfo& mi, const Runti
 BootSource resolve_boot_source(const std::string& config_path, const std::string& db_path, bool reset_from_yaml,
                                bool db_init) {
     if (db_init) {
-        EVLOG_warning << "--db-init is deprecated and has no effect: the database wins when it holds a valid boot "
-                         "slot, otherwise it is seeded from the YAML config. Use --reset-from-yaml to force "
-                         "re-seeding.";
+        EVLOG_warning << "--db-init is deprecated and has no effect: the database wins when its boot slot holds at "
+                         "least one module, otherwise the boot slot is seeded from the YAML config. Use "
+                         "--reset-from-yaml to force re-seeding.";
         if (config_path.empty() || db_path.empty()) {
             EVLOG_warning << "--db-init is ignored because it requires both --config and --db.";
         }
@@ -91,6 +91,13 @@ BootSource resolve_boot_source(const std::string& config_path, const std::string
     }
     return src;
 }
+
+namespace {
+// First line of a (possibly multi-line) exception message, for slot descriptions and log lines.
+std::string first_line(const std::string& text) {
+    return text.substr(0, text.find('\n'));
+}
+} // namespace
 
 DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_from_yaml) {
     DatabaseBootstrap bs;
@@ -127,64 +134,104 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
     }
 
     const bool slot_exists = slot_mgr.exists(boot_slot_id);
-    if (slot_exists && !reset_from_yaml) {
-        EVLOG_info << "Booting and parsing configuration from database: " << ms.db_dir;
+    bool slot_has_modules = false;
+    if (slot_exists) {
         const auto resp = db_storage->get_module_configs();
         if (resp.status == everest::config::GenericResponseStatus::Failed) {
             EVLOG_AND_THROW(EverestConfigError("Failed to pre-load module configs from database"));
         }
-        bs.module_configs_initialized = true;
-    } else {
-        if (reset_from_yaml && slot_exists) {
-            EVLOG_info << "--reset-from-yaml requested, discarding existing database slot and re-seeding from YAML: "
-                       << ms.config_file;
-        } else if (no_config) {
-            EVLOG_info << "No config file and no existing database slot; seeding an empty config slot " << boot_slot_id
-                       << " (manager will exit unless --into-idle or --idle-on-failure is given).";
-        } else {
-            EVLOG_info << "Database not initialized or not valid, seeding from YAML config file: " << ms.config_file;
-        }
-
-        std::shared_ptr<const ManagerConfig> mgr_config;
-        bool valid_config = false;
-        try {
-            mgr_config = std::make_shared<const ManagerConfig>(ms);
-            valid_config = true;
-        } catch (EverestInternalError& e) {
-            EVLOG_error << fmt::format("Failed to load and validate config!\n{}",
-                                       boost::diagnostic_information(e, true));
-        } catch (boost::exception& e) {
-            EVLOG_error << "Failed to load and validate config!";
-            EVLOG_critical << fmt::format("Caught top level boost::exception:\n{}",
-                                          boost::diagnostic_information(e, true));
-        } catch (std::exception& e) {
-            EVLOG_error << "Failed to load and validate config!";
-            EVLOG_critical << fmt::format("Caught top level std::exception:\n{}",
-                                          boost::diagnostic_information(e, true));
-        }
-
-        if (valid_config) {
-            // Delete the slot (no-op if it doesn't exist)
-            slot_mgr.delete_slot(boot_slot_id);
-            // Seed the database: parse() enriched module_configs with manifest metadata needed for storage writes.
-            const auto& module_config = mgr_config->get_module_configurations();
-            const std::optional<std::filesystem::path> config_file_path =
-                no_config ? std::nullopt : std::optional<std::filesystem::path>{ms.config_file};
-            if (slot_mgr.write_config_slot(boot_slot_id, nlohmann::json(module_config).dump(), config_file_path,
-                                           std::nullopt) == everest::config::GenericResponseStatus::OK) {
-                if (db_storage->write_module_configs(module_config) != everest::config::GenericResponseStatus::Failed) {
-                    EVLOG_info << "Module configs written to database successfully";
-                    bs.module_configs_initialized = true;
-                } else {
-                    EVLOG_warning << "Failed to write module configs to database";
-                    slot_mgr.delete_slot(boot_slot_id);
-                }
-            } else {
-                EVLOG_error << "Could not write config slot " << boot_slot_id;
-            }
-        }
+        slot_has_modules = not resp.module_configs.empty();
     }
 
+    // The database wins only when the boot slot holds at least one module. A boot slot without modules is
+    // never startable, so a given YAML is (re-)seeded into it on every boot; without a YAML there is nothing
+    // to seed from and the slot is kept as it is.
+    if (slot_exists && !reset_from_yaml && (slot_has_modules || no_config)) {
+        EVLOG_info << "Booting and parsing configuration from database: " << ms.db_dir
+                   << (slot_has_modules ? std::string{}
+                                        : fmt::format(" (boot slot {} holds no modules)", boot_slot_id));
+        bs.module_configs_initialized = true;
+        return bs;
+    }
+
+    if (reset_from_yaml && slot_exists) {
+        EVLOG_info << "--reset-from-yaml requested, replacing the contents of boot slot " << boot_slot_id
+                   << " from YAML config file: " << ms.config_file;
+    } else if (slot_exists) {
+        EVLOG_info << "Boot slot " << boot_slot_id
+                   << " holds no modules; seeding it from YAML config file: " << ms.config_file;
+    } else if (no_config) {
+        EVLOG_info << "No config file and no existing database slot; seeding an empty config slot " << boot_slot_id
+                   << " (manager will exit unless --into-idle or --idle-on-failure is given).";
+    } else {
+        EVLOG_info << "Database not initialized, seeding from YAML config file: " << ms.config_file;
+    }
+
+    // Stays empty when the YAML fails to load or validate: the boot slot is then written as an empty
+    // placeholder whose description records the failure. Every boot thus ends with an existing boot slot, and
+    // the manager decides "nothing startable" uniformly on the empty module list.
+    everest::config::ModuleConfigurations module_configs;
+    std::optional<std::string> description;
+    const auto record_seed_failure = [&](const std::string& what) {
+        bs.seed_failure = fmt::format("Seeding from {} failed: {}", ms.config_file.string(), first_line(what));
+    };
+    try {
+        const ManagerConfig mgr_config(ms);
+        // parse() enriched the module configs with the manifest metadata needed for storage writes.
+        module_configs = mgr_config.get_module_configurations();
+    } catch (EverestInternalError& e) {
+        EVLOG_error << fmt::format("Failed to load and validate config!\n{}", boost::diagnostic_information(e, true));
+        record_seed_failure(e.what());
+    } catch (boost::exception& e) {
+        EVLOG_error << "Failed to load and validate config!";
+        EVLOG_critical << fmt::format("Caught top level boost::exception:\n{}", boost::diagnostic_information(e, true));
+        // EVLOG_AND_THROW wraps the error types into a boost::exception that is also a std::exception; its
+        // what() is the readable validation message, the diagnostic information only the scope tag.
+        const auto* as_std_exception = dynamic_cast<const std::exception*>(&e);
+        record_seed_failure(as_std_exception != nullptr ? std::string{as_std_exception->what()}
+                                                        : boost::diagnostic_information(e, false));
+    } catch (std::exception& e) {
+        EVLOG_error << "Failed to load and validate config!";
+        EVLOG_critical << fmt::format("Caught top level std::exception:\n{}", boost::diagnostic_information(e, true));
+        record_seed_failure(e.what());
+    }
+    if (bs.seed_failure.has_value()) {
+        if (reset_from_yaml && slot_has_modules) {
+            // An explicit reset must not trade a working configuration for an empty placeholder.
+            EVLOG_error << "--reset-from-yaml requested but the YAML config is invalid; keeping boot slot "
+                        << boot_slot_id << " untouched.";
+            return bs;
+        }
+        description = bs.seed_failure;
+        EVLOG_warning << "Boot slot " << boot_slot_id
+                      << " is written as an empty placeholder (no modules). Fix the YAML config and restart, or "
+                         "load a configuration via the Configuration API.";
+    }
+
+    const std::optional<std::filesystem::path> config_file_path =
+        no_config ? std::nullopt : std::optional<std::filesystem::path>{ms.config_file};
+    // Upsert: an existing slot keeps its CONFIG row; the boot slot selection and all other slots are untouched.
+    if (slot_mgr.write_config_slot(boot_slot_id, nlohmann::json(module_configs).dump(), config_file_path,
+                                   description) != everest::config::GenericResponseStatus::OK) {
+        EVLOG_error << "Could not write config slot " << boot_slot_id;
+        return bs;
+    }
+    const auto write_status = slot_exists ? db_storage->replace_module_configs(module_configs)
+                                          : db_storage->write_module_configs(module_configs);
+    if (write_status == everest::config::GenericResponseStatus::Failed) {
+        EVLOG_error << "Failed to write module configs to database";
+        if (!slot_exists) {
+            // Roll back the freshly created slot only.
+            slot_mgr.delete_slot(boot_slot_id);
+        }
+        return bs;
+    }
+    if (bs.seed_failure.has_value()) {
+        EVLOG_info << "Empty placeholder config slot " << boot_slot_id << " written to database";
+    } else {
+        EVLOG_info << "Module configs written to database successfully";
+    }
+    bs.module_configs_initialized = true;
     return bs;
 }
 
