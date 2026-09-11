@@ -33,6 +33,17 @@ const ocpp::v2::DeviceModelVariable* find_variable(const std::vector<ocpp::v2::D
     return nullptr;
 }
 
+// The Actual value of a single-attribute variable, empty when it carries none.
+std::string variable_value(const ocpp::v2::DeviceModelVariable& variable) {
+    // Fail on the shape so a wrong attribute count does not read as a wrong value.
+    if (variable.attributes.size() != 1) {
+        ADD_FAILURE() << variable.name << " has " << variable.attributes.size() << " attributes, expected 1";
+        return {};
+    }
+    const auto& value = variable.attributes.at(0).variable_attribute.value;
+    return value.has_value() ? value.value().get() : std::string{};
+}
+
 namespace dmn = ocpp_module_common::device_model;
 namespace em = types::evse_manager;
 
@@ -95,6 +106,25 @@ TEST(DerCtrlrComponentTest, DecidedFromWiringAndChargeMode) {
     EXPECT_EQ(dmn::der_ctrlr_component(true, connectors({})), DerCtrlrComponent::None);
 }
 
+// ISO15118Ctrlr.Enabled and the AC DER gate both ask whether the EVSE speaks ISO 15118 at all, so both
+// read this. "Any" rather than "all": on a mixed EVSE the session runs on whichever plug can carry it.
+TEST(EvseHlcCapableTest, AnyConnectorSuffices) {
+    constexpr auto AC = em::ChargeMode::AC;
+    constexpr auto DC = em::ChargeMode::DC;
+
+    EXPECT_FALSE(dmn::evse_hlc_capable(connectors({AC}, /*hlc_capable=*/false)));
+    EXPECT_FALSE(dmn::evse_hlc_capable(connectors({AC, AC}, /*hlc_capable=*/false)));
+    EXPECT_TRUE(dmn::evse_hlc_capable(connectors({AC}, /*hlc_capable=*/true)));
+    EXPECT_TRUE(dmn::evse_hlc_capable(connectors({DC}, /*hlc_capable=*/true)));
+
+    EXPECT_TRUE(dmn::evse_hlc_capable(connectors_hlc({{AC, false}, {AC, true}})));
+    EXPECT_TRUE(dmn::evse_hlc_capable(connectors_hlc({{AC, true}, {AC, false}})));
+
+    // An EVSE with no connectors cannot run a session; the schema forbids it, but the answer must not
+    // be true by vacuous quantification.
+    EXPECT_FALSE(dmn::evse_hlc_capable(connectors({})));
+}
+
 // AC DER is reachable only over ISO 15118-20, so the AC arm additionally requires HLC. The DC arm does
 // not: EvseManager refuses to start a DC EVSE without HLC, so a DC connector reporting no HLC could not
 // have booted, and gating it there would be unreachable code.
@@ -115,11 +145,12 @@ TEST(DerCtrlrComponentTest, AcRequiresHlcAndDcDoesNot) {
     EXPECT_EQ(dmn::der_ctrlr_component(true, connectors_hlc({{AC, true}, {AC, false}})), DerCtrlrComponent::Ac);
 }
 
-// Builds an Evse carrying the given connector charge modes.
-em::Evse evse_with(const std::int32_t evse_id, const std::vector<em::ChargeMode>& modes) {
+// Builds an Evse carrying the given connector charge modes, all connectors sharing one hlc_capable value.
+em::Evse evse_with(const std::int32_t evse_id, const std::vector<em::ChargeMode>& modes,
+                   const bool hlc_capable = true) {
     em::Evse evse;
     evse.id = evse_id;
-    evse.connectors = connectors(modes);
+    evse.connectors = connectors(modes, hlc_capable);
     return evse;
 }
 
@@ -180,18 +211,23 @@ TEST(DecideDerCtrlrComponentsTest, NoEvsesDecidesNothing) {
 // The storage constructor cannot be built in a unit test: ConfigServiceClient is concrete and needs a live
 // MQTTAbstraction. So its provisioning pass is covered through build_der_component_configs here, and its
 // clearing pass through disable_other_der_ctrlrs below.
-TEST(BuildDerComponentConfigsTest, WithDerComponentsFalseBuildsNothing) {
+TEST(BuildComponentConfigsTest, WithDerComponentsFalseBuildsNothing) {
     constexpr auto AC = em::ChargeMode::AC;
 
     const std::vector<em::Evse> evses{evse_with(1, {AC}), evse_with(2, {AC})};
 
-    EXPECT_TRUE(dmn::build_der_component_configs(evses, {1, 2}, /*with_der_components=*/false).empty());
+    EXPECT_TRUE(dmn::build_der_component_configs(evses, {1, 2}, /*with_der_components=*/false,
+                                                 /*iso_extension_evse_ids=*/{},
+                                                 /*evse_service_renegotiation_supported=*/{})
+                    .empty());
 }
 
-TEST(BuildDerComponentConfigsTest, AcWiredEvseGetsAcDerCtrlr) {
+TEST(BuildComponentConfigsTest, AcWiredEvseGetsAcDerCtrlr) {
     constexpr auto AC = em::ChargeMode::AC;
 
-    const auto configs = dmn::build_der_component_configs({evse_with(1, {AC})}, {1}, /*with_der_components=*/true);
+    const auto configs =
+        dmn::build_der_component_configs({evse_with(1, {AC})}, {1}, /*with_der_components=*/true,
+                                         /*iso_extension_evse_ids=*/{}, /*evse_service_renegotiation_supported=*/{});
 
     ASSERT_EQ(configs.size(), 1u);
     const auto& key = configs.cbegin()->first;
@@ -199,10 +235,12 @@ TEST(BuildDerComponentConfigsTest, AcWiredEvseGetsAcDerCtrlr) {
     EXPECT_EQ(key.evse_id, 1);
 }
 
-TEST(BuildDerComponentConfigsTest, DcWiredEvseGetsDcDerCtrlr) {
+TEST(BuildComponentConfigsTest, DcWiredEvseGetsDcDerCtrlr) {
     constexpr auto DC = em::ChargeMode::DC;
 
-    const auto configs = dmn::build_der_component_configs({evse_with(1, {DC})}, {1}, /*with_der_components=*/true);
+    const auto configs =
+        dmn::build_der_component_configs({evse_with(1, {DC})}, {1}, /*with_der_components=*/true,
+                                         /*iso_extension_evse_ids=*/{}, /*evse_service_renegotiation_supported=*/{});
 
     ASSERT_EQ(configs.size(), 1u);
     const auto& key = configs.cbegin()->first;
@@ -210,23 +248,29 @@ TEST(BuildDerComponentConfigsTest, DcWiredEvseGetsDcDerCtrlr) {
     EXPECT_EQ(key.evse_id, 1);
 }
 
-TEST(BuildDerComponentConfigsTest, UnwiredEvseGetsNoEntry) {
+TEST(BuildComponentConfigsTest, UnwiredEvseGetsNoEntry) {
     constexpr auto AC = em::ChargeMode::AC;
 
-    EXPECT_TRUE(dmn::build_der_component_configs({evse_with(1, {AC})}, {}, /*with_der_components=*/true).empty());
+    EXPECT_TRUE(dmn::build_der_component_configs({evse_with(1, {AC})}, {}, /*with_der_components=*/true,
+                                                 /*iso_extension_evse_ids=*/{},
+                                                 /*evse_service_renegotiation_supported=*/{})
+                    .empty());
 }
 
-TEST(BuildDerComponentConfigsTest, AcWiredEvseWithoutHlcGetsNoEntry) {
+TEST(BuildComponentConfigsTest, AcWiredEvseWithoutHlcGetsNoEntry) {
     constexpr auto AC = em::ChargeMode::AC;
 
     em::Evse evse;
     evse.id = 1;
     evse.connectors = connectors({AC}, /*hlc_capable=*/false);
 
-    EXPECT_TRUE(dmn::build_der_component_configs({evse}, {1}, /*with_der_components=*/true).empty());
+    EXPECT_TRUE(dmn::build_der_component_configs({evse}, {1}, /*with_der_components=*/true,
+                                                 /*iso_extension_evse_ids=*/{},
+                                                 /*evse_service_renegotiation_supported=*/{})
+                    .empty());
 }
 
-TEST(BuildDerComponentConfigsTest, EachEvseKeyedByItsOwnId) {
+TEST(BuildComponentConfigsTest, EachEvseKeyedByItsOwnId) {
     constexpr auto AC = em::ChargeMode::AC;
     constexpr auto DC = em::ChargeMode::DC;
 
@@ -236,7 +280,9 @@ TEST(BuildDerComponentConfigsTest, EachEvseKeyedByItsOwnId) {
         evse_with(3, {AC}), // not wired
     };
 
-    const auto configs = dmn::build_der_component_configs(evses, {1, 2}, /*with_der_components=*/true);
+    const auto configs =
+        dmn::build_der_component_configs(evses, {1, 2}, /*with_der_components=*/true, /*iso_extension_evse_ids=*/{},
+                                         /*evse_service_renegotiation_supported=*/{});
 
     ASSERT_EQ(configs.size(), 2u);
     std::map<int32_t, std::string> by_evse_id;
@@ -253,12 +299,14 @@ TEST(BuildDerComponentConfigsTest, EachEvseKeyedByItsOwnId) {
 
 // Two EVSEs resolving to the same component only stay distinct because evse_id is part of the key. Were it
 // dropped, the CSMS would see one ACDERCtrlr and EVSE 2 would answer every DER message UnknownComponent.
-TEST(BuildDerComponentConfigsTest, TwoAcEvsesEachGetTheirOwnAcDerCtrlr) {
+TEST(BuildComponentConfigsTest, TwoAcEvsesEachGetTheirOwnAcDerCtrlr) {
     constexpr auto AC = em::ChargeMode::AC;
 
     const std::vector<em::Evse> evses{evse_with(1, {AC}), evse_with(2, {AC})};
 
-    const auto configs = dmn::build_der_component_configs(evses, {1, 2}, /*with_der_components=*/true);
+    const auto configs =
+        dmn::build_der_component_configs(evses, {1, 2}, /*with_der_components=*/true, /*iso_extension_evse_ids=*/{},
+                                         /*evse_service_renegotiation_supported=*/{});
 
     ASSERT_EQ(configs.size(), 2u);
     std::set<int32_t> evse_ids;
@@ -268,6 +316,149 @@ TEST(BuildDerComponentConfigsTest, TwoAcEvsesEachGetTheirOwnAcDerCtrlr) {
         evse_ids.insert(key.evse_id.value());
     }
     EXPECT_EQ(evse_ids, (std::set<int32_t>{1, 2}));
+}
+
+// Finds the single ISO15118Ctrlr entry of a component config map, or nullptr.
+const std::vector<ocpp::v2::DeviceModelVariable>*
+find_iso15118_variables(const std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>& configs,
+                        const int32_t evse_id) {
+    for (const auto& [key, variables] : configs) {
+        if (key.name == "ISO15118Ctrlr" and key.evse_id.has_value() and key.evse_id.value() == evse_id) {
+            return &variables;
+        }
+    }
+    return nullptr;
+}
+
+// Enabled is provisioned ReadOnly, so a hardcoded "true" told the CSMS an ISO 15118 session was possible
+// on an EVSE whose HLC is switched off. It is read from the serving evse_manager instead.
+TEST(BuildComponentConfigsTest, IsoExtensionOnHlcCapableEvseEnablesIso15118) {
+    constexpr auto AC = em::ChargeMode::AC;
+
+    const auto configs = dmn::build_der_component_configs({evse_with(1, {AC}, /*hlc_capable=*/true)}, {},
+                                                          /*with_der_components=*/false,
+                                                          /*iso_extension_evse_ids=*/{1},
+                                                          /*evse_service_renegotiation_supported=*/{{1, false}});
+
+    const auto* variables = find_iso15118_variables(configs, 1);
+    ASSERT_NE(variables, nullptr);
+    const auto* enabled = find_variable(*variables, ocpp::v2::ISO15118ComponentVariables::Enabled.name);
+    ASSERT_NE(enabled, nullptr);
+    EXPECT_EQ(variable_value(*enabled), "true");
+}
+
+TEST(BuildComponentConfigsTest, IsoExtensionOnEvseWithoutHlcDisablesIso15118) {
+    constexpr auto AC = em::ChargeMode::AC;
+
+    const auto configs = dmn::build_der_component_configs({evse_with(1, {AC}, /*hlc_capable=*/false)}, {},
+                                                          /*with_der_components=*/false,
+                                                          /*iso_extension_evse_ids=*/{1},
+                                                          /*evse_service_renegotiation_supported=*/{{1, false}});
+
+    const auto* variables = find_iso15118_variables(configs, 1);
+    ASSERT_NE(variables, nullptr);
+    const auto* enabled = find_variable(*variables, ocpp::v2::ISO15118ComponentVariables::Enabled.name);
+    ASSERT_NE(enabled, nullptr);
+    EXPECT_EQ(variable_value(*enabled), "false");
+}
+
+// One capable plug is enough, matching evse_hlc_capable's any_of rule: the session runs on that plug.
+TEST(BuildComponentConfigsTest, IsoExtensionOnMixedConnectorEvseEnablesIso15118) {
+    constexpr auto AC = em::ChargeMode::AC;
+
+    em::Evse evse;
+    evse.id = 1;
+    evse.connectors = connectors_hlc({{AC, false}, {AC, true}});
+
+    const auto configs = dmn::build_der_component_configs({evse}, {}, /*with_der_components=*/false,
+                                                          /*iso_extension_evse_ids=*/{1},
+                                                          /*evse_service_renegotiation_supported=*/{{1, false}});
+
+    const auto* variables = find_iso15118_variables(configs, 1);
+    ASSERT_NE(variables, nullptr);
+    const auto* enabled = find_variable(*variables, ocpp::v2::ISO15118ComponentVariables::Enabled.name);
+    ASSERT_NE(enabled, nullptr);
+    EXPECT_EQ(variable_value(*enabled), "true");
+}
+
+// An iso15118_extensions connection can be mapped to an EVSE this station does not serve. That used to
+// index a map keyed by the served EVSE ids and take the module down at boot.
+TEST(BuildComponentConfigsTest, IsoExtensionMappedToUnservedEvseIsIgnored) {
+    constexpr auto AC = em::ChargeMode::AC;
+
+    const auto build = [] {
+        return dmn::build_der_component_configs({evse_with(1, {AC}, /*hlc_capable=*/true)}, {},
+                                                /*with_der_components=*/false,
+                                                /*iso_extension_evse_ids=*/{1, 7},
+                                                /*evse_service_renegotiation_supported=*/{{1, false}});
+    };
+
+    ASSERT_NO_THROW(build());
+    const auto configs = build();
+    EXPECT_NE(find_iso15118_variables(configs, 1), nullptr);
+    EXPECT_EQ(find_iso15118_variables(configs, 7), nullptr);
+}
+
+// Pins the public contract: a served EVSE with no seeded ServiceRenegotiationSupport entry must not throw
+// and must read as "not supported". Unreachable through the modules, which seed every served EVSE in one
+// 1..N loop and only ever add keys at runtime, so this guards direct callers of the public function.
+TEST(BuildComponentConfigsTest, IsoExtensionWithNoSeededRenegotiationEntryDefaultsToFalse) {
+    constexpr auto AC = em::ChargeMode::AC;
+
+    const auto build = [] {
+        return dmn::build_der_component_configs({evse_with(4, {AC}, /*hlc_capable=*/true)}, {},
+                                                /*with_der_components=*/false,
+                                                /*iso_extension_evse_ids=*/{4},
+                                                /*evse_service_renegotiation_supported=*/{{1, true}});
+    };
+
+    ASSERT_NO_THROW(build());
+    const auto configs = build();
+    const auto* variables = find_iso15118_variables(configs, 4);
+    ASSERT_NE(variables, nullptr);
+    const auto* renegotiation =
+        find_variable(*variables, ocpp::v2::ISO15118ComponentVariables::ServiceRenegotiationSupport.name);
+    ASSERT_NE(renegotiation, nullptr);
+    EXPECT_EQ(variable_value(*renegotiation), "false");
+}
+
+// The storage constructor holds the DER decision already (its clearing pass needs the None entries) and so
+// calls the decided overload, not the deciding one: the assertions below pin that overload directly, which
+// is the production path. The equivalence check is weak today, since the deciding overload is a one-line
+// delegation, and only guards against ISO logic being duplicated into it later.
+TEST(BuildComponentConfigsTest, DecidedOverloadAssemblesTheSameIso15118Entry) {
+    constexpr auto AC = em::ChargeMode::AC;
+
+    const std::vector<em::Evse> evses{evse_with(1, {AC}, /*hlc_capable=*/true),
+                                      evse_with(2, {AC}, /*hlc_capable=*/false)};
+    const std::vector<int32_t> iso_extension_evse_ids{1, 2};
+    const std::map<int32_t, bool> renegotiation{{1, true}, {2, false}};
+
+    const auto decided = dmn::decide_der_ctrlr_components(evses, {1}, /*with_der_components=*/true);
+    const auto from_decision = dmn::build_der_component_configs(decided, evses, iso_extension_evse_ids, renegotiation);
+    const auto from_evses = dmn::build_der_component_configs(evses, {1}, /*with_der_components=*/true,
+                                                             iso_extension_evse_ids, renegotiation);
+
+    const auto keyed_names =
+        [](const std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>& configs) {
+            std::map<std::pair<std::string, std::optional<int32_t>>, std::vector<std::pair<std::string, std::string>>>
+                result;
+            for (const auto& [key, variables] : configs) {
+                auto& entry = result[{key.name, key.evse_id}];
+                for (const auto& variable : variables) {
+                    entry.emplace_back(variable.name, variable_value(variable));
+                }
+            }
+            return result;
+        };
+    EXPECT_EQ(keyed_names(from_decision), keyed_names(from_evses));
+    for (const auto& [evse_id, expected] : std::map<int32_t, std::string>{{1, "true"}, {2, "false"}}) {
+        const auto* variables = find_iso15118_variables(from_decision, evse_id);
+        ASSERT_NE(variables, nullptr);
+        const auto* enabled = find_variable(*variables, ocpp::v2::ISO15118ComponentVariables::Enabled.name);
+        ASSERT_NE(enabled, nullptr);
+        EXPECT_EQ(variable_value(*enabled), expected);
+    }
 }
 
 // The Ac component carries static presence (Available "true"/ReadOnly) and a runtime Enabled control
