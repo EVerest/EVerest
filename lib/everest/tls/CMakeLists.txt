@@ -42,7 +42,7 @@ if(EVEREST_CORE_BUILD_TESTING)
 endif()
 
 if(DISABLE_EDM AND TLS_INSTALL)
-    if (EVEREST_CORE_BUILD)
+    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
         set(TLS_EXPORT_TARGETS everest-core-targets)
     else()
         set(TLS_EXPORT_TARGETS everest-tls-targets)
