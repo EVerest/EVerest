@@ -14,6 +14,17 @@
   interface loops multicast back before trusting a run: unicast crossing a
   veth pair does not imply multicast does.
 
+- The Lint Repository job runs clang-format from the everest-ci
+  `build-env-base` image, not your local one: v1.5.4 carries 15.0.6, and
+  versions reflow differently, so a file your own clang-format calls clean can
+  still fail the job. Reproduce in that image. Scope the sweep to tracked
+  `*.hpp`/`*.cpp`; a bare recursive run also walks the gitignored `build/`
+  tree and buries the real hits under vendored headers.
+
+- A red Lint or Build-with-CMake job leaves the Integration and OCPP suites
+  `skipped`, not failed, so no e2e result is visible until both are green.
+  Read a "skipped" e2e gate as "never ran", never as "nothing to report".
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.
