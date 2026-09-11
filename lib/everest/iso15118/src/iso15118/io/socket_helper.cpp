@@ -2,6 +2,8 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/io/socket_helper.hpp>
 
+#include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <utility>
 
@@ -11,6 +13,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -164,8 +167,78 @@ bool set_tcp_keepalive(int fd) {
     return true;
 }
 
+AcceptResult accept_connection(int listen_fd, sockaddr_in6& peer_address) {
+    socklen_t address_len = sizeof(peer_address);
+
+    // The poll loop is shared (SDP server + connections), so nothing downstream may ever block here.
+    const auto accept_fd =
+        ::accept4(listen_fd, reinterpret_cast<sockaddr*>(&peer_address), &address_len, SOCK_NONBLOCK);
+
+    if (accept_fd == -1) {
+        // A client that connects and RSTs quickly (e.g. a port scan) yields ECONNABORTED; the listener
+        // stays usable, so the caller should just wait for the next connection.
+        if (errno == EINTR or errno == EAGAIN or errno == EWOULDBLOCK or errno == ECONNABORTED) {
+            logf_warning("accept4 failed with a transient error code: %d", errno);
+            return {AcceptResult::Status::Transient, -1};
+        }
+        // A hard accept failure (e.g. EMFILE): the caller must contain this by tearing down its own
+        // connection rather than letting an exception escape the poll callback.
+        //
+        // Deliberate deviation from accept(2)'s advice to retry the pending-connection network errnos: this
+        // listener serves exactly one EV over a point-to-point link-local connection, so such a failure
+        // means the link itself is gone and dlink-loss handling, not an accept retry, is the recovery.
+        logf_error("accept4 failed with error code: %d", errno);
+        return {AcceptResult::Status::Fatal, -1};
+    }
+
+    // The read() paths rely on the keepalive's ETIMEDOUT to tear down a peer that vanished without FIN.
+    if (not set_tcp_keepalive(accept_fd)) {
+        logf_warning("Failed to configure TCP keepalive on the accepted connection");
+    }
+
+    return {AcceptResult::Status::Accepted, accept_fd};
+}
+
+bool write_all(int fd, const uint8_t* buf, size_t len, int timeout_ms) {
+    using clock = std::chrono::steady_clock;
+    const auto deadline = clock::now() + std::chrono::milliseconds(timeout_ms);
+
+    size_t written = 0;
+    while (written < len) {
+        // MSG_NOSIGNAL: a peer that closed mid-write must surface as EPIPE, not kill the process.
+        const auto write_result = ::send(fd, buf + written, len - written, MSG_NOSIGNAL);
+
+        if (write_result >= 0) {
+            written += static_cast<size_t>(write_result);
+            continue;
+        }
+
+        if (errno != EINTR and errno != EAGAIN and errno != EWOULDBLOCK) {
+            return false;
+        }
+
+        const auto now = clock::now();
+        if (now >= deadline) {
+            errno = ETIMEDOUT;
+            return false;
+        }
+        const auto remaining_ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+
+        pollfd pfd{fd, POLLOUT, 0};
+        const auto poll_result = ::poll(&pfd, 1, static_cast<int>(remaining_ms));
+        if (poll_result == -1 and errno != EINTR) {
+            return false;
+        }
+        // A timeout becomes ETIMEDOUT at the top of the next iteration, after one final write attempt.
+    }
+
+    return true;
+}
+
 int create_tcp_listen_socket(sockaddr_in6 address, uint16_t port, int backlog, const std::string& interface_name) {
-    const auto fd = socket(AF_INET6, SOCK_STREAM, 0);
+    // accept_connection()'s Transient/EAGAIN contract depends on it: a blocking accept4 would stall the
+    // shared controller poll loop until the next TCP connect arrives.
+    const auto fd = socket(AF_INET6, SOCK_STREAM | SOCK_NONBLOCK, 0);
     if (fd == -1) {
         log_and_throw("Failed to create an ipv6 socket");
     }

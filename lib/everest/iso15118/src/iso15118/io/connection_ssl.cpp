@@ -3,6 +3,8 @@
 #include <iso15118/io/connection_ssl.hpp>
 
 #include <cassert>
+#include <cerrno>
+#include <chrono>
 #include <cinttypes>
 #include <cstring>
 #include <memory>
@@ -53,6 +55,9 @@ std::string_view result_name(tls::Connection::result_t r) {
 tls::Server::config_t make_tls_server_config(const config::SSLConfig& cfg, const std::string& interface_name,
                                              int listen_fd, std::vector<tls::Server::certificate_config_t>&& chains) {
     tls::Server::config_t out{};
+    // ISO 15118-2 Table 7 lists two TLS 1.2 suites and [V2G2-602] asks for both. Only the ephemeral
+    // (ECDHE) one is offered: the static-ECDH suite has no forward secrecy and has been removed from
+    // modern OpenSSL, so it cannot be enabled anyway, and the EVCC needs only one of the two [V2G2-603].
     out.cipher_list = "ECDHE-ECDSA-AES128-SHA256";
     out.ciphersuites = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256";
     out.chains = std::move(chains);
@@ -120,7 +125,12 @@ ConnectionSSL::ConnectionSSL(PollManager& poll_manager_, const std::string& inte
     poll_manager.register_fd(ssl->listen_fd, [this]() { this->handle_connect(); });
 }
 
-ConnectionSSL::~ConnectionSSL() = default;
+ConnectionSSL::~ConnectionSSL() {
+    // Also covers a session torn down without an explicit close(). The event callback targets the
+    // (dying) session, so silence it first.
+    event_callback = nullptr;
+    close();
+}
 
 void ConnectionSSL::set_event_callback(const ConnectionEventCallback& callback) {
     event_callback = callback;
@@ -140,14 +150,38 @@ void ConnectionSSL::write(const uint8_t* buf, size_t len) {
     assert(handshake_complete);
     assert(ssl->connection != nullptr);
 
-    std::size_t writebytes = 0;
-    const auto result =
-        ssl->connection->write(reinterpret_cast<const std::byte*>(buf), len, writebytes, /*timeout_ms=*/-1);
+    // Bounded rather than timeout_ms=-1, which would stall the shared poll loop forever on a peer with
+    // a stalled receive window; resumed on partial progress, since write may report fewer bytes.
+    using clock = std::chrono::steady_clock;
+    const auto deadline = clock::now() + std::chrono::milliseconds(WRITE_TIMEOUT_MS);
 
-    if (result != tls::Connection::result_t::success || writebytes != len) {
+    std::size_t total_written = 0;
+    auto result = tls::Connection::result_t::success;
+
+    while (total_written < len) {
+        const auto now = clock::now();
+        if (now >= deadline) {
+            result = tls::Connection::result_t::timeout;
+            break;
+        }
+        const auto remaining_ms =
+            static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count());
+
+        std::size_t writebytes = 0;
+        result = ssl->connection->write(reinterpret_cast<const std::byte*>(buf) + total_written, len - total_written,
+                                        writebytes, remaining_ms);
+        total_written += writebytes;
+
+        if (result == tls::Connection::result_t::closed) {
+            break;
+        }
+        // Timeout/want_read/want_write retry against the remaining budget.
+    }
+
+    if (total_written != len) {
         std::string msg = "Failed to write on TLS connection: ";
         msg += result_name(result);
-        msg += " (" + std::to_string(writebytes) + "/" + std::to_string(len) + " bytes)";
+        msg += " (" + std::to_string(total_written) + "/" + std::to_string(len) + " bytes)";
         const auto ssl_err = ssl->connection->last_error();
         if (not ssl_err.empty()) {
             msg += " openssl=";
@@ -190,16 +224,27 @@ ReadResult ConnectionSSL::read(uint8_t* buf, size_t len) {
 void ConnectionSSL::handle_connect() {
 
     sockaddr_in6 peer_addr{};
-    socklen_t peer_len = sizeof(peer_addr);
-    const int accepted_fd = ::accept(ssl->listen_fd, reinterpret_cast<sockaddr*>(&peer_addr), &peer_len);
-    if (accepted_fd < 0) {
-        log_and_throw("Failed to accept incoming TLS connection");
+    // wrap_accepted_fd inherits the fd's flags and tls::Server only sets BIO_SOCK_NONBLOCK on its own
+    // accept path, so a blocking fd would stall the poll loop for a whole handshake flight.
+    const auto accepted = accept_connection(ssl->listen_fd, peer_addr);
+
+    if (accepted.status == AcceptResult::Status::Transient) {
+        return;
     }
+
+    if (accepted.status == AcceptResult::Status::Fatal) {
+        // Tear down just this connection instead of the whole controller loop.
+        logf_error("Closing the TLS listener after a fatal accept failure");
+        close();
+        return;
+    }
+
+    const int accepted_fd = accepted.fd;
 
     char host[NI_MAXHOST] = {0};
     char service[NI_MAXSERV] = {0};
-    const auto gni_result = ::getnameinfo(reinterpret_cast<sockaddr*>(&peer_addr), peer_len, host, sizeof(host),
-                                          service, sizeof(service), NI_NUMERICHOST | NI_NUMERICSERV);
+    const auto gni_result = ::getnameinfo(reinterpret_cast<sockaddr*>(&peer_addr), sizeof(peer_addr), host,
+                                          sizeof(host), service, sizeof(service), NI_NUMERICHOST | NI_NUMERICSERV);
     if (gni_result != 0) {
         logf_warning("getnameinfo() failed for incoming connection: %s", gai_strerror(gni_result));
     }
@@ -212,14 +257,21 @@ void ConnectionSSL::handle_connect() {
 
     call_if_available(event_callback, ConnectionEvent::ACCEPTED);
 
-    if (not set_tcp_keepalive(accepted_fd)) {
-        logf_warning("Failed to configure TCP keepalive on accepted TLS connection");
+    if (closed) {
+        // An event handler closed the connection during ACCEPTED: CLOSED is already delivered and close()
+        // is idempotent, so a poll callback registered below would never be unregistered and would dangle
+        // past this object's destruction. The accepted fd is not owned by the TLS wrapper yet.
+        ::close(accepted_fd);
+        return;
     }
 
     ssl->connection = ssl->server->wrap_accepted_fd(accepted_fd, host, service);
     if (ssl->connection == nullptr) {
         ::close(accepted_fd);
-        log_and_throw("Failed to wrap accepted TLS socket");
+        // Same containment: fail this connection rather than throw out of the poll callback.
+        logf_error("Failed to wrap accepted TLS socket; closing the connection");
+        close();
+        return;
     }
 
     // The ServerConnection owns the fd from here on; key the poll callback on it.
@@ -252,7 +304,10 @@ void ConnectionSSL::handle_data() {
             call_if_available(event_callback, ConnectionEvent::OPEN);
             return;
         default:
-            log_and_throw("Failed to complete TLS handshake");
+            // Same containment as the closed case.
+            logf_error("TLS handshake failed with an unexpected result; closing the connection");
+            this->close();
+            return;
         }
     }
 
@@ -260,42 +315,41 @@ void ConnectionSSL::handle_data() {
 }
 
 void ConnectionSSL::close() {
-    // Idempotency / re-entry guard: the connection is reset before CLOSED is
-    // delivered below, so a re-entrant or repeated close() is a no-op.
-    if (ssl->connection == nullptr) {
-        // Never-connected teardown: the listener is still registered because
-        // handle_connect never ran. Release it and fire CLOSED once.
-        if (ssl->listen_fd != -1) {
-            poll_manager.unregister_fd(ssl->listen_fd);
-            ::close(ssl->listen_fd);
-            ssl->listen_fd = -1;
-            call_if_available(event_callback, ConnectionEvent::CLOSED);
-        }
+    // Idempotent: whichever teardown path runs first delivers CLOSED exactly once.
+    if (closed) {
         return;
     }
+    closed = true;
 
-    logf_info("Closing TLS connection");
-
-    const auto result = ssl->connection->shutdown(/*timeout_ms=*/0);
-    if (result != tls::Connection::result_t::success && result != tls::Connection::result_t::closed) {
-        logf_error("TLS shutdown returned non-success result");
+    if (ssl->listen_fd != -1) {
+        // Drop the listener, so a session torn down while still waiting for the TCP connect does not leave
+        // a dangling poll callback and an open fd behind.
+        poll_manager.unregister_fd(ssl->listen_fd);
+        ::close(ssl->listen_fd);
+        ssl->listen_fd = -1;
     }
 
-    // Unregistering from within the accept fd's own poll callback is safe: it is
-    // the only non-event fd registered at this point (listen_fd was dropped in
-    // handle_connect), so PollManager::poll has no further entries to visit.
-    const int fd = ssl->connection->socket();
-    if (fd != -1) {
-        poll_manager.unregister_fd(fd);
+    if (ssl->connection != nullptr) {
+        logf_info("Closing TLS connection");
+
+        const auto result = ssl->connection->shutdown(/*timeout_ms=*/0);
+        if (result != tls::Connection::result_t::success && result != tls::Connection::result_t::closed) {
+            logf_error("TLS shutdown returned non-success result");
+        }
+
+        // Safe from within the accept fd's own poll callback only because listen_fd was already dropped in
+        // handle_connect, so PollManager::poll has no further entries to visit.
+        const int fd = ssl->connection->socket();
+        if (fd != -1) {
+            poll_manager.unregister_fd(fd);
+        }
+
+        // Explicit rather than relying on SSLContext's destructor, so the close happens at a deterministic
+        // point relative to the CLOSED event delivered below.
+        ssl->connection.reset();
+
+        logf_info("TLS connection closed");
     }
-
-    // Destroying the ServerConnection tears down the SSL state and closes the
-    // underlying socket it owns. We must do this explicitly rather than relying
-    // on SSLContext's destructor so that the close happens at a deterministic
-    // point relative to the CLOSED event we deliver below.
-    ssl->connection.reset();
-
-    logf_info("TLS connection closed");
 
     call_if_available(event_callback, ConnectionEvent::CLOSED);
 }

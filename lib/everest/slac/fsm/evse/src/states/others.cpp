@@ -59,18 +59,24 @@ FSMSimpleState::HandleEventReturnType ResetState::handle_event(AllocatorType& sa
 
 FSMSimpleState::CallbackReturnType ResetState::callback() {
     const auto& cfg = ctx.slac_config;
-    if (setup_has_been_send == false) {
+    if (set_key_attempts < SET_KEY_MAX_ATTEMPTS) {
         auto set_key_req = create_cm_set_key_req(cfg.session_nmk);
 
-        ctx.log_info("New NMK key: " + format_nmk(cfg.session_nmk));
+        if (set_key_attempts == 0) {
+            ctx.log_info("New NMK key: " + format_nmk(cfg.session_nmk));
+        } else {
+            ctx.log_warn("CM_SET_KEY_REQ timeout, retrying (attempt " + std::to_string(set_key_attempts + 1) + "/" +
+                         std::to_string(SET_KEY_MAX_ATTEMPTS) + ")");
+        }
 
         ctx.send_slac_message(cfg.plc_peer_mac, set_key_req);
 
-        setup_has_been_send = true;
+        set_key_attempts++;
 
         return cfg.set_key_timeout_ms;
     } else {
-        ctx.log_error("CM_SET_KEY_REQ timeout - failed to setup NMK key");
+        ctx.log_error("CM_SET_KEY_REQ timeout - failed to setup NMK key after " + std::to_string(SET_KEY_MAX_ATTEMPTS) +
+                      " attempts");
         return {};
     }
 }
@@ -217,6 +223,12 @@ FSMSimpleState::HandleEventReturnType MatchedState::handle_event(AllocatorType& 
         }
     } else if (ev == Event::RESET) {
         return sa.create_simple<ResetState>(ctx);
+    } else if (ev == Event::LEAVE_BCD) {
+        // EV unplugged (or left states B/C/D): the logical network of this session is gone.
+        // Reset so the next plug-in starts from a clean UNMATCHED state instead of stranding
+        // MATCHED across the replug (where a new CM_SLAC_PARM.REQ would be ignored).
+        ctx.log_info("Left CP state B/C/D while matched, resetting");
+        return sa.create_simple<ResetState>(ctx);
     }
     return sa.PASS_ON;
 }
@@ -252,6 +264,10 @@ void FailedState::enter() {
 FSMSimpleState::HandleEventReturnType FailedState::handle_event(AllocatorType& sa, Event ev) {
     if (ev == Event::RESET) {
         return sa.create_simple<ResetState>(ctx);
+    } else if (ev == Event::LEAVE_BCD) {
+        // EV unplugged: recover from the failed match so the next plug-in can match again.
+        ctx.log_info("Left CP state B/C/D in failed state, resetting");
+        return sa.create_simple<ResetState>(ctx);
     } else {
         return sa.PASS_ON;
     }
@@ -274,6 +290,10 @@ FSMSimpleState::HandleEventReturnType WaitForLinkState::handle_event(AllocatorTy
         // Notify higher layers to on CP signal
         return sa.create_simple<FailedState>(ctx);
     } else if (ev == Event::RESET) {
+        return sa.create_simple<ResetState>(ctx);
+    } else if (ev == Event::LEAVE_BCD) {
+        // EV unplugged while waiting for the link: abandon this session.
+        ctx.log_info("Left CP state B/C/D while waiting for link, resetting");
         return sa.create_simple<ResetState>(ctx);
     } else {
         return sa.PASS_ON;

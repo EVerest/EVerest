@@ -37,7 +37,7 @@ iso15118::TbdController make_controller(bool enable_sdp_server,
                                         const iso15118::session::feedback::Callbacks& callbacks) {
     return iso15118::TbdController{
         iso15118::TbdConfig{{}, "lo", iso15118::config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER, enable_sdp_server},
-        callbacks, iso15118::d20::EvseSetupConfig{}};
+        callbacks, iso15118::session::EvseSetupConfig{}};
 }
 
 std::array<int, 2> make_nonblocking_socketpair() {

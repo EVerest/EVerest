@@ -63,10 +63,6 @@ template <typename MessageType> size_t serialize(const MessageType&, const io::S
 //
 // definitions of type traits
 //
-#ifdef CREATE_TYPE_TRAIT
-#define CREATE_TYPE_TRAIT_PUSHED CREATE_TYPE_TRAIT
-#endif
-
 #define CREATE_TYPE_TRAIT(struct_name, enum_name)                                                                      \
     struct struct_name;                                                                                                \
     template <> struct TypeTrait<struct_name> {                                                                        \
@@ -116,10 +112,7 @@ CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeParameterDiscoveryResponse, DER_SAE_AC_Charge
 CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeLoopRequest, DER_SAE_AC_ChargeLoopReq);
 CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeLoopResponse, DER_SAE_AC_ChargeLoopRes);
 
-#ifdef CREATE_TYPE_TRAIT_PUSHED
-#define CREATE_TYPE_TRAIT CREATE_TYPE_TRAIT_PUSHED
-#else
+// header-local macro: drop it so the type-trait headers of the other protocols can redefine it
 #undef CREATE_TYPE_TRAIT
-#endif
 
 } // namespace iso15118::message_20

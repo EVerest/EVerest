@@ -9,6 +9,7 @@
 
 #include <iso15118/config.hpp>
 #include <iso15118/d20/config.hpp>
+#include <iso15118/session/config.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/tbd_controller.hpp>
 
@@ -53,7 +54,7 @@ TbdController make_controller(SSLConfig initial) {
     tbd_cfg.interface_name = "lo";
     tbd_cfg.enable_sdp_server = false;
     return TbdController{std::move(tbd_cfg), iso15118::session::feedback::Callbacks{},
-                         iso15118::d20::EvseSetupConfig{}};
+                         iso15118::session::EvseSetupConfig{}};
 }
 
 } // namespace
