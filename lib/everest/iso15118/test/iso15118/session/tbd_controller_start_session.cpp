@@ -626,7 +626,7 @@ SCENARIO("update_der_sae_limits logs the SAE grid code withdrawal only on the tr
     // Hold the session in SessionSetup so it stays live while the limits are updated.
     const auto request_frame =
         make_v2gtp_frame(iso15118::io::v2gtp::PayloadType::Part20Main, session_setup_req, sizeof(session_setup_req));
-    ::write(fds.at(1), request_frame.data(), request_frame.size());
+    [[maybe_unused]] auto unused2 = ::write(fds.at(1), request_frame.data(), request_frame.size());
     const auto response = read_v2gtp_frame(fds.at(1), std::chrono::seconds(5));
     REQUIRE(response.has_value());
     REQUIRE(controller.has_active_session());
