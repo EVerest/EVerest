@@ -4,9 +4,14 @@
 #include <gtest/gtest.h>
 
 #include <optional>
+#include <utility>
+#include <vector>
 
+#include <iso15118/d20/der_functions.hpp>
 #include <iso15118/message/ac_der_iec_charge_parameter_discovery.hpp>
+#include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/message/common_types.hpp>
+#include <iso15118/sae_modes.hpp>
 
 #include "der_setup.hpp"
 
@@ -183,4 +188,170 @@ TEST(DerChargingParametersTest, session_energy_maps_independently_of_reactive_li
     EXPECT_FALSE(params.min_charge_reactive_power.has_value());
     EXPECT_FALSE(params.max_discharge_reactive_power.has_value());
     EXPECT_FALSE(params.min_discharge_reactive_power.has_value());
+}
+
+namespace {
+
+using SaeFn = iso15118::sae::DerBitMapFunctions;
+using DT = types::grid_support::DirectiveType;
+
+dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode make_sae_ev_limits() {
+    dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode ev{};
+    ev.max_charge_power = dt::from_float(11000.0f);
+    ev.min_charge_power = dt::from_float(0.0f);
+    ev.maximum_discharge_power = dt::from_float(11000.0f);
+    return ev;
+}
+
+} // namespace
+
+TEST(DerChargingParametersTest, sae_each_mapped_bit_yields_its_directive) {
+    // One entry per SAE function with a grid_support DirectiveType counterpart.
+    const std::vector<std::pair<SaeFn, DT>> expected = {
+        {SaeFn::EnterService, DT::EnterService},
+        {SaeFn::ConstantPowerFactorUnderExcitedFunction, DT::FixedPFAbsorb},
+        {SaeFn::ConstantPowerFactorOverExcitedFunction, DT::FixedPFInject},
+        {SaeFn::ConstantReactivePowerFunction, DT::FixedVar},
+        {SaeFn::FrequencyDroopFunction, DT::FreqDroop},
+        {SaeFn::HighFrequencyMayTripFunction, DT::HFMayTrip},
+        {SaeFn::HighFrequencyMustTripFunction, DT::HFMustTrip},
+        {SaeFn::HighVoltageMayTripFunction, DT::HVMayTrip},
+        {SaeFn::HighVoltageMomentaryCessationFunction, DT::HVMomCess},
+        {SaeFn::HighVoltageMustTripFunction, DT::HVMustTrip},
+        {SaeFn::LowFrequencyMustTripFunction, DT::LFMustTrip},
+        {SaeFn::LowVoltageMayTripFunction, DT::LVMayTrip},
+        {SaeFn::LowVoltageMomentaryCessationFunction, DT::LVMomCess},
+        {SaeFn::LowVoltageMustTripFunction, DT::LVMustTrip},
+        {SaeFn::LimitMaximumActiveDischargePowerFunction, DT::LimitMaxDischarge},
+        {SaeFn::VoltVarFunction, DT::VoltVar},
+        {SaeFn::VoltWattFunction, DT::VoltWatt},
+        {SaeFn::WattVarFunction, DT::WattVar},
+    };
+
+    for (const auto& [function, directive] : expected) {
+        SCOPED_TRACE(iso15118::sae::sae_function_names(iso15118::sae::sae_function_bit(function)));
+
+        auto ev = make_sae_ev_limits();
+        ev.supported_modes = iso15118::sae::sae_function_bit(function);
+
+        const auto params = module::to_der_charging_parameters(ev);
+
+        ASSERT_TRUE(params.ev_supported_dercontrol.has_value());
+        ASSERT_EQ(params.ev_supported_dercontrol->size(), 1u);
+        EXPECT_EQ(params.ev_supported_dercontrol->front(), directive);
+    }
+}
+
+TEST(DerChargingParametersTest, sae_unmappable_bits_are_dropped_without_error) {
+    auto ev = make_sae_ev_limits();
+    ev.supported_modes = iso15118::sae::sae_function_bit(SaeFn::ChargeFunction) |
+                         iso15118::sae::sae_function_bit(SaeFn::DischargeFunction) |
+                         iso15118::sae::sae_function_bit(SaeFn::ConstantActivePowerFunction) |
+                         iso15118::sae::sae_function_bit(SaeFn::LowFrequencyMayTripFunction) |
+                         iso15118::sae::sae_function_bit(SaeFn::EVSETargetReactivePowerFunction) |
+                         iso15118::sae::sae_function_bit(SaeFn::EVSETargetActivePowerFunction);
+
+    types::iso15118::DERChargingParameters params{};
+    EXPECT_NO_THROW(params = module::to_der_charging_parameters(ev));
+
+    // All bits unmappable: the field must stay unset (minItems:1), not become an empty list.
+    EXPECT_FALSE(params.ev_supported_dercontrol.has_value());
+}
+
+TEST(DerChargingParametersTest, sae_mapped_bits_survive_unmappable_neighbors) {
+    auto ev = make_sae_ev_limits();
+    ev.supported_modes = iso15118::sae::sae_function_bit(SaeFn::ChargeFunction) |
+                         iso15118::sae::sae_function_bit(SaeFn::VoltVarFunction) |
+                         iso15118::sae::sae_function_bit(SaeFn::EVSETargetActivePowerFunction);
+
+    const auto params = module::to_der_charging_parameters(ev);
+
+    ASSERT_TRUE(params.ev_supported_dercontrol.has_value());
+    ASSERT_EQ(params.ev_supported_dercontrol->size(), 1u);
+    EXPECT_EQ(params.ev_supported_dercontrol->front(), DT::VoltVar);
+}
+
+TEST(DerChargingParametersTest, sae_empty_supported_modes_leaves_dercontrol_unset) {
+    const auto ev = make_sae_ev_limits();
+
+    const auto params = module::to_der_charging_parameters(ev);
+
+    EXPECT_FALSE(params.ev_supported_dercontrol.has_value());
+}
+
+TEST(DerChargingParametersTest, sae_excitation_values_round_trip) {
+    auto ev = make_sae_ev_limits();
+    ev.excitation_limits.specified_over_excited_power_factor = dt::from_float(0.95f);
+    ev.excitation_limits.specified_over_excited_discharge_power = dt::from_float(10450.0f);
+    ev.excitation_limits.specified_under_excited_power_factor = dt::from_float(0.9f);
+    ev.excitation_limits.specified_under_excited_discharge_power = dt::from_float(9900.0f);
+
+    const auto params = module::to_der_charging_parameters(ev);
+
+    // Compare against the value the RationalNumber wire type carries: from_float quantizes (0.9f
+    // does not survive exactly), and the mapper must not add any loss on top of that.
+    ASSERT_TRUE(params.ev_over_excited_power_factor.has_value());
+    EXPECT_FLOAT_EQ(params.ev_over_excited_power_factor.value(),
+                    dt::from_RationalNumber(ev.excitation_limits.specified_over_excited_power_factor));
+    ASSERT_TRUE(params.ev_over_excited_max_discharge_power.has_value());
+    EXPECT_FLOAT_EQ(params.ev_over_excited_max_discharge_power.value(), 10450.0f);
+    ASSERT_TRUE(params.ev_under_excited_power_factor.has_value());
+    EXPECT_FLOAT_EQ(params.ev_under_excited_power_factor.value(),
+                    dt::from_RationalNumber(ev.excitation_limits.specified_under_excited_power_factor));
+    ASSERT_TRUE(params.ev_under_excited_max_discharge_power.has_value());
+    EXPECT_FLOAT_EQ(params.ev_under_excited_max_discharge_power.value(), 9900.0f);
+
+    // The two quantized power factors must still land near their sources and stay distinct.
+    EXPECT_NEAR(params.ev_over_excited_power_factor.value(), 0.95f, 0.001f);
+    EXPECT_NEAR(params.ev_under_excited_power_factor.value(), 0.9f, 0.001f);
+}
+
+TEST(DerChargingParametersTest, sae_fields_without_a_source_stay_unset) {
+    const auto ev = make_sae_ev_limits();
+
+    const auto params = module::to_der_charging_parameters(ev);
+
+    // The IEC-style charge/discharge reactive fields are not mapped: SAE var absorption/injection
+    // semantics differ from the IEC charge/discharge reactive fields. Session energy is optional in
+    // the SAE request; absent must stay unset.
+    EXPECT_FALSE(params.max_charge_reactive_power.has_value());
+    EXPECT_FALSE(params.min_charge_reactive_power.has_value());
+    EXPECT_FALSE(params.max_discharge_reactive_power.has_value());
+    EXPECT_FALSE(params.min_discharge_reactive_power.has_value());
+    EXPECT_FALSE(params.ev_session_total_discharge_energy_available.has_value());
+}
+
+TEST(DerChargingParametersTest, sae_session_energy_round_trips_when_present) {
+    auto ev = make_sae_ev_limits();
+    ev.session_total_discharge_energy_available = dt::from_float(20000.0f);
+
+    const auto params = module::to_der_charging_parameters(ev);
+
+    ASSERT_TRUE(params.ev_session_total_discharge_energy_available.has_value());
+    EXPECT_FLOAT_EQ(params.ev_session_total_discharge_energy_available.value(), 20000.0f);
+}
+
+TEST(DerChargingParametersTest, sae_multi_bit_bitmap_maps_in_table_order) {
+    auto ev = make_sae_ev_limits();
+    ev.supported_modes = iso15118::sae::sae_function_bit(SaeFn::EnterService) |
+                         iso15118::sae::sae_function_bit(SaeFn::FrequencyDroopFunction) |
+                         iso15118::sae::sae_function_bit(SaeFn::WattVarFunction);
+
+    const auto params = module::to_der_charging_parameters(ev);
+
+    ASSERT_TRUE(params.ev_supported_dercontrol.has_value());
+    const std::vector<DT> expected{DT::EnterService, DT::FreqDroop, DT::WattVar};
+    EXPECT_EQ(params.ev_supported_dercontrol.value(), expected);
+}
+
+TEST(DerChargingParametersTest, sae_full_bitmap_yields_all_mappable_directives) {
+    auto ev = make_sae_ev_limits();
+    ev.supported_modes = iso15118::sae::SAE_MODE_BITMAP_MASK;
+
+    const auto params = module::to_der_charging_parameters(ev);
+
+    // 24 defined bits, 6 with no DirectiveType counterpart (charge, discharge, constant watt,
+    // under frequency may trip, the two EVSE target powers).
+    ASSERT_TRUE(params.ev_supported_dercontrol.has_value());
+    EXPECT_EQ(params.ev_supported_dercontrol->size(), 18u);
 }
