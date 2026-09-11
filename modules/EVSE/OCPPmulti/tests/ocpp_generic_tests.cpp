@@ -843,16 +843,19 @@ TEST_F(GenericOcppProvidesTester, publishOcppTransactionEvent) {
         received[0],
         R"({"session_id":"TransactionId","timestamp":"2026-06-05T13:37:36.409Z","transaction_event":"Updated","transaction_id":"TransactionId"})"_json);
 
-    // OCPP1.6: numeric transaction id differs from the session id and no timestamp is reported
-    ocpp->cb_transaction_event(request, "42", std::nullopt);
+    // OCPP1.6: numeric transaction id differs from the session id and the timestamp comes from the 1.6 message
+    ocpp->cb_transaction_event(request, "42", DateTime{"2026-06-05T14:02:11.000Z"});
     ASSERT_EQ(received.size(), 2);
-    EXPECT_EQ(received[1],
-              R"({"session_id":"TransactionId","transaction_event":"Updated","transaction_id":"42"})"_json);
+    EXPECT_EQ(
+        received[1],
+        R"({"session_id":"TransactionId","timestamp":"2026-06-05T14:02:11.000Z","transaction_event":"Updated","transaction_id":"42"})"_json);
 
     // OCPP1.6: transaction id not assigned yet (Started)
-    ocpp->cb_transaction_event(request, std::nullopt, std::nullopt);
+    ocpp->cb_transaction_event(request, std::nullopt, DateTime{"2026-06-05T14:02:11.000Z"});
     ASSERT_EQ(received.size(), 3);
-    EXPECT_EQ(received[2], R"({"session_id":"TransactionId","transaction_event":"Updated"})"_json);
+    EXPECT_EQ(
+        received[2],
+        R"({"session_id":"TransactionId","timestamp":"2026-06-05T14:02:11.000Z","transaction_event":"Updated"})"_json);
 }
 
 TEST_F(GenericOcppProvidesTester, publishOcppTransactionEventRespose) {
@@ -906,8 +909,9 @@ TEST_F(GenericOcppProvidesTester, publishOcppTransactionEventRespose) {
     transaction_event.triggerReason = TriggerReasonEnum::ChargingStateChanged;
     transaction_event.evse = EVSE{1, 0};
     transaction_event_response.idTokenInfo = IdTokenInfo{AuthorizationStatusEnum::Accepted};
-    // OCPP1.6: numeric transaction id differs from the session id and no timestamp is reported
-    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response, "42", std::nullopt);
+    // OCPP1.6: numeric transaction id differs from the session id and the timestamp comes from the 1.6 message
+    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response, "42",
+                                        DateTime{"2026-06-05T14:02:11.000Z"});
 
     EXPECT_EQ(received.size(), 2);
     EXPECT_EQ(
@@ -915,7 +919,7 @@ TEST_F(GenericOcppProvidesTester, publishOcppTransactionEventRespose) {
         R"({"original_transaction_event":{"session_id":"transactionId","timestamp":"2026-06-05T13:37:36.409Z","transaction_event":"Started","transaction_id":"transactionId"}})"_json);
     EXPECT_EQ(
         received[1],
-        R"({"original_transaction_event":{"evse":{"connector_id":0,"id":1},"session_id":"transactionId","transaction_event":"Updated","transaction_id":"42"}})"_json);
+        R"({"original_transaction_event":{"evse":{"connector_id":0,"id":1},"session_id":"transactionId","timestamp":"2026-06-05T14:02:11.000Z","transaction_event":"Updated","transaction_id":"42"}})"_json);
 }
 
 TEST_F(GenericOcppProvidesTester, publishChargingSchedules) {

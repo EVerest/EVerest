@@ -140,13 +140,6 @@ std::filesystem::path update_path_v2(const std::filesystem::path& share, const s
     return update_path("OCPP201", share, path);
 }
 
-std::optional<std::string> to_optional_rfc3339(const std::optional<ocpp::DateTime>& timestamp) {
-    if (!timestamp.has_value()) {
-        return std::nullopt;
-    }
-    return timestamp->to_rfc3339();
-}
-
 std::filesystem::path remove_dir(std::filesystem::path path) {
     std::filesystem::path result = path;
     if (!path.empty()) {
@@ -1592,24 +1585,24 @@ void GenericOcpp::cb_time_sync(const ocpp::DateTime& current_time) {
 
 void GenericOcpp::cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event,
                                        const std::optional<std::string>& transaction_id,
-                                       const std::optional<ocpp::DateTime>& timestamp) {
+                                       const ocpp::DateTime& timestamp) {
     using namespace module::conversions;
 
     auto ocpp_transaction_event = to_everest_ocpp_transaction_event(transaction_event);
     ocpp_transaction_event.transaction_id = transaction_id;
-    ocpp_transaction_event.timestamp = to_optional_rfc3339(timestamp);
+    ocpp_transaction_event.timestamp = timestamp.to_rfc3339();
     mv_provides.ocpp_generic.publish_ocpp_transaction_event(ocpp_transaction_event);
 }
 
 void GenericOcpp::cb_transaction_event_response(const ocpp::v2::TransactionEventRequest& transaction_event,
                                                 const ocpp::v2::TransactionEventResponse& transaction_event_response,
                                                 const std::optional<std::string>& transaction_id,
-                                                const std::optional<ocpp::DateTime>& timestamp) {
+                                                const ocpp::DateTime& timestamp) {
     using namespace module::conversions;
 
     auto ocpp_transaction_event = to_everest_ocpp_transaction_event(transaction_event);
     ocpp_transaction_event.transaction_id = transaction_id;
-    ocpp_transaction_event.timestamp = to_optional_rfc3339(timestamp);
+    ocpp_transaction_event.timestamp = timestamp.to_rfc3339();
     auto ocpp_transaction_event_response = to_everest_transaction_event_response(transaction_event_response);
     ocpp_transaction_event_response.original_transaction_event = ocpp_transaction_event;
     mv_provides.ocpp_generic.publish_ocpp_transaction_event_response(ocpp_transaction_event_response);

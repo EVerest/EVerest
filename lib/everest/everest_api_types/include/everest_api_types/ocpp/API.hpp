@@ -201,7 +201,7 @@ struct OcppTransactionEvent {
     std::string session_id;
     std::optional<EVSE> evse;
     std::optional<std::string> transaction_id;
-    std::optional<std::string> timestamp;
+    std::string timestamp;
 };
 
 struct EventData {
