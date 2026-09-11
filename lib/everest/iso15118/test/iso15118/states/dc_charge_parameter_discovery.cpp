@@ -27,8 +27,6 @@ session::EvseSetupConfig make_evse_setup() {
     const d20::DcTransferLimits dc_limits;
     const d20::AcTransferLimits ac_limits;
     const d20::DcTransferLimits powersupply_limits;
-    const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
-        {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
     session::EvseSetupConfig setup{};
     setup.evse_id = evse_id;
@@ -40,7 +38,9 @@ session::EvseSetupConfig make_evse_setup() {
     setup.ac_limits = ac_limits;
     setup.der_iec_limits = std::nullopt;
     setup.der_sae_limits = std::nullopt;
-    setup.control_mobility_modes = control_mobility_modes;
+    // Assign via initializer list instead of copying a local vector: GCC 13 at -Os emits a
+    // spurious -Warray-bounds/-Wstringop-overread when inlining vector::operator=(const&).
+    setup.control_mobility_modes = {{dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
     setup.powersupply_limits = powersupply_limits;
     return setup;
 }
