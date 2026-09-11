@@ -10,7 +10,10 @@ set(DEFAULT_LINKAGE SHARED)
 add_library(framework ${DEFAULT_LINKAGE})
 add_library(everest::framework ALIAS framework)
 
-set_target_properties(framework PROPERTIES SOVERSION ${PROJECT_VERSION})
+set_target_properties(framework PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+)
 
 target_sources(framework
     PRIVATE
