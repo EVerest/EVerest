@@ -79,17 +79,17 @@ struct DER_Scheduled_AC_CLReqControlMode : Scheduled_AC_CLReqControlMode {
     std::optional<RationalNumber> minimum_discharge_power;
     std::optional<RationalNumber> minimum_discharge_power_L2;
     std::optional<RationalNumber> minimum_discharge_power_L3;
-    DEROperationalState der_operational_state;
-    DERConnectionStatus der_connection_status;
+    DEROperationalState der_operational_state{DEROperationalState::Off};
+    DERConnectionStatus der_connection_status{DERConnectionStatus::Disconnected};
     std::optional<EVApparentPower> apparent_power;
     std::optional<EVReactivePower> reactive_power;
     std::optional<EVExcitation> excitation;
-    uint64_t update_time;
+    std::uint64_t update_time{0};
     std::optional<uint32_t> minimum_charging_duration;
     std::optional<uint32_t> duration_maximum_charge_rate;
     std::optional<uint32_t> duration_maximum_discharge_rate;
-    uint32_t der_alarm_status;
-    uint32_t enabled_modes;
+    std::uint32_t der_alarm_status{0};
+    std::uint32_t enabled_modes{0};
 };
 
 struct DER_Dynamic_AC_CLReqControlMode : Dynamic_AC_CLReqControlMode {
@@ -107,18 +107,18 @@ struct DER_Dynamic_AC_CLReqControlMode : Dynamic_AC_CLReqControlMode {
     std::optional<EVExcitation> excitation;
     std::optional<RationalNumber> maximum_v2x_energy_request;
     std::optional<RationalNumber> minimum_v2x_energy_request;
-    DEROperationalState der_operational_state;
-    DERConnectionStatus der_connection_status;
-    uint64_t update_time;
-    uint32_t minimum_charging_duration;
-    uint32_t duration_maximum_charge_rate;
-    uint32_t duration_maximum_discharge_rate;
-    uint32_t der_alarm_status;
-    uint32_t enabled_modes;
+    DEROperationalState der_operational_state{DEROperationalState::Off};
+    DERConnectionStatus der_connection_status{DERConnectionStatus::Disconnected};
+    std::uint64_t update_time{0};
+    std::uint32_t minimum_charging_duration{0};
+    std::uint32_t duration_maximum_charge_rate{0};
+    std::uint32_t duration_maximum_discharge_rate{0};
+    std::uint32_t der_alarm_status{0};
+    std::uint32_t enabled_modes{0};
 };
 
 struct EnterServiceCLRes {
-    bool permit_service;
+    bool permit_service{false};
     std::optional<RationalNumber> enter_service_voltage_high;
     std::optional<RationalNumber> enter_service_voltage_low;
     std::optional<RationalNumber> enter_service_frequency_high;
@@ -183,7 +183,7 @@ struct DER_SAE_AC_ChargeLoopRequest {
 
     // the following 2 are inherited from ChargeLoopReq
     std::optional<datatypes::DisplayParameters> display_parameters;
-    bool meter_info_requested;
+    bool meter_info_requested{false};
 
     std::variant<datatypes::sae::DER_Scheduled_AC_CLReqControlMode, datatypes::sae::DER_Dynamic_AC_CLReqControlMode>
         control_mode;
@@ -192,7 +192,7 @@ struct DER_SAE_AC_ChargeLoopRequest {
 struct DER_SAE_AC_ChargeLoopResponse {
 
     Header header;
-    datatypes::ResponseCode response_code;
+    datatypes::ResponseCode response_code{};
 
     // the following 3 are inherited from ChargeLoopRes
     std::optional<datatypes::EvseStatus> status;

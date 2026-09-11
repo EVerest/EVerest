@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <cstdint>
+#include <ctime>
 #include <map>
 #include <optional>
 #include <vector>
@@ -37,5 +38,33 @@ struct DerIecSetupConfig {
     iec::OperatingMode operating_mode;
     iec::GridConnectionMode grid_connection_mode;
 };
+
+/// \brief Complete but deliberately inert default SAE grid code configuration.
+///
+/// Every enable and permit_service is false, so it does nothing. Values stay schema conformant, and every
+/// mandatory curve carries the two data points the schema requires as a minimum. This is not a real grid
+/// code: a deployment needing actual grid-code behavior must supply its own configuration.
+///
+/// The two EnterService voltage bands and the VoltVar reference voltage are volts, not percentages
+/// (AMD1 Table 1), so they are derived from nominal_voltage_v.
+sae::DERControl get_default_sae_der_control(float nominal_voltage_v);
+
+struct DerSaeSetupConfig {
+    explicit DerSaeSetupConfig(sae::DERControl der_control_, sae::RequiredDEROperatingMode op_mode,
+                               sae::GridConnectionMode conn_mode) :
+        der_control(std::move(der_control_)),
+        required_der_operating_mode(op_mode),
+        grid_connection_mode(conn_mode),
+        der_control_update_time(static_cast<std::uint64_t>(std::time(nullptr))) {
+    }
+
+    sae::DERControl der_control{};
+    sae::RequiredDEROperatingMode required_der_operating_mode{sae::RequiredDEROperatingMode::GridFollowing};
+    sae::GridConnectionMode grid_connection_mode{sae::GridConnectionMode::GridConnected};
+    std::uint64_t der_control_update_time{0}; // SECC time
+};
+
+/// Inert default grid code with GridFollowing/GridConnected; not a real grid code.
+DerSaeSetupConfig make_inert_default_sae_setup_config(float nominal_voltage_v);
 
 } // namespace iso15118::d20

@@ -11,8 +11,7 @@
 
 namespace iso15118::message_20 {
 
-namespace datatypes {
-namespace sae {
+namespace datatypes::sae {
 
 // Type aliases for string-based XSD types
 using InverterSwVersion = std::string;
@@ -91,7 +90,7 @@ struct EVInverterDetails {
 };
 
 struct DER_SAE_AC_CPDReqEnergyTransferMode : AC_CPDReqEnergyTransferMode {
-    Processing processing;
+    Processing processing{Processing::Finished};
     RationalNumber maximum_discharge_power;
     std::optional<RationalNumber> maximum_discharge_power_L2;
     std::optional<RationalNumber> maximum_discharge_power_L3;
@@ -103,18 +102,18 @@ struct DER_SAE_AC_CPDReqEnergyTransferMode : AC_CPDReqEnergyTransferMode {
     EVReactivePowerLimits reactive_power_limits;
     EVExcitationLimits excitation_limits;
     EVInverterDetails inverter_details;
-    IEEE1547NormalCategory ieee1547_normal_category;
-    IEEE1547AbnormalCategory ieee1547_abnormal_category;
+    IEEE1547NormalCategory ieee1547_normal_category{IEEE1547NormalCategory::CategoryA};
+    IEEE1547AbnormalCategory ieee1547_abnormal_category{IEEE1547AbnormalCategory::CategoryI};
     RationalNumber nominal_voltage;
     RationalNumber maximum_voltage;
     RationalNumber minimum_voltage;
     RationalNumber nominal_voltage_offset;
-    bool j3072_certified;
-    uint64_t j3072_certification_date;
-    uint32_t useable_watt_hours;
-    uint64_t update_time;
-    uint32_t supported_modes;
-    uint32_t enabled_modes;
+    bool j3072_certified{false};
+    std::uint64_t j3072_certification_date{0};
+    std::uint32_t useable_watt_hours{0};
+    std::uint64_t update_time{0};
+    std::uint32_t supported_modes{0};
+    std::uint32_t enabled_modes{0};
 };
 
 // Structs for DER_SAE_AC_CPDResEnergyTransferMode
@@ -145,7 +144,7 @@ struct GridLimits {
 
 // DERControlCPDRes and nested types
 struct EnterServiceCPDRes {
-    bool permit_service;
+    bool permit_service{false};
     RationalNumber enter_service_voltage_high;
     RationalNumber enter_service_voltage_low;
     RationalNumber enter_service_frequency_high;
@@ -178,7 +177,7 @@ struct DERControlCPDRes {
 };
 
 struct DER_SAE_AC_CPDResEnergyTransferMode : AC_CPDResEnergyTransferMode {
-    Processing processing;
+    Processing processing{Processing::Finished};
     std::optional<EvseStatus> status;
     DERControlCPDRes der_control_cpd_res;
     std::optional<RationalNumber> nominal_charge_power;
@@ -187,18 +186,17 @@ struct DER_SAE_AC_CPDResEnergyTransferMode : AC_CPDResEnergyTransferMode {
     std::optional<RationalNumber> nominal_discharge_power;
     std::optional<RationalNumber> nominal_discharge_power_L2;
     std::optional<RationalNumber> nominal_discharge_power_L3;
-    RationalNumber maximum_discharge_power;
+    RationalNumber maximum_discharge_power{};
     std::optional<RationalNumber> maximum_discharge_power_L2;
     std::optional<RationalNumber> maximum_discharge_power_L3;
     EVSEReactivePowerLimits reactive_power_limits;
     GridLimits grid_limits;
-    RequiredDEROperatingMode required_der_operating_mode;
-    GridConnectionMode grid_connection_mode;
-    uint64_t update_time;
+    RequiredDEROperatingMode required_der_operating_mode{RequiredDEROperatingMode::GridFollowing};
+    GridConnectionMode grid_connection_mode{GridConnectionMode::GridConnected};
+    std::uint64_t update_time{0};
 };
 
-} // namespace sae
-} // namespace datatypes
+} // namespace datatypes::sae
 
 struct DER_SAE_AC_ChargeParameterDiscoveryRequest {
     Header header;
