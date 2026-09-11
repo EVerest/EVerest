@@ -25,14 +25,13 @@ using Command = std::function<Result(const Parameters&)>;
 using ArgumentType = std::vector<std::string>;
 using Arguments = std::map<std::string, ArgumentType>;
 using ReturnType = std::vector<std::string>;
-using JsonCallback = std::function<void(json)>;
-using ValueCallback = std::function<void(Value)>;
+using JsonCallback = std::function<void(const json&)>;
+using ValueCallback = std::function<void(const Value&)>;
 using ConfigMap = std::map<std::string, everest::config::ConfigEntry>;
 using ModuleConfigs = std::map<std::string, ConfigMap>;
 using Array = json::array_t;
 using Object = json::object_t;
-// TODO (aw): can we pass the handler arguments by const ref?
-using Handler = std::function<void(const std::string&, json)>;
+using Handler = std::function<void(const std::string&, const json&)>;
 using StringHandler = std::function<void(std::string)>;
 using StringPairHandler = std::function<void(const std::string& topic, const std::string& data)>;
 
