@@ -156,14 +156,17 @@ struct EvseSlacConfig {
     uint8_t plc_peer_mac[ETH_ALEN] = {0x00, 0xB0, 0x52, 0x00, 0x00, 0x01};
 
     // FIXME (aw): we probably want to use std::array here
-    void generate_nmk();
     uint8_t session_nmk[slac::defs::NMK_LEN]{};
 
     // flag for using 5% PWM in AC mode
     bool ac_mode_five_percent{true};
 
-    // timeout for CM_SET_KEY.REQ
+    // timeout for CM_SET_KEY.REQ; also used as the interval between retries
     int set_key_timeout_ms = 500;
+
+    // maximum number of CM_SET_KEY.REQ attempts before giving up (a new attempt is made every
+    // set_key_timeout_ms if the previous one timed out or was rejected by the modem)
+    int set_key_max_attempts = 10;
 
     // timeout for CM_SLAC_PARM.REQ
     int slac_init_timeout_ms = slac::defs::TT_EVSE_SLAC_INIT_MS;
