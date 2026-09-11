@@ -2,12 +2,11 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/schedule_exchange.hpp>
-#include <iso15118/d20/state/service_detail.hpp>
 
 #include <iso15118/detail/d20/config_validation.hpp>
 #include <iso15118/detail/d20/context_helper.hpp>
+#include <iso15118/detail/d20/state/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/detail/d20/state/ac_der_sae_convert.hpp>
-#include <iso15118/detail/d20/state/service_discovery.hpp>
 #include <iso15118/detail/d20/state/session_stop.hpp>
 #include <iso15118/detail/helper.hpp>
 
@@ -69,6 +68,8 @@ void convert_sae_limits(dt::sae::DER_SAE_AC_CPDResEnergyTransferMode& out, const
     out.grid_limits.maximum_voltage = grid_limits.maximum_voltage;
     out.grid_limits.minimum_voltage = grid_limits.minimum_voltage;
 }
+
+} // namespace
 
 message_20::DER_SAE_AC_ChargeParameterDiscoveryResponse
 handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req, d20::Session& session,
@@ -177,8 +178,6 @@ handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req
     return response_with_code(res, message_20::datatypes::ResponseCode::OK);
 }
 
-} // namespace
-
 void AC_DER_SAE_ChargeParameterDiscovery::enter() {
     logf_debug("Enter state: AC_DER_SAE_ChargeParameterDiscovery");
     present_powers = m_ctx.cache_ac_present_power.value_or(AcPresentPower{});
@@ -201,8 +200,6 @@ Result AC_DER_SAE_ChargeParameterDiscovery::feed(Event ev) {
 
     if (const auto* const req = variant->get_if<message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest>()) {
 
-        // m_ctx.session_ev_info.ev_transfer_limits.emplace<dt::DER_AC_CPDReqEnergyTransferMode>(req->transfer_mode);
-
         const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.ac_limits, present_powers,
                                         m_ctx.session_config.der_sae_limits, m_ctx.session_config.der_sae_setup_config);
 
@@ -213,30 +210,19 @@ Result AC_DER_SAE_ChargeParameterDiscovery::feed(Event ev) {
             return {};
         }
 
-        // m_ctx.feedback.ac_limits(req->transfer_mode);
+        m_ctx.session_ev_info.ev_transfer_limits.emplace<dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode>(
+            req->transfer_mode);
+        m_ctx.feedback.ac_limits(req->transfer_mode);
 
+        // Both sides are checked, unlike the IEC state: the SECC may answer Finished with Ongoing
+        // [V2G20-3353], so [V2G20-3355] keys off the response. The IEC response carries no
+        // EVSEProcessing. Do not harmonize.
         if (req->transfer_mode.processing == dt::Processing::Finished and
             res.transfer_mode.processing == dt::Processing::Finished) {
             return m_ctx.create_state<ScheduleExchange>();
         }
         // Stay in the state because the EV set processing to Ongoing.
         return {};
-    }
-
-    // The EV may restart service selection if it does not accept the dictated DER control settings.
-    if (const auto* const req = variant->get_if<message_20::ServiceDiscoveryRequest>()) {
-        const auto res =
-            handle_request(*req, m_ctx.session, m_ctx.session_config.supported_energy_transfer_services,
-                           m_ctx.session_config.supported_vas_services, m_ctx.session_ev_info.ev_energy_services);
-
-        m_ctx.respond(res);
-
-        if (res.response_code >= message_20::datatypes::ResponseCode::FAILED) {
-            m_ctx.session_stopped = true;
-            return {};
-        }
-
-        return m_ctx.create_state<ServiceDetail>();
     }
 
     if (const auto* const req = variant->get_if<message_20::SessionStopRequest>()) {
