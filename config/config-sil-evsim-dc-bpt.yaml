@@ -16,7 +16,7 @@ active_modules:
       supported_ISO15118_20_DC: true
       tls_active: true
       enable_tls_1_3: true
-      supported_d20_energy_services: MCS
+      supported_d20_energy_services: "DC_BPT,DC"
   evse_manager:
     module: EvseManager
     config_module:
@@ -30,7 +30,6 @@ active_modules:
       payment_enable_contract: false
       bpt_channel: Unified
       bpt_generator_mode: GridFollowing
-      connector_type: cMCS
     connections:
       bsp:
         - module_id: yeti_driver

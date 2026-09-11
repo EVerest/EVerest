@@ -1214,8 +1214,9 @@ Python smoke tests (``tests/core_tests/``):
 - ``evsim_curve_test.py`` — ``DcIsoTaper`` curve via ``run_scenario`` plus
   runtime ``ramp_to_current``.
 - ``evsim_d20_test.py`` — ``DcIsoD20Basic`` end-to-end.
-- ``evsim_bpt_mcs_test.py`` — ``DcIsoBpt`` and ``DcIsoMcs`` smokes against
-  ``config-sil-evsim-dc-bpt.yaml``.
+- ``evsim_bpt_mcs_test.py`` — ``DcIsoBpt`` against
+  ``config-sil-evsim-dc-bpt.yaml`` and ``DcIsoMcs`` against
+  ``config-sil-mcs.yaml``.
 - ``evsim_battery_full_test.py`` — ``on_battery_full: stop_session`` at an
   80 % threshold against ``config-sil-evsim-battery-full.yaml``, plus the
   ``m2e/query_state`` wire round trip.
@@ -1270,4 +1271,10 @@ and OCPP configs under ``config/`` also instantiate the module.
      -
      - ✓
      - ✓
+     -
+   * - ``config-sil-mcs.yaml``
+     -
+     -
+     - ✓
+     -
      - ✓
