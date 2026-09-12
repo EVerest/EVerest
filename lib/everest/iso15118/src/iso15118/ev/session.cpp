@@ -266,12 +266,22 @@ void Session::switch_engine(ProtocolId protocol) {
     const bool pause_requested = with_engine(engine, [](auto& e) { return e.context().is_pause_charging_requested(); });
     const bool cp_c_or_d = with_engine(engine, [](auto& e) { return e.context().cp_state_c_or_d(); });
 
-    if (protocol == ProtocolId::ISO15118_2) {
+    // Three arms rather than two, so -Wswitch still catches a generation nobody wired up. The
+    // ISO 15118-20 arm is unreachable by construction: d20::Engine reports a handover only for a
+    // protocol other than its own, and disposition_violation rejects a Handover without one. It
+    // tears down the way every other stop path in this file does rather than being the one that
+    // forgets to discard.
+    switch (protocol) {
+    case ProtocolId::ISO15118_2:
         engine.emplace<d2::Engine>(callbacks, params, active_control_event, dc_params, has_cp_state_feedback,
                                    resumed_session_id);
-    } else {
-        logf_error("EV negotiated %s, which this build has no engine for; stopping the session",
-                   protocol_id_to_string(protocol));
+        break;
+    case ProtocolId::DIN70121:
+        engine.emplace<din::Engine>(callbacks, params, active_control_event, dc_params, has_cp_state_feedback,
+                                    resumed_session_id);
+        break;
+    case ProtocolId::ISO15118_20:
+        logf_error("EV handover to ISO 15118-20 requested from the -20 engine; stopping the session");
         with_engine(engine, [](auto& e) {
             e.stop();
             e.discard_request();
