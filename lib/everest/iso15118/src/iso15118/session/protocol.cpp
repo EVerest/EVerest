@@ -17,4 +17,16 @@ std::optional<ProtocolId> protocol_id_from_namespace(const std::string& protocol
     return std::nullopt;
 }
 
+const char* protocol_id_to_string(ProtocolId protocol) {
+    switch (protocol) {
+    case ProtocolId::DIN70121:
+        return "DIN70121";
+    case ProtocolId::ISO15118_2:
+        return "ISO15118-2-2013";
+    case ProtocolId::ISO15118_20:
+        return "ISO15118-20";
+    }
+    return "unknown";
+}
+
 } // namespace iso15118

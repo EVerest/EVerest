@@ -96,6 +96,8 @@ Variant::Variant(const io::StreamInputView& buffer_view) {
         insert_type(va, body.SessionStopRes);
     } else if (body.MeteringReceiptReq_isUsed) {
         insert_type(va, body.MeteringReceiptReq);
+    } else if (body.MeteringReceiptRes_isUsed) {
+        insert_type(va, body.MeteringReceiptRes);
     } else if (body.CertificateInstallationRes_isUsed) {
         insert_type(va, body.CertificateInstallationRes);
     } else if (body.CertificateInstallationReq_isUsed) {

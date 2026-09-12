@@ -49,8 +49,25 @@ template <> void convert(const MeteringReceiptResponse& in, struct iso2_Metering
     }
 }
 
+// EV direction: decode the SECC's MeteringReceiptRes.
+template <> void convert(const struct iso2_MeteringReceiptResType& in, MeteringReceiptResponse& out) {
+    cb_convert_enum(in.ResponseCode, out.response_code);
+    if (in.DC_EVSEStatus_isUsed) {
+        out.dc_evse_status.emplace();
+        convert(in.DC_EVSEStatus, out.dc_evse_status.value());
+    }
+    if (in.AC_EVSEStatus_isUsed) {
+        out.ac_evse_status.emplace();
+        convert(in.AC_EVSEStatus, out.ac_evse_status.value());
+    }
+}
+
 template <> void insert_type(VariantAccess& va, const struct iso2_MeteringReceiptReqType& in) {
     va.insert_type<MeteringReceiptRequest>(in);
+}
+
+template <> void insert_type(VariantAccess& va, const struct iso2_MeteringReceiptResType& in) {
+    va.insert_type<MeteringReceiptResponse>(in);
 }
 
 // Only the request->cbv2g direction existed, making this the one asymmetric ISO 15118-2 message pair.
