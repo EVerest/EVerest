@@ -118,7 +118,10 @@ These orderings are load-bearing and cheap to break; each has test coverage.
    this layer.
 2. **Mirror before database.** Without `--db` the user-config YAML mirror is written *before* the
    in-memory database, and a failed mirror write rejects the update, because the mirror is the
-   only persistence that survives a restart (`config_service_core.cpp`).
+   only persistence that survives a restart (`config_service_core.cpp`). The mirror exists only
+   when a YAML config file was actually loaded; with no config file at all (no `--config` and no
+   `<prefix>/etc/everest/default.yaml`, or `--db` only) there is no mirror and runtime writes
+   without `--db` are lost on restart.
 3. **Persist before consulting the module.** A successful database write sets
    `WillApplyOnRestart`; only then is the runtime path entered, and only when mutability is
    `ReadWrite` and the modules are running. With no forwarder registered the value is

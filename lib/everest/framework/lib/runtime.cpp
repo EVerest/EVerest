@@ -81,7 +81,8 @@ BootSource resolve_boot_source(const std::string& config_path, const std::string
     src.db_path = db_path;
     src.reset_from_yaml = reset_from_yaml;
     if (db_path.empty()) {
-        // Also covers "neither --config nor --db": init_config_file("") resolves the default config file.
+        // Also covers "neither --config nor --db": init_config_file("") resolves the default config file if
+        // it exists, otherwise the manager boots without a config on built-in defaults.
         src.mode = BootMode::YamlWithInMemoryDb;
     } else if (config_path.empty()) {
         src.mode = BootMode::DatabaseOnly;
@@ -488,9 +489,9 @@ void ManagerSettings::init_config_file(const std::string& config_) {
 
     if (config_.length() != 0) {
         try {
-            config_file = assert_file(config_, "User profided config");
+            config_file = assert_file(config_, "User provided config");
         } catch (const BootException& e) {
-            if (has_extension(config_file, ".yaml")) {
+            if (has_extension(config_, ".yaml")) {
                 throw;
             }
 
@@ -519,10 +520,18 @@ void ManagerSettings::init_config_file(const std::string& config_) {
 
             config_file = assert_file(user_config_file, short_form_alias);
         } else {
-            // default
-            config_file =
-                assert_file(config_file_prefix / defaults::SYSCONF_DIR / defaults::NAMESPACE / defaults::CONFIG_NAME,
-                            "Default config");
+            // default lookup: the default config file is optional. Only its absence is tolerated; a
+            // present but unusable file (directory, dangling symlink) still fails via assert_file below.
+            const auto default_config =
+                config_file_prefix / defaults::SYSCONF_DIR / defaults::NAMESPACE / defaults::CONFIG_NAME;
+            if (!fs::exists(default_config)) {
+                EVLOG_warning << "No --config given and the default config file '" << default_config.string()
+                              << "' does not exist; starting without a configuration on built-in defaults. The "
+                                 "manager will exit with no modules unless --into-idle or --idle-on-failure is given.";
+                init_no_config();
+                return;
+            }
+            config_file = assert_file(default_config, "Default config");
         }
     }
 

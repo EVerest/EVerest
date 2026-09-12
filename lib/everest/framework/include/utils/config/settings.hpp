@@ -82,14 +82,17 @@ struct ManagerSettings : public ConfigParseSettings {
     ManagerSettings(const std::string& prefix, const std::string& config, const std::string& db_path);
 
     /// \brief Constructor that initializes the ManagerSettings without any config file: config_file stays empty,
-    /// config is an empty object and all settings come from compiled-in defaults (no default.yaml fallback).
-    /// An empty \p db_path falls back to an in-memory database.
+    /// config is an empty object and all settings come from compiled-in defaults. Unlike the other constructors
+    /// this one never looks for default.yaml, even if it exists. An empty \p db_path falls back to an in-memory
+    /// database.
     ManagerSettings(WithoutConfig, const std::string& prefix, const std::string& db_path);
 
     /// \brief Initializes the ManagerSettings with the given settings and prefix.
     void init_settings(const everest::config::Settings& settings);
 
-    /// \brief Initializes the ManagerSettings based on the user provided \p config file or fallback options
+    /// \brief Initializes the ManagerSettings based on the user provided \p config file or fallback options.
+    /// A user provided \p config (full path or short name) must exist. With an empty \p config the default
+    /// config file is looked up; if it is absent this is not an error and init_no_config() is used instead.
     void init_config_file(const std::string& config);
 
     /// \brief Initializes the ManagerSettings for the no-config case: config_file = "", config = empty object.
@@ -104,7 +107,8 @@ struct ManagerSettings : public ConfigParseSettings {
 enum class BootMode {
     /// No --db given (--config or the default config lookup): the YAML config is authoritative and
     /// seeds a process-private in-memory database on every start; runtime configuration writes are
-    /// persisted to the user-config YAML.
+    /// persisted to the user-config YAML. If no --config is given and the default config file does
+    /// not exist, the manager runs with an empty config on built-in defaults and nothing is persisted.
     YamlWithInMemoryDb,
     /// --db only: the database file is the only configuration source.
     DatabaseOnly,
@@ -116,7 +120,7 @@ enum class BootMode {
 /// \brief Resolved configuration boot source, see resolve_boot_source().
 struct BootSource {
     BootMode mode = BootMode::YamlWithInMemoryDb;
-    /// Config file option as given; empty in DatabaseOnly mode, or to request the default config lookup.
+    /// Config file option as given; empty in DatabaseOnly mode, or to request the (optional) default config lookup.
     std::string config_path;
     /// Database path as given; empty means "use an in-memory database" (only in YamlWithInMemoryDb mode).
     std::string db_path;
