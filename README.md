@@ -2,6 +2,7 @@
 ![Alt text](docs/images/everest_horizontal-color.svg)
 
 [![OpenSSF Best Practices](https://bestpractices.coreinfrastructure.org/projects/6739/badge)](https://bestpractices.coreinfrastructure.org/projects/6739)
+[![Self-reported results](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Feverest.github.io%2FHimalayas%2Fsummary.json&query=%24.generated&label=self-reported%20results&color=informational&prefix=updated%20)](https://everest.github.io/Himalayas/)
 
 # EVerest
 
