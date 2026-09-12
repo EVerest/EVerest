@@ -90,14 +90,15 @@ class PyEVJosevModule():
         try:
             while True:
                 self._ready_event.wait()
+                # Consume this start before running the session. A new start may
+                # arrive during teardown or in response to v2g_session_finished.
+                self._ready_event.clear()
                 try:
                     asyncio.run(evcc_handler_main_loop(self._setup.configs.module, exi_codec))
                     self._mod.publish_variable('ev', 'v2g_session_finished', None)
                 except KeyboardInterrupt:
                     log.debug("SECC program terminated manually")
                     break
-                finally:
-                    self._ready_event.clear()
         finally:
             exi_codec.shutdown()
 
