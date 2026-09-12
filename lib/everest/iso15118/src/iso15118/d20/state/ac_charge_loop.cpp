@@ -65,14 +65,10 @@ void convert(Dynamic_BPT_AC_Res& out, const AcTargetPower& targets, const d20::A
 
 // TODO(sl): Refactor with DcChargeLoop state
 namespace {
-template <typename T> void set_dynamic_parameters_in_res(T& res_mode, const UpdateDynamicModeParameters& parameters) {
-    if (parameters.departure_time) {
-        const auto departure_time = static_cast<uint64_t>(parameters.departure_time.value());
-        const auto now = secc_time_s();
-        if (departure_time > now) {
-            res_mode.departure_time = static_cast<uint32_t>(departure_time - now);
-        }
-    }
+template <typename T>
+void set_dynamic_parameters_in_res(T& res_mode, const UpdateDynamicModeParameters& parameters,
+                                   uint64_t header_timestamp) {
+    res_mode.departure_time = departure_time_offset(parameters.departure_time, header_timestamp);
     res_mode.target_soc = parameters.target_soc;
 
     // [V2G20-1366]
@@ -135,7 +131,7 @@ handle_request(const message_20::AC_ChargeLoopRequest& req, const d20::Session& 
         convert(res_mode, target_powers, present_powers);
 
         if (selected_mobility_needs_mode == dt::MobilityNeedsMode::ProvidedBySecc) {
-            set_dynamic_parameters_in_res(res_mode, dynamic_parameters);
+            set_dynamic_parameters_in_res(res_mode, dynamic_parameters, res.header.timestamp);
         }
 
     } else if (std::holds_alternative<Dynamic_BPT_AC_Req>(req.control_mode)) {
@@ -151,7 +147,7 @@ handle_request(const message_20::AC_ChargeLoopRequest& req, const d20::Session& 
         convert(res_mode, target_powers, present_powers);
 
         if (selected_mobility_needs_mode == dt::MobilityNeedsMode::ProvidedBySecc) {
-            set_dynamic_parameters_in_res(res_mode, dynamic_parameters);
+            set_dynamic_parameters_in_res(res_mode, dynamic_parameters, res.header.timestamp);
         }
     }
 

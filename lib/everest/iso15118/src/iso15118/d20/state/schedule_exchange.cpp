@@ -23,6 +23,8 @@ using DynamicReqControlMode = message_20::datatypes::Dynamic_SEReqControlMode;
 using DynamicResControlMode = message_20::datatypes::Dynamic_SEResControlMode;
 
 namespace {
+constexpr uint64_t MICROSECONDS_PER_MILLISECOND = 1'000;
+
 auto create_default_scheduled_control_mode(const dt::RationalNumber& max_power) {
     dt::ScheduleTuple schedule;
     schedule.schedule_tuple_id = 1;
@@ -32,7 +34,7 @@ auto create_default_scheduled_control_mode(const dt::RationalNumber& max_power) 
     // (EVPowerSchedule, EVPowerProfile, AbsolutePriceSchedule, PriceLevelSchedule, Receipt), MeterTimeStamp,
     // the header TimeStamp [V2G20-1534] and the Annex J examples use microseconds. Milliseconds follows the
     // literal text of Table 112; if a price schedule is added to this tuple its anchor must be microseconds.
-    schedule.charging_schedule.power_schedule.time_anchor = secc_time_ms();
+    schedule.charging_schedule.power_schedule.time_anchor = now_in_secc_time() / MICROSECONDS_PER_MILLISECOND;
 
     dt::PowerScheduleEntry power_schedule;
     power_schedule.power = max_power;
@@ -48,14 +50,9 @@ auto create_default_scheduled_control_mode(const dt::RationalNumber& max_power) 
 }
 
 namespace {
-void set_dynamic_parameters_in_res(DynamicResControlMode& res_mode, const UpdateDynamicModeParameters& parameters) {
-    if (parameters.departure_time) {
-        const auto departure_time = static_cast<uint64_t>(parameters.departure_time.value());
-        const auto now = secc_time_s();
-        if (departure_time > now) {
-            res_mode.departure_time = static_cast<uint32_t>(departure_time - now);
-        }
-    }
+void set_dynamic_parameters_in_res(DynamicResControlMode& res_mode, const UpdateDynamicModeParameters& parameters,
+                                   uint64_t header_timestamp) {
+    res_mode.departure_time = departure_time_offset(parameters.departure_time, header_timestamp);
     res_mode.target_soc = parameters.target_soc;
     res_mode.minimum_soc = parameters.min_soc;
 }
@@ -100,7 +97,7 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
         auto& mode = res.control_mode.emplace<DynamicResControlMode>();
 
         if (selected_mobility_needs_mode == dt::MobilityNeedsMode::ProvidedBySecc) {
-            set_dynamic_parameters_in_res(mode, dynamic_parameters);
+            set_dynamic_parameters_in_res(mode, dynamic_parameters, res.header.timestamp);
         }
 
     } else {

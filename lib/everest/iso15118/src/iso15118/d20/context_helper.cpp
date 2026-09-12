@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #include <chrono>
+#include <limits>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/helper.hpp>
@@ -24,12 +25,7 @@
 namespace iso15118::d20 {
 
 namespace {
-void setup_timestamp(message_20::Header& header) {
-    const auto secc_time_us = static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch())
-            .count());
-    header.timestamp = secc_time_us; // [V2G20-2676] Header timestamp is secc time encoded at microseconds resolution
-}
+constexpr uint64_t MICROSECONDS_PER_SECOND = 1'000'000;
 
 template <typename Response> Response handle_sequence_error(const d20::Session& session) {
     Response res;
@@ -39,16 +35,32 @@ template <typename Response> Response handle_sequence_error(const d20::Session& 
 
 } // namespace
 
-//[V2G20-1529] Note 2
-uint64_t secc_time_s() {
+uint64_t now_in_secc_time() {
     return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count());
 }
 
-uint64_t secc_time_ms() {
-    return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-            .count());
+std::optional<uint32_t> departure_time_offset(const std::optional<uint64_t>& departure_time,
+                                              uint64_t header_timestamp) {
+    if (not departure_time.has_value()) {
+        return std::nullopt;
+    }
+
+    // [V2G20-2104] The offset is measured from the timestamp this very message carries, not from a
+    // fresh clock reading, which could already have crossed a second boundary.
+    const auto sent_at = header_timestamp / MICROSECONDS_PER_SECOND;
+
+    if (departure_time.value() <= sent_at) {
+        return std::nullopt; // [V2G20-2103]
+    }
+
+    const auto offset = departure_time.value() - sent_at;
+    if (offset > std::numeric_limits<uint32_t>::max()) {
+        return std::nullopt;
+    }
+
+    return static_cast<uint32_t>(offset);
 }
 
 bool validate_and_setup_header(message_20::Header& header, const Session& cur_session,
@@ -61,7 +73,7 @@ bool validate_and_setup_header(message_20::Header& header, const Session& cur_se
 
 void setup_header(message_20::Header& header, const Session& cur_session) {
     header.session_id = cur_session.get_id();
-    setup_timestamp(header);
+    header.timestamp = now_in_secc_time();
 }
 
 // Todo(sl): Not happy at all. Need refactoring. Only ctx.respond and Session is needed. Not the whole Context.

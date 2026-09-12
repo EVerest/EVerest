@@ -2,13 +2,16 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
-#include <ctime>
+#include <cstdint>
 
+#include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/dc_charge_loop.hpp>
 
 #include <iso15118/d20/config.hpp>
 
 using namespace iso15118;
+
+constexpr std::uint64_t MICROSECONDS_PER_SECOND = 1'000'000;
 
 namespace dt = message_20::datatypes;
 
@@ -369,7 +372,8 @@ SCENARIO("DC charge loop state handling") {
         req.meter_info_requested = false;
         req.present_voltage = {330, 0};
 
-        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 60, 95, std::nullopt};
+        const d20::UpdateDynamicModeParameters dynamic_parameters = {
+            d20::now_in_secc_time() / MICROSECONDS_PER_SECOND + 60, 95, std::nullopt};
 
         const auto res =
             d20::state::handle_request(req, session, 330, 30, false, false, evse_setup.dc_limits, dynamic_parameters);
@@ -422,7 +426,8 @@ SCENARIO("DC charge loop state handling") {
         req.meter_info_requested = false;
         req.present_voltage = {330, 0};
 
-        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, 95, 80};
+        const d20::UpdateDynamicModeParameters dynamic_parameters = {
+            d20::now_in_secc_time() / MICROSECONDS_PER_SECOND + 40, 95, 80};
 
         const auto res =
             d20::state::handle_request(req, session, 330, 30, false, false, evse_setup.dc_limits, dynamic_parameters);
@@ -710,7 +715,8 @@ SCENARIO("DC charge loop state handling") {
         req.meter_info_requested = false;
         req.present_voltage = {330, 0};
 
-        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 60, 95, std::nullopt};
+        const d20::UpdateDynamicModeParameters dynamic_parameters = {
+            d20::now_in_secc_time() / MICROSECONDS_PER_SECOND + 60, 95, std::nullopt};
 
         const auto res =
             d20::state::handle_request(req, session, 330, 30, false, false, evse_setup.dc_limits, dynamic_parameters);
@@ -763,7 +769,8 @@ SCENARIO("DC charge loop state handling") {
         req.meter_info_requested = false;
         req.present_voltage = {330, 0};
 
-        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, 95, 80};
+        const d20::UpdateDynamicModeParameters dynamic_parameters = {
+            d20::now_in_secc_time() / MICROSECONDS_PER_SECOND + 40, 95, 80};
 
         const auto res =
             d20::state::handle_request(req, session, 330, 30, false, false, evse_setup.dc_limits, dynamic_parameters);

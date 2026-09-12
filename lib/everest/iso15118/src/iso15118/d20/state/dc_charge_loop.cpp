@@ -72,14 +72,10 @@ template <> void convert(Dynamic_BPT_DC_Res& out, const d20::DcTransferLimits& i
 }
 
 namespace {
-template <typename T> void set_dynamic_parameters_in_res(T& res_mode, const UpdateDynamicModeParameters& parameters) {
-    if (parameters.departure_time) {
-        const auto departure_time = static_cast<uint64_t>(parameters.departure_time.value());
-        const auto now = secc_time_s();
-        if (departure_time > now) {
-            res_mode.departure_time = static_cast<uint32_t>(departure_time - now);
-        }
-    }
+template <typename T>
+void set_dynamic_parameters_in_res(T& res_mode, const UpdateDynamicModeParameters& parameters,
+                                   uint64_t header_timestamp) {
+    res_mode.departure_time = departure_time_offset(parameters.departure_time, header_timestamp);
     res_mode.target_soc = parameters.target_soc;
 
     // [V2G20-1290]
@@ -154,7 +150,7 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
         convert(res_mode, dc_limits);
 
         if (selected_mobility_needs_mode == dt::MobilityNeedsMode::ProvidedBySecc) {
-            set_dynamic_parameters_in_res(res_mode, dynamic_parameters);
+            set_dynamic_parameters_in_res(res_mode, dynamic_parameters, res.header.timestamp);
         }
 
     } else if (std::holds_alternative<Dynamic_BPT_DC_Req>(req.control_mode)) {
@@ -176,7 +172,7 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
         convert(res_mode, dc_limits);
 
         if (selected_mobility_needs_mode == dt::MobilityNeedsMode::ProvidedBySecc) {
-            set_dynamic_parameters_in_res(res_mode, dynamic_parameters);
+            set_dynamic_parameters_in_res(res_mode, dynamic_parameters, res.header.timestamp);
         }
     }
 
