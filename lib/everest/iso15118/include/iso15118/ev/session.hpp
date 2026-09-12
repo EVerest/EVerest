@@ -25,6 +25,7 @@
 #include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/d20/engine.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
+#include <iso15118/ev/din/engine.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 #include <iso15118/ev/session_params.hpp>
 
@@ -134,7 +135,7 @@ private:
     const std::optional<std::array<uint8_t, 8>> resumed_session_id;
 
     // Engine of the running protocol generation; never moved, only emplaced.
-    std::variant<std::monostate, d20::Engine, d2::Engine> engine;
+    std::variant<std::monostate, d20::Engine, d2::Engine, din::Engine> engine;
 
     OutboundSend outbound_send;
 
