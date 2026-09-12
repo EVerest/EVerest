@@ -239,6 +239,7 @@ if(ISO15118_BUILD_EV_SIDE)
     )
 
     add_subdirectory(ev/d2)
+    add_subdirectory(ev/din)
 
     target_sources(iso15118
         PRIVATE
