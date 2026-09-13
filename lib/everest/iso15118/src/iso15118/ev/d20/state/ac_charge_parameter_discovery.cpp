@@ -4,6 +4,7 @@
 #include <iso15118/ev/ac_phase_split.hpp>
 #include <iso15118/ev/d20/state/ac_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
+#include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
 
@@ -52,14 +53,18 @@ void AC_ChargeParameterDiscovery::enter() {
 
 Result AC_ChargeParameterDiscovery::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::AC_ChargeParameterDiscoveryResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
+    }
+
+    if (auto stop = stop_before_start(m_ctx)) {
+        return std::move(*stop);
     }
 
     if (m_ctx.selected_service() == dt::ServiceCategory::AC_BPT) {
@@ -67,7 +72,7 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
         if (mode == nullptr) {
             logf_error("AC_ChargeParameterDiscoveryResponse offers a non-BPT transfer mode the EV did not request");
             m_ctx.stop_session();
-            return {};
+            return Result::stopping();
         }
         m_ctx.feedback.ac_bpt_limits(*mode);
         return m_ctx.create_state<ScheduleExchange>();
@@ -77,7 +82,7 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
     if (mode == nullptr) {
         logf_error("AC_ChargeParameterDiscoveryResponse offers a BPT transfer mode the EV did not request");
         m_ctx.stop_session();
-        return {};
+        return Result::stopping();
     }
     m_ctx.feedback.ac_limits(*mode);
 

@@ -17,7 +17,7 @@ void SessionStop::enter() {
 
 Result SessionStop::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
@@ -26,7 +26,7 @@ Result SessionStop::feed(Event ev) {
     // failure. SessionStop is terminal, so the session ends here regardless.
     expect_response<message_20::SessionStopResponse>(m_ctx, *variant);
     m_ctx.stop_session();
-    return {};
+    return Result::stopping();
 }
 
 } // namespace iso15118::ev::d20::state

@@ -4,6 +4,7 @@
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/dc_cable_check.hpp>
 #include <iso15118/ev/d20/state/dc_pre_charge.hpp>
+#include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/dc_cable_check.hpp>
 
@@ -25,14 +26,18 @@ void DC_CableCheck::enter() {
 
 Result DC_CableCheck::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::DC_CableCheckResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
+    }
+
+    if (auto stop = stop_before_start(m_ctx)) {
+        return std::move(*stop);
     }
 
     if (res->processing == message_20::datatypes::Processing::Finished) {
@@ -41,7 +46,7 @@ Result DC_CableCheck::feed(Event ev) {
 
     // Processing::Ongoing: re-poll
     m_ctx.send_request(make_request(m_ctx.get_session()));
-    return {};
+    return Result::awaiting();
 }
 
 } // namespace iso15118::ev::d20::state
