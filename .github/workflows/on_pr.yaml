@@ -1,4 +1,4 @@
-name: On PR - Lint, Build CMake with GCC, Build Bazel, Build Docs, Test
+name: PR
 
 on:
   pull_request: {}
@@ -20,7 +20,7 @@ jobs:
 
 
   setup-env:
-    name: Call Setup Environment workflow
+    name: Setup
     uses: ./.github/workflows/job_setup-env.yml
     with:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
@@ -28,7 +28,7 @@ jobs:
 
 
   build-build-kit:
-    name: Call Build the build-kit workflow
+    name: Build-kit
     uses: ./.github/workflows/job_build-build-kit.yml
     needs:
       - setup-env
@@ -38,7 +38,7 @@ jobs:
 
 
   build-cmake-gcc:
-    name: Call Build with CMake and GCC workflow
+    name: CMake GCC
     uses: ./.github/workflows/job_build-cmake-gcc.yml
     needs:
       - setup-env
@@ -55,7 +55,7 @@ jobs:
 
 
   integration-tests:
-    name: Call Integration Tests workflow
+    name: Integration
     uses: ./.github/workflows/job_integrations-tests.yml
     needs:
       - setup-env
@@ -70,7 +70,7 @@ jobs:
 
 
   ocpp-tests:
-    name: Call OCPP Tests workflow
+    name: OCPP
     uses: ./.github/workflows/job_ocpp-tests.yml
     needs:
       - setup-env
@@ -85,7 +85,7 @@ jobs:
 
 
   lint:
-    name: Call Lint workflow
+    name: Lint
     uses: ./.github/workflows/job_lint.yml
     needs:
       - setup-env
@@ -95,7 +95,7 @@ jobs:
 
 
   build-docs:
-    name: Call Build Documentation workflow
+    name: Docs
     needs:
       - setup-env
       - build-build-kit
@@ -111,21 +111,21 @@ jobs:
       instance_name: ${{ format('{0} @ {1}', github.ref_name, github.sha) }}
 
   dco-check:
-    name: Call DCO Check workflow
+    name: DCO
     uses: ./.github/workflows/job_dco-check.yaml
     with:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
 
 
   bazel-build-and-test:
-    name: Call Bazel Build and Test workflow
+    name: Bazel
     uses: ./.github/workflows/job_bazel-build-test.yaml
     with:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
 
 
   bazel-cross-build:
-    name: Call Bazel Cross-Build workflow (${{ matrix.platform }})
+    name: Bazel Cross (${{ matrix.platform }})
     strategy:
       fail-fast: false
       matrix:
