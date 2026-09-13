@@ -27,7 +27,7 @@ on:
 
 jobs:
   build-build-kit:
-    name: Build the build-kit
+    name: build
     runs-on: ${{ inputs.runner }}
     env:
       BUILD_KIT_ARTIFACT_NAME: build-kit

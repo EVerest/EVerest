@@ -79,7 +79,7 @@ on:
 
 jobs:
   build-cmake-gcc:
-    name: Build with CMake and GCC, Unit Tests and Install
+    name: build + unit tests
     runs-on: ${{ inputs.runner }}
     env:
       CTEST_REPORT_ARTIFACT_NAME: ctest-report

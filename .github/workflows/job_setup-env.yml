@@ -26,7 +26,7 @@ on:
 
 jobs:
   setup-env:
-    name: Setup Environment
+    name: env
     runs-on: ${{ inputs.runner }}
     outputs:
       is_fork: ${{ steps.is_fork.outputs.is_fork }}

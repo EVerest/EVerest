@@ -30,7 +30,7 @@ on:
 jobs:
 
   setup-env:
-    name: Call Setup Environment workflow
+    name: Setup
     uses: ./.github/workflows/job_setup-env.yml
     with:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
@@ -38,7 +38,7 @@ jobs:
 
 
   build-build-kit:
-    name: Call Build the build-kit workflow
+    name: Build-kit
     needs:
       - setup-env
     uses: ./.github/workflows/job_build-build-kit.yml
@@ -48,7 +48,7 @@ jobs:
 
 
   build-docs:
-    name: Call Build and Deploy Documentation workflow
+    name: Docs
     needs:
       - setup-env
       - build-build-kit

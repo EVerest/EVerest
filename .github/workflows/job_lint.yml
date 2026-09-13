@@ -15,7 +15,7 @@ on:
 
 jobs:
   lint:
-    name: Lint Repository
+    name: lint
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Checkout local github actions

@@ -1,4 +1,4 @@
-name: On Main - Build CMake with GCC, Build Docs, and Deploy Docs
+name: Main
 
 on:
   push:
@@ -9,7 +9,7 @@ jobs:
 
 
   setup-env:
-    name: Call Setup Environment workflow
+    name: Setup
     uses: ./.github/workflows/job_setup-env.yml
     with:
       runner: ubuntu-24.04
@@ -17,7 +17,7 @@ jobs:
 
 
   build-build-kit:
-    name: Call Build the build-kit workflow
+    name: Build-kit
     uses: ./.github/workflows/job_build-build-kit.yml
     needs:
       - setup-env
@@ -27,7 +27,7 @@ jobs:
 
 
   build-cmake-gcc:
-    name: Call Build with CMake and GCC workflow
+    name: CMake GCC
     uses: ./.github/workflows/job_build-cmake-gcc.yml
     needs:
       - setup-env
@@ -60,7 +60,7 @@ jobs:
 
 
   build-docs:
-    name: Call Build and Deploy Documentation workflow
+    name: Docs
     needs:
       - setup-env
       - build-build-kit

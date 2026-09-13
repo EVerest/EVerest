@@ -37,7 +37,7 @@ on:
 
 jobs:
   ocpp-tests:
-    name: Run OCPP Tests
+    name: tests
     runs-on: ${{ inputs.runner }}
     env:
       OCPP_TESTS_ARTIFACT_NAME: ocpp-tests-artifacts
