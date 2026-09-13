@@ -111,6 +111,10 @@ public:
     sigslot::signal<CPEvent> signal_event;
     sigslot::signal<> signal_lock;
     sigslot::signal<> signal_unlock;
+    // Raw measured CP state (A-F) as reported by the BSP, emitted on every change BEFORE the
+    // derived CPEvents of the same measurement: downstream consumers (HLC stack) must e.g. learn
+    // state A before a signal_event handler triggers the SLAC teardown.
+    sigslot::signal<RawCPState> signal_raw_cp_state_changed;
 
 private:
     void connector_lock();
@@ -139,6 +143,9 @@ private:
     // True while the high level state machine wants CP state F. Guards the automatic X1 reset on
     // Disabled/A/E events, which could otherwise undo a concurrently commanded F on the BSP.
     bool cp_state_f_requested{false};
+    // Last raw state published via signal_raw_cp_state_changed (only touched from
+    // feed_state_machine).
+    RawCPState signalled_raw_cp_state{RawCPState::Disabled};
     AsyncTimeout timeout_state_c1;
     AsyncTimeout timeout_unlock_state_F;
 

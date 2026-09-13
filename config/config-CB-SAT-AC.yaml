@@ -85,10 +85,11 @@ active_modules:
   iso15118_charger:
     config_module:
       device: cb_plc
-      tls_security: prohibit
+      tls_negotiation_strategy: ENFORCE_NO_TLS
       supported_DIN70121: false
+      supported_ISO15118_2: true
     connections: {}
-    module: EvseV2G
+    module: Evse15118D20
     connections:
       security:
         - module_id: evse_security

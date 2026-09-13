@@ -4,6 +4,8 @@
 
 #include <iso15118/detail/d20/state/ac_charge_parameter_discovery.hpp>
 
+#include <iso15118/session/config.hpp>
+
 using namespace iso15118;
 
 namespace dt = message_20::datatypes;
@@ -30,20 +32,20 @@ SCENARIO("AC charge parameter discovery state handling") {
         const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
             {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
-        const d20::EvseSetupConfig evse_setup{evse_id,
-                                              supported_energy_services,
-                                              auth_services,
-                                              vas_services,
-                                              cert_install,
-                                              dc_limits,
-                                              ac_limits,
-                                              std::nullopt,
-                                              control_mobility_modes,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              powersupply_limits};
+        const session::EvseSetupConfig evse_setup{evse_id,
+                                                  supported_energy_services,
+                                                  auth_services,
+                                                  vas_services,
+                                                  cert_install,
+                                                  dc_limits,
+                                                  ac_limits,
+                                                  std::nullopt,
+                                                  control_mobility_modes,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  powersupply_limits};
 
         message_20::AC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
@@ -53,7 +55,7 @@ SCENARIO("AC charge parameter discovery state handling") {
         req_out.max_charge_power = {11, 3};
         req_out.min_charge_power = {23, 2};
 
-        const auto res = d20::state::handle_request(req, d20::Session(), d20::SessionConfig(evse_setup).ac_limits,
+        const auto res = d20::state::handle_request(req, d20::Session(), session::SessionConfig(evse_setup).ac_limits,
                                                     iso15118::d20::AcPresentPower{});
 
         THEN("ResponseCode: FAILED_UnknownSession, mandatory fields should be set") {
@@ -85,20 +87,20 @@ SCENARIO("AC charge parameter discovery state handling") {
         const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
             {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
-        const d20::EvseSetupConfig evse_setup{evse_id,
-                                              supported_energy_services,
-                                              auth_services,
-                                              vas_services,
-                                              cert_install,
-                                              dc_limits,
-                                              ac_limits,
-                                              std::nullopt,
-                                              control_mobility_modes,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              powersupply_limits};
+        const session::EvseSetupConfig evse_setup{evse_id,
+                                                  supported_energy_services,
+                                                  auth_services,
+                                                  vas_services,
+                                                  cert_install,
+                                                  dc_limits,
+                                                  ac_limits,
+                                                  std::nullopt,
+                                                  control_mobility_modes,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  powersupply_limits};
 
         auto session = d20::Session(service_parameters);
 
@@ -110,7 +112,7 @@ SCENARIO("AC charge parameter discovery state handling") {
         req_out.max_charge_power = {11, 3};
         req_out.min_charge_power = {23, 2};
 
-        const auto res = d20::state::handle_request(req, session, d20::SessionConfig(evse_setup).ac_limits,
+        const auto res = d20::state::handle_request(req, session, session::SessionConfig(evse_setup).ac_limits,
                                                     iso15118::d20::AcPresentPower{});
 
         THEN("ResponseCode: FAILED_WrongChargeParameter, mandatory fields should be set") {
@@ -141,20 +143,20 @@ SCENARIO("AC charge parameter discovery state handling") {
         const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
             {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
-        const d20::EvseSetupConfig evse_setup{evse_id,
-                                              supported_energy_services,
-                                              auth_services,
-                                              vas_services,
-                                              cert_install,
-                                              dc_limits,
-                                              ac_limits,
-                                              std::nullopt,
-                                              control_mobility_modes,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              powersupply_limits};
+        const session::EvseSetupConfig evse_setup{evse_id,
+                                                  supported_energy_services,
+                                                  auth_services,
+                                                  vas_services,
+                                                  cert_install,
+                                                  dc_limits,
+                                                  ac_limits,
+                                                  std::nullopt,
+                                                  control_mobility_modes,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  powersupply_limits};
 
         auto session = d20::Session(service_parameters);
 
@@ -168,7 +170,7 @@ SCENARIO("AC charge parameter discovery state handling") {
         req_out.max_discharge_power = {11, 3};
         req_out.min_discharge_power = {23, 2};
 
-        const auto res = d20::state::handle_request(req, session, d20::SessionConfig(evse_setup).ac_limits,
+        const auto res = d20::state::handle_request(req, session, session::SessionConfig(evse_setup).ac_limits,
                                                     iso15118::d20::AcPresentPower{});
 
         THEN("ResponseCode: FAILED_WrongChargeParameter, mandatory fields should be set") {
@@ -201,22 +203,22 @@ SCENARIO("AC charge parameter discovery state handling") {
         const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
             {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
-        const d20::EvseSetupConfig evse_setup{evse_id,
-                                              supported_energy_services,
-                                              auth_services,
-                                              vas_services,
-                                              cert_install,
-                                              dc_limits,
-                                              ac_limits,
-                                              std::nullopt,
-                                              control_mobility_modes,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              powersupply_limits};
+        const session::EvseSetupConfig evse_setup{evse_id,
+                                                  supported_energy_services,
+                                                  auth_services,
+                                                  vas_services,
+                                                  cert_install,
+                                                  dc_limits,
+                                                  ac_limits,
+                                                  std::nullopt,
+                                                  control_mobility_modes,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  powersupply_limits};
 
-        d20::SessionConfig config = d20::SessionConfig(evse_setup);
+        session::SessionConfig config = session::SessionConfig(evse_setup);
 
         float max_charge_power = 11000.0f;
         float min_charge_power = 11000.0f;
@@ -272,22 +274,22 @@ SCENARIO("AC charge parameter discovery state handling") {
         const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
             {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
-        const d20::EvseSetupConfig evse_setup{evse_id,
-                                              supported_energy_services,
-                                              auth_services,
-                                              vas_services,
-                                              cert_install,
-                                              dc_limits,
-                                              ac_limits,
-                                              std::nullopt,
-                                              control_mobility_modes,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              std::nullopt,
-                                              powersupply_limits};
+        const session::EvseSetupConfig evse_setup{evse_id,
+                                                  supported_energy_services,
+                                                  auth_services,
+                                                  vas_services,
+                                                  cert_install,
+                                                  dc_limits,
+                                                  ac_limits,
+                                                  std::nullopt,
+                                                  control_mobility_modes,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  std::nullopt,
+                                                  powersupply_limits};
 
-        auto config = d20::SessionConfig(evse_setup);
+        auto config = session::SessionConfig(evse_setup);
 
         float max_charge_power = 11000.0f;
         float min_charge_power = 11000.0f;
