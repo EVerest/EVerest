@@ -1,0 +1,79 @@
+name: ev-cli Module Update Check
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Which runner to use'
+        required: false
+        default: 'ubuntu-24.04'
+        type: string
+      build_env_base_image_tag:
+        description: 'Tag of the build-env-base image to run in. Keep in sync with the image used by
+          the run-clang-format action of everest-ci, so that generated files are formatted with the
+          same clang-format version the lint job checks against.'
+        required: false
+        default: 'v1.5.4'
+        type: string
+
+jobs:
+  ev-cli-mod-update:
+    name: ev-cli mod update
+    runs-on: ${{ inputs.runner }}
+    # Not mandatory yet: the job fails when a module would lose hand-written code, but it must
+    # not block a merge.
+    continue-on-error: true
+    container:
+      image: ghcr.io/everest/everest-ci/build-env-base:${{ inputs.build_env_base_image_tag }}
+    env:
+      REPORT_NAME: ev-cli-mod-update-report
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Allow git to operate on the checkout
+        run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+      - name: Install ev-cli
+        run: |
+          python3 -m venv /tmp/ev-cli-venv
+          /tmp/ev-cli-venv/bin/pip install --quiet ./applications/utils/ev-dev-tools
+      - name: Check that ev-cli mod update --force is a no-op
+        id: check
+        run: |
+          set +e
+          /tmp/ev-cli-venv/bin/python tests/ev-cli/check_mod_update.py \
+            --ev-cli /tmp/ev-cli-venv/bin/ev-cli \
+            --markdown "${REPORT_NAME}.md" \
+            --json "${REPORT_NAME}.json"
+          echo "exit_code=$?" >> "${GITHUB_OUTPUT}"
+      - name: Write report to job summary
+        if: ${{ always() && steps.check.outcome != 'skipped' }}
+        run: cat "${REPORT_NAME}.md" >> "${GITHUB_STEP_SUMMARY}"
+      - name: Upload report
+        if: ${{ always() && steps.check.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          name: ${{ env.REPORT_NAME }}
+          path: ${{ env.REPORT_NAME }}.*
+      - name: Grade the findings
+        run: |
+          # 0: everything regenerates cleanly -> pass
+          # 1: only template refreshes pending -> pass with a warning
+          # 2: hand-written code would be lost, or ev-cli cannot update a module -> fail
+          # 3: the checker itself could not run -> fail
+          case "${{ steps.check.outputs.exit_code }}" in
+            0)
+              echo "Every module regenerates to a zero diff."
+              ;;
+            1)
+              echo "::warning title=ev-cli mod update::Some modules need a template refresh, see the job summary"
+              ;;
+            2)
+              echo "::error title=ev-cli mod update::Some modules would lose hand-written code or cannot be updated, see the job summary"
+              exit 1
+              ;;
+            *)
+              echo "::error title=ev-cli mod update::The checker did not run (exit code ${{ steps.check.outputs.exit_code }})"
+              exit 1
+              ;;
+          esac
