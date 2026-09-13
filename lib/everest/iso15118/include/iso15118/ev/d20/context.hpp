@@ -110,7 +110,7 @@ public:
     std::unique_ptr<message_20::Variant> pull_response();
     message_20::Type peek_response_type() const;
 
-    template <typename MessageType> void respond(const MessageType& msg) {
+    template <typename MessageType> void send_request(const MessageType& msg) {
         message_exchange.set_request(msg);
     }
 
@@ -180,6 +180,27 @@ public:
         return *h;
     }
 
+    // Last present voltage the SECC reported in a DC charge-loop response. The EV has no
+    // measurement source for its own mandatory present voltage yet, so the charge loop
+    // approximates it from this. Held here so it outlives a single loop iteration.
+    std::optional<float> evse_present_voltage() const {
+        return evse_present_voltage_;
+    }
+
+    void set_evse_present_voltage(float voltage) {
+        evse_present_voltage_ = voltage;
+    }
+
+    // Last active-power target the SECC dictated in an AC charge-loop response. Same
+    // role as evse_present_voltage() for the mandatory AC present active power.
+    std::optional<float> evse_target_active_power() const {
+        return evse_target_active_power_;
+    }
+
+    void set_evse_target_active_power(float power) {
+        evse_target_active_power_ = power;
+    }
+
     // Energy service requested at construction; ServiceSelection sends exactly this.
     message_20::datatypes::ServiceCategory selected_service() const {
         return selected_service_;
@@ -238,6 +259,10 @@ private:
 
     // Module -> FSM AC-params channel; same locked-copy-snapshot contract as dc_params.
     everest::lib::util::monitor<AcChargeParams>& ac_params;
+
+    std::optional<float> evse_present_voltage_{};
+
+    std::optional<float> evse_target_active_power_{};
 
     message_20::datatypes::ServiceCategory selected_service_;
 
