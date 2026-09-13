@@ -62,6 +62,8 @@ template <> void convert(const struct appHand_supportedAppProtocolRes& in, Suppo
 
     if (in.SchemaID_isUsed) {
         out.schema_id.emplace(in.SchemaID);
+    } else {
+        out.schema_id.reset();
     }
 }
 

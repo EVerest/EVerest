@@ -27,7 +27,7 @@ bool check_response_code(ResponseCode response_code) {
     }
 }
 
-message_20::DC_WeldingDetectionRequest make_request(const Session& session,
+message_20::DC_WeldingDetectionRequest make_request(const SessionId& session,
                                                     message_20::datatypes::Processing processing) {
     message_20::DC_WeldingDetectionRequest req;
     setup_header(req.header, session);
@@ -62,8 +62,10 @@ Result DC_WeldingDetection::feed(Event ev) {
             return {};
         }
 
-        // First OK response — send Finished and transition.
-        m_ctx.respond(make_request(m_ctx.get_session(), message_20::datatypes::Processing::Finished));
+        // OK response — transition to SessionStop, whose enter() emits a SessionStopRequest.
+        // The SECC stays in WeldingDetection on our Ongoing request and answers the
+        // SessionStopReq directly; no second (Finished) welding request is emitted (never
+        // respond + transition in one pass).
         return m_ctx.create_state<SessionStop>();
     }
 
