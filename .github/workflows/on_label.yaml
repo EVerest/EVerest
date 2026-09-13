@@ -2,7 +2,7 @@
 # Nixpkgs: https://github.com/NixOS/nixpkgs/blob/a698ac1214cd924d4394ca9cd2691618765aa03c/.github/workflows/backport.yml
 # NixOS-WSL: https://github.com/nix-community/NixOS-WSL/blob/be894604b2aa2184c0b3d3b44995acd0da14dc0c/.github/workflows/on_label.yml
 
-name: "Backport"
+name: Backport
 
 on:
   pull_request_target:
@@ -13,7 +13,7 @@ on:
 jobs:
   backport:
     if: github.event.pull_request.labels && contains(join(github.event.pull_request.labels.*.name, ', '), 'backport ')
-    name: Backport PR 🔙
+    name: backport pr
     runs-on: ubuntu-24.04
     permissions:
       contents: write

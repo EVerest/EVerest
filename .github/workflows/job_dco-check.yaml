@@ -10,7 +10,7 @@ on:
 
 jobs:
   dco_check:
-    name: DCO Check
+    name: check
     runs-on: ${{ inputs.runner }}
     steps:
       - uses: actions/checkout@v3

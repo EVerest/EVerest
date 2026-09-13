@@ -56,7 +56,7 @@ on:
 
 jobs:
   integration-tests:
-    name: Run Integration Tests
+    name: tests
     runs-on: ${{ inputs.runner }}
     env:
       INTEGRATION_IMAGE_NAME: integration-image
