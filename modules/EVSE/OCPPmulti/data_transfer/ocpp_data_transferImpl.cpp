@@ -12,6 +12,10 @@ void ocpp_data_transferImpl::init() {
 void ocpp_data_transferImpl::ready() {
 }
 
+void ocpp_data_transferImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
+}
+
 types::ocpp::DataTransferResponse
 ocpp_data_transferImpl::handle_data_transfer(types::ocpp::DataTransferRequest& request) {
     return mod->m_ocpp.handle_data_transfer(request);
