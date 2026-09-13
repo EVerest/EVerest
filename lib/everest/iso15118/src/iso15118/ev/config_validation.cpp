@@ -68,6 +68,10 @@ std::vector<std::string> validate_config(const EvConfig& config) {
 std::vector<std::string> validate_ac_charge_params(const AcChargeParams& params) {
     std::vector<std::string> problems;
 
+    if (params.phase_count != 1 and params.phase_count != 3) {
+        problems.emplace_back("ac phase_count must be 1 or 3 (is " + std::to_string(params.phase_count) + ")");
+    }
+
     check_non_negative(problems, "ac max_charge_power", params.max_charge_power);
     check_non_negative(problems, "ac min_charge_power", params.min_charge_power);
     check_non_negative(problems, "ac max_discharge_power", params.max_discharge_power);

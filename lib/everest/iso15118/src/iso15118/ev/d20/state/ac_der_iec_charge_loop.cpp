@@ -2,6 +2,7 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/der_functions.hpp>
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/ev/ac_phase_split.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/ac_der_iec_charge_loop.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
@@ -15,7 +16,8 @@ namespace {
 
 namespace dt = message_20::datatypes;
 
-message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, const AcChargeParams& params) {
+message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, const AcChargeParams& params,
+                                                  dt::AcConnector connector) {
     message_20::DER_AC_ChargeLoopRequest req;
     setup_header(req.header, session);
     req.meter_info_requested = false;
@@ -26,13 +28,18 @@ message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, cons
     mode.target_energy_request = {0, 0};
     mode.max_energy_request = {0, 0};
     mode.min_energy_request = {0, 0};
-    mode.max_charge_power = dt::from_float(params.max_charge_power);
-    mode.min_charge_power = dt::from_float(params.min_charge_power);
+    emit_ac_limit(params.max_charge_power, params.phase_count, connector, mode.max_charge_power,
+                  mode.max_charge_power_L2, mode.max_charge_power_L3);
+    emit_ac_limit(params.min_charge_power, params.phase_count, connector, mode.min_charge_power,
+                  mode.min_charge_power_L2, mode.min_charge_power_L3);
     // Only ever the module's measurement; see the note in dc_charge_loop.cpp.
-    mode.present_active_power = dt::from_float(params.present_active_power);
+    emit_ac_present(params.present_active_power, params.phase_count, connector, mode.present_active_power,
+                    mode.present_active_power_L2, mode.present_active_power_L3);
     mode.present_reactive_power = {0, 0};
-    mode.max_discharge_power = dt::from_float(params.max_discharge_power);
-    mode.min_discharge_power = dt::from_float(params.min_discharge_power);
+    emit_ac_limit(params.max_discharge_power, params.phase_count, connector, mode.max_discharge_power,
+                  mode.max_discharge_power_L2, mode.max_discharge_power_L3);
+    emit_ac_limit(params.min_discharge_power, params.phase_count, connector, mode.min_discharge_power,
+                  mode.min_discharge_power_L2, mode.min_discharge_power_L3);
     mode.grid_event_condition = 0;
     req.control_mode = mode;
 
@@ -43,7 +50,7 @@ message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, cons
 
 void AC_DER_IEC_ChargeLoop::enter() {
     logf_debug("Enter state: AC_DER_IEC_ChargeLoop");
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.ac_connector()));
 }
 
 Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
@@ -90,7 +97,7 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
     }
 
     m_ctx.feedback.der_control(directive);
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.ac_connector()));
     return {};
 }
 

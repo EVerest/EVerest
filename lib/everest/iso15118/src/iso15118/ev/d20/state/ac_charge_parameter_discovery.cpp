@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/ev/ac_phase_split.hpp>
 #include <iso15118/ev/d20/state/ac_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
@@ -12,9 +13,11 @@ namespace {
 
 namespace dt = message_20::datatypes;
 
-void fill_charge_limits(dt::AC_CPDReqEnergyTransferMode& mode, const AcChargeParams& p) {
-    mode.max_charge_power = dt::from_float(p.max_charge_power);
-    mode.min_charge_power = dt::from_float(p.min_charge_power);
+void fill_charge_limits(dt::AC_CPDReqEnergyTransferMode& mode, const AcChargeParams& p, dt::AcConnector connector) {
+    emit_ac_limit(p.max_charge_power, p.phase_count, connector, mode.max_charge_power, mode.max_charge_power_L2,
+                  mode.max_charge_power_L3);
+    emit_ac_limit(p.min_charge_power, p.phase_count, connector, mode.min_charge_power, mode.min_charge_power_L2,
+                  mode.min_charge_power_L3);
 }
 
 } // namespace
@@ -23,19 +26,24 @@ void AC_ChargeParameterDiscovery::enter() {
     logf_debug("Enter state: AC_ChargeParameterDiscovery");
 
     const auto p = m_ctx.get_ac_params();
+    const auto connector = m_ctx.ac_connector();
 
     message_20::AC_ChargeParameterDiscoveryRequest req;
     setup_header(req.header, m_ctx.get_session());
 
     if (m_ctx.selected_service() == dt::ServiceCategory::AC_BPT) {
         dt::BPT_AC_CPDReqEnergyTransferMode mode{};
-        fill_charge_limits(mode, p);
-        mode.max_discharge_power = dt::from_float(p.max_discharge_power);
-        mode.min_discharge_power = dt::from_float(p.min_discharge_power);
+        fill_charge_limits(mode, p, connector);
+
+        emit_ac_limit(p.max_discharge_power, p.phase_count, connector, mode.max_discharge_power,
+                      mode.max_discharge_power_L2, mode.max_discharge_power_L3);
+        emit_ac_limit(p.min_discharge_power, p.phase_count, connector, mode.min_discharge_power,
+                      mode.min_discharge_power_L2, mode.min_discharge_power_L3);
+
         req.transfer_mode = mode;
     } else {
         dt::AC_CPDReqEnergyTransferMode mode{};
-        fill_charge_limits(mode, p);
+        fill_charge_limits(mode, p, connector);
         req.transfer_mode = mode;
     }
 

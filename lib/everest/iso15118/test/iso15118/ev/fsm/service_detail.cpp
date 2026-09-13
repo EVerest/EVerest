@@ -46,6 +46,13 @@ template <typename NarrowInt> ParameterSet make_param_set_narrow(uint16_t id, Co
     return set;
 }
 
+// Parameter set with an explicit Connector value, so connector preference can be exercised.
+ParameterSet make_param_set(uint16_t id, ControlMode control_mode, int32_t connector) {
+    auto set = make_param_set(id, control_mode);
+    set.parameter[0] = {"Connector", connector};
+    return set;
+}
+
 message_20::ServiceDetailResponse make_response(const message_20::Header& header, ResponseCode code,
                                                 ServiceCategory service,
                                                 const std::vector<ParameterSet>& parameter_sets) {
@@ -91,6 +98,14 @@ std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> der_mask(std::initializer_list<DERCo
     return mask;
 }
 
+// A DER parameter set with an explicit Connector value.
+ParameterSet make_der_param_set_on(uint16_t id, ControlMode control_mode, int32_t connector,
+                                   std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> der_mask) {
+    auto set = make_der_param_set(id, control_mode, der_mask);
+    set.parameter[0] = {"Connector", connector};
+    return set;
+}
+
 // Parameter set carrying a raw DERControlFunctions bitmask, so a SECC advertising bits at or
 // above the width the EV models can be exercised.
 ParameterSet make_der_param_set_raw(uint16_t id, ControlMode control_mode, int32_t der_functions) {
@@ -116,6 +131,43 @@ ev::DerControlFunctions dso_setpoint_support() {
     functions.dso_q_setpoint_provision = true;
     functions.dso_cos_phi_setpoint_provision = true;
     return functions;
+}
+
+// An EV supporting every IEC DER control function.
+ev::DerControlFunctions all_der_support() {
+    ev::DerControlFunctions functions{};
+    functions.over_frequency_watt_mode = true;
+    functions.under_frequency_watt_mode = true;
+    functions.volt_watt_mode = true;
+    functions.volt_var_mode = true;
+    functions.watt_var_mode = true;
+    functions.watt_cos_phi_mode = true;
+    functions.dso_q_setpoint_provision = true;
+    functions.dso_cos_phi_setpoint_provision = true;
+    functions.dc_injection_restriction = true;
+    functions.zero_current_mode = true;
+    functions.over_voltage_fault_ride_through_mode = true;
+    functions.under_voltage_fault_ride_through_mode = true;
+    return functions;
+}
+
+// Seeds an AC session for an EV drawing on \p phase_count lines.
+auto seed_ac_lines(uint8_t phase_count) {
+    return [phase_count](FsmStateHelper& helper) {
+        ev::AcChargeParams params{};
+        params.phase_count = phase_count;
+        helper.set_ac_params(params);
+    };
+}
+
+constexpr int32_t SINGLE_PHASE = message_20::to_underlying_value(message_20::datatypes::AcConnector::SinglePhase);
+constexpr int32_t THREE_PHASE = message_20::to_underlying_value(message_20::datatypes::AcConnector::ThreePhase);
+
+uint16_t selected_parameter_set_id(ev::d20::MessageExchange& msg_exch) {
+    const auto requests = take_all_requests(msg_exch);
+    const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
+    REQUIRE(request_message.has_value());
+    return request_message->selected_energy_transfer_service.parameter_set_id;
 }
 
 // Collects libiso15118 log lines while alive, then restores a no-op callback so a later
@@ -514,4 +566,95 @@ SCENARIO("ISO15118-20 EV ServiceDetail selects the first Dynamic set on a non-in
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->selected_energy_transfer_service.parameter_set_id == 5);
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail leaves the AC connector unset for DC and keeps set order") {
+    const LogCapture logs{};
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, no_seed};
+
+    // DC sets carry a "Connector" too (DcConnector::Core = 1, Dual2 = 3); it is not an AC connector.
+    primed.handle_response(
+        make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::DC,
+                      {make_param_set(1, ControlMode::Dynamic, 1), make_param_set(2, ControlMode::Dynamic, 3)}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
+    REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 1);
+    REQUIRE_FALSE(primed.ctx.selected_ac_connector().has_value());
+    REQUIRE_FALSE(logs.has_warning_containing("preferred"));
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail prefers the ThreePhase set for a three-line EV") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC, seed_ac_lines(3)};
+
+    primed.handle_response(make_response(
+        SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC,
+        {make_param_set(1, ControlMode::Dynamic, SINGLE_PHASE), make_param_set(2, ControlMode::Dynamic, THREE_PHASE)}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 2);
+    REQUIRE(primed.ctx.selected_ac_connector() == message_20::datatypes::AcConnector::ThreePhase);
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail prefers the SinglePhase set for a one-line EV") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC, seed_ac_lines(1)};
+
+    primed.handle_response(make_response(
+        SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC,
+        {make_param_set(1, ControlMode::Dynamic, SINGLE_PHASE), make_param_set(2, ControlMode::Dynamic, THREE_PHASE)}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 1);
+    REQUIRE(primed.ctx.selected_ac_connector() == message_20::datatypes::AcConnector::SinglePhase);
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail falls back to SinglePhase with a warning when ThreePhase is not offered") {
+    const LogCapture logs{};
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC, seed_ac_lines(3)};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC,
+                                         {make_param_set(1, ControlMode::Dynamic, SINGLE_PHASE)}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 1);
+    REQUIRE(primed.ctx.selected_ac_connector() == message_20::datatypes::AcConnector::SinglePhase);
+    REQUIRE(logs.has_warning_containing("preferred ThreePhase"));
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail records the DER mask of the set it selects") {
+    const ev::feedback::Callbacks callbacks{};
+    FsmStateHelper helper{callbacks,
+                          {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                          ServiceCategory::AC_DER_IEC,
+                          all_der_support(),
+                          true};
+    auto& ctx = helper.get_context();
+    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    ev::AcChargeParams params{};
+    params.phase_count = 3;
+    helper.set_ac_params(params);
+    auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
+
+    // Both sets are acceptable and neither is on the preferred connector, so the first one is
+    // selected; its mask, not the last one scanned, is what was negotiated.
+    const std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> first_mask{0b11};
+    const std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> second_mask{0b1};
+    helper.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC,
+                                         {make_der_param_set_on(1, ControlMode::Dynamic, SINGLE_PHASE, first_mask),
+                                          make_der_param_set_on(2, ControlMode::Dynamic, SINGLE_PHASE, second_mask)}));
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
+    REQUIRE(selected_parameter_set_id(helper.get_message_exchange()) == 1);
+    REQUIRE(ctx.der_negotiated_functions() == first_mask);
+    REQUIRE(ctx.selected_ac_connector() == message_20::datatypes::AcConnector::SinglePhase);
 }
