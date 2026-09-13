@@ -38,10 +38,11 @@ public:
         const ev::feedback::Callbacks& callbacks,
         std::vector<message_20::SupportedAppProtocol> protocols = DEFAULT_APP_PROTOCOLS,
         message_20::datatypes::ServiceCategory requested_service = message_20::datatypes::ServiceCategory::DC,
-        ev::DerControlFunctions der_control_functions = {}, bool der_stop_on_unsupported_functions = true) :
+        ev::DerControlFunctions der_control_functions = {}, bool der_stop_on_unsupported_functions = true,
+        ev::d20::SessionOptions options = {}) :
         advertised_app_protocols(std::move(protocols)),
         ctx(callbacks, msg_exch, evcc_id, advertised_app_protocols, control_event, dc_params, ac_params,
-            requested_service, der_control_functions, der_stop_on_unsupported_functions) {
+            requested_service, der_control_functions, der_stop_on_unsupported_functions, std::move(options)) {
     }
 
     ev::d20::Context& get_context();
@@ -158,13 +159,21 @@ template <typename State> struct PrimedState {
     // below when a test does name a service.
     template <typename Seed, typename... Args, std::enable_if_t<std::is_invocable_v<Seed&, FsmStateHelper&>, int> = 0>
     PrimedState(const ev::feedback::Callbacks& callbacks, Seed seed, Args&&... args) :
-        PrimedState(callbacks, message_20::datatypes::ServiceCategory::DC, seed, std::forward<Args>(args)...) {
+        PrimedState(callbacks, message_20::datatypes::ServiceCategory::DC, ev::d20::SessionOptions{}, seed,
+                    std::forward<Args>(args)...) {
     }
 
-    template <typename Seed, typename... Args>
+    template <typename Seed, typename... Args, std::enable_if_t<std::is_invocable_v<Seed&, FsmStateHelper&>, int> = 0>
     PrimedState(const ev::feedback::Callbacks& callbacks, message_20::datatypes::ServiceCategory requested_service,
                 Seed seed, Args&&... args) :
-        helper(callbacks, DEFAULT_APP_PROTOCOLS, requested_service),
+        PrimedState(callbacks, requested_service, ev::d20::SessionOptions{}, seed, std::forward<Args>(args)...) {
+    }
+
+    // Session options the Context only takes at construction (preferred control mode, CP feedback).
+    template <typename Seed, typename... Args>
+    PrimedState(const ev::feedback::Callbacks& callbacks, message_20::datatypes::ServiceCategory requested_service,
+                ev::d20::SessionOptions options, Seed seed, Args&&... args) :
+        helper(callbacks, DEFAULT_APP_PROTOCOLS, requested_service, {}, true, std::move(options)),
         ctx(helper.get_context()),
         fsm(seed_and_enter(seed, std::forward<Args>(args)...)) {
     }

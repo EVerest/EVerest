@@ -1498,6 +1498,35 @@ void Server::wait_stopped() {
 // ----------------------------------------------------------------------------
 // Client
 
+namespace {
+
+// Releases the path owned by the SSL_CTX ex_data, so its lifetime follows the SSL_CTX refcount.
+void client_keylog_path_free(void*, void* ptr, CRYPTO_EX_DATA*, int, long, void*) {
+    delete static_cast<std::filesystem::path*>(ptr);
+}
+
+// Process wide index, allocated on first use. The static makes the allocation thread safe.
+int client_keylog_file_index() {
+    static const int index = SSL_CTX_get_ex_new_index(0, nullptr, nullptr, nullptr, client_keylog_path_free);
+    return index;
+}
+
+// SSLKEYLOGFILE format, one secret per line, appended. Mirrors the server's file sink;
+// the client has no key-log server, there is no accepted connection to attach one to.
+void client_keylog_callback(const SSL* ssl, const char* line) {
+    auto keylog_file_path =
+        static_cast<std::filesystem::path*>(SSL_CTX_get_ex_data(SSL_get_SSL_CTX(ssl), client_keylog_file_index()));
+
+    if (keylog_file_path != nullptr and not keylog_file_path->empty()) {
+        std::ofstream ofs;
+        ofs.open(keylog_file_path->string(), std::ofstream::out | std::ofstream::app);
+        ofs << line << std::endl;
+        ofs.close();
+    }
+}
+
+} // namespace
+
 Client::Client() :
     m_context(std::make_unique<client_ctx>()), m_status_request_v2(std::make_unique<ClientStatusRequestV2>()) {
 }
@@ -1593,6 +1622,24 @@ bool Client::init(const config_t& cfg, const override_t& override) {
                                        override.trusted_ca_keys_free, &m_trusted_ca_keys, nullptr, nullptr) != 1) {
                 log_error("SSL_CTX_add_custom_ext trusted_ca_keys");
                 result = false;
+            }
+        }
+
+        if (cfg.tls_key_logging) {
+            const auto index = client_keylog_file_index();
+            if (index == -1) {
+                log_error("SSL_CTX_get_ex_new_index failed: client keylog file index");
+            } else {
+                // Own the path from the SSL_CTX: an SSL may outlive this Client.
+                // Distinct from the server file name, both ends default to the same directory.
+                auto* path = new std::filesystem::path(std::filesystem::path(cfg.tls_key_logging_path) /=
+                                                       "tls_session_keys_client.log");
+                if (SSL_CTX_set_ex_data(ctx, index, path) != 1) {
+                    log_error("SSL_CTX_set_ex_data failed: client keylog file path");
+                    delete path;
+                } else {
+                    SSL_CTX_set_keylog_callback(ctx, client_keylog_callback);
+                }
             }
         }
     }

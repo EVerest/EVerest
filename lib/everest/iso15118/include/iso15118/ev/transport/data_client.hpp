@@ -5,45 +5,47 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include <everest/io/event/fd_event_handler.hpp>
+#include <everest/io/event/fd_event_sync_interface.hpp>
 #include <everest/io/tcp/tcp_client.hpp>
+#include <everest/io/tls/tls_client.hpp>
 
 #include <iso15118/io/ipv6_endpoint.hpp>
 
 namespace iso15118::ev::transport {
 
+// TLS profile for the data path. tls_1_3 false: TLS 1.2, cipher ECDHE-ECDSA-AES128-SHA256, no client
+// certificate (ISO 15118-2). tls_1_3 true: TLS 1.3 with the vehicle chain (ISO 15118-20).
+struct TlsParams {
+    bool tls_1_3{false};
+    bool verify_server{true};
+    std::string v2g_root_cert_path;
+    std::string client_cert_chain_path;
+    std::string client_key_path;
+    std::string client_key_password;
+    bool key_logging{false};
+    std::string key_logging_path;
+};
+
 /**
- * EV-side TCP data-path client.
- *
- * Wraps a libio \ref everest::lib::io::tcp::tcp_client to carry the raw V2GTP
- * byte stream to the SECC after \ref SdpClient has discovered its endpoint.
- * The connection is established asynchronously by libio (a detached thread),
- * so the owning reactor must be run for the on-connected callback and the
- * I/O to fire.
- *
- * This class exposes the raw bytes only; V2GTP framing lives in
- * \ref iso15118::ev::Session, keeping the TLS swap seam clean (a future TLS
- * client can drop in behind the same interface).
+ * EV-side data path to the SECC: raw V2GTP bytes over libio tcp_client, or tls_client with
+ * \ref TlsParams. Framing lives in \ref iso15118::ev::Session.
+ * libio connects on a detached thread; the reactor must run.
  */
 class DataClient {
 public:
     /**
      * @brief Construct a client bound to a reactor.
-     * @details The target endpoint is only known at \ref connect time, so the
-     * underlying libio client is created there; this constructor only stores
-     * the reactor reference used for registration.
+     * @details The libio client is created in \ref connect, where the endpoint is known.
      * @param[in] handler The reactor the client registers with on connect.
      */
     explicit DataClient(everest::lib::io::event::fd_event_handler& handler);
 
-    /**
-     * @brief Unregister the internal TCP client from the reactor.
-     * @details The reactor holds this client's fd; leaving the registration behind
-     * would let a poll dispatch into freed memory. Enforced here rather than resting
-     * on the owner's member declaration order, which no compiler checks.
-     */
+    // Unregisters from the reactor: a stale registration would dispatch into freed memory.
     ~DataClient();
 
     // The reactor holds this client's fds and the class stores a reactor
@@ -55,44 +57,33 @@ public:
     DataClient& operator=(DataClient&&) = delete;
 
     /**
-     * @brief Connect to the SECC data endpoint.
-     * @details Constructs the underlying libio TCP client targeting @p endpoint
-     * and registers it with the reactor. The connection runs asynchronously;
-     * @p on_connected is invoked once when the client becomes ready, while
-     * @p on_failed is invoked once on a connect or socket failure. Both
-     * one-shot flags are reset on every @ref connect, so each call gets a
-     * fresh single fire of whichever outcome occurs.
-     *
-     * A second @ref connect tears down any prior registration first, so a
-     * reconnect re-registers the fresh client with the reactor.
-     *
-     * @note Construction or validation failures (address formatting, TCP client
-     * construction, or registration) fire @p on_failed synchronously, before
-     * @ref connect returns, on the caller's stack. Asynchronous connect/socket
-     * failures fire @p on_failed later from the reactor thread.
-     * @param[in] endpoint The SECC TCP endpoint (address + port, wire bytes).
-     * @param[in] device Egress interface bound via SO_BINDTODEVICE. Required to
-     * supply the scope for a link-local SECC address; may be empty for loopback.
-     * @param[in] on_connected Callback fired once per connect on ready.
-     * @param[in] on_failed Callback fired once per connect on failure.
+     * @brief Connect to @p endpoint over @p device, plain TCP or TLS per @p tls.
+     * @details @p on_connected / @p on_failed each fire once per connect. A construction or
+     * registration failure fires @p on_failed synchronously.
+     * @p device is bound via SO_BINDTODEVICE; it supplies the scope of a link-local address.
      */
     void connect(const iso15118::io::Ipv6EndPoint& endpoint, const std::string& device,
-                 std::function<void()> on_connected, std::function<void()> on_failed);
+                 const std::optional<TlsParams>& tls, std::function<void()> on_connected,
+                 std::function<void()> on_failed);
+
+    /**
+     * @brief Register a callback for the peer closing the connection (EOF).
+     * @details Fired at most once per connect, on a plain-TCP EOF or a TLS close_notify.
+     * A peer close fires this instead of on_failed, which stays reserved for real errors.
+     */
+    void on_closed(std::function<void()> handler);
 
     /**
      * @brief Send a raw frame to the SECC.
-     * @details Forwards to the libio client's tx, which buffers a copy and
-     * transmits it once the socket is writable.
+     * @details Buffered by libio and transmitted once the socket is writable.
      * @param[in] frame The bytes to transmit.
-     * @return False if called before \ref connect or the client is on error,
-     * true otherwise.
+     * @return False before \ref connect or on a client error, true otherwise.
      */
     bool send(const std::vector<uint8_t>& frame);
 
     /**
      * @brief Register a callback for received bytes.
-     * @details May be called before \ref connect; the callback is stored and
-     * invoked by the client's rx handler with each chunk of received data.
+     * @details May be called before \ref connect; it runs per received chunk.
      * @param[in] handler The callback used as RX handler.
      */
     void on_rx(std::function<void(const std::vector<uint8_t>&)> handler);
@@ -100,9 +91,6 @@ public:
     /**
      * @brief Register the internal TCP client with an event handler.
      * @details Idempotent: a second call returns true without re-registering.
-     * The tcp_client registers via the fd-keyed fd_event_sync_interface
-     * overload (which would itself reject a duplicate fd), but the guard also
-     * avoids needlessly re-running the registration setup.
      * @param[in] handler The reactor to register with.
      * @return True on success, false otherwise.
      */
@@ -112,14 +100,39 @@ private:
     // Fire on_failed at most once per connect; guarded by failed_fired.
     void fire_failed();
 
+    // Fire on_closed at most once per connect; guarded by closed_fired.
+    void fire_closed();
+
+    // Ready transition of either client. check_cpo runs the [V2G2-875] SECC leaf check first.
+    void on_ready(bool check_cpo);
+
+    // True when the TLS peer leaf carries a DomainComponent=="CPO" RDN [V2G2-875].
+    bool peer_is_cpo();
+
+    // Unregister and drop whichever client exists.
+    void teardown();
+
+    // Queue teardown() on the reactor: a client must not be destroyed from a callback the reactor
+    // is dispatching, which is where the [V2G2-875] rejection runs.
+    void defer_teardown();
+
+    // The registered client, plain or TLS, null before connect.
+    everest::lib::io::event::fd_event_sync_interface* active_client();
+
     everest::lib::io::event::fd_event_handler& handler;
     bool registered{false};
     bool connected_fired{false};
     bool failed_fired{false};
+    bool closed_fired{false};
     std::function<void()> on_connected;
     std::function<void()> on_failed;
+    std::function<void()> m_on_closed;
     std::function<void(const std::vector<uint8_t>&)> m_on_rx;
     std::unique_ptr<everest::lib::io::tcp::tcp_client> client;
+    std::unique_ptr<everest::lib::io::tls::tls_client> tls_client;
+    // Lifetime token for the deferred teardown: the reactor may run the queued action after this
+    // object is gone, and the destructor cannot cancel it.
+    std::shared_ptr<int> life{std::make_shared<int>(0)};
 };
 
 } // namespace iso15118::ev::transport

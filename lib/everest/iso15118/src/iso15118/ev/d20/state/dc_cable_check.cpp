@@ -21,10 +21,34 @@ message_20::DC_CableCheckRequest make_request(const SessionId& session) {
 } // namespace
 
 void DC_CableCheck::enter() {
+    // [V2G2-847]: the first DC_CableCheckReq only goes out once the EV applied CP state C or D.
+    // Without CP-state feedback there is nothing to wait for. The session's ongoing guard bounds
+    // the wait.
+    if (m_ctx.has_cp_state_feedback() and not m_ctx.cp_state_c_or_d()) {
+        logf_debug("DC_CableCheck holds the first request until CP state C or D");
+        return;
+    }
     m_ctx.send_request(make_request(m_ctx.get_session()));
+    request_sent = true;
 }
 
 Result DC_CableCheck::feed(Event ev) {
+    if (ev == Event::CONTROL_MESSAGE) {
+        if (request_sent) {
+            return Result::ignored();
+        }
+        // Still waiting for CP state C/D: a stop or pause ends the session without a CableCheckReq.
+        if (auto stop = stop_before_start(m_ctx)) {
+            return std::move(*stop);
+        }
+        if (not m_ctx.cp_state_c_or_d()) {
+            return Result::ignored();
+        }
+        m_ctx.send_request(make_request(m_ctx.get_session()));
+        request_sent = true;
+        return Result::awaiting();
+    }
+
     if (ev != Event::V2GTP_MESSAGE) {
         return Result::ignored();
     }

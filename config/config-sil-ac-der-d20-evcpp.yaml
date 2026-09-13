@@ -1,4 +1,4 @@
-# AC ISO 15118-20 SIL with the C++ EVCC (EvIso15118D20) driven in AC_DER_IEC mode.
+# AC ISO 15118-20 SIL with the C++ EVCC (Ev15118) driven in AC_DER_IEC mode.
 #
 # Run:
 #   ./build/dist/bin/manager --config build/dist/etc/everest/config-sil-ac-der-d20-evcpp.yaml
@@ -24,7 +24,7 @@ active_modules:
         - module_id: evse_security
           implementation_id: main
   iso15118_car:
-    module: EvIso15118D20
+    module: Ev15118
     config_module:
       device: auto
       evcc_id: "AA:BB:CC:DD:EE:01"

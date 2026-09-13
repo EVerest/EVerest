@@ -130,6 +130,14 @@ class PyEVJosevModule():
     def _handler_pause_charging(self, args):
         self._es.Pause = True
 
+    def _handler_abort_charging(self, args):
+        # Josev has no immediate-abort entry point; falls back to stop.
+        self._es.StopCharging = True
+
+    def _handler_cp_state_changed(self, args):
+        # Josev derives the CP state itself; informational.
+        pass
+
     def _handler_set_fault(self, args):
         pass
 

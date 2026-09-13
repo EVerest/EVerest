@@ -383,3 +383,49 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop rejects malformed responses") {
                                                          message_20::datatypes::Processing::Finished};
     check_rejection_paths(callbacks, ev::d20::StateID::AC_DER_IEC_ChargeLoop, make_fsm, make_ok, wrong);
 }
+
+namespace {
+struct PauseObserver {
+    bool fired = false;
+    ev::feedback::Callbacks callbacks{};
+    PauseObserver() {
+        callbacks.pause_from_charger = [this]() { fired = true; };
+    }
+};
+} // namespace
+
+SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop fires pause_from_charger and drives PowerDelivery(Stop) on Pause") {
+    PauseObserver obs;
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{
+        obs.callbacks, message_20::datatypes::ServiceCategory::AC_DER_IEC, seed_present_5000};
+
+    primed.handle_response(
+        make_res(SESSION_HEADER, ResponseCode::OK,
+                 message_20::datatypes::EvseStatus{0, message_20::datatypes::EvseNotification::Pause}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(obs.fired == true);
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+    REQUIRE(primed.ctx.requested_stop_reason() == message_20::datatypes::ChargingSession::Pause);
+
+    const auto requests = primed.take_requests();
+    const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(pd_request.has_value());
+    REQUIRE(pd_request->charge_progress == message_20::datatypes::Progress::Stop);
+}
+
+SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop diverts to PowerDelivery(Stop) on an EV pause request") {
+    StopObserver obs;
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{
+        obs.callbacks, message_20::datatypes::ServiceCategory::AC_DER_IEC, seed_present_5000};
+    primed.ctx.set_pause_charging_requested(true);
+
+    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(obs.fired == false);
+    REQUIRE(obs.der_control_fired == false);
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+}

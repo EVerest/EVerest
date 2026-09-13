@@ -95,9 +95,9 @@ public:
     static std::optional<SdpResponse> parse_response(const uint8_t* buf, size_t len);
 
     /**
-     * @brief Send a discovery request and report the learned endpoint.
-     * @details Transmits the request to ff02::1 port SDP_SERVER_PORT via the
-     * internal libio UDP client and invokes @p on_found with the parsed reply.
+     * @brief Send a discovery request to ff02::1 port SDP_SERVER_PORT and report the learned endpoint.
+     * @details Queued as a reactor action once \ref register_events ran, so the first request is
+     * transmitted from the reactor rather than synchronously.
      * @param[in] on_found Callback invoked with the parsed SDP response.
      */
     void discover(std::function<void(SdpResponse)> on_found);

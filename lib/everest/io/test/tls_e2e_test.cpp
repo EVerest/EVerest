@@ -8,6 +8,7 @@
 #include "tls_test_common.hpp"
 
 #include <everest/io/event/fd_event_handler.hpp>
+#include <everest/io/tcp/tcp_socket.hpp>
 #include <everest/io/tls/tls_client.hpp>
 #include <everest/io/tls/tls_listener.hpp>
 #include <everest/io/tls/tls_server.hpp>
@@ -18,9 +19,16 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <memory>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
+
+#include <netinet/in.h>
+#include <sys/socket.h>
 
 using namespace std::chrono_literals;
 
@@ -40,6 +48,50 @@ std::vector<std::uint8_t> make_large_payload() {
         payload[i] = static_cast<std::uint8_t>((i * 31 + 7) & 0xFF);
     }
     return payload;
+}
+
+// The ISO 15118-2 [V2G2-077]/[V2G2-124] EVCC source port range.
+constexpr io::tcp::source_port_range kEvccPorts{49152, 65535};
+
+std::uint16_t local_port_of(int fd) {
+    sockaddr_in6 addr{};
+    socklen_t len = sizeof(addr);
+    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
+        return 0;
+    }
+    if (addr.sin6_family == AF_INET6) {
+        return ntohs(addr.sin6_port);
+    }
+    return ntohs(reinterpret_cast<sockaddr_in*>(&addr)->sin_port);
+}
+
+/// Round-trips one 'ping' through the echo listener, so a test only asserts on its own concern.
+/// Returns the client's fd once the echo arrived, -1 on timeout.
+int ping_pong(io::event::fd_event_handler& ev, io::tls::tls_client& client) {
+    std::atomic<bool> running{true};
+    const std::vector<std::uint8_t> ping = {'p', 'i', 'n', 'g'};
+    std::vector<std::uint8_t> echo;
+
+    client.set_on_ready_action([&client, &ping]() {
+        tls_payload msg(ping.begin(), ping.end());
+        client.tx(msg);
+    });
+    client.set_rx_handler([&echo, &ping, &running](tls_payload const& payload, io::tls::tls_client_interface&) {
+        echo.insert(echo.end(), payload.begin(), payload.end());
+        if (echo.size() >= ping.size()) {
+            running = false;
+        }
+    });
+    ev.register_event_handler(&client);
+
+    test::pump_until(
+        ev, [&] { return !running; }, 5s);
+
+    if (echo != ping) {
+        return -1;
+    }
+    auto const& handle = client.get_raw_handler();
+    return handle ? handle->get_fd() : -1;
 }
 
 } // namespace
@@ -387,4 +439,52 @@ TEST(TlsE2E, client_teardown_closes_the_tls_session) {
         << "the client dropped the socket without closing the TLS session, so the peer cannot tell "
            "this from a truncated stream: "
         << server_error_text;
+}
+
+// The optional device and source port range reach tcp_socket through the variadic constructor.
+TEST(TlsE2E, DeviceAndSourcePortRangeAreForwardedToTheTcpSocket) {
+    io::event::fd_event_handler ev;
+    auto rig = test::make_echo_listener(ev);
+    const auto port = rig.port();
+    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
+    ASSERT_TRUE(rig.registered);
+
+    io::tls::tls_client client(test::client_test_config(), std::string("127.0.0.1"), port, 2000, std::string("lo"),
+                               std::optional<io::tcp::source_port_range>{kEvccPorts});
+
+    const int fd = ping_pong(ev, client);
+    ASSERT_GE(fd, 0) << "round-trip over a device-bound, port-restricted client failed within 5 seconds";
+
+    const auto source_port = local_port_of(fd);
+    EXPECT_GE(source_port, kEvccPorts.min);
+    EXPECT_LE(source_port, kEvccPorts.max);
+}
+
+// tls_key_logging writes the handshake secrets in SSLKEYLOGFILE format.
+TEST(TlsE2E, KeyLoggingWritesTheSessionKeys) {
+    auto const log_dir = std::filesystem::temp_directory_path() / "everest_io_tls_keylog_test";
+    std::filesystem::remove_all(log_dir);
+    ASSERT_TRUE(std::filesystem::create_directories(log_dir));
+
+    io::event::fd_event_handler ev;
+    auto rig = test::make_echo_listener(ev);
+    const auto port = rig.port();
+    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
+    ASSERT_TRUE(rig.registered);
+
+    auto cfg = test::client_test_config();
+    cfg.tls.tls_key_logging = true;
+    cfg.tls.tls_key_logging_path = log_dir.string();
+
+    io::tls::tls_client client(cfg, std::string("127.0.0.1"), port, 2000);
+    ASSERT_GE(ping_pong(ev, client), 0) << "round-trip with key logging enabled failed within 5 seconds";
+
+    std::ifstream keylog(log_dir / "tls_session_keys_client.log");
+    ASSERT_TRUE(keylog.is_open()) << "no key log file was written";
+    std::stringstream content;
+    content << keylog.rdbuf();
+    EXPECT_NE(content.str().find("CLIENT_RANDOM"), std::string::npos)
+        << "key log holds no CLIENT_RANDOM line: " << content.str();
+
+    std::filesystem::remove_all(log_dir);
 }

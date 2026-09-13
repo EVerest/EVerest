@@ -90,7 +90,7 @@ set(EVEREST_EXCLUDE_LIBS "" CACHE STRING "Semicolon-separated blocklist of libra
 # list of compile options that are passed to modules if EVEREST_ENABLE_COMPILE_WARNINGS=ON
 # generated code has functions often not used
 # libiso15118 builds only the SECC side by default. everest-core ships EV-side modules
-# (EvIso15118D20), so it needs the EV half of the stack and its tests.
+# (Ev15118), so it needs the EV half of the stack and its tests.
 set(ISO15118_BUILD_EV_SIDE ON)
 
 set(EVEREST_COMPILE_OPTIONS "-Wall;-Wno-unused-function" CACHE STRING "A list of compile options used for building modules")

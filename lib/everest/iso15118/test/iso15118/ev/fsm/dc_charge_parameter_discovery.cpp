@@ -175,3 +175,45 @@ SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery rejects malformed responses
     check_rejection_paths(callbacks, ev::d20::StateID::DC_ChargeParameterDiscovery, make_fsm, make_ok,
                           message_20::ScheduleExchangeResponse{});
 }
+
+namespace {
+// Observes the SECC limits the discovery publishes.
+struct LimitsObserver {
+    std::optional<ev::feedback::DcMaximumLimits> limits;
+    ev::feedback::Callbacks callbacks{};
+    LimitsObserver() {
+        callbacks.dc_evse_present_limits = [this](const ev::feedback::DcMaximumLimits& l) { limits = l; };
+    }
+};
+} // namespace
+
+SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery publishes the SECC limits from the response") {
+    LimitsObserver obs;
+    PrimedState<ev::d20::state::DC_ChargeParameterDiscovery> primed{obs.callbacks, seed_params};
+
+    auto res = make_response(SESSION_HEADER, ResponseCode::OK);
+    message_20::datatypes::DC_CPDResEnergyTransferMode mode{};
+    mode.max_charge_power = message_20::datatypes::from_float(15000.0f);
+    mode.max_charge_current = message_20::datatypes::from_float(250.0f);
+    mode.max_voltage = message_20::datatypes::from_float(920.0f);
+    res.transfer_mode = mode;
+    primed.handle_response(res);
+    primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(obs.limits.has_value());
+    REQUIRE(obs.limits->power == 15000.0f);
+    REQUIRE(obs.limits->current == 250.0f);
+    REQUIRE(obs.limits->voltage == 920.0f);
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery publishes the SECC limits from a BPT response") {
+    LimitsObserver obs;
+    PrimedState<ev::d20::state::DC_ChargeParameterDiscovery> primed{
+        obs.callbacks, message_20::datatypes::ServiceCategory::DC_BPT, seed_bpt_params};
+
+    primed.handle_response(make_bpt_response(SESSION_HEADER, ResponseCode::OK));
+    primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(obs.limits.has_value());
+    REQUIRE(obs.limits->power == 15000.0f);
+}

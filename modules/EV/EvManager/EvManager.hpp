@@ -33,6 +33,7 @@ struct Conf {
     bool auto_exec;
     bool auto_exec_infinite;
     std::string auto_exec_commands;
+    bool session_logging;
     double ac_nominal_voltage;
     int dc_max_current_limit;
     int dc_max_power_limit;

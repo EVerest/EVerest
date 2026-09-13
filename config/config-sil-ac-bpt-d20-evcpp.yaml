@@ -8,7 +8,7 @@ active_modules:
         - module_id: evse_security
           implementation_id: main
   iso15118_car:
-    module: EvIso15118D20
+    module: Ev15118
     config_module:
       device: auto
       evcc_id: "AA:BB:CC:DD:EE:01"

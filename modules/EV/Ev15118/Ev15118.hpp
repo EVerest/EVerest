@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef EV_ISO15118D20_HPP
-#define EV_ISO15118D20_HPP
+#ifndef EV15118_HPP
+#define EV15118_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -23,6 +23,19 @@ struct Conf {
     std::string device;
     std::string evcc_id;
     int response_timeout_ms;
+    std::string d20_control_mode;
+    bool supported_DIN70121;
+    bool supported_ISO15118_2;
+    bool tls_active;
+    bool enforce_tls;
+    bool enable_tls_1_3;
+    bool verify_server_certificate;
+    bool enable_tls_key_logging;
+    std::string tls_key_logging_path;
+    std::string v2g_root_cert_path;
+    std::string device_cert_chain_path;
+    std::string device_key_path;
+    std::string device_key_password_path;
     int ac_phase_count;
     double ac_max_charge_power_w;
     double ac_min_charge_power_w;
@@ -46,10 +59,10 @@ struct Conf {
     double dc_max_discharge_current_a;
 };
 
-class EvIso15118D20 : public Everest::ModuleBase {
+class Ev15118 : public Everest::ModuleBase {
 public:
-    EvIso15118D20() = delete;
-    EvIso15118D20(const ModuleInfo& info, std::unique_ptr<ISO15118_evImplBase> p_ev, Conf& config) :
+    Ev15118() = delete;
+    Ev15118(const ModuleInfo& info, std::unique_ptr<ISO15118_evImplBase> p_ev, Conf& config) :
         ModuleBase(info), p_ev(std::move(p_ev)), config(config){};
 
     const std::unique_ptr<ISO15118_evImplBase> p_ev;
@@ -81,4 +94,4 @@ private:
 
 } // namespace module
 
-#endif // EV_ISO15118D20_HPP
+#endif // EV15118_HPP
