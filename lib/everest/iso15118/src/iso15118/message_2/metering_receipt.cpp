@@ -52,8 +52,24 @@ template <> void convert(const MeteringReceiptResponse& in, struct iso2_Metering
     }
 }
 
+template <> void convert(const struct iso2_MeteringReceiptResType& in, MeteringReceiptResponse& out) {
+    cb_convert_enum(in.ResponseCode, out.response_code);
+    if (in.DC_EVSEStatus_isUsed) {
+        out.dc_evse_status.emplace();
+        convert(in.DC_EVSEStatus, out.dc_evse_status.value());
+    }
+    if (in.AC_EVSEStatus_isUsed) {
+        out.ac_evse_status.emplace();
+        convert(in.AC_EVSEStatus, out.ac_evse_status.value());
+    }
+}
+
 template <> void insert_type(VariantAccess& va, const struct iso2_MeteringReceiptReqType& in) {
     va.insert_type<MeteringReceiptRequest>(in);
+}
+
+template <> void insert_type(VariantAccess& va, const struct iso2_MeteringReceiptResType& in) {
+    va.insert_type<MeteringReceiptResponse>(in);
 }
 
 template <> int serialize_to_exi(const MeteringReceiptResponse& in, exi_bitstream_t& out) {

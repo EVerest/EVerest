@@ -16,6 +16,7 @@
 #include <iso15118/session/protocol.hpp>
 
 #include <iso15118/ev/der_control_functions.hpp>
+#include <iso15118/ev/session_params.hpp>
 
 namespace iso15118::ev {
 
@@ -86,6 +87,9 @@ struct EvConfig {
     // Re-join a paused session: constrains the SAP offer to its protocol and the SDP security byte to
     // its security; SessionSetupReq carries its id.
     std::optional<PausedSession> resume{std::nullopt};
+
+    // ISO 15118-2 / DIN SPEC 70121 engine parameters (EVCCID MAC, energy transfer mode, AC values, PnC).
+    EvSessionParams params{};
 
     // The owner reports the control pilot via Controller::set_cp_state; gates DC_CableCheck.
     bool has_cp_state_feedback{false};

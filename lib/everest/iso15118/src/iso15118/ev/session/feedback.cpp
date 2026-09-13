@@ -37,6 +37,11 @@ void Feedback::pause_from_charger() const {
     call_if_available(callbacks.pause_from_charger);
 }
 
+void Feedback::pnc_contract_installed(const std::string& contract_chain_pem, const std::string& contract_key_pem,
+                                      const std::string& emaid) const {
+    call_if_available(callbacks.pnc_contract_installed, contract_chain_pem, contract_key_pem, emaid);
+}
+
 void Feedback::timed_out() const {
     call_if_available(callbacks.timed_out);
 }

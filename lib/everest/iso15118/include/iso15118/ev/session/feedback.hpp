@@ -38,6 +38,8 @@ struct Callbacks {
     std::function<void(const std::string&)> evse_id;
     std::function<void(const DcMaximumLimits&)> dc_evse_present_limits;
     std::function<void()> pause_from_charger;
+    // Plug & Charge: contract installed via CertificateInstallation (chain PEM leaf first, key PEM, eMAID).
+    std::function<void(const std::string&, const std::string&, const std::string&)> pnc_contract_installed;
     // Fired when the response watchdog expires (a sent request got no response in
     // time). Distinct from stopped, which fires on every session end.
     std::function<void()> timed_out;
@@ -70,6 +72,8 @@ public:
     void evse_id(const std::string&) const;
     void dc_evse_present_limits(const feedback::DcMaximumLimits&) const;
     void pause_from_charger() const;
+    void pnc_contract_installed(const std::string& contract_chain_pem, const std::string& contract_key_pem,
+                                const std::string& emaid) const;
     void timed_out() const;
     void stopped() const;
     void evse_session_info(const d20::EVSESessionInfo&) const;
