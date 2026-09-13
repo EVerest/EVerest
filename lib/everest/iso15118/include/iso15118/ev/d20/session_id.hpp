@@ -30,10 +30,4 @@ private:
     std::array<uint8_t, ID_LENGTH> id{};
 };
 
-struct PauseContext {
-    SessionId session_id{std::array<uint8_t, SessionId::ID_LENGTH>{}};
-    std::optional<io::sha512_hash_t> charger_cert_hash{std::nullopt};
-    std::optional<io::sha512_hash_t> charger_cert_session_hash{std::nullopt};
-};
-
 } // namespace iso15118::ev::d20

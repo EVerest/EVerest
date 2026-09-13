@@ -106,6 +106,8 @@ if(ISO15118_BUILD_EV_SIDE)
         ev/d20/state/dc_charge_loop.cpp
         ev/transport/sdp_client.cpp
         ev/transport/data_client.cpp
+        ev/d20/state/ac_charge_parameter_discovery.cpp
+        ev/d20/state/ac_charge_loop.cpp
     )
 
     # Only the EV side uses everest::io.

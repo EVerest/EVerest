@@ -9,8 +9,6 @@
 namespace iso15118::ev::d20::state {
 
 void SessionStop::enter() {
-    // TODO(mlitre): Adding logging
-
     message_20::SessionStopRequest req;
     setup_header(req.header, m_ctx.get_session());
     req.charging_session = message_20::datatypes::ChargingSession::Terminate;
@@ -24,15 +22,10 @@ Result SessionStop::feed(Event ev) {
 
     const auto variant = m_ctx.pull_response();
 
-    if (const auto res = variant->get_if<message_20::SessionStopResponse>()) {
-        if (res->response_code != message_20::datatypes::ResponseCode::OK) {
-            logf_warning("SessionStopResponse with non-OK response_code: %d", static_cast<int>(res->response_code));
-        }
-    } else {
-        logf_error("Expected SessionStopResponse, got code type id: %d", static_cast<int>(variant->get_type()));
-    }
-
-    m_ctx.stop_session(true);
+    // expect_response validates the SessionStopResponse and stops the session on any
+    // failure. SessionStop is terminal, so the session ends here regardless.
+    expect_response<message_20::SessionStopResponse>(m_ctx, *variant);
+    m_ctx.stop_session();
     return {};
 }
 
