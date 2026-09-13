@@ -50,12 +50,7 @@ void convert(dt::DsoCosPhiSetpoint& out, const iec::DSOCosPhiSetpoint& in) {
 
 void set_dynamic_parameters_in_res(Dynamic_DER_Res& res_mode, const UpdateDynamicModeParameters& parameters,
                                    uint64_t header_timestamp) {
-    if (parameters.departure_time) {
-        const auto departure_time = static_cast<uint64_t>(parameters.departure_time.value());
-        if (departure_time > header_timestamp) {
-            res_mode.departure_time = static_cast<uint32_t>(departure_time - header_timestamp);
-        }
-    }
+    res_mode.departure_time = departure_time_offset(parameters.departure_time, header_timestamp);
     res_mode.target_soc = parameters.target_soc;
 
     // [V2G20-3155]
