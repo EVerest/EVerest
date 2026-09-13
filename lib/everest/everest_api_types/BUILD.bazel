@@ -3,15 +3,16 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 cc_library(
     name = "everest_api_types",
     # NOTE: only the framework-free API modules are exposed here. The
-    # configuration/generic/lifecycle modules have no wrapper.cpp and therefore
-    # need neither the generated interface headers nor everest::framework, which
-    # keeps this target a leaf (nlohmann_json only). Modules with a wrapper.cpp
-    # are intentionally left out.
+    # configuration/generic/lifecycle/yeti_simulator modules have no wrapper.cpp
+    # and therefore need neither the generated interface headers nor
+    # everest::framework, which keeps this target a leaf (nlohmann_json only).
+    # Modules with a wrapper.cpp are intentionally left out.
     srcs = glob([
         "src/everest_api_types/configuration/*.cpp",
         "src/everest_api_types/generic/*.cpp",
         "src/everest_api_types/lifecycle/*.cpp",
         "src/everest_api_types/telemetry/*.cpp",
+        "src/everest_api_types/yeti_simulator/*.cpp",
     ]) + [
         "src/everest_api_types/utilities/Topics.cpp",
         "src/everest_api_types/utilities/codec.cpp",
@@ -21,10 +22,12 @@ cc_library(
         "include/everest_api_types/generic/*.hpp",
         "include/everest_api_types/lifecycle/*.hpp",
         "include/everest_api_types/telemetry/*.hpp",
+        "include/everest_api_types/yeti_simulator/*.hpp",
         "private_include/everest_api_types/configuration/*.hpp",
         "private_include/everest_api_types/generic/*.hpp",
         "private_include/everest_api_types/lifecycle/*.hpp",
         "private_include/everest_api_types/telemetry/*.hpp",
+        "private_include/everest_api_types/yeti_simulator/*.hpp",
     ]) + [
         "include/everest_api_types/utilities/Topics.hpp",
         "include/everest_api_types/utilities/codec.hpp",

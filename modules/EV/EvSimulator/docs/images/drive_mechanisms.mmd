@@ -1,0 +1,16 @@
+flowchart TB
+    subgraph drivers["Drive mechanisms"]
+        A["1. MQTT m2e/* commands"]
+        B["2. Peer subscriptions<br/>(BSP / ISO / SLAC variables)"]
+        C["3. Scenario presets<br/>(run_scenario)"]
+        D["4. Internal timers<br/>(state / tick / scenario fds)"]
+    end
+
+    Q[("thread_safe_queue&lt;Event&gt;")]
+    FSM[fsm::v2 FSM]
+
+    A -->|CommandRouter| Q
+    B -->|PeerSubscriptions| Q
+    C -->|ScenarioDispatcher.on_timer_fire| Q
+    D -->|StateDeadline / tick on_tick / scenario fire| Q
+    Q -->|on_wake flushes| FSM

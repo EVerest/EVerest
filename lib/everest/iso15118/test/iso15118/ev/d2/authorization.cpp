@@ -123,8 +123,6 @@ SCENARIO("ISO15118-2 EV Authorization rejects malformed responses") {
     const auto make_ok = [](const message_2::Header& header) {
         return make_response(header, dt::ResponseCode::OK, dt::EVSEProcessing::Finished);
     };
-    message_2::SessionStopResponse wrong;
-    wrong.header = d2_header();
-    wrong.response_code = dt::ResponseCode::OK;
+    const message_2::SessionStopResponse wrong{d2_header(), dt::ResponseCode::OK};
     check_rejection_paths(callbacks, ev::d2::StateID::Authorization, make_fsm, make_ok, wrong);
 }

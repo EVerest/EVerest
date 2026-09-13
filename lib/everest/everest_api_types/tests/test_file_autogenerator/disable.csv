@@ -1,1 +1,2 @@
 generic/API.hpp,RequestReply
+ev_simulator/API.hpp,ChargingCurve,SessionConfigParams,AcIecSessionParams,AcIso2SessionParams,AcIsoD20SessionParams,DcIso2SessionParams,DcIsoD20SessionParams

@@ -80,8 +80,11 @@ cmds:
 vars:
   v2g_messages:
     description: >-
-      Debug - This element contains all V2G elements and should be used
-      for debug purposes only
+      The V2G message that was just sent or received, reported per message.
+      The id is always published; the decoded JSON and the raw EXI are only
+      populated when the EVCC runs with debug mode enabled. Unlike the
+      charger-side variable of the same name this is not debug-only: the id
+      is a session-progress signal, so a consumer may depend on it.
     type: object
     $ref: /iso15118#/V2gMessages
   v2g_session_finished:
@@ -108,3 +111,9 @@ vars:
   pause_from_charger:
     description: The charger wants to pause the session (only d20)
     type: 'null'
+  dc_evse_present_current:
+    description: EVSE-delivered present current during DC charging (A)
+    type: number
+  dc_evse_present_voltage:
+    description: EVSE-delivered present voltage during DC charging (V)
+    type: number

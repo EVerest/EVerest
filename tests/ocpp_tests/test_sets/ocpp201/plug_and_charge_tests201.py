@@ -74,7 +74,7 @@ class TestPlugAndCharge:
             central_system.chargepoint
         )
 
-        test_controller.plug_in_dc_iso()
+        test_controller.plug_in_dc_iso(payment_type="contract")
 
         assert await wait_for_and_validate(
             test_utility, charge_point, "Get15118EVCertificate", {
@@ -145,7 +145,7 @@ class TestPlugAndCharge:
         )
 
         await asyncio.sleep(3)
-        test_controller.plug_in_dc_iso()
+        test_controller.plug_in_dc_iso(payment_type="contract")
 
         assert await wait_for_and_validate(
             test_utility, charge_point, "Get15118EVCertificate", {
@@ -239,7 +239,7 @@ class TestPlugAndCharge:
             delete_certificate_response.status == DeleteCertificateStatusEnumType.accepted
         )
 
-        test_controller.plug_in_dc_iso()
+        test_controller.plug_in_dc_iso(payment_type="contract")
 
         assert await wait_for_and_validate(
             test_utility, charge_point, "Get15118EVCertificate", {
@@ -346,7 +346,7 @@ class TestPlugAndCharge:
             delete_certificate_response.status == DeleteCertificateStatusEnumType.accepted
         )
 
-        test_controller.plug_in_dc_iso()
+        test_controller.plug_in_dc_iso(payment_type="contract")
 
         # expect StatusNotification with status available
         assert await wait_for_and_validate(
@@ -453,7 +453,7 @@ class TestPlugAndCharge:
         )
 
         await asyncio.sleep(3)
-        test_controller.plug_in_dc_iso()
+        test_controller.plug_in_dc_iso(payment_type="contract")
 
         assert await wait_for_and_validate(
             test_utility, charge_point, "Get15118EVCertificate", {
@@ -555,7 +555,7 @@ class TestPlugAndCharge:
             central_system.chargepoint
         )
 
-        test_controller.plug_in_dc_iso()
+        test_controller.plug_in_dc_iso(payment_type="contract")
 
         assert await wait_for_and_validate(
             test_utility, charge_point, "Get15118EVCertificate", {
@@ -615,7 +615,7 @@ class TestPlugAndCharge:
             delete_certificate_response.status == DeleteCertificateStatusEnumType.accepted
         )
 
-        test_controller.plug_in_dc_iso()
+        test_controller.plug_in_dc_iso(payment_type="contract")
 
         assert await wait_for_and_validate(
             test_utility,

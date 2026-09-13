@@ -20,10 +20,11 @@ Controller that can be used to start/stop the Everest instance and send events t
 
 ### Fixtures
 
-The core_utils basically provide two fixtures that you can require in your test cases:
+The core_utils basically provide these fixtures that you can require in your test cases:
 
 - **everest_core** The main fixture `everest_core` can be used to start and stop the EVerest application.
 - **test_controller**: Fixture that references the test_controller that can be used for control events for the test cases. This includes control over simulations that trigger events like an EV plug in, EV plug out, swipe RFID and more. 
+- **evsim_test_controller**: Fixture that references an `EvSimulatorTestController` bound to `everest_core`, for the scenario, charging-curve and timing-override commands that the `EvSimulator` module accepts over its external MQTT API. Use it instead of `test_controller` when a test drives the EV side directly.
 
 #### Configuration Fixtures:
 
