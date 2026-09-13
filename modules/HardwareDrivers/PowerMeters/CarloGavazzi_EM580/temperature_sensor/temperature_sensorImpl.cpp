@@ -12,5 +12,9 @@ void temperature_sensorImpl::init() {
 void temperature_sensorImpl::ready() {
 }
 
+void temperature_sensorImpl::shutdown() {
+    // the powermeter implementation owns the modbus transport and its threads
+}
+
 } // namespace temperature_sensor
 } // namespace module
