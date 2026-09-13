@@ -40,7 +40,7 @@ Result AuthorizationSetup::feed(Event ev) {
     }
 
     // Save the offered authorization services so they can be reported to the EV and
-    // used to build the AuthorizationRequest.
+    // checked for EIM before an AuthorizationRequest is built.
     info.auth_services = res->authorization_services;
 
     if (std::holds_alternative<message_20::datatypes::PnC_ASResAuthorizationMode>(res->authorization_mode)) {

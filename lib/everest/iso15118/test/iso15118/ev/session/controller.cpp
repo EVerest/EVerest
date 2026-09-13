@@ -7,16 +7,10 @@
 #include <stdexcept>
 #include <thread>
 
-#include <arpa/inet.h>
-
-#include <everest/io/event/fd_event_handler.hpp>
-
-#include <iso15118/io/ipv6_endpoint.hpp>
 #include <iso15118/io/sdp.hpp>
 
 #include <iso15118/ev/config.hpp>
 #include <iso15118/ev/controller.hpp>
-#include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/session.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 
@@ -24,13 +18,14 @@
 
 using namespace iso15118;
 using namespace std::chrono_literals;
+using iso15118::ev::test::ControllerRun;
+using iso15118::ev::test::poll_until;
 
 SCENARIO("ISO15118-20 EV Controller config defaults") {
     GIVEN("A default-constructed EvConfig") {
         ev::EvConfig config{};
 
-        THEN("It defaults to SDP discovery with no transport security") {
-            REQUIRE(config.discover);
+        THEN("It defaults to no transport security") {
             REQUIRE(config.advertised_security == io::v2gtp::Security::NO_TRANSPORT_SECURITY);
         }
 
@@ -46,19 +41,13 @@ SCENARIO("ISO15118-20 EV Controller config defaults") {
 }
 
 SCENARIO("ISO15118-20 EV Controller shutdown stops the loop") {
-    // loop() runs SDP discovery on `lo`; with no SECC responding, the reactor stays
-    // in the pre-session phase (SDP retry + setup timeout, both far from elapsing).
-    // shutdown() must terminate run() promptly, well before the 18 s setup timeout,
-    // and fire the stopped callback.
-    //
-    // Note: this does not isolate shutdown's add_action wake from the periodic SDP
-    // retry timer that also wakes poll() (the wake only bounds the worst-case stop
-    // latency, which is not separately observable through loop()). A socket-level
-    // walk is deferred to the Session-level FSM-walk test.
+    // No SECC responding keeps the reactor in the pre-session phase, far from the
+    // 18 s setup timeout, so an early stop can only be shutdown() itself. Does not
+    // isolate that from the periodic SDP retry timer also waking poll(); a
+    // socket-level walk is deferred to the Session-level FSM-walk test.
     GIVEN("A Controller running SDP discovery with no SECC present") {
         ev::EvConfig config{};
         config.interface_name = "lo";
-        config.discover = true;
         config.send_delay = 5ms;
         config.response_timeout = 100ms;
 
@@ -72,11 +61,8 @@ SCENARIO("ISO15118-20 EV Controller shutdown stops the loop") {
             std::thread worker([&controller]() { controller.loop(); });
 
             THEN("loop() returns promptly and fires the stopped callback") {
-                // Nothing marks the moment loop() enters reactor.run(), and a shutdown()
-                // racing ahead of `online = true` would be lost, so re-issue it on a short
-                // cadence until the worker reports stopped (or a generous deadline elapses).
-                // Each shutdown() is an idempotent flag+wake, so repeating it is harmless and
-                // robust against the startup ordering race.
+                // A shutdown() racing ahead of `online = true` would be lost, so re-issue
+                // it (idempotent flag+wake) until stopped or a deadline elapses.
                 const auto deadline = std::chrono::steady_clock::now() + 5s;
                 while (not stopped and std::chrono::steady_clock::now() < deadline) {
                     controller.shutdown();
@@ -90,10 +76,8 @@ SCENARIO("ISO15118-20 EV Controller shutdown stops the loop") {
 }
 
 SCENARIO("ISO15118-20 EV Session on_finished callback throwing does not escape") {
-    // The Controller (and any owner) clears its `online` flag from on_finished, which
-    // runs on the reactor thread inside check_finished(). A throwing owner callback
-    // must be swallowed (logged), fired exactly once, and must not re-enter once the
-    // session is already signalled.
+    // on_finished runs on the reactor thread inside check_finished(); a throwing
+    // owner callback must be swallowed (logged), not propagate, and fire only once.
     GIVEN("A Session whose on_finished throws on first invocation") {
         ev::test::SessionFixture fx{"EVTESTID01", ev::SessionTiming{5ms, 50ms}};
 
@@ -106,9 +90,8 @@ SCENARIO("ISO15118-20 EV Session on_finished callback throwing does not escape")
         WHEN("the session finishes (watchdog timeout) and the callback throws") {
             fx.session.start();
 
-            // Run the reactor through the SAP send and the watchdog expiry. A throw
-            // escaping the guard would propagate out of reactor.poll(); the loop below
-            // would then see it, so an unguarded callback fails the test by exception.
+            // A throw escaping the guard would propagate out of reactor.poll() and fail
+            // this test by exception.
             const auto deadline = std::chrono::steady_clock::now() + 2s;
             while (not fx.session.is_finished() and std::chrono::steady_clock::now() < deadline) {
                 fx.reactor.poll(1ms);
@@ -123,54 +106,14 @@ SCENARIO("ISO15118-20 EV Session on_finished callback throwing does not escape")
     }
 }
 
-SCENARIO("ISO15118-20 EV Controller post_control_event marshals onto the reactor") {
-    // Smoke assertion (documented): post_control_event must NOT touch the session
-    // from the caller's thread. The Controller owns its reactor privately, so the
-    // queued action cannot be run here without opening a socket (a fixed_endpoint
-    // run would connect); the deferred deliver runs in loop(), exercised at the
-    // Session-level FSM walk. What this pins: post_control_event is safe to call before
-    // the reactor runs and returns without crashing or synchronously mutating the
-    // session (deliver_control_event is a no-op before start() anyway, so any synchronous
-    // call would be observable only as a crash on the absent FSM). It does not assert
-    // the action ran (that needs the reactor running, i.e. a socket).
-    GIVEN("A Controller built with discover=false and a fixed endpoint (no SdpClient)") {
-        ev::EvConfig config{};
-        config.interface_name = "lo";
-        config.discover = false;
-        config.send_delay = 5ms;
-        config.response_timeout = 100ms;
-
-        io::Ipv6EndPoint endpoint{};
-        endpoint.port = 15119;
-        endpoint.address[0] = htons(0x0001); // ::1-ish; never connected in this test
-        config.fixed_endpoint = endpoint;
-
-        ev::feedback::Callbacks callbacks{};
-        ev::Controller controller{config, callbacks};
-
-        WHEN("a control event is posted without ever running the loop") {
-            THEN("the call marshals (no crash, no synchronous session mutation) and returns") {
-                REQUIRE_NOTHROW(controller.post_control_event(ev::d20::StopCharging{true}));
-            }
-        }
-    }
-}
-
 SCENARIO("ISO15118-20 EV Controller request_stop marshals onto the reactor before the loop runs") {
     // request_stop must be safe to call off the reactor thread before loop() runs:
-    // it only queues an action (deliver StopCharging + arm the grace timer), never
-    // touching session or timer state synchronously.
-    GIVEN("A Controller built with discover=false and a fixed endpoint (no SdpClient)") {
+    // it only queues an action, never touching session/timer state synchronously.
+    GIVEN("A Controller that has never run its loop") {
         ev::EvConfig config{};
         config.interface_name = "lo";
-        config.discover = false;
         config.send_delay = 5ms;
         config.response_timeout = 100ms;
-
-        io::Ipv6EndPoint endpoint{};
-        endpoint.port = 15119;
-        endpoint.address[0] = htons(0x0001); // ::1-ish; never connected in this test
-        config.fixed_endpoint = endpoint;
 
         ev::feedback::Callbacks callbacks{};
         ev::Controller controller{config, callbacks};
@@ -184,118 +127,125 @@ SCENARIO("ISO15118-20 EV Controller request_stop marshals onto the reactor befor
 }
 
 SCENARIO("ISO15118-20 EV Controller request_stop grace fallback hard-stops a stuck session") {
-    // With no SECC responding, the session never reaches the FSM, so a StopCharging
-    // control event has nothing to walk gracefully. request_stop arms a grace-period
-    // fallback (3x response_timeout) that must hard-stop the loop and fire stopped,
-    // well before the 18 s setup timeout.
+    // With no SECC responding the session never reaches the FSM, so StopCharging has
+    // nothing to walk gracefully; request_stop's grace fallback (3x response_timeout)
+    // must hard-stop instead.
     GIVEN("A Controller running SDP discovery with no SECC present") {
         ev::EvConfig config{};
         config.interface_name = "lo";
-        config.discover = true;
         config.send_delay = 5ms;
         config.response_timeout = 50ms; // 3x = 150ms grace, well under the deadline
 
         ev::feedback::Callbacks callbacks{};
-        std::atomic_bool stopped{false};
-        callbacks.stopped = [&stopped]() { stopped = true; };
+        std::atomic_int stopped_count{0};
+        callbacks.stopped = [&stopped_count]() { ++stopped_count; };
 
         ev::Controller controller{config, callbacks};
 
         WHEN("loop() is run on a worker thread and request_stop() is called once") {
             std::thread worker([&controller]() { controller.loop(); });
 
-            THEN("the grace fallback hard-stops the loop and fires the stopped callback") {
-                // Give loop() a moment to enter reactor.run() and register the grace
-                // timer, then request a graceful stop exactly once. Re-issuing would
-                // re-arm the single-shot timer and defer the fallback indefinitely.
+            THEN("the grace fallback hard-stops the loop and fires stopped exactly once") {
+                // Request the graceful stop exactly once: re-issuing would re-arm the
+                // single-shot grace timer and defer the fallback indefinitely.
                 std::this_thread::sleep_for(50ms);
                 controller.request_stop();
 
                 const auto deadline = std::chrono::steady_clock::now() + 5s;
-                while (not stopped and std::chrono::steady_clock::now() < deadline) {
+                while (stopped_count == 0 and std::chrono::steady_clock::now() < deadline) {
                     std::this_thread::sleep_for(5ms);
                 }
                 worker.join();
-                REQUIRE(stopped);
+                REQUIRE(stopped_count == 1);
             }
         }
     }
 }
 
-SCENARIO("ISO15118-20 EV Controller loop stops when discover is off and no endpoint is set") {
-    // Fully synchronous path: with discover=false and no fixed_endpoint, loop()
-    // registers its timers, hits the configuration-error early return, fires stopped,
-    // and returns immediately (no socket, no reactor.run). Red->green: without the
-    // early return loop() would fall through to reactor.run() and block.
-    GIVEN("A Controller with discover=false and no fixed_endpoint") {
+SCENARIO("ISO15118-20 EV Controller loop releases its reactor timers before returning") {
+    // loop() registers three timers on the reactor it owns; epoll rejects
+    // EPOLL_CTL_ADD on an fd it already holds, so leaving them registered would
+    // abort the NEXT loop() synchronously on its first register_event_handler.
+    // Registration isn't observable directly, so this pins the consequence: the
+    // second run must still be alive 50 ms in. Uses request_stop, not shutdown,
+    // since shutdown latches stop_requested and the second loop() would
+    // early-return on it.
+    GIVEN("A Controller whose loop is run twice, ended by request_stop each time") {
         ev::EvConfig config{};
         config.interface_name = "lo";
-        config.discover = false;
-        // fixed_endpoint deliberately left unset.
-
-        ev::feedback::Callbacks callbacks{};
-        bool stopped = false;
-        callbacks.stopped = [&stopped]() { stopped = true; };
-
-        ev::Controller controller{config, callbacks};
-
-        WHEN("loop() is called") {
-            const auto start = std::chrono::steady_clock::now();
-            controller.loop();
-            const auto elapsed = std::chrono::steady_clock::now() - start;
-
-            THEN("it returns promptly and fires the stopped callback") {
-                REQUIRE(stopped);
-                REQUIRE(elapsed < 1s);
-            }
-        }
-    }
-}
-
-SCENARIO("ISO15118-20 EV Controller fires stopped exactly once when establish_data_path throws") {
-    // Regression guard for the establish_data_path double-fire: a throw inside
-    // establish_data_path (here, the connected consumer callback) is caught and only
-    // clears `online`; it must NOT also fire stopped from the catch. The single
-    // stopped fire is loop()'s tail after run() returns. A second fire would mean the
-    // catch re-introduced the double-fire.
-    //
-    // discover=false + a fixed_endpoint makes loop() call establish_data_path
-    // synchronously, and connected() is the first statement in its try-block, so the
-    // throw is reached before any socket work: no listener, no connect, fully
-    // synchronous (run() returns at once because the catch cleared `online`).
-    GIVEN("A Controller with a fixed endpoint whose connected callback throws") {
-        ev::EvConfig config{};
-        config.interface_name = "lo";
-        config.discover = false;
         config.send_delay = 5ms;
-        config.response_timeout = 100ms;
-
-        io::Ipv6EndPoint endpoint{};
-        endpoint.port = 15119;
-        endpoint.address[0] = htons(0x0001); // ::1-ish; never connected (connected() throws first)
-        config.fixed_endpoint = endpoint;
-
-        int connected_count = 0;
-        int stopped_count = 0;
+        config.response_timeout = 50ms; // 3x = 150 ms grace
 
         ev::feedback::Callbacks callbacks{};
-        callbacks.connected = [&connected_count](const io::Ipv6EndPoint&) {
-            ++connected_count;
-            throw std::runtime_error("connected consumer failure");
-        };
+        std::atomic_int stopped_count{0};
         callbacks.stopped = [&stopped_count]() { ++stopped_count; };
 
         ev::Controller controller{config, callbacks};
 
-        WHEN("loop() runs and the connected callback throws inside establish_data_path") {
-            const auto start = std::chrono::steady_clock::now();
-            controller.loop();
-            const auto elapsed = std::chrono::steady_clock::now() - start;
+        // Runs loop() once, returning whether it was still alive just before the
+        // graceful stop was requested.
+        const auto run_and_stop = [&controller, &stopped_count]() {
+            const auto before = stopped_count.load();
+            std::thread worker([&controller]() { controller.loop(); });
+            std::this_thread::sleep_for(50ms);
+            const auto still_running = stopped_count.load();
+            controller.request_stop();
 
-            THEN("connected fired once, the throw was caught, and stopped fired exactly once") {
-                REQUIRE(connected_count == 1);
+            const auto deadline = std::chrono::steady_clock::now() + 5s;
+            while (stopped_count == before and std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::sleep_for(5ms);
+            }
+            worker.join();
+            return still_running;
+        };
+
+        WHEN("loop() runs, stops gracefully, and runs again") {
+            const auto alive_during_first = run_and_stop();
+            const auto alive_during_second = run_and_stop();
+
+            THEN("both runs stayed alive past registration and each fired stopped once") {
+                REQUIRE(alive_during_first == 0);
+                REQUIRE(alive_during_second == 1);
+                REQUIRE(stopped_count == 2);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Controller aborts the pre-session phase on the setup timeout") {
+    // The setup timeout is the only bound on a discovery/connect that never
+    // completes; every other scenario keeps it far from elapsing, so this is the one
+    // place that actually pins it firing. Fixed 18 s production constant, no
+    // injection seam, so this scenario pays the wall time.
+    GIVEN("A Controller running SDP discovery on lo with no SECC present") {
+        ev::EvConfig config{};
+        config.interface_name = "lo";
+        config.send_delay = 5ms;
+        config.response_timeout = 100ms;
+
+        ev::feedback::Callbacks callbacks{};
+        std::atomic_int stopped_count{0};
+        std::atomic_int connected_count{0};
+        callbacks.stopped = [&stopped_count]() { ++stopped_count; };
+        callbacks.connected = [&connected_count](const io::Ipv6EndPoint&) { ++connected_count; };
+
+        ev::Controller controller{config, callbacks};
+
+        WHEN("loop() runs untouched: neither shutdown() nor request_stop() is called") {
+            ControllerRun run{controller};
+
+            THEN("the setup timeout ends the run and fires stopped exactly once") {
+                // The grace timer is never armed, so nothing but the setup timeout can
+                // end this run; it must still be alive five seconds in.
+                const auto alive_at_five_seconds = not poll_until([&]() { return stopped_count > 0; }, 5s);
+
+                const auto ended = poll_until([&]() { return stopped_count > 0; }, 20s);
+
+                REQUIRE(alive_at_five_seconds);
+                REQUIRE(ended);
                 REQUIRE(stopped_count == 1);
-                REQUIRE(elapsed < 1s);
+                // No SECC answered, so the data path was never established.
+                REQUIRE(connected_count == 0);
             }
         }
     }

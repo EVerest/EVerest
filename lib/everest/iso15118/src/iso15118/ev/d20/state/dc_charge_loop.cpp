@@ -25,24 +25,15 @@ void fill_dynamic_charge(dt::Dynamic_DC_CLReqControlMode& mode, const DcChargePa
     mode.min_voltage = dt::from_float(params.min_voltage);
 }
 
-// Approximation, not a measurement: the EV has no present-voltage source of its own yet
-// and the field is mandatory on the wire, where a zero reads as a measured zero. Prefer a
-// module-fed value, else the voltage the SECC last reported, else the EV's target.
-float approximate_present_voltage(const DcChargeParams& params, std::optional<float> reported_by_evse) {
-    if (params.present_voltage != 0.0f) {
-        return params.present_voltage;
-    }
-    return reported_by_evse.value_or(params.target_voltage);
-}
-
 message_20::DC_ChargeLoopRequest make_request(const SessionId& session, const DcChargeParams& params,
-                                              dt::ServiceCategory service,
-                                              std::optional<float> present_voltage_reported_by_evse) {
+                                              dt::ServiceCategory service) {
     message_20::DC_ChargeLoopRequest req;
     setup_header(req.header, session);
     req.meter_info_requested = false;
     req.display_parameters = std::nullopt;
-    req.present_voltage = dt::from_float(approximate_present_voltage(params, present_voltage_reported_by_evse));
+    // Only ever the module's measurement: substituting the EV's target or the SECC's
+    // own reading would be indistinguishable from it on the wire.
+    req.present_voltage = dt::from_float(params.present_voltage);
 
     if (service == dt::ServiceCategory::DC_BPT) {
         dt::BPT_Dynamic_DC_CLReqControlMode mode;
@@ -64,8 +55,7 @@ message_20::DC_ChargeLoopRequest make_request(const SessionId& session, const Dc
 
 void DC_ChargeLoop::enter() {
     logf_debug("Enter state: DC_ChargeLoop");
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service(),
-                                    m_ctx.evse_present_voltage()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service()));
 }
 
 Result DC_ChargeLoop::feed(Event ev) {
@@ -91,8 +81,6 @@ Result DC_ChargeLoop::feed(Event ev) {
         return {};
     }
 
-    m_ctx.set_evse_present_voltage(dt::from_RationalNumber(res->present_voltage));
-
     if (res->status.has_value() and res->status->notification == dt::EvseNotification::Terminate) {
         m_ctx.feedback.stop_from_charger();
         return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
@@ -102,8 +90,7 @@ Result DC_ChargeLoop::feed(Event ev) {
         return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
     }
 
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service(),
-                                    m_ctx.evse_present_voltage()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service()));
     return {};
 }
 

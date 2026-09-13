@@ -37,6 +37,7 @@ struct Conf {
     int dc_max_current_limit;
     int dc_max_power_limit;
     int dc_max_voltage_limit;
+    int dc_min_voltage_limit;
     int dc_energy_capacity;
     int dc_target_current;
     int dc_target_voltage;

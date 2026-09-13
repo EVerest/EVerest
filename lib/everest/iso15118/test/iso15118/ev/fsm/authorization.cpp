@@ -61,6 +61,51 @@ SCENARIO("ISO15118-20 EV Authorization stays and resends on Ongoing") {
     REQUIRE(request_message->selected_authorization_service == message_20::datatypes::Authorization::EIM);
 }
 
+// The EV only ever selects EIM, whatever order the SECC offers its services in.
+SCENARIO("ISO15118-20 EV Authorization selects EIM when the SECC lists PnC first") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_pnc_first = [](FsmStateHelper& helper) {
+        helper.get_context().get_evse_session_info().auth_services = {message_20::datatypes::Authorization::PnC,
+                                                                      message_20::datatypes::Authorization::EIM};
+    };
+    PrimedState<ev::d20::state::Authorization> primed{callbacks, seed_pnc_first};
+
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::AuthorizationRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->selected_authorization_service == message_20::datatypes::Authorization::EIM);
+    REQUIRE(
+        std::holds_alternative<message_20::datatypes::EIM_ASReqAuthorizationMode>(request_message->authorization_mode));
+}
+
+SCENARIO("ISO15118-20 EV Authorization stops the session when the SECC offers no EIM") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_pnc_only = [](FsmStateHelper& helper) {
+        helper.get_context().get_evse_session_info().auth_services = {message_20::datatypes::Authorization::PnC};
+    };
+    PrimedState<ev::d20::state::Authorization> primed{callbacks, seed_pnc_only};
+
+    REQUIRE(primed.ctx.is_session_stopped() == true);
+    REQUIRE(primed.take_requests().empty());
+}
+
+SCENARIO("ISO15118-20 EV Authorization stops the session on a FAILED response after an Ongoing one") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::Authorization> primed{callbacks, seed_eim};
+
+    // Poll once so the rejection below happens mid-authorization and not on the first response.
+    primed.handle_response(make_auth_res(SESSION_HEADER, ResponseCode::OK, Processing::Ongoing));
+    REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned() == false);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+    REQUIRE(primed.take_requests().get<message_20::AuthorizationRequest>().has_value());
+
+    expect_stops_session(primed, make_auth_res(SESSION_HEADER, ResponseCode::FAILED_SequenceError, Processing::Ongoing),
+                         ev::d20::StateID::Authorization);
+    REQUIRE(primed.take_requests().empty());
+}
+
 SCENARIO("ISO15118-20 EV Authorization rejects malformed responses") {
     const ev::feedback::Callbacks callbacks{};
     const auto make_fsm = [](FsmStateHelper& helper) {
