@@ -28,7 +28,7 @@ extern "C" {
 
 
 #include "cbv2g/common/exi_bitstream.h"
-#include "iso2_msgDefDatatypes.h"
+#include "cbv2g/iso_2/iso2_msgDefDatatypes.h"
 
 
 // main function for encoding
