@@ -1118,9 +1118,11 @@ bool Server::init_ssl(const config_t& cfg) {
     SSL_CTX* ctx = nullptr;
 
     if (result) {
-        // use the first server chain
+        // Default chain served to a peer that matches none: the first chain that passed
+        // verification. Reached only when cfg.chains is non-empty (see `result` above).
+        const auto default_index = (m_default_chain_index < cfg.chains.size()) ? m_default_chain_index : 0;
         const ssl_ctx_params params{true, cfg.ciphersuites, cfg.cipher_list, true, cfg.enforce_tls_1_3};
-        result = configure_ssl_ctx(ctx, cfg.chains[0], params);
+        result = configure_ssl_ctx(ctx, cfg.chains[default_index], params);
         if (result) {
 
             if (cfg.tls_key_logging) {
@@ -1175,7 +1177,9 @@ void Server::deinit_ssl() {
 bool Server::init_certificates(const std::vector<certificate_config_t>& chain_files) {
     std::vector<OcspCache::ocsp_entry_t> entries;
     openssl::chain_list chains;
+    m_default_chain_index = 0;
 
+    std::size_t config_index{0};
     for (const auto& i : chain_files) {
         auto certs = openssl::load_certificates(i.certificate_chain_file);
         auto tas = openssl::load_certificates(i.trust_anchor_file);
@@ -1221,7 +1225,21 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
                 chain.private_key = std::move(pkey);
 
                 if (openssl::verify_chain(chain)) {
+                    if (chains.empty()) {
+                        m_default_chain_index = config_index;
+                    }
                     chains.emplace_back(std::move(chain));
+                } else {
+                    const auto subject = openssl::certificate_subject(chain.chain.leaf.get());
+                    std::string msg("chain verification failed, excluding chain (leaf:");
+                    for (const auto& item : subject) {
+                        msg += ' ';
+                        msg += item.first;
+                        msg += ':';
+                        msg += item.second;
+                    }
+                    msg += ')';
+                    log_warning(msg);
                 }
             } else {
                 const auto subject = openssl::certificate_subject(certs[0].get());
@@ -1234,7 +1252,13 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
                 }
                 log_warning(msg);
             }
+        } else {
+            const auto* file = static_cast<const char*>(i.certificate_chain_file);
+            std::string msg("certificate chain file yielded no certificates: ");
+            msg += (file != nullptr) ? file : "<not set>";
+            log_warning(msg);
         }
+        config_index++;
     }
 
     bool result{true};
@@ -1242,6 +1266,17 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
     if (chains.empty()) {
         // continue without trusted_ca_keys support
         log_warning("trusted_ca_keys support disabled");
+        if (!chain_files.empty()) {
+            log_warning("no configured chain passed verification; the SSL_CTX default certificate remains "
+                        "chains[0] and clients may not be able to build a path for it");
+        }
+    } else if (m_default_chain_index != 0) {
+        std::string msg("first ");
+        msg += std::to_string(m_default_chain_index);
+        msg += " configured chain(s) unusable (see warnings above); serving chains[";
+        msg += std::to_string(m_default_chain_index);
+        msg += "] as the default certificate";
+        log_warning(msg);
     }
     m_server_trusted_ca_keys.update(std::move(chains));
 
