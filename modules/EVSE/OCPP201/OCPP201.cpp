@@ -1152,6 +1152,14 @@ void OCPP201::ready() {
     }
 }
 
+void OCPP201::shutdown() {
+    invoke_shutdown(*p_auth_validator);
+    invoke_shutdown(*p_auth_provider);
+    invoke_shutdown(*p_data_transfer);
+    invoke_shutdown(*p_ocpp_generic);
+    invoke_shutdown(*p_session_cost);
+}
+
 void OCPP201::charging_schedules_timer_callback() {
     // Single-flight + coalesce: the recompute body publishes schedules within EVerest and applies the
     // external limits. It now fires concurrently from the interval timer, the libocpp message thread,
