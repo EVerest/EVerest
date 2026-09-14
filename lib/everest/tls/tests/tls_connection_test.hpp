@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <openssl/ssl.h>
+#include <string>
 #include <thread>
 #include <tuple>
 #include <unistd.h>
@@ -312,7 +313,10 @@ protected:
         ref1.ocsp_response_files = {"ocsp_response.der", "ocsp_response.der"};
         // server_config.verify_locations_file = "client_root_cert.pem";
         server_config.host = "127.0.0.1";
-        server_config.service = "8444";
+        // "0" asks the OS for a free port. A fixed port collides with any other
+        // build tree or CI job running these tests at the same time, and the
+        // collision presents as a hang rather than a bind error.
+        server_config.service = "0";
         server_config.ipv6_only = false;
         server_config.verify_client = false;
         server_config.io_timeout_ms = 1000; // no lower than 200ms, valgrind need much higher
@@ -355,12 +359,17 @@ protected:
         }
     }
 
+    // The port the server actually bound. Only valid after start().
+    [[nodiscard]] std::string server_service() const {
+        return std::to_string(server.bound_port());
+    }
+
     void connect(const std::function<void(tls::Client::ConnectionPtr& con)>& handler = nullptr) {
         client.init(client_config);
         client.reset();
         // localhost works in some cases but not in the CI pipeline for IPv6
         // use ip6-localhost
-        auto connection = client.connect("127.0.0.1", "8444", false, 1000);
+        auto connection = client.connect("127.0.0.1", server_service().c_str(), false, 1000);
         if (handler == nullptr) {
             if (connection) {
                 if (connection->connect() == tls::Connection::result_t::success) {
@@ -431,7 +440,10 @@ protected:
         // ref1.trust_anchor_file = "alt_server_root_cert.pem";
         // ref1.ocsp_response_files = {"ocsp_response.der", "ocsp_response.der"};
         server_config.host = "127.0.0.1";
-        server_config.service = "8444";
+        // "0" asks the OS for a free port. A fixed port collides with any other
+        // build tree or CI job running these tests at the same time, and the
+        // collision presents as a hang rather than a bind error.
+        server_config.service = "0";
         server_config.ipv6_only = false;
         server_config.verify_client = false;
         server_config.io_timeout_ms = 1000; // no lower than 200ms, valgrind need much higher
