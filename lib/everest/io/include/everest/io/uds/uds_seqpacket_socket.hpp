@@ -31,8 +31,11 @@ public:
 
     /**
      * @brief Receive one message, see \ref rx_impl.
-     * @details A closed peer is reported as ECONNRESET. An empty message is delivered as such; an
-     * empty message that was queued when the peer closed may be dropped.
+     * @details A peer that closed, or shut its writing side, is reported as ECONNRESET. An empty
+     * message is delivered as such; an empty message that was queued when the peer closed may be
+     * dropped. A record larger than \ref uds_payload::max_size or carrying more than
+     * \ref uds_payload::max_fds fails the connection with EMSGSIZE: what follows it would be read
+     * out of step with the sender.
      */
     bool rx(uds_payload& payload);
 

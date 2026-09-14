@@ -441,6 +441,48 @@ TEST(uds_socket, a_reply_to_an_unnamed_sender_is_dropped_not_misdelivered) {
     EXPECT_EQ(as_string(answer), "answer");
 }
 
+TEST(uds_socket, a_reply_follows_the_payloads_peer_not_the_last_sender) {
+    auto const server_name = unique_name("peer_routing");
+    auto const name_a = unique_name("peer_routing_a");
+    auto const name_b = unique_name("peer_routing_b");
+
+    uds_server_socket server;
+    ASSERT_TRUE(server.open(server_name, true));
+    uds_client_socket a;
+    uds_client_socket b;
+    ASSERT_TRUE(a.open(server_name, true, name_a, true));
+    ASSERT_TRUE(b.open(server_name, true, name_b, true));
+
+    ASSERT_TRUE(a.tx(uds_payload{"from A"}));
+    uds_payload request_a;
+    ASSERT_TRUE(rx_within(server, request_a, 2s));
+    ASSERT_TRUE(request_a.peer.has_value());
+    EXPECT_EQ(request_a.peer->path, name_a);
+    EXPECT_TRUE(request_a.peer->is_abstract);
+
+    // B speaks before A is answered. The answer was made from A's request and stays A's.
+    ASSERT_TRUE(b.tx(uds_payload{"from B"}));
+    uds_payload request_b;
+    ASSERT_TRUE(rx_within(server, request_b, 2s));
+    auto reply = request_a;
+    reply.set_message("for A");
+    ASSERT_TRUE(server.tx(reply));
+
+    uds_payload at_a;
+    ASSERT_TRUE(rx_within(a, at_a, 2s)) << "A got nothing";
+    EXPECT_EQ(as_string(at_a), "for A");
+    uds_payload at_b;
+    EXPECT_FALSE(rx_within(b, at_b, 100ms)) << "B got A's answer";
+
+    // Without a peer the payload goes to the last sender heard, which is B now.
+    ASSERT_TRUE(server.tx(uds_payload{"for whoever spoke last"}));
+    ASSERT_TRUE(rx_within(b, at_b, 2s));
+    EXPECT_EQ(as_string(at_b), "for whoever spoke last");
+    // A client's received payload names the server, and a client ignores peer on send.
+    EXPECT_TRUE(at_b.peer.has_value());
+    EXPECT_EQ(at_b.peer->path, server_name);
+}
+
 TEST(uds_socket, a_reply_to_a_departed_client_is_dropped_not_failed) {
     auto const server_name = unique_name("departed");
     auto const client_name = unique_name("departed_client");
@@ -973,6 +1015,24 @@ mode_t permissions_of(std::string const& path) {
     return st.st_mode & 0777;
 }
 
+// Entries in the directory of \p path whose name starts with its basename: the file itself and any
+// staging leftover.
+int files_named_like(std::string const& path) {
+    auto const slash = path.rfind('/');
+    auto const dir = path.substr(0, slash);
+    auto const base = path.substr(slash + 1);
+    int count = 0;
+    if (DIR* handle = ::opendir(dir.c_str())) {
+        while (auto* entry = ::readdir(handle)) {
+            if (std::string(entry->d_name).rfind(base, 0) == 0) {
+                ++count;
+            }
+        }
+        ::closedir(handle);
+    }
+    return count;
+}
+
 } // namespace
 
 TEST(uds_socket, a_server_gives_its_socket_file_the_permissions_asked_for) {
@@ -981,11 +1041,33 @@ TEST(uds_socket, a_server_gives_its_socket_file_the_permissions_asked_for) {
     uds_server_socket server;
     ASSERT_TRUE(server.open(path, false, false, 0600)) << strerror(server.get_error());
     EXPECT_EQ(permissions_of(path), 0600u);
+    // Prepared beside the path and linked into place: nothing of the staging is left behind, and
+    // the file at the path is the live socket.
+    EXPECT_EQ(files_named_like(path), 1);
+    uds_client_socket client;
+    EXPECT_TRUE(client.open(path, false)) << strerror(client.get_error());
 
     server.close();
     ASSERT_TRUE(server.open(path, false, false, 0660)) << strerror(server.get_error());
     // Not masked by the umask: chmod sets exactly what was asked.
     EXPECT_EQ(permissions_of(path), 0660u);
+    EXPECT_EQ(files_named_like(path), 1);
+
+    server.close();
+    EXPECT_EQ(files_named_like(path), 0);
+}
+
+TEST(uds_socket, a_path_too_long_for_staging_still_gets_its_mode) {
+    // 100 characters leave no room for the staging suffix: bound and chmod()ed in place instead.
+    std::string path = unique_path("long_mode");
+    path.resize(100, 'l');
+
+    uds_server_socket server;
+    ASSERT_TRUE(server.open(path, false, false, 0600)) << strerror(server.get_error());
+    EXPECT_EQ(permissions_of(path), 0600u);
+    EXPECT_EQ(files_named_like(path), 1);
+    server.close();
+    EXPECT_EQ(files_named_like(path), 0);
 }
 
 TEST(uds_socket, permissions_for_an_abstract_name_are_refused_before_anything_is_created) {

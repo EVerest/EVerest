@@ -17,17 +17,6 @@
 namespace everest::lib::io::uds {
 
 /**
- * @struct uds_info
- * @brief Address of a unix domain socket.
- */
-struct uds_info {
-    /** Filesystem path or abstract name */
-    std::string path;
-    /** True for the abstract namespace: no file, no permissions, gone with the last socket */
-    bool is_abstract{true};
-};
-
-/**
  * @brief Common part of the unix domain socket policies: descriptor lifetime, sending and
  * receiving \ref uds_payload, error reporting.
  * @details Not usable on its own. The derived classes are the \p ClientPolicy implementations for
@@ -64,6 +53,12 @@ public:
      */
     int get_error() const;
 
+    /**
+     * @brief What went wrong at the last failed open or connect, for the error handler.
+     * @return The description the socket layer gave, empty when there is none
+     */
+    std::string const& get_error_string() const;
+
 protected:
     /**
      * @brief Send \p payload to the connected peer.
@@ -84,12 +79,19 @@ protected:
     bool tx_impl(uds_payload const& payload, uds_info const& destination);
 
     /**
-     * @brief Receive one message into \p payload, replacing its bytes, descriptors and credentials.
+     * @brief Receive one message into \p payload, replacing its bytes, descriptors, credentials and
+     * \ref uds_payload::peer.
      * @details A message exceeding \ref uds_payload::max_size or \ref uds_payload::max_fds is
-     * dropped whole, its descriptors closed. Received descriptors are close-on-exec.
+     * dropped whole, its descriptors closed, and \ref last_rx_truncated says so until the next
+     * read. Received descriptors are close-on-exec.
      * @return The sender, std::nullopt if nothing was received. An unnamed sender has an empty path
      */
     std::optional<uds_info> rx_impl(uds_payload& payload);
+
+    /**
+     * @brief True if the last \ref rx_impl dropped a message as too large.
+     */
+    bool last_rx_truncated() const;
 
     /**
      * @brief Take ownership of \p fd.
@@ -100,8 +102,10 @@ protected:
 
     /**
      * @brief Drop the socket and remember \p error as the reason there is none.
+     * @param[in] error The errno. 0 is recorded as EIO: a missing reason must not read as success
+     * @param[in] text Description for \ref get_error_string, may be empty
      */
-    void record_connect_failure(int error);
+    void record_connect_failure(int error, std::string text = {});
 
     /**
      * @brief Drop the socket, remove its bound filesystem name and clear all recorded errors.
@@ -124,6 +128,8 @@ private:
     std::string m_bound_path;
     int m_connect_error{0};
     int m_io_error{0};
+    std::string m_error_text;
+    bool m_rx_truncated{false};
     std::array<uint8_t, uds_payload::max_size> m_rx_buffer;
 };
 
@@ -188,8 +194,11 @@ private:
 
 /**
  * @brief Datagram server policy for \ref event::fd_event_client, see \ref uds_server.
- * @details One socket serves any number of clients. \ref tx answers the sender of the last
- * message received.
+ * @details One socket serves any number of clients. \ref tx sends to \ref uds_payload::peer,
+ * which a received payload carries, so a reply made from the request goes to whoever asked.
+ * Without one it answers the sender of the last message received, which is right only while one
+ * client at a time is talking: an event client writes on a later loop pass, by which time another
+ * client may have spoken.
  */
 class uds_server_socket : public uds_socket_base {
 public:
@@ -204,25 +213,33 @@ public:
      * @details A stale socket file at \p path is removed. A live socket there fails with
      * EADDRINUSE, a file that is not a socket with EEXIST. The file is removed on \ref close.
      * @param[in] path Path or abstract name to bind
-     * @param[in] is_abstract True for the abstract namespace
+     * @param[in] is_abstract True for the abstract namespace. An abstract name has no access
+     *            control: every process in the network namespace may send to it
      * @param[in] with_peer_credentials True to receive the sender's identity in
      *            \ref uds_payload::credentials with every message
-     * @param[in] mode Permissions of the socket file, set after bind. Connecting needs write
-     *            permission. Only with a path; with an abstract name the open fails with EINVAL
+     * @param[in] mode Permissions of the socket file, in force before the file appears at \p path:
+     *            the socket is bound under a staging name beside it and linked into place with its
+     *            mode set, see \ref socket::open_uds_server_socket. Clients then see that staging
+     *            name as the server's address in \ref uds_payload::peer. Connecting needs write
+     *            permission. Without one the file gets what the umask leaves of 0777. Only with a
+     *            path; with an abstract name the open fails with EINVAL
      * @return True on success, false otherwise. See \ref get_error
      */
     bool open(std::string const& path, bool is_abstract = true, bool with_peer_credentials = false,
               std::optional<mode_t> mode = std::nullopt);
 
     /**
-     * @brief Send \p payload to the sender of the last received message.
-     * @details Dropped and reported as sent if no message arrived yet, if the last sender had no
-     * name, or if it has gone. See \ref tx_impl(uds_payload const&, uds_info const&).
+     * @brief Send \p payload to its \ref uds_payload::peer, or without one to the sender of the
+     * last received message.
+     * @details Dropped and reported as sent if there is nobody to send to: no peer and no message
+     * yet, a peer without a name, or one that has gone. See
+     * \ref tx_impl(uds_payload const&, uds_info const&).
      */
     bool tx(uds_payload const& payload);
 
     /**
-     * @brief Receive one message and remember its sender for \ref tx, see \ref rx_impl.
+     * @brief Receive one message, see \ref rx_impl. Its sender is set as \ref uds_payload::peer and
+     * remembered as the fallback destination of \ref tx.
      */
     bool rx(uds_payload& payload);
 

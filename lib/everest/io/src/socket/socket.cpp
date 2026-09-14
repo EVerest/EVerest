@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <arpa/inet.h>
 #include <asm-generic/socket.h>
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <cstddef>
@@ -237,11 +238,8 @@ void bind_socket_to_interface_address(int fd, std::string const& device, std::ui
  * burst may run ahead of its reader; the kernel clamps it to net.core.wmem_max. */
 constexpr int uds_socket_buffer_size = 1024 * 1024;
 
-// A sockaddr_un naming @p name, and the exact length of that address. An abstract name is a
-// leading NUL followed by exactly the name, with no terminator, so its length carries the name
-// and cannot be recovered from the bytes. A pathname is NUL terminated, except that Linux lets it
-// fill sun_path completely, in which case the address length is the whole structure and the
-// terminator is implied.
+} // namespace
+
 std::pair<struct sockaddr_un, socklen_t> make_uds_address(std::string const& name, bool use_abstract) {
     struct sockaddr_un addr {};
     addr.sun_family = AF_UNIX;
@@ -263,6 +261,8 @@ std::pair<struct sockaddr_un, socklen_t> make_uds_address(std::string const& nam
     const size_t path_len = std::min(name.length() + 1, sun_path_size);
     return {addr, static_cast<socklen_t>(family_offset + path_len)};
 }
+
+namespace {
 
 // Failure leaves the kernel default in place, which is a smaller buffer and not a broken socket.
 // Only the send side is set: on AF_UNIX the receive buffer plays no part in how much may queue.
@@ -348,6 +348,48 @@ void apply_uds_path_mode(std::string const& path, bool is_abstract, std::optiona
     if (::chmod(path.c_str(), *mode) == -1) {
         throw_errno("Failed to set permissions on UDS socket file '" + path + "'");
     }
+}
+
+// Binds @p socket_fd to @p path with @p mode in force before the file appears there. bind() creates
+// the file with what the umask leaves of 0777 and only a chmod() afterwards narrows it, and in
+// between anyone may connect: a datagram client admitted then keeps sending after the chmod, since
+// the permission is checked at connect only. So the socket is bound under a temporary name in the
+// same directory, given its mode there, and linked to @p path only then. link() refuses with EEXIST
+// if the path was taken meanwhile, where rename() would take it over; a filesystem that refuses the
+// hard link falls back to rename(). A path that leaves no room for the suffix in sun_path is bound
+// directly and chmod()ed, window and all. On return @p bound holds @p path. The socket keeps the
+// staging name as its own address: that is what getsockname() and a client's uds_payload::peer show.
+void bind_uds_path_with_mode(int socket_fd, std::string const& path, mode_t mode, bound_path_guard& bound) {
+    // Unique per process and per call, so two threads preparing paths at once never share one.
+    static std::atomic<unsigned> sequence{0};
+    const std::string staged = path + ".tmp" + std::to_string(::getpid()) + "." + std::to_string(sequence++);
+    if (staged.length() > sizeof(sockaddr_un::sun_path)) {
+        auto const [addr, addr_len] = make_uds_address(path, false);
+        if (::bind(socket_fd, reinterpret_cast<struct sockaddr const*>(&addr), addr_len) == -1) {
+            throw_errno("Failed to bind UDS server to '" + path + "'");
+        }
+        bound.arm(path);
+        apply_uds_path_mode(path, false, mode);
+        return;
+    }
+
+    // Ours by suffix and pid: whatever a crashed run left there is stale.
+    (void)::unlink(staged.c_str());
+    auto const [addr, addr_len] = make_uds_address(staged, false);
+    if (::bind(socket_fd, reinterpret_cast<struct sockaddr const*>(&addr), addr_len) == -1) {
+        throw_errno("Failed to bind UDS server to '" + path + "'");
+    }
+    bound.arm(staged);
+    apply_uds_path_mode(staged, false, mode);
+
+    if (::link(staged.c_str(), path.c_str()) == 0) {
+        (void)::unlink(staged.c_str());
+    } else if (errno == EEXIST) {
+        throw_error("Refusing to bind UDS at '" + path + "': taken while it was being prepared", EADDRINUSE);
+    } else if (::rename(staged.c_str(), path.c_str()) == -1) {
+        throw_errno("Failed to place UDS socket file at '" + path + "'");
+    }
+    bound.arm(path);
 }
 } // namespace
 
@@ -704,16 +746,23 @@ event::unique_fd open_uds_server_socket(std::string const& server_name, bool is_
     event::unique_fd owned{socket_fd};
     configure_uds_socket_buffers(owned);
 
-    auto const [server_addr, server_len] = make_uds_address(server_name, is_abstract);
     if (not is_abstract) {
         free_uds_path_for_bind(server_name);
     }
 
-    if (::bind(owned, reinterpret_cast<struct sockaddr const*>(&server_addr), server_len) == -1) {
-        throw_errno("Failed to bind UDS server to '" + server_name + "'");
+    bound_path_guard bound;
+    if (not is_abstract and mode) {
+        // A datagram socket is live from the bind, so the mode has to be there before the path is.
+        bind_uds_path_with_mode(owned, server_name, *mode, bound);
+    } else {
+        auto const [server_addr, server_len] = make_uds_address(server_name, is_abstract);
+        if (::bind(owned, reinterpret_cast<struct sockaddr const*>(&server_addr), server_len) == -1) {
+            throw_errno("Failed to bind UDS server to '" + server_name + "'");
+        }
+        if (not is_abstract) {
+            bound.arm(server_name);
+        }
     }
-    bound_path_guard bound{server_name, is_abstract};
-    apply_uds_path_mode(server_name, is_abstract, mode);
 
     bound.commit();
     return owned;
@@ -741,7 +790,8 @@ event::unique_fd open_uds_seqpacket_server_socket(std::string const& server_name
         throw_errno("Failed to bind UDS SEQPACKET server to '" + server_name + "'");
     }
     bound_path_guard bound{server_name, is_abstract};
-    // Before listen(): nobody connects to a file that does not yet have its permissions.
+    // Before listen(): a connect to a bound but not yet listening socket is refused, so unlike the
+    // datagram server this one needs no staging to keep the window shut.
     apply_uds_path_mode(server_name, is_abstract, mode);
 
     if (::listen(owned, backlog) == -1) {
