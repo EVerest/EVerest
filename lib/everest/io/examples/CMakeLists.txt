@@ -101,6 +101,19 @@ target_link_options(test_udp_unconnected_client PRIVATE -static-libasan -fsaniti
 
 ###
 
+add_executable(test_uds_eventfd_share test_uds_eventfd_share.cpp)
+
+target_link_libraries(test_uds_eventfd_share
+    PRIVATE
+        everest::io
+)
+
+target_compile_features(test_uds_eventfd_share PUBLIC cxx_std_17)
+target_compile_options(test_uds_eventfd_share PRIVATE -fsanitize=address -g)
+target_link_options(test_uds_eventfd_share PRIVATE -static-libasan -fsanitize=address)
+
+###
+
 if(EVEREST_IO_ENABLE_TLS)
     add_executable(test_tls_server test_tls_server.cpp)
     target_link_libraries(test_tls_server PRIVATE everest::io)
