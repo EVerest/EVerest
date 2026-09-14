@@ -20,13 +20,10 @@ namespace everest::lib::io::netlink {
 
 namespace {
 
-/// One recv() buffer. Netlink dumps arrive in chunks of at most one page by default, and a single
-/// message is far smaller still, so 32 KiB cannot realistically be clipped - and MSG_TRUNC makes it
-/// detectable rather than silent if it ever is (see handle_readable).
+/// One recv() buffer. Dumps arrive in chunks of at most one page by default; clipping is detected via MSG_TRUNC.
 constexpr std::size_t receive_buffer_size = 32768;
 
-/// Bytes the socket may queue before the kernel starts dropping and reporting ENOBUFS. A link and
-/// neighbour dump of a busy host has to fit, otherwise the watcher spends startup resynchronising.
+/// SO_RCVBUF; above it the kernel drops and reports ENOBUFS. A link and neighbour dump of a busy host must fit.
 constexpr int receive_buffer_bytes = 256 * 1024;
 
 } // namespace
@@ -48,7 +45,7 @@ bool device_watcher::open() {
         return false;
     }
 
-    // Best effort: a small receive buffer only costs resynchronisation, not correctness.
+    // Best effort: a small buffer only costs resynchronisation.
     int buffer_bytes = receive_buffer_bytes;
     (void)::setsockopt(m_fd, SOL_SOCKET, SO_RCVBUF, &buffer_bytes, sizeof(buffer_bytes));
 
@@ -64,8 +61,7 @@ bool device_watcher::open() {
         return false;
     }
 
-    // Subscribe first, dump second: an event that races the dump is then seen twice rather than
-    // missed, and both carrier and presence are edge-filtered, so a duplicate is free.
+    // Subscribe first, dump second: a racing event is seen twice rather than missed; both are edge-filtered.
     if (not start_link_dump()) {
         m_fd.close();
         return false;
@@ -113,18 +109,14 @@ std::string const& device_watcher::device() const {
 void device_watcher::handle_readable() {
     std::vector<std::uint8_t> buffer(receive_buffer_size);
 
-    // Drain: the socket is non-blocking and level-triggered, but reading everything available in
-    // one wake-up keeps a dump from taking one loop iteration per datagram.
+    // Drain in one wake-up so a dump does not take one loop iteration per datagram.
     while (true) {
-        // MSG_TRUNC makes recv report the datagram's real length instead of what fitted, which is
-        // the only way to tell a clipped datagram from a complete one - without it the tail is lost
-        // silently and the parser just sees fewer messages than were sent.
+        // MSG_TRUNC makes recv report the datagram's real length, so a clipped datagram is detectable.
         auto const received = ::recv(m_fd, buffer.data(), buffer.size(), MSG_TRUNC);
         if (received > 0) {
             auto const length = static_cast<std::size_t>(received);
             if (length > buffer.size()) {
-                // Never observed in practice; if it happens the cached state may be missing an
-                // update that only a fresh dump can supply.
+                // The cached state may be missing an update only a fresh dump can supply.
                 report(diagnostic_severity::error, "rtnetlink datagram of " + std::to_string(length) +
                                                        " bytes exceeded the " + std::to_string(buffer.size()) +
                                                        " byte receive buffer on device " + m_tracker.device() +
@@ -146,9 +138,7 @@ void device_watcher::handle_readable() {
             continue;
         }
         if (reason == ENOBUFS) {
-            // The kernel dropped multicast messages, so the cached carrier and presence may be
-            // stale and no incremental update can repair that. Re-dump and let the edge filters
-            // sort out what actually changed.
+            // Multicast messages were dropped; cached carrier and presence may be stale.
             report(diagnostic_severity::warning,
                    "rtnetlink socket overrun on device " + m_tracker.device() + ", resynchronising with a fresh dump");
             request_resync();
@@ -161,14 +151,8 @@ void device_watcher::handle_readable() {
 
 void device_watcher::dispatch(parse_result const& parsed) {
     if (parsed.error == -EBUSY) {
-        // A dump was already running. Transient by definition, so it is not a fault: give up on
-        // this request and start over once the socket is free again.
-        //
-        // INVARIANT this relies on: only this object ever sends on this socket, so EBUSY can only
-        // mean a dump *we* started is still running, and its NLMSG_DONE is therefore still coming -
-        // which is what drains the queued resync. Were EBUSY ever possible without one of our own
-        // dumps outstanding, the queued resync would never be sent and the cached carrier state
-        // would stay stale for good.
+        // A dump is already running; retry once it finishes. Invariant: only this object sends on this
+        // socket, so the running dump is ours and its NLMSG_DONE drains the queued resync.
         report(diagnostic_severity::warning, "rtnetlink dump on device " + m_tracker.device() +
                                                  " was rejected as busy; retrying once the running dump finishes");
         m_resync_queued = true;
@@ -179,8 +163,7 @@ void device_watcher::dispatch(parse_result const& parsed) {
         return;
     }
     if (parsed.truncated) {
-        // Whatever decoded before the bad message is still valid, but the rest of this datagram is
-        // lost, so ask for a fresh dump rather than carrying on with a possibly incomplete view.
+        // Messages before the bad one are valid; the rest of the datagram is lost.
         report(diagnostic_severity::warning,
                "truncated rtnetlink message on device " + m_tracker.device() + "; resynchronising with a fresh dump");
         request_resync();
@@ -188,8 +171,7 @@ void device_watcher::dispatch(parse_result const& parsed) {
 
     for (auto const& report_item : parsed.links) {
         auto const change = m_tracker.apply(report_item);
-        // Presence first: "the device is back" before "and it has carrier" is the order a
-        // consumer can act on, and a removal reports the carrier loss before the disappearance.
+        // Appearance is reported before carrier, removal after carrier loss.
         if (change.presence_changed and change.present and m_callbacks.on_presence_change) {
             m_callbacks.on_presence_change(true);
         }
@@ -203,8 +185,7 @@ void device_watcher::dispatch(parse_result const& parsed) {
 
     if (parsed.dump_done) {
         m_dump_in_progress = false;
-        // The link dump is requested first, so the first NLMSG_DONE ends it and presence and
-        // carrier are settled from here on. Before that they only say "nothing seen yet".
+        // The link dump is requested first, so the first NLMSG_DONE settles presence and carrier.
         if (not m_initial_state_reported) {
             m_initial_state_reported = true;
             if (m_callbacks.on_initial_state) {
@@ -225,8 +206,7 @@ void device_watcher::dispatch(parse_result const& parsed) {
 }
 
 void device_watcher::request_resync() {
-    // Collapses repeats: m_resync_queued is a flag, not a counter, so a storm of overruns or
-    // truncations cannot queue an unbounded number of dumps.
+    // m_resync_queued is a flag, not a counter: a storm of overruns queues at most one dump.
     if (not start_link_dump()) {
         fail(std::string("failed to resynchronise the rtnetlink socket: ") + std::strerror(m_error));
     }
@@ -267,7 +247,7 @@ void device_watcher::continue_dumps() {
 }
 
 bool device_watcher::request_dump(std::uint16_t type, std::uint8_t family, std::size_t body_size) {
-    // One buffer for either body; both start with a family byte, which is all a dump request needs.
+    // Both bodies start with a family byte, which is all a dump request needs.
     std::vector<std::uint8_t> request(NLMSG_SPACE(body_size), 0);
     nlmsghdr header{};
     header.nlmsg_len = static_cast<std::uint32_t>(NLMSG_LENGTH(body_size));
@@ -286,14 +266,11 @@ bool device_watcher::request_dump(std::uint16_t type, std::uint8_t family, std::
 
 void device_watcher::report(diagnostic_severity severity, std::string const& message) const {
     if (m_callbacks.on_diagnostic) {
-        // Swallowed on purpose: this is the reporting path for failures, so it must not turn a
-        // handler's exception into a second, worse one. Falls back to std::cerr like the
-        // no-handler case, so nothing is lost.
+        // A throwing handler must not fail the failure reporting path; fall back to std::cerr.
         try {
             m_callbacks.on_diagnostic(severity, message);
             return;
         } catch (...) {
-            // fall through to std::cerr
         }
     }
     std::cerr << message << std::endl;
@@ -305,13 +282,11 @@ void device_watcher::fail(std::string const& reason) {
     }
     m_failed = true;
     if (m_callbacks.on_fatal_error) {
-        // One event, one channel: the consumer that installed this owns the reporting, so the
-        // watcher deliberately does not also log the reason. Documented on the callback.
+        // The consumer owns the reporting; the reason is not logged here as well.
         m_callbacks.on_fatal_error(reason);
         return;
     }
-    // Nobody is listening for the fatal path, so the failure goes out as a diagnostic instead of
-    // vanishing.
+    // No fatal handler: report as a diagnostic.
     report(diagnostic_severity::error, reason + " (device " + m_tracker.device() + ")");
 }
 

@@ -40,19 +40,13 @@ public:
      * @param[in] ip IP address to be assigned for the TAP device
      * @param[in] netmask Netmask for the TAP device
      * @param[in] mtu The Maximum transmission unit, i.e. the maximum size of a message in bytes.
-     * @param[in] carrier_on The carrier state the device is left in. The kernel creates a fresh TAP
-     * device with the carrier on, so the default reproduces the kernel default. Passing \p false drops
-     * the carrier before the device is brought up, which is what keeps the device from ever being
-     * announced as carrier-on to an rtnetlink watcher - bringing it up while the carrier is still on
-     * emits exactly such an announcement, and no later ioctl can retract it. A failed carrier request
-     * does not fail this function; its errno is reported by \ref carrier_setup_error, not by
-     * \ref get_error, which is required to be zero after a successful open.
-     * @note The "never announced with a carrier" guarantee covers devices this function creates. It
-     * does not extend to attaching to a pre-existing persistent TAP device that is already \p IFF_UP:
-     * \p TUNSETIFF raises the carrier unconditionally, so that attach announces a carrier before this
-     * function can drop it again. Creating the device with \p IFF_NO_CARRIER (kernel 6.1) would make
-     * the initial state atomic and remove the ordering concern entirely; \p TUNSETCARRIER is used here
-     * because it works from 5.0 onwards.
+     * @param[in] carrier_on Carrier state the device is left in. The kernel default is on.
+     * @note With \p carrier_on false the carrier is dropped via \p TUNSETCARRIER before the device is brought
+     * up, so a device this function creates is never announced carrier-on to an rtnetlink watcher. A persistent
+     * TAP device that is already \p IFF_UP is announced anyway: \p TUNSETIFF raises the carrier unconditionally.
+     * \p IFF_NO_CARRIER (kernel 6.1) would avoid this; \p TUNSETCARRIER works from 5.0.
+     * @note A failed carrier request does not fail this function; its errno is in \ref carrier_setup_error.
+     * \ref get_error is zero after a successful open.
      * @return True on success, false otherwise.
      */
     bool open(std::string const& device, std::string const& ip, std::string const& netmask, int mtu,
@@ -60,49 +54,33 @@ public:
 
     /**
      * @brief Set the carrier of the TAP device
-     * @details Issues \p TUNSETCARRIER on the device fd, which calls \p netif_carrier_on / \p
-     * netif_carrier_off on the netdev. This is orthogonal to \p IFF_UP, which \ref open leaves set.
-     * No desired state is cached here: the handler is a thin syscall wrapper and is re-created per
-     * connection by \ref event::fd_event_client, so keeping the carrier across a reset is the owner's
-     * job (\ref open takes the initial state for exactly that reason).
+     * @details Issues \p TUNSETCARRIER (\p netif_carrier_on / \p netif_carrier_off); orthogonal to \p IFF_UP.
+     * No state is cached: the handler is re-created per connection by \ref event::fd_event_client, so the
+     * owner restores the carrier across a reset through the \ref open argument.
      * @param[in] on True to raise the carrier, false to drop it.
-     * @return True on success, false otherwise. On failure the errno is stored and readable via
-     * \ref get_error. \p EINVAL or \p ENOTTY mean the running kernel does not implement
-     * \p TUNSETCARRIER (added in v5.0), which the caller may want to treat differently from a
-     * genuine error.
+     * @return True on success, false otherwise; the errno is readable via \ref get_error.
+     * @note \p EINVAL or \p ENOTTY mean the running kernel does not implement \p TUNSETCARRIER (v5.0).
      */
     bool set_carrier(bool on);
 
     /**
-     * @brief Get the outcome of the carrier request \ref open made on its own
-     * @details Reported separately from \ref get_error because a successful \ref open must leave
-     * \ref get_error at zero: \ref event::fd_event_client reads the policy's error right after a
-     * successful open and marks the fresh connection as failed on any nonzero value, which would tear
-     * the device down and drive the owner's retry loop into an endless create-destroy cycle. The
-     * carrier request must not fail the open either - a kernel without \p TUNSETCARRIER has to keep
-     * bridging - so its errno needs a channel of its own. This is that channel.
-     * @details The value is reset by each \ref open and survives until the next one. Runtime calls to
-     * \ref set_carrier do not touch it; those report through their return value and \ref get_error.
-     * @return Zero when the carrier request succeeded or was never made (\p carrier_on was true),
-     * otherwise the errno of the attempt. \p EINVAL or \p ENOTTY mean the running kernel does not
-     * implement \p TUNSETCARRIER, which is what a caller with a fail-or-warn policy keys on.
+     * @brief Get the errno of the carrier request made by \ref open
+     * @details Separate from \ref get_error because \ref event::fd_event_client fails a fresh connection on a
+     * nonzero \ref get_error right after a successful \ref open, and a kernel without \p TUNSETCARRIER must
+     * still bridge. Reset by each \ref open; \ref set_carrier does not touch it.
+     * @return Zero if the request succeeded or was not made (\p carrier_on true), otherwise its errno.
+     * @note \p EINVAL or \p ENOTTY mean the running kernel does not implement \p TUNSETCARRIER.
      */
     int carrier_setup_error() const;
 
     /**
      * @brief Get the carrier of the TAP device as the kernel reports it
-     * @details Queries \p SIOCGIFFLAGS on a temporary control socket and reports the presence of
-     * \p IFF_RUNNING. Intended for diagnostics and tests; the authoritative signal for a consumer is
-     * the flag change delivered by rtnetlink.
-     * @note This lags \ref set_carrier. \p IFF_RUNNING is derived from the netdev's operstate, which
-     * the kernel's linkwatch work updates asynchronously and dampens to roughly one update per
-     * second, so a query issued right after \ref set_carrier legitimately still reports the previous
-     * state. The instantaneous bit is \p IFF_LOWER_UP, which \p SIOCGIFFLAGS cannot carry at all:
-     * \p ifr_flags is 16 bits wide and \p IFF_LOWER_UP is 0x10000. Only the 32 bit \p ifi_flags of an
-     * rtnetlink \p RTM_NEWLINK message carries both, which is another reason for a consumer to watch
-     * rtnetlink rather than poll here.
-     * @return The carrier state, or no value if the query failed or this handler holds no device -
-     * including after a failed \ref open, so a name that another process owns is never reported on.
+     * @details \p SIOCGIFFLAGS on a temporary control socket, reporting \p IFF_RUNNING. For diagnostics and
+     * tests; consumers watch rtnetlink instead.
+     * @note Lags \ref set_carrier: \p IFF_RUNNING follows the operstate, which linkwatch updates asynchronously
+     * at roughly one update per second. The instantaneous bit \p IFF_LOWER_UP (0x10000) does not fit the 16 bit
+     * \p ifr_flags; only the 32 bit \p ifi_flags of an rtnetlink \p RTM_NEWLINK message carries both.
+     * @return The carrier state, or no value if the query failed or no device is held (also after a failed open).
      */
     std::optional<bool> carrier() const;
 

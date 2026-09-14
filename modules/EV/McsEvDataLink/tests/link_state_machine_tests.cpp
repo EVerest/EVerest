@@ -1,13 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 //
-// Tests for the EV-side data link state machine (main/link_state_machine.cpp) through its effect
-// seam. Actions in the machine never do I/O; they append effects, so a test can assert the exact
-// sequence of publishes and timer operations a transition produces - which is the whole observable
-// behaviour of the module minus the netlink socket.
-//
-// Effects are compared as strings (see describe()): an ordered list of short tokens reads like the
-// trace one would look for in a log, and a wrong order fails as clearly as a wrong content.
+// Tests for the EV data link state machine (main/link_state_machine.cpp) through its effect seam:
+// actions only append effects, so each test asserts the exact publish/timer sequence, see describe().
 
 #include <gtest/gtest.h>
 
@@ -54,7 +49,7 @@ link_config default_config() {
     return config;
 }
 
-/// The machine plus the started-and-drained bookkeeping every case needs.
+/// The machine, started, with the start effects drained.
 class fixture {
 public:
     explicit fixture(link_config config = default_config()) : m_fsm(config) {
@@ -75,7 +70,7 @@ public:
         return m_start_trace;
     }
 
-    /// Drive the machine to MATCHED via the plain path and drop the effects.
+    /// Reach MATCHED via trigger_matching + carrier_up and drop the effects.
     void reach_matched() {
         m_fsm.trigger_matching(false);
         m_fsm.carrier_up();
@@ -118,10 +113,8 @@ TEST(EvLinkStateMachine, CarrierUpWhileMatchingMatchesAndCancelsTheDeadline) {
     EXPECT_TRUE(f.fsm().dlink_ready());
 }
 
-// V2G10-028 has the EV establish the link right after plug-in detection, before state B, and SPE is
-// point to point - so by the time the EV stack asks for matching the PHY is usually already
-// operational. V2G10-030 needs the link *and* the basic-signalling condition in either order, so
-// this must match at once instead of waiting for an edge that already happened.
+// V2G10-028: the link comes up right after plug-in detection, before state B. V2G10-030 takes link
+// and basic-signalling condition in either order.
 TEST(EvLinkStateMachine, TriggerMatchingWithCarrierAlreadyUpMatchesImmediately) {
     fixture f;
     f.fsm().trigger_matching(true);
@@ -138,13 +131,12 @@ TEST(EvLinkStateMachine, TheDeadlineExpiringFailsCommunicationInitialisation) {
 
     f.fsm().link_detect_timeout();
 
-    // V2G10-054: back to UNMATCHED. No dlink_ready(false) - it was never true.
+    // V2G10-054: UNMATCHED, no dlink_ready(false).
     EXPECT_EQ(trace({"timer-", "state:UNMATCHED"}), f.taken());
     EXPECT_EQ(link_state::unmatched, f.fsm().state());
 }
 
-// The EV-side counterpart of the EVSE's retry loop: there is none. V2G10-039 has the EV wait for
-// the EVSE's restart indication, which reaches the module as another trigger_matching.
+// No EV-side retry: V2G10-039 has the EV wait for the EVSE's restart, which arrives as trigger_matching.
 TEST(EvLinkStateMachine, AFailedInitialisationJustWaitsToBeTriggeredAgain) {
     fixture f;
     f.fsm().trigger_matching(false);
@@ -152,19 +144,16 @@ TEST(EvLinkStateMachine, AFailedInitialisationJustWaitsToBeTriggeredAgain) {
     (void)f.taken();
     ASSERT_EQ(link_state::unmatched, f.fsm().state());
 
-    // Nothing happens on its own: no retry timer, no repetition, no state change.
     EXPECT_TRUE(f.taken().empty());
     EXPECT_EQ(link_state::unmatched, f.fsm().state());
 
-    // The EVSE's restart indication arrives as a fresh trigger from the EV stack.
     f.fsm().trigger_matching(true);
     EXPECT_EQ(trace({"state:MATCHED", "ready:1"}), f.taken());
 }
 
 // --- losing the link -------------------------------------------------------------------------
 
-// V2G10-036, and no retry: the EV reports the link down and waits. The EVSE is the side that
-// relaunches (7.5.3), so re-entering MATCHING here would be the EV second-guessing it.
+// V2G10-036, no retry: the EVSE relaunches (7.5.3), so the EV only reports the link down.
 TEST(EvLinkStateMachine, CarrierLossWhileMatchedReportsTheLinkDownAndStops) {
     fixture f;
     f.reach_matched();
@@ -200,8 +189,7 @@ TEST(EvLinkStateMachine, ALostLinkCanBeReestablishedByANewTrigger) {
 
 // --- reset ------------------------------------------------------------------------------------
 
-// EvManager calls reset() immediately followed by trigger_matching() every time it sees UNMATCHED,
-// so reset must be a plain teardown that leaves the module ready - never a latch.
+// EvManager calls reset() then trigger_matching() on every UNMATCHED, so reset must not latch.
 TEST(EvLinkStateMachine, ResetFromUnmatchedIsIdempotentAndLeavesTheModuleReady) {
     fixture f;
 
@@ -235,21 +223,19 @@ TEST(EvLinkStateMachine, ResetWhileMatchingCancelsTheDeadline) {
     EXPECT_EQ(link_state::unmatched, f.fsm().state());
 }
 
-// The consumer's actual call pattern, start to finish.
 TEST(EvLinkStateMachine, TheEvManagerCallPatternWorks) {
     fixture f;
 
-    // iso_wait_slac_matched: sees UNMATCHED, calls reset() then trigger_matching().
+    // iso_wait_slac_matched: reset() then trigger_matching().
     f.fsm().reset();
     f.fsm().trigger_matching(false);
     EXPECT_EQ(trace({"state:MATCHING", "timer+4000"}), f.taken());
 
-    // The link comes up and the consumer polls MATCHED.
     f.fsm().carrier_up();
     EXPECT_EQ(trace({"timer-", "state:MATCHED", "ready:1"}), f.taken());
     EXPECT_EQ(link_state::matched, f.fsm().state());
 
-    // Unplug reaches this module only through reset - see the interface gap in docs/index.rst.
+    // Unplug reaches the module only through reset (interface gap, see docs/index.rst).
     f.fsm().reset();
     EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken());
 }
@@ -376,7 +362,7 @@ TEST(EvLinkStateMachine, ACarrierLossWhileUnmatchedIsIgnored) {
     EXPECT_EQ(ignored_before + 2, f.fsm().ignored_events());
 }
 
-// A carrier drop while the deadline runs is not a failure of its own: the deadline is what decides.
+// The deadline decides; a carrier drop while MATCHING is not a failure of its own.
 TEST(EvLinkStateMachine, ACarrierLossWhileMatchingDoesNotShortcutTheDeadline) {
     fixture f;
     f.fsm().trigger_matching(false);
@@ -392,11 +378,8 @@ TEST(EvLinkStateMachine, ACarrierLossWhileMatchingDoesNotShortcutTheDeadline) {
 
 // --- the EV sleep case, which this interface cannot name ---------------------------------------
 
-// `ev_slac` has no pause command, so a comm module switched off for an EV sleep (V2G10-040) is
-// indistinguishable from a link that failed. The machine reports it as what it observes - the link
-// is down - which is truthful in both cases, and the EV stack that initiated the sleep knows which
-// one it is. Contrast the EVSE side, where dlink_pause exists and D-LINK_READY has to survive the
-// pause (V2G10-041).
+// ev_slac has no pause command, so a comm module switched off for an EV sleep (V2G10-040) looks like
+// a link loss and is reported as one. The EVSE side has dlink_pause and V2G10-041 instead.
 TEST(EvLinkStateMachine, ASleepingCommModuleLooksLikeALinkLossAndIsReportedAsOne) {
     fixture f;
     f.reach_matched();
@@ -404,8 +387,7 @@ TEST(EvLinkStateMachine, ASleepingCommModuleLooksLikeALinkLossAndIsReportedAsOne
     f.fsm().carrier_down();
     EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken());
 
-    // Waking up (V2G10-043: comm setup within T_conn_resume of the wake trigger) is a fresh
-    // trigger from the stack, and the deadline enforces the bound.
+    // Wake-up (V2G10-043, comm setup within T_conn_resume) is a fresh trigger; the deadline bounds it.
     f.fsm().trigger_matching(false);
     EXPECT_EQ(trace({"state:MATCHING", "timer+4000"}), f.taken());
     f.fsm().carrier_up();

@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-// The machine lives in its own translation unit behind link_state_machine.hpp so that no other
-// translation unit pays msm's instantiation cost, and so that none of them can be affected by
-// anything this one might have to configure for boost. Nothing needs configuring at this size: the
-// table is well inside the 20 entries boost::mpl ships preprocessed headers for. If it ever grows
-// past that, raise BOOST_MPL_LIMIT_VECTOR_SIZE here - never in a header, where it would silently
-// change the mpl configuration of every other consumer.
+// The table is within the 20 entries boost::mpl ships preprocessed headers for. If it grows past
+// that, raise BOOST_MPL_LIMIT_VECTOR_SIZE here, never in a header.
 
 #include <boost/mpl/vector.hpp>
 #include <boost/msm/back/state_machine.hpp>
@@ -29,9 +25,7 @@ namespace mpl = boost::mpl;
 using msm::front::none;
 using msm::front::Row;
 
-// The events mirror the snake_case public API 1:1. That costs one thing at the emission sites:
-// inside link_state_machine::carrier_up() the class scope wins unqualified lookup and finds the
-// member function, so the emissions reach these with an explicit main:: qualification.
+// Events mirror the public API 1:1; emission sites need main:: because the member function wins unqualified lookup.
 struct reset {};
 struct trigger_matching {
     bool carrier_up{false};
@@ -44,16 +38,7 @@ struct neighbor_reachable {
     std::string mac;
 };
 
-/// The front end. Holds the machine's data; msm::back::state_machine derives from it, so both the
-/// actions (which get the back end) and the owner reach the same members.
-///
-/// <b>Why this table is flat.</b> The EVSE-side module is hierarchical because 23 of its 39 rows
-/// were four session-wide events repeated once per state, which is what a composite state exists to
-/// collapse. Here the only repeated event is `reset`, at three rows out of ten, so a composite plus
-/// an explicit entry point would trade two rows for a second table and a shared-data indirection -
-/// cargo-culting the structure instead of applying the reasoning behind it. If `ev_slac` ever gains
-/// the pause/error/terminate commands its EVSE counterpart has, this table grows the same repeats
-/// and McsDataLink is then the pattern to follow.
+/// The front end; msm::back::state_machine derives from it. Flat table: only `reset` repeats (3 of 10 rows).
 struct link_def : public msm::front::state_machine_def<link_def> {
     link_config cfg{};
     std::vector<effect> effects{};
@@ -78,10 +63,7 @@ struct link_def : public msm::front::state_machine_def<link_def> {
         effects.push_back(std::move(item));
     }
 
-    /// The matched state is only ever entered from a state where the link was down, so this is
-    /// always a genuine edge. (The EVSE side needs an unconditional re-issue here for the
-    /// V2G10-042 wake-up out of D-LINK_PAUSE; `ev_slac` has no pause command, so there is no
-    /// re-entry from a state that already held D-LINK_READY.)
+    /// Always a genuine edge: Matched is only entered from states without a link (no pause re-entry, cf. V2G10-042).
     void emit_dlink_ready() {
         ready = true;
         effect item;
@@ -90,7 +72,7 @@ struct link_def : public msm::front::state_machine_def<link_def> {
         effects.push_back(std::move(item));
     }
 
-    /// Only when it was actually outstanding - "dlink_ready(false) if it was true".
+    /// Publishes dlink_ready(false) only if it was true.
     void withdraw_dlink_ready() {
         if (not ready) {
             return;
@@ -132,10 +114,8 @@ struct link_def : public msm::front::state_machine_def<link_def> {
 
     // --- states ----------------------------------------------------------------------------
 
-    /// No link, and none being established. Also where the EV waits after a failed communication
-    /// initialization: V2G10-039 has it wait for the EVSE's restart indication rather than retrying
-    /// on its own, and that indication arrives as another trigger_matching from the EV stack. This
-    /// is why there is no retry budget anywhere in this module.
+    /// No link and none being established. After a failed initialization the EV waits here for the
+    /// EVSE's restart indication (V2G10-039), which arrives as another trigger_matching; no retry budget.
     struct Unmatched : public msm::front::state<> {
         template <class Event, class FSM> void on_entry(Event const&, FSM& fsm) {
             fsm.forget_connector_mac();
@@ -143,7 +123,7 @@ struct link_def : public msm::front::state_machine_def<link_def> {
         }
     };
 
-    /// The EV stack asked for the link and it is not up yet. The communication-setup deadline runs.
+    /// Link requested, not up yet; the communication-setup deadline runs.
     struct Matching : public msm::front::state<> {
         template <class Event, class FSM> void on_entry(Event const&, FSM& fsm) {
             fsm.forget_connector_mac();
@@ -183,9 +163,7 @@ struct link_def : public msm::front::state_machine_def<link_def> {
 
     // --- actions ---------------------------------------------------------------------------
 
-    /// The link is going away, for whatever reason. V2G10-036: report D-LINK_READY(no link) upward
-    /// if it was ever issued. A no-op on the paths where it was not, which is why every transition
-    /// into the Unmatched state can share it.
+    /// V2G10-036: report D-LINK_READY(no link) if it was issued; a no-op otherwise.
     struct link_down {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
@@ -202,16 +180,8 @@ struct link_def : public msm::front::state_machine_def<link_def> {
 
     // --- transition table ------------------------------------------------------------------
     //
-    // Publishing is done by the state entry actions above, so the transition actions only carry
-    // what is specific to the edge. Wherever two rows share a source and an event their guards are
-    // mutually exclusive, so nothing depends on the order msm evaluates them in - msm does not
-    // resolve such a conflict in declaration order, so a guarded row paired with an unguarded
-    // fallback silently picks the fallback.
-    //
-    // Note what is absent by design: no retry counter (V2G10-039, see the Unmatched state), no
-    // paused state and no restart-guard state (`ev_slac` has no pause or error command to enter
-    // them from). The EV's own sleep is a BSP concern; see the note in datalink_controller.cpp
-    // about why a sleeping comm module looks exactly like a link loss here, and why that is honest.
+    // Rows sharing source and event have mutually exclusive guards; msm does not resolve conflicts in
+    // declaration order (a guarded row plus an unguarded fallback picks the fallback).
     //
     // clang-format off
     using transition_table = mpl::vector<
@@ -232,9 +202,7 @@ struct link_def : public msm::front::state_machine_def<link_def> {
         >;
     // clang-format on
 
-    /// Events with no row for the current state are ignored, not an error: a second
-    /// trigger_matching, a carrier edge in a state that does not care, a stray timer expiry. The
-    /// default implementation asserts, which would turn a benign race into a crash.
+    /// Events with no row for the current state are ignored; the default implementation asserts.
     template <class FSM, class Event> void no_transition(Event const&, FSM&, int) {
         ++ignored;
     }

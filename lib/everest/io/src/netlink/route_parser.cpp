@@ -15,20 +15,18 @@ namespace everest::lib::io::netlink {
 
 namespace {
 
-// <net/if.h> stops at IFF_DYNAMIC; the flag mirroring netif_carrier_ok() is a kernel addition,
-// and including <linux/if.h> next to <net/if.h> collides on struct ifreq.
+// <net/if.h> stops at IFF_DYNAMIC, and <linux/if.h> collides with it on struct ifreq.
 #ifndef IFF_LOWER_UP
 #define IFF_LOWER_UP 0x10000
 #endif
 
 constexpr char hex_digits[] = "0123456789ABCDEF";
 
-/// Walk a netlink attribute region, copying headers out instead of casting into the buffer so
-/// unaligned input cannot trap. \p visit receives (type, payload, payload_length).
+/// Walk a netlink attribute region; headers are memcpy'd so unaligned input cannot trap.
+/// \p visit receives (type, payload, payload_length).
 template <typename VisitT> void for_each_attribute(std::uint8_t const* base, std::size_t length, VisitT visit) {
     std::size_t offset = 0;
-    // Addition rather than subtraction: RTA_ALIGN can push offset past length on the last
-    // attribute, and length - offset would then wrap.
+    // RTA_ALIGN can push offset past length on the last attribute; length - offset would wrap.
     while (offset + sizeof(rtattr) <= length) {
         rtattr attribute{};
         std::memcpy(&attribute, base + offset, sizeof(attribute));
@@ -44,8 +42,7 @@ template <typename VisitT> void for_each_attribute(std::uint8_t const* base, std
 std::string to_mac_string(std::uint8_t const* data, std::size_t length) {
     constexpr std::size_t mac_length = 6;
     if (length != mac_length) {
-        // Anything but a 48 bit address (InfiniBand, a firewire link layer, an IP-over-X tunnel)
-        // cannot satisfy the ev_mac_address pattern, so report none rather than a truncation.
+        // Only a 48 bit address satisfies the ev_mac_address pattern; report none rather than a truncation.
         return {};
     }
     std::string mac;
@@ -70,9 +67,8 @@ std::string to_hex_string(std::uint8_t const* data, std::size_t length) {
     return text;
 }
 
-/// Render NDA_DST. The address is only ever compared and logged, so an unknown family degrades
-/// to hex rather than being dropped - a neighbor entry the module cannot name is still an entry
-/// whose NUD state matters for liveness.
+/// Render NDA_DST. An unknown family degrades to hex: the address is only compared and logged, and the
+/// entry's NUD state still matters for liveness.
 std::string to_address_string(std::uint8_t family, std::uint8_t const* data, std::size_t length) {
     char text[INET6_ADDRSTRLEN] = {};
     if (family == AF_INET6 and length == sizeof(in6_addr)) {

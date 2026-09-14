@@ -10,17 +10,14 @@
 namespace module {
 namespace main {
 
-/// The states types/slac.yaml publishes. The machine's internal states are richer (see
-/// \ref internal_state); this is what a consumer of the slac interface gets to see.
+/// The states published on the slac interface. \ref internal_state is the finer internal set.
 enum class link_state {
     unmatched,
     matching,
     matched,
 };
 
-/// The machine's own states. MATCHING/MATCHED/UNMATCHED do not distinguish "paused" from
-/// "up" or "waiting out the restart guard" from "idle", but the behaviour differs, so these
-/// exist separately and are only mapped to \ref link_state when published.
+/// Internal states; mapped to \ref link_state when published.
 enum class internal_state {
     /// No data link and none being established. Published UNMATCHED.
     unmatched,
@@ -28,84 +25,64 @@ enum class internal_state {
     matching,
     /// Link up and D-LINK_READY(true) issued. Published MATCHED.
     matched,
-    /// D-LINK_PAUSE received (V2G10-041). Still published MATCHED, and carrier loss here is
-    /// expected rather than a failure - the PHY is allowed to power down in B0. Carrier and
-    /// liveness supervision are therefore suspended, so the machine leaves this state again on the
-    /// first evidence that the session resumed (a carrier edge, or a neighbour answering).
+    /// D-LINK_PAUSE received (V2G10-041). Published MATCHED. Carrier and liveness supervision are
+    /// suspended because the PHY may power down in B0; left on a carrier edge or a reachable neighbour.
     paused,
-    /// D-LINK_ERROR received, or the initialization FAILED for good, and a retry is budgeted:
-    /// waiting out the >= 3 s guard of IEC 61851-23-3 CC.5.2.3.2 before asking for the restart
-    /// routine. Published UNMATCHED.
+    /// D-LINK_ERROR or final initialization FAILED with a retry budgeted: waiting out the >= 3 s guard
+    /// of IEC 61851-23-3 CC.5.2.3.2 before requesting the restart routine. Published UNMATCHED.
     retry_wait,
 };
 
-/// The two timeouts the machine asks its owner to run for it.
+/// Timers the owner runs for the machine.
 enum class timer_id {
     /// TT_EV_link_detect, ISO 15118-10 Table 8 (max 4 s).
     link_detect,
     /// The >= 3 s wait between restart attempts, IEC 61851-23-3 CC.5.2.3.2.
     retry_wait,
-    /// TT_sync_repetition, ISO 15118-10 Table 8 (max 4 s). The window opened at the communication
-    /// initialization trigger, within which a FAILED initialization may be restarted (V2G10-055
-    /// to -058).
+    /// TT_sync_repetition, ISO 15118-10 Table 8 (max 4 s): window from the communication initialization
+    /// trigger within which a FAILED initialization may be restarted (V2G10-055 to -058).
     sync_repetition,
 };
 
-/// One thing the machine wants done. Actions never perform I/O themselves - they append effects
-/// and the owner executes them after the event has been processed. That keeps the machine a pure
-/// function of its inputs and makes every transition testable without a socket or a timer.
+/// One requested side effect. The machine does no I/O; the owner executes the effects after the event.
 struct effect {
     enum class kind {
-        /// Publish the `state` variable of the slac interface.
         publish_state,
-        /// Publish `dlink_ready`.
         publish_dlink_ready,
         /// Publish `request_error_routine` (asks EvseManager for the CP/CE restart sequence).
         publish_request_error_routine,
-        /// Publish `ev_mac_address`.
         publish_ev_mac,
         /// Arm \ref timer with \ref timeout_ms, single shot.
         start_timer,
-        /// Disarm \ref timer.
         stop_timer,
     };
 
     kind what{kind::publish_state};
-    /// Valid for publish_state.
     link_state state{link_state::unmatched};
-    /// Valid for publish_dlink_ready.
     bool ready{false};
-    /// Valid for start_timer and stop_timer.
     timer_id timer{timer_id::link_detect};
-    /// Valid for start_timer.
     int timeout_ms{0};
-    /// Valid for publish_ev_mac.
     std::string mac;
 };
 
-/// Tunables from the module config, copied in once at construction.
+/// Module config tunables, copied at construction.
 struct link_config {
     /// C_conn_retry: automatic data link restarts per EV connection. 0 disables retrying.
     int conn_retry_max{3};
     /// TT_EV_link_detect in milliseconds.
     int link_detect_timeout_ms{4000};
-    /// TT_sync_repetition in milliseconds: the window from the communication initialization
-    /// trigger within which a FAILED initialization is restarted. 0 disables repetition.
+    /// TT_sync_repetition in milliseconds. 0 disables repetition.
     int sync_repetition_ms{4000};
-    /// Wait before requesting a restart after D-LINK_ERROR, in milliseconds.
+    /// CC.5.2.3.2 wait before requesting a restart, in milliseconds.
     int retry_wait_ms{3000};
-    /// Whether ev_mac_address may be published at all.
+    /// Whether ev_mac_address is published.
     bool publish_ev_mac{true};
 };
 
-/// The MCS data link lifecycle as a boost::msm state machine.
+/// The MCS data link lifecycle as a boost::msm state machine; the boost headers stay in the .cpp.
 ///
-/// The boost headers stay inside link_state_machine.cpp: this class is the seam, so no other
-/// translation unit pays the MSM compile cost and none of them can be affected by the
-/// boost::mpl sizing macros the transition table needs.
-///
-/// Every method below is an event. None of them does I/O; call \ref take_effects afterwards and
-/// execute what comes back, in order. All of it must run on one thread (the event loop).
+/// Every method is an event and does no I/O: call \ref take_effects afterwards and execute the
+/// effects in order. Single threaded (the event loop).
 class link_state_machine {
 public:
     explicit link_state_machine(link_config config);
@@ -116,18 +93,14 @@ public:
     link_state_machine(link_state_machine&&) = delete;
     link_state_machine& operator=(link_state_machine&&) = delete;
 
-    /// Enter the initial state. Produces the first publish_state effect, so the interface has a
-    /// defined value before any command arrives.
+    /// Enter the initial state and produce the first publish_state effect.
     void start();
 
-    /// reset(enable) command: tear the data link down and return to UNMATCHED with a fresh retry
-    /// budget. `enable` is accepted and logged but deliberately does not latch matching off - see
-    /// the note above the transition table in link_state_machine.cpp for why. The first reset after
-    /// a request_error_routine is the error sequence's own SLAC reset and is consumed without effect.
+    /// Tear the link down, return to UNMATCHED with a fresh retry budget. `enable` is ignored (see the
+    /// outer transition table). The first reset after a request_error_routine is absorbed.
     void reset(bool enable);
-    /// enter_bcd command: EV detected by basic signalling. \p carrier_up is the current carrier
-    /// level, because SPE is point to point and the PHY can be operational before plug-in - per
-    /// V2G10-023 D-LINK_READY needs state B *and* link up, in either order.
+    /// enter_bcd command: EV detected by basic signalling. \p carrier_up is the current carrier level;
+    /// the PHY may be up before plug-in, and V2G10-023 needs state B and link up in either order.
     void enter_bcd(bool carrier_up);
     /// leave_bcd command: EV gone.
     void leave_bcd();
@@ -135,21 +108,16 @@ public:
     void carrier_up();
     /// The netdev carrier went down, or the device was deleted. Edge, not level.
     void carrier_down();
-    /// The link was detected as lost by a means other than carrier (neighbour liveness). Handled
-    /// like carrier loss per V2G10-036.
+    /// Link lost by neighbour liveness rather than carrier. Handled like carrier loss (V2G10-036).
     void link_lost();
-    /// TT_EV_link_detect expired: communication initialization FAILED (V2G10-054).
-    /// \p may_repeat is whether TT_sync_repetition is still open, which together with the retry
-    /// budget decides whether the initialization is repeated (V2G10-056), handed to the CC.5.2.3.2
-    /// restart (V2G10-058 with budget left), or stopped (budget gone).
+    /// TT_EV_link_detect expired: communication initialization FAILED (V2G10-054). \p may_repeat is
+    /// whether TT_sync_repetition is open: repeat (V2G10-056), else CC.5.2.3.2 restart (V2G10-058)
+    /// with budget left, else stop.
     void link_detect_timeout(bool may_repeat);
     /// The CC.5.2.3.2 inter-attempt wait expired.
     void retry_wait_elapsed(bool carrier_up);
-    /// dlink_error command from the HLC.
     void dlink_error();
-    /// dlink_terminate command from the HLC.
     void dlink_terminate();
-    /// dlink_pause command from the HLC.
     void dlink_pause();
     /// A neighbour of the device became reachable, carrying \p mac.
     void neighbor_reachable(std::string mac);
@@ -158,22 +126,13 @@ public:
     std::vector<effect> take_effects();
 
     internal_state state() const;
-    /// The published state, derived from \ref state.
     link_state published_state() const;
     /// Restart attempts consumed for the current EV connection.
     int retry_count() const;
     /// Whether D-LINK_READY(true) is currently outstanding.
     bool dlink_ready() const;
-    /// Events that found no transition anywhere - neither in the link lifecycle nor among the
-    /// session-wide events. Ignoring them is correct (dlink_pause while unmatched, a second
-    /// enter_bcd, a carrier edge in a state that does not care); the counter exists so tests can
-    /// assert that an event was ignored rather than silently mishandled.
-    ///
-    /// Not every event that does nothing is counted here. An event a state deliberately *consumes*
-    /// without acting - a repeated dlink_error while the restart guard is already running, the
-    /// reset that follows a request_error_routine - took a transition, so it is not counted even
-    /// though nothing observable happened.
-    /// The counter measures "no rule matched", not "nothing happened".
+    /// Events that matched no row in either machine (for tests). Events consumed by a row without
+    /// effect (repeated dlink_error in retry_wait, the absorbed routine reset) are not counted.
     int ignored_events() const;
 
 private:

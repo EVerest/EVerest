@@ -14,7 +14,7 @@ bool link_tracker::is_tracked(link_report const& report) const {
     if (not report.name.empty()) {
         return report.name == m_device;
     }
-    // No IFLA_IFNAME to go by: only an index we have already identified can still match.
+    // Without IFLA_IFNAME only an already identified index can match.
     return m_ifindex != 0 and report.ifindex == m_ifindex;
 }
 
@@ -22,8 +22,7 @@ link_tracker::change link_tracker::apply(link_report const& report) {
     change result;
 
     if (not is_tracked(report)) {
-        // Our index turning up under a different name means the device was renamed away from
-        // under us. There is no device by the configured name any more, so this is a removal.
+        // Our index under a different name: the device was renamed, which is a removal.
         if (m_ifindex != 0 and report.ifindex == m_ifindex and not report.name.empty()) {
             m_ifindex = 0;
             set_carrier(false, result);

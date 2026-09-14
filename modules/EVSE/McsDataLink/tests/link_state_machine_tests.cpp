@@ -1,13 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 //
-// Tests for the MCS data link state machine (main/link_state_machine.cpp) through its effect
-// seam. Actions in the machine never do I/O; they append effects, so a test can assert the exact
-// sequence of publishes and timer operations a transition produces - which is the whole
-// observable behaviour of the module minus the netlink socket.
-//
-// Effects are compared as strings (see describe()): an ordered list of short tokens reads like
-// the trace one would look for in a log, and a wrong order fails as clearly as a wrong content.
+// Tests for the MCS data link state machine (main/link_state_machine.cpp) through its effect seam:
+// actions only append effects, so each test asserts the exact publish/timer sequence, see describe().
 
 #include <gtest/gtest.h>
 
@@ -53,16 +48,15 @@ link_config default_config() {
     link_config config;
     config.conn_retry_max = 3;
     config.link_detect_timeout_ms = 4000;
-    // The standard's maxima make the repetition window close exactly when the first
-    // TT_EV_link_detect expires, so the default config never repeats. Cases that exercise
-    // repetition shorten link_detect_timeout_ms, as an integrator would have to.
+    // At the standard's maxima the window closes with the first TT_EV_link_detect expiry, so the
+    // default never repeats. Repetition cases shorten link_detect_timeout_ms.
     config.sync_repetition_ms = 4000;
     config.retry_wait_ms = 3000;
     config.publish_ev_mac = true;
     return config;
 }
 
-/// The machine plus the started-and-drained bookkeeping every case needs.
+/// The machine, started, with the start effects drained.
 class fixture {
 public:
     explicit fixture(link_config config = default_config()) : m_fsm(config) {
@@ -83,7 +77,7 @@ public:
         return m_start_trace;
     }
 
-    /// Drive the machine to MATCHED via the plain path and drop the effects.
+    /// Reach MATCHED via enter_bcd + carrier_up and drop the effects.
     void reach_matched() {
         m_fsm.enter_bcd(false);
         m_fsm.carrier_up();
@@ -128,9 +122,7 @@ TEST(LinkStateMachine, CarrierUpWhileMatchingMatchesAndCancelsTheTimer) {
     EXPECT_TRUE(f.fsm().dlink_ready());
 }
 
-// SPE is point to point: on a PLCA link the PHY can be operational before the EV is detected by
-// basic signalling. V2G10-023 needs state B *and* link up, in either order, so enter_bcd with the
-// carrier already up must match straight away instead of waiting for an edge that never comes.
+// V2G10-023 needs state B and link up in either order; on SPE the PHY can be up before state B.
 TEST(LinkStateMachine, EnterBcdWithCarrierAlreadyUpMatchesImmediately) {
     fixture f;
     f.fsm().enter_bcd(true);
@@ -140,8 +132,7 @@ TEST(LinkStateMachine, EnterBcdWithCarrierAlreadyUpMatchesImmediately) {
     EXPECT_TRUE(f.fsm().dlink_ready());
 }
 
-// V2G10-054/-058 with budget left: UNMATCHED is published (no dlink_ready(false) - it was never
-// true) and the CC.5.2.3.2 restart takes over. On MCS no fresh enter_bcd can follow a failure.
+// V2G10-054/-058 with budget left: UNMATCHED, no dlink_ready(false), then the CC.5.2.3.2 restart.
 TEST(LinkStateMachine, LinkDetectTimeoutHandsOverToTheRestart) {
     fixture f;
     f.fsm().enter_bcd(false);
@@ -231,9 +222,7 @@ TEST(LinkStateMachine, LeaveBcdWhileMatchingCancelsTheTimerAndDoesNotWithdrawWha
 
 // --- reset ------------------------------------------------------------------------------------
 
-// reset(false) is the session-end teardown EvseManager sends, and it is the only reset it ever
-// sends - the matching reset(true) call is commented out there. It must therefore leave the module
-// ready for the next session; latching matching off would serve exactly one EV after startup.
+// reset(false) is the only reset EvseManager sends (reset(true) is commented out); it must not latch.
 TEST(LinkStateMachine, ResetDisableTearsDownButLeavesTheModuleReady) {
     fixture f;
     f.reach_matched();
@@ -271,9 +260,7 @@ TEST(LinkStateMachine, ResetEnableWhileMatchedTearsTheLinkDown) {
 
 // --- carrier loss while matched ---------------------------------------------------------------
 
-// V2G10-036: report D-LINK_READY(no link) upward. UNMATCHED is published explicitly before the
-// machine goes back to MATCHING so a consumer sees the link really went down, even though the
-// retry starts in the same event-loop iteration.
+// V2G10-036: D-LINK_READY(no link). UNMATCHED is published before MATCHING so consumers see the drop.
 TEST(LinkStateMachine, CarrierLossWhileMatchedReportsDownAndRestartsMatching) {
     fixture f;
     f.reach_matched();
@@ -286,9 +273,7 @@ TEST(LinkStateMachine, CarrierLossWhileMatchedReportsDownAndRestartsMatching) {
     EXPECT_EQ(1, f.fsm().retry_count());
 }
 
-// After a loss the machine waits for a fresh carrier-up edge; it does not re-derive "the carrier
-// is still up" from anywhere. That is what keeps a liveness-detected loss (where the carrier
-// genuinely never dropped) from re-matching instantly and looping.
+// Only a fresh carrier_up edge re-matches, so a liveness loss with the carrier still up cannot loop.
 TEST(LinkStateMachine, RestartedMatchingWaitsForAFreshCarrierEdge) {
     fixture f;
     f.reach_matched();
@@ -296,16 +281,13 @@ TEST(LinkStateMachine, RestartedMatchingWaitsForAFreshCarrierEdge) {
     (void)f.taken();
     ASSERT_EQ(internal_state::matching, f.fsm().state());
 
-    // Nothing happens on its own ...
     EXPECT_TRUE(f.taken().empty());
     EXPECT_EQ(internal_state::matching, f.fsm().state());
 
-    // ... until either the link really comes back ...
     f.fsm().carrier_up();
     EXPECT_EQ(trace({"timer-link_detect", "state:MATCHED", "ready:1"}), f.taken());
 }
 
-// The loss spent one attempt, the link not coming back within TT_EV_link_detect spends another.
 TEST(LinkStateMachine, LivenessLossThatDoesNotRecoverHandsOverToTheRestart) {
     fixture f;
     f.reach_matched();
@@ -333,9 +315,7 @@ TEST(LinkStateMachine, CarrierLossWithoutRetryBudgetStaysUnmatched) {
     EXPECT_EQ(0, f.fsm().retry_count());
 }
 
-// C_conn_retry is a per-connection budget. A successful match in between deliberately does not
-// refund attempts, otherwise a flapping link would retry forever and conn_retry_max would bound
-// nothing at all.
+// C_conn_retry is per connection: a match in between refunds nothing, or a flapping link retries forever.
 TEST(LinkStateMachine, RetryBudgetIsSpentAcrossSuccessfulMatchesAndThenExhausts) {
     auto config = default_config();
     config.conn_retry_max = 2;
@@ -414,10 +394,8 @@ TEST(LinkStateMachine, DlinkErrorWaitsThenRequestsTheErrorRoutineAndRematchesOnS
     EXPECT_EQ(link_state::unmatched, f.fsm().published_state());
     EXPECT_EQ(1, f.fsm().retry_count());
 
-    // The 23-3 restart method is the error routine: EvseManager's error sequence produces the
-    // B0-to-B toggle FOR THE EV. The module re-arms matching itself - on MCS the synthesized CP
-    // state never leaves B while mated, so no fresh enter_bcd can ever arrive (bench-found).
-    // With the carrier still up, both V2G10-023 conditions hold again immediately.
+    // The CC.5.2.3.2 restart is EvseManager's error routine (B0-to-B toggle). The module re-arms
+    // matching itself: on MCS the synthesized CP state stays B while mated, so no enter_bcd follows.
     f.fsm().retry_wait_elapsed(true);
     EXPECT_EQ(trace({"timer-retry_wait", "error_routine", "state:MATCHED", "ready:1"}), f.taken());
     EXPECT_EQ(internal_state::matched, f.fsm().state());
@@ -429,12 +407,10 @@ TEST(LinkStateMachine, DlinkErrorRestartWithoutCarrierWaitsForTheLinkInMatching)
 
     f.fsm().dlink_error();
     (void)f.taken();
-    f.fsm().carrier_down(); // deliberately no row in restart_wait: the guard keeps running
+    f.fsm().carrier_down(); // no row in restart_wait: the guard keeps running
     EXPECT_TRUE(f.taken().empty());
 
-    // Without carrier the restart lands in MATCHING: the EV gets TT_EV_link_detect to bring the
-    // link back after the B0-to-B toggle (the T_conn_resume analog). Deliberately no
-    // sync_repetition window: this is a C_conn_retry reconnect, not a new comm-init.
+    // No carrier: restart lands in MATCHING, TT_EV_link_detect as T_conn_resume analog, no sync_repetition.
     f.fsm().retry_wait_elapsed(false);
     EXPECT_EQ(trace({"timer-retry_wait", "error_routine", "state:MATCHING", "timer+link_detect@4000"}), f.taken());
     EXPECT_EQ(internal_state::matching, f.fsm().state());
@@ -554,7 +530,6 @@ TEST(LinkStateMachine, DlinkErrorWithoutRetryBudgetNeverRequestsARestart) {
 }
 
 TEST(LinkStateMachine, DlinkErrorIsAcceptedFromEveryLiveState) {
-    // matching
     {
         fixture f;
         f.fsm().enter_bcd(false);
@@ -564,7 +539,6 @@ TEST(LinkStateMachine, DlinkErrorIsAcceptedFromEveryLiveState) {
                   f.taken());
         EXPECT_EQ(internal_state::retry_wait, f.fsm().state());
     }
-    // paused
     {
         fixture f;
         f.reach_matched();
@@ -574,7 +548,6 @@ TEST(LinkStateMachine, DlinkErrorIsAcceptedFromEveryLiveState) {
         EXPECT_EQ(trace({"timer-sync_repetition", "ready:0", "state:UNMATCHED", "timer+retry_wait@3000"}), f.taken());
         EXPECT_EQ(internal_state::retry_wait, f.fsm().state());
     }
-    // unmatched
     {
         fixture f;
         f.fsm().dlink_error();
@@ -596,8 +569,7 @@ TEST(LinkStateMachine, EnterBcdDuringTheRestartWaitCancelsIt) {
     EXPECT_EQ(internal_state::matched, f.fsm().state());
 }
 
-// The wait is a mandatory >= 3 s guard with S S3 open; a bare carrier edge is not enough to
-// shortcut it, the link has to be re-established through the B0-B restart.
+// The wait is a mandatory >= 3 s guard with S3 open; a carrier edge does not shortcut it.
 TEST(LinkStateMachine, CarrierUpDuringTheRestartWaitIsIgnored) {
     fixture f;
     f.reach_matched();
@@ -612,9 +584,7 @@ TEST(LinkStateMachine, CarrierUpDuringTheRestartWaitIsIgnored) {
     EXPECT_EQ(ignored_before + 1, f.fsm().ignored_events());
 }
 
-// The outer machine handles dlink_error for the whole session, so the restart wait needs a row of
-// its own to swallow a repeated one: a second D-LINK_ERROR while the guard is already running must
-// not restart the wait or spend another attempt.
+// restart_wait swallows a repeated dlink_error itself, or the outer row would restart the guard.
 TEST(LinkStateMachine, ARepeatedDlinkErrorDuringTheRestartWaitChangesNothing) {
     fixture f;
     f.reach_matched();
@@ -629,9 +599,6 @@ TEST(LinkStateMachine, ARepeatedDlinkErrorDuringTheRestartWaitChangesNothing) {
     EXPECT_TRUE(f.taken().empty()) << "the guard must not be restarted";
     EXPECT_EQ(internal_state::retry_wait, f.fsm().state());
     EXPECT_EQ(1, f.fsm().retry_count()) << "and no second attempt is spent";
-    // The row that swallows it is what keeps the outer machine's dlink_error rows from firing, and
-    // taking a transition is also why this is not counted as ignored. Asserting the counter here
-    // makes a future removal of that row fail rather than silently restart the guard.
     EXPECT_EQ(ignored_before, f.fsm().ignored_events()) << "consumed by a transition, not unhandled";
 }
 
@@ -650,8 +617,7 @@ TEST(LinkStateMachine, LeaveBcdDuringTheRestartWaitCancelsIt) {
 
 // --- dlink_pause / resume ---------------------------------------------------------------------
 
-// V2G10-041: D-LINK_PAUSE keeps the link logically up. Nothing is published, the state variable
-// stays MATCHED and dlink_ready stays outstanding.
+// V2G10-041: D-LINK_PAUSE keeps the link logically up; published state stays MATCHED.
 TEST(LinkStateMachine, DlinkPauseKeepsEverythingPublishedAsItWas) {
     fixture f;
     f.reach_matched();
@@ -664,8 +630,7 @@ TEST(LinkStateMachine, DlinkPauseKeepsEverythingPublishedAsItWas) {
     EXPECT_TRUE(f.fsm().dlink_ready());
 }
 
-// The EVSE goes to B0 and the PHY may power down, so losing the carrier while paused is the
-// expected course of events - it must not look like a failure.
+// The EVSE goes to B0 and the PHY may power down, so a carrier drop while paused is not a failure.
 TEST(LinkStateMachine, CarrierLossWhilePausedIsExpectedAndSilent) {
     fixture f;
     f.reach_matched();
@@ -695,8 +660,7 @@ TEST(LinkStateMachine, LivenessLossWhilePausedIsIgnoredToo) {
     EXPECT_TRUE(f.fsm().dlink_ready());
 }
 
-// V2G10-042: the wake-up re-issues D-LINK_READY. The state variable never left MATCHED, so only
-// dlink_ready is published again - it has to be, even though its value did not change.
+// V2G10-042: the wake-up re-issues D-LINK_READY although its value did not change.
 TEST(LinkStateMachine, CarrierReturnWhilePausedReissuesDlinkReady) {
     fixture f;
     f.reach_matched();
@@ -793,8 +757,7 @@ TEST(LinkStateMachine, EvMacIsPublishedWhilePausedButNotWhileUnmatchedOrMatching
     f.reach_matched();
     f.fsm().dlink_pause();
     (void)f.taken();
-    // A neighbour answering also ends the pause (see PausedResumesOnANeighbourAnswering), hence
-    // the D-LINK_READY re-issue alongside the MAC.
+    // A neighbour answering also ends the pause, hence the D-LINK_READY re-issue.
     f.fsm().neighbor_reachable("0A:1B:2C:D3:E4:F5");
     EXPECT_EQ(trace({"mac:0A:1B:2C:D3:E4:F5", "ready:1"}), f.taken());
 
@@ -885,8 +848,7 @@ TEST(LinkStateMachine, StrayTimerExpiriesAreIgnored) {
 
 // --- TT_sync_repetition (V2G10-055 to -058) ---------------------------------------------------
 
-// The window opens when communication initialization is triggered, i.e. on the enter_bcd that
-// starts MATCHING - not on a re-match after a link loss, which is a C_conn_retry reconnect.
+// The window opens on the enter_bcd that starts MATCHING, not on a C_conn_retry reconnect.
 TEST(LinkStateMachine, CommunicationInitialisationOpensTheRepetitionWindow) {
     fixture f;
 
@@ -905,8 +867,7 @@ TEST(LinkStateMachine, ALinkLossRestartDoesNotReopenTheRepetitionWindow) {
         << "a reconnect is governed by C_conn_retry, not by TT_sync_repetition";
 }
 
-// The window belongs to one connection: a leftover window would let the next connection's or a
-// reconnect's TT_EV_link_detect expiry take the repeat row instead of going UNMATCHED.
+// A leftover window would let the next connection's TT_EV_link_detect expiry take the repeat row.
 TEST(LinkStateMachine, EndingTheConnectionClosesTheRepetitionWindow) {
     fixture f;
     f.fsm().enter_bcd(false);
@@ -939,7 +900,7 @@ TEST(LinkStateMachine, ResetAndDlinkTerminateCloseTheRepetitionWindow) {
     }
 }
 
-// A session existed, so the initialization it belonged to is over; the restart is a C_conn_retry.
+// A session existed, so the initialization is over; the restart is a C_conn_retry.
 TEST(LinkStateMachine, DlinkErrorClosesTheRepetitionWindow) {
     fixture f;
     f.reach_matched();
@@ -962,7 +923,7 @@ TEST(LinkStateMachine, TheWindowIsNotOpenedWhenRepetitionIsDisabled) {
     EXPECT_EQ(trace({"state:MATCHING", "timer+link_detect@4000"}), f.taken());
 }
 
-// V2G10-056: FAILED, but the window is still open and the EV is still there, so restart.
+// V2G10-056: FAILED with the window still open, so the initialization restarts.
 TEST(LinkStateMachine, CommunicationInitialisationIsRepeatedWhileTheWindowIsOpen) {
     auto config = default_config();
     config.link_detect_timeout_ms = 1000;
@@ -978,7 +939,7 @@ TEST(LinkStateMachine, CommunicationInitialisationIsRepeatedWhileTheWindowIsOpen
     EXPECT_EQ(1, f.fsm().retry_count()) << "a repetition costs an attempt so it cannot loop forever";
 }
 
-// V2G10-058: once the window is gone the initialization stops; the restart takes over.
+// V2G10-058: window closed, the initialization stops and the restart takes over.
 TEST(LinkStateMachine, TheInitialisationStopsOnceTheWindowClosed) {
     auto config = default_config();
     config.link_detect_timeout_ms = 1000;
@@ -1008,7 +969,6 @@ TEST(LinkStateMachine, RepetitionIsAlsoBoundedByTheRetryBudget) {
     ASSERT_EQ(1, f.fsm().retry_count());
     (void)f.taken();
 
-    // Window still open, but the budget is gone.
     f.fsm().link_detect_timeout(true);
     EXPECT_EQ(trace({"timer-link_detect", "state:UNMATCHED"}), f.taken());
     EXPECT_EQ(internal_state::unmatched, f.fsm().state());
@@ -1030,11 +990,8 @@ TEST(LinkStateMachine, ARepeatedInitialisationStillMatchesWhenTheLinkArrives) {
 
 // --- resuming from paused ---------------------------------------------------------------------
 
-// The realistic pause: the LAN8650 low-power mode is not implemented, so the carrier never drops
-// and no wake-up edge exists. Staying paused would leave carrier and liveness supervision disarmed
-// for the whole resumed session, so a link loss would never produce dlink_ready(false)
-// (V2G10-036) and the V2G10-042 re-issue would never happen. A neighbour answering is the evidence
-// that the session came back.
+// LAN8650 low-power mode is not implemented: the carrier never drops while paused, so there is no
+// wake-up edge. A neighbour answering resumes instead and re-arms supervision (V2G10-036, -042).
 TEST(LinkStateMachine, PausedResumesOnANeighbourAnswering) {
     fixture f;
     f.reach_matched();
@@ -1057,8 +1014,6 @@ TEST(LinkStateMachine, APauseResumedByANeighbourIsSupervisedAgain) {
     (void)f.taken();
     ASSERT_EQ(internal_state::matched, f.fsm().state());
 
-    // The point of resuming: this loss is reported instead of being swallowed as an expected
-    // pause-time carrier drop.
     f.fsm().carrier_down();
 
     EXPECT_EQ(trace({"ready:0", "state:UNMATCHED", "state:MATCHING", "timer+link_detect@4000"}), f.taken());

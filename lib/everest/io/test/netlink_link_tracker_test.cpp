@@ -1,13 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 //
-// Tests for netlink/link_tracker.cpp: which announcement is my device, and when did its carrier
-// change. Pure, so no socket and no privileges are involved.
-//
-// Every report below deliberately carries IFF_RUNNING, because the contract this class documents
-// is that carrier is IFF_LOWER_UP and IFF_RUNNING must never be mistaken for it: a TAP device
-// created carrier-off is announced once with IFF_RUNNING set, since the operstate that flag
-// reflects is only corrected by the kernel's linkwatch work about a second later.
+// Tests for netlink/link_tracker.cpp, pure: which announcement is my device, and when did its carrier change. Every
+// report carries IFF_RUNNING; carrier is IFF_LOWER_UP (a carrier-off TAP is announced with IFF_RUNNING set).
 
 #include <gtest/gtest.h>
 

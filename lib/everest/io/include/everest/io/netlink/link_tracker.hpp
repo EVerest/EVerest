@@ -13,51 +13,31 @@ namespace everest::lib::io::netlink {
 
 /**
  * @brief Carrier and presence edge tracking for one named network device.
- *
- * @details Folds the stream of link announcements from a NETLINK_ROUTE socket into two questions -
- * "does my device exist" and "does it have carrier" - and reports only the changes, so a consumer
- * sees one event per actual transition rather than one per announcement.
- *
- * <b>The carrier contract.</b> Carrier is \c IFF_LOWER_UP in \c ifi_flags, and deliberately not
- * either of the alternatives. Picking either of them instead is a real bug, not a matter of taste:
- * - Not the \c operstate string. A TAP device does not maintain a meaningful operstate; it starts
- *   out \c UNKNOWN, which reads as running.
- * - Not \c IFF_RUNNING. A TAP device created carrier-off is still announced <b>once with
- *   IFF_RUNNING set</b>, because the operstate that flag reflects is only corrected by the kernel's
- *   linkwatch work about a second later. Keying on IFF_RUNNING therefore produces a spurious ~1 s
- *   carrier-up on every TAP creation and every device reset. This was measured, not assumed.
- *
- * Two consequences worth knowing for either flag choice:
- * - Because linkwatch is rate-limited to roughly one run per second, the announcement that
- *   <em>drops</em> IFF_LOWER_UP can lag the physical event by up to about a second.
- * - A carrier off-to-on edge makes the kernel re-run IPv6 duplicate address detection, so the
- *   device's link-local address stays unusable for roughly a second afterwards (with the default
- *   \c dad_transmits). Carrier-up is not the same as "IPv6 usable", and nothing may assume it can
- *   send the moment the carrier appears - a consumer either tolerates the first send failing or
- *   waits the address out.
- *
- * <b>Identification is by name</b>, because the interface index is not known in advance and a
- * re-created device (a TAP, typically) gets a fresh one every time. The index learned from a named
- * announcement is what nameless announcements are matched against afterwards, and it is dropped the
- * moment the device goes away, so a recycled index cannot make another device's messages - or its
- * neighbour entries - look like this device's.
- *
- * Pure: no socket and no syscalls, so the identification and edge-filtering rules are testable on
- * their own. Not synchronized; feed it from one thread.
+ * @details Folds link announcements from a NETLINK_ROUTE socket into presence and carrier, reporting only
+ * transitions. Carrier is \c IFF_LOWER_UP in \c ifi_flags, not the \c operstate string (a TAP starts out
+ * \c UNKNOWN, which reads as running) and not \c IFF_RUNNING (a TAP created carrier-off is announced once
+ * with IFF_RUNNING set until linkwatch corrects the operstate about a second later: a spurious ~1 s
+ * carrier-up on every TAP creation and device reset, measured). Linkwatch runs about once per second, so
+ * the announcement dropping IFF_LOWER_UP can lag the physical event by up to a second. A carrier off-to-on
+ * edge re-runs IPv6 duplicate address detection, so the link-local address is unusable for about a second
+ * (default \c dad_transmits); carrier-up is not "IPv6 usable". Identification is by name, since the index
+ * is not known in advance and a re-created device gets a fresh one; the learned index matches nameless
+ * announcements and is dropped when the device goes away, so a recycled index cannot attribute another
+ * device's messages or neighbour entries to this one. Pure: no socket, no syscalls. Not synchronized;
+ * feed it from one thread.
  */
 class link_tracker {
 public:
     /**
-     * @brief What changed as a result of folding in one announcement.
-     * @details Both edges can be set at once: a device that appears already having carrier reports
-     * presence and carrier together.
+     * @brief What changed as a result of one announcement.
+     * @details Both edges can be set at once: a device appearing with carrier reports both.
      */
     struct change {
-        /// \ref present differs from what it was before the announcement.
+        /// \ref present changed.
         bool presence_changed{false};
         /// Whether the device exists, valid when \ref presence_changed is set.
         bool present{false};
-        /// \ref carrier differs from what it was before the announcement.
+        /// \ref carrier changed.
         bool carrier_changed{false};
         /// Whether the device has carrier, valid when \ref carrier_changed is set.
         bool carrier{false};
@@ -71,9 +51,7 @@ public:
 
     /**
      * @brief Fold one link announcement into the tracked state.
-     * @details Announcements for other devices are ignored. An announcement carrying the tracked
-     * interface index under a different name means the device was renamed away, which is reported
-     * as a removal.
+     * @details Other devices are ignored. The tracked index under another name is a rename away, reported as removal.
      * @param[in] report The announcement, as decoded by \ref parse
      * @return The edges this announcement caused, if any
      */
@@ -86,16 +64,13 @@ public:
     bool present() const;
 
     /**
-     * @brief The carrier state of the tracked device (\c IFF_LOWER_UP).
-     * @details Always false while the device is absent.
+     * @brief The carrier state of the tracked device (\c IFF_LOWER_UP). Always false while absent.
      * @return True if the device has carrier, false otherwise
      */
     bool carrier() const;
 
     /**
-     * @brief The interface index of the tracked device.
-     * @details Useful for matching messages that carry no device name, neighbour announcements in
-     * particular.
+     * @brief The interface index of the tracked device; matches nameless messages such as neighbour ones.
      * @return The interface index, or 0 while it is unknown
      */
     int ifindex() const;

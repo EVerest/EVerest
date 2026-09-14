@@ -16,9 +16,7 @@ namespace main {
 
 namespace {
 
-/// How long shutdown() waits for the event loop in ready() to return. It only has to cover one poll
-/// wake-up, so anything measured in seconds is generous; the bound exists so that a wedged loop
-/// degrades into a loud log instead of hanging the whole EVerest shutdown.
+/// Bound on shutdown()'s wait for the event loop; a wedged loop logs an error instead of hanging shutdown.
 constexpr std::chrono::milliseconds loop_exit_timeout{5000};
 
 types::slac::State to_interface_state(link_state value) {
@@ -54,8 +52,7 @@ datalink_controller::callbacks ev_slacImpl::controller_callbacks() {
     handlers.publish_state = [this](link_state value) { publish_state(to_interface_state(value)); };
     handlers.publish_dlink_ready = [this](bool value) { publish_dlink_ready(value); };
     if (config.publish_connector_mac) {
-        // The variable is called ev_mac_address on both sides of the interface pair; it carries the
-        // *peer's* address, which on this side is the charging connector's.
+        // ev_mac_address carries the peer's address, on this side the charging connector's.
         handlers.publish_connector_mac = [this](std::string const& mac) { publish_ev_mac_address(mac); };
     }
     handlers.raise_fault = [this](std::string const& message) { raise_communication_fault(message); };
@@ -64,16 +61,11 @@ datalink_controller::callbacks ev_slacImpl::controller_callbacks() {
 }
 
 void ev_slacImpl::init() {
-    // The controller is built here, not in ready(): EvManager may issue commands as soon as the
-    // global ready signal goes out, and the command queue has to exist before the event loop does
-    // so that nothing is lost in between. It is only touched by the loop after ready() starts it.
+    // Built here, not in ready(): commands may arrive as soon as the global ready signal goes out.
     controller = std::make_unique<datalink_controller>(controller_config(), controller_callbacks());
 
     if (not controller->open()) {
-        // Fatal for supervision, not for the module: with the socket down the interface still
-        // answers commands, the link simply never comes up (the setup deadline then fails
-        // communication initialization honestly). The fault is what makes the operator aware
-        // rather than letting sessions fail mysteriously.
+        // Not fatal: commands still work, the link never comes up and the setup deadline fails initialization.
         raise_communication_fault(fmt::format("Failed to open the rtnetlink socket for MCS data link "
                                               "supervision on device '{}': {}",
                                               config.device, std::strerror(controller->error())));
@@ -87,9 +79,7 @@ void ev_slacImpl::init() {
 }
 
 void ev_slacImpl::ready() {
-    // The event loop runs on this thread. The framework spawns a dedicated thread for the global
-    // ready message and joins it last during teardown, so blocking here is what that thread is
-    // for - no worker thread of our own is needed.
+    // The event loop runs on this thread; the framework joins the ready() thread last during teardown.
     {
         auto lifecycle = lifecycle_state.handle();
         if (not lifecycle->may_enter_loop()) {
@@ -118,9 +108,7 @@ void ev_slacImpl::run_event_loop() {
         EVLOG_error << "McsEvDataLink: failed to register the data link controller";
         registrations_ok = false;
     }
-    // Registered so that notifying it wakes poll(); the flag is `online`, the event is just the
-    // knock on the door. An eventfd counts, so a notify that lands before this registration is not
-    // lost - it fires on the first poll.
+    // Wakes poll() so the loop observes `online`; an eventfd counts, so an early notify fires on the first poll.
     if (not handler.register_event_handler(&exit_event, []() {})) {
         EVLOG_error << "McsEvDataLink: failed to register the exit event";
         registrations_ok = false;
@@ -140,8 +128,7 @@ void ev_slacImpl::run_event_loop() {
         EVLOG_error << "McsEvDataLink: the event loop stopped unexpectedly: unknown error";
     }
 
-    // The handler is about to go out of scope; drop the registrations while it is still alive. The
-    // watcher's registration in particular captures a pointer to it.
+    // Unregister while the handler is alive; the watcher's registration holds a pointer to it.
     (void)handler.unregister_event_handler(controller.get());
     (void)handler.unregister_event_handler(&exit_event);
 }
@@ -149,8 +136,7 @@ void ev_slacImpl::run_event_loop() {
 void ev_slacImpl::shutdown() {
     {
         auto lifecycle = lifecycle_state.handle();
-        // Idempotent: the framework hook and the destructor may both get here. A repeat call has
-        // work to do only if a previous one gave up waiting on a loop that is still running.
+        // Idempotent; a repeat call only has work if a previous one timed out on a running loop.
         if (lifecycle->shutting_down and lifecycle->loop_settled()) {
             return;
         }
@@ -163,9 +149,7 @@ void ev_slacImpl::shutdown() {
     online.store(false);
     exit_event.notify();
 
-    // Wait for the loop before returning: ~Everest joins the thread running ready(), and everything
-    // the loop touches lives in this object. Returning early would let the framework tear the
-    // module down underneath a running loop.
+    // Wait for the loop: ~Everest joins the ready() thread and everything the loop touches lives here.
     auto const result = everest::lib::util::wait_for_loop_exit(lifecycle_state, loop_exit_timeout);
     if (result == everest::lib::util::LoopExitResult::TimedOut) {
         EVLOG_error << "McsEvDataLink: the event loop did not stop within " << loop_exit_timeout.count()
@@ -177,17 +161,9 @@ void ev_slacImpl::shutdown() {
 }
 
 bool ev_slacImpl::post_command(char const* command, std::function<bool(datalink_controller&)> const& post) {
-    // INVARIANT: the lifecycle monitor is held across the post, not just across the lookup.
-    //
-    // shutdown() waits for the event LOOP to exit, not for in-flight command handlers, and it
-    // destroys the controller afterwards. A framework thread that read the pointer, released the
-    // monitor and was then preempted could therefore come back and call into a destroyed
-    // controller. Holding the monitor for the whole call closes that window: shutdown() cannot get
-    // past its own handle() to clear the pointer and reset the controller while we are in here.
-    //
-    // This cannot deadlock. post() takes the command queue's own lock, and nothing ever takes the
-    // lifecycle monitor while holding that one; and wait_for_loop_exit() releases the monitor while
-    // it waits, so shutdown() blocking there does not keep us out.
+    // INVARIANT: the monitor is held across the post. shutdown() waits only for the loop, then destroys the
+    // controller; the held monitor blocks it while we are in here. No deadlock: post() takes only the queue
+    // lock, never held while taking the monitor, and wait_for_loop_exit() releases the monitor while waiting.
     auto lifecycle = lifecycle_state.handle();
     auto* target = lifecycle->live_worker();
     if (target == nullptr) {
@@ -198,11 +174,9 @@ bool ev_slacImpl::post_command(char const* command, std::function<bool(datalink_
 }
 
 void ev_slacImpl::raise_communication_fault(std::string const& message) {
-    // Checked before the flag is set, not after: marking the fault as raised when it could not be
-    // would make the matching clear_error() below refer to an error that never existed.
+    // Checked before the flag is set, so a fault that could not be raised is never marked raised.
     if (not error_factory or not error_manager) {
-        // TODO: this fault is dropped rather than replayed. If the error machinery can ever be
-        // unavailable here in practice, the message should be stashed and raised once it is up.
+        // TODO: dropped, not replayed; stash and raise later if this can happen in practice.
         EVLOG_error << "McsEvDataLink: cannot raise generic/CommunicationFault yet: " << message;
         return;
     }
@@ -246,14 +220,10 @@ void ev_slacImpl::clear_communication_fault() {
 
 // --- interface commands -----------------------------------------------------------------------
 //
-// Both run on framework threads. They only hand the command to the controller's queue, which
-// signals the event loop; the state machine is never touched from here.
+// Framework threads. They only enqueue to the controller; the state machine is never touched here.
 
 void ev_slacImpl::handle_reset() {
-    // EvManager calls this immediately before every trigger_matching, so it must be a plain
-    // teardown that leaves the module ready to be triggered - never a latch. (The EVSE-side `slac`
-    // interface passes an `enable` flag here that nothing ever sets to true; `ev_slac` sensibly has
-    // no argument at all.)
+    // EvManager calls this right before every trigger_matching: a plain teardown, never a latch.
     (void)post_command("reset", [](datalink_controller& target) {
         target.post_reset();
         return true;
@@ -261,22 +231,10 @@ void ev_slacImpl::handle_reset() {
 }
 
 bool ev_slacImpl::handle_trigger_matching() {
-    // What the returned boolean means here, precisely, because the interface's wording ("False if
-    // the transition was unexpected and cannot be handled by the SLAC state machine") asks for
-    // something this architecture deliberately cannot answer:
-    //
-    // The state machine runs on the event loop and is touched by exactly one thread. Answering
-    // "would this transition be accepted" from a framework thread would mean either running the
-    // machine here - which is what the CCS EvSlac does, and what this module avoids on purpose - or
-    // blocking this thread on a round trip through the loop, which risks deadlocking against the
-    // fault path that takes the same monitor.
-    //
-    // So: true means the command was accepted for processing, false means it provably will not be
-    // (shutdown in progress, or the queue is so backed up that the loop cannot be running). A
-    // trigger that the machine then ignores because it was already matching still returns true.
-    // That is strictly more informative than the CCS EvSlac, which returns an unconditional true,
-    // and the caller's real feedback is the `state` variable it already subscribes to. See
-    // docs/index.rst, "Interface gaps".
+    // true: accepted for processing; false: shutdown in progress or queue backed up. Whether the machine
+    // accepts the transition cannot be answered from this thread without a round trip that could deadlock
+    // on the fault path's monitor; the caller's feedback is the `state` variable. See docs/index.rst,
+    // "Interface gaps".
     return post_command("trigger_matching", [](datalink_controller& target) { return target.post_trigger_matching(); });
 }
 

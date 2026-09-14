@@ -16,9 +16,7 @@ namespace main {
 
 namespace {
 
-/// How long shutdown() waits for the event loop in ready() to return. It only has to cover one
-/// poll wake-up, so anything measured in seconds is generous; the bound exists so that a wedged
-/// loop degrades into a loud log instead of hanging the whole EVerest shutdown.
+/// Bound on shutdown()'s wait for the event loop; a wedged loop logs instead of hanging EVerest shutdown.
 constexpr std::chrono::milliseconds loop_exit_timeout{5000};
 
 types::slac::State to_interface_state(link_state value) {
@@ -66,16 +64,13 @@ datalink_controller::callbacks slacImpl::controller_callbacks() {
 }
 
 void slacImpl::init() {
-    // The controller is built here, not in ready(): EvseManager may issue commands as soon as the
-    // global ready signal goes out, and the command queue has to exist before the event loop does
-    // so that nothing is lost in between. It is only touched by the loop after ready() starts it.
+    // Built in init(): EvseManager may issue commands as soon as the global ready signal goes out,
+    // so the command queue must exist before the event loop.
     controller = std::make_unique<datalink_controller>(controller_config(), controller_callbacks());
 
     if (not controller->open()) {
-        // Fatal for supervision, not for the module: with the socket down the interface still
-        // answers commands, the link simply never comes up (TT_EV_link_detect then fails
-        // communication initialization honestly). The fault is what makes EvseManager set the
-        // connector inoperative rather than letting sessions fail mysteriously.
+        // Not fatal for the module: commands are still answered, the link never comes up. The fault
+        // makes EvseManager set the connector inoperative.
         raise_communication_fault(fmt::format("Failed to open the rtnetlink socket for MCS data link "
                                               "supervision on device '{}': {}",
                                               config.device, std::strerror(controller->error())));
@@ -89,9 +84,7 @@ void slacImpl::init() {
 }
 
 void slacImpl::ready() {
-    // The event loop runs on this thread. The framework spawns a dedicated thread for the global
-    // ready message and joins it last during teardown, so blocking here is what that thread is
-    // for - no worker thread of our own is needed.
+    // The event loop blocks this thread: the framework runs ready() on a dedicated thread and joins it last.
     {
         auto lifecycle = lifecycle_state.handle();
         if (not lifecycle->may_enter_loop()) {
@@ -120,9 +113,7 @@ void slacImpl::run_event_loop() {
         EVLOG_error << "McsDataLink: failed to register the data link controller";
         registrations_ok = false;
     }
-    // Registered so that notifying it wakes poll(); the flag is `online`, the event is just the
-    // knock on the door. An eventfd counts, so a notify that lands before this registration is
-    // not lost - it fires on the first poll.
+    // Only wakes poll() so `online` is observed; an eventfd counts, so an earlier notify is not lost.
     if (not handler.register_event_handler(&exit_event, []() {})) {
         EVLOG_error << "McsDataLink: failed to register the exit event";
         registrations_ok = false;
@@ -142,7 +133,7 @@ void slacImpl::run_event_loop() {
         EVLOG_error << "McsDataLink: the event loop stopped unexpectedly: unknown error";
     }
 
-    // The handler is about to go out of scope; drop the registrations while it is still alive.
+    // Unregister before the handler goes out of scope.
     (void)handler.unregister_event_handler(controller.get());
     (void)handler.unregister_event_handler(&exit_event);
 }
@@ -150,8 +141,7 @@ void slacImpl::run_event_loop() {
 void slacImpl::shutdown() {
     {
         auto lifecycle = lifecycle_state.handle();
-        // Idempotent: the framework hook and the destructor may both get here. A repeat call has
-        // work to do only if a previous one gave up waiting on a loop that is still running.
+        // Idempotent; a repeat call only has work if a previous one timed out waiting for the loop.
         if (lifecycle->shutting_down and lifecycle->loop_settled()) {
             return;
         }
@@ -164,9 +154,7 @@ void slacImpl::shutdown() {
     online.store(false);
     exit_event.notify();
 
-    // Wait for the loop before returning: ~Everest joins the thread running ready(), and
-    // everything the loop touches lives in this object. Returning early would let the framework
-    // tear the module down underneath a running loop.
+    // Returning before the loop exits would let ~Everest tear the module down under a running loop.
     auto const result = everest::lib::util::wait_for_loop_exit(lifecycle_state, loop_exit_timeout);
     if (result == everest::lib::util::LoopExitResult::TimedOut) {
         EVLOG_error << "McsDataLink: the event loop did not stop within " << loop_exit_timeout.count()
@@ -178,17 +166,10 @@ void slacImpl::shutdown() {
 }
 
 void slacImpl::post_command(char const* command, std::function<void(datalink_controller&)> const& post) {
-    // INVARIANT: the lifecycle monitor is held across the post, not just across the lookup.
-    //
-    // shutdown() waits for the event LOOP to exit, not for in-flight command handlers, and it
-    // destroys the controller afterwards. A framework thread that read the pointer, released the
-    // monitor and was then preempted could therefore come back and call into a destroyed
-    // controller. Holding the monitor for the whole call closes that window: shutdown() cannot get
-    // past its own handle() to clear the pointer and reset the controller while we are in here.
-    //
-    // This cannot deadlock. post() takes the command queue's own lock, and nothing ever takes the
-    // lifecycle monitor while holding that one; and wait_for_loop_exit() releases the monitor while
-    // it waits, so shutdown() blocking there does not keep us out.
+    // INVARIANT: the lifecycle monitor is held across the post. shutdown() waits for the loop, not for
+    // in-flight handlers, then destroys the controller; holding the monitor keeps it out until the
+    // post returns. No deadlock: the queue lock is never held while taking the monitor, and
+    // wait_for_loop_exit() releases the monitor while waiting.
     auto lifecycle = lifecycle_state.handle();
     auto* target = lifecycle->live_worker();
     if (target == nullptr) {
@@ -199,11 +180,9 @@ void slacImpl::post_command(char const* command, std::function<void(datalink_con
 }
 
 void slacImpl::raise_communication_fault(std::string const& message) {
-    // Checked before the flag is set, not after: marking the fault as raised when it could not be
-    // would make the matching clear_error() below refer to an error that never existed.
+    // Checked before the flag is set so a fault that could not be raised is not marked as raised.
     if (not error_factory or not error_manager) {
-        // TODO: this fault is dropped rather than replayed. If the error machinery can ever be
-        // unavailable here in practice, the message should be stashed and raised once it is up.
+        // TODO: the fault is dropped, not replayed once the error machinery is up.
         EVLOG_error << "McsDataLink: cannot raise generic/CommunicationFault yet: " << message;
         return;
     }
@@ -247,8 +226,7 @@ void slacImpl::clear_communication_fault() {
 
 // --- interface commands -----------------------------------------------------------------------
 //
-// All of these run on framework threads. They only hand the command to the controller's queue,
-// which signals the event loop; the state machine is never touched from here.
+// Framework threads. They only enqueue to the controller; the state machine is never touched here.
 
 void slacImpl::handle_reset(bool& enable) {
     auto const value = enable;
@@ -264,23 +242,18 @@ void slacImpl::handle_leave_bcd() {
 }
 
 void slacImpl::handle_dlink_terminate() {
-    // ISO 15118-3 / -10: leave the logical network and become UNMATCHED. On SPE there is no
-    // network to leave, so this is a teardown of the reported link state.
+    // ISO 15118-3 / -10: become UNMATCHED. On SPE there is no logical network to leave.
     post_command("dlink_terminate", [](datalink_controller& target) { target.post_dlink_terminate(); });
 }
 
 void slacImpl::handle_dlink_error() {
-    // Unlike SLAC on PLC, this is not just a reset: per IEC 61851-23-3 CC.5.2.3.2 the EVSE restarts
-    // the communication session by re-running the B0 to B transition, at most C_conn_retry times
-    // and with at least 3 s in between. The controller counts and waits, then publishes
-    // request_error_routine so EvseManager's error sequence produces the transition.
+    // IEC 61851-23-3 CC.5.2.3.2: restart via the B0 to B transition, at most C_conn_retry times with
+    // >= 3 s in between. The controller counts and waits, then publishes request_error_routine.
     post_command("dlink_error", [](datalink_controller& target) { target.post_dlink_error(); });
 }
 
 void slacImpl::handle_dlink_pause() {
-    // V2G10-041: the link stays logically up. The state variable remains MATCHED and dlink_ready
-    // is not withdrawn, and the carrier loss that follows the PHY powering down in B0 is expected
-    // rather than a failure.
+    // V2G10-041: stays MATCHED, dlink_ready not withdrawn; carrier loss from the PHY powering down is expected.
     post_command("dlink_pause", [](datalink_controller& target) { target.post_dlink_pause(); });
 }
 

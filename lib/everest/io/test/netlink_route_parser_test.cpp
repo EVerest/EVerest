@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 //
-// Tests for netlink/route_parser.cpp against hand-built rtnetlink datagrams. No socket, no
-// privileges: the point is the decoding contract, and the one case that matters most is the
-// IFF_LOWER_UP vs IFF_RUNNING discrimination (measured, see link_tracker's documented carrier contract) - a TAP device
-// that was created carrier-off is still announced once with IFF_RUNNING set, because the operstate behind that flag is
-// only corrected by the kernel's linkwatch work about a second later. A carrier watcher keyed on IFF_RUNNING therefore
-// sees a spurious link-up on every tap creation.
+// Tests for netlink/route_parser.cpp on hand-built rtnetlink datagrams; no socket, no privileges. Key case: carrier
+// is IFF_LOWER_UP, since a TAP created carrier-off is announced with IFF_RUNNING set until linkwatch corrects it.
 
 #include <gtest/gtest.h>
 
@@ -34,7 +30,6 @@ using namespace everest::lib::io::netlink;
 /// Accumulates netlink messages the way the kernel packs them into one datagram.
 class message_builder {
 public:
-    /// Append a message with \p type, a fixed-size header struct and a list of attributes.
     template <typename HeaderT>
     message_builder& message(std::uint16_t type, HeaderT const& fixed,
                              std::vector<std::pair<std::uint16_t, std::vector<std::uint8_t>>> const& attributes = {}) {
@@ -53,7 +48,7 @@ public:
         return *this;
     }
 
-    /// Append a bare message with no body at all (NLMSG_DONE in a dump).
+    /// Append a bare message with no body (NLMSG_DONE in a dump).
     message_builder& bare(std::uint16_t type) {
         auto const start = m_buffer.size();
         m_buffer.resize(start + NLMSG_HDRLEN, 0);
@@ -72,8 +67,7 @@ public:
         return m_buffer.size();
     }
 
-    /// Overwrite the nlmsg_len of the message starting at \p offset - the only way to build the
-    /// malformed inputs the parser has to survive.
+    /// Overwrite the nlmsg_len of the message starting at \p offset, to build malformed inputs.
     void set_length(std::size_t offset, std::uint32_t length) {
         nlmsghdr header{};
         std::memcpy(&header, m_buffer.data() + offset, sizeof(header));
@@ -157,8 +151,6 @@ TEST(NetlinkRouteParser, LinkUpIsReportedWithNameAndCarrier) {
     EXPECT_EQ(0, result.error);
 }
 
-// The whole reason this module keys on IFF_LOWER_UP: a carrier-off TAP is announced with
-// IFF_RUNNING set, and IFF_RUNNING must never be mistaken for carrier.
 TEST(NetlinkRouteParser, RunningWithoutLowerUpIsNotCarrier) {
     message_builder builder;
     builder.message(RTM_NEWLINK, link_header(7, IFF_UP | IFF_RUNNING), {{IFLA_IFNAME, name_attribute("cb_plc")}});
@@ -171,8 +163,7 @@ TEST(NetlinkRouteParser, RunningWithoutLowerUpIsNotCarrier) {
     EXPECT_FALSE(is_carrier_up(result.links.front()));
 }
 
-// ... and the inverse combination is honoured too: LOWER_UP without RUNNING is carrier, which
-// is what the kernel reports in the window before linkwatch has updated the operstate.
+// The window before linkwatch has updated the operstate.
 TEST(NetlinkRouteParser, LowerUpWithoutRunningIsCarrier) {
     message_builder builder;
     builder.message(RTM_NEWLINK, link_header(7, IFF_UP | IFF_LOWER_UP));
@@ -255,8 +246,7 @@ TEST(NetlinkRouteParser, DelNeighIsMarkedDeleted) {
     EXPECT_TRUE(result.neighbors.front().deleted);
 }
 
-// STALE means "was reachable, not re-verified" - the kernel only probes when something sends.
-// Treating it as dead would tear down an idle but perfectly healthy session.
+// STALE: was reachable, not re-verified; the kernel only probes when something sends.
 TEST(NetlinkRouteParser, StaleDelayAndProbeCountAsAlive) {
     for (std::uint16_t state : {NUD_STALE, NUD_DELAY, NUD_PROBE, NUD_PERMANENT, NUD_REACHABLE}) {
         EXPECT_TRUE(is_neighbor_alive(state)) << "state " << state;

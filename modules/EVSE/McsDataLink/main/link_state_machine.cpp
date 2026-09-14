@@ -1,16 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-// The machine lives in its own translation unit behind link_state_machine.hpp so that no other
-// translation unit pays msm's instantiation cost, and so that none of them can be affected by
-// anything this one has to configure for boost.
-//
-// It no longer has to configure anything: the flat 39-row table used to exceed the 20 entries
-// boost::mpl ships preprocessed headers for and needed BOOST_MPL_LIMIT_VECTOR_SIZE raised, but
-// neither table is anywhere near that since the hierarchy split them, and raising the limits also
-// forced BOOST_MPL_CFG_NO_PREPROCESSED_HEADERS, which cost about a third of this file's compile
-// time. If a table ever grows past 20 rows again, raise the limits here - never in a header, where
-// it would silently change the mpl configuration of every other consumer.
+// boost::msm stays in this translation unit. Both tables are below the 20-row boost::mpl default;
+// if one grows past it, raise BOOST_MPL_LIMIT_VECTOR_SIZE here, never in a header.
 
 #include <boost/mpl/vector.hpp>
 #include <boost/msm/back/state_machine.hpp>
@@ -33,9 +25,8 @@ namespace mpl = boost::mpl;
 using msm::front::none;
 using msm::front::Row;
 
-// The events mirror the snake_case public API 1:1. That costs one thing at the emission sites:
-// inside link_state_machine::carrier_up() the class scope wins unqualified lookup and finds the
-// member function, so the emissions reach these with an explicit main:: qualification.
+// Events are named like the public API; the member functions emit them with an explicit main::
+// qualification because class scope wins unqualified lookup.
 struct reset {
     bool enable{true};
 };
@@ -47,7 +38,7 @@ struct carrier_up {};
 struct carrier_down {};
 struct link_lost {};
 struct link_detect_timeout {
-    /// TT_sync_repetition is still open (tracked by the owner, which holds the timer).
+    /// TT_sync_repetition is still open (tracked by the owner).
     bool may_repeat{false};
 };
 struct retry_wait_elapsed {
@@ -69,12 +60,10 @@ struct machine_data {
     int retries{0};
     int ignored{0};
     std::string published_mac{};
-    /// A request_error_routine has been published and its reset has not arrived yet.
-    /// Charger::request_error_sequence() also fires signal_slac_reset, i.e. reset(false): that
-    /// reset is the routine's side effect, not a session end, and is absorbed once.
+    /// request_error_routine published; its reset(false) from Charger::request_error_sequence() not yet absorbed.
     bool routine_reset_pending{false};
-    /// TT_sync_repetition was started for this EV connection and not stopped by the machine yet.
-    /// Its expiry is only seen by the owner, so a stop after expiry is emitted; that is harmless.
+    /// TT_sync_repetition started and not stopped by the machine. Expiry is only seen by the owner; a
+    /// stop after expiry is harmless.
     bool sync_window_armed{false};
 
     // --- effect emitters -------------------------------------------------------------------
@@ -90,8 +79,7 @@ struct machine_data {
         effects.push_back(std::move(item));
     }
 
-    /// Unconditional on purpose: re-entering the matched state after D-LINK_PAUSE has to re-issue
-    /// D-LINK_READY even though it was never withdrawn (V2G10-042 wake-up).
+    /// Unconditional: re-entering Matched after D-LINK_PAUSE re-issues D-LINK_READY (V2G10-042 wake-up).
     void emit_dlink_ready() {
         ready = true;
         effect item;
@@ -100,7 +88,7 @@ struct machine_data {
         effects.push_back(std::move(item));
     }
 
-    /// Only when it was actually outstanding - "dlink_ready(false) if it was true".
+    /// Emits dlink_ready(false) only if it is outstanding.
     void withdraw_dlink_ready() {
         if (not ready) {
             return;
@@ -156,9 +144,8 @@ struct machine_data {
         start_timer(timer_id::sync_repetition, cfg.sync_repetition_ms);
     }
 
-    /// The window belongs to one communication initialization: closed when the connection ends or
-    /// a session-level restart takes over, so it cannot leak into the next connection's or a
-    /// reconnect's TT_EV_link_detect decision.
+    /// Closed when the connection ends or a session-level restart takes over, so the window cannot
+    /// leak into the next TT_EV_link_detect decision.
     void close_sync_window() {
         if (not sync_window_armed) {
             return;
@@ -169,19 +156,10 @@ struct machine_data {
 
     // --- retry budget ----------------------------------------------------------------------
 
-    // C_conn_retry counts per EV connection, not per successful match: reaching MATCHED
-    // deliberately does not refund attempts, otherwise a link that flaps between "up" and "lost"
-    // would retry forever and conn_retry_max would bound nothing. The budget is refilled when the
-    // connection ends or is explicitly restarted: leave_bcd, reset, dlink_terminate.
-    //
-    // OPEN (for review): V2G10-052 says "a successful communication setup shall reset all the
-    // timeout timers and reset the retry_counters", which read literally asks for the refund this
-    // deliberately withholds. The counter is kept unrefunded because the alternative is an
-    // unbounded restart loop on flapping hardware, and because Table 8 scopes C_conn_retry to
-    // "communication setup retries by wakeup trigger by basic signalling" - the comm-init phase,
-    // which TT_sync_repetition already bounds in time. If conformance testing insists on the
-    // literal reading, refill on entry to the matched state and rely on TT_sync_repetition plus
-    // the HLC timeouts above to bound the loop.
+    // C_conn_retry counts per EV connection; MATCHED does not refund attempts or a flapping link would
+    // retry forever. Refilled by leave_bcd, reset and dlink_terminate.
+    // OPEN: V2G10-052 read literally asks for that refund; Table 8 scopes C_conn_retry to the comm-init
+    // phase. If conformance insists, refill on entry to Matched.
     bool retries_left() const {
         return retries < cfg.conn_retry_max;
     }
@@ -199,20 +177,14 @@ struct machine_data {
 // Inner machine: the link lifecycle
 // ==========================================================================================
 //
-// Everything that is specific to *where* in a session the link currently is. The events that mean
-// the same thing wherever we are - reset, leave_bcd, dlink_terminate, dlink_error - are not here;
-// they are handled once by the outer machine below.
-//
-// Wherever two rows share a source and an event their guards are mutually exclusive, so nothing
-// depends on the order msm evaluates them in. That discipline is deliberate: msm does not resolve
-// such a conflict in declaration order, so a guarded row paired with an unguarded fallback silently
-// picks the fallback.
+// Session-wide events (reset, leave_bcd, dlink_terminate, dlink_error) are handled by the outer
+// machine. Rows sharing source and event have mutually exclusive guards: msm does not resolve such
+// conflicts in declaration order.
 struct SessionDef : public msm::front::state_machine_def<SessionDef> {
     machine_data* d{nullptr};
 
-    /// No link, and none being established. Reached at the start of a session and after the retry
-    /// budget ran out - in the latter case the EV is still plugged in, which is why nothing here
-    /// restarts on its own (V2G10-038: state B0 territory, EvseManager decides).
+    /// No link and none being established. Also reached when the retry budget is exhausted; nothing
+    /// restarts on its own, EvseManager decides (V2G10-038).
     struct Unmatched : public msm::front::state<> {
         template <class Event, class FSM> void on_entry(Event const&, FSM& fsm) {
             fsm.d->current = internal_state::unmatched;
@@ -243,25 +215,18 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
         }
     };
 
-    /// D-LINK_PAUSE received. No publishes at all: the link stays logically up (V2G10-041), so the
-    /// state variable stays MATCHED and dlink_ready stays outstanding. Carrier loss here is
-    /// expected rather than a failure, and the state leaves again on the first evidence that the
-    /// session resumed: the carrier returning if the PHY did power down, or a neighbour answering.
-    /// The second path carries the realistic case today - the LAN8650 low-power mode is
-    /// unimplemented, so a real pause keeps the carrier up and produces no wake-up edge at all,
-    /// and staying paused would leave supervision disarmed for the whole resumed session.
+    /// D-LINK_PAUSE received. Nothing published: the link stays logically up (V2G10-041). Carrier loss
+    /// is expected here. Left on carrier_up or neighbor_reachable; the latter is the realistic path
+    /// since the LAN8650 low-power mode is unimplemented and the carrier stays up during a pause.
     struct Paused : public msm::front::state<> {
         template <class Event, class FSM> void on_entry(Event const&, FSM& fsm) {
             fsm.d->current = internal_state::paused;
         }
     };
 
-    /// Waiting out the >= 3 s inter-attempt guard of IEC 61851-23-3 CC.5.2.3.2 before asking for
-    /// the restart routine. Entered from Matching when the initialization failed for good with
-    /// budget left, and from the outer machine on dlink_error - hence the explicit entry point, it
-    /// is the one state a session-wide event has to land on directly. A bare carrier
-    /// edge deliberately has no row here: the guard time is mandatory and the link is meant to
-    /// come back through the B0-to-B restart, not because the carrier flickered.
+    /// Waiting out the >= 3 s guard of IEC 61851-23-3 CC.5.2.3.2 before requesting the restart routine.
+    /// Entered from Matching on a final FAILED initialization and from the outer machine on
+    /// dlink_error (hence the explicit entry). No carrier row: the link returns via the B0-to-B restart.
     struct RestartWait : public msm::front::state<>, public msm::front::explicit_entry<0> {
         template <class Event, class FSM> void on_entry(Event const&, FSM& fsm) {
             fsm.d->current = internal_state::retry_wait;
@@ -306,9 +271,8 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
         }
     };
 
-    /// V2G10-056: the repetition window is open and an attempt is left. The three
-    /// link_detect_timeout guards (may_repeat, restart_after_failure, no_retries) are exhaustive
-    /// and mutually exclusive, see the note above.
+    /// V2G10-056: window open and an attempt left. may_repeat, restart_after_failure and no_retries
+    /// are exhaustive and mutually exclusive.
     struct may_repeat {
         template <class EVT, class FSM, class Source, class Target>
         bool operator()(EVT const& evt, FSM& fsm, Source&, Target&) {
@@ -316,8 +280,7 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
         }
     };
 
-    /// V2G10-058 with budget left: the initialization is over, the wake-up by basic signalling
-    /// (C_conn_retry, Table 8) takes over.
+    /// V2G10-058 with budget left: the wake-up by basic signalling (C_conn_retry, Table 8) takes over.
     struct restart_after_failure {
         template <class EVT, class FSM, class Source, class Target>
         bool operator()(EVT const& evt, FSM& fsm, Source&, Target&) {
@@ -327,8 +290,7 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
 
     // --- actions ---------------------------------------------------------------------------
 
-    /// Initialization FAILED for good (V2G10-058) with budget left: spend an attempt on the
-    /// CC.5.2.3.2 restart. Nothing to withdraw, D-LINK_READY was never issued.
+    /// Final FAILED initialization (V2G10-058) with budget left: spend an attempt on the CC.5.2.3.2 restart.
     struct spend_init_retry {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
@@ -336,9 +298,8 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
         }
     };
 
-    /// The communication initialization trigger (V2G10-055): open the TT_sync_repetition window.
-    /// Only the enter_bcd edges do this - a restart after a link loss is a reconnect governed by
-    /// C_conn_retry, not a repetition of the initial setup.
+    /// Communication initialization trigger (V2G10-055): open the TT_sync_repetition window. Only on
+    /// enter_bcd; a restart after link loss is governed by C_conn_retry, not a repetition.
     struct begin_comm_init {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
@@ -346,9 +307,7 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
         }
     };
 
-    /// V2G10-056: the initialization FAILED but the window is still open and both sides are still
-    /// in state B, so restart it. Costs one attempt so the repetition cannot run forever even if
-    /// each attempt fails fast.
+    /// V2G10-056: repeat the initialization within the window. Costs an attempt so it cannot loop forever.
     struct repeat_comm_init {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
@@ -356,9 +315,8 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
         }
     };
 
-    /// Link lost while up, with budget left. D-LINK_READY(no link) goes up first (V2G10-036) and
-    /// UNMATCHED is published explicitly before the machine re-enters MATCHING, so a consumer sees
-    /// that the link really went down even though matching resumes in the same breath.
+    /// Link lost while up, budget left: D-LINK_READY(no link) (V2G10-036), then UNMATCHED is published
+    /// before MATCHING so the consumer sees the link go down.
     struct restart_matching {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
@@ -368,8 +326,7 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
         }
     };
 
-    /// Budget exhausted: report the link down and stay put. State B0 territory - EvseManager
-    /// decides what happens next (V2G10-038).
+    /// Budget exhausted: withdraw D-LINK_READY; EvseManager decides what follows (V2G10-038).
     struct give_up {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
@@ -394,12 +351,8 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
 
     // --- transition table ------------------------------------------------------------------
     //
-    // Publishing is done by the state entry actions above, so the transition actions only carry
-    // what is specific to the edge.
-    //
-    // The RestartWait/dlink_error row consumes its event on purpose: a repeated D-LINK_ERROR
-    // while the guard is already running changes nothing, and must not restart the wait or spend
-    // another attempt. Without this row the outer machine's dlink_error rows would fire.
+    // Publishing happens in the state entry actions. The RestartWait/dlink_error row consumes a
+    // repeated D-LINK_ERROR so the outer machine's rows do not restart the wait or spend an attempt.
     //
     // clang-format off
     using transition_table = mpl::vector<
@@ -429,13 +382,8 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
         >;
     // clang-format on
 
-    /// Deliberately silent, and deliberately not counting: an event with no row in this table is
-    /// offered to the outer machine next, so counting it here would count every session-wide event
-    /// as ignored. The outer machine's no_transition is the one that sees "nobody handled this".
-    ///
-    /// This holds only while there is exactly one substate machine. Add a second orthogonal region
-    /// or a nested submachine and "the inner machine did not handle it" stops implying "the outer
-    /// one will get a chance to", so the counting would have to move or be reconciled across them.
+    /// Not counted: an unhandled event is offered to the outer machine next, whose no_transition
+    /// counts. Holds only while there is exactly one submachine and no orthogonal region.
     template <class FSM, class Event> void no_transition(Event const&, FSM&, int) {
     }
 };
@@ -446,12 +394,8 @@ using Session = msm::back::state_machine<SessionDef>;
 // Outer machine: the session
 // ==========================================================================================
 //
-// Four events mean the same thing wherever the session currently is, so they are handled here once
-// instead of once per state. Three of them end the session; the fourth restarts it.
-//
-// The teardown rows are self-transitions on the session: exiting it runs the exit action of
-// whichever substate was active (stopping its timer) and re-entering it starts the session again at
-// Unmatched, which is exactly the target all three want.
+// Handles the session-wide events once. The teardown rows are self-transitions on Session: the
+// active substate's exit action stops its timer and re-entry starts at Unmatched.
 struct link_def : public msm::front::state_machine_def<link_def> {
     machine_data* d{nullptr};
 
@@ -487,8 +431,7 @@ struct link_def : public msm::front::state_machine_def<link_def> {
 
     // --- actions ---------------------------------------------------------------------------
 
-    /// The EV connection ends or is restarted from the top: withdraw D-LINK_READY and refill the
-    /// retry budget.
+    /// Connection ends or restarts from the top: withdraw D-LINK_READY, refill the retry budget.
     struct end_connection {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
@@ -499,9 +442,8 @@ struct link_def : public msm::front::state_machine_def<link_def> {
         }
     };
 
-    /// The reset EvseManager's error sequence sends after request_error_routine. On MCS it would
-    /// land in Unmatched with no enter_bcd to follow (the synthesized CP state stays B), and it
-    /// would refill the budget conn_retry_max is meant to bound. Consumed without effect.
+    /// The reset EvseManager's error sequence sends after request_error_routine. Absorbed: it would
+    /// land in Unmatched with no enter_bcd to follow (the CP state stays B) and refill the budget.
     struct absorb_routine_reset {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
@@ -509,8 +451,8 @@ struct link_def : public msm::front::state_machine_def<link_def> {
         }
     };
 
-    /// D-LINK_ERROR with budget left: report the link down and spend an attempt. The restart itself
-    /// is requested when the CC.5.2.3.2 wait elapses.
+    /// D-LINK_ERROR with budget left: withdraw D-LINK_READY and spend an attempt. The restart is
+    /// requested when the CC.5.2.3.2 wait elapses.
     struct spend_retry {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
@@ -520,7 +462,7 @@ struct link_def : public msm::front::state_machine_def<link_def> {
         }
     };
 
-    /// Budget exhausted: report the link down and fall back to unmatched.
+    /// Budget exhausted: withdraw D-LINK_READY and fall back to Unmatched.
     struct give_up {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
@@ -531,26 +473,15 @@ struct link_def : public msm::front::state_machine_def<link_def> {
 
     using initial_state = Session;
 
-    /// The direct entry into the inner machine's RestartWait state - the one state a session-wide
-    /// event has to land on.
+    /// Direct entry into the inner RestartWait state.
     using RestartWait = Session::direct<SessionDef::RestartWait>;
 
     // --- transition table ------------------------------------------------------------------
     //
-    // `reset` ignores its `enable` argument. The slac interface documents enable=false as "stop
-    // matching", but EvseManager only ever calls reset(false) - as the session-end teardown, with
-    // the matching reset(true) call commented out (EvseManager.cpp:409, :1088, :1097). Latching
-    // matching off there would leave the module unable to serve any further session. SlacSimulator
-    // and EvseSlacNeo treat reset(false) as "reset" for the same reason; only the BUSlac bring-up
-    // tool uses the flag as start/stop.
-    //
-    // The reset that follows a request_error_routine is the routine's own (see
-    // absorb_routine_reset); the pending flag is cleared by that reset, leave_bcd or
-    // dlink_terminate, never by time - a routine EvseManager did not run leaves no reset to absorb,
-    // and the next reset then comes after a leave_bcd.
-    //
-    // The reset and dlink_error guard pairs are mutually exclusive, so nothing depends on row order
-    // here either.
+    // `reset` ignores `enable`: EvseManager only ever calls reset(false), as the session-end teardown
+    // (EvseManager.cpp:409, :1088, :1097); latching matching off would block every further session.
+    // routine_reset_pending is cleared by that reset, leave_bcd or dlink_terminate, never by time.
+    // The reset and dlink_error guard pairs are mutually exclusive.
     //
     // clang-format off
     using transition_table = mpl::vector<

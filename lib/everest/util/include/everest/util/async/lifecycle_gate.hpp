@@ -5,21 +5,12 @@
  * @file lifecycle_gate.hpp
  * @brief Shutdown handshake for a module whose event loop runs on a borrowed framework thread.
  *
- * @details Shape of the problem this solves. A module that runs its event loop inside its own
- * `ready()` - rather than starting a worker thread - borrows the thread the framework spawned to
- * deliver global ready, and that thread is joined last during teardown. `shutdown()` then arrives
- * on a *different* framework thread and has to make the loop return and wait for it, because the
- * framework destroys the module afterwards and everything the loop touches lives in it.
- *
- * Waiting is the part that needs care, because two orders race and both must be decided under one
- * lock: if `ready()` got there first it will run the loop and `shutdown()` has to wait for it, and
- * if `shutdown()` got there first `ready()` must never enter the loop and `shutdown()` must not
- * wait for an exit that will never happen. \ref everest::lib::util::LifecycleStateT holds the two
- * flags that make that decidable and \ref everest::lib::util::wait_for_loop_exit does the waiting.
- *
- * The state is always reached through an \ref everest::lib::util::monitor, never a bare mutex, and
- * every writer of a flag that \ref everest::lib::util::LifecycleStateT::loop_settled looks at must
- * `notify_all()` on that monitor.
+ * @details The loop runs inside `ready()` on the framework thread that delivered global ready; `shutdown()`
+ * runs on another framework thread, must make the loop return and wait for it, and must not wait if
+ * `ready()` never entered the loop. Both orders are decided under one lock:
+ * \ref everest::lib::util::LifecycleStateT holds the flags, \ref everest::lib::util::wait_for_loop_exit
+ * waits. Reach the state only through an \ref everest::lib::util::monitor; every writer of a flag read by
+ * \ref everest::lib::util::LifecycleStateT::loop_settled must `notify_all()` on it.
  */
 
 #pragma once
@@ -29,20 +20,11 @@
 namespace everest::lib::util {
 
 /**
- * @brief Lifecycle flags shared between the threads of a module that runs its event loop in
- * `ready()`.
- *
- * @details Guard an instance with an \ref everest::lib::util::monitor and reach it only through that. The flags are
- * deliberately two (`ready_entered` and `loop_exited`) rather than one "running" flag: a single flag
- * cannot distinguish "the loop has not started yet" from "the loop has already finished", and
- * `shutdown()` has to treat those opposite ways.
- *
- * Anything the owner needs beyond these flags - a fault it is reporting, a retry counter - belongs
- * in a struct of its own that derives from this one, so the generic part stays generic.
- *
- * @tparam WorkerT The type owned by the module and reached from its command or request handlers -
- * whatever object the event loop drives and `shutdown()` destroys. Only ever held as a pointer
- * here, so an incomplete type is fine.
+ * @brief Lifecycle flags shared between the threads of a module that runs its event loop in `ready()`.
+ * @details Guard with an \ref everest::lib::util::monitor. `ready_entered` and `loop_exited` are two flags
+ * because "not started yet" and "already finished" need opposite handling in `shutdown()`. Owner-specific
+ * state goes in a derived struct.
+ * @tparam WorkerT The object the event loop drives and `shutdown()` destroys; held as a pointer, may be incomplete.
  */
 template <typename WorkerT> struct LifecycleStateT {
     /// `ready()` committed to running the event loop.
@@ -51,13 +33,11 @@ template <typename WorkerT> struct LifecycleStateT {
     bool loop_exited{false};
     /// `shutdown()` was called.
     bool shutting_down{false};
-    /// Valid between construction of the worker and `shutdown()`; handlers reach the loop
-    /// through it.
+    /// Valid between construction of the worker and `shutdown()`.
     WorkerT* worker{nullptr};
 
     /**
-     * @brief Whether `ready()` may run the event loop.
-     * @details False for every subsequent `ready()`, and false if `shutdown()` won the race.
+     * @brief Whether `ready()` may run the event loop: not after a previous `ready()`, not after `shutdown()`.
      * @return True if the loop may be entered, false otherwise
      */
     bool may_enter_loop() const {
@@ -65,8 +45,7 @@ template <typename WorkerT> struct LifecycleStateT {
     }
 
     /**
-     * @brief Whether there is nothing left for \ref wait_for_loop_exit to wait for.
-     * @details True when the loop has finished, and also when it was never entered.
+     * @brief Whether \ref wait_for_loop_exit has nothing to wait for: the loop finished or was never entered.
      * @return True if the loop is settled, false while it is still running
      */
     bool loop_settled() const {
@@ -74,10 +53,8 @@ template <typename WorkerT> struct LifecycleStateT {
     }
 
     /**
-     * @brief The worker a handler may talk to.
-     * @details Null once shutdown started, so handlers drop their work instead of reaching into an
-     * object that is about to be destroyed. Callers must keep the monitor held across the whole use
-     * of the returned pointer, not just across this call.
+     * @brief The worker a handler may talk to; null once shutdown started.
+     * @details Keep the monitor held across the whole use of the returned pointer.
      * @return The worker, or nullptr if it must not be used
      */
     WorkerT* live_worker() const {
@@ -90,25 +67,22 @@ template <typename WorkerT> struct LifecycleStateT {
  * @brief Outcome of waiting for a module's event loop to exit.
  */
 enum class LoopExitResult {
-    /// The loop was never entered - `ready()` had not run yet, or had already been told to stop.
+    /// The loop was never entered.
     NotRunning,
-    /// The loop returned; everything it touched is safe to destroy.
+    /// The loop returned; what it touched may be destroyed.
     Stopped,
-    /// It did not return in time. Destroying what it touches would be a use-after-free, so the
-    /// caller must leave those objects alone.
+    /// The loop did not return in time; what it touches must not be destroyed.
     TimedOut,
 };
 
 /**
  * @brief Block until the event loop started in `ready()` has exited, or \p timeout elapsed.
- * @details Every writer of the flags \ref LifecycleStateT::loop_settled checks must `notify_all()`
- * on \p monitor. The wait releases the monitor while it blocks, so a handler holding it briefly
- * does not deadlock against this.
- * @tparam LifecycleMonitor An \ref everest::lib::util::monitor over a \ref LifecycleStateT (or over a
- * type derived from it)
+ * @details Writers of the flags \ref LifecycleStateT::loop_settled checks must `notify_all()` on \p monitor.
+ * The monitor is released while blocking.
+ * @tparam LifecycleMonitor An \ref everest::lib::util::monitor over a \ref LifecycleStateT or a derived type
  * @param[inout] monitor The monitor guarding the lifecycle flags
  * @param[in] timeout How long to wait before giving up
- * @return What happened; see \ref LoopExitResult
+ * @return See \ref LoopExitResult
  */
 template <typename LifecycleMonitor>
 LoopExitResult wait_for_loop_exit(LifecycleMonitor& monitor, std::chrono::milliseconds timeout) {

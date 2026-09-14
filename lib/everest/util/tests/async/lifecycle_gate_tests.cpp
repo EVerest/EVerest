@@ -1,14 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 //
-// Tests for the shutdown handshake (async/lifecycle_gate.hpp), for a module that has no worker
-// thread of its own: the event loop runs inside ready(), and shutdown() arrives on a different
-// framework thread and has to make that loop return and then wait for it, because the framework
-// joins the ready thread and destroys the module afterwards.
-//
-// The two orders that must both be decided under the lock are the point of these cases:
-// ready() first (shutdown waits) and shutdown() first (ready never enters, so shutdown must not
-// wait for something that will never happen).
+// Tests for the shutdown handshake in async/lifecycle_gate.hpp: ready() first (shutdown waits) and
+// shutdown() first (ready never enters the loop, shutdown does not wait).
 
 #include <gtest/gtest.h>
 
@@ -115,8 +109,7 @@ TEST(LifecycleGate, WaitingBlocksUntilTheLoopReportsItHasExited) {
     EXPECT_GE(elapsed, 40ms) << "it really waited";
 }
 
-// A loop that does not come back must not make shutdown() hang forever, and the caller has to be
-// able to tell that case apart: destroying what the loop still uses would be a use-after-free.
+// A loop that never returns: the wait times out and reports it.
 TEST(LifecycleGate, WaitingTimesOutOnALoopThatDoesNotReturn) {
     LifecycleMonitor monitor;
     {

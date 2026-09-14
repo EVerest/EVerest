@@ -15,8 +15,7 @@ namespace main {
 
 namespace {
 
-/// A command backlog this deep means the loop is not running (or is wedged). Dropping is better
-/// than growing without bound, and it is loud.
+/// A backlog this deep means the loop is not running; further commands are dropped with an error.
 constexpr std::size_t max_pending_commands = 64;
 
 link_config to_link_config(datalink_controller::config const& settings) {
@@ -37,7 +36,6 @@ datalink_controller::datalink_controller(config settings, callbacks handlers) :
     m_fsm(to_link_config(m_config)),
     m_watcher(m_config.device, m_config.neighbor_liveness) {
 
-    // Every timer here is a deadline, not a tick.
     m_link_detect_timer.set_single_shot(true);
     m_sync_repetition_timer.set_single_shot(true);
     m_retry_wait_timer.set_single_shot(true);
@@ -52,8 +50,7 @@ datalink_controller::datalink_controller(config settings, callbacks handlers) :
         };
     }
     watcher_handlers.on_initial_state = [this]() { on_initial_state(); };
-    // libio must not depend on the framework logger, so the watcher hands its diagnostics to a
-    // sink. Without this they would go to std::cerr and bypass the EVerest log entirely.
+    // libio does not depend on the framework logger; without a sink diagnostics go to std::cerr.
     using severity = everest::lib::io::netlink::device_watcher::diagnostic_severity;
     watcher_handlers.on_diagnostic = [](severity level, std::string const& message) {
         if (level == severity::error) {
@@ -187,8 +184,7 @@ void datalink_controller::drain_commands() {
     }
     for (auto const& item : batch) {
         apply(item);
-        // Per command rather than per batch: a start_timer must have taken effect before the next
-        // command can ask for it to be stopped again.
+        // Per command: a start_timer must take effect before the next command may stop it.
         run_effects();
     }
 }
@@ -202,9 +198,7 @@ void datalink_controller::apply(command const& item) {
 
     case command_kind::enter_bcd:
         if (not m_watcher.device_present()) {
-            // An EV is present and there is no network device to talk over. Absence was fine while
-            // idle; now it is a fault worth surfacing, so EvseManager can make the connector
-            // inoperative instead of the session failing on a bare 4 s timeout.
+            // Absence is a fault once an EV is present; EvseManager can then make the connector inoperative.
             raise_fault("MCS data link device '" + m_config.device +
                         "' does not exist while an EV is connected; the SPE link cannot be established");
         }
@@ -212,7 +206,6 @@ void datalink_controller::apply(command const& item) {
         return;
 
     case command_kind::leave_bcd:
-        // The EV is gone; its neighbour entries say nothing about the next one.
         forget_neighbors();
         m_fsm.leave_bcd();
         return;
@@ -232,10 +225,8 @@ void datalink_controller::apply(command const& item) {
 
     case command_kind::dlink_pause:
         if (m_fsm.state() == internal_state::matched and not m_config.neighbor_liveness) {
-            // Carrier and liveness supervision are suspended while paused, and with neighbour
-            // liveness off a carrier edge is the only thing that can end the pause. The LAN8650
-            // low-power mode is not implemented today, so a real pause keeps the carrier up and
-            // that edge may never come - say so rather than silently supervising nothing.
+            // With liveness off only a carrier edge ends the pause; the LAN8650 low-power mode is not
+            // implemented, so the carrier stays up and that edge may never come.
             EVLOG_warning << "McsDataLink: pausing with neighbor_liveness disabled; link supervision "
                              "stays suspended until the carrier drops and returns";
         }
@@ -247,8 +238,7 @@ void datalink_controller::apply(command const& item) {
         }
         EVLOG_info << "McsDataLink: D-LINK_PAUSE.request received, staying MATCHED; carrier loss is "
                       "expected from here until the wake-up";
-        // The PHY may power down in B0, which retires the neighbour entries. Forgetting them now
-        // keeps the liveness policy from reporting a loss the pause caused.
+        // The PHY may power down in B0 and retire neighbour entries; forgetting them avoids a false liveness loss.
         forget_neighbors();
         m_fsm.dlink_pause();
         return;
@@ -326,9 +316,8 @@ everest::lib::io::event::timer_fd& datalink_controller::timer_for(timer_id id) {
 void datalink_controller::on_carrier_change(bool up) {
     EVLOG_info << "McsDataLink: carrier on " << m_config.device << " went " << (up ? "up" : "down");
     if (up) {
-        // Carrier-up is not the same as "IPv6 usable": the kernel re-runs duplicate address
-        // detection on the edge, so the link-local address takes about a second to become usable.
-        // Everything downstream is on seconds-scale ISO 15118-10 timers, which absorbs that.
+        // The kernel re-runs duplicate address detection on the edge; the link-local address is usable
+        // about a second later, within the ISO 15118-10 timers.
         m_fsm.carrier_up();
     } else {
         forget_neighbors();
@@ -375,8 +364,7 @@ void datalink_controller::on_liveness_grace() {
     if (not m_neighbors.peer_is_lost()) {
         return;
     }
-    // V2G10-036: a detected link loss, even though the carrier may still claim the PHY is fine.
-    // On the SECC there is no PHY level peer signal, so this is the only way to notice.
+    // V2G10-036: link loss detected without a carrier edge; the SECC has no PHY level peer signal.
     EVLOG_warning << "McsDataLink: no neighbour on " << m_config.device << " recovered within "
                   << m_config.liveness_grace_ms << " ms, treating the data link as lost";
     m_fsm.link_lost();
@@ -387,17 +375,14 @@ void datalink_controller::on_link_detect_timeout() {
     EVLOG_warning << "McsDataLink: TT_EV_link_detect (" << m_config.link_detect_timeout_ms
                   << " ms) expired without a link on " << m_config.device
                   << "; communication initialization FAILED (V2G10-054)";
-    // V2G10-056: the initialization may be restarted while TT_sync_repetition has not expired.
-    // With the standard's default maxima (both 4 s) the window is already gone when the first
-    // TT_EV_link_detect expires, so the repetition only ever fires for an integrator who shortened
-    // link_detect_timeout_ms - which is the standard's own arithmetic, not a quirk here.
+    // V2G10-056: repeat while TT_sync_repetition is open. With both defaults at 4 s the window is
+    // already closed here; repetition only fires with a shortened link_detect_timeout_ms.
     m_fsm.link_detect_timeout(m_sync_window_open);
     run_effects();
 }
 
 void datalink_controller::on_sync_repetition_elapsed() {
-    // V2G10-058: no further repetition of the communication initialization. A running attempt is
-    // left alone - only its failure is now final.
+    // V2G10-058: no further repetition. A running attempt continues; only its failure is now final.
     m_sync_window_open = false;
     EVLOG_info << "McsDataLink: TT_sync_repetition (" << m_config.sync_repetition_ms
                << " ms) expired; no further communication initialization retries for this "
@@ -422,8 +407,7 @@ void datalink_controller::forget_neighbors() {
 
 void datalink_controller::arm_liveness_grace() {
     if (m_liveness_grace_armed) {
-        // Re-arming on every further NUD_FAILED would push the deadline out for as long as the
-        // kernel keeps failing addresses, which is exactly when it should be running out.
+        // Re-arming on every NUD_FAILED would push the deadline out indefinitely.
         return;
     }
     if (m_liveness_grace_timer.set_timeout_ms(m_config.liveness_grace_ms)) {

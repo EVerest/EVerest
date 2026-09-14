@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 //
-// Tests for netlink/neighbor_table.cpp - the mirror of the kernel neighbour table for one device.
-// The class reports facts and draws no conclusions; what "nothing is alive" means for a link is a
-// policy decision that lives with the caller, so these cases assert the facts only.
+// Tests for netlink/neighbor_table.cpp, the mirror of the kernel neighbour table for one device; facts only.
 
 #include <gtest/gtest.h>
 
@@ -35,8 +33,7 @@ TEST(NetlinkNeighborTable, StartsEmpty) {
     EXPECT_FALSE(table.any_alive());
 }
 
-// Without NDA_DST the entry has no identity, so it can neither be stored nor retired - and the
-// announcement says nothing about the device's neighbours either.
+// Without NDA_DST the entry has no identity and can neither be stored nor retired.
 TEST(NetlinkNeighborTable, AnAnnouncementWithoutAnAddressIsNotIdentified) {
     neighbor_table table;
 
@@ -64,8 +61,7 @@ TEST(NetlinkNeighborTable, AReachableNeighbourIsStoredAliveAndOffersItsMac) {
     EXPECT_EQ(1u, table.size());
 }
 
-// NUD_STALE means "was reachable, not re-verified recently". The kernel only re-probes when
-// something wants to send, so an idle but healthy peer legitimately stays there indefinitely.
+// NUD_STALE: was reachable, not re-verified. The kernel only re-probes on send, so an idle peer stays there.
 TEST(NetlinkNeighborTable, StaleCountsAsAliveButIsNotFreshEvidence) {
     neighbor_table table;
 
@@ -175,9 +171,7 @@ TEST(NetlinkNeighborTable, StorageStopsAtTheCapButKnownEntriesKeepUpdating) {
     EXPECT_EQ(neighbor_table::max_entries, table.size());
 }
 
-// The reason `alive` is judged from the announcement and not from what got stored: a caller has to
-// be able to see a live peer even when the table had no room for its entry, or a table full of dead
-// addresses could outvote a peer that is demonstrably answering.
+// `alive` is judged from the announcement, not from storage.
 TEST(NetlinkNeighborTable, AnAliveAnnouncementIsReportedEvenWhenItCannotBeStored) {
     neighbor_table table;
     for (std::size_t i = 0; i < neighbor_table::max_entries; ++i) {
@@ -194,24 +188,19 @@ TEST(NetlinkNeighborTable, AnAliveAnnouncementIsReportedEvenWhenItCannotBeStored
     EXPECT_FALSE(table.any_alive()) << "the stored entries are still all dead";
 }
 
-// The same-station refinement, exactly as the bench found it: one physical peer with
-// two addresses (IPv4 pinged into FAILED, IPv6 link-local idle in STALE, same MAC). The idle twin
-// is a ghost of the dead station and must not veto the loss verdict.
+// Bench case: one station, two addresses (IPv4 pinged into FAILED, IPv6 link-local idle in STALE, same MAC).
 TEST(NetlinkNeighborTable, AStaleTwinOfAFailedStationDoesNotCountAsAlive) {
     neighbor_table table;
     (void)table.apply(make_neighbor("172.25.6.1", NUD_REACHABLE, "F2:0E:4F:18:21:BF"));
     (void)table.apply(make_neighbor("fe80::f00e:4fff:fe18:21bf", NUD_STALE, "F2:0E:4F:18:21:BF"));
     ASSERT_TRUE(table.any_alive());
 
-    // The kernel's NUD_FAILED announcement typically carries no NDA_LLADDR; attribution must come
-    // from the remembered MAC.
+    // The kernel's NUD_FAILED announcement carries no NDA_LLADDR; attribution uses the remembered MAC.
     (void)table.apply(make_neighbor("172.25.6.1", NUD_FAILED));
 
     EXPECT_FALSE(table.any_alive()) << "the STALE twin of the failed station vetoed the verdict";
 }
 
-// The refinement must not weaken the documented stale-counts-as-alive semantics for a DIFFERENT
-// station: an idle second peer is not evidence about the failed one, and vice versa.
 TEST(NetlinkNeighborTable, AStaleNeighbourOfAnotherStationStillCountsAsAlive) {
     neighbor_table table;
     (void)table.apply(make_neighbor("172.25.6.1", NUD_FAILED, "F2:0E:4F:18:21:BF"));
@@ -220,8 +209,6 @@ TEST(NetlinkNeighborTable, AStaleNeighbourOfAnotherStationStillCountsAsAlive) {
     EXPECT_TRUE(table.any_alive());
 }
 
-// A STALE entry whose MAC was never learned cannot be attributed to any station and keeps the
-// conservative alive semantics.
 TEST(NetlinkNeighborTable, AStaleNeighbourWithoutAMacStillCountsAsAlive) {
     neighbor_table table;
     (void)table.apply(make_neighbor("172.25.6.1", NUD_FAILED, "F2:0E:4F:18:21:BF"));
@@ -230,8 +217,7 @@ TEST(NetlinkNeighborTable, AStaleNeighbourWithoutAMacStillCountsAsAlive) {
     EXPECT_TRUE(table.any_alive());
 }
 
-// DELAY and PROBE are the kernel actively verifying - they resolve to REACHABLE or FAILED on
-// their own and keep counting meanwhile, same station or not.
+// DELAY and PROBE are the kernel actively verifying.
 TEST(NetlinkNeighborTable, AnActivelyVerifyingTwinStillCountsAsAlive) {
     neighbor_table table;
     (void)table.apply(make_neighbor("172.25.6.1", NUD_FAILED, "F2:0E:4F:18:21:BF"));
@@ -240,7 +226,6 @@ TEST(NetlinkNeighborTable, AnActivelyVerifyingTwinStillCountsAsAlive) {
     EXPECT_TRUE(table.any_alive());
 }
 
-// And the recovery direction: the failed twin re-resolving lifts the veto with no residue.
 TEST(NetlinkNeighborTable, TheVetoLiftsWhenTheFailedTwinRecovers) {
     neighbor_table table;
     (void)table.apply(make_neighbor("fe80::f00e:4fff:fe18:21bf", NUD_STALE, "F2:0E:4F:18:21:BF"));
@@ -252,10 +237,7 @@ TEST(NetlinkNeighborTable, TheVetoLiftsWhenTheFailedTwinRecovers) {
     EXPECT_TRUE(table.any_alive());
 }
 
-// The two holes of the momentary-state version, both bench-found on the same day. First: under an
-// active sender the kernel cycles the failed entry FAILED -> INCOMPLETE (re-resolution) -> FAILED;
-// at the instant the caller's grace expires there is usually no entry reading FAILED, and the
-// suspicion must survive that.
+// Under an active sender the kernel cycles FAILED -> INCOMPLETE -> FAILED; at grace expiry no entry may read FAILED.
 TEST(NetlinkNeighborTable, TheVetoSurvivesTheFailedIncompleteCycle) {
     neighbor_table table;
     (void)table.apply(make_neighbor("fe80::f00e:4fff:fe18:21bf", NUD_STALE, "F2:0E:4F:18:21:BF"));
@@ -268,8 +250,7 @@ TEST(NetlinkNeighborTable, TheVetoSurvivesTheFailedIncompleteCycle) {
     EXPECT_FALSE(table.any_alive()) << "INCOMPLETE is not evidence of life and must not lift the veto";
 }
 
-// Second: the kernel garbage collects failed entries within seconds. The deletion removes the
-// entry, not the suspicion - bookkeeping is not evidence of life.
+// The kernel garbage collects failed entries within seconds.
 TEST(NetlinkNeighborTable, TheVetoSurvivesGarbageCollectionOfTheFailedEntry) {
     neighbor_table table;
     (void)table.apply(make_neighbor("fe80::f00e:4fff:fe18:21bf", NUD_STALE, "F2:0E:4F:18:21:BF"));
@@ -282,7 +263,6 @@ TEST(NetlinkNeighborTable, TheVetoSurvivesGarbageCollectionOfTheFailedEntry) {
     EXPECT_FALSE(table.any_alive()) << "deleting the failed entry must not resurrect its stale twin";
 }
 
-// Suspicion clears with the table: a fresh link starts unprejudiced.
 TEST(NetlinkNeighborTable, ClearForgetsSuspicionsWithTheEntries) {
     neighbor_table table;
     (void)table.apply(make_neighbor("172.25.6.1", NUD_FAILED, "F2:0E:4F:18:21:BF"));

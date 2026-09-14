@@ -10,12 +10,11 @@ peer_liveness::verdict peer_liveness::apply(neighbor_report const& report) {
 
     auto const update = m_table.apply(report);
     if (not update.identified) {
-        // The report had no address, so it says nothing about the device's neighbours.
+        // No address: the report says nothing about the neighbours.
         return result;
     }
 
-    // `update.alive` rather than only the table: at the table's cap a live peer's entry may not
-    // have been stored, and it must still count.
+    // update.alive as well: at the table's cap a live peer's entry may not have been stored.
     if (m_table.any_alive() or update.alive) {
         m_last_entry_failed = false;
         result.cancel_grace = true;
@@ -25,18 +24,13 @@ peer_liveness::verdict peer_liveness::apply(neighbor_report const& report) {
 
     if (m_table.empty()) {
         if (report.deleted and update.failed) {
-            // The last entry went away carrying NUD_FAILED: the kernel garbage collecting a dead
-            // peer's entry. The kernel does that within seconds of the failure, typically before a
-            // grace period of any useful length has expired, so it must not be mistaken for the
-            // "idle entry removed" case below. The verdict stays what the failure made it: keep
-            // the grace timer running (or start it, should the failure itself not have been seen)
-            // and remember the loss, since the table no longer holds it.
+            // The kernel garbage collected a NUD_FAILED entry, which happens within seconds of the failure,
+            // before a useful grace period expires. Keep or start the grace timer and remember the loss.
             m_last_entry_failed = true;
             result.arm_grace = true;
             return result;
         }
-        // No opinion: either nothing has been seen yet, or the last entry was removed while it was
-        // not failed. Removal is what the kernel does to idle entries, so it must not end a session.
+        // Nothing seen yet, or the last entry was removed while not failed (idle removal); not a loss.
         m_last_entry_failed = false;
         result.cancel_grace = true;
         return result;
@@ -47,8 +41,7 @@ peer_liveness::verdict peer_liveness::apply(neighbor_report const& report) {
         return result;
     }
 
-    // Neither alive nor failed (NUD_INCOMPLETE while resolution is in flight, NUD_NONE): leave a
-    // running grace timer alone and do not start one - probing is not yet a verdict.
+    // Neither alive nor failed (NUD_INCOMPLETE, NUD_NONE): leave the grace timer as it is.
     return result;
 }
 

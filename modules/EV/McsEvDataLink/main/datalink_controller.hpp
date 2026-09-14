@@ -19,15 +19,9 @@
 namespace module {
 namespace main {
 
-/// Everything the module does at runtime, wired onto one fd_event_handler.
-///
-/// Threading: the state machine, the liveness judgement and the timers are touched by exactly one
-/// thread - the one running the event loop in ev_slacImpl::ready(). Interface commands arrive on
-/// framework threads and are only ever appended to \ref m_commands and signalled through an
-/// event_fd; they never reach the machine directly. That is the whole synchronisation story.
-///
-/// The state machine performs no I/O. It returns effect requests, and \ref run_effects is the one
-/// place that turns them into publishes and timer operations.
+/// The module's runtime, wired onto one fd_event_handler. State machine, liveness and timers are touched
+/// only by the event loop thread (ev_slacImpl::ready()); framework threads only append to \ref m_commands
+/// and signal an event_fd. The machine does no I/O; \ref run_effects executes its effects.
 class datalink_controller : public everest::lib::io::event::fd_event_register_interface {
 public:
     struct config {
@@ -53,8 +47,7 @@ public:
     datalink_controller(datalink_controller const&) = delete;
     datalink_controller& operator=(datalink_controller const&) = delete;
 
-    /// Open the rtnetlink socket. A failure is reported through \ref error and is not fatal to the
-    /// event loop: commands are still processed, the link simply never comes up.
+    /// Open the rtnetlink socket. On failure \ref error is set; commands still work, the link never comes up.
     bool open();
     int error() const;
 
@@ -65,11 +58,10 @@ public:
     void start();
 
     /// @name Interface commands
-    /// Called on framework threads. They enqueue and wake the loop; nothing else.
+    /// Framework threads. Enqueue and wake the loop only.
     /// @{
     void post_reset();
-    /// \return false when the command could not be accepted at all - see
-    /// ev_slacImpl::handle_trigger_matching for what the interface's boolean can and cannot mean.
+    /// \return false if the command could not be queued; see ev_slacImpl::handle_trigger_matching.
     bool post_trigger_matching();
     /// @}
 
@@ -86,15 +78,11 @@ private:
         trigger_matching,
     };
 
-    /// A single FIFO rather than one event_fd per command: the framework's ordering between
-    /// different commands has to survive the hop onto the loop, and EvManager relies on it - it
-    /// calls reset() and then trigger_matching(), and swapping them would leave the module
-    /// unmatched with nothing pending.
+    /// One FIFO, not an event_fd per command: EvManager's reset() then trigger_matching() order must survive.
     bool post(command_kind kind);
     void drain_commands();
     void apply(command_kind kind);
 
-    /// Execute what the machine asked for, in order. The only I/O the machine causes.
     void run_effects();
 
     void on_carrier_change(bool up);

@@ -14,8 +14,7 @@ namespace main {
 
 namespace {
 
-/// A command backlog this deep means the loop is not running (or is wedged). Dropping is better
-/// than growing without bound, and it is loud.
+/// A backlog this deep means the loop is not running; further commands are dropped with an error.
 constexpr std::size_t max_pending_commands = 64;
 
 link_config to_link_config(datalink_controller::config const& settings) {
@@ -46,8 +45,7 @@ datalink_controller::datalink_controller(config settings, callbacks handlers) :
         };
     }
     watcher_handlers.on_initial_state = [this]() { on_initial_state(); };
-    // libio must not depend on the framework logger, so the watcher hands its diagnostics to a
-    // sink. Without this they would go to std::cerr and bypass the EVerest log entirely.
+    // Without a sink the watcher's diagnostics go to std::cerr, bypassing the EVerest log.
     using severity = everest::lib::io::netlink::device_watcher::diagnostic_severity;
     watcher_handlers.on_diagnostic = [](severity level, std::string const& message) {
         if (level == severity::error) {
@@ -73,9 +71,7 @@ int datalink_controller::error() const {
 bool datalink_controller::register_events(everest::lib::io::event::fd_event_handler& handler) {
     auto registrations_ok = true;
 
-    // A watcher without a socket is not a registration failure: the module stays usable (commands
-    // are answered, the setup deadline still fails communication initialization honestly) and the
-    // CommunicationFault raised at open() time is what tells the operator what is wrong.
+    // A watcher without a socket is not a registration failure; open() already raised the fault.
     if (m_watcher.error() == 0 and not m_watcher.register_events(handler)) {
         EVLOG_error << "McsEvDataLink: failed to register the rtnetlink watcher";
         registrations_ok = false;
@@ -111,10 +107,7 @@ bool datalink_controller::unregister_events(everest::lib::io::event::fd_event_ha
 }
 
 void datalink_controller::start() {
-    // The interface needs a defined state before the first command arrives. The device's actual
-    // situation is not known yet - the dump requested by open() is only read once the loop polls -
-    // and it does not have to be: presence and carrier arrive as edges from the dump itself, and
-    // UNMATCHED with no carrier is exactly where the machine has to start either way.
+    // The device state is unknown until the loop reads the dump requested by open(); it arrives as edges.
     m_fsm.start();
     run_effects();
 }
@@ -126,8 +119,7 @@ void datalink_controller::on_initial_state() {
                    << (m_config.neighbor_liveness ? "on" : "off") << ")";
         return;
     }
-    // Normal on a Chargebridge: the TAP is created by the application at runtime, possibly long
-    // after EVerest came up. Say it once at info level and then stay quiet until it appears.
+    // Normal on a Chargebridge: the TAP is created by the application at runtime.
     EVLOG_info << "McsEvDataLink: device " << m_config.device
                << " does not exist yet; waiting for it to appear (expected when the network device "
                   "is created at runtime)";
@@ -165,8 +157,7 @@ void datalink_controller::drain_commands() {
     }
     for (auto const& kind : batch) {
         apply(kind);
-        // Per command rather than per batch: a start_timer must have taken effect before the next
-        // command can ask for it to be stopped again.
+        // Per command: a start_timer must take effect before the next command can stop it.
         run_effects();
     }
 }
@@ -174,22 +165,17 @@ void datalink_controller::drain_commands() {
 void datalink_controller::apply(command_kind kind) {
     switch (kind) {
     case command_kind::reset:
-        // EvManager calls this immediately before every trigger_matching, so it is the hot path and
-        // deliberately cheap: a teardown that leaves the module ready, never a latch.
+        // Called before every trigger_matching: a teardown that leaves the module ready, never a latch.
         EVLOG_debug << "McsEvDataLink: reset";
         forget_neighbors();
         m_fsm.reset();
         return;
 
     case command_kind::trigger_matching:
-        // The EV stack asks for the data link. Per V2G10-030 this is the basic-signalling half of
-        // the condition and the carrier is the other half, in either order - so the current carrier
-        // level goes in with the event.
+        // V2G10-030: link and basic signalling in either order, so the current carrier level goes in too.
         EVLOG_info << "McsEvDataLink: trigger_matching (carrier " << (m_watcher.carrier_up() ? "up" : "down") << ")";
         if (not m_watcher.device_present()) {
-            // The EV wants to talk and there is no network device to talk over. Absence was fine
-            // while idle; now it is a fault worth surfacing rather than letting the session die on
-            // a bare 4 s deadline.
+            // Absence is fine while idle; with a link requested it is a fault.
             raise_fault("MCS data link device '" + m_config.device +
                         "' does not exist while the EV is requesting the data link");
         }
@@ -244,17 +230,11 @@ void datalink_controller::run_effects() {
 void datalink_controller::on_carrier_change(bool up) {
     EVLOG_info << "McsEvDataLink: carrier on " << m_config.device << " went " << (up ? "up" : "down");
     if (up) {
-        // Carrier-up is not the same as "IPv6 usable": the kernel re-runs duplicate address
-        // detection on the edge, so the link-local address takes about a second to become usable.
-        // The seconds-scale deadline above absorbs that, but nothing here may assume it can send.
+        // Carrier up is not "IPv6 usable": DAD takes about a second on the edge; the setup deadline absorbs it.
         m_fsm.carrier_up();
     } else {
-        // A carrier drop is reported as a link loss whatever caused it - including the EV's own
-        // sleep, where V2G10-040 allows the comm module to be switched off entirely. `ev_slac` has
-        // no pause command, so the module cannot be told the difference, and reporting what it
-        // observes is the honest answer: the link really is down, and the stack that decided to
-        // sleep is the one that knows why. On the EVSE side dlink_pause exists and D-LINK_READY has
-        // to survive the pause (V2G10-041); there is deliberately no analogue of that here.
+        // Any carrier drop is a link loss, including the EV's own sleep (V2G10-040): `ev_slac` has no pause
+        // command, so unlike the EVSE side (V2G10-041) D-LINK_READY does not survive it.
         forget_neighbors();
         m_fsm.carrier_down();
     }
@@ -299,8 +279,7 @@ void datalink_controller::on_liveness_grace() {
     if (not m_neighbors.peer_is_lost()) {
         return;
     }
-    // V2G10-036: a detected link loss, even though the carrier may still claim the local PHY is
-    // fine. The peer here is the SECC.
+    // V2G10-036: link loss even though the carrier may still be up. The peer is the SECC.
     EVLOG_warning << "McsEvDataLink: no neighbour on " << m_config.device << " recovered within "
                   << m_config.liveness_grace_ms << " ms, treating the data link as lost";
     m_fsm.link_lost();
@@ -329,8 +308,7 @@ void datalink_controller::forget_neighbors() {
 
 void datalink_controller::arm_liveness_grace() {
     if (m_liveness_grace_armed) {
-        // Re-arming on every further NUD_FAILED would push the deadline out for as long as the
-        // kernel keeps failing addresses, which is exactly when it should be running out.
+        // Re-arming on every further NUD_FAILED would keep pushing the deadline out.
         return;
     }
     if (m_liveness_grace_timer.set_timeout_ms(m_config.liveness_grace_ms)) {

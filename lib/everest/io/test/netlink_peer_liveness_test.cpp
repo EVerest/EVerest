@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 //
-// Tests for netlink/peer_liveness.cpp: what to conclude from the kernel neighbour table of a
-// point-to-point device. The table mirroring itself is tested in netlink_neighbor_table_test.cpp;
-// these cases pin down the judgement, which is the part that decides whether a working session gets
-// torn down.
+// Tests for netlink/peer_liveness.cpp: the liveness verdict over the neighbour table of a point-to-point device.
 
 #include <gtest/gtest.h>
 
@@ -80,7 +77,7 @@ TEST(NetlinkPeerLiveness, TheLastNeighbourFailingArmsTheGraceAndIsALostLink) {
     EXPECT_TRUE(tracker.peer_is_lost());
 }
 
-// The debounce this policy exists for: one address failing and re-resolving must not end a session.
+// One address failing and re-resolving must not end a session.
 TEST(NetlinkPeerLiveness, AFailedNeighbourThatRecoversCancelsTheGrace) {
     peer_liveness tracker;
     (void)tracker.apply(make_neighbor("fe80::1", NUD_REACHABLE, "0A:1B:2C:D3:E4:F5"));
@@ -117,7 +114,7 @@ TEST(NetlinkPeerLiveness, AllAddressesFailingIsALostLink) {
     EXPECT_TRUE(tracker.peer_is_lost());
 }
 
-// The kernel removes idle entries by itself. That is housekeeping, not the EV disappearing.
+// The kernel removes idle entries by itself.
 TEST(NetlinkPeerLiveness, RemovingTheLastEntryIsNoOpinionRatherThanALoss) {
     peer_liveness tracker;
     (void)tracker.apply(make_neighbor("fe80::1", NUD_REACHABLE, "0A:1B:2C:D3:E4:F5"));
@@ -130,9 +127,7 @@ TEST(NetlinkPeerLiveness, RemovingTheLastEntryIsNoOpinionRatherThanALoss) {
     EXPECT_FALSE(tracker.peer_is_lost());
 }
 
-// The kernel also garbage collects FAILED entries, within seconds - usually before a grace period of
-// any useful length has expired. That removal is the dead peer being tidied away, and it must not
-// cancel the verdict the failure produced (bench-found: the loss was silently never reported).
+// The kernel garbage collects FAILED entries within seconds, before any useful grace expires (bench-found).
 TEST(NetlinkPeerLiveness, RemovingTheLastFailedEntryKeepsTheLossVerdict) {
     peer_liveness tracker;
     (void)tracker.apply(make_neighbor("fe80::1", NUD_REACHABLE, "0A:1B:2C:D3:E4:F5"));
@@ -146,7 +141,6 @@ TEST(NetlinkPeerLiveness, RemovingTheLastFailedEntryKeepsTheLossVerdict) {
     EXPECT_TRUE(tracker.peer_is_lost()) << "the grace expiry must still find the peer lost";
 }
 
-// ... and the peer coming back afterwards is still a recovery.
 TEST(NetlinkPeerLiveness, APeerRecoveringAfterItsFailedEntryWasRemovedCancelsTheGrace) {
     peer_liveness tracker;
     (void)tracker.apply(make_neighbor("fe80::1", NUD_FAILED));
@@ -159,7 +153,6 @@ TEST(NetlinkPeerLiveness, APeerRecoveringAfterItsFailedEntryWasRemovedCancelsThe
     EXPECT_FALSE(tracker.peer_is_lost());
 }
 
-// A later removal of a healthy entry returns to "no opinion", the remembered loss included.
 TEST(NetlinkPeerLiveness, RemovingAHealthyEntryAfterARememberedLossClearsIt) {
     peer_liveness tracker;
     (void)tracker.apply(make_neighbor("fe80::1", NUD_FAILED));
@@ -200,18 +193,14 @@ TEST(NetlinkPeerLiveness, TheTableDoesNotGrowWithoutBoundButKeepsUpdatingWhatItK
     }
     EXPECT_EQ(neighbor_table::max_entries, tracker.size());
 
-    // An address that made it into the table is still tracked ...
     auto const known = tracker.apply(make_neighbor("2001:db8::0", NUD_FAILED));
     EXPECT_FALSE(known.arm_grace) << "the other 31 are still alive";
 
-    // ... and one that did not is still not stored.
     auto const unknown = tracker.apply(make_neighbor("2001:db8::ffff", NUD_FAILED));
     EXPECT_FALSE(unknown.arm_grace);
     EXPECT_EQ(neighbor_table::max_entries, tracker.size());
 }
 
-// At the cap an untracked report is not stored, but it must still be allowed to prove the peer is
-// alive - otherwise a table full of dead entries could tear down a session whose peer is answering.
 TEST(NetlinkPeerLiveness, AnAliveReportCountsEvenWhenTheTableIsTooFullToStoreIt) {
     peer_liveness tracker;
     for (int i = 0; i < 32; ++i) {
