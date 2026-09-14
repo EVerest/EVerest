@@ -58,7 +58,10 @@ private:
 };
 
 // ev@3d7da0ad-02c2-493d-9920-0bbbd56b9876:v1
-// insert other definitions here
+inline constexpr auto CP_VOLTAGE_A = 12.0;
+inline constexpr auto CP_VOLTAGE_B = 9.0;
+inline constexpr auto CP_VOLTAGE_C = 6.0;
+inline constexpr auto CP_VOLTAGE_D = 3.0;
 // ev@3d7da0ad-02c2-493d-9920-0bbbd56b9876:v1
 
 } // namespace ev_board_support
