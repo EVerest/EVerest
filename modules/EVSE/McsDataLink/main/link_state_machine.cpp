@@ -73,6 +73,9 @@ struct machine_data {
     /// Charger::request_error_sequence() also fires signal_slac_reset, i.e. reset(false): that
     /// reset is the routine's side effect, not a session end, and is absorbed once.
     bool routine_reset_pending{false};
+    /// TT_sync_repetition was started for this EV connection and not stopped by the machine yet.
+    /// Its expiry is only seen by the owner, so a stop after expiry is emitted; that is harmless.
+    bool sync_window_armed{false};
 
     // --- effect emitters -------------------------------------------------------------------
 
@@ -143,6 +146,25 @@ struct machine_data {
         item.what = effect::kind::stop_timer;
         item.timer = timer;
         effects.push_back(std::move(item));
+    }
+
+    void open_sync_window() {
+        if (cfg.sync_repetition_ms <= 0) {
+            return;
+        }
+        sync_window_armed = true;
+        start_timer(timer_id::sync_repetition, cfg.sync_repetition_ms);
+    }
+
+    /// The window belongs to one communication initialization: closed when the connection ends or
+    /// a session-level restart takes over, so it cannot leak into the next connection's or a
+    /// reconnect's TT_EV_link_detect decision.
+    void close_sync_window() {
+        if (not sync_window_armed) {
+            return;
+        }
+        sync_window_armed = false;
+        stop_timer(timer_id::sync_repetition);
     }
 
     // --- retry budget ----------------------------------------------------------------------
@@ -307,9 +329,7 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
     struct begin_comm_init {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
-            if (fsm.d->cfg.sync_repetition_ms > 0) {
-                fsm.d->start_timer(timer_id::sync_repetition, fsm.d->cfg.sync_repetition_ms);
-            }
+            fsm.d->open_sync_window();
         }
     };
 
@@ -459,6 +479,7 @@ struct link_def : public msm::front::state_machine_def<link_def> {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
             fsm.d->routine_reset_pending = false;
+            fsm.d->close_sync_window();
             fsm.d->withdraw_dlink_ready();
             fsm.d->refill_retries();
         }
@@ -479,6 +500,7 @@ struct link_def : public msm::front::state_machine_def<link_def> {
     struct spend_retry {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
+            fsm.d->close_sync_window();
             fsm.d->withdraw_dlink_ready();
             fsm.d->take_retry();
         }
@@ -488,6 +510,7 @@ struct link_def : public msm::front::state_machine_def<link_def> {
     struct give_up {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
+            fsm.d->close_sync_window();
             fsm.d->withdraw_dlink_ready();
         }
     };

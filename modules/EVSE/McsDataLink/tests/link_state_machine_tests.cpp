@@ -159,7 +159,7 @@ TEST(LinkStateMachine, LeaveBcdTearsDownTheLink) {
 
     f.fsm().leave_bcd();
 
-    EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken());
+    EXPECT_EQ(trace({"timer-sync_repetition", "ready:0", "state:UNMATCHED"}), f.taken());
     EXPECT_EQ(internal_state::unmatched, f.fsm().state());
     EXPECT_FALSE(f.fsm().dlink_ready());
 }
@@ -171,7 +171,7 @@ TEST(LinkStateMachine, LeaveBcdWhileMatchingCancelsTheTimerAndDoesNotWithdrawWha
 
     f.fsm().leave_bcd();
 
-    EXPECT_EQ(trace({"timer-link_detect", "state:UNMATCHED"}), f.taken());
+    EXPECT_EQ(trace({"timer-link_detect", "timer-sync_repetition", "state:UNMATCHED"}), f.taken());
 }
 
 // --- reset ------------------------------------------------------------------------------------
@@ -184,7 +184,7 @@ TEST(LinkStateMachine, ResetDisableTearsDownButLeavesTheModuleReady) {
     f.reach_matched();
 
     f.fsm().reset(false);
-    EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken());
+    EXPECT_EQ(trace({"timer-sync_repetition", "ready:0", "state:UNMATCHED"}), f.taken());
     EXPECT_EQ(internal_state::unmatched, f.fsm().state());
 
     f.fsm().enter_bcd(true);
@@ -210,7 +210,7 @@ TEST(LinkStateMachine, ResetEnableWhileMatchedTearsTheLinkDown) {
 
     f.fsm().reset(true);
 
-    EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken());
+    EXPECT_EQ(trace({"timer-sync_repetition", "ready:0", "state:UNMATCHED"}), f.taken());
     EXPECT_EQ(internal_state::unmatched, f.fsm().state());
 }
 
@@ -351,7 +351,7 @@ TEST(LinkStateMachine, DlinkErrorWaitsThenRequestsTheErrorRoutineAndRematchesOnS
     f.reach_matched();
 
     f.fsm().dlink_error();
-    EXPECT_EQ(trace({"ready:0", "state:UNMATCHED", "timer+retry_wait@3000"}), f.taken());
+    EXPECT_EQ(trace({"timer-sync_repetition", "ready:0", "state:UNMATCHED", "timer+retry_wait@3000"}), f.taken());
     EXPECT_EQ(internal_state::retry_wait, f.fsm().state());
     EXPECT_EQ(link_state::unmatched, f.fsm().published_state());
     EXPECT_EQ(1, f.fsm().retry_count());
@@ -491,7 +491,7 @@ TEST(LinkStateMachine, DlinkErrorWithoutRetryBudgetNeverRequestsARestart) {
 
     f.fsm().dlink_error();
 
-    EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken());
+    EXPECT_EQ(trace({"timer-sync_repetition", "ready:0", "state:UNMATCHED"}), f.taken());
     EXPECT_EQ(internal_state::unmatched, f.fsm().state());
 }
 
@@ -502,7 +502,8 @@ TEST(LinkStateMachine, DlinkErrorIsAcceptedFromEveryLiveState) {
         f.fsm().enter_bcd(false);
         (void)f.taken();
         f.fsm().dlink_error();
-        EXPECT_EQ(trace({"timer-link_detect", "state:UNMATCHED", "timer+retry_wait@3000"}), f.taken());
+        EXPECT_EQ(trace({"timer-link_detect", "timer-sync_repetition", "state:UNMATCHED", "timer+retry_wait@3000"}),
+                  f.taken());
         EXPECT_EQ(internal_state::retry_wait, f.fsm().state());
     }
     // paused
@@ -512,7 +513,7 @@ TEST(LinkStateMachine, DlinkErrorIsAcceptedFromEveryLiveState) {
         f.fsm().dlink_pause();
         (void)f.taken();
         f.fsm().dlink_error();
-        EXPECT_EQ(trace({"ready:0", "state:UNMATCHED", "timer+retry_wait@3000"}), f.taken());
+        EXPECT_EQ(trace({"timer-sync_repetition", "ready:0", "state:UNMATCHED", "timer+retry_wait@3000"}), f.taken());
         EXPECT_EQ(internal_state::retry_wait, f.fsm().state());
     }
     // unmatched
@@ -673,7 +674,7 @@ TEST(LinkStateMachine, LeaveBcdAndResetStillTearDownFromPaused) {
         f.fsm().dlink_pause();
         (void)f.taken();
         f.fsm().leave_bcd();
-        EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken());
+        EXPECT_EQ(trace({"timer-sync_repetition", "ready:0", "state:UNMATCHED"}), f.taken());
         EXPECT_EQ(internal_state::unmatched, f.fsm().state());
     }
     {
@@ -682,7 +683,7 @@ TEST(LinkStateMachine, LeaveBcdAndResetStillTearDownFromPaused) {
         f.fsm().dlink_pause();
         (void)f.taken();
         f.fsm().reset(false);
-        EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken());
+        EXPECT_EQ(trace({"timer-sync_repetition", "ready:0", "state:UNMATCHED"}), f.taken());
         EXPECT_EQ(internal_state::unmatched, f.fsm().state());
     }
     {
@@ -691,7 +692,7 @@ TEST(LinkStateMachine, LeaveBcdAndResetStillTearDownFromPaused) {
         f.fsm().dlink_pause();
         (void)f.taken();
         f.fsm().dlink_terminate();
-        EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken());
+        EXPECT_EQ(trace({"timer-sync_repetition", "ready:0", "state:UNMATCHED"}), f.taken());
         EXPECT_EQ(internal_state::unmatched, f.fsm().state());
     }
 }
@@ -844,6 +845,53 @@ TEST(LinkStateMachine, ALinkLossRestartDoesNotReopenTheRepetitionWindow) {
 
     EXPECT_EQ(trace({"ready:0", "state:UNMATCHED", "state:MATCHING", "timer+link_detect@4000"}), f.taken())
         << "a reconnect is governed by C_conn_retry, not by TT_sync_repetition";
+}
+
+// The window belongs to one connection: a leftover window would let the next connection's or a
+// reconnect's TT_EV_link_detect expiry take the repeat row instead of going UNMATCHED.
+TEST(LinkStateMachine, EndingTheConnectionClosesTheRepetitionWindow) {
+    fixture f;
+    f.fsm().enter_bcd(false);
+    (void)f.taken();
+
+    f.fsm().leave_bcd();
+    EXPECT_EQ(trace({"timer-link_detect", "timer-sync_repetition", "state:UNMATCHED"}), f.taken());
+
+    f.fsm().leave_bcd();
+    EXPECT_TRUE(f.taken().empty()) << "closed once";
+
+    f.fsm().enter_bcd(true);
+    (void)f.taken();
+    f.fsm().reset(false);
+    EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken()) << "no window was opened, none to close";
+}
+
+TEST(LinkStateMachine, ResetAndDlinkTerminateCloseTheRepetitionWindow) {
+    {
+        fixture f;
+        f.reach_matched();
+        f.fsm().reset(false);
+        EXPECT_EQ(trace({"timer-sync_repetition", "ready:0", "state:UNMATCHED"}), f.taken());
+    }
+    {
+        fixture f;
+        f.reach_matched();
+        f.fsm().dlink_terminate();
+        EXPECT_EQ(trace({"timer-sync_repetition", "ready:0", "state:UNMATCHED"}), f.taken());
+    }
+}
+
+// A session existed, so the initialization it belonged to is over; the restart is a C_conn_retry.
+TEST(LinkStateMachine, DlinkErrorClosesTheRepetitionWindow) {
+    fixture f;
+    f.reach_matched();
+
+    f.fsm().dlink_error();
+    EXPECT_EQ(trace({"timer-sync_repetition", "ready:0", "state:UNMATCHED", "timer+retry_wait@3000"}), f.taken());
+
+    f.fsm().retry_wait_elapsed(false);
+    EXPECT_EQ(trace({"timer-retry_wait", "error_routine", "state:MATCHING", "timer+link_detect@4000"}), f.taken())
+        << "the re-arm does not reopen it";
 }
 
 TEST(LinkStateMachine, TheWindowIsNotOpenedWhenRepetitionIsDisabled) {

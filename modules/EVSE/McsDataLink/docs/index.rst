@@ -133,7 +133,10 @@ be operational before the EV is plugged in:
   The repetition window opens at the communication-initialization *trigger*
   (V2G10-055), i.e. on the ``enter_bcd`` that starts ``MATCHING``. A re-match
   after a link loss is a *reconnect* governed by ``C_conn_retry``, not a
-  repetition of the initial setup, and does not reopen the window.
+  repetition of the initial setup, and does not reopen the window. The window
+  closes early on ``leave_bcd``, ``reset``, ``dlink_terminate`` and
+  ``dlink_error``: it belongs to one connection's initialization and must not
+  decide a later ``TT_EV_link_detect`` expiry.
 
 Losing the link
 ---------------
