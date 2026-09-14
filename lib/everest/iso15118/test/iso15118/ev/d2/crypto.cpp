@@ -332,25 +332,23 @@ void fill_res(iso2_exiDocument& doc, const std::vector<uint8_t>& sa_leaf_der, co
 // The CPS half: four References over the current element contents, ECDSA-signed with `leaf_key`.
 void sign_res(iso2_exiDocument& doc, EVP_PKEY* leaf_key) {
     const auto& res = doc.V2G_Message.Body.CertificateInstallationRes;
-    const std::array<std::array<uint8_t, 32>, 4> digests{
-        fragment_digest([&res](iso2_exiFragment& f) {
-            f.ContractSignatureCertChain_isUsed = 1;
-            std::memcpy(&f.ContractSignatureCertChain, &res.ContractSignatureCertChain,
-                        sizeof(f.ContractSignatureCertChain));
-        }),
-        fragment_digest([&res](iso2_exiFragment& f) {
-            f.ContractSignatureEncryptedPrivateKey_isUsed = 1;
-            std::memcpy(&f.ContractSignatureEncryptedPrivateKey, &res.ContractSignatureEncryptedPrivateKey,
-                        sizeof(f.ContractSignatureEncryptedPrivateKey));
-        }),
-        fragment_digest([&res](iso2_exiFragment& f) {
-            f.DHpublickey_isUsed = 1;
-            std::memcpy(&f.DHpublickey, &res.DHpublickey, sizeof(f.DHpublickey));
-        }),
-        fragment_digest([&res](iso2_exiFragment& f) {
-            f.eMAID_isUsed = 1;
-            std::memcpy(&f.eMAID, &res.eMAID, sizeof(f.eMAID));
-        })};
+    const auto chain_digest = fragment_digest([&res](iso2_exiFragment& f) {
+        f.ContractSignatureCertChain_isUsed = 1;
+        f.ContractSignatureCertChain = res.ContractSignatureCertChain;
+    });
+    const auto key_digest = fragment_digest([&res](iso2_exiFragment& f) {
+        f.ContractSignatureEncryptedPrivateKey_isUsed = 1;
+        f.ContractSignatureEncryptedPrivateKey = res.ContractSignatureEncryptedPrivateKey;
+    });
+    const auto dh_digest = fragment_digest([&res](iso2_exiFragment& f) {
+        f.DHpublickey_isUsed = 1;
+        f.DHpublickey = res.DHpublickey;
+    });
+    const auto emaid_digest = fragment_digest([&res](iso2_exiFragment& f) {
+        f.eMAID_isUsed = 1;
+        f.eMAID = res.eMAID;
+    });
+    const std::array<std::array<uint8_t, 32>, 4> digests{chain_digest, key_digest, dh_digest, emaid_digest};
     const std::array<const char*, 4> uris{"#id1", "#id2", "#id3", "#id4"};
 
     auto& signature = doc.V2G_Message.Header.Signature;
