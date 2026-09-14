@@ -26,6 +26,7 @@ void EnergyManager::init() {
     energy_manager_config.switch_3ph1ph_power_hysteresis_W = config.switch_3ph1ph_power_hysteresis_W;
     energy_manager_config.switch_3ph1ph_time_hysteresis_s = config.switch_3ph1ph_time_hysteresis_s;
     energy_manager_config.broker_strategy = config.broker_strategy;
+    energy_manager_config.power_meter_aggregation_window_s = config.power_meter_aggregation_window_s;
 
     const auto enforce_limits_callback = [this](const std::vector<types::energy::EnforcedLimits>& limits) {
         const types::energy::NumberWithSource nonumber = {-9999.0};
