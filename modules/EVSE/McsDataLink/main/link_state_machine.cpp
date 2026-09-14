@@ -210,9 +210,9 @@ struct machine_data {
 struct SessionDef : public msm::front::state_machine_def<SessionDef> {
     machine_data* d{nullptr};
 
-    /// No link, and none being established. Reached at the start of a session, after a
-    /// communication initialization failure, and after the retry budget ran out - in the last two
-    /// cases the EV is still plugged in, which is why nothing here restarts on its own.
+    /// No link, and none being established. Reached at the start of a session and after the retry
+    /// budget ran out - in the latter case the EV is still plugged in, which is why nothing here
+    /// restarts on its own (V2G10-038: state B0 territory, EvseManager decides).
     struct Unmatched : public msm::front::state<> {
         template <class Event, class FSM> void on_entry(Event const&, FSM& fsm) {
             fsm.d->current = internal_state::unmatched;
@@ -257,8 +257,9 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
     };
 
     /// Waiting out the >= 3 s inter-attempt guard of IEC 61851-23-3 CC.5.2.3.2 before asking for
-    /// the restart routine. Entered from the outer machine on dlink_error, hence the explicit entry
-    /// point - it is the one state a session-wide event has to land on directly. A bare carrier
+    /// the restart routine. Entered from Matching when the initialization failed for good with
+    /// budget left, and from the outer machine on dlink_error - hence the explicit entry point, it
+    /// is the one state a session-wide event has to land on directly. A bare carrier
     /// edge deliberately has no row here: the guard time is mandatory and the link is meant to
     /// come back through the B0-to-B restart, not because the carrier flickered.
     struct RestartWait : public msm::front::state<>, public msm::front::explicit_entry<0> {
@@ -305,8 +306,9 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
         }
     };
 
-    /// Both bounds of V2G10-056 and -058 at once: the repetition window is open and an attempt is
-    /// left. Paired with no_repeat rather than with an unguarded fallback row, see the note above.
+    /// V2G10-056: the repetition window is open and an attempt is left. The three
+    /// link_detect_timeout guards (may_repeat, restart_after_failure, no_retries) are exhaustive
+    /// and mutually exclusive, see the note above.
     struct may_repeat {
         template <class EVT, class FSM, class Source, class Target>
         bool operator()(EVT const& evt, FSM& fsm, Source&, Target&) {
@@ -314,14 +316,25 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
         }
     };
 
-    struct no_repeat {
+    /// V2G10-058 with budget left: the initialization is over, the wake-up by basic signalling
+    /// (C_conn_retry, Table 8) takes over.
+    struct restart_after_failure {
         template <class EVT, class FSM, class Source, class Target>
         bool operator()(EVT const& evt, FSM& fsm, Source&, Target&) {
-            return not(evt.may_repeat and fsm.d->retries_left());
+            return not evt.may_repeat and fsm.d->retries_left();
         }
     };
 
     // --- actions ---------------------------------------------------------------------------
+
+    /// Initialization FAILED for good (V2G10-058) with budget left: spend an attempt on the
+    /// CC.5.2.3.2 restart. Nothing to withdraw, D-LINK_READY was never issued.
+    struct spend_init_retry {
+        template <class EVT, class FSM, class Source, class Target>
+        void operator()(EVT const&, FSM& fsm, Source&, Target&) {
+            fsm.d->take_retry();
+        }
+    };
 
     /// The communication initialization trigger (V2G10-055): open the TT_sync_repetition window.
     /// Only the enter_bcd edges do this - a restart after a link loss is a reconnect governed by
@@ -390,28 +403,29 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
     //
     // clang-format off
     using transition_table = mpl::vector<
-        //    +-------------+---------------------+-----------+-----------------------+--------------+
-        //    | Source      | Event               | Target    | Action                | Guard        |
-        //    +-------------+---------------------+-----------+-----------------------+--------------+
-        Row   < Unmatched   , enter_bcd           , Matched   , none                  , carrier      >,
-        Row   < Unmatched   , enter_bcd           , Matching  , begin_comm_init       , no_carrier   >,
-        Row   < Matching    , carrier_up          , Matched   , none                  , none         >,
-        Row   < Matching    , link_detect_timeout , Matching  , repeat_comm_init      , may_repeat   >,
-        Row   < Matching    , link_detect_timeout , Unmatched , none                  , no_repeat    >,
-        Row   < Matched     , carrier_down        , Matching  , restart_matching      , retries_left >,
-        Row   < Matched     , carrier_down        , Unmatched , give_up               , no_retries   >,
-        Row   < Matched     , link_lost           , Matching  , restart_matching      , retries_left >,
-        Row   < Matched     , link_lost           , Unmatched , give_up               , no_retries   >,
-        Row   < Matched     , dlink_pause         , Paused    , none                  , none         >,
-        Row   < Matched     , neighbor_reachable  , none      , publish_ev_mac        , none         >,
-        Row   < Paused      , carrier_up          , Matched   , none                  , none         >,
-        Row   < Paused      , neighbor_reachable  , Matched   , publish_ev_mac        , none         >,
-        Row   < RestartWait , retry_wait_elapsed  , Matched   , request_error_routine , carrier      >,
-        Row   < RestartWait , retry_wait_elapsed  , Matching  , request_error_routine , no_carrier   >,
-        Row   < RestartWait , enter_bcd           , Matched   , none                  , carrier      >,
-        Row   < RestartWait , enter_bcd           , Matching  , begin_comm_init       , no_carrier   >,
-        Row   < RestartWait , dlink_error         , none      , none                  , none         >
-        //    +-------------+---------------------+-----------+-----------------------+--------------+
+        //    +-------------+---------------------+-------------+-----------------------+-----------------------+
+        //    | Source      | Event               | Target      | Action                | Guard                 |
+        //    +-------------+---------------------+-------------+-----------------------+-----------------------+
+        Row   < Unmatched   , enter_bcd           , Matched     , none                  , carrier               >,
+        Row   < Unmatched   , enter_bcd           , Matching    , begin_comm_init       , no_carrier            >,
+        Row   < Matching    , carrier_up          , Matched     , none                  , none                  >,
+        Row   < Matching    , link_detect_timeout , Matching    , repeat_comm_init      , may_repeat            >,
+        Row   < Matching    , link_detect_timeout , RestartWait , spend_init_retry      , restart_after_failure >,
+        Row   < Matching    , link_detect_timeout , Unmatched   , none                  , no_retries            >,
+        Row   < Matched     , carrier_down        , Matching    , restart_matching      , retries_left          >,
+        Row   < Matched     , carrier_down        , Unmatched   , give_up               , no_retries            >,
+        Row   < Matched     , link_lost           , Matching    , restart_matching      , retries_left          >,
+        Row   < Matched     , link_lost           , Unmatched   , give_up               , no_retries            >,
+        Row   < Matched     , dlink_pause         , Paused      , none                  , none                  >,
+        Row   < Matched     , neighbor_reachable  , none        , publish_ev_mac        , none                  >,
+        Row   < Paused      , carrier_up          , Matched     , none                  , none                  >,
+        Row   < Paused      , neighbor_reachable  , Matched     , publish_ev_mac        , none                  >,
+        Row   < RestartWait , retry_wait_elapsed  , Matched     , request_error_routine , carrier               >,
+        Row   < RestartWait , retry_wait_elapsed  , Matching    , request_error_routine , no_carrier            >,
+        Row   < RestartWait , enter_bcd           , Matched     , none                  , carrier               >,
+        Row   < RestartWait , enter_bcd           , Matching    , begin_comm_init       , no_carrier            >,
+        Row   < RestartWait , dlink_error         , none        , none                  , none                  >
+        //    +-------------+---------------------+-------------+-----------------------+-----------------------+
         >;
     // clang-format on
 

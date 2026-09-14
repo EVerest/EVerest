@@ -33,8 +33,9 @@ enum class internal_state {
     /// liveness supervision are therefore suspended, so the machine leaves this state again on the
     /// first evidence that the session resumed (a carrier edge, or a neighbour answering).
     paused,
-    /// D-LINK_ERROR received and a retry is budgeted: waiting out the >= 3 s guard of
-    /// IEC 61851-23-3 CC.5.2.3.2 before asking for the restart routine. Published UNMATCHED.
+    /// D-LINK_ERROR received, or the initialization FAILED for good, and a retry is budgeted:
+    /// waiting out the >= 3 s guard of IEC 61851-23-3 CC.5.2.3.2 before asking for the restart
+    /// routine. Published UNMATCHED.
     retry_wait,
 };
 
@@ -139,7 +140,8 @@ public:
     void link_lost();
     /// TT_EV_link_detect expired: communication initialization FAILED (V2G10-054).
     /// \p may_repeat is whether TT_sync_repetition is still open, which together with the retry
-    /// budget decides whether the initialization is restarted (V2G10-056) or stopped (V2G10-058).
+    /// budget decides whether the initialization is repeated (V2G10-056), handed to the CC.5.2.3.2
+    /// restart (V2G10-058 with budget left), or stopped (budget gone).
     void link_detect_timeout(bool may_repeat);
     /// The CC.5.2.3.2 inter-attempt wait expired.
     void retry_wait_elapsed(bool carrier_up);

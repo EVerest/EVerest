@@ -140,17 +140,72 @@ TEST(LinkStateMachine, EnterBcdWithCarrierAlreadyUpMatchesImmediately) {
     EXPECT_TRUE(f.fsm().dlink_ready());
 }
 
-TEST(LinkStateMachine, LinkDetectTimeoutFailsCommunicationInitialisation) {
+// V2G10-054/-058 with budget left: UNMATCHED is published (no dlink_ready(false) - it was never
+// true) and the CC.5.2.3.2 restart takes over. On MCS no fresh enter_bcd can follow a failure.
+TEST(LinkStateMachine, LinkDetectTimeoutHandsOverToTheRestart) {
     fixture f;
     f.fsm().enter_bcd(false);
     (void)f.taken();
 
     f.fsm().link_detect_timeout(false);
 
-    // V2G10-054: back to UNMATCHED. No dlink_ready(false) - it was never true.
+    EXPECT_EQ(trace({"timer-link_detect", "state:UNMATCHED", "timer+retry_wait@3000"}), f.taken());
+    EXPECT_EQ(internal_state::retry_wait, f.fsm().state());
+    EXPECT_EQ(1, f.fsm().retry_count());
+
+    f.fsm().retry_wait_elapsed(true);
+    EXPECT_EQ(trace({"timer-retry_wait", "error_routine", "state:MATCHED", "ready:1"}), f.taken())
+        << "a carrier that came up late is picked up by the re-arm";
+}
+
+TEST(LinkStateMachine, LinkDetectTimeoutRestartWithoutCarrierRunsLinkDetectAgain) {
+    fixture f;
+    f.fsm().enter_bcd(false);
+    (void)f.taken();
+    f.fsm().link_detect_timeout(false);
+    (void)f.taken();
+
+    f.fsm().retry_wait_elapsed(false);
+    EXPECT_EQ(trace({"timer-retry_wait", "error_routine", "state:MATCHING", "timer+link_detect@4000"}), f.taken())
+        << "no sync_repetition window: this is a C_conn_retry, not a new comm-init";
+
+    f.fsm().carrier_up();
+    EXPECT_EQ(trace({"timer-link_detect", "state:MATCHED", "ready:1"}), f.taken());
+}
+
+TEST(LinkStateMachine, LinkDetectTimeoutWithoutBudgetFailsCommunicationInitialisation) {
+    auto config = default_config();
+    config.conn_retry_max = 0;
+    fixture f(config);
+    f.fsm().enter_bcd(false);
+    (void)f.taken();
+
+    f.fsm().link_detect_timeout(false);
+
     EXPECT_EQ(trace({"timer-link_detect", "state:UNMATCHED"}), f.taken());
     EXPECT_EQ(internal_state::unmatched, f.fsm().state());
-    EXPECT_EQ(0, f.fsm().retry_count()) << "a failed first attempt does not spend the retry budget";
+    EXPECT_EQ(0, f.fsm().retry_count());
+}
+
+TEST(LinkStateMachine, RepeatedInitialisationFailuresExhaustTheBudget) {
+    auto config = default_config();
+    config.conn_retry_max = 2;
+    fixture f(config);
+    f.fsm().enter_bcd(false);
+    (void)f.taken();
+
+    for (int attempt = 1; attempt <= 2; ++attempt) {
+        f.fsm().link_detect_timeout(false);
+        ASSERT_EQ(internal_state::retry_wait, f.fsm().state()) << "attempt " << attempt;
+        ASSERT_EQ(attempt, f.fsm().retry_count());
+        f.fsm().retry_wait_elapsed(false);
+        (void)f.taken();
+        ASSERT_EQ(internal_state::matching, f.fsm().state());
+    }
+
+    f.fsm().link_detect_timeout(false);
+    EXPECT_EQ(trace({"timer-link_detect", "state:UNMATCHED"}), f.taken());
+    EXPECT_EQ(internal_state::unmatched, f.fsm().state()) << "budget exhausted: no further restart";
 }
 
 TEST(LinkStateMachine, LeaveBcdTearsDownTheLink) {
@@ -250,16 +305,19 @@ TEST(LinkStateMachine, RestartedMatchingWaitsForAFreshCarrierEdge) {
     EXPECT_EQ(trace({"timer-link_detect", "state:MATCHED", "ready:1"}), f.taken());
 }
 
-TEST(LinkStateMachine, LivenessLossThatDoesNotRecoverEndsInCommunicationInitialisationFailed) {
+// The loss spent one attempt, the link not coming back within TT_EV_link_detect spends another.
+TEST(LinkStateMachine, LivenessLossThatDoesNotRecoverHandsOverToTheRestart) {
     fixture f;
     f.reach_matched();
     f.fsm().link_lost();
     (void)f.taken();
+    ASSERT_EQ(1, f.fsm().retry_count());
 
     f.fsm().link_detect_timeout(false);
 
-    EXPECT_EQ(trace({"timer-link_detect", "state:UNMATCHED"}), f.taken());
-    EXPECT_EQ(internal_state::unmatched, f.fsm().state());
+    EXPECT_EQ(trace({"timer-link_detect", "state:UNMATCHED", "timer+retry_wait@3000"}), f.taken());
+    EXPECT_EQ(internal_state::retry_wait, f.fsm().state());
+    EXPECT_EQ(2, f.fsm().retry_count());
 }
 
 TEST(LinkStateMachine, CarrierLossWithoutRetryBudgetStaysUnmatched) {
@@ -920,7 +978,7 @@ TEST(LinkStateMachine, CommunicationInitialisationIsRepeatedWhileTheWindowIsOpen
     EXPECT_EQ(1, f.fsm().retry_count()) << "a repetition costs an attempt so it cannot loop forever";
 }
 
-// V2G10-058: once the window is gone the initialization stops.
+// V2G10-058: once the window is gone the initialization stops; the restart takes over.
 TEST(LinkStateMachine, TheInitialisationStopsOnceTheWindowClosed) {
     auto config = default_config();
     config.link_detect_timeout_ms = 1000;
@@ -932,8 +990,9 @@ TEST(LinkStateMachine, TheInitialisationStopsOnceTheWindowClosed) {
 
     f.fsm().link_detect_timeout(false);
 
-    EXPECT_EQ(trace({"timer-link_detect", "state:UNMATCHED"}), f.taken());
-    EXPECT_EQ(internal_state::unmatched, f.fsm().state());
+    EXPECT_EQ(trace({"timer-link_detect", "state:UNMATCHED", "timer+retry_wait@3000"}), f.taken());
+    EXPECT_EQ(internal_state::retry_wait, f.fsm().state());
+    EXPECT_EQ(2, f.fsm().retry_count());
 }
 
 TEST(LinkStateMachine, RepetitionIsAlsoBoundedByTheRetryBudget) {

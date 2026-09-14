@@ -117,9 +117,15 @@ be operational before the EV is plugged in:
 * Expiry means communication initialization **FAILED** (**V2G10-054**). It is then
   **repeated** while ``TT_sync_repetition`` (``sync_repetition_ms``) has not
   expired and the EV is still present (**V2G10-056**), each repetition costing one
-  attempt from the retry budget so it cannot loop; once the window closes or the
-  budget is gone the initialization stops (**V2G10-058**) and the state returns to
-  ``UNMATCHED``. EvseManager owns what happens to the session from there.
+  attempt from the retry budget so it cannot loop. Once the window has closed the
+  initialization stops (**V2G10-058**). With budget left that hands over to the
+  CC.5.2.3.2 restart below (``C_conn_retry`` is scoped by Table 8 to "communication
+  setup retries by wakeup trigger by basic signalling"): one attempt is spent, the
+  3 s guard runs, ``request_error_routine`` is published and matching re-arms on
+  the carrier as it then stands. On MCS this is the only way out - the synthesized
+  CP state never leaves B, so no fresh ``enter_bcd`` follows a failure. With the
+  budget gone the state returns to ``UNMATCHED`` and EvseManager owns what happens
+  to the session from there.
 
   .. note::
 
