@@ -69,6 +69,10 @@ struct machine_data {
     int retries{0};
     int ignored{0};
     std::string published_mac{};
+    /// A request_error_routine has been published and its reset has not arrived yet.
+    /// Charger::request_error_sequence() also fires signal_slac_reset, i.e. reset(false): that
+    /// reset is the routine's side effect, not a session end, and is absorbed once.
+    bool routine_reset_pending{false};
 
     // --- effect emitters -------------------------------------------------------------------
 
@@ -343,6 +347,7 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
     struct request_error_routine {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
+            fsm.d->routine_reset_pending = true;
             fsm.d->emit_error_routine();
         }
     };
@@ -432,6 +437,20 @@ struct link_def : public msm::front::state_machine_def<link_def> {
         }
     };
 
+    struct routine_reset_pending {
+        template <class EVT, class FSM, class Source, class Target>
+        bool operator()(EVT const&, FSM& fsm, Source&, Target&) {
+            return fsm.d->routine_reset_pending;
+        }
+    };
+
+    struct no_routine_reset_pending {
+        template <class EVT, class FSM, class Source, class Target>
+        bool operator()(EVT const&, FSM& fsm, Source&, Target&) {
+            return not fsm.d->routine_reset_pending;
+        }
+    };
+
     // --- actions ---------------------------------------------------------------------------
 
     /// The EV connection ends or is restarted from the top: withdraw D-LINK_READY and refill the
@@ -439,8 +458,19 @@ struct link_def : public msm::front::state_machine_def<link_def> {
     struct end_connection {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
+            fsm.d->routine_reset_pending = false;
             fsm.d->withdraw_dlink_ready();
             fsm.d->refill_retries();
+        }
+    };
+
+    /// The reset EvseManager's error sequence sends after request_error_routine. On MCS it would
+    /// land in Unmatched with no enter_bcd to follow (the synthesized CP state stays B), and it
+    /// would refill the budget conn_retry_max is meant to bound. Consumed without effect.
+    struct absorb_routine_reset {
+        template <class EVT, class FSM, class Source, class Target>
+        void operator()(EVT const&, FSM& fsm, Source&, Target&) {
+            fsm.d->routine_reset_pending = false;
         }
     };
 
@@ -477,19 +507,26 @@ struct link_def : public msm::front::state_machine_def<link_def> {
     // and EvseSlacNeo treat reset(false) as "reset" for the same reason; only the BUSlac bring-up
     // tool uses the flag as start/stop.
     //
-    // The dlink_error guards are mutually exclusive, so nothing depends on row order here either.
+    // The reset that follows a request_error_routine is the routine's own (see
+    // absorb_routine_reset); the pending flag is cleared by that reset, leave_bcd or
+    // dlink_terminate, never by time - a routine EvseManager did not run leaves no reset to absorb,
+    // and the next reset then comes after a leave_bcd.
+    //
+    // The reset and dlink_error guard pairs are mutually exclusive, so nothing depends on row order
+    // here either.
     //
     // clang-format off
     using transition_table = mpl::vector<
-        //    +---------+-----------------+-------------+----------------+--------------+
-        //    | Source  | Event           | Target      | Action         | Guard        |
-        //    +---------+-----------------+-------------+----------------+--------------+
-        Row   < Session , reset           , Session     , end_connection , none         >,
-        Row   < Session , leave_bcd       , Session     , end_connection , none         >,
-        Row   < Session , dlink_terminate , Session     , end_connection , none         >,
-        Row   < Session , dlink_error     , RestartWait , spend_retry    , retries_left >,
-        Row   < Session , dlink_error     , Session     , give_up        , no_retries   >
-        //    +---------+-----------------+-------------+----------------+--------------+
+        //    +---------+-----------------+-------------+----------------------+--------------------------+
+        //    | Source  | Event           | Target      | Action               | Guard                    |
+        //    +---------+-----------------+-------------+----------------------+--------------------------+
+        Row   < Session , reset           , none        , absorb_routine_reset , routine_reset_pending    >,
+        Row   < Session , reset           , Session     , end_connection       , no_routine_reset_pending >,
+        Row   < Session , leave_bcd       , Session     , end_connection       , none                     >,
+        Row   < Session , dlink_terminate , Session     , end_connection       , none                     >,
+        Row   < Session , dlink_error     , RestartWait , spend_retry          , retries_left             >,
+        Row   < Session , dlink_error     , Session     , give_up              , no_retries               >
+        //    +---------+-----------------+-------------+----------------------+--------------------------+
         >;
     // clang-format on
 

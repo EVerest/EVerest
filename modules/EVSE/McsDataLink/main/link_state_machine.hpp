@@ -121,7 +121,8 @@ public:
 
     /// reset(enable) command: tear the data link down and return to UNMATCHED with a fresh retry
     /// budget. `enable` is accepted and logged but deliberately does not latch matching off - see
-    /// the note above the transition table in link_state_machine.cpp for why.
+    /// the note above the transition table in link_state_machine.cpp for why. The first reset after
+    /// a request_error_routine is the error sequence's own SLAC reset and is consumed without effect.
     void reset(bool enable);
     /// enter_bcd command: EV detected by basic signalling. \p carrier_up is the current carrier
     /// level, because SPE is point to point and the PHY can be operational before plug-in - per
@@ -167,8 +168,9 @@ public:
     /// assert that an event was ignored rather than silently mishandled.
     ///
     /// Not every event that does nothing is counted here. An event a state deliberately *consumes*
-    /// without acting - currently only a repeated dlink_error while the restart guard is already
-    /// running - took a transition, so it is not counted even though nothing observable happened.
+    /// without acting - a repeated dlink_error while the restart guard is already running, the
+    /// reset that follows a request_error_routine - took a transition, so it is not counted even
+    /// though nothing observable happened.
     /// The counter measures "no rule matched", not "nothing happened".
     int ignored_events() const;
 

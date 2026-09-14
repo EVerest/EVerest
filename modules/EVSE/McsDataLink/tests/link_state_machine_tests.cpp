@@ -385,6 +385,104 @@ TEST(LinkStateMachine, DlinkErrorRestartWithoutCarrierWaitsForTheLinkInMatching)
     EXPECT_EQ(trace({"timer-link_detect", "state:MATCHED", "ready:1"}), f.taken());
 }
 
+// Charger::request_error_sequence() fires signal_slac_reset -> reset(false) besides the CP toggle.
+TEST(LinkStateMachine, TheErrorRoutinesOwnResetIsAbsorbed) {
+    fixture f;
+    f.reach_matched();
+    f.fsm().dlink_error();
+    f.fsm().retry_wait_elapsed(true);
+    (void)f.taken();
+    ASSERT_EQ(internal_state::matched, f.fsm().state());
+
+    f.fsm().reset(false);
+    EXPECT_TRUE(f.taken().empty());
+    EXPECT_EQ(internal_state::matched, f.fsm().state());
+    EXPECT_TRUE(f.fsm().dlink_ready());
+    EXPECT_EQ(1, f.fsm().retry_count()) << "the routine's reset must not refill the budget";
+    EXPECT_EQ(0, f.fsm().ignored_events()) << "consumed, not ignored";
+
+    f.fsm().reset(false);
+    EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken()) << "only one reset is the routine's";
+    EXPECT_EQ(0, f.fsm().retry_count());
+}
+
+TEST(LinkStateMachine, TheErrorRoutinesOwnResetIsAbsorbedWhileMatchingToo) {
+    fixture f;
+    f.reach_matched();
+    f.fsm().dlink_error();
+    f.fsm().retry_wait_elapsed(false);
+    (void)f.taken();
+    ASSERT_EQ(internal_state::matching, f.fsm().state());
+
+    f.fsm().reset(false);
+    EXPECT_TRUE(f.taken().empty());
+    EXPECT_EQ(internal_state::matching, f.fsm().state()) << "TT_EV_link_detect keeps running";
+
+    f.fsm().carrier_up();
+    EXPECT_EQ(trace({"timer-link_detect", "state:MATCHED", "ready:1"}), f.taken());
+}
+
+TEST(LinkStateMachine, ConnRetryMaxBoundsTheErrorRoutineRestarts) {
+    auto config = default_config();
+    config.conn_retry_max = 1;
+    fixture f(config);
+    f.reach_matched();
+
+    f.fsm().dlink_error();
+    (void)f.taken();
+    f.fsm().retry_wait_elapsed(true);
+    EXPECT_EQ(trace({"timer-retry_wait", "error_routine", "state:MATCHED", "ready:1"}), f.taken());
+    f.fsm().reset(false);
+    EXPECT_TRUE(f.taken().empty());
+
+    f.fsm().dlink_error();
+    EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken()) << "budget spent: no second routine";
+    EXPECT_EQ(internal_state::unmatched, f.fsm().state());
+}
+
+TEST(LinkStateMachine, LeaveBcdAfterTheErrorRoutineForgetsThePendingReset) {
+    fixture f;
+    f.reach_matched();
+    f.fsm().dlink_error();
+    f.fsm().retry_wait_elapsed(true);
+    f.fsm().leave_bcd();
+    f.fsm().enter_bcd(true);
+    (void)f.taken();
+    ASSERT_EQ(internal_state::matched, f.fsm().state());
+
+    f.fsm().reset(false);
+    EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken()) << "a new connection's reset is a teardown";
+}
+
+TEST(LinkStateMachine, DlinkTerminateAfterTheErrorRoutineForgetsThePendingReset) {
+    fixture f;
+    f.reach_matched();
+    f.fsm().dlink_error();
+    f.fsm().retry_wait_elapsed(true);
+    f.fsm().dlink_terminate();
+    f.fsm().enter_bcd(true);
+    (void)f.taken();
+    ASSERT_EQ(internal_state::matched, f.fsm().state());
+
+    f.fsm().reset(false);
+    EXPECT_EQ(trace({"ready:0", "state:UNMATCHED"}), f.taken());
+}
+
+TEST(LinkStateMachine, ADlinkErrorBeforeTheRoutinesResetArrivesKeepsItPending) {
+    fixture f;
+    f.reach_matched();
+    f.fsm().dlink_error();
+    f.fsm().retry_wait_elapsed(true);
+    f.fsm().dlink_error();
+    (void)f.taken();
+    ASSERT_EQ(internal_state::retry_wait, f.fsm().state());
+
+    f.fsm().reset(false);
+    EXPECT_TRUE(f.taken().empty()) << "the guard keeps running";
+    EXPECT_EQ(internal_state::retry_wait, f.fsm().state());
+    EXPECT_EQ(2, f.fsm().retry_count());
+}
+
 TEST(LinkStateMachine, DlinkErrorWithoutRetryBudgetNeverRequestsARestart) {
     auto config = default_config();
     config.conn_retry_max = 0;
