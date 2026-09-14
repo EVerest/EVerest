@@ -188,7 +188,14 @@ context the firmware does not have:
 #. Publish ``request_error_routine``. ``EvseManager`` turns that into
    ``Charger::request_error_sequence()``, whose CP/CE toggle is the B0-to-B
    transition the restart method asks for - that toggle is the wake signal
-   **for the EV**.
+   **for the EV**. The sequence also fires ``signal_slac_reset`` ->
+   ``reset(false)``. The module absorbs that one reset: as a teardown it would
+   land in ``UNMATCHED`` with no ``enter_bcd`` to follow (note below) and refill
+   the ``C_conn_retry`` budget on every restart. ``leave_bcd`` and
+   ``dlink_terminate`` clear the expectation. The sequence only runs in Charger
+   states ``WaitingForAuthentication`` and ``PrepareCharging``; on DC the
+   ``dlink_error`` also starts a ``reinit_duration_ms`` reinit (default 3000 ms,
+   same as ``retry_wait_ms``), during which the request is a no-op.
 #. In the same step the module re-arms matching itself: straight back to
    ``MATCHED`` when the carrier still stands (both V2G10-023 conditions hold
    again), or ``MATCHING`` with TT_EV_link_detect when it does not (the
