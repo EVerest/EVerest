@@ -237,6 +237,22 @@ bool digest_signed_info(const iso2_SignedInfoType& signed_info, std::array<uint8
     return sha256(buffer.data(), exi_bitstream_get_length(&stream), out);
 }
 
+// The fragment models eMAID with the schema-informed element fragment grammar, so its member is a
+// distinct generated type from the message's EMAIDType and the two character fields are copied
+// across. The asserts fire if either buffer stops matching, rather than truncating in silence.
+iso2_eMAIDElementFragment as_fragment(const iso2_EMAIDType& emaid) {
+    iso2_eMAIDElementFragment fragment{};
+    static_assert(sizeof(fragment.Id.characters) == sizeof(emaid.Id.characters));
+    static_assert(sizeof(fragment.CONTENT.characters) == sizeof(emaid.CONTENT.characters));
+    fragment.Id_isUsed = 1;
+    fragment.Id.charactersLen = emaid.Id.charactersLen;
+    std::memcpy(fragment.Id.characters, emaid.Id.characters, sizeof(fragment.Id.characters));
+    fragment.CONTENT_isUsed = 1;
+    fragment.CONTENT.charactersLen = emaid.CONTENT.charactersLen;
+    std::memcpy(fragment.CONTENT.characters, emaid.CONTENT.characters, sizeof(fragment.CONTENT.characters));
+    return fragment;
+}
+
 // SHA-256 over an iso2_exiFragment carrying the single element `fill` sets.
 // `fill` assigns the element rather than memcpy'ing it: the fragment member and the message
 // member are separate generated types that happen to coincide today, and a memcpy between
@@ -323,7 +339,7 @@ bool verify_res_references(const iso2_CertificateInstallationResType& res, const
             }) and
         add("eMAID", res.eMAID.Id.characters, res.eMAID.Id.charactersLen, [&res](iso2_exiFragment& f) {
             f.eMAID_isUsed = 1;
-            f.eMAID = res.eMAID;
+            f.eMAID = as_fragment(res.eMAID);
         });
     if (not built) {
         return false;

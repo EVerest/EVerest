@@ -329,6 +329,22 @@ void fill_res(iso2_exiDocument& doc, const std::vector<uint8_t>& sa_leaf_der, co
     set_chars(res.eMAID.CONTENT, emaid);
 }
 
+// The fragment models eMAID with the schema-informed element fragment grammar, so its member is a
+// distinct generated type from the message's EMAIDType and the two character fields are copied
+// across. The asserts fire if either buffer stops matching, rather than truncating in silence.
+iso2_eMAIDElementFragment as_fragment(const iso2_EMAIDType& emaid) {
+    iso2_eMAIDElementFragment fragment{};
+    static_assert(sizeof(fragment.Id.characters) == sizeof(emaid.Id.characters));
+    static_assert(sizeof(fragment.CONTENT.characters) == sizeof(emaid.CONTENT.characters));
+    fragment.Id_isUsed = 1;
+    fragment.Id.charactersLen = emaid.Id.charactersLen;
+    std::memcpy(fragment.Id.characters, emaid.Id.characters, sizeof(fragment.Id.characters));
+    fragment.CONTENT_isUsed = 1;
+    fragment.CONTENT.charactersLen = emaid.CONTENT.charactersLen;
+    std::memcpy(fragment.CONTENT.characters, emaid.CONTENT.characters, sizeof(fragment.CONTENT.characters));
+    return fragment;
+}
+
 // The CPS half: four References over the current element contents, ECDSA-signed with `leaf_key`.
 void sign_res(iso2_exiDocument& doc, EVP_PKEY* leaf_key) {
     const auto& res = doc.V2G_Message.Body.CertificateInstallationRes;
@@ -346,7 +362,7 @@ void sign_res(iso2_exiDocument& doc, EVP_PKEY* leaf_key) {
     });
     const auto emaid_digest = fragment_digest([&res](iso2_exiFragment& f) {
         f.eMAID_isUsed = 1;
-        f.eMAID = res.eMAID;
+        f.eMAID = as_fragment(res.eMAID);
     });
     const std::array<std::array<uint8_t, 32>, 4> digests{chain_digest, key_digest, dh_digest, emaid_digest};
     const std::array<const char*, 4> uris{"#id1", "#id2", "#id3", "#id4"};
