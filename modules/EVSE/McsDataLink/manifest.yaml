@@ -82,7 +82,6 @@ provides:
         type: boolean
         default: true
 metadata:
-  base_license: https://directory.fsf.org/wiki/License:BSD-3-Clause-Clear
   license: https://opensource.org/licenses/Apache-2.0
   authors:
     - Jan Christoph Habig (Pionix GmbH)
