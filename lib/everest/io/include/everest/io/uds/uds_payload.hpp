@@ -29,6 +29,21 @@ using shared_fd = std::shared_ptr<event::unique_fd>;
 using uds_credentials = socket::peer_credentials;
 
 /**
+ * @struct uds_info
+ * @brief Address of a unix domain socket.
+ */
+struct uds_info {
+    /** Filesystem path or abstract name */
+    std::string path;
+    /**
+     * True for the abstract namespace: no file, gone with the last socket, and no access control:
+     * every process in the network namespace may connect. A path with a mode is the option that
+     * has one.
+     */
+    bool is_abstract{true};
+};
+
+/**
  * @struct uds_payload
  * @brief One unix domain socket message: bytes, optional file descriptors, optional sender
  * credentials.
@@ -116,13 +131,25 @@ struct uds_payload {
 
     /**
      * @brief Sender identity, set on receive if the socket was opened with peer credentials.
-     * @details Filled by the kernel. Set on an outgoing payload it is ignored.
+     * @details Filled by the kernel, datagram sockets only. A SEQPACKET connection has one peer for
+     * its whole life and answers \ref uds_seqpacket_socket_base::peer_credentials instead; this
+     * stays empty there. Set on an outgoing payload it is ignored.
      */
     std::optional<uds_credentials> credentials;
 
     /**
+     * @brief The other end of this message.
+     * @details Set on receive to the sender; an unnamed sender leaves an empty path. On a payload a
+     * \ref uds_server_socket sends it is the destination, so a reply built from the request, or a
+     * copy of it, reaches whoever asked even when another client has spoken since. A connected
+     * socket ignores it on send. Empty on a payload that was never received.
+     */
+    std::optional<uds_info> peer;
+
+    /**
      * @var max_size
-     * @brief Upper bound of \ref buffer. Larger messages are dropped by the receiver.
+     * @brief Upper bound of \ref buffer. A larger message is dropped by a datagram receiver and
+     * fails a SEQPACKET connection with EMSGSIZE.
      */
     static constexpr size_t max_size = 64 * 1024;
 

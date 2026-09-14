@@ -10,6 +10,8 @@
 #include <stdexcept>
 #include <string>
 #include <sys/types.h>
+#include <sys/un.h>
+#include <utility>
 #include <vector>
 
 #include <everest/io/event/unique_fd.hpp>
@@ -224,6 +226,19 @@ event::unique_fd open_raw_promiscuous_socket(std::string const& if_name);
 #endif
 
 /**
+ * @brief A sockaddr_un naming @p name, and the exact length of that address.
+ * @details An abstract name is a leading NUL followed by exactly the name, with no terminator, so
+ * its length carries the name and cannot be recovered from the bytes. A pathname is NUL
+ * terminated, except that Linux lets it fill sun_path completely, in which case the address length
+ * is the whole structure and the terminator is implied.
+ * @param[in] name Filesystem path or abstract name
+ * @param[in] use_abstract True for the abstract namespace
+ * @return The address and its length
+ * @throws socket_error EINVAL for an empty name, ENAMETOOLONG for one that does not fit sun_path
+ */
+std::pair<struct sockaddr_un, socklen_t> make_uds_address(std::string const& name, bool use_abstract);
+
+/**
  * @brief Open a unix domain datagram socket connected to a server.
  * @param[in] server_name Server path or abstract name
  * @param[in] server_is_abstract True if @p server_name is abstract
@@ -244,11 +259,16 @@ event::unique_fd open_uds_client_socket(std::string const& server_name, bool ser
  * @brief Open a unix domain datagram socket bound to @p server_name.
  * @details A stale socket file (nothing bound to it) is removed first. A live socket fails with
  * EADDRINUSE, a file that is not a socket with EEXIST. Connecting to a socket file needs write
- * permission on it.
+ * permission on it. An abstract name has no file and no access control: every process in the
+ * network namespace may send to it.
  * @param[in] server_name Path or abstract name to bind
  * @param[in] is_abstract True for the abstract namespace
- * @param[in] mode Permissions of the socket file, set right after bind. Only with a path; with an
- * abstract name EINVAL is thrown
+ * @param[in] mode Permissions of the socket file, in force before the file appears at
+ * @p server_name: the socket is bound under a temporary name beside it, given its mode, and linked
+ * to @p server_name only then, so no client is admitted in between. The socket keeps that staging
+ * name as its own address, which is what getsockname() and a client's received uds_payload::peer
+ * show. Without one the file gets what the umask leaves of 0777. Only with a path; with an abstract
+ * name EINVAL is thrown
  * @return The bound socket, blocking
  * @throws socket_error carrying the errno on failure
  */
@@ -281,7 +301,10 @@ event::unique_fd open_uds_seqpacket_client_socket(std::string const& server_name
 
 /**
  * @struct peer_credentials
- * @brief Identity of a unix domain socket peer as recorded by the kernel. Cannot be forged.
+ * @brief Identity of a unix domain socket peer as recorded by the kernel.
+ * @details Cannot be forged by an unprivileged sender: the kernel refuses a claimed pid or uid
+ * that is not the sender's own. A process with CAP_SYS_ADMIN may declare another identity, and a
+ * pid is reused once its process is gone, which is what \ref get_peer_pidfd is for.
  */
 struct peer_credentials {
     pid_t pid{0};

@@ -92,9 +92,15 @@ connection through the error handler and reconnects on `reset()`. A peer is sing
 error.
 
 Names are either a filesystem path or a name in the abstract namespace (`is_abstract`, default).
-A path is a file: it can be given permissions (`mode`, connecting needs write permission), a stale
-one is cleaned up, a live one is never stolen. Abstract names need no directory and vanish with the
-socket.
+A path is a file: it can be given permissions (`mode`, in force before the file appears; connecting
+needs write permission), a stale one is cleaned up, a live one is never stolen. Abstract names need
+no directory and vanish with the socket, and have no access control at all: any process in the
+network namespace can reach one. Use a path with a `mode` where that matters.
+
+A received payload names its sender in `peer`. A `uds_server` sends a payload to its `peer`, so a
+reply built from the request, or a copy of it, reaches whoever asked even if other clients have
+spoken since; a payload without one goes to the last sender heard, which is only right with a
+single client.
 
 Descriptors ride on the payload: `payload.attach_duplicate(fd)` / `payload.attach(std::move(fd))`
 to send, `payload.fds` / `payload.fd(i)` on receive. They are owned and shared, so a queued payload
@@ -108,7 +114,9 @@ server.set_rx_handler([](uds::uds_payload const& p, auto& device) {
     if (p.credentials and p.has_fds()) {
         use(p.fd(), p.credentials->pid);
     }
-    device.tx(p); // reply to the sender
+    auto reply = p;              // keeps p.peer: the reply is addressed to the sender
+    reply.set_message("done");
+    device.tx(reply);
 });
 ```
 

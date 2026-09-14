@@ -17,6 +17,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <thread>
+#include <tuple>
 #include <unistd.h>
 #include <vector>
 
@@ -26,32 +27,6 @@ using everest::lib::io::uds::shared_fd;
 using everest::lib::io::uds::uds_credentials;
 using everest::lib::io::uds::uds_info;
 using everest::lib::io::uds::uds_payload;
-
-/**
- * @brief Fill a sockaddr_un naming \p destination and report its exact length.
- * @details An abstract name is a leading NUL followed by exactly the name, with no terminator,
- * so the length carries the name and cannot be recomputed from the bytes. A pathname is NUL
- * terminated, except that Linux lets it fill sun_path completely, in which case the length is the
- * whole structure. A name that does not fit yields a zero length, which no send accepts.
- */
-socklen_t fill_uds_address(struct sockaddr_un& addr, uds_info const& destination) {
-    addr = {};
-    addr.sun_family = AF_UNIX;
-
-    constexpr size_t sun_path_size = sizeof(addr.sun_path);
-    const size_t max_name_len = destination.is_abstract ? sun_path_size - 1 : sun_path_size;
-    if (destination.path.empty() or destination.path.length() > max_name_len) {
-        return 0;
-    }
-
-    constexpr auto family_offset = offsetof(struct sockaddr_un, sun_path);
-    if (destination.is_abstract) {
-        std::memcpy(addr.sun_path + 1, destination.path.data(), destination.path.length());
-        return static_cast<socklen_t>(family_offset + 1 + destination.path.length());
-    }
-    std::memcpy(addr.sun_path, destination.path.data(), destination.path.length());
-    return static_cast<socklen_t>(family_offset + std::min(destination.path.length() + 1, sun_path_size));
-}
 
 /**
  * @brief One sendmsg/recvmsg call, with the control message buffer an SCM_RIGHTS transfer needs.
@@ -183,13 +158,18 @@ void uds_socket_base::adopt(event::unique_fd&& fd, std::string bound_path) {
     m_bound_path = std::move(bound_path);
     m_connect_error = 0;
     m_io_error = 0;
+    m_error_text.clear();
+    m_rx_truncated = false;
 }
 
-void uds_socket_base::record_connect_failure(int error) {
+void uds_socket_base::record_connect_failure(int error, std::string text) {
     release_bound_path();
     m_owned_uds_fd.close();
-    m_connect_error = error;
+    // A failure without an errno (a helper that throws std::runtime_error) is still a failure: 0
+    // would read as healthy to the event client and leave it waiting on a socket that never opens.
+    m_connect_error = error != 0 ? error : EIO;
     m_io_error = 0;
+    m_error_text = std::move(text);
 }
 
 void uds_socket_base::discard() {
@@ -197,6 +177,8 @@ void uds_socket_base::discard() {
     m_owned_uds_fd.close();
     m_connect_error = 0;
     m_io_error = 0;
+    m_error_text.clear();
+    m_rx_truncated = false;
 }
 
 void uds_socket_base::record_io_error(int error) {
@@ -233,6 +215,14 @@ int uds_socket_base::get_error() const {
     return socket::get_pending_error(m_owned_uds_fd);
 }
 
+std::string const& uds_socket_base::get_error_string() const {
+    return m_error_text;
+}
+
+bool uds_socket_base::last_rx_truncated() const {
+    return m_rx_truncated;
+}
+
 bool uds_socket_base::tx_impl(uds_payload const& payload) {
     if (not is_open()) {
         return false;
@@ -266,10 +256,12 @@ bool uds_socket_base::tx_impl(uds_payload const& payload, uds_info const& destin
     }
 
     struct sockaddr_un peer_addr {};
-    const auto peer_addr_len = fill_uds_address(peer_addr, destination);
-    if (peer_addr_len == 0) {
-        // Nowhere to send to: an unnamed sender cannot be answered. Dropped like any undeliverable
-        // datagram; the socket itself is fine.
+    socklen_t peer_addr_len = 0;
+    try {
+        std::tie(peer_addr, peer_addr_len) = socket::make_uds_address(destination.path, destination.is_abstract);
+    } catch (socket::socket_error const&) {
+        // Nowhere to send to: an unnamed sender cannot be answered, and a name too long for
+        // sun_path names nobody. Dropped like any undeliverable datagram; the socket itself is fine.
         return true;
     }
 
@@ -305,6 +297,7 @@ std::optional<uds_info> uds_socket_base::rx_impl(uds_payload& payload) {
 
     // A received descriptor must not leak into a child of this process any more than one this
     // library opened itself would.
+    m_rx_truncated = false;
     const ssize_t payload_size = ::recvmsg(m_owned_uds_fd, &ctx.msg, MSG_CMSG_CLOEXEC);
     if (payload_size < 0) {
         record_io_error(errno);
@@ -324,6 +317,7 @@ std::optional<uds_info> uds_socket_base::rx_impl(uds_payload& payload) {
         for (int fd : received_fds) {
             ::close(fd);
         }
+        m_rx_truncated = true;
         return std::nullopt;
     }
 
@@ -344,7 +338,8 @@ std::optional<uds_info> uds_socket_base::rx_impl(uds_payload& payload) {
     const size_t name_len = std::min<size_t>(ctx.msg.msg_namelen, sizeof(peer_addr));
     if (name_len <= family_offset) {
         // An unbound sender has no address, so nothing can be sent back to it.
-        return uds_info{"", false};
+        payload.peer = uds_info{"", false};
+        return payload.peer;
     }
     const size_t path_capacity = name_len - family_offset;
 
@@ -354,7 +349,10 @@ std::optional<uds_info> uds_socket_base::rx_impl(uds_payload& payload) {
     auto parsed_path = is_abstract ? std::string(peer_addr.sun_path + 1, path_capacity - 1)
                                    : std::string(peer_addr.sun_path, ::strnlen(peer_addr.sun_path, path_capacity));
 
-    return uds_info{std::move(parsed_path), is_abstract};
+    // The payload carries its sender, so a reply made from it is addressed at composition, not at
+    // the later write.
+    payload.peer = uds_info{std::move(parsed_path), is_abstract};
+    return payload.peer;
 }
 
 /////////////////////////////////////////////////
@@ -372,22 +370,27 @@ bool uds_client_socket::setup(std::string const& remote, bool remote_abstract, s
 
 void uds_client_socket::connect(std::function<void(bool, int)> const& setup_cb) {
     int error = 0;
+    std::string text;
     try {
-        auto socket = socket::open_uds_client_socket(m_remote, m_remote_abstract, m_local, m_local_abstract,
-                                                     /*client_autobind=*/m_local.empty());
-        socket::set_non_blocking(socket);
+        // Adopted before the remaining steps: a step that fails after the bind then takes the bound
+        // file down with the socket instead of leaving it behind.
+        adopt(socket::open_uds_client_socket(m_remote, m_remote_abstract, m_local, m_local_abstract,
+                                             /*client_autobind=*/m_local.empty()),
+              m_local_abstract ? std::string{} : m_local);
+        socket::set_non_blocking(get_fd());
         if (m_with_peer_credentials) {
-            socket::request_peer_credentials(socket);
+            socket::request_peer_credentials(get_fd());
         }
-        const auto fd = static_cast<int>(socket);
-        adopt(std::move(socket), m_local_abstract ? std::string{} : m_local);
-        setup_cb(true, fd);
+        setup_cb(true, get_fd());
         return;
     } catch (socket::socket_error const& e) {
         error = e.error();
+        text = e.what();
+    } catch (std::exception const& e) {
+        text = e.what();
     } catch (...) {
     }
-    record_connect_failure(error);
+    record_connect_failure(error, std::move(text));
     std::this_thread::sleep_for(std::chrono::milliseconds(socket::reconnect_delay_ms));
     setup_cb(false, -1);
 }
@@ -395,14 +398,15 @@ void uds_client_socket::connect(std::function<void(bool, int)> const& setup_cb) 
 bool uds_client_socket::open(std::string const& remote, bool remote_abstract, std::string const& local,
                              bool local_abstract, bool with_peer_credentials) {
     int error = 0;
+    std::string text;
     try {
-        auto socket = socket::open_uds_client_socket(remote, remote_abstract, local, local_abstract,
-                                                     /*client_autobind=*/local.empty());
-        socket::set_non_blocking(socket);
+        adopt(socket::open_uds_client_socket(remote, remote_abstract, local, local_abstract,
+                                             /*client_autobind=*/local.empty()),
+              local_abstract ? std::string{} : local);
+        socket::set_non_blocking(get_fd());
         if (with_peer_credentials) {
-            socket::request_peer_credentials(socket);
+            socket::request_peer_credentials(get_fd());
         }
-        adopt(std::move(socket), local_abstract ? std::string{} : local);
         // SO_ERROR is read-and-clear. The pending error is read once and kept, so a
         // false return still carries the reason instead of a value already consumed.
         error = get_error();
@@ -411,9 +415,12 @@ bool uds_client_socket::open(std::string const& remote, bool remote_abstract, st
         }
     } catch (socket::socket_error const& e) {
         error = e.error();
+        text = e.what();
+    } catch (std::exception const& e) {
+        text = e.what();
     } catch (...) {
     }
-    record_connect_failure(error);
+    record_connect_failure(error, std::move(text));
     return false;
 }
 
@@ -430,31 +437,38 @@ bool uds_client_socket::rx(uds_payload& payload) {
 bool uds_server_socket::open(std::string const& path, bool is_abstract, bool with_peer_credentials,
                              std::optional<mode_t> mode) {
     int error = 0;
+    std::string text;
     try {
-        auto socket = socket::open_uds_server_socket(path, is_abstract, mode);
-        socket::set_non_blocking(socket);
+        adopt(socket::open_uds_server_socket(path, is_abstract, mode), is_abstract ? std::string{} : path);
+        socket::set_non_blocking(get_fd());
         if (with_peer_credentials) {
-            socket::request_peer_credentials(socket);
+            socket::request_peer_credentials(get_fd());
         }
-        adopt(std::move(socket), is_abstract ? std::string{} : path);
         error = get_error();
         if (error == 0) {
             return true;
         }
     } catch (socket::socket_error const& e) {
         error = e.error();
+        text = e.what();
+    } catch (std::exception const& e) {
+        text = e.what();
     } catch (...) {
     }
-    record_connect_failure(error);
+    record_connect_failure(error, std::move(text));
     return false;
 }
 
 bool uds_server_socket::tx(uds_payload const& payload) {
-    if (not m_last_source) {
+    // The payload names its destination when it was received, or made from one that was. Only a
+    // payload without one falls back to the last sender, which may have changed since tx() was
+    // called on an event client: its write happens on a later loop pass.
+    auto const& destination = payload.peer ? payload.peer : m_last_source;
+    if (not destination) {
         // No client has spoken yet, so there is nobody to answer. Dropped; the socket is fine.
         return true;
     }
-    return tx_impl(payload, *m_last_source);
+    return tx_impl(payload, *destination);
 }
 
 bool uds_server_socket::rx(uds_payload& payload) {

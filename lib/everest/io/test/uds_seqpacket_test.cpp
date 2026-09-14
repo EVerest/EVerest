@@ -63,7 +63,7 @@ bool path_exists(std::string const& path) {
 // Drives one handler until \p done says so or the budget is spent. Keeps the verdict rather than
 // asking again, so a predicate that consumes what it waits for works too.
 template <class PredicateT>
-bool pump_until(event::fd_event_handler& handler, PredicateT done, std::chrono::milliseconds budget) {
+bool pump_until(event::fd_event_handler& handler, std::chrono::milliseconds budget, PredicateT done) {
     auto const deadline = std::chrono::steady_clock::now() + budget;
     bool satisfied = done();
     while (not satisfied and std::chrono::steady_clock::now() < deadline) {
@@ -143,13 +143,13 @@ TEST(uds_seqpacket, listener_hands_out_a_peer_and_messages_keep_their_boundaries
     echo_server server(handler, name);
     collecting_client client(handler, name);
 
-    ASSERT_TRUE(pump_until(handler, [&]() { return client.ready_count.load() == 1; }, 5s)) << "client never ready";
-    ASSERT_TRUE(pump_until(handler, [&]() { return server.accepted.load() == 1; }, 5s)) << "nothing accepted";
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return client.ready_count.load() == 1; })) << "client never ready";
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return server.accepted.load() == 1; })) << "nothing accepted";
 
     // Two sends must come back as two messages, never as one concatenated stream.
     ASSERT_TRUE(client.client.tx(uds_payload{"first"}));
     ASSERT_TRUE(client.client.tx(uds_payload{"second"}));
-    ASSERT_TRUE(pump_until(handler, [&]() { return client.received.size() == 2; }, 5s)) << "echo incomplete";
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return client.received.size() == 2; })) << "echo incomplete";
     EXPECT_EQ(as_string(client.received[0]), "first");
     EXPECT_EQ(as_string(client.received[1]), "second");
     ASSERT_EQ(server.received.size(), 2u);
@@ -163,14 +163,14 @@ TEST(uds_seqpacket, a_descriptor_travels_over_the_connection_both_ways) {
     echo_server server(handler, name);
     collecting_client client(handler, name);
     ASSERT_TRUE(
-        pump_until(handler, [&]() { return client.ready_count.load() == 1 and server.accepted.load() == 1; }, 5s));
+        pump_until(handler, 5s, [&]() { return client.ready_count.load() == 1 and server.accepted.load() == 1; }));
 
     int pipe_fds[2] = {-1, -1};
     ASSERT_EQ(::pipe(pipe_fds), 0);
 
     // The echo sends the payload back with its descriptor, so the client gets its own duplicate.
     ASSERT_TRUE(send_fd(client.client, pipe_fds[0], "read end"));
-    ASSERT_TRUE(pump_until(handler, [&]() { return client.received.size() == 1; }, 5s)) << "no echo";
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return client.received.size() == 1; })) << "no echo";
     auto const& echoed = client.received[0];
     EXPECT_EQ(as_string(echoed), "read end");
     ASSERT_TRUE(echoed.has_fds());
@@ -190,11 +190,11 @@ TEST(uds_seqpacket, an_empty_message_is_delivered_not_taken_for_eof) {
     echo_server server(handler, name);
     collecting_client client(handler, name);
     ASSERT_TRUE(
-        pump_until(handler, [&]() { return client.ready_count.load() == 1 and server.accepted.load() == 1; }, 5s));
+        pump_until(handler, 5s, [&]() { return client.ready_count.load() == 1 and server.accepted.load() == 1; }));
 
     ASSERT_TRUE(client.client.tx(uds_payload{}));
     ASSERT_TRUE(client.client.tx(uds_payload{"after the empty one"}));
-    ASSERT_TRUE(pump_until(handler, [&]() { return client.received.size() == 2; }, 5s)) << "echo incomplete";
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return client.received.size() == 2; })) << "echo incomplete";
     EXPECT_EQ(client.received[0].size(), 0u);
     EXPECT_EQ(as_string(client.received[1]), "after the empty one");
     // Neither side mistook the zero byte message for the peer closing.
@@ -208,10 +208,10 @@ TEST(uds_seqpacket, the_peer_learns_that_the_client_went_away) {
     echo_server server(handler, name);
     {
         collecting_client client(handler, name);
-        ASSERT_TRUE(pump_until(handler, [&]() { return server.accepted.load() == 1; }, 5s));
+        ASSERT_TRUE(pump_until(handler, 5s, [&]() { return server.accepted.load() == 1; }));
     }
     // A datagram server would never hear of this. The connection reports it.
-    ASSERT_TRUE(pump_until(handler, [&]() { return server.peer_errors.load() >= 1; }, 5s)) << "peer never told";
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return server.peer_errors.load() >= 1; })) << "peer never told";
     EXPECT_TRUE(server.last_peer_error.load() == ECONNRESET or server.last_peer_error.load() == ENOTCONN)
         << strerror(server.last_peer_error.load());
 }
@@ -222,24 +222,59 @@ TEST(uds_seqpacket, the_client_learns_that_the_peer_went_away_and_reconnects) {
     echo_server server(handler, name);
     collecting_client client(handler, name);
     ASSERT_TRUE(
-        pump_until(handler, [&]() { return client.ready_count.load() == 1 and server.accepted.load() == 1; }, 5s));
+        pump_until(handler, 5s, [&]() { return client.ready_count.load() == 1 and server.accepted.load() == 1; }));
 
     // The server drops its side of the connection; the listener stays.
     handler.unregister_event_handler(server.peers.front().get());
     server.peers.clear();
 
-    ASSERT_TRUE(pump_until(handler, [&]() { return client.first_error.load() != 0; }, 5s)) << "client never told";
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return client.first_error.load() != 0; })) << "client never told";
     EXPECT_TRUE(client.first_error.load() == ECONNRESET or client.first_error.load() == ENOTCONN)
         << strerror(client.first_error.load());
 
     // A client reconnects, and the listener accepts the new connection.
     client.client.reset();
-    ASSERT_TRUE(pump_until(
-        handler, [&]() { return client.ready_count.load() == 2 and server.accepted.load() == 2; }, 5s))
-        << "no reconnect";
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() {
+        return client.ready_count.load() == 2 and server.accepted.load() == 2;
+    })) << "no reconnect";
     ASSERT_TRUE(client.client.tx(uds_payload{"back again"}));
-    ASSERT_TRUE(pump_until(handler, [&]() { return not client.received.empty(); }, 5s));
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return not client.received.empty(); }));
     EXPECT_EQ(as_string(client.received.back()), "back again");
+}
+
+TEST(uds_seqpacket, a_peer_that_half_closes_is_reported_not_spun_on) {
+    auto const name = unique_name("half_close");
+    event::fd_event_handler handler;
+    echo_server server(handler, name);
+
+    // A raw client: shutdown(SHUT_WR) says "done writing" and keeps the socket. From then on every
+    // read answers zero bytes with no POLLHUP, byte-identical to an empty record.
+    auto raw = socket_api::open_uds_seqpacket_client_socket(name, true);
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return server.accepted.load() == 1; }));
+    ASSERT_EQ(::shutdown(static_cast<int>(raw), SHUT_WR), 0);
+
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return server.peer_errors.load() >= 1; })) << "peer never told";
+    EXPECT_EQ(server.last_peer_error.load(), ECONNRESET) << strerror(server.last_peer_error.load());
+    // Reporting it after a flood of phantom empty payloads has not stopped the spin.
+    EXPECT_LE(server.received.size(), 2u) << server.received.size() << " phantom payloads delivered";
+}
+
+TEST(uds_seqpacket, an_oversized_record_fails_the_connection) {
+    auto const name = unique_name("oversized_record");
+    event::fd_event_handler handler;
+    echo_server server(handler, name);
+
+    // The policies refuse to send past max_size; a raw sender does not. On a connection the record
+    // that follows would be read out of step with the sender, so the connection is failed.
+    auto raw = socket_api::open_uds_seqpacket_client_socket(name, true);
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return server.accepted.load() == 1; }));
+    std::vector<char> oversized(uds_payload::max_size + 1, 'x');
+    ASSERT_EQ(::send(static_cast<int>(raw), oversized.data(), oversized.size(), 0),
+              static_cast<ssize_t>(oversized.size()));
+
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return server.peer_errors.load() >= 1; })) << "not reported";
+    EXPECT_EQ(server.last_peer_error.load(), EMSGSIZE) << strerror(server.last_peer_error.load());
+    EXPECT_TRUE(server.received.empty());
 }
 
 TEST(uds_seqpacket, a_peer_is_single_use) {
@@ -247,21 +282,21 @@ TEST(uds_seqpacket, a_peer_is_single_use) {
     event::fd_event_handler handler;
     echo_server server(handler, name);
     collecting_client client(handler, name);
-    ASSERT_TRUE(pump_until(handler, [&]() { return server.accepted.load() == 1; }, 5s));
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return server.accepted.load() == 1; }));
 
     // The descriptor was taken out of the shared handle on the first open, so a reset, which
     // hands the same argument to a fresh policy, finds nothing and must say so rather than adopt
     // whatever number the kernel has since reused.
     auto& peer = *server.peers.front();
     peer.reset();
-    ASSERT_TRUE(pump_until(handler, [&]() { return server.peer_errors.load() >= 1; }, 5s)) << "reset not reported";
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return server.peer_errors.load() >= 1; })) << "reset not reported";
     EXPECT_EQ(server.last_peer_error.load(), ENOTCONN);
 }
 
 TEST(uds_seqpacket, connecting_to_nothing_is_reported_with_the_errno) {
     event::fd_event_handler handler;
     collecting_client client(handler, unique_name("nobody"));
-    ASSERT_TRUE(pump_until(handler, [&]() { return client.first_error.load() != 0; }, 5s)) << "never reported";
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return client.first_error.load() != 0; })) << "never reported";
     EXPECT_EQ(client.first_error.load(), ECONNREFUSED);
 }
 
@@ -329,7 +364,7 @@ TEST(uds_seqpacket, listener_without_an_accept_callback_closes_what_it_accepts) 
 
     collecting_client client(handler, name);
     // The connection completes, is accepted, and is closed again: the client sees the peer go.
-    ASSERT_TRUE(pump_until(handler, [&]() { return client.first_error.load() != 0; }, 5s)) << "never closed";
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return client.first_error.load() != 0; })) << "never closed";
     EXPECT_TRUE(client.first_error.load() == ECONNRESET or client.first_error.load() == ENOTCONN)
         << strerror(client.first_error.load());
     handler.unregister_event_handler(&listener);
@@ -341,7 +376,7 @@ TEST(uds_seqpacket, both_ends_know_who_is_on_the_other_end) {
     echo_server server(handler, name);
     collecting_client client(handler, name);
     ASSERT_TRUE(
-        pump_until(handler, [&]() { return client.ready_count.load() == 1 and server.accepted.load() == 1; }, 5s));
+        pump_until(handler, 5s, [&]() { return client.ready_count.load() == 1 and server.accepted.load() == 1; }));
 
     // Recorded by the kernel at accept and connect time; both ends are this process here.
     auto const accepted_side = server.peers.front()->get_raw_handler()->peer_credentials();
@@ -360,7 +395,7 @@ TEST(uds_seqpacket, a_peer_pidfd_names_the_connecting_process) {
     event::fd_event_handler handler;
     echo_server server(handler, name);
     collecting_client client(handler, name);
-    ASSERT_TRUE(pump_until(handler, [&]() { return server.accepted.load() == 1; }, 5s));
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return server.accepted.load() == 1; }));
 
     auto pidfd = server.peers.front()->get_raw_handler()->peer_pidfd();
     if (not pidfd.is_fd()) {
@@ -406,13 +441,13 @@ TEST(uds_seqpacket, two_empty_messages_in_a_row_are_both_delivered) {
     echo_server server(handler, name);
     collecting_client client(handler, name);
     ASSERT_TRUE(
-        pump_until(handler, [&]() { return client.ready_count.load() == 1 and server.accepted.load() == 1; }, 5s));
+        pump_until(handler, 5s, [&]() { return client.ready_count.load() == 1 and server.accepted.load() == 1; }));
 
     // The record queued behind an empty one is empty as well: still not EOF.
     ASSERT_TRUE(client.client.tx(uds_payload{}));
     ASSERT_TRUE(client.client.tx(uds_payload{}));
     ASSERT_TRUE(client.client.tx(uds_payload{"third"}));
-    ASSERT_TRUE(pump_until(handler, [&]() { return client.received.size() == 3; }, 5s)) << "echo incomplete";
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return client.received.size() == 3; })) << "echo incomplete";
     EXPECT_EQ(server.peer_errors.load(), 0);
     EXPECT_EQ(client.first_error.load(), 0);
 }
@@ -423,14 +458,14 @@ TEST(uds_seqpacket, an_fd_only_message_behind_an_empty_one_is_delivered) {
     echo_server server(handler, name);
     collecting_client client(handler, name);
     ASSERT_TRUE(
-        pump_until(handler, [&]() { return client.ready_count.load() == 1 and server.accepted.load() == 1; }, 5s));
+        pump_until(handler, 5s, [&]() { return client.ready_count.load() == 1 and server.accepted.load() == 1; }));
 
     int pipe_fds[2] = {-1, -1};
     ASSERT_EQ(::pipe(pipe_fds), 0);
     // send_fd with default metadata is a zero byte record carrying a descriptor.
     ASSERT_TRUE(client.client.tx(uds_payload{}));
     ASSERT_TRUE(send_fd(client.client, pipe_fds[0]));
-    ASSERT_TRUE(pump_until(handler, [&]() { return client.received.size() == 2; }, 5s)) << "echo incomplete";
+    ASSERT_TRUE(pump_until(handler, 5s, [&]() { return client.received.size() == 2; })) << "echo incomplete";
     EXPECT_TRUE(client.received[1].has_fds());
     EXPECT_EQ(server.peer_errors.load(), 0);
     EXPECT_EQ(client.first_error.load(), 0);
@@ -451,7 +486,7 @@ TEST(uds_seqpacket, a_second_listener_on_a_live_path_does_not_disturb_the_first)
         EXPECT_EQ(e.error(), EADDRINUSE);
     }
     // The probe that found the first listener alive must not have connected to it.
-    pump_until(handler, [&]() { return false; }, 200ms);
+    pump_until(handler, 200ms, [&]() { return false; });
     EXPECT_EQ(server.accepted.load(), 0);
     EXPECT_EQ(server.peer_errors.load(), 0);
 }

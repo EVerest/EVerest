@@ -39,7 +39,7 @@ std::string unique_name(std::string const& tag) {
 
 // Drives the client until \p done says so or the deadline passes. Returns done's verdict.
 template <class ClientT, class PredicateT>
-bool drive_until(ClientT& client, PredicateT done, std::chrono::milliseconds timeout) {
+bool drive_until(ClientT& client, std::chrono::milliseconds timeout, PredicateT done) {
     auto const deadline = std::chrono::steady_clock::now() + timeout;
     // The verdict is kept rather than asked again: a predicate that consumes what it waits for,
     // such as an rx(), answers true exactly once.
@@ -81,15 +81,14 @@ TEST(uds_event_client, client_reports_a_vanished_server_instead_of_spinning) {
     });
     std::atomic<bool> ready{false};
     client.set_on_ready_action([&]() { ready = true; });
-    ASSERT_TRUE(drive_until(client, [&]() { return ready.load(); }, 5s)) << "client never came up";
+    ASSERT_TRUE(drive_until(client, 5s, [&]() { return ready.load(); })) << "client never came up";
 
     server.reset();
     ASSERT_TRUE(client.tx(uds_payload{"into the void"}));
 
     // The send fails with ECONNREFUSED and SO_ERROR stays 0. Only the recorded errno turns that
     // into a report; without it this loop runs out its deadline with the payload still queued.
-    ASSERT_TRUE(drive_until(
-        client, [&]() { return first_error.load() != 0; }, 5s))
+    ASSERT_TRUE(drive_until(client, 5s, [&]() { return first_error.load() != 0; }))
         << "the vanished server was never reported";
     EXPECT_EQ(first_error.load(), ECONNREFUSED);
 }
@@ -110,25 +109,25 @@ TEST(uds_event_client, server_survives_a_client_that_left_before_the_reply) {
     server.set_rx_handler([&](uds_payload const&, auto&) { ++received; });
     std::atomic<bool> ready{false};
     server.set_on_ready_action([&]() { ready = true; });
-    ASSERT_TRUE(drive_until(server, [&]() { return ready.load(); }, 5s)) << "server never came up";
+    ASSERT_TRUE(drive_until(server, 5s, [&]() { return ready.load(); })) << "server never came up";
 
     {
         uds_client_socket client;
         ASSERT_TRUE(client.open(server_name, true, client_name, true));
         ASSERT_TRUE(client.tx(uds_payload{"question"}));
-        ASSERT_TRUE(drive_until(server, [&]() { return received.load() == 1; }, 5s));
+        ASSERT_TRUE(drive_until(server, 5s, [&]() { return received.load() == 1; }));
     }
 
     // The reply cannot be delivered. That is the client's loss, not a server failure.
     ASSERT_TRUE(server.tx(uds_payload{"answer"}));
-    drive_until(server, [&]() { return false; }, 200ms);
+    drive_until(server, 200ms, [&]() { return false; });
     EXPECT_EQ(errors.load(), 0);
 
     // And the server still serves the next client.
     uds_client_socket next_client;
     ASSERT_TRUE(next_client.open(server_name, true));
     ASSERT_TRUE(next_client.tx(uds_payload{"still there?"}));
-    EXPECT_TRUE(drive_until(server, [&]() { return received.load() == 2; }, 5s));
+    EXPECT_TRUE(drive_until(server, 5s, [&]() { return received.load() == 2; }));
 }
 
 TEST(uds_event_client, server_tx_before_any_client_is_dropped_and_the_server_keeps_serving) {
@@ -145,17 +144,55 @@ TEST(uds_event_client, server_tx_before_any_client_is_dropped_and_the_server_kee
     server.set_rx_handler([&](uds_payload const&, auto&) { ++received; });
     std::atomic<bool> ready{false};
     server.set_on_ready_action([&]() { ready = true; });
-    ASSERT_TRUE(drive_until(server, [&]() { return ready.load(); }, 5s)) << "server never came up";
+    ASSERT_TRUE(drive_until(server, 5s, [&]() { return ready.load(); })) << "server never came up";
 
     // Nobody to answer yet. Failing the server for it would close its socket on every client.
     ASSERT_TRUE(server.tx(uds_payload{"to whom?"}));
-    drive_until(server, [&]() { return false; }, 200ms);
+    drive_until(server, 200ms, [&]() { return false; });
     EXPECT_EQ(errors.load(), 0);
 
     uds_client_socket client;
     ASSERT_TRUE(client.open(server_name, true));
     ASSERT_TRUE(client.tx(uds_payload{"first client"}));
-    EXPECT_TRUE(drive_until(server, [&]() { return received.load() == 1; }, 5s));
+    EXPECT_TRUE(drive_until(server, 5s, [&]() { return received.load() == 1; }));
+}
+
+TEST(uds_event_client, a_reply_reaches_the_client_that_asked_not_the_last_one_heard) {
+    auto const server_name = unique_name("two_clients");
+    auto const name_a = unique_name("two_clients_a");
+    auto const name_b = unique_name("two_clients_b");
+
+    // Both requests are read before either answer is written: tx() only queues, the write happens
+    // on a later pass. The answer must still go to whoever asked, descriptor included.
+    uds_server server(server_name, true);
+    std::atomic<int> requests{0};
+    server.set_rx_handler([&](uds_payload const& request, auto& device) {
+        ++requests;
+        auto reply = request;
+        reply.set_message("answer-for-" + std::string(request.buffer.begin(), request.buffer.end()));
+        device.tx(reply);
+    });
+    std::atomic<bool> ready{false};
+    server.set_on_ready_action([&]() { ready = true; });
+    ASSERT_TRUE(drive_until(server, 5s, [&]() { return ready.load(); })) << "server never came up";
+
+    uds_client_socket a;
+    uds_client_socket b;
+    ASSERT_TRUE(a.open(server_name, true, name_a, true));
+    ASSERT_TRUE(b.open(server_name, true, name_b, true));
+    ASSERT_TRUE(a.tx(uds_payload{"A"}));
+    ASSERT_TRUE(b.tx(uds_payload{"B"}));
+    ASSERT_TRUE(drive_until(server, 5s, [&]() { return requests.load() == 2; })) << "requests not read";
+
+    uds_payload to_a;
+    uds_payload to_b;
+    ASSERT_TRUE(drive_until(server, 5s, [&]() { return a.rx(to_a); })) << "A got nothing";
+    ASSERT_TRUE(drive_until(server, 5s, [&]() { return b.rx(to_b); })) << "B got nothing";
+    EXPECT_EQ(std::string(to_a.buffer.begin(), to_a.buffer.end()), "answer-for-A");
+    EXPECT_EQ(std::string(to_b.buffer.begin(), to_b.buffer.end()), "answer-for-B");
+    // And nothing more for either: no answer went out twice.
+    uds_payload extra;
+    EXPECT_FALSE(drive_until(server, 100ms, [&]() { return a.rx(extra) or b.rx(extra); }));
 }
 
 TEST(uds_event_client, server_without_an_rx_handler_leaks_no_descriptors) {
@@ -170,7 +207,7 @@ TEST(uds_event_client, server_without_an_rx_handler_leaks_no_descriptors) {
         uds_server server(server_name, true);
         std::atomic<bool> ready{false};
         server.set_on_ready_action([&]() { ready = true; });
-        ASSERT_TRUE(drive_until(server, [&]() { return ready.load(); }, 5s)) << "server never came up";
+        ASSERT_TRUE(drive_until(server, 5s, [&]() { return ready.load(); })) << "server never came up";
 
         uds_client_socket client;
         ASSERT_TRUE(client.open(server_name, true));
@@ -180,8 +217,13 @@ TEST(uds_event_client, server_without_an_rx_handler_leaks_no_descriptors) {
 
         for (int i = 0; i < messages; ++i) {
             ASSERT_TRUE(send_fd(client, pipe_fds[0], "unread"));
+            // The kernel queues at most net.unix.max_dgram_qlen unread datagrams per socket: 10 by
+            // default and in a fresh network namespace such as a CI container, 512 under systemd.
+            // Beyond that the non-blocking sender gets EAGAIN, so the server takes each message
+            // before the next is sent.
+            server.sync(10ms);
         }
-        drive_until(server, [&]() { return false; }, 300ms);
+        drive_until(server, 300ms, [&]() { return false; });
 
         // Each read replaced the previous descriptor in the reused payload, so at most the last
         // one is still held.
@@ -206,7 +248,7 @@ TEST(uds_event_client, client_keeps_a_queued_descriptor_alive_until_it_is_sent) 
     uds_client client(server_name, true);
     std::atomic<bool> ready{false};
     client.set_on_ready_action([&]() { ready = true; });
-    ASSERT_TRUE(drive_until(client, [&]() { return ready.load(); }, 5s)) << "client never came up";
+    ASSERT_TRUE(drive_until(client, 5s, [&]() { return ready.load(); })) << "client never came up";
 
     // tx() only queues. The caller drops its descriptor right away; the queued copy owns a
     // duplicate, so what goes out on the writable event is still a live pipe end.
@@ -215,7 +257,7 @@ TEST(uds_event_client, client_keeps_a_queued_descriptor_alive_until_it_is_sent) 
     pipe_fds[0] = -1;
 
     uds_payload received;
-    ASSERT_TRUE(drive_until(client, [&]() { return server.rx(received); }, 5s)) << "nothing arrived";
+    ASSERT_TRUE(drive_until(client, 5s, [&]() { return server.rx(received); })) << "nothing arrived";
     ASSERT_TRUE(received.has_fds());
     ASSERT_EQ(::write(pipe_fds[1], "alive", 5), 5);
     char buffer[8] = {};
@@ -239,7 +281,7 @@ TEST(uds_event_client, rx_handler_receives_the_descriptor_with_the_message) {
         kept = payload;
         got = true;
     });
-    ASSERT_TRUE(drive_until(server, [&]() { return ready.load(); }, 5s)) << "server never came up";
+    ASSERT_TRUE(drive_until(server, 5s, [&]() { return ready.load(); })) << "server never came up";
 
     int pipe_fds[2] = {-1, -1};
     ASSERT_EQ(::pipe(pipe_fds), 0);
@@ -247,7 +289,7 @@ TEST(uds_event_client, rx_handler_receives_the_descriptor_with_the_message) {
     ASSERT_TRUE(client.open(server_name, true));
     ASSERT_TRUE(send_fd(client, pipe_fds[0], "for the handler"));
 
-    ASSERT_TRUE(drive_until(server, [&]() { return got.load(); }, 5s)) << "handler never ran";
+    ASSERT_TRUE(drive_until(server, 5s, [&]() { return got.load(); })) << "handler never ran";
     EXPECT_EQ(std::string(kept.buffer.begin(), kept.buffer.end()), "for the handler");
     ASSERT_TRUE(kept.has_fds());
     ASSERT_EQ(::write(pipe_fds[1], "hi", 2), 2);
@@ -270,14 +312,14 @@ TEST(uds_event_client, a_handler_answers_with_a_descriptor_through_its_device) {
     server.set_on_ready_action([&]() { ready = true; });
     // The interface handed to the callback is what the send_fd overloads for event clients take.
     server.set_rx_handler([&](uds_payload const&, auto& device) { send_fd(device, pipe_fds[0], "here you go"); });
-    ASSERT_TRUE(drive_until(server, [&]() { return ready.load(); }, 5s)) << "server never came up";
+    ASSERT_TRUE(drive_until(server, 5s, [&]() { return ready.load(); })) << "server never came up";
 
     uds_client_socket client;
     ASSERT_TRUE(client.open(server_name, true, client_name, true));
     ASSERT_TRUE(client.tx(uds_payload{"may I have a descriptor"}));
 
     uds_payload answer;
-    ASSERT_TRUE(drive_until(server, [&]() { return client.rx(answer); }, 5s)) << "no answer";
+    ASSERT_TRUE(drive_until(server, 5s, [&]() { return client.rx(answer); })) << "no answer";
     EXPECT_EQ(std::string(answer.buffer.begin(), answer.buffer.end()), "here you go");
     ASSERT_TRUE(answer.has_fds());
     ASSERT_EQ(::write(pipe_fds[1], "yes", 3), 3);
@@ -301,12 +343,12 @@ TEST(uds_event_client, an_rx_handler_sees_the_senders_credentials_when_the_serve
         seen = payload.credentials;
         got = true;
     });
-    ASSERT_TRUE(drive_until(server, [&]() { return ready.load(); }, 5s)) << "server never came up";
+    ASSERT_TRUE(drive_until(server, 5s, [&]() { return ready.load(); })) << "server never came up";
 
     uds_client_socket client;
     ASSERT_TRUE(client.open(server_name, true));
     ASSERT_TRUE(client.tx(uds_payload{"hello"}));
-    ASSERT_TRUE(drive_until(server, [&]() { return got.load(); }, 5s)) << "handler never ran";
+    ASSERT_TRUE(drive_until(server, 5s, [&]() { return got.load(); })) << "handler never ran";
     ASSERT_TRUE(seen.has_value());
     EXPECT_EQ(seen->pid, ::getpid());
     EXPECT_EQ(seen->uid, ::getuid());
@@ -319,7 +361,7 @@ TEST(uds_event_client, a_client_without_a_local_name_gets_the_servers_answer) {
     server.set_rx_handler([](uds_payload const& payload, auto& device) { device.tx(payload); });
     std::atomic<bool> server_ready{false};
     server.set_on_ready_action([&]() { server_ready = true; });
-    ASSERT_TRUE(drive_until(server, [&]() { return server_ready.load(); }, 5s)) << "server never came up";
+    ASSERT_TRUE(drive_until(server, 5s, [&]() { return server_ready.load(); })) << "server never came up";
 
     // Two arguments, no naming ceremony: the kernel gives the client the name the echo needs.
     uds_client client(server_name, true);
@@ -331,7 +373,7 @@ TEST(uds_event_client, a_client_without_a_local_name_gets_the_servers_answer) {
         echoed.assign(payload.buffer.begin(), payload.buffer.end());
         got = true;
     });
-    ASSERT_TRUE(drive_until(client, [&]() { return ready.load(); }, 5s)) << "client never came up";
+    ASSERT_TRUE(drive_until(client, 5s, [&]() { return ready.load(); })) << "client never came up";
     ASSERT_TRUE(client.tx(uds_payload{"echo?"}));
 
     auto const deadline = std::chrono::steady_clock::now() + 5s;

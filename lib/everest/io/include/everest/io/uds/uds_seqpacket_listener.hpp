@@ -42,7 +42,8 @@ public:
      * @details A stale socket file at \p name is removed. A live socket there fails with
      * EADDRINUSE, a file that is not a socket with EEXIST.
      * @param[in] name Path or abstract name to listen on
-     * @param[in] is_abstract True for the abstract namespace
+     * @param[in] is_abstract True for the abstract namespace. An abstract name has no access
+     *            control: every process in the network namespace may connect
      * @param[in] mode Permissions of the socket file, set between bind and listen. Connecting
      *            needs write permission. Only with a path; with an abstract name EINVAL is thrown
      * @throws socket::socket_error carrying the errno on failure
@@ -57,6 +58,11 @@ public:
 
     /**
      * @brief Set the accept callback. Without one, accepted connections are closed at once.
+     * @details The listener itself accepts every connection the backlog holds and keeps no count
+     * of live peers, so a limit is the callback's: dropping the peer instead of registering it
+     * refuses the connection, and the client sees EOF. Each accepted peer is a full event client,
+     * which costs a handful of descriptors (the socket, an epoll instance, event and timer
+     * descriptors) and a receive buffer of \ref uds_payload::max_size.
      */
     void set_accept_callback(accept_cb cb);
 

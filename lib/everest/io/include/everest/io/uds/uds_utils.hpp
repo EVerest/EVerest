@@ -50,7 +50,10 @@ using uds_seqpacket_peer_interface = event::fd_event_client<uds_seqpacket_peer_s
  * @param[in] fd Descriptor to send
  * @param[in] metadata Message bytes, may be empty
  * @return The result of tx(). False without sending if \p fd is invalid or \p metadata exceeds
- *         \ref uds_payload::max_size
+ *         \ref uds_payload::max_size. Note what true means on a datagram server: sent, or dropped
+ *         because there was nobody to send to (see \ref uds_server_socket::tx). A descriptor
+ *         handed over as \ref event::unique_fd is closed either way, as a sent one would be; with
+ *         an `int` the caller keeps its own. On a connected socket true means the record went out
  * @{
  */
 bool send_fd(uds_client_socket& sender, int fd, std::string const& metadata = {});
