@@ -8,6 +8,7 @@
 namespace {
 
 using types::ev_board_support::EvCpState;
+namespace ev_bsp = module::ev_board_support;
 
 class EvBoardSupport : public module::ev_board_support::ev_board_supportImpl {
 public:
@@ -58,7 +59,7 @@ TEST_F(EvBoardSupportTest, UnplugDuringForcedFIsRemembered) {
     // the simulation to observe after the EVSE releases F.
     EXPECT_TRUE(simulator.module_state->pwm_error_f);
     EXPECT_TRUE(adapter.events.empty());
-    EXPECT_DOUBLE_EQ(simulator.module_state->simdata_setting.cp_voltage, 12.0);
+    EXPECT_DOUBLE_EQ(simulator.module_state->simdata_setting.cp_voltage, ev_bsp::CP_VOLTAGE_A);
 }
 
 TEST_F(EvBoardSupportTest, LatestEvStateDuringForcedFIsRemembered) {
@@ -69,12 +70,12 @@ TEST_F(EvBoardSupportTest, LatestEvStateDuringForcedFIsRemembered) {
     set_cp_state(EvCpState::C);
     EXPECT_TRUE(simulator.module_state->pwm_error_f);
     EXPECT_TRUE(adapter.events.empty());
-    EXPECT_DOUBLE_EQ(simulator.module_state->simdata_setting.cp_voltage, 6.0);
+    EXPECT_DOUBLE_EQ(simulator.module_state->simdata_setting.cp_voltage, ev_bsp::CP_VOLTAGE_C);
 
     set_cp_state(EvCpState::B);
     EXPECT_TRUE(simulator.module_state->pwm_error_f);
     EXPECT_TRUE(adapter.events.empty());
-    EXPECT_DOUBLE_EQ(simulator.module_state->simdata_setting.cp_voltage, 9.0);
+    EXPECT_DOUBLE_EQ(simulator.module_state->simdata_setting.cp_voltage, ev_bsp::CP_VOLTAGE_B);
 }
 
 } // namespace

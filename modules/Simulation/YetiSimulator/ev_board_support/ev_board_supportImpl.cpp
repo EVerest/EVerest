@@ -6,13 +6,6 @@
 
 namespace module::ev_board_support {
 
-namespace {
-constexpr auto CP_VOLTAGE_A = 12.0;
-constexpr auto CP_VOLTAGE_B = 9.0;
-constexpr auto CP_VOLTAGE_C = 6.0;
-constexpr auto CP_VOLTAGE_D = 3.0;
-} // namespace
-
 void ev_board_supportImpl::init() {
 }
 
