@@ -4,6 +4,7 @@
 #define OCPP_V16_CHARGE_POINT_CONFIGURATION_INTERFACE_HPP
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <set>
 #include <string>
@@ -453,6 +454,17 @@ public:
     ///
     /// The default implementation is a no-op (the JSON-backed class validates at construction time).
     virtual void check_integrity(int32_t expected_number_of_connectors){};
+
+    /// \brief force-writes a Custom key's value, bypassing its readOnly flag. Intended for
+    /// internal/backend-driven updates only (e.g. a hardware event pushing a fresh value)
+    /// never for CSMS-initiated ChangeConfiguration, which must keep respecting readOnly.
+    /// Default implementation is a no-op returning NotSupported.
+    /// \param key
+    /// \param value
+    /// \return Accepted if written, NotSupported if the key does not exist in the Custom profile.
+    virtual ConfigurationStatus set_custom_key_forced(const CiString<50>& key, const CiString<500>& value) {
+        return ConfigurationStatus::NotSupported;
+    };
 };
 
 } // namespace ocpp::v16

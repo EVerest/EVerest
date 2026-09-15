@@ -3139,7 +3139,7 @@ std::optional<KeyValue> ChargePointConfiguration::getLanguageKeyValue() {
 // Custom
 std::optional<KeyValue> ChargePointConfiguration::getCustomKeyValue(const CiString<50>& key) {
     std::lock_guard<std::recursive_mutex> lock(this->configuration_mutex);
-    if (!this->config["Custom"].contains(key.get())) {
+    if (!this->config.contains("Custom") or !this->config["Custom"].contains(key.get())) {
         return std::nullopt;
     }
 
@@ -4302,6 +4302,15 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
     }
 
     return ConfigurationStatus::Accepted;
+}
+
+ConfigurationStatus ChargePointConfiguration::set_custom_key_forced(const CiString<50>& key,
+                                                                    const CiString<500>& value) {
+    std::lock_guard<std::recursive_mutex> lock(this->configuration_mutex);
+    if (!this->config.contains("Custom") or !this->config["Custom"].contains(key.get())) {
+        return ConfigurationStatus::NotSupported;
+    }
+    return this->setCustomKey(key, value, /*force=*/true);
 }
 
 } // namespace ocpp::v16
