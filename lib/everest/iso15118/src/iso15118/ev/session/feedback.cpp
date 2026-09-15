@@ -65,4 +65,32 @@ void Feedback::stop_from_charger() const {
     call_if_available(callbacks.stop_from_charger);
 }
 
+void Feedback::ac_limits(const message_20::datatypes::AC_CPDResEnergyTransferMode& mode) const {
+    call_if_available(callbacks.ac_limits, mode);
+}
+
+void Feedback::ac_bpt_limits(const message_20::datatypes::BPT_AC_CPDResEnergyTransferMode& mode) const {
+    call_if_available(callbacks.ac_bpt_limits, mode);
+}
+
+void Feedback::dc_bpt_limits(const message_20::datatypes::BPT_DC_CPDResEnergyTransferMode& mode) const {
+    call_if_available(callbacks.dc_bpt_limits, mode);
+}
+
+void Feedback::ac_der_limits(const message_20::datatypes::DER_AC_CPDResEnergyTransferMode& mode) const {
+    call_if_available(callbacks.ac_der_limits, mode);
+}
+
+void Feedback::ac_target_power(const iso15118::d20::AcTargetPower& target) const {
+    call_if_available(callbacks.ac_target_power, target);
+}
+
+void Feedback::der_control(const message_20::datatypes::DER_Dynamic_AC_CLResControlMode& mode) const {
+    call_if_available(callbacks.der_control, mode);
+}
+
+void Feedback::der_curves(const message_20::datatypes::DerControl& control) const {
+    call_if_available(callbacks.der_curves, control);
+}
+
 } // namespace iso15118::ev
