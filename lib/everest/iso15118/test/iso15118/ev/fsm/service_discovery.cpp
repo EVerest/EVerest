@@ -47,12 +47,8 @@ SCENARIO("ISO15118-20 EV ServiceDiscovery stops session when DC not offered") {
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::ServiceDiscovery> primed{callbacks, no_seed};
 
-    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::ServiceDiscovery);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC),
+                         ev::d20::StateID::ServiceDiscovery);
 }
 
 SCENARIO("ISO15118-20 EV ServiceDiscovery lists the configured AC service") {
@@ -88,12 +84,8 @@ SCENARIO("ISO15118-20 EV ServiceDiscovery stops session when AC not offered") {
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::ServiceDiscovery> primed{callbacks, ServiceCategory::AC, no_seed};
 
-    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::DC));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::ServiceDiscovery);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::DC),
+                         ev::d20::StateID::ServiceDiscovery);
 }
 
 SCENARIO("ISO15118-20 EV ServiceDiscovery rejects malformed responses") {

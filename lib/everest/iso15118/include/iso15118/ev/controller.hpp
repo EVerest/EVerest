@@ -49,22 +49,13 @@ public:
 
     /**
      * @brief Resolve the SECC endpoint, connect, and run the reactor.
-     * @details If config.discover, runs SDP discovery to learn the endpoint;
-     * otherwise uses config.fixed_endpoint. Then connects the data client,
+     * @details Runs SDP discovery to learn the endpoint, connects the data client,
      * starts the session on connect, and runs the reactor until the session is
      * finished or a bounded deadline elapses. Fires feedback.connected on
-     * endpoint resolution and feedback.stopped before returning.
+     * endpoint resolution and feedback.stopped before returning. Unregisters the
+     * timers it registered on every exit path.
      */
     void loop();
-
-    /**
-     * @brief Deliver a control event into the session from another thread.
-     * @details Marshals onto the reactor thread (add_action): the event is fed to
-     * the Session there, never touching session state directly off-thread.
-     * Safe to call before the session starts (the action runs once the reactor is
-     * running; deliver_control_event is a no-op without an FSM).
-     */
-    void post_control_event(d20::ControlEvent event);
 
     /**
      * @brief Request a graceful EV-initiated stop of the charging session.
@@ -147,8 +138,10 @@ private:
     // graceful stop walk does not finish in time. Single-shot; disarmed on finish.
     everest::lib::io::event::timer_fd stop_grace_timer;
 
-    // Declaration order is load-bearing: the reactor must outlive the clients that
-    // register fds with it, and the Session is constructed last.
+    // Declaration order here isn't load-bearing: clients unregister in their own
+    // destructors. data_client is created lazily at runtime (in establish_data_path,
+    // once transport security is known); sdp_client is emplaced only after the ctor
+    // resolves config.interface_name.
     everest::lib::io::event::fd_event_handler reactor;
     std::optional<transport::SdpClient> sdp_client;
     std::unique_ptr<transport::DataClient> data_client;

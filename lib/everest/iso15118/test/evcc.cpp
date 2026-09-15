@@ -25,7 +25,6 @@ int main(int argc, char* argv[]) {
 
     iso15118::ev::EvConfig config{};
     config.interface_name = interface;
-    config.discover = true;
     config.evcc_id = "02:00:00:00:00:01";
 
     iso15118::ev::feedback::Callbacks callbacks{};
