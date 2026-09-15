@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include "EvSlac.hpp"
 
 namespace module {
@@ -10,6 +10,10 @@ void EvSlac::init() {
 
 void EvSlac::ready() {
     invoke_ready(*p_main);
+}
+
+void EvSlac::shutdown() {
+    invoke_shutdown(*p_main);
 }
 
 } // namespace module

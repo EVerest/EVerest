@@ -39,6 +39,11 @@ void slacImpl::handle_dlink_pause() {
     // No action needed for D-LINK_PAUSE in simulation
 }
 
+void slacImpl::handle_count_bc(int& count) {
+    // The SLAC simulator does not model CM_VALIDATE BCB-toggle detection; ignore the B/C transition count.
+    (void)count;
+}
+
 void slacImpl::set_state_to_unmatched() {
     if (state != State::UNMATCHED) {
         state = State::UNMATCHED;
