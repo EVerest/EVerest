@@ -87,9 +87,9 @@ std::optional<std::pair<std::vector<uint8_t>, io::v2gtp::PayloadType>> Engine::t
 }
 
 void Engine::discard_request() {
-    if (message_exchange.has_request()) {
-        message_exchange.take_request();
-    }
+    // Not take_request(): that encodes the message first and reports a failure if it cannot, which
+    // would be an error logged from a path that is deliberately throwing the message away.
+    message_exchange.discard();
 }
 
 std::chrono::milliseconds Engine::response_timeout() const {
