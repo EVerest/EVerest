@@ -14,9 +14,7 @@ namespace iso15118::ev::d20::state {
 
 namespace {
 
-// TODO(mlitre): offer PnC once the EV has a TLS client and a contract certificate. The
-// selection belongs here, not in the serializer, so adding it means setting both fields
-// below from what AuthorizationSetup offered.
+// TODO(mlitre): offer PnC once the EV has a contract certificate.
 message_20::AuthorizationRequest make_request(Context& ctx) {
     message_20::AuthorizationRequest req;
     setup_header(req.header, ctx.get_session());

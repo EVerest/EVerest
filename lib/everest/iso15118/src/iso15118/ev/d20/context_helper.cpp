@@ -70,8 +70,10 @@ bool check_response_code(dt::ResponseCode response_code) {
 }
 
 const char* disposition_violation(Disposition d, bool consumed, bool has_request, bool session_stopped,
-                                  bool transitioned) {
+                                  bool transitioned, bool handover) {
     switch (d) {
+    case Disposition::Handover:
+        return handover ? nullptr : "Handover without a negotiated non-20 protocol";
     case Disposition::Awaiting:
         return has_request ? nullptr : "Awaiting without a pending request";
     case Disposition::Stopping:

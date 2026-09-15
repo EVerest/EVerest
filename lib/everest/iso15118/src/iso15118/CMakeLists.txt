@@ -110,17 +110,21 @@ target_sources(iso15118
         message_2/metering_receipt.cpp
         message_2/certificate_installation.cpp
 
+        session/protocol.cpp
+
         tbd_controller.cpp
 )
 
 
 # The EV side is opt-in: consumers that only implement a charger (the SECC) should not pay to
-# build or link it. everest-core turns it on for the EvIso15118D20 module.
+# build or link it. everest-core turns it on for the Ev15118 module.
 if(ISO15118_BUILD_EV_SIDE)
     target_sources(iso15118
         PRIVATE
         ev/d20/context.cpp
         ev/d20/context_helper.cpp
+        ev/d20/engine.cpp
+        ev/d20/timeouts.cpp
         ev/d20/state/supported_app_protocol.cpp
         ev/d20/state/session_setup.cpp
         ev/d20/state/authorization_setup.cpp
@@ -134,6 +138,7 @@ if(ISO15118_BUILD_EV_SIDE)
         ev/session/feedback.cpp
         ev/session.cpp
         ev/controller.cpp
+        ev/sap_offer.cpp
         ev/d20/state/service_discovery.cpp
         ev/d20/state/service_detail.cpp
         ev/d20/state/service_selection.cpp

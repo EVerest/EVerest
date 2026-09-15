@@ -44,15 +44,14 @@ enum class StateID {
 };
 
 // What a state did with the event, declared rather than inferred.
-//
-// A state that consumes a response must leave exactly one thing behind: a new request, a stopped
-// session, or a successor whose enter() emits. Do none of those and no timer stays armed, so the
-// session hangs with nothing to show for it. Session::feed_fsm() verifies each after the feed.
+// A consumed response must leave a request, a stopped session or an emitting successor behind;
+// Session::feed_fsm() verifies that after every feed.
 enum class Disposition {
     Ignored,       // the event was not this state's to handle; nothing was consumed
     Awaiting,      // a request was emitted; the session now waits for its response
     Stopping,      // the session is being torn down
     Transitioning, // control passes to new_state, whose enter() drives the next step
+    Handover,      // SAP negotiated another protocol generation; the Session switches engines
 };
 
 struct Result {
@@ -73,6 +72,11 @@ struct Result {
     // Pairs with a stop_session() on this path, including the ones inside expect_response().
     static Result stopping() {
         return Result{Disposition::Stopping};
+    }
+
+    // Pairs with a set_negotiated_protocol() != ISO15118_20 on this path.
+    static Result handover() {
+        return Result{Disposition::Handover};
     }
 
     // Derived from output: only Ignored leaves the event unhandled. The fsm engine reads

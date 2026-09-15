@@ -11,6 +11,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <optional>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <everest/io/event/fd_event_handler.hpp>
@@ -123,7 +125,8 @@ SCENARIO("ISO15118-20 EV DataClient connects and exchanges raw V2GTP frames over
         int connected_count = 0;
         int failed_count = 0;
         client.connect(
-            loopback_endpoint(listener.port()), "", [&]() { ++connected_count; }, [&]() { ++failed_count; });
+            loopback_endpoint(listener.port()), "", std::nullopt, [&]() { ++connected_count; },
+            [&]() { ++failed_count; });
 
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
         const auto run_reactor_until = [&](auto&& predicate) {
@@ -227,7 +230,7 @@ SCENARIO("ISO15118-20 EV DataClient surfaces a failed connect via on_failed") {
         int connected_count = 0;
         int failed_count = 0;
         client.connect(
-            loopback_endpoint(closed_port), "", [&]() { ++connected_count; }, [&]() { ++failed_count; });
+            loopback_endpoint(closed_port), "", std::nullopt, [&]() { ++connected_count; }, [&]() { ++failed_count; });
 
         WHEN("the reactor is run until the connect fails") {
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
@@ -252,7 +255,8 @@ SCENARIO("ISO15118-20 EV DataClient surfaces a failed connect via on_failed") {
                 // A reconnect must tear down the prior registration, or register_events
                 // short-circuits and the second failure never surfaces (hang).
                 client.connect(
-                    loopback_endpoint(closed_port), "", [&]() { ++connected_count; }, [&]() { ++failed_count; });
+                    loopback_endpoint(closed_port), "", std::nullopt, [&]() { ++connected_count; },
+                    [&]() { ++failed_count; });
 
                 const auto retry_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
                 while (failed_count < 2 and std::chrono::steady_clock::now() < retry_deadline) {
@@ -267,10 +271,9 @@ SCENARIO("ISO15118-20 EV DataClient surfaces a failed connect via on_failed") {
     }
 }
 
-SCENARIO("ISO15118-20 EV DataClient surfaces a peer disconnect on an established link") {
-    // on_failed was only exercised at connect time before; a vanished SECC must
-    // surface the same way or the EV sits on a dead socket until the response
-    // watchdog expires. libio reports the drop as ECONNRESET.
+SCENARIO("ISO15118-20 EV DataClient reports a peer disconnect as a close, not a failure") {
+    // libio reports the drop as ECONNRESET. on_failed stays reserved for real errors: the
+    // Controller drives a close through on_closed so the Session can tear down gracefully.
     GIVEN("a connected DataClient") {
         LoopbackListener listener;
         fd_event_handler handler;
@@ -279,7 +282,8 @@ SCENARIO("ISO15118-20 EV DataClient surfaces a peer disconnect on an established
         int connected_count = 0;
         int failed_count = 0;
         client.connect(
-            loopback_endpoint(listener.port()), "", [&]() { ++connected_count; }, [&]() { ++failed_count; });
+            loopback_endpoint(listener.port()), "", std::nullopt, [&]() { ++connected_count; },
+            [&]() { ++failed_count; });
 
         const auto run_until = [&](auto&& predicate, std::chrono::milliseconds budget) {
             const auto deadline = std::chrono::steady_clock::now() + budget;
@@ -297,15 +301,90 @@ SCENARIO("ISO15118-20 EV DataClient surfaces a peer disconnect on an established
         WHEN("the peer drops the established connection") {
             listener.close_peer();
 
-            THEN("on_failed fires exactly once and further sends are refused") {
-                REQUIRE(run_until([&]() { return failed_count > 0; }, std::chrono::seconds(2)));
-                REQUIRE(failed_count == 1);
+            THEN("on_failed never fires and further sends are refused") {
+                // Nothing to wait for, so run the reactor for a fixed budget.
+                run_until([&]() { return false; }, std::chrono::milliseconds(500));
+
+                REQUIRE(failed_count == 0);
                 REQUIRE(connected_count == 1);
 
-                // Session's outbound seam runs through send(), so even a consumer that
-                // ignores on_failed can't wait on a response to an untransmitted frame.
+                // Session's outbound seam runs through send(), so a consumer can't wait on a
+                // response to an untransmitted frame.
                 REQUIRE_FALSE(client.send({0x01, 0x02, 0x03}));
             }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV DataClient reports a peer EOF through on_closed") {
+    GIVEN("a connected DataClient with an on_closed handler") {
+        LoopbackListener listener;
+        fd_event_handler handler;
+        DataClient client(handler);
+
+        int closed_count = 0;
+        client.on_closed([&]() { ++closed_count; });
+
+        int connected_count = 0;
+        int failed_count = 0;
+        client.connect(
+            loopback_endpoint(listener.port()), "", std::nullopt, [&]() { ++connected_count; },
+            [&]() { ++failed_count; });
+
+        const auto run_until = [&](auto&& predicate, std::chrono::milliseconds budget) {
+            const auto deadline = std::chrono::steady_clock::now() + budget;
+            while (not predicate() and std::chrono::steady_clock::now() < deadline) {
+                handler.poll(std::chrono::milliseconds(5));
+                handler.run_actions();
+                listener.try_accept();
+            }
+            return predicate();
+        };
+
+        REQUIRE(run_until([&]() { return connected_count > 0 and listener.peer() >= 0; }, std::chrono::seconds(5)));
+        REQUIRE(closed_count == 0);
+
+        WHEN("the peer closes the established connection") {
+            listener.close_peer();
+
+            THEN("on_closed fires exactly once") {
+                REQUIRE(run_until([&]() { return closed_count > 0; }, std::chrono::seconds(2)));
+                run_until([&]() { return false; }, std::chrono::milliseconds(200));
+                REQUIRE(closed_count == 1);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV DataClient binds its source port to the EVCC range") {
+    // [V2G2-077]/[V2G2-124]: the EVCC uses a port from the dynamic range 49152..65535.
+    GIVEN("a connected DataClient") {
+        LoopbackListener listener;
+        fd_event_handler handler;
+        DataClient client(handler);
+
+        int connected_count = 0;
+        int failed_count = 0;
+        client.connect(
+            loopback_endpoint(listener.port()), "", std::nullopt, [&]() { ++connected_count; },
+            [&]() { ++failed_count; });
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while ((connected_count == 0 or listener.peer() < 0) and std::chrono::steady_clock::now() < deadline) {
+            handler.poll(std::chrono::milliseconds(5));
+            handler.run_actions();
+            listener.try_accept();
+        }
+        REQUIRE(connected_count == 1);
+        REQUIRE(listener.peer() >= 0);
+
+        THEN("the accepted peer's remote port is inside the EVCC range") {
+            sockaddr_in6 remote{};
+            socklen_t remote_len = sizeof(remote);
+            REQUIRE(::getpeername(listener.peer(), reinterpret_cast<sockaddr*>(&remote), &remote_len) == 0);
+            const auto source_port = ntohs(remote.sin6_port);
+            REQUIRE(source_port >= 49152);
+            REQUIRE(source_port <= 65535);
         }
     }
 }

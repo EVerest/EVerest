@@ -298,13 +298,30 @@ SCENARIO("ISO15118-20 EV ServiceDetail finds Dynamic set encoded as narrow int16
     REQUIRE(request_message->selected_energy_transfer_service.parameter_set_id == 7);
 }
 
-SCENARIO("ISO15118-20 EV ServiceDetail stops session when only Scheduled offered") {
+SCENARIO("ISO15118-20 EV ServiceDetail falls back to the Scheduled set when no Dynamic set is offered") {
+    const LogCapture logs{};
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, no_seed};
 
-    expect_stops_session(primed,
-                         make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::DC,
-                                       {make_param_set(5, ControlMode::Scheduled)}),
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::DC,
+                                         {make_param_set(5, ControlMode::Scheduled)}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+    REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 5);
+    REQUIRE(primed.ctx.selected_control_mode() == ControlMode::Scheduled);
+    REQUIRE(logs.has_warning_containing("preferred Dynamic control mode"));
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail stops session when no set carries a readable control mode") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, no_seed};
+
+    auto set = make_param_set(5, ControlMode::Dynamic);
+    set.parameter[1] = {"ControlMode", std::string{"Dynamic"}};
+    expect_stops_session(primed, make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::DC, {set}),
                          ev::d20::StateID::ServiceDetail);
 }
 
@@ -657,4 +674,99 @@ SCENARIO("ISO15118-20 EV ServiceDetail records the DER mask of the set it select
     REQUIRE(selected_parameter_set_id(helper.get_message_exchange()) == 1);
     REQUIRE(ctx.der_negotiated_functions() == first_mask);
     REQUIRE(ctx.selected_ac_connector() == message_20::datatypes::AcConnector::SinglePhase);
+}
+
+namespace {
+ev::d20::SessionOptions prefer(ControlMode mode) {
+    ev::d20::SessionOptions options{};
+    options.control_mode = mode;
+    return options;
+}
+} // namespace
+
+SCENARIO("ISO15118-20 EV ServiceDetail selects the Scheduled set when Scheduled is preferred") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::DC, prefer(ControlMode::Scheduled),
+                                                      no_seed};
+
+    primed.handle_response(make_dc_response(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
+    REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 5);
+    REQUIRE(primed.ctx.selected_control_mode() == ControlMode::Scheduled);
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail falls back to the Dynamic set when Scheduled is preferred but not offered") {
+    const LogCapture logs{};
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::DC, prefer(ControlMode::Scheduled),
+                                                      no_seed};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::DC,
+                                         {make_param_set(7, ControlMode::Dynamic)}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 7);
+    REQUIRE(primed.ctx.selected_control_mode() == ControlMode::Dynamic);
+    REQUIRE(logs.has_warning_containing("preferred Scheduled control mode"));
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail lets the preferred control mode outrank the preferred connector") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC, prefer(ControlMode::Scheduled),
+                                                      seed_ac_lines(3)};
+
+    // The ThreePhase set is Dynamic, so the SinglePhase Scheduled set wins.
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC,
+                                         {make_param_set(1, ControlMode::Dynamic, THREE_PHASE),
+                                          make_param_set(2, ControlMode::Scheduled, SINGLE_PHASE)}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 2);
+    REQUIRE(primed.ctx.selected_control_mode() == ControlMode::Scheduled);
+    REQUIRE(primed.ctx.selected_ac_connector() == message_20::datatypes::AcConnector::SinglePhase);
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail prefers the matching connector within the preferred control mode") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC, prefer(ControlMode::Scheduled),
+                                                      seed_ac_lines(3)};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC,
+                                         {make_param_set(1, ControlMode::Scheduled, SINGLE_PHASE),
+                                          make_param_set(2, ControlMode::Dynamic, THREE_PHASE),
+                                          make_param_set(3, ControlMode::Scheduled, THREE_PHASE)}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 3);
+    REQUIRE(primed.ctx.selected_control_mode() == ControlMode::Scheduled);
+    REQUIRE(primed.ctx.selected_ac_connector() == message_20::datatypes::AcConnector::ThreePhase);
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail records Dynamic for an AC_DER_IEC set even when Scheduled is preferred") {
+    const ev::feedback::Callbacks callbacks{};
+    FsmStateHelper helper{callbacks,
+                          {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                          ServiceCategory::AC_DER_IEC,
+                          all_der_support(),
+                          true,
+                          prefer(ControlMode::Scheduled)};
+    auto& ctx = helper.get_context();
+    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    ev::AcChargeParams params{};
+    params.phase_count = 1;
+    helper.set_ac_params(params);
+    auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
+
+    helper.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC,
+                                         {make_der_param_set(1, ControlMode::Dynamic, der_mask({}))}));
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(ctx.selected_control_mode() == ControlMode::Dynamic);
 }
