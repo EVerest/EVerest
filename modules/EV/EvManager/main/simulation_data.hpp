@@ -43,6 +43,7 @@ struct SimulationData {
     // 2026-09-01). Vehicle state (plugged, CP, V2G) is deliberately NOT touched here.
     void clear_command_ticks() {
         sleep_ticks_left.reset();
+        cp_c_pulse_ticks_left.reset();
         stop_hold_ticks_left.reset();
         pwm_wait_ticks_left.reset();
     }
@@ -51,6 +52,7 @@ struct SimulationData {
     SimState last_state{SimState::UNDEFINED};
     types::slac::State slac_state{types::slac::State::UNMATCHED};
     std::optional<size_t> sleep_ticks_left{};
+    std::optional<size_t> cp_c_pulse_ticks_left{};
     // Set once a stop has been requested (own timer or stop_from_charger): the pilot is held
     // in C until v2g_finished, bounded by this countdown.
     std::optional<size_t> stop_hold_ticks_left{};
