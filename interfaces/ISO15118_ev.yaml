@@ -27,7 +27,21 @@ cmds:
   stop_charging:
     description: Stop the ev charging communication process
   pause_charging:
-    description: Pause the ev charging communication process  
+    description: Pause the ev charging communication process
+  abort_charging:
+    description: >-
+      Terminate the V2G session immediately, without the SessionStop exchange.
+      CP state E/F stops the session ([V2G2-737]); the connection is then torn down
+      ([V2G2-728], [V2G2-025]).
+  cp_state_changed:
+    description: >-
+      Control pilot state the vehicle applies. Gates the EVCC CP checks, e.g.
+      C/D before CableCheckReq ([V2G2-912]).
+    arguments:
+      cp_state:
+        description: The CP state the vehicle has applied
+        type: string
+        $ref: /iso15118#/CpState
   set_fault:
     description: >-
       TODO_SL: Set the different ev faults to communicate these errors
@@ -55,7 +69,25 @@ cmds:
         description: The actual State of Charge from the EV
         type: number
         minimum: 0
+  update_present_values:
+    description: >-
+      Updating the values the EV measures. Separate from update_soc because electrical
+      measurements and SoC have different natural update rates.
+    arguments:
+      PresentValues:
+        description: The values the EV currently measures
+        type: object
+        $ref: /iso15118#/EvPresentValues
 vars:
+  v2g_messages:
+    description: >-
+      The V2G message that was just sent or received, reported per message.
+      The id is always published; the decoded JSON and the raw EXI are only
+      populated when the EVCC runs with debug mode enabled. Unlike the
+      charger-side variable of the same name this is not debug-only: the id
+      is a session-progress signal, so a consumer may depend on it.
+    type: object
+    $ref: /iso15118#/V2gMessages
   v2g_session_finished:
     description: The v2g session between the charger and the car is finished
     type: 'null'
@@ -80,3 +112,9 @@ vars:
   pause_from_charger:
     description: The charger wants to pause the session (only d20)
     type: 'null'
+  dc_evse_present_current:
+    description: EVSE-delivered present current during DC charging (A)
+    type: number
+  dc_evse_present_voltage:
+    description: EVSE-delivered present voltage during DC charging (V)
+    type: number
