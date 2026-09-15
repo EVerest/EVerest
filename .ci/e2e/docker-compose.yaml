@@ -7,8 +7,9 @@ services:
       - type: bind
         source: ./mosquitto/mosquitto.conf
         target: /mosquitto/config/mosquitto.conf
-    logging:
-      driver: none
+    # Keep the broker's log. When a run fails because sessions stopped being
+    # acknowledged, the only account of what the broker did is its own, and
+    # `driver: none` threw it away.
     networks:
       - testnetwork
 
