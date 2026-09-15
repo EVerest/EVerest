@@ -120,6 +120,45 @@ SCENARIO("ISO15118-20 EV ServiceSelection transitions to DC_ChargeParameterDisco
     REQUIRE(primed.ctx.selected_service() == ServiceCategory::DC_BPT);
 }
 
+SCENARIO("ISO15118-20 EV ServiceSelection emits an MCS ServiceSelectionRequest on enter") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::MCS, no_seed, uint16_t{8}};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->selected_energy_transfer_service.service_id == ServiceCategory::MCS);
+    REQUIRE(request_message->selected_energy_transfer_service.parameter_set_id == 8);
+}
+
+// MCS is a DC service: it must take the DC parameter discovery, not fall through to the
+// "not supported by the EV" arm that stops the session.
+SCENARIO("ISO15118-20 EV ServiceSelection transitions to DC_ChargeParameterDiscovery on OK for MCS") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::MCS, no_seed, uint16_t{1}};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeParameterDiscovery);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+    REQUIRE(primed.ctx.selected_service() == ServiceCategory::MCS);
+}
+
+SCENARIO("ISO15118-20 EV ServiceSelection transitions to DC_ChargeParameterDiscovery on OK for MCS_BPT") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::MCS_BPT, no_seed, uint16_t{1}};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeParameterDiscovery);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+    REQUIRE(primed.ctx.selected_service() == ServiceCategory::MCS_BPT);
+}
+
 SCENARIO("ISO15118-20 EV ServiceSelection emits an AC_DER_IEC ServiceSelectionRequest on enter") {
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::AC_DER_IEC, no_seed, uint16_t{5}};
