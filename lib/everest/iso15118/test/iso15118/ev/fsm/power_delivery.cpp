@@ -1,0 +1,165 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
+#include <catch2/catch_test_macros.hpp>
+
+#include "helper.hpp"
+
+#include <iso15118/ev/d20/state/power_delivery.hpp>
+#include <iso15118/message/authorization.hpp>
+#include <iso15118/message/power_delivery.hpp>
+#include <iso15118/message/type.hpp>
+
+using namespace iso15118;
+
+namespace {
+using message_20::datatypes::Progress;
+using message_20::datatypes::ResponseCode;
+using message_20::datatypes::ServiceCategory;
+
+message_20::PowerDeliveryResponse make_pd_res(const message_20::Header& header, ResponseCode code) {
+    return message_20::PowerDeliveryResponse{header, code, std::nullopt};
+}
+} // namespace
+
+SCENARIO("ISO15118-20 EV PowerDelivery sends Finished + chosen progress on enter") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, no_seed, Progress::Start};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
+    REQUIRE(request_message->processing == message_20::datatypes::Processing::Finished);
+    REQUIRE(request_message->charge_progress == Progress::Start);
+    REQUIRE_FALSE(request_message->power_profile.has_value());
+    REQUIRE_FALSE(request_message->channel_selection.has_value());
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_ChargeLoop on OK response") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, no_seed, Progress::Start};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_WeldingDetection on Stop") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, no_seed, Progress::Stop};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_WeldingDetection);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+// AC_BPT rides the same is_ac_family() branch as AC. Widening that predicate for
+// AC_DER_IEC must not drop AC_BPT out of the AC dispatch onto the DC path.
+SCENARIO("ISO15118-20 EV PowerDelivery accepts OK_PowerToleranceConfirmed") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, no_seed, Progress::Start};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK_PowerToleranceConfirmed));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery stops the session on an accepted Standby it cannot drive") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, no_seed, Progress::Standby};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::WARNING_StandbyNotAllowed));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    // The response is accepted, but the EV drives no standby loop, so it emits nothing and there
+    // is nothing left to advance the session. It stops here rather than parking silently. This
+    // was already the end-to-end outcome via Session's consumed-but-idle catch-all; the state now
+    // says so itself, which is what makes it visible without running a session.
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+    REQUIRE(primed.ctx.is_session_stopped());
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery stops session on FAILED_ContactorError") {
+    // State-specific rejection beyond the shared triple.
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, no_seed, Progress::Start};
+
+    expect_stops_session(primed, make_pd_res(SESSION_HEADER, ResponseCode::FAILED_ContactorError),
+                         ev::d20::StateID::PowerDelivery);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery rejects malformed responses") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto make_fsm = [](FsmStateHelper& helper) {
+        auto& ctx = helper.get_context();
+        ctx.get_session().set_id(SESSION_HEADER.session_id);
+        return fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::PowerDelivery>(Progress::Start)};
+    };
+    const auto make_ok = [](const message_20::Header& header) { return make_pd_res(header, ResponseCode::OK); };
+    const auto wrong = message_20::AuthorizationResponse{SESSION_HEADER, ResponseCode::OK,
+                                                         message_20::datatypes::Processing::Finished};
+    check_rejection_paths(callbacks, ev::d20::StateID::PowerDelivery, make_fsm, make_ok, wrong);
+}
+
+namespace {
+using message_20::datatypes::ControlMode;
+
+// ScheduleExchange records the tuple the SECC offered before PowerDelivery is entered.
+const auto seed_scheduled_tuple = [](FsmStateHelper& helper) {
+    ev::DcChargeParams params{};
+    params.max_charge_power = 11000.0f;
+    helper.set_dc_params(params);
+    helper.get_context().set_selected_control_mode(ControlMode::Scheduled);
+    helper.get_context().set_selected_schedule_tuple_id(3);
+};
+
+// Scheduled mode without a recorded tuple id, which the state cannot reference.
+const auto seed_scheduled_without_tuple = [](FsmStateHelper& helper) {
+    helper.get_context().set_selected_control_mode(ControlMode::Scheduled);
+};
+} // namespace
+
+SCENARIO("ISO15118-20 EV PowerDelivery carries the selected ScheduleTupleID on Start in Scheduled mode") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_scheduled_tuple, Progress::Start};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->power_profile.has_value());
+    const auto& profile = request_message->power_profile.value();
+    REQUIRE(std::holds_alternative<message_20::datatypes::Scheduled_EVPPTControlMode>(profile.control_mode));
+    REQUIRE(std::get<message_20::datatypes::Scheduled_EVPPTControlMode>(profile.control_mode).selected_schedule == 3);
+    REQUIRE(profile.entries.size() == 1);
+    REQUIRE(message_20::datatypes::from_RationalNumber(profile.entries[0].power) == 11000.0f);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery omits the power profile on Stop in Scheduled mode") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_scheduled_tuple, Progress::Stop};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE_FALSE(request_message->power_profile.has_value());
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery omits the power profile when no ScheduleTupleID was recorded") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_scheduled_without_tuple, Progress::Start};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE_FALSE(request_message->power_profile.has_value());
+}
