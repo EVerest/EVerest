@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# A suite target that matches nothing must fail here. Under xdist, pytest collects
+# zero items from a missing path instead of reporting it.
+shopt -s failglob
 
 # Unified test runner for E2E tests of EVerest.
 #
@@ -13,6 +16,7 @@ set -euo pipefail
 #   framework       Framework tests only
 #   asyncapi        Async API tests only
 #   management      Management API tests only
+#   harness         Unit tests for the test harness itself (no EVerest, no broker)
 #
 #   ocpp            All OCPP tests (1.6, 2.0.1, 2.1)
 #   ocpp16          OCPP 1.6 tests only
@@ -43,6 +47,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE:-$0}")" && pwd)"
 EVEREST_CORE_DIR="$(dirname "$SCRIPT_DIR")"
 PYTHON="${PYTHON_INTERPRETER:-python3}"
+HARNESS_TESTS="${EVEREST_CORE_DIR}/applications/utils/everest-testing/tests"
 
 # Defaults
 WORKERS="${PARALLEL_TESTS:-$(nproc)}"
@@ -215,6 +220,7 @@ case "$SUITE" in
             framework_tests/*.py \
             async_api_tests/*.py \
             management_api_tests/*_tests.py \
+            "$HARNESS_TESTS"/*.py \
             ocpp_tests/test_sets/ocpp16/*.py \
             ocpp_tests/test_sets/ocpp201/*.py \
             ocpp_tests/test_sets/ocpp21/*.py \
@@ -228,7 +234,31 @@ case "$SUITE" in
             framework_tests/*.py \
             async_api_tests/*.py \
             management_api_tests/*_tests.py \
+            "$HARNESS_TESTS"/*.py \
             eebus_tests/eebus_tests.py
+        ;;
+
+    harness)
+        # The harness's own unit tests. They drive SimRegistry and the controllers against
+        # fakes, so they need neither an EVerest prefix nor a broker, and they live outside
+        # tests/ beside the code they cover. That also puts them outside the reach of
+        # tests/conftest.py, which is what registers --everest-prefix and
+        # --network-isolation, so drop those two here. In the `all` and `integration`
+        # suites a tests/ target pulls that conftest in and both options resolve.
+        cd "$SCRIPT_DIR"
+        filtered=()
+        skip_next=false
+        for arg in "${PYTEST_ARGS[@]}"; do
+            if [[ "$skip_next" == "true" ]]; then skip_next=false; continue; fi
+            case "$arg" in
+                --everest-prefix) skip_next=true ;;
+                --network-isolation) ;;
+                *) filtered+=("$arg") ;;
+            esac
+        done
+        PYTEST_ARGS=("${filtered[@]}")
+        run_pytest_suite \
+            "$HARNESS_TESTS"/*.py
         ;;
 
     core)
@@ -298,7 +328,7 @@ case "$SUITE" in
 
     *)
         echo "Unknown suite: $SUITE" >&2
-        echo "Valid suites: all, integration, core, framework, asyncapi, management, ocpp, ocpp16, ocpp201, ocpp21, eebus" >&2
+        echo "Valid suites: all, integration, core, framework, asyncapi, management, harness, ocpp, ocpp16, ocpp201, ocpp21, eebus" >&2
         exit 1
         ;;
 

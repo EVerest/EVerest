@@ -1,0 +1,16 @@
+stateDiagram-v2
+    direction LR
+
+    [*] --> Plugged
+
+    Plugged --> Charging : BspMeasurement duty in (7,97)
+
+    Charging --> ChargingPwmPaused : BspMeasurement duty outside (7,97)
+    ChargingPwmPaused --> Charging : BspMeasurement duty in (7,97)
+
+    Charging --> Paused : PauseSession
+    Paused --> Charging : ResumeSession (no BCB)
+
+    Charging --> [*] : StopSession / Unplug
+    Charging --> Faulted : InjectFault
+    ChargingPwmPaused --> Faulted : InjectFault

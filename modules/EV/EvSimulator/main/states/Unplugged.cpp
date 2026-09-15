@@ -1,0 +1,130 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+#include "Unplugged.hpp"
+
+#include "../FsmContext.hpp"
+#include "../ScenarioDispatcher.hpp"
+#include "Plugged.hpp"
+
+#include <algorithm>
+
+namespace module {
+
+namespace api = API_types::ev_simulator;
+
+void Unplugged::enter() {
+    // The BSP peer's simulation loop is gated on its own enabled flag; arm
+    // it on every Unplugged entry so the path from Disabled (where the BSP
+    // is parked) back to Unplugged restarts the peer's CP/PWM propagation.
+    // Idempotent on transitions between non-Disabled states.
+    ctx.enable_bsp(true);
+    ctx.set_cp(::types::ev_board_support::EvCpState::A);
+    ctx.allow_power_on(false);
+    ctx.iso_stop_charging();
+    // Before reset_session_vars, whose curve drop would otherwise re-arm the
+    // preset steps this reset discards.
+    ctx.scenario.reset();
+    ctx.reset_session_vars();
+    ctx.vars.unplug_after_stop = false;
+    ctx.vars.hold_session = false;
+    if (ctx.take_restore_plug()) {
+        // Plugged when the module last stopped: plug again as it was, with the
+        // persisted session or idle, rather than persist an unplug the EV
+        // never did.
+        replug_ = true;
+        ctx.vars.hold_session = ctx.persisted_state().hold_session;
+    }
+    if (replug_) {
+        ctx.arm_timer(replug_dwell);
+    }
+    // A replug persists the plug it is about to make, so a restart mid-dwell
+    // restores it with the session or idle as asked.
+    ctx.mark_plugged_in(replug_);
+    ctx.kvs_save();
+    ctx.publish_e2m_state(api::FsmState::Unplugged);
+}
+
+StateBase::Result Unplugged::feed(EventType ev) {
+    using EK = EventKind;
+    switch (kind_of(ev)) {
+    case EK::Plug:
+        if (replug_) {
+            // Already plugging once the dwell ends; this plug asks for a session.
+            ctx.vars.hold_session = false;
+            ctx.mark_plugged_in(true);
+            ctx.kvs_save();
+            return {false, nullptr};
+        }
+        return {false, std::make_unique<Plugged>(ctx)};
+    case EK::StateDeadline:
+        if (replug_) {
+            return {false, std::make_unique<Plugged>(ctx)};
+        }
+        return {true, nullptr};
+    case EK::RunScenario: {
+        auto p = std::get<api::RunScenarioParams>(ev.payload);
+        ctx.scenario.start(p.name, p.timing, ctx);
+        return {false, nullptr};
+    }
+    case EK::Disable:
+        return transition_to_disabled(ctx);
+    case EK::SetSoc: {
+        auto p = std::get<api::SetSocParams>(ev.payload);
+        // Clamp at the write site so a single out-of-range value (e.g. 1e30)
+        // cannot publish on e2m/ev_info before the next-tick clamp catches it.
+        const float clamped_soc = std::clamp(p.soc_pct, 0.0f, 100.0f);
+        ctx.vars.soc_pct = clamped_soc;
+        ctx.vars.battery_charge_wh = ctx.vars.battery_capacity_wh * (clamped_soc / 100.0f);
+        return {false, nullptr};
+    }
+    case EK::QueryState:
+        return handle_query_state(ctx, api::FsmState::Unplugged);
+    case EK::StopSession:
+    case EK::PauseSession:
+    case EK::ResumeSession:
+    case EK::SetChargingCurrent:
+    case EK::InjectFault:
+    case EK::ClearFault:
+    case EK::BcbToggle:
+        return reject(ev, "no session active");
+    case EK::Unplug:
+        if (replug_) {
+            ctx.cancel_timer();
+            replug_ = false;
+            ctx.vars.hold_session = false;
+            ctx.mark_plugged_in(false);
+            ctx.kvs_save();
+            return {false, nullptr};
+        }
+        return {true, nullptr};
+    case EK::BspEvent:
+    case EK::BspMeasurement:
+    case EK::EvInfo:
+    case EK::SlacState:
+    case EK::DcEvsePresentCurrent:
+    case EK::DcEvsePresentVoltage:
+    case EK::V2gMessage:
+    case EK::IsoPowerReady:
+    case EK::IsoAcMaxCurrent:
+    case EK::IsoAcTargetPower:
+    case EK::IsoStopFromCharger:
+    case EK::IsoV2GFinished:
+    case EK::IsoDcPowerOn:
+    case EK::IsoPauseFromCharger:
+    // RaiseError / ClearError are intercepted on the loop thread before the
+    // FSM feed; listed only to keep the switch exhaustive (-Werror=switch).
+    // ConfigureSession is intercepted pre-FSM (loop thread); BeginSession is
+    // an internal Plugged-only self-advance. Listed for switch exhaustiveness.
+    case EK::ConfigureSession:
+    case EK::BeginSession:
+    case EK::SetPresentValues:
+    case EK::RaiseError:
+    case EK::ClearError:
+    case EK::Shutdown:
+    case EK::Enable:
+        return {true, nullptr};
+    }
+    return {true, nullptr};
+}
+
+} // namespace module

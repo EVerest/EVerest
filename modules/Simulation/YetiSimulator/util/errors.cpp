@@ -132,3 +132,52 @@ std::tuple<bool, std::optional<ErrorDefinition>> parse_error_type(const std::str
 Everest::error::Error create_error(const Everest::error::ErrorFactory& error_factory, const ErrorDefinition& def) {
     return error_factory.create_error(def.type, def.sub_type, def.message, def.severity);
 }
+
+std::optional<ErrorDefinition> lookup_error_definition(const std::string& full_type) {
+    static const ErrorDefinition table[] = {
+        error_definitions::evse_board_support_DiodeFault,
+        error_definitions::evse_board_support_BrownOut,
+        error_definitions::evse_board_support_EnergyManagement,
+        error_definitions::evse_board_support_PermanentFault,
+        error_definitions::evse_board_support_MREC2GroundFailure,
+        error_definitions::evse_board_support_MREC3HighTemperature,
+        error_definitions::evse_board_support_MREC4OverCurrentFailure,
+        error_definitions::evse_board_support_MREC5OverVoltage,
+        error_definitions::evse_board_support_MREC6UnderVoltage,
+        error_definitions::evse_board_support_MREC8EmergencyStop,
+        error_definitions::evse_board_support_MREC10InvalidVehicleMode,
+        error_definitions::evse_board_support_MREC14PilotFault,
+        error_definitions::evse_board_support_MREC15PowerLoss,
+        error_definitions::evse_board_support_MREC17EVSEContactorFault,
+        error_definitions::evse_board_support_MREC18CableOverTempDerate,
+        error_definitions::evse_board_support_MREC19CableOverTempStop,
+        error_definitions::evse_board_support_MREC20PartialInsertion,
+        error_definitions::evse_board_support_MREC23ProximityFault,
+        error_definitions::evse_board_support_MREC24ConnectorVoltageHigh,
+        error_definitions::evse_board_support_MREC25BrokenLatch,
+        error_definitions::evse_board_support_MREC26CutCable,
+        error_definitions::evse_board_support_TiltDetected,
+        error_definitions::evse_board_support_WaterIngressDetected,
+        error_definitions::evse_board_support_EnclosureOpen,
+        error_definitions::ac_rcd_VendorError,
+        error_definitions::ac_rcd_Selftest,
+        error_definitions::ac_rcd_AC,
+        error_definitions::ac_rcd_DC,
+        error_definitions::ac_rcd_MREC2GroundFailure,
+        error_definitions::connector_lock_ConnectorLockUnexpectedClose,
+        error_definitions::connector_lock_ConnectorLockCapNotCharged,
+        error_definitions::connector_lock_ConnectorLockUnexpectedOpen,
+        error_definitions::connector_lock_ConnectorLockFailedLock,
+        error_definitions::connector_lock_ConnectorLockFailedUnlock,
+        error_definitions::connector_lock_MREC1ConnectorLockFailure,
+        error_definitions::connector_lock_VendorError,
+        error_definitions::powermeter_CommunicationFault,
+    };
+
+    for (const auto& def : table) {
+        if (full_type == def.type) {
+            return def;
+        }
+    }
+    return std::nullopt;
+}
