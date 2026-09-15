@@ -24,6 +24,14 @@ config:
       Simulation commands, e.g. sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
     type: string
     default: ""
+  session_logging:
+    description: >-
+      Log every V2G response the EV accepted in the HLC session to the console
+      (the ISO15118_ev provider does not report the requests it sends) -- the
+      EV-side counterpart of the EvseManager option of the same name. Debug aid;
+      off by default.
+    type: boolean
+    default: false
   ac_nominal_voltage:
     description: Nominal AC voltage between phase and neutral in Volt
     type: number
@@ -40,6 +48,12 @@ config:
     description: Maximum voltage allowed by the EV
     type: integer
     default: 900
+  dc_min_voltage_limit:
+    description: >-
+      Minimum voltage the EV can accept. Emitted into DC_PreChargeReq and DC_ChargeLoopReq,
+      where it is mandatory.
+    type: integer
+    default: 150
   dc_energy_capacity:
     description: Energy capacity of the EV
     type: integer

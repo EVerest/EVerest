@@ -1,3 +1,5 @@
+# AC ISO 15118-2 SIL: C++ EVCC (Ev15118) against the EvseV2G SECC, plaintext, EIM.
+# The AC_EVChargeParameter values the EV sends come from the iso2_ac_* options.
 settings:
   telemetry_enabled: true
 active_modules:
@@ -42,7 +44,7 @@ active_modules:
     config_module:
       auto_enable: true
       auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
+      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session AC;iso_wait_pwr_ready;iso_draw_power_regulated 16,3;iso_wait_for_stop 20;iso_wait_v2g_session_stopped;unplug
       connector_id: 1
     connections:
       ev:
@@ -122,9 +124,15 @@ active_modules:
   iso15118_car:
     config_module:
       device: auto
+      response_timeout_ms: 8000
       supported_ISO15118_2: true
+      ac_phase_count: 3
+      iso2_ac_e_amount_wh: 60000
+      iso2_ac_ev_max_voltage_v: 400
+      iso2_ac_ev_max_current_a: 16
+      iso2_ac_ev_min_current_a: 6
     connections: {}
-    module: PyEvJosev
+    module: Ev15118
   iso15118_charger:
     config_module:
       device: auto
