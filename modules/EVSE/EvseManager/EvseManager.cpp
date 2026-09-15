@@ -1169,7 +1169,18 @@ void EvseManager::ready() {
                 // r_slac[0]->call_reset(true);
                 // This is entering BCD from state A
                 car_manufacturer = types::evse_manager::CarManufacturer::Unknown;
+                // New session: restart the B/C transition counter used for BCB-toggle detection.
+                // Push the reset to SLAC too, otherwise EvseSlac's counter stays at the previous
+                // (stale) value and the CM_VALIDATE baseline is off, under-counting the BCB toggles.
+                bc_transition_count = 0;
+                r_slac[0]->call_count_bc(bc_transition_count);
                 r_slac[0]->call_enter_bcd();
+            } else if (event == CPEvent::CarRequestedPower) {
+                // Count only the B->C edge (CarRequestedPower): a BCB toggle is B->C->B, so one B->C
+                // per toggle. Pushing the running total to SLAC lets EvseSlac use it directly as the
+                // number of BCB toggles during CM_VALIDATE (no C->B counting, halving the command calls).
+                bc_transition_count += 1;
+                r_slac[0]->call_count_bc(bc_transition_count);
             } else if (event == CPEvent::CarUnplugged) {
                 if (hlc_link_in_use) {
                     // An HLC session is still up: the stack closes the V2G TCP connection on the
@@ -1622,7 +1633,8 @@ void EvseManager::ready_to_start_charging() {
     charger->enable_disable_initial_state_publish();
 
     this->p_evse->publish_ready(true);
-    EVLOG_info << fmt::format(fmt::emphasis::bold | fg(fmt::terminal_color::green), "🌀🌀🌀 Ready to start charging 🌀🌀🌀");
+    EVLOG_info << fmt::format(fmt::emphasis::bold | fg(fmt::terminal_color::green),
+                              "🌀🌀🌀 Ready to start charging 🌀🌀🌀");
     if (!initial_powermeter_value_received) {
         EVLOG_warning << "No powermeter value received yet!";
     }

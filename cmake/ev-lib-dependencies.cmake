@@ -31,7 +31,6 @@ set(EVEREST_LIB_SUBDIRS
     evse_security
     external_energy_limits
     framework
-    fsm
     helpers
     ieee2030_1_1
     io
@@ -40,12 +39,12 @@ set(EVEREST_LIB_SUBDIRS
     ocpp
     ocpp_module_common
     run_application
-    slac
     sqlite
     timer
     tls
     util
     yaml
+    slac
 )
 
 # --- Internal dependency map ---
@@ -64,7 +63,7 @@ set(EVEREST_LIB_DEPS_ocpp "log;timer;evse_security;sqlite;util")
 set(EVEREST_LIB_DEPS_iso15118 "cbv2g;util;tls")
 set(EVEREST_LIB_DEPS_ieee2030_1_1 "util")
 set(EVEREST_LIB_DEPS_tls "util;evse_security")
-set(EVEREST_LIB_DEPS_slac "tls;fsm")
+set(EVEREST_LIB_DEPS_slac "everest_api_types;io;tls")
 # Tier 3 (framework-coupled)
 set(EVEREST_LIB_DEPS_helpers "tls;framework")
 set(EVEREST_LIB_DEPS_external_energy_limits "framework")
