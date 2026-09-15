@@ -120,7 +120,7 @@ else()
 endif()
 
 install(TARGETS everest_io
-    EXPORT everest-core-targets
+    EXPORT everest-base-targets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
