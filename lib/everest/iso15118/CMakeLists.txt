@@ -30,6 +30,7 @@ endif()
 # options
 option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
 option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
+option(ISO15118_BUILD_EV_SIDE "Build the EV (EVCC) side of the stack, not just the SECC" OFF)
 option(ISO15118_INSTALL "Enable install target" ${EVC_MAIN_PROJECT})
 option(DISABLE_ISO15118_LOCAL_DEPENDENCIES "Disable local dependency lookup for libiso15118" OFF)
 option(ISO15118_USE_EXPORTED_BUILD "Use (experimental) exported build of libiso15118" OFF)
@@ -72,10 +73,17 @@ if (ISO15118_INSTALL)
         EXPORT iso15118-targets
     )
 
+    # ev/ declares symbols that are only in the library when the EV side was built, so a
+    # charger-only install must not ship those headers.
+    set(ISO15118_HEADER_EXCLUDES PATTERN "detail" EXCLUDE)
+    if(NOT ISO15118_BUILD_EV_SIDE)
+        list(APPEND ISO15118_HEADER_EXCLUDES PATTERN "ev" EXCLUDE)
+    endif()
+
     install(
         DIRECTORY include/
         TYPE INCLUDE
-        PATTERN "detail" EXCLUDE
+        ${ISO15118_HEADER_EXCLUDES}
     )
 
     evc_setup_package(
