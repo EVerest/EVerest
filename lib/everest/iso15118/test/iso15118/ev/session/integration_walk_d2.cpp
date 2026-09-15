@@ -685,6 +685,38 @@ SCENARIO("ISO15118-2 EV Session ignores frames with a non-SAP payload type") {
     }
 }
 
+SCENARIO("ISO15118-2 EV Session survives a frame larger than the old accumulator ceiling") {
+    // A real ISO 15118-2 CertificateInstallationRes carries six certificates plus the
+    // encrypted contract key, the DH public key, the eMAID and the XML signature, and
+    // measures 4143 bytes of EXI on the wire. The inbound V2GTP accumulator used to hold
+    // 2048, so every such frame was rejected as malformed and the session was torn down
+    // before the contract could be presented. Framed under a payload type the -2 engine
+    // ignores, so this asserts the transport ceiling alone and not message semantics.
+    constexpr std::size_t CERTIFICATE_INSTALLATION_RES_PAYLOAD = 4143;
+
+    GIVEN("a Session that handed over to the ISO 15118-2 engine") {
+        auto fx = make_fixture({ProtocolId::ISO15118_20, ProtocolId::ISO15118_2, ProtocolId::DIN70121}, walk_params(),
+                               message_20::datatypes::ServiceCategory::DC);
+        walk_sap(*fx, 2, 3);
+        const auto captured_before = fx->captured.size();
+
+        WHEN("a frame that long arrives") {
+            fx->session.on_bytes_received(
+                frame_payload(PT::Part20Main, std::vector<uint8_t>(CERTIFICATE_INSTALLATION_RES_PAYLOAD, 0xAB)));
+
+            THEN("the session is still alive and the next real response still advances it") {
+                REQUIRE_FALSE(fx->session.is_finished());
+                REQUIRE(fx->captured.size() == captured_before);
+
+                const auto req = step<message_2::ServiceDiscoveryRequest>(*fx, "SessionSetup -> ServiceDiscovery",
+                                                                          session_setup_res());
+                REQUIRE(req.header.session_id == D2_SID);
+                REQUIRE_FALSE(fx->timed_out);
+            }
+        }
+    }
+}
+
 SCENARIO("ISO15118-2 EV Session re-arms a dropped frame with the configured response timeout") {
     GIVEN("a Session with a 1000 ms override against the 2000 ms -2 message timeout") {
         auto fx = make_fixture({ProtocolId::ISO15118_20, ProtocolId::ISO15118_2, ProtocolId::DIN70121}, walk_params(),

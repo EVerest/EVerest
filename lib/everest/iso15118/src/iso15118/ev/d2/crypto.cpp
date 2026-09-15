@@ -237,7 +237,26 @@ bool digest_signed_info(const iso2_SignedInfoType& signed_info, std::array<uint8
     return sha256(buffer.data(), exi_bitstream_get_length(&stream), out);
 }
 
+// The fragment models eMAID with the schema-informed element fragment grammar, so its member is a
+// distinct generated type from the message's EMAIDType and the two character fields are copied
+// across. The asserts fire if either buffer stops matching, rather than truncating in silence.
+iso2_eMAIDElementFragment as_fragment(const iso2_EMAIDType& emaid) {
+    iso2_eMAIDElementFragment fragment{};
+    static_assert(sizeof(fragment.Id.characters) == sizeof(emaid.Id.characters));
+    static_assert(sizeof(fragment.CONTENT.characters) == sizeof(emaid.CONTENT.characters));
+    fragment.Id_isUsed = 1;
+    fragment.Id.charactersLen = emaid.Id.charactersLen;
+    std::memcpy(fragment.Id.characters, emaid.Id.characters, sizeof(fragment.Id.characters));
+    fragment.CONTENT_isUsed = 1;
+    fragment.CONTENT.charactersLen = emaid.CONTENT.charactersLen;
+    std::memcpy(fragment.CONTENT.characters, emaid.CONTENT.characters, sizeof(fragment.CONTENT.characters));
+    return fragment;
+}
+
 // SHA-256 over an iso2_exiFragment carrying the single element `fill` sets.
+// `fill` assigns the element rather than memcpy'ing it: the fragment member and the message
+// member are separate generated types that happen to coincide today, and a memcpy between
+// them keeps compiling after they diverge while silently encoding the wrong bytes.
 template <typename Fill> bool digest_fragment(Fill fill, std::array<uint8_t, SHA256_LEN>& out) {
     auto fragment = std::make_unique<iso2_exiFragment>();
     init_iso2_exiFragment(fragment.get());
@@ -258,14 +277,13 @@ bool digest_request_fragment(const iso2_exiDocument& doc, std::array<uint8_t, SH
     const auto fill = [&body](iso2_exiFragment& fragment) {
         if (body.AuthorizationReq_isUsed) {
             fragment.AuthorizationReq_isUsed = 1;
-            std::memcpy(&fragment.AuthorizationReq, &body.AuthorizationReq, sizeof(fragment.AuthorizationReq));
+            fragment.AuthorizationReq = body.AuthorizationReq;
         } else if (body.MeteringReceiptReq_isUsed) {
             fragment.MeteringReceiptReq_isUsed = 1;
-            std::memcpy(&fragment.MeteringReceiptReq, &body.MeteringReceiptReq, sizeof(fragment.MeteringReceiptReq));
+            fragment.MeteringReceiptReq = body.MeteringReceiptReq;
         } else if (body.CertificateInstallationReq_isUsed) {
             fragment.CertificateInstallationReq_isUsed = 1;
-            std::memcpy(&fragment.CertificateInstallationReq, &body.CertificateInstallationReq,
-                        sizeof(fragment.CertificateInstallationReq));
+            fragment.CertificateInstallationReq = body.CertificateInstallationReq;
         }
     };
 
@@ -306,24 +324,22 @@ bool verify_res_references(const iso2_CertificateInstallationResType& res, const
                                                             : static_cast<uint16_t>(0),
             [&res](iso2_exiFragment& f) {
                 f.ContractSignatureCertChain_isUsed = 1;
-                std::memcpy(&f.ContractSignatureCertChain, &res.ContractSignatureCertChain,
-                            sizeof(f.ContractSignatureCertChain));
+                f.ContractSignatureCertChain = res.ContractSignatureCertChain;
             }) and
         add("ContractSignatureEncryptedPrivateKey", res.ContractSignatureEncryptedPrivateKey.Id.characters,
             res.ContractSignatureEncryptedPrivateKey.Id.charactersLen,
             [&res](iso2_exiFragment& f) {
                 f.ContractSignatureEncryptedPrivateKey_isUsed = 1;
-                std::memcpy(&f.ContractSignatureEncryptedPrivateKey, &res.ContractSignatureEncryptedPrivateKey,
-                            sizeof(f.ContractSignatureEncryptedPrivateKey));
+                f.ContractSignatureEncryptedPrivateKey = res.ContractSignatureEncryptedPrivateKey;
             }) and
         add("DHpublickey", res.DHpublickey.Id.characters, res.DHpublickey.Id.charactersLen,
             [&res](iso2_exiFragment& f) {
                 f.DHpublickey_isUsed = 1;
-                std::memcpy(&f.DHpublickey, &res.DHpublickey, sizeof(f.DHpublickey));
+                f.DHpublickey = res.DHpublickey;
             }) and
         add("eMAID", res.eMAID.Id.characters, res.eMAID.Id.charactersLen, [&res](iso2_exiFragment& f) {
             f.eMAID_isUsed = 1;
-            std::memcpy(&f.eMAID, &res.eMAID, sizeof(f.eMAID));
+            f.eMAID = as_fragment(res.eMAID);
         });
     if (not built) {
         return false;
