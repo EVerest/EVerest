@@ -34,7 +34,7 @@ on:
         required: true
 jobs:
   create-coverage-badge:
-    name: Create Coverage Badge
+    name: coverage badge
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Checkout local github actions

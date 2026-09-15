@@ -61,7 +61,7 @@ on:
 
 jobs:
   build-docs:
-    name: Build EVerest Documentation
+    name: build
     runs-on: ${{ inputs.runner }}
     env:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock

@@ -14,7 +14,7 @@ on:
         type: string
 jobs:
   bazel-cross-build:
-    name: Cross-compile (${{ inputs.platform }})
+    name: build
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Checkout
