@@ -43,9 +43,19 @@ void DC_ChargeParameterDiscovery::enter() {
     message_20::DC_ChargeParameterDiscoveryRequest req;
     setup_header(req.header, m_ctx.get_session());
 
-    dt::DC_CPDReqEnergyTransferMode mode{};
-    fill_charge_limits(mode, p);
-    req.transfer_mode = mode;
+    if (m_ctx.is_bpt()) {
+        dt::BPT_DC_CPDReqEnergyTransferMode mode{};
+        fill_charge_limits(mode, p);
+        mode.max_discharge_power = dt::from_float(p.max_discharge_power);
+        mode.min_discharge_power = dt::from_float(p.min_discharge_power);
+        mode.max_discharge_current = dt::from_float(p.max_discharge_current);
+        mode.min_discharge_current = dt::RationalNumber{0, 0};
+        req.transfer_mode = mode;
+    } else {
+        dt::DC_CPDReqEnergyTransferMode mode{};
+        fill_charge_limits(mode, p);
+        req.transfer_mode = mode;
+    }
 
     m_ctx.send_request(req);
 }
@@ -64,6 +74,18 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
 
     if (auto stop = stop_before_start(m_ctx)) {
         return std::move(*stop);
+    }
+
+    if (m_ctx.is_bpt()) {
+        const auto* mode = std::get_if<dt::BPT_DC_CPDResEnergyTransferMode>(&res->transfer_mode);
+        if (mode == nullptr) {
+            logf_error("DC_ChargeParameterDiscoveryResponse offers a non-BPT transfer mode the EV did not request");
+            m_ctx.stop_session();
+            return Result::stopping();
+        }
+        m_ctx.feedback.dc_bpt_limits(*mode);
+        m_ctx.feedback.dc_evse_present_limits(evse_present_limits(*mode));
+        return m_ctx.create_state<ScheduleExchange>();
     }
 
     const auto* mode = std::get_if<dt::DC_CPDResEnergyTransferMode>(&res->transfer_mode);

@@ -13,6 +13,7 @@
 
 #include <iso15118/io/ipv6_endpoint.hpp>
 
+#include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/config.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/session.hpp>
@@ -29,7 +30,8 @@ namespace iso15118::ev {
  */
 class Controller {
 public:
-    Controller(EvConfig config, feedback::Callbacks callbacks, DcChargeParams initial_dc_params = {});
+    Controller(EvConfig config, feedback::Callbacks callbacks, DcChargeParams initial_dc_params = {},
+               AcChargeParams initial_ac_params = {});
 
     Controller(const Controller&) = delete;
     Controller& operator=(const Controller&) = delete;
@@ -61,6 +63,7 @@ public:
     // Module -> FSM parameter channels (any thread).
     void update_present_soc(double present_soc);
     void update_present_voltage(float present_voltage);
+    void update_present_active_power(float present_active_power);
     // Replace the static DC fields; the live fields keep their current values.
     void update_dc_params(const DcChargeParams& params);
 
@@ -100,6 +103,7 @@ private:
 
     // Outlive the Session (its Context references them).
     everest::lib::util::monitor<DcChargeParams> dc_params;
+    everest::lib::util::monitor<AcChargeParams> ac_params;
 
     std::unique_ptr<Session> session;
 };

@@ -15,6 +15,7 @@
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/session/protocol.hpp>
 
+#include <iso15118/ev/der_control_functions.hpp>
 #include <iso15118/ev/session_params.hpp>
 
 namespace iso15118::ev {
@@ -103,6 +104,13 @@ struct EvConfig {
 
     // Response watchdog per request. Zero: the per-message table (ev/d20/timeouts.hpp).
     std::chrono::milliseconds response_timeout{0};
+
+    // IEC DER control functions the EV supports, matched in ServiceDetail. AC_DER_IEC only.
+    DerControlFunctions der_control_functions{};
+
+    // false selects a set demanding unsupported functions anyway, which deviates from
+    // [V2G20-3191]: the EV may only select AC_DER_IEC when it supports every demanded function.
+    bool der_stop_on_unsupported_functions{true};
 
     // Security byte of the SDP request: TLS when TLS is requested, else the paused session's.
     io::v2gtp::Security sdp_security() const {

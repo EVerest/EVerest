@@ -26,6 +26,8 @@ SCENARIO("ISO15118-20 EV per-message response timeout table") {
         }
 
         THEN("every charge loop gets the short loop timeout") {
+            REQUIRE(timeouts::response_timeout(StateID::AC_ChargeLoop) == 500ms);
+            REQUIRE(timeouts::response_timeout(StateID::AC_DER_IEC_ChargeLoop) == 500ms);
             REQUIRE(timeouts::response_timeout(StateID::DC_ChargeLoop) == 500ms);
         }
 

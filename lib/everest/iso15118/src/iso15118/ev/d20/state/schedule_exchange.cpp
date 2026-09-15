@@ -6,6 +6,7 @@
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/dc_cable_check.hpp>
+#include <iso15118/ev/d20/state/power_delivery.hpp>
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
 #include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
@@ -92,6 +93,9 @@ Result ScheduleExchange::feed(Event ev) {
         }
 
         m_ctx.feedback.ev_power_ready();
+        if (m_ctx.is_ac_family()) {
+            return m_ctx.create_state<PowerDelivery>(dt::Progress::Start);
+        }
         return m_ctx.create_state<DC_CableCheck>();
     }
 

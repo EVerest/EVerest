@@ -58,6 +58,25 @@ SCENARIO("ISO15118-20 EV build_sap_offer covers the offered generations") {
         }
     }
 
+    GIVEN("an AC service offering -20, -2 and DIN") {
+        const auto offer = build_sap_offer(all_generations(ServiceCategory::AC));
+
+        THEN("the AC -20 namespace is used and DIN is dropped, renumbering the rest") {
+            REQUIRE(namespaces(offer) == std::vector<std::string>{ISO20_AC_PROTOCOL_NAMESPACE, ISO2_NAMESPACE});
+            REQUIRE(offer[1].entry.schema_id == 2);
+        }
+    }
+
+    GIVEN("an AC_BPT service offering -20 only") {
+        SapOfferInput input;
+        input.energy_service = ServiceCategory::AC_BPT;
+        const auto offer = build_sap_offer(input);
+
+        THEN("the AC -20 namespace is used") {
+            REQUIRE(namespaces(offer) == std::vector<std::string>{ISO20_AC_PROTOCOL_NAMESPACE});
+        }
+    }
+
     GIVEN("a DC service under TLS offering -20, -2 and DIN") {
         auto input = all_generations(ServiceCategory::DC);
         input.tls = true;
