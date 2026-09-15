@@ -7,8 +7,16 @@ services:
       - type: bind
         source: ./mosquitto/mosquitto.conf
         target: /mosquitto/config/mosquitto.conf
-    logging:
-      driver: none
+    # mosquitto.conf's max_connections is only reachable if the process has the
+    # descriptors to back it: one per client socket on top of the listeners. Docker's
+    # default soft limit is 1024, which is below what the suites ask for.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    # Keep the broker's log. When a run fails because sessions stopped being
+    # acknowledged, the only account of what the broker did is its own, and
+    # `driver: none` threw it away.
     networks:
       - testnetwork
 
