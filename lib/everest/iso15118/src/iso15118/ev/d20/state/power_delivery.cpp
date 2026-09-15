@@ -5,9 +5,12 @@
 
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
+#include <iso15118/ev/d20/state/ac_charge_loop.hpp>
+#include <iso15118/ev/d20/state/ac_der_iec_charge_loop.hpp>
 #include <iso15118/ev/d20/state/dc_charge_loop.hpp>
 #include <iso15118/ev/d20/state/dc_welding_detection.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
+#include <iso15118/ev/d20/state/session_stop.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/power_delivery.hpp>
 #include <iso15118/message/schedule_exchange.hpp>
@@ -34,9 +37,11 @@ std::optional<dt::PowerProfile> make_scheduled_power_profile(const Context& ctx,
     dt::PowerProfile profile{};
     profile.time_anchor = time_anchor;
     profile.control_mode = mode;
-    profile.entries.push_back(dt::PowerScheduleEntry{dt::SCHEDULED_POWER_DURATION_S,
-                                                     dt::from_float(ctx.get_dc_params().max_charge_power), std::nullopt,
-                                                     std::nullopt});
+    profile.entries.push_back(
+        dt::PowerScheduleEntry{dt::SCHEDULED_POWER_DURATION_S,
+                               dt::from_float(ctx.is_ac_family() ? ctx.get_ac_params().max_charge_power
+                                                                 : ctx.get_dc_params().max_charge_power),
+                               std::nullopt, std::nullopt});
     return profile;
 }
 
@@ -72,10 +77,22 @@ Result PowerDelivery::feed(Event ev) {
     }
 
     using Progress = message_20::datatypes::Progress;
+    using ServiceCategory = message_20::datatypes::ServiceCategory;
+    const bool is_ac = m_ctx.is_ac_family();
+    const bool is_ac_der_iec = m_ctx.selected_service() == ServiceCategory::AC_DER_IEC;
     switch (m_charge_progress) {
     case Progress::Start:
+        if (is_ac_der_iec) {
+            return m_ctx.create_state<AC_DER_IEC_ChargeLoop>();
+        }
+        if (is_ac) {
+            return m_ctx.create_state<AC_ChargeLoop>();
+        }
         return m_ctx.create_state<DC_ChargeLoop>();
     case Progress::Stop:
+        if (is_ac) {
+            return m_ctx.create_state<SessionStop>();
+        }
         return m_ctx.create_state<DC_WeldingDetection>();
     // The EV drives neither loop; stopping keeps the declared disposition honest.
     case Progress::Standby:

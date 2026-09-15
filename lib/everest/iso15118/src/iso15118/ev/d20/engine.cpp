@@ -16,9 +16,12 @@ Engine::Engine(feedback::Callbacks callbacks, message_20::datatypes::Identifier 
                std::vector<message_20::SupportedAppProtocol> advertised_app_protocols,
                const std::optional<ControlEvent>& current_control_event,
                everest::lib::util::monitor<DcChargeParams>& dc_params,
-               message_20::datatypes::ServiceCategory energy_service, SessionOptions options) :
+               everest::lib::util::monitor<AcChargeParams>& ac_params,
+               message_20::datatypes::ServiceCategory energy_service, DerControlFunctions der_control_functions,
+               bool der_stop_on_unsupported_functions, SessionOptions options) :
     ctx(std::move(callbacks), message_exchange, std::move(evcc_id), std::move(advertised_app_protocols),
-        current_control_event, dc_params, energy_service, std::move(options)) {
+        current_control_event, dc_params, ac_params, energy_service, der_control_functions,
+        der_stop_on_unsupported_functions, std::move(options)) {
 }
 
 void Engine::start() {
