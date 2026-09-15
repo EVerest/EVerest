@@ -36,7 +36,20 @@ if(NOT CXXBRIDGE_INSTALLED)
     everestrs_check_cxxbridge_version(${CXXBRIDGE_BINARY} CXXBRIDGE_INSTALLED)
 endif()
 
+option(EVEREST_FETCH_CXXBRIDGE
+    "Build the cxxbridge CLI from crates.io during configure when it is missing" OFF)
+
 # Either we never had cxxbridge installed, or the version is incorrect. Install the correct version to our build dir.
+if(NOT CXXBRIDGE_INSTALLED AND NOT EVEREST_FETCH_CXXBRIDGE)
+    message(FATAL_ERROR
+        "cxxbridge ${CXXBRIDGE_VERSION} was not found. Install it with\n"
+        "  cargo install cxxbridge-cmd --locked --version ${CXXBRIDGE_VERSION}\n"
+        "or configure with -DEVEREST_FETCH_CXXBRIDGE=ON to build it here. "
+        "Fetching is off by default because it is a silent network download in "
+        "the middle of configure, which is how a version bump that misses the "
+        "build image goes unnoticed.")
+endif()
+
 if(NOT CXXBRIDGE_INSTALLED)
     message(STATUS "Fetching rust cxxbridge cli tool")
     execute_process(
@@ -95,14 +108,7 @@ set_property(
     TARGET
         everestrs_sys
     PROPERTY
-        EVERESTRS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/everestrs
-)
-
-set_property(
-    TARGET
-        everestrs_sys
-    PROPERTY
-        EVERESTRS_BUILD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/everestrs-build
+        EVERESTRS_CRATES_DIR ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_include_directories(everestrs_sys
