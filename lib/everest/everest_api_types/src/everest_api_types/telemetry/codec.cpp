@@ -42,6 +42,14 @@ std::string serialize(V2gEvErrorCode val) noexcept {
     return utilities::dump_json(val);
 }
 
+std::string serialize(SlacState val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(SlacD3State val) noexcept {
+    return utilities::dump_json(val);
+}
+
 std::string serialize(CertChainState const& val) noexcept {
     return utilities::dump_json(val);
 }
@@ -71,6 +79,14 @@ std::string serialize(V2gChargerStatus const& val) noexcept {
 }
 
 std::string serialize(V2gEvseElectrical const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(SlacStatus const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(SlacFsmState const& val) noexcept {
     return utilities::dump_json(val);
 }
 
@@ -106,6 +122,14 @@ template <> V2gEvErrorCode deserialize(std::string_view val) {
     return utilities::parse_json<V2gEvErrorCode>(val);
 }
 
+template <> SlacState deserialize(std::string_view val) {
+    return utilities::parse_json<SlacState>(val);
+}
+
+template <> SlacD3State deserialize(std::string_view val) {
+    return utilities::parse_json<SlacD3State>(val);
+}
+
 template <> CertChainState deserialize(std::string_view val) {
     return utilities::parse_json<CertChainState>(val);
 }
@@ -136,6 +160,14 @@ template <> V2gChargerStatus deserialize(std::string_view val) {
 
 template <> V2gEvseElectrical deserialize(std::string_view val) {
     return utilities::parse_json<V2gEvseElectrical>(val);
+}
+
+template <> SlacStatus deserialize(std::string_view val) {
+    return utilities::parse_json<SlacStatus>(val);
+}
+
+template <> SlacFsmState deserialize(std::string_view val) {
+    return utilities::parse_json<SlacFsmState>(val);
 }
 
 std::ostream& operator<<(std::ostream& os, ChargeProgress const& val) {
@@ -178,6 +210,16 @@ std::ostream& operator<<(std::ostream& os, V2gEvErrorCode const& val) {
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, SlacState const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, SlacD3State const& val) {
+    os << serialize(val);
+    return os;
+}
+
 std::ostream& operator<<(std::ostream& os, CertChainState const& val) {
     os << serialize(val);
     return os;
@@ -214,6 +256,16 @@ std::ostream& operator<<(std::ostream& os, V2gChargerStatus const& val) {
 }
 
 std::ostream& operator<<(std::ostream& os, V2gEvseElectrical const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, SlacStatus const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, SlacFsmState const& val) {
     os << serialize(val);
     return os;
 }
