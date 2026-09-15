@@ -544,7 +544,11 @@ void Everest::publish_var(const std::string& impl_id, const std::string& var_nam
 
     const auto var_topic = fmt::format("{}/var/{}", this->config.mqtt_prefix(this->module_id, impl_id), var_name);
 
-    MqttMessagePayload payload{MqttMessageType::Var, json{{"data", value}}};
+    // Serialize the message directly instead of deep-copying `value` through two json envelopes
+    // (json{{"data", value}} + adl_serializer<MqttMessagePayload>). The produced bytes must stay
+    // identical to dumping MqttMessagePayload{MqttMessageType::Var, json{{"data", value}}}.
+    const std::string payload = fmt::format(R"({{"data":{{"data":{}}},"msg_type":"{}"}})", value.dump(),
+                                            mqtt_message_type_to_string(MqttMessageType::Var));
 
     // FIXME(kai): implement an efficient way of choosing qos for each variable
     this->mqtt_abstraction->publish(var_topic, payload, QOS::QOS2);

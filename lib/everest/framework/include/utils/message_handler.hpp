@@ -45,7 +45,7 @@ public:
     ~MessageHandler();
 
     /// \brief Adds given \p message to the message queue for processing
-    void add(const ParsedMessage& message);
+    void add(ParsedMessage message);
 
     /// \brief Stops all threads started by this handler
     void stop();
