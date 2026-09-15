@@ -68,8 +68,12 @@ std::vector<OfferedProtocol> make_offer(const EvConfig& config) {
 
 } // namespace
 
-Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcChargeParams initial_dc_params) :
-    config(std::move(config_)), feedback(callbacks_), dc_params(std::move(initial_dc_params)) {
+Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcChargeParams initial_dc_params,
+                       AcChargeParams initial_ac_params) :
+    config(std::move(config_)),
+    feedback(callbacks_),
+    dc_params(std::move(initial_dc_params)),
+    ac_params(std::move(initial_ac_params)) {
 
     if (not io::check_and_update_interface(config.interface_name)) {
         throw std::runtime_error("Ethernet interface was not found: " + config.interface_name);
@@ -104,7 +108,8 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcCharg
             return true;
         },
         reactor, SessionTiming{config.send_delay, config.response_timeout}, config.evcc_id, std::move(advertised),
-        &dc_params, config.energy_service, make_session_options(config, std::move(offer)), config.params);
+        &dc_params, &ac_params, config.energy_service, config.der_control_functions,
+        config.der_stop_on_unsupported_functions, make_session_options(config, std::move(offer)), config.params);
 
     session->set_on_finished([this]() {
         online = false;
@@ -347,6 +352,11 @@ void Controller::update_present_soc(double present_soc) {
 void Controller::update_present_voltage(float present_voltage) {
     auto h = dc_params.handle();
     (*h).present_voltage = present_voltage;
+}
+
+void Controller::update_present_active_power(float present_active_power) {
+    auto h = ac_params.handle();
+    (*h).present_active_power = present_active_power;
 }
 
 void Controller::update_dc_params(const DcChargeParams& params) {

@@ -36,6 +36,7 @@
 #include <iso15118/message/variant.hpp>
 #include <iso15118/session/protocol.hpp>
 
+#include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/controller.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/session.hpp>
@@ -50,6 +51,20 @@ using namespace std::chrono_literals;
 // this itself, so ctor sites pass it here.
 inline std::vector<message_20::SupportedAppProtocol> default_advertised_app_protocols() {
     return {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
+}
+
+// The single -20 AC entry an AC-configured ev::Session advertises.
+inline std::vector<message_20::SupportedAppProtocol> default_advertised_ac_app_protocols() {
+    return {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}};
+}
+
+// DER control functions the fixture supports by default, mirroring the module
+// manifest defaults.
+inline DerControlFunctions default_der_control_functions() {
+    DerControlFunctions functions{};
+    functions.dso_q_setpoint_provision = true;
+    functions.dso_cos_phi_setpoint_provision = true;
+    return functions;
 }
 
 // Frame a payload with the 8-byte V2GTP header, mirroring Session's own framing.
@@ -144,10 +159,15 @@ public:
         DcChargeParams params = default_params(),
         std::vector<message_20::SupportedAppProtocol> protocols = default_advertised_app_protocols(),
         message_20::datatypes::ServiceCategory energy_service = message_20::datatypes::ServiceCategory::DC,
-        d20::SessionOptions options = {}, EvSessionParams session_params = {}) :
+        AcChargeParams ac_seed = AcChargeParams{},
+        DerControlFunctions der_control_functions = default_der_control_functions(),
+        bool der_stop_on_unsupported_functions = true, d20::SessionOptions options = {},
+        EvSessionParams session_params = {}) :
         dc_params(std::move(params)),
+        ac_params(std::move(ac_seed)),
         session(make_callbacks(), make_send(), reactor, timing, std::move(evcc_id), std::move(protocols), &dc_params,
-                energy_service, std::move(options), std::move(session_params)) {
+                &ac_params, energy_service, der_control_functions, der_stop_on_unsupported_functions,
+                std::move(options), std::move(session_params)) {
     }
 
     everest::lib::io::event::fd_event_handler reactor;
@@ -159,6 +179,11 @@ public:
     bool ev_power_ready = false;
     bool dc_power_on = false;
     bool stop_from_charger = false;
+    bool ac_limits = false;
+    bool ac_bpt_limits = false;
+    bool dc_bpt_limits = false;
+    bool ac_target_power = false;
+    bool der_control = false;
 
     // Session-level feedback observation.
     std::vector<feedback::Signal> signals;
@@ -196,6 +221,15 @@ private:
         cb.ev_power_ready = [this]() { ev_power_ready = true; };
         cb.dc_power_on = [this]() { dc_power_on = true; };
         cb.stop_from_charger = [this]() { stop_from_charger = true; };
+        cb.ac_limits = [this](const message_20::datatypes::AC_CPDResEnergyTransferMode&) { ac_limits = true; };
+        cb.ac_bpt_limits = [this](const message_20::datatypes::BPT_AC_CPDResEnergyTransferMode&) {
+            ac_bpt_limits = true;
+        };
+        cb.dc_bpt_limits = [this](const message_20::datatypes::BPT_DC_CPDResEnergyTransferMode&) {
+            dc_bpt_limits = true;
+        };
+        cb.ac_target_power = [this](const iso15118::d20::AcTargetPower&) { ac_target_power = true; };
+        cb.der_control = [this](const message_20::datatypes::DER_Dynamic_AC_CLResControlMode&) { der_control = true; };
         cb.signal = [this](feedback::Signal s) { signals.push_back(s); };
         cb.selected_protocol = [this](ProtocolId p) { selected_protocol = p; };
         cb.evse_id = [this](const std::string& id) { evse_id = id; };
@@ -217,6 +251,7 @@ private:
     }
 
     everest::lib::util::monitor<DcChargeParams> dc_params;
+    everest::lib::util::monitor<AcChargeParams> ac_params;
 
 public:
     Session session;
