@@ -17,6 +17,8 @@ public:
     virtual ~RegisteredCommandBase() = default;
     virtual bool operator()(const std::vector<std::string>& /*arguments*/) const = 0;
     [[nodiscard]] virtual std::size_t get_argument_count() const = 0;
+    /// Name this command was registered under, for diagnostics.
+    [[nodiscard]] virtual const std::string& get_command_name() const = 0;
 };
 
 class RegisteredCommand : public RegisteredCommandBase {
@@ -38,6 +40,10 @@ public:
 
     [[nodiscard]] std::size_t get_argument_count() const override {
         return argument_count;
+    }
+
+    [[nodiscard]] const std::string& get_command_name() const override {
+        return command_name;
     }
 
 private:

@@ -19,6 +19,7 @@
 
 #include <utils/date.hpp>
 
+#include <everest/conversions/iso15118/v2g_message_id.hpp>
 #include <everest/util/misc/container.hpp>
 
 #include <iso15118/config.hpp>
@@ -1317,7 +1318,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         // v2g_json stay unset: neither stack decodes the EXI back into a document.
         if (debug_mode) {
             types::iso15118::V2gMessages message;
-            message.id = convert_v2g_message_type(id);
+            message.id = module::conversions::to_v2g_message_id(id);
             if (exi_frame.payload != nullptr and exi_frame.payload_len > 0) {
                 message.exi = to_hex_string(exi_frame);
                 message.exi_base64 = to_base64_string(exi_frame);
