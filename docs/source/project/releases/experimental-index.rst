@@ -17,7 +17,7 @@ are on the way out rather than on the way in.
 With every stable release the maintainers review this list and decide, per
 component, whether to promote it to stable, keep it experimental, or remove it.
 
-The manager options below are documented in full in
+The manager options in the table below are documented in full in
 :ref:`reference-manager-cli`, and the manager logs a warning at startup naming
 any experimental option it was given.
 
@@ -47,3 +47,10 @@ any experimental option it was given.
      - 2026.10.0
      - Stay alive in Idle when there is nothing startable, instead of exiting
        with an error.
+   * - :ref:`EEBUS module <everest_modules_EEBUS>`
+     - 2026.10.0
+     - Bridge to an external EEBUS gRPC service, implementing the Limitation of
+       Power Consumption use case. Configuration parameters and the integration
+       in EVerest may change without further notice. The maintainer of
+       ``eebus-go``, the EEBUS stack underneath the ``eebus_grpc_api`` sidecar
+       the module drives, will not maintain it going forward.

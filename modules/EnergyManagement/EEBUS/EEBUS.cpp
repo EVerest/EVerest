@@ -83,6 +83,9 @@ EEBUS::~EEBUS() {
 }
 
 void EEBUS::init() {
+    EVLOG_warning << "This EEBUS module is currently experimental! Configuration parameters and the integration in "
+                     "EVerest may change without further notice";
+
     // Setup callbacks
     m_callbacks.update_limits_callback = [this](types::energy::ExternalLimits new_limits) {
         r_eebus_energy_sink->call_set_external_limits(std::move(new_limits));
