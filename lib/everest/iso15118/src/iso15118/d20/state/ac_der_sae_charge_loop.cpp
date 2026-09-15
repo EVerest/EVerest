@@ -28,14 +28,9 @@ namespace {
 
 using DerFn = sae::DerBitMapFunctions;
 
-void set_dynamic_parameters_in_res(Dynamic_DER_Res& res_mode, const UpdateDynamicModeParameters& parameters) {
-    if (parameters.departure_time) {
-        const auto departure_time = static_cast<std::uint64_t>(parameters.departure_time.value());
-        const auto now = secc_time_s();
-        if (departure_time > now) {
-            res_mode.departure_time = static_cast<std::uint32_t>(departure_time - now);
-        }
-    }
+void set_dynamic_parameters_in_res(Dynamic_DER_Res& res_mode, const UpdateDynamicModeParameters& parameters,
+                                   std::uint64_t header_timestamp) {
+    res_mode.departure_time = departure_time_offset(parameters.departure_time, header_timestamp);
     res_mode.target_soc = parameters.target_soc;
 
     // The minimum soc is only sent when it does not exceed the target soc.
@@ -216,7 +211,7 @@ handle_request(const message_20::DER_SAE_AC_ChargeLoopRequest& req, const d20::S
              changed_since_cpd, ev_supported_modes.value(), log_state);
 
         if (selected_mobility_needs_mode == dt::MobilityNeedsMode::ProvidedBySecc) {
-            set_dynamic_parameters_in_res(res_mode, dynamic_parameters);
+            set_dynamic_parameters_in_res(res_mode, dynamic_parameters, res.header.timestamp);
         }
     } else {
         logf_error("EV sent an unhandled charge loop control mode");
@@ -323,8 +318,7 @@ Result AC_DER_SAE_ChargeLoop::feed(Event ev) {
             // read back out of the response that just went out rather than derived from the config a second
             // time.
             const auto der_control_cl_res =
-                std::visit([](const auto& mode) { return mode.der_control_cl_res; },
-                           res.control_mode);
+                std::visit([](const auto& mode) { return mode.der_control_cl_res; }, res.control_mode);
             m_ctx.session.set_enabled_der_control_modes(derive_enabled_modes(der_control_cl_res));
 
             m_ctx.session.record_der_control_sent(der_config->der_control_update_time);
