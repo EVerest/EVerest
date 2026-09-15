@@ -1,0 +1,143 @@
+# The EVerest half of the Himalayas floating-pointer contract. Its
+# counterpart is .github/workflows/record-pointer-move.yml in
+# EVerest/Himalayas, which receives the dispatch fired at the end of this
+# job. The two payloads have to stay in step.
+#
+# Moves the floating pointer branches forward and records each move in the
+# Himalayas repository's append-only log.
+#
+# WHY THE SECOND HALF MATTERS AS MUCH AS THE FIRST
+# A force-pushed branch keeps no server-side history, so moving the pointer
+# without recording where it went makes every submission against it unverifiable
+# after the fact. pointers.json is the only record that a given commit was ever
+# the agreed base, and the Himalayas gate rejects a submission whose
+# commit is not in it. So if the dispatch step fails, the move is worse than
+# useless - it invalidates submissions. That is why it does not use
+# continue-on-error, and why the branch push happens first.
+#
+# The pointers are UNGATED by design: they advertise "this is the agreed base",
+# not "this works". Do not add a CI-green condition here without changing that
+# contract first - and if you do, the naming has to change too.
+#
+# ALWAYS `git rev-parse --verify --quiet` FOR A REF THAT MAY NOT EXIST.
+# Plain `git rev-parse origin/testing/main` prints the ref NAME to stdout and
+# exits 128 when the ref is missing, so `$(git rev-parse ... || echo none)`
+# captured a two-line string, `[ "$CUR" != "none" ]` was true, and the FIRST
+# move of any pointer failed with a false "would move backwards or sideways".
+# Reproduced; --verify --quiet is what makes the missing case detectable.
+#
+# THIS JOB IS NOT ATOMIC, and cannot be made so from here. The branch moves and
+# then the move is recorded; if the recording fails the branch has already
+# moved, which invalidates every submission made against the new base until
+# someone re-runs. The recording step therefore fails loudly rather than
+# continuing, and the re-run is idempotent on both halves - the push is a no-op
+# if the pointer is already there, and record_pointer_move.py is a no-op if the
+# sha is already logged. Re-run it; do not hand-edit pointers.json.
+
+name: Move Himalayas pointers
+
+on:
+  schedule:
+    - cron: '11 3 * * *'          # daily, before the Himalayas verifier at 06:23
+  workflow_dispatch: {}
+
+permissions:
+  contents: write                 # to force-push the testing/* branches
+
+concurrency:
+  group: move-pointers
+  cancel-in-progress: false       # never race two moves
+
+jobs:
+  move:
+    runs-on: ubuntu-24.04
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - pointer: testing/main
+            tracks: main
+          - pointer: testing/stable-2026.02
+            tracks: stable/2026.02
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the commit to advertise
+        id: sha
+        env:
+          TRACKS: ${{ matrix.tracks }}
+          POINTER: ${{ matrix.pointer }}
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse --verify --quiet "origin/$TRACKS") || {
+            echo "::error::origin/$TRACKS does not exist"; exit 1; }
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          # --verify --quiet prints nothing and exits non-zero when the ref is
+          # missing, so a pointer that does not exist yet is detectable. Plain
+          # rev-parse prints the ref name and exits 128, which is what broke the
+          # first move of every pointer.
+          CUR=$(git rev-parse --verify --quiet "origin/$POINTER" || true)
+          echo "current=$CUR" >> "$GITHUB_OUTPUT"
+          if [ -z "$CUR" ]; then
+            echo "$POINTER does not exist yet; this is its first move"
+          elif [ "$CUR" = "$SHA" ]; then
+            echo "unchanged=1" >> "$GITHUB_OUTPUT"
+            echo "already at $SHA - nothing to do"
+          fi
+          echo "Advertising $TRACKS @ $SHA as $POINTER"
+
+      - name: Refuse to move the pointer backwards
+        if: steps.sha.outputs.unchanged != '1'
+        env:
+          POINTER: ${{ matrix.pointer }}
+          SHA: ${{ steps.sha.outputs.sha }}
+          CUR: ${{ steps.sha.outputs.current }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CUR" ]; then
+            # the new commit must be a descendant of the old one
+            if ! git merge-base --is-ancestor "$CUR" "$SHA"; then
+              echo "::error::$POINTER would move backwards or sideways:" \
+                   "$CUR is not an ancestor of $SHA." \
+                   "Refusing - a pointer must only ever move forward."
+              exit 1
+            fi
+          fi
+
+      - name: Force-push the pointer
+        if: steps.sha.outputs.unchanged != '1'
+        env:
+          POINTER: ${{ matrix.pointer }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git push --force origin "$SHA:refs/heads/$POINTER"
+
+      # The log lives in the OTHER repository, so this needs a credential with
+      # dispatch access to it. Scope it to that repo only: a GitHub App
+      # installation token, or a fine-grained PAT limited to
+      # EVerest/Himalayas. Do NOT reuse a token that can write to
+      # EVerest itself.
+      - name: Record the move in Himalayas
+        if: steps.sha.outputs.unchanged != '1'
+        env:
+          GH_TOKEN: ${{ secrets.HIMALAYAS_DISPATCH_TOKEN }}
+          POINTER: ${{ matrix.pointer }}
+          TRACKS: ${{ matrix.tracks }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::HIMALAYAS_DISPATCH_TOKEN is not set." \
+                 "The branch has moved but the move is now UNRECORDED, which" \
+                 "invalidates submissions against it. Set the secret and re-run."
+            exit 1
+          fi
+          gh api repos/EVerest/Himalayas/dispatches \
+            -f event_type=pointer-moved \
+            -F "client_payload[pointer]=$POINTER" \
+            -F "client_payload[tracks]=$TRACKS" \
+            -F "client_payload[sha]=$SHA" \
+            -F "client_payload[moved_at]=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
