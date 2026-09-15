@@ -1,12 +1,8 @@
-# DC ISO 15118-2 SIL over TLS 1.2: C++ EVCC (Ev15118) against the EvseV2G SECC, EIM.
-# DIN SPEC 70121 is plaintext only and therefore not offered here.
 active_modules:
   iso15118_charger:
-    module: EvseV2G
+    module: Evse15118D20
     config_module:
       device: auto
-      tls_security: force
-      tls_key_logging: true
     connections:
       security:
         - module_id: evse_security
@@ -15,13 +11,8 @@ active_modules:
     module: Ev15118
     config_module:
       device: auto
+      evcc_id: "AA:BB:CC:DD:EE:01"
       response_timeout_ms: 8000
-      supported_ISO15118_2: true
-      tls_active: true
-      enforce_tls: true
-      # ISO 15118-2 uses TLS 1.2 without a client certificate.
-      enable_tls_1_3: false
-      enable_tls_key_logging: true
   evse_manager:
     module: EvseManager
     config_module:
