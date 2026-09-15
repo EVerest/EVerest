@@ -46,6 +46,10 @@ public:
     void reset() {
         const auto measured_cp_state = sim_data.actual_bsp_event;
         const auto was_plugged = sim_data.state != SimState::UNPLUGGED;
+        // A cp_c_pulse cut short by the reset would leave the readiness claim (CP C) standing on
+        // the wire. Release it; nothing above PLUGGED_IN ever runs a pulse, so this is never a
+        // C-exit out of an energized session.
+        const auto pulse_in_flight = sim_data.cp_c_pulse_ticks_left.has_value();
         sim_data = SimulationData();
         sim_data.actual_bsp_event = measured_cp_state;
         sim_data.last_logged_wait_event = measured_cp_state;
@@ -55,6 +59,9 @@ public:
         if (was_plugged) {
             sim_data.state = SimState::PLUGGED_IN;
             sim_data.last_state = SimState::PLUGGED_IN;
+            if (pulse_in_flight) {
+                r_ev_board_support->call_set_cp_state(types::ev_board_support::EvCpState::B);
+            }
         }
     }
 
@@ -182,6 +189,7 @@ public:
 
     void state_machine();
     bool sleep(const CmdArguments&, size_t);
+    bool cp_c_pulse(const CmdArguments&, size_t);
     bool iec_wait_pwr_ready(const CmdArguments&);
     bool iso_wait_pwm_is_running(const CmdArguments&, size_t loop_interval_ms);
     bool draw_power_regulated(const CmdArguments&);
