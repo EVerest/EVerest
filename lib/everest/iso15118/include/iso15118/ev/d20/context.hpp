@@ -235,6 +235,14 @@ public:
         return ev::is_ac_family(selected_service_);
     }
 
+    bool is_dc_family() const {
+        return ev::is_dc_family(selected_service_);
+    }
+
+    bool is_bpt() const {
+        return ev::is_bpt(selected_service_);
+    }
+
     // AC connector of the parameter set ServiceDetail selected. Decides both how an advertised
     // total is split across lines and whether the _L2/_L3 peers may be emitted at all, so the AC
     // states must not guess it. Unset until an AC parameter set is chosen, and never set for DC.

@@ -145,6 +145,31 @@ SCENARIO("ISO15118-20 EV Context reports the requested energy service") {
             REQUIRE(ctx.is_ac_family() == true);
         }
     }
+
+    GIVEN("A Context constructed with a requested MCS service") {
+
+        FsmStateHelper helper{
+            callbacks, {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}}, message_20::datatypes::ServiceCategory::MCS};
+        auto& ctx = helper.get_context();
+
+        THEN("is_dc_family() is true and is_ac_family()/is_bpt() are false") {
+            REQUIRE(ctx.is_dc_family() == true);
+            REQUIRE(ctx.is_ac_family() == false);
+            REQUIRE(ctx.is_bpt() == false);
+        }
+    }
+
+    GIVEN("A Context constructed with a requested MCS_BPT service") {
+
+        FsmStateHelper helper{
+            callbacks, {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}}, message_20::datatypes::ServiceCategory::MCS_BPT};
+        auto& ctx = helper.get_context();
+
+        THEN("is_dc_family() and is_bpt() are true, so the DC and BPT branches take it") {
+            REQUIRE(ctx.is_dc_family() == true);
+            REQUIRE(ctx.is_bpt() == true);
+        }
+    }
 }
 
 SCENARIO("ISO15118-20 EV DerControlFunctions to_bitset maps flags to DERControlName positions") {
