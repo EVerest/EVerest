@@ -33,6 +33,9 @@ struct Conf {
     std::string dummy_meter_value_blob_stop;
     double ac_nominal_voltage;
     double ac_nominal_frequency;
+    double ac_line_impedance_ohm;
+    double measurement_noise_percent;
+    double frequency_noise_percent;
     double max_current_A_import;
     double min_current_A_import;
 };
@@ -86,6 +89,7 @@ public:
         new_state->simdata_setting.frequencies.L1 = nominal_frequency;
         new_state->simdata_setting.frequencies.L2 = nominal_frequency;
         new_state->simdata_setting.frequencies.L3 = nominal_frequency;
+        new_state->simdata_setting.impedance_ohm = config.ac_line_impedance_ohm;
         new_state->simulation_data.frequencies.L1 = nominal_frequency;
         new_state->simulation_data.frequencies.L2 = nominal_frequency;
         new_state->simulation_data.frequencies.L3 = nominal_frequency;
