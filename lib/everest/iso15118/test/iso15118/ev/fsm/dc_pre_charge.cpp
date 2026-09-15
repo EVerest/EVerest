@@ -11,6 +11,7 @@
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/dc_pre_charge.hpp>
 #include <iso15118/message/power_delivery.hpp>
+#include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/type.hpp>
 
 using namespace iso15118;
@@ -75,6 +76,29 @@ SCENARIO("ISO15118-20 EV DC_PreCharge fires dc_power_on and transitions to Power
     const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
     REQUIRE(pd_request.has_value());
     REQUIRE(pd_request->charge_progress == message_20::datatypes::Progress::Start);
+}
+
+SCENARIO("ISO15118-20 EV DC_PreCharge goes to SessionStop when a stop was requested") {
+    // [V2G20-2644]: PowerDeliveryReq(Start) has not been sent, so the EV-side stop skips the
+    // contactor close and sends SessionStopReq(Terminate) as its next request.
+    bool dc_power_on_fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.dc_power_on = [&dc_power_on_fired]() { dc_power_on_fired = true; };
+    PrimedState<ev::d20::state::DC_PreCharge> primed{callbacks, seed_target_400};
+    primed.ctx.set_stop_charging_requested(true);
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, message_20::datatypes::from_float(400.0f)));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
+    REQUIRE(dc_power_on_fired == false);
+
+    const auto requests = primed.take_requests();
+    REQUIRE_FALSE(requests.get<message_20::PowerDeliveryRequest>().has_value());
+    const auto stop_request = requests.get<message_20::SessionStopRequest>();
+    REQUIRE(stop_request.has_value());
+    REQUIRE(stop_request->charging_session == message_20::datatypes::ChargingSession::Terminate);
 }
 
 SCENARIO("ISO15118-20 EV DC_PreCharge resends Ongoing request when voltage not in tolerance") {
