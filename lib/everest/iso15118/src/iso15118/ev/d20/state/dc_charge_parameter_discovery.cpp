@@ -43,7 +43,7 @@ void DC_ChargeParameterDiscovery::enter() {
     message_20::DC_ChargeParameterDiscoveryRequest req;
     setup_header(req.header, m_ctx.get_session());
 
-    if (m_ctx.selected_service() == dt::ServiceCategory::DC_BPT) {
+    if (m_ctx.is_bpt()) {
         dt::BPT_DC_CPDReqEnergyTransferMode mode{};
         fill_charge_limits(mode, p);
         mode.max_discharge_power = dt::from_float(p.max_discharge_power);
@@ -76,7 +76,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
         return std::move(*stop);
     }
 
-    if (m_ctx.selected_service() == dt::ServiceCategory::DC_BPT) {
+    if (m_ctx.is_bpt()) {
         const auto* mode = std::get_if<dt::BPT_DC_CPDResEnergyTransferMode>(&res->transfer_mode);
         if (mode == nullptr) {
             logf_error("DC_ChargeParameterDiscoveryResponse offers a non-BPT transfer mode the EV did not request");
