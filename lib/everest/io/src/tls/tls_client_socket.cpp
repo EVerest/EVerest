@@ -60,12 +60,15 @@ std::string init_failure_text(::tls::Client::config_t const& cfg) {
     out.status_request = cfg.status_request;
     out.status_request_v2 = cfg.status_request_v2;
     out.trusted_ca_keys = cfg.trusted_ca_keys;
+    out.tls_key_logging = cfg.tls_key_logging;
+    out.tls_key_logging_path = cfg.tls_key_logging_path;
     return out;
 }
 
 } // namespace
 
-bool tls_client_socket::setup(Config cfg, std::string const& remote_host, std::uint16_t remote_port, int timeout_ms) {
+bool tls_client_socket::setup(Config cfg, std::string const& remote_host, std::uint16_t remote_port, int timeout_ms,
+                              std::string const& device, std::optional<tcp::source_port_range> const& source_ports) {
     m_host_for_sni = std::move(cfg.host_for_sni);
     auto const tls_cfg = materialize(cfg.tls);
     if (!init_client(m_client, tls_cfg)) {
@@ -75,7 +78,7 @@ bool tls_client_socket::setup(Config cfg, std::string const& remote_host, std::u
         m_last_error_text = init_failure_text(tls_cfg);
         return false;
     }
-    return m_tcp.setup(remote_host, remote_port, timeout_ms);
+    return m_tcp.setup(remote_host, remote_port, timeout_ms, device, source_ports);
 }
 
 void tls_client_socket::connect(std::function<void(bool, int)> const& cb) {
