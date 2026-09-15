@@ -292,6 +292,7 @@ case "$SUITE" in
     eebus)
         cd "$SCRIPT_DIR"
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
+            "${EXTRA_PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
             eebus_tests/eebus_tests.py
         ;;
