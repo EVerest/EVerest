@@ -1,0 +1,53 @@
+name: Build libiso15118 without the EV side
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Which runner to use'
+        required: false
+        default: 'ubuntu-24.04'
+        type: string
+      build-kit-artifact-name:
+        description: 'The name of the build-kit artifact to download'
+        required: true
+        type: string
+      build_kit_image_tag:
+        description: 'The tag of the build-kit image to use for building the project'
+        required: true
+        type: string
+      build_kit_scripts_directory:
+        description: 'Directory in the repository where the build kit scripts are located'
+        required: false
+        default: '.ci/build-kit/scripts'
+        type: string
+
+jobs:
+  build-secc-only:
+    name: charger-only build
+    runs-on: ${{ inputs.runner }}
+    env:
+      BUILD_KIT_IMAGE: ${{ inputs.build_kit_image_tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: source
+      - name: Setup run scripts
+        run: |
+          mkdir scripts
+          rsync -a source/${{ inputs.build_kit_scripts_directory }}/ scripts
+      - name: Download build-kit image
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ inputs.build-kit-artifact-name }}
+      - name: Load build-kit image
+        run: |
+          docker load -i build-kit.tar
+          docker image tag ${{ env.BUILD_KIT_IMAGE }} build-kit
+      - name: Compile libiso15118 with ISO15118_BUILD_EV_SIDE=OFF
+        run: |
+          docker run \
+          --volume "${{ github.workspace }}:/ext" \
+          --name compile-secc-only-container \
+          build-kit run-script compile_secc_only
