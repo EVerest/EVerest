@@ -10,7 +10,7 @@
         pub enum {{ error_group.name | title }}Error {
             {%- for error_entry in error_group.error_list.errors %}
             /// {{ error_entry.description | replace("\n", " ")}}
-            #[serde(rename = "{{ error_group.name | snake }}/{{ error_entry.name }}")]
+            #[serde(rename = "{{ error_group.name }}/{{ error_entry.name }}")]
             {{ error_entry.name | title}},
             {%- endfor %}
         }
