@@ -75,17 +75,17 @@ fi
 $TMUX set -t $SESSION mouse on
 $TMUX set -t $SESSION history-limit 50000
 
-# Layout: daemon top-left, aux top-right, EVerest manager across the full-width bottom
-# (the manager produces by far the most output).
+# Layout: daemon on top, EVerest manager below it (the manager produces by far the most
+# output). Two panes only - drive the session from your own shell:
+#   mosquitto_pub -h $MQTT_SERVER_ADDRESS -t 'everest_external/nodered/1/carsim/cmd/
+#     execute_charging_session' -m 'iso_wait_slac_matched;iso_start_v2g_session mcs;...'
 PANE_DAEMON=$($TMUX display-message -p -t $SESSION '#{pane_id}')
 PANE_MANAGER=$($TMUX split-window -v -t "$PANE_DAEMON" -PF '#{pane_id}')
-PANE_AUX=$($TMUX split-window -h -t "$PANE_DAEMON" -PF '#{pane_id}')
 
 $TMUX send -t "$PANE_DAEMON" "env LD_LIBRARY_PATH=$PREFIX/lib $PREFIX/bin/pionix_chargebridge $CB_CONFIG" ENTER
 $TMUX send -t "$PANE_MANAGER" "sleep 1 && $ENV $PREFIX/bin/manager --prefix $PREFIX --config $EVEREST_CONFIG" ENTER
 # The MQTT hint honours MQTT_SERVER_ADDRESS (set by the netns wrapper - the broker sits on
 # the veth, not on localhost, inside the namespace).
-$TMUX send -t "$PANE_AUX" "echo 'aux pane - drive the session from here once both sides are up and mated:'; echo; echo \"  mosquitto_pub -h \${MQTT_SERVER_ADDRESS:-localhost} -t 'everest_external/nodered/1/carsim/cmd/execute_charging_session' -m 'iso_wait_slac_matched;iso_start_v2g_session DC;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 30;iso_wait_v2g_session_stopped;unplug'\"" ENTER
 
 $TMUX attach -t $SESSION
 $TMUX kill-server 2>/dev/null || true
