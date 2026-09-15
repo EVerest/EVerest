@@ -45,6 +45,7 @@ rust_test(
     name = "RsModDefMeterTest",
     edition = "2021",
     srcs = [],
+    crate_features = ["mockall", "mockall_double"],
     crate = ":RsModDefMeterBinary",
 )
 
