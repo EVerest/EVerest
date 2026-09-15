@@ -959,6 +959,60 @@ TEST_F(AuthTest, test_transaction_finish) {
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
 }
 
+/// \brief Test that a new authorization is possible after TransactionFinished while the cable is still
+/// plugged in (no SessionFinished yet, OCPP 1.6 Finishing state), supporting the F2 restart
+TEST_F(AuthTest, test_new_authorization_after_transaction_finished_while_plugged_in) {
+
+    TokenHandlingResult result;
+
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken provided_token_1 = get_provided_token(VALID_TOKEN_2, connectors);
+    ProvidedIdToken provided_token_2 = get_provided_token(VALID_TOKEN_1, connectors);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::UsedToStart));
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Processing))
+        .Times(2);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Rejected));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::UsedToStart));
+
+    // start a transaction with the first token
+    SessionEvent session_started_event =
+        get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    this->auth_handler->handle_session_event(1, session_started_event);
+
+    result = this->auth_handler->on_token(provided_token_1);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+
+    SessionEvent transaction_started_event = get_transaction_started_event(provided_token_1);
+    this->auth_handler->handle_session_event(1, transaction_started_event);
+
+    // while the transaction is active, a new token must not be authorized
+    result = this->auth_handler->on_token(provided_token_2);
+    ASSERT_TRUE(result == TokenHandlingResult::NO_CONNECTOR_AVAILABLE);
+
+    // transaction ends, but cable stays plugged in: no SessionFinished
+    SessionEvent transaction_finished_event;
+    transaction_finished_event.event = SessionEventEnum::TransactionFinished;
+    transaction_finished_event.timestamp = Everest::Date::to_rfc3339(date::utc_clock::now());
+    this->auth_handler->handle_session_event(1, transaction_finished_event);
+
+    // a new authorization can now start a new transaction (F2: Finishing -> Preparing)
+    result = this->auth_handler->on_token(provided_token_2);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+}
+
 /// \brief Test if transaction can be finished with parent_id when prioritize_authorization_over_stopping_transaction is
 /// false
 TEST_F(AuthTest, test_parent_id_finish) {

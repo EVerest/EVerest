@@ -2207,8 +2207,9 @@ void ChargePointImpl::handleRemoteStartTransactionRequest(ocpp::Call<RemoteStart
             continue;
         }
 
-        if (this->transaction_handler->get_transaction(connector) != nullptr ||
-            this->status->get_state(connector) == ChargePointStatus::Finishing) {
+        // Finishing is not rejected: a remote start may begin a new transaction while the cable
+        // is still plugged in after the previous transaction (F2: Finishing -> Preparing)
+        if (this->transaction_handler->get_transaction(connector) != nullptr) {
             obtainable = false;
             continue;
         }
@@ -4424,7 +4425,9 @@ void ChargePointImpl::on_transaction_started(const std::int32_t& connector, cons
                                              std::optional<std::int32_t> reservation_id,
                                              const ocpp::DateTime& timestamp,
                                              std::optional<std::string> signed_meter_value) {
-    if (this->status->get_state(connector) == ChargePointStatus::Reserved) {
+    // Finishing: F2 transition, the user starts a new transaction while the cable is still plugged in
+    if (this->status->get_state(connector) == ChargePointStatus::Reserved ||
+        this->status->get_state(connector) == ChargePointStatus::Finishing) {
         this->status->submit_event(connector, FSMEvent::UsageInitiated, ocpp::DateTime());
     }
 
