@@ -1,4 +1,5 @@
 add_executable(everest_util_tests
+  async/lifecycle_gate_tests.cpp
   async/monitor_tests.cpp
   async/thread_pool_tests.cpp
   async/thread_pool_scaling_tests.cpp

@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+#include <algorithm>
+#include <cerrno>
 #include <cstring>
 #include <everest/io/tun_tap/tap_handler.hpp>
 #include <fcntl.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -10,25 +13,90 @@
 #include <linux/if.h>
 #include <linux/if_tun.h>
 
+// TUNSETCARRIER entered the UAPI with Linux 5.0; older sysroots (armv7 cross toolchains) lack it. The ioctl
+// number is ABI-stable; a kernel without it answers EINVAL.
+#ifndef TUNSETCARRIER
+#define TUNSETCARRIER _IOW('T', 226, int)
+#endif
+
 #include <everest/io/socket/socket.hpp>
 
 namespace everest::lib::io::tun_tap {
 
-bool tap_handler::open(std::string const& device, std::string const& ip, std::string const& netmask, int mtu) {
+namespace {
+
+void set_ifr_name(struct ifreq& ifr, std::string const& dev_name) {
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, dev_name.c_str(),
+            std::min(dev_name.size(), static_cast<std::string::size_type>(IFNAMSIZ - 1)));
+    ifr.ifr_name[IFNAMSIZ - 1] = '\0';
+}
+
+} // namespace
+
+bool tap_handler::open(std::string const& device, std::string const& ip, std::string const& netmask, int mtu,
+                       bool carrier_on) {
     m_mtu = mtu;
+    m_carrier_setup_error = 0;
     try {
         m_fd = socket::create_tap_device(device);
     } catch (...) {
+        // m_device is set only once the device exists, so carrier() never queries a device owned by another
+        // process. A previously held fd and its name survive this path.
         m_error = EPERM;
         return false;
+    }
+    m_device = device;
+    // Drop the carrier before bringing the device up: bringing it up emits an rtnetlink notification
+    // synchronously, and with the carrier still on it announces IFF_RUNNING and IFF_LOWER_UP.
+    if (not carrier_on and not set_carrier(false)) {
+        m_carrier_setup_error = m_error;
     }
     if (not socket::configure_tap_device_properties(m_fd, device, ip, netmask, mtu)) {
         m_error = EPERM;
         m_fd.close();
+        m_device.clear();
+        return false;
+    }
+    // fd_event_client fails a fresh connection on a nonzero error after open; clear the errno a failed
+    // set_carrier above left in m_error, it lives in m_carrier_setup_error.
+    m_error = 0;
+    return true;
+}
+
+bool tap_handler::set_carrier(bool on) {
+    int value = on ? 1 : 0;
+    if (ioctl(m_fd, TUNSETCARRIER, &value) == -1) {
+        m_error = errno;
         return false;
     }
     m_error = 0;
     return true;
+}
+
+int tap_handler::carrier_setup_error() const {
+    return m_carrier_setup_error;
+}
+
+std::optional<bool> tap_handler::carrier() const {
+    // Queries by name, so the fd serves as the ownership token: a name alone could resolve to another
+    // process's device.
+    if (not m_fd.is_fd()) {
+        return std::nullopt;
+    }
+    event::unique_fd control_sock_fd;
+    try {
+        control_sock_fd = socket::open_control_socket();
+    } catch (...) {
+        return std::nullopt;
+    }
+
+    struct ifreq ifr;
+    set_ifr_name(ifr, m_device);
+    if (ioctl(control_sock_fd, SIOCGIFFLAGS, &ifr) == -1) {
+        return std::nullopt;
+    }
+    return (ifr.ifr_flags & IFF_RUNNING) != 0;
 }
 
 bool tap_handler::tx(PayloadT const& data) {

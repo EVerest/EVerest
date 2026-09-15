@@ -36,6 +36,11 @@ target_sources(everest_io
         tun_tap/tap_handler.cpp
         tcp/tcp_socket.cpp
         netlink/vcan_netlink_manager.cpp
+        netlink/route_parser.cpp
+        netlink/link_tracker.cpp
+        netlink/neighbor_table.cpp
+        netlink/peer_liveness.cpp
+        netlink/device_watcher.cpp
         raw/raw_socket.cpp
 )
 
