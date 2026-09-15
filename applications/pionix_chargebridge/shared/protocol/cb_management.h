@@ -147,7 +147,10 @@ struct CB_COMPILER_ATTR_PACK CbDebugUartLinePacket {
 // more entries on the MCU; no protocol/host change is needed as long as the entry count stays
 // within CB_TELEMETRY_MAX_ENTRIES.
 #define CB_TELEMETRY_NAME_LEN 12   // max name length including the NUL terminator (<=11 chars)
-#define CB_TELEMETRY_MAX_ENTRIES 32 // max entries carried in one IO packet
+// Raising this is a breaking change: the host rejects a whole CbIoPacket whose length or entry
+// count exceeds what it was built for, so GPIO and ADC stop flowing too, not just the extra
+// telemetry. Both sides must be rebuilt together. CB_MAX_CB_STRUCT_SIZE caps this at 68.
+#define CB_TELEMETRY_MAX_ENTRIES 64 // max entries carried in one IO packet
 
 struct CB_COMPILER_ATTR_PACK CbTelemetryEntry {
 	char name[CB_TELEMETRY_NAME_LEN]; // NUL-terminated ASCII; unused tail bytes are 0
