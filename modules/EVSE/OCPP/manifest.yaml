@@ -104,6 +104,22 @@ config:
       This is only used to prevent issues from passing by availlable before preparing on a restart.
     type: integer
     default: 0
+  ErrorGracePeriodS:
+    description: >-
+      Maximum time (seconds) to delay connecting to the CSMS after startup, to allow transient startup errors
+      (e.g. hardware self-tests) to clear before they are reported. The wait ends early once EvseManager reports
+      that all its errors have cleared (see ErrorGraceMinPeriodS), or once this period elapses, whichever is
+      first. Set to 0 to disable (connect immediately, previous behavior).
+    type: integer
+    default: 0
+  ErrorGraceMinPeriodS:
+    description: >-
+      Minimum time (seconds) within ErrorGracePeriodS to always wait, ignoring EvseManager's all_errors_cleared
+      signal. Needed because slow-initializing hardware (BSP, powermeter, etc.) may not have raised its first
+      error yet immediately after startup, which would otherwise cause a premature "all clear". Only relevant
+      if ErrorGracePeriodS is greater than 0.
+    type: integer
+    default: 0
   ResetStopDelay:
     description: >-
       Time (seconds) to delay the stopping of the charge point so that the CSMS has enough time to respond
