@@ -261,19 +261,3 @@ if(EVEREST_CORE_BUILD_TESTING AND NOT EVEREST_LIBS_ONLY)
 else()
     message("Not running unit tests")
 endif()
-
-if(NOT EVEREST_LIBS_ONLY)
-    # convenience target for integration tests
-    add_custom_target(install_everest_testing
-        COMMAND
-            if [ -z "${CPM_PACKAGE_everest-utils_SOURCE_DIR}" ] \;
-            then echo "Could not determine location of everest-utils, please install everest-testing manually!" \;
-            else echo "Found everest-utils at ${CPM_PACKAGE_everest-utils_SOURCE_DIR}" \;
-                 ${Python3_EXECUTABLE} -m pip install -e "${CPM_PACKAGE_everest-utils_SOURCE_DIR}/everest-testing" \;
-            fi\;
-        DEPENDS
-            everestpy_pip_install_dist
-        COMMENT
-            "Installing dependencies for testing EVerest"
-    )
-endif()
