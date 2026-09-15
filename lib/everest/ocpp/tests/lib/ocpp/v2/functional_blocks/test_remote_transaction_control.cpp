@@ -47,6 +47,7 @@ public:
     MOCK_METHOD(void, heartbeat_req, (bool), (override));
     MOCK_METHOD(void, handle_scheduled_change_availability_requests, (std::int32_t), (override));
     MOCK_METHOD(void, set_scheduled_change_availability_requests, (std::int32_t, AvailabilityChange), (override));
+    MOCK_METHOD(void, drop_non_persistent_scheduled_changes, (), (override));
     MOCK_METHOD(void, set_heartbeat_timer_interval, (const std::chrono::seconds&), (override));
     MOCK_METHOD(void, stop_heartbeat_timer, (), (override));
     MOCK_METHOD(ChangeAvailabilityResponse, change_availability_req, (bool&, const ChangeAvailabilityRequest&),
@@ -98,8 +99,8 @@ public:
 class FirmwareUpdateMock : public FirmwareUpdateInterface {
 public:
     MOCK_METHOD(void, handle_message, (const ocpp::EnhancedMessage<MessageType>&), (override));
-    MOCK_METHOD(void, on_firmware_update_status_notification, (std::int32_t, const FirmwareStatusEnum&, const bool),
-                (override));
+    MOCK_METHOD(void, on_firmware_update_status_notification,
+                (std::int32_t, const FirmwareStatusEnum&, std::optional<bool>), (override));
     MOCK_METHOD(void, on_firmware_status_notification_request, (), (override));
     MOCK_METHOD(void, on_transaction_finished, (), (override));
 };
