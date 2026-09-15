@@ -4,11 +4,15 @@
 
 #include <iso15118/detail/d20/state/ac_der_sae_charge_loop.hpp>
 
+#include <iso15118/detail/d20/context_helper.hpp>
+
 #include <iso15118/d20/config.hpp>
 
 #include <cstdint>
 
 using namespace iso15118;
+
+constexpr std::uint64_t MICROSECONDS_PER_SECOND = 1'000'000;
 
 namespace dt = message_20::datatypes;
 namespace dt_sae = dt::sae;
@@ -480,7 +484,7 @@ SCENARIO("SAE AC DER charge loop dynamic mode parameters") {
 
     GIVEN("A departure time in the future") {
         Inputs in{};
-        in.dynamic_parameters = {std::time(nullptr) + 40, 95, 80};
+        in.dynamic_parameters = {d20::now_in_secc_time() / MICROSECONDS_PER_SECOND + 40, 95, 80};
 
         const auto res = call(req, session, in);
 
@@ -496,7 +500,7 @@ SCENARIO("SAE AC DER charge loop dynamic mode parameters") {
 
     GIVEN("A departure time already in the past") {
         Inputs in{};
-        in.dynamic_parameters = {std::time(nullptr) - 60, 95, 80};
+        in.dynamic_parameters = {d20::now_in_secc_time() / MICROSECONDS_PER_SECOND - 60, 95, 80};
 
         const auto res = call(req, session, in);
 
