@@ -23,14 +23,16 @@ void tcp_socket::discard() {
     m_connect_error = 0;
 }
 
-bool tcp_socket::open(std::string const& remote, uint16_t port, std::string const& device) {
+bool tcp_socket::open(std::string const& remote, uint16_t port, std::string const& device,
+                      std::optional<source_port_range> const& source_ports) {
     m_remote = remote;
     m_port = port;
     m_timeout_ms = 1000;
     m_device = device;
+    m_source_ports = source_ports;
     int error = 0;
     try {
-        auto socket = socket::open_tcp_socket_with_timeout(remote, port, m_timeout_ms, m_device);
+        auto socket = socket::open_tcp_socket_with_timeout(remote, port, m_timeout_ms, m_device, m_source_ports);
         socket::set_non_blocking(socket);
         adopt(std::move(socket));
         // SO_ERROR is read-and-clear. The pending error is read once and kept, so a
@@ -47,11 +49,13 @@ bool tcp_socket::open(std::string const& remote, uint16_t port, std::string cons
     return false;
 }
 
-bool tcp_socket::setup(std::string const& remote, uint16_t port, int timeout_ms, std::string const& device) {
+bool tcp_socket::setup(std::string const& remote, uint16_t port, int timeout_ms, std::string const& device,
+                       std::optional<source_port_range> const& source_ports) {
     m_remote = remote;
     m_port = port;
     m_timeout_ms = timeout_ms;
     m_device = device;
+    m_source_ports = source_ports;
     discard();
     return true;
 }
@@ -59,7 +63,7 @@ bool tcp_socket::setup(std::string const& remote, uint16_t port, int timeout_ms,
 void tcp_socket::connect(std::function<void(bool, int)> const& setup_cb) {
     int error = 0;
     try {
-        auto socket = socket::open_tcp_socket_with_timeout(m_remote, m_port, m_timeout_ms, m_device);
+        auto socket = socket::open_tcp_socket_with_timeout(m_remote, m_port, m_timeout_ms, m_device, m_source_ports);
         socket::set_non_blocking(socket);
         const auto fd = static_cast<int>(socket);
         adopt(std::move(socket));
