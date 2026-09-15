@@ -480,6 +480,12 @@ bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool th
         r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::DC_BPT, selected_payment_option,
                                      departure_time, e_amount);
         charge_mode = ChargeMode::DC;
+    } else if (energy_mode == constants::MCS) {
+        // MCS rides the DC power path on the vehicle side; only the -20 energy service differs.
+        sim_data.energy_mode = EnergyMode::DC;
+        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::MCS, selected_payment_option, departure_time,
+                                     e_amount);
+        charge_mode = ChargeMode::DC;
     } else {
         return false;
     }
