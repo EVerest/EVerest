@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace iso15118 {
 
@@ -23,5 +24,8 @@ constexpr auto ISO20_COMMON_MESSAGES_NAMESPACE = "urn:iso:std:iso:15118:-20:Comm
 
 // Maps a SupportedAppProtocol namespace string to its ProtocolId, if the namespace is known.
 std::optional<ProtocolId> protocol_id_from_namespace(const std::string& protocol_namespace);
+
+// Stable protocol generation names.
+std::string_view protocol_id_to_string(ProtocolId protocol);
 
 } // namespace iso15118

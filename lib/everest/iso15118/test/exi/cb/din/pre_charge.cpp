@@ -35,6 +35,13 @@ SCENARIO("Se/Deserialize DIN pre charge messages") {
             REQUIRE(msg.ev_target_voltage == 400.0);
             REQUIRE(msg.ev_target_current == 2.0);
         }
+
+        THEN("The wire carries the right units, which the domain type does not keep") {
+            const auto& raw = decode_helper(bytes).V2G_Message.Body.PreChargeReq;
+
+            REQUIRE(raw.EVTargetVoltage.Unit == din_unitSymbolType_V);
+            REQUIRE(raw.EVTargetCurrent.Unit == din_unitSymbolType_A);
+        }
     }
 
     GIVEN("Serialize and deserialize pre_charge_res") {

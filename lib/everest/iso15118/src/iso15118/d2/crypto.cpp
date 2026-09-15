@@ -884,9 +884,13 @@ message_2::RootCertificateId root_cert_id_from_der(const std::vector<uint8_t>& r
     }
     const ASN1_INTEGER* serial = X509_get0_serialNumber(root.get());
     if (serial != nullptr) {
-        int64_t value = 0;
-        if (ASN1_INTEGER_get_int64(&value, serial) == 1) {
-            id.serial_number = value;
+        std::unique_ptr<BIGNUM, decltype(&BN_free)> bn{ASN1_INTEGER_to_BN(serial, nullptr), &BN_free};
+        if (bn != nullptr and not BN_is_negative(bn.get())) {
+            const auto serial_bytes = static_cast<std::size_t>(BN_num_bytes(bn.get()));
+            if (serial_bytes <= message_2::MAX_SERIAL_NUMBER_BYTES) {
+                id.serial_number.resize(serial_bytes);
+                BN_bn2bin(bn.get(), id.serial_number.data());
+            }
         }
     }
     return id;
