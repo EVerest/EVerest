@@ -17,6 +17,7 @@ endfunction()
 create_fsm_test_target(session_setup)
 create_fsm_test_target(service_detail)
 create_fsm_test_target(dc_pre_charge)
+create_fsm_test_target(dc_charge_parameter_discovery)
 create_fsm_test_target(der_iec_charge_parameter_discovery)
 create_fsm_test_target(der_iec_charge_loop)
 
