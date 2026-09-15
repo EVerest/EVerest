@@ -83,6 +83,44 @@ SCENARIO("ISO15118-20 EV PowerDelivery transitions to SessionStop on Stop for AC
     REQUIRE(primed.ctx.is_session_stopped() == false);
 }
 
+// AC_BPT rides the same is_ac_family() branch as AC. Widening that predicate for
+// AC_DER_IEC must not drop AC_BPT out of the AC dispatch onto the DC path.
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to AC_ChargeLoop on OK response for AC_BPT") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC_BPT, no_seed, Progress::Start};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to SessionStop on Stop for AC_BPT") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC_BPT, no_seed, Progress::Stop};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to AC_DER_IEC_ChargeLoop on OK for AC_DER_IEC") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC_DER_IEC, no_seed, Progress::Start};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_DER_IEC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
 SCENARIO("ISO15118-20 EV PowerDelivery accepts OK_PowerToleranceConfirmed") {
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, no_seed, Progress::Start};

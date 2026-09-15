@@ -10,7 +10,8 @@ namespace iso15118::ev {
 // states, and in the module that configures them, cannot drift apart.
 constexpr bool is_ac_family(message_20::datatypes::ServiceCategory service) {
     return service == message_20::datatypes::ServiceCategory::AC or
-           service == message_20::datatypes::ServiceCategory::AC_BPT;
+           service == message_20::datatypes::ServiceCategory::AC_BPT or
+           service == message_20::datatypes::ServiceCategory::AC_DER_IEC;
 }
 
 } // namespace iso15118::ev
