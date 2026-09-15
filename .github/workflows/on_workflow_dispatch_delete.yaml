@@ -81,7 +81,7 @@ jobs:
           git config --global user.email "compiler@pionix.de"
 
       - name: Checkout source repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: source
 
