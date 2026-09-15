@@ -43,6 +43,7 @@ types::evse_security::CertificateHashDataChain to_everest(evse_security::Certifi
 types::evse_security::GetInstalledCertificatesResult to_everest(evse_security::GetInstalledCertificatesResult other);
 types::evse_security::OCSPRequestData to_everest(evse_security::OCSPRequestData other);
 types::evse_security::OCSPRequestDataList to_everest(evse_security::OCSPRequestDataList other);
+types::evse_security::CertificateOCSP to_everest(evse_security::CertificateOCSP other);
 types::evse_security::CertificateInfo to_everest(evse_security::CertificateInfo other);
 
 } // namespace conversions

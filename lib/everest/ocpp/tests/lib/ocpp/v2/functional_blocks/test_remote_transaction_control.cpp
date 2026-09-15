@@ -66,6 +66,7 @@ public:
     MOCK_METHOD(std::optional<StatusInfo>, is_sign_certificate_possible, (const ocpp::CertificateSigningUseEnum&),
                 (const, override));
     MOCK_METHOD(void, stop_certificate_signed_timer, (), (override));
+    MOCK_METHOD(bool, v2g20_certificate_installation_enabled, (), (const, override));
     MOCK_METHOD(void, init_certificate_expiration_check_timers, (), (override));
     MOCK_METHOD(void, stop_certificate_expiration_check_timers, (), (override));
     MOCK_METHOD(Get15118EVCertificateResponse, on_get_15118_ev_certificate_request,
@@ -405,6 +406,44 @@ TEST_F(RemoteTransactionControlTest, TriggerSignV2GCertificateRejectedWhenInstal
     expect_trigger_message_rejection("NotEnabled");
 
     remote_transaction_control->handle_message(create_trigger_message_request(MessageTriggerEnum::SignV2GCertificate));
+}
+
+TEST_F(RemoteTransactionControlTest, TriggerSignV2G20CertificateRejectedWhenV2G20Disabled) {
+    // V2GCertificateInstallationEnabled alone is not enough for the ISO 15118-20 leaf: the OCPP 2.1 only
+    // V2G20CertificateInstallationEnabled gate (evaluated by the security block) must also be open.
+    set_v2g_certificate_installation_enabled(true);
+    EXPECT_CALL(security, v2g20_certificate_installation_enabled()).WillOnce(Return(false));
+
+    EXPECT_CALL(security, is_sign_certificate_possible(_)).Times(0);
+    EXPECT_CALL(security, sign_certificate_req(_, _)).Times(0);
+    expect_trigger_message_rejection("NotEnabled");
+
+    remote_transaction_control->handle_message(
+        create_trigger_message_request(MessageTriggerEnum::SignV2G20Certificate));
+}
+
+TEST_F(RemoteTransactionControlTest, TriggerSignV2G20CertificateRejectedWhenV2GInstallationDisabled) {
+    set_v2g_certificate_installation_enabled(false);
+
+    EXPECT_CALL(security, v2g20_certificate_installation_enabled()).Times(0);
+    EXPECT_CALL(security, sign_certificate_req(_, _)).Times(0);
+    expect_trigger_message_rejection("NotEnabled");
+
+    remote_transaction_control->handle_message(
+        create_trigger_message_request(MessageTriggerEnum::SignV2G20Certificate));
+}
+
+TEST_F(RemoteTransactionControlTest, TriggerSignV2G20CertificateAcceptedWhenEnabledAndCanSend) {
+    set_v2g_certificate_installation_enabled(true);
+    EXPECT_CALL(security, v2g20_certificate_installation_enabled()).WillOnce(Return(true));
+
+    EXPECT_CALL(security, is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::V2G20Certificate))
+        .WillOnce(Return(std::nullopt));
+    EXPECT_CALL(security, sign_certificate_req(ocpp::CertificateSigningUseEnum::V2G20Certificate, true));
+    expect_trigger_message_status(TriggerMessageStatusEnum::Accepted);
+
+    remote_transaction_control->handle_message(
+        create_trigger_message_request(MessageTriggerEnum::SignV2G20Certificate));
 }
 
 TEST_F(RemoteTransactionControlTest, TriggerSignV2GCertificateAcceptedWhenEnabledAndCanSend) {
