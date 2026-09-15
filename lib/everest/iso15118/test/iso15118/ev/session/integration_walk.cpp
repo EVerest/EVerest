@@ -500,6 +500,9 @@ void walk_ac_stop_to_finish(SessionFixture& fx, const message_20::datatypes::Ses
 // Seeded AC charge params the AC_CPD/AC_ChargeLoop requests are built from.
 ev::AcChargeParams ac_seed_params() {
     ev::AcChargeParams p{};
+    // A single-line EV, so the advertised totals reach the wire unsplit and these walks stay
+    // about sequencing. The per-line split is pinned by the four AC state scenarios in ev/fsm/.
+    p.phase_count = 1;
     p.max_charge_power = AC_MAX_CHARGE_POWER;
     p.min_charge_power = AC_MIN_CHARGE_POWER;
     p.present_active_power = AC_PRESENT_ACTIVE_POWER;
