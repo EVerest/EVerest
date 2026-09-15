@@ -20,9 +20,47 @@ provides:
         type: boolean
         default: true
       set_key_timeout_ms:
-        description: Timeout for CM_SET_KEY.REQ. Default works for QCA7000/QCA7005/CG5317.
+        description: Timeout and retry interval for CM_SET_KEY.REQ. Default works for QCA7000/QCA7005/CG5317.
         type: integer
+        minimum: 1
         default: 1000
+      set_key_handling_mode:
+        description: |
+          Set-key behavior mode:
+            - legacy_single_attempt: send one CM_SET_KEY.REQ and only accept a valid CM_SET_KEY.CNF success result.
+            - retry_confirmed: retry on timeout/failure and only accept CM_SET_KEY.CNF result success.
+        type: string
+        enum:
+          - legacy_single_attempt
+          - retry_confirmed
+        default: retry_confirmed
+      set_key_cnf_success_mode:
+        description: |
+          CM_SET_KEY.CNF success result interpretation:
+            - modem_compat_0x01: default QCA/practical modem behavior; only result 0x01 is accepted as success.
+            - hpgp_standard_0x00: explicit HomePlug Green PHY standard behavior; only result 0x00 is accepted.
+            - accept_0x00_or_0x01: compatibility mode accepting either standard 0x00 or modem-compatible 0x01.
+        type: string
+        enum:
+          - modem_compat_0x01
+          - hpgp_standard_0x00
+          - accept_0x00_or_0x01
+        default: modem_compat_0x01
+      nmk_generation_mode:
+        description: |
+          NMK generation mode for internal session NMK generation:
+            - legacy_printable: default compatibility mode; use legacy printable characters only (0-9A-Z).
+            - full_byte_range: explicit opt-in for the full byte range 0x00..0xFF to reduce collision probability.
+        type: string
+        enum:
+          - legacy_printable
+          - full_byte_range
+        default: legacy_printable
+      set_key_max_attempts:
+        description: Maximum CM_SET_KEY.REQ attempts before proceeding to the next reset state.
+        type: integer
+        minimum: 1
+        default: 10
       sounding_attenuation_adjustment:
         description: Offset in dB that should be added to the calculated sounding attenuation
         type: integer
@@ -48,10 +86,12 @@ provides:
       chip_reset_delay_ms:
         description: Delay between SET_KEY.CNF and RS_DEV.REQ
         type: integer
+        minimum: 0
         default: 100
       chip_reset_timeout_ms:
         description: Timeout for RS_DEV.REQ (waiting for RS_DEV.CNF)
         type: integer
+        minimum: 1
         default: 500
       link_status_detection:
         description: After matching.cnf, wait for link to come up before sending out d_link_ready=connected using LINK_STATUS Vendor MME Extension (Works on Qualcomm and Lumissil chips)
@@ -60,11 +100,31 @@ provides:
       link_status_retry_ms:
         description: Delay between retries of LINK_STATUS requests after matching request
         type: integer
+        minimum: 1
         default: 100
       link_status_timeout_ms:
         description: Timeout for Link to come up after matching request
         type: integer
+        minimum: 1
         default: 10000
+      link_status_poll_in_matched_state_ms:
+        description: >-
+          Interval between LINK_STATUS polls while matched. Link-loss detection takes up to
+          link_status_debounce_count consecutive polls, so keep debounce count times poll interval
+          well below TP_match_leave (1 s) for ISO 15118-3 conformant leaving on connection loss.
+        type: integer
+        minimum: 10
+        default: 200
+      link_status_debounce_count:
+        description: >-
+          Consecutive negative LINK_STATUS confirmations in the matched state before the link
+          counts as lost and the session is torn down. 1 tears down on the first negative reply;
+          higher values ride out transient PLC link flaps (e.g. re-sync under full DC load) at the
+          cost of one poll interval of detection latency per additional confirmation. A positive
+          confirmation resets the count.
+        type: integer
+        minimum: 1
+        default: 1
       debug_simulate_failed_matching:
         description: Only for debugging. Simulate failed matching by sending a wrong NMK to the EV.
         type: boolean
@@ -76,11 +136,17 @@ provides:
           To react to this message and restart the SLAC process, the EVSE go to the reset state here.
         type: boolean
         default: true
+      max_matching_sessions:
+        description: Maximum number of simultaneous CM_SLAC_PARM sessions the EVSE keeps active.
+        type: integer
+        minimum: 1
+        default: 5
       startup_delay_ms:
         description: >-
           Delay initialization of SLAC I/O by the given amount.
-          On some hardware platforms with multiple EvseSlac modules loaded this can be necessary to ensure that the initial query of the device information does not happen at the same time.
+          On some hardware platforms with multiple EvseSlac  modules loaded this can be necessary to ensure that the initial query of the device information does not happen at the same time.
         type: integer
+        minimum: 0
         default: 0
       slac_init_timeout_ms:
         description: >-
@@ -90,14 +156,36 @@ provides:
         minimum: 10000
         maximum: 50000
         default: 40000
+      print_state_transitions:
+        description: >-
+          For debugging. Print all transitions of the internal state machine.
+        type: boolean
+        default: false
       hack_disable_regenerate_key_on_reset:
         description: >-
           Hack: Do not regenerate NMK on reset, this is not spec compliant and should only be set for debugging purposes.
         type: boolean
         default: false
+      initiate_amp_map:
+        description: >-
+          Send a CM_AMP_MAP.REQ once the AVLN is established to reduce the transmit power of
+          selected OFDM carriers (ISO 15118-3 A.9.6 transmit-power limitation). The amplitude
+          map is read from amp_map_file. The SECC always answers an incoming CM_AMP_MAP.REQ
+          with CM_AMP_MAP.CNF regardless of this option.
+        type: boolean
+        default: false
+      amp_map_file:
+        description: >-
+          Path to a YAML file describing the CM_AMP_MAP amplitude map (keys: carriers,
+          default_amplitude 0..15, overrides {carrier: amplitude}). Empty uses a built-in
+          all-maximum-TX default (no reduction). See config/slac_amp_map_example.yaml.
+          Only used when initiate_amp_map is true.
+        type: string
+        default: ""
+enable_telemetry: true
 metadata:
-  base_license: https://directory.fsf.org/wiki/License:BSD-3-Clause-Clear
   license: https://opensource.org/licenses/Apache-2.0
   authors:
-    - aw@pionix.de
+    - Jan Christoph Habig (Pionix GmbH)
     - Cornelius Claussen (Pionix GmbH)
+    - aw@pionix.de

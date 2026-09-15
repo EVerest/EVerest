@@ -241,6 +241,15 @@ void slacImpl::handle_leave_bcd() {
     post_command("leave_bcd", [](datalink_controller& target) { target.post_leave_bcd(); });
 }
 
+void slacImpl::handle_count_bc(int& count) {
+    // The B/C transition count exists for the HomePlug CM_VALIDATE BCB-toggle exchange, which
+    // matches a vehicle by counting pilot toggles when the modems cannot tell each other apart.
+    // MCS matches over the SPE link instead and has no CM_VALIDATE, so the count has no consumer
+    // here. Accepted and ignored: EvseManager pushes it on every edge for whichever slac provider
+    // is configured, and refusing it would make an ordinary session log errors.
+    (void)count;
+}
+
 void slacImpl::handle_dlink_terminate() {
     // ISO 15118-3 / -10: become UNMATCHED. On SPE there is no logical network to leave.
     post_command("dlink_terminate", [](datalink_controller& target) { target.post_dlink_terminate(); });
