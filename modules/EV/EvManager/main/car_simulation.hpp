@@ -54,6 +54,11 @@ public:
         sim_data.modify_charging_session_cmds.emplace(cmds);
     }
 
+    /// Ask the EV to announce a different EVCCID (its MAC address) from the next V2G session onwards, so that a
+    /// single simulator can play the part of several vehicles. Returns the EVCCID that will actually be
+    /// announced, or an empty string if the EV rejected the value or there is no EV connected.
+    std::string set_evcc_id(const std::string& evcc_id);
+
     void set_state(SimState state) {
         sim_data.state = state;
     }
