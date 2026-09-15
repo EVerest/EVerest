@@ -275,9 +275,11 @@ Limitations
 
 The implementation has a deliberately narrow scope:
 
-- **DC and AC only.** ``start_charging`` accepts DC, DC BPT, AC single/three-phase,
-  AC BPT, and AC DER IEC energy-transfer modes; WPT and MCS sessions are not
-  supported.
+- **DC, MCS and AC only.** ``start_charging`` accepts DC, DC BPT, MCS, MCS BPT,
+  AC single/three-phase, AC BPT, and AC DER IEC energy-transfer modes; WPT sessions
+  are not supported. MCS is the megawatt DC service of ISO 15118-20: the same DC
+  parameter discovery, cable check, pre-charge and charge loop under a different
+  service id, so it rides the DC states and has no ISO 15118-2 or DIN equivalent.
 - **DER directives are log-only.** AC DER IEC directives (target active power,
   DSO Q and cos phi setpoints) are logged, not published, pending an interface
   variable. The three-phase inverter relay use case is assumed.
