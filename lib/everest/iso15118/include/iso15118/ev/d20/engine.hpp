@@ -37,6 +37,7 @@ public:
            std::vector<message_20::SupportedAppProtocol> advertised_app_protocols,
            const std::optional<ControlEvent>& current_control_event,
            everest::lib::util::monitor<DcChargeParams>& dc_params,
+           everest::lib::util::monitor<AcChargeParams>& ac_params,
            message_20::datatypes::ServiceCategory energy_service, SessionOptions options);
 
     Engine(const Engine&) = delete;

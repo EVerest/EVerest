@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/config.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
 
@@ -22,9 +23,18 @@ namespace iso15118::ev {
 std::vector<std::string> validate_config(const EvConfig& config);
 
 /**
+ * @brief Report the problems in an \ref AcChargeParams limit set.
+ * @details Limits must be non-negative and no min may exceed its max. The present-power
+ * measurement is not checked.
+ * @param[in] params The limit set to check.
+ * @return One message per problem, empty if the limits are usable.
+ */
+std::vector<std::string> validate_ac_charge_params(const AcChargeParams& params);
+
+/**
  * @brief Report the problems in a \ref DcChargeParams limit set.
- * @details Every limit must be non-negative and each min must not exceed its max,
- * because the pair is advertised verbatim in DC_ChargeParameterDiscovery.
+ * @details Same contract as \ref validate_ac_charge_params, for the DC limits
+ * advertised in DC_ChargeParameterDiscovery.
  * @param[in] params The limit set to check.
  * @return One message per problem, empty if the limits are usable.
  */
