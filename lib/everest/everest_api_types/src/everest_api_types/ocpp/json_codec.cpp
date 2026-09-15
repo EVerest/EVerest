@@ -497,18 +497,18 @@ void to_json(json& j, OcppTransactionEvent const& k) noexcept {
     j = json{
         {"transaction_event", k.transaction_event},
         {"session_id", k.session_id},
+        {"timestamp", k.timestamp},
     };
     set_json_optional(evse);
     set_json_optional(transaction_id);
-    set_json_optional(timestamp);
 }
 
 void from_json(const json& j, OcppTransactionEvent& k) {
     set_obj(transaction_event);
     set_obj(session_id);
+    set_obj(timestamp);
     set_obj_optional(evse);
     set_obj_optional(transaction_id);
-    set_obj_optional(timestamp);
 }
 
 void to_json(json& j, MonitorVariableRequestList const& k) noexcept {
