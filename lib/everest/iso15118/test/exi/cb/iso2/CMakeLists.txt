@@ -25,3 +25,9 @@ create_exi_test_target(welding_detection)
 create_exi_test_target(session_stop)
 create_exi_test_target(metering_receipt)
 create_exi_test_target(certificate_installation)
+
+# The EV direction: decoding responses, and the physical values its requests carry.
+if(ISO15118_BUILD_EV_SIDE)
+    create_exi_test_target(response_variant)
+    create_exi_test_target(physical_value)
+endif()
