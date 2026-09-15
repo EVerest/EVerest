@@ -23,7 +23,8 @@ struct Conf {
     std::string device;
     std::string evcc_id;
     int response_timeout_ms;
-    std::string fixed_endpoint;
+    double ac_max_charge_power_w;
+    double ac_min_charge_power_w;
 };
 
 class EvIso15118D20 : public Everest::ModuleBase {

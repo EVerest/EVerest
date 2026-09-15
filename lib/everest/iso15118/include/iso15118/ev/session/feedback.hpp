@@ -6,6 +6,8 @@
 
 #include <iso15118/ev/d20/evse_session_info.hpp>
 #include <iso15118/io/ipv6_endpoint.hpp>
+#include <iso15118/message/ac_charge_loop.hpp>
+#include <iso15118/message/ac_charge_parameter_discovery.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/type.hpp>
 
@@ -14,7 +16,6 @@ namespace iso15118::ev::feedback {
 struct Callbacks {
     std::function<void(const io::Ipv6EndPoint&)> connected;
     std::function<void(message_20::Type)> v2g_message;
-    std::function<void(const message_20::SessionSetupResponse&)> session_setup_response;
     // Fired when the response watchdog expires (a sent request got no response in
     // time). Distinct from stopped, which fires on every session end.
     std::function<void()> timed_out;
@@ -23,6 +24,8 @@ struct Callbacks {
     std::function<void()> ev_power_ready;
     std::function<void()> dc_power_on;
     std::function<void()> stop_from_charger;
+    std::function<void(const message_20::datatypes::AC_CPDResEnergyTransferMode&)> ac_limits;
+    std::function<void(const message_20::datatypes::Dynamic_AC_CLResControlMode&)> ac_target_power;
 };
 
 } // namespace iso15118::ev::feedback
@@ -35,13 +38,14 @@ public:
 
     void connected(const io::Ipv6EndPoint&) const;
     void v2g_message(message_20::Type) const;
-    void session_setup_response(const message_20::SessionSetupResponse&) const;
     void timed_out() const;
     void stopped() const;
     void evse_session_info(const d20::EVSESessionInfo&) const;
     void ev_power_ready() const;
     void dc_power_on() const;
     void stop_from_charger() const;
+    void ac_limits(const message_20::datatypes::AC_CPDResEnergyTransferMode&) const;
+    void ac_target_power(const message_20::datatypes::Dynamic_AC_CLResControlMode&) const;
 
 private:
     feedback::Callbacks callbacks;

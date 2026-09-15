@@ -2,6 +2,7 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
+#include <iso15118/ev/d20/state/ac_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/dc_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/service_selection.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
@@ -9,28 +10,12 @@
 
 namespace iso15118::ev::d20::state {
 
-namespace {
-
-using ResponseCode = message_20::datatypes::ResponseCode;
-
-bool check_response_code(ResponseCode response_code) {
-    switch (response_code) {
-    case ResponseCode::OK:
-        return true;
-    default:
-        logf_warning("Unexpected response code received: %d", static_cast<int>(response_code));
-        return iso15118::ev::d20::check_response_code(response_code);
-    }
-}
-
-} // namespace
-
 void ServiceSelection::enter() {
     logf_debug("Enter state: ServiceSelection");
 
     message_20::ServiceSelectionRequest req;
     setup_header(req.header, m_ctx.get_session());
-    req.selected_energy_transfer_service = {message_20::datatypes::ServiceCategory::DC, m_parameter_set_id};
+    req.selected_energy_transfer_service = {m_ctx.selected_service(), m_parameter_set_id};
     m_ctx.respond(req);
 }
 
@@ -41,23 +26,13 @@ Result ServiceSelection::feed(Event ev) {
 
     const auto variant = m_ctx.pull_response();
 
-    const auto res = variant->get_if<message_20::ServiceSelectionResponse>();
+    const auto* res = expect_response<message_20::ServiceSelectionResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        logf_error("Expected ServiceSelectionResponse, got code type id: %d", static_cast<int>(variant->get_type()));
-        m_ctx.stop_session(true);
         return {};
     }
 
-    if (res->header.session_id != m_ctx.get_session().get_id()) {
-        logf_error("ServiceSelectionResponse session_id does not match current session");
-        m_ctx.stop_session(true);
-        return {};
-    }
-
-    if (not check_response_code(res->response_code)) {
-        logf_error("ServiceSelectionResponse rejected with response_code: %d", static_cast<int>(res->response_code));
-        m_ctx.stop_session(true);
-        return {};
+    if (m_ctx.is_ac_family()) {
+        return m_ctx.create_state<AC_ChargeParameterDiscovery>();
     }
 
     return m_ctx.create_state<DC_ChargeParameterDiscovery>();
