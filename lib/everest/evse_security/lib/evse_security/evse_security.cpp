@@ -18,6 +18,7 @@
 #include <evse_security/certificate/x509_hierarchy.hpp>
 #include <evse_security/certificate/x509_wrapper.hpp>
 #include <evse_security/utils/evse_filesystem.hpp>
+#include <evse_security/utils/load_ctl.hpp>
 
 namespace evse_security {
 
@@ -329,6 +330,15 @@ EvseSecurity::EvseSecurity(const FilePaths& file_paths, const std::optional<std:
                 EVLOG_error << "Could not create default bundle for path: " << pair.second;
             }
         }
+    }
+
+    fs::path ctl_dir =
+	     file_paths.directories.ctl_directory.empty() ? fs::path(CTL_DIR) : file_paths.directories.ctl_directory;
+     if (!ctl_dir.empty() && fs::exists(ctl_dir)) {
+        EVLOG_info << "Loading CTL from: " << ctl_dir;
+        load_ctl(ctl_dir, this->ca_bundle_path_map);
+    } else {
+        EVLOG_info << "No CTL directory configured or found, skipping CTL load";
     }
 
     // Check that the leafs directory is not related to the bundle directory because
