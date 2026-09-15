@@ -236,6 +236,12 @@ if(ISO15118_BUILD_EV_SIDE)
         ev/d20/state/ac_der_iec_charge_parameter_discovery.cpp
         ev/d20/state/ac_der_iec_charge_loop.cpp
         ev/ac_phase_split.cpp
+    )
+
+    add_subdirectory(ev/d2)
+
+    target_sources(iso15118
+        PRIVATE
         ev/session.cpp
         ev/controller.cpp
         ev/config_validation.cpp
