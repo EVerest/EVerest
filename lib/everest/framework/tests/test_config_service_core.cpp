@@ -48,7 +48,33 @@ TEST_CASE("ConfigServiceCore Unit Tests", "[config_service_core]") {
     // Instantiate the core service
     ConfigServiceCore config_service(parse_settings, db);
 
-    SECTION("YAML Loading: into a new slot") {
+    SECTION("YAML Loading: into the non-existent active slot reloads the active configuration") {
+        // A freshly migrated database holds no slot, yet the default active slot id is 0. The manager never
+        // runs in this state (init_database_bootstrap always writes the boot slot), but a service
+        // constructed directly on an empty database does. Loading a configuration into that slot must make
+        // it the active in-memory configuration right away, exactly like loading into an already existing
+        // active slot does.
+        REQUIRE(config_service.list_all_slots().empty());
+        REQUIRE(config_service.get_active_slot_id() == 0);
+
+        // Without an explicit slot id, next_slot_id() resolves to 0 on an empty database, so both
+        // spellings target the (non-existent) active slot.
+        const auto requested_slot = GENERATE(values<std::optional<int>>({std::nullopt, 0}));
+        INFO("requested slot: " << (requested_slot.has_value() ? std::to_string(*requested_slot) : "nullopt"));
+
+        auto expected_status = ActiveSlotStatus::Stopped;
+        SECTION("modules Stopped (--into-idle boot)") {
+        }
+        SECTION("modules FailedToStart (--idle-on-failure boot)") {
+            // Publishes a ModuleStatus event of its own, hence before the handler is registered below.
+            config_service.notice_cfg_validation_failed();
+            expected_status = ActiveSlotStatus::FailedToStart;
+        }
+
+        std::vector<ActiveSlotUpdate> events;
+        config_service.register_active_slot_update_handler(
+            [&events](const ActiveSlotUpdate& update) { events.push_back(update); });
+
         std::string valid_yaml = R"(
 active_modules:
   dummy_module:
@@ -60,13 +86,135 @@ active_modules:
         valid_config_entry: "hello there"
 )";
 
-        auto result = config_service.load_from_yaml(valid_yaml, "Test description", std::nullopt);
+        auto result = config_service.load_from_yaml(valid_yaml, "Corrected after invalid boot", requested_slot);
         INFO(result.error_message);
         REQUIRE(result.success == true);
-        REQUIRE(result.slot_id.has_value());
+        REQUIRE(result.slot_id == 0);
+        REQUIRE(config_service.list_all_slots().size() == 1);
+        CHECK(config_service.get_active_slot_id() == 0);
+        CHECK(config_service.get_next_boot_slot_id() == 0);
 
-        auto slots = config_service.list_all_slots();
-        REQUIRE(slots.size() >= 1);
+        // Every symptom below is a CHECK so that a regression reports the full picture at once.
+
+        // The reload of the active slot is announced exactly once, as slot information.
+        CHECK(events.size() == 1);
+        if (not events.empty()) {
+            CHECK(events[0].cause == ActiveSlotUpdateCause::SlotInfo);
+            CHECK(events[0].active_slot_id == 0);
+            REQUIRE(events[0].next_boot_slot_id.has_value());
+            CHECK(events[0].next_boot_slot_id.value() == 0);
+            CHECK(events[0].status == expected_status);
+        }
+
+        // The in-memory snapshot the manager starts the modules from holds the loaded module.
+        auto active = config_service.get_active_module_configurations();
+        REQUIRE(active != nullptr);
+        CHECK(active->count("dummy_module") == 1);
+
+        // Non-forced reads of the active slot, by id and via ACTIVE_SLOT, see the loaded module.
+        for (const int slot : {0, ConfigServiceInterface::ACTIVE_SLOT}) {
+            INFO("slot query: " << slot);
+            auto cfg = config_service.get_configuration(slot);
+            REQUIRE(cfg.status == GetConfigurationStatus::Success);
+            CHECK(cfg.module_configurations.count("dummy_module") == 1);
+        }
+
+        // The in-memory view and the forced database read agree on the parameter value.
+        const everest::config::ConfigurationParameterIdentifier param_id{"dummy_module", "valid_config_entry",
+                                                                         "!module"};
+        auto in_memory = config_service.get_config_parameters(0, {param_id});
+        auto from_db = config_service.get_config_parameters(0, {param_id}, true);
+        REQUIRE(in_memory.status == GetConfigurationStatus::Success);
+        REQUIRE(from_db.status == GetConfigurationStatus::Success);
+        REQUIRE(in_memory.parameters.size() == 1);
+        REQUIRE(from_db.parameters.size() == 1);
+        REQUIRE(from_db.parameters[0].has_value());
+        CHECK(std::get<std::string>(from_db.parameters[0]->value) == "hello there");
+        CHECK(in_memory.parameters[0].has_value());
+        if (in_memory.parameters[0].has_value()) {
+            CHECK(in_memory.parameters[0]->value == from_db.parameters[0]->value);
+        }
+
+        // Writes to the active slot resolve against the loaded module. The modules are down, so the
+        // change is persisted for the upcoming start.
+        const Origin origin{true, std::nullopt};
+        auto set_by_id =
+            config_service.set_config_parameters(0, {ConfigParameterUpdate{param_id, "via slot 0"}}, origin);
+        REQUIRE(set_by_id.status == SetConfigParameterStatus::Ok);
+        REQUIRE(set_by_id.parameter_results.has_value());
+        INFO(set_by_id.parameter_results->front().status_info);
+        CHECK(set_by_id.parameter_results->front().status == SetConfigParameterResultEnum::WillApplyOnRestart);
+
+        const everest::config::ConfigurationParameterIdentifier impl_param_id{"dummy_module", "valid_config_entry",
+                                                                              "main"};
+        auto set_active = config_service.set_config_parameters(
+            ConfigServiceInterface::ACTIVE_SLOT, {ConfigParameterUpdate{impl_param_id, "via ACTIVE_SLOT"}}, origin);
+        REQUIRE(set_active.status == SetConfigParameterStatus::Ok);
+        REQUIRE(set_active.parameter_results.has_value());
+        INFO(set_active.parameter_results->front().status_info);
+        CHECK(set_active.parameter_results->front().status == SetConfigParameterResultEnum::WillApplyOnRestart);
+
+        // Parameter writes publish ConfigurationUpdates, never ActiveSlotUpdates.
+        CHECK(events.size() == 1);
+    }
+
+    SECTION("YAML Loading: into a non-active new slot leaves the active configuration alone") {
+        std::string valid_yaml = R"(
+active_modules:
+  dummy_module:
+    module: TESTValidManifest
+    config_module:
+      valid_config_entry: "hello there"
+    config_implementation:
+      main:
+        valid_config_entry: "hello there"
+)";
+        // Establish slot 0 as the active configuration independently of how load_from_yaml treats
+        // the active slot (the explicit reload is what the section above must not need).
+        REQUIRE(config_service.load_from_yaml(valid_yaml, "Slot 0", 0).success);
+        config_service.reinitialize_from_db(true);
+        REQUIRE(config_service.get_active_module_configurations()->count("dummy_module") == 1);
+
+        std::vector<ActiveSlotUpdate> events;
+        config_service.register_active_slot_update_handler(
+            [&events](const ActiveSlotUpdate& update) { events.push_back(update); });
+
+        std::string other_yaml = R"(
+active_modules:
+  other_module:
+    module: TESTValidManifest
+    config_module:
+      valid_config_entry: "staged"
+    config_implementation:
+      main:
+        valid_config_entry: "staged"
+)";
+        auto result = config_service.load_from_yaml(other_yaml, "Staged", 1);
+        INFO(result.error_message);
+        REQUIRE(result.success == true);
+        REQUIRE(result.slot_id == 1);
+
+        // Nothing about the active slot changed, so no SlotInfo update is published ...
+        CHECK(events.empty());
+        CHECK(config_service.get_active_slot_id() == 0);
+        CHECK(config_service.get_next_boot_slot_id() == 0);
+
+        // ... and the active in-memory configuration is untouched.
+        auto active = config_service.get_active_module_configurations();
+        REQUIRE(active != nullptr);
+        CHECK(active->count("dummy_module") == 1);
+        CHECK(active->count("other_module") == 0);
+
+        auto cfg0 = config_service.get_configuration(0);
+        REQUIRE(cfg0.status == GetConfigurationStatus::Success);
+        CHECK(cfg0.module_configurations.count("dummy_module") == 1);
+        CHECK(cfg0.module_configurations.count("other_module") == 0);
+
+        // The staged slot is readable from the database.
+        auto cfg1 = config_service.get_configuration(1);
+        REQUIRE(cfg1.status == GetConfigurationStatus::Success);
+        CHECK(cfg1.module_configurations.count("other_module") == 1);
+        CHECK(cfg1.module_configurations.count("dummy_module") == 0);
     }
 
     SECTION("Empty seeded slot: as produced by a no-config manager boot") {

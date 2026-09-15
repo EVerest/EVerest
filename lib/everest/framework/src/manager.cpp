@@ -913,8 +913,9 @@ int Manager::run() {
     const bool have_config = not config_path.empty();
     const auto boot_source = resolve_boot_source(config_path, db_opt, reset_from_yaml, m_vm.count("db-init") != 0);
 
-    // DatabaseOnly runs on built-in defaults (no default.yaml fallback); the other modes resolve
-    // the config file, falling back to the default config lookup when no --config was given.
+    // DatabaseOnly runs on built-in defaults and never looks for default.yaml; the other modes resolve
+    // the config file. Without --config the default config is looked up and, if it is absent, the
+    // manager also runs on built-in defaults with an empty config (ms.config_file is then empty).
     ManagerSettings ms = boot_source.mode == BootMode::DatabaseOnly
                              ? ManagerSettings(ManagerSettings::WithoutConfig{}, prefix_opt, boot_source.db_path)
                              : ManagerSettings(prefix_opt, boot_source.config_path, boot_source.db_path);
@@ -1014,21 +1015,22 @@ int Manager::run() {
         return EXIT_SUCCESS;
     }
 
+    // Set when the YAML config failed to load or validate: the bootstrap then wrote an empty placeholder
+    // boot slot, and the boot decision below reports this reason instead of a bare "no modules".
+    std::optional<std::string> seed_failure;
     {
         auto bs = init_database_bootstrap(ms, reset_from_yaml);
         m_db_connection = std::move(bs.db_connection);
         if (not bs.module_configs_initialized) {
-            // No valid database entry and it is impossible to write one, so exiting is the default.
-            // --idle-on-failure / --into-idle continue into the lifecycle instead, where the
-            // Configuration API can be used to push a corrected configuration. The database is left
-            // untouched (no empty slot is seeded), so the boot arrives below with no modules.
-            if (not m_idle_on_failure and not boot_into_idle) {
-                EVLOG_critical << "Couldn't initialize the configuration database!";
-                return EXIT_FAILURE;
-            }
-            EVLOG_warning << "Couldn't initialize the configuration database; continuing without a configuration "
-                             "because --idle-on-failure or --into-idle was given. No modules will be started.";
+            // The boot slot could not be written (or --reset-from-yaml met an invalid YAML and kept the
+            // existing slot). Nothing downstream can work without a boot slot, so this aborts regardless
+            // of --idle-on-failure / --into-idle. An invalid YAML alone never ends up here: it seeds an
+            // empty placeholder slot and is handled like a configuration without modules below.
+            EVLOG_critical << "Couldn't initialize the configuration database!"
+                           << (bs.seed_failure.has_value() ? " " + *bs.seed_failure : std::string{});
+            return EXIT_FAILURE;
         }
+        seed_failure = std::move(bs.seed_failure);
     }
 
     // Without --db the database is in-memory and dies with the process; runtime configuration
@@ -1036,8 +1038,15 @@ int Manager::run() {
     // merges back into the config on the next start (the pre-database write behavior).
     std::unique_ptr<everest::config::StorageInterface> persistence_mirror;
     if (boot_source.mode == BootMode::YamlWithInMemoryDb) {
-        const auto user_config_path = ms.config_file.parent_path() / "user-config" / ms.config_file.filename();
-        persistence_mirror = std::make_unique<everest::config::UserConfigStorage>(user_config_path);
+        if (not ms.config_file.empty()) {
+            const auto user_config_path = ms.config_file.parent_path() / "user-config" / ms.config_file.filename();
+            persistence_mirror = std::make_unique<everest::config::UserConfigStorage>(user_config_path);
+        } else {
+            // No --config and no default.yaml: there is no YAML to mirror into, and the loader would not read
+            // a user-config back without a main config file anyway.
+            EVLOG_warning << "No config file loaded and no --db given: runtime configuration changes are kept in "
+                             "memory only and are lost on restart. Use --db <path> for persistence.";
+        }
     }
     m_config_service_core =
         std::make_unique<config::ConfigServiceCore>(ms, m_db_connection, std::move(persistence_mirror));
@@ -1289,16 +1298,22 @@ int Manager::run() {
     } module_process_guard{*this};
 
     if (boot_into_idle) {
+        if (seed_failure.has_value()) {
+            EVLOG_warning << *seed_failure << " Entering Idle without modules.";
+        }
         EVLOG_info << "Requested by command-line-parameter -> entering Idle";
         transition_to(ManagerState::Idle);
     } else if (not runtime_ctx_has_valid_config or runtime_ctx.config->get_module_configurations().empty()) {
         // Both "nothing startable at boot" outcomes - a configuration that does not load or validate,
-        // and one without modules - share one decision: exit by default, or stay in Idle and report
-        // FailedToStart with --idle-on-failure so a corrected configuration can be pushed.
+        // and one without modules (including the empty placeholder slot seeded for an invalid YAML) -
+        // share one decision: exit by default, or stay in Idle and report FailedToStart with
+        // --idle-on-failure so a corrected configuration can be pushed.
         // The emptiness check must stay behind the short circuit: config is null when the load failed.
-        const std::string_view failure_reason =
-            runtime_ctx_has_valid_config ? "Module configuration contains no modules (empty or missing active_modules)."
-                                         : "Failed to load and validate config!";
+        const std::string failure_reason =
+            not runtime_ctx_has_valid_config ? std::string{"Failed to load and validate config!"}
+            : seed_failure.has_value()
+                ? fmt::format("Module configuration contains no modules: {}", *seed_failure)
+                : std::string{"Module configuration contains no modules (empty or missing active_modules)."};
         if (not m_idle_on_failure) {
             EVLOG_error << failure_reason;
             EVLOG_error << "Manager is exiting. Pass --idle-on-failure (or --into-idle) to keep the manager "
@@ -2103,8 +2118,10 @@ int main(int argc, char* argv[]) {
     desc.add_options()("dontvalidateschema", "Don't validate json schema on every message");
     desc.add_options()("config", po::value<std::string>(),
                        "Full path to a config file.  If the file does not exist and has no extension, it will be "
-                       "looked up in the default config directory. Optional: defaults to the default config file in "
-                       "the default config directory. Without --db, the config is loaded from YAML on every start "
+                       "looked up in the default config directory. Optional: defaults to "
+                       "<prefix>/etc/everest/default.yaml if it exists; otherwise the manager starts with an empty "
+                       "configuration on built-in defaults (and exits with no modules unless --into-idle or "
+                       "--idle-on-failure is given). Without --db, the config is loaded from YAML on every start "
                        "and runtime configuration changes are persisted to user-config/<config-name>.yaml.");
     desc.add_options()("conf", po::value<std::string>(), "Deprecated: Same as --config. Do not use both.");
     desc.add_options()("configuration-api", po::value<std::string>()->implicit_value("ro"),
@@ -2114,16 +2131,17 @@ int main(int argc, char* argv[]) {
     desc.add_options()("db", po::value<std::string>(),
                        "Full path to the configuration database file. Optional: without --db an in-memory database "
                        "is used and the YAML config is authoritative on every start. With --db and --config, the "
-                       "database wins when it holds a valid configuration; otherwise it is seeded from the YAML "
-                       "config.");
+                       "database wins when its boot slot holds at least one module; a missing or module-less boot "
+                       "slot is seeded from the YAML config. An invalid YAML seeds an empty placeholder slot whose "
+                       "description records the error.");
     desc.add_options()("db-init",
-                       "Deprecated, no effect: seeding the database from YAML when it holds no valid configuration "
+                       "Deprecated, no effect: seeding the database from YAML when its boot slot holds no modules "
                        "is now the default. Ignored unless both --config and --db are given. Use --reset-from-yaml "
                        "to force re-seeding.");
     desc.add_options()("reset-from-yaml",
-                       "Experimental: Discard the existing database slot and re-seed from the YAML config file. "
-                       "Intended for development use when you want to reset to a known YAML state. "
-                       "Requires --config.");
+                       "Experimental: Replace the contents of the boot slot with the YAML config file, even if it "
+                       "holds modules; aborts without touching the database if the YAML is invalid. Intended for "
+                       "development use when you want to reset to a known YAML state. Requires --config.");
     desc.add_options()("into-idle",
                        "Experimental: Boot into idle state (no modules are started). Also enters Idle instead of "
                        "exiting when the configuration is invalid, missing or contains no modules.");
