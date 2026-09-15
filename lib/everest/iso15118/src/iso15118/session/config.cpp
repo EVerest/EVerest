@@ -7,6 +7,7 @@
 #include <limits>
 #include <utility>
 
+#include <iso15118/detail/d20/config_validation.hpp>
 #include <iso15118/detail/helper.hpp>
 
 namespace iso15118::session {
@@ -186,17 +187,68 @@ auto get_default_mcs_bpt_parameter_list(const std::vector<d20::ControlMobilityNe
     return param_list;
 }
 
+/// \brief Applies the AC_DER_SAE offer rules to an offered service list.
+///
+/// Fills in the inert default setup config when none was given, and removes AC_DER_SAE from the offer when
+/// the limits are missing or the setup config is not conformant. This is the single decision procedure: it
+/// runs on construction and again on every replacement of the offered services.
+void apply_ac_der_sae_offer_rules(std::vector<dt::ServiceCategory>& services,
+                                  std::optional<d20::DerSaeSetupConfig>& setup_config,
+                                  const std::optional<d20::SaeDerTransferLimits>& sae_limits,
+                                  const d20::AcTransferLimits& ac_limits) {
+    const auto ac_der_sae_found =
+        std::find(services.begin(), services.end(), dt::ServiceCategory::AC_DER_SAE) != services.end();
+
+    if (not ac_der_sae_found) {
+        return;
+    }
+
+    const auto strip_ac_der_sae = [&services]() {
+        services.erase(std::remove(services.begin(), services.end(), dt::ServiceCategory::AC_DER_SAE), services.end());
+    };
+
+    // The limits carry the nominal voltage the inert default is derived from, so they are checked first.
+    if (not sae_limits.has_value()) {
+        strip_ac_der_sae();
+        logf_error("The supported energy services contain AC_DER_SAE, but there are no sae der limits defined. "
+                   "Removing AC_DER_SAE from the supported_energy_transfer list!");
+        return;
+    }
+
+    if (not setup_config.has_value()) {
+        logf_warning("The supported energy services contain AC_DER_SAE, but no sae der setup config was defined. "
+                     "Falling back to the inert default grid code configuration.");
+        setup_config =
+            d20::make_inert_default_sae_setup_config(dt::from_RationalNumber(sae_limits->grid_limits.nominal_voltage));
+    }
+
+    // setup_config is filled in above when it was missing, so both inputs are present here.
+    const auto violation = d20::validate_sae_der_setup(setup_config.value(), sae_limits.value(), ac_limits);
+    if (violation.has_value()) {
+        strip_ac_der_sae();
+        logf_error("The sae der configuration is not conformant: %s. Removing AC_DER_SAE from the "
+                   "supported_energy_transfer list!",
+                   violation.value().c_str());
+    }
+}
+
 } // namespace
+
+void SessionConfig::set_supported_energy_transfer_services(std::vector<dt::ServiceCategory> services) {
+    supported_energy_transfer_services = std::move(services);
+    apply_ac_der_sae_offer_rules(supported_energy_transfer_services, der_sae_setup_config, der_sae_limits, ac_limits);
+}
 
 SessionConfig::SessionConfig(EvseSetupConfig config) :
     evse_id(std::move(config.evse_id)),
     cert_install_service(config.enable_certificate_install_service),
     authorization_services(std::move(config.authorization_services)),
-    supported_energy_transfer_services(std::move(config.supported_energy_services)),
     supported_vas_services(std::move(config.supported_vas_services)),
     dc_limits(config.dc_limits),
     ac_limits(config.ac_limits),
-    der_limits(config.der_limits),
+    der_iec_limits(config.der_iec_limits),
+    der_sae_setup_config(config.der_sae_setup_config),
+    der_sae_limits(config.der_sae_limits),
     powersupply_limits(config.powersupply_limits),
     supported_control_mobility_modes(std::move(config.control_mobility_modes)),
     custom_protocol(std::move(config.custom_protocol)),
@@ -214,6 +266,8 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
     pre20_vas_services(std::move(config.pre20_vas_services)),
     auth_timeout_eim_s(config.auth_timeout_eim_s),
     auth_timeout_pnc_s(config.auth_timeout_pnc_s) {
+
+    set_supported_energy_transfer_services(std::move(config.supported_energy_services));
 
     // TODO(SL): How to handle this probaly
     const auto is_dc_bpt_service = [](dt::ServiceCategory service) {
@@ -241,7 +295,7 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
     };
     const auto ac_der_iec_found = std::any_of(supported_energy_transfer_services.begin(),
                                               supported_energy_transfer_services.end(), is_ac_der_iec_service);
-    if (ac_der_iec_found and not der_limits.has_value()) {
+    if (ac_der_iec_found and not der_iec_limits.has_value()) {
         logf_warning("The supported energy services contain AC_DER_IEC, but there is no der limits defined. This "
                      "can lead to session shutdowns.");
     }
