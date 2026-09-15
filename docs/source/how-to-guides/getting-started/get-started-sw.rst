@@ -164,8 +164,7 @@ It is used for the communication between the EVerest modules:
 
 .. code-block:: bash
 
-  docker run -d --name mqtt-server --network infranet_network -p 1883:1883 -p 9001:9001 ghcr.io/everest/containers/mosquitto:docker-images-v0.1.0
-
+  docker run -d --name mqtt-server --network infranet_network -p 1883:1883 -p 9001:9001 ghcr.io/everest/everest-demo/mqtt-server:latest
 
 That makes us ready for entering the simulation phase described in the next
 chapter.
