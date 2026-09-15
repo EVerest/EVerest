@@ -30,11 +30,8 @@ active_modules:
         - implementation_id: main
           module_id: token_validator
   ev_manager:
-    module: EvManager
+    module: EvSimulator
     config_module:
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
       connector_id: 1
     connections:
       ev:
