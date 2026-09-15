@@ -42,7 +42,9 @@ std::unique_ptr<SessionFixture> dual_offer_fixture() {
     ev::d20::SessionOptions options;
     options.offered_protocols = offer;
     return std::make_unique<SessionFixture>("EVTESTID01", ev::SessionTiming{5ms, 100ms}, ev::DcChargeParams{},
-                                            advertised, message_20::datatypes::ServiceCategory::DC, std::move(options));
+                                            advertised, message_20::datatypes::ServiceCategory::DC,
+                                            ev::AcChargeParams{}, default_der_control_functions(), true,
+                                            std::move(options));
 }
 
 message_20::SupportedAppProtocolResponse sap_response(uint8_t schema_id) {
