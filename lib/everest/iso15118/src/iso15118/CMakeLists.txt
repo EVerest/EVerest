@@ -231,6 +231,9 @@ if(ISO15118_BUILD_EV_SIDE)
         ev/d20/state/dc_welding_detection.cpp
         ev/d20/state/power_delivery.cpp
         ev/d20/state/session_stop.cpp
+        ev/session.cpp
+        ev/controller.cpp
+        ev/config_validation.cpp
         ev/transport/sdp_client.cpp
         ev/transport/data_client.cpp
     )
