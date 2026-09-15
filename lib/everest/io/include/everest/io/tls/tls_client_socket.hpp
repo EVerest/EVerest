@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace tls {
@@ -38,7 +39,11 @@ public:
 
     // Build the SSL_CTX and record the TCP connect parameters. Starts no connect itself, so it
     // returns quickly. Must be followed by connect(), which does the blocking work.
-    bool setup(Config cfg, std::string const& remote_host, std::uint16_t remote_port, int timeout_ms);
+    // device binds the socket to an interface (SO_BINDTODEVICE), required to reach a link-local
+    // peer. source_ports pins the local port to a range, unset lets the kernel pick.
+    bool setup(Config cfg, std::string const& remote_host, std::uint16_t remote_port, int timeout_ms,
+               std::string const& device = {},
+               std::optional<tcp::source_port_range> const& source_ports = std::nullopt);
 
     // Wrap the connected fd, without handshaking: the loop drives that. Runs on the
     // fd_event_client connect thread.

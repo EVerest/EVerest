@@ -74,8 +74,23 @@ target_sources(iso15118
         message/ac_der_sae_charge_loop.cpp
         message/ac_der_sae_types.cpp
 
-        tbd_controller.cpp    
+        tbd_controller.cpp
 )
+
+# The EV side is opt-in: consumers that only implement a charger (the SECC) should not pay to
+# build or link it. everest-core turns it on for the Ev15118 module.
+if(ISO15118_BUILD_EV_SIDE)
+    target_sources(iso15118
+        PRIVATE
+        ev/fsm_base.cpp
+        ev/session/feedback.cpp
+        ev/transport/sdp_client.cpp
+        ev/transport/data_client.cpp
+    )
+
+    # Only the EV side uses everest::io.
+    target_link_libraries(iso15118 PUBLIC everest::io)
+endif()
 
 target_link_libraries(iso15118
     PUBLIC

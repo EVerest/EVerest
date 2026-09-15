@@ -89,6 +89,13 @@ set(EVEREST_INCLUDE_LIBS "" CACHE STRING "Semicolon-separated allowlist of libra
 set(EVEREST_EXCLUDE_LIBS "" CACHE STRING "Semicolon-separated blocklist of libraries to skip")
 # list of compile options that are passed to modules if EVEREST_ENABLE_COMPILE_WARNINGS=ON
 # generated code has functions often not used
+# libiso15118 builds only the SECC side by default. everest-core ships EV-side modules
+# (Ev15118), so it defaults to building the EV half and its tests. A value given on the command
+# line still wins, which is what keeps the charger-only path reachable and testable in CI.
+if(NOT DEFINED ISO15118_BUILD_EV_SIDE)
+    set(ISO15118_BUILD_EV_SIDE ON)
+endif()
+
 set(EVEREST_COMPILE_OPTIONS "-Wall;-Wno-unused-function" CACHE STRING "A list of compile options used for building modules")
 if(EVEREST_ENABLE_GLOBAL_COMPILE_WARNINGS)
     add_compile_options(${EVEREST_COMPILE_OPTIONS})

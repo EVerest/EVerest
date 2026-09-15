@@ -8,6 +8,7 @@ add_executable(everest_io_tests
   udp_dualstack_server_socket_test.cpp
   fd_event_client_async_test.cpp
   client_connect_error_test.cpp
+  tcp_bind_options_test.cpp
   fd_event_handler_test.cpp
   fd_event_client_backpressure_test.cpp
   pty_handler_test.cpp
