@@ -152,9 +152,9 @@ active_modules:
   iso15118_charger:
     config_module:
       device: auto
-      tls_security: allow
+      supported_ISO15118_2: true
       supported_DIN70121: false
-    module: EvseV2G
+    module: Evse15118D20
     connections:
       security:
         - module_id: evse_security
