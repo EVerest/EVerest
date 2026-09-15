@@ -17,7 +17,7 @@ void ServiceSelection::enter() {
     message_20::ServiceSelectionRequest req;
     setup_header(req.header, m_ctx.get_session());
     req.selected_energy_transfer_service = {m_ctx.selected_service(), m_parameter_set_id};
-    m_ctx.respond(req);
+    m_ctx.send_request(req);
 }
 
 Result ServiceSelection::feed(Event ev) {
@@ -42,7 +42,15 @@ Result ServiceSelection::feed(Event ev) {
         return m_ctx.create_state<AC_ChargeParameterDiscovery>();
     }
 
-    return m_ctx.create_state<DC_ChargeParameterDiscovery>();
+    const auto service = m_ctx.selected_service();
+    if (service == message_20::datatypes::ServiceCategory::DC or
+        service == message_20::datatypes::ServiceCategory::DC_BPT) {
+        return m_ctx.create_state<DC_ChargeParameterDiscovery>();
+    }
+
+    logf_error("selected service category is not supported by the EV");
+    m_ctx.stop_session();
+    return {};
 }
 
 } // namespace iso15118::ev::d20::state

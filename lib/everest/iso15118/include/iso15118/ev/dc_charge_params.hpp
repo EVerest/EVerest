@@ -16,6 +16,9 @@ struct DcChargeParams {
     // Static: negotiated/advertised limits and targets.
     float max_charge_power{0.0f};
     float max_charge_current{0.0f};
+    float max_discharge_power{0.0f};
+    float min_discharge_power{0.0f};
+    float max_discharge_current{0.0f};
     float max_voltage{0.0f};
     float min_voltage{0.0f};
     float energy_capacity{0.0f};

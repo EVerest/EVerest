@@ -20,7 +20,7 @@ message_20::DC_CableCheckRequest make_request(const SessionId& session) {
 } // namespace
 
 void DC_CableCheck::enter() {
-    m_ctx.respond(make_request(m_ctx.get_session()));
+    m_ctx.send_request(make_request(m_ctx.get_session()));
 }
 
 Result DC_CableCheck::feed(Event ev) {
@@ -40,7 +40,7 @@ Result DC_CableCheck::feed(Event ev) {
     }
 
     // Processing::Ongoing: re-poll
-    m_ctx.respond(make_request(m_ctx.get_session()));
+    m_ctx.send_request(make_request(m_ctx.get_session()));
     return {};
 }
 
