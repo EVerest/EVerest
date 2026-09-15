@@ -32,8 +32,9 @@ bool Engine::started() const {
     return fsm.has_value();
 }
 
-void Engine::stage_response(io::v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
+bool Engine::stage_response(io::v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
     message_exchange.set_response(std::make_unique<message_20::Variant>(payload_type, view));
+    return true;
 }
 
 V2gMessageType Engine::peek_response_type() const {
@@ -83,6 +84,42 @@ std::optional<std::chrono::milliseconds> Engine::ongoing_timeout() const {
         return std::nullopt;
     }
     return timeouts::ongoing_timeout(fsm->get_current_state_id());
+}
+
+std::chrono::milliseconds Engine::min_request_interval() const {
+    return std::chrono::milliseconds(0);
+}
+
+void Engine::latch(const ControlEvent& event) {
+    if (const auto* stop = std::get_if<StopCharging>(&event); stop != nullptr and *stop) {
+        ctx.set_stop_charging_requested(true);
+    }
+    if (const auto* pause = std::get_if<PauseCharging>(&event); pause != nullptr and *pause) {
+        ctx.set_pause_charging_requested(true);
+    }
+    if (const auto* cp = std::get_if<CpState>(&event)) {
+        ctx.set_cp_state(cp->c_or_d);
+    }
+}
+
+void Engine::stop() {
+    ctx.stop_session();
+}
+
+bool Engine::is_stopped() const {
+    return ctx.is_session_stopped();
+}
+
+bool Engine::is_paused() const {
+    return ctx.is_session_paused();
+}
+
+std::optional<std::array<uint8_t, 8>> Engine::session_id() const {
+    return ctx.get_session().get_id();
+}
+
+std::optional<ProtocolId> Engine::negotiated_protocol() const {
+    return ctx.negotiated_protocol();
 }
 
 std::optional<StateID> Engine::current_state() const {
