@@ -88,7 +88,7 @@ struct EvConfig {
     // its security; SessionSetupReq carries its id.
     std::optional<PausedSession> resume{std::nullopt};
 
-    // Session parameters an engine reads beyond the protocol itself.
+    // ISO 15118-2 / DIN SPEC 70121 engine parameters (EVCCID MAC, energy transfer mode, AC values, PnC).
     EvSessionParams params{};
 
     // The owner reports the control pilot via Controller::set_cp_state; gates DC_CableCheck.

@@ -20,6 +20,7 @@
 #include <iso15118/session/protocol.hpp>
 
 #include <iso15118/ev/ac_charge_params.hpp>
+#include <iso15118/ev/d2/engine.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/d20/engine.hpp>
@@ -115,6 +116,11 @@ private:
     // check_finished(). poll_impl has no try/catch.
     template <typename F> void guarded(const char* op, F&& f);
 
+    // Stop whatever engine there is without ever throwing. switch_engine emplaces into the
+    // variant, so a throwing engine constructor leaves it valueless, and guarded's handlers run
+    // after exactly that. A handler that threw again would escape the reactor callback.
+    void stop_engine_quietly() noexcept;
+
     // Referenced by the engine's Context; declared before it.
     std::optional<d20::ControlEvent> active_control_event;
     everest::lib::util::monitor<DcChargeParams> owned_dc_params{DcChargeParams{}};
@@ -128,7 +134,7 @@ private:
     const std::optional<std::array<uint8_t, 8>> resumed_session_id;
 
     // Engine of the running protocol generation; never moved, only emplaced.
-    std::variant<std::monostate, d20::Engine> engine;
+    std::variant<std::monostate, d20::Engine, d2::Engine> engine;
 
     OutboundSend outbound_send;
 

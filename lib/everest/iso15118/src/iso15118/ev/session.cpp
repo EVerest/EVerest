@@ -97,22 +97,32 @@ void Session::set_on_finished(std::function<void()> on_finished_) {
     on_finished = std::move(on_finished_);
 }
 
+void Session::stop_engine_quietly() noexcept {
+    // std::visit on a valueless variant throws, and with_engine throws on monostate by design.
+    // Neither may happen here: this runs from an exception handler.
+    if (engine.valueless_by_exception() or std::holds_alternative<std::monostate>(engine)) {
+        return;
+    }
+    try {
+        with_engine(engine, [](auto& e) {
+            e.stop();
+            e.discard_request();
+        });
+    } catch (...) {
+        // Nothing further is possible; is_finished() reports a valueless engine as finished.
+    }
+}
+
 template <typename F> void Session::guarded(const char* op, F&& f) {
     try {
         f();
     } catch (const std::exception& ex) {
         logf_error("EV %s failed (%s); stopping the session", op, ex.what());
         // A request left in the exchange would keep is_finished() false forever.
-        with_engine(engine, [](auto& e) {
-            e.stop();
-            e.discard_request();
-        });
+        stop_engine_quietly();
     } catch (...) {
         logf_error("EV %s failed (non-std exception); stopping the session", op);
-        with_engine(engine, [](auto& e) {
-            e.stop();
-            e.discard_request();
-        });
+        stop_engine_quietly();
     }
 
     check_finished();
@@ -267,14 +277,41 @@ std::optional<ProtocolId> Session::feed_fsm(d20::Event ev) {
 }
 
 void Session::switch_engine(ProtocolId protocol) {
-    // Only ISO 15118-20 has an engine here; the other generations arrive with their own layers.
-    // A SAP offer that names one of them and gets it back has nowhere to go.
-    logf_error("EV negotiated %s, which this build has no engine for; stopping the session",
-               protocol_id_to_string(protocol));
-    with_engine(engine, [](auto& e) {
-        e.stop();
-        e.discard_request();
+    // Carry the latches of the SAP phase into the new engine.
+    const bool stop_requested = with_engine(engine, [](auto& e) { return e.context().is_stop_charging_requested(); });
+    const bool pause_requested = with_engine(engine, [](auto& e) { return e.context().is_pause_charging_requested(); });
+    const bool cp_c_or_d = with_engine(engine, [](auto& e) { return e.context().cp_state_c_or_d(); });
+
+    if (protocol == ProtocolId::ISO15118_2) {
+        engine.emplace<d2::Engine>(callbacks, params, active_control_event, dc_params, has_cp_state_feedback,
+                                   resumed_session_id);
+    } else {
+        logf_error("EV negotiated %s, which this build has no engine for; stopping the session",
+                   protocol_id_to_string(protocol));
+        with_engine(engine, [](auto& e) {
+            e.stop();
+            e.discard_request();
+        });
+        return;
+    }
+    logf_info("EV switched to the %s engine", protocol_id_to_string(protocol));
+
+    with_engine(engine, [&](auto& e) {
+        if (stop_requested) {
+            e.latch(d20::ControlEvent{d20::StopCharging{true}});
+        }
+        if (pause_requested) {
+            e.latch(d20::ControlEvent{d20::PauseCharging{true}});
+        }
+        if (cp_c_or_d) {
+            e.latch(d20::ControlEvent{d20::CpState{true}});
+        }
+        e.start();
     });
+    update_ongoing_guard(true);
+    if (with_engine(engine, [](auto& e) { return e.has_request(); })) {
+        arm_send_delay();
+    }
 }
 
 void Session::set_transport_security(io::v2gtp::Security security) {
@@ -445,6 +482,12 @@ void Session::check_finished() {
 }
 
 bool Session::is_finished() const {
+    // switch_engine emplaces, so a throwing engine constructor leaves no engine at all. There is
+    // nothing left to run the session, and std::visit on a valueless variant would throw here,
+    // inside the path that is meant to wind the session down.
+    if (engine.valueless_by_exception()) {
+        return true;
+    }
     return std::visit(
         [&](const auto& e) {
             if constexpr (std::is_same_v<std::decay_t<decltype(e)>, std::monostate>) {
@@ -457,6 +500,9 @@ bool Session::is_finished() const {
 }
 
 bool Session::is_paused() const {
+    if (engine.valueless_by_exception()) {
+        return false;
+    }
     return std::visit(
         [&](const auto& e) {
             if constexpr (std::is_same_v<std::decay_t<decltype(e)>, std::monostate>) {
@@ -469,6 +515,9 @@ bool Session::is_paused() const {
 }
 
 std::optional<std::array<uint8_t, 8>> Session::session_id() const {
+    if (engine.valueless_by_exception()) {
+        return std::nullopt;
+    }
     return std::visit(
         [&](const auto& e) -> std::optional<std::array<uint8_t, 8>> {
             if constexpr (std::is_same_v<std::decay_t<decltype(e)>, std::monostate>) {
@@ -481,6 +530,9 @@ std::optional<std::array<uint8_t, 8>> Session::session_id() const {
 }
 
 std::optional<ProtocolId> Session::selected_protocol() const {
+    if (engine.valueless_by_exception()) {
+        return std::nullopt;
+    }
     return std::visit(
         [&](const auto& e) -> std::optional<ProtocolId> {
             if constexpr (std::is_same_v<std::decay_t<decltype(e)>, std::monostate>) {

@@ -66,6 +66,12 @@ public:
         return request.has_value();
     }
 
+    // Drop the pending request without encoding it. take_request() runs the deferred serializer and
+    // reports a failure if it cannot; a caller that is tearing the session down wants neither.
+    void discard() {
+        request.reset();
+    }
+
     Type pending_request_type() const {
         return request.has_value() ? request->type : Type::None;
     }
