@@ -1,0 +1,241 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
+#include <catch2/catch_test_macros.hpp>
+
+#include "helper.hpp"
+
+#include <iso15118/ev/d20/state/schedule_exchange.hpp>
+#include <iso15118/message/authorization.hpp>
+#include <iso15118/message/schedule_exchange.hpp>
+#include <iso15118/message/session_stop.hpp>
+#include <iso15118/message/type.hpp>
+
+using namespace iso15118;
+
+namespace {
+using message_20::datatypes::Processing;
+using message_20::datatypes::ResponseCode;
+using message_20::datatypes::ServiceCategory;
+
+message_20::ScheduleExchangeResponse make_response(const message_20::Header& header, ResponseCode response_code,
+                                                   Processing processing) {
+    message_20::ScheduleExchangeResponse res{};
+    res.header = header;
+    res.response_code = response_code;
+    res.processing = processing;
+    return res;
+}
+} // namespace
+
+SCENARIO("ISO15118-20 EV ScheduleExchange sends initial Dynamic request on enter") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, no_seed};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::ScheduleExchangeRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
+    REQUIRE(std::holds_alternative<message_20::datatypes::Dynamic_SEReqControlMode>(request_message->control_mode));
+}
+
+SCENARIO("ISO15118-20 EV ScheduleExchange fires ev_power_ready and transitions to DC_CableCheck on Finished") {
+    bool ev_power_ready_fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.ev_power_ready = [&ev_power_ready_fired]() { ev_power_ready_fired = true; };
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, no_seed};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(ev_power_ready_fired == true);
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_CableCheck);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO(
+    "ISO15118-20 EV ScheduleExchange fires ev_power_ready and transitions to DC_CableCheck on Finished for DC_BPT") {
+    bool ev_power_ready_fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.ev_power_ready = [&ev_power_ready_fired]() { ev_power_ready_fired = true; };
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, message_20::datatypes::ServiceCategory::DC_BPT,
+                                                         no_seed};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(ev_power_ready_fired == true);
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_CableCheck);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV ScheduleExchange goes to SessionStop when a stop was requested") {
+    // [V2G20-2644]: a stopped session never signals power readiness; SessionStopReq(Terminate)
+    // is the next request instead of DC_CableCheckReq.
+    bool ev_power_ready_fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.ev_power_ready = [&ev_power_ready_fired]() { ev_power_ready_fired = true; };
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, no_seed};
+    primed.ctx.set_stop_charging_requested(true);
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
+    REQUIRE(ev_power_ready_fired == false);
+
+    const auto requests = primed.take_requests();
+    const auto stop_request = requests.get<message_20::SessionStopRequest>();
+    REQUIRE(stop_request.has_value());
+    REQUIRE(stop_request->charging_session == message_20::datatypes::ChargingSession::Terminate);
+}
+
+SCENARIO("ISO15118-20 EV ScheduleExchange stays and resends on Ongoing without firing ev_power_ready") {
+    bool ev_power_ready_fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.ev_power_ready = [&ev_power_ready_fired]() { ev_power_ready_fired = true; };
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, no_seed};
+
+    // Take the request emitted on enter() so the post-feed assertion proves feed()
+    // emitted a *fresh* ScheduleExchangeRequest rather than observing the initial one.
+    REQUIRE(primed.helper.get_message_exchange().take_request().has_value());
+    REQUIRE_FALSE(primed.helper.get_message_exchange().has_request());
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, Processing::Ongoing));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(ev_power_ready_fired == false);
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::ScheduleExchange);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::ScheduleExchangeRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
+}
+
+SCENARIO("ISO15118-20 EV ScheduleExchange rejects malformed responses") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto make_fsm = [](FsmStateHelper& helper) {
+        auto& ctx = helper.get_context();
+        ctx.get_session().set_id(SESSION_HEADER.session_id);
+        return fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ScheduleExchange>()};
+    };
+    const auto make_ok = [](const message_20::Header& header) {
+        return make_response(header, ResponseCode::OK, Processing::Finished);
+    };
+    const auto wrong = message_20::AuthorizationResponse{SESSION_HEADER, ResponseCode::OK, Processing::Finished};
+    check_rejection_paths(callbacks, ev::d20::StateID::ScheduleExchange, make_fsm, make_ok, wrong);
+}
+
+namespace {
+using message_20::datatypes::ControlMode;
+
+// ServiceDetail records the selected control mode before ScheduleExchange is entered.
+const auto seed_scheduled = [](FsmStateHelper& helper) {
+    helper.get_context().set_selected_control_mode(ControlMode::Scheduled);
+};
+
+message_20::ScheduleExchangeResponse make_scheduled_response(const message_20::Header& header,
+                                                             ResponseCode response_code, Processing processing,
+                                                             std::vector<uint32_t> tuple_ids) {
+    auto res = make_response(header, response_code, processing);
+    message_20::datatypes::Scheduled_SEResControlMode mode{};
+    for (const auto id : tuple_ids) {
+        message_20::datatypes::ScheduleTuple tuple{};
+        tuple.schedule_tuple_id = id;
+        mode.schedule_tuple.push_back(tuple);
+    }
+    res.control_mode = mode;
+    return res;
+}
+} // namespace
+
+SCENARIO("ISO15118-20 EV ScheduleExchange sends a Scheduled request on enter in Scheduled mode") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, seed_scheduled};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::ScheduleExchangeRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(std::holds_alternative<message_20::datatypes::Scheduled_SEReqControlMode>(request_message->control_mode));
+    const auto& mode = std::get<message_20::datatypes::Scheduled_SEReqControlMode>(request_message->control_mode);
+    REQUIRE_FALSE(mode.departure_time.has_value());
+    REQUIRE_FALSE(mode.target_energy.has_value());
+    REQUIRE_FALSE(mode.energy_offer.has_value());
+}
+
+SCENARIO("ISO15118-20 EV ScheduleExchange records the offered ScheduleTupleID on Finished") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, seed_scheduled};
+
+    primed.handle_response(make_scheduled_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished, {4, 9}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_CableCheck);
+    REQUIRE(primed.ctx.selected_schedule_tuple_id() == 4);
+}
+
+SCENARIO("ISO15118-20 EV ScheduleExchange re-sends the Scheduled request on Ongoing") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, seed_scheduled};
+
+    REQUIRE(primed.helper.get_message_exchange().take_request().has_value());
+
+    primed.handle_response(make_scheduled_response(SESSION_HEADER, ResponseCode::OK, Processing::Ongoing, {}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+    REQUIRE_FALSE(primed.ctx.selected_schedule_tuple_id().has_value());
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::ScheduleExchangeRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(std::holds_alternative<message_20::datatypes::Scheduled_SEReqControlMode>(request_message->control_mode));
+}
+
+SCENARIO("ISO15118-20 EV ScheduleExchange stops the session on a Dynamic reply it never requested") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, seed_scheduled};
+
+    expect_stops_session(primed, make_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished),
+                         ev::d20::StateID::ScheduleExchange);
+}
+
+SCENARIO("ISO15118-20 EV ScheduleExchange stops the session on a Scheduled reply without a schedule tuple") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, seed_scheduled};
+
+    expect_stops_session(primed, make_scheduled_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished, {}),
+                         ev::d20::StateID::ScheduleExchange);
+}
+
+SCENARIO("ISO15118-20 EV ScheduleExchange stops the session on a ScheduleTupleID outside 1..255") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, seed_scheduled};
+
+    expect_stops_session(primed, make_scheduled_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished, {256}),
+                         ev::d20::StateID::ScheduleExchange);
+}
+
+SCENARIO("ISO15118-20 EV ScheduleExchange goes to SessionStop carrying Pause when a pause was requested") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, no_seed};
+    primed.ctx.set_pause_charging_requested(true);
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
+
+    const auto requests = primed.take_requests();
+    const auto stop_request = requests.get<message_20::SessionStopRequest>();
+    REQUIRE(stop_request.has_value());
+    REQUIRE(stop_request->charging_session == message_20::datatypes::ChargingSession::Pause);
+}
