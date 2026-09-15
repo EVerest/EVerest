@@ -30,6 +30,8 @@ struct everest::lib::io::tls::tls_client_socket::Config {
         bool status_request{false};                              //!< status request extension in the client hello
         bool status_request_v2{false};                           //!< status request v2 extension in the client hello
         bool trusted_ca_keys{false};                             //!< trusted ca keys extension in the client hello
+        bool tls_key_logging{false};                             //!< tls key logging is active when true
+        std::string tls_key_logging_path;                        //!< tls key logging file path
     };
     tls_config tls{};
     std::string host_for_sni;
