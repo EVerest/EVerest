@@ -270,7 +270,7 @@ prefix with ``find_package()``.
    * - Package
      - Contents
    * - ``base``
-     - log, timer, util, sqlite, evse_security, tls
+     - log, timer, util, sqlite, evse_security, tls, io
    * - ``iso15118``
      - libiso15118 and the cbv2g EXI codec libraries
    * - ``ocpp``
@@ -280,6 +280,9 @@ prefix with ``find_package()``.
        out-of-tree module projects build against
    * - ``runtime``
      - the in-tree modules, applications and configurations (no CMake package)
+
+``base`` needs mosquitto for io: EDM fetches it, and with ``DISABLE_EDM=ON`` it is found with
+pkg-config as ``libmosquitto``.
 
 The default builds all five. Only ``libocpp`` and what it needs, for example:
 

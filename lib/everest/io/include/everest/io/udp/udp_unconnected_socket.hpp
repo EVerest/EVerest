@@ -10,6 +10,7 @@
 #include <string>
 
 #include <everest/io/event/unique_fd.hpp>
+#include <everest/io/socket/socket.hpp>
 #include <everest/io/udp/endpoint.hpp>
 #include <everest/io/udp/udp_payload.hpp>
 
@@ -40,9 +41,11 @@ public:
      * @details Implementation for \p ClientPolicy (sync variant). Never throws.
      * @param[in] target Destination for \ref tx; selects the socket family.
      * @param[in] iface Optional interface name. Empty uses @p target's hint.
+     * @param[in] source_ports Optional local source port range. Unset lets the kernel pick the port.
      * @return True on success, false otherwise.
      */
-    bool open(endpoint target, std::string iface = {});
+    bool open(endpoint target, std::string iface = {},
+              std::optional<socket::SourcePortRange> source_ports = std::nullopt);
 
     /**
      * @brief Send a \ref udp_payload to the configured destination.

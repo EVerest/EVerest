@@ -8,11 +8,19 @@
 #include <cstdint>
 #include <everest/io/event/unique_fd.hpp>
 #include <everest/io/socket/io_error_record.hpp>
+#include <everest/io/socket/socket.hpp>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace everest::lib::io::tcp {
+
+/**
+ * @var SourcePortRange
+ * @brief Inclusive range of local source ports, see \ref socket::SourcePortRange
+ */
+using SourcePortRange = socket::SourcePortRange;
 
 /**
  * tcp_socket bundles basic <a href="https://man7.org/linux/man-pages/man7/tcp.7.html">TCP</a>
@@ -48,9 +56,12 @@ public:
      * @param[in] remote The host to connect to
      * @param[in] port The port on host
      * @param[in] device Optional interface name to bind to via SO_BINDTODEVICE. Empty = no binding.
+     * @param[in] source_ports Optional local source port range bound before connect. Unset lets the
+     * kernel pick the port.
      * @return True on success, false otherwise.
      */
-    bool open(std::string const& remote, uint16_t port, std::string const& device = {});
+    bool open(std::string const& remote, uint16_t port, std::string const& device = {},
+              std::optional<SourcePortRange> const& source_ports = std::nullopt);
 
     /**
      * @brief Prepare the setup a TCP socket.
@@ -59,9 +70,12 @@ public:
      * @param[in] port The port on host
      * @param[in] timeout_ms Timeout for connecting to the remote
      * @param[in] device Optional interface name to bind to via SO_BINDTODEVICE. Empty = no binding.
+     * @param[in] source_ports Optional local source port range bound before connect. Unset lets the
+     * kernel pick the port.
      * @return True on success, false otherwise.
      */
-    bool setup(std::string const& remote, uint16_t port, int timeout_ms, std::string const& device = {});
+    bool setup(std::string const& remote, uint16_t port, int timeout_ms, std::string const& device = {},
+               std::optional<SourcePortRange> const& source_ports = std::nullopt);
 
     /**
      * @brief Long running part of the TCP connection process
@@ -175,6 +189,7 @@ private:
     int m_connect_error{0};
     socket::io_error_record m_error;
     std::string m_device;
+    std::optional<SourcePortRange> m_source_ports{};
     static constexpr size_t default_buffer_size{1500};
 };
 } // namespace everest::lib::io::tcp
