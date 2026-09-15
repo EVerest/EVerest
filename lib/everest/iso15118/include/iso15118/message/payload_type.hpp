@@ -37,7 +37,11 @@ CREATE_TYPE_TRAIT(DC_PreChargeRequest, Part20DC);
 CREATE_TYPE_TRAIT(PowerDeliveryRequest, Part20Main);
 CREATE_TYPE_TRAIT(DC_WeldingDetectionRequest, Part20DC);
 CREATE_TYPE_TRAIT(SessionStopRequest, Part20Main);
+CREATE_TYPE_TRAIT(AC_ChargeParameterDiscoveryRequest, Part20AC);
+CREATE_TYPE_TRAIT(AC_ChargeLoopRequest, Part20AC);
 CREATE_TYPE_TRAIT(DC_ChargeLoopRequest, Part20DC);
+CREATE_TYPE_TRAIT(DER_AC_ChargeParameterDiscoveryRequest, Part20DerIec);
+CREATE_TYPE_TRAIT(DER_AC_ChargeLoopRequest, Part20DerIec);
 
 CREATE_TYPE_TRAIT(SupportedAppProtocolResponse, SAP);
 CREATE_TYPE_TRAIT(SessionSetupResponse, Part20Main);

@@ -8,6 +8,7 @@
 #include <iso15118/ev/d20/state/dc_charge_loop.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
+#include <iso15118/ev/service_family.hpp>
 #include <iso15118/message/dc_charge_loop.hpp>
 
 namespace iso15118::ev::d20::state {
@@ -41,7 +42,7 @@ void fill_scheduled_charge(dt::Scheduled_DC_CLReqControlMode& mode, const DcChar
 }
 
 message_20::DC_ChargeLoopRequest make_request(const SessionId& session, const DcChargeParams& params,
-                                              dt::ControlMode control_mode) {
+                                              dt::ServiceCategory service, dt::ControlMode control_mode) {
     message_20::DC_ChargeLoopRequest req;
     setup_header(req.header, session);
     req.meter_info_requested = false;
@@ -50,25 +51,49 @@ message_20::DC_ChargeLoopRequest make_request(const SessionId& session, const Dc
     // own reading would be indistinguishable from it on the wire.
     req.present_voltage = dt::from_float(params.present_voltage);
 
+    const bool bpt = ev::is_bpt(service);
+
     if (control_mode == dt::ControlMode::Scheduled) {
-        dt::Scheduled_DC_CLReqControlMode mode;
-        fill_scheduled_charge(mode, params);
-        req.control_mode = mode;
+        if (bpt) {
+            dt::BPT_Scheduled_DC_CLReqControlMode mode;
+            fill_scheduled_charge(mode, params);
+            mode.max_discharge_power = dt::from_float(params.max_discharge_power);
+            mode.min_discharge_power = dt::from_float(params.min_discharge_power);
+            mode.max_discharge_current = dt::from_float(params.max_discharge_current);
+            req.control_mode = mode;
+        } else {
+            dt::Scheduled_DC_CLReqControlMode mode;
+            fill_scheduled_charge(mode, params);
+            req.control_mode = mode;
+        }
         return req;
     }
 
-    dt::Dynamic_DC_CLReqControlMode mode;
-    fill_dynamic_charge(mode, params);
-    req.control_mode = mode;
+    if (bpt) {
+        dt::BPT_Dynamic_DC_CLReqControlMode mode;
+        fill_dynamic_charge(mode, params);
+        mode.max_discharge_power = dt::from_float(params.max_discharge_power);
+        mode.min_discharge_power = dt::from_float(params.min_discharge_power);
+        mode.max_discharge_current = dt::from_float(params.max_discharge_current);
+        req.control_mode = mode;
+    } else {
+        dt::Dynamic_DC_CLReqControlMode mode;
+        fill_dynamic_charge(mode, params);
+        req.control_mode = mode;
+    }
 
     return req;
 }
 
-bool mode_matches_session(const message_20::DC_ChargeLoopResponse& res, dt::ControlMode control_mode) {
+bool mode_matches_session(const message_20::DC_ChargeLoopResponse& res, dt::ServiceCategory service,
+                          dt::ControlMode control_mode) {
+    const bool bpt = ev::is_bpt(service);
     if (control_mode == dt::ControlMode::Scheduled) {
-        return std::holds_alternative<dt::Scheduled_DC_CLResControlMode>(res.control_mode);
+        return bpt ? std::holds_alternative<dt::BPT_Scheduled_DC_CLResControlMode>(res.control_mode)
+                   : std::holds_alternative<dt::Scheduled_DC_CLResControlMode>(res.control_mode);
     }
-    return std::holds_alternative<dt::Dynamic_DC_CLResControlMode>(res.control_mode);
+    return bpt ? std::holds_alternative<dt::BPT_Dynamic_DC_CLResControlMode>(res.control_mode)
+               : std::holds_alternative<dt::Dynamic_DC_CLResControlMode>(res.control_mode);
 }
 
 void assign_limit(float& target, const dt::RationalNumber& value, bool& any) {
@@ -103,7 +128,8 @@ std::optional<feedback::DcMaximumLimits> evse_present_limits(const message_20::D
 
 void DC_ChargeLoop::enter() {
     logf_debug("Enter state: DC_ChargeLoop");
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_control_mode()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service(),
+                                    m_ctx.selected_control_mode()));
 }
 
 Result DC_ChargeLoop::feed(Event ev) {
@@ -118,7 +144,7 @@ Result DC_ChargeLoop::feed(Event ev) {
         return Result::stopping();
     }
 
-    if (not mode_matches_session(*res, m_ctx.selected_control_mode())) {
+    if (not mode_matches_session(*res, m_ctx.selected_service(), m_ctx.selected_control_mode())) {
         logf_error("DC_ChargeLoopResponse offers a control mode the EV did not request");
         m_ctx.stop_session();
         // no transition; the session finishes on the stop flag
@@ -149,7 +175,8 @@ Result DC_ChargeLoop::feed(Event ev) {
         return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
     }
 
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_control_mode()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service(),
+                                    m_ctx.selected_control_mode()));
     return Result::awaiting();
 }
 
