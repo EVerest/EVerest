@@ -1,0 +1,230 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+
+#include "ISO15118_evImpl.hpp"
+
+#include <chrono>
+#include <exception>
+#include <utility>
+
+#include <iso15118/detail/io/socket_helper.hpp>
+#include <iso15118/io/logging.hpp>
+#include <iso15118/io/sdp.hpp>
+
+namespace {
+template <class F> class ScopeGuard {
+public:
+    explicit ScopeGuard(F f) : m_f(std::move(f)) {
+    }
+    ScopeGuard(const ScopeGuard&) = delete;
+    ScopeGuard& operator=(const ScopeGuard&) = delete;
+    ~ScopeGuard() {
+        m_f();
+    }
+
+private:
+    F m_f;
+};
+} // namespace
+
+namespace module {
+namespace ev {
+
+void ISO15118_evImpl::init() {
+    iso15118::io::set_logging_callback([](const iso15118::LogLevel& level, const std::string& msg) {
+        switch (level) {
+        case iso15118::LogLevel::Error:
+            EVLOG_error << msg;
+            break;
+        case iso15118::LogLevel::Warning:
+            EVLOG_warning << msg;
+            break;
+        case iso15118::LogLevel::Info:
+            EVLOG_info << msg;
+            break;
+        case iso15118::LogLevel::Debug:
+            EVLOG_debug << msg;
+            break;
+        case iso15118::LogLevel::Trace:
+            EVLOG_verbose << msg;
+            break;
+        default:
+            EVLOG_critical << "(Loglevel not defined) - " << msg;
+            break;
+        }
+    });
+}
+
+void ISO15118_evImpl::ready() {
+    worker = std::thread([this] { session_worker(); });
+}
+
+ISO15118_evImpl::~ISO15118_evImpl() {
+    {
+        auto h = session.handle();
+        (*h).shutting_down = true;
+        if ((*h).current) {
+            (*h).current->shutdown();
+        }
+    }
+    session.notify_all();
+    if (worker.joinable()) {
+        worker.join();
+    }
+}
+
+iso15118::ev::EvConfig ISO15118_evImpl::make_ev_config() const {
+    iso15118::ev::EvConfig ev_config;
+
+    std::string interface_name = mod->config.device;
+    if (not iso15118::io::check_and_update_interface(interface_name)) {
+        EVLOG_error << "EvIso15118D20: no usable IPv6 interface for device '" << mod->config.device << "'";
+    }
+    ev_config.interface_name = interface_name;
+
+    ev_config.evcc_id = mod->config.evcc_id;
+    ev_config.response_timeout = std::chrono::milliseconds(mod->config.response_timeout_ms);
+    ev_config.advertised_security = iso15118::io::v2gtp::Security::NO_TRANSPORT_SECURITY;
+
+    if (not mod->config.fixed_endpoint.empty()) {
+        EVLOG_warning << "EvIso15118D20: fixed_endpoint is configured but not yet supported; using SDP discovery";
+    }
+    ev_config.discover = true;
+
+    return ev_config;
+}
+
+iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
+    iso15118::ev::feedback::Callbacks callbacks;
+
+    callbacks.connected = [](const iso15118::io::Ipv6EndPoint&) { EVLOG_info << "EvIso15118D20: connected to SECC"; };
+
+    callbacks.v2g_message = [](iso15118::message_20::Type type) {
+        EVLOG_debug << "EvIso15118D20: V2G message " << static_cast<int>(type);
+    };
+
+    callbacks.session_setup_response = [](const iso15118::message_20::SessionSetupResponse&) {
+        EVLOG_debug << "EvIso15118D20: SessionSetupResponse received";
+    };
+
+    callbacks.evse_session_info = [](const iso15118::ev::d20::EVSESessionInfo&) {
+        EVLOG_debug << "EvIso15118D20: EVSE session info received";
+    };
+
+    callbacks.timed_out = [] { EVLOG_warning << "EvIso15118D20: response watchdog timed out"; };
+
+    callbacks.stopped = [] { EVLOG_info << "EvIso15118D20: session stopped"; };
+
+    callbacks.ev_power_ready = [this] { publish_ev_power_ready(true); };
+
+    callbacks.dc_power_on = [this] { publish_dc_power_on(nullptr); };
+
+    callbacks.stop_from_charger = [this] { publish_stop_from_charger(nullptr); };
+
+    return callbacks;
+}
+
+void ISO15118_evImpl::session_worker() {
+    while (true) {
+        {
+            auto h = session.handle();
+            h.wait([&] { return (*h).phase == SessionPhase::requested || (*h).shutting_down; });
+            if ((*h).shutting_down) {
+                return;
+            }
+        }
+        run_one_session();
+        // published after run_one_session() has reset phase to idle, so a consumer
+        // that starts a new session in response is not rejected by the phase guard
+        publish_v2g_session_finished(nullptr);
+    }
+}
+
+void ISO15118_evImpl::run_one_session() {
+    try {
+        iso15118::ev::DcChargeParams cached_params;
+        {
+            auto h = session.handle();
+            cached_params = (*h).dc_params;
+        }
+        iso15118::ev::Controller controller(make_ev_config(), make_callbacks(), cached_params);
+        // declared after the controller, so it runs before ~Controller on every
+        // exit path, clearing the off-thread pointer while the object is still alive
+        ScopeGuard clear_current{[this] {
+            auto h = session.handle();
+            (*h).current = nullptr;
+        }};
+        {
+            auto h = session.handle();
+            (*h).current = &controller;
+            (*h).phase = SessionPhase::running;
+        }
+        controller.loop();
+    } catch (const std::exception& e) {
+        EVLOG_error << "EvIso15118D20: session failed: " << e.what();
+    }
+    auto h = session.handle();
+    (*h).phase = SessionPhase::idle;
+}
+
+bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode& EnergyTransferMode,
+                                            types::iso15118::SelectedPaymentOption& SelectedPaymentOption,
+                                            double& DepartureTime, double& EAmount) {
+    EVLOG_info << "EvIso15118D20: start_charging requested (DC-only M0; negotiation arguments ignored)";
+    {
+        auto h = session.handle();
+        if ((*h).phase != SessionPhase::idle) {
+            EVLOG_warning << "EvIso15118D20: a session is already active; ignoring start_charging";
+            return false;
+        }
+        (*h).phase = SessionPhase::requested;
+    }
+    session.notify_all();
+    return true;
+}
+
+void ISO15118_evImpl::handle_stop_charging() {
+    auto h = session.handle();
+    if ((*h).current) {
+        (*h).current->request_stop();
+    }
+}
+
+void ISO15118_evImpl::handle_pause_charging() {
+    EVLOG_info << "EvIso15118D20: pause_charging is not supported";
+}
+
+void ISO15118_evImpl::handle_set_fault() {
+    EVLOG_info << "EvIso15118D20: set_fault";
+}
+
+void ISO15118_evImpl::handle_set_dc_params(types::iso15118::DcEvParameters& EvParameters) {
+    EVLOG_info << "EvIso15118D20: set_dc_params";
+    auto h = session.handle();
+    auto& params = (*h).dc_params;
+    params.max_charge_power = EvParameters.max_power_limit.value_or(0.0f);
+    params.max_charge_current = EvParameters.max_current_limit.value_or(0.0f);
+    params.max_voltage = EvParameters.max_voltage_limit.value_or(0.0f);
+    params.energy_capacity = EvParameters.energy_capacity.value_or(0.0f);
+    params.target_voltage = EvParameters.target_voltage.value_or(0.0f);
+    params.target_current = EvParameters.target_current.value_or(0.0f);
+}
+
+void ISO15118_evImpl::handle_set_bpt_dc_params(types::iso15118::DcEvBPTParameters& EvBPTParameters) {
+    EVLOG_info << "EvIso15118D20: set_bpt_dc_params: deferred to M1+";
+}
+
+void ISO15118_evImpl::handle_enable_sae_j2847_v2g_v2h() {
+    EVLOG_info << "EvIso15118D20: enable_sae_j2847_v2g_v2h is not supported";
+}
+
+void ISO15118_evImpl::handle_update_soc(double& SoC) {
+    auto h = session.handle();
+    (*h).dc_params.present_soc = SoC;
+    if ((*h).current) {
+        (*h).current->update_present_soc(SoC);
+    }
+}
+
+} // namespace ev
+} // namespace module
