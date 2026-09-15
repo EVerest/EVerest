@@ -47,9 +47,7 @@ Result ServiceSelection::feed(Event ev) {
         return m_ctx.create_state<AC_ChargeParameterDiscovery>();
     }
 
-    const auto service = m_ctx.selected_service();
-    if (service == message_20::datatypes::ServiceCategory::DC or
-        service == message_20::datatypes::ServiceCategory::DC_BPT) {
+    if (m_ctx.is_dc_family()) {
         return m_ctx.create_state<DC_ChargeParameterDiscovery>();
     }
 

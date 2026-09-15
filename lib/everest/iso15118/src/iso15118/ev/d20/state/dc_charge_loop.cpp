@@ -50,7 +50,7 @@ message_20::DC_ChargeLoopRequest make_request(const SessionId& session, const Dc
     // own reading would be indistinguishable from it on the wire.
     req.present_voltage = dt::from_float(params.present_voltage);
 
-    const bool bpt = (service == dt::ServiceCategory::DC_BPT);
+    const bool bpt = ev::is_bpt(service);
 
     if (control_mode == dt::ControlMode::Scheduled) {
         if (bpt) {
@@ -86,7 +86,7 @@ message_20::DC_ChargeLoopRequest make_request(const SessionId& session, const Dc
 
 bool mode_matches_session(const message_20::DC_ChargeLoopResponse& res, dt::ServiceCategory service,
                           dt::ControlMode control_mode) {
-    const bool bpt = (service == dt::ServiceCategory::DC_BPT);
+    const bool bpt = ev::is_bpt(service);
     if (control_mode == dt::ControlMode::Scheduled) {
         return bpt ? std::holds_alternative<dt::BPT_Scheduled_DC_CLResControlMode>(res.control_mode)
                    : std::holds_alternative<dt::Scheduled_DC_CLResControlMode>(res.control_mode);
