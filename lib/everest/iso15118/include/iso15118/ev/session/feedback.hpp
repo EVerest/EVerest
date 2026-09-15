@@ -7,6 +7,7 @@
 
 #include <iso15118/ev/d20/evse_session_info.hpp>
 #include <iso15118/io/ipv6_endpoint.hpp>
+#include <iso15118/message/v2g_message_type.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/protocol.hpp>
 
@@ -23,6 +24,7 @@ using DcMaximumLimits = session::feedback::DcMaximumLimits;
 
 struct Callbacks {
     std::function<void(const io::Ipv6EndPoint&)> connected;
+    std::function<void(const V2gMessageType&)> v2g_message;
     std::function<void(Signal)> signal;
     std::function<void(ProtocolId)> selected_protocol;
     std::function<void(const std::string&)> evse_id;
@@ -47,6 +49,7 @@ public:
     explicit Feedback(feedback::Callbacks);
 
     void connected(const io::Ipv6EndPoint&) const;
+    void v2g_message(const V2gMessageType&) const;
     void signal(feedback::Signal) const;
     void selected_protocol(ProtocolId) const;
     void evse_id(const std::string&) const;

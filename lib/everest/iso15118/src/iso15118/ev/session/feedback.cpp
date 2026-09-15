@@ -13,6 +13,10 @@ void Feedback::connected(const io::Ipv6EndPoint& endpoint) const {
     call_if_available(callbacks.connected, endpoint);
 }
 
+void Feedback::v2g_message(const V2gMessageType& type) const {
+    call_if_available(callbacks.v2g_message, type);
+}
+
 void Feedback::signal(feedback::Signal signal) const {
     call_if_available(callbacks.signal, signal);
 }
