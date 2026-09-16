@@ -31,7 +31,7 @@ make_request(const SessionId& session, message_20::datatypes::Progress charge_pr
 } // namespace
 
 void PowerDelivery::enter() {
-    m_ctx.respond(make_request(m_ctx.get_session(), m_charge_progress));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_charge_progress));
 }
 
 Result PowerDelivery::feed(Event ev) {

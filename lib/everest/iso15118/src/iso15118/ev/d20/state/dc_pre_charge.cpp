@@ -31,7 +31,7 @@ message_20::DC_PreChargeRequest make_request(const SessionId& session, message_2
 
 void DC_PreCharge::enter() {
     const auto params = m_ctx.get_dc_params();
-    m_ctx.respond(make_request(m_ctx.get_session(), message_20::datatypes::Processing::Ongoing, params));
+    m_ctx.send_request(make_request(m_ctx.get_session(), message_20::datatypes::Processing::Ongoing, params));
 }
 
 Result DC_PreCharge::feed(Event ev) {
@@ -58,7 +58,7 @@ Result DC_PreCharge::feed(Event ev) {
     // Not in tolerance: resend one Ongoing request and stay. The SECC keeps answering
     // precharge requests while its converter ramps, so the EV converges here before
     // transitioning; no Finished precharge request is ever emitted.
-    m_ctx.respond(make_request(m_ctx.get_session(), message_20::datatypes::Processing::Ongoing, params));
+    m_ctx.send_request(make_request(m_ctx.get_session(), message_20::datatypes::Processing::Ongoing, params));
     return {};
 }
 

@@ -287,7 +287,8 @@ bool CarSimulation::iso_dc_power_on(const CmdArguments& arguments) {
         EVLOG_info << "Charger wants to pause the session";
         r_ev_board_support->call_allow_power_on(false);
 
-        // NOTE(sl): Change when the Energymode has more then 2 values
+        // NOTE(sl): Change when the Energymode has more then 2 values; BPT sessions resume as
+        // non-BPT here; the internal enum reuse loses the BPT flag.
         const std::string energy_mode = (sim_data.energy_mode == EnergyMode::AC) ? "AC" : "DC";
         const std::string iso_start_v2g_session = "iso_start_v2g_session " + energy_mode + ";";
 
@@ -344,10 +345,20 @@ bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool th
                                          selected_payment_option, departure_time, e_amount);
             charge_mode = ChargeMode::ACThreePhase;
         }
+    } else if (energy_mode == constants::AC_BPT) {
+        sim_data.energy_mode = EnergyMode::AC;
+        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_BPT, selected_payment_option,
+                                     departure_time, e_amount);
+        charge_mode = ChargeMode::AC;
     } else if (energy_mode == constants::DC) {
         r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::DC_extended, selected_payment_option,
                                      departure_time, e_amount);
         sim_data.energy_mode = EnergyMode::DC;
+        charge_mode = ChargeMode::DC;
+    } else if (energy_mode == constants::DC_BPT) {
+        sim_data.energy_mode = EnergyMode::DC;
+        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::DC_BPT, selected_payment_option,
+                                     departure_time, e_amount);
         charge_mode = ChargeMode::DC;
     } else {
         return false;
@@ -410,7 +421,8 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
         EVLOG_info << "Charger wants to pause the session";
         r_ev_board_support->call_allow_power_on(false);
 
-        // NOTE(sl): Change when the Energymode has more then 2 values
+        // NOTE(sl): Change when the Energymode has more then 2 values; BPT sessions resume as
+        // non-BPT here; the internal enum reuse loses the BPT flag.
         const std::string energy_mode = (sim_data.energy_mode == EnergyMode::AC) ? "AC" : "DC";
         const std::string iso_start_v2g_session = "iso_start_v2g_session " + energy_mode + ";";
 
