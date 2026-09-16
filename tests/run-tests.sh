@@ -130,6 +130,14 @@ if [[ "$ISOLATION" == "true" && "$SERIAL" == "false" ]]; then
     fi
 fi
 
+# EvseV2G with "device: auto" binds the first interface carrying an IPv6
+# link-local address. When that is not a V2G link, the SECC never reaches the EV
+# simulator and the ISO 15118 tests fail on downstream assertions that say
+# nothing about the network. Name the interface up front so it is checkable.
+V2G_DEVICE="$(ip -o -6 addr show scope link 2>/dev/null | awk 'NR==1 {print $2}')"
+echo "V2G:     device auto resolves to ${V2G_DEVICE:-<no IPv6 link-local interface>};"
+echo "         if that is not a V2G link, see run-in-netns.sh and tests/README.md"
+
 # Common pytest arguments
 PYTEST_ARGS=(
     -rA

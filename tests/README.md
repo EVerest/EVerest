@@ -43,6 +43,61 @@ The script automatically sets up network isolation for parallel ISO 15118 tests
 
 After execution `result.xml` and `report.html` are written to the `tests/` directory.
 
+### ISO 15118 and HLC tests need the right network interface
+
+`EvseV2G` and the EV simulator are configured with `device: auto`, which binds
+the **first interface that carries an IPv6 link-local address**
+(`choose_first_ipv6_interface` in `modules/EVSE/EvseV2G/tools.cpp`). On a
+developer machine that is whatever comes first in the interface list, typically
+`wlan0` or `eth0`; the EV then never discovers the SECC over it and the session
+dies in SDP (`SDPFailedError`, repeated `TimeoutError` after an `SDPRequest`).
+With no link-local interface at all, the SECC does not start in the first place.
+Both end the same way: every ISO 15118 test fails.
+
+**Neither failure looks like a network problem.** The test failure is a
+downstream assertion, typically `assert False` on a `StartTransaction`, and the
+cause appears only as an `EvseV2G` error buried in the EVerest log, for example:
+
+```
+Device auto: Failed to initialize connection: No IPv6 link-local interface found
+```
+
+One measured sweep lost 41 tests to this, all of them ISO 15118, against the
+same commit and the same binary as a run that passed them. Read from a test
+report alone it looks like roughly 40 charging regressions rather than a
+networking problem, so check the interface before blaming a branch:
+
+```bash
+ip -o -6 addr show scope link | head -1   # this is the device "auto" will pick
+```
+
+`run-tests.sh` prints the same interface on startup.
+
+Where a working interface normally comes from: `setup-network-isolation.sh`
+brings up the `ev_test*` veth pairs and the kernel gives each one a link-local
+address. It needs root or `CAP_NET_ADMIN`. Without either, use
+`run-in-netns.sh`.
+
+### Running ISO 15118 and HLC tests without root
+
+`run-in-netns.sh` runs a command inside a private network namespace whose only
+link-local interface is a `v2g0` veth pair, so `device: auto` can only resolve
+to the V2G link. It also starts an MQTT broker on port 1883 inside the
+namespace. It needs no root and touches nothing outside the namespace:
+
+```bash
+cd ~/checkout/everest-workspace/EVerest/tests
+
+./run-in-netns.sh ./run-tests.sh ocpp16
+./run-in-netns.sh ./run-tests.sh ocpp
+./run-in-netns.sh python3 -m pytest core_tests/smoke_tests.py::test_iso15118_ac_session
+```
+
+It requires `unshare`, `ip` and `mosquitto` on `PATH` and permitted unprivileged
+user namespaces, and it names whichever of those is missing instead of letting
+the suite fail confusingly. It exits 70 when it cannot build the namespace, so a
+harness failure stays distinguishable from a test failure.
+
 ### Running individual tests directly
 
 For a single test file or test case, invoke `pytest` directly from the `tests/` directory:
