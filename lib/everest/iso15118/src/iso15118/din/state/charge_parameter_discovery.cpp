@@ -204,7 +204,6 @@ Result ChargeParameterDiscovery::on_request(const message_din::Variant& received
 
     logf_warning("Expected ChargeParameterDiscoveryReq or SessionStopReq! But code type id: %d", received.get_type());
     respond_sequence_error(m_ctx, received);
-    m_ctx.session_stopped = true;
     return {};
 }
 
