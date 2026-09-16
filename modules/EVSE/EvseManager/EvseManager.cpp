@@ -883,11 +883,13 @@ void EvseManager::ready() {
                 process_dc_ev_target_voltage_current(charger->get_evse_max_hlc_limits());
             });
 
-            // Car requests DC contactor open. We don't actually open but switch off DC supply.
-            // opening will be done by Charger on C->B CP event.
+            // Car requests DC contactor open: switch off the DC supply and withdraw the power
+            // permissive now, before the EV's C->B (see Charger::dc_open_contactor_request).
             r_hlc[0]->subscribe_dc_open_contactor([this] {
-                powersupply_DC_off();
+                // First: the Charger's signal_dc_supply_off follows from dc_open_contactor_request().
                 imd_stop_after_welding_detection();
+                powersupply_DC_off();
+                charger->dc_open_contactor_request();
             });
 
             // Back up switch off - charger signalled that it needs to switch off now.
