@@ -63,7 +63,9 @@ def probe_module(everest_core: EverestCore) -> ProbeModule:
     probe_module.implement_command(
         "ProbeModuleOcpp", "change_availability", lambda arg: {"status": "Accepted"})
     probe_module.implement_command(
-        "ProbeModuleOcppDataTransfer", "data_transfer", lambda arg: {"status": "Accepted"})
+        "ProbeModuleOcpp", "monitor_and_get_variables", lambda arg: {"status": "Accepted"})
+    probe_module.implement_command(
+        "ProbeModuleOcppDataTransfer", "data_transfer", lambda arg: [])
 
     probe_module.start()
     return probe_module
