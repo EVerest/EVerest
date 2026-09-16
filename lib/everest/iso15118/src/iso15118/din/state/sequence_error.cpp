@@ -145,10 +145,20 @@ void respond_with_code(Context& ctx, const message_din::Variant& received, dt::R
     }
 }
 
-void respond_sequence_error(Context& ctx, const message_din::Variant& received) {
-    respond_with_code(ctx, received, dt::ResponseCode::FAILED_SequenceError);
+namespace {
+
+void respond_and_terminate(Context& ctx, const message_din::Variant& received, dt::ResponseCode code) {
+    respond_with_code(ctx, received, code);
+    ctx.session_stopped = true;
     // Oscillator off without delay + SECC-side TCP close, reported once the response hit the wire.
+    // Set here rather than in Context::respond() so a type it cannot build still terminates.
     ctx.session_stop_res_pending = session::feedback::SessionStopAction::FailedTermination;
+}
+
+} // namespace
+
+void respond_sequence_error(Context& ctx, const message_din::Variant& received) {
+    respond_and_terminate(ctx, received, dt::ResponseCode::FAILED_SequenceError);
 }
 
 bool reject_unknown_session(Context& ctx, const message_din::Variant& received) {
@@ -165,9 +175,7 @@ bool reject_unknown_session(Context& ctx, const message_din::Variant& received) 
     if (received.get_session_id() == ctx.get_session_id()) {
         return false;
     }
-    // ctx.respond() arms the FailedTermination close path for every FAILED_* code.
-    respond_with_code(ctx, received, dt::ResponseCode::FAILED_UnknownSession);
-    ctx.session_stopped = true;
+    respond_and_terminate(ctx, received, dt::ResponseCode::FAILED_UnknownSession);
     return true;
 }
 
