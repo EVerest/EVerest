@@ -158,12 +158,20 @@ mod ffi {
         /// and may have a namespace sprinkled into it (?).
         pub error_type: String,
 
+        /// The sub type, which qualifies the type further. Empty for most
+        /// errors; a vendor error carries the vendor's own discriminator here.
+        pub sub_type: String,
+
         /// The description.
         pub description: String,
 
         /// The message - no idea what the difference to the description
         /// actually is.
         pub message: String,
+
+        /// Who defines the meaning of this error. Left empty on a raise the
+        /// C++ side keeps its own default, `UTILS_ERROR_DEFAULTS_VENDOR_ID`.
+        pub vendor_id: String,
 
         /// The severity of the error.
         pub severity: ErrorSeverity,
@@ -353,10 +361,16 @@ pub struct ErrorType<T> {
     pub error_type: T,
 
     /// Carried over directly from the FfiErrorType
+    pub sub_type: String,
+
+    /// Carried over directly from the FfiErrorType
     pub description: String,
 
     /// Carried over directly from the FfiErrorType
     pub message: String,
+
+    /// Carried over directly from the FfiErrorType
+    pub vendor_id: String,
 
     /// The severity of the error.
     /// Carried over directly from the FfiErrorType
@@ -367,8 +381,10 @@ impl<T> From<T> for ErrorType<T> {
     fn from(t: T) -> ErrorType<T> {
         ErrorType {
             error_type: t,
+            sub_type: String::new(),
             description: String::new(),
             message: String::new(),
+            vendor_id: String::new(),
             severity: ErrorSeverity::High,
         }
     }
@@ -638,8 +654,10 @@ impl Runtime {
         debug!("Raising error {error_string:?} from {error:?}");
         let error_type = ffi::ErrorType {
             error_type: error_string.to_string(),
+            sub_type: error.sub_type,
             description: error.description,
             message: error.message,
+            vendor_id: error.vendor_id,
             severity: error.severity,
         };
         self.cpp_module.raise_error(impl_id, error_type);

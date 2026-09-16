@@ -183,14 +183,16 @@ void Module::subscribe_all_errors(const Runtime& rt) const {
         error_manager_ptr->subscribe_all_errors(
             [&rt, req, handle_ptr](Everest::error::Error error) {
                 handle_ptr->ensure_ready();
-                const ErrorType rust_error{rust::String(error.type), rust::String(error.description),
-                                           rust::String(error.message), static_cast<ErrorSeverity>(error.severity)};
+                const ErrorType rust_error{rust::String(error.type),        rust::String(error.sub_type),
+                                           rust::String(error.description), rust::String(error.message),
+                                           rust::String(error.vendor_id),   static_cast<ErrorSeverity>(error.severity)};
                 rt.handle_on_error(rust::Str(req.id), req.index, rust_error, true);
             },
             [&rt, req, handle_ptr](Everest::error::Error error) {
                 handle_ptr->ensure_ready();
-                const ErrorType rust_error{rust::String(error.type), rust::String(error.description),
-                                           rust::String(error.message), static_cast<ErrorSeverity>(error.severity)};
+                const ErrorType rust_error{rust::String(error.type),        rust::String(error.sub_type),
+                                           rust::String(error.description), rust::String(error.message),
+                                           rust::String(error.vendor_id),   static_cast<ErrorSeverity>(error.severity)};
                 rt.handle_on_error(rust::Str(req.id), req.index, rust_error, false);
             });
     }
@@ -241,12 +243,17 @@ void Module::raise_error(rust::Str implementation_id, ErrorType error_type) cons
         }
     }
     const ImplementationIdentifier id{module_id_, impl_id, mapping};
-    const Everest::error::Error error{std::string(error_type.error_type),
-                                      std::string{},
-                                      std::string(error_type.message),
-                                      std::string(error_type.description),
-                                      id,
-                                      static_cast<Everest::error::Severity>(error_type.severity)};
+    Everest::error::Error error{std::string(error_type.error_type),
+                                std::string(error_type.sub_type),
+                                std::string(error_type.message),
+                                std::string(error_type.description),
+                                id,
+                                static_cast<Everest::error::Severity>(error_type.severity)};
+    // A module that names no vendor keeps the constructor's default, so adding the field
+    // did not change what any existing caller puts on the wire.
+    if (not error_type.vendor_id.empty()) {
+        error.vendor_id = std::string(error_type.vendor_id);
+    }
     handle_->get_error_manager_impl(std::string(implementation_id))->raise_error(error);
 }
 

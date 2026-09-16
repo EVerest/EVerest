@@ -13,6 +13,8 @@ use std::sync::{Arc, Condvar, Mutex};
 
 const MESSAGE: &str = "a message";
 const DESCRIPTION: &str = "a description";
+const SUB_TYPE: &str = "a sub type";
+const VENDOR_ID: &str = "a vendor id";
 const SEVERITY: ErrorSeverity = ErrorSeverity::Low;
 
 struct ErrorCommunacator {
@@ -36,11 +38,15 @@ impl OnReadySubscriber for ErrorCommunacator {
         let error_c = ExampleError::ExampleErrors(ExampleErrorsError::ExampleErrorC);
         publishers.multiple.raise_error(error_a.clone().into());
         publishers.multiple.raise_error(error_b.into());
-        // Raise an error also with description and severity.
+        // Raise an error also with every field the wire carries, so the round
+        // trip through the C++ error manager is asserted on all of them and not
+        // only on the three that used to exist.
         let error_c = ErrorType {
             error_type: error_c,
+            sub_type: SUB_TYPE.to_owned(),
             description: DESCRIPTION.to_owned(),
             message: MESSAGE.to_owned(),
+            vendor_id: VENDOR_ID.to_owned(),
             severity: SEVERITY,
         };
         publishers.multiple.raise_error(error_c);
@@ -58,11 +64,18 @@ impl ErrorsMultipleClientSubscriber for ErrorCommunacator {
             raised_set.insert(inner.clone());
         }
 
-        // Check the handling for custom message, description and severity.
+        // Check the handling for custom message, description, sub type,
+        // vendor id and severity.
         if let ExampleError::ExampleErrors(ExampleErrorsError::ExampleErrorC) = error.error_type {
             assert_eq!(&error.description, DESCRIPTION);
             assert_eq!(&error.message, MESSAGE);
+            assert_eq!(&error.sub_type, SUB_TYPE);
+            assert_eq!(&error.vendor_id, VENDOR_ID);
             assert_eq!(error.severity, SEVERITY);
+        } else {
+            // A raise that names no vendor keeps the framework default rather
+            // than arriving empty, which is what makes the new field additive.
+            assert_eq!(&error.vendor_id, "everest");
         }
     }
 

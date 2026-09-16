@@ -65,8 +65,10 @@ fn dispatch_error_to_{{ trait.name | snake }} (
 
     let error_type = ::everestrs::ErrorType {
         error_type: v,
+        sub_type: error.sub_type,
         description: error.description,
         message: error.message,
+        vendor_id: error.vendor_id,
         severity: error.severity,
     };
 
