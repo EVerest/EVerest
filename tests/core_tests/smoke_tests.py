@@ -261,6 +261,11 @@ async def setup_probe_module(
     await probe_module.wait_to_be_ready()
     await wait_for_ready(ready_mock, timeout=5)
 
+    # The car simulator subscribes and auto-enables in its ready(), which runs
+    # only after the probe module signals init done. Gating the plug-in on the
+    # evse manager's ready alone is a race that a slow evse manager hides.
+    test_controller.wait_for_car_simulators_enabled()
+
     return probe_module
 
 
