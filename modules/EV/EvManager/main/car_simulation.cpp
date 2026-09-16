@@ -154,6 +154,35 @@ void CarSimulation::simulate_soc() {
         }
     }
 
+    // The values the simulated EV "measures". Kept here, not in the protocol stack,
+    // since the stack must not invent a measurement but a simulator may.
+    std::optional<double> present_voltage;
+    std::optional<double> present_active_power;
+    switch (charge_mode) {
+    case ChargeMode::None:
+        break;
+    case ChargeMode::AC:
+    case ChargeMode::ACThreePhase:
+        present_active_power = power;
+        break;
+    case ChargeMode::DC:
+        present_voltage = config.dc_target_voltage;
+        present_active_power = power;
+        break;
+    }
+
+    if (present_voltage != latest_present_voltage or present_active_power != latest_present_active_power) {
+        latest_present_voltage = present_voltage;
+        latest_present_active_power = present_active_power;
+
+        if (!r_ev.empty() and (present_voltage.has_value() or present_active_power.has_value())) {
+            types::iso15118::EvPresentValues values;
+            values.present_voltage = present_voltage;
+            values.present_active_power = present_active_power;
+            r_ev[0]->call_update_present_values(values);
+        }
+    }
+
     ev_info.soc = soc;
     ev_info.battery_capacity = sim_data.battery_capacity_wh;
     ev_info.battery_full_soc = 100;
@@ -348,6 +377,11 @@ bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool th
     } else if (energy_mode == constants::AC_BPT) {
         sim_data.energy_mode = EnergyMode::AC;
         r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_BPT, selected_payment_option,
+                                     departure_time, e_amount);
+        charge_mode = ChargeMode::AC;
+    } else if (energy_mode == constants::AC_DER) {
+        sim_data.energy_mode = EnergyMode::AC;
+        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_DER_IEC, selected_payment_option,
                                      departure_time, e_amount);
         charge_mode = ChargeMode::AC;
     } else if (energy_mode == constants::DC) {

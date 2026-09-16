@@ -151,12 +151,8 @@ SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery stops the session on a plai
     PrimedState<ev::d20::state::DC_ChargeParameterDiscovery> primed{
         callbacks, message_20::datatypes::ServiceCategory::DC_BPT, seed_bpt_params};
 
-    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeParameterDiscovery);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, make_response(SESSION_HEADER, ResponseCode::OK),
+                         ev::d20::StateID::DC_ChargeParameterDiscovery);
     REQUIRE(fired == false);
 }
 
@@ -164,12 +160,8 @@ SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery stops the session on a BPT 
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::DC_ChargeParameterDiscovery> primed{callbacks, seed_params};
 
-    primed.handle_response(make_bpt_response(SESSION_HEADER, ResponseCode::OK));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeParameterDiscovery);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, make_bpt_response(SESSION_HEADER, ResponseCode::OK),
+                         ev::d20::StateID::DC_ChargeParameterDiscovery);
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery rejects malformed responses") {

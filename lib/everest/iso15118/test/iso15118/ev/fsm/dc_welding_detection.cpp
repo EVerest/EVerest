@@ -65,12 +65,8 @@ SCENARIO("ISO15118-20 EV DC_WeldingDetection stops session on FAILED_UnknownSess
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::DC_WeldingDetection> primed{callbacks, no_seed};
 
-    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::FAILED_UnknownSession));
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_WeldingDetection);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, make_response(SESSION_HEADER, ResponseCode::FAILED_UnknownSession),
+                         ev::d20::StateID::DC_WeldingDetection);
 }
 
 SCENARIO("ISO15118-20 EV DC_WeldingDetection rejects malformed responses") {

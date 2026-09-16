@@ -134,9 +134,9 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop stays and re-emits a request on a
     REQUIRE_FALSE(requests.get<message_20::PowerDeliveryRequest>().has_value());
 }
 
-SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop reports the dictated target as its present power") {
+SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop does not substitute the dictated target for a measurement") {
     const ev::feedback::Callbacks callbacks{};
-    // No module-fed present power, so the approximation has to supply the mandatory field.
+    // Unfed present power stays unreported; see the note in ac_charge_loop.cpp.
     const auto seed_unfed_present = [](FsmStateHelper& helper) {
         ev::AcChargeParams p{};
         p.max_charge_power = 11000.0f;
@@ -147,7 +147,6 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop reports the dictated target as it
     };
     PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{callbacks, seed_unfed_present};
 
-    // Nothing has been dictated yet, so the first request has no better value than zero.
     const auto first = primed.take_requests().get<message_20::DER_AC_ChargeLoopRequest>();
     REQUIRE(first.has_value());
     const auto& first_mode = std::get<message_20::datatypes::DER_Dynamic_AC_CLReqControlMode>(first->control_mode);
@@ -159,7 +158,7 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop reports the dictated target as it
     const auto second = primed.take_requests().get<message_20::DER_AC_ChargeLoopRequest>();
     REQUIRE(second.has_value());
     const auto& second_mode = std::get<message_20::datatypes::DER_Dynamic_AC_CLReqControlMode>(second->control_mode);
-    REQUIRE(message_20::datatypes::from_RationalNumber(second_mode.present_active_power) == Catch::Approx(7000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(second_mode.present_active_power) == Catch::Approx(0.0f));
 }
 
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop fires stop_from_charger and drives PowerDelivery(Stop) on Terminate") {
@@ -248,12 +247,7 @@ SCENARIO(
 
     auto res = make_res(SESSION_HEADER, ResponseCode::OK);
     res.control_mode = message_20::datatypes::DER_Scheduled_AC_CLResControlMode{};
-    primed.handle_response(res);
-    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_DER_IEC_ChargeLoop);
-    REQUIRE(primed.ctx.is_session_stopped() == true);
+    expect_stops_session(primed, res, ev::d20::StateID::AC_DER_IEC_ChargeLoop);
     REQUIRE(fired == false);
 }
 
@@ -315,6 +309,24 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop passes a negotiated DSO Q setpoin
     // Q was negotiated: it stays. cos phi was not: it is stripped.
     REQUIRE(captured->dso_q_setpoint.has_value());
     REQUIRE_FALSE(captured->dso_cos_phi_setpoint.has_value());
+}
+
+SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop stops the session on a FAILED response mid-loop") {
+    StopObserver obs;
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{obs.callbacks, seed_present_5000};
+
+    // One accepted iteration first, so the rejection below happens mid-loop and not on entry.
+    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
+    REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned() == false);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+    REQUIRE(primed.take_requests().get<message_20::DER_AC_ChargeLoopRequest>().has_value());
+    obs.der_control_fired = false;
+
+    expect_stops_session(primed, make_res(SESSION_HEADER, ResponseCode::FAILED_SequenceError),
+                         ev::d20::StateID::AC_DER_IEC_ChargeLoop);
+    REQUIRE(obs.fired == false);
+    REQUIRE(obs.der_control_fired == false);
+    REQUIRE(primed.take_requests().empty());
 }
 
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop rejects malformed responses") {

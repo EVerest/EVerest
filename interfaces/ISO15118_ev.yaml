@@ -55,6 +55,15 @@ cmds:
         description: The actual State of Charge from the EV
         type: number
         minimum: 0
+  update_present_values:
+    description: >-
+      Updating the values the EV measures. Separate from update_soc because electrical
+      measurements and SoC have different natural update rates.
+    arguments:
+      PresentValues:
+        description: The values the EV currently measures
+        type: object
+        $ref: /iso15118#/EvPresentValues
 vars:
   v2g_session_finished:
     description: The v2g session between the charger and the car is finished

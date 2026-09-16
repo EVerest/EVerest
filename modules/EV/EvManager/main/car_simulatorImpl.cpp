@@ -377,9 +377,17 @@ void car_simulatorImpl::subscribe_to_variables_on_init() {
 
 void car_simulatorImpl::setup_ev_parameters() {
     if (!mod->r_ev.empty()) {
-        mod->r_ev[0]->call_set_dc_params({mod->config.dc_max_current_limit, mod->config.dc_max_power_limit,
-                                          mod->config.dc_max_voltage_limit, mod->config.dc_energy_capacity,
-                                          mod->config.dc_target_current, mod->config.dc_target_voltage});
+        // Assigned by name rather than positionally: the type is generated from
+        // types/iso15118.yaml, where adding a property shifts every later member.
+        types::iso15118::DcEvParameters dc_params;
+        dc_params.max_current_limit = mod->config.dc_max_current_limit;
+        dc_params.max_power_limit = mod->config.dc_max_power_limit;
+        dc_params.max_voltage_limit = mod->config.dc_max_voltage_limit;
+        dc_params.min_voltage_limit = mod->config.dc_min_voltage_limit;
+        dc_params.energy_capacity = mod->config.dc_energy_capacity;
+        dc_params.target_current = mod->config.dc_target_current;
+        dc_params.target_voltage = mod->config.dc_target_voltage;
+        mod->r_ev[0]->call_set_dc_params(dc_params);
         if (mod->config.support_sae_j2847) {
             mod->r_ev[0]->call_enable_sae_j2847_v2g_v2h();
             mod->r_ev[0]->call_set_bpt_dc_params(

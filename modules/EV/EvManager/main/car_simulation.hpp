@@ -133,6 +133,10 @@ private:
     double charge_current_a{0};
 
     double latest_soc{0};
+    // Last values pushed through ISO15118_ev::update_present_values, so a tick that changes
+    // nothing does not re-send. Unset until the first tick that has something to report.
+    std::optional<double> latest_present_voltage;
+    std::optional<double> latest_present_active_power;
 
     enum class ChargeMode {
         None,

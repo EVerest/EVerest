@@ -8,5 +8,6 @@ static constexpr auto DEFAULT_LOOP_INTERVAL_MS{250};
 static constexpr auto AC{"ac"};
 static constexpr auto DC{"dc"};
 static constexpr auto AC_BPT{"ac_bpt"};
+static constexpr auto AC_DER{"ac_der"};
 static constexpr auto DC_BPT{"dc_bpt"};
 } // namespace constants
