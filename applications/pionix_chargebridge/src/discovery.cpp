@@ -10,21 +10,18 @@
 namespace charge_bridge {
 
 namespace {
-std::string to_string(discovery_device_type val) {
-    switch (val) {
-    case discovery_device_type::CB_EV:
-        return "CB-CCS-EV-LU";
-
-    case discovery_device_type::CB_EVSE:
-        return "CB-CCS-EVSE-LU";
-    default:
-        return "INVALID";
-    }
-}
-
+// The board_type TXT record is the hardware name the firmware derives from its strap pins
+// (board_type_name() in the firmware's NonSecure main.c), not the configured role. Both
+// CCS EVSE variants (LU and QCA modem) answer ANY_EVSE. MCS hardware announces
+// "CB-MCS-EVSE" regardless of the latched role and is therefore not matched here.
 bool is_cb_match(std::string const& board_type, discovery_device_type discriminator) {
-    auto result = board_type == to_string(discriminator);
-    return result;
+    switch (discriminator) {
+    case discovery_device_type::CB_EV:
+        return board_type == "CB-CCS-EV-LU";
+    case discovery_device_type::CB_EVSE:
+        return board_type == "CB-CCS-EVSE-LU" or board_type == "CB-CCS-EVSE-QCA";
+    }
+    return false;
 }
 
 } // namespace
