@@ -6,6 +6,7 @@
 #include <charge_bridge/utilities/logging.hpp>
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/udp/udp_payload.hpp>
+#include <fstream>
 #include <iostream>
 
 namespace {
@@ -48,6 +49,7 @@ plc_bridge::plc_bridge(plc_bridge_config const& config, everest::lib::io::event:
 
     auto identifier = config.cb + "/" + config.item;
     m_identifier = identifier;
+    m_tap_name = config.plc_tap;
 
     if (m_carrier_mode == carrier_mode::firmware) {
         // Detection point for the unsupported-kernel policy. open(..., false) succeeds even when the
@@ -144,6 +146,34 @@ void plc_bridge::handle_timer_event() {
     if (m_tap_on_error) {
         m_tap.reset();
     }
+    send_keepalive();
+}
+
+void plc_bridge::send_keepalive() {
+    // Only an SPE board forgets the host between sessions in practice (a HomePlug host talks SLAC
+    // before any SDP), and only a live, heartbeat-verified board can be taught anything.
+    if (m_technology not_eq CB_LINK_TECH_SPE or not m_cb_is_connected or not m_udp_ready or not m_udp) {
+        return;
+    }
+    if (not m_tap_mac) {
+        mac_address mac{};
+        std::ifstream address("/sys/class/net/" + m_tap_name + "/address");
+        std::string text;
+        if (address and std::getline(address, text) and parse_mac_address(text.c_str(), mac)) {
+            m_tap_mac = mac;
+        } else {
+            if (not m_tap_mac_failure_reported) {
+                m_tap_mac_failure_reported = true;
+                utilities::print_error(m_identifier, "PLC/KEEPALIVE", -1)
+                    << "cannot read the MAC of " << m_tap_name << ", keepalive disabled" << std::endl;
+            }
+            return;
+        }
+    }
+    const auto frame = make_plc_keepalive_frame(*m_tap_mac);
+    everest::lib::io::udp::udp_payload pl;
+    pl.set_message(frame.data(), frame.size());
+    m_udp->tx(pl);
 }
 
 void plc_bridge::handle_ready() {
@@ -166,6 +196,9 @@ void plc_bridge::set_cb_connection_status(bool connected) {
         m_ce_mated = false;
     }
     apply_carrier();
+    if (connected) {
+        send_keepalive();
+    }
 }
 
 void plc_bridge::set_ce_state(std::uint8_t ce_state) {
