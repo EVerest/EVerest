@@ -64,7 +64,8 @@ void ISO15118_evImpl::ready() {
     worker = std::thread([this] { session_worker(); });
 }
 
-ISO15118_evImpl::~ISO15118_evImpl() {
+// Idempotent, so the destructor still tears down cleanly if the framework never calls this.
+void ISO15118_evImpl::shutdown() {
     {
         auto h = session.handle();
         (*h).shutting_down = true;
@@ -76,6 +77,10 @@ ISO15118_evImpl::~ISO15118_evImpl() {
     if (worker.joinable()) {
         worker.join();
     }
+}
+
+ISO15118_evImpl::~ISO15118_evImpl() {
+    shutdown();
 }
 
 iso15118::ev::EvConfig
@@ -330,6 +335,7 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
         (*h).energy_service = energy_service;
         namespace dt = iso15118::message_20::datatypes;
         if (iso15118::ev::is_ac_family(energy_service)) {
+            (*h).ac_params.phase_count = static_cast<uint8_t>(mod->config.ac_phase_count);
             (*h).ac_params.max_charge_power = static_cast<float>(mod->config.ac_max_charge_power_w);
             (*h).ac_params.min_charge_power = static_cast<float>(mod->config.ac_min_charge_power_w);
         }

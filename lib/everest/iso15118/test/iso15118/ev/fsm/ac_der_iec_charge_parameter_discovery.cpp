@@ -35,6 +35,7 @@ message_20::DER_AC_ChargeParameterDiscoveryResponse make_response(const message_
 // AC_DER_IEC_ChargeParameterDiscovery builds its request from the EV's AC charge params.
 const auto seed_charge_limits = [](FsmStateHelper& helper) {
     ev::AcChargeParams p{};
+    p.phase_count = 1;
     p.max_charge_power = 22000.0f;
     p.min_charge_power = 1000.0f;
     p.max_discharge_power = 15000.0f;
@@ -69,6 +70,34 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeParameterDiscovery emits a DER request
     REQUIRE_FALSE(mode.max_discharge_power_L3.has_value());
     REQUIRE_FALSE(mode.min_discharge_power_L2.has_value());
     REQUIRE_FALSE(mode.min_discharge_power_L3.has_value());
+}
+
+SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeParameterDiscovery splits the totals across a ThreePhase connector") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeParameterDiscovery> primed{
+        callbacks, [](FsmStateHelper& helper) {
+            ev::AcChargeParams p{};
+            p.phase_count = 3;
+            p.max_charge_power = 22500.0f;
+            p.min_charge_power = 1500.0f;
+            helper.set_ac_params(p);
+            helper.get_context().set_selected_ac_connector(message_20::datatypes::AcConnector::ThreePhase);
+        }};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::DER_AC_ChargeParameterDiscoveryRequest>();
+    REQUIRE(request_message.has_value());
+
+    const auto& mode = request_message->transfer_mode;
+
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_charge_power) == 7500.0f);
+    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_charge_power_L2) == 7500.0f);
+    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_charge_power_L3) == 7500.0f);
+
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_charge_power) == 500.0f);
+    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_charge_power_L2) == 500.0f);
+
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_charge_power) != 22500.0f);
 }
 
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeParameterDiscovery transitions to ScheduleExchange and fires ac_limits") {
