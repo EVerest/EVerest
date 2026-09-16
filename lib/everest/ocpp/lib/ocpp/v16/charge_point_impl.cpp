@@ -151,13 +151,24 @@ ChargePointImpl::ChargePointImpl(
                             << this->connectors.size() << " connectors including connector 0.";
                 return;
             }
+            const std::chrono::seconds minimum_status_duration(
+                this->configuration.getMinimumStatusDuration().value_or(0));
+
+            // Supersede a status that has not yet been stable for MinimumStatusDuration.
             this->status_notification_timers.at(connector)->stop();
-            this->status_notification_timers.at(connector)->timeout(
-                [this, connector, errorCode, status, timestamp, info, vendor_id, vendor_error_code]() {
-                    this->status_notification(connector, errorCode, status, timestamp, info, vendor_id,
-                                              vendor_error_code);
-                },
-                std::chrono::seconds(this->configuration.getMinimumStatusDuration().value_or(0)));
+
+            if (minimum_status_duration == std::chrono::seconds::zero()) {
+                // No debounce was configured, so there is nothing to wait for. Deferring to the timer thread
+                // would only expose the notification to cancellation by the next status change.
+                this->status_notification(connector, errorCode, status, timestamp, info, vendor_id, vendor_error_code);
+            } else {
+                this->status_notification_timers.at(connector)->timeout(
+                    [this, connector, errorCode, status, timestamp, info, vendor_id, vendor_error_code]() {
+                        this->status_notification(connector, errorCode, status, timestamp, info, vendor_id,
+                                                  vendor_error_code);
+                    },
+                    minimum_status_duration);
+            }
 
             // Check if the changed status should trigger to send a metervalue.
             const std::shared_ptr<Connector>& c = this->connectors.at(connector);
