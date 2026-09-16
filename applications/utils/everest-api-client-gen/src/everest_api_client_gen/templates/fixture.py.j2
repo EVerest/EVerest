@@ -1,0 +1,15 @@
+from .client import {{ model.class_name }}
+
+import pytest
+import paho.mqtt.client as mqtt
+
+from everest.testing.core_utils.fixtures import connected_mqtt_client, everest_core
+
+@pytest.fixture
+def {{ model.name_snake }}_client(request, connected_mqtt_client: mqtt.Client, everest_core):
+  marker = request.node.get_closest_marker('{{ model.name_snake }}_module_id')
+  if marker is None:
+    raise ValueError('Module ID not provided, provide marker \'{{ model.name_snake }}_module_id\'')
+  module_id = marker.args[0]
+  client = {{ model.class_name }}(connected_mqtt_client, everest_core.mqtt_external_prefix, module_id)
+  return client
