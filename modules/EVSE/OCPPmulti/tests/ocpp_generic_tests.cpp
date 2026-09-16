@@ -820,9 +820,13 @@ TEST_F(GenericOcppProvidesTester, monitorAndGetVariables) {
     const GetVariableRequest expected_req{{{"Component1"}, {"Variable1"}}, std::nullopt};
     const auto request_input = to_ocpp_get_variable_data_vector({expected_req});
     std::vector<ocpp::v2::GetVariableResult> request_output;
-    const ocpp::v2::GetVariableResult res{
-        ocpp::v2::GetVariableStatusEnum::Accepted, component, variable, std::nullopt, std::nullopt,
-        "Value1",                                  std::nullopt};
+    const ocpp::v2::GetVariableResult res{ocpp::v2::GetVariableStatusEnum::Accepted,
+                                          component,
+                                          variable,
+                                          std::nullopt,
+                                          std::nullopt,
+                                          "Value1",
+                                          std::nullopt};
     request_output.push_back(res);
     EXPECT_CALL(chargepoint, get_variables(request_input)).WillOnce(Return(request_output));
 
@@ -844,21 +848,31 @@ TEST_F(GenericOcppProvidesTester, monitorAndGetVariablesOrderPreserved) {
     using types::ocpp::GetVariableRequest;
     using types::ocpp::GetVariableStatusEnumType;
 
-    EXPECT_CALL(chargepoint, register_variable_listener(ocpp::v2::Component{"Component1"},
-                                                        ocpp::v2::Variable{"Variable1"}, _))
+    EXPECT_CALL(chargepoint,
+                register_variable_listener(ocpp::v2::Component{"Component1"}, ocpp::v2::Variable{"Variable1"}, _))
         .Times(1);
-    EXPECT_CALL(chargepoint, register_variable_listener(ocpp::v2::Component{"Component2"},
-                                                        ocpp::v2::Variable{"Variable2"}, _))
+    EXPECT_CALL(chargepoint,
+                register_variable_listener(ocpp::v2::Component{"Component2"}, ocpp::v2::Variable{"Variable2"}, _))
         .Times(1);
 
     std::vector<GetVariableRequest> expected_reqs{{{{"Component1"}, {"Variable1"}}, std::nullopt},
                                                   {{{"Component2"}, {"Variable2"}}, std::nullopt}};
     const auto request_input = to_ocpp_get_variable_data_vector(expected_reqs);
     std::vector<ocpp::v2::GetVariableResult> request_output;
-    request_output.push_back({ocpp::v2::GetVariableStatusEnum::Accepted, {"Component1"}, {"Variable1"}, std::nullopt,
-                              std::nullopt, "Value1", std::nullopt});
-    request_output.push_back({ocpp::v2::GetVariableStatusEnum::Accepted, {"Component2"}, {"Variable2"}, std::nullopt,
-                              std::nullopt, "Value2", std::nullopt});
+    request_output.push_back({ocpp::v2::GetVariableStatusEnum::Accepted,
+                              {"Component1"},
+                              {"Variable1"},
+                              std::nullopt,
+                              std::nullopt,
+                              "Value1",
+                              std::nullopt});
+    request_output.push_back({ocpp::v2::GetVariableStatusEnum::Accepted,
+                              {"Component2"},
+                              {"Variable2"},
+                              std::nullopt,
+                              std::nullopt,
+                              "Value2",
+                              std::nullopt});
     EXPECT_CALL(chargepoint, get_variables(request_input)).WillOnce(Return(request_output));
 
     std::vector<ComponentVariable> req{{{"Component1"}, {"Variable1"}}, {{"Component2"}, {"Variable2"}}};
@@ -887,8 +901,13 @@ TEST_F(GenericOcppProvidesTester, monitorAndGetVariablesUnresolvableStillReturns
     const GetVariableRequest expected_req{{{""}, {"NoSuchKey"}}, std::nullopt};
     const auto request_input = to_ocpp_get_variable_data_vector({expected_req});
     std::vector<ocpp::v2::GetVariableResult> request_output;
-    request_output.push_back({ocpp::v2::GetVariableStatusEnum::UnknownVariable, {""}, {"NoSuchKey"}, std::nullopt,
-                              std::nullopt, std::nullopt, std::nullopt});
+    request_output.push_back({ocpp::v2::GetVariableStatusEnum::UnknownVariable,
+                              {""},
+                              {"NoSuchKey"},
+                              std::nullopt,
+                              std::nullopt,
+                              std::nullopt,
+                              std::nullopt});
     EXPECT_CALL(chargepoint, get_variables(request_input)).WillOnce(Return(request_output));
 
     std::vector<ComponentVariable> req{{{""}, {"NoSuchKey"}}};
@@ -940,11 +959,11 @@ TEST_F(GenericOcppProvidesTester, monitorAndGetVariablesExtends) {
     // consecutive calls extend the existing monitors
     using types::ocpp::ComponentVariable;
 
-    EXPECT_CALL(chargepoint, register_variable_listener(ocpp::v2::Component{"Component1"},
-                                                        ocpp::v2::Variable{"Variable1"}, _))
+    EXPECT_CALL(chargepoint,
+                register_variable_listener(ocpp::v2::Component{"Component1"}, ocpp::v2::Variable{"Variable1"}, _))
         .Times(1);
-    EXPECT_CALL(chargepoint, register_variable_listener(ocpp::v2::Component{"Component2"},
-                                                        ocpp::v2::Variable{"Variable2"}, _))
+    EXPECT_CALL(chargepoint,
+                register_variable_listener(ocpp::v2::Component{"Component2"}, ocpp::v2::Variable{"Variable2"}, _))
         .Times(1);
     EXPECT_CALL(chargepoint, get_variables(_)).Times(2);
 
