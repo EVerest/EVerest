@@ -43,6 +43,9 @@ public:
     api_connector(everest_api_config const& config, std::string const& cb_identifier);
     void set_cb_tx(tx_ftor const& handler);
     void set_cb_message(evse_bsp_cb_to_host const& msg);
+    // CbLinkTechnology from the heartbeat link status; only the EVSE API acts on it so far.
+    void set_link_technology(std::uint8_t technology);
+    void forget_link_technology();
     void set_error_handler(error_ftor const& handler);
 
     bool register_events(everest::lib::io::event::fd_event_handler& handler) override;

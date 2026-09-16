@@ -4,6 +4,7 @@
 #include "protocol/cb_common.h"
 #include "protocol/evse_bsp_cb_to_host.h"
 #include <charge_bridge/everest_api/ev_bsp_api.hpp>
+#include <charge_bridge/mcs_bsp.hpp>
 #include <charge_bridge/utilities/logging.hpp>
 #include <charge_bridge/utilities/string.hpp>
 #include <chrono>
@@ -135,6 +136,15 @@ void ev_bsp_api::handle_event_cp(std::uint8_t cp) {
 void ev_bsp_api::handle_bsp_measurement(uint16_t cp, [[maybe_unused]] uint8_t pp_1, [[maybe_unused]] uint8_t pp2) {
     // FIXME implement PP correctly
     API_EV_BSP::BspMeasurement data;
+    // The MCU reports the duty as a 16-bit fraction; EVerest wants percent. In EV role on MCS the
+    // MCU synthesizes a fixed 3276 -> 4.9988 %, the 5 % HLC marker of IEC 61851-23-3 Annex CC, rather
+    // than an ampacity code.
+    //
+    // That clears the gate that matters for a DC session: EvManager's iso_wait_pwm_is_running
+    // requires > 4.0 % (car_simulation.cpp:187). It does NOT clear the two 7 % gates in the same file
+    // (:42 CHARGING_REGULATED, :182 iec_wait_pwr_ready) - and must not be read as a contradiction,
+    // because those are IEC AC basic-signalling paths where the duty encodes an available current.
+    // An MCS session is DC and HLC-only, so it never runs them.
     data.cp_pwm_duty_cycle = cp / 65536. * 100.;
     API_EVSE_BSP::ProximityPilot pp;
     API_EVSE_BSP::Ampacity amp;
@@ -186,51 +196,44 @@ void ev_bsp_api::set_cb_message(evse_bsp_cb_to_host const& msg) {
     m_cb_status = msg;
 }
 
-enum class SafetyErrorMask : std::uint32_t {
-    cp_not_state_c = (1 << 0),
-    pwm_not_enabled = (1 << 1),
-    pp_invalid = (1 << 2),
-    plug_temperature_too_high = (1 << 3),
-    internal_temperature_too_high = (1 << 4),
-    emergency_input_latched = (1 << 5),
-    relay_health_latched = (1 << 6),
-    vdd_3v3_out_of_range = (1 << 7),
-    vdd_core_out_of_range = (1 << 8),
-    vdd_12V_out_of_range = (1 << 9),
-    vdd_N12V_out_of_range = (1 << 10),
-    vdd_refint_out_of_range = (1 << 11),
-    external_allow_power_on = (1 << 12),
-    config_mem_error = (1 << 13),
-    dc_hv_ov = (1 << 14),
-    rcd_error = (1 << 16),
-};
+// The bit positions live in charge_bridge/mcs_bsp.hpp. They were duplicated here and in
+// evse_bsp_api.cpp, and both copies had fallen behind the wire header - which is how ce_fault and
+// id_fault came to be dropped on both interfaces. What this file does with a bit still differs: the
+// EV board support interface has no error surface in EVerest yet, so these are rendered into a log
+// line only.
+using safety_error_mask = charge_bridge::safety_error_mask;
 
 // Table that maps a mask to our API error + message
 struct FlagSpec {
-    SafetyErrorMask mask;
+    safety_error_mask mask;
     const char* message;
 };
 
 static constexpr FlagSpec error_specs[] = {
-    {SafetyErrorMask::pp_invalid, "PP invalid"},
-    {SafetyErrorMask::plug_temperature_too_high, "Plug temperature too high"},
-    {SafetyErrorMask::internal_temperature_too_high, "ChargeBridge internal over temperature"},
-    {SafetyErrorMask::emergency_input_latched, "Emergency input latched"},
-    {SafetyErrorMask::relay_health_latched, "Relay welded error"},
-    {SafetyErrorMask::vdd_3v3_out_of_range, "Supply voltage 3.3V out of range"},
-    {SafetyErrorMask::vdd_core_out_of_range, "Internal supply core voltage out of range"},
-    {SafetyErrorMask::vdd_12V_out_of_range, "Internal supply 12V voltage out of range"},
-    {SafetyErrorMask::vdd_N12V_out_of_range, "Internal supply -12V voltage out of range"},
-    {SafetyErrorMask::vdd_refint_out_of_range, "Internal supply VREF voltage out of range"},
-    {SafetyErrorMask::config_mem_error, "Internal config memory error"},
-    {SafetyErrorMask::dc_hv_ov, "DC HV OVM. FIXME: This should be on OVM not EVSE interface"},
-    {SafetyErrorMask::rcd_error, "RCD error detected"},
+    {safety_error_mask::pp_invalid, "PP invalid"},
+    {safety_error_mask::plug_temperature_too_high, "Plug temperature too high"},
+    {safety_error_mask::internal_temperature_too_high, "ChargeBridge internal over temperature"},
+    {safety_error_mask::emergency_input_latched, "Emergency input latched"},
+    {safety_error_mask::relay_health_latched, "Relay welded error"},
+    {safety_error_mask::vdd_3v3_out_of_range, "Supply voltage 3.3V out of range"},
+    {safety_error_mask::vdd_core_out_of_range, "Internal supply core voltage out of range"},
+    {safety_error_mask::vdd_12V_out_of_range, "Supply 12V (CCS) / 5V front end (MCS) voltage out of range"},
+    {safety_error_mask::vdd_N12V_out_of_range, "Internal supply -12V voltage out of range"},
+    {safety_error_mask::vdd_refint_out_of_range, "Internal supply VREF voltage out of range"},
+    {safety_error_mask::config_mem_error, "Internal config memory error"},
+    {safety_error_mask::dc_hv_ov_emergency, "DC HV OVM. FIXME: This should be on OVM not EVSE interface"},
+    {safety_error_mask::rcd_error, "RCD error detected"},
+    // MCS basic signalling. Without these two the log line for a CE or ID emergency came out empty,
+    // and an empty line is read below as "nothing wrong" - so an MCS emergency printed "Relays can be
+    // switched on." while the MCU had just opened S V3.
+    {safety_error_mask::ce_fault, "MCS Charge Enable signal integrity lost"},
+    {safety_error_mask::id_fault, "MCS Insertion Detection lost"},
 };
 
 static constexpr FlagSpec print_warning_specs[] = {
-    {SafetyErrorMask::cp_not_state_c, "CP is not state C"},
-    {SafetyErrorMask::pwm_not_enabled, "PWM not enabled"},
-    {SafetyErrorMask::external_allow_power_on, "Allow power on from EVerest missing"},
+    {safety_error_mask::cp_not_state_c, "CP is not state C"},
+    {safety_error_mask::pwm_not_enabled, "PWM not enabled"},
+    {safety_error_mask::external_allow_power_on, "Allow power on from EVerest missing"},
 };
 
 void ev_bsp_api::handle_error(const SafetyErrorFlags& data) {
