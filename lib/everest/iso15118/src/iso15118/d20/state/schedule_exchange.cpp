@@ -27,8 +27,12 @@ using DynamicResControlMode = message_20::datatypes::Dynamic_SEResControlMode;
 namespace {
 constexpr uint64_t MICROSECONDS_PER_MILLISECOND = 1'000;
 
-auto create_default_scheduled_control_mode(const dt::RationalNumber& max_power) {
-    dt::ScheduleTuple schedule;
+// Fills the response's control mode in place: a Scheduled_SEResControlMode is ~1.7 MB and a ScheduleTuple ~0.6 MB
+// (fixed_vector storage), so building them as locals and copying costs several MB of stack per call.
+void set_default_scheduled_control_mode(ScheduledResControlMode& scheduled_mode, const dt::RationalNumber& max_power) {
+    // Providing no price schedule!
+    // NOTE: Agreement on iso15118.elaad.io: [V2G20-2176] is not required and should be ignored.
+    auto& schedule = scheduled_mode.schedule_tuple.emplace_back();
     schedule.schedule_tuple_id = 1;
     // [V2G20-1016] TimeAnchor marks when the first PowerScheduleEntry becomes active, i.e. now.
     // Unit: Table 112 (PowerScheduleType) is the only TimeAnchor in ISO 15118-20 specified at "ms resolution"
@@ -38,17 +42,9 @@ auto create_default_scheduled_control_mode(const dt::RationalNumber& max_power) 
     // literal text of Table 112; if a price schedule is added to this tuple its anchor must be microseconds.
     schedule.charging_schedule.power_schedule.time_anchor = now_in_secc_time() / MICROSECONDS_PER_MILLISECOND;
 
-    dt::PowerScheduleEntry power_schedule;
+    auto& power_schedule = schedule.charging_schedule.power_schedule.entries.emplace_back();
     power_schedule.power = max_power;
     power_schedule.duration = dt::SCHEDULED_POWER_DURATION_S;
-    schedule.charging_schedule.power_schedule.entries.push_back(power_schedule);
-
-    ScheduledResControlMode scheduled_mode{};
-
-    // Providing no price schedule!
-    // NOTE: Agreement on iso15118.elaad.io: [V2G20-2176] is not required and should be ignored.
-    scheduled_mode.schedule_tuple = {schedule};
-    return scheduled_mode;
 }
 
 void set_dynamic_parameters_in_res(DynamicResControlMode& res_mode, const UpdateDynamicModeParameters& parameters,
@@ -85,7 +81,7 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
     if (selected_control_mode == dt::ControlMode::Scheduled &&
         std::holds_alternative<dt::Scheduled_SEReqControlMode>(req.control_mode)) {
 
-        res.control_mode.emplace<ScheduledResControlMode>(create_default_scheduled_control_mode(max_power));
+        set_default_scheduled_control_mode(res.control_mode.emplace<ScheduledResControlMode>(), max_power);
 
         // TODO(sl): Adding price schedule
         // TODO(sl): Adding discharging schedule
