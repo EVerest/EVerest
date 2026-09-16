@@ -1,0 +1,89 @@
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("@everest_crate_index//:defs.bzl", "all_crate_deps")
+
+cargo_build_script(
+    name = "build_script",
+    srcs = ["build.rs"],
+    edition = "2021",
+    build_script_env = {
+        "EVEREST_CORE_ROOT": "../../..",
+    },
+    data = [
+        "manifest.yaml",
+        "@everest-core//errors",
+        "@everest-core//interfaces",
+        "@everest-core//types",
+    ],
+    deps = all_crate_deps(build = True) + [
+        "//lib/everest/framework/everestrs/everestrs-build",
+    ],
+)
+
+rust_library(
+    name = "RsEvseManagerLibrary",
+    srcs = glob(
+        ["src/**/*.rs"],
+        exclude = ["src/main.rs"],
+    ),
+    crate_name = "RsEvseManager",
+    edition = "2021",
+    deps = all_crate_deps(normal = True),
+)
+
+rust_binary(
+    name = "RsEvseManagerBinary",
+    srcs = glob(["src/**/*.rs"]),
+    compile_data = [
+        "manifest.yaml",
+    ],
+    edition = "2021",
+    proc_macro_deps = all_crate_deps(proc_macro = True),
+    visibility = ["//visibility:public"],
+    deps = all_crate_deps(normal = True) + [
+        ":RsEvseManagerLibrary",
+        ":build_script",
+        "//lib/everest/framework/everestrs/everestrs",
+        "//lib/everest/framework/everestrs/everestrs:everestrs_sys",
+        "//lib/everest/framework/everestrs/everestrs:everestrs_bridge",
+    ],
+)
+
+rust_test(
+    name = "RsEvseManagerTest",
+    edition = "2021",
+    srcs = [],
+    crate = ":RsEvseManagerBinary",
+)
+
+rust_test(
+    name = "RsEvseManagerLibraryTest",
+    edition = "2021",
+    srcs = [],
+    deps = all_crate_deps(normal = True, normal_dev = True),
+    crate = ":RsEvseManagerLibrary",
+)
+
+binary = ":RsEvseManagerBinary"
+manifest = ":manifest.yaml"
+name = "RsEvseManager"
+
+genrule(
+    name = "copy_to_subdir",
+    srcs = [binary, manifest],
+    outs = [
+        "{}/manifest.yaml".format(name),
+        "{}/{}".format(name, name),
+    ],
+    cmd = "mkdir -p $(RULEDIR)/{} && ".format(name) +
+          "cp $(location {}) $(RULEDIR)/{}/{} && ".format(binary, name, name) +
+          "cp $(location {}) $(RULEDIR)/{}/".format(manifest, name),
+)
+
+filegroup(
+    name = name,
+    srcs = [
+        ":copy_to_subdir",
+    ],
+    visibility = ["//visibility:public"],
+)

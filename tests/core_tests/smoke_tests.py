@@ -490,6 +490,57 @@ async def wait_for_hlc_session_failed_with_reason(mock, expected_reason, timeout
     )
 
 
+CPP_EVSE_MANAGER_MODULE = "EvseManager"
+RUST_EVSE_MANAGER_MODULE = "RsEvseManager"
+
+
+class EvseManagerModuleAdjustmentStrategy(EverestConfigAdjustmentStrategy):
+    """
+    Adjustment strategy to swap the module implementing the evse manager.
+
+    The two implementations, the C++ EvseManager and the Rust RsEvseManager, share
+    the same manifest surface, so substituting the module name is enough to run a
+    scenario against either one. Every shipped config declares the evse manager
+    exactly once, which this strategy asserts rather than assumes.
+    """
+
+    def __init__(self, module_name: str):
+        self.module_name = module_name
+
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        matches = [
+            module_id
+            for module_id, module in adjusted_config["active_modules"].items()
+            if module["module"] in (CPP_EVSE_MANAGER_MODULE, RUST_EVSE_MANAGER_MODULE)
+        ]
+        assert len(matches) == 1, (
+            f"expected exactly one evse manager module in the config, found {matches}"
+        )
+        adjusted_config["active_modules"][matches[0]]["module"] = self.module_name
+        return adjusted_config
+
+
+# Captured before the fixture below shadows the name imported by the star import,
+# so the framework keeps supplying its own strategies, such as network isolation.
+_framework_everest_config_strategies = getattr(
+    everest_config_strategies, "__wrapped__", everest_config_strategies
+)
+
+
+@pytest.fixture(params=[CPP_EVSE_MANAGER_MODULE, RUST_EVSE_MANAGER_MODULE])
+def evse_manager_module(request) -> str:
+    """Runs every scenario in this file against both evse manager implementations."""
+    return request.param
+
+
+@pytest.fixture
+def everest_config_strategies(request, evse_manager_module):
+    strategies = list(_framework_everest_config_strategies(request))
+    strategies.append(EvseManagerModuleAdjustmentStrategy(evse_manager_module))
+    return strategies
+
+
 ###################################################
 ################ Begin Tests ######################
 ###################################################
