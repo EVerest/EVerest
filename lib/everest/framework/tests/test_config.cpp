@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_all.hpp>
 
+#include <algorithm>
+
 #include <framework/runtime.hpp>
 #include <tests/helpers.hpp>
 #include <utils/config.hpp>
@@ -301,6 +303,49 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
             CHECK_NOTHROW(Everest::ManagerConfig(ms));
         }
     }
+    GIVEN("A config with module ID placeholders") {
+        auto ms =
+            Everest::ManagerSettings(bin_dir + "module_id_expansion/", bin_dir + "module_id_expansion/config.yaml");
+        auto mc = Everest::ManagerConfig(ms);
+
+        const auto& module_configs = mc.get_module_configurations();
+        const auto get_value =
+            [&module_configs](const std::string& module_id, const std::string& implementation_id,
+                              const std::string& parameter_name) -> const everest::config::ConfigEntry& {
+            const auto& parameters = module_configs.at(module_id).configuration_parameters.at(implementation_id);
+            const auto parameter = std::find_if(parameters.begin(), parameters.end(),
+                                                [&parameter_name](const auto& p) { return p.name == parameter_name; });
+            REQUIRE(parameter != parameters.end());
+            return parameter->value;
+        };
+
+        THEN("known placeholders are expanded for module and implementation configuration") {
+            CHECK(std::get<std::string>(get_value("connector_1", "!module", "valid_config_entry")) ==
+                  "prefix-connector_1-${unknown}-connector_1");
+            CHECK(std::get<std::string>(get_value("connector_1", "main", "valid_config_entry")) == "impl-connector_1");
+            CHECK(std::get<std::string>(get_value("connector-2", "!module", "valid_config_entry")) ==
+                  "/srv/everest/connector-2");
+            CHECK(std::get<std::string>(get_value("connector-2", "main", "valid_config_entry")) == "unchanged");
+        }
+
+        THEN("manifest defaults are expanded before schema validation") {
+            CHECK(std::get<std::string>(get_value("connector_1", "!module", "module_id_default")) ==
+                  "/logs/connector_1");
+            CHECK(std::get<std::string>(get_value("connector-2", "!module", "module_id_default")) ==
+                  "/logs/connector-2");
+            CHECK(std::get<double>(get_value("connector_1", "!module", "valid_config_entry_with_default")) == 42.0);
+        }
+
+        THEN("serialized module configuration contains expanded values") {
+            const auto serialized = Everest::get_serialized_module_config("connector_1", module_configs);
+            const auto serialized_module = serialized.at("module_config").get<everest::config::ModuleConfig>();
+            const auto& parameters = serialized_module.configuration_parameters.at("!module");
+            const auto parameter = std::find_if(parameters.begin(), parameters.end(),
+                                                [](const auto& p) { return p.name == "valid_config_entry"; });
+            REQUIRE(parameter != parameters.end());
+            CHECK(std::get<std::string>(parameter->value) == "prefix-connector_1-${unknown}-connector_1");
+        }
+    }
     GIVEN("A valid config with a valid module and a user-config applied") {
         auto ms = Everest::ManagerSettings(bin_dir + "valid_module_config_userconfig/",
                                            bin_dir + "valid_module_config_userconfig/config.yaml");
@@ -314,7 +359,7 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
                 for (const auto& param : config_params.at("!module")) {
                     if (param.name == "valid_config_entry") {
                         found = true;
-                        CHECK(std::get<std::string>(param.value) == "hi");
+                        CHECK(std::get<std::string>(param.value) == "hi-valid_module");
                     }
                 }
 
