@@ -13,7 +13,8 @@ cmake \
     -DENABLE_GRPC_GENERATOR=ON \
     -DGRPC_EDM=OFF \
     -DGRPC_GENERATOR_EDM=OFF \
-    -DEVEREST_BUILD_MODULE_EEBUS=ON
+    -DEVEREST_BUILD_MODULE_EEBUS=ON \
+    -DEVEREST_BUILD_API_CLIENTS=ON
 retVal=$?
 if [ $retVal -ne 0 ]; then
     echo "Configuring failed with return code $retVal"

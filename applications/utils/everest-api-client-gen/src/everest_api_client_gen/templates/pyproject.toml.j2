@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "package_{{ model.name_snake }}"
+version = "0.0.1"
+authors = [{ name="Pionix", email="contact@pionix.de" }]
+description = "A generated asyncapi python mqtt client"
+requires-python = ">=3.8"
+dependencies = [
+    "paho-mqtt>=2.0",
+    "cmd2>=2.4,<3",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
