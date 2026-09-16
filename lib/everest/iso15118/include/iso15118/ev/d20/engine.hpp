@@ -2,6 +2,7 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <optional>
@@ -14,19 +15,15 @@
 #include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/v2g_message_type.hpp>
 
+#include <iso15118/session/protocol.hpp>
+
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/states.hpp>
+#include <iso15118/ev/engine_outcome.hpp>
 
 namespace iso15118::ev::d20 {
 
-// Result of one FSM feed as the Session sees it.
-struct FeedOutcome {
-    Disposition output{Disposition::Ignored};
-    bool transitioned{false};
-    StateID state_before{StateID::SupportedAppProtocol};
-    // Declared disposition not matched by what the state did; nullptr when consistent.
-    const char* violation{nullptr};
-};
+using FeedOutcome = ev::FeedOutcome<StateID>;
 
 // ISO 15118-20 engine: MessageExchange + Context + FSM. Owned by the Session, one per protocol
 // generation; the SupportedAppProtocol handshake runs here for every session.
@@ -47,8 +44,8 @@ public:
     void start();
     bool started() const;
 
-    // Decodes @p view by protocol context and stages it as the pending response.
-    void stage_response(io::v2gtp::PayloadType payload_type, const io::StreamInputView& view);
+    // Decodes @p view by payload type and stages it as the pending response. Always true (-20 accepts every type).
+    bool stage_response(io::v2gtp::PayloadType payload_type, const io::StreamInputView& view);
     V2gMessageType peek_response_type() const;
 
     FeedOutcome feed(Event ev);
@@ -62,7 +59,19 @@ public:
     // Bound for the current state's Ongoing polling loop, if it has one.
     std::optional<std::chrono::milliseconds> ongoing_timeout() const;
 
+    std::chrono::milliseconds min_request_interval() const;
     std::optional<StateID> current_state() const;
+
+    // Session-facing, engine-neutral surface (same on every generation's Engine).
+    void latch(const ControlEvent& event);
+    void stop();
+    bool is_stopped() const;
+    bool is_paused() const;
+    std::optional<std::array<uint8_t, 8>> session_id() const;
+    std::optional<ProtocolId> negotiated_protocol() const;
+    ProtocolId protocol() const {
+        return ProtocolId::ISO15118_20;
+    }
 
     Context& context() {
         return ctx;

@@ -15,10 +15,7 @@ void setup_header(message_20::Header&, const SessionId&);
 
 bool check_response_code(message_20::datatypes::ResponseCode response_code);
 
-// Returns the violated expectation, or nullptr when the declared disposition matches what happened.
-// `consumed` is true when the feed pulled a response (Event::V2GTP_MESSAGE).
-const char* disposition_violation(Disposition d, bool consumed, bool has_request, bool session_stopped,
-                                  bool transitioned, bool handover = false);
+using ev::disposition_violation;
 
 // Validate an inbound response: the expected variant, a session id matching the
 // active session, and an accepted response code. On any failure it logs, stops the
