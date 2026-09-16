@@ -4,6 +4,7 @@
 #include <iso15118/ev/ac_phase_split.hpp>
 #include <iso15118/ev/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
+#include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/ac_der_iec_charge_parameter_discovery.hpp>
 
@@ -36,14 +37,18 @@ void AC_DER_IEC_ChargeParameterDiscovery::enter() {
 
 Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::DER_AC_ChargeParameterDiscoveryResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
+    }
+
+    if (auto stop = stop_before_start(m_ctx)) {
+        return std::move(*stop);
     }
 
     // ac_limits sees the AC base; der_curves carries the dictated DER functions.

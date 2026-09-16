@@ -13,6 +13,7 @@
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/service_detail.hpp>
 #include <iso15118/ev/d20/state/service_selection.hpp>
+#include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/der_control_functions.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/service_detail.hpp>
@@ -197,20 +198,24 @@ void ServiceDetail::enter() {
 
 Result ServiceDetail::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::ServiceDetailResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
+    }
+
+    if (auto stop = stop_before_start(m_ctx)) {
+        return std::move(*stop);
     }
 
     if (res->service_parameter_list.empty()) {
         logf_error("ServiceDetailResponse carries no parameter sets");
         m_ctx.stop_session();
-        return {};
+        return Result::stopping();
     }
 
     // AC_DER_IEC negotiates control functions: prefer the first Dynamic set whose
@@ -262,7 +267,7 @@ Result ServiceDetail::feed(Event ev) {
         if (not first_dynamic.has_value()) {
             logf_error("AC_DER_IEC ServiceDetailResponse offers no Dynamic control-mode parameter set");
             m_ctx.stop_session();
-            return {};
+            return Result::stopping();
         }
 
         auto unsupported = describe_functions(first_dynamic_offer.mask & ~supported);
@@ -276,7 +281,7 @@ Result ServiceDetail::feed(Event ev) {
             logf_error("AC_DER_IEC offers no set within the supported DER functions (unsupported: %s); stopping",
                        unsupported.c_str());
             m_ctx.stop_session();
-            return {};
+            return Result::stopping();
         }
 
         logf_warning("AC_DER_IEC offers no set within the supported DER functions (unsupported: %s); "
@@ -290,7 +295,7 @@ Result ServiceDetail::feed(Event ev) {
     if (not dynamic_set.has_value()) {
         logf_error("ServiceDetailResponse offers no Dynamic control-mode parameter set");
         m_ctx.stop_session();
-        return {};
+        return Result::stopping();
     }
 
     if (preferred.has_value()) {

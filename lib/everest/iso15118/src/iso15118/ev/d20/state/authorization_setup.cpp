@@ -4,6 +4,7 @@
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/authorization.hpp>
 #include <iso15118/ev/d20/state/authorization_setup.hpp>
+#include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 #include <iso15118/message/authorization.hpp>
@@ -21,14 +22,18 @@ void AuthorizationSetup::enter() {
 
 Result AuthorizationSetup::feed(Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
-        return {};
+        return Result::ignored();
     }
 
     const auto variant = m_ctx.pull_response();
 
     const auto* res = expect_response<message_20::AuthorizationSetupResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        return {};
+        return Result::stopping();
+    }
+
+    if (auto stop = stop_before_start(m_ctx)) {
+        return std::move(*stop);
     }
 
     auto& info = m_ctx.get_evse_session_info();
@@ -55,7 +60,7 @@ Result AuthorizationSetup::feed(Event ev) {
     if (info.auth_services.empty()) {
         logf_error("No authorization services offered by the EVSE. Abort the session.");
         m_ctx.stop_session();
-        return {};
+        return Result::stopping();
     }
 
     return m_ctx.create_state<Authorization>();

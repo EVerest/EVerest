@@ -59,9 +59,10 @@ public:
 
     /**
      * @brief Request a graceful EV-initiated stop of the charging session.
-     * @details Marshals a StopCharging control event onto the reactor thread (the
-     * FSM walks PowerDelivery(Stop) -> DC_WeldingDetection -> SessionStop) and arms
-     * a single-shot grace-period fallback that hard-stops the loop if the session
+     * @details Marshals a StopCharging control event onto the reactor thread (before
+     * PowerDelivery(Start) the FSM goes straight to SessionStop; afterwards it walks
+     * PowerDelivery(Stop) -> DC_WeldingDetection -> SessionStop) and arms a
+     * single-shot grace-period fallback that hard-stops the loop if the session
      * has not finished in time. Unlike shutdown() this lets the session close down
      * gracefully; the fallback bounds the wait.
      */
