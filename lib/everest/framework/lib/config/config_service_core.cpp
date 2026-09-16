@@ -451,6 +451,14 @@ ConfigServiceCore::internal_set_config_parameters(int slot_id, const std::vector
                                                   const Origin& origin) {
     SetConfigParameterResult result;
 
+    // Placeholder expansion normally happens while loading the configuration. Runtime updates
+    // bypass that path, so normalize them here before any validation, persistence, callback, or
+    // event handling. This keeps all representations of the value identical.
+    std::vector<ConfigParameterUpdate> expanded_updates = updates;
+    for (auto& update : expanded_updates) {
+        update.value = expand_module_id_placeholder(std::move(update.value), update.identifier.module_id);
+    }
+
     const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? m_active_slot_id : slot_id;
     const bool modifies_active_slot = resolved_slot_id == m_active_slot_id;
     // FailedToStart is a resting status, not a transient one: the modules are down, so the write is
@@ -473,9 +481,9 @@ ConfigServiceCore::internal_set_config_parameters(int slot_id, const std::vector
         std::fill(result.parameter_results->begin(), result.parameter_results->end(),
                   SetConfigPerParameterResult{SetConfigParameterResultEnum::RetryLater, ""});
     } else if (modifies_active_slot) {
-        apply_active_slot_updates(updates, result, event);
+        apply_active_slot_updates(expanded_updates, result, event);
     } else {
-        apply_inactive_slot_updates(resolved_slot_id, updates, result, event);
+        apply_inactive_slot_updates(resolved_slot_id, expanded_updates, result, event);
     }
 
     if (not event.updates.empty()) {
