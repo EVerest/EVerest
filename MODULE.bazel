@@ -170,6 +170,7 @@ everest_crate_index.from_cargo(
     manifests = [
         "@everest-core//modules:Cargo.toml",
         "@everest-core//modules/HardwareDrivers/PowerMeters/RsIskraMeter:Cargo.toml",
+        "@everest-core//modules/HardwareDrivers/PowerMeters/RsModDefMeter:Cargo.toml",
         "@everest-core//modules/HardwareDrivers/Payment/RsPaymentTerminal:Cargo.toml",
         "@everest-core//modules/Examples/RustExamples/RsExample:Cargo.toml",
         "@everest-core//modules/Examples/RustExamples/RsExampleUser:Cargo.toml",
