@@ -15,7 +15,7 @@ from typing import Dict, Optional
 from everest.testing.core_utils import EverestConfigAdjustmentStrategy
 
 # EV-facing modules: listen on the EV-side of the veth pair
-_EV_SIDE_MODULES = frozenset({"PyEvJosev", "IsoMux"})
+_EV_SIDE_MODULES = frozenset({"PyEvJosev", "EvIso15118D20", "IsoMux"})
 
 # EVSE proxy-side modules: listen on the EVSE/proxy-side of the veth pair
 _PROXY_SIDE_MODULES = frozenset({"EvseV2G", "Evse15118D20"})
@@ -32,7 +32,7 @@ class NetworkIsolationStrategy(EverestConfigAdjustmentStrategy):
     and multicast conflicts.
 
     When IsoMux is present:
-        - IsoMux and PyEvJosev use `interface_name` as `device` (EV-facing side).
+        - IsoMux and the EV modules use `interface_name` as `device` (EV-facing side).
         - EvseV2G and Evse15118D20 use `proxy_interface_name` as `device`.
         - IsoMux `proxy_device` is set to `proxy_interface_name` so it connects
           to the ISO-2/ISO-20 instances via link-local instead of loopback.
