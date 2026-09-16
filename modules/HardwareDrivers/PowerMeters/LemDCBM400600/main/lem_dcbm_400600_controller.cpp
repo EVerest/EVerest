@@ -2,8 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "lem_dcbm_400600_controller.hpp"
-#include <stdexcept>
 #include <algorithm>
+#include <stdexcept>
 #include <string>
 namespace module::main {
 
@@ -366,8 +366,10 @@ LemDCBM400600Controller::transaction_start_request_to_dcbm_payload(const types::
     client_id = (client_id.length() > max_length_client_id) ? client_id.substr(0, max_length_client_id) : client_id;
     std::string tariff_text = request.tariff_text.value_or("");
     const int max_length_tariff_text = 20; // as defined by LEM documentation
-    tariff_text = (tariff_text.length() > max_length_tariff_text) ? tariff_text.substr(0, max_length_tariff_text) : tariff_text;
-    // the device cannot handle multi-line text, so replace newlines and carriage returns with spaces instead of truncating the text
+    tariff_text =
+        (tariff_text.length() > max_length_tariff_text) ? tariff_text.substr(0, max_length_tariff_text) : tariff_text;
+    // the device cannot handle multi-line text, so replace newlines and carriage returns with spaces instead of
+    // truncating the text
     std::replace(tariff_text.begin(), tariff_text.end(), '\n', ' ');
     std::replace(tariff_text.begin(), tariff_text.end(), '\r', ' ');
     if (this->v2_capable) {
