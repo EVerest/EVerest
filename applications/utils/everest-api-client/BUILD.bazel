@@ -1,0 +1,21 @@
+load("//applications/utils:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_PYTHON_INCOMPATIBLE")
+
+exports_files(
+    ["BUILD.bazel"],
+)
+
+# Only the hand-written spy client is covered by Bazel. The per-API client
+# packages and the cmd2 shell depend on build-time code generation
+# (asyncapi-cli + python-mqtt-template), which is CMake-only.
+py_library(
+    name = "spyclient-api",
+    srcs = glob(["spyclient_api/src/**/*.py"]),
+    imports = ["spyclient_api/src"],
+    visibility = ["//visibility:public"],
+    target_compatible_with = CROSS_PYTHON_INCOMPATIBLE,
+    deps = [
+        requirement("paho-mqtt"),
+    ],
+)

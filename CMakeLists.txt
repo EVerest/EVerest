@@ -83,6 +83,7 @@ option(EVEREST_ENABLE_DEBUG_BUILD "Enable debug build" OFF)
 # pytest workers would otherwise clobber shared .gcda files in the build tree.
 option(EVEREST_ENABLE_COVERAGE "Enable code coverage instrumentation and coverage targets" OFF)
 option(EVEREST_BUILD_APPLICATIONS "Build applications like drivers for the EVerest stable API" ON)
+option(EVEREST_BUILD_API_CLIENTS "Generate and build Python client packages for the EVerest API modules" OFF)
 set(EVEREST_PACKAGES "base;iso15118;ocpp;core;runtime" CACHE STRING
     "Packages built from this tree (base, iso15118, ocpp, core, runtime); the others are taken from an installed prefix")
 set(EVEREST_TEST_PACKAGES "base;iso15118;ocpp;core;runtime" CACHE STRING
