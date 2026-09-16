@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
-"""Helpers shared by the EvIso15118D20 SIL tests.
+"""Helpers shared by the Ev15118 SIL tests.
 
 Not a conftest.py: none of these are pytest fixtures. ``_ev_config_adaptions`` and
 ``EvAutoExecAdjustmentStrategy`` are evaluated inside the

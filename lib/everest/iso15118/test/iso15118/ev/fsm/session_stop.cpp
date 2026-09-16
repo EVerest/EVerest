@@ -50,3 +50,51 @@ SCENARIO("ISO15118-20 EV SessionStop with wrong-variant response stops session")
                                                          message_20::datatypes::Processing::Finished};
     expect_stops_session(primed, wrong, ev::d20::StateID::SessionStop);
 }
+
+SCENARIO("ISO15118-20 EV SessionStop sends Pause when a pause was requested") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_pause = [](FsmStateHelper& helper) { helper.get_context().set_pause_charging_requested(true); };
+    PrimedState<ev::d20::state::SessionStop> primed{callbacks, seed_pause};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::SessionStopRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->charging_session == message_20::datatypes::ChargingSession::Pause);
+}
+
+SCENARIO("ISO15118-20 EV SessionStop sends Terminate when a stop and a pause were both requested") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_both = [](FsmStateHelper& helper) {
+        helper.get_context().set_pause_charging_requested(true);
+        helper.get_context().set_stop_charging_requested(true);
+    };
+    PrimedState<ev::d20::state::SessionStop> primed{callbacks, seed_both};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::SessionStopRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->charging_session == message_20::datatypes::ChargingSession::Terminate);
+}
+
+SCENARIO("ISO15118-20 EV SessionStop pauses the session on an OK response to a Pause") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_pause = [](FsmStateHelper& helper) { helper.get_context().set_pause_charging_requested(true); };
+    PrimedState<ev::d20::state::SessionStop> primed{callbacks, seed_pause};
+
+    expect_stops_session(primed,
+                         message_20::SessionStopResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::OK},
+                         ev::d20::StateID::SessionStop);
+    REQUIRE(primed.ctx.is_session_paused() == true);
+}
+
+SCENARIO("ISO15118-20 EV SessionStop does not pause on a rejected Pause") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_pause = [](FsmStateHelper& helper) { helper.get_context().set_pause_charging_requested(true); };
+    PrimedState<ev::d20::state::SessionStop> primed{callbacks, seed_pause};
+
+    expect_stops_session(
+        primed,
+        message_20::SessionStopResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::FAILED_PauseNotAllowed},
+        ev::d20::StateID::SessionStop);
+    REQUIRE(primed.ctx.is_session_paused() == false);
+}

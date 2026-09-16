@@ -14,10 +14,12 @@ void car_simulatorImpl::init() {
     last_commands = {};
     loop_interval_ms = constants::DEFAULT_LOOP_INTERVAL_MS;
     register_all_commands();
-    subscribe_to_variables_on_init();
 
+    // Before the subscriptions: their callbacks use car_simulation.
     car_simulation = std::make_unique<CarSimulation>(mod->r_ev_board_support, mod->r_ev, mod->r_slac, mod->p_ev_manager,
                                                      mod->config);
+
+    subscribe_to_variables_on_init();
 
     std::thread(&car_simulatorImpl::run, this).detach();
 }
@@ -156,7 +158,13 @@ void car_simulatorImpl::register_all_commands() {
         return this->car_simulation->iec_wait_pwr_ready(arguments);
     });
     command_registry->register_command("iso_wait_pwm_is_running", 0, [this](const CmdArguments& arguments) {
-        return this->car_simulation->iso_wait_pwm_is_running(arguments);
+        return this->car_simulation->iso_wait_pwm_is_running(arguments, loop_interval_ms);
+    });
+    // Same command with an optional fallback timeout in seconds: the EV waits
+    // for the EVSE's PWM as usual, but proceeds with the matching process
+    // anyway if the duty cycle has not started within that time.
+    command_registry->register_command("iso_wait_pwm_is_running", 1, [this](const CmdArguments& arguments) {
+        return this->car_simulation->iso_wait_pwm_is_running(arguments, loop_interval_ms);
     });
     command_registry->register_command("draw_power_regulated", 2, [this](const CmdArguments& arguments) {
         return this->car_simulation->draw_power_regulated(arguments);
@@ -289,8 +297,14 @@ bool car_simulatorImpl::run_simulation_loop() {
         }
 
         if (!command_blocked) {
+            last_blocked_command.clear();
             command_queue.pop();
         } else {
+            // Log the blocking command once.
+            if (last_blocked_command != current_command.name()) {
+                last_blocked_command = current_command.name();
+                EVLOG_info << "Simulation waiting on: " << last_blocked_command;
+            }
             break; // command blocked, wait for timer to run this function again
         }
     }
@@ -313,15 +327,62 @@ bool car_simulatorImpl::check_can_execute() {
     return true;
 }
 
+void car_simulatorImpl::log_v2g_message(const types::iso15118::V2gMessages& v2g_messages) {
+    // Mirrors EvseManager's SessionLog layout: CAR yellow indented, EVSE cyan.
+    static constexpr auto YELLOW = "\033[1;33m";
+    static constexpr auto CYAN = "\033[1;36m";
+    static constexpr auto RESET = "\033[1;0m";
+
+    const auto msg = types::iso15118::v2g_message_id_to_string(v2g_messages.id);
+
+    const auto is_response = msg.size() >= 3 and msg.compare(msg.size() - 3, 3, "Res") == 0;
+
+    if (not is_response) {
+        EVLOG_info << "                                    " << YELLOW << "CAR  ISO V2G " << msg << RESET;
+    } else {
+        EVLOG_info << CYAN << "EVSE ISO V2G " << msg << RESET;
+    }
+}
+
 void car_simulatorImpl::subscribe_to_variables_on_init() {
     // subscribe bsp_event
     const std::lock_guard<std::mutex> lock{car_simulation_mutex};
     using types::board_support_common::BspEvent;
     mod->r_ev_board_support->subscribe_bsp_event([this](const auto& bsp_event) {
+        const std::lock_guard<std::mutex> callback_lock{car_simulation_mutex};
+        const auto previous_event = car_simulation->get_bsp_event();
         car_simulation->set_bsp_event(bsp_event.event);
-        if (bsp_event.event == types::board_support_common::Event::Disconnected &&
-            car_simulation->get_state() != SimState::UNPLUGGED) {
-            cancel_charging_session();
+        if (bsp_event.event != previous_event) {
+            EVLOG_info << "CP measured at the vehicle inlet: " << previous_event << " -> " << bsp_event.event;
+            forward_cp_state_to_hlc(bsp_event.event);
+        }
+        // [V2G3-A09-123]: E/F stops matching, like a plug out.
+        if (bsp_event.event == types::board_support_common::Event::E or
+            bsp_event.event == types::board_support_common::Event::F) {
+            if (car_simulation->get_slac_state() != types::slac::State::UNMATCHED) {
+                EVLOG_info << "CP left the Bx/Cx/Dx range (" << bsp_event.event << ") - stopping the matching process";
+                car_simulation->stop_matching();
+            }
+            // E/F applied by the vehicle itself (error_e, diode_fail) is not a session end.
+            const auto state = car_simulation->get_state();
+            if (state != SimState::UNPLUGGED and state != SimState::ERROR_E and state != SimState::DIODE_FAIL) {
+                // E/F ends the session; UNMATCHED re-arms iso_wait_slac_matched.
+                EVLOG_info << "<<< SESSION ABORTED by CP state " << bsp_event.event << " - resetting the vehicle";
+                // abort, not stop: [V2G2-025]/[V2G2-728] want no SessionStop exchange.
+                abort_v2g_session();
+                cancel_charging_session();
+            }
+        }
+        if (bsp_event.event == types::board_support_common::Event::Disconnected) {
+            if (car_simulation->get_state() != SimState::UNPLUGGED) {
+                EVLOG_info << "<<< PLUG-OUT detected (CP dead) - cancelling the charging session and resetting";
+                // Same as the E/F case: no pilot left for a SessionStop exchange.
+                abort_v2g_session();
+                cancel_charging_session();
+            } else {
+                // Already unplugged: nothing to cancel.
+                EVLOG_info << "Plug-out signalled while already unplugged - no session to cancel";
+            }
         }
         mod->p_ev_manager->publish_bsp_event(bsp_event);
     });
@@ -344,7 +405,16 @@ void car_simulatorImpl::subscribe_to_variables_on_init() {
     // subscribe slac_state
     if (!mod->r_slac.empty()) {
         const auto& slac = mod->r_slac.at(0);
-        slac->subscribe_state([this](const auto& state) { car_simulation->set_slac_state(state); });
+        slac->subscribe_state([this](const auto& state) {
+            EVLOG_info << "SLAC state: " << state;
+            car_simulation->set_slac_state(state);
+        });
+    }
+
+    // subscribe the HLC message trace (opt-in console session log)
+    if (mod->config.session_logging && !mod->r_ev.empty()) {
+        mod->r_ev.at(0)->subscribe_v2g_messages(
+            [this](const types::iso15118::V2gMessages& v2g_messages) { log_v2g_message(v2g_messages); });
     }
 
     // subscribe ev events
@@ -369,7 +439,12 @@ void car_simulatorImpl::subscribe_to_variables_on_init() {
             // TODO(SL): Adding missing reactive power
         });
         _ev->subscribe_stop_from_charger([this]() { car_simulation->set_iso_stopped(true); });
-        _ev->subscribe_v2g_session_finished([this]() { car_simulation->set_v2g_finished(true); });
+        _ev->subscribe_v2g_session_finished([this]() {
+            const std::lock_guard<std::mutex> callback_lock{car_simulation_mutex};
+            car_simulation->set_v2g_finished(true);
+            // Do not stay in C/D with the contactor closed ([V2G2-526], [V2G2-728]).
+            car_simulation->end_charging_session();
+        });
         _ev->subscribe_dc_power_on([this]() { car_simulation->set_dc_power_on(true); });
         _ev->subscribe_pause_from_charger([this]() { car_simulation->set_iso_charger_paused(true); });
     }
@@ -442,6 +517,45 @@ void car_simulatorImpl::set_execution_active(bool value) {
 
 void car_simulatorImpl::cancel_charging_session() {
     cancel_charging_session_flag = true;
+}
+
+void car_simulatorImpl::forward_cp_state_to_hlc(types::board_support_common::Event event) {
+    if (mod->r_ev.empty()) {
+        return;
+    }
+    using BspEvent = types::board_support_common::Event;
+    std::optional<types::iso15118::CpState> cp_state;
+    switch (event) {
+    case BspEvent::A:
+        cp_state = types::iso15118::CpState::A;
+        break;
+    case BspEvent::B:
+        cp_state = types::iso15118::CpState::B;
+        break;
+    case BspEvent::C:
+        cp_state = types::iso15118::CpState::C;
+        break;
+    case BspEvent::D:
+        cp_state = types::iso15118::CpState::D;
+        break;
+    case BspEvent::E:
+        cp_state = types::iso15118::CpState::E;
+        break;
+    case BspEvent::F:
+        cp_state = types::iso15118::CpState::F;
+        break;
+    default:
+        return; // PowerOn / PowerOff / Disconnected are not control pilot states
+    }
+    // The HLC stack has no board support connection; [V2G2-847] needs the CP state.
+    mod->r_ev.at(0)->call_cp_state_changed(cp_state.value());
+}
+
+void car_simulatorImpl::abort_v2g_session() {
+    if (mod->r_ev.empty()) {
+        return;
+    }
+    mod->r_ev.at(0)->call_abort_charging();
 }
 
 } // namespace module::main

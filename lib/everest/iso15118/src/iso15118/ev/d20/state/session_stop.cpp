@@ -11,7 +11,7 @@ namespace iso15118::ev::d20::state {
 void SessionStop::enter() {
     message_20::SessionStopRequest req;
     setup_header(req.header, m_ctx.get_session());
-    req.charging_session = message_20::datatypes::ChargingSession::Terminate;
+    req.charging_session = m_ctx.requested_stop_reason();
     m_ctx.send_request(req);
 }
 
@@ -24,8 +24,13 @@ Result SessionStop::feed(Event ev) {
 
     // expect_response validates the SessionStopResponse and stops the session on any
     // failure. SessionStop is terminal, so the session ends here regardless.
-    expect_response<message_20::SessionStopResponse>(m_ctx, *variant);
-    m_ctx.stop_session();
+    const auto* res = expect_response<message_20::SessionStopResponse>(m_ctx, *variant);
+    if (res != nullptr and m_ctx.requested_stop_reason() == message_20::datatypes::ChargingSession::Pause) {
+        // An acknowledged pause keeps the session id joinable.
+        m_ctx.pause_session();
+    } else {
+        m_ctx.stop_session();
+    }
     return Result::stopping();
 }
 

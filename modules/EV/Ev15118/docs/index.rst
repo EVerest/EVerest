@@ -1,15 +1,20 @@
-.. _everest_modules_handwritten_EvIso15118D20:
+.. _everest_modules_handwritten_Ev15118:
 
-EvIso15118D20
-=============
+Ev15118
+=======
 
-EV-side ISO 15118-20 EVCC built on the ``libiso15118`` ``ev::Controller``. It
+EV-side ISO 15118 EVCC built on the ``libiso15118`` ``ev::Controller``. It
 provides the ``ISO15118_ev`` interface (the same interface as ``PyEvJosev``), so
 it is a drop-in software-in-the-loop (SIL) replacement for the Python EVCC when
 driving a DC or AC ISO 15118-20 session against a SECC such as ``Evse15118D20``.
 
-AC support covers the Dynamic control mode over plain TCP with external
-identification means (EIM) authorization. The AC DER IEC service is also
+The SAP offer carries ISO 15118-20 first, then ISO 15118-2 and DIN SPEC 70121
+when ``supported_ISO15118_2`` / ``supported_DIN70121`` are set. Only the
+ISO 15118-20 engine exists so far, so an SECC that selects one of the older
+generations ends the session.
+
+The session runs over plain TCP or TLS (``tls_active`` / ``enforce_tls``), with
+external identification means (EIM) authorization. The AC DER IEC service is also
 negotiated (assuming a three-phase inverter relay); received DER directives are
 logged only, as ``ISO15118_ev`` has no DER variable to publish them on.
 
@@ -37,18 +42,69 @@ Configuration
        library pick a usable IPv6 interface.
    * - ``evcc_id``
      - ``02:00:00:00:00:01``
-     - EVCC identifier sent to the SECC (MAC-address format).
+     - EVCC identifier sent to the SECC, 1 to 255 characters. A MAC address and a
+       vehicle identifier (``WMIV1234567890ABCDEX``) are both valid.
    * - ``response_timeout_ms``
-     - ``20000``
-     - Response watchdog timeout in milliseconds.
+     - ``0``
+     - Response watchdog timeout in milliseconds. ``0`` uses the per-message
+       ISO 15118 timeouts from the specification table.
+   * - ``d20_control_mode``
+     - ``Dynamic``
+     - Preferred ISO 15118-20 charge-loop control mode, ``Scheduled`` or
+       ``Dynamic``.
+   * - ``supported_DIN70121``
+     - ``false``
+     - Offer DIN SPEC 70121 in the SAP handshake, after ISO 15118-20.
+   * - ``supported_ISO15118_2``
+     - ``false``
+     - Offer ISO 15118-2 in the SAP handshake, after ISO 15118-20.
+   * - ``tls_active``
+     - ``false``
+     - Request TLS in the SDP request and connect with TLS when offered.
+   * - ``enforce_tls``
+     - ``false``
+     - Reject an SDP response without TLS. Implies ``tls_active``.
+   * - ``enable_tls_1_3``
+     - ``false``
+     - TLS 1.3 with a client certificate. ``false`` uses TLS 1.2 without one.
+   * - ``verify_server_certificate``
+     - ``true``
+     - Verify the SECC chain against the V2G root.
+   * - ``enable_tls_key_logging``
+     - ``false``
+     - Export the TLS session keys. Testing and simulation only.
+   * - ``tls_key_logging_path``
+     - ``/tmp``
+     - Output directory for the TLS key log file.
+   * - ``v2g_root_cert_path``
+     - ``""``
+     - V2G root certificate. Empty resolves to
+       ``<etc>/certs/ca/v2g/V2G_ROOT_CA.pem``.
+   * - ``device_cert_chain_path``
+     - ``""``
+     - Vehicle certificate chain, leaf first. Empty resolves to
+       ``<etc>/certs/client/vehicle/VEHICLE_CERT_CHAIN.pem``.
+   * - ``device_key_path``
+     - ``""``
+     - Vehicle leaf private key. Empty resolves to
+       ``<etc>/certs/client/vehicle/VEHICLE_LEAF.key``.
+   * - ``device_key_password_path``
+     - ``""``
+     - File holding the vehicle leaf key password. Empty resolves to
+       ``<etc>/certs/client/vehicle/VEHICLE_LEAF_PASSWORD.txt``; a missing or
+       empty file means no password.
+   * - ``ac_phase_count``
+     - ``3``
+     - Number of AC lines the EV draws on, 1 or 3. Selects the connector and
+       divides the advertised totals below into per-line values.
    * - ``ac_max_charge_power_w``
      - ``11040``
-     - Advertised AC maximum charge power in watts, as a three-phase total. The
-       default is 16 A x 230 V x 3.
+     - Advertised AC maximum charge power in watts, as a total across
+       ``ac_phase_count`` lines. The default is 16 A x 230 V x 3.
    * - ``ac_min_charge_power_w``
      - ``4140``
-     - Advertised AC minimum charge power in watts, as a three-phase total. The
-       default is 6 A x 230 V x 3.
+     - Advertised AC minimum charge power in watts, as a total across
+       ``ac_phase_count`` lines. The default is 6 A x 230 V x 3.
    * - ``der_over_frequency_watt_mode``
      - ``false``
      - Declare support for the IEC OverFrequencyWattMode DER control function.
@@ -137,9 +193,9 @@ The implementation has a deliberately narrow scope:
 - **DER curves are log-only.** DER curves dictated in
   ``DER_AC_ChargeParameterDiscoveryRes`` are logged, not applied; the EV negotiates
   the functions and observes what the SECC dictates.
-- **No TLS.** The session advertises ``NO_TRANSPORT_SECURITY``; Plug & Charge and
-  TLS are out of scope.
-- **No pause/resume.** ``pause_charging`` is a no-op.
+- **No Plug & Charge.** Authorization is EIM only.
+- **ISO 15118-20 only.** ISO 15118-2 and DIN SPEC 70121 can be offered in the SAP
+  handshake, but no engine implements them yet.
 - **Dynamic BPT only.** BPT is negotiated in Dynamic control mode; reverse power
   flow follows SECC targets. SAE J2847/2 (``enable_sae_j2847_v2g_v2h``) is not
   implemented.
@@ -152,3 +208,9 @@ A single worker thread, started from ``ready()``, runs one V2G session at a time
 ``ev::Controller`` and runs its event loop until the session ends, then waits for
 the next request. Session state is guarded by a ``monitor`` so command handlers
 and the worker coordinate safely, including during module teardown.
+
+``pause_charging`` ends the session with ``SessionStop(Pause)``; the paused
+session is stored and handed to the next ``ev::Controller`` as
+``EvConfig::resume``. ``stop_charging`` and ``abort_charging`` discard it.
+``cp_state_changed`` is latched and replayed to every new controller, and the
+first report switches the CP-dependent checks (the DC cable check) on.

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <bitset>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -20,16 +21,16 @@
 
 #include <everest/util/async/monitor.hpp>
 
-#include <bitset>
-
 #include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/d20/evse_session_info.hpp>
 #include <iso15118/ev/d20/session_id.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/der_control_functions.hpp>
+#include <iso15118/ev/sap_offer.hpp>
 #include <iso15118/ev/service_family.hpp>
 #include <iso15118/ev/session/feedback.hpp>
+#include <iso15118/session/protocol.hpp>
 
 namespace iso15118::ev::d20 {
 
@@ -38,11 +39,8 @@ class MessageExchange {
 public:
     MessageExchange() = default;
 
-    // Defer serialization to transmit time. Exactly one request may be pending: the
-    // session takes it (take_request) before the next response arrives, so depth is
-    // always <= 1. A state that queues a request while one is still pending is a
-    // protocol violation; throwing turns it into a loud session stop at the session's
-    // reactor boundary rather than two requests on the wire.
+    // Serialization is deferred to transmit time; exactly one request may be pending.
+    // Queueing a second one is a protocol violation, so it throws instead of reaching the wire.
     template <typename Msg> void set_request(const Msg& msg) {
         if (request.has_value()) {
             throw std::logic_error("EV request slot already occupied: a state produced a request while a previous "
@@ -89,6 +87,20 @@ private:
 struct StateBase;
 using BasePointerType = std::unique_ptr<StateBase>;
 
+// Session-scoped options beyond the positional Context arguments.
+struct SessionOptions {
+    // Preferred charge-loop control mode; ServiceDetail picks the parameter set matching it and falls
+    // back to the first offered set.
+    message_20::datatypes::ControlMode control_mode{message_20::datatypes::ControlMode::Dynamic};
+    std::vector<message_20::datatypes::Authorization> supported_auth_options{message_20::datatypes::Authorization::EIM};
+    // The owner reports CpState events: DC_CableCheck holds its first request until state C/D.
+    bool has_cp_state_feedback{false};
+    // Re-join this paused session (SessionSetupReq carries it; OK_OldSessionJoined expected).
+    std::optional<std::array<uint8_t, SessionId::ID_LENGTH>> resumed_session_id{std::nullopt};
+    // schema_id -> protocol map of the SAP offer; empty = every offered entry is ISO 15118-20.
+    std::vector<OfferedProtocol> offered_protocols{};
+};
+
 class Context {
 public:
     Context(feedback::Callbacks feedback_callbacks, MessageExchange& message_exchange_,
@@ -98,7 +110,7 @@ public:
             everest::lib::util::monitor<DcChargeParams>& dc_params_,
             everest::lib::util::monitor<AcChargeParams>& ac_params_,
             message_20::datatypes::ServiceCategory requested_service_, DerControlFunctions der_control_functions_ = {},
-            bool der_stop_on_unsupported_functions_ = true);
+            bool der_stop_on_unsupported_functions_ = true, SessionOptions options_ = {});
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;
 
@@ -143,11 +155,89 @@ public:
         return stop_charging_requested;
     }
 
+    // EV-initiated pause flag; same latch semantics as the stop flag.
+    void set_pause_charging_requested(bool requested) {
+        pause_charging_requested = requested;
+    }
+
+    bool is_pause_charging_requested() const {
+        return pause_charging_requested;
+    }
+
+    // Pause wins over stop only when no stop was requested.
+    message_20::datatypes::ChargingSession requested_stop_reason() const {
+        return (pause_charging_requested and not stop_charging_requested)
+                   ? message_20::datatypes::ChargingSession::Pause
+                   : message_20::datatypes::ChargingSession::Terminate;
+    }
+
+    // SessionStop(Pause) acknowledged: stopped, and the session id can be re-joined.
+    void pause_session() {
+        session_stopped = true;
+        session_paused = true;
+    }
+
+    bool is_session_paused() const {
+        return session_paused;
+    }
+
+    const SessionOptions& options() const {
+        return session_options;
+    }
+
+    message_20::datatypes::ControlMode preferred_control_mode() const {
+        return session_options.control_mode;
+    }
+
+    // Control mode of the parameter set ServiceDetail selected; the preferred mode until then.
+    message_20::datatypes::ControlMode selected_control_mode() const {
+        return selected_control_mode_.value_or(session_options.control_mode);
+    }
+
+    void set_selected_control_mode(message_20::datatypes::ControlMode mode) {
+        selected_control_mode_ = mode;
+    }
+
+    // Scheduled mode: ScheduleTupleID chosen in ScheduleExchange, echoed by PowerDelivery.
+    std::optional<uint8_t> selected_schedule_tuple_id() const {
+        return selected_schedule_tuple_id_;
+    }
+
+    void set_selected_schedule_tuple_id(uint8_t id) {
+        selected_schedule_tuple_id_ = id;
+    }
+
+    bool has_cp_state_feedback() const {
+        return session_options.has_cp_state_feedback;
+    }
+
+    // Last reported control pilot state (CpState event); false until reported.
+    bool cp_state_c_or_d() const {
+        return cp_state_c_or_d_;
+    }
+
+    void set_cp_state(bool c_or_d) {
+        cp_state_c_or_d_ = c_or_d;
+    }
+
+    // Set by SupportedAppProtocol from the negotiated schema_id.
+    std::optional<ProtocolId> negotiated_protocol() const {
+        return negotiated_protocol_;
+    }
+
+    void set_negotiated_protocol(ProtocolId protocol) {
+        negotiated_protocol_ = protocol;
+    }
+
     const message_20::datatypes::Identifier& get_evcc_id() const {
         return evcc_id;
     }
 
     SessionId& get_session() {
+        return session;
+    }
+
+    const SessionId& get_session() const {
         return session;
     }
 
@@ -256,8 +346,16 @@ private:
     SessionId session{std::array<uint8_t, SessionId::ID_LENGTH>{}};
 
     bool session_stopped{false};
+    bool session_paused{false};
 
     bool stop_charging_requested{false};
+    bool pause_charging_requested{false};
+
+    SessionOptions session_options;
+    std::optional<message_20::datatypes::ControlMode> selected_control_mode_{std::nullopt};
+    std::optional<uint8_t> selected_schedule_tuple_id_{std::nullopt};
+    bool cp_state_c_or_d_{false};
+    std::optional<ProtocolId> negotiated_protocol_{std::nullopt};
 };
 
 } // namespace iso15118::ev::d20

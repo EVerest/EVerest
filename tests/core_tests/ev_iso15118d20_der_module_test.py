@@ -85,7 +85,7 @@ SESSION_COMMANDS = (
 async def test_ev_iso15118d20_ac_der_iec_session(
     test_controller: TestController, everest_core: EverestCore
 ):
-    """SIL gate: EvIso15118D20 negotiates an AC_DER_IEC ISO 15118-20 session.
+    """SIL gate: Ev15118 negotiates an AC_DER_IEC ISO 15118-20 session.
 
     The probe stands in for the protocol backend that a production deployment would have. Two things
     have to come from outside the config: EvseManager only advertises AC_DER_IEC once a backend has
@@ -109,7 +109,7 @@ async def test_ev_iso15118d20_ac_der_iec_session(
         optional field, so the value never reaches the wire. Asserting the intersection directly
         needs either a published variable on ISO15118_ev carrying the EV's negotiated mask, or that
         serializer defect fixed.
-      * Directive application. The SECC does send DerControl in the charge loop, but EvIso15118D20
+      * Directive application. The SECC does send DerControl in the charge loop, but Ev15118
         only logs it; no variable carries it.
     """
     test_controller.start()

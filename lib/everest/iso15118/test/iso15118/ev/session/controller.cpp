@@ -26,16 +26,17 @@ SCENARIO("ISO15118-20 EV Controller config defaults") {
         ev::EvConfig config{};
 
         THEN("It defaults to no transport security") {
-            REQUIRE(config.advertised_security == io::v2gtp::Security::NO_TRANSPORT_SECURITY);
+            REQUIRE(config.sdp_security() == io::v2gtp::Security::NO_TRANSPORT_SECURITY);
         }
 
         THEN("It paces re-poll sends with a non-zero default send delay") {
             REQUIRE(config.send_delay > std::chrono::milliseconds{0});
         }
 
-        THEN("It advertises exactly the single ISO 15118-20 DC app protocol") {
-            REQUIRE(config.advertised_app_protocols.size() == 1);
-            REQUIRE(config.advertised_app_protocols.front().protocol_namespace == "urn:iso:std:iso:15118:-20:DC");
+        THEN("It offers ISO 15118-20 only and derives the SAP list") {
+            REQUIRE(config.supported_protocols == std::vector<ProtocolId>{ProtocolId::ISO15118_20});
+            REQUIRE(config.advertised_app_protocols.empty());
+            REQUIRE(config.response_timeout == std::chrono::milliseconds{0});
         }
     }
 }
@@ -126,15 +127,16 @@ SCENARIO("ISO15118-20 EV Controller request_stop marshals onto the reactor befor
     }
 }
 
-SCENARIO("ISO15118-20 EV Controller request_stop grace fallback hard-stops a stuck session") {
-    // With no SECC responding the session never reaches the FSM, so StopCharging has
-    // nothing to walk gracefully; request_stop's grace fallback (3x response_timeout)
-    // must hard-stop instead.
-    GIVEN("A Controller running SDP discovery with no SECC present") {
+SCENARIO("ISO15118-20 EV Controller stop grace is never shorter than the graceful stop walk") {
+    // A short response_timeout must not shrink the grace below the worst-case
+    // PowerDelivery(Stop) -> DC_WeldingDetection -> SessionStop walk, which takes far longer than
+    // 3x the per-message timeout. Pinned via the consequence: the loop is still alive well past
+    // 3x response_timeout after request_stop().
+    GIVEN("A Controller with a 50 ms response timeout and no SECC present") {
         ev::EvConfig config{};
         config.interface_name = "lo";
         config.send_delay = 5ms;
-        config.response_timeout = 50ms; // 3x = 150ms grace, well under the deadline
+        config.response_timeout = 50ms; // 3x = 150 ms, far below the stop walk
 
         ev::feedback::Callbacks callbacks{};
         std::atomic_int stopped_count{0};
@@ -145,17 +147,21 @@ SCENARIO("ISO15118-20 EV Controller request_stop grace fallback hard-stops a stu
         WHEN("loop() is run on a worker thread and request_stop() is called once") {
             std::thread worker([&controller]() { controller.loop(); });
 
-            THEN("the grace fallback hard-stops the loop and fires stopped exactly once") {
-                // Request the graceful stop exactly once: re-issuing would re-arm the
-                // single-shot grace timer and defer the fallback indefinitely.
+            THEN("the loop outlives 3x the response timeout and terminate() then ends it once") {
                 std::this_thread::sleep_for(50ms);
                 controller.request_stop();
 
+                std::this_thread::sleep_for(500ms);
+                const auto alive_past_the_old_grace = stopped_count.load();
+
+                controller.terminate();
                 const auto deadline = std::chrono::steady_clock::now() + 5s;
                 while (stopped_count == 0 and std::chrono::steady_clock::now() < deadline) {
                     std::this_thread::sleep_for(5ms);
                 }
                 worker.join();
+
+                REQUIRE(alive_past_the_old_grace == 0);
                 REQUIRE(stopped_count == 1);
             }
         }
@@ -167,9 +173,8 @@ SCENARIO("ISO15118-20 EV Controller loop releases its reactor timers before retu
     // EPOLL_CTL_ADD on an fd it already holds, so leaving them registered would
     // abort the NEXT loop() synchronously on its first register_event_handler.
     // Registration isn't observable directly, so this pins the consequence: the
-    // second run must still be alive 50 ms in. Uses request_stop, not shutdown,
-    // since shutdown latches stop_requested and the second loop() would
-    // early-return on it.
+    // second run must still be alive 50 ms in. Uses terminate, not shutdown, since
+    // shutdown latches stop_requested and the second loop() would early-return on it.
     GIVEN("A Controller whose loop is run twice, ended by request_stop each time") {
         ev::EvConfig config{};
         config.interface_name = "lo";
@@ -183,13 +188,13 @@ SCENARIO("ISO15118-20 EV Controller loop releases its reactor timers before retu
         ev::Controller controller{config, callbacks};
 
         // Runs loop() once, returning whether it was still alive just before the
-        // graceful stop was requested.
+        // teardown was requested.
         const auto run_and_stop = [&controller, &stopped_count]() {
             const auto before = stopped_count.load();
             std::thread worker([&controller]() { controller.loop(); });
             std::this_thread::sleep_for(50ms);
             const auto still_running = stopped_count.load();
-            controller.request_stop();
+            controller.terminate();
 
             const auto deadline = std::chrono::steady_clock::now() + 5s;
             while (stopped_count == before and std::chrono::steady_clock::now() < deadline) {
@@ -199,7 +204,7 @@ SCENARIO("ISO15118-20 EV Controller loop releases its reactor timers before retu
             return still_running;
         };
 
-        WHEN("loop() runs, stops gracefully, and runs again") {
+        WHEN("loop() runs, is terminated, and runs again") {
             const auto alive_during_first = run_and_stop();
             const auto alive_during_second = run_and_stop();
 
@@ -226,8 +231,14 @@ SCENARIO("ISO15118-20 EV Controller aborts the pre-session phase on the setup ti
         ev::feedback::Callbacks callbacks{};
         std::atomic_int stopped_count{0};
         std::atomic_int connected_count{0};
+        std::atomic_int dlink_error_count{0};
         callbacks.stopped = [&stopped_count]() { ++stopped_count; };
         callbacks.connected = [&connected_count](const io::Ipv6EndPoint&) { ++connected_count; };
+        callbacks.signal = [&dlink_error_count](ev::feedback::Signal signal) {
+            if (signal == ev::feedback::Signal::DLINK_ERROR) {
+                ++dlink_error_count;
+            }
+        };
 
         ev::Controller controller{config, callbacks};
 
@@ -246,7 +257,24 @@ SCENARIO("ISO15118-20 EV Controller aborts the pre-session phase on the setup ti
                 REQUIRE(stopped_count == 1);
                 // No SECC answered, so the data path was never established.
                 REQUIRE(connected_count == 0);
+                // A loop that ends without a session reports DLINK_ERROR exactly once.
+                REQUIRE(dlink_error_count == 1);
             }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Controller reports no paused session for a session that never paused") {
+    GIVEN("A Controller whose loop never ran") {
+        ev::EvConfig config{};
+        config.interface_name = "lo";
+        config.send_delay = 5ms;
+
+        ev::feedback::Callbacks callbacks{};
+        ev::Controller controller{config, callbacks};
+
+        THEN("paused_session() is empty") {
+            REQUIRE_FALSE(controller.paused_session().has_value());
         }
     }
 }

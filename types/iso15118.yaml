@@ -70,6 +70,18 @@ types:
       - Error_UtilityInterruptEvent
       - Error_Malfunction
       - Error_EmergencyShutdown
+  CpState:
+    description: >-
+      IEC 61851-1 control pilot state the vehicle applies, reported to the HLC
+      stack for the CP checks tied to the message sequence ([V2G2-847]).
+    type: string
+    enum:
+      - A
+      - B
+      - C
+      - D
+      - E
+      - F
   V2gMessageId:
     description: This element contains the id of the v2g message body
     type: string

@@ -13,8 +13,28 @@ void Feedback::connected(const io::Ipv6EndPoint& endpoint) const {
     call_if_available(callbacks.connected, endpoint);
 }
 
-void Feedback::v2g_message(message_20::Type type) const {
+void Feedback::v2g_message(const V2gMessageType& type) const {
     call_if_available(callbacks.v2g_message, type);
+}
+
+void Feedback::signal(feedback::Signal signal) const {
+    call_if_available(callbacks.signal, signal);
+}
+
+void Feedback::selected_protocol(ProtocolId protocol) const {
+    call_if_available(callbacks.selected_protocol, protocol);
+}
+
+void Feedback::evse_id(const std::string& id) const {
+    call_if_available(callbacks.evse_id, id);
+}
+
+void Feedback::dc_evse_present_limits(const feedback::DcMaximumLimits& limits) const {
+    call_if_available(callbacks.dc_evse_present_limits, limits);
+}
+
+void Feedback::pause_from_charger() const {
+    call_if_available(callbacks.pause_from_charger);
 }
 
 void Feedback::timed_out() const {
@@ -53,8 +73,8 @@ void Feedback::dc_bpt_limits(const message_20::datatypes::BPT_DC_CPDResEnergyTra
     call_if_available(callbacks.dc_bpt_limits, mode);
 }
 
-void Feedback::ac_target_power(const message_20::datatypes::Dynamic_AC_CLResControlMode& mode) const {
-    call_if_available(callbacks.ac_target_power, mode);
+void Feedback::ac_target_power(const iso15118::d20::AcTargetPower& target) const {
+    call_if_available(callbacks.ac_target_power, target);
 }
 
 void Feedback::der_control(const message_20::datatypes::DER_Dynamic_AC_CLResControlMode& mode) const {

@@ -51,7 +51,7 @@ BPT_CHANNELS = ("Unified", "Separated")
 async def test_ev_iso15118d20_ac_bpt_session(
     test_controller: TestController, everest_core: EverestCore
 ):
-    """SIL gate: EvIso15118D20 negotiates an AC ISO 15118-20 BPT session.
+    """SIL gate: Ev15118 negotiates an AC ISO 15118-20 BPT session.
 
     The gate proves BPT NEGOTIATION happened, not reverse power flow: the SECC
     reports AC_BPT as the service the EV selected, and the EV then reaches the
@@ -126,7 +126,7 @@ async def test_ev_iso15118d20_ac_bpt_session(
 async def test_ev_iso15118d20_dc_bpt_session(
     test_controller: TestController, everest_core: EverestCore
 ):
-    """SIL gate: EvIso15118D20 negotiates a DC ISO 15118-20 BPT session.
+    """SIL gate: Ev15118 negotiates a DC ISO 15118-20 BPT session.
 
     The gate proves BPT NEGOTIATION happened, not reverse power flow: the SECC
     reports DC_BPT as the service the EV selected, and the EV then reaches the

@@ -107,6 +107,45 @@ SCENARIO("ISO15118-20 EV SdpClient parses an SDP response") {
         }
     }
 
+    GIVEN("a response advertising a transport other than TCP") {
+        uint8_t buffer[28] = {0};
+        V2GTP20_WriteHeader(buffer, 20, V2GTP20_SDP_RESPONSE_PAYLOAD_ID);
+        buffer[26] = static_cast<uint8_t>(v2gtp::Security::NO_TRANSPORT_SECURITY);
+        buffer[27] = static_cast<uint8_t>(v2gtp::TransportProtocol::RESERVED_FOR_UDP);
+
+        const auto response = SdpClient::parse_response(buffer, sizeof(buffer));
+
+        THEN("no response is returned: only TCP is valid [V2G2-142]") {
+            REQUIRE_FALSE(response.has_value());
+        }
+    }
+
+    GIVEN("a response with an unknown transport byte") {
+        uint8_t buffer[28] = {0};
+        V2GTP20_WriteHeader(buffer, 20, V2GTP20_SDP_RESPONSE_PAYLOAD_ID);
+        buffer[26] = static_cast<uint8_t>(v2gtp::Security::TLS);
+        buffer[27] = 0x42;
+
+        const auto response = SdpClient::parse_response(buffer, sizeof(buffer));
+
+        THEN("no response is returned") {
+            REQUIRE_FALSE(response.has_value());
+        }
+    }
+
+    GIVEN("a response with an unknown security byte") {
+        uint8_t buffer[28] = {0};
+        V2GTP20_WriteHeader(buffer, 20, V2GTP20_SDP_RESPONSE_PAYLOAD_ID);
+        buffer[26] = 0x42;
+        buffer[27] = static_cast<uint8_t>(v2gtp::TransportProtocol::TCP);
+
+        const auto response = SdpClient::parse_response(buffer, sizeof(buffer));
+
+        THEN("no response is returned: only TLS and no-security are defined") {
+            REQUIRE_FALSE(response.has_value());
+        }
+    }
+
     GIVEN("a buffer that is too short") {
         uint8_t buffer[10] = {0};
         V2GTP20_WriteHeader(buffer, 20, V2GTP20_SDP_RESPONSE_PAYLOAD_ID);

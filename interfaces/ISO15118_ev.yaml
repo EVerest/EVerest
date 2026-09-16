@@ -27,7 +27,20 @@ cmds:
   stop_charging:
     description: Stop the ev charging communication process
   pause_charging:
-    description: Pause the ev charging communication process  
+    description: Pause the ev charging communication process
+  abort_charging:
+    description: >-
+      Terminate the V2G session immediately, without the SessionStop exchange.
+      For CP state E/F or unplug ([V2G2-025], [V2G2-728]).
+  cp_state_changed:
+    description: >-
+      Control pilot state the vehicle applies. Gates the EVCC CP checks, e.g.
+      C/D before CableCheckReq ([V2G2-847]).
+    arguments:
+      cp_state:
+        description: The CP state the vehicle has applied
+        type: string
+        $ref: /iso15118#/CpState
   set_fault:
     description: >-
       TODO_SL: Set the different ev faults to communicate these errors
@@ -65,6 +78,12 @@ cmds:
         type: object
         $ref: /iso15118#/EvPresentValues
 vars:
+  v2g_messages:
+    description: >-
+      Debug - This element contains all V2G elements and should be used
+      for debug purposes only
+    type: object
+    $ref: /iso15118#/V2gMessages
   v2g_session_finished:
     description: The v2g session between the charger and the car is finished
     type: 'null'
