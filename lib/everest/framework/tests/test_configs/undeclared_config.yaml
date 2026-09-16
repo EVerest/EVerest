@@ -1,0 +1,28 @@
+# Two modules, where module_a supplies one key the manifest does not declare in
+# its own config group and one in the config group of the interface it provides.
+# The framework drops both values while parsing and keeps only their names.
+active_modules:
+  module_a:
+    module: TESTModuleA
+    config_module:
+      valid_module_config_entry: "test"
+      a_key_the_manifest_does_not_declare: true
+    config_implementation:
+      main:
+        valid_impl_config_entry: 42
+        an_undeclared_impl_key: "surprise"
+    connections:
+      req1:
+        - module_id: module_b
+          implementation_id: impl1
+  module_b:
+    module: TESTModuleB
+    config_module: {}
+settings:
+  interfaces_dir: "interfaces"
+  modules_dir: "modules"
+  types_dir: "types"
+  errors_dir: "errors"
+  schemas_dir: "schemas"
+  www_dir: "www"
+  logging_config_file: "logging.ini"

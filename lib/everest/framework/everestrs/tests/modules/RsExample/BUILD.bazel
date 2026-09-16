@@ -159,3 +159,83 @@ rust_test(
         "@everest_framework_crate_index//:mockall",
     ],
 )
+
+everest_env(
+    name = "config_mapping_env",
+    config_file = "config_mapping.yaml",
+    modules = [
+        ":RsExample",
+    ],
+)
+
+# Tests for the untyped config and mapping accessors on the generated Module.
+rust_test(
+    name = "RsExampleConfigTestBinary",
+    srcs = ["rs_tests/config_test.rs"],
+    compile_data = [
+        "config_mapping.yaml",
+        "manifest.yaml",
+        "//lib/everest/framework/everestrs/tests/errors",
+        "//lib/everest/framework/everestrs/tests/interfaces",
+        "//lib/everest/framework/everestrs/tests/types",
+    ],
+    data = ["config_mapping_env"],
+    edition = "2021",
+    proc_macro_deps = [
+        "//lib/everest/framework/everestrs/everestrs-derive",
+    ],
+    rustc_env = {
+        "CARGO_MANIFEST_DIR": "lib/everest/framework/everestrs/tests/modules/RsExample",
+        "EVEREST_CORE_ROOT": "lib/everest/framework/everestrs/tests",
+    },
+    tags = ["exclusive"],
+    deps = [
+        "//lib/everest/framework/everestrs/everestrs",
+    ],
+)
+
+everest_env(
+    name = "config_undeclared_env",
+    config_file = "config_undeclared.yaml",
+    modules = [
+        ":RsExample",
+    ],
+)
+
+everest_env(
+    name = "config_undeclared_impl_only_env",
+    config_file = "config_undeclared_impl_only.yaml",
+    modules = [
+        ":RsExample",
+    ],
+)
+
+# Tests for the undeclared config key accessor on the generated Module.
+rust_test(
+    name = "RsExampleUndeclaredConfigTestBinary",
+    srcs = ["rs_tests/undeclared_config_test.rs"],
+    compile_data = [
+        "config_undeclared.yaml",
+        "config_undeclared_impl_only.yaml",
+        "manifest.yaml",
+        "//lib/everest/framework/everestrs/tests/errors",
+        "//lib/everest/framework/everestrs/tests/interfaces",
+        "//lib/everest/framework/everestrs/tests/types",
+    ],
+    data = [
+        "config_undeclared_env",
+        "config_undeclared_impl_only_env",
+    ],
+    edition = "2021",
+    proc_macro_deps = [
+        "//lib/everest/framework/everestrs/everestrs-derive",
+    ],
+    rustc_env = {
+        "CARGO_MANIFEST_DIR": "lib/everest/framework/everestrs/tests/modules/RsExample",
+        "EVEREST_CORE_ROOT": "lib/everest/framework/everestrs/tests",
+    },
+    tags = ["exclusive"],
+    deps = [
+        "//lib/everest/framework/everestrs/everestrs",
+    ],
+)

@@ -1,0 +1,23 @@
+# Test config for the undeclared config key accessor. `example_0` supplies two
+# keys `manifest.yaml` does not declare, one of which a module is expected to
+# refuse at startup.
+active_modules:
+  example_0:
+    module: RsExample
+    config_module:
+      some_string_config: Hello world
+      a_key_the_manifest_does_not_declare: true
+      another_undeclared_key: 17
+    config_implementation:
+      foobar:
+        an_undeclared_interface_key: true
+    connections:
+      a_friend:
+        - module_id: example_1
+          implementation_id: foobar
+  example_1:
+    module: RsExample
+    connections:
+      a_friend:
+        - module_id: example_0
+          implementation_id: foobar

@@ -3,7 +3,7 @@
 #[derive(Debug)]
 pub(crate) struct {{ p_config.name | title }}Config {
     {% for config in p_config.config %}
-    /// {{ config.description }}
+    /// {{ config.description | replace("\n", " ") }}
     pub(crate) {{ config.name | identifier }}: {{ config.data_type.name }},
     {% endfor %}
 }
@@ -14,7 +14,7 @@ pub(crate) struct {{ p_config.name | title }}Config {
 #[derive(Debug)]
 pub(crate) struct ModuleConfig {
     {% for config in module_config %}
-    /// {{ config.description }}
+    /// {{ config.description | replace("\n", " ") }}
     pub(crate) {{ config.name | identifier }}: {{ config.data_type.name }},
     {% endfor %}
 
@@ -39,7 +39,7 @@ impl Module {
         {% endfor %}
         ModuleConfig {
         {% for config in module_config %}
-        {{ config.name | identifier }}: raw_config.get("!module").unwrap().get("{{ config.name }}").unwrap().try_into().unwrap(),
+        {{ config.name | identifier }}: raw_config.get(::everestrs::MODULE_CONFIG_GROUP).unwrap().get("{{ config.name }}").unwrap().try_into().unwrap(),
         {% endfor %}
 
         {% for p_config in provided_config %}

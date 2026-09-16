@@ -485,6 +485,7 @@ void adl_serializer<everest::config::ModuleConfig>::to_json(nlohmann::json& j, c
         j["telemetry_config"] = m.telemetry_config.value();
     }
     j["configuration_parameters"] = m.configuration_parameters;
+    j["undeclared_configuration_parameters"] = m.undeclared_configuration_parameters;
     j["telemetry_enabled"] = m.telemetry_enabled;
     j["connections"] = m.connections;
     j["mapping"] = m.mapping;
@@ -503,6 +504,10 @@ void adl_serializer<everest::config::ModuleConfig>::from_json(const nlohmann::js
         m.telemetry_config = j.at("telemetry_config").get<TelemetryConfig>();
     }
     m.configuration_parameters = j.at("configuration_parameters").get<everest::config::ModuleConfigurationParameters>();
+    if (j.contains("undeclared_configuration_parameters")) {
+        m.undeclared_configuration_parameters =
+            j.at("undeclared_configuration_parameters").get<everest::config::ModuleUndeclaredConfigurationParameters>();
+    }
     m.telemetry_enabled = j.at("telemetry_enabled").get<bool>();
     m.connections = j.at("connections").get<everest::config::ModuleConnections>();
     m.mapping = j.at("mapping").get<ModuleTierMappings>();

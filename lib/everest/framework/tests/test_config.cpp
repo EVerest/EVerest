@@ -5,7 +5,11 @@
 #include <framework/runtime.hpp>
 #include <tests/helpers.hpp>
 #include <utils/config.hpp>
+#include <utils/config/config_service_core.hpp>
 #include <utils/config/slot_manager.hpp>
+#include <utils/config/storage_sqlite.hpp>
+
+#include <algorithm>
 
 namespace fs = std::filesystem;
 
@@ -664,6 +668,238 @@ SCENARIO("ConfigurationParameterCharacteristics serialization of min_value and m
                 CHECK(j["min_value"].get<int32_t>() == 0);
                 CHECK(j["max_value"].get<int32_t>() == 60000);
             }
+        }
+    }
+}
+
+namespace {
+/// The undeclared keys of one group of `module_id`, or an empty list when the
+/// group has none.
+std::vector<std::string> undeclared_keys_of(const Everest::ManagerConfig& mc, const std::string& module_id,
+                                            const std::string& group) {
+    const auto& undeclared =
+        mc.get_module_configurations().at(module_id).undeclared_configuration_parameters;
+    const auto it = undeclared.find(group);
+    if (it == undeclared.end()) {
+        return {};
+    }
+    return it->second;
+}
+
+/// The value of one declared parameter of one group of `module_id`, by name.
+everest::config::ConfigEntry declared_value_of(const Everest::ManagerConfig& mc, const std::string& module_id,
+                                               const std::string& group, const std::string& name) {
+    const auto& parameters = mc.get_module_configurations().at(module_id).configuration_parameters.at(group);
+    const auto it = std::find_if(parameters.begin(), parameters.end(),
+                                 [&name](const everest::config::ConfigurationParameter& parameter) {
+                                     return parameter.name == name;
+                                 });
+    REQUIRE(it != parameters.end());
+    return it->value;
+}
+} // namespace
+
+SCENARIO("Config reports undeclared config keys per group", "[Config]") {
+    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+    auto ms = Everest::ManagerSettings(bin_dir + "undeclared_config/", bin_dir + "undeclared_config/config.yaml");
+    auto mc = Everest::ManagerConfig(ms);
+
+    GIVEN("A config supplying an undeclared key in the module group and in a provided interface's group") {
+        THEN("Each group reports its own key and nothing else") {
+            CHECK(undeclared_keys_of(mc, "module_a", "!module") ==
+                  std::vector<std::string>{"a_key_the_manifest_does_not_declare"});
+            CHECK(undeclared_keys_of(mc, "module_a", "main") ==
+                  std::vector<std::string>{"an_undeclared_impl_key"});
+        }
+
+        THEN("A module that declares no undeclared keys reports none") {
+            CHECK(undeclared_keys_of(mc, "module_b", "!module").empty());
+        }
+
+        THEN("The parsed config carries neither key, which is why the names are reported at all") {
+            const auto& parameters = mc.get_module_configurations().at("module_a").configuration_parameters;
+            for (const auto& [group, group_parameters] : parameters) {
+                for (const auto& parameter : group_parameters) {
+                    CHECK(parameter.name != "a_key_the_manifest_does_not_declare");
+                    CHECK(parameter.name != "an_undeclared_impl_key");
+                }
+            }
+        }
+
+        THEN("They survive the serialization a module receives its config through") {
+            auto serialized = Everest::get_serialized_module_config("module_a", mc.get_module_configurations());
+            complete_serialized_mod_config(serialized, mc);
+            Everest::MQTTSettings mqtt_settings;
+            const Everest::Config config(mqtt_settings, serialized);
+
+            const auto& undeclared = config.get_module_config().undeclared_configuration_parameters;
+            CHECK(undeclared.at("!module") ==
+                  std::vector<std::string>{"a_key_the_manifest_does_not_declare"});
+            CHECK(undeclared.at("main") == std::vector<std::string>{"an_undeclared_impl_key"});
+        }
+    }
+}
+
+/// The database boot path as Manager::reload_and_update_context takes it
+/// (`src/manager.cpp:792-797`): the config service reloads from the database and
+/// hands its module configurations to the preloaded ManagerConfig constructor.
+/// ManagerConfig(ms) is the YAML constructor and reads no database at all, so a
+/// scenario about a database boot cannot use it.
+static Everest::ManagerConfig
+boot_from_database(const Everest::ManagerSettings& ms,
+                   std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection) {
+    Everest::config::ConfigServiceCore core(ms, std::move(db_connection));
+    core.reinitialize_from_db();
+    everest::config::ModuleConfigurations module_configs = *core.get_active_module_configurations();
+    return Everest::ManagerConfig(ms, std::move(module_configs));
+}
+
+SCENARIO("Config reports undeclared config keys on the database boot path", "[Config]") {
+    // The set is not stored: it is recomputed against the manifest by
+    // load_and_validate_manifest, which runs whatever the config was loaded
+    // from. So what a database boot has to catch is a stored key the manifest
+    // stopped declaring, which is what a module upgrade leaves behind.
+    //
+    // The database is this scenario's precondition and not its subject, so it is
+    // seeded directly rather than imported from a YAML. A config file still sits
+    // in the prefix and names two undeclared keys of its own, unused by this
+    // boot: seeing either of them below would mean this read the YAML instead.
+    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+    const auto prefix = bin_dir + "undeclared_config_db/";
+    const auto db = prefix + "config.db";
+    fs::remove(db);
+
+    GIVEN("A stored config naming keys the manifest does not declare") {
+        Everest::ManagerSettings ms(Everest::ManagerSettings::WithoutConfig{}, prefix, db);
+        const auto bs = Everest::init_database_bootstrap(ms);
+        REQUIRE(bs.module_configs_initialized);
+
+        everest::config::SqliteConfigSlotManager slot_mgr(bs.db_connection);
+        const auto boot_slot_id = slot_mgr.get_next_boot_slot_id();
+        everest::config::SqliteStorage storage(bs.db_connection, boot_slot_id);
+
+        everest::config::ConfigurationParameterCharacteristics string_param;
+        string_param.datatype = everest::config::Datatype::String;
+        string_param.mutability = everest::config::Mutability::ReadOnly;
+
+        everest::config::ConfigurationParameterCharacteristics integer_param;
+        integer_param.datatype = everest::config::Datatype::Integer;
+        integer_param.mutability = everest::config::Mutability::ReadOnly;
+
+        everest::config::ConfigurationParameterCharacteristics boolean_param;
+        boolean_param.datatype = everest::config::Datatype::Boolean;
+        boolean_param.mutability = everest::config::Mutability::ReadOnly;
+
+        // One key the manifest declares and one it does not, in each of the two
+        // groups module_a owns: its own, and the group of the interface it
+        // provides. The declared pair is what proves a boot that reports the
+        // undeclared names has not simply dropped everything.
+        everest::config::ConfigurationParameter declared_module;
+        declared_module.name = "valid_module_config_entry";
+        declared_module.value = std::string("test");
+        declared_module.characteristics = string_param;
+
+        everest::config::ConfigurationParameter dropped_module;
+        dropped_module.name = "a_stored_key_the_manifest_dropped";
+        dropped_module.value = true;
+        dropped_module.characteristics = boolean_param;
+
+        everest::config::ConfigurationParameter declared_impl;
+        declared_impl.name = "valid_impl_config_entry";
+        declared_impl.value = 42;
+        declared_impl.characteristics = integer_param;
+
+        everest::config::ConfigurationParameter dropped_impl;
+        dropped_impl.name = "a_stored_impl_key_the_manifest_dropped";
+        dropped_impl.value = true;
+        dropped_impl.characteristics = boolean_param;
+
+        everest::config::ModuleConfig module_a;
+        module_a.module_name = "TESTModuleA";
+        module_a.configuration_parameters["!module"] = {declared_module, dropped_module};
+        module_a.configuration_parameters["main"] = {declared_impl, dropped_impl};
+
+        // TESTModuleA requires req1 with min_connections 1, so the stored config
+        // has to fulfill it or validation fails before any key is looked at.
+        Fulfillment req1_fulfillment;
+        req1_fulfillment.module_id = "module_b";
+        req1_fulfillment.implementation_id = "impl1";
+        req1_fulfillment.requirement = {"req1", 0};
+        module_a.connections["req1"] = {req1_fulfillment};
+
+        everest::config::ModuleConfig module_b;
+        module_b.module_name = "TESTModuleB";
+
+        everest::config::ModuleConfigurations module_configs;
+        module_configs["module_a"] = module_a;
+        module_configs["module_b"] = module_b;
+
+        REQUIRE(storage.write_module_configs(module_configs) == everest::config::GenericResponseStatus::OK);
+
+        THEN("A boot from the database reports them, group by group") {
+            auto mc = boot_from_database(ms, bs.db_connection);
+
+            CHECK(undeclared_keys_of(mc, "module_a", "!module") ==
+                  std::vector<std::string>{"a_stored_key_the_manifest_dropped"});
+            CHECK(undeclared_keys_of(mc, "module_a", "main") ==
+                  std::vector<std::string>{"a_stored_impl_key_the_manifest_dropped"});
+
+            // Only the stored keys. The config file in the prefix supplies two
+            // undeclared keys of its own and a database boot never reads it, so
+            // seeing either of those would mean this booted from the YAML.
+            const auto module_group = undeclared_keys_of(mc, "module_a", "!module");
+            const auto impl_group = undeclared_keys_of(mc, "module_a", "main");
+            CHECK(std::find(module_group.begin(), module_group.end(),
+                            "a_key_the_manifest_does_not_declare") == module_group.end());
+            CHECK(std::find(impl_group.begin(), impl_group.end(), "an_undeclared_impl_key") ==
+                  impl_group.end());
+        }
+
+        THEN("A boot from the database still delivers the declared keys of both groups") {
+            // The recompute rebuilds the parsed parameters as well as the
+            // undeclared names, so a database boot must not lose or misfile
+            // what the manifest does declare.
+            auto mc = boot_from_database(ms, bs.db_connection);
+
+            const auto& module_configs_read = mc.get_module_configurations();
+            const auto module_a_read = module_configs_read.find("module_a");
+            REQUIRE(module_a_read != module_configs_read.end());
+
+            const auto& params = module_a_read->second.configuration_parameters;
+            const auto module_group = params.find("!module");
+            REQUIRE(module_group != params.end());
+            const auto impl_group = params.find("main");
+            REQUIRE(impl_group != params.end());
+
+            const auto has = [](const auto& group, const std::string& name) {
+                return std::any_of(group.begin(), group.end(),
+                                   [&name](const auto& p) { return p.name == name; });
+            };
+            CHECK(has(module_group->second, "valid_module_config_entry"));
+            CHECK(has(impl_group->second, "valid_impl_config_entry"));
+        }
+    }
+}
+SCENARIO("Config reports an undeclared key of a provided interface with an empty module group", "[Config]") {
+    // The module's own group carries nothing undeclared and the interface's
+    // group carries one key. Reporting it under the module's group would tell a
+    // module it was handed a key it was not.
+    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+    auto ms = Everest::ManagerSettings(bin_dir + "undeclared_config_impl_only/",
+                                       bin_dir + "undeclared_config_impl_only/config.yaml");
+    auto mc = Everest::ManagerConfig(ms);
+
+    GIVEN("A config whose only undeclared key sits under a provided interface") {
+        THEN("The module group reports nothing and the interface group reports the key") {
+            CHECK(undeclared_keys_of(mc, "module_a", "!module").empty());
+            CHECK(undeclared_keys_of(mc, "module_a", "main") ==
+                  std::vector<std::string>{"an_undeclared_impl_key"});
+        }
+
+        THEN("The declared keys of both groups are untouched") {
+            CHECK(std::get<std::string>(
+                      declared_value_of(mc, "module_a", "!module", "valid_module_config_entry")) == "test");
+            CHECK(std::get<int>(declared_value_of(mc, "module_a", "main", "valid_impl_config_entry")) == 42);
         }
     }
 }

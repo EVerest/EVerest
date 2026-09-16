@@ -701,6 +701,8 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
                         "Unknown config entry '{}' of {} of module '{}' ignored, please fix your config file!",
                         unknown_entry, printable_identifier(module_id, impl_id), module_name);
                 }
+                module_config.undeclared_configuration_parameters[impl_id] = {
+                    parsed_config_map.unknown_config_entries.begin(), parsed_config_map.unknown_config_entries.end()};
             }
             module_config.configuration_parameters[impl_id] = parsed_config_map.parsed_config_parameters;
         } catch (const ConfigParseException& err) {
@@ -733,6 +735,8 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
                         "Unknown config entry '{}' of module '{}' ignored, please fix your config file!", unknown_entry,
                         module_config.module_name);
                 }
+                module_config.undeclared_configuration_parameters["!module"] = {
+                    parsed_config_map.unknown_config_entries.begin(), parsed_config_map.unknown_config_entries.end()};
             }
             module_config.configuration_parameters["!module"] = parsed_config_map.parsed_config_parameters;
         } catch (const ConfigParseException& err) {

@@ -14,6 +14,7 @@ struct JsonBlob;
 struct Runtime;
 struct RsModuleConfig;
 struct RsModuleConnections;
+struct RsUndeclaredConfigKey;
 struct ConfigField;
 struct ErrorType;
 
@@ -37,6 +38,7 @@ public:
     JsonBlob get_interface(rust::Str interface_name) const;
     rust::Vec<RsModuleConfig> get_module_configs(rust::Str module_name) const;
     rust::Vec<RsModuleConnections> get_module_connections() const;
+    rust::Vec<RsUndeclaredConfigKey> get_undeclared_config_keys() const;
 
     void signal_ready(const Runtime& rt) const;
     void provide_command(const Runtime& rt, rust::String implementation_id, rust::String name) const;

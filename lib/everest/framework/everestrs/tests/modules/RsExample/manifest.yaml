@@ -8,6 +8,16 @@ config:
     description: A module level number config.
     type: number
     default: 42
+  some_multiline_config:
+    description: >-
+      A module level config whose description spans more than one line and
+      contains a bullet list:
+
+      - the first item
+
+      - the second item
+    type: integer
+    default: 7
 provides:
   foobar:
     interface: example

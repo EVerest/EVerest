@@ -109,6 +109,32 @@ setup_test_directory(
     INTERFACE_FILES test_interface
 )
 
+setup_test_directory(
+    undeclared_config
+    CONFIG undeclared_config.yaml
+    MODULES TESTModuleA TESTModuleB
+    INTERFACE_FILES test_interface test_interface_cmd_var
+)
+
+# No CONFIG: this fixture is booted from a database, and the absence of a YAML
+# in the prefix is what makes booting from one impossible rather than merely
+# unasserted. The FHS layout is required because a boot with no config file has
+# nothing to name a schema directory and falls back to share/everest/schemas.
+setup_test_directory(
+    undeclared_config_db
+    USE_FILESYSTEM_HIERARCHY_STANDARD
+    CONFIG undeclared_config_db_config.yaml
+    MODULES TESTModuleA TESTModuleB
+    INTERFACE_FILES test_interface test_interface_cmd_var
+)
+
+setup_test_directory(
+    undeclared_config_impl_only
+    CONFIG undeclared_config_impl_only.yaml
+    MODULES TESTModuleA TESTModuleB
+    INTERFACE_FILES test_interface test_interface_cmd_var
+)
+
 file(COPY ${PROJECT_SOURCE_DIR}/schemas/migrations
      DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
 )

@@ -127,6 +127,9 @@ using ImplementationIdentifier = std::string;
 using ModuleConnections = std::map<RequirementId, std::vector<Fulfillment>, std::less<>>;
 using ModuleConfigurations = std::map<ModuleId, ModuleConfig, std::less<>>;
 using ModuleConfigurationParameters = std::map<ImplementationIdentifier, std::vector<ConfigurationParameter>>;
+/// Names of supplied configuration parameters the manifest does not declare, keyed by the group they were supplied
+/// under. The framework drops their values during parsing, so only the names survive.
+using ModuleUndeclaredConfigurationParameters = std::map<ImplementationIdentifier, std::vector<std::string>>;
 using Keys = std::set<std::string, std::less<>>;
 
 struct VisitConfigEntry {
@@ -261,6 +264,8 @@ struct ModuleConfig {
     std::optional<std::vector<std::string>> capabilities;
     ModuleConfigurationParameters configuration_parameters; // contains: config_module and config_implementations
                                                             // as well as the upcoming "config" key
+    ModuleUndeclaredConfigurationParameters
+        undeclared_configuration_parameters; // supplied but not declared by the manifest, values already dropped
     bool telemetry_enabled = false;
     std::optional<TelemetryConfig> telemetry_config;
     ModuleConnections connections;

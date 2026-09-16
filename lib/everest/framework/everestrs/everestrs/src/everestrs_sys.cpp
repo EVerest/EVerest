@@ -283,6 +283,25 @@ rust::Vec<RsModuleConnections> Module::get_module_connections() const {
     return out;
 }
 
+rust::Vec<RsUndeclaredConfigKey> Module::get_undeclared_config_keys() const {
+    const auto& undeclared = config_->get_module_config().undeclared_configuration_parameters;
+
+    rust::Vec<RsUndeclaredConfigKey> out;
+    // Every group the module owns: its own config group and the config group of
+    // each interface it provides. A sorted map of sorted sets, so the order the
+    // Rust side documents comes for free.
+    for (const auto& [group, keys] : undeclared) {
+        for (const auto& key : keys) {
+            // Two fields of the same type, so by name and never positionally.
+            RsUndeclaredConfigKey entry;
+            entry.group = rust::String{group};
+            entry.name = rust::String{key};
+            out.push_back(std::move(entry));
+        }
+    }
+    return out;
+}
+
 rust::Vec<RsModuleConfig> Module::get_module_configs(rust::Str module_id) const {
     // TODO(ddo) We call this before initializing the logger.
     const auto module_configs = config_->get_module_configs(std::string(module_id));

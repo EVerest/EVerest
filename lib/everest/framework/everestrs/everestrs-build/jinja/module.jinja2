@@ -118,6 +118,24 @@ impl Module {
         }
     }
 
+    /// The module's own config values as untyped JSON, keyed by config name.
+    ///
+    /// Unlike `get_config` this is not typed against the manifest, so it also
+    /// reports keys the manifest does not declare. Use it to inspect the config
+    /// as the config file wrote it, for example to reject unsupported keys.
+    pub(crate) fn get_raw_config(&self) -> ::std::collections::HashMap<String, __serde_json::Value> {
+        self.runtime.get_raw_config()
+    }
+
+    /// The config keys the config file supplied for this module that
+    /// `manifest.yaml` does not declare, each with the group it was supplied
+    /// under. `get_raw_config` cannot report these because the framework
+    /// discards their values while parsing, so only the names are available.
+    /// Use it to refuse a key the module no longer supports.
+    pub(crate) fn get_undeclared_config_keys(&self) -> Vec<::everestrs::UndeclaredConfigKey> {
+        self.runtime.get_undeclared_config_keys()
+    }
+
     pub(crate) fn start
 {% if requires_with_generics %}
     <

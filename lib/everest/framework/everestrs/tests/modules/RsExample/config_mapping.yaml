@@ -1,0 +1,19 @@
+# Test config for the raw config and module mapping accessors. `example_0` is
+# the module under test and carries an explicit three tier model mapping.
+active_modules:
+  example_0:
+    module: RsExample
+    mapping:
+      module:
+        evse: 1
+        connector: 1
+    connections:
+      a_friend:
+        - module_id: example_1
+          implementation_id: foobar
+  example_1:
+    module: RsExample
+    connections:
+      a_friend:
+        - module_id: example_0
+          implementation_id: foobar

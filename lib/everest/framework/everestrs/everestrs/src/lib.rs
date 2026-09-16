@@ -17,6 +17,10 @@ use thiserror::Error;
 /// Prevent calling the init of loggers more than once.
 static INIT_LOGGER_ONCE: Once = Once::new();
 
+/// The key under which the framework reports a module's own config values, as
+/// opposed to the config values of the interfaces it provides.
+pub const MODULE_CONFIG_GROUP: &str = "!module";
+
 // Reexport everything so the clients can use it.
 pub use everestrs_derive::{harness, main, test};
 pub use log;
@@ -143,6 +147,19 @@ mod ffi {
         slots: usize,
     }
 
+    /// One config key the config file supplied that the module's
+    /// `manifest.yaml` does not declare, and the group it was supplied under.
+    /// The framework drops the value while parsing, so only the name survives.
+    struct RsUndeclaredConfigKey {
+        /// The group the key was supplied under: [MODULE_CONFIG_GROUP] for the
+        /// module's own config, otherwise the id of the provided implementation
+        /// whose config group carried it.
+        group: String,
+
+        /// The name of the key.
+        name: String,
+    }
+
     #[derive(Debug)]
     pub enum ErrorSeverity {
         Low,
@@ -239,6 +256,12 @@ mod ffi {
         /// Returns the `connections` block defined in the `config.yaml` for
         /// the current module.
         fn get_module_connections(self: &Module) -> Vec<RsModuleConnections>;
+
+        /// Returns the config keys the `config.yaml` supplied for the current
+        /// module that its `manifest.yaml` does not declare, one entry per key
+        /// and group. The framework drops their values while parsing, so only
+        /// names survive.
+        fn get_undeclared_config_keys(self: &Module) -> Vec<RsUndeclaredConfigKey>;
 
         /// Publishes the given `blob` under the `implementation_id` and `name`.
         fn publish_variable(self: &Module, implementation_id: &str, name: &str, blob: JsonBlob);
@@ -826,6 +849,62 @@ impl Runtime {
     pub fn get_module_configs(&self) -> &HashMap<String, HashMap<String, Config>> {
         &self.config
     }
+
+    /// The module's own config values as untyped JSON, keyed by config name.
+    ///
+    /// This is the [MODULE_CONFIG_GROUP] group of [Runtime::get_module_configs]
+    /// converted to `serde_json::Value`; the per implementation groups are not
+    /// included. Modules that want their config typed should use the generated
+    /// `Module::get_config` instead. This accessor exists for modules that need
+    /// to see the config as the config file wrote it, for example to reject
+    /// keys they do not support.
+    pub fn get_raw_config(&self) -> HashMap<String, serde_json::Value> {
+        self.config
+            .get(MODULE_CONFIG_GROUP)
+            .map(|group| {
+                group
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.into()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The config keys the config file supplied for this module that the
+    /// manifest does not declare, each with the group it was supplied under.
+    ///
+    /// [Runtime::get_raw_config] cannot report these: the framework builds the
+    /// parsed config by iterating the manifest schema, so an undeclared key is
+    /// set aside by name and its value discarded. Modules that must refuse a key
+    /// they no longer support need the name, which is all that is left.
+    ///
+    /// Every group the module owns is reported: its own config group, named
+    /// [MODULE_CONFIG_GROUP], and the config group of each interface it
+    /// provides. The framework holds the keys in a sorted map of sorted sets, so
+    /// the result is ordered by group and then by name.
+    pub fn get_undeclared_config_keys(&self) -> Vec<UndeclaredConfigKey> {
+        self.cpp_module
+            .get_undeclared_config_keys()
+            .into_iter()
+            .map(|key| UndeclaredConfigKey {
+                group: key.group,
+                name: key.name,
+            })
+            .collect()
+    }
+}
+
+/// A config key the config file supplied that the manifest does not declare,
+/// and the group it was supplied under. The Rust side counterpart of one entry
+/// of the framework's `ModuleUndeclaredConfigurationParameters`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UndeclaredConfigKey {
+    /// [MODULE_CONFIG_GROUP] for the module's own config group, otherwise the
+    /// id of the provided implementation whose config group carried the key.
+    pub group: String,
+
+    /// The name of the key. Its value is already gone.
+    pub name: String,
 }
 
 impl Drop for Runtime {
@@ -884,6 +963,19 @@ impl TryFrom<&Config> for i64 {
         match value {
             Config::Integer(value) => Ok(*value),
             _ => Err(Error::MessageParsingError(format!("{:?}", value))),
+        }
+    }
+}
+
+/// Untyped view on a config value, for callers that want the config as the
+/// config file wrote it rather than as a typed field.
+impl From<&Config> for serde_json::Value {
+    fn from(value: &Config) -> Self {
+        match value {
+            Config::Boolean(value) => serde_json::Value::from(*value),
+            Config::String(value) => serde_json::Value::from(value.clone()),
+            Config::Number(value) => serde_json::Value::from(*value),
+            Config::Integer(value) => serde_json::Value::from(*value),
         }
     }
 }
