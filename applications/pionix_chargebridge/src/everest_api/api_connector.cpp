@@ -144,6 +144,20 @@ void api_connector::set_cb_message(evse_bsp_cb_to_host const& msg) {
     }
 }
 
+void api_connector::set_link_technology(std::uint8_t technology) {
+    // Only the EVSE API changes behaviour on the board class today (it stops publishing PP-derived
+    // ampacity on an MCS connector). The EV API renders no PP at all, so it needs nothing.
+    if (m_evse_bsp_enabled) {
+        m_evse_bsp.set_link_technology(technology);
+    }
+}
+
+void api_connector::forget_link_technology() {
+    if (m_evse_bsp_enabled) {
+        m_evse_bsp.forget_link_technology();
+    }
+}
+
 void api_connector::set_error_handler(error_ftor const& handler) {
     m_ready.setCallback([handler](bool, bool new_value) { handler(new_value); });
 }
