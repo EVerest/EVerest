@@ -102,6 +102,7 @@ elseif(BUILD_TESTING)
       test/mcs_bsp_test.cpp
       test/heartbeat_reply_test.cpp
       test/mcu_uptime_test.cpp
+      test/plc_keepalive_test.cpp
     )
 
     target_include_directories(pionix_chargebridge_tests

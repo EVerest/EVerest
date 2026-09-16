@@ -3,6 +3,7 @@
 #pragma once
 
 #include <charge_bridge/carrier_policy.hpp>
+#include <charge_bridge/plc_keepalive.hpp>
 #include <charge_bridge/utilities/print_status.hpp>
 #include <everest/io/event/fd_event_register_interface.hpp>
 #include <everest/io/event/timer_fd.hpp>
@@ -63,6 +64,9 @@ private:
     carrier_inputs current_carrier_inputs() const;
     void apply_carrier();
     void report_carrier_unsupported();
+    // EXPERIMENTAL: re-teach the firmware the host's PLC endpoint (see plc_keepalive.hpp). Sent on the
+    // 5 s timer and on every (re)connect while the reported technology is SPE.
+    void send_keepalive();
     everest::lib::io::tun_tap::tap_client m_tap;
     std::unique_ptr<everest::lib::io::udp::udp_client> m_udp;
     everest::lib::io::event::timer_fd m_timer;
@@ -98,6 +102,9 @@ private:
     bool m_carrier_unsupported_reported{false};
     bool m_technology_mismatch{false};
     bool m_technology_mismatch_reported{false};
+    std::string m_tap_name;
+    std::optional<mac_address> m_tap_mac;
+    bool m_tap_mac_failure_reported{false};
 };
 
 } // namespace charge_bridge
