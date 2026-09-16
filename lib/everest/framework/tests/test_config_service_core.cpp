@@ -1560,6 +1560,74 @@ active_modules:
     }
 }
 
+TEST_CASE("ConfigServiceCore expands module-id placeholders in runtime updates", "[config_service_core]") {
+    auto db = setup_in_memory_db();
+    auto parse_settings = setup_parse_settings();
+    ConfigServiceCore config_service(parse_settings, db);
+
+    everest::config::ModuleConfigurations active_configs;
+    everest::config::ModuleConfig active_module;
+    active_module.module_name = "TESTCSTarget";
+    active_module.module_id = "module_1";
+    everest::config::ConfigurationParameter parameter;
+    parameter.name = "path";
+    parameter.value = "/initial";
+    parameter.characteristics.datatype = everest::config::Datatype::String;
+    parameter.characteristics.mutability = everest::config::Mutability::ReadWrite;
+    active_module.configuration_parameters["!module"].push_back(parameter);
+    active_configs["module_1"] = active_module;
+
+    everest::config::SqliteConfigSlotManager slot_manager(db);
+    REQUIRE(slot_manager.write_config_slot(0, "{}", std::nullopt, "Active Slot") ==
+            everest::config::GenericResponseStatus::OK);
+    everest::config::SqliteStorage storage(db, 0);
+    REQUIRE(storage.write_module_configs(active_configs) == everest::config::GenericResponseStatus::OK);
+    config_service.mark_active_slot(0);
+    config_service.reinitialize_from_db(true);
+    config_service.set_modules_running();
+
+    std::string callback_value;
+    config_service.register_set_runtime_parameter_handler(
+        [&callback_value](const everest::config::ConfigurationParameterIdentifier&, const std::string& value) {
+            callback_value = value;
+            return SetParameterResponse::ModuleReplied_Applied;
+        });
+
+    const everest::config::ConfigurationParameterIdentifier id{"module_1", "path", "!module"};
+    const ConfigParameterUpdate update{id, "/logs/${module_id}"};
+    const Origin origin{true, std::nullopt};
+    const auto result = config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {update}, origin);
+
+    REQUIRE(result.parameter_results.has_value());
+    CHECK(result.parameter_results->front().status == SetConfigParameterResultEnum::Applied);
+    CHECK(callback_value == "/logs/module_1");
+    CHECK(std::get<std::string>(config_service.get_active_module_configurations()
+                                    ->at("module_1")
+                                    .configuration_parameters.at("!module")
+                                    .front()
+                                    .value) == "/logs/module_1");
+
+    const auto memory_result = config_service.get_config_parameters(0, {id});
+    REQUIRE(memory_result.parameters.front().has_value());
+    CHECK(std::get<std::string>(memory_result.parameters.front()->value) == "/logs/module_1");
+    const auto db_result = config_service.get_config_parameters(0, {id}, true);
+    REQUIRE(db_result.parameters.front().has_value());
+    CHECK(std::get<std::string>(db_result.parameters.front()->value) == "/logs/module_1");
+
+    const int inactive_slot = 1;
+    REQUIRE(slot_manager.write_config_slot(inactive_slot, "{}", std::nullopt, "Inactive Slot") ==
+            everest::config::GenericResponseStatus::OK);
+    everest::config::SqliteStorage inactive_storage(db, inactive_slot);
+    REQUIRE(inactive_storage.write_module_configs(active_configs) == everest::config::GenericResponseStatus::OK);
+    const auto inactive_result =
+        config_service.set_config_parameters(inactive_slot, {update}, Origin{false, "manager"});
+    REQUIRE(inactive_result.parameter_results.has_value());
+    CHECK(inactive_result.parameter_results->front().status == SetConfigParameterResultEnum::WillApplyOnRestart);
+    const auto inactive_db_result = config_service.get_config_parameters(inactive_slot, {id}, true);
+    REQUIRE(inactive_db_result.parameters.front().has_value());
+    CHECK(std::get<std::string>(inactive_db_result.parameters.front()->value) == "/logs/module_1");
+}
+
 TEST_CASE("ConfigServiceCore Concurrency Tests", "[config_service_core][concurrency]") {
     auto db = setup_in_memory_db();
     auto parse_settings = setup_parse_settings();

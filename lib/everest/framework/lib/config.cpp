@@ -39,6 +39,16 @@ constexpr std::string_view path_separator = ":";
 constexpr std::string_view path_arrow = "->";
 constexpr std::string_view ext_yaml = ".yaml";
 constexpr std::string_view error_ref_prefix = "/errors/";
+constexpr std::string_view MODULE_ID_PLACEHOLDER = "${module_id}";
+
+std::string expand_module_id_placeholder(std::string value, const std::string& module_id) {
+    std::size_t position = 0;
+    while ((position = value.find(MODULE_ID_PLACEHOLDER, position)) != std::string::npos) {
+        value.replace(position, MODULE_ID_PLACEHOLDER.size(), module_id);
+        position += module_id.size();
+    }
+    return value;
+}
 
 void loader(const json_uri& uri, json& schema) {
     BOOST_LOG_FUNCTION();
@@ -142,7 +152,7 @@ json get_serialized_module_config(std::string_view module_id, const ModuleConfig
 }
 
 namespace {
-void validate_config_schema(const json& config_map_schema) {
+void validate_config_schema(const json& config_map_schema, const std::string& module_id) {
     // iterate over every config entry
     json_validator validator(loader, format_checker);
     for (const auto& config_item : config_map_schema.items()) {
@@ -152,7 +162,11 @@ void validate_config_schema(const json& config_map_schema) {
 
         try {
             validator.set_root_schema(config_item.value());
-            validator.validate(config_item.value().at("default"));
+            auto default_value = config_item.value().at("default");
+            if (default_value.is_string()) {
+                default_value = expand_module_id_placeholder(default_value.get<std::string>(), module_id);
+            }
+            validator.validate(default_value);
         } catch (const std::exception& e) {
             throw std::runtime_error(fmt::format("Config item '{}' has issues:\n{}", config_item.key(), e.what()));
         }
@@ -173,7 +187,8 @@ void validate_config_schema(const json& config_map_schema) {
 /// \throws ConfigParseException if a required configuration entry is missing, type validation
 ///         fails against the schema or an unsupported data type is encountered in the schema.
 ParsedConfigMap parse_config_map(const json& config_map_schema,
-                                 const std::vector<ConfigurationParameter>& configuration_parameters) {
+                                 const std::vector<ConfigurationParameter>& configuration_parameters,
+                                 const std::string& module_id) {
     std::vector<ConfigurationParameter> patched_config_parameters; // this is going to be returned
     std::map<std::string, ConfigurationParameter> config_parameter_map;
     std::set<std::string> config_map_keys;
@@ -226,6 +241,11 @@ ParsedConfigMap parse_config_map(const json& config_map_schema,
         } else if (config_entry.contains("default")) {
             config_entry_value = config_entry.at("default"); // use default value defined in manifest
         }
+
+        if (config_entry_value.is_string()) {
+            config_entry_value = expand_module_id_placeholder(config_entry_value.get<std::string>(), module_id);
+        }
+
         json_validator validator(loader, format_checker);
         validator.set_root_schema(config_entry);
         try {
@@ -633,7 +653,7 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
 
     // validate user-defined default values for the config meta-schemas
     try {
-        validate_config_schema(m_manifests[module_name]["config"]);
+        validate_config_schema(m_manifests[module_name]["config"], module_id);
     } catch (const std::exception& e) {
         EVLOG_AND_THROW(EverestConfigError(
             fmt::format("Failed to validate the module configuration meta-schema for module '{}'. Reason:\n{}",
@@ -642,7 +662,7 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
 
     for (const auto& impl : m_manifests[module_name]["provides"].items()) {
         try {
-            validate_config_schema(impl.value().at("config"));
+            validate_config_schema(impl.value().at("config"), module_id);
         } catch (const std::exception& e) {
             EVLOG_AND_THROW(
                 EverestConfigError(fmt::format("Failed to validate the implementation configuration meta-schema "
@@ -694,7 +714,7 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
         const json config_map_schema = m_manifests[module_name]["provides"][impl_id]["config"];
 
         try {
-            const auto parsed_config_map = parse_config_map(config_map_schema, configuration_parameters);
+            const auto parsed_config_map = parse_config_map(config_map_schema, configuration_parameters, module_id);
             if (parsed_config_map.unknown_config_entries.size()) {
                 for (const auto& unknown_entry : parsed_config_map.unknown_config_entries) {
                     EVLOG_error << fmt::format(
@@ -726,7 +746,7 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
         const json config_map_schema = m_manifests[module_name]["config"];
 
         try {
-            auto parsed_config_map = parse_config_map(config_map_schema, configuration_parameters);
+            auto parsed_config_map = parse_config_map(config_map_schema, configuration_parameters, module_id);
             if (parsed_config_map.unknown_config_entries.size()) {
                 for (const auto& unknown_entry : parsed_config_map.unknown_config_entries) {
                     EVLOG_error << fmt::format(
