@@ -159,6 +159,7 @@ def implement_ocpp16_probe_commands(
     _add("security", "verify_file_signature", True)
     _add("security", "get_all_valid_certificates_info", {"status": "NotFound", "info": []})
     _add("security", "get_verify_location", "")
+    _add("security", "set_max_fs_certificate_store_entries", None)
 
     _add("auth", "set_connection_timeout", None)
     _add("auth", "withdraw_authorization", "Accepted")
