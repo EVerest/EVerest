@@ -17,10 +17,6 @@ void Feedback::v2g_message(message_20::Type type) const {
     call_if_available(callbacks.v2g_message, type);
 }
 
-void Feedback::session_setup_response(const message_20::SessionSetupResponse& response) const {
-    call_if_available(callbacks.session_setup_response, response);
-}
-
 void Feedback::timed_out() const {
     call_if_available(callbacks.timed_out);
 }
@@ -43,6 +39,14 @@ void Feedback::dc_power_on() const {
 
 void Feedback::stop_from_charger() const {
     call_if_available(callbacks.stop_from_charger);
+}
+
+void Feedback::ac_limits(const message_20::datatypes::AC_CPDResEnergyTransferMode& mode) const {
+    call_if_available(callbacks.ac_limits, mode);
+}
+
+void Feedback::ac_target_power(const message_20::datatypes::Dynamic_AC_CLResControlMode& mode) const {
+    call_if_available(callbacks.ac_target_power, mode);
 }
 
 } // namespace iso15118::ev

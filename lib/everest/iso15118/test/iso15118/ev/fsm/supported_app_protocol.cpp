@@ -31,7 +31,7 @@ std::unique_ptr<message_20::Variant> make_sap_response_variant(const message_20:
 
 } // namespace
 
-SCENARIO("EV d20 SupportedAppProtocol entry state initiates negotiation") {
+SCENARIO("ISO15118-20 EV SupportedAppProtocol entry state initiates negotiation") {
 
     GIVEN("A SupportedAppProtocol state on a fresh context") {
 
@@ -72,7 +72,7 @@ SCENARIO("EV d20 SupportedAppProtocol entry state initiates negotiation") {
 
         WHEN("A successful SupportedAppProtocolResponse is fed") {
             state.enter();
-            mx.take_request(); // drain the SAP request
+            mx.take_request(); // take the SAP request
 
             const auto res = message_20::SupportedAppProtocolResponse{
                 message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation, 1};
@@ -80,7 +80,13 @@ SCENARIO("EV d20 SupportedAppProtocol entry state initiates negotiation") {
 
             auto result = state.feed(ev::d20::Event::V2GTP_MESSAGE);
 
-            THEN("It produces a SessionSetupRequest and transitions to SessionSetup") {
+            THEN("It transitions to SessionSetup, whose enter() produces a SessionSetupRequest") {
+                REQUIRE(result.new_state != nullptr);
+                REQUIRE(result.new_state->get_id() == ev::d20::StateID::SessionSetup);
+                REQUIRE(ctx.is_session_stopped() == false);
+
+                // The Session enters the successor on transition; do so here to observe the request.
+                result.new_state->enter();
                 REQUIRE(mx.has_request());
 
                 const auto taken = mx.take_request();
@@ -94,16 +100,12 @@ SCENARIO("EV d20 SupportedAppProtocol entry state initiates negotiation") {
                 const auto* req = variant.get_if<message_20::SessionSetupRequest>();
                 REQUIRE(req != nullptr);
                 REQUIRE(req->evccid == "EVTESTID01");
-
-                REQUIRE(result.new_state != nullptr);
-                REQUIRE(result.new_state->get_id() == ev::d20::StateID::SessionSetup);
-                REQUIRE(ctx.is_session_stopped() == false);
             }
         }
 
         WHEN("A SupportedAppProtocolResponse with a minor deviation is fed") {
             state.enter();
-            mx.take_request(); // drain the SAP request
+            mx.take_request(); // take the SAP request
 
             const auto res = message_20::SupportedAppProtocolResponse{
                 message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiationWithMinorDeviation, 1};
@@ -111,7 +113,12 @@ SCENARIO("EV d20 SupportedAppProtocol entry state initiates negotiation") {
 
             auto result = state.feed(ev::d20::Event::V2GTP_MESSAGE);
 
-            THEN("It is accepted: a SessionSetupRequest is produced and it transitions to SessionSetup") {
+            THEN("It is accepted and transitions to SessionSetup, whose enter() produces a SessionSetupRequest") {
+                REQUIRE(result.new_state != nullptr);
+                REQUIRE(result.new_state->get_id() == ev::d20::StateID::SessionSetup);
+                REQUIRE(ctx.is_session_stopped() == false);
+
+                result.new_state->enter();
                 REQUIRE(mx.has_request());
 
                 const auto taken = mx.take_request();
@@ -121,10 +128,6 @@ SCENARIO("EV d20 SupportedAppProtocol entry state initiates negotiation") {
 
                 message_20::Variant variant(type, io::StreamInputView{bytes.data(), bytes.size()});
                 REQUIRE(variant.get_if<message_20::SessionSetupRequest>() != nullptr);
-
-                REQUIRE(result.new_state != nullptr);
-                REQUIRE(result.new_state->get_id() == ev::d20::StateID::SessionSetup);
-                REQUIRE(ctx.is_session_stopped() == false);
             }
         }
 
@@ -182,17 +185,17 @@ SCENARIO("ISO15118-20 EV SupportedAppProtocol advertises a multi-entry app proto
     GIVEN("A SupportedAppProtocol state whose context advertises two app protocols in order") {
 
         const ev::feedback::Callbacks callbacks{};
-        FsmStateHelper helper{callbacks};
-
-        auto& ctx = helper.get_context();
-        auto& mx = helper.get_message_exchange();
 
         // Two distinct namespaces with descending priority. The state must copy every
         // advertised entry into the request, preserving order.
-        ctx.advertised_app_protocols = {
-            {"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1},
-            {"urn:iso:std:iso:15118:-20:AC", 1, 0, 2, 2},
-        };
+        FsmStateHelper helper{callbacks,
+                              {
+                                  {"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1},
+                                  {"urn:iso:std:iso:15118:-20:AC", 1, 0, 2, 2},
+                              }};
+
+        auto& ctx = helper.get_context();
+        auto& mx = helper.get_message_exchange();
 
         ev::d20::state::SupportedAppProtocol state{ctx};
 

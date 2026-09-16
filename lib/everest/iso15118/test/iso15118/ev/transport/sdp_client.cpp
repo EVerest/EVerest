@@ -15,7 +15,7 @@
 using iso15118::ev::transport::SdpClient;
 using namespace iso15118::io;
 
-SCENARIO("SdpClient builds an SDP request") {
+SCENARIO("ISO15118-20 EV SdpClient builds an SDP request") {
     GIVEN("a request for no-security TCP") {
         const auto request =
             SdpClient::build_request(v2gtp::Security::NO_TRANSPORT_SECURITY, v2gtp::TransportProtocol::TCP);
@@ -47,7 +47,7 @@ SCENARIO("SdpClient builds an SDP request") {
     }
 }
 
-SCENARIO("SdpClient parses an SDP response") {
+SCENARIO("ISO15118-20 EV SdpClient parses an SDP response") {
     GIVEN("a 28-byte response advertising an address and port") {
         uint8_t buffer[28] = {0};
         V2GTP20_WriteHeader(buffer, 20, V2GTP20_SDP_RESPONSE_PAYLOAD_ID);
