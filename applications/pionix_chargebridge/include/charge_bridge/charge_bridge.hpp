@@ -6,6 +6,7 @@
 #include <atomic>
 #include <charge_bridge/bsp_bridge.hpp>
 #include <charge_bridge/can_bridge.hpp>
+#include <charge_bridge/cb_role.hpp>
 #include <charge_bridge/discovery.hpp>
 #include <charge_bridge/firmware_update/sync_fw_updater.hpp>
 #include <charge_bridge/heartbeat_service.hpp>
@@ -49,6 +50,9 @@ struct charge_bridge_config {
     std::string cb_name;
     std::uint16_t cb_port;
     std::string cb_remote;
+    // charge_bridge.type. Drives the MCU's role GPIO on an MCS board and derives the plc.station_id
+    // default; the MCU latches it from the first config heartbeat after it boots.
+    cb_role type{cb_role::evse};
     std::optional<telemetry_config> telemetry;
     std::optional<can_bridge_config> can0;
     std::optional<serial_bridge_config> serial1;
@@ -173,6 +177,11 @@ private:
     // Bridges whose construction failure has already been reported, so the retry on the manager
     // cadence does not repeat the message until that bridge has been created successfully.
     std::set<std::string> m_bridge_create_failures_reported;
+    // Bridges whose construction failed in a way this host can never recover from (a kernel that does
+    // not implement an ioctl the config asks for). Construction is not retried for these: the retry
+    // would recreate and destroy their host-local device on every cadence forever. Reported once when
+    // it is latched (see create_bridge).
+    std::set<std::string> m_bridge_permanently_disabled;
     // Bridges that were created late but could not be connected and registered into the running
     // runtime (see activate_late_bridge), for the same once-per-episode reporting.
     std::set<std::string> m_bridge_activate_failures_reported;

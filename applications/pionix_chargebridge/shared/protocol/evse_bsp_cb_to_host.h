@@ -22,6 +22,11 @@ struct CB_COMPILER_ATTR_PACK evse_bsp_cb_to_host {
     // still define handling set for
     uint8_t stop_charging;
     uint16_t cp_duty_cycle;
+    // MCS (IEC 61851-23-3 configuration HH) basic signalling, DIAGNOSTICS ONLY -- cp_state above
+    // stays the functional interface and is synthesized from ce_state (see cb_common.h). Always
+    // CeState_NotApplicable / IdState_NotApplicable on CCS boards.
+    CeState ce_state;
+    IdState id_state;
 };
 
 /* Enum definitions */
@@ -51,11 +56,9 @@ typedef enum _PpState_Type1 {
 	PpState_Type1_STATE_Invalid
 } PpState_Type1;
 
-typedef enum _LockState {
-    LockState_UNDEFINED = 0,
-    LockState_UNLOCKED = 1,
-    LockState_LOCKED = 2
-} LockState;
+// LockState moved to cb_common.h: the secure partition needs it for the MCS EV-role interlock
+// (Table CC.110 t5 -> t6, connector locked before S V3 closes) and must not include a BSP wire
+// header to get it. Values unchanged.
 
 #include "test/evse_bsp_cb_to_host_test.h"
 
