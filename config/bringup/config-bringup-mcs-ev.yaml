@@ -1,0 +1,41 @@
+# MCS ChargeBridge bring-up, EV side. Manual button-level control of the EV half of an
+# MCS (ISO 15118-10 / IEC 61851-23-3) link - no EvManager, no HLC.
+#
+# Companion pieces (see run-mcs-ev-bringup.sh, which starts all of it):
+#  - pionix_chargebridge with applications/pionix_chargebridge/config/config-CB-MCS-EV.yaml:
+#    charge_bridge.type EV, plc.carrier firmware (TAP "cb_plc_ev"), ev_bsp.module_id "ev_bsp".
+#  - The EVSE side runs as a second EVerest instance from config-bringup-mcs-evse.yaml on the
+#    same broker; this instance uses its own everest prefix so the two do not collide.
+#
+# What the BUEvBoardSupport buttons mean on an MCS board (firmware mcs_sv3.h):
+#   CP State C  -> readiness claim: close S V3 (lock interlock first) if the EVSE offers a
+#                  session, or run the Figure CC.114 wake toggle if the EVSE is idle
+#   CP State B  -> withdraw the claim: open S V3 (also clears the sustain_blocked latch)
+#   CP State A/E -> simulate unplugged / error on the EV's own view
+settings:
+  telemetry_enabled: false
+  mqtt_everest_prefix: everest_mcs_ev
+active_modules:
+  ev_bsp:
+    module: ev_board_support_API
+    config_module:
+      cfg_communication_check_to_s: 0
+  mcs_ev_datalink:
+    module: McsEvDataLink
+    config_implementation:
+      main:
+        device: cb_plc_ev
+  bu_bsp:
+    module: BUEvBoardSupport
+    standalone: true
+    connections:
+      bsp:
+        - module_id: ev_bsp
+          implementation_id: main
+  bu_slac:
+    module: BUEvSlac
+    standalone: true
+    connections:
+      slac:
+        - module_id: mcs_ev_datalink
+          implementation_id: main

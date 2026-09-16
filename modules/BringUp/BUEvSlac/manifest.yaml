@@ -1,4 +1,4 @@
-description: Interactive bring up helper for SLAC interface
+description: Interactive bring up helper for EV-side SLAC interface
 config:
   echo_device:
     description: >-
@@ -7,11 +7,11 @@ config:
       short-circuited by local routing and never touches the wire). Empty disables the echo
       section. Needs CAP_NET_RAW: run the panel under sudo, like the daemon.
     type: string
-    default: cb_plc
+    default: cb_plc_ev
 requires:
   slac:
-    interface: slac
+    interface: ev_slac
 metadata:
   license: https://opensource.org/licenses/Apache-2.0
   authors:
-    - Piet Gömpel
+    - Jan Christoph Habig (Pionix GmbH)
