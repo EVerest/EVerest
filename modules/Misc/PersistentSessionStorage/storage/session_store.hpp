@@ -124,9 +124,10 @@ public:
     virtual std::optional<types::session_storage::Session>
     get_session(const types::session_storage::SessionIdentifier& identifier) = 0;
 
-    /// \brief Deletes every stored record
-    /// \returns the number of records deleted
-    virtual int clear_sessions() = 0;
+    /// \brief Deletes the records selected by \p request: every record, or the record of
+    ///        up_to_session_id together with all records stored before it
+    /// \returns the number of records deleted, 0 if up_to_session_id matches no record
+    virtual int clear_sessions(const types::session_storage::ClearSessionsRequest& request) = 0;
 };
 
 /// \brief SQLite implementation of SessionStoreInterface.
@@ -160,7 +161,7 @@ public:
     get_sessions(const types::session_storage::GetSessionsRequest& request) override;
     std::optional<types::session_storage::Session>
     get_session(const types::session_storage::SessionIdentifier& identifier) override;
-    int clear_sessions() override;
+    int clear_sessions(const types::session_storage::ClearSessionsRequest& request) override;
 
 private:
     /// \brief The database connection together with the continuation token epoch it holds

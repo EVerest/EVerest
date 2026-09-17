@@ -27,9 +27,10 @@ session_storageImpl::handle_get_session(types::session_storage::SessionIdentifie
     return result;
 }
 
-types::session_storage::ClearSessionsResult session_storageImpl::handle_clear_sessions() {
+types::session_storage::ClearSessionsResult
+session_storageImpl::handle_clear_sessions(types::session_storage::ClearSessionsRequest& request) {
     types::session_storage::ClearSessionsResult result{};
-    result.cleared = mod->store().clear_sessions();
+    result.cleared = mod->store().clear_sessions(request);
     return result;
 }
 

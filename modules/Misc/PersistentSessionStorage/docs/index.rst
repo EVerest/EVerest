@@ -102,7 +102,7 @@ raw id token is not persisted.
 The module provides the ``session_storage`` interface with three commands:
 ``get_sessions`` (one page of stored records, oldest first), ``get_session`` (a single
 record looked up by session id or OCPP transaction id) and ``clear_sessions`` (deletes
-every stored record, including ``Open`` ones). Clearing cannot be undone; if a finish
+stored records, including ``Open`` ones). Clearing cannot be undone; if a finish
 arrives later for a record that was already deleted, that finish is simply dropped.
 
 ``get_sessions`` is paginated: the caller passes an optional page size and filter
@@ -114,6 +114,13 @@ appear at its end, pruned records are skipped, and a token that is invalid or re
 a replaced database file restarts the iteration from the oldest record, so a stale token
 can re-deliver records but never silently skip them. Page sizes are additionally capped
 by a byte budget, so a page may contain fewer records than requested.
+
+``clear_sessions`` with an empty request deletes every stored record. To read out and
+delete records without losing a session that starts in between, pass the session id of
+the last record received from ``get_sessions`` as ``up_to_session_id``: that record and
+every record stored before it are deleted, records stored after it are kept for the
+next read-out. The reply carries the number of deleted records, which is 0 if no record
+with the given session id exists.
 
 On shutdown the module stops recording events and closes the database, so an event
 that arrives during shutdown is not stored.

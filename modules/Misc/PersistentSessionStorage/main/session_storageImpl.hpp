@@ -38,7 +38,8 @@ protected:
     handle_get_sessions(types::session_storage::GetSessionsRequest& request) override;
     virtual types::session_storage::SessionResult
     handle_get_session(types::session_storage::SessionIdentifier& identifier) override;
-    virtual types::session_storage::ClearSessionsResult handle_clear_sessions() override;
+    virtual types::session_storage::ClearSessionsResult
+    handle_clear_sessions(types::session_storage::ClearSessionsRequest& request) override;
 
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
     // insert your protected definitions here

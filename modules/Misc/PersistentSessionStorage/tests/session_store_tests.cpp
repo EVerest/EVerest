@@ -25,6 +25,7 @@ using module::storage::SessionStart;
 using module::storage::SessionStore;
 using module::storage::TransactionFinish;
 using module::storage::TransactionStart;
+using types::session_storage::ClearSessionsRequest;
 using types::session_storage::GetSessionsRequest;
 using types::session_storage::Session;
 using types::session_storage::SessionFilter;
@@ -693,7 +694,7 @@ TEST_F(SessionStoreTest, a_transaction_after_a_finished_transaction_is_rejected)
 
 TEST_F(SessionStoreTest, transaction_start_after_clear_fails) {
     ASSERT_TRUE(store->store_session_started(make_session("s1", 1, "2026-08-21T10:00:00Z")));
-    ASSERT_EQ(store->clear_sessions(), 1);
+    ASSERT_EQ(store->clear_sessions(ClearSessionsRequest{}), 1);
 
     EXPECT_FALSE(store->store_transaction_started(make_transaction_start("s1")));
     EXPECT_TRUE(all_sessions().empty());
@@ -881,7 +882,7 @@ TEST_F(SessionStoreTest, a_closing_finish_of_a_session_without_a_transaction_doe
 TEST_F(SessionStoreTest, finish_after_clear_fails) {
     ASSERT_TRUE(store->store_session_started(make_session("s1", 1, "2026-08-21T10:00:00Z")));
     ASSERT_TRUE(store->store_transaction_started(make_transaction_start("s1")));
-    ASSERT_EQ(store->clear_sessions(), 1);
+    ASSERT_EQ(store->clear_sessions(ClearSessionsRequest{}), 1);
 
     EXPECT_FALSE(store->store_transaction_finished(make_finish("s1", "2026-08-21T11:00:00Z")));
     EXPECT_TRUE(all_sessions().empty());
@@ -977,7 +978,7 @@ TEST_F(SessionStoreTest, session_finish_of_a_stale_session_fails) {
 
 TEST_F(SessionStoreTest, session_finish_after_clear_fails) {
     ASSERT_TRUE(store->store_session_started(make_session("s1", 1, "2026-08-21T10:00:00Z")));
-    ASSERT_EQ(store->clear_sessions(), 1);
+    ASSERT_EQ(store->clear_sessions(ClearSessionsRequest{}), 1);
 
     EXPECT_FALSE(store->store_session_finished("s1", "2026-08-21T11:00:00Z"));
     EXPECT_TRUE(all_sessions().empty());
@@ -1236,17 +1237,64 @@ TEST_F(SessionStoreTest, clear_deletes_all_records) {
     ASSERT_TRUE(store->store_session_started(make_session("s2", 2, "2026-08-21T11:00:00Z")));
     ASSERT_TRUE(store->store_session_started(make_session("s3", 3, "2026-08-21T12:00:00Z")));
 
-    EXPECT_EQ(store->clear_sessions(), 3);
+    EXPECT_EQ(store->clear_sessions(ClearSessionsRequest{}), 3);
     EXPECT_TRUE(all_sessions().empty());
 }
 
 TEST_F(SessionStoreTest, clear_of_an_empty_table_deletes_nothing) {
-    EXPECT_EQ(store->clear_sessions(), 0);
+    EXPECT_EQ(store->clear_sessions(ClearSessionsRequest{}), 0);
+}
+
+TEST_F(SessionStoreTest, clear_up_to_a_session_deletes_that_record_and_the_older_ones_only) {
+    store_records(*store, 4);
+
+    ClearSessionsRequest request{};
+    request.up_to_session_id = "s2";
+
+    EXPECT_EQ(store->clear_sessions(request), 2);
+    EXPECT_EQ(session_ids(all_sessions()), std::vector<std::string>({"s3", "s4"}));
+}
+
+TEST_F(SessionStoreTest, clear_up_to_a_session_ignores_the_state_of_the_records) {
+    ASSERT_TRUE(store->store_session_started(make_session("s1", 1, "2026-08-21T10:00:00Z")));
+    ASSERT_TRUE(store->store_session_started(make_session("s2", 2, "2026-08-21T11:00:00Z")));
+    ASSERT_TRUE(store->store_session_started(make_session("s3", 3, "2026-08-21T12:00:00Z")));
+    ASSERT_TRUE(store->store_session_finished("s1", "2026-08-21T10:30:00Z"));
+
+    ClearSessionsRequest request{};
+    request.up_to_session_id = "s2";
+
+    EXPECT_EQ(store->clear_sessions(request), 2);
+    EXPECT_EQ(session_ids(all_sessions()), std::vector<std::string>({"s3"}));
+}
+
+TEST_F(SessionStoreTest, clear_up_to_an_unknown_session_deletes_nothing) {
+    store_records(*store, 3);
+
+    ClearSessionsRequest request{};
+    request.up_to_session_id = "unknown";
+
+    EXPECT_EQ(store->clear_sessions(request), 0);
+    EXPECT_EQ(session_ids(all_sessions()), std::vector<std::string>({"s1", "s2", "s3"}));
+}
+
+TEST_F(SessionStoreTest, clear_up_to_the_last_record_read_keeps_a_session_started_in_between) {
+    store_records(*store, 2);
+    const auto read = page_through_all(*store);
+    ASSERT_EQ(session_ids(read), std::vector<std::string>({"s1", "s2"}));
+
+    ASSERT_TRUE(store->store_session_started(make_session("s3", 1, "2026-08-21T12:00:00Z")));
+
+    ClearSessionsRequest request{};
+    request.up_to_session_id = read.back().session_id;
+
+    EXPECT_EQ(store->clear_sessions(request), 2);
+    EXPECT_EQ(session_ids(all_sessions()), std::vector<std::string>({"s3"}));
 }
 
 TEST_F(SessionStoreTest, insert_after_clear_works) {
     ASSERT_TRUE(store->store_session_started(make_session("s1", 1, "2026-08-21T10:00:00Z")));
-    ASSERT_EQ(store->clear_sessions(), 1);
+    ASSERT_EQ(store->clear_sessions(ClearSessionsRequest{}), 1);
 
     ASSERT_TRUE(store->store_session_started(make_session("s1", 1, "2026-08-21T11:00:00Z")));
 
@@ -1390,7 +1438,7 @@ TEST_F(SessionStoreTest, a_token_taken_before_a_clear_returns_the_records_stored
 
     const auto first = store->get_sessions(make_request(1));
     ASSERT_TRUE(first.continuation_token.has_value());
-    ASSERT_EQ(store->clear_sessions(), 2);
+    ASSERT_EQ(store->clear_sessions(ClearSessionsRequest{}), 2);
     ASSERT_TRUE(store->store_session_started(make_session("s3", 1, "2026-08-21T11:00:00Z")));
 
     const auto page = store->get_sessions(make_request(std::nullopt, first.continuation_token));
@@ -1559,7 +1607,7 @@ TEST_F(SessionStoreTest, calls_after_close_fail_without_throwing) {
     EXPECT_FALSE(store->store_session_finished("s1", "2026-08-21T11:00:00Z"));
     EXPECT_TRUE(store->get_sessions(make_request()).sessions.empty());
     EXPECT_FALSE(get_by_session_id("s1").has_value());
-    EXPECT_EQ(store->clear_sessions(), 0);
+    EXPECT_EQ(store->clear_sessions(ClearSessionsRequest{}), 0);
 }
 
 // ---------------------------------------------------------------------------

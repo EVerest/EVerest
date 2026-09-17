@@ -66,7 +66,7 @@ public:
     MOCK_METHOD(types::session_storage::SessionList, get_sessions,
                 (const types::session_storage::GetSessionsRequest& request), (override));
     MOCK_METHOD(std::optional<Session>, get_session, (const SessionIdentifier& identifier), (override));
-    MOCK_METHOD(int, clear_sessions, (), (override));
+    MOCK_METHOD(int, clear_sessions, (const types::session_storage::ClearSessionsRequest& request), (override));
 };
 
 types::units::Energy make_energy(float total, bool with_phases) {

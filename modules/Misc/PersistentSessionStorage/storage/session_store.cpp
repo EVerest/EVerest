@@ -642,10 +642,20 @@ SessionStore::get_session(const types::session_storage::SessionIdentifier& ident
     return std::nullopt;
 }
 
-int SessionStore::clear_sessions() {
+int SessionStore::clear_sessions(const types::session_storage::ClearSessionsRequest& request) {
     auto database = m_database.handle();
     try {
-        auto statement = database->connection->new_statement("DELETE FROM SESSIONS");
+        std::string sql = "DELETE FROM SESSIONS";
+        if (request.up_to_session_id.has_value()) {
+            // An unknown session id yields NULL, which matches no row
+            sql += " WHERE ID <= (SELECT ID FROM SESSIONS WHERE SESSION_ID=@session_id)";
+        }
+
+        auto statement = database->connection->new_statement(sql);
+        if (request.up_to_session_id.has_value()) {
+            statement->bind_text("@session_id", request.up_to_session_id.value(), SQLiteString::Transient);
+        }
+
         if (statement->step() != SQLITE_DONE) {
             EVLOG_error << "Could not clear the stored sessions: " << database->connection->get_error_message();
             return 0;

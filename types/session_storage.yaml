@@ -280,14 +280,32 @@ types:
         description: The matching session record
         type: object
         $ref: /session_storage#/Session
+  ClearSessionsRequest:
+    description: >-
+      Selects the session records to delete. An empty object deletes every stored
+      record.
+    type: object
+    additionalProperties: false
+    properties:
+      up_to_session_id:
+        description: >-
+          Session id of the newest record to delete. Deletes that record and every
+          record stored before it, in the order get_sessions returns them, and keeps
+          the records stored after it. A client that has read all records with
+          get_sessions can pass the session id of the last record it received to
+          delete exactly what it has read, without losing sessions that started in
+          the meantime. If no record with this id exists, nothing is deleted.
+        type: string
   ClearSessionsResult:
-    description: Result of deleting all stored session records
+    description: Result of deleting stored session records
     type: object
     additionalProperties: false
     required:
       - cleared
     properties:
       cleared:
-        description: Number of session records that were deleted
+        description: >-
+          Number of session records that were deleted. With up_to_session_id set,
+          0 means that no record with that session id exists.
         type: integer
         minimum: 0
