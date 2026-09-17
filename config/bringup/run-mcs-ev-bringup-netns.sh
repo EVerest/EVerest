@@ -49,7 +49,7 @@
 #   EV_LAN_ADDR    "dhcp" (default) or a static <addr>/<prefix> for the LAN macvlan
 #
 # Inside the namespace this hands off to the plain run-mcs-ev-bringup.sh, dropped back
-# to the invoking user with CAP_NET_ADMIN+CAP_NET_RAW ambient - that script recognizes
+# to the invoking user with CAP_NET_ADMIN+CAP_NET_RAW+CAP_DAC_OVERRIDE ambient - that script recognizes
 # the caps and starts its tmux server without any further prompt. The namespace and the
 # NAT rule persist across runs (cheap, reusable); --teardown removes them.
 #
@@ -100,7 +100,8 @@ stop_socat() {
 return_phys_ifaces() {
     local ifc
     for ifc in $(ip -n $NS -o link show 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1); do
-        case "$ifc" in lo | "$VETH_NS" | "$LAN_IF_NS") continue ;; esac
+        # cb_*: the daemon's own virtual devices (tap cb_plc_ev, vcan cb_ev_can) - not parked hardware.
+        case "$ifc" in lo | "$VETH_NS" | "$LAN_IF_NS" | cb_*) continue ;; esac
         ip -n $NS link set "$ifc" netns 1 2>/dev/null || true
     done
 }
@@ -287,7 +288,7 @@ fi
 RUN_USER=${SUDO_USER:-root}
 RUN_HOME=$(getent passwd "$RUN_USER" | cut -d: -f6)
 ip netns exec $NS setpriv --reuid="$RUN_USER" --regid="$(id -g "$RUN_USER")" --init-groups \
-    --inh-caps=+net_admin,+net_raw --ambient-caps=+net_admin,+net_raw -- \
+    --inh-caps=+net_admin,+net_raw,+dac_override --ambient-caps=+net_admin,+net_raw,+dac_override -- \
     env HOME="$RUN_HOME" USER="$RUN_USER" LOGNAME="$RUN_USER" SHELL=/bin/bash \
     TERM="${TERM:-xterm-256color}" PATH="$PATH" \
     MQTT_SERVER_ADDRESS=$HOST_IP MQTT_SERVER_PORT=1883 CB_CONFIG="$DERIVED_CONFIG" \

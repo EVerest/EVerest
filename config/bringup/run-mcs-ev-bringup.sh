@@ -59,8 +59,9 @@ fi
 ENV="LD_LIBRARY_PATH=$PREFIX/lib:\$LD_LIBRARY_PATH PATH=$PREFIX/bin:\$PATH"
 
 # --- privileges: ONE sudo prompt, no sudo in any pane ------------------------------------------
-# The daemon needs CAP_NET_ADMIN (TAP create/carrier/link) and the slac panel CAP_NET_RAW (the
-# link-echo raw socket). Instead of one sudo prompt per pane (credential caching is per-tty), the
+# The daemon needs CAP_NET_ADMIN (TAP create/carrier/link) and, with serial bridges enabled,
+# CAP_DAC_OVERRIDE (their ptys are linked into the root-owned /dev); the slac panel needs
+# CAP_NET_RAW (the link-echo raw socket). Instead of one sudo prompt per pane (credential caching is per-tty), the
 # tmux SERVER is started once via `sudo setpriv` with those capabilities AMBIENT: they inherit
 # across fork/exec into every pane while everything keeps running as the invoking user. Ambient
 # caps do not trigger secure-execution mode, so LD_LIBRARY_PATH keeps working - the reason plain
@@ -87,12 +88,12 @@ for pattern in "$(basename "$CB_CONFIG")" "config-CB-MCS-EV\.yaml"; do
         exit 1
     fi
 done
-if [ "$(id -u)" = "0" ] || setpriv -d | grep -q 'Ambient capabilities:.*net_admin'; then
+if [ "$(id -u)" = "0" ] || setpriv -d | grep 'Ambient capabilities:' | grep -q 'net_admin.*dac_override\|dac_override.*net_admin'; then
     $TMUX new-session -d -s $SESSION
 else
-    echo "one sudo prompt: starting the tmux server with ambient CAP_NET_ADMIN+CAP_NET_RAW"
+    echo "one sudo prompt: starting the tmux server with ambient CAP_NET_ADMIN+CAP_NET_RAW+CAP_DAC_OVERRIDE"
     sudo setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups \
-        --inh-caps=+net_admin,+net_raw --ambient-caps=+net_admin,+net_raw -- \
+        --inh-caps=+net_admin,+net_raw,+dac_override --ambient-caps=+net_admin,+net_raw,+dac_override -- \
         env HOME="$HOME" USER="$USER" LOGNAME="$USER" SHELL="${SHELL:-/bin/bash}" \
         TERM="${TERM:-xterm-256color}" PATH="$PATH" \
         tmux -L $SESSION new-session -d -s $SESSION

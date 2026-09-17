@@ -54,8 +54,9 @@ fi
 
 ENV="LD_LIBRARY_PATH=$PREFIX/lib:\$LD_LIBRARY_PATH PATH=$PREFIX/bin:\$PATH"
 
-# One sudo prompt: tmux server with ambient CAP_NET_ADMIN (TAP) - see run-mcs-evse-bringup.sh
-# for the full rationale.
+# One sudo prompt: tmux server with ambient CAP_NET_ADMIN (TAP), CAP_NET_RAW and CAP_DAC_OVERRIDE
+# (the serial bridges link their ptys as /dev/cb_uart, /dev/cb_rs485 - a symlink into root-owned
+# /dev) - see run-mcs-evse-bringup.sh for the full rationale.
 TMUX="tmux -L $SESSION"
 $TMUX kill-server 2>/dev/null || true
 
@@ -67,12 +68,12 @@ if pgrep -af "pionix_chargebridge.*$(basename "$CB_CONFIG")" >/dev/null 2>&1; th
     echo "kill it first (may need sudo), then re-run" >&2
     exit 1
 fi
-if [ "$(id -u)" = "0" ] || setpriv -d | grep -q 'Ambient capabilities:.*net_admin'; then
+if [ "$(id -u)" = "0" ] || setpriv -d | grep 'Ambient capabilities:' | grep -q 'net_admin.*dac_override\|dac_override.*net_admin'; then
     $TMUX new-session -d -s $SESSION
 else
-    echo "one sudo prompt: starting the tmux server with ambient CAP_NET_ADMIN+CAP_NET_RAW"
+    echo "one sudo prompt: starting the tmux server with ambient CAP_NET_ADMIN+CAP_NET_RAW+CAP_DAC_OVERRIDE"
     sudo setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups \
-        --inh-caps=+net_admin,+net_raw --ambient-caps=+net_admin,+net_raw -- \
+        --inh-caps=+net_admin,+net_raw,+dac_override --ambient-caps=+net_admin,+net_raw,+dac_override -- \
         env HOME="$HOME" USER="$USER" LOGNAME="$USER" SHELL="${SHELL:-/bin/bash}" \
         TERM="${TERM:-xterm-256color}" PATH="$PATH" \
         tmux -L $SESSION new-session -d -s $SESSION
