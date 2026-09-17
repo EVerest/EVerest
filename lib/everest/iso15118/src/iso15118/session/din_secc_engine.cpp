@@ -256,7 +256,7 @@ void DinSeccEngine::on_timeout(d20::TimeoutType timeout) {
     // Nothing arrived that the emergency shutdown could be reported on, so close anyway.
     if (timeout == d20::TimeoutType::EMERGENCY_SHUTDOWN) {
         if (not ctx.session_stopped) {
-            logf_warning("No request to answer within %%d ms of the emergency shutdown; closing the connection",
+            logf_warning("No request to answer within %d ms of the emergency shutdown; closing the connection",
                          d20::TIMEOUT_EMERGENCY_SHUTDOWN_GUARD);
             ctx.session_stopped = true;
             ctx.session_ended_with_error = true;
