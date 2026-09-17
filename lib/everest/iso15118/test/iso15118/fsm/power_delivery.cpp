@@ -67,17 +67,21 @@ SCENARIO("ISO15118-20 power delivery contactor handling") {
         state_helper.set_active_control_event(d20::ClosedContactor(false));
         REQUIRE(fsm.feed(d20::Event::CONTROL_MESSAGE).transitioned() == false);
 
-        // Drive the timeouts the way Session::loop does: only a timeout that Timeouts still holds
-        // reaches the state machine.
-        std::this_thread::sleep_for(WAIT_OUT_CONTACTOR_TIMEOUT);
-        for (const auto timeout : state_helper.get_timeouts().check().value_or(std::vector<d20::TimeoutType>{})) {
-            ctx.set_active_timeout(timeout);
-            fsm.feed(d20::Event::TIMEOUT);
-        }
+        THEN("The saved request is answered with a terminate notification, not a contactor error") {
+            const auto response_message = ctx.get_response<message_20::PowerDeliveryResponse>();
+            REQUIRE(response_message.has_value());
 
-        THEN("The contactor timeout does not fail the already stopping session") {
-            REQUIRE(ctx.session_stopped == false);
-            REQUIRE(ctx.get_response<message_20::PowerDeliveryResponse>().has_value() == false);
+            const auto& response = response_message.value();
+            REQUIRE(response.response_code == dt::ResponseCode::OK);
+            REQUIRE(response.status.has_value());
+            REQUIRE(response.status.value().notification == dt::EvseNotification::Terminate);
+            REQUIRE(response.status.value().notification_max_delay == 0);
+            REQUIRE(ctx.session_stopped == true);
+
+            // Drive the timeouts the way Session::loop does: the contactor timeout is cancelled, so
+            // it never fires a second, failing response at the EV.
+            std::this_thread::sleep_for(WAIT_OUT_CONTACTOR_TIMEOUT);
+            REQUIRE(state_helper.get_timeouts().check().has_value() == false);
         }
     }
 }
