@@ -23,7 +23,7 @@ inline dt::DC_EVSEStatus make_dc_evse_status(const Context& ctx, dt::DC_EVSEStat
 // WeldingDetectionReq or SessionStopReq. The gate applies only once PowerDelivery(Stop) has opened
 // the contactor [V2G2-913], and both nodes that can receive one test it before answering.
 inline bool cp_state_b_outstanding(const Context& ctx) {
-    return ctx.session().power_delivery_stopped and ctx.evse().current_cp_state != d20::CpState::B;
+    return ctx.session().cp_state_b_gate_armed and ctx.evse().current_cp_state != d20::CpState::B;
 }
 
 inline dt::AC_EVSEStatus make_ac_evse_status() {
