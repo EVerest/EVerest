@@ -1566,12 +1566,13 @@ SCENARIO("ISO 15118-2 SECC accepts SessionStopReq only after PowerDelivery(Stop)
             secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
             REQUIRE(secc.fsm.state() == StateID::SessionStop);
 
-            AND_WHEN("It then signals CP State B and sends SessionStopReq") {
-                // [V2G2-913]: PowerDelivery(Stop) arms the CP State B gate, so the request is parked until B.
-                secc.fsm.context().set_cp_state(d20::CpState::B);
+            AND_WHEN("It then sends SessionStopReq while still in CP State C") {
+                // The CP State B gate of [V2G2-920]..[V2G2-922] is a DC requirement (8.7.4.4); an AC
+                // SessionStopReq is answered regardless of the measured CP state.
+                secc.fsm.context().set_cp_state(d20::CpState::C);
                 secc.drive(message_2::SessionStopRequest{});
 
-                THEN("It is in sequence and answered OK [V2G2-568]") {
+                THEN("It is in sequence and answered OK at once [V2G2-568]") {
                     const auto res = secc.fsm.response<message_2::SessionStopResponse>();
                     REQUIRE(res.has_value());
                     REQUIRE(res->response_code == dt::ResponseCode::OK);
