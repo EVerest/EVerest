@@ -109,13 +109,25 @@ return_phys_ifaces() {
 # dhcpcd for the LAN macvlan runs inside the namespace and outlives sessions (the lease keeps
 # renewing between runs); only --teardown stops it. Same /run, so its control socket is reachable.
 stop_lan_dhcp() {
-    ip netns exec $NS dhcpcd -k "$LAN_IF_NS" 2>/dev/null || pkill -f "dhcpcd.* $LAN_IF_NS\$" 2>/dev/null || true
+    ip netns exec $NS dhcpcd -k "$LAN_IF_NS" 2>/dev/null || true
+    # dhcpcd 10 runs as a small family ("dhcpcd: mcs-ev-lan [ip4]", "[privileged proxy] ...",
+    # "[BPF ARP] ...", "[BOOTP proxy] <ip>"); the titles end in more than the interface name, so
+    # match loosely and take the children of every matching parent with it. Bench-found 17.9.: a
+    # survivor kept the (unnamed) namespace alive and its veth host end behind.
+    local pid
+    for pid in $(pgrep -f "dhcpcd.*$LAN_IF_NS" 2>/dev/null); do
+        pkill -P "$pid" 2>/dev/null || true
+        kill "$pid" 2>/dev/null || true
+    done
 }
 
 if [ "${1:-}" = "--teardown" ]; then
     stop_socat
     return_phys_ifaces
     stop_lan_dhcp
+    # Anything still running inside (a daemon or manager pane that outlived its tmux session)
+    # would keep the namespace alive after its name is gone - and leave the veth host end behind.
+    for pid in $(ip netns pids $NS 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
     ip netns del $NS 2>/dev/null || true # takes its veth end - and thereby the host end - with it
     rm -f /tmp/config-CB-MCS-EV-netns.yaml
     iptables -t nat -D POSTROUTING -s $NET -j MASQUERADE 2>/dev/null || true
@@ -130,6 +142,15 @@ fi
 
 # --- idempotent namespace + plumbing ------------------------------------------------------------
 ip netns add $NS 2>/dev/null || true
+# Idempotence must check the PEER, not just the host end: after a --teardown the namespace's name
+# is gone but the namespace itself can live on while a process (dhcpcd of the LAN leg, a daemon
+# pane) still runs inside it. Then a fresh 'ip netns add' makes an empty namespace, the old host
+# end still exists with its peer in the orphan, and 'ip -n $NS ... dev $VETH_NS' fails with
+# "Cannot find device". Bench-found 17.9. Drop such a stale host end and create the pair anew.
+if ip link show $VETH_HOST >/dev/null 2>&1 && ! ip -n $NS link show $VETH_NS >/dev/null 2>&1; then
+    echo "stale $VETH_HOST (peer not in '$NS') - recreating the veth pair"
+    ip link del $VETH_HOST
+fi
 if ! ip link show $VETH_HOST >/dev/null 2>&1; then
     ip link add $VETH_HOST type veth peer name $VETH_NS netns $NS
 fi
