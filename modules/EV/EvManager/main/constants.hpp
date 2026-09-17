@@ -10,4 +10,7 @@ static constexpr auto DC{"dc"};
 static constexpr auto AC_BPT{"ac_bpt"};
 static constexpr auto AC_DER{"ac_der"};
 static constexpr auto DC_BPT{"dc_bpt"};
+// Megawatt Charging System: an ISO 15118-20 DC service of its own, not a DC variant, so it is
+// requested as its own energy mode rather than through a DC fallback.
+static constexpr auto MCS{"mcs"};
 } // namespace constants
