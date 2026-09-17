@@ -40,7 +40,9 @@ struct SessionParameters {
     bool charge_loop_started{false};    // DcChargeLoop, cleared by PowerDelivery(Start)
     bool receipt_received{false};       // MeteringReceipt
     bool power_delivery_started{false}; // PowerDelivery(Start); gates Renegotiate [V2G2-812]
-    bool power_delivery_stopped{false}; // PowerDelivery(Stop); arms the CP State B gate [V2G2-913]
+    // DC PowerDelivery(Stop) received: WeldingDetectionReq / SessionStopReq wait for CP State B
+    // ([V2G2-913], [V2G2-920]..[V2G2-922]). DC only, 8.7.4.4.
+    bool cp_state_b_gate_armed{false};
 };
 
 } // namespace iso15118::d2
