@@ -306,8 +306,7 @@ Result process_dc_power_delivery(Context& m_ctx, const message_2::PowerDeliveryR
         return {};
     }
 
-    // [V2G2-913]: arm the CP State B gate for the following WeldingDetection ([V2G2-920]..[V2G2-922]).
-    m_ctx.set_power_delivery_stopped();
+    m_ctx.arm_cp_state_b_gate();
 
     // With the contactor open the verified isolation no longer holds, so a post-stop restart must re-run
     // the physical test. Renegotiation keeps the contactor closed and so keeps cable_check_done (NOTE 1
