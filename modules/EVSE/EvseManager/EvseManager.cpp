@@ -2375,8 +2375,11 @@ void EvseManager::cable_check() {
                 imd_stop();
                 std::ostringstream oss;
                 oss << "Isolation resistance too low: " << m.resistance_F_Ohm << " Ohm";
-                error_handling->raise_isolation_resistance_fault(oss.str(), "Resistance");
+                // The HLC stack must learn the cable check result before the fault below stops the Charger:
+                // its emergency shutdown would otherwise reach the stack first and the FAILED CableCheckRes
+                // would report EVSE_EmergencyShutdown instead of the isolation fault.
                 fail_cable_check(oss.str());
+                error_handling->raise_isolation_resistance_fault(oss.str(), "Resistance");
                 return;
             }
         } else {

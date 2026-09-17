@@ -151,18 +151,13 @@ private:
     std::mutex der_apply_mutex;
     void apply_active_der_directives();
 
-    // hlc_session_failed derivation. The last V2G message handled this session (loop thread only, from
-    // the v2g_message feedback) is mapped to a reason at teardown, mirroring EvseV2G. graceful_stop and
-    // emergency_shutdown are set from the module command threads (handle_stop_charging / handle_send_error)
-    // so they are atomic. Either one suppresses the report: both are EVSE-initiated ends, which is what
-    // EvseV2G checks (`stop_hlc || intl_emergency_shutdown`, connection.cpp:518).
+    // hlc_session_failed derivation: the last V2G message handled this session (loop thread only, from
+    // the v2g_message feedback) is mapped to a reason at teardown.
     std::optional<iso15118::V2gMessageType> last_v2g_message;
     // Last published EV completion flags (DIN SPEC 70121 / ISO 15118-2 charge progress); published on
     // change only. Reset when the session's data link ends.
     std::optional<bool> last_charging_complete;
     std::optional<bool> last_bulk_charging_complete;
-    std::atomic_bool graceful_stop_requested{false};
-    std::atomic_bool emergency_shutdown_requested{false};
     // debug_mode from the setup command gates the v2g_messages and ev_app_protocol publishes (mirrors
     // EvseV2G, which publishes both only with debugMode). Atomic: set from the command thread, read on
     // the loop thread.
