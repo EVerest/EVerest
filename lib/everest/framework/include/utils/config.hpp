@@ -14,6 +14,7 @@
 
 #include <nlohmann/json-schema.hpp>
 
+#include <utils/config/deprecation.hpp>
 #include <utils/config/mqtt_settings.hpp>
 #include <utils/config/settings.hpp>
 #include <utils/config/storage_userconfig.hpp>
@@ -233,6 +234,10 @@ private:
     Validators m_validators;
     std::unique_ptr<nlohmann::json_schema::json_validator> m_draft7_validator;
     std::unique_ptr<everest::config::UserConfigStorage> m_user_config_storage;
+    std::vector<everest::config::DeprecationNotice> m_deprecations;
+    /// \brief Whether the parsed config still tells configured values apart from manifest defaults, which only
+    /// holds for configs parsed from YAML
+    bool m_config_origin_authoritative{true};
 
     /// \brief Sets up schemas, validators and error map (shared by all constructors).
     void init_schemas();
@@ -244,6 +249,15 @@ private:
     void init_from_yaml();
 
     nlohmann::json apply_user_config_and_defaults();
+
+    ///
+    /// \brief collects the deprecations declared by the config entries of \p config_map_schema that are configured
+    /// in \p configuration_parameters, \p defaulted_config_entries being the entries that fall back to their default
+    void
+    collect_config_deprecations(const nlohmann::json& config_map_schema,
+                                const std::vector<everest::config::ConfigurationParameter>& configuration_parameters,
+                                const std::set<std::string>& defaulted_config_entries, const std::string& module_id,
+                                const std::string& module_name, const std::optional<std::string>& impl_id);
 
     ///
     /// \brief loads and validates the manifest of the \p module_config
@@ -337,6 +351,11 @@ public:
     /// whether it was found
     everest::config::GetConfigurationParameterResponse
     get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier) const;
+
+    ///
+    /// \returns the deprecations declared by the manifests of the configured modules and by the config entries
+    /// these modules are configured with
+    const std::vector<everest::config::DeprecationNotice>& get_deprecations() const;
 };
 
 ///

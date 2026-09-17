@@ -334,9 +334,18 @@ config:
     description: >-
       Indicates if the connector lock should be locked in state B. If set to false, connector will remain unlocked in CP state B
       and this violates IEC61851-1:2019 D.6.5 Table D.9 line 4 and should not be used in public environments!
-      This feature is deprecated.
     type: boolean
     default: true
+    deprecated:
+      component: EvseManager config entry 'lock_connector_in_state_b'
+      deprecated_in: 2026.10.0
+      earliest_removal: 2027.04.0
+      when: false
+      migration_guide: >-
+        Remove the entry and set unlock_when_deauthorized to true instead
+      note: >-
+        Unlocking the connector in CP state B violates IEC61851-1:2019 D.6.5 Table D.9 line 4 and
+        must not be used in public environments.
   unlock_when_deauthorized:
     description: >-
       Indicates if the connector lock should be locked in state B/C regardless of if a user authorized. If set to true,

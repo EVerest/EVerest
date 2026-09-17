@@ -120,6 +120,12 @@ Have a look at this categorized list of all guides:
 
       How to migrate an existing OCPP 1.6 JSON configuration into the unified device model storage.
 
+   .. grid-item-card:: Deprecate a Module or a Config Key
+      :link: deprecate-a-module
+      :link-type: doc
+
+      How to declare a deprecation in a module manifest so that EVerest warns about it at runtime.
+
 .. toctree::
     :maxdepth: 1
     :hidden:
@@ -142,3 +148,4 @@ Have a look at this categorized list of all guides:
     devcontainer-usage/index
     c++-coding-guidelines
     ocpp-storage-migration
+    deprecate-a-module

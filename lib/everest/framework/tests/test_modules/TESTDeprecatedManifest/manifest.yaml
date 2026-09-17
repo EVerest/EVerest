@@ -1,0 +1,44 @@
+description: "This manifest declares deprecations."
+deprecated:
+  component: "TESTDeprecatedManifest (test module)"
+  deprecated_in: "2026.10.0"
+  earliest_removal: "2027.04.0"
+  migration_guide: "Use another module"
+  note: "This module only exists to test the deprecation handling."
+config:
+  deprecated_entry:
+    description: "Deprecated whenever it is configured"
+    type: string
+    default: "untouched"
+    deprecated:
+      deprecated_in: "2026.10.0"
+      earliest_removal: "2027.04.0"
+      migration_guide: "Remove the entry"
+  deprecated_when_false_entry:
+    description: "Deprecated only when set to false"
+    type: boolean
+    default: true
+    deprecated:
+      component: "the entry that is only deprecated when false"
+      deprecated_in: "2026.10.0"
+      earliest_removal: "2027.04.0"
+      when: false
+  valid_config_entry:
+    description: "This config entry is not deprecated"
+    type: string
+    default: "untouched"
+provides:
+  main:
+    description: "This unit has a valid manifest but no corresponding class"
+    interface: "test_interface"
+    config:
+      deprecated_impl_entry:
+        description: "Deprecated implementation config entry"
+        type: string
+        default: "untouched"
+        deprecated:
+          deprecated_in: "2026.10.0"
+          earliest_removal: "2027.04.0"
+metadata:
+  license: "https://opensource.org/licenses/Apache-2.0"
+  authors: ["Pionix GmbH"]

@@ -3,6 +3,9 @@
 {{ funcs.explicit_target('everest_modules_' + name) -}}
 {{ funcs.h1(name) -}}
 {{ data.description | rst_indent() }}
+{%  if 'deprecated' in data %}
+{{ funcs.deprecation(data.deprecated) -}}
+{%  endif %}
 {%  if 'documentation' in manifest %}
 {{ funcs.documentation(data.documentation) | rst_indent() -}}
 {%  endif %}

@@ -276,6 +276,33 @@ Graphically, this would look as follows:
 For a tutorial where you implement and experiment a similar example,
 refer to :doc:`Develop New EVerest Modules </tutorials/develop-new-module>`
 
+Marking a module as deprecated
+==============================
+
+A manifest can declare that the module, or a single one of its config
+parameters, is deprecated. The manager then warns about it at startup and
+``manager --check`` reports it, without any code in the module itself:
+
+..  code-block:: yaml
+
+    description: Example ping-pong module
+    deprecated: # this module is on its way out
+      deprecated_in: 2026.10.0 # release that deprecated it
+      earliest_removal: 2027.04.0 # earliest release it may be removed in
+      migration_guide: Use the PongServerModule instead
+    config:
+      cfg_publish_number_of_pings:
+        description: Publish the number_of_pings variable every 5 seconds.
+        type: boolean
+        default: false
+        deprecated: # only this config parameter is deprecated
+          deprecated_in: 2026.10.0
+          earliest_removal: 2027.04.0
+          when: true # only warn when it is set to true
+
+See :ref:`howto-deprecate-a-module` for the full procedure, and
+:ref:`project-deprecation-policy` for the rules a deprecation has to follow.
+
 ********************************
 Explaining the generated sources
 ********************************

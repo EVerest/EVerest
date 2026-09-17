@@ -859,6 +859,26 @@ void warn_about_experimental_options(const po::variables_map& vm) {
         fmt::join(used, ", "));
 }
 
+/// Emit one warning per deprecated module and per deprecated config entry in use, as declared by the
+/// "deprecated" section of the module manifests. Modules in \p ignored_modules are left out because they
+/// are not started. See docs/source/project/releases/deprecation-policy.rst.
+void log_deprecations(const Everest::ManagerConfig& config, const std::vector<std::string>& ignored_modules) {
+    std::size_t reported = 0;
+    for (const auto& notice : config.get_deprecations()) {
+        if (std::find(ignored_modules.begin(), ignored_modules.end(), notice.module_id) != ignored_modules.end()) {
+            continue;
+        }
+        EVLOG_warning << everest::config::format_deprecation_notice(notice);
+        reported++;
+    }
+
+    if (reported != 0) {
+        EVLOG_warning << fmt::format("{} deprecated item(s) in use; see the Active Deprecation Index of the EVerest "
+                                     "documentation for the migration paths.",
+                                     reported);
+    }
+}
+
 /// \brief Parses a --configuration-api / --lifecycle-api value into a read-write flag.
 /// \returns std::nullopt when the value is neither "ro" nor "rw", after logging the error.
 std::optional<bool> parse_api_mode(const po::variables_map& vm, const char* option_name) {
@@ -1006,6 +1026,7 @@ int Manager::run() {
             if (m_vm.count("dump")) {
                 dump_config_and_manifests(validated_config, fs::path(m_vm["dump"].as<std::string>()));
             }
+            log_deprecations(validated_config, {});
         } catch (const std::exception& e) {
             EVLOG_error << "Config is invalid: " << e.what();
             return EXIT_FAILURE;
@@ -1644,6 +1665,7 @@ void Manager::handle_start_modules(const RuntimeContext& ctx) {
     EVLOG_info << "Starting " << number_of_modules << " modules";
 
     publish_startup_metadata(ctx);
+    log_deprecations(*ctx.config, ignored_modules);
 
     for (const auto& [module_id_, module_config] : module_configurations) {
         const auto& module_name = module_config.module_name;

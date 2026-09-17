@@ -106,6 +106,37 @@
 {%      endfor %}
 {%  endmacro %}
 
+{### Renders a deprecation declared by a manifest ###}
+{%  macro deprecation(data) %}
+
+.. deprecated:: {{ data.deprecated_in }}
+{%      if data.component %}
+   **{{ data.component }}** is deprecated.
+{%      endif %}
+   Earliest removal: {{ data.earliest_removal }}.
+{%      if data.migration_guide %}
+
+   Migration: {{ data.migration_guide }}
+{%      endif %}
+{%      if data.note %}
+
+   {{ data.note }}
+{%      endif %}
+{%  endmacro %}
+
+{### Renders a deprecation declared by a config entry. Config entries are rendered as a line block,
+     which cannot hold a directive, so this stays plain text ###}
+{%  macro deprecation_note(data) %}
+{%      set when_value = data.when | string | lower if data.when is boolean else data.when %}
+**deprecated** since {{ data.deprecated_in }}, earliest removal {{ data.earliest_removal }}{% if data.when is defined %}, warned about when set to ``{{ when_value }}``{% endif %}.
+{%      if data.migration_guide %}
+Migration: {{ data.migration_guide }}
+{%      endif %}
+{%      if data.note %}
+{{ data.note }}
+{%      endif %}
+{%  endmacro %}
+
 {### Renders a single var ###}
 {% macro var(var_name, var_data, show_required=true, required=None) %}
 {% if required == None %}
@@ -146,7 +177,10 @@
 {%      if 'documentation' in var_data %}
 {{ documentation(var_data['documentation']) | indent(1, True) -}}
 {%      endif %}
-{%      set ignore_keys = ['default', 'description', 'type', 'properties', 'documentation', '$ref', 'required', 'items'] %}
+{%      if 'deprecated' in var_data %}
+{{ deprecation_note(var_data['deprecated']) | indent(1, True) -}}
+{%      endif %}
+{%      set ignore_keys = ['default', 'description', 'type', 'properties', 'documentation', '$ref', 'required', 'items', 'deprecated'] %}
 {%      set mapping_result = mapping( var_name, var_data.items(), ignore_keys, False) %}
 {%      if mapping_result != '' %}
 {{ mapping_result | literal_rst | indent(1, True) -}}

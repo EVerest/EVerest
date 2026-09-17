@@ -141,6 +141,8 @@ release in which it may be removed, and a link to or a description of
 the corresponding migration guide.
 
 Maintainers must ensure that an entry is added when introducing a deprecation.
+:ref:`howto-deprecate-a-module` describes how the entry and the manifest
+declaration fit together.
 
 ******************************
 How Deprecations Are Announced
@@ -154,6 +156,8 @@ Every deprecation must be announced through all of the following channels:
 - **Runtime warnings**: Where reasonable, EVerest emits a clearly identifiable
   warning when a deprecated component is used (e.g. a log message at startup
   for a deprecated configuration option or when a deprecated operation is invoked).
+  For modules and their configuration options this is declarative: see
+  :ref:`howto-deprecate-a-module`.
 - **Migration guide**: A short migration note describes the replacement and
   the recommended upgrade path, and is linked from the release notes entry.
 
@@ -204,6 +208,7 @@ Additional Resources
 
 - :ref:`project-release-and-versioning`
 - :ref:`project-breaking-changes`
+- :ref:`howto-deprecate-a-module`
 
 For questions about a specific deprecation or to propose one, please contact
 the EVerest maintainers via Zulip.

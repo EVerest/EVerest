@@ -17,6 +17,7 @@
 
 #include <framework/runtime.hpp>
 #include <utils/config.hpp>
+#include <utils/config/deprecation.hpp>
 #include <utils/config/storage.hpp>
 #include <utils/config/types.hpp>
 #include <utils/formatter.hpp>
@@ -31,6 +32,7 @@ using json_validator = nlohmann::json_schema::json_validator;
 struct ParsedConfigMap {
     std::vector<ConfigurationParameter> parsed_config_parameters;
     std::set<std::string> unknown_config_entries;
+    std::set<std::string> defaulted_config_entries;
 };
 
 constexpr std::string_view path_modules = "modules/";
@@ -169,7 +171,8 @@ void validate_config_schema(const json& config_map_schema) {
 ///        against the schema.
 /// \return A `ParsedConfigMap` containing:
 ///         - a list of validated and completed configuration parameters,
-///         - a set of unknown configuration keys not present in the schema.
+///         - a set of unknown configuration keys not present in the schema,
+///         - a set of configuration keys whose value was taken from the default defined in the schema.
 /// \throws ConfigParseException if a required configuration entry is missing, type validation
 ///         fails against the schema or an unsupported data type is encountered in the schema.
 ParsedConfigMap parse_config_map(const json& config_map_schema,
@@ -184,6 +187,7 @@ ParsedConfigMap parse_config_map(const json& config_map_schema,
     }
 
     std::set<std::string> unknown_config_entries;
+    std::set<std::string> defaulted_config_entries;
     const everest::config::Keys& config_map_schema_keys = Config::keys(config_map_schema);
 
     std::set_difference(config_map_keys.begin(), config_map_keys.end(), config_map_schema_keys.begin(),
@@ -225,6 +229,7 @@ ParsedConfigMap parse_config_map(const json& config_map_schema,
             }
         } else if (config_entry.contains("default")) {
             config_entry_value = config_entry.at("default"); // use default value defined in manifest
+            defaulted_config_entries.insert(config_entry_name);
         }
         json_validator validator(loader, format_checker);
         validator.set_root_schema(config_entry);
@@ -263,7 +268,7 @@ ParsedConfigMap parse_config_map(const json& config_map_schema,
         patched_config_parameters.push_back(config_param);
     }
 
-    return {patched_config_parameters, unknown_config_entries};
+    return {patched_config_parameters, unknown_config_entries, defaulted_config_entries};
 }
 
 auto get_provides_for_probe_module(std::string_view probe_module_id, const ModuleConfigurations& module_configs,
@@ -604,6 +609,22 @@ std::map<std::string, std::vector<Fulfillment>> ConfigBase::get_fulfillments(std
 }
 
 // ManagerConfig
+void ManagerConfig::collect_config_deprecations(const json& config_map_schema,
+                                                const std::vector<ConfigurationParameter>& configuration_parameters,
+                                                const std::set<std::string>& defaulted_config_entries,
+                                                const std::string& module_id, const std::string& module_name,
+                                                const std::optional<std::string>& impl_id) {
+    auto notices = everest::config::collect_config_deprecations(config_map_schema, configuration_parameters,
+                                                                defaulted_config_entries, m_config_origin_authoritative,
+                                                                module_id, module_name, impl_id);
+    m_deprecations.insert(m_deprecations.end(), std::make_move_iterator(notices.begin()),
+                          std::make_move_iterator(notices.end()));
+}
+
+const std::vector<everest::config::DeprecationNotice>& ManagerConfig::get_deprecations() const {
+    return m_deprecations;
+}
+
 void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
     const auto module_id = module_config.module_id;
     const auto module_name = module_config.module_name;
@@ -629,6 +650,11 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
     } catch (const std::exception& e) {
         EVLOG_AND_THROW(EverestConfigError(fmt::format("Failed to load and parse manifest file {}: {}",
                                                        fs::weakly_canonical(manifest_path).string(), e.what())));
+    }
+
+    if (auto module_deprecation =
+            everest::config::collect_module_deprecation(m_manifests[module_name], module_id, module_name)) {
+        m_deprecations.push_back(std::move(module_deprecation.value()));
     }
 
     // validate user-defined default values for the config meta-schemas
@@ -703,6 +729,8 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
                 }
             }
             module_config.configuration_parameters[impl_id] = parsed_config_map.parsed_config_parameters;
+            collect_config_deprecations(config_map_schema, parsed_config_map.parsed_config_parameters,
+                                        parsed_config_map.defaulted_config_entries, module_id, module_name, impl_id);
         } catch (const ConfigParseException& err) {
             if (err.err_t == ConfigParseException::MISSING_ENTRY) {
                 EVLOG_AND_THROW(EverestConfigError(fmt::format("Missing mandatory config entry '{}' in {}!", err.entry,
@@ -735,6 +763,9 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
                 }
             }
             module_config.configuration_parameters["!module"] = parsed_config_map.parsed_config_parameters;
+            collect_config_deprecations(config_map_schema, parsed_config_map.parsed_config_parameters,
+                                        parsed_config_map.defaulted_config_entries, module_id, module_name,
+                                        std::nullopt);
         } catch (const ConfigParseException& err) {
             if (err.err_t == ConfigParseException::MISSING_ENTRY) {
                 EVLOG_AND_THROW(
@@ -1191,6 +1222,8 @@ void ManagerConfig::init_schemas() {
 }
 
 void ManagerConfig::init_from_preloaded(everest::config::ModuleConfigurations preloaded_configs) {
+    // storage does not record whether a value was configured or defaulted
+    m_config_origin_authoritative = false;
     try {
         init_schemas();
         EVLOG_info << "Loading module configs from pre-loaded database configuration";

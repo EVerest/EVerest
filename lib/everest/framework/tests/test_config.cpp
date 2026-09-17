@@ -2,9 +2,12 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_all.hpp>
 
+#include <algorithm>
+
 #include <framework/runtime.hpp>
 #include <tests/helpers.hpp>
 #include <utils/config.hpp>
+#include <utils/config/deprecation.hpp>
 #include <utils/config/slot_manager.hpp>
 
 namespace fs = std::filesystem;
@@ -664,6 +667,142 @@ SCENARIO("ConfigurationParameterCharacteristics serialization of min_value and m
                 CHECK(j["min_value"].get<int32_t>() == 0);
                 CHECK(j["max_value"].get<int32_t>() == 60000);
             }
+        }
+    }
+}
+
+namespace {
+using everest::config::DeprecationKind;
+using everest::config::DeprecationNotice;
+
+const DeprecationNotice* find_module_notice(const std::vector<DeprecationNotice>& notices) {
+    const auto it = std::find_if(notices.begin(), notices.end(),
+                                 [](const auto& notice) { return notice.kind == DeprecationKind::Module; });
+    return it == notices.end() ? nullptr : &(*it);
+}
+
+const DeprecationNotice* find_config_entry_notice(const std::vector<DeprecationNotice>& notices,
+                                                  const std::string& config_entry) {
+    const auto it = std::find_if(notices.begin(), notices.end(), [&config_entry](const auto& notice) {
+        return notice.kind == DeprecationKind::ConfigEntry and notice.config_entry == config_entry;
+    });
+    return it == notices.end() ? nullptr : &(*it);
+}
+} // namespace
+
+SCENARIO("Check manifest driven deprecations", "[!throws]") {
+    const auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+
+    GIVEN("A config using a module that declares deprecations") {
+        auto ms =
+            Everest::ManagerSettings(bin_dir + "deprecated_manifest/", bin_dir + "deprecated_manifest/config.yaml");
+        const Everest::ManagerConfig config(ms);
+        const auto& deprecations = config.get_deprecations();
+
+        THEN("The deprecation of the module itself is reported") {
+            const auto* notice = find_module_notice(deprecations);
+            REQUIRE(notice != nullptr);
+            CHECK(notice->component == "TESTDeprecatedManifest (test module)");
+            CHECK(notice->module_id == "deprecated_module");
+            CHECK(notice->module_name == "TESTDeprecatedManifest");
+            CHECK(notice->deprecated_in == "2026.10.0");
+            CHECK(notice->earliest_removal == "2027.04.0");
+            REQUIRE(notice->migration_guide.has_value());
+            CHECK(notice->migration_guide.value() == "Use another module");
+        }
+
+        THEN("A configured deprecated config entry is reported") {
+            const auto* notice = find_config_entry_notice(deprecations, "deprecated_entry");
+            REQUIRE(notice != nullptr);
+            CHECK(notice->component == "TESTDeprecatedManifest config entry 'deprecated_entry'");
+            CHECK_FALSE(notice->implementation_id.has_value());
+        }
+
+        THEN("A configured deprecated config entry of an implementation is reported") {
+            const auto* notice = find_config_entry_notice(deprecations, "deprecated_impl_entry");
+            REQUIRE(notice != nullptr);
+            REQUIRE(notice->implementation_id.has_value());
+            CHECK(notice->implementation_id.value() == "main");
+        }
+
+        THEN("A config entry set to a value other than the deprecated one is not reported") {
+            CHECK(find_config_entry_notice(deprecations, "deprecated_when_false_entry") == nullptr);
+        }
+
+        THEN("A config entry without a deprecation is not reported") {
+            CHECK(find_config_entry_notice(deprecations, "valid_config_entry") == nullptr);
+        }
+    }
+
+    GIVEN("A config that leaves a deprecated config entry at its default") {
+        auto ms = Everest::ManagerSettings(bin_dir + "deprecated_manifest_defaults/",
+                                           bin_dir + "deprecated_manifest_defaults/config.yaml");
+        const Everest::ManagerConfig config(ms);
+        const auto& deprecations = config.get_deprecations();
+
+        THEN("The defaulted config entry is not reported") {
+            CHECK(find_config_entry_notice(deprecations, "deprecated_entry") == nullptr);
+            CHECK(find_config_entry_notice(deprecations, "deprecated_impl_entry") == nullptr);
+        }
+
+        THEN("The config entry set to the deprecated value is reported") {
+            const auto* notice = find_config_entry_notice(deprecations, "deprecated_when_false_entry");
+            REQUIRE(notice != nullptr);
+            CHECK(notice->component == "the entry that is only deprecated when false");
+        }
+
+        THEN("The deprecation of the module itself is still reported") {
+            CHECK(find_module_notice(deprecations) != nullptr);
+        }
+    }
+
+    GIVEN("A config file using a module with an incomplete deprecation in its manifest") {
+        auto ms = Everest::ManagerSettings(bin_dir + "broken_manifest_5/", bin_dir + "broken_manifest_5/config.yaml");
+        THEN("It should throw Everest::EverestConfigError") {
+            CHECK_THROWS_AS(Everest::ManagerConfig(ms), Everest::EverestConfigError);
+        }
+    }
+}
+
+SCENARIO("Check the formatting of a deprecation notice") {
+    GIVEN("A module deprecation with all fields set") {
+        DeprecationNotice notice;
+        notice.kind = DeprecationKind::Module;
+        notice.component = "OCPP (OCPP 1.6)";
+        notice.module_id = "ocpp";
+        notice.module_name = "OCPP";
+        notice.deprecated_in = "2026.10.0";
+        notice.earliest_removal = "2027.04.0";
+        notice.migration_guide = "Migrate to the Combined OCPPmulti Module";
+        notice.note = "Superseded by OCPPmulti.";
+
+        THEN("Every field is rendered on its own line") {
+            CHECK(everest::config::format_deprecation_notice(notice) ==
+                  "DEPRECATED MODULE\n"
+                  "  component       : OCPP (OCPP 1.6)\n"
+                  "  module id       : ocpp\n"
+                  "  deprecated      : 2026.10.0, earliest removal 2027.04.0\n"
+                  "  migration guide : Migrate to the Combined OCPPmulti Module\n"
+                  "  note            : Superseded by OCPPmulti.");
+        }
+    }
+
+    GIVEN("A config entry deprecation without optional fields") {
+        DeprecationNotice notice;
+        notice.kind = DeprecationKind::ConfigEntry;
+        notice.component = "EvseManager config entry 'lock_connector_in_state_b'";
+        notice.module_id = "connector_1";
+        notice.module_name = "EvseManager";
+        notice.config_entry = "lock_connector_in_state_b";
+        notice.deprecated_in = "2026.10.0";
+        notice.earliest_removal = "2027.04.0";
+
+        THEN("The absent fields are left out") {
+            CHECK(everest::config::format_deprecation_notice(notice) ==
+                  "DEPRECATED CONFIG ENTRY\n"
+                  "  component       : EvseManager config entry 'lock_connector_in_state_b'\n"
+                  "  set in          : connector_1, module config\n"
+                  "  deprecated      : 2026.10.0, earliest removal 2027.04.0");
         }
     }
 }

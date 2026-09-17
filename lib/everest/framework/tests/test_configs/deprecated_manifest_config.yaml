@@ -1,0 +1,17 @@
+active_modules:
+  deprecated_module:
+    module: TESTDeprecatedManifest
+    config_module:
+      deprecated_entry: "configured"
+      deprecated_when_false_entry: true
+    config_implementation:
+      main:
+        deprecated_impl_entry: "configured"
+settings:
+  interfaces_dir: "interfaces"
+  modules_dir: "modules"
+  types_dir: "types"
+  errors_dir: "errors"
+  schemas_dir: "schemas"
+  www_dir: "www"
+  logging_config_file: "logging.ini"
