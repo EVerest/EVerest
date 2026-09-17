@@ -3,11 +3,12 @@
 #include "PersistentSessionStorage.hpp"
 
 #include <algorithm>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <utility>
 
+#include <everest/database/sqlite/connection.hpp>
 #include <everest/exceptions.hpp>
 #include <everest/logging.hpp>
 #include <utils/exceptions.hpp>
