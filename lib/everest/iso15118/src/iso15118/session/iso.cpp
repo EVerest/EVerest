@@ -341,13 +341,9 @@ TimePoint const& Session::poll() {
         visit_engine([&event](auto& e) { e.on_control_event(event.value()); });
     }
 
-    const auto timeouts_reached = timeouts.check();
-
-    if (timeouts_reached.has_value()) {
-        for (const auto& timeout : timeouts_reached.value()) {
-            visit_engine([timeout](auto& e) { e.on_timeout(timeout); });
-            timeouts.reset_timeout(timeout);
-        }
+    for (const auto timeout : timeouts.check()) {
+        visit_engine([timeout](auto& e) { e.on_timeout(timeout); });
+        timeouts.reset_timeout(timeout);
     }
 
     // check for complete sdp packet

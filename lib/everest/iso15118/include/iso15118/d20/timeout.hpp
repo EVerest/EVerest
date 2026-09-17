@@ -51,7 +51,7 @@ public:
     void start_timeout(TimeoutType type, uint32_t timeout_ms);
     void stop_timeout(TimeoutType type);
     void reset_timeout(TimeoutType type);
-    std::optional<std::vector<TimeoutType>> check();
+    std::vector<TimeoutType> check() const;
 
 private:
     std::array<std::optional<Timeout>, TIMEOUT_TYPE_SIZE> timeouts;
