@@ -28,7 +28,7 @@ extern "C" {
 
 
 #include "cbv2g/common/exi_bitstream.h"
-#include "cbv2g/iso_20/iso20_AC_DER_SAE_Datatypes.h"
+#include "iso20_AC_DER_SAE_Datatypes.h"
 
 
 // main function for decoding
