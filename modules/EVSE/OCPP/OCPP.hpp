@@ -161,8 +161,10 @@ public:
     std::unique_ptr<Everest::SteadyTimer> charging_schedules_timer;
     bool ocpp_stopped = false;
 
-    /// \brief Returns the OCPP connector id for the given EVerest \p evse_id and \p connector_id.
-    /// \throws std::out_of_range if the evse is not connected to this module instance.
+    /**
+     * @brief Returns the OCPP connector id for the given EVerest @p evse_id and @p connector_id.
+     * @throws std::out_of_range if the evse is not connected to this module instance.
+     */
     int32_t get_ocpp_connector_id(int32_t evse_id, int32_t connector_id);
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
@@ -197,13 +199,13 @@ private:
     std::map<int32_t, int32_t> everest_evse_id_by_ocpp_connector_id; // OCPP connector id -> EVerest evse id
 
     /**
-     * @brief Translates an EVerest everest_evse_id into the OCPP connector id of its first connector. 0 maps to 0.
+     * @brief Translates an EVerest @p everest_evse_id into the OCPP connector id of its first connector. 0 maps to 0.
      * @returns std::nullopt if the evse is not connected to this module instance.
      */
     std::optional<int32_t> to_ocpp_connector_id(int32_t everest_evse_id) const;
 
     /**
-     * @brief Translates an ocpp_connector_id into the EVerest evse id it belongs to. 0 maps to 0.
+     * @brief Translates an @p ocpp_connector_id into the EVerest evse id it belongs to. 0 maps to 0.
      * Unknown ids are returned unchanged (with a warning) so that the caller degrades gracefully.
      */
     int32_t to_everest_evse_id(int32_t ocpp_connector_id) const;
