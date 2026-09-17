@@ -138,6 +138,10 @@ void bsp_bridge::connect_cb_endpoint(std::string const& remote) {
     handle_status();
 }
 
+void bsp_bridge::set_cb_connection_status(bool connected) {
+    m_api.notify_cb_connection(connected);
+}
+
 void bsp_bridge::handle_timer_event() {
     if (m_udp_on_error) {
         if (m_udp) {

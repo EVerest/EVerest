@@ -56,6 +56,8 @@ public:
 private:
     void handle_error_timer();
     void handle_heartbeat_timer();
+    void send_heartbeat();
+    void set_cb_connected(bool connected);
     void handle_udp_rx(everest::lib::io::udp::udp_payload const& payload);
     void handle_heartbeat_reply(everest::lib::io::udp::udp_payload const& payload);
     void create_udp_client(std::string const& remote, uint16_t remote_port);

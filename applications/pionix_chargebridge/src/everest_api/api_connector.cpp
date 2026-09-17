@@ -88,23 +88,8 @@ bool api_connector::register_events(everest::lib::io::event::fd_event_handler& h
     }
     result = handler.register_event_handler(&m_mqtt) && result;
     result = handler.register_event_handler(&m_sync_timer, [this](auto&) {
-        // The ChargeBridge state is evaluated first, so the adapters are sync'd with this tick's
-        // value and not with the previous one. The adapters decide from it whether an EVerest that
-        // just came back gets the device state replayed or a communication fault, and both edges can
-        // fall into the same 1 s tick: with the old order a coincident CB-connect + EVerest-connect
-        // lost the replay entirely (fault raised, then cleared by the CB edge, EVerest left blank),
-        // and a coincident CB-disconnect replayed a snapshot of a device that had just gone away.
-        // Re-raising a fault the CB edge already raised is a no-op in the EVerest error framework.
-        handle_cb_connection_state();
-        if (m_evse_bsp_enabled) {
-            m_evse_bsp.sync(m_cb_connected);
-        }
-        if (m_ovm_enabled) {
-            m_ovm.sync(m_cb_connected);
-        }
-        if (m_ev_bsp_enabled) {
-            m_ev_bsp.sync(m_cb_connected);
-        }
+        m_tx(m_host_status);
+        sync_cb_connection_state();
     }) && result;
     return result;
 }
@@ -141,6 +126,17 @@ void api_connector::set_cb_message(evse_bsp_cb_to_host const& msg) {
     }
     if (m_ovm_enabled) {
         m_ovm.set_cb_message(msg);
+    }
+    // The up edge is taken from the packet itself, after the adapters hold its content, so the replay
+    // they do on the edge uses this device state. The down edge stays with the tick: it is a timeout.
+    if (not m_cb_connected) {
+        sync_cb_connection_state();
+    }
+}
+
+void api_connector::notify_cb_connection(bool connected) {
+    if (connected and m_tx) {
+        m_tx(m_host_status);
     }
 }
 
@@ -199,8 +195,27 @@ void api_connector::handle_mqtt_connect() {
     }
 }
 
+// The ChargeBridge state is evaluated first, so the adapters are sync'd with this evaluation's
+// value and not with the previous one. The adapters decide from it whether an EVerest that just came
+// back gets the device state replayed or a communication fault, and both edges can fall into the
+// same 1 s tick: with the other order a coincident CB-connect + EVerest-connect lost the replay
+// entirely (fault raised, then cleared by the CB edge, EVerest left blank), and a coincident
+// CB-disconnect replayed a snapshot of a device that had just gone away. Re-raising a fault the CB
+// edge already raised is a no-op in the EVerest error framework.
+void api_connector::sync_cb_connection_state() {
+    handle_cb_connection_state();
+    if (m_evse_bsp_enabled) {
+        m_evse_bsp.sync(m_cb_connected);
+    }
+    if (m_ovm_enabled) {
+        m_ovm.sync(m_cb_connected);
+    }
+    if (m_ev_bsp_enabled) {
+        m_ev_bsp.sync(m_cb_connected);
+    }
+}
+
 void api_connector::handle_cb_connection_state() {
-    m_tx(m_host_status);
     auto current = check_cb_heartbeat();
     auto handle_status = [this](bool status) {
         if (status) {

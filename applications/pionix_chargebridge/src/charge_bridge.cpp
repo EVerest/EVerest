@@ -360,6 +360,18 @@ void charge_bridge::set_bridges_cb_connection_status(bool connected) {
     if (m_plc) {
         m_plc->set_cb_connection_status(connected);
     }
+    if (m_pty_1) {
+        m_pty_1->set_cb_connection_status(connected);
+    }
+    if (m_pty_2) {
+        m_pty_2->set_cb_connection_status(connected);
+    }
+    if (m_pty_3) {
+        m_pty_3->set_cb_connection_status(connected);
+    }
+    if (m_bsp) {
+        m_bsp->set_cb_connection_status(connected);
+    }
     if (m_io) {
         m_io->set_cb_connection_status(connected);
     }
@@ -673,7 +685,7 @@ void charge_bridge::retry_missing_bridges() {
 
         // A bridge created here missed every set_bridges_cb_connection_status() that ran while it did
         // not exist, and nothing repeats that call for it: on a config without a heartbeat block the
-        // state is published once per connection edge, so a late can/plc/io bridge would report
+        // state is published once per connection edge, so a late can/plc/io/serial/bsp bridge would report
         // available() == false for the rest of the session. (Heartbeat configs heal themselves only
         // because the heartbeat republishes the state on every tick.) Apply the current state the way
         // heartbeat_cb does: read it under the monitor, then publish to the bridges with the lock
