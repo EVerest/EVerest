@@ -2754,7 +2754,15 @@ static int encode_iso20_EVPriceRuleStackType(exi_bitstream_t* stream, const stru
                     error = encode_iso20_EVPriceRuleType(stream, &EVPriceRuleStackType->EVPriceRule.array[EVPriceRule_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 54;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (EVPriceRule_currentIndex < 8)
+                        {
+                            grammar_id = 54;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -3172,7 +3180,15 @@ static int encode_iso20_PowerScheduleEntryListType(exi_bitstream_t* stream, cons
                     error = encode_iso20_PowerScheduleEntryType(stream, &PowerScheduleEntryListType->PowerScheduleEntry.array[PowerScheduleEntry_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 62;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (PowerScheduleEntry_currentIndex < 1024)
+                        {
+                            grammar_id = 62;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -3525,7 +3541,15 @@ static int encode_iso20_PriceRuleStackType(exi_bitstream_t* stream, const struct
                     error = encode_iso20_PriceRuleType(stream, &PriceRuleStackType->PriceRule.array[PriceRule_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 73;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (PriceRule_currentIndex < 8)
+                        {
+                            grammar_id = 73;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -3824,7 +3848,15 @@ static int encode_iso20_EVPowerScheduleEntryListType(exi_bitstream_t* stream, co
                     error = encode_iso20_EVPowerScheduleEntryType(stream, &EVPowerScheduleEntryListType->EVPowerScheduleEntry.array[EVPowerScheduleEntry_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 81;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (EVPowerScheduleEntry_currentIndex < 1024)
+                        {
+                            grammar_id = 81;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -4051,7 +4083,15 @@ static int encode_iso20_EVPriceRuleStackListType(exi_bitstream_t* stream, const 
                     error = encode_iso20_EVPriceRuleStackType(stream, &EVPriceRuleStackListType->EVPriceRuleStack.array[EVPriceRuleStack_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 87;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (EVPriceRuleStack_currentIndex < 1024)
+                        {
+                            grammar_id = 87;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -5705,7 +5745,15 @@ static int encode_iso20_PriceLevelScheduleEntryListType(exi_bitstream_t* stream,
                     error = encode_iso20_PriceLevelScheduleEntryType(stream, &PriceLevelScheduleEntryListType->PriceLevelScheduleEntry.array[PriceLevelScheduleEntry_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 116;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (PriceLevelScheduleEntry_currentIndex < 1024)
+                        {
+                            grammar_id = 116;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -5857,7 +5905,15 @@ static int encode_iso20_TaxRuleListType(exi_bitstream_t* stream, const struct is
                     error = encode_iso20_TaxRuleType(stream, &TaxRuleListType->TaxRule.array[TaxRule_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 120;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (TaxRule_currentIndex < 10)
+                        {
+                            grammar_id = 120;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -5939,7 +5995,15 @@ static int encode_iso20_PriceRuleStackListType(exi_bitstream_t* stream, const st
                     error = encode_iso20_PriceRuleStackType(stream, &PriceRuleStackListType->PriceRuleStack.array[PriceRuleStack_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 122;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (PriceRuleStack_currentIndex < 1024)
+                        {
+                            grammar_id = 122;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -6055,7 +6119,15 @@ static int encode_iso20_OverstayRuleListType(exi_bitstream_t* stream, const stru
                     error = encode_iso20_OverstayRuleType(stream, &OverstayRuleListType->OverstayRule.array[OverstayRule_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 124;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (OverstayRule_currentIndex < 5)
+                        {
+                            grammar_id = 124;
+                        }
+                        else
+                        {
+                            grammar_id = 125;
+                        }
                     }
                 }
             }
@@ -6113,7 +6185,15 @@ static int encode_iso20_OverstayRuleListType(exi_bitstream_t* stream, const stru
                     error = encode_iso20_OverstayRuleType(stream, &OverstayRuleListType->OverstayRule.array[OverstayRule_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 126;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (OverstayRule_currentIndex < 5)
+                        {
+                            grammar_id = 126;
+                        }
+                        else
+                        {
+                            grammar_id = 127;
+                        }
                     }
                 }
             }
@@ -6159,7 +6239,15 @@ static int encode_iso20_OverstayRuleListType(exi_bitstream_t* stream, const stru
                     error = encode_iso20_OverstayRuleType(stream, &OverstayRuleListType->OverstayRule.array[OverstayRule_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 128;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (OverstayRule_currentIndex < 5)
+                        {
+                            grammar_id = 128;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -6241,7 +6329,15 @@ static int encode_iso20_AdditionalServiceListType(exi_bitstream_t* stream, const
                     error = encode_iso20_AdditionalServiceType(stream, &AdditionalServiceListType->AdditionalService.array[AdditionalService_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 130;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (AdditionalService_currentIndex < 5)
+                        {
+                            grammar_id = 130;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -6424,7 +6520,15 @@ static int encode_iso20_ParameterSetType(exi_bitstream_t* stream, const struct i
                     error = encode_iso20_ParameterType(stream, &ParameterSetType->Parameter.array[Parameter_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 135;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (Parameter_currentIndex < 32)
+                        {
+                            grammar_id = 135;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -7731,7 +7835,15 @@ static int encode_iso20_ReceiptType(exi_bitstream_t* stream, const struct iso20_
                     error = encode_iso20_DetailedTaxType(stream, &ReceiptType->TaxCosts.array[TaxCosts_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 159;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (TaxCosts_currentIndex < 10)
+                        {
+                            grammar_id = 159;
+                        }
+                        else
+                        {
+                            grammar_id = 160;
+                        }
                     }
                 }
             }
@@ -7822,7 +7934,15 @@ static int encode_iso20_ReceiptType(exi_bitstream_t* stream, const struct iso20_
                     error = encode_iso20_DetailedTaxType(stream, &ReceiptType->TaxCosts.array[TaxCosts_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 161;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (TaxCosts_currentIndex < 10)
+                        {
+                            grammar_id = 161;
+                        }
+                        else
+                        {
+                            grammar_id = 162;
+                        }
                     }
                 }
             }
@@ -7900,7 +8020,15 @@ static int encode_iso20_ReceiptType(exi_bitstream_t* stream, const struct iso20_
                     error = encode_iso20_DetailedTaxType(stream, &ReceiptType->TaxCosts.array[TaxCosts_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 163;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (TaxCosts_currentIndex < 10)
+                        {
+                            grammar_id = 163;
+                        }
+                        else
+                        {
+                            grammar_id = 164;
+                        }
                     }
                 }
             }
@@ -7965,7 +8093,15 @@ static int encode_iso20_ReceiptType(exi_bitstream_t* stream, const struct iso20_
                     error = encode_iso20_DetailedTaxType(stream, &ReceiptType->TaxCosts.array[TaxCosts_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 165;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (TaxCosts_currentIndex < 10)
+                        {
+                            grammar_id = 165;
+                        }
+                        else
+                        {
+                            grammar_id = 166;
+                        }
                     }
                 }
             }
@@ -8017,7 +8153,15 @@ static int encode_iso20_ReceiptType(exi_bitstream_t* stream, const struct iso20_
                     error = encode_iso20_DetailedTaxType(stream, &ReceiptType->TaxCosts.array[TaxCosts_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 167;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (TaxCosts_currentIndex < 10)
+                        {
+                            grammar_id = 167;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -8569,7 +8713,15 @@ static int encode_iso20_EVPowerProfileEntryListType(exi_bitstream_t* stream, con
                     error = encode_iso20_PowerScheduleEntryType(stream, &EVPowerProfileEntryListType->EVPowerProfileEntry.array[EVPowerProfileEntry_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 182;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (EVPowerProfileEntry_currentIndex < 2048)
+                        {
+                            grammar_id = 182;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -9864,7 +10016,15 @@ static int encode_iso20_SelectedServiceListType(exi_bitstream_t* stream, const s
                     error = encode_iso20_SelectedServiceType(stream, &SelectedServiceListType->SelectedService.array[SelectedService_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 216;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (SelectedService_currentIndex < 16)
+                        {
+                            grammar_id = 216;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -10284,7 +10444,15 @@ static int encode_iso20_ListOfRootCertificateIDsType(exi_bitstream_t* stream, co
                     error = encode_iso20_X509IssuerSerialType(stream, &ListOfRootCertificateIDsType->RootCertificateID.array[RootCertificateID_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 228;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (RootCertificateID_currentIndex < 20)
+                        {
+                            grammar_id = 228;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -10459,7 +10627,15 @@ static int encode_iso20_ServiceListType(exi_bitstream_t* stream, const struct is
                     error = encode_iso20_ServiceType(stream, &ServiceListType->Service.array[Service_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 233;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (Service_currentIndex < 8)
+                        {
+                            grammar_id = 233;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -10541,7 +10717,15 @@ static int encode_iso20_ServiceParameterListType(exi_bitstream_t* stream, const 
                     error = encode_iso20_ParameterSetType(stream, &ServiceParameterListType->ParameterSet.array[ParameterSet_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 235;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (ParameterSet_currentIndex < 32)
+                        {
+                            grammar_id = 235;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }
@@ -11844,7 +12028,15 @@ static int encode_iso20_Scheduled_SEResControlModeType(exi_bitstream_t* stream, 
                     error = encode_iso20_ScheduleTupleType(stream, &Scheduled_SEResControlModeType->ScheduleTuple.array[ScheduleTuple_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 260;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (ScheduleTuple_currentIndex < 3)
+                        {
+                            grammar_id = 260;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }

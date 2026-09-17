@@ -3474,7 +3474,15 @@ static int encode_iso2_ConsumptionCostType(exi_bitstream_t* stream, const struct
                     error = encode_iso2_CostType(stream, &ConsumptionCostType->Cost.array[Cost_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 71;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (Cost_currentIndex < 3)
+                        {
+                            grammar_id = 71;
+                        }
+                        else
+                        {
+                            grammar_id = 3;
+                        }
                     }
                 }
             }
@@ -3690,7 +3698,15 @@ static int encode_iso2_SalesTariffEntryType(exi_bitstream_t* stream, const struc
                     error = encode_iso2_ConsumptionCostType(stream, &SalesTariffEntryType->ConsumptionCost.array[ConsumptionCost_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 76;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (ConsumptionCost_currentIndex < 3)
+                        {
+                            grammar_id = 76;
+                        }
+                        else
+                        {
+                            grammar_id = 77;
+                        }
                     }
                 }
             }
@@ -3742,7 +3758,15 @@ static int encode_iso2_SalesTariffEntryType(exi_bitstream_t* stream, const struc
                     error = encode_iso2_ConsumptionCostType(stream, &SalesTariffEntryType->ConsumptionCost.array[ConsumptionCost_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 78;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (ConsumptionCost_currentIndex < 3)
+                        {
+                            grammar_id = 78;
+                        }
+                        else
+                        {
+                            grammar_id = 3;
+                        }
                     }
                 }
             }
@@ -3824,7 +3848,15 @@ static int encode_iso2_PMaxScheduleType(exi_bitstream_t* stream, const struct is
                     error = encode_iso2_PMaxScheduleEntryType(stream, &PMaxScheduleType->PMaxScheduleEntry.array[PMaxScheduleEntry_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 80;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (PMaxScheduleEntry_currentIndex < 1024)
+                        {
+                            grammar_id = 80;
+                        }
+                        else
+                        {
+                            grammar_id = 3;
+                        }
                     }
                 }
             }
@@ -4208,7 +4240,15 @@ static int encode_iso2_SalesTariffType(exi_bitstream_t* stream, const struct iso
                     error = encode_iso2_SalesTariffEntryType(stream, &SalesTariffType->SalesTariffEntry.array[SalesTariffEntry_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 86;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (SalesTariffEntry_currentIndex < 1024)
+                        {
+                            grammar_id = 86;
+                        }
+                        else
+                        {
+                            grammar_id = 87;
+                        }
                     }
                 }
             }
@@ -4275,7 +4315,15 @@ static int encode_iso2_SalesTariffType(exi_bitstream_t* stream, const struct iso
                     error = encode_iso2_SalesTariffEntryType(stream, &SalesTariffType->SalesTariffEntry.array[SalesTariffEntry_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 88;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (SalesTariffEntry_currentIndex < 1024)
+                        {
+                            grammar_id = 88;
+                        }
+                        else
+                        {
+                            grammar_id = 89;
+                        }
                     }
                 }
             }
@@ -4321,7 +4369,15 @@ static int encode_iso2_SalesTariffType(exi_bitstream_t* stream, const struct iso
                     error = encode_iso2_SalesTariffEntryType(stream, &SalesTariffType->SalesTariffEntry.array[SalesTariffEntry_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 90;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (SalesTariffEntry_currentIndex < 1024)
+                        {
+                            grammar_id = 90;
+                        }
+                        else
+                        {
+                            grammar_id = 3;
+                        }
                     }
                 }
             }
@@ -4626,7 +4682,15 @@ static int encode_iso2_ParameterSetType(exi_bitstream_t* stream, const struct is
                     error = encode_iso2_ParameterType(stream, &ParameterSetType->Parameter.array[Parameter_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 99;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (Parameter_currentIndex < 16)
+                        {
+                            grammar_id = 99;
+                        }
+                        else
+                        {
+                            grammar_id = 3;
+                        }
                     }
                 }
             }
@@ -5845,7 +5909,15 @@ static int encode_iso2_ListOfRootCertificateIDsType(exi_bitstream_t* stream, con
                     error = encode_iso2_X509IssuerSerialType(stream, &ListOfRootCertificateIDsType->RootCertificateID.array[RootCertificateID_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 118;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (RootCertificateID_currentIndex < 20)
+                        {
+                            grammar_id = 118;
+                        }
+                        else
+                        {
+                            grammar_id = 3;
+                        }
                     }
                 }
             }
@@ -6167,7 +6239,15 @@ static int encode_iso2_SelectedServiceListType(exi_bitstream_t* stream, const st
                     error = encode_iso2_SelectedServiceType(stream, &SelectedServiceListType->SelectedService.array[SelectedService_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 127;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (SelectedService_currentIndex < 16)
+                        {
+                            grammar_id = 127;
+                        }
+                        else
+                        {
+                            grammar_id = 3;
+                        }
                     }
                 }
             }
@@ -7183,7 +7263,15 @@ static int encode_iso2_SAScheduleListType(exi_bitstream_t* stream, const struct 
                     error = encode_iso2_SAScheduleTupleType(stream, &SAScheduleListType->SAScheduleTuple.array[SAScheduleTuple_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 155;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (SAScheduleTuple_currentIndex < 3)
+                        {
+                            grammar_id = 155;
+                        }
+                        else
+                        {
+                            grammar_id = 3;
+                        }
                     }
                 }
             }
@@ -7265,7 +7353,15 @@ static int encode_iso2_ChargingProfileType(exi_bitstream_t* stream, const struct
                     error = encode_iso2_ProfileEntryType(stream, &ChargingProfileType->ProfileEntry.array[ProfileEntry_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 157;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (ProfileEntry_currentIndex < 24)
+                        {
+                            grammar_id = 157;
+                        }
+                        else
+                        {
+                            grammar_id = 3;
+                        }
                     }
                 }
             }
@@ -7347,7 +7443,15 @@ static int encode_iso2_ServiceParameterListType(exi_bitstream_t* stream, const s
                     error = encode_iso2_ParameterSetType(stream, &ServiceParameterListType->ParameterSet.array[ParameterSet_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 159;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (ParameterSet_currentIndex < 255)
+                        {
+                            grammar_id = 159;
+                        }
+                        else
+                        {
+                            grammar_id = 3;
+                        }
                     }
                 }
             }
@@ -8114,7 +8218,15 @@ static int encode_iso2_ServiceListType(exi_bitstream_t* stream, const struct iso
                     error = encode_iso2_ServiceType(stream, &ServiceListType->Service.array[Service_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 184;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (Service_currentIndex < 8)
+                        {
+                            grammar_id = 184;
+                        }
+                        else
+                        {
+                            grammar_id = 3;
+                        }
                     }
                 }
             }
