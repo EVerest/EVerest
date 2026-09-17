@@ -36,3 +36,11 @@ install(
     DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/everest"
     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )
+
+# MCS EVSE-side session test: the script also starts the pionix_chargebridge daemon and a tmux
+# server with ambient CAP_NET_ADMIN, so it does not go through run_tmux_helper.sh.
+install(
+    FILES "run-mcs-evse-session.sh"
+    DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/everest"
+    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+)
