@@ -106,11 +106,11 @@ every stored record, including ``Open`` ones). Clearing cannot be undone; if a f
 arrives later for a record that was already deleted, that finish is simply dropped.
 
 ``get_sessions`` is paginated: the caller passes an optional page size and filter
-(state, EVSE id, started-after timestamp compared against the session start), and
-iterates by passing the ``continuation_token`` of a reply into the next call until a
-reply carries no token. The token is opaque and held only by the caller; the module
-keeps no iteration state. Records stored during the iteration appear at its end, pruned
-records are skipped, and a token that is invalid or refers to a replaced database file
-restarts the iteration from the oldest record, so a stale token can re-deliver records
-but never silently skip them. Page sizes are additionally capped by a byte budget, so a
-page may contain fewer records than requested.
+(state, EVSE id, started-after timestamp compared against the session start at
+millisecond precision), and iterates by passing the ``continuation_token`` of a reply
+into the next call until a reply carries no token. The token is opaque and held only by
+the caller; the module keeps no iteration state. Records stored during the iteration
+appear at its end, pruned records are skipped, and a token that is invalid or refers to
+a replaced database file restarts the iteration from the oldest record, so a stale token
+can re-deliver records but never silently skip them. Page sizes are additionally capped
+by a byte budget, so a page may contain fewer records than requested.

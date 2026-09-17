@@ -1477,15 +1477,25 @@ TEST_F(SessionStoreTest, the_started_after_filter_excludes_the_boundary_in_any_s
     EXPECT_TRUE(page.sessions.empty());
 }
 
-TEST_F(SessionStoreTest, the_started_after_filter_accepts_nanosecond_timestamps) {
+TEST_F(SessionStoreTest, the_started_after_filter_applies_the_fraction_of_a_nanosecond_timestamp) {
     ASSERT_TRUE(store->store_session_started(make_session("s1", 1, "2026-08-21T10:00:00.000Z")));
-    ASSERT_TRUE(store->store_session_started(make_session("s2", 2, "2026-08-21T12:00:00.000Z")));
+    ASSERT_TRUE(store->store_session_started(make_session("s2", 2, "2026-08-21T10:00:00.124Z")));
 
     SessionFilter filter{};
-    filter.started_after = "2026-08-21T11:00:00.123456789Z";
+    filter.started_after = "2026-08-21T10:00:00.123456789Z";
 
     const auto page = store->get_sessions(make_request(std::nullopt, std::nullopt, filter));
     EXPECT_EQ(session_ids(page.sessions), std::vector<std::string>({"s2"}));
+}
+
+TEST_F(SessionStoreTest, the_started_after_filter_compares_at_millisecond_precision) {
+    ASSERT_TRUE(store->store_session_started(make_session("s1", 1, "2026-08-21T10:00:00.000Z")));
+
+    SessionFilter filter{};
+    filter.started_after = "2026-08-21T09:59:59.999999999Z";
+
+    const auto page = store->get_sessions(make_request(std::nullopt, std::nullopt, filter));
+    EXPECT_TRUE(page.sessions.empty());
 }
 
 TEST_F(SessionStoreTest, a_started_after_value_that_is_not_a_timestamp_is_ignored) {
