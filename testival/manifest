@@ -1,0 +1,43 @@
+# testival manifest. Directives, applied top to bottom:
+#
+#   event  <name>                   branches testival/<name>-base and testival/<name>-fixes,
+#                                   tags testival/<name>-base-N and testival/<name>-fixes-N
+#   main   <sha>                    base commit the branch is built on
+#   stack  <name>                   starts a stack; its first entry is ranged against main
+#   pr     <number>                 that PR's own commits, ranged against the previous entry in the stack
+#   branch <name> <remote-branch>   same for a branch without a PR
+#   local  <name> [<from>..<to>]    a local block; taken from the previous base build when it has a
+#                                   marker of that name, else from the given range
+#
+# Every entry ends with an empty marker commit "=== end <kind> <name> ... ===".
+
+event charin-09-2026-blomberg
+main 34666a1b1e4472ded1761bda75893e4be1398c58
+
+stack A
+pr 2485
+pr 2703
+pr 2651
+pr 2654
+pr 2607
+pr 2652
+pr 2643
+pr 2608
+pr 2734
+pr 1935
+
+stack B
+pr 2798
+pr 2799
+pr 2800
+pr 2801
+pr 2802
+pr 2803
+pr 2804
+pr 2805
+pr 2806
+local glue 9fe5e05ca~1..9fe5e05ca
+branch mcs-ev feat/mcs-integration-ev
+
+stack C
+pr 2810
