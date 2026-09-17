@@ -252,7 +252,7 @@ types:
           $ref: /session_storage#/Session
       continuation_token:
         description: >-
-          Present if there may be more matching records. Pass it in the next
+          Present if more matching records follow this page. Pass it in the next
           request to continue the iteration; a reply without it means the
           iteration is complete.
         type: string

@@ -563,7 +563,8 @@ SessionStore::get_sessions(const types::session_storage::GetSessionsRequest& req
             // Chronological instead of lexicographic compare, records may store any RFC3339 spelling
             sql += " AND julianday(TIMESTAMP_START) > julianday(@started_after)";
         }
-        sql += " ORDER BY ID ASC LIMIT @limit";
+        // One row beyond the page tells whether a continuation token is needed
+        sql += " ORDER BY ID ASC LIMIT @limit + 1";
 
         auto statement = database->connection->new_statement(sql);
         statement->bind_int64("@cursor", cursor);
@@ -582,9 +583,13 @@ SessionStore::get_sessions(const types::session_storage::GetSessionsRequest& req
         std::int64_t last_seen_id{0};
         std::int32_t processed_rows{0};
         std::size_t page_bytes{0};
-        bool budget_exceeded{false};
+        bool more_records_follow{false};
 
         while (statement->step() == SQLITE_ROW) {
+            if (processed_rows == effective_limit or page_bytes > PAGE_BYTE_BUDGET) {
+                more_records_follow = true;
+                break;
+            }
             last_seen_id = statement->column_int64(to_int(SessionColumnIndex::COL_ID));
             ++processed_rows;
 
@@ -595,16 +600,10 @@ SessionStore::get_sessions(const types::session_storage::GetSessionsRequest& req
             } catch (const std::exception& e) {
                 // A single unreadable record must not hide all the others
                 EVLOG_error << "Skipping unreadable session record: " << e.what();
-                continue;
-            }
-
-            if (page_bytes > PAGE_BYTE_BUDGET) {
-                budget_exceeded = true;
-                break;
             }
         }
 
-        if (budget_exceeded or processed_rows == effective_limit) {
+        if (more_records_follow) {
             list.continuation_token = database->epoch + ":" + std::to_string(last_seen_id);
         }
         return list;

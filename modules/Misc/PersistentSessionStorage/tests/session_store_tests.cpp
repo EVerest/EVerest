@@ -1283,19 +1283,29 @@ TEST_F(SessionStoreTest, paging_returns_every_record_exactly_once) {
     EXPECT_FALSE(third.continuation_token.has_value());
 }
 
-TEST_F(SessionStoreTest, a_record_count_that_is_a_multiple_of_the_limit_ends_with_an_empty_page) {
+TEST_F(SessionStoreTest, a_record_count_that_is_a_multiple_of_the_limit_ends_without_a_token) {
     store_records(*store, 4);
 
     const auto first = store->get_sessions(make_request(2));
     ASSERT_TRUE(first.continuation_token.has_value());
     const auto second = store->get_sessions(make_request(2, first.continuation_token));
-    ASSERT_TRUE(second.continuation_token.has_value());
-    const auto third = store->get_sessions(make_request(2, second.continuation_token));
 
     EXPECT_EQ(first.sessions.size(), 2);
     EXPECT_EQ(second.sessions.size(), 2);
-    EXPECT_TRUE(third.sessions.empty());
-    EXPECT_FALSE(third.continuation_token.has_value());
+    EXPECT_FALSE(second.continuation_token.has_value());
+}
+
+TEST_F(SessionStoreTest, a_page_that_ends_on_the_last_matching_record_carries_no_token) {
+    ASSERT_TRUE(store->store_session_started(make_session("s1", 1, "2026-08-21T10:00:00Z")));
+    ASSERT_TRUE(store->store_session_started(make_session("s2", 2, "2026-08-21T11:00:00Z")));
+    ASSERT_TRUE(store->store_session_started(make_session("s3", 1, "2026-08-21T12:00:00Z")));
+
+    SessionFilter filter{};
+    filter.evse_id = 2;
+
+    const auto page = store->get_sessions(make_request(1, std::nullopt, filter));
+    EXPECT_EQ(session_ids(page.sessions), std::vector<std::string>({"s2"}));
+    EXPECT_FALSE(page.continuation_token.has_value());
 }
 
 TEST_F(SessionStoreTest, a_request_without_a_limit_returns_everything_that_fits_the_default_page) {

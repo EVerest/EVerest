@@ -113,8 +113,8 @@ public:
     virtual bool update_cost(const std::string& session_id, const types::session_cost::SessionCost& cost) = 0;
 
     /// \brief One page of stored records matching the request, in the order they were
-    ///        stored, oldest first. The reply carries a continuation token while more
-    ///        records may follow. An invalid or outdated token in the request starts
+    ///        stored, oldest first. The reply carries a continuation token if more
+    ///        matching records follow. An invalid or outdated token in the request starts
     ///        the iteration from the beginning.
     virtual types::session_storage::SessionList
     get_sessions(const types::session_storage::GetSessionsRequest& request) = 0;
