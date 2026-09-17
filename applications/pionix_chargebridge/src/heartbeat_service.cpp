@@ -79,8 +79,39 @@ void heartbeat_service::create_udp_client(std::string const& remote, uint16_t re
         }
         m_udp_on_error = id not_eq 0;
         m_udp_ready = id == 0;
+        if (m_udp_ready) {
+            // The MCU raises its management link on the first heartbeat it receives and closes every
+            // UART TCP connection while it is down. Sending on the socket's up edge instead of at the
+            // first timer expiry saves a full interval of that state.
+            send_heartbeat();
+        }
         handle_ready();
     });
+}
+
+void heartbeat_service::send_heartbeat() {
+    if (m_udp_on_error or not m_udp) {
+        return;
+    }
+    everest::lib::io::udp::udp_payload payload;
+    utilities::struct_to_vector(m_config_message, payload.buffer);
+    m_udp->tx(payload);
+}
+
+void heartbeat_service::set_cb_connected(bool connected) {
+    if (connected == m_cb_connected) {
+        return;
+    }
+    m_cb_connected = connected;
+    if (connected) {
+        utilities::print_error(m_identifier, "HEARTBEAT/UDP", 0) << "ChargeBridge connected" << std::endl;
+    } else {
+        utilities::print_error(m_identifier, "HEARTBEAT/UDP", 1) << "ChargeBridge connection lost" << std::endl;
+    }
+    handle_ready();
+    if (m_publish_connection_status) {
+        m_publish_connection_status(m_cb_connected);
+    }
 }
 
 void heartbeat_service::disconnect_cb_endpoint() {
@@ -147,23 +178,10 @@ void heartbeat_service::handle_error_timer() {
 }
 
 void heartbeat_service::handle_heartbeat_timer() {
-    if (not m_udp_on_error && m_udp) {
-        everest::lib::io::udp::udp_payload payload;
-        utilities::struct_to_vector(m_config_message, payload.buffer);
-        m_udp->tx(payload);
-    }
+    send_heartbeat();
     auto timeout = std::chrono::steady_clock::now() - m_last_heartbeat_reply > m_connection_to;
-    if (timeout and m_cb_connected) {
-        utilities::print_error(m_identifier, "HEARTBEAT/UDP", 1) << "ChargeBridge connection lost" << std::endl;
-        m_cb_connected = false;
-        handle_ready();
-    }
-
-    else if (not timeout and not m_cb_connected) {
-        utilities::print_error(m_identifier, "HEARTBEAT/UDP", 0) << "ChargeBridge connected" << std::endl;
-        m_cb_connected = true;
-        handle_ready();
-    }
+    set_cb_connected(not timeout);
+    // Republished every tick: a bridge created after the last edge picks the state up here.
     if (m_publish_connection_status) {
         m_publish_connection_status(m_cb_connected);
     }
@@ -248,6 +266,9 @@ void heartbeat_service::handle_heartbeat_reply(everest::lib::io::udp::udp_payloa
     }
 
     m_last_heartbeat_reply = std::chrono::steady_clock::now();
+    // Connected on the reply itself rather than at the next timer expiry: the serial bridges connect
+    // on this edge, and the MCU already accepts them.
+    set_cb_connected(true);
     auto mcu_current = static_cast<uint32_t>(data.data.uptime_ms);
     if (utilities::mcu_rebooted(m_mcu_timestamp, mcu_current)) {
         m_mcu_reset_count++;
