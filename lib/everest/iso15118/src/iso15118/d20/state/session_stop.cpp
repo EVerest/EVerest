@@ -76,20 +76,7 @@ Result SessionStop::feed(Event ev) {
             m_ctx.pause_ctx.reset();
         }
 
-        // Only a positive Res that ends the session anchors the CP-oscillator retain time (a
-        // ServiceRenegotiation keeps the session running); a FAILED Res ends the session with
-        // immediate oscillator-off + SECC-side TCP close instead. Reported once the response
-        // actually hit the wire (Session::send_response).
-        if (res.response_code == dt::ResponseCode::OK) {
-            if (req->charging_session != message_20::datatypes::ChargingSession::ServiceRenegotiation) {
-                m_ctx.session_stop_res_pending =
-                    (req->charging_session == message_20::datatypes::ChargingSession::Pause)
-                        ? session::feedback::SessionStopAction::Pause
-                        : session::feedback::SessionStopAction::Terminate;
-            }
-        } else {
-            m_ctx.session_stop_res_pending = session::feedback::SessionStopAction::FailedTermination;
-        }
+        mark_session_stop_response(m_ctx, *req, res);
 
         return {};
     } else {
@@ -101,6 +88,23 @@ Result SessionStop::feed(Event ev) {
 
         m_ctx.session_stopped = true;
         return {};
+    }
+}
+
+void mark_session_stop_response(d20::Context& ctx, const message_20::SessionStopRequest& req,
+                                const message_20::SessionStopResponse& res) {
+    // Only a positive Res that ends the session anchors the CP-oscillator retain time (a
+    // ServiceRenegotiation keeps the session running); a FAILED Res ends the session with
+    // immediate oscillator-off + SECC-side TCP close instead. Reported once the response
+    // actually hit the wire (Session::send_response).
+    if (res.response_code == dt::ResponseCode::OK) {
+        if (req.charging_session != dt::ChargingSession::ServiceRenegotiation) {
+            ctx.session_stop_res_pending = (req.charging_session == dt::ChargingSession::Pause)
+                                               ? session::feedback::SessionStopAction::Pause
+                                               : session::feedback::SessionStopAction::Terminate;
+        }
+    } else {
+        ctx.session_stop_res_pending = session::feedback::SessionStopAction::FailedTermination;
     }
 }
 

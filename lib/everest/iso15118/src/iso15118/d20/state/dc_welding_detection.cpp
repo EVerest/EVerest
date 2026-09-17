@@ -78,6 +78,7 @@ Result DC_WeldingDetection::feed(Event ev) {
         }
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
 
         // Todo(sl): Tell the reason why the charger is stopping. Shutdown, Error, etc.
         if (req->charging_session == message_20::datatypes::ChargingSession::Pause) {
