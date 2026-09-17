@@ -382,6 +382,11 @@ ocpp::v2::ChargingRateUnitEnum get_unit_or_default(const std::string& unit_strin
 }
 
 void OCPP201::init() {
+    EVLOG_warning << "DEPRECATED MODULE\n"
+                     "  component       : OCPP201 (OCPP 2.0.1 / 2.1)\n"
+                     "  deprecated      : 2026.10.0, earliest removal 2027.04.0\n"
+                     "  migration guide : Migrate to the Combined OCPPmulti Module";
+
     invoke_init(*p_auth_provider);
     invoke_init(*p_auth_validator);
 
