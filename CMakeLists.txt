@@ -87,6 +87,9 @@ set(EVEREST_PACKAGES "base;iso15118;ocpp;core;runtime" CACHE STRING
     "Packages built from this tree (base, iso15118, ocpp, core, runtime); the others are taken from an installed prefix")
 set(EVEREST_TEST_PACKAGES "base;iso15118;ocpp;core;runtime" CACHE STRING
     "Packages whose tests are built when BUILD_TESTING is on")
+# Also declared by everest-framework, but everest-generate.cmake reads it before
+# that subdirectory is added, so a -D would only be seen as a raw cache entry.
+option(EVEREST_ENABLE_RS_SUPPORT "Enable everestrs for Rust modules" OFF)
 # list of compile options that are passed to modules if EVEREST_ENABLE_COMPILE_WARNINGS=ON
 # generated code has functions often not used
 set(EVEREST_COMPILE_OPTIONS "-Wall;-Wno-unused-function" CACHE STRING "A list of compile options used for building modules")
