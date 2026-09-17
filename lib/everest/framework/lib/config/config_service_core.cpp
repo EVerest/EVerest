@@ -380,10 +380,13 @@ LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string&
                 EVLOG_error << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
                 return {false, std::nullopt, err_msg};
             }
+        }
 
-            if (target_slot_id == m_active_slot_id) {
-                internal_reinitialize_from_db(true);
-            }
+        // The active slot's in-memory configuration follows the database, whether the slot was replaced or
+        // just created (a service constructed on an empty database has a default active slot 0 that does not
+        // exist yet).
+        if (target_slot_id == m_active_slot_id) {
+            internal_reinitialize_from_db(true);
         }
 
         EVLOG_info << "Successfully loaded from YAML into slot " << target_slot_id << ".";
