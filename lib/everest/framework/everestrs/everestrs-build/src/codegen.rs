@@ -85,6 +85,7 @@ fn is_reserved_keyword(s: &str) -> bool {
 
 fn lazy_load<'a, T: DeserializeOwned>(
     storage: &'a mut HashMap<String, T>,
+    read_paths: &mut Vec<PathBuf>,
     everest_root: &Vec<PathBuf>,
     prefix: &str,
     postfix: &str,
@@ -102,6 +103,7 @@ fn lazy_load<'a, T: DeserializeOwned>(
             let Ok(blob) = fs::read_to_string(&p) else {
                 return None;
             };
+            read_paths.push(p.clone());
             let out = serde_yaml::from_str(&blob).with_context(|| format!("Failed to parse {p:?}"));
             match out {
                 Err(err) => {
@@ -132,6 +134,9 @@ struct YamlRepo {
     interfaces: HashMap<String, Interface>,
     data_types: HashMap<String, DataTypes>,
     error_types: HashMap<String, ErrorList>,
+    /// Every YAML file this repo actually read, so that a build script can
+    /// declare them and an edit to one is not invisible.
+    read_paths: Vec<PathBuf>,
 }
 
 impl YamlRepo {
@@ -143,15 +148,33 @@ impl YamlRepo {
     }
 
     pub fn get_interface<'a>(&'a mut self, name: &str) -> Result<&'a mut Interface> {
-        lazy_load(&mut self.interfaces, &self.everest_root, "interfaces", name)
+        lazy_load(
+            &mut self.interfaces,
+            &mut self.read_paths,
+            &self.everest_root,
+            "interfaces",
+            name,
+        )
     }
 
     pub fn get_data_types<'a>(&'a mut self, name: &str) -> Result<&'a mut DataTypes> {
-        lazy_load(&mut self.data_types, &self.everest_root, "types", name)
+        lazy_load(
+            &mut self.data_types,
+            &mut self.read_paths,
+            &self.everest_root,
+            "types",
+            name,
+        )
     }
 
     pub fn get_errors<'a>(&'a mut self, prefix: &str, name: &str) -> Result<&'a mut ErrorList> {
-        lazy_load(&mut self.error_types, &self.everest_root, prefix, name)
+        lazy_load(
+            &mut self.error_types,
+            &mut self.read_paths,
+            &self.everest_root,
+            prefix,
+            name,
+        )
     }
 }
 
@@ -706,12 +729,28 @@ fn emit_config(config: BTreeMap<String, ConfigEntry>) -> Vec<ArgumentContext> {
 }
 
 pub fn emit(manifest_path: PathBuf, everest_core: Vec<PathBuf>) -> Result<String> {
+    Ok(emit_with_inputs(manifest_path, everest_core)?.0)
+}
+
+/// Like [`emit`], but also returns every YAML file the generator read.
+pub fn emit_with_inputs(
+    manifest_path: PathBuf,
+    everest_core: Vec<PathBuf>,
+) -> Result<(String, Vec<PathBuf>)> {
     let blob = fs::read_to_string(&manifest_path).context("While reading manifest file")?;
     let manifest: Manifest = serde_yaml::from_str(&blob).context("While parsing manifest")?;
-    emit_manifest(manifest, everest_core)
+    emit_manifest_with_inputs(manifest, everest_core)
 }
 
 pub fn emit_manifest(manifest: Manifest, everest_core: Vec<PathBuf>) -> Result<String> {
+    Ok(emit_manifest_with_inputs(manifest, everest_core)?.0)
+}
+
+/// Like [`emit_manifest`], but also returns every YAML file the generator read.
+pub fn emit_manifest_with_inputs(
+    manifest: Manifest,
+    everest_core: Vec<PathBuf>,
+) -> Result<(String, Vec<PathBuf>)> {
     let mut yaml_repo = YamlRepo::new(everest_core);
 
     let mut env = Environment::new();
@@ -857,11 +896,71 @@ pub fn emit_manifest(manifest: Manifest, everest_core: Vec<PathBuf>) -> Result<S
         provided_config,
     };
     let tmpl = env.get_template("module").unwrap();
-    Ok(tmpl.render(context).unwrap())
+    Ok((tmpl.render(context).unwrap(), yaml_repo.read_paths))
 }
 
 #[cfg(test)]
 mod tests {
+    /// The failure guarded here is under-declaration: a YAML the generator read
+    /// but did not report, whose later edits a build then never sees. A count
+    /// would pass with the wrong files, so compare the whole set.
+    #[test]
+    fn every_yaml_read_is_reported() {
+        use std::collections::BTreeSet;
+        use std::fs;
+
+        let root = std::env::temp_dir().join(format!(
+            "everestrs-build-declared-inputs-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        for dir in ["interfaces", "types", "errors"] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        fs::write(
+            root.join("manifest.yaml"),
+            "description: fixture\nprovides:\n  probe:\n    interface: probe\n    description: fixture\nrequires:\n  other:\n    interface: other_probe\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("interfaces/probe.yaml"),
+            "description: fixture\nvars:\n  measurement:\n    description: fixture\n    type: object\n    $ref: /probe#/Measurement\nerrors:\n  - reference: /errors/probe\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("interfaces/other_probe.yaml"),
+            "description: fixture\ncmds:\n  ping:\n    description: fixture\n    result:\n      description: fixture\n      type: boolean\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("types/probe.yaml"),
+            "description: fixture\ntypes:\n  Measurement:\n    description: fixture\n    type: object\n    properties:\n      value:\n        description: fixture\n        type: number\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("errors/probe.yaml"),
+            "description: fixture\nerrors:\n  - name: ProbeFault\n    description: fixture\n",
+        )
+        .unwrap();
+
+        let (_, inputs) =
+            super::emit_with_inputs(root.join("manifest.yaml"), vec![root.clone()]).unwrap();
+
+        let expected: BTreeSet<_> = [
+            "interfaces/probe.yaml",
+            "interfaces/other_probe.yaml",
+            "types/probe.yaml",
+            "errors/probe.yaml",
+        ]
+        .iter()
+        .map(|p| root.join(p))
+        .collect();
+        let got: BTreeSet<_> = inputs.into_iter().collect();
+
+        fs::remove_dir_all(&root).unwrap();
+        assert_eq!(got, expected);
+    }
+
     #[test]
     fn test_split_paths_invalid() {
         use super::impl_error::*;

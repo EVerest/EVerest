@@ -94,7 +94,7 @@ and the Rust examples) when its ``PACKAGECONFIG`` contains ``rust``:
 
    PACKAGECONFIG:append:pn-everest-core = " rust"
 
-The crates need Rust 1.82 or newer, while scarthgap ships 1.75. The Yocto
+The crates need Rust 1.86 or newer, while scarthgap ships 1.75. The Yocto
 Project's `meta-lts-mixins <https://git.yoctoproject.org/meta-lts-mixins/>`_
 repository has a ``scarthgap/rust`` branch that backports a current toolchain
 under the standard recipe names, so it replaces poky's Rust for the whole

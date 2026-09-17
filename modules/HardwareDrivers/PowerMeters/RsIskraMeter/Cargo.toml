@@ -2,6 +2,8 @@
 name = "RsIskraMeter"
 version = "0.1.0"
 edition = "2021"
+# Minimum toolchain, in sync with RUST_VERSION in MODULE.bazel.
+rust-version = "1.86.0"
 
 [build-dependencies]
 everestrs-build = { workspace=true }
