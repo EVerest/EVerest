@@ -30,6 +30,18 @@ Variable Powermeter
 Publication of the ``powermeter`` var is done with approx. frequency 1/second. This fetches the current ``livemeasure``
 values from the device's ``/v1/livemeasure`` endpoint and injects the meter id as determined at initialization.
 
+Variable Capabilities
+---------------------
+
+If ``min_import_current_A`` and/or ``min_export_current_A`` are configured to a value greater than 0, the module
+publishes the ``capabilities`` var once on startup. These values describe the minimum current above which the meter
+measures within its accuracy class (e.g. required by the German Calibration Law)
+
+The direction convention follows the DCBM's metering convention: ``min_import_current_A`` refers to the charging
+direction, which the DCBM accumulates in its ``energyImportTotal`` register.
+``min_export_current_A`` refers to the discharge direction (``energyExportTotal``). The values
+cannot be read from the device. Take them from the device datasheet.
+
 Command start_transaction
 -------------------------
 
