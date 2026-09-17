@@ -13514,14 +13514,90 @@ int encode_iso2_exiDocument(exi_bitstream_t* stream, struct iso2_exiDocument* ex
     return error;
 }
 
+// Element fragment: name={urn:iso:15118:2:2013:MsgBody}eMAID
+// EXI 1.0, 8.5.3: declared with more than one type ({urn:iso:15118:2:2013:MsgDataTypes}EMAIDType, {urn:iso:15118:2:2013:MsgDataTypes}eMAIDType), so inside a
+//          fragment its content uses the element fragment grammar, whose event codes are
+//          numbered over the 10 attribute and 243 element qnames of the schema.
+static int encode_iso2_eMAIDElementFragment(exi_bitstream_t* stream, const struct iso2_eMAIDElementFragment* eMAIDElementFragment) {
+    int grammar_id = 0;
+    int done = 0;
+    int error = 0;
+    // ElementFragment_0 returns to itself after every attribute, so the
+    // remaining events are tracked here instead of in the caller's struct.
+    int Id_pending = eMAIDElementFragment->Id_isUsed;
+    int CONTENT_pending = eMAIDElementFragment->CONTENT_isUsed;
+
+    while (!done)
+    {
+        switch (grammar_id)
+        {
+        case 0:
+            // Grammar: ElementFragment_0; read/write bits=9
+            if (Id_pending)
+            {
+                // Event: AT({urn:iso:15118:2:2013:MsgDataTypes}Id); event code 4; next=ElementFragment_0
+                Id_pending = 0;
+                error = exi_basetypes_encoder_nbit_uint(stream, 9, 4);
+                if (error == EXI_ERROR__NO_ERROR)
+                {
+                    // string should not be found in table, so add 2
+                    error = exi_basetypes_encoder_uint_16(stream, (uint16_t)(eMAIDElementFragment->Id.charactersLen + 2));
+                    if (error == EXI_ERROR__NO_ERROR)
+                    {
+                        error = exi_basetypes_encoder_characters(stream, eMAIDElementFragment->Id.charactersLen, eMAIDElementFragment->Id.characters, iso2_eMAIDElementFragment_Id_CHARACTER_SIZE);
+                    }
+                }
+            }
+            else if (CONTENT_pending)
+            {
+                // Event: CH [untyped value]; event code 256; next=ElementFragment_1
+                CONTENT_pending = 0;
+                error = exi_basetypes_encoder_nbit_uint(stream, 9, 256);
+                if (error == EXI_ERROR__NO_ERROR)
+                {
+                    // string should not be found in table, so add 2
+                    error = exi_basetypes_encoder_uint_16(stream, (uint16_t)(eMAIDElementFragment->CONTENT.charactersLen + 2));
+                    if (error == EXI_ERROR__NO_ERROR)
+                    {
+                        error = exi_basetypes_encoder_characters(stream, eMAIDElementFragment->CONTENT.charactersLen, eMAIDElementFragment->CONTENT.characters, iso2_eMAIDElementFragment_CONTENT_CHARACTER_SIZE);
+                    }
+                }
+                grammar_id = 1;
+            }
+            else
+            {
+                // Event: END Element; event code 255
+                error = exi_basetypes_encoder_nbit_uint(stream, 9, 255);
+                done = 1;
+            }
+            break;
+        case 1:
+            // Grammar: ElementFragment_1; read/write bits=8
+            // A second CH would need a second character member, so only the
+            // end of the element is reachable here.
+            // Event: END Element; event code 244
+            error = exi_basetypes_encoder_nbit_uint(stream, 8, 244);
+            done = 1;
+            break;
+        default:
+            error = EXI_ERROR__UNKNOWN_GRAMMAR_ID;
+            break;
+        }
+
+        if (error)
+        {
+            done = 1;
+        }
+    }
+
+    return error;
+}
+
+
 // main function for encoding fragment
-/* NOTE! There may be problems when comparing the signature of the eMAID.
-   In the ISO 15118-2 schema there are two different types with problematic names,
-   EMAIDType and eMAIDType. The fragment de- and encoder of e.g. openV2G considers
-   this type as generic type EXISchemaInformedElementFragmentGrammar. We treat it as a complex type.
-   We have not yet been able to determine why this particular type has to be coded as a generic type,
-   and only for the fragment decoder and encoder.
-   This is why we have not yet adapted our fragment coders, and it can lead to the problem mentioned. */
+/* Elements declared with more than one type are coded here with the EXI
+   element fragment grammar (EXI 1.0, 8.5.3) rather than with a type grammar,
+   because a fragment carries no parent context to pick a declaration by. */
 int encode_iso2_exiFragment(exi_bitstream_t* stream, struct iso2_exiFragment* exiFrag)
 {
     int error = exi_header_write(stream);
@@ -14082,7 +14158,7 @@ int encode_iso2_exiFragment(exi_bitstream_t* stream, struct iso2_exiFragment* ex
             error = exi_basetypes_encoder_nbit_uint(stream, 8, 236);
             if (error == EXI_ERROR__NO_ERROR)
             {
-                error = encode_iso2_EMAIDType(stream, &exiFrag->eMAID);
+                error = encode_iso2_eMAIDElementFragment(stream, &exiFrag->eMAID);
             }
         }
         // intValue (urn:iso:15118:2:2013:MsgDataTypes)
