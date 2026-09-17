@@ -135,14 +135,11 @@ static ocpp::v16::ErrorInfo get_error_info(const Everest::error::Error& error) {
 
 std::optional<int32_t> OCPP::to_ocpp_connector_id(int32_t everest_evse_id) const {
     if (everest_evse_id == CHARGE_POINT_CONNECTOR_ID) {
-        // charge point level, valid for every instance
         return CHARGE_POINT_CONNECTOR_ID;
     }
 
     const auto index_it = this->evse_index_by_everest_evse_id.find(everest_evse_id);
     if (index_it == this->evse_index_by_everest_evse_id.end()) {
-        // this evse is not connected to this OCPP module instance; it is most
-        // likely handled by another instance talking to a different CSMS
         return std::nullopt;
     }
 
@@ -151,7 +148,6 @@ std::optional<int32_t> OCPP::to_ocpp_connector_id(int32_t everest_evse_id) const
         return std::nullopt;
     }
 
-    // report on the first connector of the evse
     return connector_map_it->second.begin()->second;
 }
 
@@ -162,8 +158,7 @@ int32_t OCPP::to_everest_evse_id(int32_t ocpp_connector_id) const {
 
     const auto it = this->everest_evse_id_by_ocpp_connector_id.find(ocpp_connector_id);
     if (it == this->everest_evse_id_by_ocpp_connector_id.end()) {
-        EVLOG_warning << "No EVerest evse id known for OCPP connector id " << ocpp_connector_id
-                      << ", falling back to identity mapping";
+        EVLOG_warning << "No EVerest evse id known for OCPP connector id " << ocpp_connector_id;
         return ocpp_connector_id;
     }
 
