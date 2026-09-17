@@ -26,7 +26,7 @@ void PersistentSessionStorage::init() {
         EVLOG_AND_THROW(
             Everest::EverestConfigError("Could not open the session storage database at " + config.database_path));
     }
-    m_store_initialized.store(true, std::memory_order_release);
+    m_store_available.store(true, std::memory_order_release);
 
     subscribe_all();
     invoke_init(*p_main);
@@ -38,10 +38,23 @@ void PersistentSessionStorage::ready() {
     drain_event_queue();
 }
 
+void PersistentSessionStorage::shutdown() {
+    invoke_shutdown(*p_main);
+    {
+        // Waits for an event dispatch in flight, none reaches the store afterwards
+        auto pending_events = m_pending_events.handle();
+        pending_events->stopped = true;
+    }
+    m_store_available.store(false, std::memory_order_release);
+    if (m_store) {
+        m_store->close();
+    }
+}
+
 storage::SessionStoreInterface& PersistentSessionStorage::store() {
     // Also the release/acquire pair publishing m_store to the handler threads
-    if (not m_store_initialized.load(std::memory_order_acquire)) {
-        throw Everest::NotReady("The session storage is not initialized yet");
+    if (not m_store_available.load(std::memory_order_acquire)) {
+        throw Everest::NotReady("The session storage is not available");
     }
     return *m_store;
 }
@@ -86,6 +99,10 @@ void PersistentSessionStorage::resolve_evse_info() {
 
 void PersistentSessionStorage::enqueue_or_dispatch(std::function<void()> call) {
     auto pending_events = m_pending_events.handle();
+    if (pending_events->stopped) {
+        EVLOG_debug << "Dropping an event received after shutdown";
+        return;
+    }
     if (not pending_events->started) {
         pending_events->queue.push(std::move(call));
         return;

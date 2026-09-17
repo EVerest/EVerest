@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -73,11 +73,14 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     /// \brief Calls of events received before ready(), in arrival order across all sources
     struct PendingEvents {
         bool started{false};
+        /// \brief Set in shutdown(), events arriving afterwards are dropped
+        bool stopped{false};
         std::queue<std::function<void()>> queue{};
     };
 
@@ -87,13 +90,14 @@ private:
     void resolve_evse_info();
     /// \brief Runs the queued calls in order, then lets new events dispatch directly
     void drain_event_queue();
-    /// \brief Queues \p call before ready(), dispatches it directly afterwards
+    /// \brief Queues \p call before ready(), dispatches it directly afterwards and drops it after shutdown()
     /// \param[in] call - the bound event handling call
     void enqueue_or_dispatch(std::function<void()> call);
 
     std::unique_ptr<storage::SessionStore> m_store{};
-    /// \brief Publishes m_store to the command handlers, which are registered before init() runs
-    std::atomic<bool> m_store_initialized{false};
+    /// \brief Publishes m_store to the command handlers, which are registered before init() runs,
+    ///        and withdraws it in shutdown()
+    std::atomic<bool> m_store_available{false};
     std::vector<std::unique_ptr<storage::EvseSessionRecorder>> m_evse_recorders{};
     everest::lib::util::monitor<PendingEvents> m_pending_events{};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1

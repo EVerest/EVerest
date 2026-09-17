@@ -1547,6 +1547,22 @@ TEST_F(SessionStoreTest, an_unreadable_record_does_not_stall_the_iteration) {
 }
 
 // ---------------------------------------------------------------------------
+// Closing
+// ---------------------------------------------------------------------------
+
+TEST_F(SessionStoreTest, calls_after_close_fail_without_throwing) {
+    store_records(*store, 2);
+    store->close();
+
+    EXPECT_FALSE(store->store_session_started(make_session("s3", 1, "2026-08-21T11:00:00Z")));
+    EXPECT_FALSE(store->store_transaction_started(make_transaction_start("s1")));
+    EXPECT_FALSE(store->store_session_finished("s1", "2026-08-21T11:00:00Z"));
+    EXPECT_TRUE(store->get_sessions(make_request()).sessions.empty());
+    EXPECT_FALSE(get_by_session_id("s1").has_value());
+    EXPECT_EQ(store->clear_sessions(), 0);
+}
+
+// ---------------------------------------------------------------------------
 // Persistence
 // ---------------------------------------------------------------------------
 

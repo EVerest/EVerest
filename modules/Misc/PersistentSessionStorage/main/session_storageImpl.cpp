@@ -12,6 +12,9 @@ void session_storageImpl::init() {
 void session_storageImpl::ready() {
 }
 
+void session_storageImpl::shutdown() {
+}
+
 types::session_storage::SessionList
 session_storageImpl::handle_get_sessions(types::session_storage::GetSessionsRequest& request) {
     return mod->store().get_sessions(request);

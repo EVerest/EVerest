@@ -114,3 +114,6 @@ appear at its end, pruned records are skipped, and a token that is invalid or re
 a replaced database file restarts the iteration from the oldest record, so a stale token
 can re-deliver records but never silently skip them. Page sizes are additionally capped
 by a byte budget, so a page may contain fewer records than requested.
+
+On shutdown the module stops recording events and closes the database, so an event
+that arrives during shutdown is not stored.

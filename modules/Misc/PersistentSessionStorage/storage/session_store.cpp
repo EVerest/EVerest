@@ -309,6 +309,13 @@ bool SessionStore::open() {
     }
 }
 
+void SessionStore::close() {
+    auto database = m_database.handle();
+    if (not database->connection->close_connection()) {
+        EVLOG_warning << "Could not close the session storage database connection";
+    }
+}
+
 bool SessionStore::store_session_started(const SessionStart& session) {
     auto database = m_database.handle();
     try {

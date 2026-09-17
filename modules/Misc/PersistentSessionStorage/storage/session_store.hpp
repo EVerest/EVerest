@@ -147,6 +147,9 @@ public:
     /// \returns false if the migration or opening the connection failed
     bool open();
 
+    /// \brief Closes the database connection. Calls made afterwards fail and are logged.
+    void close();
+
     bool store_session_started(const SessionStart& session) override;
     bool store_transaction_started(const TransactionStart& transaction) override;
     bool store_transaction_finished(const TransactionFinish& finish) override;
