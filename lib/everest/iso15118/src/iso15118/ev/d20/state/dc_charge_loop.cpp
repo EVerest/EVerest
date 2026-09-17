@@ -106,6 +106,18 @@ void assign_limit(float& target, const std::optional<dt::RationalNumber>& value,
     }
 }
 
+// The power limit is optional in the shared feedback struct (an EVSE may omit it).
+void assign_limit(std::optional<float>& target, const dt::RationalNumber& value, bool& any) {
+    target = dt::from_RationalNumber(value);
+    any = true;
+}
+
+void assign_limit(std::optional<float>& target, const std::optional<dt::RationalNumber>& value, bool& any) {
+    if (value.has_value()) {
+        assign_limit(target, *value, any);
+    }
+}
+
 // SECC limits carried by the response; the Scheduled modes make all three optional.
 std::optional<feedback::DcMaximumLimits> evse_present_limits(const message_20::DC_ChargeLoopResponse& res) {
     return std::visit(

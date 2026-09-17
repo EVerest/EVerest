@@ -540,7 +540,7 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
 
     callbacks.dc_evse_present_limits = [](const iso15118::ev::feedback::DcMaximumLimits& limits) {
         EVLOG_debug << "Ev15118: DC EVSE present limits: " << limits.voltage << " V, " << limits.current << " A, "
-                    << limits.power << " W";
+                    << (limits.power.has_value() ? std::to_string(*limits.power) : std::string("n/a")) << " W";
     };
 
     callbacks.evse_session_info = [](const iso15118::ev::d20::EVSESessionInfo&) {
