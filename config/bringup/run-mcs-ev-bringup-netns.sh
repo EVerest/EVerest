@@ -19,6 +19,16 @@
 #    holds no "%iface" (legacy IPv4 / mDNS setups) the old lifeline applies: a veth pair
 #    (host 10.200.0.1 <-> ns 10.200.0.2) with NAT for the daemon's UDP to an explicit
 #    IPv4 MCU address (mDNS does not cross NAT).
+#  - the LAN leg for mDNS discovery. With charge_bridge.ip = ANY_EV the daemon has to HEAR the
+#    board's announcement, and multicast never crosses the veth/NAT. So the harness gives the
+#    namespace its own presence on the bench LAN: a macvlan child of the host's LAN interface
+#    (mcs-ev-lan, default parent = the default-route interface, EV_LAN_IFACE overrides; empty
+#    disables), addressed by DHCP through dhcpcd (EV_LAN_ADDR=<cidr> for a static address
+#    instead). Also used when EV_LAN_IFACE is set explicitly with a literal MCU address - the
+#    MCU traffic then leaves on-link instead of through NAT. Kept across runs like the
+#    namespace; --teardown removes it (and its dhcpcd). Wired parents only: macvlan does not
+#    work on Wi-Fi. The host cannot reach its own macvlan child over the parent - irrelevant
+#    here, the board is an external device.
 #    TRAP: the CB firmware uses ONE MAC for both ends of its USB CDC link, so the kernel's
 #    default EUI-64 link-local for the moved interface would be the MCU's own address and
 #    fail DAD. The harness therefore disables autoconf on it (addr_gen_mode=1) and assigns
@@ -31,6 +41,12 @@
 #
 # Usage: sudo run-mcs-ev-bringup-netns.sh [dist-prefix]     (root: ip netns needs it)
 #        sudo run-mcs-ev-bringup-netns.sh --teardown
+# Environment:
+#   CB_CONFIG      daemon config (default: applications/pionix_chargebridge/config/config-CB-MCS-EV.yaml)
+#   EV_MCU_IFACE   interface to move into the namespace for a "%iface" MCU address (see above)
+#   EV_LAN_IFACE   parent for the LAN macvlan; default: default-route interface when the config
+#                  uses ANY_EV, else off. Set explicitly to force it on, set EMPTY to force it off.
+#   EV_LAN_ADDR    "dhcp" (default) or a static <addr>/<prefix> for the LAN macvlan
 #
 # Inside the namespace this hands off to the plain run-mcs-ev-bringup.sh, dropped back
 # to the invoking user with CAP_NET_ADMIN+CAP_NET_RAW ambient - that script recognizes
@@ -55,6 +71,8 @@ NET=10.200.0.0/24
 SOCAT_PIDFILE=/run/mcs-ev-netns-socat.pid
 # Fixed link-local for the moved MCU interface inside the namespace (see the header TRAP).
 MCU_IF_LL=fe80::2
+# LAN leg (mDNS discovery): macvlan child of the host's LAN interface, living in the namespace.
+LAN_IF_NS=mcs-ev-lan
 
 if [ "$(id -u)" != "0" ]; then
     # Self-elevate: ip netns needs root. Still exactly one password for the whole session -
@@ -64,7 +82,8 @@ if [ "$(id -u)" != "0" ]; then
     # (EV_MCU_IFACE too, including an explicitly EMPTY one = "do not move any interface").
     echo "one sudo prompt: namespace setup needs root"
     exec sudo -- env ${EV_INNER_SCRIPT:+EV_INNER_SCRIPT="$EV_INNER_SCRIPT"} \
-        ${CB_CONFIG:+CB_CONFIG="$CB_CONFIG"} ${EV_MCU_IFACE+EV_MCU_IFACE="$EV_MCU_IFACE"} "$0" "$@"
+        ${CB_CONFIG:+CB_CONFIG="$CB_CONFIG"} ${EV_MCU_IFACE+EV_MCU_IFACE="$EV_MCU_IFACE"} \
+        ${EV_LAN_IFACE+EV_LAN_IFACE="$EV_LAN_IFACE"} ${EV_LAN_ADDR:+EV_LAN_ADDR="$EV_LAN_ADDR"} "$0" "$@"
 fi
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -81,14 +100,21 @@ stop_socat() {
 return_phys_ifaces() {
     local ifc
     for ifc in $(ip -n $NS -o link show 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1); do
-        case "$ifc" in lo | "$VETH_NS") continue ;; esac
+        case "$ifc" in lo | "$VETH_NS" | "$LAN_IF_NS") continue ;; esac
         ip -n $NS link set "$ifc" netns 1 2>/dev/null || true
     done
+}
+
+# dhcpcd for the LAN macvlan runs inside the namespace and outlives sessions (the lease keeps
+# renewing between runs); only --teardown stops it. Same /run, so its control socket is reachable.
+stop_lan_dhcp() {
+    ip netns exec $NS dhcpcd -k "$LAN_IF_NS" 2>/dev/null || pkill -f "dhcpcd.* $LAN_IF_NS\$" 2>/dev/null || true
 }
 
 if [ "${1:-}" = "--teardown" ]; then
     stop_socat
     return_phys_ifaces
+    stop_lan_dhcp
     ip netns del $NS 2>/dev/null || true # takes its veth end - and thereby the host end - with it
     rm -f /tmp/config-CB-MCS-EV-netns.yaml
     iptables -t nat -D POSTROUTING -s $NET -j MASQUERADE 2>/dev/null || true
@@ -212,6 +238,51 @@ if [ -n "$MCU_IFACE" ]; then
     echo "moved $MCU_IFACE into '$NS' ($MCU_IF_LL/64, returned to the root namespace when the session ends)"
 fi
 
+# --- LAN leg: macvlan into the namespace for mDNS discovery -------------------------------------
+# On by default when the daemon config discovers the board (charge_bridge.ip = ANY_EV...): mDNS
+# cannot work over the veth/NAT lifeline. EV_LAN_IFACE set = on with that parent, set empty = off.
+if [ "${EV_LAN_IFACE+set}" = set ]; then
+    LAN_IFACE=$EV_LAN_IFACE
+elif grep -Eq '^[[:space:]]*ip:[[:space:]]*"?ANY_' "$CB_CONFIG_SRC"; then
+    LAN_IFACE=$(ip -o route show default | awk '{for (i = 1; i <= NF; i++) if ($i == "dev") {print $(i + 1); exit}}')
+    if [ -z "$LAN_IFACE" ]; then
+        echo "warning: config uses mDNS discovery but no default route found - set EV_LAN_IFACE=<lan-if>," >&2
+        echo "         otherwise the daemon in '$NS' cannot hear the board's announcement" >&2
+    fi
+else
+    LAN_IFACE=
+fi
+if [ -n "$LAN_IFACE" ]; then
+    if ! ip -n $NS link show "$LAN_IF_NS" >/dev/null 2>&1; then
+        if ! ip link show "$LAN_IFACE" >/dev/null 2>&1; then
+            echo "ERROR: LAN interface '$LAN_IFACE' for the macvlan does not exist (EV_LAN_IFACE)" >&2
+            exit 1
+        fi
+        # Bridge mode: children and the wire see each other; the parent itself does not, which
+        # is fine - the board is not the host.
+        ip link add "$LAN_IF_NS" link "$LAN_IFACE" type macvlan mode bridge
+        ip link set "$LAN_IF_NS" netns $NS
+    fi
+    ip -n $NS link set "$LAN_IF_NS" up
+    if ip -n $NS -4 -o addr show dev "$LAN_IF_NS" | grep -q inet; then
+        : # addressed from an earlier run (lease still held by the namespace's dhcpcd, or static)
+    elif [ "${EV_LAN_ADDR:-dhcp}" != dhcp ]; then
+        ip -n $NS addr replace "$EV_LAN_ADDR" dev "$LAN_IF_NS"
+    elif command -v dhcpcd >/dev/null 2>&1; then
+        # -4: IPv4 lease only (kernel SLAAC covers the link-local IPv6 mDNS needs); -G: no default
+        # route from the lease, the namespace's default stays on the veth; -w: return once the
+        # address is up; no resolv.conf hook - the namespace shares the host's /etc.
+        if ! ip netns exec $NS dhcpcd -4 -G -w -q --nohook resolv.conf "$LAN_IF_NS"; then
+            echo "warning: no DHCP lease on $LAN_IF_NS via $LAN_IFACE - set EV_LAN_ADDR=<addr>/<prefix> for a static one" >&2
+        fi
+    else
+        echo "ERROR: dhcpcd not installed - set EV_LAN_ADDR=<addr>/<prefix> for the LAN macvlan (or EV_LAN_IFACE= to disable)" >&2
+        exit 1
+    fi
+    LAN_ADDR_NOW=$(ip -n $NS -4 -o addr show dev "$LAN_IF_NS" | awk '{print $4}' | head -n1)
+    echo "LAN leg $LAN_IF_NS (macvlan on $LAN_IFACE) up in '$NS' with ${LAN_ADDR_NOW:-no IPv4 address} - mDNS discovery can hear the board"
+fi
+
 # --- hand off into the namespace, dropped back to the invoking user ----------------------------
 RUN_USER=${SUDO_USER:-root}
 RUN_HOME=$(getent passwd "$RUN_USER" | cut -d: -f6)
@@ -222,6 +293,6 @@ ip netns exec $NS setpriv --reuid="$RUN_USER" --regid="$(id -g "$RUN_USER")" --i
     MQTT_SERVER_ADDRESS=$HOST_IP MQTT_SERVER_PORT=1883 CB_CONFIG="$DERIVED_CONFIG" \
     "${EV_INNER_SCRIPT:-$SCRIPT_DIR/run-mcs-ev-bringup.sh}" "$@"
 
-# The inner script's tmux session has ended; the EXIT trap stops socat, hands the MCU interface
-# back to the root namespace and removes the derived config.
+# The inner script's tmux session has ended; the EXIT trap stops socat and hands the MCU interface
+# back to the root namespace. The LAN macvlan stays with the namespace.
 echo "session ended; namespace '$NS' kept for the next run ('$0 --teardown' removes it)"
