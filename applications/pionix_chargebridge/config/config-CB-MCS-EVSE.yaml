@@ -15,7 +15,7 @@ charge_bridge:
   # Bring-up: flash the MCS firmware manually first and leave auto-update off until an
   # MCS .cbfw release exists.
   fw_file: ./firmware/charge-bridge-fw_complete.cbfw
-  fw_update_on_start: false
+  fw_update_on_start: true
   mdns_name: ""
 
 # Required for plc.carrier: firmware - the link status rides every heartbeat reply.
