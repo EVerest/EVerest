@@ -213,13 +213,20 @@ protected:
     EvseSessionRecorder recorder{store, RecorderConfig{true}};
 };
 
-/// \brief Recorder whose store rejects every unexpected call
+/// \brief Recorder whose store fails the test on any call, for events that must not reach the store
 class EvseSessionRecorderStrictTest : public testing::Test {
 protected:
     void SetUp() override {
         recorder.set_evse(EVSE_ID, EVSE_ID_STRING);
     }
 
+    StrictMock<MockSessionStore> store{};
+    EvseSessionRecorder recorder{store, RecorderConfig{}};
+};
+
+/// \brief Recorder without an EVSE, whose store fails the test on any call
+class EvseSessionRecorderUnsetEvseTest : public testing::Test {
+protected:
     StrictMock<MockSessionStore> store{};
     EvseSessionRecorder recorder{store, RecorderConfig{}};
 };
@@ -626,17 +633,12 @@ TEST(EvseSessionRecorderMultipleEvseTest, each_recorder_records_its_own_evse) {
 
 // --- defensive behaviour and noise rejection ---------------------------------
 
-TEST(EvseSessionRecorderUnsetEvseTest, session_started_before_set_evse_is_dropped) {
-    StrictMock<MockSessionStore> store{};
-    EvseSessionRecorder recorder{store, RecorderConfig{}};
-
+TEST_F(EvseSessionRecorderUnsetEvseTest, session_started_before_set_evse_is_dropped) {
+    // The StrictMock store fails the test if the event reaches it
     recorder.on_session_event(make_session_started_event(SESSION_ID));
 }
 
-TEST(EvseSessionRecorderUnsetEvseTest, session_finished_before_set_evse_is_dropped) {
-    StrictMock<MockSessionStore> store{};
-    EvseSessionRecorder recorder{store, RecorderConfig{}};
-
+TEST_F(EvseSessionRecorderUnsetEvseTest, session_finished_before_set_evse_is_dropped) {
     recorder.on_session_event(make_session_event(SessionEventEnum::SessionFinished, SESSION_ID));
 }
 
@@ -649,6 +651,7 @@ TEST_F(EvseSessionRecorderStrictTest, unrelated_session_events_do_not_touch_the_
         SessionEventEnum::ReservationEnd,   SessionEventEnum::PluginTimeout,    SessionEventEnum::SwitchingPhases,
     };
 
+    // The StrictMock store fails the test if any of them reaches it
     for (const auto event : events) {
         recorder.on_session_event(make_session_event(event, SESSION_ID));
     }
