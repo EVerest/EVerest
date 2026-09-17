@@ -258,8 +258,6 @@ Result process_ac_power_delivery(Context& m_ctx, const message_2::PowerDeliveryR
         return {};
     }
 
-    // [V2G2-913]: arm the CP State B gate for the following SessionStop ([V2G2-920]..[V2G2-922]).
-    m_ctx.set_power_delivery_stopped();
     m_ctx.set_contactor_closed(false);
     m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
     return m_ctx.create_state<SessionStop>();
