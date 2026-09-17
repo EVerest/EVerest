@@ -325,11 +325,6 @@ void EvseManager::ready() {
         },
         std::chrono::milliseconds(config.internal_over_voltage_duration_ms));
 
-    if (not config.lock_connector_in_state_b) {
-        EVLOG_warning << "Unlock connector in CP state B. This violates IEC61851-1:2019 D.6.5 Table D.9 line 4 and "
-                         "should not be used in public environments! This feature is deprecated.";
-    }
-
     if (config.unlock_when_deauthorized) {
         EVLOG_warning << "The config `unlock_when_deauthorized` is set to true. This violates "
                          "IEC61851-1:2019 D.6.5 Table D.9 line 4 and should not be used in public environments!";

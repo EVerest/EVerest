@@ -250,6 +250,10 @@ often:
 - Every contribution must be reviewed and understood by a human before submission.
 - Releases, versioning and what counts as a breaking change:
   `docs/source/project/releases/releases-and-versioning.rst`.
+- Deprecating a module or one of its config keys is declarative: a `deprecated:` section
+  in `manifest.yaml` makes the manager warn at startup and `manager --check` report it,
+  so never hand-write a deprecation warning in a module. Procedure:
+  `docs/source/how-to-guides/deprecate-a-module.rst`.
 
 Commit subjects and pull request titles follow Conventional Commits and name the affected
 module, for example `fix(EvseManager): handle unplug during timed charging`. Changes land

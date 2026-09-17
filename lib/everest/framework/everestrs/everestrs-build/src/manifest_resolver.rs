@@ -196,6 +196,7 @@ pub fn build_test_manifest(
         config: BTreeMap::new(),
         capabilities: Vec::new(),
         enable_global_errors: false,
+        deprecated: None,
     };
 
     let mut tracked_files = vec![config_path.to_path_buf()];

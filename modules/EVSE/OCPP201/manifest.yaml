@@ -1,8 +1,12 @@
-description: >-
-  A OCPP charge point / charging station module for OCPP 2.0.1.
-  DEPRECATED in 2026.10.0, earliest removal in 2027.04.0: superseded by the combined
-  OCPPmulti module, which supports OCPP 1.6, 2.0.1 and 2.1 in one module. See the
-  how-to guide "Migrate to the Combined OCPP Module" for the upgrade path.
+description: A OCPP charge point / charging station module for OCPP 2.0.1
+deprecated:
+  component: OCPP201 (OCPP 2.0.1 / 2.1)
+  deprecated_in: 2026.10.0
+  earliest_removal: 2027.04.0
+  migration_guide: Migrate to the Combined OCPPmulti Module
+  note: >-
+    Superseded by the combined OCPPmulti module, which supports OCPP 1.6, 2.0.1 and 2.1 in one
+    module.
 config:
   MessageLogPath:
     description: Path to directory where logs of all OCPP messages are written to

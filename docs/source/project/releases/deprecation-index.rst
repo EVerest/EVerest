@@ -12,6 +12,10 @@ deprecated, the earliest release in which it may be removed (following the
 :ref:`minimum deprecation period <project-deprecation-policy>`), and a link
 to the corresponding migration guide.
 
+Modules and their configuration options declare their deprecation in their
+``manifest.yaml``, which is what makes EVerest warn about them at runtime; see
+:ref:`howto-deprecate-a-module`.
+
 .. list-table::
    :header-rows: 1
    :widths: 30 20 20 30
@@ -25,13 +29,15 @@ to the corresponding migration guide.
      - 2026.10.0
      - 2027.04.0
      - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`.
-       The module logs a deprecation warning at startup.
+       The manager logs a deprecation warning at startup and ``manager --check``
+       reports it.
    * - :ref:`OCPP201 module <everest_modules_OCPP201>` (OCPP 2.0.1 / 2.1), superseded by
        :ref:`OCPPmulti <everest_modules_OCPPmulti>`
      - 2026.10.0
      - 2027.04.0
      - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`.
-       The module logs a deprecation warning at startup.
+       The manager logs a deprecation warning at startup and ``manager --check``
+       reports it.
    * - The `RsIskraMeter` deprecates its `meter` implementation_id in favor of `main`.
      - 2026.10.0
      - 2027.04.0
@@ -88,5 +94,6 @@ to the corresponding migration guide.
        connector locked while an authorized session is paused in state B and
        does not lock in state C/D without authorization or closed relays.
        Both options violate IEC 61851-1:2019 D.6.5 Table D.9 line 4 and must
-       not be used in public environments; the module logs a warning at
-       startup for either.
+       not be used in public environments; EvseManager logs a warning at startup
+       for ``unlock_when_deauthorized``, and the manager logs the deprecation
+       when ``lock_connector_in_state_b: false`` is configured.

@@ -475,11 +475,6 @@ ocpp::v16::ChargingRateUnit get_unit_or_default(const std::string& unit_string) 
 }
 
 void OCPP::init() {
-    EVLOG_warning << "DEPRECATED MODULE\n"
-                     "  component       : OCPP (OCPP 1.6)\n"
-                     "  deprecated      : 2026.10.0, earliest removal 2027.04.0\n"
-                     "  migration guide : Migrate to the Combined OCPPmulti Module";
-
     invoke_init(*p_main);
     invoke_init(*p_ocpp_generic);
     invoke_init(*p_auth_validator);
