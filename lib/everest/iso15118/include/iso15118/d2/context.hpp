@@ -227,8 +227,8 @@ public:
     void set_power_delivery_started() {
         session_params.power_delivery_started = true;
     }
-    void set_power_delivery_stopped() {
-        session_params.power_delivery_stopped = true;
+    void arm_cp_state_b_gate() {
+        session_params.cp_state_b_gate_armed = true;
     }
 
     // True once SessionSetup assigned or re-joined a SessionID. Before that an unexpected first message
