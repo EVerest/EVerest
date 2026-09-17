@@ -31,6 +31,9 @@ public:
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
     void disconnect_cb_endpoint();
     void connect_cb_endpoint(std::string const& remote);
+    // Heartbeat-verified connection state, see api_connector::notify_cb_connection. The bridge's own
+    // availability keeps following the BSP packets.
+    void set_cb_connection_status(bool connected);
     bool available() const;
     // Latest CP state reported by the MCU ("A".."F", "DF", "INVALID"); empty until the first packet.
     std::optional<std::string> cp_state() const;
