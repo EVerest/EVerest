@@ -5,8 +5,8 @@
 #include <chrono>
 #include <map>
 #include <optional>
-#include <set>
 #include <string>
+#include <vector>
 
 #include <generated/interfaces/energy/Interface.hpp>
 #include <utils/date.hpp>
@@ -42,6 +42,9 @@ bool is_fresh(const std::optional<date::utc_clock::time_point>& measured_at, dat
               std::chrono::seconds window);
 
 /// \brief Sums the readings of several power meters that report at different times.
+///
+/// Built, filled and summed within a single optimizer run: it holds no state that outlives
+/// one aggregation, so a stale entry cannot survive into the next run.
 ///
 /// Power meters in the energy tree publish independently, so at any instant the stored
 /// readings have different ages. Summing them all would mix a fresh value with values
@@ -79,6 +82,11 @@ public:
         int fresh_meters{0};
         /// Number of stored meters excluded because their reading was too old or unusable
         int stale_meters{0};
+        /// Meters excluded because their timestamp could not be parsed at all, as opposed
+        /// to merely being old. Reported rather than logged here: warning once per meter
+        /// instead of once per optimizer cycle is a decision about a meter's history, and
+        /// this class only ever sees one instant.
+        std::vector<std::string> unparsable_meters;
     };
 
     /// \param window validity window for a reading, see is_fresh().
@@ -87,26 +95,22 @@ public:
     /// \brief Stores (or replaces) the last reading of one node.
     void update(const std::string& node_uuid, const types::powermeter::Powermeter& reading);
 
-    /// \brief Drops all stored readings.
-    void clear();
-
     /// \brief Number of stored readings, fresh and stale alike.
     std::size_t size() const;
 
     /// \brief Sums the readings that are fresh relative to \p now, by the is_fresh() rule.
     ///
-    /// A timestamp that cannot be parsed counts as stale and is warned about once per meter
-    /// rather than once per call, so a permanently broken meter does not warn every second
-    /// around the clock.
+    /// A timestamp that cannot be parsed counts as stale, and the meter is named in
+    /// AggregateResult::unparsable_meters so the caller can warn about it once rather than
+    /// on every optimizer cycle.
+    ///
+    /// Pure: no state of this object and nothing outside it changes, which is what lets an
+    /// instance be built, summed and dropped within one optimizer run.
     AggregateResult aggregate(date::utc_clock::time_point now) const;
 
 private:
     std::map<std::string, types::powermeter::Powermeter> readings;
     std::chrono::seconds aggregation_window;
-    // Meters whose timestamp failed to parse, so the warning is logged once per meter
-    // rather than on every optimizer cycle. An entry is dropped again once the meter
-    // delivers a parsable timestamp.
-    mutable std::set<std::string> warned_unparsable;
 };
 
 /// \brief Feeds the aggregator with the power meter reading of every EVSE node in the tree.

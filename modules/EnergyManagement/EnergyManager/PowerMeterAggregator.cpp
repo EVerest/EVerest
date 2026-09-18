@@ -3,8 +3,6 @@
 
 #include "PowerMeterAggregator.hpp"
 
-#include <everest/logging.hpp>
-
 namespace module {
 
 std::optional<date::utc_clock::time_point> parse_meter_timestamp(const std::string& timestamp) {
@@ -92,10 +90,6 @@ void PowerMeterAggregator::update(const std::string& node_uuid, const types::pow
     readings[node_uuid] = reading;
 }
 
-void PowerMeterAggregator::clear() {
-    readings.clear();
-}
-
 std::size_t PowerMeterAggregator::size() const {
     return readings.size();
 }
@@ -118,18 +112,13 @@ PowerMeterAggregator::AggregateResult PowerMeterAggregator::aggregate(date::utc_
         const auto freshness = check_freshness(reading, now, aggregation_window);
 
         if (freshness == Freshness::UnparsableTimestamp) {
-            // Warn once per meter, not once per optimizer cycle: a permanently broken
-            // meter would otherwise produce a warning every second, around the clock.
-            if (warned_unparsable.insert(uuid).second) {
-                EVLOG_warning << "PowerMeterAggregator: cannot parse power meter timestamp '" << reading.timestamp
-                              << "' of meter " << uuid << ", treating its readings as stale until it recovers";
-            }
+            // Named rather than logged: warning once per meter instead of once per
+            // optimizer cycle needs to know what the previous cycles already said, and
+            // this function only ever sees one instant.
+            result.unparsable_meters.push_back(uuid);
             result.stale_meters++;
             continue;
         }
-
-        // The meter delivers parsable timestamps (again); allow a future warning.
-        warned_unparsable.erase(uuid);
 
         if (freshness == Freshness::Stale) {
             result.stale_meters++;

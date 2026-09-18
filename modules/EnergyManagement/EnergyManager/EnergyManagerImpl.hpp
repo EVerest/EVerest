@@ -16,6 +16,7 @@
 #include <PowerMeterAggregator.hpp>
 
 #include <memory>
+#include <set>
 
 namespace module {
 
@@ -106,6 +107,10 @@ public:
     PowerMeterAggregator::AggregateResult get_leaf_aggregate() const;
 
 private:
+    /// \brief Logs the meters aggregate() reported as having an unparsable timestamp, once
+    /// per meter rather than once per optimizer run.
+    void warn_about_unparsable_meters(const std::vector<std::string>& unparsable);
+
     EnergyManagerConfig config;
     BrokerStrategy broker_strategy;
     std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)> enforced_limits_callback;
@@ -134,9 +139,15 @@ private:
 
     std::map<std::string, BrokerContext> contexts;
 
-    // Aggregates the leaf power meter readings of the tree. Rebuilt on every optimizer run.
-    std::unique_ptr<PowerMeterAggregator> leaf_aggregator;
+    // Aggregated leaf power meter reading of the most recent optimizer run. The aggregator
+    // that produces it is a local of that run: it holds nothing worth keeping between runs,
+    // and a member would have to be cleared by hand to stop a departed meter contributing.
     PowerMeterAggregator::AggregateResult leaf_aggregate;
+
+    // Meters already warned about for an unparsable timestamp. The warn-once decision needs
+    // the history that a single aggregation does not have, so it lives here rather than in
+    // the aggregator. An entry is dropped once the meter delivers a usable timestamp again.
+    std::set<std::string> warned_unparsable_meters;
 };
 
 } // namespace module

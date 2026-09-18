@@ -109,14 +109,19 @@ TEST(PowerMeterAggregatorStorage, UpdateReplacesReadingForSameNode) {
     EXPECT_EQ(result.fresh_meters, 1);
 }
 
-TEST(PowerMeterAggregatorStorage, ClearDropsAllReadings) {
+TEST(PowerMeterAggregatorStorage, AggregateDoesNotChangeTheAggregator) {
+    // Summing is pure, which is what lets an aggregator be built, summed and dropped inside
+    // one optimizer run instead of being a member that has to be cleared by hand.
     PowerMeterAggregator aggregator(std::chrono::seconds(5));
-
     aggregator.update("cp01", make_reading(1000.0f, NOW, std::chrono::seconds(0)));
-    aggregator.clear();
 
-    EXPECT_EQ(aggregator.size(), 0U);
-    EXPECT_FALSE(aggregator.aggregate(NOW).power_W.has_value());
+    const auto first = aggregator.aggregate(NOW);
+    const auto second = aggregator.aggregate(NOW);
+
+    EXPECT_EQ(aggregator.size(), 1U);
+    EXPECT_FLOAT_EQ(first.power_W.value().total, second.power_W.value().total);
+    EXPECT_EQ(first.fresh_meters, second.fresh_meters);
+    EXPECT_EQ(first.unparsable_meters, second.unparsable_meters);
 }
 
 TEST(PowerMeterAggregatorStorage, SumsPerPhaseWhenAllMetersReportIt) {
@@ -401,12 +406,26 @@ TEST(PowerMeterAggregatorWindow, UnparsableTimestampIsStale) {
     aggregator.update("cp01", broken);
     aggregator.update("cp02", make_reading(700.0f, NOW, std::chrono::seconds(0)));
 
-    PowerMeterAggregator::AggregateResult result;
-    ASSERT_NO_THROW(result = aggregator.aggregate(NOW));
+    const auto result = aggregator.aggregate(NOW);
 
     EXPECT_FLOAT_EQ(result.power_W.value().total, 700.0f);
     EXPECT_EQ(result.fresh_meters, 1);
     EXPECT_EQ(result.stale_meters, 1);
+    // Named, so the caller can warn about it once rather than on every optimizer cycle.
+    EXPECT_EQ(result.unparsable_meters, std::vector<std::string>{"cp01"});
+}
+
+TEST(PowerMeterAggregatorWindow, MerelyOldTimestampIsNotReportedAsUnparsable) {
+    // Stale and unusable are different faults: one recovers on its own, the other is a
+    // meter to warn about. The counter lumps them together, the list must not.
+    PowerMeterAggregator aggregator(std::chrono::seconds(5));
+
+    aggregator.update("cp01", make_reading(1000.0f, NOW, std::chrono::seconds(60)));
+
+    const auto result = aggregator.aggregate(NOW);
+
+    EXPECT_EQ(result.stale_meters, 1);
+    EXPECT_TRUE(result.unparsable_meters.empty());
 }
 
 TEST(PowerMeterAggregatorWindow, StaleMeterIsExcludedFromPerPhaseSums) {
