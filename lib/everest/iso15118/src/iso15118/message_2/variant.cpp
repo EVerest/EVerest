@@ -40,64 +40,34 @@ Variant::Variant(const io::StreamInputView& buffer_view) {
 
     if (body.SessionSetupReq_isUsed) {
         insert_type(va, body.SessionSetupReq);
-    } else if (body.SessionSetupRes_isUsed) {
-        insert_type(va, body.SessionSetupRes);
     } else if (body.ServiceDiscoveryReq_isUsed) {
         insert_type(va, body.ServiceDiscoveryReq);
-    } else if (body.ServiceDiscoveryRes_isUsed) {
-        insert_type(va, body.ServiceDiscoveryRes);
     } else if (body.ServiceDetailReq_isUsed) {
         insert_type(va, body.ServiceDetailReq);
-    } else if (body.ServiceDetailRes_isUsed) {
-        insert_type(va, body.ServiceDetailRes);
     } else if (body.PaymentServiceSelectionReq_isUsed) {
         insert_type(va, body.PaymentServiceSelectionReq);
-    } else if (body.PaymentServiceSelectionRes_isUsed) {
-        insert_type(va, body.PaymentServiceSelectionRes);
     } else if (body.PaymentDetailsReq_isUsed) {
         insert_type(va, body.PaymentDetailsReq);
-    } else if (body.PaymentDetailsRes_isUsed) {
-        insert_type(va, body.PaymentDetailsRes);
     } else if (body.AuthorizationReq_isUsed) {
         insert_type(va, body.AuthorizationReq);
-    } else if (body.AuthorizationRes_isUsed) {
-        insert_type(va, body.AuthorizationRes);
     } else if (body.ChargeParameterDiscoveryReq_isUsed) {
         insert_type(va, body.ChargeParameterDiscoveryReq);
-    } else if (body.ChargeParameterDiscoveryRes_isUsed) {
-        insert_type(va, body.ChargeParameterDiscoveryRes);
     } else if (body.PowerDeliveryReq_isUsed) {
         insert_type(va, body.PowerDeliveryReq);
-    } else if (body.PowerDeliveryRes_isUsed) {
-        insert_type(va, body.PowerDeliveryRes);
     } else if (body.ChargingStatusReq_isUsed) {
         insert_type(va, body.ChargingStatusReq);
-    } else if (body.ChargingStatusRes_isUsed) {
-        insert_type(va, body.ChargingStatusRes);
     } else if (body.CableCheckReq_isUsed) {
         insert_type(va, body.CableCheckReq);
-    } else if (body.CableCheckRes_isUsed) {
-        insert_type(va, body.CableCheckRes);
     } else if (body.PreChargeReq_isUsed) {
         insert_type(va, body.PreChargeReq);
-    } else if (body.PreChargeRes_isUsed) {
-        insert_type(va, body.PreChargeRes);
     } else if (body.CurrentDemandReq_isUsed) {
         insert_type(va, body.CurrentDemandReq);
-    } else if (body.CurrentDemandRes_isUsed) {
-        insert_type(va, body.CurrentDemandRes);
     } else if (body.WeldingDetectionReq_isUsed) {
         insert_type(va, body.WeldingDetectionReq);
-    } else if (body.WeldingDetectionRes_isUsed) {
-        insert_type(va, body.WeldingDetectionRes);
     } else if (body.SessionStopReq_isUsed) {
         insert_type(va, body.SessionStopReq);
-    } else if (body.SessionStopRes_isUsed) {
-        insert_type(va, body.SessionStopRes);
     } else if (body.MeteringReceiptReq_isUsed) {
         insert_type(va, body.MeteringReceiptReq);
-    } else if (body.CertificateInstallationRes_isUsed) {
-        insert_type(va, body.CertificateInstallationRes);
     } else if (body.CertificateInstallationReq_isUsed) {
         // Relay-only: mark the type so the engine can forward the raw request EXI and splice the raw
         // response back. No message struct is decoded (data stays null, no custom deleter).
@@ -106,7 +76,6 @@ Variant::Variant(const io::StreamInputView& buffer_view) {
         // Relay-only as well; the Update action is derived from this type in the relay state.
         type = Type::CertificateUpdateReq;
     } else {
-        // MeteringReceipt is out of scope
         error = "chosen message type unhandled";
     }
 

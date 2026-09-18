@@ -35,10 +35,6 @@ template <> void insert_type(VariantAccess& va, const struct iso2_WeldingDetecti
     va.insert_type<WeldingDetectionRequest>(in);
 }
 
-template <> void insert_type(VariantAccess& va, const struct iso2_WeldingDetectionResType& in) {
-    va.insert_type<WeldingDetectionResponse>(in);
-}
-
 template <> int serialize_to_exi(const WeldingDetectionRequest& in, exi_bitstream_t& out) {
     iso2_exiDocument doc{};
     convert(in.header, doc.V2G_Message.Header);

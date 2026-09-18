@@ -43,12 +43,10 @@ SCENARIO("Se/Deserialize DIN welding detection messages") {
 
         const auto bytes = serialize_helper(res);
 
-        THEN("It round-trips through the Variant") {
-            const io::StreamInputView view{bytes.data(), bytes.size()};
-            message_din::Variant variant(view);
-
-            REQUIRE(variant.get_type() == Type::WeldingDetectionRes);
-            const auto& msg = variant.get<WeldingDetectionResponse>();
+        THEN("The encoded response converts back field for field") {
+            const auto doc = decode_helper(bytes);
+            REQUIRE(doc.V2G_Message.Body.WeldingDetectionRes_isUsed);
+            const auto msg = to_response<WeldingDetectionResponse>(doc, doc.V2G_Message.Body.WeldingDetectionRes);
             REQUIRE(msg.header.session_id == session_id);
             REQUIRE(msg.response_code == datatypes::ResponseCode::OK);
             REQUIRE(msg.evse_present_voltage == 10.0);

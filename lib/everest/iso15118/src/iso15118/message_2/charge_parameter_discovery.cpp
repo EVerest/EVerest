@@ -244,10 +244,6 @@ template <> void insert_type(VariantAccess& va, const struct iso2_ChargeParamete
     va.insert_type<ChargeParameterDiscoveryRequest>(in);
 }
 
-template <> void insert_type(VariantAccess& va, const struct iso2_ChargeParameterDiscoveryResType& in) {
-    va.insert_type<ChargeParameterDiscoveryResponse>(in);
-}
-
 template <> int serialize_to_exi(const ChargeParameterDiscoveryRequest& in, exi_bitstream_t& out) {
     iso2_exiDocument doc{};
     convert(in.header, doc.V2G_Message.Header);

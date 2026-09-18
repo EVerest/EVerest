@@ -93,10 +93,6 @@ template <> void convert(const CertificateInstallationRequest& in, struct iso2_C
     list.arrayLen = in.root_certificate_ids.size();
 }
 
-template <> void insert_type(VariantAccess& va, const struct iso2_CertificateInstallationResType& in) {
-    va.insert_type<CertificateInstallationResponse>(in);
-}
-
 template <> int serialize_to_exi(const CertificateInstallationRequest& in, exi_bitstream_t& out) {
     // Unsigned serialization, used by tests; the production EV path signs via serialize_signed.
     iso2_exiDocument doc{};

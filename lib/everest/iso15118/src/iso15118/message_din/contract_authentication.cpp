@@ -35,10 +35,6 @@ template <> void insert_type(VariantAccess& va, const struct din_ContractAuthent
     va.insert_type<ContractAuthenticationRequest>(in);
 }
 
-template <> void insert_type(VariantAccess& va, const struct din_ContractAuthenticationResType& in) {
-    va.insert_type<ContractAuthenticationResponse>(in);
-}
-
 template <> int serialize_to_exi(const ContractAuthenticationRequest& in, exi_bitstream_t& out) {
     din_exiDocument doc;
     init_din_exiDocument(&doc);
