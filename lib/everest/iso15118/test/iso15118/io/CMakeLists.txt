@@ -47,7 +47,7 @@ add_custom_command(
     TARGET connection_openssl_test POST_BUILD
     COMMAND mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/pki
     COMMAND cd pki && cp pki.sh ${CMAKE_CURRENT_BINARY_DIR}/pki && cp -r configs ${CMAKE_CURRENT_BINARY_DIR}/pki
-    COMMAND cd ${CMAKE_CURRENT_BINARY_DIR}/pki && test -d certs/ca/v2g || sh pki.sh
+    COMMAND cd ${CMAKE_CURRENT_BINARY_DIR}/pki && test -f certs/client/cso/CPO_CERT_CHAIN_20.pem || sh pki.sh
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 target_sources(connection_openssl_test

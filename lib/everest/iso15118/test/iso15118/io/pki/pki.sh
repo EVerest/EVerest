@@ -71,6 +71,14 @@ openssl req -new -key $CLIENT_CSO_PATH/SECC_LEAF.key -passin pass:$password -con
 openssl x509 -req -in $CSR_PATH/SECC_LEAF.csr -extfile configs/seccLeafCert.cnf -extensions ext -CA $CA_CSO_PATH/CPO_SUB_CA2.pem -CAkey $CLIENT_CSO_PATH/CPO_SUB_CA2.key -passin pass:$password -set_serial 12348 -days $VALIDITY_SECC_LEAF_CERT -out $CLIENT_CSO_PATH/SECC_LEAF.pem
 cat $CLIENT_CSO_PATH/SECC_LEAF.pem $CA_CSO_PATH/CPO_SUB_CA2.pem $CA_CSO_PATH/CPO_SUB_CA1.pem > $CLIENT_CSO_PATH/CPO_CERT_CHAIN.pem
 
+# 4b) Create a second SECC leaf on secp521r1, the curve ISO 15118-20 mandates for the
+#     TLS 1.3 server certificate, signed by the same CPO_SUB_CA2. Together with the
+#     prime256v1 leaf above (ISO 15118-2, TLS 1.2) this exercises per-version leaf selection.
+openssl ecparam -genkey -name secp521r1 | openssl ec $SYMMETRIC_CIPHER -passout pass:$password -out $CLIENT_CSO_PATH/SECC_LEAF_20.key
+openssl req -new -key $CLIENT_CSO_PATH/SECC_LEAF_20.key -passin pass:$password -config configs/seccLeafCert.cnf -out $CSR_PATH/SECC_LEAF_20.csr
+openssl x509 -req -in $CSR_PATH/SECC_LEAF_20.csr -extfile configs/seccLeafCert.cnf -extensions ext -CA $CA_CSO_PATH/CPO_SUB_CA2.pem -CAkey $CLIENT_CSO_PATH/CPO_SUB_CA2.key -passin pass:$password -set_serial 12349 -days $VALIDITY_SECC_LEAF_CERT -out $CLIENT_CSO_PATH/SECC_LEAF_20.pem
+cat $CLIENT_CSO_PATH/SECC_LEAF_20.pem $CA_CSO_PATH/CPO_SUB_CA2.pem $CA_CSO_PATH/CPO_SUB_CA1.pem > $CLIENT_CSO_PATH/CPO_CERT_CHAIN_20.pem
+
 # 5) Create a self-signed OEM_ROOT_CA certificate (validity is up to the OEM)
 openssl ecparam -genkey -name $EC_CURVE | openssl ec $SYMMETRIC_CIPHER -passout pass:$password -out $CLIENT_OEM_PATH/OEM_ROOT_CA.key
 openssl req -new -key $CLIENT_OEM_PATH/OEM_ROOT_CA.key -passin pass:$password -config configs/oemRootCACert.cnf -out $CSR_PATH/OEM_ROOT_CA.csr
