@@ -5,18 +5,17 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
-#include "fsm_controller.hpp"
-#include <everest/slac/io.hpp>
 #include <generated/interfaces/slac/Implementation.hpp>
-#include <slac/slac.hpp>
 
 #include "../EvseSlac.hpp"
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
-// insert your custom include headers here
+#include "fsm_controller.hpp"
+#include <everest/slac/io.hpp>
+#include <slac/slac.hpp>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -72,6 +71,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     slac::fsm::evse::Context fsm_ctx;
