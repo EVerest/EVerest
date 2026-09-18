@@ -1666,6 +1666,13 @@ bool ISO15118_chargerImpl::handle_update_supported_app_protocols(
 }
 
 void ISO15118_chargerImpl::apply_supported_protocols() {
+    // ready() builds the offer only after the TLS chain lookup, while EvseManager's first
+    // update_energy_transfer_modes may already be handled on another thread. Until the offer exists
+    // there is nothing to filter; ready() applies it once built.
+    if (configured_protocol_offer.empty()) {
+        return;
+    }
+
     auto offered = configured_protocol_offer;
 
     // DIN SPEC 70121 is DC only, so it must not be offered on an AC charger -- an EV picking it would only
@@ -1688,7 +1695,7 @@ void ISO15118_chargerImpl::apply_supported_protocols() {
     if (din_removed) {
         EVLOG_warning << "Removed DIN SPEC 70121 from the list of supported protocols as AC is enabled";
     }
-    if (offered.empty()) {
+    if (din_removed and offered.empty()) {
         EVLOG_error << "No protocol left to offer: DIN SPEC 70121 is the only configured protocol but the "
                        "charger offers AC energy transfer. Every SupportedAppProtocol handshake will fail";
     }
