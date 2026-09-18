@@ -126,6 +126,11 @@ std::string serialize(RequestStartTransaction const& val) noexcept {
     return j.dump(json_indent);
 }
 
+std::string serialize(Capabilities const& val) noexcept {
+    json j = val;
+    return j.dump(json_indent);
+}
+
 template <> OCMFUserIdentificationStatus deserialize(std::string const& s) {
     auto data = json::parse(s);
     OCMFUserIdentificationStatus result = data;
@@ -264,6 +269,12 @@ template <> RequestStartTransaction deserialize(std::string const& s) {
     return result;
 }
 
+template <> Capabilities deserialize(std::string const& s) {
+    auto data = json::parse(s);
+    Capabilities result = data;
+    return result;
+}
+
 std::ostream& operator<<(std::ostream& os, OCMFUserIdentificationStatus const& val) {
     os << serialize(val);
     return os;
@@ -375,6 +386,11 @@ std::ostream& operator<<(std::ostream& os, ReplyStopTransaction const& val) {
 }
 
 std::ostream& operator<<(std::ostream& os, RequestStartTransaction const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, Capabilities const& val) {
     os << serialize(val);
     return os;
 }

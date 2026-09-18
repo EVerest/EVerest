@@ -94,6 +94,13 @@ from the power meter that can be used for billing (DC side on DC, AC side on
 AC). If no powermeter is connected EvseManager will never publish this
 variable.
 
+In DC charge mode, the car side power meter may publish its ``capabilities``
+(minimum measurable currents, e.g. due to calibration law accuracy limits).
+These minimum currents are merged into the DC limits advertised to the EV over
+ISO 15118 (ChargeParameterDiscovery and mid-session limit updates), but they
+never affect internal power supply control such as cable check, precharge or
+setpoint clamping.
+
 
 Authentication
 ==============

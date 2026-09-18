@@ -73,6 +73,7 @@ private:
     void subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish);
     void generate_api_var_powermeter_values();
     void generate_api_var_public_key_ocmf();
+    void generate_api_var_capabilities();
     void generate_api_var_communication_check();
 
     void setup_heartbeat_generator();

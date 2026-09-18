@@ -60,6 +60,11 @@ channels:
     messages:
       send_public_key_ocmf:
         $ref: '#/components/messages/send_public_key_ocmf'
+  send_capabilities:
+    address: 'm2e/capabilities'
+    messages:
+      send_capabilities:
+        $ref: '#/components/messages/send_capabilities'
 
 
   receive_heartbeat:
@@ -127,6 +132,16 @@ operations:
     action: send
     channel:
       $ref: '#/channels/send_public_key_ocmf'
+  send_capabilities:
+    title: 'Send power meter capabilities'
+    summary: 'Direction: Module to EVerest'
+    description: >-
+      This operation is used to send the capabilities of the power meter. Optional: meters without
+      restrictions do not need to publish this. If supported, publish at least once during start up
+      and on every change. Absence of individual fields means no restriction.
+    action: send
+    channel:
+      $ref: '#/channels/send_capabilities'
 
 
   receive_heartbeat:
@@ -268,6 +283,22 @@ components:
         - summary: ""
           payload:
             "THE_KEY"
+    send_capabilities:
+      name: send_capabilities
+      title: 'Send power meter capabilities'
+      summary: >-
+        Capabilities of the power meter, e.g. the minimum current above which the meter measures
+        within its accuracy class (required by the German Calibration Law, Eichrecht). Publish at
+        least once during start up and on every change if supported. Absence of individual fields
+        means no restriction.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Capabilities'
+      examples:
+        - summary: "Capabilities example"
+          payload:
+            min_import_current_A: 10
+            min_export_current_A: 10
 
 
     receive_heartbeat:
@@ -295,6 +326,23 @@ components:
 
 
   schemas:
+    Capabilities:
+      description: >-
+        Capabilities of this power meter. All fields are optional; an absent field means
+        no restriction / not supported.
+      type: object
+      additionalProperties: false
+      properties:
+        min_import_current_A:
+          description: >-
+            Minimum current in Ampere in import direction (charging) the meter can measure
+            within its accuracy class (e.g. required by German Calibration Law).
+          type: number
+        min_export_current_A:
+          description: >-
+            Minimum current in Ampere in export direction (discharging) the meter can measure
+            within its accuracy class.
+          type: number
     OCMFIdentificationFlags:
       description: |
         - RFID_NONE: No assignment via RFID

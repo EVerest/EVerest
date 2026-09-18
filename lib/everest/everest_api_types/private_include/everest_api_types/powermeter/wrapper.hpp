@@ -151,4 +151,10 @@ using RequestStartTransaction_External = RequestStartTransaction;
 
 RequestStartTransaction_External to_external_api(RequestStartTransaction_Internal const& val);
 
+using Capabilities_Internal = ::types::powermeter::Capabilities;
+using Capabilities_External = Capabilities;
+
+Capabilities_Internal to_internal_api(Capabilities_External const& val);
+Capabilities_External to_external_api(Capabilities_Internal const& val);
+
 } // namespace everest::lib::API::V1_0::types::powermeter
