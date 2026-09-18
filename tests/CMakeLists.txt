@@ -30,7 +30,6 @@ ev_is_python_venv_active(
 )
 if(IS_PYTHON_VENV_ACTIVE)
     get_target_property(SOURCE_DIRECTORY ev_pip_package_everest-testing SOURCE_DIRECTORY)
-    message(STATUS "Installing everest-testing from: ${SOURCE_DIRECTORY}")
     ev_pip_install_local(
         PACKAGE_NAME "everest-testing"
         PACKAGE_SOURCE_DIRECTORY "${SOURCE_DIRECTORY}"
