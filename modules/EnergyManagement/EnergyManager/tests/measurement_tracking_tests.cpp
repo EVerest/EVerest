@@ -3,6 +3,9 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <thread>
+
 #include <utils/date.hpp>
 
 #include "BrokerPowerRedistribution.hpp"
@@ -14,14 +17,14 @@ namespace module {
 
 TEST(MeasurementTrackingHelpers, NoMeasurementReturnsNullopt) {
     auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
-    EXPECT_FALSE(get_measured_power_W(evse).has_value());
+    EXPECT_FALSE(read_measurement(evse).power_W.has_value());
 }
 
 TEST(MeasurementTrackingHelpers, ReadsLeavesMeasurement) {
     auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
     test::set_measurement(evse, 4200.0f);
 
-    const auto measured = get_measured_power_W(evse);
+    const auto measured = read_measurement(evse).power_W;
     ASSERT_TRUE(measured.has_value());
     EXPECT_FLOAT_EQ(measured.value().total, 4200.0f);
 }
@@ -39,7 +42,7 @@ TEST(MeasurementTrackingHelpers, PrefersLeavesOverRoot) {
 
     test::set_measurement(evse, 4200.0f);
 
-    const auto measured = get_measured_power_W(evse);
+    const auto measured = read_measurement(evse).power_W;
     ASSERT_TRUE(measured.has_value());
     EXPECT_FLOAT_EQ(measured.value().total, 4200.0f);
 }
@@ -55,7 +58,7 @@ TEST(MeasurementTrackingHelpers, FallsBackToRootMeasurement) {
     root.power_W = root_power;
     evse.energy_usage_root = root;
 
-    const auto measured = get_measured_power_W(evse);
+    const auto measured = read_measurement(evse).power_W;
     ASSERT_TRUE(measured.has_value());
     EXPECT_FLOAT_EQ(measured.value().total, 9000.0f);
 }
@@ -68,7 +71,7 @@ TEST(MeasurementTrackingHelpers, PreservesPerPhasePower) {
     evse.energy_usage_leaves.value().power_W.value().L2 = 1300.0f;
     evse.energy_usage_leaves.value().power_W.value().L3 = 1500.0f;
 
-    const auto measured = get_measured_power_W(evse);
+    const auto measured = read_measurement(evse).power_W;
     ASSERT_TRUE(measured.has_value());
     EXPECT_FLOAT_EQ(measured.value().total, 4200.0f);
     ASSERT_TRUE(measured.value().L1.has_value());
@@ -88,14 +91,14 @@ TEST(MeasurementTrackingHelpers, PreservesPerPhasePower) {
 
 TEST(MeasurementTrackingHelpers, NoMeasurementHasNoMeasurementTime) {
     auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
-    EXPECT_FALSE(get_measured_time(evse).has_value());
+    EXPECT_FALSE(read_measurement(evse).measured_at.has_value());
 }
 
 TEST(MeasurementTrackingHelpers, ReadsMeasurementTime) {
     auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
     test::set_measurement(evse, 4200.0f, "2026-08-04T12:29:57.000Z");
 
-    const auto measured_at = get_measured_time(evse);
+    const auto measured_at = read_measurement(evse).measured_at;
     ASSERT_TRUE(measured_at.has_value());
     EXPECT_EQ(measured_at.value(), Everest::Date::from_rfc3339("2026-08-04T12:29:57.000Z"));
 }
@@ -116,8 +119,8 @@ TEST(MeasurementTrackingHelpers, MeasurementTimeComesFromTheMeterThatSuppliedThe
 
     test::set_measurement(evse, 4200.0f, "2026-08-04T12:29:57.000Z");
 
-    EXPECT_FLOAT_EQ(get_measured_power_W(evse).value().total, 4200.0f);
-    EXPECT_EQ(get_measured_time(evse).value(), Everest::Date::from_rfc3339("2026-08-04T12:29:57.000Z"));
+    EXPECT_FLOAT_EQ(read_measurement(evse).power_W.value().total, 4200.0f);
+    EXPECT_EQ(read_measurement(evse).measured_at.value(), Everest::Date::from_rfc3339("2026-08-04T12:29:57.000Z"));
 }
 
 TEST(MeasurementTrackingHelpers, MeasurementTimeFallsBackToRootWithThePower) {
@@ -131,8 +134,8 @@ TEST(MeasurementTrackingHelpers, MeasurementTimeFallsBackToRootWithThePower) {
     root.power_W = root_power;
     evse.energy_usage_root = root;
 
-    EXPECT_FLOAT_EQ(get_measured_power_W(evse).value().total, 9000.0f);
-    EXPECT_EQ(get_measured_time(evse).value(), Everest::Date::from_rfc3339("2026-08-04T12:29:57.000Z"));
+    EXPECT_FLOAT_EQ(read_measurement(evse).power_W.value().total, 9000.0f);
+    EXPECT_EQ(read_measurement(evse).measured_at.value(), Everest::Date::from_rfc3339("2026-08-04T12:29:57.000Z"));
 }
 
 TEST(MeasurementTrackingHelpers, UnparsableMeasurementTimeIsAbsentNotNow) {
@@ -142,15 +145,15 @@ TEST(MeasurementTrackingHelpers, UnparsableMeasurementTimeIsAbsentNotNow) {
     auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
     test::set_measurement(evse, 4200.0f, "not a timestamp");
 
-    ASSERT_TRUE(get_measured_power_W(evse).has_value());
-    EXPECT_FALSE(get_measured_time(evse).has_value());
+    ASSERT_TRUE(read_measurement(evse).power_W.has_value());
+    EXPECT_FALSE(read_measurement(evse).measured_at.has_value());
 }
 
 TEST(MeasurementTrackingHelpers, EpochMeasurementTimeIsAbsent) {
     auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
     test::set_measurement(evse, 4200.0f, "1970-01-01T00:00:00.000Z");
 
-    EXPECT_FALSE(get_measured_time(evse).has_value());
+    EXPECT_FALSE(read_measurement(evse).measured_at.has_value());
 }
 
 // ---------------------------------------------------------------- per-phase current extraction
@@ -161,7 +164,7 @@ TEST(MeasurementTrackingHelpers, EpochMeasurementTimeIsAbsent) {
 TEST(MeasurementTrackingHelpers, NoCurrentMeasurementReturnsAllNullopt) {
     auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
 
-    const auto measured = get_measured_current_A(evse);
+    const auto measured = read_measurement(evse).current_A;
     EXPECT_FALSE(measured.L1.has_value());
     EXPECT_FALSE(measured.L2.has_value());
     EXPECT_FALSE(measured.L3.has_value());
@@ -171,7 +174,7 @@ TEST(MeasurementTrackingHelpers, ReadsLeavesPerPhaseCurrent) {
     auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
     test::set_measurement_current(evse, 10.0f, 11.0f, 12.0f);
 
-    const auto measured = get_measured_current_A(evse);
+    const auto measured = read_measurement(evse).current_A;
     ASSERT_TRUE(measured.L1.has_value());
     ASSERT_TRUE(measured.L2.has_value());
     ASSERT_TRUE(measured.L3.has_value());
@@ -185,7 +188,7 @@ TEST(MeasurementTrackingHelpers, PartialPhaseCurrentIsPreserved) {
     auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
     test::set_measurement_current(evse, 16.0f, std::nullopt, std::nullopt);
 
-    const auto measured = get_measured_current_A(evse);
+    const auto measured = read_measurement(evse).current_A;
     ASSERT_TRUE(measured.L1.has_value());
     EXPECT_FLOAT_EQ(measured.L1.value(), 16.0f);
     EXPECT_FALSE(measured.L2.has_value());
@@ -207,7 +210,7 @@ TEST(MeasurementTrackingHelpers, PrefersLeavesCurrentOverRoot) {
 
     test::set_measurement_current(evse, 10.0f, 11.0f, 12.0f);
 
-    const auto measured = get_measured_current_A(evse);
+    const auto measured = read_measurement(evse).current_A;
     ASSERT_TRUE(measured.L1.has_value());
     EXPECT_FLOAT_EQ(measured.L1.value(), 10.0f);
 }
@@ -225,13 +228,85 @@ TEST(MeasurementTrackingHelpers, FallsBackToRootCurrent) {
     root.current_A = root_current;
     evse.energy_usage_root = root;
 
-    const auto measured = get_measured_current_A(evse);
+    const auto measured = read_measurement(evse).current_A;
     ASSERT_TRUE(measured.L1.has_value());
     ASSERT_TRUE(measured.L2.has_value());
     ASSERT_TRUE(measured.L3.has_value());
     EXPECT_FLOAT_EQ(measured.L1.value(), 1.0f);
     EXPECT_FLOAT_EQ(measured.L2.value(), 2.0f);
     EXPECT_FLOAT_EQ(measured.L3.value(), 3.0f);
+}
+
+// One reading supplies every field. A node whose two sides carry different halves of a
+// measurement is the case that used to mix them: power and timestamp from one meter, the
+// per-phase current from the other.
+
+TEST(MeasurementTrackingHelpers, PowerDecidesWhichReadingIsUsed) {
+    // The leaves side reports current but no power. Power is the value an allocation is
+    // compared against, so the root side wins the selection - and then supplies every
+    // field, including the timestamp.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T11:00:00.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Power root_power;
+    root_power.total = 9000.0f;
+    root.power_W = root_power;
+    evse.energy_usage_root = root;
+
+    test::set_measurement_current(evse, 10.0f, 11.0f, 12.0f, "2026-08-04T12:29:57.000Z");
+
+    const auto measured = read_measurement(evse);
+    ASSERT_TRUE(measured.power_W.has_value());
+    EXPECT_FLOAT_EQ(measured.power_W.value().total, 9000.0f);
+    // The leaves side's 10 A belongs to the meter that was not selected.
+    EXPECT_FALSE(measured.current_A.L1.has_value());
+    ASSERT_TRUE(measured.measured_at.has_value());
+    EXPECT_EQ(measured.measured_at.value(), Everest::Date::from_rfc3339("2026-08-04T11:00:00.000Z"));
+}
+
+TEST(MeasurementTrackingHelpers, CurrentDecidesOnlyWhenNoSideReportsPower) {
+    // Neither side reports power, so current picks the reading - leaves before root, and
+    // again every field comes from the one that won.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T11:00:00.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Current root_current;
+    root_current.L1 = 1.0f;
+    root.current_A = root_current;
+    evse.energy_usage_root = root;
+
+    test::set_measurement_current(evse, 10.0f, 11.0f, 12.0f, "2026-08-04T12:29:57.000Z");
+
+    const auto measured = read_measurement(evse);
+    EXPECT_FALSE(measured.power_W.has_value());
+    ASSERT_TRUE(measured.current_A.L1.has_value());
+    EXPECT_FLOAT_EQ(measured.current_A.L1.value(), 10.0f);
+    ASSERT_TRUE(measured.measured_at.has_value());
+    EXPECT_EQ(measured.measured_at.value(), Everest::Date::from_rfc3339("2026-08-04T12:29:57.000Z"));
+}
+
+TEST(MeasurementTrackingHelpers, PowerOnlyReadingLeavesCurrentUnknown) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T11:00:00.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Current root_current;
+    root_current.L1 = 1.0f;
+    root.current_A = root_current;
+    evse.energy_usage_root = root;
+
+    test::set_measurement(evse, 4200.0f, "2026-08-04T12:29:57.000Z");
+
+    const auto measured = read_measurement(evse);
+    ASSERT_TRUE(measured.power_W.has_value());
+    EXPECT_FLOAT_EQ(measured.power_W.value().total, 4200.0f);
+    // The root side's 1 A belongs to another meter; unknown is the honest answer.
+    EXPECT_FALSE(measured.current_A.L1.has_value());
 }
 
 // ---------------------------------------------------------------- per session context
@@ -581,6 +656,60 @@ TEST(MeasurementTrackingBroker, UnknownStrategyFallsBackToFastCharging) {
 
     EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 32.0f, 0.01f);
     EXPECT_FALSE(impl.get_observed_measurement("evse1").power_W.has_value());
+}
+
+// ---------------------------------------------------------------- worker thread lifecycle
+
+TEST(EnergyManagerLifecycle, StopDoesNotWaitOutTheUpdateInterval) {
+    // stop() clears the flag under the mutex the worker waits on. Clearing it outside that
+    // mutex loses the notification whenever it lands after the wait predicate and before
+    // the worker registers on the condition variable, and stop() then blocks for a full
+    // update_interval.
+    auto config = make_tracking_config();
+    config.update_interval = 30;
+
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    const auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(config, [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.on_energy_flow_request(request);
+    impl.start();
+    // Let the worker get through its first run and into the wait.
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    const auto before = std::chrono::steady_clock::now();
+    impl.stop();
+    const auto elapsed = std::chrono::steady_clock::now() - before;
+
+    EXPECT_LT(elapsed, std::chrono::seconds(5));
+}
+
+TEST(EnergyManagerLifecycle, StartAndStopAreIdempotent) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    const auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.on_energy_flow_request(request);
+
+    impl.stop(); // never started
+    impl.start();
+    impl.start(); // second start must not spawn a second thread
+    impl.stop();
+    impl.stop();
+}
+
+TEST(EnergyManagerLifecycle, DestructorJoinsTheWorker) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    const auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    {
+        EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+        impl.on_energy_flow_request(request);
+        impl.start();
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    // Leaving the scope must not terminate or leave a thread reading a destroyed object.
+    SUCCEED();
 }
 
 } // namespace module

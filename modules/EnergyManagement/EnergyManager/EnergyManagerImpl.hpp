@@ -94,8 +94,17 @@ private:
     // Worker thread running the optimizer loop, and the flag that ends it. The thread is
     // joined rather than detached: it reads config, contexts and the energy flow request of
     // this object on every cycle, so it must not outlive it.
+    // running is written only under mainloop_sleep_mutex, the mutex the worker waits on, so
+    // a stop() cannot slip past the wait predicate; it is atomic so the loop condition can
+    // read it without taking the lock every cycle.
     std::thread mainloop;
     std::atomic<bool> running{false};
+
+    // Set by on_energy_flow_request() for a priority request, to run the optimizer before
+    // the update interval is up; cleared by the worker once it has woken. Guarded by
+    // mainloop_sleep_mutex, not atomic: unlike running it is only ever touched while
+    // holding that mutex, and the wait predicate must see it and the notification together.
+    bool wakeup{false};
 
     // complete energy tree request
     types::energy::EnergyFlowRequest energy_flow_request;

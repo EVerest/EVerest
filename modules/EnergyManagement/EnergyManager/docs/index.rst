@@ -27,10 +27,13 @@ EVSE:
 
 The measurement is taken from the EVSE's own power meter, reported through the
 ``energy_usage_leaves`` field of the energy flow request (with ``energy_usage_root``
-as fallback), so the observation is per connector. The last observed value is retained
-per connector for the duration of the session and reset on unplug. A connector in an
-active charging session that reports no measurement is warned about once per session;
-connectors that are ``Unplugged`` or ``Finished`` are not observed.
+as fallback), so the observation is per connector. One reading is selected per run and
+the power, the per-phase current and the timestamp all come from it: a node whose two
+sides each report a different half of a measurement is read from one side only, so no
+value is ever paired with another meter's phases or age. The last observed value is
+retained per connector for the duration of the session and reset on unplug. A connector
+in an active charging session that reports no measurement is warned about once per
+session; connectors that are ``Unplugged`` or ``Finished`` are not observed.
 
 Each observation carries the reading's own measurement timestamp alongside its values.
 This is what lets a consumer tell a live reading from a frozen one: ``EnergyNode`` and

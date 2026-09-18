@@ -37,7 +37,12 @@ static BrokerStrategy to_broker_strategy(const std::string& s) {
     if (s == "PowerRedistribution") {
         return BrokerStrategy::PowerRedistribution;
     }
-    // Default of the manifest option. An unknown value must not break energy distribution.
+    // Default of the manifest option. An unknown value must not break energy distribution,
+    // but it must not pass unnoticed either: the manifest enum rejects a typo, a config
+    // built any other way does not.
+    if (s != "FastCharging") {
+        EVLOG_warning << "Unknown broker_strategy '" << s << "', falling back to FastCharging";
+    }
     return BrokerStrategy::FastCharging;
 }
 
@@ -99,8 +104,12 @@ EnergyManagerImpl::~EnergyManagerImpl() {
 }
 
 void EnergyManagerImpl::start() {
-    if (running.exchange(true)) {
-        return;
+    {
+        std::lock_guard<std::mutex> lock(mainloop_sleep_mutex);
+        if (running) {
+            return;
+        }
+        running = true;
     }
 
     // start thread to update energy optimization
@@ -110,20 +119,33 @@ void EnergyManagerImpl::start() {
             enforced_limits_callback(optimized_values);
             {
                 std::unique_lock<std::mutex> lock(mainloop_sleep_mutex);
-                // Re-check the flag under the lock: stop() clears it and notifies, and
-                // without the predicate that notification is lost whenever it lands between
-                // the loop condition and the wait, leaving shutdown blocked for a full
-                // update_interval.
+                // Both reasons to wake early, under the lock that guards them. stop() and
+                // on_energy_flow_request() set their flag while holding this same mutex, so
+                // neither change can land between this predicate and the wait; without both
+                // halves the notification is lost in that window.
+                //
+                // Both have to be named here: a predicated wait_for re-sleeps on every
+                // notification its predicate does not cover, so a predicate that mentions
+                // only the stop flag swallows the priority request wake-up and delays the
+                // optimizer run it asks for by a full update_interval.
                 mainloop_sleep_condvar.wait_for(lock, std::chrono::seconds(config.update_interval),
-                                                [this] { return not running; });
+                                                [this] { return not running or wakeup; });
+                wakeup = false;
             }
         }
     });
 }
 
 void EnergyManagerImpl::stop() {
-    if (not running.exchange(false)) {
-        return;
+    {
+        // Under the same mutex the worker waits on: clearing the flag outside it leaves a
+        // window where the worker has already tested the predicate but is not yet
+        // registered on the condition variable, and the notification below is lost.
+        std::lock_guard<std::mutex> lock(mainloop_sleep_mutex);
+        if (not running) {
+            return;
+        }
+        running = false;
     }
 
     mainloop_sleep_condvar.notify_all();
@@ -138,7 +160,14 @@ void EnergyManagerImpl::on_energy_flow_request(const types::energy::EnergyFlowRe
     energy_flow_request = e;
 
     if (is_priority_request(e)) {
-        // trigger optimization now
+        // Trigger optimization now. The flag is set under the mutex the worker waits on,
+        // for the same reason stop() clears running under it: notifying without it leaves a
+        // window in which the worker has tested the predicate but is not yet registered on
+        // the condition variable, and the request waits out the whole update_interval.
+        {
+            std::lock_guard<std::mutex> sleep_lock(mainloop_sleep_mutex);
+            wakeup = true;
+        }
         mainloop_sleep_condvar.notify_all();
     }
 }

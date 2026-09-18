@@ -15,6 +15,7 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 target_sources(${TEST_TARGET_NAME} PRIVATE
     energy_manager_tests.cpp
     measurement_tracking_tests.cpp
+    optimizer_loop_tests.cpp
     JsonDefinedEnergyManagerTest.cpp
     ../Broker.cpp
     ../BrokerFastCharging.cpp

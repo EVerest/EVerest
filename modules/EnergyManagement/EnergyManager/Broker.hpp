@@ -120,7 +120,8 @@ public:
     // before any trading round runs. Called exactly once per optimizer run, from the same
     // loop that creates the brokers. Trading must not depend on it: the default does
     // nothing, and a strategy that only trades never overrides it.
-    virtual void observe(){};
+    virtual void observe() {
+    }
 
     Market& get_local_market();
 

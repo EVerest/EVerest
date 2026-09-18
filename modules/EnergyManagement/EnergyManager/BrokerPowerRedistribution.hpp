@@ -8,35 +8,37 @@
 
 namespace module {
 
-/// \brief Extracts the imported power measurement from a node of the energy tree.
-/// Prefers the leaves side measurement (what EvseManager reports for an EVSE) and falls
-/// back to the root side measurement.
-/// \returns measured power in Watt (total, plus per-phase L1/L2/L3 when the meter reports
-/// them), or std::nullopt if the node carries no power measurement
-std::optional<types::units::Power> get_measured_power_W(const types::energy::EnergyFlowRequest& node);
-
-/// \brief Measurement timestamp of the reading get_measured_power_W() took its value from,
-/// using the same leaves-before-root precedence so the age always belongs to the value.
+/// \brief Reads the power meter measurement of one node of the energy tree.
 ///
-/// A power meter reading without a usable timestamp has no age a consumer could check, so
-/// it is reported as absent rather than as "now": EnergyNode and EvseManager republish the
-/// last reading they received on every request, which makes a meter that stopped updating
-/// indistinguishable from one holding steady unless its own timestamp is carried along.
-/// Everest::Date::from_rfc3339 does not throw - a default constructed time point is its
-/// only failure signal - so the epoch doubles as the unparsable case, and a meter genuinely
-/// reporting 1970 is equally unusable.
-/// \returns the reading's measurement time, or std::nullopt when the node carries no power
-/// measurement or its timestamp is unusable
-std::optional<date::utc_clock::time_point> get_measured_time(const types::energy::EnergyFlowRequest& node);
-
-/// \brief Extracts the per-phase current measurement (L1/L2/L3) from a node of the energy
-/// tree. Prefers the leaves side measurement and falls back to the root side, like
-/// get_measured_power_W(). Phases the meter does not report stay nullopt (a single-phase
-/// meter reports only L1) - they must not be read as zero.
-/// Per-phase values are what per-phase trading and asymmetric load limits are expressed in,
-/// the latter as a threshold in ampere per phase.
-/// \returns measured current per phase in Ampere; all phases nullopt if no current measurement
-types::units::Current get_measured_current_A(const types::energy::EnergyFlowRequest& node);
+/// Exactly one reading is selected and every field of the result comes from it. Selecting
+/// per field instead would let the per-phase current of one meter sit next to the total
+/// power and timestamp of another, and the timestamp is only worth carrying while it
+/// belongs to the values beside it.
+///
+/// Power decides which reading that is - the leaves side (what EvseManager reports for an
+/// EVSE) before the root side - and current decides only when neither side reports power.
+/// A leaves reading that carries current alone must not hide a root reading that carries
+/// the power, which is the value an allocation is actually compared against.
+///
+/// The measured power is in Watt (total, plus per-phase L1/L2/L3 when the meter reports
+/// them) and std::nullopt when the selected reading has no power value. Per-phase current
+/// is in Ampere; phases the meter does not report stay std::nullopt (a single-phase meter
+/// reports only L1) and must not be read as zero. Per-phase values are what per-phase
+/// trading and asymmetric load limits are expressed in, the latter as a threshold in
+/// ampere per phase.
+///
+/// The measurement time is the reading's own, not the time of the run. A reading without a
+/// usable timestamp has no age a consumer could check, so it is reported as absent rather
+/// than as "now": EnergyNode and EvseManager republish the last reading they received on
+/// every request, which makes a meter that stopped updating indistinguishable from one
+/// holding steady unless its own timestamp is carried along. Everest::Date::from_rfc3339
+/// does not throw - a default constructed time point is its only failure signal - so the
+/// epoch doubles as the unparsable case, and a meter genuinely reporting 1970 is equally
+/// unusable.
+///
+/// \returns the observed measurement, all fields std::nullopt if the node carries no
+/// measurement at all
+ObservedMeasurement read_measurement(const types::energy::EnergyFlowRequest& node);
 
 /// \brief Broker of the PowerRedistribution strategy. In this stage it trades exactly like
 /// BrokerFastCharging and additionally observes the live power meter measurement of its
