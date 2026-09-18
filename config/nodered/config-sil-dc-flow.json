@@ -1810,7 +1810,7 @@
         "type": "function",
         "z": "ed603c51db9dcbb9",
         "name": "Buffer sim commands",
-        "func": "if (msg.topic.indexOf('sim_commands') > -1) {\n    const s = msg.payload.split('#');\n    flow.set('sim_commands_start', s[0]);\n    flow.set('sim_commands_stop', s[1]);\n    flow.set('sim_commands_pause', s[2]);\n    flow.set('sim_commands_resume', s[3]);\n} else if (msg.payload == 'start') {\n    msg.payload = flow.get('sim_commands_start');\n    return msg;\n} else if (msg.payload == 'stop') {\n    msg.payload = flow.get('sim_commands_stop');\n    return msg;\n} else if (msg.payload == 'pause') {\n    msg.payload = flow.get('sim_commands_pause');\n    return msg;\n} else if (msg.payload == 'resume') {\n    msg.payload = flow.get('sim_commands_resume');\n    return msg;\n} else {\n    msg.payload = 'NONE';\n    return msg;\n}\n",
+        "func": "// The \"Vehicle MAC (VID)\" input arrives here with the topic 'evcc_id'. The value is kept in flow context and\n// prepended to the session start commands rather than sent on its own, because execute_charging_session and\n// modify_charging_session replace the whole command queue - sending it separately would abort a running\n// session. Prepending also means the EV picks it up for the session that is starting, since the EVCCID is\n// fixed at SessionSetupReq.\nif (msg.topic === 'evcc_id') {\n    const typed = String(msg.payload || '').trim();\n    const mac = typed.replace(/^vid:/i, '').replace(/[:\\-. ]/g, '');\n    if (typed === '') {\n        // Blank restores the MAC address of the EV's network interface.\n        flow.set('evcc_id_command', 'set_evcc_id;');\n    } else if (/^[0-9a-f]{12}$/i.test(mac)) {\n        flow.set('evcc_id_command', 'set_evcc_id ' + mac.toUpperCase() + ';');\n    } else {\n        node.warn('Ignoring vehicle MAC \"' + typed + '\": not a MAC address');\n    }\n    return null;\n}\n\nif (msg.topic.indexOf('sim_commands') > -1) {\n    const s = msg.payload.split('#');\n    flow.set('sim_commands_start', s[0]);\n    flow.set('sim_commands_stop', s[1]);\n    flow.set('sim_commands_pause', s[2]);\n    flow.set('sim_commands_resume', s[3]);\n} else if (msg.payload == 'start') {\n    msg.payload = (flow.get('evcc_id_command') || '') + flow.get('sim_commands_start');\n    return msg;\n} else if (msg.payload == 'stop') {\n    msg.payload = flow.get('sim_commands_stop');\n    return msg;\n} else if (msg.payload == 'pause') {\n    msg.payload = flow.get('sim_commands_pause');\n    return msg;\n} else if (msg.payload == 'resume') {\n    msg.payload = flow.get('sim_commands_resume');\n    return msg;\n} else {\n    msg.payload = 'NONE';\n    return msg;\n}\n",
         "outputs": 1,
         "noerr": 0,
         "initialize": "",
@@ -1924,5 +1924,97 @@
                 "620b0d248a89ece0"
             ]
         ]
+    },
+    {
+        "id": "b1d0ae5efa11ce00",
+        "type": "comment",
+        "z": "ed603c51db9dcbb9",
+        "name": "Simulated vehicle identity (Autocharge)",
+        "info": "The EV announces its MAC address as the EVCCID in SessionSetupReq. EvseManager turns that into the Autocharge token \"VID:<mac>\" and sends it to the CSMS as the Authorize idTag.\n\nWithout an override the MAC comes from the container's network interface, so every simulated session looks like the same car. Setting a value here makes a different vehicle turn up on the next plug-in.\n\nThe value is prepended to the \"Car Plugin\" command string as \"set_evcc_id <mac>\", so it takes effect for the session it starts.\n\nAccepts VID:0242AC110099, 02:42:AC:11:00:99 or 0242AC110099. Leave blank to go back to the interface MAC address.",
+        "x": 240,
+        "y": 1240,
+        "wires": []
+    },
+    {
+        "id": "b1d0ae5efa11ce01",
+        "type": "ui_text_input",
+        "z": "ed603c51db9dcbb9",
+        "name": "Vehicle MAC (VID)",
+        "label": "Vehicle MAC (VID)",
+        "tooltip": "Applied when the next session starts. Blank restores the network interface MAC address.",
+        "group": "b364f7eb4621082b",
+        "order": 14,
+        "width": 0,
+        "height": 0,
+        "passthru": false,
+        "mode": "text",
+        "delay": "0",
+        "topic": "evcc_id",
+        "sendOnBlur": true,
+        "className": "",
+        "topicType": "str",
+        "x": 200,
+        "y": 1300,
+        "wires": [
+            [
+                "620b0d248a89ece0"
+            ]
+        ]
+    },
+    {
+        "id": "b1d0ae5efa11ce02",
+        "type": "mqtt in",
+        "z": "ed603c51db9dcbb9",
+        "name": "",
+        "topic": "everest_external/nodered/+/carsim/state/evcc_id",
+        "qos": "2",
+        "datatype": "auto",
+        "broker": "fc8686af.48d178",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 290,
+        "y": 1360,
+        "wires": [
+            [
+                "b1d0ae5efa11ce03"
+            ]
+        ]
+    },
+    {
+        "id": "b1d0ae5efa11ce03",
+        "type": "function",
+        "z": "ed603c51db9dcbb9",
+        "name": "Filter connector number",
+        "func": "// The retained EVCCID is delivered the instant the broker connects, which can beat the inject node that\n// seeds connector_number, so fall back to this tab's connector rather than dropping the value silently.\nconst connector = flow.get('connector_number') || '1';\nif (msg.topic.indexOf(String(connector)) > -1) return msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 710,
+        "y": 1360,
+        "wires": [
+            [
+                "b1d0ae5efa11ce04"
+            ]
+        ]
+    },
+    {
+        "id": "b1d0ae5efa11ce04",
+        "type": "ui_text",
+        "z": "ed603c51db9dcbb9",
+        "group": "b364f7eb4621082b",
+        "order": 15,
+        "width": 0,
+        "height": 0,
+        "name": "",
+        "label": "Announced VID",
+        "format": "{{msg.payload}}",
+        "layout": "row-spread",
+        "x": 1000,
+        "y": 1360,
+        "wires": []
     }
 ]
