@@ -12,6 +12,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -37,7 +38,34 @@ enum class ResponseErrorEnum {
 
 /// \brief Converts the given ResponseErrorEnum \p e to human readable string
 /// \returns a string representation of the ResponseErrorEnum
-inline std::string response_error_enum_to_string(ResponseErrorEnum e) {
+inline std::string response_error_enum_to_string(const ResponseErrorEnum& e) {
+    switch (e) {
+    case ResponseErrorEnum::NoError:
+        return "NoError";
+    case ResponseErrorEnum::ErrorInvalidParameter:
+        return "ErrorInvalidParameter";
+    case ResponseErrorEnum::ErrorOutOfRange:
+        return "ErrorOutOfRange";
+    case ResponseErrorEnum::ErrorValuesNotApplied:
+        return "ErrorValuesNotApplied";
+    case ResponseErrorEnum::ErrorInvalidEVSEIndex:
+        return "ErrorInvalidEVSEIndex";
+    case ResponseErrorEnum::ErrorInvalidConnectorIndex:
+        return "ErrorInvalidConnectorIndex";
+    case ResponseErrorEnum::ErrorNoDataAvailable:
+        return "ErrorNoDataAvailable";
+    case ResponseErrorEnum::ErrorOperationNotSupported:
+        return "ErrorOperationNotSupported";
+    case ResponseErrorEnum::ErrorUnknownError:
+        return "ErrorUnknownError";
+    }
+
+    throw std::out_of_range("No known string conversion for provided enum of type ResponseErrorEnum");
+}
+
+/// \brief Converts the given ResponseErrorEnum \p e to human readable string
+/// \returns a string_view representation of the ResponseErrorEnum
+inline constexpr std::string_view response_error_enum_to_string_view(const ResponseErrorEnum& e) {
     switch (e) {
     case ResponseErrorEnum::NoError:
         return "NoError";
@@ -103,6 +131,16 @@ inline std::ostream& operator<<(std::ostream& os, const types::json_rpc_api::Res
     return os;
 }
 
+/// \brief Conversion from a given ResponseErrorEnum \p e to a given json object \p j
+inline void to_json(json& j, const ResponseErrorEnum& e) {
+    j = types::json_rpc_api::response_error_enum_to_string_view(e);
+}
+
+/// \brief Conversion from a given json object \p j to a given ResponseErrorEnum \p e
+inline void from_json(const json& j, ResponseErrorEnum& e) {
+    e = types::json_rpc_api::string_to_response_error_enum(j.get<std::string>());
+}
+
 } // namespace json_rpc_api
 } // namespace types
 
@@ -118,7 +156,26 @@ enum class ChargeProtocolEnum {
 
 /// \brief Converts the given ChargeProtocolEnum \p e to human readable string
 /// \returns a string representation of the ChargeProtocolEnum
-inline std::string charge_protocol_enum_to_string(ChargeProtocolEnum e) {
+inline std::string charge_protocol_enum_to_string(const ChargeProtocolEnum& e) {
+    switch (e) {
+    case ChargeProtocolEnum::Unknown:
+        return "Unknown";
+    case ChargeProtocolEnum::IEC61851:
+        return "IEC61851";
+    case ChargeProtocolEnum::DIN70121:
+        return "DIN70121";
+    case ChargeProtocolEnum::ISO15118:
+        return "ISO15118";
+    case ChargeProtocolEnum::ISO15118_20:
+        return "ISO15118_20";
+    }
+
+    throw std::out_of_range("No known string conversion for provided enum of type ChargeProtocolEnum");
+}
+
+/// \brief Converts the given ChargeProtocolEnum \p e to human readable string
+/// \returns a string_view representation of the ChargeProtocolEnum
+inline constexpr std::string_view charge_protocol_enum_to_string_view(const ChargeProtocolEnum& e) {
     switch (e) {
     case ChargeProtocolEnum::Unknown:
         return "Unknown";
@@ -164,6 +221,16 @@ inline std::ostream& operator<<(std::ostream& os, const types::json_rpc_api::Cha
     return os;
 }
 
+/// \brief Conversion from a given ChargeProtocolEnum \p e to a given json object \p j
+inline void to_json(json& j, const ChargeProtocolEnum& e) {
+    j = types::json_rpc_api::charge_protocol_enum_to_string_view(e);
+}
+
+/// \brief Conversion from a given json object \p j to a given ChargeProtocolEnum \p e
+inline void from_json(const json& j, ChargeProtocolEnum& e) {
+    e = types::json_rpc_api::string_to_charge_protocol_enum(j.get<std::string>());
+}
+
 } // namespace json_rpc_api
 } // namespace types
 
@@ -188,7 +255,44 @@ enum class EVSEStateEnum {
 
 /// \brief Converts the given EVSEStateEnum \p e to human readable string
 /// \returns a string representation of the EVSEStateEnum
-inline std::string evsestate_enum_to_string(EVSEStateEnum e) {
+inline std::string evsestate_enum_to_string(const EVSEStateEnum& e) {
+    switch (e) {
+    case EVSEStateEnum::Unknown:
+        return "Unknown";
+    case EVSEStateEnum::Unplugged:
+        return "Unplugged";
+    case EVSEStateEnum::Disabled:
+        return "Disabled";
+    case EVSEStateEnum::Preparing:
+        return "Preparing";
+    case EVSEStateEnum::Reserved:
+        return "Reserved";
+    case EVSEStateEnum::AuthRequired:
+        return "AuthRequired";
+    case EVSEStateEnum::ChargingPausedEV:
+        return "ChargingPausedEV";
+    case EVSEStateEnum::ChargingPausedEVSE:
+        return "ChargingPausedEVSE";
+    case EVSEStateEnum::Charging:
+        return "Charging";
+    case EVSEStateEnum::AuthTimeout:
+        return "AuthTimeout";
+    case EVSEStateEnum::Finished:
+        return "Finished";
+    case EVSEStateEnum::FinishedEVSE:
+        return "FinishedEVSE";
+    case EVSEStateEnum::FinishedEV:
+        return "FinishedEV";
+    case EVSEStateEnum::SwitchingPhases:
+        return "SwitchingPhases";
+    }
+
+    throw std::out_of_range("No known string conversion for provided enum of type EVSEStateEnum");
+}
+
+/// \brief Converts the given EVSEStateEnum \p e to human readable string
+/// \returns a string_view representation of the EVSEStateEnum
+inline constexpr std::string_view evsestate_enum_to_string_view(const EVSEStateEnum& e) {
     switch (e) {
     case EVSEStateEnum::Unknown:
         return "Unknown";
@@ -279,6 +383,16 @@ inline std::ostream& operator<<(std::ostream& os, const types::json_rpc_api::EVS
     return os;
 }
 
+/// \brief Conversion from a given EVSEStateEnum \p e to a given json object \p j
+inline void to_json(json& j, const EVSEStateEnum& e) {
+    j = types::json_rpc_api::evsestate_enum_to_string_view(e);
+}
+
+/// \brief Conversion from a given json object \p j to a given EVSEStateEnum \p e
+inline void from_json(const json& j, EVSEStateEnum& e) {
+    e = types::json_rpc_api::string_to_evsestate_enum(j.get<std::string>());
+}
+
 } // namespace json_rpc_api
 } // namespace types
 
@@ -311,7 +425,60 @@ enum class ConnectorTypeEnum {
 
 /// \brief Converts the given ConnectorTypeEnum \p e to human readable string
 /// \returns a string representation of the ConnectorTypeEnum
-inline std::string connector_type_enum_to_string(ConnectorTypeEnum e) {
+inline std::string connector_type_enum_to_string(const ConnectorTypeEnum& e) {
+    switch (e) {
+    case ConnectorTypeEnum::cCCS1:
+        return "cCCS1";
+    case ConnectorTypeEnum::cCCS2:
+        return "cCCS2";
+    case ConnectorTypeEnum::cG105:
+        return "cG105";
+    case ConnectorTypeEnum::cTesla:
+        return "cTesla";
+    case ConnectorTypeEnum::cType1:
+        return "cType1";
+    case ConnectorTypeEnum::cType2:
+        return "cType2";
+    case ConnectorTypeEnum::s309_1P_16A:
+        return "s309_1P_16A";
+    case ConnectorTypeEnum::s309_1P_32A:
+        return "s309_1P_32A";
+    case ConnectorTypeEnum::s309_3P_16A:
+        return "s309_3P_16A";
+    case ConnectorTypeEnum::s309_3P_32A:
+        return "s309_3P_32A";
+    case ConnectorTypeEnum::sBS1361:
+        return "sBS1361";
+    case ConnectorTypeEnum::sCEE_7_7:
+        return "sCEE_7_7";
+    case ConnectorTypeEnum::sType2:
+        return "sType2";
+    case ConnectorTypeEnum::sType3:
+        return "sType3";
+    case ConnectorTypeEnum::Other1PhMax16A:
+        return "Other1PhMax16A";
+    case ConnectorTypeEnum::Other1PhOver16A:
+        return "Other1PhOver16A";
+    case ConnectorTypeEnum::Other3Ph:
+        return "Other3Ph";
+    case ConnectorTypeEnum::Pan:
+        return "Pan";
+    case ConnectorTypeEnum::wInductive:
+        return "wInductive";
+    case ConnectorTypeEnum::wResonant:
+        return "wResonant";
+    case ConnectorTypeEnum::Undetermined:
+        return "Undetermined";
+    case ConnectorTypeEnum::Unknown:
+        return "Unknown";
+    }
+
+    throw std::out_of_range("No known string conversion for provided enum of type ConnectorTypeEnum");
+}
+
+/// \brief Converts the given ConnectorTypeEnum \p e to human readable string
+/// \returns a string_view representation of the ConnectorTypeEnum
+inline constexpr std::string_view connector_type_enum_to_string_view(const ConnectorTypeEnum& e) {
     switch (e) {
     case ConnectorTypeEnum::cCCS1:
         return "cCCS1";
@@ -442,6 +609,16 @@ inline std::ostream& operator<<(std::ostream& os, const types::json_rpc_api::Con
     return os;
 }
 
+/// \brief Conversion from a given ConnectorTypeEnum \p e to a given json object \p j
+inline void to_json(json& j, const ConnectorTypeEnum& e) {
+    j = types::json_rpc_api::connector_type_enum_to_string_view(e);
+}
+
+/// \brief Conversion from a given json object \p j to a given ConnectorTypeEnum \p e
+inline void from_json(const json& j, ConnectorTypeEnum& e) {
+    e = types::json_rpc_api::string_to_connector_type_enum(j.get<std::string>());
+}
+
 } // namespace json_rpc_api
 } // namespace types
 
@@ -471,7 +648,54 @@ enum class EnergyTransferModeEnum {
 
 /// \brief Converts the given EnergyTransferModeEnum \p e to human readable string
 /// \returns a string representation of the EnergyTransferModeEnum
-inline std::string energy_transfer_mode_enum_to_string(EnergyTransferModeEnum e) {
+inline std::string energy_transfer_mode_enum_to_string(const EnergyTransferModeEnum& e) {
+    switch (e) {
+    case EnergyTransferModeEnum::AC_single_phase_core:
+        return "AC_single_phase_core";
+    case EnergyTransferModeEnum::AC_two_phase:
+        return "AC_two_phase";
+    case EnergyTransferModeEnum::AC_three_phase_core:
+        return "AC_three_phase_core";
+    case EnergyTransferModeEnum::DC_core:
+        return "DC_core";
+    case EnergyTransferModeEnum::DC_extended:
+        return "DC_extended";
+    case EnergyTransferModeEnum::DC_combo_core:
+        return "DC_combo_core";
+    case EnergyTransferModeEnum::DC_unique:
+        return "DC_unique";
+    case EnergyTransferModeEnum::DC:
+        return "DC";
+    case EnergyTransferModeEnum::AC_BPT:
+        return "AC_BPT";
+    case EnergyTransferModeEnum::AC_BPT_DER:
+        return "AC_BPT_DER";
+    case EnergyTransferModeEnum::AC_DER:
+        return "AC_DER";
+    case EnergyTransferModeEnum::AC_DER_IEC:
+        return "AC_DER_IEC";
+    case EnergyTransferModeEnum::AC_DER_SAE:
+        return "AC_DER_SAE";
+    case EnergyTransferModeEnum::DC_BPT:
+        return "DC_BPT";
+    case EnergyTransferModeEnum::DC_ACDP:
+        return "DC_ACDP";
+    case EnergyTransferModeEnum::DC_ACDP_BPT:
+        return "DC_ACDP_BPT";
+    case EnergyTransferModeEnum::WPT:
+        return "WPT";
+    case EnergyTransferModeEnum::MCS:
+        return "MCS";
+    case EnergyTransferModeEnum::MCS_BPT:
+        return "MCS_BPT";
+    }
+
+    throw std::out_of_range("No known string conversion for provided enum of type EnergyTransferModeEnum");
+}
+
+/// \brief Converts the given EnergyTransferModeEnum \p e to human readable string
+/// \returns a string_view representation of the EnergyTransferModeEnum
+inline constexpr std::string_view energy_transfer_mode_enum_to_string_view(const EnergyTransferModeEnum& e) {
     switch (e) {
     case EnergyTransferModeEnum::AC_single_phase_core:
         return "AC_single_phase_core";
@@ -588,6 +812,16 @@ inline std::ostream& operator<<(std::ostream& os,
     return os;
 }
 
+/// \brief Conversion from a given EnergyTransferModeEnum \p e to a given json object \p j
+inline void to_json(json& j, const EnergyTransferModeEnum& e) {
+    j = types::json_rpc_api::energy_transfer_mode_enum_to_string_view(e);
+}
+
+/// \brief Conversion from a given json object \p j to a given EnergyTransferModeEnum \p e
+inline void from_json(const json& j, EnergyTransferModeEnum& e) {
+    e = types::json_rpc_api::string_to_energy_transfer_mode_enum(j.get<std::string>());
+}
+
 } // namespace json_rpc_api
 } // namespace types
 
@@ -601,7 +835,22 @@ enum class Severity {
 
 /// \brief Converts the given Severity \p e to human readable string
 /// \returns a string representation of the Severity
-inline std::string severity_to_string(Severity e) {
+inline std::string severity_to_string(const Severity& e) {
+    switch (e) {
+    case Severity::High:
+        return "High";
+    case Severity::Medium:
+        return "Medium";
+    case Severity::Low:
+        return "Low";
+    }
+
+    throw std::out_of_range("No known string conversion for provided enum of type Severity");
+}
+
+/// \brief Converts the given Severity \p e to human readable string
+/// \returns a string_view representation of the Severity
+inline constexpr std::string_view severity_to_string_view(const Severity& e) {
     switch (e) {
     case Severity::High:
         return "High";
@@ -637,6 +886,16 @@ inline std::ostream& operator<<(std::ostream& os, const types::json_rpc_api::Sev
     return os;
 }
 
+/// \brief Conversion from a given Severity \p e to a given json object \p j
+inline void to_json(json& j, const Severity& e) {
+    j = types::json_rpc_api::severity_to_string_view(e);
+}
+
+/// \brief Conversion from a given json object \p j to a given Severity \p e
+inline void from_json(const json& j, Severity& e) {
+    e = types::json_rpc_api::string_to_severity(j.get<std::string>());
+}
+
 } // namespace json_rpc_api
 } // namespace types
 
@@ -659,10 +918,10 @@ struct ImplementationIdentifier {
         };
         // the optional parts of the type
         if (k.evse_index) {
-            j["evse_index"] = k.evse_index.value();
+            j.emplace("evse_index", *k.evse_index);
         }
         if (k.connector_index) {
-            j["connector_index"] = k.connector_index.value();
+            j.emplace("connector_index", *k.connector_index);
         }
     }
 
@@ -673,11 +932,14 @@ struct ImplementationIdentifier {
         k.implementation_id = j.at("implementation_id");
 
         // the optional parts of the type
-        if (j.contains("evse_index")) {
-            k.evse_index.emplace(j.at("evse_index"));
+        auto it = j.end();
+        it = it = j.find("evse_index");
+        if (it != j.end()) {
+            k.evse_index = it->get<int32_t>();
         }
-        if (j.contains("connector_index")) {
-            k.connector_index.emplace(j.at("connector_index"));
+        it = it = j.find("connector_index");
+        if (it != j.end()) {
+            k.connector_index = it->get<int32_t>();
         }
     }
 
@@ -724,25 +986,25 @@ struct ChargerInfoObj {
         };
         // the optional parts of the type
         if (k.friendly_name) {
-            j["friendly_name"] = k.friendly_name.value();
+            j.emplace("friendly_name", *k.friendly_name);
         }
         if (k.manufacturer) {
-            j["manufacturer"] = k.manufacturer.value();
+            j.emplace("manufacturer", *k.manufacturer);
         }
         if (k.manufacturer_url) {
-            j["manufacturer_url"] = k.manufacturer_url.value();
+            j.emplace("manufacturer_url", *k.manufacturer_url);
         }
         if (k.model_url) {
-            j["model_url"] = k.model_url.value();
+            j.emplace("model_url", *k.model_url);
         }
         if (k.model_no) {
-            j["model_no"] = k.model_no.value();
+            j.emplace("model_no", *k.model_no);
         }
         if (k.revision) {
-            j["revision"] = k.revision.value();
+            j.emplace("revision", *k.revision);
         }
         if (k.board_revision) {
-            j["board_revision"] = k.board_revision.value();
+            j.emplace("board_revision", *k.board_revision);
         }
     }
 
@@ -755,26 +1017,34 @@ struct ChargerInfoObj {
         k.firmware_version = j.at("firmware_version");
 
         // the optional parts of the type
-        if (j.contains("friendly_name")) {
-            k.friendly_name.emplace(j.at("friendly_name"));
+        auto it = j.end();
+        it = it = j.find("friendly_name");
+        if (it != j.end()) {
+            k.friendly_name = it->get<std::string>();
         }
-        if (j.contains("manufacturer")) {
-            k.manufacturer.emplace(j.at("manufacturer"));
+        it = it = j.find("manufacturer");
+        if (it != j.end()) {
+            k.manufacturer = it->get<std::string>();
         }
-        if (j.contains("manufacturer_url")) {
-            k.manufacturer_url.emplace(j.at("manufacturer_url"));
+        it = it = j.find("manufacturer_url");
+        if (it != j.end()) {
+            k.manufacturer_url = it->get<std::string>();
         }
-        if (j.contains("model_url")) {
-            k.model_url.emplace(j.at("model_url"));
+        it = it = j.find("model_url");
+        if (it != j.end()) {
+            k.model_url = it->get<std::string>();
         }
-        if (j.contains("model_no")) {
-            k.model_no.emplace(j.at("model_no"));
+        it = it = j.find("model_no");
+        if (it != j.end()) {
+            k.model_no = it->get<std::string>();
         }
-        if (j.contains("revision")) {
-            k.revision.emplace(j.at("revision"));
+        it = it = j.find("revision");
+        if (it != j.end()) {
+            k.revision = it->get<std::string>();
         }
-        if (j.contains("board_revision")) {
-            k.board_revision.emplace(j.at("board_revision"));
+        it = it = j.find("board_revision");
+        if (it != j.end()) {
+            k.board_revision = it->get<std::string>();
         }
     }
 
@@ -816,13 +1086,13 @@ struct ErrorObj {
         // the required parts of the type
         j = json{
             {"type", k.type},       {"description", k.description},
-            {"message", k.message}, {"severity", types::json_rpc_api::severity_to_string(k.severity)},
+            {"message", k.message}, {"severity", types::json_rpc_api::severity_to_string_view(k.severity)},
             {"origin", k.origin},   {"timestamp", k.timestamp},
             {"uuid", k.uuid},
         };
         // the optional parts of the type
         if (k.sub_type) {
-            j["sub_type"] = k.sub_type.value();
+            j.emplace("sub_type", *k.sub_type);
         }
     }
 
@@ -838,8 +1108,10 @@ struct ErrorObj {
         k.uuid = j.at("uuid");
 
         // the optional parts of the type
-        if (j.contains("sub_type")) {
-            k.sub_type.emplace(j.at("sub_type"));
+        auto it = j.end();
+        it = it = j.find("sub_type");
+        if (it != j.end()) {
+            k.sub_type = it->get<std::string>();
         }
     }
 
@@ -874,11 +1146,11 @@ struct ConnectorInfoObj {
         // the required parts of the type
         j = json{
             {"index", k.index},
-            {"type", types::json_rpc_api::connector_type_enum_to_string(k.type)},
+            {"type", types::json_rpc_api::connector_type_enum_to_string_view(k.type)},
         };
         // the optional parts of the type
         if (k.description) {
-            j["description"] = k.description.value();
+            j.emplace("description", *k.description);
         }
     }
 
@@ -889,8 +1161,10 @@ struct ConnectorInfoObj {
         k.type = types::json_rpc_api::string_to_connector_type_enum(j.at("type"));
 
         // the optional parts of the type
-        if (j.contains("description")) {
-            k.description.emplace(j.at("description"));
+        auto it = j.end();
+        it = it = j.find("description");
+        if (it != j.end()) {
+            k.description = it->get<std::string>();
         }
     }
 
@@ -935,13 +1209,13 @@ struct ACChargeParametersObj {
         };
         // the optional parts of the type
         if (k.evse_nominal_voltage) {
-            j["evse_nominal_voltage"] = k.evse_nominal_voltage.value();
+            j.emplace("evse_nominal_voltage", *k.evse_nominal_voltage);
         }
         if (k.evse_maximum_discharge_power) {
-            j["evse_maximum_discharge_power"] = k.evse_maximum_discharge_power.value();
+            j.emplace("evse_maximum_discharge_power", *k.evse_maximum_discharge_power);
         }
         if (k.evse_minimum_discharge_power) {
-            j["evse_minimum_discharge_power"] = k.evse_minimum_discharge_power.value();
+            j.emplace("evse_minimum_discharge_power", *k.evse_minimum_discharge_power);
         }
     }
 
@@ -955,14 +1229,18 @@ struct ACChargeParametersObj {
         k.evse_nominal_frequency = j.at("evse_nominal_frequency");
 
         // the optional parts of the type
-        if (j.contains("evse_nominal_voltage")) {
-            k.evse_nominal_voltage.emplace(j.at("evse_nominal_voltage"));
+        auto it = j.end();
+        it = it = j.find("evse_nominal_voltage");
+        if (it != j.end()) {
+            k.evse_nominal_voltage = it->get<float>();
         }
-        if (j.contains("evse_maximum_discharge_power")) {
-            k.evse_maximum_discharge_power.emplace(j.at("evse_maximum_discharge_power"));
+        it = it = j.find("evse_maximum_discharge_power");
+        if (it != j.end()) {
+            k.evse_maximum_discharge_power = it->get<float>();
         }
-        if (j.contains("evse_minimum_discharge_power")) {
-            k.evse_minimum_discharge_power.emplace(j.at("evse_minimum_discharge_power"));
+        it = it = j.find("evse_minimum_discharge_power");
+        if (it != j.end()) {
+            k.evse_minimum_discharge_power = it->get<float>();
         }
     }
 
@@ -1015,19 +1293,19 @@ struct DCChargeParametersObj {
         };
         // the optional parts of the type
         if (k.evse_energy_to_be_delivered) {
-            j["evse_energy_to_be_delivered"] = k.evse_energy_to_be_delivered.value();
+            j.emplace("evse_energy_to_be_delivered", *k.evse_energy_to_be_delivered);
         }
         if (k.evse_maximum_discharge_current) {
-            j["evse_maximum_discharge_current"] = k.evse_maximum_discharge_current.value();
+            j.emplace("evse_maximum_discharge_current", *k.evse_maximum_discharge_current);
         }
         if (k.evse_maximum_discharge_power) {
-            j["evse_maximum_discharge_power"] = k.evse_maximum_discharge_power.value();
+            j.emplace("evse_maximum_discharge_power", *k.evse_maximum_discharge_power);
         }
         if (k.evse_minimum_discharge_current) {
-            j["evse_minimum_discharge_current"] = k.evse_minimum_discharge_current.value();
+            j.emplace("evse_minimum_discharge_current", *k.evse_minimum_discharge_current);
         }
         if (k.evse_minimum_discharge_power) {
-            j["evse_minimum_discharge_power"] = k.evse_minimum_discharge_power.value();
+            j.emplace("evse_minimum_discharge_power", *k.evse_minimum_discharge_power);
         }
     }
 
@@ -1042,20 +1320,26 @@ struct DCChargeParametersObj {
         k.evse_minimum_voltage = j.at("evse_minimum_voltage");
 
         // the optional parts of the type
-        if (j.contains("evse_energy_to_be_delivered")) {
-            k.evse_energy_to_be_delivered.emplace(j.at("evse_energy_to_be_delivered"));
+        auto it = j.end();
+        it = it = j.find("evse_energy_to_be_delivered");
+        if (it != j.end()) {
+            k.evse_energy_to_be_delivered = it->get<float>();
         }
-        if (j.contains("evse_maximum_discharge_current")) {
-            k.evse_maximum_discharge_current.emplace(j.at("evse_maximum_discharge_current"));
+        it = it = j.find("evse_maximum_discharge_current");
+        if (it != j.end()) {
+            k.evse_maximum_discharge_current = it->get<float>();
         }
-        if (j.contains("evse_maximum_discharge_power")) {
-            k.evse_maximum_discharge_power.emplace(j.at("evse_maximum_discharge_power"));
+        it = it = j.find("evse_maximum_discharge_power");
+        if (it != j.end()) {
+            k.evse_maximum_discharge_power = it->get<float>();
         }
-        if (j.contains("evse_minimum_discharge_current")) {
-            k.evse_minimum_discharge_current.emplace(j.at("evse_minimum_discharge_current"));
+        it = it = j.find("evse_minimum_discharge_current");
+        if (it != j.end()) {
+            k.evse_minimum_discharge_current = it->get<float>();
         }
-        if (j.contains("evse_minimum_discharge_power")) {
-            k.evse_minimum_discharge_power.emplace(j.at("evse_minimum_discharge_power"));
+        it = it = j.find("evse_minimum_discharge_power");
+        if (it != j.end()) {
+            k.evse_minimum_discharge_power = it->get<float>();
         }
     }
 
@@ -1104,6 +1388,7 @@ struct ACChargeStatusObj {
         k.evse_active_phase_count = j.at("evse_active_phase_count");
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type ACChargeStatusObj for equality
@@ -1155,6 +1440,7 @@ struct DCChargeStatusObj {
         k.evse_voltage_limit_achieved = j.at("evse_voltage_limit_achieved");
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type DCChargeStatusObj for equality
@@ -1197,37 +1483,37 @@ struct DisplayParametersObj {
         j = json({});
         // the optional parts of the type
         if (k.start_soc) {
-            j["start_soc"] = k.start_soc.value();
+            j.emplace("start_soc", *k.start_soc);
         }
         if (k.present_soc) {
-            j["present_soc"] = k.present_soc.value();
+            j.emplace("present_soc", *k.present_soc);
         }
         if (k.minimum_soc) {
-            j["minimum_soc"] = k.minimum_soc.value();
+            j.emplace("minimum_soc", *k.minimum_soc);
         }
         if (k.target_soc) {
-            j["target_soc"] = k.target_soc.value();
+            j.emplace("target_soc", *k.target_soc);
         }
         if (k.maximum_soc) {
-            j["maximum_soc"] = k.maximum_soc.value();
+            j.emplace("maximum_soc", *k.maximum_soc);
         }
         if (k.remaining_time_to_minimum_soc) {
-            j["remaining_time_to_minimum_soc"] = k.remaining_time_to_minimum_soc.value();
+            j.emplace("remaining_time_to_minimum_soc", *k.remaining_time_to_minimum_soc);
         }
         if (k.remaining_time_to_target_soc) {
-            j["remaining_time_to_target_soc"] = k.remaining_time_to_target_soc.value();
+            j.emplace("remaining_time_to_target_soc", *k.remaining_time_to_target_soc);
         }
         if (k.remaining_time_to_maximum_soc) {
-            j["remaining_time_to_maximum_soc"] = k.remaining_time_to_maximum_soc.value();
+            j.emplace("remaining_time_to_maximum_soc", *k.remaining_time_to_maximum_soc);
         }
         if (k.charging_complete) {
-            j["charging_complete"] = k.charging_complete.value();
+            j.emplace("charging_complete", *k.charging_complete);
         }
         if (k.battery_energy_capacity) {
-            j["battery_energy_capacity"] = k.battery_energy_capacity.value();
+            j.emplace("battery_energy_capacity", *k.battery_energy_capacity);
         }
         if (k.inlet_hot) {
-            j["inlet_hot"] = k.inlet_hot.value();
+            j.emplace("inlet_hot", *k.inlet_hot);
         }
     }
 
@@ -1236,38 +1522,50 @@ struct DisplayParametersObj {
         // the required parts of the type
 
         // the optional parts of the type
-        if (j.contains("start_soc")) {
-            k.start_soc.emplace(j.at("start_soc"));
+        auto it = j.end();
+        it = it = j.find("start_soc");
+        if (it != j.end()) {
+            k.start_soc = it->get<int32_t>();
         }
-        if (j.contains("present_soc")) {
-            k.present_soc.emplace(j.at("present_soc"));
+        it = it = j.find("present_soc");
+        if (it != j.end()) {
+            k.present_soc = it->get<int32_t>();
         }
-        if (j.contains("minimum_soc")) {
-            k.minimum_soc.emplace(j.at("minimum_soc"));
+        it = it = j.find("minimum_soc");
+        if (it != j.end()) {
+            k.minimum_soc = it->get<int32_t>();
         }
-        if (j.contains("target_soc")) {
-            k.target_soc.emplace(j.at("target_soc"));
+        it = it = j.find("target_soc");
+        if (it != j.end()) {
+            k.target_soc = it->get<int32_t>();
         }
-        if (j.contains("maximum_soc")) {
-            k.maximum_soc.emplace(j.at("maximum_soc"));
+        it = it = j.find("maximum_soc");
+        if (it != j.end()) {
+            k.maximum_soc = it->get<int32_t>();
         }
-        if (j.contains("remaining_time_to_minimum_soc")) {
-            k.remaining_time_to_minimum_soc.emplace(j.at("remaining_time_to_minimum_soc"));
+        it = it = j.find("remaining_time_to_minimum_soc");
+        if (it != j.end()) {
+            k.remaining_time_to_minimum_soc = it->get<int32_t>();
         }
-        if (j.contains("remaining_time_to_target_soc")) {
-            k.remaining_time_to_target_soc.emplace(j.at("remaining_time_to_target_soc"));
+        it = it = j.find("remaining_time_to_target_soc");
+        if (it != j.end()) {
+            k.remaining_time_to_target_soc = it->get<int32_t>();
         }
-        if (j.contains("remaining_time_to_maximum_soc")) {
-            k.remaining_time_to_maximum_soc.emplace(j.at("remaining_time_to_maximum_soc"));
+        it = it = j.find("remaining_time_to_maximum_soc");
+        if (it != j.end()) {
+            k.remaining_time_to_maximum_soc = it->get<int32_t>();
         }
-        if (j.contains("charging_complete")) {
-            k.charging_complete.emplace(j.at("charging_complete"));
+        it = it = j.find("charging_complete");
+        if (it != j.end()) {
+            k.charging_complete = it->get<bool>();
         }
-        if (j.contains("battery_energy_capacity")) {
-            k.battery_energy_capacity.emplace(j.at("battery_energy_capacity"));
+        it = it = j.find("battery_energy_capacity");
+        if (it != j.end()) {
+            k.battery_energy_capacity = it->get<float>();
         }
-        if (j.contains("inlet_hot")) {
-            k.inlet_hot.emplace(j.at("inlet_hot"));
+        it = it = j.find("inlet_hot");
+        if (it != j.end()) {
+            k.inlet_hot = it->get<bool>();
         }
     }
 
@@ -1338,6 +1636,7 @@ struct HardwareCapabilitiesObj {
         k.phase_switch_during_charging = j.at("phase_switch_during_charging");
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type HardwareCapabilitiesObj for equality
@@ -1384,7 +1683,7 @@ struct EVSEInfoObj {
         };
         // the optional parts of the type
         if (k.description) {
-            j["description"] = k.description.value();
+            j.emplace("description", *k.description);
         }
     }
 
@@ -1393,16 +1692,16 @@ struct EVSEInfoObj {
         // the required parts of the type
         k.index = j.at("index");
         k.id = j.at("id");
-        for (auto val : j.at("available_connectors")) {
-            k.available_connectors.push_back(val);
-        }
-        for (auto val : j.at("supported_energy_transfer_modes")) {
-            k.supported_energy_transfer_modes.push_back(val);
-        }
+        k.available_connectors =
+            std::move(j.at("available_connectors").get<std::vector<types::json_rpc_api::ConnectorInfoObj>>());
+        k.supported_energy_transfer_modes = std::move(
+            j.at("supported_energy_transfer_modes").get<std::vector<types::json_rpc_api::EnergyTransferModeEnum>>());
 
         // the optional parts of the type
-        if (j.contains("description")) {
-            k.description.emplace(j.at("description"));
+        auto it = j.end();
+        it = it = j.find("description");
+        if (it != j.end()) {
+            k.description = it->get<std::string>();
         }
     }
 
@@ -1454,24 +1753,24 @@ struct EVSEStatusObj {
             {"available", k.available},
             {"active_connector_index", k.active_connector_index},
             {"error_present", k.error_present},
-            {"charge_protocol", types::json_rpc_api::charge_protocol_enum_to_string(k.charge_protocol)},
-            {"state", types::json_rpc_api::evsestate_enum_to_string(k.state)},
+            {"charge_protocol", types::json_rpc_api::charge_protocol_enum_to_string_view(k.charge_protocol)},
+            {"state", types::json_rpc_api::evsestate_enum_to_string_view(k.state)},
         };
         // the optional parts of the type
         if (k.ac_charge_param) {
-            j["ac_charge_param"] = k.ac_charge_param.value();
+            j.emplace("ac_charge_param", *k.ac_charge_param);
         }
         if (k.dc_charge_param) {
-            j["dc_charge_param"] = k.dc_charge_param.value();
+            j.emplace("dc_charge_param", *k.dc_charge_param);
         }
         if (k.ac_charge_status) {
-            j["ac_charge_status"] = k.ac_charge_status.value();
+            j.emplace("ac_charge_status", *k.ac_charge_status);
         }
         if (k.dc_charge_status) {
-            j["dc_charge_status"] = k.dc_charge_status.value();
+            j.emplace("dc_charge_status", *k.dc_charge_status);
         }
         if (k.display_parameters) {
-            j["display_parameters"] = k.display_parameters.value();
+            j.emplace("display_parameters", *k.display_parameters);
         }
     }
 
@@ -1489,20 +1788,26 @@ struct EVSEStatusObj {
         k.state = types::json_rpc_api::string_to_evsestate_enum(j.at("state"));
 
         // the optional parts of the type
-        if (j.contains("ac_charge_param")) {
-            k.ac_charge_param.emplace(j.at("ac_charge_param"));
+        auto it = j.end();
+        it = it = j.find("ac_charge_param");
+        if (it != j.end()) {
+            k.ac_charge_param = it->get<types::json_rpc_api::ACChargeParametersObj>();
         }
-        if (j.contains("dc_charge_param")) {
-            k.dc_charge_param.emplace(j.at("dc_charge_param"));
+        it = it = j.find("dc_charge_param");
+        if (it != j.end()) {
+            k.dc_charge_param = it->get<types::json_rpc_api::DCChargeParametersObj>();
         }
-        if (j.contains("ac_charge_status")) {
-            k.ac_charge_status.emplace(j.at("ac_charge_status"));
+        it = it = j.find("ac_charge_status");
+        if (it != j.end()) {
+            k.ac_charge_status = it->get<types::json_rpc_api::ACChargeStatusObj>();
         }
-        if (j.contains("dc_charge_status")) {
-            k.dc_charge_status.emplace(j.at("dc_charge_status"));
+        it = it = j.find("dc_charge_status");
+        if (it != j.end()) {
+            k.dc_charge_status = it->get<types::json_rpc_api::DCChargeStatusObj>();
         }
-        if (j.contains("display_parameters")) {
-            k.display_parameters.emplace(j.at("display_parameters"));
+        it = it = j.find("display_parameters");
+        if (it != j.end()) {
+            k.display_parameters = it->get<types::json_rpc_api::DisplayParametersObj>();
         }
     }
 
@@ -1543,16 +1848,16 @@ struct Current_A {
         j = json({});
         // the optional parts of the type
         if (k.L1) {
-            j["L1"] = k.L1.value();
+            j.emplace("L1", *k.L1);
         }
         if (k.L2) {
-            j["L2"] = k.L2.value();
+            j.emplace("L2", *k.L2);
         }
         if (k.L3) {
-            j["L3"] = k.L3.value();
+            j.emplace("L3", *k.L3);
         }
         if (k.N) {
-            j["N"] = k.N.value();
+            j.emplace("N", *k.N);
         }
     }
 
@@ -1561,17 +1866,22 @@ struct Current_A {
         // the required parts of the type
 
         // the optional parts of the type
-        if (j.contains("L1")) {
-            k.L1.emplace(j.at("L1"));
+        auto it = j.end();
+        it = it = j.find("L1");
+        if (it != j.end()) {
+            k.L1 = it->get<float>();
         }
-        if (j.contains("L2")) {
-            k.L2.emplace(j.at("L2"));
+        it = it = j.find("L2");
+        if (it != j.end()) {
+            k.L2 = it->get<float>();
         }
-        if (j.contains("L3")) {
-            k.L3.emplace(j.at("L3"));
+        it = it = j.find("L3");
+        if (it != j.end()) {
+            k.L3 = it->get<float>();
         }
-        if (j.contains("N")) {
-            k.N.emplace(j.at("N"));
+        it = it = j.find("N");
+        if (it != j.end()) {
+            k.N = it->get<float>();
         }
     }
 
@@ -1608,13 +1918,13 @@ struct Energy_Wh_import {
         };
         // the optional parts of the type
         if (k.L1) {
-            j["L1"] = k.L1.value();
+            j.emplace("L1", *k.L1);
         }
         if (k.L2) {
-            j["L2"] = k.L2.value();
+            j.emplace("L2", *k.L2);
         }
         if (k.L3) {
-            j["L3"] = k.L3.value();
+            j.emplace("L3", *k.L3);
         }
     }
 
@@ -1624,14 +1934,18 @@ struct Energy_Wh_import {
         k.total = j.at("total");
 
         // the optional parts of the type
-        if (j.contains("L1")) {
-            k.L1.emplace(j.at("L1"));
+        auto it = j.end();
+        it = it = j.find("L1");
+        if (it != j.end()) {
+            k.L1 = it->get<float>();
         }
-        if (j.contains("L2")) {
-            k.L2.emplace(j.at("L2"));
+        it = it = j.find("L2");
+        if (it != j.end()) {
+            k.L2 = it->get<float>();
         }
-        if (j.contains("L3")) {
-            k.L3.emplace(j.at("L3"));
+        it = it = j.find("L3");
+        if (it != j.end()) {
+            k.L3 = it->get<float>();
         }
     }
 
@@ -1668,13 +1982,13 @@ struct Energy_Wh_export {
         };
         // the optional parts of the type
         if (k.L1) {
-            j["L1"] = k.L1.value();
+            j.emplace("L1", *k.L1);
         }
         if (k.L2) {
-            j["L2"] = k.L2.value();
+            j.emplace("L2", *k.L2);
         }
         if (k.L3) {
-            j["L3"] = k.L3.value();
+            j.emplace("L3", *k.L3);
         }
     }
 
@@ -1684,14 +1998,18 @@ struct Energy_Wh_export {
         k.total = j.at("total");
 
         // the optional parts of the type
-        if (j.contains("L1")) {
-            k.L1.emplace(j.at("L1"));
+        auto it = j.end();
+        it = it = j.find("L1");
+        if (it != j.end()) {
+            k.L1 = it->get<float>();
         }
-        if (j.contains("L2")) {
-            k.L2.emplace(j.at("L2"));
+        it = it = j.find("L2");
+        if (it != j.end()) {
+            k.L2 = it->get<float>();
         }
-        if (j.contains("L3")) {
-            k.L3.emplace(j.at("L3"));
+        it = it = j.find("L3");
+        if (it != j.end()) {
+            k.L3 = it->get<float>();
         }
     }
 
@@ -1727,10 +2045,10 @@ struct Frequency_Hz {
         };
         // the optional parts of the type
         if (k.L2) {
-            j["L2"] = k.L2.value();
+            j.emplace("L2", *k.L2);
         }
         if (k.L3) {
-            j["L3"] = k.L3.value();
+            j.emplace("L3", *k.L3);
         }
     }
 
@@ -1740,11 +2058,14 @@ struct Frequency_Hz {
         k.L1 = j.at("L1");
 
         // the optional parts of the type
-        if (j.contains("L2")) {
-            k.L2.emplace(j.at("L2"));
+        auto it = j.end();
+        it = it = j.find("L2");
+        if (it != j.end()) {
+            k.L2 = it->get<float>();
         }
-        if (j.contains("L3")) {
-            k.L3.emplace(j.at("L3"));
+        it = it = j.find("L3");
+        if (it != j.end()) {
+            k.L3 = it->get<float>();
         }
     }
 
@@ -1781,13 +2102,13 @@ struct Power_W {
         };
         // the optional parts of the type
         if (k.L1) {
-            j["L1"] = k.L1.value();
+            j.emplace("L1", *k.L1);
         }
         if (k.L2) {
-            j["L2"] = k.L2.value();
+            j.emplace("L2", *k.L2);
         }
         if (k.L3) {
-            j["L3"] = k.L3.value();
+            j.emplace("L3", *k.L3);
         }
     }
 
@@ -1797,14 +2118,18 @@ struct Power_W {
         k.total = j.at("total");
 
         // the optional parts of the type
-        if (j.contains("L1")) {
-            k.L1.emplace(j.at("L1"));
+        auto it = j.end();
+        it = it = j.find("L1");
+        if (it != j.end()) {
+            k.L1 = it->get<float>();
         }
-        if (j.contains("L2")) {
-            k.L2.emplace(j.at("L2"));
+        it = it = j.find("L2");
+        if (it != j.end()) {
+            k.L2 = it->get<float>();
         }
-        if (j.contains("L3")) {
-            k.L3.emplace(j.at("L3"));
+        it = it = j.find("L3");
+        if (it != j.end()) {
+            k.L3 = it->get<float>();
         }
     }
 
@@ -1838,13 +2163,13 @@ struct Voltage_V {
         j = json({});
         // the optional parts of the type
         if (k.L1) {
-            j["L1"] = k.L1.value();
+            j.emplace("L1", *k.L1);
         }
         if (k.L2) {
-            j["L2"] = k.L2.value();
+            j.emplace("L2", *k.L2);
         }
         if (k.L3) {
-            j["L3"] = k.L3.value();
+            j.emplace("L3", *k.L3);
         }
     }
 
@@ -1853,14 +2178,18 @@ struct Voltage_V {
         // the required parts of the type
 
         // the optional parts of the type
-        if (j.contains("L1")) {
-            k.L1.emplace(j.at("L1"));
+        auto it = j.end();
+        it = it = j.find("L1");
+        if (it != j.end()) {
+            k.L1 = it->get<float>();
         }
-        if (j.contains("L2")) {
-            k.L2.emplace(j.at("L2"));
+        it = it = j.find("L2");
+        if (it != j.end()) {
+            k.L2 = it->get<float>();
         }
-        if (j.contains("L3")) {
-            k.L3.emplace(j.at("L3"));
+        it = it = j.find("L3");
+        if (it != j.end()) {
+            k.L3 = it->get<float>();
         }
     }
 
@@ -1905,28 +2234,28 @@ struct MeterDataObj {
         };
         // the optional parts of the type
         if (k.current_A) {
-            j["current_A"] = k.current_A.value();
+            j.emplace("current_A", *k.current_A);
         }
         if (k.energy_Wh_export) {
-            j["energy_Wh_export"] = k.energy_Wh_export.value();
+            j.emplace("energy_Wh_export", *k.energy_Wh_export);
         }
         if (k.frequency_Hz) {
-            j["frequency_Hz"] = k.frequency_Hz.value();
+            j.emplace("frequency_Hz", *k.frequency_Hz);
         }
         if (k.meter_id) {
-            j["meter_id"] = k.meter_id.value();
+            j.emplace("meter_id", *k.meter_id);
         }
         if (k.serial_number) {
-            j["serial_number"] = k.serial_number.value();
+            j.emplace("serial_number", *k.serial_number);
         }
         if (k.phase_seq_error) {
-            j["phase_seq_error"] = k.phase_seq_error.value();
+            j.emplace("phase_seq_error", *k.phase_seq_error);
         }
         if (k.power_W) {
-            j["power_W"] = k.power_W.value();
+            j.emplace("power_W", *k.power_W);
         }
         if (k.voltage_V) {
-            j["voltage_V"] = k.voltage_V.value();
+            j.emplace("voltage_V", *k.voltage_V);
         }
     }
 
@@ -1937,29 +2266,38 @@ struct MeterDataObj {
         k.timestamp = j.at("timestamp");
 
         // the optional parts of the type
-        if (j.contains("current_A")) {
-            k.current_A.emplace(j.at("current_A"));
+        auto it = j.end();
+        it = it = j.find("current_A");
+        if (it != j.end()) {
+            k.current_A = it->get<Current_A>();
         }
-        if (j.contains("energy_Wh_export")) {
-            k.energy_Wh_export.emplace(j.at("energy_Wh_export"));
+        it = it = j.find("energy_Wh_export");
+        if (it != j.end()) {
+            k.energy_Wh_export = it->get<Energy_Wh_export>();
         }
-        if (j.contains("frequency_Hz")) {
-            k.frequency_Hz.emplace(j.at("frequency_Hz"));
+        it = it = j.find("frequency_Hz");
+        if (it != j.end()) {
+            k.frequency_Hz = it->get<Frequency_Hz>();
         }
-        if (j.contains("meter_id")) {
-            k.meter_id.emplace(j.at("meter_id"));
+        it = it = j.find("meter_id");
+        if (it != j.end()) {
+            k.meter_id = it->get<std::string>();
         }
-        if (j.contains("serial_number")) {
-            k.serial_number.emplace(j.at("serial_number"));
+        it = it = j.find("serial_number");
+        if (it != j.end()) {
+            k.serial_number = it->get<std::string>();
         }
-        if (j.contains("phase_seq_error")) {
-            k.phase_seq_error.emplace(j.at("phase_seq_error"));
+        it = it = j.find("phase_seq_error");
+        if (it != j.end()) {
+            k.phase_seq_error = it->get<bool>();
         }
-        if (j.contains("power_W")) {
-            k.power_W.emplace(j.at("power_W"));
+        it = it = j.find("power_W");
+        if (it != j.end()) {
+            k.power_W = it->get<Power_W>();
         }
-        if (j.contains("voltage_V")) {
-            k.voltage_V.emplace(j.at("voltage_V"));
+        it = it = j.find("voltage_V");
+        if (it != j.end()) {
+            k.voltage_V = it->get<Voltage_V>();
         }
     }
 
@@ -2004,7 +2342,7 @@ struct HelloResObj {
         };
         // the optional parts of the type
         if (k.authenticated) {
-            j["authenticated"] = k.authenticated.value();
+            j.emplace("authenticated", *k.authenticated);
         }
     }
 
@@ -2017,8 +2355,10 @@ struct HelloResObj {
         k.charger_info = j.at("charger_info");
 
         // the optional parts of the type
-        if (j.contains("authenticated")) {
-            k.authenticated.emplace(j.at("authenticated"));
+        auto it = j.end();
+        it = it = j.find("authenticated");
+        if (it != j.end()) {
+            k.authenticated = it->get<bool>();
         }
     }
 
@@ -2052,7 +2392,7 @@ struct ChargePointGetEVSEInfosResObj {
         // the required parts of the type
         j = json{
             {"infos", k.infos},
-            {"error", types::json_rpc_api::response_error_enum_to_string(k.error)},
+            {"error", types::json_rpc_api::response_error_enum_to_string_view(k.error)},
         };
         // the optional parts of the type
     }
@@ -2060,12 +2400,11 @@ struct ChargePointGetEVSEInfosResObj {
     /// \brief Conversion from a given json object \p j to a given ChargePointGetEVSEInfosResObj \p k
     friend void from_json(const json& j, ChargePointGetEVSEInfosResObj& k) {
         // the required parts of the type
-        for (auto val : j.at("infos")) {
-            k.infos.push_back(val);
-        }
+        k.infos = std::move(j.at("infos").get<std::vector<types::json_rpc_api::EVSEInfoObj>>());
         k.error = types::json_rpc_api::string_to_response_error_enum(j.at("error"));
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type ChargePointGetEVSEInfosResObj for equality
@@ -2096,7 +2435,7 @@ struct ChargePointGetActiveErrorsResObj {
         // the required parts of the type
         j = json{
             {"active_errors", k.active_errors},
-            {"error", types::json_rpc_api::response_error_enum_to_string(k.error)},
+            {"error", types::json_rpc_api::response_error_enum_to_string_view(k.error)},
         };
         // the optional parts of the type
     }
@@ -2104,12 +2443,11 @@ struct ChargePointGetActiveErrorsResObj {
     /// \brief Conversion from a given json object \p j to a given ChargePointGetActiveErrorsResObj \p k
     friend void from_json(const json& j, ChargePointGetActiveErrorsResObj& k) {
         // the required parts of the type
-        for (auto val : j.at("active_errors")) {
-            k.active_errors.push_back(val);
-        }
+        k.active_errors = std::move(j.at("active_errors").get<std::vector<types::json_rpc_api::ErrorObj>>());
         k.error = types::json_rpc_api::string_to_response_error_enum(j.at("error"));
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type ChargePointGetActiveErrorsResObj for equality
@@ -2142,7 +2480,7 @@ struct EVSEGetInfoResObj {
         // the required parts of the type
         j = json{
             {"info", k.info},
-            {"error", types::json_rpc_api::response_error_enum_to_string(k.error)},
+            {"error", types::json_rpc_api::response_error_enum_to_string_view(k.error)},
         };
         // the optional parts of the type
     }
@@ -2154,6 +2492,7 @@ struct EVSEGetInfoResObj {
         k.error = types::json_rpc_api::string_to_response_error_enum(j.at("error"));
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type EVSEGetInfoResObj for equality
@@ -2184,7 +2523,7 @@ struct EVSEGetStatusResObj {
         // the required parts of the type
         j = json{
             {"status", k.status},
-            {"error", types::json_rpc_api::response_error_enum_to_string(k.error)},
+            {"error", types::json_rpc_api::response_error_enum_to_string_view(k.error)},
         };
         // the optional parts of the type
     }
@@ -2196,6 +2535,7 @@ struct EVSEGetStatusResObj {
         k.error = types::json_rpc_api::string_to_response_error_enum(j.at("error"));
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type EVSEGetStatusResObj for equality
@@ -2226,7 +2566,7 @@ struct EVSEGetHardwareCapabilitiesResObj {
         // the required parts of the type
         j = json{
             {"hardware_capabilities", k.hardware_capabilities},
-            {"error", types::json_rpc_api::response_error_enum_to_string(k.error)},
+            {"error", types::json_rpc_api::response_error_enum_to_string_view(k.error)},
         };
         // the optional parts of the type
     }
@@ -2238,6 +2578,7 @@ struct EVSEGetHardwareCapabilitiesResObj {
         k.error = types::json_rpc_api::string_to_response_error_enum(j.at("error"));
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type EVSEGetHardwareCapabilitiesResObj for equality
@@ -2270,7 +2611,7 @@ struct EVSEGetMeterDataResObj {
         // the required parts of the type
         j = json{
             {"meter_data", k.meter_data},
-            {"error", types::json_rpc_api::response_error_enum_to_string(k.error)},
+            {"error", types::json_rpc_api::response_error_enum_to_string_view(k.error)},
         };
         // the optional parts of the type
     }
@@ -2282,6 +2623,7 @@ struct EVSEGetMeterDataResObj {
         k.error = types::json_rpc_api::string_to_response_error_enum(j.at("error"));
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type EVSEGetMeterDataResObj for equality
@@ -2310,7 +2652,7 @@ struct ErrorResObj {
     friend void to_json(json& j, const ErrorResObj& k) {
         // the required parts of the type
         j = json{
-            {"error", types::json_rpc_api::response_error_enum_to_string(k.error)},
+            {"error", types::json_rpc_api::response_error_enum_to_string_view(k.error)},
         };
         // the optional parts of the type
     }
@@ -2321,6 +2663,7 @@ struct ErrorResObj {
         k.error = types::json_rpc_api::string_to_response_error_enum(j.at("error"));
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type ErrorResObj for equality
@@ -2357,11 +2700,10 @@ struct ChargePointActiveErrorsChangedObj {
     /// \brief Conversion from a given json object \p j to a given ChargePointActiveErrorsChangedObj \p k
     friend void from_json(const json& j, ChargePointActiveErrorsChangedObj& k) {
         // the required parts of the type
-        for (auto val : j.at("active_errors")) {
-            k.active_errors.push_back(val);
-        }
+        k.active_errors = std::move(j.at("active_errors").get<std::vector<types::json_rpc_api::ErrorObj>>());
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type ChargePointActiveErrorsChangedObj for equality
@@ -2406,6 +2748,7 @@ struct EVSEHardwareCapabilitiesChangedObj {
         k.hardware_capabilities = j.at("hardware_capabilities");
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type EVSEHardwareCapabilitiesChangedObj for equality
@@ -2450,6 +2793,7 @@ struct EVSEStatusChangedObj {
         k.evse_status = j.at("evse_status");
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type EVSEStatusChangedObj for equality
@@ -2492,6 +2836,7 @@ struct EVSEMeterDataChangedObj {
         k.meter_data = j.at("meter_data");
 
         // the optional parts of the type
+        auto it = j.end();
     }
 
     /// \brief Compares objects of type EVSEMeterDataChangedObj for equality
