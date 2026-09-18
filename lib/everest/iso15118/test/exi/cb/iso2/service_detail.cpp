@@ -42,12 +42,11 @@ SCENARIO("Se/Deserialize ISO-2 service detail messages") {
         param.string_value = "http";
 
         const auto serialized = serialize_helper(res);
-        const io::StreamInputView stream_view{serialized.data(), serialized.size()};
-        message_2::Variant variant(stream_view);
+        const auto doc = decode_helper(serialized);
 
-        THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_2::Type::ServiceDetailRes);
-            const auto& msg = variant.get<message_2::ServiceDetailResponse>();
+        THEN("The encoded response converts back field for field") {
+            REQUIRE(doc.V2G_Message.Body.ServiceDetailRes_isUsed);
+            const auto msg = to_response<message_2::ServiceDetailResponse>(doc, doc.V2G_Message.Body.ServiceDetailRes);
             REQUIRE(msg.service_id == 42);
             REQUIRE(msg.service_parameter_list.has_value());
             REQUIRE(msg.service_parameter_list->size() == 1);

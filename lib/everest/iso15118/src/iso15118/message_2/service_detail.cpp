@@ -95,10 +95,6 @@ template <> void insert_type(VariantAccess& va, const struct iso2_ServiceDetailR
     va.insert_type<ServiceDetailRequest>(in);
 }
 
-template <> void insert_type(VariantAccess& va, const struct iso2_ServiceDetailResType& in) {
-    va.insert_type<ServiceDetailResponse>(in);
-}
-
 template <> int serialize_to_exi(const ServiceDetailRequest& in, exi_bitstream_t& out) {
     iso2_exiDocument doc{};
     convert(in.header, doc.V2G_Message.Header);

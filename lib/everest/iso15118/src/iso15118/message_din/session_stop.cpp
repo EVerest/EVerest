@@ -32,10 +32,6 @@ template <> void insert_type(VariantAccess& va, const struct din_SessionStopType
     va.insert_type<SessionStopRequest>(in);
 }
 
-template <> void insert_type(VariantAccess& va, const struct din_SessionStopResType& in) {
-    va.insert_type<SessionStopResponse>(in);
-}
-
 template <> int serialize_to_exi(const SessionStopRequest& in, exi_bitstream_t& out) {
     din_exiDocument doc;
     init_din_exiDocument(&doc);

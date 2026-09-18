@@ -56,12 +56,10 @@ SCENARIO("Se/Deserialize DIN current demand messages") {
 
         const auto bytes = serialize_helper(res);
 
-        THEN("It round-trips through the Variant") {
-            const io::StreamInputView view{bytes.data(), bytes.size()};
-            message_din::Variant variant(view);
-
-            REQUIRE(variant.get_type() == Type::CurrentDemandRes);
-            const auto& msg = variant.get<CurrentDemandResponse>();
+        THEN("The encoded response converts back field for field") {
+            const auto doc = decode_helper(bytes);
+            REQUIRE(doc.V2G_Message.Body.CurrentDemandRes_isUsed);
+            const auto msg = to_response<CurrentDemandResponse>(doc, doc.V2G_Message.Body.CurrentDemandRes);
             REQUIRE(msg.header.session_id == session_id);
             REQUIRE(msg.response_code == datatypes::ResponseCode::OK);
             REQUIRE(msg.evse_present_voltage == 419.0);

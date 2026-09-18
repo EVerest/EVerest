@@ -49,10 +49,6 @@ template <> void insert_type(VariantAccess& va, const struct din_ServicePaymentS
     va.insert_type<ServicePaymentSelectionRequest>(in);
 }
 
-template <> void insert_type(VariantAccess& va, const struct din_ServicePaymentSelectionResType& in) {
-    va.insert_type<ServicePaymentSelectionResponse>(in);
-}
-
 template <> int serialize_to_exi(const ServicePaymentSelectionRequest& in, exi_bitstream_t& out) {
     din_exiDocument doc;
     init_din_exiDocument(&doc);

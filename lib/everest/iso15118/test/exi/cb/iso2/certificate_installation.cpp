@@ -46,12 +46,12 @@ SCENARIO("Se/Deserialize ISO-2 certificate installation messages") {
         res.emaid = "00000000000000";
 
         const auto serialized = serialize_helper(res);
-        const io::StreamInputView stream_view{serialized.data(), serialized.size()};
-        message_2::Variant variant(stream_view);
+        const auto doc = decode_helper(serialized);
 
-        THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_2::Type::CertificateInstallationRes);
-            const auto& msg = variant.get<message_2::CertificateInstallationResponse>();
+        THEN("The encoded response converts back field for field") {
+            REQUIRE(doc.V2G_Message.Body.CertificateInstallationRes_isUsed);
+            const auto msg = to_response<message_2::CertificateInstallationResponse>(
+                doc, doc.V2G_Message.Body.CertificateInstallationRes);
             REQUIRE(msg.response_code == ResponseCode::FAILED_SequenceError);
             REQUIRE(msg.contract_chain.id.has_value());
             REQUIRE(msg.contract_chain.id.value() == "contractSignatureCertChain");
@@ -72,12 +72,12 @@ SCENARIO("Se/Deserialize ISO-2 certificate installation messages") {
         res.emaid = "DEPNX123456789";
 
         const auto serialized = serialize_helper(res);
-        const io::StreamInputView stream_view{serialized.data(), serialized.size()};
-        message_2::Variant variant(stream_view);
+        const auto doc = decode_helper(serialized);
 
-        THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_2::Type::CertificateInstallationRes);
-            const auto& msg = variant.get<message_2::CertificateInstallationResponse>();
+        THEN("The encoded response converts back field for field") {
+            REQUIRE(doc.V2G_Message.Body.CertificateInstallationRes_isUsed);
+            const auto msg = to_response<message_2::CertificateInstallationResponse>(
+                doc, doc.V2G_Message.Body.CertificateInstallationRes);
             REQUIRE(msg.response_code == ResponseCode::OK);
             REQUIRE(msg.sa_provisioning_chain.certificate == res.sa_provisioning_chain.certificate);
             REQUIRE(msg.contract_chain.certificate == res.contract_chain.certificate);

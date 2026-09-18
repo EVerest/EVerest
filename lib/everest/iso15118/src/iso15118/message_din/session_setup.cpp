@@ -35,10 +35,6 @@ template <> void insert_type(VariantAccess& va, const struct din_SessionSetupReq
     va.insert_type<SessionSetupRequest>(in);
 }
 
-template <> void insert_type(VariantAccess& va, const struct din_SessionSetupResType& in) {
-    va.insert_type<SessionSetupResponse>(in);
-}
-
 template <> int serialize_to_exi(const SessionSetupRequest& in, exi_bitstream_t& out) {
     din_exiDocument doc;
     init_din_exiDocument(&doc);
