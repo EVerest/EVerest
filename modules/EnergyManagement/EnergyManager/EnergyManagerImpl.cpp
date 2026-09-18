@@ -10,6 +10,7 @@
 #include "BrokerFastCharging.hpp"
 #include "BrokerPowerRedistribution.hpp"
 #include "Market.hpp"
+#include "PowerMeterAggregator.hpp"
 
 namespace module {
 
@@ -92,6 +93,13 @@ EnergyManagerImpl::EnergyManagerImpl(
     broker_strategy(to_broker_strategy(config.broker_strategy)),
     enforced_limits_callback(enforced_limits_callback) {
     this->energy_flow_request.node_type = types::energy::NodeType::Undefined;
+    this->leaf_aggregator =
+        std::make_unique<PowerMeterAggregator>(std::chrono::seconds(config.power_meter_aggregation_window_s));
+}
+
+PowerMeterAggregator::AggregateResult EnergyManagerImpl::get_leaf_aggregate() const {
+    std::scoped_lock lock(energy_mutex);
+    return leaf_aggregate;
 }
 
 void EnergyManagerImpl::start() {
@@ -137,10 +145,24 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
     globals.init(start_time, config.schedule_interval_duration, config.schedule_total_duration, config.slice_ampere,
                  config.slice_watt, config.debug, request);
 
+    // Refresh the aggregated leaf measurements for this run. Clearing first means a
+    // connector that disappeared from the tree stops contributing straight away.
+    leaf_aggregator->clear();
+    collect_leaf_measurements(request, *leaf_aggregator);
+    leaf_aggregate = leaf_aggregator->aggregate(globals.start_time);
+
     time_probe optimizer_start;
     optimizer_start.start();
     if (globals.debug)
         EVLOG_info << "\033[1;44m---------------- Run energy optimizer ---------------- \033[1;0m";
+
+    if (globals.debug) {
+        // Spell out the absence of a total rather than printing a zero that no meter reported.
+        const auto power = leaf_aggregate.power_W.has_value() ? fmt::format("{}W", leaf_aggregate.power_W.value().total)
+                                                              : std::string("no reading");
+        EVLOG_info << fmt::format("Aggregated leaf power: {} from {} meter(s), {} stale", power,
+                                  leaf_aggregate.fresh_meters, leaf_aggregate.stale_meters);
+    }
 
     time_probe market_tp;
 
