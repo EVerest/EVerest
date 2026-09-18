@@ -31,3 +31,12 @@ as fallback), so the observation is per connector. The last observed value is re
 per connector for the duration of the session and reset on unplug. A connector in an
 active charging session that reports no measurement is warned about once per session;
 connectors that are ``Unplugged`` or ``Finished`` are not observed.
+
+Each observation carries the reading's own measurement timestamp alongside its values.
+This is what lets a consumer tell a live reading from a frozen one: ``EnergyNode`` and
+``EvseManager`` republish the last power meter reading they received in every energy flow
+request, so a meter that stopped updating is indistinguishable from one holding steady
+unless the reading's own timestamp is checked. A reading whose timestamp cannot be parsed
+is reported without a timestamp rather than as a current one. Nothing acts on the age at
+this stage - the observation is log-only - but no consumer has to trust an age it cannot
+see.

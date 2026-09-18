@@ -94,18 +94,42 @@ EnergyManagerImpl::EnergyManagerImpl(
     this->energy_flow_request.node_type = types::energy::NodeType::Undefined;
 }
 
+EnergyManagerImpl::~EnergyManagerImpl() {
+    stop();
+}
+
 void EnergyManagerImpl::start() {
+    if (running.exchange(true)) {
+        return;
+    }
+
     // start thread to update energy optimization
-    std::thread([this] {
-        while (true) {
+    mainloop = std::thread([this] {
+        while (running) {
             auto optimized_values = this->run_optimizer(energy_flow_request, date::utc_clock::now());
             enforced_limits_callback(optimized_values);
             {
                 std::unique_lock<std::mutex> lock(mainloop_sleep_mutex);
-                mainloop_sleep_condvar.wait_for(lock, std::chrono::seconds(config.update_interval));
+                // Re-check the flag under the lock: stop() clears it and notifies, and
+                // without the predicate that notification is lost whenever it lands between
+                // the loop condition and the wait, leaving shutdown blocked for a full
+                // update_interval.
+                mainloop_sleep_condvar.wait_for(lock, std::chrono::seconds(config.update_interval),
+                                                [this] { return not running; });
             }
         }
-    }).detach();
+    });
+}
+
+void EnergyManagerImpl::stop() {
+    if (not running.exchange(false)) {
+        return;
+    }
+
+    mainloop_sleep_condvar.notify_all();
+    if (mainloop.joinable()) {
+        mainloop.join();
+    }
 }
 
 void EnergyManagerImpl::on_energy_flow_request(const types::energy::EnergyFlowRequest& e) {
@@ -119,6 +143,7 @@ void EnergyManagerImpl::on_energy_flow_request(const types::energy::EnergyFlowRe
     }
 }
 
+#ifdef BUILD_TESTING_MODULE_ENERGY_MANAGER
 ObservedMeasurement EnergyManagerImpl::get_observed_measurement(const std::string& uuid) {
     std::scoped_lock lock(energy_mutex);
 
@@ -128,6 +153,7 @@ ObservedMeasurement EnergyManagerImpl::get_observed_measurement(const std::strin
     }
     return it->second.last_observed_measurement;
 }
+#endif
 
 std::vector<types::energy::EnforcedLimits>
 EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request,
@@ -157,8 +183,7 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
     for (auto m : evse_markets) {
         // Check if we need to clear the context
         // Note that context is created here if it does not exist implicitly by operator[] of the map
-        if (m->energy_flow_request.evse_state == types::energy::EvseState::Unplugged or
-            m->energy_flow_request.evse_state == types::energy::EvseState::Finished) {
+        if (not in_session(m->energy_flow_request)) {
             contexts[m->energy_flow_request.uuid].clear();
             contexts[m->energy_flow_request.uuid].ts_1ph_optimal =
                 globals.start_time - std::chrono::seconds(config.switch_3ph1ph_time_hysteresis_s);
@@ -166,6 +191,11 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
 
         brokers.push_back(make_broker(broker_strategy, *m, contexts[m->energy_flow_request.uuid],
                                       to_broker_fast_charging_config(config)));
+        // Read the connector state this run trades against, before the first trading round.
+        // Explicit rather than a constructor side effect: a broker is built once per EVSE per
+        // run in this loop, and a reader should not have to know that constructing one
+        // mutates the session context.
+        brokers.back()->observe();
         // EVLOG_info << fmt::format("Created broker for {}", m->energy_flow_request.uuid);
     }
 

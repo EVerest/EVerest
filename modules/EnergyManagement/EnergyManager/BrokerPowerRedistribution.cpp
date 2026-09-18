@@ -7,16 +7,46 @@
 
 namespace module {
 
-std::optional<types::units::Power> get_measured_power_W(const types::energy::EnergyFlowRequest& node) {
+namespace {
+
+// Selects the power meter reading a node's power measurement comes from: the leaves side
+// (what EvseManager reports for an EVSE) when it carries a power value, the root side
+// otherwise. Returning the whole reading rather than the value keeps the timestamp and the
+// power it belongs to inseparable - reading them through two independent lookups is how a
+// value ends up carrying somebody else's age.
+const types::powermeter::Powermeter* find_power_reading(const types::energy::EnergyFlowRequest& node) {
     if (node.energy_usage_leaves.has_value() and node.energy_usage_leaves.value().power_W.has_value()) {
-        return node.energy_usage_leaves.value().power_W.value();
+        return &node.energy_usage_leaves.value();
     }
 
     if (node.energy_usage_root.has_value() and node.energy_usage_root.value().power_W.has_value()) {
-        return node.energy_usage_root.value().power_W.value();
+        return &node.energy_usage_root.value();
     }
 
-    return std::nullopt;
+    return nullptr;
+}
+
+} // namespace
+
+std::optional<types::units::Power> get_measured_power_W(const types::energy::EnergyFlowRequest& node) {
+    const auto* reading = find_power_reading(node);
+    if (reading == nullptr) {
+        return std::nullopt;
+    }
+    return reading->power_W.value();
+}
+
+std::optional<date::utc_clock::time_point> get_measured_time(const types::energy::EnergyFlowRequest& node) {
+    const auto* reading = find_power_reading(node);
+    if (reading == nullptr) {
+        return std::nullopt;
+    }
+
+    const auto measured_at = Everest::Date::from_rfc3339(reading->timestamp);
+    if (measured_at == date::utc_clock::time_point{}) {
+        return std::nullopt;
+    }
+    return measured_at;
 }
 
 types::units::Current get_measured_current_A(const types::energy::EnergyFlowRequest& node) {
@@ -34,23 +64,22 @@ types::units::Current get_measured_current_A(const types::energy::EnergyFlowRequ
 BrokerPowerRedistribution::BrokerPowerRedistribution(Market& market, BrokerContext& context,
                                                      EnergyManagerConfig config) :
     BrokerFastCharging(market, context, config) {
-    observe_measurement();
 }
 
-void BrokerPowerRedistribution::observe_measurement() {
+void BrokerPowerRedistribution::observe() {
     const auto& request = local_market.energy_flow_request;
 
     // Only sessions have a consumption worth observing. The optimizer runs continuously
     // and constructs a broker for every EVSE on every run; without this guard an idle
     // meterless connector would trip the missing-measurement warning.
-    if (request.evse_state.has_value() and (request.evse_state.value() == types::energy::EvseState::Unplugged or
-                                            request.evse_state.value() == types::energy::EvseState::Finished)) {
+    if (not in_session(request)) {
         return;
     }
 
     const auto measured_W = get_measured_power_W(request);
     context.last_observed_measurement.power_W = measured_W;
     context.last_observed_measurement.current_A = get_measured_current_A(request);
+    context.last_observed_measurement.measured_at = get_measured_time(request);
 
     if (not measured_W.has_value()) {
         // Warn once per session, not once per optimizer run.

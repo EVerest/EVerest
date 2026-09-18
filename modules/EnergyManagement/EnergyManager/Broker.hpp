@@ -16,11 +16,21 @@ enum class SlotType {
     Undecided
 };
 
-// Snapshot of the power meter reading last observed by the measurement tracking broker
+// True while a connector has a session worth observing. Unplugged and Finished are the
+// two states with no consumption to compare an allocation against; a node that declares no
+// state at all (the non-EVSE nodes of the tree) is not excluded. Shared by every site that
+// needs this test so the three of them cannot drift apart - one of them used to spell the
+// negation by hand.
+inline bool in_session(const types::energy::EnergyFlowRequest& node) {
+    return not node.evse_state.has_value() or (node.evse_state.value() != types::energy::EvseState::Unplugged and
+                                               node.evse_state.value() != types::energy::EvseState::Finished);
+}
+
+// Snapshot of the power meter reading last observed by the power redistribution broker
 // for one connector, refreshed on every optimizer run during an active session.
 // Values the meter does not report are nullopt, never zero (a single-phase meter reports
-// only current_A.L1). Per-phase current is the basis for WP1.b per-phase trading and
-// WP3.a asymmetry limits.
+// only current_A.L1). Per-phase current is what per-phase trading and asymmetry limits
+// are expressed in, so it is kept per phase rather than collapsed to a total.
 struct ObservedMeasurement {
     // Imported power [W] (types::units::Power): total plus optional per-phase L1/L2/L3.
     // nullopt while the meter reports no power at all.
@@ -28,6 +38,16 @@ struct ObservedMeasurement {
 
     // Per-phase current [A] with named L1/L2/L3 properties (types::units::Current).
     types::units::Current current_A;
+
+    // The reading's own measurement timestamp, carried so a consumer can tell a live
+    // reading from one the meter stopped refreshing. This matters because absence and
+    // staleness fail differently: a meter that stops publishing clears power_W on the
+    // next run, but EnergyNode and EvseManager keep re-publishing the last Powermeter
+    // they received, so a dead meter looks exactly like a live one holding steady.
+    // Without this field that is indistinguishable, and every consumer of power_W would
+    // have to trust an age it cannot see. nullopt when the meter reports no usable
+    // timestamp, which must be treated like a missing measurement, not like a fresh one.
+    std::optional<date::utc_clock::time_point> measured_at;
 };
 
 // All context data that is stored in between optimization runs
@@ -52,7 +72,7 @@ struct BrokerContext {
     // meterless connector warns once instead of once per optimizer run.
     bool tracking_warned_no_measurement;
 
-    // Reading last observed by the measurement tracking broker for this connector.
+    // Reading last observed by the power redistribution broker for this connector.
     // Empty (all nullopt) while no measurement is available. Reset by clear() on unplug.
     ObservedMeasurement last_observed_measurement;
 };
@@ -95,6 +115,12 @@ public:
     // Actual implementation of the trading algorithm. This function must be overriden by the
     // specific implementation class. It will be called from the trade() function of the base class.
     virtual void tradeImpl() = 0;
+
+    // Reads whatever this broker wants to know about the current state of its connector,
+    // before any trading round runs. Called exactly once per optimizer run, from the same
+    // loop that creates the brokers. Trading must not depend on it: the default does
+    // nothing, and a strategy that only trades never overrides it.
+    virtual void observe(){};
 
     Market& get_local_market();
 

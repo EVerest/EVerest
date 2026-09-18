@@ -79,9 +79,83 @@ TEST(MeasurementTrackingHelpers, PreservesPerPhasePower) {
     EXPECT_FLOAT_EQ(measured.value().L3.value(), 1500.0f);
 }
 
+// ---------------------------------------------------------------- measurement provenance
+
+// A reading has to carry its own age. EnergyNode and EvseManager republish the last
+// Powermeter they received on every energy flow request, so a meter that stopped updating
+// is byte-for-byte identical to one holding steady - the timestamp is the only thing that
+// tells them apart, and every consumer of the value needs it.
+
+TEST(MeasurementTrackingHelpers, NoMeasurementHasNoMeasurementTime) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    EXPECT_FALSE(get_measured_time(evse).has_value());
+}
+
+TEST(MeasurementTrackingHelpers, ReadsMeasurementTime) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    test::set_measurement(evse, 4200.0f, "2026-08-04T12:29:57.000Z");
+
+    const auto measured_at = get_measured_time(evse);
+    ASSERT_TRUE(measured_at.has_value());
+    EXPECT_EQ(measured_at.value(), Everest::Date::from_rfc3339("2026-08-04T12:29:57.000Z"));
+}
+
+TEST(MeasurementTrackingHelpers, MeasurementTimeComesFromTheMeterThatSuppliedThePower) {
+    // Both sides carry a reading with different timestamps. The power is taken from the
+    // leaves side, so the age must be the leaves side's - pairing a value with another
+    // meter's timestamp is worse than having no timestamp at all.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T11:00:00.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Power root_power;
+    root_power.total = 9000.0f;
+    root.power_W = root_power;
+    evse.energy_usage_root = root;
+
+    test::set_measurement(evse, 4200.0f, "2026-08-04T12:29:57.000Z");
+
+    EXPECT_FLOAT_EQ(get_measured_power_W(evse).value().total, 4200.0f);
+    EXPECT_EQ(get_measured_time(evse).value(), Everest::Date::from_rfc3339("2026-08-04T12:29:57.000Z"));
+}
+
+TEST(MeasurementTrackingHelpers, MeasurementTimeFallsBackToRootWithThePower) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T12:29:57.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Power root_power;
+    root_power.total = 9000.0f;
+    root.power_W = root_power;
+    evse.energy_usage_root = root;
+
+    EXPECT_FLOAT_EQ(get_measured_power_W(evse).value().total, 9000.0f);
+    EXPECT_EQ(get_measured_time(evse).value(), Everest::Date::from_rfc3339("2026-08-04T12:29:57.000Z"));
+}
+
+TEST(MeasurementTrackingHelpers, UnparsableMeasurementTimeIsAbsentNotNow) {
+    // from_rfc3339 signals failure with a default constructed time point rather than
+    // throwing. Reporting that as an age of 55 years is harmless; reporting it as "now"
+    // would not be, so it is reported as absent.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    test::set_measurement(evse, 4200.0f, "not a timestamp");
+
+    ASSERT_TRUE(get_measured_power_W(evse).has_value());
+    EXPECT_FALSE(get_measured_time(evse).has_value());
+}
+
+TEST(MeasurementTrackingHelpers, EpochMeasurementTimeIsAbsent) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    test::set_measurement(evse, 4200.0f, "1970-01-01T00:00:00.000Z");
+
+    EXPECT_FALSE(get_measured_time(evse).has_value());
+}
+
 // ---------------------------------------------------------------- per-phase current extraction
 
-// WP1.b preparation: phase imbalance handling needs the measurement per phase (in ampere,
+// Phase imbalance handling needs the measurement per phase (in ampere,
 // matching the asymmetry threshold), not just the total power.
 
 TEST(MeasurementTrackingHelpers, NoCurrentMeasurementReturnsAllNullopt) {
@@ -180,9 +254,11 @@ TEST(MeasurementTrackingContext, ClearResetsObservedMeasurement) {
     context.last_observed_measurement.current_A.L1 = 16.0f;
     context.last_observed_measurement.current_A.L2 = 15.0f;
     context.last_observed_measurement.current_A.L3 = 14.0f;
+    context.last_observed_measurement.measured_at = Everest::Date::from_rfc3339("2026-08-04T12:00:00.000Z");
 
     context.clear();
 
+    EXPECT_FALSE(context.last_observed_measurement.measured_at.has_value());
     EXPECT_FALSE(context.last_observed_measurement.power_W.has_value());
     EXPECT_FALSE(context.last_observed_measurement.current_A.L1.has_value());
     EXPECT_FALSE(context.last_observed_measurement.current_A.L2.has_value());
@@ -435,6 +511,58 @@ TEST(MeasurementTrackingBroker, FastChargingStrategyLeavesStaticBehaviourUnchang
     EnergyManagerImpl impl(config, [](const std::vector<types::energy::EnforcedLimits>&) {});
 
     EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 32.0f, 0.01f);
+}
+
+// A frozen meter is the realistic failure, not a missing one: absence already fails safe
+// (power_W goes back to nullopt on the next run), while a meter that stops publishing keeps
+// its last reading in every request forever. These two pin the observation that makes that
+// case detectable at all; the consumer that acts on it arrives with the redistribution
+// inference.
+
+TEST(MeasurementTrackingBroker, ObservationCarriesTheReadingsOwnAge) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4000.0f, "2026-08-04T12:30:00.000Z");
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, AT);
+
+    const auto observed = impl.get_observed_measurement("evse1");
+    ASSERT_TRUE(observed.power_W.has_value());
+    ASSERT_TRUE(observed.measured_at.has_value());
+    EXPECT_EQ(observed.measured_at.value(), AT);
+}
+
+TEST(MeasurementTrackingBroker, FrozenMeterKeepsItsOriginalMeasurementTime) {
+    // Same tree twice, five minutes apart, with the meter never refreshing its timestamp.
+    // The observed value is unchanged - that is the whole problem - so the age must move.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4000.0f, "2026-08-04T12:30:00.000Z");
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, AT);
+    impl.run_optimizer(request, AT + std::chrono::seconds(300));
+
+    const auto observed = impl.get_observed_measurement("evse1");
+    ASSERT_TRUE(observed.power_W.has_value());
+    EXPECT_FLOAT_EQ(observed.power_W.value().total, 4000.0f);
+    ASSERT_TRUE(observed.measured_at.has_value());
+    EXPECT_EQ(observed.measured_at.value(), AT);
+    EXPECT_EQ(AT + std::chrono::seconds(300) - observed.measured_at.value(), std::chrono::seconds(300));
+}
+
+TEST(MeasurementTrackingBroker, MeasurementWithoutUsableTimeIsObservedWithoutAnAge) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4000.0f, "garbage");
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, AT);
+
+    const auto observed = impl.get_observed_measurement("evse1");
+    ASSERT_TRUE(observed.power_W.has_value());
+    EXPECT_FALSE(observed.measured_at.has_value());
 }
 
 // ---------------------------------------------------------------- strategy selection
