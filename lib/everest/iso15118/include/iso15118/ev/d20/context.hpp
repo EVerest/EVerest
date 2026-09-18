@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <bitset>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -21,12 +22,15 @@
 
 #include <everest/util/async/monitor.hpp>
 
+#include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/d20/evse_session_info.hpp>
 #include <iso15118/ev/d20/session_id.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
+#include <iso15118/ev/der_control_functions.hpp>
 #include <iso15118/ev/message_exchange.hpp>
 #include <iso15118/ev/sap_offer.hpp>
+#include <iso15118/ev/service_family.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 #include <iso15118/session/protocol.hpp>
 
@@ -77,7 +81,9 @@ public:
             std::vector<message_20::SupportedAppProtocol> advertised_app_protocols_,
             const std::optional<ControlEvent>& current_control_event_,
             everest::lib::util::monitor<DcChargeParams>& dc_params_,
-            message_20::datatypes::ServiceCategory requested_service_, SessionOptions options_ = {});
+            everest::lib::util::monitor<AcChargeParams>& ac_params_,
+            message_20::datatypes::ServiceCategory requested_service_, DerControlFunctions der_control_functions_ = {},
+            bool der_stop_on_unsupported_functions_ = true, SessionOptions options_ = {});
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;
 
@@ -214,9 +220,58 @@ public:
         return *h;
     }
 
+    // Locked-copy snapshot of the EV AC charge params (module -> FSM channel).
+    AcChargeParams get_ac_params() const {
+        auto h = ac_params.handle();
+        return *h;
+    }
+
     // Energy service requested at construction; ServiceSelection sends exactly this.
     message_20::datatypes::ServiceCategory selected_service() const {
         return selected_service_;
+    }
+
+    bool is_ac_family() const {
+        return ev::is_ac_family(selected_service_);
+    }
+
+    // AC connector of the parameter set ServiceDetail selected. Decides both how an advertised
+    // total is split across lines and whether the _L2/_L3 peers may be emitted at all, so the AC
+    // states must not guess it. Unset until an AC parameter set is chosen, and never set for DC.
+    std::optional<message_20::datatypes::AcConnector> selected_ac_connector() const {
+        return selected_ac_connector_;
+    }
+
+    void set_selected_ac_connector(message_20::datatypes::AcConnector connector) {
+        selected_ac_connector_ = connector;
+    }
+
+    // The connector the AC states emit for. SinglePhase is the reading under which the base
+    // element is never a sum.
+    message_20::datatypes::AcConnector ac_connector() const {
+        return selected_ac_connector_.value_or(message_20::datatypes::AcConnector::SinglePhase);
+    }
+
+    // IEC DER control functions the EV supports (config-driven), matched against the
+    // SECC's AC_DER_IEC parameter sets in ServiceDetail.
+    std::bitset<DER_CONTROL_FUNCTION_COUNT> der_supported_functions() const {
+        return der_supported_functions_;
+    }
+
+    // true -> stop the session when no offered AC_DER_IEC Dynamic set is a subset of
+    // the supported functions; false -> select the first Dynamic set and warn.
+    bool der_stop_on_unsupported_functions() const {
+        return der_stop_on_unsupported_functions_;
+    }
+
+    // Negotiated functions for the selected AC_DER_IEC parameter set (offered mask AND
+    // supported mask). Set by ServiceDetail, read by AC_DER_IEC_ChargeLoop.
+    void set_der_negotiated_functions(std::bitset<DER_CONTROL_FUNCTION_COUNT> functions) {
+        der_negotiated_functions_ = functions;
+    }
+
+    std::bitset<DER_CONTROL_FUNCTION_COUNT> der_negotiated_functions() const {
+        return der_negotiated_functions_;
     }
 
     // EVSE-reported session data, populated by AuthorizationSetup and read by the
@@ -244,7 +299,18 @@ private:
     // mutates its mutex; read access is a locked-copy snapshot.
     everest::lib::util::monitor<DcChargeParams>& dc_params;
 
+    // Module -> FSM AC-params channel; same locked-copy-snapshot contract as dc_params.
+    everest::lib::util::monitor<AcChargeParams>& ac_params;
+
     message_20::datatypes::ServiceCategory selected_service_;
+
+    std::optional<message_20::datatypes::AcConnector> selected_ac_connector_{};
+
+    std::bitset<DER_CONTROL_FUNCTION_COUNT> der_supported_functions_{};
+
+    bool der_stop_on_unsupported_functions_{true};
+
+    std::bitset<DER_CONTROL_FUNCTION_COUNT> der_negotiated_functions_{};
 
     EVSESessionInfo evse_session_info;
 
