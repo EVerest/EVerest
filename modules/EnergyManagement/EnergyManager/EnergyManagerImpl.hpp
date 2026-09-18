@@ -178,10 +178,10 @@ private:
     std::set<std::string> warned_unparsable_meters;
 
     RedistributionInference redistribution_inference;
-    // start_time of the run since which the site has continuously had headroom to hand
-    // out; nullopt while it has not. Site counterpart of BrokerContext::under_consuming_since.
-    std::optional<date::utc_clock::time_point> headroom_since;
-    bool increase_reported{false};
+    // How long the site has continuously had headroom to hand out, and whether that has
+    // already been reported. The same latch BrokerContext uses per connector, so the two
+    // cannot drift apart the way two hand-written copies did.
+    HoldLatch site_headroom;
 };
 
 } // namespace module

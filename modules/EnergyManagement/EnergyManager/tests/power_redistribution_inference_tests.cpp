@@ -326,6 +326,33 @@ TEST(RedistributionSite, IncreaseIsSplitEquallyAndClampedToStaticMaximum) {
     EXPECT_NEAR(s.increase_W, 4936.0f + 500.0f, 0.5f);
 }
 
+TEST(RedistributionSite, ConnectorWithoutAStaticMaximumIsNotACandidate) {
+    // There is nothing to clamp an increase against, so it must neither receive a share nor
+    // dilute anybody else's.
+    ConnectorInference connector;
+    connector.connector_class = ConnectorClass::Saturated;
+    connector.allocated_W = 11040.0f;
+
+    StaticBoundsW unbounded;
+    EXPECT_FALSE(to_saturated_connector(connector, unbounded).has_value());
+
+    StaticBoundsW bounded;
+    bounded.max_W = 22080.0f;
+    const auto candidate = to_saturated_connector(connector, bounded);
+    ASSERT_TRUE(candidate.has_value());
+    EXPECT_FLOAT_EQ(candidate.value().allocated_W, 11040.0f);
+    EXPECT_FLOAT_EQ(candidate.value().max_W, 22080.0f);
+}
+
+TEST(RedistributionSite, ConnectorWithoutAnAllocationIsNotACandidate) {
+    ConnectorInference connector;
+    connector.connector_class = ConnectorClass::Saturated;
+
+    StaticBoundsW bounded;
+    bounded.max_W = 22080.0f;
+    EXPECT_FALSE(to_saturated_connector(connector, bounded).has_value());
+}
+
 TEST(RedistributionSite, NoIncreaseWithoutSaturatedConnectors) {
     const auto s = infer_site(22080.0f, make_aggregate(10000.0f, 1, 0), {}, MARGIN, GAIN);
     ASSERT_TRUE(s.headroom_W.has_value());
@@ -342,14 +369,61 @@ TEST(RedistributionSite, ZeroGainDisablesIncrease) {
 TEST(RedistributionContext, ClearResetsInferenceState) {
     BrokerContext context;
     context.last_allocated_W = 11040.0f;
-    context.under_consuming_since = T0;
-    context.reduce_reported = true;
+    context.under_consuming.update(true, T0, std::chrono::seconds(0));
+    ASSERT_TRUE(context.under_consuming.held());
 
     context.clear();
 
     EXPECT_FALSE(context.last_allocated_W.has_value());
-    EXPECT_FALSE(context.under_consuming_since.has_value());
-    EXPECT_FALSE(context.reduce_reported);
+    EXPECT_FALSE(context.under_consuming.held());
+    // The stretch is forgotten, not released: a session that ended has no condition left
+    // to have stopped holding, so the next session starts silent.
+    EXPECT_EQ(context.under_consuming.update(false, T0, std::chrono::seconds(0)), HoldLatch::Edge::None);
+}
+
+// ---------------------------------------------------------------- hold latch
+
+TEST(HoldLatchTest, ReportsNothingBeforeTheHoldTimeIsUp) {
+    HoldLatch latch;
+
+    EXPECT_EQ(latch.update(true, T0, std::chrono::seconds(10)), HoldLatch::Edge::None);
+    EXPECT_FALSE(latch.held());
+    EXPECT_EQ(latch.update(true, T0 + std::chrono::seconds(9), std::chrono::seconds(10)), HoldLatch::Edge::None);
+    EXPECT_FALSE(latch.held());
+}
+
+TEST(HoldLatchTest, ReportsHeldOnceTheHoldTimeIsUpAndThenStaysQuiet) {
+    HoldLatch latch;
+    latch.update(true, T0, std::chrono::seconds(10));
+
+    EXPECT_EQ(latch.update(true, T0 + std::chrono::seconds(10), std::chrono::seconds(10)), HoldLatch::Edge::Held);
+    EXPECT_TRUE(latch.held());
+    // Once per stretch, not once per optimizer run.
+    EXPECT_EQ(latch.update(true, T0 + std::chrono::seconds(11), std::chrono::seconds(10)), HoldLatch::Edge::None);
+    EXPECT_EQ(latch.update(true, T0 + std::chrono::seconds(60), std::chrono::seconds(10)), HoldLatch::Edge::None);
+}
+
+TEST(HoldLatchTest, ReportsReleaseOnceAndOnlyAfterAReport) {
+    HoldLatch latch;
+    latch.update(true, T0, std::chrono::seconds(10));
+    ASSERT_EQ(latch.update(true, T0 + std::chrono::seconds(10), std::chrono::seconds(10)), HoldLatch::Edge::Held);
+
+    EXPECT_EQ(latch.update(false, T0 + std::chrono::seconds(11), std::chrono::seconds(10)), HoldLatch::Edge::Released);
+    EXPECT_FALSE(latch.held());
+    EXPECT_EQ(latch.update(false, T0 + std::chrono::seconds(12), std::chrono::seconds(10)), HoldLatch::Edge::None);
+}
+
+TEST(HoldLatchTest, AnInterruptedStretchNeverReportsAndStartsOver) {
+    HoldLatch latch;
+    latch.update(true, T0, std::chrono::seconds(10));
+
+    // Nothing was reported, so dropping the condition has nothing to release either.
+    EXPECT_EQ(latch.update(false, T0 + std::chrono::seconds(5), std::chrono::seconds(10)), HoldLatch::Edge::None);
+
+    // And the clock restarts rather than crediting the first five seconds.
+    latch.update(true, T0 + std::chrono::seconds(6), std::chrono::seconds(10));
+    EXPECT_EQ(latch.update(true, T0 + std::chrono::seconds(11), std::chrono::seconds(10)), HoldLatch::Edge::None);
+    EXPECT_EQ(latch.update(true, T0 + std::chrono::seconds(16), std::chrono::seconds(10)), HoldLatch::Edge::Held);
 }
 
 // ---------------------------------------------------------------- optimizer integration

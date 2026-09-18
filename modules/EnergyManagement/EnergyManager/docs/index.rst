@@ -151,7 +151,9 @@ contributing meter is fresh, see above): headroom ``G - S`` beyond
 ``power_redistribution_site_margin x G`` can be handed to the saturated connectors. The
 reported increase is ``gain x (headroom - deadband)``, split equally and clamped to each
 connector's static maximum, so the step is large far from the grid limit and vanishes close
-to it.
+to it. A saturated connector whose static maximum is unknown is not a candidate: there is
+nothing to clamp its share against, and counting it would shrink the share of the
+connectors that can actually use one.
 
 Both conditions must hold continuously for ``power_redistribution_hold_time_s`` before they
 are reported. This hold is the **only** thing filtering an EV that is still ramping:

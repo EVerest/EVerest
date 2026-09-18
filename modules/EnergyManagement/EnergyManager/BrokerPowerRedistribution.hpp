@@ -64,8 +64,8 @@ struct ConnectorInference {
     /// By how much the allocation could shrink: down to measured x (1 + margin), but never
     /// below the connector's minimum purchase. 0 unless UnderConsuming.
     float reducible_W{0.f};
-    /// True once the condition has held for the configured hold time. Set by the caller,
-    /// which owns the timing; classify_connector() leaves it false.
+    /// True once the condition has held for the configured hold time. Set by the caller
+    /// from its HoldLatch, which owns the timing; classify_connector() leaves it false.
     bool held{false};
 };
 
@@ -82,17 +82,25 @@ ConnectorInference classify_connector(std::optional<float> allocated_W, std::opt
                                       const StaticBoundsW& bounds, float margin);
 
 /// \brief A connector that could take more power: its current allocation and static maximum.
+///
+/// Both are plain floats. A connector whose maximum is unknown cannot be given power
+/// safely - there is nothing to clamp the increase against - so it is not a candidate at
+/// all rather than a candidate with a missing bound that every consumer has to decide what
+/// to do about.
 struct SaturatedConnector {
     float allocated_W;
-    std::optional<float> max_W;
+    float max_W;
 };
 
-/// \brief Pairs a Saturated classification with its bounds.
+/// \brief Pairs a Saturated classification with its bounds, when both are known.
 ///
-/// Only meaningful for ConnectorClass::Saturated, which classify_connector() only returns
-/// once it has an allocation - so the caller does not have to dereference allocated_W on
-/// the strength of an invariant established in another function.
-SaturatedConnector to_saturated_connector(const ConnectorInference& connector, const StaticBoundsW& bounds);
+/// \returns std::nullopt when the allocation or the static maximum is missing. The caller
+/// then leaves the connector out of infer_site()'s candidates entirely: giving it a share
+/// would be handing out power with nothing to clamp it against, and counting it among the
+/// candidates would shrink everyone else's share on behalf of a connector that cannot use
+/// it.
+std::optional<SaturatedConnector> to_saturated_connector(const ConnectorInference& connector,
+                                                         const StaticBoundsW& bounds);
 
 /// \brief Result of infer_site().
 struct SiteInference {
@@ -109,7 +117,8 @@ struct SiteInference {
     /// Proposed increase [W] summed over the saturated connectors. 0 when the headroom is
     /// within the deadband, no connector can take more, or the gain is 0.
     float increase_W{0.f};
-    /// True once the condition has held for the configured hold time (set by the caller).
+    /// True once the condition has held for the configured hold time (set by the caller
+    /// from its HoldLatch).
     bool held{false};
 };
 

@@ -188,29 +188,25 @@ void EnergyManagerImpl::infer_redistribution(const Market& market,
         }
         auto connector = classify_connector(ctx.last_allocated_W, measured_W, bounds, connector_margin);
 
-        if (connector.connector_class == ConnectorClass::UnderConsuming) {
-            if (not ctx.under_consuming_since.has_value()) {
-                ctx.under_consuming_since = now;
-            }
-            connector.held = now - ctx.under_consuming_since.value() >= hold_time;
-            if (connector.held and not ctx.reduce_reported) {
-                ctx.reduce_reported = true;
-                EVLOG_info << fmt::format("{}: power can be reduced by {:.0f} W (allotted {}, measured {})", node.uuid,
-                                          connector.reducible_W, format_W(connector.allocated_W),
-                                          format_W(connector.measured_W));
-            }
-        } else {
-            ctx.under_consuming_since.reset();
-            if (ctx.reduce_reported) {
-                ctx.reduce_reported = false;
-                EVLOG_info << fmt::format("{}: power can no longer be reduced (allotted {}, measured {})", node.uuid,
-                                          format_W(connector.allocated_W), format_W(connector.measured_W));
-            }
-            if (connector.connector_class == ConnectorClass::Saturated) {
-                // classify_connector() only returns Saturated once it has an allocation, so
-                // the value is there - but ask it for the pair rather than dereferencing on
-                // the strength of an invariant that lives in another function.
-                saturated.push_back(to_saturated_connector(connector, bounds));
+        const auto edge =
+            ctx.under_consuming.update(connector.connector_class == ConnectorClass::UnderConsuming, now, hold_time);
+        connector.held = ctx.under_consuming.held();
+
+        if (edge == HoldLatch::Edge::Held) {
+            EVLOG_info << fmt::format("{}: power can be reduced by {:.0f} W (allotted {}, measured {})", node.uuid,
+                                      connector.reducible_W, format_W(connector.allocated_W),
+                                      format_W(connector.measured_W));
+        } else if (edge == HoldLatch::Edge::Released) {
+            EVLOG_info << fmt::format("{}: power can no longer be reduced (allotted {}, measured {})", node.uuid,
+                                      format_W(connector.allocated_W), format_W(connector.measured_W));
+        }
+
+        if (connector.connector_class == ConnectorClass::Saturated) {
+            // Without an allocation or a static maximum there is nothing to clamp an
+            // increase against, so such a connector is not a candidate - and must not be
+            // counted among them either, or it would shrink the others' share.
+            if (const auto candidate = to_saturated_connector(connector, bounds)) {
+                saturated.push_back(candidate.value());
             }
         }
 
@@ -232,25 +228,16 @@ void EnergyManagerImpl::infer_redistribution(const Market& market,
     auto site = infer_site(get_grid_limit_W(market, nominal_ac_voltage), site_aggregate, saturated, site_margin, gain);
     site.meter_source = site_meter_source;
 
-    if (site.increase_W > 0.f) {
-        if (not headroom_since.has_value()) {
-            headroom_since = now;
-        }
-        site.held = now - headroom_since.value() >= hold_time;
-        if (site.held and not increase_reported) {
-            increase_reported = true;
-            EVLOG_info << fmt::format(
-                "power can be increased by {:.0f} W over {} connector(s) (grid limit {}, measured {})", site.increase_W,
-                site.saturated_connectors, format_W(site.grid_limit_W), format_W(site.measured_W));
-        }
-    } else {
-        headroom_since.reset();
-        if (increase_reported) {
-            increase_reported = false;
-            EVLOG_info << fmt::format("power can no longer be increased (grid limit {}, measured {}, headroom {})",
-                                      format_W(site.grid_limit_W), format_W(site.measured_W),
-                                      format_W(site.headroom_W));
-        }
+    const auto site_edge = site_headroom.update(site.increase_W > 0.f, now, hold_time);
+    site.held = site_headroom.held();
+
+    if (site_edge == HoldLatch::Edge::Held) {
+        EVLOG_info << fmt::format(
+            "power can be increased by {:.0f} W over {} connector(s) (grid limit {}, measured {})", site.increase_W,
+            site.saturated_connectors, format_W(site.grid_limit_W), format_W(site.measured_W));
+    } else if (site_edge == HoldLatch::Edge::Released) {
+        EVLOG_info << fmt::format("power can no longer be increased (grid limit {}, measured {}, headroom {})",
+                                  format_W(site.grid_limit_W), format_W(site.measured_W), format_W(site.headroom_W));
     }
 
     if (globals.debug) {

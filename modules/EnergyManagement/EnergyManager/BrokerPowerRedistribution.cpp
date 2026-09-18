@@ -83,18 +83,17 @@ const types::energy::LimitsReq* active_limits(const Market& market) {
 
 // Converts a limit to watt with the precedence used throughout: an explicit watt value
 // wins, otherwise the ampere value times the phase count times the nominal voltage.
-// Works for both LimitsReq (schedules) and LimitsRes (enforced limits), which name these
-// fields identically.
-template <typename Limits>
-std::optional<float> limits_to_W(const Limits& limits, const std::optional<types::energy::NumberWithSource>& current_A,
-                                 const std::optional<types::energy::IntegerWithSource>& phase_count,
-                                 float nominal_ac_voltage) {
+// Templated because LimitsReq (schedules) and LimitsRes (enforced limits) name these three
+// fields identically - which is also why they are read off the limit here rather than
+// passed alongside it, where a caller could pair one limit's watts with another's amperes.
+template <typename Limits> std::optional<float> limits_to_W(const Limits& limits, float nominal_ac_voltage) {
     if (limits.total_power_W.has_value()) {
         return limits.total_power_W.value().value;
     }
-    if (current_A.has_value()) {
-        const auto phases = phase_count.has_value() ? phase_count.value().value : ASSUMED_PHASE_COUNT;
-        return current_A.value().value * static_cast<float>(phases) * nominal_ac_voltage;
+    if (limits.ac_max_current_A.has_value()) {
+        const auto phases =
+            limits.ac_max_phase_count.has_value() ? limits.ac_max_phase_count.value().value : ASSUMED_PHASE_COUNT;
+        return limits.ac_max_current_A.value().value * static_cast<float>(phases) * nominal_ac_voltage;
     }
     return std::nullopt;
 }
@@ -106,12 +105,11 @@ std::optional<float> get_grid_limit_W(const Market& root, float nominal_ac_volta
     if (limits == nullptr) {
         return std::nullopt;
     }
-    return limits_to_W(*limits, limits->ac_max_current_A, limits->ac_max_phase_count, nominal_ac_voltage);
+    return limits_to_W(*limits, nominal_ac_voltage);
 }
 
 std::optional<float> get_allocated_power_W(const types::energy::EnforcedLimits& limit, float nominal_ac_voltage) {
-    const auto& limits = limit.limits_root_side;
-    return limits_to_W(limits, limits.ac_max_current_A, limits.ac_max_phase_count, nominal_ac_voltage);
+    return limits_to_W(limit.limits_root_side, nominal_ac_voltage);
 }
 
 StaticBoundsW get_static_bounds_W(const Market& connector, float nominal_ac_voltage) {
@@ -121,7 +119,7 @@ StaticBoundsW get_static_bounds_W(const Market& connector, float nominal_ac_volt
         return bounds;
     }
 
-    bounds.max_W = limits_to_W(*limits, limits->ac_max_current_A, limits->ac_max_phase_count, nominal_ac_voltage);
+    bounds.max_W = limits_to_W(*limits, nominal_ac_voltage);
 
     if (limits->ac_min_current_A.has_value()) {
         // The minimum purchase uses the smallest phase count the connector accepts; a
@@ -190,8 +188,12 @@ ConnectorInference classify_connector(std::optional<float> allocated_W, std::opt
     return result;
 }
 
-SaturatedConnector to_saturated_connector(const ConnectorInference& connector, const StaticBoundsW& bounds) {
-    return {connector.allocated_W.value_or(0.f), bounds.max_W};
+std::optional<SaturatedConnector> to_saturated_connector(const ConnectorInference& connector,
+                                                         const StaticBoundsW& bounds) {
+    if (not connector.allocated_W.has_value() or not bounds.max_W.has_value()) {
+        return std::nullopt;
+    }
+    return SaturatedConnector{connector.allocated_W.value(), bounds.max_W.value()};
 }
 
 SiteInference infer_site(std::optional<float> grid_limit_W, const PowerMeterAggregator::AggregateResult& aggregate,
@@ -220,8 +222,7 @@ SiteInference infer_site(std::optional<float> grid_limit_W, const PowerMeterAggr
 
     const float share = gain * (headroom - deadband) / static_cast<float>(saturated.size());
     for (const auto& connector : saturated) {
-        const float room =
-            connector.max_W.has_value() ? std::max(0.f, connector.max_W.value() - connector.allocated_W) : share;
+        const float room = std::max(0.f, connector.max_W - connector.allocated_W);
         site.increase_W += std::min(share, room);
     }
     return site;
