@@ -27,6 +27,13 @@ struct EnergyManagerConfig {
     std::string switch_3ph1ph_switch_limit_stickyness;
     int switch_3ph1ph_power_hysteresis_W;
     int switch_3ph1ph_time_hysteresis_s;
+    std::string broker_strategy;
+};
+
+/// \brief Broker selected by the broker_strategy config option (see manifest.yaml).
+enum class BrokerStrategy {
+    FastCharging,
+    PowerRedistribution,
 };
 
 class EnergyManagerImpl {
@@ -52,8 +59,15 @@ public:
                                                              date::utc_clock::time_point start_time,
                                                              const std::string& test_name = "");
 
+    /// \brief Returns the reading the measurement tracking broker last observed for
+    /// connector \p uuid: total power [W] and per-phase current [A] (L1/L2/L3). Values
+    /// without a measurement are std::nullopt (all of them if tracking is disabled, no
+    /// measurement is available, or no active session).
+    ObservedMeasurement get_observed_measurement(const std::string& uuid);
+
 private:
     EnergyManagerConfig config;
+    BrokerStrategy broker_strategy;
     std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)> enforced_limits_callback;
 
     std::mutex energy_mutex;
