@@ -156,8 +156,13 @@ if (EVEREST_API_JSON_INDENT)
     target_compile_definitions(everest_api_types PUBLIC EVEREST_API_JSON_INDENT=${EVEREST_API_JSON_INDENT})
 endif ()
 
+if (EVEREST_CORE_BUILD AND DISABLE_EDM)
+  set(API_TYPES_EXPORT_TARGETS everest-core-targets)
+else()
+  set(API_TYPES_EXPORT_TARGETS everest_api_types-targets)
+endif()
 install(TARGETS everest_api_types
-  EXPORT everest_api_types-targets
+  EXPORT ${API_TYPES_EXPORT_TARGETS}
   LIBRARY
 )
 
