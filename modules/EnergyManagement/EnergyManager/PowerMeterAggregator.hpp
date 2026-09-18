@@ -13,6 +13,34 @@
 
 namespace module {
 
+/// \brief Parses a power meter reading's own measurement timestamp.
+///
+/// Everest::Date::from_rfc3339 does not throw: a default constructed time point is its only
+/// failure signal, which is why the epoch is checked instead of catching an exception. A
+/// meter genuinely reporting 1970 is equally unusable, so the two cases collapse.
+/// \returns the measurement time, or std::nullopt when the timestamp is unusable
+std::optional<date::utc_clock::time_point> parse_meter_timestamp(const std::string& timestamp);
+
+/// \brief The module's one staleness rule for power meter readings.
+///
+/// A reading is fresh while its own measurement timestamp is younger than \p window. Two
+/// cases are deliberately not stale: a timestamp slightly in the future, since minor clock
+/// skew between a meter and the controller must not discard data, and any reading at all
+/// once the window is zero or negative - though the manifest no longer allows that to be
+/// configured, a caller passing a window from elsewhere still gets a defined answer.
+///
+/// A reading with no usable timestamp has no age to judge and is never fresh.
+///
+/// This lives here, next to the aggregator that first needed it, because every consumer of
+/// a measurement has to apply the same rule: the site aggregate and the per connector
+/// snapshot are two views of the same meters, and they must not disagree about which of
+/// them are alive.
+///
+/// \p now must be a real wall clock time; an epoch value would make every reading look
+/// like the future and disable the filter.
+bool is_fresh(const std::optional<date::utc_clock::time_point>& measured_at, date::utc_clock::time_point now,
+              std::chrono::seconds window);
+
 /// \brief Sums the readings of several power meters that report at different times.
 ///
 /// Power meters in the energy tree publish independently, so at any instant the stored
@@ -39,8 +67,13 @@ public:
         std::optional<types::units::Power> power_W;
         /// Summed current [A] over the same meters, under the same per field rule. A
         /// single phase meter reports only L1, so L2 and L3 stay nullopt as soon as one
-        /// contributing meter does not measure them. N is never summed: neutral currents
-        /// do not add up scalar-wise and no consumer trades against them.
+        /// contributing meter does not measure them.
+        ///
+        /// Only the AC phases are summed. N is left out because neutral currents do not add
+        /// up scalar-wise, and DC for the same reason one step further removed: an ampere
+        /// on a DC link is only meaningful together with that link's voltage, so 100 A at
+        /// 400 V and 100 A at 800 V are not 200 A of anything. A site-wide DC ampere has no
+        /// consumer and no defensible meaning, so it is not produced.
         types::units::Current current_A;
         /// Number of meters that contributed to the sums
         int fresh_meters{0};
@@ -48,8 +81,7 @@ public:
         int stale_meters{0};
     };
 
-    /// \param window validity window for a reading. A window of zero disables the
-    /// staleness filter and always includes the last reading of every meter.
+    /// \param window validity window for a reading, see is_fresh().
     explicit PowerMeterAggregator(std::chrono::seconds window) : aggregation_window(window){};
 
     /// \brief Stores (or replaces) the last reading of one node.
@@ -61,17 +93,11 @@ public:
     /// \brief Number of stored readings, fresh and stale alike.
     std::size_t size() const;
 
-    /// \brief Sums the readings that are fresh relative to \p now.
+    /// \brief Sums the readings that are fresh relative to \p now, by the is_fresh() rule.
     ///
-    /// A reading counts as fresh while its own measurement timestamp is younger than the
-    /// configured window. Two cases are deliberately not stale: a timestamp slightly in
-    /// the future, since minor clock skew between a meter and the controller must not
-    /// discard data, and any reading at all once the window is zero. A timestamp that
-    /// cannot be parsed is treated as stale and warned about once per meter rather than
-    /// once per call - see check_freshness() in the implementation for both rules.
-    ///
-    /// \p now must be a real wall clock time; an epoch value would make every reading
-    /// look like the future and disable the filter.
+    /// A timestamp that cannot be parsed counts as stale and is warned about once per meter
+    /// rather than once per call, so a permanently broken meter does not warn every second
+    /// around the clock.
     AggregateResult aggregate(date::utc_clock::time_point now) const;
 
 private:

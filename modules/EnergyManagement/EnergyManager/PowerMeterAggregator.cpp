@@ -7,6 +7,35 @@
 
 namespace module {
 
+std::optional<date::utc_clock::time_point> parse_meter_timestamp(const std::string& timestamp) {
+    const auto measured_at = Everest::Date::from_rfc3339(timestamp);
+
+    if (measured_at == date::utc_clock::time_point{}) {
+        return std::nullopt;
+    }
+    return measured_at;
+}
+
+bool is_fresh(const std::optional<date::utc_clock::time_point>& measured_at, date::utc_clock::time_point now,
+              std::chrono::seconds window) {
+    if (not measured_at.has_value()) {
+        return false;
+    }
+
+    if (window <= std::chrono::seconds(0)) {
+        return true;
+    }
+
+    const auto age = now - measured_at.value();
+
+    if (age < std::chrono::seconds(0)) {
+        // Reading is timestamped in the future; accept it as the freshest we have.
+        return true;
+    }
+
+    return age < window;
+}
+
 namespace {
 
 enum class Freshness {
@@ -15,37 +44,18 @@ enum class Freshness {
     UnparsableTimestamp,
 };
 
-/// \brief Decides whether a reading is recent enough to contribute to the sum.
-///
-/// An unparsable timestamp is reported separately so the caller can warn about it. The
-/// epoch check runs before the window check, so a meter with a broken clock is excluded
-/// even when the staleness filter is switched off.
-///
-/// Readings timestamped slightly in the future (clock skew between meter and
-/// controller) count as fresh. A window of zero disables the age check.
+/// \brief Classifies a reading for aggregate(), which needs to tell an unusable timestamp
+/// from a merely old one so it can warn about the former. The age rule itself is is_fresh()
+/// and is not repeated here.
 Freshness check_freshness(const types::powermeter::Powermeter& reading, date::utc_clock::time_point now,
                           std::chrono::seconds window) {
-    const auto measured_at = Everest::Date::from_rfc3339(reading.timestamp);
+    const auto measured_at = parse_meter_timestamp(reading.timestamp);
 
-    if (measured_at == date::utc_clock::time_point{}) {
-        // Either unparsable, or a meter genuinely reporting 1970 - both unusable. Note that
-        // from_rfc3339 never throws: a default constructed time point is its only failure
-        // signal, which is why the epoch is checked instead of catching an exception.
+    if (not measured_at.has_value()) {
         return Freshness::UnparsableTimestamp;
     }
 
-    if (window <= std::chrono::seconds(0)) {
-        return Freshness::Fresh;
-    }
-
-    const auto age = now - measured_at;
-
-    if (age < std::chrono::seconds(0)) {
-        // Reading is timestamped in the future; accept it as the freshest we have.
-        return Freshness::Fresh;
-    }
-
-    return age < window ? Freshness::Fresh : Freshness::Stale;
+    return is_fresh(measured_at, now, window) ? Freshness::Fresh : Freshness::Stale;
 }
 
 /// \brief Sums one optional measurement field across meters.
@@ -97,7 +107,7 @@ PowerMeterAggregator::AggregateResult PowerMeterAggregator::aggregate(date::utc_
     // contributed: an empty sum must read as "no data", not as zero.
     float total_W = 0.f;
     FieldAccumulator power_L1_W, power_L2_W, power_L3_W;
-    FieldAccumulator current_DC_A, current_L1_A, current_L2_A, current_L3_A;
+    FieldAccumulator current_L1_A, current_L2_A, current_L3_A;
 
     for (const auto& [uuid, reading] : readings) {
         if (not reading.power_W.has_value()) {
@@ -138,7 +148,6 @@ PowerMeterAggregator::AggregateResult PowerMeterAggregator::aggregate(date::utc_
         // A meter publishing power but no current is simply not covered for current. Feed
         // the accumulators an empty Current so that counts the same as a missing phase.
         const auto current = reading.current_A.value_or(types::units::Current{});
-        current_DC_A.add(current.DC);
         current_L1_A.add(current.L1);
         current_L2_A.add(current.L2);
         current_L3_A.add(current.L3);
@@ -152,7 +161,6 @@ PowerMeterAggregator::AggregateResult PowerMeterAggregator::aggregate(date::utc_
         power.L3 = power_L3_W.total();
         result.power_W = power;
 
-        result.current_A.DC = current_DC_A.total();
         result.current_A.L1 = current_L1_A.total();
         result.current_A.L2 = current_L2_A.total();
         result.current_A.L3 = current_L3_A.total();

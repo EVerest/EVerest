@@ -7,6 +7,7 @@
 #include <string>
 
 #include "BrokerFastCharging.hpp"
+#include "PowerMeterAggregator.hpp"
 
 namespace module {
 
@@ -33,10 +34,9 @@ namespace module {
 /// usable timestamp has no age a consumer could check, so it is reported as absent rather
 /// than as "now": EnergyNode and EvseManager republish the last reading they received on
 /// every request, which makes a meter that stopped updating indistinguishable from one
-/// holding steady unless its own timestamp is carried along. Everest::Date::from_rfc3339
-/// does not throw - a default constructed time point is its only failure signal - so the
-/// epoch doubles as the unparsable case, and a meter genuinely reporting 1970 is equally
-/// unusable.
+/// holding steady unless its own timestamp is carried along. Parsing follows
+/// parse_meter_timestamp(), the same rule the aggregator applies, so the two measurement
+/// paths cannot disagree about which readings have a usable age.
 ///
 /// \returns the observed measurement, all fields std::nullopt if the node carries no
 /// measurement at all

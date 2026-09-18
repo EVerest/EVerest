@@ -254,7 +254,10 @@ TEST(PowerMeterAggregatorCurrent, StaleMeterIsExcludedFromCurrentSums) {
     EXPECT_EQ(result.stale_meters, 1);
 }
 
-TEST(PowerMeterAggregatorCurrent, SumsDcCurrent) {
+TEST(PowerMeterAggregatorCurrent, DoesNotSumDcCurrent) {
+    // A DC ampere only means something together with its link voltage: 100 A at 400 V and
+    // 100 A at 800 V are not 200 A of anything. Power is the additive quantity on a mixed
+    // site and it is summed above, so no site-wide DC ampere is produced at all.
     PowerMeterAggregator aggregator(std::chrono::seconds(5));
 
     auto dc = make_reading(20000.0f, NOW, std::chrono::seconds(0));
@@ -265,7 +268,8 @@ TEST(PowerMeterAggregatorCurrent, SumsDcCurrent) {
 
     const auto result = aggregator.aggregate(NOW);
 
-    EXPECT_FLOAT_EQ(result.current_A.DC.value(), 50.0f);
+    EXPECT_FLOAT_EQ(result.power_W.value().total, 20000.0f);
+    EXPECT_FALSE(result.current_A.DC.has_value());
     EXPECT_FALSE(result.current_A.L1.has_value());
 }
 
@@ -328,7 +332,10 @@ TEST(PowerMeterAggregatorWindow, SubSecondAgesResolveAtMillisecondPrecision) {
     EXPECT_EQ(result.stale_meters, 1);
 }
 
-TEST(PowerMeterAggregatorWindow, ZeroWindowDisablesTheFilter) {
+TEST(PowerMeterAggregatorWindow, ZeroWindowStillDisablesTheFilter) {
+    // The manifest no longer allows this to be configured (minimum: 1) - a slow meter needs
+    // a larger window, not no window. The behaviour is kept defined rather than left to
+    // chance for any caller that constructs the aggregator directly.
     PowerMeterAggregator aggregator(std::chrono::seconds(0));
 
     aggregator.update("cp01", make_reading(1000.0f, NOW, std::chrono::hours(3)));
@@ -338,6 +345,40 @@ TEST(PowerMeterAggregatorWindow, ZeroWindowDisablesTheFilter) {
     EXPECT_FLOAT_EQ(result.power_W.value().total, 1000.0f);
     EXPECT_EQ(result.fresh_meters, 1);
     EXPECT_EQ(result.stale_meters, 0);
+}
+
+// ---------------------------------------------------------------- the shared freshness rule
+
+// The site aggregate and the per connector snapshot are two views of the same meters, so
+// they have to answer "is this reading alive" identically. These pin the rule both go
+// through; PowerMeterAggregatorWindow above covers it as the aggregator applies it.
+
+TEST(MeterFreshness, ParsesATimestamp) {
+    const auto parsed = parse_meter_timestamp("2026-08-04T12:00:00.000Z");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(parsed.value(), NOW);
+}
+
+TEST(MeterFreshness, UnparsableAndEpochTimestampsAreBothUnusable) {
+    EXPECT_FALSE(parse_meter_timestamp("not a timestamp").has_value());
+    EXPECT_FALSE(parse_meter_timestamp("1970-01-01T00:00:00.000Z").has_value());
+    EXPECT_FALSE(parse_meter_timestamp("").has_value());
+}
+
+TEST(MeterFreshness, AReadingWithNoUsableAgeIsNeverFresh) {
+    // Not even with the filter switched off: an unusable timestamp is not an old reading,
+    // it is a reading whose age is unknown, and nothing may be computed from it.
+    EXPECT_FALSE(is_fresh(std::nullopt, NOW, std::chrono::seconds(5)));
+    EXPECT_FALSE(is_fresh(std::nullopt, NOW, std::chrono::seconds(0)));
+}
+
+TEST(MeterFreshness, WindowEdgeIsExclusive) {
+    EXPECT_TRUE(is_fresh(NOW - std::chrono::milliseconds(4999), NOW, std::chrono::seconds(5)));
+    EXPECT_FALSE(is_fresh(NOW - std::chrono::seconds(5), NOW, std::chrono::seconds(5)));
+}
+
+TEST(MeterFreshness, ClockSkewIntoTheFutureIsFresh) {
+    EXPECT_TRUE(is_fresh(NOW + std::chrono::seconds(1), NOW, std::chrono::seconds(5)));
 }
 
 TEST(PowerMeterAggregatorWindow, FutureTimestampCountsAsFresh) {

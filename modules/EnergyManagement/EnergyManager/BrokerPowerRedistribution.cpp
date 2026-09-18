@@ -40,14 +40,6 @@ const types::powermeter::Powermeter* find_reading(const types::energy::EnergyFlo
     return pick([](const types::powermeter::Powermeter& p) { return p.current_A.has_value(); });
 }
 
-std::optional<date::utc_clock::time_point> measured_time_of(const types::powermeter::Powermeter& reading) {
-    const auto measured_at = Everest::Date::from_rfc3339(reading.timestamp);
-    if (measured_at == date::utc_clock::time_point{}) {
-        return std::nullopt;
-    }
-    return measured_at;
-}
-
 // True while the connector's measured consumption can be taken for the demand of its EV.
 // A session that has not started drawing (WaitForAuth, PrepareCharging) or has stopped
 // (PausedEV, PausedEVSE) measures zero for a reason that says nothing about what the EV
@@ -80,7 +72,7 @@ ObservedMeasurement read_measurement(const types::energy::EnergyFlowRequest& nod
     ObservedMeasurement measurement;
     measurement.power_W = reading->power_W;
     measurement.current_A = reading->current_A.value_or(types::units::Current{});
-    measurement.measured_at = measured_time_of(*reading);
+    measurement.measured_at = parse_meter_timestamp(reading->timestamp);
     return measurement;
 }
 
