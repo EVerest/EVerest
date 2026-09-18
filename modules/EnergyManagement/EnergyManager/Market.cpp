@@ -194,6 +194,33 @@ ScheduleSetpoints Market::resample(const ScheduleSetpoints& request) {
     return sp;
 }
 
+std::optional<ScheduleReq::size_type> active_slot_index(const ScheduleReq& schedule) {
+    if (schedule.empty()) {
+        return std::nullopt;
+    }
+
+    const auto& now = globals.start_time;
+    const auto at = [&schedule](ScheduleReq::size_type n) { return Everest::Date::from_rfc3339(schedule[n].timestamp); };
+
+    if (now < at(0)) {
+        // The whole schedule is still in the future; the first slot is the one to come.
+        return 0;
+    }
+
+    if (now > at(schedule.size() - 1)) {
+        // The whole schedule is in the past; the last slot is the one still standing.
+        return schedule.size() - 1;
+    }
+
+    for (ScheduleReq::size_type n = 0; n + 1 < schedule.size(); n++) {
+        if (now > at(n) and now < at(n + 1)) {
+            return n;
+        }
+    }
+
+    return 0;
+}
+
 ScheduleReq Market::get_max_available_energy(const ScheduleReq& request) {
 
     ScheduleReq available = globals.empty_schedule_req;

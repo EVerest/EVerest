@@ -47,7 +47,8 @@ struct EnergyManagerConfig {
     int redistribution_reduction_hold_s{30};
     int redistribution_measurement_max_age_s{10};
     int power_meter_aggregation_window_s{5};
-    double power_redistribution_margin{0.1};
+    double power_redistribution_connector_margin{0.1};
+    double power_redistribution_site_margin{0.1};
     double power_redistribution_gain{0.5};
     int power_redistribution_hold_time_s{10};
 };
@@ -110,17 +111,20 @@ public:
     ObservedMeasurement get_observed_measurement(const std::string& uuid);
 #endif
 
-    /// \brief The aggregated leaf power meter reading computed during the most recent
-    /// run_optimizer() call. Readings older than power_meter_aggregation_window_s are
-    /// excluded from the sums.
-    /// Returned by value under the optimizer lock: run_optimizer() runs on a detached
-    /// thread once start() has been called, so a reference into the live state would be a
-    /// data race for any external caller.
-    PowerMeterAggregator::AggregateResult get_leaf_aggregate() const;
+#ifdef BUILD_TESTING_MODULE_ENERGY_MANAGER
+    /// \brief The site power meter reading computed during the most recent run_optimizer()
+    /// call: the grid connection's own meter where there is one, otherwise the sum of the
+    /// EVSE meters. Readings older than power_meter_aggregation_window_s are excluded.
+    ///
+    /// Test observation only, like get_observed_measurement(); nothing in production reads
+    /// it. Returned by value under the optimizer lock, since run_optimizer() runs on the
+    /// worker thread once start() has been called.
+    PowerMeterAggregator::AggregateResult get_site_aggregate() const;
 
     /// \brief The power redistribution inference of the most recent run_optimizer() call.
-    /// Returned by value under the optimizer lock, like get_leaf_aggregate().
+    /// Test observation only, returned by value under the optimizer lock.
     RedistributionInference get_redistribution_inference() const;
+#endif
 
 private:
     /// \brief Logs the meters aggregate() reported as having an unparsable timestamp, once
@@ -131,8 +135,7 @@ private:
     /// trading. Compares each connector's measurement with the allocation of the previous
     /// run, the site aggregate with the grid limit, applies the hold time and logs
     /// candidates on change. Called under energy_mutex.
-    void infer_redistribution(const types::energy::EnergyFlowRequest& request,
-                              const std::vector<std::shared_ptr<Broker>>& brokers,
+    void infer_redistribution(const Market& market, const std::vector<std::shared_ptr<Broker>>& brokers,
                               const std::vector<types::energy::EnforcedLimits>& limits);
 
     EnergyManagerConfig config;
@@ -163,10 +166,11 @@ private:
 
     std::map<std::string, BrokerContext> contexts;
 
-    // Aggregated leaf power meter reading of the most recent optimizer run. The aggregator
+    // Aggregated site power meter reading of the most recent optimizer run. The aggregator
     // that produces it is a local of that run: it holds nothing worth keeping between runs,
     // and a member would have to be cleared by hand to stop a departed meter contributing.
-    PowerMeterAggregator::AggregateResult leaf_aggregate;
+    PowerMeterAggregator::AggregateResult site_aggregate;
+    SiteMeterSource site_meter_source{SiteMeterSource::None};
 
     // Meters already warned about for an unparsable timestamp. The warn-once decision needs
     // the history that a single aggregation does not have, so it lives here rather than in

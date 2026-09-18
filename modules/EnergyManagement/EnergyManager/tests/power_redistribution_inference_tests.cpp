@@ -51,6 +51,36 @@ StaticBoundsW bounds(std::optional<float> min_W, std::optional<float> max_W) {
     return StaticBoundsW{min_W, max_W};
 }
 
+// The limits the inference reads come from the Market, not from the request, so the tests
+// have to build one the way run_optimizer does: globals initialised for the run, then a
+// Market over the tree. It owns its request because Market keeps a reference to it.
+class MarketFixture {
+public:
+    MarketFixture(types::energy::EnergyFlowRequest tree, date::utc_clock::time_point at,
+                  int schedule_total_duration_h = 1) :
+        request(std::move(tree)) {
+        globals.init(at, 60, schedule_total_duration_h, 0.5f, 500.0f, false, request);
+        market = std::make_unique<Market>(request, U);
+    }
+
+    const Market& root() const {
+        return *market;
+    }
+
+    const Market& evse(const std::string& uuid) const {
+        for (auto* m : market->get_list_of_evses()) {
+            if (m->energy_flow_request.uuid == uuid) {
+                return *m;
+            }
+        }
+        throw std::runtime_error("no such evse in fixture: " + uuid);
+    }
+
+private:
+    types::energy::EnergyFlowRequest request;
+    std::unique_ptr<Market> market;
+};
+
 EnergyManagerConfig make_redistribution_config(int hold_time_s = 10) {
     auto config = test::make_default_config();
     config.broker_strategy = "PowerRedistribution";
@@ -72,23 +102,57 @@ std::string fresh_at(int seconds) {
 // ---------------------------------------------------------------- limit helpers
 
 TEST(RedistributionHelpers, GridLimitFromCurrentAndPhases) {
-    const auto root = test::make_root_node("grid", 32.0f, std::nullopt, {});
-    const auto limit = get_grid_limit_W(root, U);
+    const MarketFixture f(test::make_root_node("grid", 32.0f, std::nullopt, {}), T0);
+    const auto limit = get_grid_limit_W(f.root(), U);
     ASSERT_TRUE(limit.has_value());
     EXPECT_FLOAT_EQ(limit.value(), 32.0f * 3 * U);
 }
 
 TEST(RedistributionHelpers, GridLimitPrefersTotalPower) {
-    const auto root = test::make_root_node("grid", 32.0f, 11000.0f, {});
-    const auto limit = get_grid_limit_W(root, U);
+    const MarketFixture f(test::make_root_node("grid", 32.0f, 11000.0f, {}), T0);
+    const auto limit = get_grid_limit_W(f.root(), U);
     ASSERT_TRUE(limit.has_value());
     EXPECT_FLOAT_EQ(limit.value(), 11000.0f);
 }
 
-TEST(RedistributionHelpers, GridLimitNulloptWithoutSchedule) {
+TEST(RedistributionHelpers, NoScheduleMeansNothingIsAvailable) {
+    // A node that requests nothing gets Market's zero schedule, so the limit is a known
+    // zero rather than an unknown. Either way the inference claims no headroom.
     types::energy::EnergyFlowRequest root;
+    root.uuid = "grid";
     root.node_type = types::energy::NodeType::Generic;
-    EXPECT_FALSE(get_grid_limit_W(root, U).has_value());
+    const MarketFixture f(root, T0);
+    const auto limit = get_grid_limit_W(f.root(), U);
+    ASSERT_TRUE(limit.has_value());
+    EXPECT_FLOAT_EQ(limit.value(), 0.0f);
+}
+
+TEST(RedistributionHelpers, GridLimitUsesTheSlotInForceNotTheFirstOne) {
+    // A multi-slot schedule is what an external limit looks like: an OCPP charging profile
+    // or any DLM input produces one. Reading slot 0 would report the 32 A that applied at
+    // 11:00 while the schedule in force at 12:30 allows 10 A - a 3.2x overstatement of the
+    // grid limit, in the direction that fabricates headroom.
+    auto root = test::make_root_node("grid", 32.0f, std::nullopt, {}, "2026-08-04T11:00:00.000Z");
+    root.schedule_import.push_back(test::make_schedule_entry("2026-08-04T12:00:00.000Z", 10.0f, 0.0f));
+
+    const MarketFixture f(root, T0, 3);
+    const auto limit = get_grid_limit_W(f.root(), U);
+    ASSERT_TRUE(limit.has_value());
+    EXPECT_FLOAT_EQ(limit.value(), 10.0f * 3 * U);
+}
+
+TEST(RedistributionHelpers, GridLimitHonoursALimitExpressedOnTheLeavesSide) {
+    // get_max_available_energy() takes the minimum of the two sides. A limit that only
+    // exists on the leaves side is invisible in limits_to_root, so reading the request
+    // directly would report 32 A where only 10 A may actually be drawn.
+    auto root = test::make_root_node("grid", 32.0f, std::nullopt, {});
+    root.schedule_import[0].limits_to_leaves.ac_max_current_A = {10.0f, "TEST_external"};
+    root.schedule_import[0].limits_to_leaves.ac_max_phase_count = {3, "TEST_external"};
+
+    const MarketFixture f(root, T0);
+    const auto limit = get_grid_limit_W(f.root(), U);
+    ASSERT_TRUE(limit.has_value());
+    EXPECT_FLOAT_EQ(limit.value(), 10.0f * 3 * U);
 }
 
 TEST(RedistributionHelpers, AllocatedPowerFromAmpere) {
@@ -98,11 +162,14 @@ TEST(RedistributionHelpers, AllocatedPowerFromAmpere) {
     EXPECT_FLOAT_EQ(allocated.value(), 16.0f * 3 * U);
 }
 
-TEST(RedistributionHelpers, AllocatedPowerAssumesThreePhasesWhenUndeclared) {
+TEST(RedistributionHelpers, AllocatedPowerAssumesOnePhaseWhenUndeclared) {
+    // An undeclared phase count is missing information about a limit, and the safe reading
+    // of that is the smaller limit. EnergyNode always declares it, so this only covers a
+    // node that does not.
     const auto limit = make_enforced_limit("evse1", 16.0f, std::nullopt, std::nullopt);
     const auto allocated = get_allocated_power_W(limit, U);
     ASSERT_TRUE(allocated.has_value());
-    EXPECT_FLOAT_EQ(allocated.value(), 16.0f * 3 * U);
+    EXPECT_FLOAT_EQ(allocated.value(), 16.0f * 1 * U);
 }
 
 TEST(RedistributionHelpers, AllocatedPowerPrefersTotalPower) {
@@ -119,8 +186,9 @@ TEST(RedistributionHelpers, AllocatedPowerNulloptWithoutAnyLimit) {
 
 TEST(RedistributionHelpers, StaticBoundsUseMinPhasesForMinimum) {
     // make_evse_node declares max 3 phases, min 1 phase.
-    const auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
-    const auto b = get_static_bounds_W(evse, U);
+    const MarketFixture f(test::make_root_node("grid", 32.0f, std::nullopt, {test::make_evse_node("evse1", 32.0f, 6.0f)}),
+                          T0);
+    const auto b = get_static_bounds_W(f.evse("evse1"), U);
     ASSERT_TRUE(b.min_W.has_value());
     ASSERT_TRUE(b.max_W.has_value());
     EXPECT_FLOAT_EQ(b.min_W.value(), 6.0f * 1 * U);
@@ -128,11 +196,13 @@ TEST(RedistributionHelpers, StaticBoundsUseMinPhasesForMinimum) {
 }
 
 TEST(RedistributionHelpers, StaticBoundsPreferTotalPowerForMaximum) {
-    const auto evse = test::make_evse_node("evse1", 32.0f, 6.0f, 11000.0f);
-    const auto b = get_static_bounds_W(evse, U);
+    const MarketFixture f(
+        test::make_root_node("grid", 32.0f, std::nullopt, {test::make_evse_node("evse1", 32.0f, 6.0f, 11000.0f)}), T0);
+    const auto b = get_static_bounds_W(f.evse("evse1"), U);
     ASSERT_TRUE(b.max_W.has_value());
     EXPECT_FLOAT_EQ(b.max_W.value(), 11000.0f);
 }
+
 
 // ---------------------------------------------------------------- connector classification
 
@@ -185,9 +255,21 @@ TEST(RedistributionClassify, ConsumingWithoutKnownMaximumIsSaturated) {
     EXPECT_EQ(c.connector_class, ConnectorClass::Saturated);
 }
 
-TEST(RedistributionClassify, NegativeMeasurementCountsAsZero) {
-    // An exporting meter reads negative; the released amount is bounded by the minimum.
+TEST(RedistributionClassify, ExportingConnectorMakesNoImportClaim) {
+    // Negative is export. This inference only ever looks at schedule_import, so a
+    // discharging connector has no import consumption to compare against its import
+    // allocation. Clamping to zero instead would read as "using none of its allocation" and
+    // offer the whole allocation up for redistribution, which is not what a V2G session is
+    // doing.
     const auto c = classify_connector(11040.0f, -500.0f, bounds(1380.0f, 22080.0f), MARGIN);
+    EXPECT_EQ(c.connector_class, ConnectorClass::Unknown);
+    EXPECT_FLOAT_EQ(c.reducible_W, 0.0f);
+}
+
+TEST(RedistributionClassify, AConnectorDrawingNothingIsStillUnderConsuming) {
+    // Zero is a measurement, not an absence: a plugged-in car that has stopped drawing can
+    // genuinely give its allocation back, down to the minimum purchase.
+    const auto c = classify_connector(11040.0f, 0.0f, bounds(1380.0f, 22080.0f), MARGIN);
     EXPECT_EQ(c.connector_class, ConnectorClass::UnderConsuming);
     EXPECT_NEAR(c.reducible_W, 11040.0f - 1380.0f, 0.5f);
 }
@@ -320,19 +402,26 @@ TEST(RedistributionIntegration, ComparesMeasurementWithPreviousAllocation) {
 }
 
 TEST(RedistributionIntegration, ReduceCandidateIsHeldOnlyAfterHoldTime) {
+    // The meter has to keep reporting for the condition to keep holding: a reading is only
+    // usable while it is fresh, so a live under-consuming connector refreshes its timestamp
+    // on every run just as a real one does.
     auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
     auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
-    test::set_measurement(request.children[0], 4000.0f, FRESH);
 
     EnergyManagerImpl impl(make_redistribution_config(10), [](const std::vector<types::energy::EnforcedLimits>&) {});
-    impl.run_optimizer(request, T0);
-    impl.run_optimizer(request, T0 + std::chrono::seconds(1)); // condition starts here
+    const auto run_at = [&](int seconds) {
+        test::set_measurement(request.children[0], 4000.0f, fresh_at(seconds));
+        impl.run_optimizer(request, T0 + std::chrono::seconds(seconds));
+    };
+
+    run_at(0);
+    run_at(1); // condition starts here
     EXPECT_FALSE(impl.get_redistribution_inference().connectors.at("evse1").held);
 
-    impl.run_optimizer(request, T0 + std::chrono::seconds(6));
+    run_at(6);
     EXPECT_FALSE(impl.get_redistribution_inference().connectors.at("evse1").held);
 
-    impl.run_optimizer(request, T0 + std::chrono::seconds(11));
+    run_at(11);
     EXPECT_TRUE(impl.get_redistribution_inference().connectors.at("evse1").held);
 }
 
@@ -341,19 +430,21 @@ TEST(RedistributionIntegration, TransientCaughtUpRestartsTheHold) {
     auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
 
     EnergyManagerImpl impl(make_redistribution_config(10), [](const std::vector<types::energy::EnforcedLimits>&) {});
-    test::set_measurement(request.children[0], 4000.0f, FRESH);
-    impl.run_optimizer(request, T0);
-    impl.run_optimizer(request, T0 + std::chrono::seconds(1));
-    impl.run_optimizer(request, T0 + std::chrono::seconds(6));
+    const auto run_at = [&](int seconds, float measured_W) {
+        test::set_measurement(request.children[0], measured_W, fresh_at(seconds));
+        impl.run_optimizer(request, T0 + std::chrono::seconds(seconds));
+    };
+
+    run_at(0, 4000.0f);
+    run_at(1, 4000.0f);
+    run_at(6, 4000.0f);
 
     // EV briefly draws its full allocation.
-    test::set_measurement(request.children[0], 22000.0f, FRESH);
-    impl.run_optimizer(request, T0 + std::chrono::seconds(7));
+    run_at(7, 22000.0f);
     EXPECT_EQ(impl.get_redistribution_inference().connectors.at("evse1").connector_class, ConnectorClass::AtMaximum);
 
-    test::set_measurement(request.children[0], 4000.0f, FRESH);
-    impl.run_optimizer(request, T0 + std::chrono::seconds(8));
-    impl.run_optimizer(request, T0 + std::chrono::seconds(12));
+    run_at(8, 4000.0f);
+    run_at(12, 4000.0f);
     // Only 4 s since the condition returned: not held, despite 11 s since it first appeared.
     EXPECT_FALSE(impl.get_redistribution_inference().connectors.at("evse1").held);
 }
@@ -505,6 +596,160 @@ TEST(RedistributionIntegration, IncreaseReportedAfterHoldForSaturatedConnector) 
     EXPECT_FLOAT_EQ(inference.site.increase_W, 0.0f);
     EXPECT_FALSE(inference.site.held);
     EXPECT_FALSE(run(14, 13000.0f).site.held);
+}
+
+// ---------------------------------------------------------------- stale measurements
+
+// The connector path and the site path look at the same meters and must agree about which
+// of them are alive. Absence already failed safe; staleness is the realistic failure,
+// because EnergyNode and EvseManager republish the last reading they received in every
+// request - a dead meter looks exactly like a live one holding steady.
+
+TEST(RedistributionIntegration, StaleConnectorMeasurementMakesNoClaim) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    // The meter reports 4 kW and then stops updating its timestamp.
+    test::set_measurement(request.children[0], 4000.0f, FRESH);
+
+    EnergyManagerImpl impl(make_redistribution_config(0), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, T0);
+
+    // Still fresh one second in: the connector is genuinely under-consuming.
+    impl.run_optimizer(request, T0 + std::chrono::seconds(1));
+    {
+        const auto c = impl.get_redistribution_inference().connectors.at("evse1");
+        EXPECT_EQ(c.connector_class, ConnectorClass::UnderConsuming);
+        EXPECT_GT(c.reducible_W, 0.0f);
+        EXPECT_TRUE(c.held);
+    }
+
+    // Five minutes later the tree is byte-for-byte identical and the reading is five
+    // minutes old. Nothing may be concluded from it.
+    impl.run_optimizer(request, T0 + std::chrono::seconds(300));
+    {
+        const auto c = impl.get_redistribution_inference().connectors.at("evse1");
+        EXPECT_EQ(c.connector_class, ConnectorClass::Unknown);
+        EXPECT_FLOAT_EQ(c.reducible_W, 0.0f);
+        EXPECT_FALSE(c.held);
+    }
+}
+
+TEST(RedistributionIntegration, ConnectorAndSiteAgreeAboutAStaleMeter) {
+    // The site already refused to claim on a stale meter while the connector did not. Both
+    // now go through the same rule, so neither makes a claim.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4000.0f, FRESH);
+
+    EnergyManagerImpl impl(make_redistribution_config(0), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, T0);
+    impl.run_optimizer(request, T0 + std::chrono::seconds(300));
+
+    const auto inference = impl.get_redistribution_inference();
+    EXPECT_FALSE(inference.site.measured_W.has_value());
+    EXPECT_FALSE(inference.site.headroom_W.has_value());
+    EXPECT_FLOAT_EQ(inference.site.increase_W, 0.0f);
+    EXPECT_EQ(inference.connectors.at("evse1").connector_class, ConnectorClass::Unknown);
+}
+
+TEST(RedistributionIntegration, AMeterWithNoUsableTimestampMakesNoClaim) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4000.0f, "not a timestamp");
+
+    EnergyManagerImpl impl(make_redistribution_config(0), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, T0);
+    impl.run_optimizer(request, T0 + std::chrono::seconds(1));
+
+    EXPECT_EQ(impl.get_redistribution_inference().connectors.at("evse1").connector_class, ConnectorClass::Unknown);
+}
+
+// ---------------------------------------------------------------- what measures the site
+
+TEST(RedistributionIntegration, SitePrefersTheGridConnectionsOwnMeter) {
+    // 34 kW through the connection, of which the single EVSE draws 4 kW - the other 30 kW
+    // is building load that no EVSE meter can see. Summing the EVSE meters would report
+    // 4 kW of site consumption and 30 kW of headroom that is already spent.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 100.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4000.0f, FRESH);
+    test::set_root_measurement(request, 34000.0f, FRESH);
+
+    EnergyManagerImpl impl(make_redistribution_config(0), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, T0);
+    impl.run_optimizer(request, T0 + std::chrono::seconds(1));
+
+    const auto site = impl.get_redistribution_inference().site;
+    EXPECT_EQ(site.meter_source, SiteMeterSource::RootMeter);
+    ASSERT_TRUE(site.measured_W.has_value());
+    EXPECT_FLOAT_EQ(site.measured_W.value(), 34000.0f);
+    ASSERT_TRUE(site.grid_limit_W.has_value());
+    EXPECT_FLOAT_EQ(site.grid_limit_W.value(), 100.0f * 3 * U);
+    ASSERT_TRUE(site.headroom_W.has_value());
+    EXPECT_FLOAT_EQ(site.headroom_W.value(), 100.0f * 3 * U - 34000.0f);
+}
+
+TEST(RedistributionIntegration, SiteFallsBackToTheEvseSumWithoutARootMeter) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 100.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4000.0f, FRESH);
+
+    EnergyManagerImpl impl(make_redistribution_config(0), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, T0);
+    impl.run_optimizer(request, T0 + std::chrono::seconds(1));
+
+    const auto site = impl.get_redistribution_inference().site;
+    EXPECT_EQ(site.meter_source, SiteMeterSource::LeafSum);
+    ASSERT_TRUE(site.measured_W.has_value());
+    EXPECT_FLOAT_EQ(site.measured_W.value(), 4000.0f);
+}
+
+TEST(RedistributionIntegration, StaleRootMeterMakesNoSiteClaim) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 100.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4000.0f, FRESH);
+    test::set_root_measurement(request, 34000.0f, FRESH);
+
+    EnergyManagerImpl impl(make_redistribution_config(0), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, T0 + std::chrono::seconds(300));
+
+    const auto site = impl.get_redistribution_inference().site;
+    EXPECT_EQ(site.meter_source, SiteMeterSource::RootMeter);
+    EXPECT_FALSE(site.measured_W.has_value());
+    EXPECT_FLOAT_EQ(site.increase_W, 0.0f);
+}
+
+// ---------------------------------------------------------------- never above the fuse
+
+TEST(RedistributionIntegration, NoIncreaseAtTheFuseLimitWithHouseLoad) {
+    // The test asked for on PR 2628 and deferred as "measures only": a tree at its fuse
+    // limit must propose no increase. All three inputs are the ones that used to be read
+    // wrong - a multi-slot schedule that tightens, a limit on the leaves side, and a site
+    // meter that sees a load no EVSE reports.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f, std::nullopt, "2026-08-04T11:00:00.000Z");
+    auto request = test::make_root_node("grid", 100.0f, std::nullopt, {evse}, "2026-08-04T11:00:00.000Z");
+    // From 12:00 an external limit tightens the connection to 32 A, expressed leaves side.
+    auto tightened = test::make_schedule_entry("2026-08-04T12:00:00.000Z", 100.0f, 0.0f);
+    tightened.limits_to_leaves.ac_max_current_A = {32.0f, "TEST_external"};
+    tightened.limits_to_leaves.ac_max_phase_count = {3, "TEST_external"};
+    request.schedule_import.push_back(tightened);
+
+    // The connection is drawing its full 32 A: 4 kW of EVSE and the rest house load.
+    test::set_measurement(request.children[0], 4000.0f, FRESH);
+    test::set_root_measurement(request, 32.0f * 3 * U, FRESH);
+
+    auto config = make_redistribution_config(0);
+    config.schedule_total_duration = 3;
+    EnergyManagerImpl impl(config, [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, T0);
+    impl.run_optimizer(request, T0 + std::chrono::seconds(1));
+
+    const auto site = impl.get_redistribution_inference().site;
+    ASSERT_TRUE(site.grid_limit_W.has_value());
+    EXPECT_FLOAT_EQ(site.grid_limit_W.value(), 32.0f * 3 * U);
+    ASSERT_TRUE(site.headroom_W.has_value());
+    EXPECT_NEAR(site.headroom_W.value(), 0.0f, 1.0f);
+    EXPECT_FLOAT_EQ(site.increase_W, 0.0f);
 }
 
 TEST(RedistributionIntegration, AllocationsIdenticalToFastCharging) {

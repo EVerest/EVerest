@@ -19,17 +19,25 @@ namespace module {
 // reduced or increased. Nothing here changes an allocation; EnergyManagerImpl calls these
 // once per optimizer run and logs the result.
 
-/// \brief Import limit of the grid connection [W], read from the root node's own
-/// schedule_import[0]. total_power_W wins; otherwise ac_max_current_A times the declared
-/// phase count (3 when not declared) times the nominal voltage.
-/// \returns std::nullopt when the root declares no import limit
-std::optional<float> get_grid_limit_W(const types::energy::EnergyFlowRequest& root, float nominal_ac_voltage);
+/// \brief Import limit of the grid connection [W], read from the root Market's offer at the
+/// slot in force. total_power_W wins; otherwise ac_max_current_A times the declared phase
+/// count times the nominal voltage.
+///
+/// The offer, not the raw request: Market::get_max_available_energy() has already resampled
+/// the schedule onto the optimizer's timestamp grid, taken the minimum of the leaves side
+/// and root side limits and divided by the conversion efficiency. Reading
+/// schedule_import[0].limits_to_root instead skips all three, and each one skipped
+/// overstates the limit - on a multi-slot external schedule, or a limit expressed only on
+/// the leaves side, by whatever the two happen to differ by.
+/// \returns std::nullopt when the root has no import schedule at all
+std::optional<float> get_grid_limit_W(const Market& root, float nominal_ac_voltage);
 
 /// \brief Import power [W] an enforced limit hands to a connector, with the same precedence
 /// as get_grid_limit_W(). \returns std::nullopt when the limit carries neither watt nor ampere.
 std::optional<float> get_allocated_power_W(const types::energy::EnforcedLimits& limit, float nominal_ac_voltage);
 
-/// \brief Static import bounds of a connector [W], from its schedule_import[0].limits_to_root.
+/// \brief Import bounds of a connector [W] at the slot in force, from its own Market offer
+/// for the same reasons as get_grid_limit_W().
 struct StaticBoundsW {
     /// Smallest purchase that still charges: ac_min_current_A x min phase count x U.
     std::optional<float> min_W;
@@ -37,7 +45,7 @@ struct StaticBoundsW {
     std::optional<float> max_W;
 };
 
-StaticBoundsW get_static_bounds_W(const types::energy::EnergyFlowRequest& node, float nominal_ac_voltage);
+StaticBoundsW get_static_bounds_W(const Market& connector, float nominal_ac_voltage);
 
 enum class ConnectorClass {
     Unknown,        ///< no previous allocation or no measurement to compare against
@@ -67,7 +75,9 @@ struct ConnectorInference {
 /// under-consumption. Everything closer is treated as consuming the allocation, which is
 /// either Saturated (could take more) or AtMaximum (its static limit is reached, within 1 W).
 /// Without both an allocation and a measurement the class is Unknown: no claim is made on
-/// missing data.
+/// missing data. A negative measurement is Unknown too: negative is export, the inference
+/// looks only at schedule_import, and a discharging connector consuming none of its import
+/// allocation is not the same thing as one that could give the whole allocation back.
 ConnectorInference classify_connector(std::optional<float> allocated_W, std::optional<float> measured_W,
                                       const StaticBoundsW& bounds, float margin);
 
@@ -76,6 +86,13 @@ struct SaturatedConnector {
     float allocated_W;
     std::optional<float> max_W;
 };
+
+/// \brief Pairs a Saturated classification with its bounds.
+///
+/// Only meaningful for ConnectorClass::Saturated, which classify_connector() only returns
+/// once it has an allocation - so the caller does not have to dereference allocated_W on
+/// the strength of an invariant established in another function.
+SaturatedConnector to_saturated_connector(const ConnectorInference& connector, const StaticBoundsW& bounds);
 
 /// \brief Result of infer_site().
 struct SiteInference {
@@ -86,6 +103,9 @@ struct SiteInference {
     /// grid_limit_W - measured_W, when both are known
     std::optional<float> headroom_W;
     int saturated_connectors{0};
+    /// Which meter measured_W came from. A leaf sum sees only the EVSEs, so a consumer (and
+    /// the log line) can tell how much of the site the figure actually covers.
+    SiteMeterSource meter_source{SiteMeterSource::None};
     /// Proposed increase [W] summed over the saturated connectors. 0 when the headroom is
     /// within the deadband, no connector can take more, or the gain is 0.
     float increase_W{0.f};
@@ -98,8 +118,8 @@ struct SiteInference {
 /// Headroom h = G - S must exceed the deadband margin x G. The increase is then
 /// gain x (h - deadband), split equally over the saturated connectors and clamped per
 /// connector to its static maximum. Being proportional to the remaining headroom the step
-/// is large far from the grid limit and vanishes close to it, which is what the review on
-/// PR #2630 asked for instead of a fixed ampere step.
+/// is large far from the grid limit and vanishes close to it, rather than being a fixed
+/// ampere step that would approach the limit just as fast however close it already is.
 SiteInference infer_site(std::optional<float> grid_limit_W, const PowerMeterAggregator::AggregateResult& aggregate,
                          const std::vector<SaturatedConnector>& saturated, float margin, float gain);
 

@@ -60,12 +60,26 @@ std::optional<float> add_margin(const std::optional<float>& phase, float margin_
     }
     return phase.value() + margin_A;
 }
-
-constexpr int ASSUMED_PHASE_COUNT = 3;
+// Phase count to assume when a limit declares none. One, not three: an undeclared phase
+// count is missing information, and the safe reading of missing information about a limit
+// is the smaller limit. EnergyNode always declares it (energyImpl.cpp), so this only
+// covers a node that does not.
+constexpr int ASSUMED_PHASE_COUNT = 1;
 // An allocation this close to the static maximum counts as at the maximum. Trading happens
 // in slices of slice_ampere (0.5 A x 230 V = 115 W by default), so 1 W only absorbs
 // floating point noise of the two conversions.
 constexpr float AT_MAXIMUM_TOLERANCE_W = 1.f;
+
+// The limits in force at this node right now, from the offer the brokers traded against
+// rather than from the raw request. Returns nullptr when the node has no schedule at all.
+const types::energy::LimitsReq* active_limits(const Market& market) {
+    const auto& offer = market.get_import_max_available();
+    const auto slot = active_slot_index(offer);
+    if (not slot.has_value()) {
+        return nullptr;
+    }
+    return &offer[slot.value()].limits_to_root;
+}
 
 // Converts a limit to watt with the precedence used throughout: an explicit watt value
 // wins, otherwise the ampere value times the phase count times the nominal voltage.
@@ -87,12 +101,12 @@ std::optional<float> limits_to_W(const Limits& limits, const std::optional<types
 
 } // namespace
 
-std::optional<float> get_grid_limit_W(const types::energy::EnergyFlowRequest& root, float nominal_ac_voltage) {
-    if (root.schedule_import.empty()) {
+std::optional<float> get_grid_limit_W(const Market& root, float nominal_ac_voltage) {
+    const auto* limits = active_limits(root);
+    if (limits == nullptr) {
         return std::nullopt;
     }
-    const auto& limits = root.schedule_import[0].limits_to_root;
-    return limits_to_W(limits, limits.ac_max_current_A, limits.ac_max_phase_count, nominal_ac_voltage);
+    return limits_to_W(*limits, limits->ac_max_current_A, limits->ac_max_phase_count, nominal_ac_voltage);
 }
 
 std::optional<float> get_allocated_power_W(const types::energy::EnforcedLimits& limit, float nominal_ac_voltage) {
@@ -100,22 +114,22 @@ std::optional<float> get_allocated_power_W(const types::energy::EnforcedLimits& 
     return limits_to_W(limits, limits.ac_max_current_A, limits.ac_max_phase_count, nominal_ac_voltage);
 }
 
-StaticBoundsW get_static_bounds_W(const types::energy::EnergyFlowRequest& node, float nominal_ac_voltage) {
+StaticBoundsW get_static_bounds_W(const Market& connector, float nominal_ac_voltage) {
     StaticBoundsW bounds;
-    if (node.schedule_import.empty()) {
+    const auto* limits = active_limits(connector);
+    if (limits == nullptr) {
         return bounds;
     }
-    const auto& limits = node.schedule_import[0].limits_to_root;
 
-    bounds.max_W = limits_to_W(limits, limits.ac_max_current_A, limits.ac_max_phase_count, nominal_ac_voltage);
+    bounds.max_W = limits_to_W(*limits, limits->ac_max_current_A, limits->ac_max_phase_count, nominal_ac_voltage);
 
-    if (limits.ac_min_current_A.has_value()) {
+    if (limits->ac_min_current_A.has_value()) {
         // The minimum purchase uses the smallest phase count the connector accepts; a
         // connector that can charge single phase only needs min current on one phase.
-        const auto phases = limits.ac_min_phase_count.has_value()   ? limits.ac_min_phase_count.value().value
-                            : limits.ac_max_phase_count.has_value() ? limits.ac_max_phase_count.value().value
-                                                                    : ASSUMED_PHASE_COUNT;
-        bounds.min_W = limits.ac_min_current_A.value().value * static_cast<float>(phases) * nominal_ac_voltage;
+        const auto phases = limits->ac_min_phase_count.has_value()   ? limits->ac_min_phase_count.value().value
+                            : limits->ac_max_phase_count.has_value() ? limits->ac_max_phase_count.value().value
+                                                                     : ASSUMED_PHASE_COUNT;
+        bounds.min_W = limits->ac_min_current_A.value().value * static_cast<float>(phases) * nominal_ac_voltage;
     }
     return bounds;
 }
@@ -144,8 +158,16 @@ ConnectorInference classify_connector(std::optional<float> allocated_W, std::opt
         return result;
     }
 
+    // Negative is export (see types/units.yaml). This inference is about the import
+    // schedule only, and a discharging connector has no import consumption to compare
+    // against its import allocation. Clamping it to zero instead would read as "consuming
+    // none of what it was allotted" and report the entire allocation as reducible.
+    if (measured_W.value() < 0.f) {
+        return result;
+    }
+
     const float allocated = allocated_W.value();
-    const float measured = std::max(0.f, measured_W.value());
+    const float measured = measured_W.value();
     const float gap = allocated - measured;
 
     if (gap > margin * allocated) {
@@ -166,6 +188,10 @@ ConnectorInference classify_connector(std::optional<float> allocated_W, std::opt
         result.connector_class = ConnectorClass::Saturated;
     }
     return result;
+}
+
+SaturatedConnector to_saturated_connector(const ConnectorInference& connector, const StaticBoundsW& bounds) {
+    return {connector.allocated_W.value_or(0.f), bounds.max_W};
 }
 
 SiteInference infer_site(std::optional<float> grid_limit_W, const PowerMeterAggregator::AggregateResult& aggregate,

@@ -31,7 +31,8 @@ void EnergyManager::init() {
     energy_manager_config.redistribution_reduction_hold_s = config.redistribution_reduction_hold_s;
     energy_manager_config.redistribution_measurement_max_age_s = config.redistribution_measurement_max_age_s;
     energy_manager_config.power_meter_aggregation_window_s = config.power_meter_aggregation_window_s;
-    energy_manager_config.power_redistribution_margin = config.power_redistribution_margin;
+    energy_manager_config.power_redistribution_connector_margin = config.power_redistribution_connector_margin;
+    energy_manager_config.power_redistribution_site_margin = config.power_redistribution_site_margin;
     energy_manager_config.power_redistribution_gain = config.power_redistribution_gain;
     energy_manager_config.power_redistribution_hold_time_s = config.power_redistribution_hold_time_s;
 
