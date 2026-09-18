@@ -34,6 +34,10 @@ target_sources(everest_api_types
   src/everest_api_types/configuration/codec.cpp
   src/everest_api_types/configuration/json_codec.cpp
 
+  src/everest_api_types/charger_information/codec.cpp
+  src/everest_api_types/charger_information/json_codec.cpp
+  src/everest_api_types/charger_information/wrapper.cpp
+
   src/everest_api_types/dc_external_derate/codec.cpp
   src/everest_api_types/dc_external_derate/json_codec.cpp
 
