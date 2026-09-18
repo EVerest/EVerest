@@ -105,8 +105,24 @@ options. There are three cases.
   kept in memory only.
 
 ``--db`` **only**
-  The database file is the only configuration source; manager settings come from
-  built-in defaults.
+  The database file is the only configuration source for module
+  configurations. The database never holds the manager ``settings:`` block, so
+  the settings come from built-in defaults: installation paths (``prefix``,
+  ``modules_dir``, ``interfaces_dir``, ``types_dir``, ``errors_dir``,
+  ``schemas_dir``, ``configs_dir``, ``www_dir``, ``logging_config_file``), MQTT
+  broker and prefixes (``mqtt_broker_host``, ``mqtt_broker_port``,
+  ``mqtt_broker_socket_path``, ``mqtt_everest_prefix``,
+  ``mqtt_external_prefix``), ``controller_port``,
+  ``controller_rpc_timeout_ms``, ``run_as_user``, ``telemetry_enabled``,
+  ``telemetry_prefix``, ``validate_schema`` and ``forward_exceptions``.
+  Deployments that need any non-default setting pass ``--config`` alongside
+  ``--db``.
+
+  Databases created before the multi-configuration schema stored these
+  settings in a ``SETTING`` table. Schema migration 4 drops that table without
+  carrying the values over; a database upgraded from such a release therefore
+  needs ``--config`` alongside ``--db`` to keep a non-default broker, prefix or
+  user.
 
 ``--config`` **and** ``--db``
   The database wins when it holds a valid boot slot, and the YAML is then
