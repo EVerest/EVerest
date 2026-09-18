@@ -40,9 +40,6 @@ active_modules:
     module: Auth
   ev_manager:
     config_module:
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
       connector_id: 1
     connections:
       ev:
@@ -54,7 +51,7 @@ active_modules:
       slac:
         - implementation_id: ev
           module_id: slac
-    module: EvManager
+    module: EvSimulator
   energy_manager:
     config_module:
       switch_3ph1ph_while_charging_mode: Both

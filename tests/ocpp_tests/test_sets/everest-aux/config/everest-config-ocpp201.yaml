@@ -44,22 +44,17 @@ active_modules:
     config_module:
       connector_id: 2
   car_simulator_1:
-    module: EvManager
+    module: EvSimulator
     config_module:
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
     connections:
       ev_board_support:
         - module_id: yeti_driver_1
           implementation_id: ev_board_support
   car_simulator_2:
-    module: EvManager
+    module: EvSimulator
     config_module:
       connector_id: 2
-      auto_enable: true
-      auto_exec: false
     connections:
       ev_board_support:
         - module_id: yeti_driver_2

@@ -1,0 +1,14 @@
+sequenceDiagram
+    autonumber
+    participant Mgr as Manager / Test
+    participant Topic as m2e/verb
+    participant Router as CommandRouter
+    participant Queue as Event queue
+    participant Runtime as EvSimRuntime
+    participant FSM as fsm::v2 FSM
+
+    Mgr->>Topic: publish JSON payload
+    Topic->>Router: MQTT handler
+    Router->>Queue: enqueue Event
+    Queue-->>Runtime: wake_fd.notify()
+    Runtime->>FSM: on_wake -> feed(ev)
