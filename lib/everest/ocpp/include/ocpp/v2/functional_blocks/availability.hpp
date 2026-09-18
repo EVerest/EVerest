@@ -58,6 +58,11 @@ public:
                                                             AvailabilityChange availability_change) = 0;
 
     ///
+    /// \brief Drop every scheduled change availability request that was queued with persist == false.
+    ///
+    virtual void drop_non_persistent_scheduled_changes() = 0;
+
+    ///
     /// \brief Set the heartbeat timer interval.
     /// \param interval The interval in seconds.
     ///
@@ -115,6 +120,7 @@ public:
     void handle_scheduled_change_availability_requests(const std::int32_t evse_id) override;
     void set_scheduled_change_availability_requests(const std::int32_t evse_id,
                                                     AvailabilityChange availability_change) override;
+    void drop_non_persistent_scheduled_changes() override;
 
     void set_heartbeat_timer_interval(const std::chrono::seconds& interval) override;
     void stop_heartbeat_timer() override;
