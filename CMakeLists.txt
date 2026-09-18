@@ -85,6 +85,9 @@ option(EVEREST_ENABLE_COVERAGE "Enable code coverage instrumentation and coverag
 option(EVEREST_BUILD_APPLICATIONS "Build applications like drivers for the EVerest stable API" ON)
 option(EVEREST_LIBS_ONLY "Only build libraries, skip modules/applications/config" OFF)
 option(EVEREST_IO_WITH_MQTT "Build MQTT (mosquitto) support in everest::io" ON)
+# Also declared by everest-framework, but everest-generate.cmake reads it before
+# that subdirectory is added, so a -D would only be seen as a raw cache entry.
+option(EVEREST_ENABLE_RS_SUPPORT "Enable everestrs for Rust modules" OFF)
 set(EVEREST_INCLUDE_LIBS "" CACHE STRING "Semicolon-separated allowlist of libraries to build (empty = all)")
 set(EVEREST_EXCLUDE_LIBS "" CACHE STRING "Semicolon-separated blocklist of libraries to skip")
 # list of compile options that are passed to modules if EVEREST_ENABLE_COMPILE_WARNINGS=ON
