@@ -105,10 +105,6 @@ template <> void insert_type(VariantAccess& va, const struct iso2_PowerDeliveryR
     va.insert_type<PowerDeliveryRequest>(in);
 }
 
-template <> void insert_type(VariantAccess& va, const struct iso2_PowerDeliveryResType& in) {
-    va.insert_type<PowerDeliveryResponse>(in);
-}
-
 template <> int serialize_to_exi(const PowerDeliveryRequest& in, exi_bitstream_t& out) {
     iso2_exiDocument doc{};
     convert(in.header, doc.V2G_Message.Header);

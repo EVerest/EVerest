@@ -17,6 +17,7 @@
 
 namespace iso15118::message_2 {
 
+// Decodes only what the SECC receives, so no *Res type. An EV side would need a variant of its own.
 class Variant {
 public:
     using CustomDeleter = void (*)(void*);

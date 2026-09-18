@@ -37,12 +37,11 @@ SCENARIO("Se/Deserialize ISO-2 cable check messages") {
         res.evse_processing = EVSEProcessing::Ongoing;
 
         const auto serialized = serialize_helper(res);
-        const io::StreamInputView stream_view{serialized.data(), serialized.size()};
-        message_2::Variant variant(stream_view);
+        const auto doc = decode_helper(serialized);
 
-        THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_2::Type::CableCheckRes);
-            const auto& msg = variant.get<message_2::CableCheckResponse>();
+        THEN("The encoded response converts back field for field") {
+            REQUIRE(doc.V2G_Message.Body.CableCheckRes_isUsed);
+            const auto msg = to_response<message_2::CableCheckResponse>(doc, doc.V2G_Message.Body.CableCheckRes);
             REQUIRE(msg.response_code == ResponseCode::OK);
             REQUIRE(msg.evse_processing == EVSEProcessing::Ongoing);
             REQUIRE(msg.dc_evse_status.isolation_status.has_value());

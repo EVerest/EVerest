@@ -35,12 +35,11 @@ SCENARIO("Se/Deserialize ISO-2 authorization messages") {
         res.evse_processing = EVSEProcessing::Finished;
 
         const auto serialized = serialize_helper(res);
-        const io::StreamInputView stream_view{serialized.data(), serialized.size()};
-        message_2::Variant variant(stream_view);
+        const auto doc = decode_helper(serialized);
 
-        THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_2::Type::AuthorizationRes);
-            const auto& msg = variant.get<message_2::AuthorizationResponse>();
+        THEN("The encoded response converts back field for field") {
+            REQUIRE(doc.V2G_Message.Body.AuthorizationRes_isUsed);
+            const auto msg = to_response<message_2::AuthorizationResponse>(doc, doc.V2G_Message.Body.AuthorizationRes);
             REQUIRE(msg.response_code == ResponseCode::OK);
             REQUIRE(msg.evse_processing == EVSEProcessing::Finished);
         }

@@ -32,6 +32,25 @@ SCENARIO("Se/Deserialize DIN contract authentication messages") {
         }
     }
 
+    GIVEN("Serialize and deserialize contract_authentication_req with Id and GenChallenge") {
+        ContractAuthenticationRequest req;
+        req.header.session_id = session_id;
+        req.id = "id1";
+        req.gen_challenge = "foo";
+
+        const auto bytes = serialize_helper(req);
+
+        THEN("Both optional elements survive the round-trip") {
+            const io::StreamInputView view{bytes.data(), bytes.size()};
+            message_din::Variant variant(view);
+
+            REQUIRE(variant.get_type() == Type::ContractAuthenticationReq);
+            const auto& msg = variant.get<ContractAuthenticationRequest>();
+            REQUIRE(msg.id == "id1");
+            REQUIRE(msg.gen_challenge == "foo");
+        }
+    }
+
     GIVEN("Serialize and deserialize contract_authentication_res") {
         ContractAuthenticationResponse res;
         res.header.session_id = session_id;
@@ -40,12 +59,11 @@ SCENARIO("Se/Deserialize DIN contract authentication messages") {
 
         const auto bytes = serialize_helper(res);
 
-        THEN("It round-trips through the Variant") {
-            const io::StreamInputView view{bytes.data(), bytes.size()};
-            message_din::Variant variant(view);
-
-            REQUIRE(variant.get_type() == Type::ContractAuthenticationRes);
-            const auto& msg = variant.get<ContractAuthenticationResponse>();
+        THEN("The encoded response converts back field for field") {
+            const auto doc = decode_helper(bytes);
+            REQUIRE(doc.V2G_Message.Body.ContractAuthenticationRes_isUsed);
+            const auto msg =
+                to_response<ContractAuthenticationResponse>(doc, doc.V2G_Message.Body.ContractAuthenticationRes);
             REQUIRE(msg.header.session_id == session_id);
             REQUIRE(msg.response_code == datatypes::ResponseCode::OK);
             REQUIRE(msg.evse_processing == datatypes::EvseProcessing::Finished);

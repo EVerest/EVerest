@@ -35,10 +35,6 @@ template <> void insert_type(VariantAccess& va, const struct iso2_SessionSetupRe
     va.insert_type<SessionSetupRequest>(in);
 }
 
-template <> void insert_type(VariantAccess& va, const struct iso2_SessionSetupResType& in) {
-    va.insert_type<SessionSetupResponse>(in);
-}
-
 template <> int serialize_to_exi(const SessionSetupRequest& in, exi_bitstream_t& out) {
     iso2_exiDocument doc{};
     convert(in.header, doc.V2G_Message.Header);
