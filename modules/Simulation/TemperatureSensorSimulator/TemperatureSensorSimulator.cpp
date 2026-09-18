@@ -12,4 +12,8 @@ void TemperatureSensorSimulator::ready() {
     invoke_ready(*p_temperature_sensor);
 }
 
+void TemperatureSensorSimulator::shutdown() {
+    invoke_shutdown(*p_temperature_sensor);
+}
+
 } // namespace module
