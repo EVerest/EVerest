@@ -133,7 +133,7 @@ public:
         r_data_transfer(std::move(r_data_transfer)),
         r_display_message(std::move(r_display_message)),
         r_extensions_15118(std::move(r_extensions_15118)),
-        config(config){};
+        config(config) {};
 
     Everest::MqttProvider& mqtt;
     const std::unique_ptr<ocpp_1_6_charge_pointImplBase> p_main;
@@ -161,8 +161,10 @@ public:
     std::unique_ptr<Everest::SteadyTimer> charging_schedules_timer;
     bool ocpp_stopped = false;
 
-    // Return the OCPP connector id from a pair of EVerest EVSE id and connector
-    // id
+    /**
+     * @brief Returns the OCPP connector id for the given EVerest @p evse_id and @p connector_id.
+     * @throws std::out_of_range if the evse is not connected to this module instance.
+     */
     int32_t get_ocpp_connector_id(int32_t evse_id, int32_t connector_id);
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
@@ -189,10 +191,25 @@ private:
     void init_evse_maps();
     void init_module_configuration();
     void handle_config_key(const ocpp::v16::KeyValue& kv);
-    EvseConnectorMap evse_connector_map;                 // provides access to OCPP connector id by using
-                                                         // EVerests evse and connector id
-    std::map<int32_t, int32_t> connector_evse_index_map; // provides access to r_evse_manager index by
-                                                         // using OCPP connector id
+
+    // evse_index is the 1-based position within r_evse_manager
+    EvseConnectorMap evse_connector_map;                 // evse_index -> (EVerest connector id -> OCPP connector id)
+    std::map<int32_t, int32_t> connector_evse_index_map; // OCPP connector id -> 0-based index into r_evse_manager
+    std::map<int32_t, int32_t> evse_index_by_everest_evse_id;        // EVerest evse id -> 1-based evse index
+    std::map<int32_t, int32_t> everest_evse_id_by_ocpp_connector_id; // OCPP connector id -> EVerest evse id
+
+    /**
+     * @brief Translates an EVerest @p everest_evse_id into the OCPP connector id of its first connector. 0 maps to 0.
+     * @returns std::nullopt if the evse is not connected to this module instance.
+     */
+    std::optional<int32_t> to_ocpp_connector_id(int32_t everest_evse_id) const;
+
+    /**
+     * @brief Translates an @p ocpp_connector_id into the EVerest evse id it belongs to. 0 maps to 0.
+     * Unknown ids are returned unchanged (with a warning) so that the caller degrades gracefully.
+     */
+    int32_t to_everest_evse_id(int32_t ocpp_connector_id) const;
+
     everest::lib::util::monitor<std::map<int32_t, bool>> evse_ready_map;
     everest::lib::util::monitor<std::map<int32_t, std::optional<float>>> evse_soc_map;
     std::set<std::string> resuming_session_ids;
@@ -200,7 +217,7 @@ private:
     std::mutex event_mutex;
     bool started{false};
     std::queue<Event> event_queue;
-    void process_session_event(int32_t evse_id, const types::evse_manager::SessionEvent& session_event);
+    void process_session_event(int32_t evse_index, const types::evse_manager::SessionEvent& session_event);
 
     std::string source_ext_limit;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
