@@ -11,11 +11,25 @@
 
 namespace iso15118::d2::state {
 
+namespace {
+// Table 28: the ServiceList is filtered by the ServiceScope and ServiceCategory of the request. The
+// ChargeService is exempt.
+bool matches_request(const dt::Service& service, const message_2::ServiceDiscoveryRequest& req) {
+    if (req.service_category.has_value() and service.service_category != req.service_category.value()) {
+        return false;
+    }
+    if (req.service_scope.has_value() and service.service_scope != req.service_scope) {
+        return false;
+    }
+    return true;
+}
+} // namespace
+
 message_2::ServiceDiscoveryResponse handle_request(
-    [[maybe_unused]] const message_2::ServiceDiscoveryRequest& req, const dt::SessionId& session_id,
-    uint16_t charge_service_id, const everest::lib::util::fixed_vector<dt::EnergyTransferMode, 6>& supported_modes,
-    bool offer_eim, bool offer_contract, bool cert_service_offered,
-    const std::optional<dt::PaymentOption>& resumed_payment_option, const dt::ServiceList& offered_vas_services) {
+    const message_2::ServiceDiscoveryRequest& req, const dt::SessionId& session_id, uint16_t charge_service_id,
+    const everest::lib::util::fixed_vector<dt::EnergyTransferMode, 6>& supported_modes, bool offer_eim,
+    bool offer_contract, bool cert_service_offered, const std::optional<dt::PaymentOption>& resumed_payment_option,
+    const dt::ServiceList& offered_vas_services) {
     message_2::ServiceDiscoveryResponse res;
     res.header.session_id = session_id;
     res.response_code = dt::ResponseCode::OK;
@@ -36,29 +50,37 @@ message_2::ServiceDiscoveryResponse handle_request(
 
     // [V2G2-410/416/417]: without the advertisement the relay still works but is undiscoverable. Gated
     // separately from the Contract payment option, so a Contract-auth-only SECC does not advertise it.
+    dt::ServiceList service_list;
     if (cert_service_offered) {
-        auto& service_list = res.service_list.emplace();
         dt::Service cert_service;
         cert_service.service_id = dt::CERTIFICATE_SERVICE_ID;
         cert_service.service_name = "Certificate";
         cert_service.service_category = dt::ServiceCategory::ContractCertificate;
         cert_service.free_service = true;
-        service_list.push_back(cert_service);
+        if (matches_request(cert_service, req)) {
+            service_list.push_back(cert_service);
+        }
     }
 
-    // Already filtered and sized by make_d2_config so they fit next to the Certificate service.
+    // Already sized by make_d2_config so they fit next to the Certificate service.
     for (const auto& vas : offered_vas_services) {
-        if (not res.service_list.has_value()) {
-            res.service_list.emplace();
+        if (not matches_request(vas, req)) {
+            continue;
         }
-        if (res.service_list->try_emplace_back(vas) == nullptr) {
+        if (service_list.try_emplace_back(vas) == nullptr) {
             logf_warning("ServiceList full; dropping VAS ServiceID %u", vas.service_id);
             break;
         }
     }
 
+    // ServiceListType needs at least one Service, so a filtered-out list is omitted rather than sent empty.
+    if (not service_list.empty()) {
+        res.service_list = std::move(service_list);
+    }
+
     auto& charge_service = res.charge_service;
     charge_service.service_id = charge_service_id;
+    charge_service.service_name = "AC_DC_Charging"; // Table 105, [V2G2-417]
     charge_service.service_category = dt::ServiceCategory::EVCharging;
     charge_service.free_service = true;
     charge_service.supported_energy_transfer_mode = supported_modes;

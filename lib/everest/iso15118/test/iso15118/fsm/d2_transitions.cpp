@@ -321,6 +321,8 @@ SCENARIO("ISO 15118-2 SECC handshake state transitions") {
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::OK);
                 REQUIRE(res->charge_service.service_id == CHARGE_SERVICE_ID);
+                REQUIRE(res->charge_service.service_name == "AC_DC_Charging");
+                REQUIRE(res->charge_service.service_category == dt::ServiceCategory::EVCharging);
             }
         }
     }
@@ -1162,6 +1164,91 @@ SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
                 const auto res = secc.fsm.response<message_2::CertificateInstallationResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO 15118-2 SECC ServiceDiscovery filtering by scope and category") {
+    auto config = make_pnc_config();
+
+    dt::Service parking;
+    parking.service_id = 42;
+    parking.service_name = "Parking";
+    parking.service_category = dt::ServiceCategory::OtherCustom;
+    parking.service_scope = "urn:example:parking";
+    parking.free_service = true;
+    config.offered_vas_services.push_back(parking);
+
+    dt::Service internet;
+    internet.service_id = 3;
+    internet.service_name = "InternetAccess";
+    internet.service_category = dt::ServiceCategory::Internet;
+    internet.free_service = false;
+    config.offered_vas_services.push_back(internet);
+
+    const auto service_ids = [](const message_2::ServiceDiscoveryResponse& res) {
+        std::vector<uint16_t> ids;
+        if (res.service_list.has_value()) {
+            for (const auto& service : *res.service_list) {
+                ids.push_back(service.service_id);
+            }
+        }
+        return ids;
+    };
+
+    GIVEN("A machine in ServiceDiscovery offering the Certificate service and two VAS") {
+        Secc secc(config, {});
+        to_service_discovery(secc);
+
+        WHEN("The EV sends a ServiceDiscoveryReq without scope or category") {
+            secc.drive(message_2::ServiceDiscoveryRequest{});
+
+            THEN("Every service is listed") {
+                const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(service_ids(*res) == std::vector<uint16_t>{dt::CERTIFICATE_SERVICE_ID, 42, 3});
+            }
+        }
+
+        WHEN("The EV asks for the Internet category") {
+            message_2::ServiceDiscoveryRequest req;
+            req.service_category = dt::ServiceCategory::Internet;
+            secc.drive(req);
+
+            THEN("Only the Internet service is listed and the charge service is untouched") {
+                const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                REQUIRE(service_ids(*res) == std::vector<uint16_t>{3});
+                REQUIRE(res->charge_service.service_id == CHARGE_SERVICE_ID);
+                REQUIRE(secc.fsm.state() == StateID::ServiceSelection);
+            }
+        }
+
+        WHEN("The EV asks for the parking provider's scope") {
+            message_2::ServiceDiscoveryRequest req;
+            req.service_scope = "urn:example:parking";
+            secc.drive(req);
+
+            THEN("Only the service carrying that scope is listed") {
+                const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(service_ids(*res) == std::vector<uint16_t>{42});
+            }
+        }
+
+        WHEN("The EV asks for a category nothing matches") {
+            message_2::ServiceDiscoveryRequest req;
+            req.service_category = dt::ServiceCategory::EVCharging;
+            secc.drive(req);
+
+            THEN("The ServiceList is omitted and the charge service is still offered") {
+                const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                REQUIRE_FALSE(res->service_list.has_value());
+                REQUIRE(res->charge_service.service_id == CHARGE_SERVICE_ID);
             }
         }
     }
