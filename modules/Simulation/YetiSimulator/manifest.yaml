@@ -30,6 +30,29 @@ config:
     default: 50.0
     minimum: 50.0
     maximum: 60.0
+  ac_line_impedance_ohm:
+    description: >-
+      Line impedance in Ohm per phase between the grid and the simulated power meter. The reported phase voltage
+      drops by ac_line_impedance_ohm * current, so the reported power is below ac_nominal_voltage * current while
+      charging. Set to 0 to always report the nominal voltage.
+    type: number
+    minimum: 0
+    default: 0.5
+  measurement_noise_percent:
+    description: >-
+      Peak amplitude in percent of the uniformly distributed random noise applied to the simulated voltages,
+      currents, CP voltage, PP resistor and RCD current. Set to 0 for deterministic readings. The CP voltage is
+      decoded with a +-1.1 V window, so values above a few percent break the CP state detection.
+    type: number
+    minimum: 0
+    default: 1.0
+  frequency_noise_percent:
+    description: >-
+      Peak amplitude in percent of the uniformly distributed random noise applied to the simulated grid frequency.
+      Set to 0 for a deterministic frequency reading.
+    type: number
+    minimum: 0
+    default: 0.25
   max_current_A_import:
     description: >-
       Maximum import current in amps reported as a hardware capability. The default matches a 32 A AC wallbox. DC
