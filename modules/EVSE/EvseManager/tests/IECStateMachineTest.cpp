@@ -27,6 +27,7 @@ struct BspStub : public module::stub::ModuleAdapterStub {
         _bsp["allow_power_on"] = &BspStub::call_allow_power_on;
         _bsp["enable"] = &BspStub::call_enable;
         _bsp["cp_state_X1"] = &BspStub::call_cp_state_X1;
+        _bsp["cp_state_F"] = &BspStub::call_cp_state_F;
         _bsp["pwm_on"] = &BspStub::call_pwm_on;
     }
 
@@ -56,6 +57,11 @@ struct BspStub : public module::stub::ModuleAdapterStub {
 
     virtual Result call_cp_state_X1(Parameters p) {
         std::cout << "call_cp_state_X1(" << p << ")" << std::endl;
+        return std::nullopt;
+    }
+
+    virtual Result call_cp_state_F(Parameters p) {
+        std::cout << "call_cp_state_F(" << p << ")" << std::endl;
         return std::nullopt;
     }
 
