@@ -325,10 +325,6 @@ void ChargePointImpl::on_websocket_connected(const int configuration_slot,
     this->message_queue->resume(this->message_queue_resume_delay);
     this->connected_callback();
 
-    // There has been a successful connection so a subsequent
-    // InvalidCSMSCertificate should be logged
-    InvalidCSMSCertificate_logged = false;
-
     // signal_set_charging_profiles_callback since composite schedule could have changed if
     // IgnoredProfilePurposesOffline are configured when becoming online
     if (this->signal_set_charging_profiles_callback != nullptr and
@@ -367,14 +363,8 @@ void ChargePointImpl::on_websocket_connection_failed(ocpp::ConnectionFailedReaso
                                         true);
     }
     if (reason == ocpp::ConnectionFailedReason::InvalidCSMSCertificate) {
-        if (InvalidCSMSCertificate_logged) {
-            EVLOG_warning << "Connection failed: InvalidCSMSCertificate";
-        } else {
-            // This event is forced to accommodate TC_078_CS despite this event being not critical
-            this->securityEventNotification(CiString<50>(ocpp::security_events::INVALIDCENTRALSYSTEMCERTIFICATE),
-                                            std::nullopt, true, true);
-            InvalidCSMSCertificate_logged = true;
-        }
+        this->securityEventNotification(CiString<50>(ocpp::security_events::INVALIDCENTRALSYSTEMCERTIFICATE),
+                                        std::nullopt, true, true);
     }
 }
 
