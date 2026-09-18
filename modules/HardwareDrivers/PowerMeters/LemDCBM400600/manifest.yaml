@@ -15,6 +15,14 @@ config:
     description: The DCBM's HTTPS certificate, in PEM format. If provided, HTTPS will be used. If left empty, regular HTTP will be used. Note that this does not affect the default port - specify a port explicitly if you wish to use a port other than 80.
     type: string
     default: ""
+  http_connection_reuse:
+    description: >-
+      Reuse HTTP(S) connections to the power meter across requests. This avoids a TCP connect
+      (and, with TLS, a full TLS handshake) for every poll. Disable to restore the previous
+      behavior of one fresh connection per request, e.g. if the device misbehaves with
+      keep-alive connections.
+    type: boolean
+    default: true
   ntp_server_1_ip_addr:
     description: The IPv4 address (in 4-octet form W.X.Y.Z) of the first NTP server to use for time sync. If this is left empty, NTP will not be configured on the DCBM - its time will be synced with EVerest's system time instead.
     type: string
@@ -130,6 +138,20 @@ config:
     default: 5000
     maximum: 20000
     minimum: 1000
+  poll_interval_ms:
+    description: The interval in milliseconds between polls of the live measurements (publish rate of the powermeter var).
+    type: integer
+    default: 1000
+    minimum: 100
+  transaction_ocmf_fetch_interval_s:
+    description: >-
+      While a transaction is active, the current OCMF record is periodically fetched from the
+      device as a fallback, so a signed meter value is available even if the device becomes
+      unreachable at transaction stop. This option throttles that fetch to at most once every
+      N seconds. The default of 0 fetches on every poll (previous behavior).
+    type: integer
+    default: 0
+    minimum: 0
 
 provides:
   main:
