@@ -45,12 +45,10 @@ SCENARIO("Se/Deserialize DIN cable check messages") {
 
         const auto bytes = serialize_helper(res);
 
-        THEN("It round-trips through the Variant") {
-            const io::StreamInputView view{bytes.data(), bytes.size()};
-            message_din::Variant variant(view);
-
-            REQUIRE(variant.get_type() == Type::CableCheckRes);
-            const auto& msg = variant.get<CableCheckResponse>();
+        THEN("The encoded response converts back field for field") {
+            const auto doc = decode_helper(bytes);
+            REQUIRE(doc.V2G_Message.Body.CableCheckRes_isUsed);
+            const auto msg = to_response<CableCheckResponse>(doc, doc.V2G_Message.Body.CableCheckRes);
             REQUIRE(msg.header.session_id == session_id);
             REQUIRE(msg.response_code == datatypes::ResponseCode::OK);
             REQUIRE(msg.dc_evse_status.evse_isolation_status.has_value());

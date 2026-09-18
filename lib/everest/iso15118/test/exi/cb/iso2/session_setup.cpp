@@ -41,17 +41,16 @@ SCENARIO("Se/Deserialize ISO-2 session setup messages") {
 
         const auto serialized = serialize_helper(res);
 
-        const io::StreamInputView stream_view{serialized.data(), serialized.size()};
-        message_2::Variant variant(stream_view);
+        const auto doc = decode_helper(serialized);
 
-        THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_2::Type::SessionSetupRes);
-            const auto& msg = variant.get<message_2::SessionSetupResponse>();
+        THEN("The encoded response converts back field for field") {
+            REQUIRE(doc.V2G_Message.Body.SessionSetupRes_isUsed);
+            const auto msg = to_response<message_2::SessionSetupResponse>(doc, doc.V2G_Message.Body.SessionSetupRes);
             REQUIRE(msg.response_code == message_2::datatypes::ResponseCode::OK_NewSessionEstablished);
             REQUIRE(msg.evse_id == "DE*PNX*E12345*1");
             REQUIRE(msg.evse_timestamp.has_value());
             REQUIRE(msg.evse_timestamp.value() == 1739635913);
-            REQUIRE(variant.get_session_id() == res.header.session_id);
+            REQUIRE(msg.header.session_id == res.header.session_id);
         }
     }
 

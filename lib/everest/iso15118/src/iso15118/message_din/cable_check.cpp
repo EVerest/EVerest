@@ -35,10 +35,6 @@ template <> void insert_type(VariantAccess& va, const struct din_CableCheckReqTy
     va.insert_type<CableCheckRequest>(in);
 }
 
-template <> void insert_type(VariantAccess& va, const struct din_CableCheckResType& in) {
-    va.insert_type<CableCheckResponse>(in);
-}
-
 template <> int serialize_to_exi(const CableCheckRequest& in, exi_bitstream_t& out) {
     din_exiDocument doc;
     init_din_exiDocument(&doc);

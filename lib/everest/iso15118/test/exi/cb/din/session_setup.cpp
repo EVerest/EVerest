@@ -68,12 +68,10 @@ SCENARIO("Se/Deserialize DIN session setup messages") {
 
         const auto bytes = serialize_helper(res);
 
-        THEN("It round-trips through the Variant") {
-            const io::StreamInputView view{bytes.data(), bytes.size()};
-            message_din::Variant variant(view);
-
-            REQUIRE(variant.get_type() == Type::SessionSetupRes);
-            const auto& msg = variant.get<SessionSetupResponse>();
+        THEN("The encoded response converts back field for field") {
+            const auto doc = decode_helper(bytes);
+            REQUIRE(doc.V2G_Message.Body.SessionSetupRes_isUsed);
+            const auto msg = to_response<SessionSetupResponse>(doc, doc.V2G_Message.Body.SessionSetupRes);
             REQUIRE(msg.header.session_id == res.header.session_id);
             REQUIRE(msg.response_code == datatypes::ResponseCode::OK_NewSessionEstablished);
             REQUIRE(msg.evse_id == res.evse_id);

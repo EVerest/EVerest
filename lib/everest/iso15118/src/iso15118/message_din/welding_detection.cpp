@@ -37,10 +37,6 @@ template <> void insert_type(VariantAccess& va, const struct din_WeldingDetectio
     va.insert_type<WeldingDetectionRequest>(in);
 }
 
-template <> void insert_type(VariantAccess& va, const struct din_WeldingDetectionResType& in) {
-    va.insert_type<WeldingDetectionResponse>(in);
-}
-
 template <> int serialize_to_exi(const WeldingDetectionRequest& in, exi_bitstream_t& out) {
     din_exiDocument doc;
     init_din_exiDocument(&doc);
