@@ -1178,6 +1178,7 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
     std::vector<OcspCache::ocsp_entry_t> entries;
     openssl::chain_list chains;
     m_default_chain_index = 0;
+    bool any_trust_anchors{false};
 
     std::size_t config_index{0};
     for (const auto& i : chain_files) {
@@ -1209,25 +1210,40 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
                 log_warning("<n> certificates != <n> OCSP responses");
             }
 
+            switch (i.tls_version) {
+            case TlsVersion::tls_1_2:
+                chain.tls_version = TLS1_2_VERSION;
+                break;
+            case TlsVersion::tls_1_3:
+                chain.tls_version = TLS1_3_VERSION;
+                break;
+            case TlsVersion::any:
+            default:
+                chain.tls_version = 0;
+                break;
+            }
+
             /*
              * If there are no trust anchors then the chain can't be verified
-             * it also means that trusted_ca_keys can't be supported for the
-             * chain.
+             * and trusted_ca_keys can't match it (matching is on the anchors).
+             * The chain is still kept so that it can be selected by the
+             * negotiated TLS version.
              */
+
+            chain.chain.leaf = std::move(certs[0]);
+            // remove server cert from intermediate list
+            certs.erase(certs.begin());
+            chain.chain.chain = std::move(certs);
+            chain.private_key = std::move(pkey);
 
             if (!tas.empty()) {
                 // update trusted CA keys information
-                chain.chain.leaf = std::move(certs[0]);
-                // remove server cert from intermediate list
-                certs.erase(certs.begin());
-                chain.chain.chain = std::move(certs);
                 chain.chain.trust_anchors = std::move(tas);
-                chain.private_key = std::move(pkey);
-
                 if (openssl::verify_chain(chain)) {
                     if (chains.empty()) {
                         m_default_chain_index = config_index;
                     }
+                    any_trust_anchors = true;
                     chains.emplace_back(std::move(chain));
                 } else {
                     const auto subject = openssl::certificate_subject(chain.chain.leaf.get());
@@ -1242,7 +1258,7 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
                     log_warning(msg);
                 }
             } else {
-                const auto subject = openssl::certificate_subject(certs[0].get());
+                const auto subject = openssl::certificate_subject(chain.chain.leaf.get());
                 std::string msg("No trust anchors for certificate:");
                 for (const auto& item : subject) {
                     msg += ' ';
@@ -1251,6 +1267,7 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
                     msg += item.second;
                 }
                 log_warning(msg);
+                chains.emplace_back(std::move(chain));
             }
         } else {
             const auto* file = static_cast<const char*>(i.certificate_chain_file);
@@ -1263,7 +1280,7 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
 
     bool result{true};
 
-    if (chains.empty()) {
+    if (!any_trust_anchors) {
         // continue without trusted_ca_keys support
         log_warning("trusted_ca_keys support disabled");
         if (!chain_files.empty()) {
