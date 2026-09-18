@@ -9,10 +9,17 @@ namespace v2 {
 
 void MessageDispatcher::dispatch_call(const json& call, bool triggered) {
     const auto message_type = conversions::string_to_messagetype(call.at(CALL_ACTION));
+    // NotifyEvent is fire-and-forget, so discarding it before registration is accepted loses the event
+    // (e.g. the cause of a fault already active at boot) permanently
+    const bool queue_until_accepted =
+        message_type == MessageType::NotifyEvent and
+        this->device_model.get_optional_value<bool>(ControllerComponentVariables::QueueNotifyEventMessages)
+            .value_or(false);
     const auto message_transmission_priority = get_message_transmission_priority(
         is_boot_notification_message(message_type), triggered,
         (this->registration_status == RegistrationStatusEnum::Accepted), is_transaction_message(message_type),
-        this->device_model.get_optional_value<bool>(ControllerComponentVariables::QueueAllMessages).value_or(false));
+        this->device_model.get_optional_value<bool>(ControllerComponentVariables::QueueAllMessages).value_or(false),
+        queue_until_accepted);
     switch (message_transmission_priority) {
     case MessageTransmissionPriority::SendImmediately:
         this->message_queue.push_call(call);
