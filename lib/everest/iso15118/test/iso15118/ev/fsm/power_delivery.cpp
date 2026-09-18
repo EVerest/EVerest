@@ -4,6 +4,7 @@
 
 #include "helper.hpp"
 
+#include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/power_delivery.hpp>
@@ -59,8 +60,94 @@ SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_WeldingDetection on Sto
     REQUIRE(primed.ctx.is_session_stopped() == false);
 }
 
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_ChargeLoop on OK response for DC_BPT") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, message_20::datatypes::ServiceCategory::DC_BPT,
+                                                      no_seed, Progress::Start};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_WeldingDetection on Stop for DC_BPT") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, message_20::datatypes::ServiceCategory::DC_BPT,
+                                                      no_seed, Progress::Stop};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_WeldingDetection);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to AC_ChargeLoop on OK response for AC") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC, no_seed, Progress::Start};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to SessionStop on Stop for AC") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC, no_seed, Progress::Stop};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
 // AC_BPT rides the same is_ac_family() branch as AC. Widening that predicate for
 // AC_DER_IEC must not drop AC_BPT out of the AC dispatch onto the DC path.
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to AC_ChargeLoop on OK response for AC_BPT") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC_BPT, no_seed, Progress::Start};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to SessionStop on Stop for AC_BPT") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC_BPT, no_seed, Progress::Stop};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to AC_DER_IEC_ChargeLoop on OK for AC_DER_IEC") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC_DER_IEC, no_seed, Progress::Start};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_DER_IEC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
 SCENARIO("ISO15118-20 EV PowerDelivery accepts OK_PowerToleranceConfirmed") {
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, no_seed, Progress::Start};
@@ -162,4 +249,61 @@ SCENARIO("ISO15118-20 EV PowerDelivery omits the power profile when no ScheduleT
     const auto request_message = requests.get<message_20::PowerDeliveryRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE_FALSE(request_message->power_profile.has_value());
+}
+
+namespace {
+using message_20::datatypes::AcConnector;
+
+// A three-line EV advertising 12 kW in total, on the connector the SECC offered. The total divides
+// evenly by three so the assertions are exact through RationalNumber's two-significant-digit
+// exponent quantisation.
+auto seed_scheduled_ac(AcConnector connector) {
+    return [connector](FsmStateHelper& helper) {
+        ev::AcChargeParams params{};
+        params.phase_count = 3;
+        params.max_charge_power = 12000.0f;
+        helper.set_ac_params(params);
+        helper.get_context().set_selected_control_mode(ControlMode::Scheduled);
+        helper.get_context().set_selected_ac_connector(connector);
+        helper.get_context().set_selected_schedule_tuple_id(3);
+    };
+}
+} // namespace
+
+SCENARIO("ISO15118-20 EV PowerDelivery splits the Scheduled AC power profile across the connector") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC,
+                                                      seed_scheduled_ac(AcConnector::ThreePhase), Progress::Start};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->power_profile.has_value());
+    const auto& entry = request_message->power_profile.value().entries.at(0);
+
+    // ThreePhase with peers: the base element is L1 alone, so the three lines must each carry
+    // their share or the declared total is a third of what ChargeParameterDiscovery advertised.
+    REQUIRE(message_20::datatypes::from_RationalNumber(entry.power) == 4000.0f);
+    REQUIRE(entry.power_l2.has_value());
+    REQUIRE(entry.power_l3.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(entry.power_l2.value()) == 4000.0f);
+    REQUIRE(message_20::datatypes::from_RationalNumber(entry.power_l3.value()) == 4000.0f);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery declares one line's share on a SinglePhase connector") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC,
+                                                      seed_scheduled_ac(AcConnector::SinglePhase), Progress::Start};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->power_profile.has_value());
+    const auto& entry = request_message->power_profile.value().entries.at(0);
+
+    // The regression: a three-line EV on a one-line connector used to declare the full 12 kW here
+    // while AC_ChargeParameterDiscoveryReq advertised 12000/3 on that same line.
+    REQUIRE(message_20::datatypes::from_RationalNumber(entry.power) == 4000.0f);
+    REQUIRE_FALSE(entry.power_l2.has_value());
+    REQUIRE_FALSE(entry.power_l3.has_value());
 }

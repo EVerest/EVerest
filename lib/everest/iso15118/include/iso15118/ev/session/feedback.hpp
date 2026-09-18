@@ -5,8 +5,16 @@
 #include <functional>
 #include <string>
 
+#include <iso15118/d20/ac_powers.hpp>
 #include <iso15118/ev/d20/evse_session_info.hpp>
 #include <iso15118/io/ipv6_endpoint.hpp>
+#include <iso15118/message/ac_charge_loop.hpp>
+#include <iso15118/message/ac_charge_parameter_discovery.hpp>
+#include <iso15118/message/ac_der_iec_charge_loop.hpp>
+#include <iso15118/message/ac_der_iec_charge_parameter_discovery.hpp>
+#include <iso15118/message/dc_charge_parameter_discovery.hpp>
+#include <iso15118/message/session_setup.hpp>
+#include <iso15118/message/type.hpp>
 #include <iso15118/message/v2g_message_type.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/protocol.hpp>
@@ -40,6 +48,16 @@ struct Callbacks {
     std::function<void()> ev_power_ready;
     std::function<void()> dc_power_on;
     std::function<void()> stop_from_charger;
+    std::function<void(const message_20::datatypes::AC_CPDResEnergyTransferMode&)> ac_limits;
+    std::function<void(const message_20::datatypes::BPT_AC_CPDResEnergyTransferMode&)> ac_bpt_limits;
+    // The DER response derives from the AC one and adds the discharge limits, the operating
+    // mode and the grid-connection mode. Binding it to ac_limits would slice all of those off.
+    std::function<void(const message_20::datatypes::DER_AC_CPDResEnergyTransferMode&)> ac_der_limits;
+    std::function<void(const message_20::datatypes::BPT_DC_CPDResEnergyTransferMode&)> dc_bpt_limits;
+    // Set point from a Dynamic or Scheduled AC charge loop response.
+    std::function<void(const iso15118::d20::AcTargetPower&)> ac_target_power;
+    std::function<void(const message_20::datatypes::DER_Dynamic_AC_CLResControlMode&)> der_control;
+    std::function<void(const message_20::datatypes::DerControl&)> der_curves;
 };
 
 } // namespace iso15118::ev::feedback
@@ -64,6 +82,13 @@ public:
     void ev_power_ready() const;
     void dc_power_on() const;
     void stop_from_charger() const;
+    void ac_limits(const message_20::datatypes::AC_CPDResEnergyTransferMode&) const;
+    void ac_bpt_limits(const message_20::datatypes::BPT_AC_CPDResEnergyTransferMode&) const;
+    void ac_der_limits(const message_20::datatypes::DER_AC_CPDResEnergyTransferMode&) const;
+    void dc_bpt_limits(const message_20::datatypes::BPT_DC_CPDResEnergyTransferMode&) const;
+    void ac_target_power(const iso15118::d20::AcTargetPower&) const;
+    void der_control(const message_20::datatypes::DER_Dynamic_AC_CLResControlMode&) const;
+    void der_curves(const message_20::datatypes::DerControl&) const;
 
 private:
     feedback::Callbacks callbacks;

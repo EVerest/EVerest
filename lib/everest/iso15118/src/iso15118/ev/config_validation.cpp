@@ -50,15 +50,40 @@ std::vector<std::string> validate_config(const EvConfig& config) {
     return problems;
 }
 
+std::vector<std::string> validate_ac_charge_params(const AcChargeParams& params) {
+    std::vector<std::string> problems;
+
+    if (params.phase_count != 1 and params.phase_count != 3) {
+        problems.emplace_back("ac phase_count must be 1 or 3 (is " + std::to_string(params.phase_count) + ")");
+    }
+
+    check_non_negative(problems, "ac max_charge_power", params.max_charge_power);
+    check_non_negative(problems, "ac min_charge_power", params.min_charge_power);
+    check_non_negative(problems, "ac max_discharge_power", params.max_discharge_power);
+    check_non_negative(problems, "ac min_discharge_power", params.min_discharge_power);
+
+    check_min_not_above_max(problems, "ac min_charge_power", params.min_charge_power, "ac max_charge_power",
+                            params.max_charge_power);
+    check_min_not_above_max(problems, "ac min_discharge_power", params.min_discharge_power, "ac max_discharge_power",
+                            params.max_discharge_power);
+
+    return problems;
+}
+
 std::vector<std::string> validate_dc_charge_params(const DcChargeParams& params) {
     std::vector<std::string> problems;
 
     check_non_negative(problems, "dc max_charge_power", params.max_charge_power);
     check_non_negative(problems, "dc max_charge_current", params.max_charge_current);
+    check_non_negative(problems, "dc max_discharge_power", params.max_discharge_power);
+    check_non_negative(problems, "dc min_discharge_power", params.min_discharge_power);
+    check_non_negative(problems, "dc max_discharge_current", params.max_discharge_current);
     check_non_negative(problems, "dc max_voltage", params.max_voltage);
     check_non_negative(problems, "dc min_voltage", params.min_voltage);
     check_non_negative(problems, "dc energy_capacity", params.energy_capacity);
 
+    check_min_not_above_max(problems, "dc min_discharge_power", params.min_discharge_power, "dc max_discharge_power",
+                            params.max_discharge_power);
     check_min_not_above_max(problems, "dc min_voltage", params.min_voltage, "dc max_voltage", params.max_voltage);
 
     return problems;
