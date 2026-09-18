@@ -261,14 +261,41 @@ std::optional<ProtocolId> Session::feed_fsm(d20::Event ev) {
 }
 
 void Session::switch_engine(ProtocolId protocol) {
-    // Only ISO 15118-20 has an engine here; the other generations arrive with their own layers.
-    // A SAP offer that names one of them and gets it back has nowhere to go.
-    logf_error("EV negotiated %s, which this build has no engine for; stopping the session",
-               protocol_id_to_string(protocol));
-    with_engine(engine, [](auto& e) {
-        e.stop();
-        e.discard_request();
+    // Carry the latches of the SAP phase into the new engine.
+    const bool stop_requested = with_engine(engine, [](auto& e) { return e.context().is_stop_charging_requested(); });
+    const bool pause_requested = with_engine(engine, [](auto& e) { return e.context().is_pause_charging_requested(); });
+    const bool cp_c_or_d = with_engine(engine, [](auto& e) { return e.context().cp_state_c_or_d(); });
+
+    if (protocol == ProtocolId::ISO15118_2) {
+        engine.emplace<d2::Engine>(callbacks, params, active_control_event, dc_params, has_cp_state_feedback,
+                                   resumed_session_id);
+    } else {
+        logf_error("EV negotiated %s, which this build has no engine for; stopping the session",
+                   protocol_id_to_string(protocol));
+        with_engine(engine, [](auto& e) {
+            e.stop();
+            e.discard_request();
+        });
+        return;
+    }
+    logf_info("EV switched to the %s engine", protocol_id_to_string(protocol));
+
+    with_engine(engine, [&](auto& e) {
+        if (stop_requested) {
+            e.latch(d20::ControlEvent{d20::StopCharging{true}});
+        }
+        if (pause_requested) {
+            e.latch(d20::ControlEvent{d20::PauseCharging{true}});
+        }
+        if (cp_c_or_d) {
+            e.latch(d20::ControlEvent{d20::CpState{true}});
+        }
+        e.start();
     });
+    update_ongoing_guard(true);
+    if (with_engine(engine, [](auto& e) { return e.has_request(); })) {
+        arm_send_delay();
+    }
 }
 
 void Session::set_transport_security(io::v2gtp::Security security) {
