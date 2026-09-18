@@ -25,6 +25,7 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
             REQUIRE(res.payment_option_list.size() == 1);
             REQUIRE(res.payment_option_list[0] == dt::PaymentOption::ExternalPayment);
             REQUIRE(res.charge_service.service_id == 1);
+            REQUIRE(res.charge_service.service_name == "AC_DC_Charging");
             REQUIRE(res.charge_service.service_category == dt::ServiceCategory::EVCharging);
             const auto& adv = res.charge_service.supported_energy_transfer_mode;
             REQUIRE(std::find(adv.begin(), adv.end(), dt::EnergyTransferMode::DC_extended) != adv.end());
@@ -116,6 +117,32 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
             REQUIRE(res.service_list.has_value());
             REQUIRE(res.service_list->size() == 2);
             REQUIRE(res.service_list->front().service_id == 3);
+        }
+
+        THEN("a requested ServiceCategory narrows the ServiceList (Table 28) but never the ChargeService") {
+            message_2::ServiceDiscoveryRequest filtered;
+            filtered.service_category = dt::ServiceCategory::OtherCustom;
+            const auto res = d2::state::handle_request(filtered, id, 1, modes, true, true,
+                                                       /*cert_service_offered=*/true, std::nullopt, vas);
+            REQUIRE(res.service_list.has_value());
+            REQUIRE(res.service_list->size() == 1);
+            REQUIRE(res.service_list->front().service_id == 42);
+            REQUIRE(res.charge_service.service_id == 1);
+        }
+
+        THEN("a requested ServiceScope matches only services carrying that scope") {
+            message_2::ServiceDiscoveryRequest filtered;
+            filtered.service_scope = "urn:example:parking";
+            const auto res = d2::state::handle_request(filtered, id, 1, modes, true, true,
+                                                       /*cert_service_offered=*/true, std::nullopt, vas);
+            REQUIRE_FALSE(res.service_list.has_value());
+
+            vas.back().service_scope = "urn:example:parking";
+            const auto scoped = d2::state::handle_request(filtered, id, 1, modes, true, true,
+                                                          /*cert_service_offered=*/true, std::nullopt, vas);
+            REQUIRE(scoped.service_list.has_value());
+            REQUIRE(scoped.service_list->size() == 1);
+            REQUIRE(scoped.service_list->front().service_id == 42);
         }
     }
     WHEN("Only Contract is configured (PnC-only SECC over TLS)") {
