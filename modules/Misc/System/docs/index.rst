@@ -14,6 +14,9 @@ Currently this includes the following commands:
 
 Corresponding variables signal the state of Log Uploads and Firmware Updates.
 
+The bundled simulation installer stub treats firmware URLs whose basename ends in
+``-bad.pnx`` as installation failures, which is useful for exercising failure handling.
+
 Integration in EVerest
 ======================
 
