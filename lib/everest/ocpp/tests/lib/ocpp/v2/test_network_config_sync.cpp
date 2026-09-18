@@ -1068,6 +1068,7 @@ public:
     MOCK_METHOD(std::optional<StatusInfo>, is_sign_certificate_possible, (const ocpp::CertificateSigningUseEnum&),
                 (const, override));
     MOCK_METHOD(void, stop_certificate_signed_timer, (), (override));
+    MOCK_METHOD(bool, v2g20_certificate_installation_enabled, (), (const, override));
     MOCK_METHOD(void, init_certificate_expiration_check_timers, (), (override));
     MOCK_METHOD(void, stop_certificate_expiration_check_timers, (), (override));
     MOCK_METHOD(Get15118EVCertificateResponse, on_get_15118_ev_certificate_request,

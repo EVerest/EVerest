@@ -607,6 +607,8 @@ struct CertificateHashDataChain {
     CertificateHashDataType certificateHashData;
     CertificateType certificateType;
     std::optional<std::vector<CertificateHashDataType>> childCertificateHashData;
+    /// \brief Key algorithm of the hashed certificate (e.g. prime256v1, secp521r1); not part of any OCPP message
+    std::optional<std::string> publicKeyAlgorithm;
 };
 /// \brief Conversion from a given CertificateHashDataChain \p k to a given json object \p j
 void to_json(json& j, const CertificateHashDataChain& k);
@@ -711,9 +713,10 @@ struct GetCertificateInfoResult {
 
 enum class LeafCertificateType {
     CSMS, // Charging Station Management System
-    V2G,  // Vehicle to grid
+    V2G,  // Vehicle to grid, ISO 15118-2 SECC leaf
     MF,   // Manufacturer
-    MO    // Mobility Operator
+    MO,   // Mobility Operator
+    V2G20 // Vehicle to grid, ISO 15118-20 SECC leaf (OCPP 2.1 V2G20Certificate)
 };
 
 namespace conversions {

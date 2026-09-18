@@ -32,9 +32,11 @@ enum class CaCertificateType {
 
 enum class LeafCertificateType {
     CSMS,
-    V2G,
+    V2G, ///< ISO 15118-2 SECC leaf (TLS 1.2, prime256v1). Shares the SECC store with V2G20; a SECC leaf is V2G
+         ///< unless its key is secp521r1 / ED448
     MF,
     MO,
+    V2G20, ///< ISO 15118-20 SECC leaf (TLS 1.3, secp521r1 / ED448), same directories and V2G root bundle as V2G
 };
 
 enum class CertificateType {
@@ -156,7 +158,8 @@ struct CertificateHashDataChain {
     CertificateType certificate_type; ///< Indicates the type of the certificate for which the hash data is provided
     CertificateHashData certificate_hash_data; ///< Contains the hash data of the certificate
     std::vector<CertificateHashData>
-        child_certificate_hash_data; ///< Contains the hash data of the child's certificates
+        child_certificate_hash_data;  ///< Contains the hash data of the child's certificates
+    std::string public_key_algorithm; ///< Key algorithm of the hashed certificate (e.g. prime256v1, secp521r1)
 };
 struct GetInstalledCertificatesResult {
     GetInstalledCertificatesStatus status; ///< Indicates the status of the request
@@ -191,6 +194,11 @@ struct CertificateInfo {
                                          /// (the root is not taken into account because of the OCSP cache)
     std::optional<std::string> password; ///< Specifies the password for the private key if encrypted
     std::vector<CertificateOCSP> ocsp;   ///< The ordered list of OCSP certificate data based on the chain file order
+    /// Public key algorithm of the leaf, as reported by the crypto supplier: the named EC curve for EC keys
+    /// ("prime256v1", "secp384r1", "secp521r1", ...), otherwise the key type name ("ED448", "RSA", ...).
+    /// Empty when it could not be determined. ISO 15118-2 mandates prime256v1 for the SECC leaf, ISO 15118-20
+    /// mandates secp521r1 or ED448, so this is what tells the two apart when both are installed.
+    std::string public_key_algorithm;
 };
 
 struct GetCertificateInfoResult {
