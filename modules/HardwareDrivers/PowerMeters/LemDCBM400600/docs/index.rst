@@ -30,6 +30,38 @@ Variable Powermeter
 Publication of the ``powermeter`` var is done with approx. frequency 1/second. This fetches the current ``livemeasure``
 values from the device's ``/v1/livemeasure`` endpoint and injects the meter id as determined at initialization.
 
+<<<<<<< HEAD
+=======
+The poll loop runs at a fixed rate: the time spent performing the requests is subtracted from the wait before the
+next poll, so the interval between two publications stays at ``poll_interval_ms`` instead of growing with the
+latency of the device. This matters because consumers watch this stream for gaps - EvseManager, for instance, aborts
+a DC cable check if it sees no power supply measurement for two seconds. If a gap of more than 1.5 times the
+configured interval does occur, a warning is logged with the measured gap and the duration of the live measurement
+request, so a slow device or network can be identified from the logs.
+
+While a transaction is active, the current OCMF record is additionally fetched as a fallback so that a signed meter
+value is available even if the device becomes unreachable at transaction stop. This fetch is performed *after* the
+live measurements have been published, so that its round trip is not added to the gap between two publications. By
+default it happens on every poll; it can be throttled with the ``transaction_ocmf_fetch_interval_s`` config option.
+Throttling applies to attempts rather than successes, so a failing OCMF endpoint cannot cause a request on every
+single poll.
+
+By default, HTTP(S) connections to the device are kept alive and reused across requests. Set ``http_connection_reuse``
+to ``false`` to restore the previous behavior of one fresh connection per request.
+
+Variable Capabilities
+---------------------
+
+If ``min_import_current_A`` and/or ``min_export_current_A`` are configured to a value greater than 0, the module
+publishes the ``capabilities`` var once on startup. These values describe the minimum current above which the meter
+measures within its accuracy class (e.g. required by the German Calibration Law)
+
+The direction convention follows the DCBM's metering convention: ``min_import_current_A`` refers to the charging
+direction, which the DCBM accumulates in its ``energyImportTotal`` register.
+``min_export_current_A`` refers to the discharge direction (``energyExportTotal``). The values
+cannot be read from the device. Take them from the device datasheet.
+
+>>>>>>> 2a37ab0 (feat(LemDCBM400600): publish min current capabilities (#2488))
 Command start_transaction
 -------------------------
 
