@@ -174,6 +174,17 @@ config:
       the relays may close may be delayed by the self test.
     type: integer
     default: 5
+  cable_check_measurement_timeout_s:
+    description: >-
+      Time in seconds to wait for a voltage measurement from the power supply during cablecheck before
+      logging that the measurement stream has stalled. A gap does not fail the cablecheck by itself:
+      waiting continues until the overall voltage timeout of 10 seconds expires, so a measurement source
+      that goes briefly silent (e.g. a power meter polled over the network) does not abort an otherwise
+      healthy cablecheck. Raise this if the measurement source is known to be slower than the default.
+    type: integer
+    default: 2
+    minimum: 2
+    maximum: 5
   cable_check_wait_below_60V_before_finish:
     description: >-
       Switch off power supply and wait until output voltage drops below 60V before cable check is finished.
