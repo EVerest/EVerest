@@ -39,6 +39,8 @@ struct SimulationData {
     SimState last_state{SimState::UNDEFINED};
     types::slac::State slac_state{types::slac::State::UNMATCHED};
     std::optional<size_t> sleep_ticks_left{};
+    // Countdown of the optional fallback timeout of iso_wait_pwm_is_running.
+    std::optional<size_t> pwm_wait_ticks_left{};
 
     bool v2g_finished{false};
     bool iso_stopped{false};
@@ -66,4 +68,7 @@ struct SimulationData {
     double battery_capacity_wh{0};
 
     types::board_support_common::Event actual_bsp_event{types::board_support_common::Event::Disconnected};
+    // Last CP state reported by the "waiting for plug-in" log, so that wait
+    // logs once per distinct state instead of on every simulation tick.
+    types::board_support_common::Event last_logged_wait_event{types::board_support_common::Event::Disconnected};
 };
