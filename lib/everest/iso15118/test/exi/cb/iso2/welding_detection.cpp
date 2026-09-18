@@ -36,12 +36,12 @@ SCENARIO("Se/Deserialize ISO-2 welding detection messages") {
         res.evse_present_voltage = to_physical_value(42, Unit::V);
 
         const auto serialized = serialize_helper(res);
-        const io::StreamInputView stream_view{serialized.data(), serialized.size()};
-        message_2::Variant variant(stream_view);
+        const auto doc = decode_helper(serialized);
 
-        THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_2::Type::WeldingDetectionRes);
-            const auto& msg = variant.get<message_2::WeldingDetectionResponse>();
+        THEN("The encoded response converts back field for field") {
+            REQUIRE(doc.V2G_Message.Body.WeldingDetectionRes_isUsed);
+            const auto msg =
+                to_response<message_2::WeldingDetectionResponse>(doc, doc.V2G_Message.Body.WeldingDetectionRes);
             REQUIRE(msg.response_code == ResponseCode::OK);
             REQUIRE(from_physical_value(msg.evse_present_voltage) == 42);
         }

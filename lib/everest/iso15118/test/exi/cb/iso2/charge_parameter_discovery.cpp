@@ -90,12 +90,12 @@ SCENARIO("Se/Deserialize ISO-2 charge parameter discovery messages") {
         dc.evse_peak_current_ripple = to_physical_value(1, Unit::A);
 
         const auto serialized = serialize_helper(res);
-        const io::StreamInputView stream_view{serialized.data(), serialized.size()};
-        message_2::Variant variant(stream_view);
+        const auto doc = decode_helper(serialized);
 
-        THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_2::Type::ChargeParameterDiscoveryRes);
-            const auto& msg = variant.get<message_2::ChargeParameterDiscoveryResponse>();
+        THEN("The encoded response converts back field for field") {
+            REQUIRE(doc.V2G_Message.Body.ChargeParameterDiscoveryRes_isUsed);
+            const auto msg = to_response<message_2::ChargeParameterDiscoveryResponse>(
+                doc, doc.V2G_Message.Body.ChargeParameterDiscoveryRes);
             REQUIRE(msg.response_code == ResponseCode::OK);
             REQUIRE(msg.evse_processing == EVSEProcessing::Finished);
             REQUIRE(msg.sa_schedule_list.has_value());
@@ -123,12 +123,12 @@ SCENARIO("Se/Deserialize ISO-2 charge parameter discovery messages") {
         ac.evse_max_current = to_physical_value(32, Unit::A);
 
         const auto serialized = serialize_helper(res);
-        const io::StreamInputView stream_view{serialized.data(), serialized.size()};
-        message_2::Variant variant(stream_view);
+        const auto doc = decode_helper(serialized);
 
-        THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_2::Type::ChargeParameterDiscoveryRes);
-            const auto& msg = variant.get<message_2::ChargeParameterDiscoveryResponse>();
+        THEN("The encoded response converts back field for field") {
+            REQUIRE(doc.V2G_Message.Body.ChargeParameterDiscoveryRes_isUsed);
+            const auto msg = to_response<message_2::ChargeParameterDiscoveryResponse>(
+                doc, doc.V2G_Message.Body.ChargeParameterDiscoveryRes);
             REQUIRE(msg.ac_evse_charge_parameter.has_value());
             REQUIRE(from_physical_value(msg.ac_evse_charge_parameter->evse_nominal_voltage) == 230);
             REQUIRE(from_physical_value(msg.ac_evse_charge_parameter->evse_max_current) == 32);

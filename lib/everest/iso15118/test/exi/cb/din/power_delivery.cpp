@@ -52,12 +52,10 @@ SCENARIO("Se/Deserialize DIN power delivery messages") {
 
         const auto bytes = serialize_helper(res);
 
-        THEN("It round-trips through the Variant") {
-            const io::StreamInputView view{bytes.data(), bytes.size()};
-            message_din::Variant variant(view);
-
-            REQUIRE(variant.get_type() == Type::PowerDeliveryRes);
-            const auto& msg = variant.get<PowerDeliveryResponse>();
+        THEN("The encoded response converts back field for field") {
+            const auto doc = decode_helper(bytes);
+            REQUIRE(doc.V2G_Message.Body.PowerDeliveryRes_isUsed);
+            const auto msg = to_response<PowerDeliveryResponse>(doc, doc.V2G_Message.Body.PowerDeliveryRes);
             REQUIRE(msg.header.session_id == session_id);
             REQUIRE(msg.response_code == datatypes::ResponseCode::OK);
             REQUIRE(msg.dc_evse_status.has_value());
