@@ -1,0 +1,92 @@
+# Smoke test: send at least one operation from EVERY EVerest API module.
+#
+# Run it against an EVerest started with config-test-all-external-api.yaml:
+#     run_script examples/all_apis_smoke.script
+#
+# Unlike ac_charging_session.script (a real charging flow), this just fires one
+# representative message per API so you can confirm every generated client and
+# every module round-trips. It is fire-and-forget: it does not wait for or
+# answer replies, so it never blocks and can be re-run any time. Watch the
+# module logs (or turn mute off) to see each message land.
+#
+# Lines beginning with # are comments (cmd2).
+
+set mute true
+echo ============= EVerest API smoke test: one operation per API module =============
+
+# --- register a client per API module (ids match config-test-all-external-api.yaml) ---
+client_add SpyClient
+client_add EvseBspAPIClient bsp_api
+client_add EvBspAPIClient ev_bsp_api
+client_add PowermeterAPIClient powermeter_api
+client_add SlacAPIClient slac_api
+client_add IsolationMonitorAPIClient imd_api
+client_add OverVoltageMonitorAPIClient ovm_api
+client_add PowerSupplyDCAPIClient psu_dc_api
+client_add AuthTokenProviderAPIClient token_provider_api
+client_add AuthTokenValidatorAPIClient token_validator_api
+client_add DisplayMessageAPIClient display_message_api
+client_add GenericErrorRaiserAPIClient error_raiser_api
+client_add SystemAPIClient system_api
+client_add SessionCostAPIClient session_cost_api
+client_add EvseManagerConsumerAPIClient evse_manager_api
+client_add AuthConsumerAPIClient auth_api
+client_add DcExternalDerateConsumerAPIClient ded_api
+client_add ErrorHistoryConsumerAPIClient error_history_api
+client_add EvseSecurityConsumerAPIClient evse_security_api
+client_add SessionCostConsumerAPIClient session_cost_consumer_api
+client_add ExternalEnergyLimitsConsumerAPIClient eel_api
+# ocpp_api needs the standalone BUOcppConsumer running; comment out if absent.
+client_add OcppConsumerAPIClient ocpp_api
+
+# ---- provider APIs: publish a representative value ----
+echo [evse_board_support_API]  bsp_send_ac_nr_of_phases
+bsp_send_ac_nr_of_phases bsp_api 3
+echo [ev_board_support_API]    evbsp_send_ev_info
+evbsp_send_ev_info ev_bsp_api {"soc":67,"present_voltage":390,"present_current":80,"target_voltage":420,"target_current":80,"maximum_current_limit":120,"minimum_current_limit":10,"maximum_voltage_limit":500,"evcc_id":"aa:bb:cc:dd:ee:ff","battery_capacity":77000,"battery_full_soc":95}
+echo [powermeter_API]          pm_send_powermeter_values
+pm_send_powermeter_values powermeter_api {"current_A":{"L1":0,"L2":0,"L3":0,"N":0},"energy_Wh_import":{"L1":0,"L2":0,"L3":0,"total":0},"frequency_Hz":{"L1":50,"L2":50,"L3":50},"meter_id":"THE_POWERMETER","phase_seq_error":false,"power_W":{"L1":0,"L2":0,"L3":0,"total":0},"timestamp":"2026-01-01T00:00:00Z","voltage_V":{"L1":230,"L2":230,"L3":230}}
+echo [slac_API]                slac_send_state
+slac_send_state slac_api "MATCHED"
+echo [isolation_monitor_API]   im_send_isolation_measurement
+im_send_isolation_measurement imd_api {"resistance_F_Ohm":1000000,"voltage_V":400}
+echo [over_voltage_monitor_API] ovm_send_voltage_measurement_V
+ovm_send_voltage_measurement_V ovm_api 500
+echo [power_supply_DC_API]     ps_send_voltage_current
+ps_send_voltage_current psu_dc_api {"voltage_V":230,"current_A":15}
+echo [auth_token_provider_API] tp_send_provided_token
+tp_send_provided_token token_provider_api {"authorization_type":"OCPP","id_token":{"type":"Central","value":"SMOKETEST"}}
+echo [auth_token_validator_API] tv_send_validate_result_update
+tv_send_validate_result_update token_validator_api {"connector_id":1,"validation_result":{"authorization_status":"Accepted","tariff_messages":[]}}
+echo [display_message_API]     dm_send_reply_clear_display_message
+dm_send_reply_clear_display_message display_message_api reply/smoke {"status":"Accepted"}
+echo [generic_error_raiser_API] err_send_raise_error / clear
+err_send_raise_error error_raiser_api {"type":"CommunicationFault","sub_type":"smoke","message":"smoke test"}
+err_send_clear_error error_raiser_api {"type":"CommunicationFault","sub_type":"smoke","message":"smoke test"}
+echo [system_API]              sys_send_firmware_update_status
+sys_send_firmware_update_status system_api {"request_id":1,"firmware_update_status":"Idle"}
+echo [session_cost_API]        sc_send_session_cost
+sc_send_session_cost session_cost_api {"session_id":"smoke","status":"Running","cost_chunks":[]}
+
+# ---- consumer APIs: issue a representative request (fire-and-forget; the
+#      reply arrives asynchronously and is just logged) ----
+echo [evse_manager_consumer_API]  em_send_request_get_evse
+em_send_request_get_evse evse_manager_api {"headers":{"replyTo":"everest_api/1/evse_manager_consumer/evse_manager_api/e2m/get_evse/smoke"}}
+echo [auth_consumer_API]          tc_send_request_get_token_validation_status
+tc_send_request_get_token_validation_status auth_api {"headers":{"replyTo":"everest_api/1/auth_consumer/auth_api/e2m/get_token_validation_status/smoke"}}
+echo [dc_external_derate_consumer_API] ded_send_set_external_derating
+ded_send_set_external_derating ded_api {"max_export_current_A":15}
+echo [error_history_consumer_API] eh_send_request_get_errors
+eh_send_request_get_errors error_history_api {"headers":{"replyTo":"everest_api/1/error_history_consumer/error_history_api/e2m/get_errors/smoke"},"payload":{"filter_arguments":{}}}
+echo [evse_security_consumer_API] sec_send_request_is_ca_certificate_installed
+sec_send_request_is_ca_certificate_installed evse_security_api {"headers":{"replyTo":"everest_api/1/evse_security_consumer/evse_security_api/e2m/is_ca_certificate_installed/smoke"},"payload":"CSMS"}
+echo [session_cost_consumer_API] scc_send_request_get_default_price
+scc_send_request_get_default_price session_cost_consumer_api {"headers":{"replyTo":"everest_api/1/session_cost_consumer/session_cost_consumer_api/e2m/get_default_price/smoke"}}
+echo [external_energy_limits_consumer_API] eel_send_request_get_capabilities
+eel_send_request_get_capabilities eel_api {"headers":{"replyTo":"everest_api/1/external_energy_limits_consumer/eel_api/e2m/get_capabilities/smoke"}}
+echo [ocpp_consumer_API]         oc_send_request_get_variables
+oc_send_request_get_variables ocpp_api {"headers":{"replyTo":"everest_api/1/ocpp_consumer/ocpp_api/e2m/get_variables/smoke"},"payload":{"items":[]}}
+
+echo ============= Smoke test done: one operation sent per API module =============
+# uncomment to restore live logging:
+# set mute false

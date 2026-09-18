@@ -127,6 +127,7 @@ components:
         - summary: "Reply validate token."
           payload:
             authorization_status: Accepted
+            tariff_messages: []
             evse_ids:
             - 1
 
@@ -146,6 +147,7 @@ components:
             "validation_result": {
                 "authorization_status": "Accepted",
                 "certificate_status": "Accepted",
+                "tariff_messages": [],
                 "expiry_time": "2019-08-24T14:15:22Z",
                 "parent_id_token": {
                     "value": "string",
