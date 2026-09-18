@@ -407,13 +407,15 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
     callbacks.all_connectors_unavailable_callback = [this]() { m_callbacks_ptr->cb_all_connectors_unavailable(); };
     callbacks.transaction_event_callback = [this](const ocpp::v2::TransactionEventRequest& transaction_event) {
         // in 2.x the session id doubles as the transaction id
-        m_callbacks_ptr->cb_transaction_event(transaction_event, transaction_event.transactionInfo.transactionId.get());
+        m_callbacks_ptr->cb_transaction_event(transaction_event, transaction_event.transactionInfo.transactionId.get(),
+                                              transaction_event.timestamp);
     };
     callbacks.transaction_event_response_callback =
         [this](const ocpp::v2::TransactionEventRequest& transaction_event,
                const ocpp::v2::TransactionEventResponse& transaction_event_response) {
             m_callbacks_ptr->cb_transaction_event_response(transaction_event, transaction_event_response,
-                                                           transaction_event.transactionInfo.transactionId.get());
+                                                           transaction_event.transactionInfo.transactionId.get(),
+                                                           transaction_event.timestamp);
         };
     callbacks.boot_notification_callback = [this](auto&&... args) { m_callbacks_ptr->cb_boot_notification(args...); };
     callbacks.set_display_message_callback = [this](auto&&... args) {
