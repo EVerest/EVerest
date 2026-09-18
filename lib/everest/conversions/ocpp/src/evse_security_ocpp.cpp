@@ -251,6 +251,8 @@ ocpp::LeafCertificateType to_ocpp(types::evse_security::LeafCertificateType othe
         return ocpp::LeafCertificateType::MF;
     case types::evse_security::LeafCertificateType::MO:
         return ocpp::LeafCertificateType::MO;
+    case types::evse_security::LeafCertificateType::V2G20:
+        return ocpp::LeafCertificateType::V2G20;
     }
     throw std::out_of_range(
         "Could not convert types::evse_security::LeafCertificateType to ocpp::CertificateSigningUseEnum");
@@ -395,6 +397,7 @@ ocpp::CertificateHashDataChain to_ocpp(types::evse_security::CertificateHashData
         }
         lhs.childCertificateHashData = v;
     }
+    lhs.publicKeyAlgorithm = other.public_key_algorithm;
     return lhs;
 }
 
@@ -465,8 +468,7 @@ types::evse_security::LeafCertificateType from_ocpp(ocpp::CertificateSigningUseE
     case ocpp::CertificateSigningUseEnum::ManufacturerCertificate:
         return types::evse_security::LeafCertificateType::MF;
     case ocpp::CertificateSigningUseEnum::V2G20Certificate:
-        throw std::out_of_range("Could not convert ocpp::CertificateSigningUseEnum::V2G20Certificate to "
-                                "evse_security::LeafCertificateType");
+        return types::evse_security::LeafCertificateType::V2G20;
     }
     throw std::out_of_range(
         "Could not convert ocpp::CertificateSigningUseEnum to types::evse_security::LeafCertificateType");
@@ -482,6 +484,8 @@ types::evse_security::LeafCertificateType from_ocpp(ocpp::LeafCertificateType ot
         return types::evse_security::LeafCertificateType::MF;
     case ocpp::LeafCertificateType::MO:
         return types::evse_security::LeafCertificateType::MO;
+    case ocpp::LeafCertificateType::V2G20:
+        return types::evse_security::LeafCertificateType::V2G20;
     }
     throw std::out_of_range(
         "Could not convert ocpp::CertificateSigningUseEnum to types::evse_security::LeafCertificateType");
@@ -576,6 +580,7 @@ types::evse_security::CertificateHashDataChain from_ocpp(ocpp::CertificateHashDa
         }
         lhs.child_certificate_hash_data = v;
     }
+    lhs.public_key_algorithm = other.publicKeyAlgorithm;
     return lhs;
 }
 

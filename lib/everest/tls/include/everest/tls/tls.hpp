@@ -440,6 +440,13 @@ public:
         stopped,       //!< stopped - reinitialisation will be needed
     };
 
+    /// which negotiated TLS protocol version a server certificate chain is meant for
+    enum class TlsVersion : std::uint8_t {
+        any,     //!< usable for every negotiated version (the default)
+        tls_1_2, //!< prefer for TLS 1.2 connections, e.g. the ISO 15118-2 SECC leaf (secp256r1)
+        tls_1_3, //!< prefer for TLS 1.3 connections, e.g. the ISO 15118-20 SECC leaf (secp521r1 / Ed448)
+    };
+
     struct certificate_config_t {
         //!< server certificate is the first certificate in the file followed by any intermediate CAs
         ConfigItem certificate_chain_file{nullptr};
@@ -448,6 +455,12 @@ public:
         ConfigItem private_key_file{nullptr};        //!< key associated with the server certificate
         ConfigItem private_key_password{nullptr};    //!< optional password to read private key
         std::vector<ConfigItem> ocsp_response_files; //!< list of OCSP files in certificate chain order
+        //!< Once the protocol version has been negotiated the server presents the first chain (in
+        //!< config_t::chains order) tagged for that version, falling back to a chain tagged `any` and
+        //!< finally to the first chain at all. A trusted_ca_keys extension (TLS 1.2 only) further picks
+        //!< among the chains compatible with the negotiated version. When no chain carries a version tag
+        //!< the first chain is used for every connection, as before.
+        TlsVersion tls_version{TlsVersion::any};
     };
 
     struct config_t {
