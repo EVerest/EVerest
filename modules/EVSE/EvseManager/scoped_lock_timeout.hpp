@@ -30,6 +30,7 @@ enum class MutexDescription {
     Charger_get_authorized_eim,
     Charger_get_authorized_pnc_ready_for_hlc,
     Charger_get_authorized_eim_ready_for_hlc,
+    Charger_get_transaction_active,
     Charger_authorize,
     Charger_deauthorize,
     Charger_disable,
