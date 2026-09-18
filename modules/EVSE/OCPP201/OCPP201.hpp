@@ -34,6 +34,7 @@
 #include <tuple>
 #include <variant>
 
+#include "transaction_id_tags.hpp"
 #include <everest/ocpp_module_common/conversions.hpp>
 #include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
@@ -159,6 +160,9 @@ private:
     // insert your private definitions here
     std::shared_ptr<device_model::EverestDeviceModelStorage> everest_device_model_storage;
     std::unique_ptr<TransactionHandler> transaction_handler;
+    // The bank card id tags that started the transactions: attributes the final session costs the CSMS reports to
+    // them.
+    TransactionIdTags transaction_id_tags;
     Everest::SteadyTimer charging_schedules_timer;
 
     std::filesystem::path ocpp_share_path;
