@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include <evse_security/certificate/x509_wrapper.hpp>
-
 #include <cctype>
+#include <evse_security/certificate/x509_wrapper.hpp>
+#include <evse_security/crypto/openssl/openssl_types.hpp>
 #include <fstream>
 #include <iostream>
 #include <regex>
@@ -146,8 +146,79 @@ std::string X509Wrapper::get_common_name() const {
     return CryptoSupplier::x509_get_common_name(get());
 }
 
+std::string X509Wrapper::get_organization() const {
+    return CryptoSupplier::x509_get_organization(get());
+}
+
+std::string X509Wrapper::get_organizational_unit() const {
+    return CryptoSupplier::x509_get_organizational_unit(get());
+}
+
+std::string X509Wrapper::get_country() const {
+    return CryptoSupplier::x509_get_country(get());
+}
+
+std::string X509Wrapper::get_state() const {
+    return CryptoSupplier::x509_get_state(get());
+}
+
+std::string X509Wrapper::get_locality() const {
+    return CryptoSupplier::x509_get_locality(get());
+}
+
+std::string X509Wrapper::get_domain_component() const {
+    return CryptoSupplier::x509_get_domain_component(get());
+}
+std::string X509Wrapper::get_issuer_common_name() const {
+    return CryptoSupplier::x509_get_issuer_common_name(get());
+}
+
+std::string X509Wrapper::get_issuer_organization() const {
+    return CryptoSupplier::x509_get_issuer_organization(get());
+}
+
+std::string X509Wrapper::get_issuer_organizational_unit() const {
+    return CryptoSupplier::x509_get_issuer_organizational_unit(get());
+}
+
+std::string X509Wrapper::get_issuer_country() const {
+    return CryptoSupplier::x509_get_issuer_country(get());
+}
+
+std::string X509Wrapper::get_issuer_state() const {
+    return CryptoSupplier::x509_get_issuer_state(get());
+}
+
+std::string X509Wrapper::get_issuer_locality() const {
+    return CryptoSupplier::x509_get_issuer_locality(get());
+}
+
+std::string X509Wrapper::get_issuer_domain_component() const {
+    return CryptoSupplier::x509_get_issuer_domain_component(get());
+}
+
 std::string X509Wrapper::get_issuer_name_hash() const {
     return CryptoSupplier::x509_get_issuer_name_hash(get());
+}
+
+std::string X509Wrapper::get_key_usage() const {
+    return CryptoSupplier::x509_get_key_usage(get());
+}
+
+std::string X509Wrapper::get_basic_constraints() const {
+    return CryptoSupplier::x509_get_basic_constraints(get());
+}
+
+std::string X509Wrapper::get_subject_key_identifier() const {
+    return CryptoSupplier::x509_get_subject_key_identifier(get());
+}
+
+std::string X509Wrapper::get_authority_key_identifier() const {
+    return CryptoSupplier::x509_get_authority_key_identifier(get());
+}
+
+std::string X509Wrapper::get_crl_distribution_points() const {
+    return CryptoSupplier::x509_get_crl_distribution_points(get());
 }
 
 std::string X509Wrapper::get_serial_number() const {
