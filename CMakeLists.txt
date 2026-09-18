@@ -6,12 +6,12 @@ project(everest-core
 	LANGUAGES CXX C
 )
 
-find_package(everest-cmake 0.7
+find_package(everest-cmake 0.8
     COMPONENTS bundling
     PATHS ../everest-cmake
     NO_DEFAULT_PATH
 )
-find_package(everest-cmake 0.7
+find_package(everest-cmake 0.8
     COMPONENTS bundling
 )
 
@@ -21,7 +21,7 @@ if (NOT everest-cmake_FOUND)
     FetchContent_Declare(
         everest-cmake
         GIT_REPOSITORY https://github.com/EVerest/everest-cmake.git
-        GIT_TAG        29fdd49cb9db7c4867f8e6aac6d810e79ad5b2a6 # v0.7.0
+        GIT_TAG        cd4b339ec15b64b85a5be41cb47d9da79b41cbef # v0.8.0
     )
     FetchContent_MakeAvailable(everest-cmake)
     set(everest-cmake_DIR "${everest-cmake_SOURCE_DIR}")
