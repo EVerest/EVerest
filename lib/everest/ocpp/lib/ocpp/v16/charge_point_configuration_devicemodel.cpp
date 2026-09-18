@@ -1906,6 +1906,11 @@ bool ChargePointConfigurationDeviceModel::getUseTPMSeccLeafCertificate() {
     return get_value<bool>(*storage, keys::valid_keys::UseTPMSeccLeafCertificate);
 }
 
+bool ChargePointConfigurationDeviceModel::getV2G20CertificateInstallationEnabled() {
+    // Absent in device models predating InternalCtrlr.V2G20CertificateInstallationEnabled, whose default is true
+    return get_optional<bool>(*storage, keys::valid_keys::V2G20CertificateInstallationEnabled).value_or(true);
+}
+
 bool ChargePointConfigurationDeviceModel::getVerifyCsmsAllowWildcards() {
     return get_value<bool>(*storage, keys::valid_keys::VerifyCsmsAllowWildcards);
 }
@@ -2367,6 +2372,10 @@ std::optional<KeyValue> ChargePointConfigurationDeviceModel::getSeccLeafSubjectC
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getSeccLeafSubjectCountryKeyValue() {
     return get_key_value_optional(*storage, keys::valid_keys::SeccLeafSubjectCountry);
+}
+
+std::optional<KeyValue> ChargePointConfigurationDeviceModel::getV2G20CertificateInstallationEnabledKeyValue() {
+    return get_key_value_optional(*storage, keys::valid_keys::V2G20CertificateInstallationEnabled);
 }
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getSeccLeafSubjectOrganizationKeyValue() {
@@ -3806,6 +3815,7 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::TLSKeylogFile:
         case keys::valid_keys::UseTPM:
         case keys::valid_keys::UseTPMSeccLeafCertificate:
+        case keys::valid_keys::V2G20CertificateInstallationEnabled:
             // hidden keys - std::nullopt expected
             break;
 

@@ -19,6 +19,7 @@ from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate,
 from everest.testing.ocpp_utils.charge_point_v201 import ChargePoint201
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP2XConfigAdjustment
 from everest_test_utils import *
+from OpenSSL import crypto
 # fmt: on
 
 
@@ -53,8 +54,13 @@ class TestPlugAndCharge:
 
     @pytest.mark.asyncio
     @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
+    @parametrize_secc_config(
+        "everest-config-ocpp201-sil-dc-d2.yaml",
+        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_01(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -114,8 +120,13 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
+    @parametrize_secc_config(
+        "everest-config-ocpp201-sil-dc-d2.yaml",
+        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_02(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -197,8 +208,13 @@ class TestPlugAndCharge:
             ]
         )
     )
+    @parametrize_secc_config(
+        "everest-config-ocpp201-sil-dc-d2.yaml",
+        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_03(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -304,8 +320,13 @@ class TestPlugAndCharge:
             ]
         )
     )
+    @parametrize_secc_config(
+        "everest-config-ocpp201-sil-dc-d2.yaml",
+        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_04(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -401,8 +422,13 @@ class TestPlugAndCharge:
         )
     )
     @pytest.mark.asyncio
+    @parametrize_secc_config(
+        "everest-config-ocpp201-sil-dc-d2.yaml",
+        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    )
     async def test_contract_revoked(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -535,8 +561,13 @@ class TestPlugAndCharge:
             ]
         )
     )
+    @parametrize_secc_config(
+        "everest-config-ocpp201-sil-dc-d2.yaml",
+        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    )
     async def test_no_tls_after_secc_leaf_deleted(
         self,
+        secc_config,
         exi_generator,
         central_system: CentralSystem,
         charge_point: ChargePoint201,
@@ -659,3 +690,72 @@ class TestPlugAndCharge:
                 "eventType": "Ended",
             },
         )
+
+
+def _capture_secc_csr(captured: list):
+    """Validation callback for wait_for_and_validate: matches a SignCertificate.req for a SECC leaf and keeps its CSR."""
+
+    def validate(meta_data, msg, exp_payload):
+        if msg.message_type_id != 2 or msg.action != "SignCertificate":
+            return False
+        if msg.payload.get("certificateType") != "V2GCertificate":
+            return False
+        captured.append(msg.payload["csr"])
+        return True
+
+    return validate
+
+
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_core_config(get_everest_config_path_str("everest-config-ocpp201.yaml"))
+@pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP2XConfigAdjustment(
+        [
+            (OCPP2XConfigVariableIdentifier("ISO15118Ctrlr", "V2GCertificateInstallationEnabled", "Actual"), True),
+            (OCPP2XConfigVariableIdentifier("ISO15118Ctrlr", "SeccId", "Actual"), "SECCCert"),
+            (OCPP2XConfigVariableIdentifier("ISO15118Ctrlr", "ISO15118CtrlrOrganizationName", "Actual"), "EVerest"),
+            (OCPP2XConfigVariableIdentifier("ISO15118Ctrlr", "ISO15118CtrlrCountryName", "Actual"), "DE"),
+            (OCPP2XConfigVariableIdentifier("InternalCtrlr", "V2GCertificateExpireCheckInitialDelaySeconds", "Actual"), 2),
+        ]
+    )
+)
+@pytest.mark.xdist_group(name="ISO15118")
+class TestSeccLeafCertificates:
+
+    async def _sign_next_secc_csr(self, charge_point: ChargePoint201, test_utility: TestUtility, key_bits: int):
+        """Waits for the next SECC leaf CSR, checks its key size, signs it with the V2G root and installs the chain."""
+        csrs = []
+        assert await wait_for_and_validate(
+            test_utility, charge_point, "SignCertificate", {}, validate_payload_func=_capture_secc_csr(csrs), timeout=20
+        )
+        csr = crypto.load_certificate_request(crypto.FILETYPE_PEM, csrs[0])
+        assert csr.get_pubkey().bits() == key_bits
+        test_utility.messages.clear()
+
+        signed_result = await charge_point.certificate_signed_req(
+            certificate_chain=certificate_signed_response(csr), certificate_type="V2GCertificate"
+        )
+        assert signed_result.status == "Accepted"
+
+    @pytest.mark.asyncio
+    async def test_v2g_and_v2g20_leaf_signed_over_ocpp201(
+        self,
+        central_system: CentralSystem,
+        charge_point: ChargePoint201,
+        test_utility: TestUtility,
+    ):
+        """
+        Both SECC leafs over OCPP 2.0.1, which has no V2G20Certificate: every CSR is labelled V2GCertificate and the
+        CSMS tells the ISO 15118-2 leaf (P-256) from the ISO 15118-20 leaf (P-521) by its key. The fixture ships a
+        valid -2 leaf, so the initial expiry check requests only the missing -20 leaf. A triggered SignV2GCertificate
+        then renews the -2 leaf and, one gap later, the -20 leaf again.
+        """
+        # initial provisioning of the missing ISO 15118-20 leaf
+        await self._sign_next_secc_csr(charge_point, test_utility, 521)
+
+        # triggered renewal: -2 leaf first, -20 leaf V2GCertificateExpireCheckInitialDelaySeconds later
+        trigger_result = await charge_point.trigger_message_req(requested_message="SignV2GCertificate")
+        assert trigger_result.status == "Accepted"
+        await self._sign_next_secc_csr(charge_point, test_utility, 256)
+        await self._sign_next_secc_csr(charge_point, test_utility, 521)

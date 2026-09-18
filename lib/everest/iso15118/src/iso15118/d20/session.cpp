@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/session.hpp>
 
-#include <random>
-
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/detail/random.hpp>
 
 namespace iso15118::d20 {
 
@@ -97,35 +96,17 @@ SelectedServiceParameters::SelectedServiceParameters(dt::ServiceCategory energy_
 };
 
 Session::Session() {
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    std::uniform_int_distribution<uint8_t> distribution(0x00, 0xff);
-
-    for (auto& item : id) {
-        item = distribution(generator);
-    }
+    fill_random(id.data(), id.size());
 }
 
 Session::Session(const PauseContext& pause_ctx) :
     id(pause_ctx.old_session_id), selected_services(pause_ctx.selected_service_parameters){};
 
 Session::Session(SelectedServiceParameters service_parameters_) : selected_services(service_parameters_) {
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    std::uniform_int_distribution<uint8_t> distribution(0x00, 0xff);
-
-    for (auto& item : id) {
-        item = distribution(generator);
-    }
+    fill_random(id.data(), id.size());
 }
 Session::Session(OfferedServices services_) : offered_services(services_) {
-    std::random_device rd;
-    std::mt19937 generator(rd());
-    std::uniform_int_distribution<uint8_t> distribution(0x00, 0xff);
-
-    for (auto& item : id) {
-        item = distribution(generator);
-    }
+    fill_random(id.data(), id.size());
 }
 
 Session::~Session() = default;
@@ -154,7 +135,11 @@ bool Session::find_energy_parameter_set_id(const dt::ServiceCategory service, in
             return true;
         }
         break;
-
+    case dt::ServiceCategory::AC_DER_SAE:
+        if (this->offered_services.ac_parameter_list.find(id) != this->offered_services.ac_parameter_list.end()) {
+            return true;
+        }
+        break;
     case dt::ServiceCategory::DC:
 
         if (this->offered_services.dc_parameter_list.find(id) != this->offered_services.dc_parameter_list.end()) {
@@ -184,8 +169,6 @@ bool Session::find_energy_parameter_set_id(const dt::ServiceCategory service, in
     case dt::ServiceCategory::DC_ACDP:
         [[fallthrough]];
     case dt::ServiceCategory::DC_ACDP_BPT:
-        [[fallthrough]];
-    case dt::ServiceCategory::AC_DER_SAE:
         [[fallthrough]];
     default:
         logf_warning("Service %u is not supported yet", message_20::to_underlying_value(service));
@@ -260,7 +243,16 @@ void Session::selected_service_parameters(const dt::ServiceCategory service, con
             // Todo(sl): Should be not the case -> Raise Error?
         }
         break;
-
+    case dt::ServiceCategory::AC_DER_SAE:
+        if (this->offered_services.ac_parameter_list.find(id) != this->offered_services.ac_parameter_list.end()) {
+            const auto& parameters = this->offered_services.ac_parameter_list.at(id);
+            this->selected_services = SelectedServiceParameters(dt::ServiceCategory::AC_DER_SAE, parameters.connector,
+                                                                parameters.control_mode, parameters.mobility_needs_mode,
+                                                                parameters.pricing, parameters.evse_nominal_voltage);
+        } else {
+            // TODO(mlitre): Should be not the case -> Raise Error?
+        }
+        break;
     case dt::ServiceCategory::DC:
         if (this->offered_services.dc_parameter_list.find(id) != this->offered_services.dc_parameter_list.end()) {
             const auto& parameters = this->offered_services.dc_parameter_list.at(id);
@@ -325,8 +317,6 @@ void Session::selected_service_parameters(const dt::ServiceCategory service, con
     case dt::ServiceCategory::DC_ACDP:
         [[fallthrough]];
     case dt::ServiceCategory::DC_ACDP_BPT:
-        [[fallthrough]];
-    case dt::ServiceCategory::AC_DER_SAE:
         [[fallthrough]];
     default:
         logf_warning("Service %u is not supported yet", message_20::to_underlying_value(service));

@@ -72,6 +72,7 @@ public:
     virtual bool getUseSslDefaultVerifyPaths() = 0;
     virtual bool getUseTPM() = 0;
     virtual bool getUseTPMSeccLeafCertificate() = 0;
+    virtual bool getV2G20CertificateInstallationEnabled() = 0;
     virtual bool getVerifyCsmsAllowWildcards() = 0;
     virtual bool getVerifyCsmsCommonName() = 0;
 
@@ -167,6 +168,7 @@ public:
     virtual std::optional<KeyValue> getReportClearedErrorsKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectCommonNameKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectCountryKeyValue() = 0;
+    virtual std::optional<KeyValue> getV2G20CertificateInstallationEnabledKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectOrganizationKeyValue() = 0;
     virtual std::optional<KeyValue> getSupplyVoltageKeyValue() = 0;
     virtual std::optional<KeyValue> getSwitchSecurityProfileConnectionTimeoutKeyValue() = 0;

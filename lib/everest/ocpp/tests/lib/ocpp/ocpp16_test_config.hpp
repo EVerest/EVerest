@@ -27,6 +27,7 @@ inline constexpr char OCPP16_TEST_CONFIG_FULL[] = R"({
         "SupportedCiphers13": ["TLS_AES_256_GCM_SHA384", "TLS_AES_128_GCM_SHA256", "TLS_CHACHA20_POLY1305_SHA256"],
         "UseTPM": true,
         "UseTPMSeccLeafCertificate": true,
+        "V2G20CertificateInstallationEnabled": true,
         "RetryBackoffRandomRange": 12,
         "RetryBackoffRepeatTimes": 4,
         "RetryBackoffWaitMinimum": 4,

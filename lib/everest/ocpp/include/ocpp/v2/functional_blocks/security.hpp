@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <mutex>
 #include <optional>
 #include <variant>
 
@@ -42,6 +43,9 @@ public:
     virtual std::optional<StatusInfo>
     is_sign_certificate_possible(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const = 0;
     virtual void stop_certificate_signed_timer() = 0;
+    /// \brief Whether the ISO 15118-20 SECC leaf (V2G20Certificate) is maintained next to the ISO 15118-2 one:
+    /// V2GCertificateInstallationEnabled and V2G20CertificateInstallationEnabled
+    virtual bool v2g20_certificate_installation_enabled() const = 0;
     virtual void init_certificate_expiration_check_timers() = 0;
     virtual void stop_certificate_expiration_check_timers() = 0;
 
@@ -85,6 +89,30 @@ private:
     /// \brief Stops awaiting a CertificateSigned.req, which the retry timer would otherwise be the only thing to do.
     void reset_certificate_signing_state();
 
+    /// \brief The SECC leaf to turn to once the current SECC signing round has ended (CertificateSigned.req handled,
+    /// SignCertificate.req rejected or its retries given up). Only one SignCertificate.req is outstanding at a time,
+    /// and before OCPP 2.1 both SECC leafs are requested as V2GCertificate, so the two CSRs are kept apart in time:
+    /// the follow-up is handled V2GCertificateExpireCheckInitialDelaySeconds after the round has ended.
+    struct SeccFollowUp {
+        ocpp::CertificateSigningUseEnum certificate_signing_use;
+        bool regardless_of_expiry; ///< TriggerMessage semantics: request the leaf even when it is not due
+    };
+    void set_secc_follow_up(const SeccFollowUp& follow_up);
+    std::optional<SeccFollowUp> take_secc_follow_up();
+
+    /// \brief Re-arms the SECC expiry check after V2GCertificateExpireCheckInitialDelaySeconds when \p finished is a
+    /// SECC leaf and a follow-up is pending
+    void on_secc_signing_round_finished(const ocpp::CertificateSigningUseEnum& finished);
+
+    /// \brief Ends the outstanding SignCertificate.req round without a CertificateSigned.req
+    void abandon_certificate_signing_round();
+
+    /// \brief The V2G root the SECC leaf of \p certificate_signing_use is (or will be) issued under, for
+    /// SignCertificateRequest.hashRootCertificate (A02.FR.27): the root of the installed leaf if there is one,
+    /// otherwise the only installed V2G root. std::nullopt when this is ambiguous.
+    std::optional<ocpp::CertificateHashDataType>
+    get_secc_root_certificate_hash(const ocpp::CertificateSigningUseEnum& certificate_signing_use);
+
     // Members
     const FunctionalBlockContext& context;
     MessageLogging& logging;
@@ -94,6 +122,13 @@ private:
 
     int csr_attempt;
     std::optional<ocpp::CertificateSigningUseEnum> awaited_certificate_signing_use_enum;
+    /// \brief requestId of the outstanding SignCertificate.req (OCPP 2.1, A02.FR.24). A CertificateSigned.req that
+    /// carries a different requestId is rejected (A02.FR.26). Not set on OCPP 2.0.1, whose schema lacks the field.
+    std::optional<std::int32_t> awaited_sign_certificate_request_id;
+    std::int32_t next_sign_certificate_request_id;
+    /// \brief Written by the message handlers, consumed by the expiry check timer
+    std::optional<SeccFollowUp> secc_follow_up;
+    std::mutex secc_follow_up_mutex;
     Everest::SteadyTimer certificate_signed_timer;
     Everest::SteadyTimer client_certificate_expiration_check_timer;
     Everest::SteadyTimer v2g_certificate_expiration_check_timer;
@@ -118,6 +153,12 @@ private:
     std::optional<StatusInfo> check_certificate_install_allowed(InstallCertificateUseEnum cert_type) const;
     void scheduled_check_client_certificate_expiration();
     void scheduled_check_v2g_certificate_expiration();
+
+    /// \brief Whether one SECC leaf (V2GCertificate or V2G20Certificate) is missing or expires within 30 days
+    bool is_secc_certificate_due(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const;
+
+public:
+    bool v2g20_certificate_installation_enabled() const override;
 };
 } // namespace v2
 } // namespace ocpp

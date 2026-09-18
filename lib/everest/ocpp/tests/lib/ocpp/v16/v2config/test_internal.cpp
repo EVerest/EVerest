@@ -640,6 +640,26 @@ TEST_P(Configuration, InternalBooleans) {
     EXPECT_FALSE(get()->getUseTPMSeccLeafCertificate());
 }
 
+TEST_P(Configuration, V2G20CertificateInstallationEnabled) {
+    ASSERT_NE(get(), nullptr);
+    // Not set in the unit test configs. Absent means false for a JSON configuration, where the ISO 15118-20 SECC
+    // leaf is opt-in, and true for a device model (InternalCtrlr default), where it is opt-out.
+    const bool device_model_backed = GetParam() == "sql";
+    EXPECT_EQ(get()->getV2G20CertificateInstallationEnabled(), device_model_backed);
+    EXPECT_FALSE(get()->getV2G20CertificateInstallationEnabledKeyValue().has_value());
+    if (!device_model_backed) {
+        return;
+    }
+
+    device_model->set("Internal", "V2G20CertificateInstallationEnabled", "false");
+    EXPECT_FALSE(get()->getV2G20CertificateInstallationEnabled());
+    const auto kv = get()->getV2G20CertificateInstallationEnabledKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->key, "V2G20CertificateInstallationEnabled");
+    EXPECT_EQ(kv->value, "false");
+    EXPECT_TRUE(kv->readonly);
+}
+
 TEST_P(Configuration, LogMessagesFormat) {
     ASSERT_NE(get(), nullptr);
     // initial values are from the JSON unit test config files

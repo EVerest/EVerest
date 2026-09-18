@@ -539,6 +539,22 @@ KeyValue ChargePointConfiguration::getUseTPMSeccLeafCertificateKeyValue() {
     return kv;
 }
 
+bool ChargePointConfiguration::getV2G20CertificateInstallationEnabled() {
+    // Absent means false: the ISO 15118-20 SECC leaf is opt-in for a JSON configured charge point
+    return this->config["Internal"].value("V2G20CertificateInstallationEnabled", false);
+}
+
+std::optional<KeyValue> ChargePointConfiguration::getV2G20CertificateInstallationEnabledKeyValue() {
+    if (!this->config["Internal"].contains("V2G20CertificateInstallationEnabled")) {
+        return std::nullopt;
+    }
+    KeyValue kv;
+    kv.key = "V2G20CertificateInstallationEnabled";
+    kv.readonly = true;
+    kv.value.emplace(ocpp::conversions::bool_to_string(this->getV2G20CertificateInstallationEnabled()));
+    return kv;
+}
+
 bool ChargePointConfiguration::getVerifyCsmsAllowWildcards() {
     return this->config["Internal"]["VerifyCsmsAllowWildcards"];
 }
@@ -3447,6 +3463,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     }
     if (key == "UseTPMSeccLeafCertificate") {
         return this->getUseTPMSeccLeafCertificateKeyValue();
+    }
+    if (key == "V2G20CertificateInstallationEnabled") {
+        return this->getV2G20CertificateInstallationEnabledKeyValue();
     }
     // Core Profile
     if (key == "AllowOfflineTxForUnknownId") {

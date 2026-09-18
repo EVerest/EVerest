@@ -121,6 +121,11 @@
             "readOnly": true,
             "default": false
         },
+        "V2G20CertificateInstallationEnabled": {
+            "$comment": "If true (and ISO15118CertificateManagementEnabled is true), a second SECC leaf certificate for ISO 15118-20 (secp521r1 key) is maintained next to the ISO 15118-2 one via the Plug&Charge DataTransfer extension: its CSR is sent as certificateType V2GCertificate and the CSMS tells the two SECC CSRs apart by key algorithm. Absent means false.",
+            "type": "boolean",
+            "readOnly": true
+        },
         "RetryBackoffRandomRange": {
             "$comment": "maximum value for the random part of the websocket reconnect back-off time",
             "type": "integer",

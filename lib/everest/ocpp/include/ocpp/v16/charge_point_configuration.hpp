@@ -137,6 +137,8 @@ public:
     KeyValue getUseTPMKeyValue() override;
     bool getUseTPMSeccLeafCertificate() override;
     KeyValue getUseTPMSeccLeafCertificateKeyValue() override;
+    bool getV2G20CertificateInstallationEnabled() override;
+    std::optional<KeyValue> getV2G20CertificateInstallationEnabledKeyValue() override;
 
     std::string getSupportedMeasurands() override;
     KeyValue getSupportedMeasurandsKeyValue() override;

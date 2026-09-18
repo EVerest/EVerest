@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <array>
@@ -23,7 +23,7 @@ using namespace iso15118;
 
 namespace dt = message_20::datatypes;
 
-inline d20::EvseSetupConfig create_default_evse_setup() {
+inline session::EvseSetupConfig create_default_evse_setup() {
     const auto evse_id = std::string("everest se");
     const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::DC};
     const auto cert_install = false;
@@ -35,25 +35,24 @@ inline d20::EvseSetupConfig create_default_evse_setup() {
     const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
         {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
-    return d20::EvseSetupConfig{evse_id,
-                                supported_energy_services,
-                                auth_services,
-                                vas_services,
-                                cert_install,
-                                dc_limits,
-                                ac_limits,
-                                std::nullopt,
-                                control_mobility_modes,
-                                std::nullopt,
-                                std::nullopt,
-                                std::nullopt,
-                                std::nullopt,
-                                powersupply_limits};
+    session::EvseSetupConfig setup{};
+    setup.evse_id = evse_id;
+    setup.supported_energy_services = supported_energy_services;
+    setup.authorization_services = auth_services;
+    setup.supported_vas_services = vas_services;
+    setup.enable_certificate_install_service = cert_install;
+    setup.dc_limits = dc_limits;
+    setup.ac_limits = ac_limits;
+    setup.der_iec_limits = std::nullopt;
+    setup.der_sae_limits = std::nullopt;
+    setup.control_mobility_modes = control_mobility_modes;
+    setup.powersupply_limits = powersupply_limits;
+    return setup;
 }
 
 class FsmStateHelper {
 public:
-    FsmStateHelper(const d20::SessionConfig& config, std::optional<d20::PauseContext>& pause_ctx_,
+    FsmStateHelper(const session::SessionConfig& config, std::optional<d20::PauseContext>& pause_ctx_,
                    const session::feedback::Callbacks& callbacks) :
         ctx(callbacks, config, pause_ctx_, active_control_event, msg_exch, timeouts) {
 

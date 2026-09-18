@@ -13,6 +13,7 @@
 #include <ocpp/common/support_older_cpp_versions.hpp>
 #include <optional>
 #include <set>
+#include <utility>
 
 #include <everest/timer.hpp>
 
@@ -129,6 +130,17 @@ private:
     std::unique_ptr<Everest::SteadyTimer> ocsp_request_timer;
     std::unique_ptr<Everest::SteadyTimer> client_certificate_timer;
     std::unique_ptr<Everest::SteadyTimer> v2g_certificate_timer;
+    /// \brief SECC leaf type of the DataTransfer(SignCertificate) whose CertificateSigned is outstanding. The PnC
+    /// DataTransfer payload labels both SECC leafs V2GCertificate, so the answer is told by what was asked.
+    std::optional<ocpp::CertificateSigningUseEnum> awaited_secc_certificate_signing_use;
+    /// \brief The SECC leaf to turn to at the next v2g_certificate_timer tick, once the current signing round has
+    /// ended; only one DataTransfer(SignCertificate) is in flight at a time
+    struct SeccFollowUp {
+        ocpp::CertificateSigningUseEnum certificate_signing_use;
+        bool regardless_of_expiry; ///< TriggerMessage semantics: request the leaf even when it is not due
+    };
+    std::optional<SeccFollowUp> secc_follow_up;
+    std::mutex secc_certificate_state_mutex;
     std::unique_ptr<Everest::SystemTimer> change_time_offset_timer;
     std::chrono::time_point<date::utc_clock> clock_aligned_meter_values_time_point;
     std::mutex meter_values_mutex;
@@ -326,8 +338,15 @@ private:
 
     // plug&charge for 1.6 whitepaper
     bool is_iso15118_certificate_management_enabled();
+    bool is_v2g20_certificate_installation_enabled();
     bool is_pnc_enabled();
-    void data_transfer_pnc_sign_certificate();
+    /// \return true when the DataTransfer(SignCertificate) was sent
+    bool data_transfer_pnc_sign_certificate(const ocpp::CertificateSigningUseEnum& certificate_signing_use);
+    /// \brief Whether one SECC leaf (V2GCertificate or V2G20Certificate) is missing or expires within 30 days
+    bool is_secc_certificate_due(const ocpp::CertificateSigningUseEnum& certificate_signing_use);
+    /// \brief v2g_certificate_timer tick: requests the SECC leaf that is due, or the pending follow-up
+    void check_secc_certificates_expiration();
+    void clear_secc_certificate_signing_state();
     void data_transfer_pnc_get_certificate_status(const ocpp::v2::OCSPRequestData& ocsp_request_data);
 
     void handle_data_transfer_pnc_trigger_message(Call<DataTransferRequest> call);

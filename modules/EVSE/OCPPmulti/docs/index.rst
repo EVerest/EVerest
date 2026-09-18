@@ -473,7 +473,10 @@ module rolls back to the last accepted capability; an EVSE whose very first capa
 
 The CSMS may write the ``Enabled`` variable (``ReadWrite``). Writing ``Enabled="false"`` makes the module push an empty
 directive replacement set to that EVSE, so the device clears the EV's curves; writing ``Enabled="true"`` republishes the
-filtered active set for that EVSE. A CSMS-written ``Enabled`` persists across reboots and is restored at boot.
+filtered active set for that EVSE. A CSMS-written ``Enabled`` persists across reboots and is restored at boot. The
+curve-clearing effect applies to an EVSE configured for the ISO 15118-20 ``AC_DER_IEC`` annex: the push itself always
+happens, but the device's directive relay maps IEC control functions only, so nothing reaches a session running the
+``AC_DER_SAE`` annex.
 
 The device reports grid event faults through the ``alarm`` variable, forwarded to the CSMS as a **NotifyDERAlarm.req**.
 Alarms raised before the backend has accepted a capability for any EVSE are buffered and delivered once the first
@@ -481,8 +484,11 @@ capability is accepted; if no capability is ever accepted, the buffered alarms a
 received before the charge point is initialized are queued and replayed once the charge point is ready.
 
 In addition to enabling the DER device-model component, the module asserts DER availability to the matching EvseManager
-via its **set_der_available** command, so that EvseManager can advertise the corresponding ISO 15118-20 DER energy
-transfer modes. If the device model rejects the capability, DER availability is withdrawn instead.
+via its **set_der_available** command, so that EvseManager can advertise an ISO 15118-20 AC DER energy transfer mode.
+Which annex is advertised (``AC_DER_IEC`` or ``AC_DER_SAE``, or neither) is EvseManager's own
+``iso15118_der_flavor`` config choice, not something OCPP selects; it defaults to ``NONE``, so asserting
+availability alone does not advertise a DER service. If the device model rejects the capability, DER availability is
+withdrawn instead.
 
 The configuration parameter **GridSupportHeartbeatS** sets the interval (in seconds) at which the current active
 directive set is re-sent for every registered EVSE. A value of ``0`` disables the heartbeat; the set is then sent only
@@ -649,17 +655,62 @@ and shared.
 Certificate management
 ======================
 
-Two leaf certificates are managed by the OCPP communication enabled by this module:
+Up to three leaf certificates are managed by the OCPP communication enabled by this module:
 
 * CSMS client certificate (used for mTLS with security profile 3)
-* SECC server certificate (server certificate for ISO 15118)
+* SECC server certificate for ISO 15118-2 (TLS 1.2, ``prime256v1`` key; OCPP certificateType
+  **V2GCertificate**)
+* SECC server certificate for ISO 15118-20 (TLS 1.3, ``secp521r1`` key; OCPP 2.1 certificateType
+  **V2G20Certificate**, requested as **V2GCertificate** on OCPP 2.0.1 and 1.6)
+
+The two SECC certificates are distinct: ISO 15118-2 and ISO 15118-20 mandate incompatible key algorithms, so one
+leaf cannot serve both protocol generations. Both are stored in the ``EvseSecurity`` SECC leaf directory and are
+told apart by their key algorithm; their sub-CA certificates arrive with the signed chain in **CertificateSigned.req**
+and their roots -- which may or may not be the same for the two -- are installed into the V2G root bundle via
+**InstallCertificate.req** (``V2GRootCertificate``).
 
 In OCPP 2.x, 60 seconds after the first **BootNotification.req** has been accepted by the CSMS, the charging station
-checks whether these certificates are missing or expired and, if so, initiates a **SignCertificate.req** towards the
-CSMS. For the CSMS leaf certificate this is only done when security profile 3 is used; for the SECC leaf certificate
-only when Plug&Charge is enabled via **ISO15118Ctrlr.V2GCertificateInstallationEnabled**. Expiry is re-checked every
-12 hours. In OCPP 1.6, the equivalent functionality is provided via the OCPP 1.6 security whitepaper extension and
-the Plug&Charge extension implemented via **DataTransfer.req** messages.
+checks whether these certificates are missing or expire within 30 days and, if so, initiates a
+**SignCertificate.req** towards the CSMS (a missing certificate is requested the same way as an expiring one, which
+is how the initial certificate is provisioned). For the CSMS leaf certificate this is only done when security
+profile 3 is used; for the ISO 15118-2 SECC leaf only when Plug&Charge is enabled via
+**ISO15118Ctrlr.V2GCertificateInstallationEnabled**; for the ISO 15118-20 SECC leaf additionally only while
+**InternalCtrlr.V2G20CertificateInstallationEnabled** (default ``true``) has not been switched off for a CSMS that
+cannot issue it. Expiry is re-checked every 12 hours (``V2GCertificateExpireCheckIntervalSeconds``). The two SECC
+leafs are checked and renewed independently, but only one **SignCertificate.req** is ever outstanding: when both are
+due the -2 leaf is requested first and the -20 leaf by a follow-up check armed
+``V2GCertificateExpireCheckInitialDelaySeconds`` (default 60 s) after the -2 round has ended, i.e. after its
+**CertificateSigned.req** was handled, its **SignCertificate.req** was rejected or its retries were given up.
+
+On OCPP 2.1 the -20 request carries certificateType **V2G20Certificate**, every **SignCertificate.req** carries a
+``requestId`` and a **CertificateSigned.req** whose ``requestId`` does not belong to the outstanding request is
+rejected (A02.FR.24 / A02.FR.26); a SECC leaf request also names the V2G root it shall be issued under in
+``hashRootCertificate`` (A02.FR.27) -- the root of the installed leaf, or the only installed V2G root, omitted when
+neither identifies one. The CSMS can trigger either request via **TriggerMessage.req** (``SignV2GCertificate`` /
+``SignV2G20Certificate``).
+
+OCPP 2.0.1 knows neither **V2G20Certificate** nor ``requestId``. There the -20 CSR is sent with certificateType
+**V2GCertificate** as well, and the CSMS tells the two SECC CSRs apart by their key algorithm (``secp521r1`` for
+ISO 15118-20, ``prime256v1`` for ISO 15118-2). The charging station tells the answers apart by the request that is
+outstanding: a **CertificateSigned.req** typed **V2GCertificate** (or without ``certificateType``) that arrives
+while a -20 request is outstanding is installed as the -20 leaf. Since there is no ``SignV2G20Certificate`` trigger,
+a triggered ``SignV2GCertificate`` renews both SECC leafs, the -20 one in the follow-up round regardless of its
+expiry.
+
+A **CertificateSigned.req** that omits ``certificateType`` is installed as the type of the outstanding request (the
+CSMS is only recommended to echo the type). A newly installed SECC leaf is picked up by the ``Evse15118D20`` module
+without a restart via the ``certificate_store_update`` event.
+
+In OCPP 1.6, the equivalent functionality is provided via the OCPP 1.6 security whitepaper extension (CSMS client
+certificate) and the Plug&Charge extension implemented via **DataTransfer.req** messages (SECC leafs, gated by
+**ISO15118CertificateManagementEnabled**). The Plug&Charge payloads are OCPP 2.0.1 messages, so the ISO 15118-20
+SECC leaf is handled as on OCPP 2.0.1: its CSR goes out as certificateType **V2GCertificate**, a SECC-typed
+**CertificateSigned** answers the outstanding request, a DataTransfer **TriggerMessage** renews both leafs, and the
+-20 request follows 60 seconds after the -2 round has ended (there is no CSR retry over the extension, so an
+unanswered -2 request delays it to the next 12 hour check). The gate is the same
+**InternalCtrlr.V2G20CertificateInstallationEnabled**, which OCPP 1.6 sees as the read-only configuration key
+``V2G20CertificateInstallationEnabled``. The deprecated ``OCPP`` module reads that key from its JSON configuration,
+where it is absent and hence ``false`` by default.
 
 In addition, the charging station periodically (by default every seven days) updates the OCSP responses of the sub-CA
 certificates of the V2G certificate chain. The cached OCSP response can be used as part of the ISO 15118 TLS

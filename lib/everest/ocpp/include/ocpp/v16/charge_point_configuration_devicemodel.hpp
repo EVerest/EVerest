@@ -169,6 +169,7 @@ public:
     bool getUseSslDefaultVerifyPaths() override;
     bool getUseTPM() override;
     bool getUseTPMSeccLeafCertificate() override;
+    bool getV2G20CertificateInstallationEnabled() override;
     bool getVerifyCsmsAllowWildcards() override;
     bool getVerifyCsmsCommonName() override;
 
@@ -264,6 +265,7 @@ public:
     std::optional<KeyValue> getReportClearedErrorsKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectCommonNameKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectCountryKeyValue() override;
+    std::optional<KeyValue> getV2G20CertificateInstallationEnabledKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectOrganizationKeyValue() override;
     std::optional<KeyValue> getSupplyVoltageKeyValue() override;
     std::optional<KeyValue> getSwitchSecurityProfileConnectionTimeoutKeyValue() override;

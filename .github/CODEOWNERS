@@ -24,7 +24,7 @@
 /lib/everest/evse_security/ @pietfried @hikinggrass @james-ctc
 /lib/everest/gpio/ @corneliusclaussen @hikinggrass @a-w50
 /lib/everest/conversions/ @hikinggrass @pietfried @corneliusclaussen @mlitre @a-w50
-/lib/everest/slac/ @a-w50 @corneliusclaussen @SebaLukas
+/lib/everest/slac/ @a-w50 @corneliusclaussen @SebaLukas @djchhp
 /lib/everest/tls/ @james-ctc @mlitre @corneliusclaussen @SebaLukas @pietfried @a-w50
 /lib/everest/everest_api_types/ @hikinggrass @pietfried @corneliusclaussen @djchhp @cburandt @florinmihut @a-w50
 /lib/everest/io/ @djchhp @corneliusclaussen @hikinggrass @james-ctc @pietfried @mlitre @a-w50
@@ -42,7 +42,7 @@
 /modules/EVSE/Evse15118D20/ @SebaLukas @a-w50 @corneliusclaussen @pietfried @hikinggrass @james-ctc @mlitre
 /modules/EVSE/EvseManager/ @corneliusclaussen @SebaLukas @hikinggrass @pietfried @mlitre @djchhp @a-w50
 /modules/EVSE/EvseSecurity/ @pietfried @hikinggrass @james-ctc @mlitre @SebaLukas @a-w50
-/modules/EVSE/EvseSlac/ @a-w50 @corneliusclaussen @SebaLukas @pietfried @hikinggrass
+/modules/EVSE/EvseSlac/ @a-w50 @corneliusclaussen @SebaLukas @pietfried @hikinggrass @djchhp
 /modules/EVSE/EvseV2G/ @corneliusclaussen @SebaLukas @james-ctc @pietfried @hikinggrass @james-ctc @mlitre @barsnick @FaHaGit @a-w50
 /modules/EVSE/OCPP/ @hikinggrass @pietfried @mlitre
 /modules/HardwareDrivers/ @pietfried @hikinggrass @corneliusclaussen @florinmihut @cburandt @djchhp @a-w50

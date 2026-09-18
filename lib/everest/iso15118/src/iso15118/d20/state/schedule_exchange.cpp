@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/dc_cable_check.hpp>
 #include <iso15118/d20/state/power_delivery.hpp>
 #include <iso15118/d20/state/schedule_exchange.hpp>
+#include <iso15118/d20/state/service_detail.hpp>
 
 #include <optional>
 #include <variant>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/schedule_exchange.hpp>
+#include <iso15118/detail/d20/state/service_discovery.hpp>
 #include <iso15118/detail/d20/state/session_stop.hpp>
 #include <iso15118/detail/helper.hpp>
 
@@ -49,14 +51,12 @@ auto create_default_scheduled_control_mode(const dt::RationalNumber& max_power) 
     return scheduled_mode;
 }
 
-namespace {
 void set_dynamic_parameters_in_res(DynamicResControlMode& res_mode, const UpdateDynamicModeParameters& parameters,
                                    uint64_t header_timestamp) {
     res_mode.departure_time = departure_time_offset(parameters.departure_time, header_timestamp);
     res_mode.target_soc = parameters.target_soc;
     res_mode.minimum_soc = parameters.min_soc;
 }
-} // namespace
 } // namespace
 
 namespace dt = message_20::datatypes;
@@ -68,7 +68,7 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
 
     message_20::ScheduleExchangeResponse res;
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
     }
 
@@ -163,7 +163,8 @@ Result ScheduleExchange::feed(Event ev) {
         }
 
         session::feedback::EvseTransferLimits evse_limits;
-        if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger()) {
+        if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger() or
+            m_ctx.session.is_ac_der_sae_charger()) {
             evse_limits = m_ctx.session_config.ac_limits;
         } else if (m_ctx.session.is_dc_charger()) {
             evse_limits = m_ctx.session_config.dc_limits;
@@ -197,7 +198,8 @@ Result ScheduleExchange::feed(Event ev) {
 
         m_ctx.stop_timeout(d20::TimeoutType::ONGOING);
 
-        if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger()) {
+        if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger() or
+            m_ctx.session.is_ac_der_sae_charger()) {
             // For AC move directly to power delivery
             return m_ctx.create_state<PowerDelivery>();
         }
@@ -214,9 +216,27 @@ Result ScheduleExchange::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
         m_ctx.session_stopped = true;
 
         return {};
+    } else if (const auto req = variant->get_if<message_20::ServiceDiscoveryRequest>();
+               req != nullptr and (m_ctx.session.is_ac_der_iec_charger() or m_ctx.session.is_ac_der_sae_charger())) {
+        // The EV may restart service selection if it rejects the dictated DER settings: [V2G20-3153] IEC,
+        // [V2G20-3231] SAE, allowed as the next request by [V2G20-3348] and [V2G20-3355]. The Finished
+        // plus OK precondition is discharged by both CPD states' transition guards.
+        const auto res =
+            handle_request(*req, m_ctx.session, m_ctx.session_config.supported_energy_transfer_services,
+                           m_ctx.session_config.supported_vas_services, m_ctx.session_ev_info.ev_energy_services);
+
+        m_ctx.respond(res);
+
+        if (res.response_code >= dt::ResponseCode::FAILED) {
+            m_ctx.session_stopped = true;
+            return {};
+        }
+
+        return m_ctx.create_state<ServiceDetail>();
     } else {
         logf_warning("Expected ScheduleExchangeReq! But code type id: %d", variant->get_type());
 

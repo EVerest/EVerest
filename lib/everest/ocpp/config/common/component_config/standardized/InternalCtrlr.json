@@ -442,6 +442,22 @@
         "default": false,
         "type": "boolean"
       },
+      "V2G20CertificateInstallationEnabled": {
+        "description": "If true (and ISO15118Ctrlr.V2GCertificateInstallationEnabled is true), the charging station also maintains a second SECC leaf certificate for ISO 15118-20 (TLS 1.3, secp521r1 key) next to the ISO 15118-2 one: it requests one via SignCertificate.req when none is installed or the installed one expires within 30 days and installs the CertificateSigned.req chain. On OCPP 2.1 the request carries certificateType V2G20Certificate and TriggerMessage SignV2G20Certificate is accepted. OCPP 2.0.1 and the OCPP 1.6 Plug&Charge DataTransfer extension have no such value: there the -20 CSR is sent as V2GCertificate and the CSMS tells the two SECC CSRs apart by their key algorithm (secp521r1 vs prime256v1); a CertificateSigned.req typed V2GCertificate that answers the outstanding -20 request is installed as the -20 leaf, and TriggerMessage SignV2GCertificate renews both leafs. The two CSRs are never in flight together: the second follows V2GCertificateExpireCheckInitialDelaySeconds after the first round has ended. Over OCPP 1.6 this variable is visible as the read-only configuration key of the same name. Defaults to true, so a CSMS that supports V2GCertificate is expected to sign the -20 CSR as well; set to false for a CSMS that cannot.",
+        "variable_name": "V2G20CertificateInstallationEnabled",
+        "characteristics": {
+            "supportsMonitoring": false,
+            "dataType": "boolean"
+        },
+        "attributes": [
+            {
+                "type": "Actual",
+                "mutability": "ReadWrite"
+            }
+        ],
+        "default": true,
+        "type": "boolean"
+      },
       "VerifyCsmsAllowWildcards": {
         "variable_name": "VerifyCsmsAllowWildcards",
         "characteristics": {

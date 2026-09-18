@@ -5,6 +5,7 @@
 #include <everest/logging.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstring>
 #include <iterator>
@@ -124,6 +125,7 @@ bool s_generate_key(const KeyGenerationInfo& key_info, KeyHandle_ptr& out_key, E
     unsigned int bits = 0;
     std::string group_256 = "P-256";
     std::string group_384 = "P-384";
+    std::string group_521 = "P-521";
     char* group = nullptr;
     std::size_t group_sz = 0;
     int nid = NID_undef;
@@ -158,6 +160,11 @@ bool s_generate_key(const KeyGenerationInfo& key_info, KeyHandle_ptr& out_key, E
         group = group_256.data();
         group_sz = group_256.length();
         nid = NID_X9_62_prime256v1;
+        break;
+    case CryptoKeyType::EC_secp521r1:
+        group = group_521.data();
+        group_sz = group_521.length();
+        nid = NID_secp521r1;
         break;
     case CryptoKeyType::EC_secp384r1:
     default:
@@ -399,6 +406,31 @@ std::string OpenSSLSupplier::x509_get_key_hash(X509Handle* handle) {
     }
 
     return ss.str();
+}
+
+std::string OpenSSLSupplier::x509_get_public_key_algorithm(X509Handle* handle) {
+    X509* x509 = get(handle);
+
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    // Borrowed reference, must not be freed
+    EVP_PKEY* pkey = X509_get0_pubkey(x509);
+    if (pkey == nullptr) {
+        return {};
+    }
+
+    // EC keys are told apart by their curve: that is what ISO 15118-2 (prime256v1) and
+    // ISO 15118-20 (secp521r1) prescribe for the SECC leaf.
+    std::array<char, 64> group{};
+    std::size_t group_len = 0;
+    if (EVP_PKEY_get_group_name(pkey, group.data(), group.size(), &group_len) == 1 && group_len > 0) {
+        return std::string(group.data(), group_len);
+    }
+
+    const char* type_name = EVP_PKEY_get0_type_name(pkey);
+    return (type_name != nullptr) ? std::string(type_name) : std::string{};
 }
 
 std::string OpenSSLSupplier::x509_get_responder_url(X509Handle* handle) {
@@ -761,8 +793,10 @@ CertificateSignRequestResult OpenSSLSupplier::x509_generate_csr(const Certificat
         return CertificateSignRequestResult::ExtensionsError;
     }
 
-    // sign the certificate with the private key
-    const bool x509_signed = X509_REQ_sign(x509_req_ptr.get(), key, EVP_sha256()) != 0;
+    // sign the certificate with the private key. ISO 15118-20 pairs secp521r1 with SHA-512
+    // (ecdsa-with-SHA512); everything else keeps SHA-256
+    const EVP_MD* digest = (csr_info.key_info.key_type == CryptoKeyType::EC_secp521r1) ? EVP_sha512() : EVP_sha256();
+    const bool x509_signed = X509_REQ_sign(x509_req_ptr.get(), key, digest) != 0;
 
     if (x509_signed == false) {
         EVLOG_error << "Failed to sign csr with error!";

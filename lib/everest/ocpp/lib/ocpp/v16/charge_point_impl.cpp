@@ -128,16 +128,7 @@ ChargePointImpl::ChargePointImpl(
     });
 
     this->v2g_certificate_timer = std::make_unique<Everest::SteadyTimer>(&this->io_context, [this]() {
-        EVLOG_info << "Checking if V2GCertificate has expired";
-        const int expiry_days_count =
-            this->evse_security->get_leaf_expiry_days_count(ocpp::CertificateSigningUseEnum::V2GCertificate);
-        if (expiry_days_count < 30) {
-            EVLOG_info << "V2GCertificate is invalid in " << expiry_days_count
-                       << " days. Requesting new certificate with certificate signing request";
-            this->data_transfer_pnc_sign_certificate();
-        } else {
-            EVLOG_info << "V2GCertificate is still valid.";
-        }
+        this->check_secc_certificates_expiration();
         this->v2g_certificate_timer->interval(V2G_CERTIFICATE_TIMER_INTERVAL);
     });
 
@@ -353,6 +344,7 @@ void ChargePointImpl::on_websocket_disconnected(const int configuration_slot,
     if (this->v2g_certificate_timer != nullptr) {
         this->v2g_certificate_timer->stop();
     }
+    this->clear_secc_certificate_signing_state();
     // signal_set_charging_profiles_callback since composite schedule could have changed if
     // IgnoredProfilePurposesOffline are configured when becoming offline
     if (this->signal_set_charging_profiles_callback != nullptr and
@@ -1287,6 +1279,7 @@ bool ChargePointImpl::stop() {
         if (this->v2g_certificate_timer != nullptr) {
             this->v2g_certificate_timer->stop();
         }
+        this->clear_secc_certificate_signing_state();
         if (this->change_time_offset_timer != nullptr) {
             this->change_time_offset_timer->stop();
         }
@@ -1968,6 +1961,7 @@ ChargePointImpl::set_configuration_key_internal(CiString<50> key, CiString<500> 
                     } else {
                         ocsp_request_timer->stop();
                         v2g_certificate_timer->stop();
+                        clear_secc_certificate_signing_state();
                     }
                 } else if (key == "OcspRequestInterval") {
                     if (is_iso15118_certificate_management_enabled()) {
@@ -3894,13 +3888,75 @@ ocpp::v2::AuthorizeResponse ChargePointImpl::data_transfer_pnc_authorize(
     return authorize_response;
 }
 
-void ChargePointImpl::data_transfer_pnc_sign_certificate() {
+bool ChargePointImpl::is_v2g20_certificate_installation_enabled() {
+    return this->is_iso15118_certificate_management_enabled() and
+           this->configuration.getV2G20CertificateInstallationEnabled();
+}
+
+bool ChargePointImpl::is_secc_certificate_due(const ocpp::CertificateSigningUseEnum& certificate_signing_use) {
+    const auto name = ocpp::conversions::certificate_signing_use_enum_to_string(certificate_signing_use);
+    EVLOG_info << "Checking if " << name << " has expired";
+    // 0 also when no leaf of that type is installed yet, so the initial certificate is requested the same way
+    const int expiry_days_count = this->evse_security->get_leaf_expiry_days_count(certificate_signing_use);
+    if (expiry_days_count < 30) {
+        EVLOG_info << name << " is invalid in " << expiry_days_count
+                   << " days. Requesting new certificate with certificate signing request";
+        return true;
+    }
+    EVLOG_info << name << " is still valid.";
+    return false;
+}
+
+void ChargePointImpl::check_secc_certificates_expiration() {
+    std::optional<SeccFollowUp> follow_up;
+    {
+        const std::lock_guard<std::mutex> lock(this->secc_certificate_state_mutex);
+        // A CertificateSigned that never came must not label a much later one; there is no CSR retry over the
+        // PnC DataTransfer extension, so a follow-up left behind by an unanswered CSR is handled at this tick
+        this->awaited_secc_certificate_signing_use.reset();
+        follow_up = std::exchange(this->secc_follow_up, std::nullopt);
+    }
+    const bool v2g20_enabled = this->is_v2g20_certificate_installation_enabled();
+
+    if (follow_up.has_value()) {
+        // A follow-up round handles the other SECC leaf only and never schedules a follow-up of its own
+        if (follow_up->certificate_signing_use == ocpp::CertificateSigningUseEnum::V2G20Certificate and
+            not v2g20_enabled) {
+            EVLOG_info << "V2G20CertificateInstallationEnabled was switched off, not requesting the V2G20Certificate";
+        } else if (follow_up->regardless_of_expiry or
+                   this->is_secc_certificate_due(follow_up->certificate_signing_use)) {
+            this->data_transfer_pnc_sign_certificate(follow_up->certificate_signing_use);
+        }
+    } else if (this->is_secc_certificate_due(ocpp::CertificateSigningUseEnum::V2GCertificate)) {
+        if (v2g20_enabled) {
+            // The ISO 15118-2 and ISO 15118-20 SECC leafs are renewed independently, one DataTransfer(SignCertificate)
+            // at a time and both labelled V2GCertificate: the -2 leaf goes first, the -20 leaf is checked
+            // INITIAL_CERTIFICATE_REQUESTS_DELAY after that round has ended. Set before the CSR goes out so that an
+            // immediate answer already finds it.
+            const std::lock_guard<std::mutex> lock(this->secc_certificate_state_mutex);
+            this->secc_follow_up = SeccFollowUp{ocpp::CertificateSigningUseEnum::V2G20Certificate, false};
+        }
+        this->data_transfer_pnc_sign_certificate(ocpp::CertificateSigningUseEnum::V2GCertificate);
+    } else if (v2g20_enabled and this->is_secc_certificate_due(ocpp::CertificateSigningUseEnum::V2G20Certificate)) {
+        this->data_transfer_pnc_sign_certificate(ocpp::CertificateSigningUseEnum::V2G20Certificate);
+    }
+}
+
+void ChargePointImpl::clear_secc_certificate_signing_state() {
+    const std::lock_guard<std::mutex> lock(this->secc_certificate_state_mutex);
+    this->awaited_secc_certificate_signing_use.reset();
+    this->secc_follow_up.reset();
+}
+
+bool ChargePointImpl::data_transfer_pnc_sign_certificate(
+    const ocpp::CertificateSigningUseEnum& certificate_signing_use) {
+    const auto name = ocpp::conversions::certificate_signing_use_enum_to_string(certificate_signing_use);
 
     if (!this->configuration.getCpoName().has_value() and
         !this->configuration.getSeccLeafSubjectOrganization().has_value()) {
-        EVLOG_warning
-            << "Can not request new V2GCertificate because neither CpoName nor SeccLeafSubjectOrganization is set.";
-        return;
+        EVLOG_warning << "Can not request new " << name
+                      << " because neither CpoName nor SeccLeafSubjectOrganization is set.";
+        return false;
     }
 
     DataTransferRequest req;
@@ -3910,29 +3966,38 @@ void ChargePointImpl::data_transfer_pnc_sign_certificate() {
     ocpp::v2::SignCertificateRequest csr_req;
 
     const auto result = this->evse_security->generate_certificate_signing_request(
-        ocpp::CertificateSigningUseEnum::V2GCertificate, this->configuration.getSeccLeafSubjectCountry().value_or("DE"),
+        certificate_signing_use, this->configuration.getSeccLeafSubjectCountry().value_or("DE"),
         this->configuration.getSeccLeafSubjectOrganization().value_or(
             this->configuration.getCpoName().value_or("DEFAULT")),
         this->configuration.getSeccLeafSubjectCommonName().value_or(this->configuration.getChargeBoxSerialNumber()),
         this->configuration.getUseTPMSeccLeafCertificate());
 
     if (result.status != GetCertificateSignRequestStatus::Accepted || !result.csr.has_value()) {
-        EVLOG_error << "Could not request new V2GCertificate, because the CSR was not successful.";
+        EVLOG_error << "Could not request new " << name << ", because the CSR was not successful.";
 
         std::string gen_error = "Data transfer pnc csr failed due to:" +
                                 ocpp::conversions::generate_certificate_signing_request_status_to_string(result.status);
         this->securityEventNotification(ocpp::security_events::CSRGENERATIONFAILED,
                                         std::optional<CiString<255>>(gen_error), true);
 
-        return;
+        return false;
     }
 
     csr_req.csr = result.csr.value();
+    // The PnC DataTransfer payload is an OCPP 2.0.1 SignCertificateRequest, whose CertificateSigningUseEnum has no
+    // V2G20Certificate: both SECC leafs are labelled V2GCertificate and the CSMS tells the two CSRs apart by their
+    // key algorithm (secp521r1 vs prime256v1)
     csr_req.certificateType = ocpp::v2::CertificateSigningUseEnum::V2GCertificate;
     req.data.emplace(json(csr_req).dump());
 
+    {
+        const std::lock_guard<std::mutex> lock(this->secc_certificate_state_mutex);
+        this->awaited_secc_certificate_signing_use = certificate_signing_use;
+    }
+
     const Call<DataTransferRequest> call(req);
     this->message_dispatcher->dispatch_call(call);
+    return true;
 }
 
 void ChargePointImpl::data_transfer_pnc_get_15118_ev_certificate(
@@ -4081,7 +4146,13 @@ void ChargePointImpl::handle_data_transfer_pnc_trigger_message(Call<DataTransfer
 
     if (response.status == DataTransferStatus::Accepted) {
         // send sign certificate wrapped in data_transfer
-        this->data_transfer_pnc_sign_certificate();
+        if (this->data_transfer_pnc_sign_certificate(ocpp::CertificateSigningUseEnum::V2GCertificate) and
+            this->is_v2g20_certificate_installation_enabled()) {
+            // The PnC extension has no trigger for the -20 leaf: renewing "the SECC leaf" covers both leafs, the
+            // -20 one following once this round has ended
+            const std::lock_guard<std::mutex> lock(this->secc_certificate_state_mutex);
+            this->secc_follow_up = SeccFollowUp{ocpp::CertificateSigningUseEnum::V2G20Certificate, true};
+        }
     }
 }
 
@@ -4104,11 +4175,20 @@ void ChargePointImpl::handle_data_transfer_pnc_certificate_signed(Call<DataTrans
         certificate_response.status = CertificateSignedStatusEnumType::Rejected;
         std::string tech_info; // in case certificate is rejected this contains human readable information
 
+        // The chain ends the outstanding signing round whichever way it is installed
+        std::optional<ocpp::CertificateSigningUseEnum> awaited;
+        bool follow_up_pending = false;
+        {
+            const std::lock_guard<std::mutex> lock(this->secc_certificate_state_mutex);
+            awaited = std::exchange(this->awaited_secc_certificate_signing_use, std::nullopt);
+            follow_up_pending = this->secc_follow_up.has_value();
+        }
+
         const auto get_certificate_signed_max_chain_size = this->configuration.getCertificateSignedMaxChainSize();
         if (req.certificateType.has_value() and
-            req.certificateType.value() != ocpp::v2::CertificateSigningUseEnum::V2GCertificate) {
+            req.certificateType.value() == ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate) {
             tech_info = "Received DataTransfer.req containing CertificateSigned.req where certificateType is not "
-                        "V2GCertificate";
+                        "a SECC leaf type";
             EVLOG_warning << tech_info;
         } else if (get_certificate_signed_max_chain_size.has_value() and
                    static_cast<size_t>(get_certificate_signed_max_chain_size.value()) <
@@ -4117,9 +4197,15 @@ void ChargePointImpl::handle_data_transfer_pnc_certificate_signed(Call<DataTrans
                         "than configured CertificateSignedMaxChainSize";
             EVLOG_warning << tech_info;
         } else {
+            // The PnC payload labels both SECC leafs V2GCertificate (a CSMS may still echo V2G20Certificate), so a
+            // SECC chain answers the DataTransfer(SignCertificate) that is outstanding
+            const auto certificate_signing_use =
+                (req.certificateType == ocpp::v2::CertificateSigningUseEnum::V2G20Certificate)
+                    ? ocpp::CertificateSigningUseEnum::V2G20Certificate
+                    : awaited.value_or(ocpp::CertificateSigningUseEnum::V2GCertificate);
             const auto certificate_chain = req.certificateChain.get();
-            const auto result = this->evse_security->update_leaf_certificate(
-                certificate_chain, ocpp::CertificateSigningUseEnum::V2GCertificate);
+            const auto result =
+                this->evse_security->update_leaf_certificate(certificate_chain, certificate_signing_use);
 
             if (result == InstallCertificateResult::Accepted) {
                 certificate_response.status = CertificateSignedStatusEnumType::Accepted;
@@ -4132,6 +4218,12 @@ void ChargePointImpl::handle_data_transfer_pnc_certificate_signed(Call<DataTrans
 
         const CallResult<DataTransferResponse> call_result(response, call.uniqueId);
         this->message_dispatcher->dispatch_call_result(call_result);
+
+        if (follow_up_pending) {
+            // The other SECC leaf follows after the usual initial delay
+            this->v2g_certificate_timer->stop();
+            this->v2g_certificate_timer->timeout(INITIAL_CERTIFICATE_REQUESTS_DELAY);
+        }
 
         if (certificate_response.status == CertificateSignedStatusEnumType::Rejected) {
             this->securityEventNotification(ocpp::security_events::INVALIDCHARGEPOINTCERTIFICATE,

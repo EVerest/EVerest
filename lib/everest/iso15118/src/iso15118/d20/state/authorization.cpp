@@ -141,6 +141,7 @@ Result Authorization::feed(Event ev) {
     } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
 
         m_ctx.session_stopped = true;
         return {};

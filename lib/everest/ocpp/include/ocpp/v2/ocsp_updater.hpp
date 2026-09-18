@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #ifndef OCPP_OCSP_UPDATER_HPP
 #define OCPP_OCSP_UPDATER_HPP
@@ -69,7 +69,8 @@ private:
     std::thread updater_thread;
 
     // This mutex guards access to everything below it, INCLUDING explicit_update_trigger
-    // - The updater thread always holds the lock, except when it's waiting on explicit_update_trigger
+    // - The updater thread always holds the lock, except when it's waiting on explicit_update_trigger or exchanging
+    //   GetCertificateStatus messages with the CSMS, so trigger_ocsp_cache_update never blocks on a running update
     // - The lib needs to hold the lock to notify the explicit_update_trigger (this guarantees it wakes up the worker)
     std::mutex update_ocsp_cache_lock;
     // Condition variable used to wake up the updater thread

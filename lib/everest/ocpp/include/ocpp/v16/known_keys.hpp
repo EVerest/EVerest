@@ -75,6 +75,7 @@ namespace ocpp::v16::keys {
     mapping(SupportedCiphers13, SupportedCiphers13) \
     mapping(UseTPM, UseTPM) \
     mapping(UseTPMSeccLeafCertificate, UseTPMSeccLeafCertificate) \
+    mapping(V2G20CertificateInstallationEnabled, V2G20CertificateInstallationEnabled) \
     mapping(RetryBackoffRandomRange, RetryBackOffRandomRange) \
     mapping(RetryBackoffRepeatTimes, RetryBackOffRepeatTimes) \
     mapping(AuthorizeConnectorZeroOnConnectorOne,AuthorizeConnectorZeroOnConnectorOne) \
@@ -302,6 +303,7 @@ namespace ocpp::v16::keys {
     key(Internal, UseSslDefaultVerifyPaths) \
     key(Internal, UseTPM) \
     key(Internal, UseTPMSeccLeafCertificate) \
+    key(Internal, V2G20CertificateInstallationEnabled) \
     key(Internal, VerifyCsmsAllowWildcards) \
     key(Internal, VerifyCsmsCommonName) \
     key(Internal, WaitForStopTransactionsOnResetTimeout) \

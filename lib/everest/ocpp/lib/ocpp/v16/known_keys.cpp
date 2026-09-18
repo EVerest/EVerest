@@ -85,7 +85,8 @@ using ocpp::v16::keys::valid_keys;
     key(EnableTLSKeylog) \
     key(TLSKeylogFile) \
     key(UseTPM) \
-    key(UseTPMSeccLeafCertificate)
+    key(UseTPMSeccLeafCertificate) \
+    key(V2G20CertificateInstallationEnabled)
 
 // Hidden keys are ones that are not made available over OCPP
 //  AuthorizationKey because it contains the connection secret

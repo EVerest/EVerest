@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <array>
@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include <iso15118/d20/der_functions.hpp>
 #include <iso15118/io/sha_hash.hpp>
 #include <iso15118/message/common_types.hpp>
 
@@ -126,24 +127,65 @@ public:
     void selected_service_parameters(const dt::ServiceCategory service, const uint16_t id);
     void selected_service_parameters(const uint16_t vas_service, const uint16_t id);
 
-    auto get_selected_services() const& {
+    [[nodiscard]] auto get_selected_services() const& {
         return selected_services;
     }
 
-    bool is_ac_charger() const {
+    [[nodiscard]] bool is_ac_charger() const {
         return selected_services.selected_energy_service == dt::ServiceCategory::AC or
                selected_services.selected_energy_service == dt::ServiceCategory::AC_BPT;
     }
 
-    bool is_ac_der_iec_charger() const {
+    [[nodiscard]] bool is_ac_der_iec_charger() const {
         return selected_services.selected_energy_service == dt::ServiceCategory::AC_DER_IEC;
     }
 
-    bool is_dc_charger() const {
+    [[nodiscard]] bool is_ac_der_sae_charger() const {
+        return selected_services.selected_energy_service == dt::ServiceCategory::AC_DER_SAE;
+    }
+
+    [[nodiscard]] bool is_dc_charger() const {
         return selected_services.selected_energy_service == dt::ServiceCategory::DC or
                selected_services.selected_energy_service == dt::ServiceCategory::DC_BPT or
                selected_services.selected_energy_service == dt::ServiceCategory::MCS or
                selected_services.selected_energy_service == dt::ServiceCategory::MCS_BPT;
+    }
+
+    void set_ev_supported_sae_functions(std::uint32_t bitmap) {
+        ev_supported_sae_functions.emplace(bitmap);
+    }
+
+    [[nodiscard]] std::optional<std::uint32_t> get_ev_supported_sae_functions() const {
+        return ev_supported_sae_functions;
+    }
+
+    void set_enabled_der_control_modes(std::uint32_t bitmap) {
+        enabled_der_control_modes = bitmap;
+    }
+
+    [[nodiscard]] std::uint32_t get_enabled_der_control_modes() const {
+        return enabled_der_control_modes;
+    }
+
+    void record_der_control_sent(std::uint32_t revision) {
+        der_control_sent_revision.emplace(revision);
+    }
+
+    [[nodiscard]] bool der_control_changed_since_cpd(std::uint32_t config_revision) const {
+        return der_control_sent_revision != config_revision;
+    }
+
+    void record_der_modes_sent(sae::RequiredDEROperatingMode operating_mode, sae::GridConnectionMode connection_mode) {
+        sent_required_der_operating_mode.emplace(operating_mode);
+        sent_grid_connection_mode.emplace(connection_mode);
+    }
+
+    [[nodiscard]] std::optional<sae::RequiredDEROperatingMode> get_sent_required_der_operating_mode() const {
+        return sent_required_der_operating_mode;
+    }
+
+    [[nodiscard]] std::optional<sae::GridConnectionMode> get_sent_grid_connection_mode() const {
+        return sent_grid_connection_mode;
     }
 
     ~Session();
@@ -158,6 +200,21 @@ private:
 
     SelectedServiceParameters selected_services{};
     SelectedVasParameter selected_vas_services{};
+
+    // The EV's masked SupportedModes declaration, empty until the SAE CPD has run.
+    std::optional<std::uint32_t> ev_supported_sae_functions{};
+
+    // The SAE bits the SECC actually enabled in the CPD response, which is what the EV's EnabledModes echo is
+    // compared against. Zero until the SAE CPD has run.
+    std::uint32_t enabled_der_control_modes{0};
+
+    // The DerSaeSetupConfig::revision last sent to the EV, to be compared against the configured one. Empty
+    // until the SAE CPD has run.
+    std::optional<std::uint32_t> der_control_sent_revision{};
+
+    // Last-sent Annex M mode enums, for [V2G20-3358]-[V2G20-3361] per-field resend (ADR-0027).
+    std::optional<sae::RequiredDEROperatingMode> sent_required_der_operating_mode{};
+    std::optional<sae::GridConnectionMode> sent_grid_connection_mode{};
 };
 
 } // namespace iso15118::d20

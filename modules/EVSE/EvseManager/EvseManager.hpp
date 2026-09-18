@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -63,6 +63,7 @@ struct Conf {
     bool payment_enable_eim;
     bool payment_enable_contract;
     double ac_nominal_voltage;
+    double ac_nominal_frequency;
     double ac_max_reactive_power;
     bool ev_receipt_required;
     bool session_logging;
@@ -71,6 +72,7 @@ struct Conf {
     bool has_ventilation;
     std::string charge_mode;
     bool supported_iso_ac_bpt;
+    std::string iso15118_der_flavor;
     bool ac_hlc_enabled;
     bool ac_hlc_use_5percent;
     bool ac_enforce_hlc;
@@ -297,9 +299,12 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
+    /// The AC energy transfer list implied by the current capabilities and der_available.
+    std::vector<types::iso15118::EnergyTransferMode> current_ac_energy_transfers();
     std::mutex powersupply_capabilities_mutex;
     types::power_supply_DC::Capabilities powersupply_capabilities;
     std::optional<types::power_supply_DC::Capabilities> last_hlc_capabilities;
@@ -334,6 +339,12 @@ private:
 
     std::atomic_bool hlc_waiting_for_auth_eim;
     std::atomic_bool hlc_waiting_for_auth_pnc;
+
+    // An HLC data link/session is currently in use (set at protocol selection, cleared by the
+    // dlink_* events). While true, the SLAC leave on unplug is deferred to the dlink_terminate
+    // that follows the stack's own TCP teardown, so the FIN still traverses the AVLN
+    // ([V2G-DC-962]/[V2G-DC-940]; the SLAC leave has T_match_leave of budget).
+    std::atomic_bool hlc_link_in_use{false};
 
     std::atomic_bool pnc_enabled{false};
     std::atomic_bool central_contract_validation_allowed{false};
@@ -391,6 +402,7 @@ private:
     bool wait_powersupply_DC_below_voltage(double target_voltage);
 
     bool cable_check_should_exit();
+    bool cable_check_wait_for_prepare_charging();
 
     double get_emergency_over_voltage_threshold();
     double get_error_over_voltage_threshold();
@@ -420,6 +432,10 @@ private:
 
     std::atomic_bool current_demand_active{false};
     std::atomic_bool slac_unmatched{false};
+    // Running count of Control-Pilot B/C transitions in the current session. Incremented on every B<->C
+    // edge and pushed to the SLAC module via count_bc() so EvseSlac can detect BCB toggles for
+    // CM_VALIDATE. Reset to 0 on plug-in.
+    int bc_transition_count{0};
     std::mutex powermeter_mutex;
     std::condition_variable powermeter_cv;
     bool initial_powermeter_value_received{false};
