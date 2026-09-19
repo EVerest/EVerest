@@ -627,12 +627,13 @@ std::optional<dt::ResponseCode> chain_validity_fault(const std::vector<uint8_t>&
     return validity_fault(chain);
 }
 
-std::vector<uint8_t> authorization_request_without_timestamp(const std::vector<uint8_t>& exi) {
+std::vector<uint8_t> authorization_request_without_timestamp_and_signature(const std::vector<uint8_t>& exi) {
     auto doc = std::make_unique<iso20_exiDocument>();
     if (not decode_document(exi, *doc) or not doc->AuthorizationReq_isUsed) {
         return {};
     }
     doc->AuthorizationReq.Header.TimeStamp = 0;
+    doc->AuthorizationReq.Header.Signature_isUsed = 0;
     std::vector<uint8_t> result(MAX_EXI_SIZE);
     exi_bitstream_t stream;
     exi_bitstream_init(&stream, result.data(), result.size(), 0, nullptr);
