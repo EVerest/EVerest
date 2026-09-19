@@ -162,6 +162,29 @@ TEST_F(ConfigurationTester, BooleanKeyAcceptsValidLiterals) {
     }
 }
 
+TEST_F(ConfigurationTester, OcspRequestInterval) {
+    EXPECT_EQ(config->getOcspRequestInterval(), 604800);
+
+    auto set_ok = config->set("OcspRequestInterval", "86400");
+    ASSERT_TRUE(set_ok.has_value());
+    EXPECT_EQ(set_ok.value(), ConfigurationStatus::Accepted);
+    EXPECT_EQ(config->getOcspRequestInterval(), 86400);
+
+    auto set_low = config->set("OcspRequestInterval", "86399");
+    ASSERT_TRUE(set_low.has_value());
+    EXPECT_EQ(set_low.value(), ConfigurationStatus::Rejected);
+    EXPECT_EQ(config->getOcspRequestInterval(), 86400);
+}
+
+TEST(ConfigWithoutOcspRequestInterval, SchemaDefaultIsSevenDays) {
+    fs::path cfg{CONFIG_DIR_V16};
+    cfg /= "config.json";
+    std::ifstream ifs(cfg);
+    const std::string config_file((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+    ChargePointConfiguration local_config(config_file, CONFIG_DIR_V16, USER_CONFIG_FILE_LOCATION_V16);
+    EXPECT_EQ(local_config.getOcspRequestInterval(), 604800);
+}
+
 TEST_F(ConfigurationTester, BooleanKeyRejectsInvalidLiterals) {
     auto initial = config->get("AuthorizeRemoteTxRequests");
     ASSERT_TRUE(initial.has_value());
