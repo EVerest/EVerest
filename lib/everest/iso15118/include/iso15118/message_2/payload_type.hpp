@@ -48,6 +48,8 @@ CREATE_TYPE_TRAIT(MeteringReceiptRequest, SAP);
 CREATE_TYPE_TRAIT(MeteringReceiptResponse, SAP);
 CREATE_TYPE_TRAIT(CertificateInstallationRequest, SAP);
 CREATE_TYPE_TRAIT(CertificateInstallationResponse, SAP);
+CREATE_TYPE_TRAIT(CertificateUpdateRequest, SAP);
+CREATE_TYPE_TRAIT(CertificateUpdateResponse, SAP);
 
 // header-local macro: drop it so the type-trait headers of the other protocols can redefine it
 #undef CREATE_TYPE_TRAIT
