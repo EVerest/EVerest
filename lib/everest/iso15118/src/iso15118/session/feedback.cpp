@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/session/feedback.hpp>
 
 #include <iso15118/detail/helper.hpp>
@@ -110,9 +110,8 @@ void Feedback::require_auth_pnc(const std::string& emaid, const std::string& con
     call_if_available(callbacks.require_auth_pnc, emaid, contract_chain_pem);
 }
 
-void Feedback::certificate_request(const std::string& exi_request_base64,
-                                   feedback::CertificateExchangeAction action) const {
-    call_if_available(callbacks.certificate_request, exi_request_base64, action);
+void Feedback::certificate_request(const feedback::CertificateRequest& request) const {
+    call_if_available(callbacks.certificate_request, request);
 }
 
 } // namespace iso15118::session

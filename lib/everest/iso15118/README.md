@@ -19,8 +19,8 @@ The following table shows the current support for the listed EVSE ISO15118-20 fe
 | WPT                                |                    |
 | ACDP                               |                    |
 | ExternalPayment                    | :heavy_check_mark: |
-| Plug&Charge                        | WIP                |
-| CertificateInstallation            |                    |
+| Plug&Charge                        | :heavy_check_mark: |
+| CertificateInstallation            | :heavy_check_mark: |
 | Scheduled Mode                     | :heavy_check_mark: |
 | Dynamic Mode (+ MobilityNeedsMode) | :heavy_check_mark: |
 | Private Env                        |                    |

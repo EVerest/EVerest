@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <chrono>
 #include <limits>
 
@@ -9,6 +9,7 @@
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
+#include <iso15118/message/certificate_installation.hpp>
 #include <iso15118/message/dc_cable_check.hpp>
 #include <iso15118/message/dc_charge_loop.hpp>
 #include <iso15118/message/dc_charge_parameter_discovery.hpp>
@@ -89,6 +90,13 @@ void send_sequence_error(const message_20::Type req_type, d20::Context& ctx) {
     } else if (req_type == message_20::Type::AuthorizationReq) {
         const auto res = handle_sequence_error<message_20::AuthorizationResponse>(ctx.session);
         ctx.respond(res);
+    } else if (req_type == message_20::Type::CertificateInstallationReq) {
+        // Mandatory chains as empty placeholders ([V2G20-736]); ContractCertificateChain needs one entry.
+        message_20::CertificateInstallationResponse res;
+        setup_header(res.header, ctx.session);
+        res.signed_installation_data.id = "id1";
+        res.signed_installation_data.contract_certificate_chain.sub_certificates.emplace_back();
+        ctx.respond(response_with_code(res, message_20::datatypes::ResponseCode::FAILED_SequenceError));
     } else if (req_type == message_20::Type::ServiceDiscoveryReq) {
         const auto res = handle_sequence_error<message_20::ServiceDiscoveryResponse>(ctx.session);
         ctx.respond(res);

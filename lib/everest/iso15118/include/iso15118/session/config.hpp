@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <array>
@@ -76,7 +76,7 @@ struct EvseSetupConfig {
 
     // In SECONDS; 0 waits indefinitely. EIM gets far more than the 55 s V2G_SECC_Ongoing_Performance_Time
     // of [V2G2-712/713] on purpose: the bottleneck is a human presenting a card, not SECC processing.
-    // ISO 15118-20 is deliberately not covered -- it keeps its own fixed d20::TIMEOUT_EIM_ONGOING.
+    // -20 EIM keeps the fixed d20::TIMEOUT_EIM_ONGOING; -20 PnC uses auth_timeout_pnc_s ([V2G20-2102]).
     uint32_t auth_timeout_eim_s{300};
     uint32_t auth_timeout_pnc_s{55};
 };

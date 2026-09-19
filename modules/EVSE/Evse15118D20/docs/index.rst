@@ -45,6 +45,77 @@ The two DER flavors are mutually exclusive per EVSE, so at most one is ever
 advertised. EvseManager enforces that when it builds the energy transfer mode
 set; see "DER flavor selection" below.
 
+Plug and Charge
+===============
+
+Contract-certificate authorization is offered whenever EvseManager passes
+``Contract`` in ``session_setup`` (``payment_enable_contract``). For ISO
+15118-2 this is the ``Contract`` payment option; for ISO 15118-20 the SECC lists
+``PnC`` next to ``EIM`` in ``AuthorizationSetupRes`` and issues the 128 bit
+``GenChallenge`` ([V2G20-697]). The ``CertificateInstallationService`` flag
+follows ``supported_certificate_service``.
+
+An ISO 15118-20 ``AuthorizationReq`` with ``PnC`` is checked in this order:
+session id, offered service ([V2G20-2209]), ``GenChallenge`` match
+([V2G20-2565], ``WARNING_ChallengeInvalid``), header signature over
+``PnC_AReqAuthorizationMode`` with the contract leaf key ([V2G20-1063];
+``ecdsa-sha512`` with SHA-512 digests or Ed448 with SHAKE256 digests, r||s per
+[V2G20-1000]; a failure is ``FAILED_SignatureError`` and ends the session), then
+the contract chain. The chain is validated locally against the MO and V2G root
+bundles of ``EvseSecurity`` (``get_verify_file``): validity window of every
+element (``WARNING_CertificateExpired`` / ``WARNING_CertificateNotYetValid``),
+the Annex B profile (secp521r1 or Ed448 keys, ``ecdsa-with-SHA512`` or Ed448
+signatures, critical ``KeyUsage`` and ``BasicConstraints``, no
+``ExtendedKeyUsage``, no extension outside Table B.9/B.10, ``CN`` = EMAID and
+``O`` in the subject, CRL or OCSP pointer; ``WARNING_CertificateValidationError``)
+and the trust chain. Annex B marks the key identifiers and the revocation
+pointers critical where IETF RFC 5280 does not, so those extensions are decoded
+and accepted; any other unknown critical extension still fails the chain. A
+chain whose eMSP root is not installed is ``WARNING_eMSPUnknown`` unless
+``central_contract_validation_allowed`` is set, in which case it is still handed
+to the backend.
+
+An accepted chain is published as ``require_auth_pnc`` (eMAID plus the PEM
+chain) and answered ``OK`` / ``Ongoing`` until ``authorization_response``
+arrives. While that poll is open the EV repeats the request unaltered apart from
+the header timestamp ([V2G20-1582]); a changed request is a sequence error, so a
+pending result can never be consumed by a different contract. The wait is
+bounded by ``auth_timeout_pnc`` ([V2G20-2102]). ``Accepted`` gives
+``OK``, or ``OK_CertificateExpiresSoon`` when the leaf expires within 14 days
+([V2G20-2218]), which keeps ``CertificateInstallationReq`` available so the EV
+can install a fresh contract ([V2G20-2232]); a rejection maps the ``CertificateStatus`` onto
+``WARNING_CertificateExpired``, ``WARNING_CertificateRevoked``,
+``WARNING_CertificateValidationError`` (chain, signature, no certificate) or
+``WARNING_GeneralPnCAuthorizationError`` (everything else, including
+``ContractCancelled``, which has no code of its own in the -20 schema), and an
+``AuthorizationStatus`` of ``Unknown`` onto ``WARNING_eMSPUnknown``. After a
+``WARNING`` the EV may retry with another chain, switch to ``EIM`` or send a
+``CertificateInstallationReq`` ([V2G20-1583]). Once authorized the eMAID and
+contract certificate are fixed for the session ([V2G20-2702]) and survive a
+pause ([V2G20-1844]).
+
+``CertificateInstallationReq`` is accepted when the service was offered. The
+SECC verifies its header signature against the OEM provisioning leaf
+([V2G20-1548], ``FAILED_SignatureError``) and relays the raw request over
+``iso15118_extensions`` with
+``iso15118_schema_version`` ``urn:iso:std:iso:15118:-20:CommonMessages``. Until
+``set_get_certificate_response`` arrives every repetition is answered ``OK`` /
+``Ongoing`` ([V2G20-1972]); the backend's complete, CPS-signed
+``CertificateInstallationRes`` then goes out verbatim, and its
+``RemainingContractCertificateChains`` decides whether another
+``CertificateInstallationReq`` is allowed ([V2G20-1973], [V2G20-1975]), while a
+relayed ``WARNING_eMSPUnknown`` allows a further attempt ([V2G20-2224]). A
+backend failure, timeout, or a response that is not a ``CertificateInstallationRes``
+for this session is ``WARNING_NoCertificateAvailable`` ([V2G20-2207],
+[V2G20-2225]). Validity, algorithm profile and trust of the OEM provisioning
+chain are the certificate provisioning service's job ([V2G20-1548] NOTE 2).
+
+Not implemented: ``SupportedProviders`` in ``AuthorizationSetupRes`` (optional,
+omitted), ``MeteringConfirmationReq`` on the multiplexed side stream, and the
+OCPP 2.1 ``maximumContractCertificateChains`` / ``prioritizedEMAIDs`` /
+``remainingContracts`` pass-through (the ``RemainingContractCertificateChains``
+the EV sees is whatever the backend encoded).
+
 DER grid support
 ================
 
