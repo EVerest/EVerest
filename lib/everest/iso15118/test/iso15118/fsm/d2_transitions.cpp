@@ -3,11 +3,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <optional>
 #include <vector>
 
 #include "secc_helper.hpp"
 
+#include <iso15118/detail/base64.hpp>
 #include <iso15118/message_2/authorization.hpp>
 #include <iso15118/message_2/cable_check.hpp>
 #include <iso15118/message_2/certificate_installation.hpp>
@@ -1144,6 +1146,30 @@ SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
                     REQUIRE_FALSE(secc.fsm.has_response());
                 }
             }
+
+            AND_WHEN("The backend returns a CertificateInstallationRes with a FAILED_* ResponseCode") {
+                message_2::CertificateInstallationResponse failed;
+                failed.header.session_id = secc.fsm.context().get_session_id();
+                failed.response_code = dt::ResponseCode::FAILED_CertificateExpired;
+                failed.sa_provisioning_chain.certificate = {0x00};
+                failed.contract_chain.id = "contractSignatureCertChain";
+                failed.contract_chain.certificate = {0x00};
+                failed.encrypted_private_key = {0x00};
+                failed.dh_public_key = {0x00};
+                failed.emaid = "00000000000000";
+                std::array<uint8_t, 2048> buffer{};
+                const io::StreamOutputView view{buffer.data(), buffer.size()};
+                const auto len = message_2::serialize(failed, view);
+                const std::vector<uint8_t> raw(buffer.begin(), buffer.begin() + len);
+                secc.fsm.control(d20::CertificateResponse{true, base64_encode(raw)});
+
+                THEN("The response is relayed and the session terminates [V2G2-539]") {
+                    REQUIRE(secc.fsm.has_response());
+                    REQUIRE(secc.fsm.context().session_stopped);
+                    REQUIRE(secc.fsm.context().session_stop_res_pending ==
+                            session::feedback::SessionStopAction::FailedTermination);
+                }
+            }
         }
     }
 
@@ -1154,13 +1180,34 @@ SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
         WHEN("The EV runs a certificate installation anyway") {
             secc.drive(certificate_installation_req());
 
-            THEN("The unselected action is out of sequence [V2G2-539]") {
+            THEN("The exchange is forwarded: it is an allowed next request after PaymentServiceSelection "
+                 "[V2G2-551], selecting the Certificate service is not a precondition") {
                 REQUIRE(secc.fsm.state() == StateID::Identification);
-                REQUIRE(secc.fsm.context().session_stopped);
-                // Not relayed to the module: the EV never selected this action [V2G2-432].
-                REQUIRE_FALSE(forwarded_exi_request.has_value());
-                // [V2G2-538]: the FAILED_SequenceError still has to reach the EV before the close.
-                const auto res = secc.fsm.response<message_2::CertificateInstallationResponse>();
+                REQUIRE_FALSE(secc.fsm.context().session_stopped);
+                REQUIRE(forwarded_exi_request.has_value());
+                REQUIRE_FALSE(secc.fsm.has_response());
+            }
+        }
+    }
+
+    GIVEN("A machine in PaymentDetails of a SECC that does not offer the certificate service") {
+        auto config = make_pnc_config();
+        config.cert_install_service = false;
+        Secc plain{config, callbacks};
+        plain.drive_session_setup();
+        plain.drive(message_2::ServiceDiscoveryRequest{});
+        message_2::PaymentServiceSelectionRequest req;
+        req.selected_payment_option = dt::PaymentOption::Contract;
+        req.selected_service_list.push_back({CHARGE_SERVICE_ID, std::nullopt});
+        plain.drive(req);
+        REQUIRE(plain.fsm.state() == StateID::Identification);
+
+        WHEN("The EV runs a certificate installation") {
+            plain.drive(certificate_installation_req());
+
+            THEN("It is out of sequence for this SECC and answered before the close [V2G2-538]") {
+                REQUIRE(plain.fsm.context().session_stopped);
+                const auto res = plain.fsm.response<message_2::CertificateInstallationResponse>();
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
             }
