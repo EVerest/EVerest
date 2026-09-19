@@ -255,6 +255,48 @@ SCENARIO("ISO 15118-20 contract certificate chain validation") {
     }
 }
 
+SCENARIO("ISO 15118-20 chain validity") {
+
+    GIVEN("A valid chain") {
+        const auto pki = make_pki("secp521r1", {"DE8PAA00003C4D58Y2"});
+        THEN("No fault") {
+            REQUIRE_FALSE(crypto::chain_validity_fault(pki.leaf_der(), pki.subs_der()).has_value());
+        }
+    }
+
+    GIVEN("A not yet valid leaf and an expired sub-CA2") {
+        CertSpec leaf{"DE8PAA00003C4D58Y2"};
+        leaf.not_before_offset_s = 24L * 3600;
+        leaf.not_after_offset_s = 365L * 24 * 3600;
+        CertSpec sub2{"OEM Sub-CA2"};
+        sub2.not_before_offset_s = -2L * 365 * 24 * 3600;
+        sub2.not_after_offset_s = -24L * 3600;
+        const auto pki = make_pki("secp521r1", leaf, {"OEM Sub-CA1"}, sub2);
+        THEN("Expired wins") {
+            REQUIRE(crypto::chain_validity_fault(pki.leaf_der(), pki.subs_der()) ==
+                    dt::ResponseCode::WARNING_CertificateExpired);
+        }
+    }
+
+    GIVEN("A not yet valid sub-CA1") {
+        CertSpec sub1{"OEM Sub-CA1"};
+        sub1.not_before_offset_s = 24L * 3600;
+        sub1.not_after_offset_s = 365L * 24 * 3600;
+        const auto pki = make_pki("secp521r1", {"DE8PAA00003C4D58Y2"}, sub1);
+        THEN("WARNING_CertificateNotYetValid") {
+            REQUIRE(crypto::chain_validity_fault(pki.leaf_der(), pki.subs_der()) ==
+                    dt::ResponseCode::WARNING_CertificateNotYetValid);
+        }
+    }
+
+    GIVEN("A leaf that is not a certificate") {
+        THEN("WARNING_CertificateValidationError") {
+            REQUIRE(crypto::chain_validity_fault({0x30, 0x00}, {}) ==
+                    dt::ResponseCode::WARNING_CertificateValidationError);
+        }
+    }
+}
+
 SCENARIO("ISO 15118-20 CertificateInstallationReq signature") {
 
     GIVEN("A signed CertificateInstallationReq") {
