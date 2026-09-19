@@ -2277,7 +2277,11 @@ KeyValue ChargePointConfiguration::getContractValidationOfflineKeyValue() {
 }
 
 std::int32_t ChargePointConfiguration::getOcspRequestInterval() {
-    return this->config["Internal"]["OcspRequestInterval"];
+    const auto& internal = this->config["Internal"];
+    if (!internal.contains("OcspRequestInterval") || !internal["OcspRequestInterval"].is_number_integer()) {
+        return OCSP_REQUEST_INTERVAL_DEFAULT;
+    }
+    return internal["OcspRequestInterval"].get<std::int32_t>();
 }
 
 void ChargePointConfiguration::setOcspRequestInterval(const std::int32_t ocsp_request_interval) {

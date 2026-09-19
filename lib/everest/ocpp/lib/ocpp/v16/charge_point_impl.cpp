@@ -225,11 +225,11 @@ ChargePointImpl::ChargePointImpl(
             };
         this->ocsp_request_timer = std::make_unique<Everest::SteadyTimer>(&this->io_context, [this]() {
             this->update_ocsp_cache();
-            int32_t ocsp_request_interval = 604800; // default to 12 hours if not configured
+            int32_t ocsp_request_interval = OCSP_REQUEST_INTERVAL_DEFAULT;
             try {
                 ocsp_request_interval = this->configuration.getOcspRequestInterval();
-            } catch (const std::runtime_error& e) {
-                EVLOG_error << "OCSP request interval could not be loaded (Using default 168 hours): " << e.what();
+            } catch (const std::exception& e) {
+                EVLOG_error << "OCSP request interval could not be loaded, using 7 day default: " << e.what();
             }
             this->ocsp_request_timer->interval(std::chrono::seconds(ocsp_request_interval));
         });

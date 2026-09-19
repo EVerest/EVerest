@@ -397,7 +397,7 @@ TEST_P(Configuration, MaxMessageSize) {
 
 TEST_P(Configuration, OcspRequestInterval) {
     ASSERT_NE(get(), nullptr);
-    // initial values are from the JSON unit test config files
+    // config.json does not set OcspRequestInterval; JSON configs use the 7 day schema default
     EXPECT_EQ(get()->getOcspRequestInterval(), 604800);
     auto kv = get()->getOcspRequestIntervalKeyValue();
     EXPECT_EQ(kv.key, "OcspRequestInterval");
