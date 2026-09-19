@@ -252,7 +252,8 @@ Result Authorization::handle_authorization_request(const message_20::Authorizati
             m_ctx.session.authorization.eim_requested = true;
         }
         if (not eim_timer_started) {
-            m_ctx.restart_timeout(d20::TimeoutType::ONGOING, TIMEOUT_EIM_ONGOING);
+            // [V2G20-2102]: EIM has no longer window than PnC; the session stops at the performance time.
+            m_ctx.restart_timeout(d20::TimeoutType::ONGOING, TIMEOUT_ONGOING);
             eim_timer_started = true;
         }
     }

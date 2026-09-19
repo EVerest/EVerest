@@ -67,7 +67,8 @@ config:
     description: >-
       Defines how many seconds the EVSE should wait for authorization in EIM (External Payment) case,
       before the charging session is aborted. Write 0 if the EVSE should wait indefinitely for EIM
-      authorization. Applies to ISO 15118-2 and DIN SPEC 70121; ISO 15118-20 EIM uses a fixed 3 min window.
+      authorization. Applies to ISO 15118-2 and DIN SPEC 70121; ISO 15118-20 EIM stops the session after the
+      55 s V2G_SECC_Ongoing_Performance_Time ([V2G20-2102]).
     type: integer
     minimum: 0
     default: 300
