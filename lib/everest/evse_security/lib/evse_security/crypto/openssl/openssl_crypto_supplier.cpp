@@ -44,6 +44,58 @@ EVP_PKEY* get(KeyHandle* handle) {
     return nullptr;
 }
 
+bool uses_iso20_curve(EVP_PKEY* pkey) {
+    if (pkey == nullptr) {
+        return false;
+    }
+    const int base = EVP_PKEY_base_id(pkey);
+    if (base == EVP_PKEY_ED448) {
+        return true;
+    }
+    if (base != EVP_PKEY_EC) {
+        return false;
+    }
+    char name[64] = {0};
+    std::size_t len = 0;
+    if (EVP_PKEY_get_group_name(pkey, name, sizeof(name), &len) != 1) {
+        return false;
+    }
+    const std::string group(name, len);
+    return group == "secp521r1" or group == "P-521";
+}
+
+// ISO 15118-20 Annex B marks the key identifiers and revocation pointers critical, which IETF RFC 5280
+// does not, so OpenSSL rejects a conforming contract certificate. Accept those, keep anything else fatal.
+int verify_iso20_extensions(int preverified, X509_STORE_CTX* ctx) {
+    if (preverified or X509_STORE_CTX_get_error(ctx) != X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION) {
+        return preverified;
+    }
+    X509* cert = X509_STORE_CTX_get_current_cert(ctx);
+    for (int i = 0; i < X509_get_ext_count(cert); ++i) {
+        X509_EXTENSION* ext = X509_get_ext(cert, i);
+        if (not X509_EXTENSION_get_critical(ext) or X509_supported_extension(ext)) {
+            continue;
+        }
+        const int nid = OBJ_obj2nid(X509_EXTENSION_get_object(ext));
+        if (nid != NID_authority_key_identifier and nid != NID_subject_key_identifier and nid != NID_info_access and
+            nid != NID_crl_distribution_points and nid != NID_sinfo_access) {
+            return 0;
+        }
+        const X509V3_EXT_METHOD* method = X509V3_EXT_get(ext);
+        void* decoded = X509V3_EXT_d2i(ext);
+        if (decoded == nullptr or method == nullptr) {
+            return 0;
+        }
+        if (method->it) {
+            ASN1_item_free(static_cast<ASN1_VALUE*>(decoded), ASN1_ITEM_ptr(method->it));
+        } else {
+            method->ext_free(decoded);
+        }
+    }
+    X509_STORE_CTX_set_error(ctx, X509_V_OK);
+    return 1;
+}
+
 CertificateValidationResult to_certificate_error(const int ec) {
     switch (ec) {
     case X509_V_ERR_CERT_HAS_EXPIRED:
@@ -503,6 +555,10 @@ bool OpenSSLSupplier::x509_is_child(X509Handle* child, X509Handle* parent) {
         X509_STORE_CTX_set_flags(ctx.get(), X509_V_FLAG_PARTIAL_CHAIN);
     }
 
+    if (uses_iso20_curve(X509_get0_pubkey(x509_child))) {
+        X509_STORE_CTX_set_verify_cb(ctx.get(), verify_iso20_extensions);
+    }
+
     if (X509_verify_cert(ctx.get()) != 1) {
         const int ec = X509_STORE_CTX_get_error(ctx.get());
         const char* error = X509_verify_cert_error_string(ec);
@@ -578,6 +634,10 @@ CertificateValidationResult OpenSSLSupplier::x509_verify_certificate_chain(
     if (1 != X509_STORE_CTX_init(store_ctx_ptr.get(), store_ptr.get(), get(target), untrusted.get())) {
         EVLOG_error << "X509 could not init x509 store ctx!";
         return CertificateValidationResult::Unknown;
+    }
+
+    if (uses_iso20_curve(X509_get0_pubkey(get(target)))) {
+        X509_STORE_CTX_set_verify_cb(store_ctx_ptr.get(), verify_iso20_extensions);
     }
 
     if (allow_future_certificates) {
