@@ -78,8 +78,9 @@ to the backend.
 An accepted chain is published as ``require_auth_pnc`` (eMAID plus the PEM
 chain) and answered ``OK`` / ``Ongoing`` until ``authorization_response``
 arrives. While that poll is open the EV repeats the request unaltered apart from
-the header timestamp ([V2G20-1582]); a changed request is a sequence error, so a
-pending result can never be consumed by a different contract. The wait is
+the header timestamp ([V2G20-1582]) and a freshly computed header signature,
+which is verified on every repetition; a changed request is a sequence error,
+so a pending result can never be consumed by a different contract. The wait is
 bounded by ``auth_timeout_pnc`` ([V2G20-2102]). ``Accepted`` gives
 ``OK``, or ``OK_CertificateExpiresSoon`` when the leaf expires within 14 days
 ([V2G20-2218]), which keeps ``CertificateInstallationReq`` available so the EV
