@@ -28,6 +28,7 @@ namespace iso15118::message_2 {
 template <> void convert(const struct iso2_AuthorizationResType& in, AuthorizationResponse& out);
 template <> void convert(const struct iso2_CableCheckResType& in, CableCheckResponse& out);
 template <> void convert(const struct iso2_CertificateInstallationResType& in, CertificateInstallationResponse& out);
+template <> void convert(const struct iso2_CertificateUpdateResType& in, CertificateUpdateResponse& out);
 template <> void convert(const struct iso2_ChargeParameterDiscoveryResType& in, ChargeParameterDiscoveryResponse& out);
 template <> void convert(const struct iso2_ChargingStatusResType& in, ChargingStatusResponse& out);
 template <> void convert(const struct iso2_CurrentDemandResType& in, CurrentDemandResponse& out);
