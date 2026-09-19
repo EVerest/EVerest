@@ -578,6 +578,27 @@ TEST_CASE("ISO 15118-20: changed contract must not consume previous backend acce
     CHECK_FALSE(ctx.session.authorization.authorized);
 }
 
+TEST_CASE("ISO 15118-20: a re-signed repetition of the same authorization is not a sequence error") {
+    const auto pki = make_pki("secp521r1");
+    Recorded recorded;
+    std::optional<d20::PauseContext> pause;
+    FsmStateHelper helper(session::SessionConfig(pnc_setup(pki.root_bundle_path)), pause, make_callbacks(recorded));
+    auto& ctx = helper.get_context();
+    fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AuthorizationSetup>()};
+    const auto challenge = run_authorization_setup(helper, ctx, fsm);
+    const auto first = signed_authorization_req(pki, ctx, challenge);
+    const auto again = signed_authorization_req(pki, ctx, challenge);
+    REQUIRE(first != again);
+    REQUIRE(feed_authorization(helper, ctx, fsm, first).evse_processing == dt::Processing::Ongoing);
+    REQUIRE(feed_authorization(helper, ctx, fsm, again).evse_processing == dt::Processing::Ongoing);
+    helper.set_active_control_event(d20::AuthorizationResponse{true});
+    fsm.feed(d20::Event::CONTROL_MESSAGE);
+    const auto res = feed_authorization(helper, ctx, fsm, signed_authorization_req(pki, ctx, challenge));
+    CHECK(res.response_code == dt::ResponseCode::OK);
+    CHECK(res.evse_processing == dt::Processing::Finished);
+    CHECK(ctx.session.authorization.authorized);
+}
+
 TEST_CASE("ISO 15118-20: a repeated authorization still verifies its signature") {
     const auto pki = make_pki("secp521r1");
     Recorded recorded;

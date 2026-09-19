@@ -53,8 +53,10 @@ enum class SignedElement {
                                 // signed with the OEM provisioning leaf key [V2G20-1548]
 };
 
-// [V2G20-1582]: a repeated AuthorizationReq may change only its timestamp.
-std::vector<uint8_t> authorization_request_without_timestamp(const std::vector<uint8_t>& exi);
+// [V2G20-1582]: a repeated AuthorizationReq may change only its timestamp. The header signature is left
+// out as well: every request's signature is verified on its own, and an ECDSA signature over the same
+// element differs on every signing.
+std::vector<uint8_t> authorization_request_without_timestamp_and_signature(const std::vector<uint8_t>& exi);
 
 enum class SignatureVerdict {
     Ok,

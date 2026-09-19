@@ -238,8 +238,8 @@ Result Authorization::handle_authorization_request(const message_20::Authorizati
         m_ctx.session_stopped = true;
         return {};
     }
-    const auto poll =
-        eim ? std::vector<uint8_t>{} : crypto::authorization_request_without_timestamp(variant.get_exi_payload());
+    const auto poll = eim ? std::vector<uint8_t>{}
+                          : crypto::authorization_request_without_timestamp_and_signature(variant.get_exi_payload());
     if (pnc_attempt and (poll.empty() or poll != pnc_attempt->request)) {
         send_sequence_error(message_20::Type::AuthorizationReq, m_ctx);
         m_ctx.session_stopped = true;
