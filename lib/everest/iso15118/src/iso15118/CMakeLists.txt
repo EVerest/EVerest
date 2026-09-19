@@ -12,6 +12,8 @@ target_sources(iso15118
         misc/helper.cpp
         misc/cb_exi.cpp
         misc/random.cpp
+        misc/x509_helper.cpp
+        misc/base64.cpp
 
         sae_modes.cpp
 
@@ -53,6 +55,7 @@ target_sources(iso15118
         d20/context.cpp
         d20/context_helper.cpp
         d20/session.cpp
+        d20/crypto.cpp
         d20/timeout.cpp
 
         d2/context.cpp
@@ -107,6 +110,7 @@ target_sources(iso15118
         message/common_types.cpp
         message/authorization_setup.cpp
         message/authorization.cpp
+        message/certificate_installation.cpp
         message/service_discovery.cpp
         message/service_detail.cpp
         message/service_selection.cpp

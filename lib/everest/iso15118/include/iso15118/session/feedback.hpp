@@ -27,6 +27,7 @@
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/message/type.hpp>
 #include <iso15118/message/v2g_message_type.hpp>
+#include <iso15118/session/protocol.hpp>
 
 namespace iso15118::session {
 
@@ -135,6 +136,14 @@ enum class CertificateExchangeAction {
     Update,
 };
 
+// A CertificateInstallationReq (or -2 CertificateUpdateReq) for the CSMS/CPS backend. protocol picks the
+// schema namespace sent with it; the response arrives as a CertificateResponse control event.
+struct CertificateRequest {
+    std::string exi_request_base64;
+    CertificateExchangeAction action{CertificateExchangeAction::Install};
+    ProtocolId protocol{ProtocolId::ISO15118_2};
+};
+
 // Reported right after the session-ending response was written to the socket. Terminate/Pause
 // anchor the CP-oscillator retain time ([V2G-DC-968]); DIN has no ChargingSession and always maps to
 // Terminate. FailedTermination means the oscillator goes off without delay and the SECC closes the
@@ -186,9 +195,7 @@ struct Callbacks {
 
     std::function<void(const std::string& emaid, const std::string& contract_chain_pem)> require_auth_pnc;
 
-    // The raw request EXI (base64) goes to the CSMS/CPS backend; the response is injected back
-    // asynchronously via a CertificateResponse control event.
-    std::function<void(const std::string& exi_request_base64, CertificateExchangeAction action)> certificate_request;
+    std::function<void(const CertificateRequest&)> certificate_request;
 };
 
 } // namespace feedback
@@ -225,7 +232,7 @@ public:
     void session_stop_res_sent(feedback::SessionStopAction) const;
     void selected_payment_option(shared_datatypes::PaymentOption) const;
     void require_auth_pnc(const std::string& emaid, const std::string& contract_chain_pem) const;
-    void certificate_request(const std::string& exi_request_base64, feedback::CertificateExchangeAction action) const;
+    void certificate_request(const feedback::CertificateRequest&) const;
 
 private:
     feedback::Callbacks callbacks;

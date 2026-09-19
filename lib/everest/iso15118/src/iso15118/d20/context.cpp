@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/context.hpp>
 
+#include <cstring>
 #include <stdexcept>
 
 #include <iso15118/detail/helper.hpp>
@@ -31,6 +32,24 @@ std::unique_ptr<message_20::Variant> MessageExchange::pull_request() {
     }
 
     return std::move(request);
+}
+
+bool MessageExchange::set_raw_response(const uint8_t* data, size_t len, message_20::Type type) {
+    if (data == nullptr or len == 0) {
+        logf_error("Refusing to stage an empty raw relay response");
+        return false;
+    }
+    if (len > response.payload_len) {
+        logf_error("Raw relay response (%zu bytes) exceeds the output buffer (%zu bytes)", len, response.payload_len);
+        return false;
+    }
+    std::memcpy(response.payload, data, len);
+    response_size = len;
+    response_available = true;
+    payload_type = io::v2gtp::PayloadType::Part20Main;
+    response_type = type;
+    response_message.reset();
+    return true;
 }
 
 std::tuple<bool, size_t, io::v2gtp::PayloadType, message_20::Type> MessageExchange::check_and_clear_response() {

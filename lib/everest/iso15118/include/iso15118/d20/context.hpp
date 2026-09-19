@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <any>
@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <vector>
 
 #include <iso15118/d20/timeout.hpp>
 #include <iso15118/message/payload_type.hpp>
@@ -48,6 +49,9 @@ public:
             return std::nullopt;
         }
     }
+
+    // Stages an already encoded response verbatim. False when it is empty or exceeds the output buffer.
+    bool set_raw_response(const uint8_t* data, size_t len, message_20::Type type);
 
     std::tuple<bool, size_t, io::v2gtp::PayloadType, message_20::Type> check_and_clear_response();
     bool has_response() const {
@@ -93,6 +97,10 @@ public:
         return message_exchange.get_response<Msg>();
     }
 
+    bool respond_raw(const std::vector<uint8_t>& exi, message_20::Type type) {
+        return message_exchange.set_raw_response(exi.data(), exi.size(), type);
+    }
+
     const auto& get_control_event() {
         return current_control_event;
     }
@@ -123,6 +131,12 @@ public:
 
     void stop_timeout(d20::TimeoutType type) {
         timeouts.stop_timeout(type);
+    }
+
+    // (Re)arms a slot that may already be running.
+    void restart_timeout(d20::TimeoutType type, uint32_t time_ms) {
+        timeouts.reset_timeout(type);
+        timeouts.start_timeout(type, time_ms);
     }
 
     d20::TimeoutType const* get_active_timeout() {

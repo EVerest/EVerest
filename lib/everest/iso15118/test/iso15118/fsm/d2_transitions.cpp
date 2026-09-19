@@ -1033,9 +1033,8 @@ SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
     std::optional<std::string> forwarded_exi_request;
     std::optional<shared_datatypes::PaymentOption> reported_payment_option;
     session::feedback::Callbacks callbacks;
-    callbacks.certificate_request = [&forwarded_exi_request](const std::string& exi_request_base64,
-                                                             session::feedback::CertificateExchangeAction) {
-        forwarded_exi_request = exi_request_base64;
+    callbacks.certificate_request = [&forwarded_exi_request](const session::feedback::CertificateRequest& request) {
+        forwarded_exi_request = request.exi_request_base64;
     };
     callbacks.selected_payment_option = [&reported_payment_option](shared_datatypes::PaymentOption option) {
         reported_payment_option = option;

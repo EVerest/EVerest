@@ -1526,18 +1526,20 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         this->mod->p_charger->publish_require_auth_pnc(token);
     };
 
-    // ISO 15118-2 Plug-and-Charge CertificateInstallation relay: libiso15118 forwards the raw
+    // Plug-and-Charge CertificateInstallation relay: libiso15118 forwards the raw
     // CertificateInstallationReq EXI (base64). Republish it verbatim on the iso15118_extensions
     // interface (iso15118_certificate_request) so the CSMS/CPS backend can build the response. The
     // response is delivered async via handle_set_get_certificate_response (see on_certificate_response).
-    callbacks.certificate_request = [this](const std::string& exi_request_base64,
-                                           iso15118::session::feedback::CertificateExchangeAction action) {
+    callbacks.certificate_request = [this](const iso15118::session::feedback::CertificateRequest& forwarded) {
         types::iso15118::RequestExiStreamSchema request;
-        request.exi_request = exi_request_base64;
-        request.iso15118_schema_version = "urn:iso:15118:2:2013:MsgDef";
-        request.certificate_action = (action == iso15118::session::feedback::CertificateExchangeAction::Update)
-                                         ? types::iso15118::CertificateActionEnum::Update
-                                         : types::iso15118::CertificateActionEnum::Install;
+        request.exi_request = forwarded.exi_request_base64;
+        request.iso15118_schema_version = (forwarded.protocol == iso15118::ProtocolId::ISO15118_20)
+                                              ? iso15118::ISO20_COMMON_MESSAGES_NAMESPACE
+                                              : "urn:iso:15118:2:2013:MsgDef";
+        request.certificate_action =
+            (forwarded.action == iso15118::session::feedback::CertificateExchangeAction::Update)
+                ? types::iso15118::CertificateActionEnum::Update
+                : types::iso15118::CertificateActionEnum::Install;
         this->mod->p_extensions->publish_iso15118_certificate_request(request);
     };
 
@@ -1623,8 +1625,9 @@ void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::Pay
         if (option == types::iso15118::PaymentOption::ExternalPayment) {
             auth_services.push_back(dt::Authorization::EIM);
         } else if (option == types::iso15118::PaymentOption::Contract) {
-            // ISO 15118-20 PnC is not yet wired; the ISO 15118-2 SECC engine does support Plug-and-Charge
-            // (Contract payment) and is enabled via setup_config.iso2_pnc_enabled below.
+            // Contract payment is ISO 15118-20 PnC in AuthorizationSetupRes and, for the ISO 15118-2 engine,
+            // the Contract payment option enabled via setup_config.iso2_pnc_enabled below.
+            auth_services.push_back(dt::Authorization::PnC);
             contract_offered = true;
         }
     }
@@ -1632,8 +1635,8 @@ void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::Pay
     setup_config.authorization_services = auth_services;
     setup_config.iso2_pnc_enabled = contract_offered;
     setup_config.enable_certificate_install_service = supported_certificate_service;
-    // ISO 15118-2 PnC: accept a contract without a local MO root and forward it for central validation
-    // (OCPP CentralContractValidationAllowed, via EvseManager).
+    // PnC: accept a contract without a local MO root and forward it for central validation (OCPP
+    // CentralContractValidationAllowed, via EvseManager).
     setup_config.central_contract_validation_allowed = central_contract_validation_allowed;
 
     // session_setup is (re)sent by EvseManager for every session: push the updated auth/PnC setup into
@@ -1731,19 +1734,46 @@ void ISO15118_chargerImpl::handle_set_powersupply_capabilities(types::power_supp
     setup_steps_done.set(SetupStep::MIN_LIMITS);
 }
 
+namespace {
+
+iso15118::d20::CertificateStatus to_iso15118_certificate_status(types::authorization::CertificateStatus status) {
+    using Everest = types::authorization::CertificateStatus;
+    using Lib = iso15118::d20::CertificateStatus;
+    switch (status) {
+    case Everest::Accepted:
+        return Lib::Accepted;
+    case Everest::SignatureError:
+        return Lib::SignatureError;
+    case Everest::CertificateExpired:
+        return Lib::CertificateExpired;
+    case Everest::CertificateRevoked:
+        return Lib::CertificateRevoked;
+    case Everest::NoCertificateAvailable:
+        return Lib::NoCertificateAvailable;
+    case Everest::CertChainError:
+        return Lib::CertChainError;
+    case Everest::ContractCancelled:
+        return Lib::ContractCancelled;
+    }
+    return Lib::Accepted;
+}
+
+} // namespace
+
 void ISO15118_chargerImpl::handle_authorization_response(
     types::authorization::AuthorizationStatus& authorization_status,
     types::authorization::CertificateStatus& certificate_status) {
 
     std::scoped_lock lock(GEL);
     const bool authorized = (authorization_status == types::authorization::AuthorizationStatus::Accepted);
-    // ISO 15118-2 Plug-and-Charge: a rejection because the contract certificate is revoked is named as
-    // such in the AuthorizationRes (FAILED_CertificateRevoked). Only meaningful with a rejection.
-    const bool certificate_revoked =
-        not authorized and certificate_status == types::authorization::CertificateStatus::CertificateRevoked;
+    // Only meaningful with a rejection: ISO 15118-2 names a revoked contract certificate, ISO 15118-20
+    // maps every certificate status and an unknown token onto its WARNING codes.
+    const bool token_unknown =
+        not authorized and authorization_status == types::authorization::AuthorizationStatus::Unknown;
 
     if (controller) {
-        controller->send_control_event(iso15118::d20::AuthorizationResponse{authorized, certificate_revoked});
+        controller->send_control_event(iso15118::d20::AuthorizationResponse{
+            authorized, to_iso15118_certificate_status(certificate_status), token_unknown});
     }
 }
 
