@@ -4,187 +4,234 @@
 #include "slacImpl.hpp"
 
 #include <chrono>
-#include <future>
+#include <initializer_list>
+#include <stdexcept>
+#include <utility>
 
-#include <everest/slac/io.hpp>
+#include <everest_api_types/telemetry/codec.hpp>
+#include <everest_api_types/telemetry/json_codec.hpp>
 #include <fmt/core.h>
-#include <slac/channel.hpp>
-#include <thread>
 
-#include "fsm_controller.hpp"
+#include "everest/logging.hpp"
+#include "slac_io.hpp"
 
 namespace module {
 namespace main {
 
-static std::string mac_to_ascii(const std::string& mac_binary) {
-    if (mac_binary.size() < 6)
-        return "";
-    return fmt::format("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", mac_binary[0], mac_binary[1], mac_binary[2],
-                       mac_binary[3], mac_binary[4], mac_binary[5]);
+namespace {
+namespace api_telemetry = everest::lib::API::V1_0::types::telemetry;
+
+template <typename T> nlohmann::json to_telemetry_json(std::string const& value) {
+    return api_telemetry::deserialize<T>(value);
+}
+
+// Converts the library's framework-agnostic D3State into the generated slac interface enum.
+// The mapping is total: D3State and types::slac::State share the same three matching states.
+types::slac::State to_interface_state(everest::lib::slac::D3State state) {
+    switch (state) {
+    case everest::lib::slac::D3State::Matching:
+        return types::slac::State::MATCHING;
+    case everest::lib::slac::D3State::Matched:
+        return types::slac::State::MATCHED;
+    case everest::lib::slac::D3State::Unmatched:
+        return types::slac::State::UNMATCHED;
+    }
+    return types::slac::State::UNMATCHED;
+}
+
+// The framework rejects a value outside the manifest's enum before init() runs; reaching the throw
+// means the manifest and this table disagree, which must stop the module rather than pick a default.
+template <typename E>
+E parse_enum(char const* option, std::string const& value, std::initializer_list<std::pair<char const*, E>> table) {
+    for (auto const& [name, e] : table) {
+        if (value == name) {
+            return e;
+        }
+    }
+    throw std::invalid_argument(fmt::format("EvseSlac: config option {} has unsupported value '{}'", option, value));
+}
+} // namespace
+
+// --- FrameworkSink ------------------------------------------------------------------------------
+
+void slacImpl::FrameworkSink::publish_state(everest::lib::slac::D3State state) {
+    owner.publish_state(to_interface_state(state));
+}
+
+void slacImpl::FrameworkSink::publish_dlink_ready(bool ready) {
+    owner.publish_dlink_ready(ready);
+}
+
+void slacImpl::FrameworkSink::publish_ev_mac_address(std::string const& mac) {
+    owner.publish_ev_mac_address(mac);
+}
+
+void slacImpl::FrameworkSink::request_error_routine() {
+    owner.publish_request_error_routine(nullptr);
+}
+
+void slacImpl::FrameworkSink::raise_fault(std::string const& type, std::string const& sub_type,
+                                          std::string const& message) {
+    if (owner.error_factory && owner.error_manager) {
+        owner.raise_error(owner.error_factory->create_error(type, sub_type, message));
+    }
+}
+
+void slacImpl::FrameworkSink::clear_fault(std::string const& type) {
+    if (owner.error_manager) {
+        owner.clear_error(type);
+    }
+}
+
+void slacImpl::FrameworkSink::publish_telemetry(std::string const& block, std::string const& key,
+                                                std::string const& value) {
+    if (block == "generic" && key == "status") {
+        telemetry_generic[block][key] = to_telemetry_json<api_telemetry::SlacStatus>(value);
+    } else if (block == "FSM" && key == "state") {
+        telemetry_generic[block][key] = to_telemetry_json<api_telemetry::SlacFsmState>(value);
+    } else {
+        telemetry_generic[block][key] = value;
+    }
+    owner.mod->telemetry.publish("Slac", block, telemetry_generic[block]);
+}
+
+void slacImpl::FrameworkSink::log(LogLevel level, std::string const& text) {
+    switch (level) {
+    case LogLevel::Debug:
+        EVLOG_debug << text;
+        break;
+    case LogLevel::Info:
+        EVLOG_info << text;
+        break;
+    case LogLevel::Warning:
+        EVLOG_warning << text;
+        break;
+    case LogLevel::Error:
+        EVLOG_error << text;
+        break;
+    }
+}
+
+// --- configuration ------------------------------------------------------------------------------
+
+SlacRuntimeConfig slacImpl::make_runtime_config() const {
+    using namespace std::chrono;
+    using everest::lib::slac::fsm::evse::NmkGenerationMode;
+    using everest::lib::slac::fsm::evse::SetKeyCnfSuccessMode;
+    using everest::lib::slac::fsm::evse::SetKeyHandlingMode;
+
+    SlacRuntimeConfig rc;
+    rc.device = config.device;
+    rc.startup_delay = milliseconds{config.startup_delay_ms};
+    rc.publish_mac_on_first_parm_req = config.publish_mac_on_first_parm_req;
+    rc.publish_mac_on_match_cnf = config.publish_mac_on_match_cnf;
+    rc.telemetry_enabled = mod->info.telemetry_enabled;
+    rc.initiate_amp_map = config.initiate_amp_map;
+    rc.amp_map_file = config.amp_map_file;
+
+    // Ranges and enum values are validated against the manifest by the framework before init();
+    // nothing here needs a fallback.
+    auto& s = rc.slac;
+    s.set_key_timeout = milliseconds{config.set_key_timeout_ms};
+    s.set_key_max_attempts = config.set_key_max_attempts;
+    s.set_key_handling_mode =
+        parse_enum<SetKeyHandlingMode>("set_key_handling_mode", config.set_key_handling_mode,
+                                       {{"retry_confirmed", SetKeyHandlingMode::retry_confirmed},
+                                        {"legacy_single_attempt", SetKeyHandlingMode::legacy_single_attempt}});
+    s.set_key_cnf_success_mode =
+        parse_enum<SetKeyCnfSuccessMode>("set_key_cnf_success_mode", config.set_key_cnf_success_mode,
+                                         {{"modem_compat_0x01", SetKeyCnfSuccessMode::modem_compat_0x01},
+                                          {"hpgp_standard_0x00", SetKeyCnfSuccessMode::hpgp_standard_0x00},
+                                          {"accept_0x00_or_0x01", SetKeyCnfSuccessMode::accept_0x00_or_0x01}});
+    s.nmk_generation_mode = parse_enum<NmkGenerationMode>("nmk_generation_mode", config.nmk_generation_mode,
+                                                          {{"legacy_printable", NmkGenerationMode::legacy_printable},
+                                                           {"full_byte_range", NmkGenerationMode::full_byte_range}});
+    s.slac_init_timeout = milliseconds{config.slac_init_timeout_ms};
+    s.max_matching_sessions = config.max_matching_sessions;
+    s.ac_mode_five_percent = config.ac_mode_five_percent;
+    s.sounding_atten_adjustment = config.sounding_attenuation_adjustment;
+    s.chip_reset.enabled = config.do_chip_reset;
+    s.chip_reset.delay = milliseconds{config.chip_reset_delay_ms};
+    s.chip_reset.timeout = milliseconds{config.chip_reset_timeout_ms};
+    s.link_status.do_detect = config.link_status_detection;
+    s.link_status.retry = milliseconds{config.link_status_retry_ms};
+    s.link_status.timeout = milliseconds{config.link_status_timeout_ms};
+    s.link_status.poll_in_matched_state = milliseconds{config.link_status_poll_in_matched_state_ms};
+    s.link_status.debounce_count = config.link_status_debounce_count;
+    s.link_status.debug_simulate_failed_matching = config.debug_simulate_failed_matching;
+    s.reset_instead_of_fail = config.reset_instead_of_fail;
+    s.print_state_transitions = config.print_state_transitions;
+    s.regenerate_key_on_reset = !config.hack_disable_regenerate_key_on_reset;
+    return rc;
+}
+
+// --- lifecycle ----------------------------------------------------------------------------------
+
+slacImpl::~slacImpl() {
+    shutdown();
 }
 
 void slacImpl::init() {
-    if (config.startup_delay_ms > 0) {
-        EVLOG_info << "Delaying SLAC startup by " << config.startup_delay_ms << "ms";
-        std::this_thread::sleep_for(std::chrono::milliseconds(config.startup_delay_ms));
-        EVLOG_info << "Continuing with SLAC initialization";
-    }
-
-    // initialize slac i/o
-    try {
-        slac_io.init(config.device);
-    } catch (const std::exception& e) {
-        EVLOG_error << fmt::format("Couldn't open device {} for SLAC communication. Reason: {}", config.device,
-                                   e.what());
-        raise_error(
-            error_factory->create_error("generic/CommunicationFault", "", "Could not open device " + config.device));
-        return;
-    }
-
-    // setup callbacks
-    fsm_ctx.callbacks.send_raw_slac = [this](slac::messages::HomeplugMessage& msg) { slac_io.send(msg); };
-
-    fsm_ctx.callbacks.signal_dlink_ready = [this](bool value) { publish_dlink_ready(value); };
-
-    fsm_ctx.callbacks.signal_state = [this](const std::string& value) {
-        try {
-            publish_state(types::slac::string_to_state(value));
-        } catch (const std::exception& e) {
-            EVLOG_error << fmt::format("Tried to publish unknown SLAC state '{}'. Error: {}", value, e.what());
-        }
-    };
-
-    fsm_ctx.callbacks.signal_error_routine_request = [this]() { publish_request_error_routine(nullptr); };
-
-    fsm_ctx.callbacks.log_debug = [](const std::string& text) { EVLOG_debug << text; };
-    fsm_ctx.callbacks.log_info = [](const std::string& text) { EVLOG_info << text; };
-    fsm_ctx.callbacks.log_warn = [](const std::string& text) { EVLOG_warning << text; };
-    fsm_ctx.callbacks.log_error = [](const std::string& text) { EVLOG_error << text; };
-
-    if (config.publish_mac_on_first_parm_req) {
-        fsm_ctx.callbacks.signal_ev_mac_address_parm_req = [this](const std::string& mac) {
-            publish_ev_mac_address(mac);
-        };
-    }
-
-    if (config.publish_mac_on_match_cnf) {
-        fsm_ctx.callbacks.signal_ev_mac_address_match_cnf = [this](const std::string& mac) {
-            publish_ev_mac_address(mac);
-        };
-    }
-
-    fsm_ctx.slac_config.set_key_timeout_ms = config.set_key_timeout_ms;
-    fsm_ctx.slac_config.slac_init_timeout_ms = config.slac_init_timeout_ms;
-    fsm_ctx.slac_config.ac_mode_five_percent = config.ac_mode_five_percent;
-    fsm_ctx.slac_config.sounding_atten_adjustment = config.sounding_attenuation_adjustment;
-
-    fsm_ctx.slac_config.chip_reset.enabled = config.do_chip_reset;
-    fsm_ctx.slac_config.chip_reset.delay_ms = config.chip_reset_delay_ms;
-    fsm_ctx.slac_config.chip_reset.timeout_ms = config.chip_reset_timeout_ms;
-
-    fsm_ctx.slac_config.link_status.do_detect = config.link_status_detection;
-    fsm_ctx.slac_config.link_status.retry_ms = config.link_status_retry_ms;
-    fsm_ctx.slac_config.link_status.timeout_ms = config.link_status_timeout_ms;
-    fsm_ctx.slac_config.link_status.debug_simulate_failed_matching = config.debug_simulate_failed_matching;
-
-    fsm_ctx.slac_config.reset_instead_of_fail = config.reset_instead_of_fail;
-
-    fsm_ctx.slac_config.regenerate_key_on_reset = !config.hack_disable_regenerate_key_on_reset;
-
-    fsm_ctx.slac_config.generate_nmk();
-
-    memcpy(fsm_ctx.evse_mac, slac_io.get_mac_addr(), ETH_ALEN);
-
-    fsm_ctrl = std::make_unique<FSMController>(fsm_ctx);
-
-    // Qualcomm PLC chip emits VS_ATTENUATION_CHARACTERISTICS (vendor MMTYPE 0xA14E) as
-    // unsolicited broadcasts during sounding from a sibling MAC. FSM does not handle this
-    // MMTYPE and logs "Received non-expected SLAC message of type 0xA14E" per frame, which
-    // adds RX/log load. Drop it pre-FSM. Other MMTYPEs (incl. CM_SET_KEY.CNF, CM_ATTEN_PROFILE.IND)
-    // pass through unchanged.
-    slac_io.run([this](slac::messages::HomeplugMessage& msg) {
-        if (not fsm_ctrl) {
-            return;
-        }
-
-        if (msg.get_mmtype() == slac::defs::qualcomm::MMTYPE_VS_ATTENUATION_CHARACTERISTICS) {
-            return;
-        }
-        fsm_ctrl->signal_new_slac_message(msg);
-    });
+    sink = std::make_unique<FrameworkSink>(*this);
+    runtime = std::make_unique<SlacRuntime>(make_runtime_config(), make_plc_socket_io, *sink);
+    runtime->init();
 }
 
 void slacImpl::ready() {
-    if (fsm_ctrl) {
-        fsm_ctrl->run();
+    if (runtime) {
+        runtime->ready();
     }
 }
 
-void slacImpl::handle_reset(bool& enable) {
-    if (not fsm_ctrl) {
-        return;
+void slacImpl::shutdown() {
+    if (runtime) {
+        runtime->shutdown();
     }
+}
 
-    // FIXME (aw): the enable could be used for power saving etc, but it is not implemented yet
-    // CC: as power saving is not implemented, we actually don't need to reset at beginning of session (enable=true): At
-    // start of everest it is being reset once and then it is enough to reset at the end of each session. This saves
-    // some hundreds of msecs at the beginning of the charging session as we do not need to set up keys. Then
-    // EvseManager can switch on 5% PWM basically immediately as SLAC is already ready.
-    if (!enable) {
-        fsm_ctrl->signal_reset();
+// --- interface commands -------------------------------------------------------------------------
+
+void slacImpl::handle_reset(bool& enable) {
+    if (runtime) {
+        (void)runtime->reset(enable);
     }
-};
+}
 
 void slacImpl::handle_enter_bcd() {
-    if (not fsm_ctrl) {
-        return;
+    if (runtime) {
+        (void)runtime->enter_bcd();
     }
-
-    fsm_ctrl->signal_enter_bcd();
-};
+}
 
 void slacImpl::handle_leave_bcd() {
-    if (not fsm_ctrl) {
-        return;
+    if (runtime) {
+        (void)runtime->leave_bcd();
     }
+}
 
-    fsm_ctrl->signal_leave_bcd();
-};
+void slacImpl::handle_count_bc(int& count) {
+    if (runtime) {
+        runtime->count_bc(count);
+    }
+}
 
 void slacImpl::handle_dlink_terminate() {
-    if (not fsm_ctrl) {
-        return;
+    if (runtime) {
+        (void)runtime->dlink_terminate();
     }
-    // With receiving a D-LINK_TERMINATE.request from HLE, the communication node
-    // shall leave the logical network within TP_match_leave. All parameters related
-    // to the current link shall be set to the default value and shall change to the status "Unmatched".
-    EVLOG_info << "D-LINK_TERMINATE.request received, leaving network.";
-    fsm_ctrl->signal_reset();
-};
+}
 
 void slacImpl::handle_dlink_error() {
-    if (not fsm_ctrl) {
-        return;
+    if (runtime) {
+        (void)runtime->dlink_error();
     }
-    // The D-LINK_ERROR.request requests lower layers to terminate the data link and restart the matching
-    // process by a control pilot transition through state E (on EVSE side this should be state F though)
-    // CP signal is handled by EvseManager, so we just need to reset the SLAC state machine here.
-    // DLINK_ERROR will be send from HLC layers when they detect that the connection is dead.
-    EVLOG_warning << "D-LINK_ERROR.request received";
-    fsm_ctrl->signal_reset();
-};
+}
 
 void slacImpl::handle_dlink_pause() {
-    if (not fsm_ctrl) {
-        return;
+    if (runtime) {
+        runtime->dlink_pause();
     }
-    // The D-LINK_PAUSE.request requests lower layers to enter a power saving mode. While being in this
-    // mode, the state will be kept to "Matched".
-    // So we don't need to do anything here as we do not support low power mode to power down the PLC modem.
-    // This is optional in ISO15118-3.
-    EVLOG_info << "D-LINK_PAUSE.request received. Staying in MATCHED, PLC chip stays powered on (low power mode "
-                  "optional in -3)";
-};
+}
 
 } // namespace main
 } // namespace module
