@@ -95,7 +95,10 @@ contract certificate are fixed for the session ([V2G20-2702]) and survive a
 pause ([V2G20-1844]).
 
 ``CertificateInstallationReq`` is accepted when the service was offered. The
-SECC verifies its header signature against the OEM provisioning leaf
+SECC checks the validity period of every OEM provisioning chain element
+(``WARNING_CertificateExpired`` / ``WARNING_CertificateNotYetValid``,
+[V2G20-2203], [V2G20-2204]), verifies the header signature over
+``OEMProvisioningCertificateChain`` against the OEM provisioning leaf
 ([V2G20-1548], ``FAILED_SignatureError``) and relays the raw request over
 ``iso15118_extensions`` with
 ``iso15118_schema_version`` ``urn:iso:std:iso:15118:-20:CommonMessages``. Until
@@ -107,8 +110,8 @@ SECC verifies its header signature against the OEM provisioning leaf
 relayed ``WARNING_eMSPUnknown`` allows a further attempt ([V2G20-2224]). A
 backend failure, timeout, or a response that is not a ``CertificateInstallationRes``
 for this session is ``WARNING_NoCertificateAvailable`` ([V2G20-2207],
-[V2G20-2225]). Validity, algorithm profile and trust of the OEM provisioning
-chain are the certificate provisioning service's job ([V2G20-1548] NOTE 2).
+[V2G20-2225]). Algorithm profile and trust of the OEM provisioning chain are
+the certificate provisioning service's job ([V2G20-1548] NOTE 2).
 
 Not implemented: ``SupportedProviders`` in ``AuthorizationSetupRes`` (optional,
 omitted), ``MeteringConfirmationReq`` on the multiplexed side stream, and the

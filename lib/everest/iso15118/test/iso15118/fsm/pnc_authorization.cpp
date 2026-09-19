@@ -508,12 +508,10 @@ SCENARIO("ISO 15118-20 certificate installation relay") {
             const auto expired = make_pki("secp521r1", leaf, {"OEM Sub-CA1"}, {"OEM Sub-CA2"});
             const auto res = feed(signed_certificate_installation_req(expired, ctx, expired.leaf_private_key()));
 
-            // [V2G20-1548] NOTE 2 and Annex B.7.3: the secondary actor validates the OEM
-            // provisioning chain, so the SECC relays it and only checks the signature.
-            THEN("It is relayed to the certificate provisioning service") {
-                REQUIRE(res->response_code == dt::ResponseCode::OK);
-                REQUIRE(res->evse_processing == dt::Processing::Ongoing);
-                REQUIRE(recorded.certificate_requests.size() == 1);
+            THEN("WARNING_CertificateExpired without a relay, the session continues") {
+                REQUIRE(res->response_code == dt::ResponseCode::WARNING_CertificateExpired);
+                REQUIRE(res->evse_processing == dt::Processing::Finished);
+                REQUIRE(recorded.certificate_requests.empty());
                 REQUIRE_FALSE(ctx.session_stopped);
             }
         }

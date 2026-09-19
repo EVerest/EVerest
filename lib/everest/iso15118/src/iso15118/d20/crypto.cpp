@@ -617,6 +617,16 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
     return result;
 }
 
+std::optional<dt::ResponseCode> chain_validity_fault(const std::vector<uint8_t>& leaf_der,
+                                                     const std::vector<std::vector<uint8_t>>& sub_certs) {
+    ParsedChain chain;
+    if (leaf_der.empty() or not parse_chain(leaf_der, sub_certs, chain)) {
+        ERR_clear_error();
+        return dt::ResponseCode::WARNING_CertificateValidationError;
+    }
+    return validity_fault(chain);
+}
+
 std::vector<uint8_t> authorization_request_without_timestamp(const std::vector<uint8_t>& exi) {
     auto doc = std::make_unique<iso20_exiDocument>();
     if (not decode_document(exi, *doc) or not doc->AuthorizationReq_isUsed) {
