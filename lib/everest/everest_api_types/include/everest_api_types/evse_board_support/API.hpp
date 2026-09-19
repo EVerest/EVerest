@@ -74,6 +74,12 @@ struct Error {
 enum class Connector_type {
     IEC62196Type2Cable,
     IEC62196Type2Socket,
+    cCCS1,
+    cCCS2,
+    cTesla,
+    cJ3400,
+    cG105,
+    cMCS,
 };
 
 struct HardwareCapabilities {

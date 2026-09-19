@@ -83,6 +83,18 @@ Connector_type_Internal to_internal_api(Connector_type_External const& val) {
         return TarT::IEC62196Type2Cable;
     case SrcT::IEC62196Type2Socket:
         return TarT::IEC62196Type2Socket;
+    case SrcT::cCCS1:
+        return TarT::cCCS1;
+    case SrcT::cCCS2:
+        return TarT::cCCS2;
+    case SrcT::cTesla:
+        return TarT::cTesla;
+    case SrcT::cJ3400:
+        return TarT::cJ3400;
+    case SrcT::cG105:
+        return TarT::cG105;
+    case SrcT::cMCS:
+        return TarT::cMCS;
     }
 
     throw std::out_of_range(
@@ -98,6 +110,18 @@ Connector_type_External to_external_api(Connector_type_Internal const& val) {
         return TarT::IEC62196Type2Cable;
     case SrcT::IEC62196Type2Socket:
         return TarT::IEC62196Type2Socket;
+    case SrcT::cCCS1:
+        return TarT::cCCS1;
+    case SrcT::cCCS2:
+        return TarT::cCCS2;
+    case SrcT::cTesla:
+        return TarT::cTesla;
+    case SrcT::cJ3400:
+        return TarT::cJ3400;
+    case SrcT::cG105:
+        return TarT::cG105;
+    case SrcT::cMCS:
+        return TarT::cMCS;
     }
 
     throw std::out_of_range(
