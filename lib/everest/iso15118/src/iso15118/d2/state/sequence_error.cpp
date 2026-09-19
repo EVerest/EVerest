@@ -216,8 +216,21 @@ void respond_with_code(Context& ctx, message_2::Type received_type, dt::Response
         ctx.respond(res);
         return;
     }
-    // NOTE: CertificateUpdateReq has no case here -- CertificateUpdateRes is not modelled at all (the
-    // SECC only ever relays it), so an out-of-sequence update still closes without a response.
+    case message_2::Type::CertificateUpdateReq: {
+        // Same discipline as the installation response: schema-mandatory placeholders on FAILED_*
+        // ([V2G2-736]); a successful update is relayed from the backend as raw EXI.
+        message_2::CertificateUpdateResponse res;
+        res.header.session_id = session_id;
+        res.response_code = code;
+        res.sa_provisioning_chain.certificate = {0x00};
+        res.contract_chain.id = "contractSignatureCertChain";
+        res.contract_chain.certificate = {0x00};
+        res.encrypted_private_key = {0x00};
+        res.dh_public_key = {0x00};
+        res.emaid = EMAID_PLACEHOLDER;
+        ctx.respond(res);
+        return;
+    }
     case message_2::Type::SessionStopReq: {
         message_2::SessionStopResponse res;
         res.header.session_id = session_id;

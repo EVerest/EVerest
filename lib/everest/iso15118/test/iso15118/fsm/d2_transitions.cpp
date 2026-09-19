@@ -192,6 +192,15 @@ message_2::CertificateInstallationRequest certificate_installation_req() {
     return req;
 }
 
+message_2::CertificateUpdateRequest certificate_update_req() {
+    message_2::CertificateUpdateRequest req;
+    req.contract_chain.certificate = {0x30, 0x82, 0x01, 0x02};
+    req.contract_chain.sub_certificates.push_back({0x30, 0x82, 0x00, 0x55});
+    req.emaid = "UKSWI123456791A";
+    req.root_certificate_ids.push_back({"CN=V2G Root CA", 12345});
+    return req;
+}
+
 message_2::CurrentDemandRequest current_demand_req() {
     message_2::CurrentDemandRequest req;
     req.ev_target_voltage = volts(400.0);
@@ -1186,6 +1195,44 @@ SCENARIO("ISO 15118-2 SECC Plug-and-Charge state transitions") {
                 REQUIRE_FALSE(secc.fsm.context().session_stopped);
                 REQUIRE(forwarded_exi_request.has_value());
                 REQUIRE_FALSE(secc.fsm.has_response());
+            }
+        }
+    }
+
+    GIVEN("A machine in PaymentDetails driving a certificate update") {
+        to_payment_details(false);
+        REQUIRE(secc.fsm.state() == StateID::Identification);
+
+        WHEN("The EV sends a CertificateUpdateReq with an unknown SessionID") {
+            secc.drive_wrong_session(certificate_update_req());
+
+            THEN("A CertificateUpdateRes with FAILED_UnknownSession is sent before the close [V2G2-460]") {
+                REQUIRE(secc.fsm.context().session_stopped);
+                REQUIRE_FALSE(forwarded_exi_request.has_value());
+                const auto res = secc.fsm.response<message_2::CertificateUpdateResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED_UnknownSession);
+            }
+        }
+
+        WHEN("The EV sends a valid CertificateUpdateReq") {
+            secc.drive(certificate_update_req());
+
+            THEN("It is forwarded to the backend as an update") {
+                REQUIRE(forwarded_exi_request.has_value());
+                REQUIRE_FALSE(secc.fsm.has_response());
+            }
+
+            AND_WHEN("The backend answers and the EV asks for a second update") {
+                secc.fsm.control(d20::CertificateResponse{true, "3q2+7w=="});
+                REQUIRE(secc.fsm.state() == StateID::PaymentDetails);
+                secc.drive(certificate_update_req());
+
+                THEN("It is out of sequence and answered with a CertificateUpdateRes [V2G2-538]") {
+                    const auto res = secc.fsm.response<message_2::CertificateUpdateResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+                }
             }
         }
     }
