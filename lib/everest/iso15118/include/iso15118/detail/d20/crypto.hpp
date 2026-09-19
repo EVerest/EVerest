@@ -42,7 +42,8 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
 
 enum class SignedElement {
     PnC_AReqAuthorizationMode,  // AuthorizationReq, signed with the contract leaf key [V2G20-1063]
-    CertificateInstallationReq, // body element, signed with the OEM provisioning leaf key [V2G20-1548]
+    CertificateInstallationReq, // OEMProvisioningCertificateChain, the request's only Id-carrying element,
+                                // signed with the OEM provisioning leaf key [V2G20-1548]
 };
 
 // [V2G20-1582]: a repeated AuthorizationReq may change only its timestamp.

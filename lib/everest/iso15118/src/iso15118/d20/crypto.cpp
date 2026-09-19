@@ -213,8 +213,9 @@ struct Fragment {
     std::size_t length{0};
 };
 
-// The signed element as an EXI fragment ([V2G20-119], [V2G20-1449]). A header signature never covers
-// itself, so it is absent from the CertificateInstallationReq fragment ([V2G20-1548], Table 17).
+// The signed element as an EXI fragment ([V2G20-119], [V2G20-1449]). A signature Reference addresses the
+// element by its Id attribute (7.9.2), so the CertificateInstallationReq signature covers its
+// OEMProvisioningCertificateChain, the request's only Id-carrying element ([V2G20-1548], Table 17).
 bool encode_signed_element(const iso20_exiDocument& doc, SignedElement element, Fragment& out) {
     auto fragment = std::make_unique<iso20_exiFragment>();
     init_iso20_exiFragment(fragment.get());
@@ -230,9 +231,8 @@ bool encode_signed_element(const iso20_exiDocument& doc, SignedElement element, 
         if (not doc.CertificateInstallationReq_isUsed) {
             return false;
         }
-        fragment->CertificateInstallationReq_isUsed = 1;
-        fragment->CertificateInstallationReq = doc.CertificateInstallationReq;
-        fragment->CertificateInstallationReq.Header.Signature_isUsed = 0;
+        fragment->OEMProvisioningCertificateChain_isUsed = 1;
+        fragment->OEMProvisioningCertificateChain = doc.CertificateInstallationReq.OEMProvisioningCertificateChain;
         break;
     }
     exi_bitstream_t stream;
