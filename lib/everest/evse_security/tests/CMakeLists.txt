@@ -46,6 +46,7 @@ file(COPY
     "${CMAKE_CURRENT_SOURCE_DIR}/generate_test_certs.sh"
     "${CMAKE_CURRENT_SOURCE_DIR}/generate_test_certs_root_multi.sh"
     "${CMAKE_CURRENT_SOURCE_DIR}/generate_test_certs_leaf_multi.sh"
+    "${CMAKE_CURRENT_SOURCE_DIR}/generate_test_certs_leaf_dual_algorithm.sh"
     DESTINATION "${LIBEVSE_SECURITY_TEST_DIR}/tests"
 )
 

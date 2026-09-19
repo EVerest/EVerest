@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include <iostream>
 
@@ -328,6 +328,72 @@ TEST_F(OcspUpdaterTest, test_trigger) {
     this->calls_complete.timed_wait(boost::posix_time::second_clock::universal_time() + boost::posix_time::seconds(5));
     ocsp_updater->trigger_ocsp_cache_update();
     this->calls_complete.timed_wait(boost::posix_time::second_clock::universal_time() + boost::posix_time::seconds(5));
+    ocsp_updater->stop();
+}
+
+/// \brief A trigger during a running update returns at once and is honoured once that update has finished
+TEST_F(OcspUpdaterTest, test_trigger_during_update_does_not_block) {
+    auto ocsp_updater = std::make_unique<v2::OcspUpdater>(this->evse_security, this->status_update);
+
+    boost::interprocess::interprocess_semaphore csms_reached(0);
+    boost::interprocess::interprocess_semaphore csms_release(0);
+
+    testing::Sequence seq;
+    v2::GetCertificateStatusResponse response_success;
+    response_success.ocspResult = "EXAMPLE OCSP RESULT";
+    response_success.status = v2::GetCertificateStatusEnum::Accepted;
+
+    // First update: the CSMS answer is held back until the test releases it
+    EXPECT_CALL(*this->evse_security, get_v2g_ocsp_request_data())
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(this->example_ocsp_data));
+    EXPECT_CALL(*this->charge_point, get_certificate_status(testing::_))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Invoke([&](const v2::GetCertificateStatusRequest&) {
+            csms_reached.post();
+            csms_release.wait();
+            return response_success;
+        }));
+    EXPECT_CALL(*this->charge_point, get_certificate_status(testing::_))
+        .Times(2)
+        .InSequence(seq)
+        .WillRepeatedly(testing::Return(response_success));
+    EXPECT_CALL(*this->evse_security, update_ocsp_cache(testing::_, "EXAMPLE OCSP RESULT"))
+        .Times(3)
+        .InSequence(seq)
+        .WillRepeatedly(testing::Return());
+
+    // Second update, owed to the trigger that arrived during the first
+    EXPECT_CALL(*this->evse_security, get_v2g_ocsp_request_data())
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(this->example_ocsp_data));
+    EXPECT_CALL(*this->charge_point, get_certificate_status(testing::_))
+        .Times(3)
+        .InSequence(seq)
+        .WillRepeatedly(testing::Return(response_success));
+    EXPECT_CALL(*this->evse_security, update_ocsp_cache(testing::_, "EXAMPLE OCSP RESULT"))
+        .Times(2)
+        .InSequence(seq)
+        .WillRepeatedly(testing::Return());
+    EXPECT_CALL(*this->evse_security, update_ocsp_cache(testing::_, "EXAMPLE OCSP RESULT"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(SignalCallsCompleteVoid(&this->calls_complete));
+
+    ocsp_updater->start();
+    ASSERT_TRUE(
+        csms_reached.timed_wait(boost::posix_time::second_clock::universal_time() + boost::posix_time::seconds(5)));
+
+    const auto trigger_start = std::chrono::steady_clock::now();
+    ocsp_updater->trigger_ocsp_cache_update();
+    EXPECT_LT(std::chrono::steady_clock::now() - trigger_start, std::chrono::seconds(1));
+
+    csms_release.post();
+    ASSERT_TRUE(this->calls_complete.timed_wait(boost::posix_time::second_clock::universal_time() +
+                                                boost::posix_time::seconds(5)));
     ocsp_updater->stop();
 }
 
