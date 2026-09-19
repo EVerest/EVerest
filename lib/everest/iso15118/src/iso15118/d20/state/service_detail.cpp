@@ -256,6 +256,7 @@ Result ServiceDetail::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
         m_ctx.session_stopped = true;
 
         return {};
