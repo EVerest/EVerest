@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Copyright (C) 2022 - 2023 chargebyte GmbH
- * Copyright (C) 2022 - 2023 Contributors to EVerest
+ * Copyright (C) 2022 - 2026 Contributors to EVerest
  */
 
 /*****************************************************
@@ -15973,7 +15973,15 @@ int encode_iso20_exiFragment(exi_bitstream_t* stream, struct iso20_exiFragment* 
         // NumberOfPriceLevels (urn:iso:std:iso:15118:-20:CommonMessages)
         // event 127
         // OEMProvisioningCertificateChain (urn:iso:std:iso:15118:-20:CommonMessages)
-        // event 128
+        else if (exiFrag->OEMProvisioningCertificateChain_isUsed == 1)
+        {
+            // encode event 128
+            error = exi_basetypes_encoder_nbit_uint(stream, 9, 128);
+            if (error == EXI_ERROR__NO_ERROR)
+            {
+                error = encode_iso20_SignedCertificateChainType(stream, &exiFrag->OEMProvisioningCertificateChain);
+            }
+        }
         // Object (http://www.w3.org/2000/09/xmldsig#)
         // event 129
         // OccupancyCosts (urn:iso:std:iso:15118:-20:CommonTypes)
