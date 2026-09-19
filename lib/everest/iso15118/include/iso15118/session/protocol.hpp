@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <optional>
@@ -18,6 +18,8 @@ constexpr auto DIN70121_NAMESPACE = "urn:din:70121:2012:MsgDef";
 constexpr auto ISO2_NAMESPACE = "urn:iso:15118:2:2013:MsgDef";
 constexpr auto ISO20_DC_PROTOCOL_NAMESPACE = "urn:iso:std:iso:15118:-20:DC";
 constexpr auto ISO20_AC_PROTOCOL_NAMESPACE = "urn:iso:std:iso:15118:-20:AC";
+// Schema namespace of the -20 common message set, e.g. for CertificateInstallationReq relayed to a backend.
+constexpr auto ISO20_COMMON_MESSAGES_NAMESPACE = "urn:iso:std:iso:15118:-20:CommonMessages";
 
 // Maps a SupportedAppProtocol namespace string to its ProtocolId, if the namespace is known.
 std::optional<ProtocolId> protocol_id_from_namespace(const std::string& protocol_namespace);

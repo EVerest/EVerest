@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/message/variant.hpp>
 
 #include <cassert>
@@ -60,6 +60,10 @@ static void handle_main(VariantAccess& va) {
         insert_type(va, doc.AuthorizationReq);
     } else if (doc.AuthorizationRes_isUsed) {
         insert_type(va, doc.AuthorizationRes);
+    } else if (doc.CertificateInstallationReq_isUsed) {
+        insert_type(va, doc.CertificateInstallationReq);
+    } else if (doc.CertificateInstallationRes_isUsed) {
+        insert_type(va, doc.CertificateInstallationRes);
     } else if (doc.ServiceDiscoveryReq_isUsed) {
         insert_type(va, doc.ServiceDiscoveryReq);
     } else if (doc.ServiceDiscoveryRes_isUsed) {
@@ -194,6 +198,14 @@ static void handle_ac_sae_der(VariantAccess& va) {
 }
 
 Variant::Variant(io::v2gtp::PayloadType payload_type, const io::StreamInputView& buffer_view) {
+
+    if (buffer_view.payload == nullptr or buffer_view.payload_len == 0) {
+        error = "empty EXI payload";
+        logf_error("Failed due to: %s\n", error.c_str());
+        return;
+    }
+
+    exi_payload.assign(buffer_view.payload, buffer_view.payload + buffer_view.payload_len);
 
     VariantAccess va{
         get_exi_input_stream(buffer_view),

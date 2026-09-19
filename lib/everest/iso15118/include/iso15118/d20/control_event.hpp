@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <cstdint>
@@ -39,10 +39,27 @@ struct MeterInfo {
     uint64_t meter_reading_wh{0};
 };
 
+// Mirrors types::authorization::CertificateStatus of the EVerest authorization_response command.
+enum class CertificateStatus : uint8_t {
+    Accepted,
+    SignatureError,
+    CertificateExpired,
+    CertificateRevoked,
+    NoCertificateAvailable,
+    CertChainError,
+    ContractCancelled,
+};
+
 class AuthorizationResponse {
 public:
     explicit AuthorizationResponse(bool authorized_, bool certificate_revoked_ = false) :
-        authorized(authorized_), certificate_revoked(certificate_revoked_) {
+        authorized(authorized_),
+        certificate_status(certificate_revoked_ ? CertificateStatus::CertificateRevoked : CertificateStatus::Accepted) {
+    }
+
+    // token_unknown_: the backend does not know the token / eMAID at all ([V2G20-2211] on ISO 15118-20).
+    AuthorizationResponse(bool authorized_, CertificateStatus certificate_status_, bool token_unknown_ = false) :
+        authorized(authorized_), certificate_status(certificate_status_), token_unknown(token_unknown_) {
     }
 
     operator bool() const {
@@ -52,12 +69,21 @@ public:
     // ISO 15118-2 PnC: a revoked contract certificate is answered with FAILED_CertificateRevoked rather
     // than a plain FAILED. Only meaningful when authorized is false; the other protocols ignore it.
     bool is_certificate_revoked() const {
-        return certificate_revoked;
+        return certificate_status == CertificateStatus::CertificateRevoked;
+    }
+
+    CertificateStatus get_certificate_status() const {
+        return certificate_status;
+    }
+
+    bool is_token_unknown() const {
+        return token_unknown;
     }
 
 private:
     bool authorized;
-    bool certificate_revoked;
+    CertificateStatus certificate_status;
+    bool token_unknown{false};
 };
 
 class StopCharging {
@@ -104,8 +130,8 @@ private:
 // TODO(SL): Define this globally for message and states
 using SupportedVASs = std::vector<uint16_t>;
 
-// The module injects the raw CertificateInstallationRes EXI (base64) back into the d2 engine, which
-// splices it onto the wire verbatim.
+// The module injects the raw CertificateInstallationRes EXI (base64) back into the engine that
+// forwarded the request, which splices it onto the wire verbatim.
 struct CertificateResponse {
     bool status_accepted{false};
     std::string exi_response_base64{};
