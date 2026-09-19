@@ -432,6 +432,14 @@ Result Authorization::handle_certificate_installation_request(const message_20::
     }
 
     const auto& chain = req.oem_provisioning_certificate_chain;
+    // [V2G20-2203], [V2G20-2204]: "the SECC (or SA) deduces" an expired or not yet valid OEM provisioning
+    // chain element. Trust of the chain stays with the certificate provisioning service ([V2G20-1548] NOTE 2).
+    const std::vector<std::vector<uint8_t>> subs(chain.sub_certificates.begin(), chain.sub_certificates.end());
+    if (const auto fault = crypto::chain_validity_fault(chain.certificate, subs)) {
+        cert_install_remaining = 0;
+        respond_certificate_installation(req, *fault, dt::Processing::Finished);
+        return {};
+    }
     const auto verdict = crypto::verify_signature(variant.get_exi_payload(), chain.certificate,
                                                   crypto::SignedElement::CertificateInstallationReq);
     if (verdict != crypto::SignatureVerdict::Ok) {
