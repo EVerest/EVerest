@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/message/authorization.hpp>
 
-#include <stdexcept>
 #include <type_traits>
 #include <variant>
 
@@ -24,7 +23,7 @@ template <> void convert(const struct iso20_AuthorizationReqType& in, Authorizat
 
         pnc_out.id = CB2CPP_STRING(in.PnC_AReqAuthorizationMode.Id);
         CB2CPP_BYTES(in.PnC_AReqAuthorizationMode.GenChallenge, pnc_out.gen_challenge);
-        // Todo(sl): Adding certificate
+        convert(in.PnC_AReqAuthorizationMode.ContractCertificateChain, pnc_out.contract_certificate_chain);
     }
 }
 
@@ -44,11 +43,12 @@ struct AuthorizationModeVisitor {
         CB_SET_USED(out.EIM_AReqAuthorizationMode);
         init_iso20_EIM_AReqAuthorizationModeType(&out.EIM_AReqAuthorizationMode);
     }
-    void operator()([[maybe_unused]] const datatypes::PnC_ASReqAuthorizationMode& in) {
-        // Todo(mlitre): none of Id, GenChallenge and ContractCertificateChain are converted,
-        // so in.id and in.gen_challenge are discarded. Reject the request until they are,
-        // rather than let a PnC selection go out on the wire as EIM.
-        throw std::runtime_error("PnC authorization mode not implemented");
+    void operator()(const datatypes::PnC_ASReqAuthorizationMode& in) {
+        CB_SET_USED(out.PnC_AReqAuthorizationMode);
+        init_iso20_PnC_AReqAuthorizationModeType(&out.PnC_AReqAuthorizationMode);
+        CPP2CB_STRING(in.id, out.PnC_AReqAuthorizationMode.Id);
+        CPP2CB_BYTES(in.gen_challenge, out.PnC_AReqAuthorizationMode.GenChallenge);
+        convert(in.contract_certificate_chain, out.PnC_AReqAuthorizationMode.ContractCertificateChain);
     }
 
 private:

@@ -550,7 +550,7 @@ types:
           Raw CertificateInstallationRes or CertificateUpdateRes message
           as exi stream (Base64 encoded)
         type: string
-        maxLength: 5600
+        maxLength: 17000
       certificate_action:
         description: Type of the certificate request
         type: string
@@ -569,7 +569,7 @@ types:
           Raw CertificateInstallationReq or CertificateUpdateReq message as
           exi stream (Base64 encoded)
         type: string
-        maxLength: 5600
+        maxLength: 11000
       iso15118_schema_version:
         description: Schema Version used for CertificateReq message between EV and Charger
         type: string
