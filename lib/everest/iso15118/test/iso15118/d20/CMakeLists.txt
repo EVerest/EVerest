@@ -49,3 +49,14 @@ target_link_libraries(test_sae_modes
 )
 
 catch_discover_tests(test_sae_modes)
+
+add_executable(test_d20_crypto crypto.cpp)
+
+target_link_libraries(test_d20_crypto
+    PRIVATE
+        iso15118
+        OpenSSL::Crypto
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_d20_crypto)
