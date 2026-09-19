@@ -40,6 +40,13 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
                                                  const std::vector<std::vector<uint8_t>>& sub_certs,
                                                  const std::string& mo_root_path, const std::string& v2g_root_path);
 
+// Time validity of every element of a chain: WARNING_CertificateExpired or WARNING_CertificateNotYetValid
+// ([V2G20-2203], [V2G20-2204] for the OEM provisioning chain, [V2G20-2212], [V2G20-2213] for the contract
+// chain), WARNING_CertificateValidationError when a certificate does not parse, nothing when the whole
+// chain is valid. Trust is not checked.
+std::optional<dt::ResponseCode> chain_validity_fault(const std::vector<uint8_t>& leaf_der,
+                                                     const std::vector<std::vector<uint8_t>>& sub_certs);
+
 enum class SignedElement {
     PnC_AReqAuthorizationMode,  // AuthorizationReq, signed with the contract leaf key [V2G20-1063]
     CertificateInstallationReq, // OEMProvisioningCertificateChain, the request's only Id-carrying element,
