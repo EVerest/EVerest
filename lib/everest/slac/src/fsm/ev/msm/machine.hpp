@@ -183,6 +183,12 @@ struct SlacEVFSM_def : state_machine_def<SlacEVFSM_def> {
                     octet = static_cast<std::uint8_t>(byte_distribution(rng));
                 }
                 send_slac_parm_req::send(fsm);
+                // Matching has started with this request: say so now, not only once the EVSE answers.
+                // Until CM_SLAC_PARM.CNF arrives the consumer otherwise still sees UNMATCHED, takes the
+                // run for failed and restarts it (EvManager: every 250 ms pass), which drowned an EVSE
+                // that re-arms matching only 3.5 s after a BCB toggle in fresh CM_SLAC_PARM.REQs.
+                // Upstream's EV SLAC announced MATCHING on entering its matching state, too.
+                fsm.ctx->signal_state("MATCHING");
                 fsm.ctx->log_info("EV MSM start matching");
             }
         }
@@ -203,7 +209,6 @@ struct SlacEVFSM_def : state_machine_def<SlacEVFSM_def> {
                 return;
             }
             std::copy_n(src_mac, fsm.active_session.evse_mac.size(), fsm.active_session.evse_mac.begin());
-            fsm.ctx->signal_state("MATCHING");
         }
     };
 

@@ -464,7 +464,10 @@ bool test_trigger_matching_emits_single_parm_request() {
                      "trigger_matching did not send exactly one CM_SLAC_PARM.REQ")) {
         return false;
     }
-    if (!assert_true(not harness.saw_matching_state, test_name, "EV FSM entered MATCHING during trigger_matching")) {
+    // Matching starts with this request; the consumer learns it at once (a silent EVSE must not
+    // read as "not matching", or the consumer restarts the run every pass).
+    if (!assert_true(harness.saw_matching_state, test_name,
+                     "EV FSM did not announce MATCHING when sending CM_SLAC_PARM.REQ")) {
         return false;
     }
 
@@ -510,7 +513,10 @@ bool test_trigger_matching_immediately_after_reset_emits_single_parm_request() {
                      "reset followed by trigger_matching did not send exactly one CM_SLAC_PARM.REQ")) {
         return false;
     }
-    if (!assert_true(not harness.saw_matching_state, test_name, "EV FSM entered MATCHING during trigger_matching")) {
+    // Matching starts with this request; the consumer learns it at once (a silent EVSE must not
+    // read as "not matching", or the consumer restarts the run every pass).
+    if (!assert_true(harness.saw_matching_state, test_name,
+                     "EV FSM did not announce MATCHING when sending CM_SLAC_PARM.REQ")) {
         return false;
     }
     if (!assert_true(is_cm_slac_parm_req(harness.sent_messages.front()), test_name,
@@ -708,10 +714,6 @@ bool test_wrong_run_id_cm_slac_parm_cnf_is_ignored() {
     harness.machine.message(create_cm_slac_parm_cnf(evse_mac, run_id));
     harness.machine.update();
 
-    if (!assert_true(not harness.saw_matching_state, test_name,
-                     "EV entered MATCHING after wrong-run_id CM_SLAC_PARM.CNF")) {
-        return false;
-    }
     if (!assert_true(count_cm_start_atten_char_ind(harness.sent_messages) == sound_count_before, test_name,
                      "sounding message emitted after wrong-run_id CM_SLAC_PARM.CNF")) {
         return false;
@@ -753,9 +755,6 @@ bool test_short_cm_slac_parm_cnf_is_ignored() {
     harness.machine.message(short_cnf);
     harness.machine.update();
 
-    if (!assert_true(not harness.saw_matching_state, test_name, "EV entered MATCHING after short CM_SLAC_PARM.CNF")) {
-        return false;
-    }
     if (!assert_true(count_cm_start_atten_char_ind(harness.sent_messages) == sound_count_before, test_name,
                      "sounding message emitted after short CM_SLAC_PARM.CNF")) {
         return false;
