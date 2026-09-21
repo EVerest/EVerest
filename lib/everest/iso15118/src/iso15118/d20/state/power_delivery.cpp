@@ -28,11 +28,13 @@ message_20::PowerDeliveryResponse handle_request(const message_20::PowerDelivery
     message_20::PowerDeliveryResponse res;
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     if (contactor_error) {
-        return response_with_code(res, dt::ResponseCode::FAILED_ContactorError);
+        set_response_code(res, dt::ResponseCode::FAILED_ContactorError);
+        return res;
     }
 
     if (shutdown_requested) {
@@ -45,10 +47,12 @@ message_20::PowerDeliveryResponse handle_request(const message_20::PowerDelivery
 
     // Todo(sl): Add standby feature and define as everest module config
     if (req.charge_progress == dt::Progress::Standby) {
-        return response_with_code(res, dt::ResponseCode::WARNING_StandbyNotAllowed);
+        set_response_code(res, dt::ResponseCode::WARNING_StandbyNotAllowed);
+        return res;
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void PowerDelivery::enter() {

@@ -2,10 +2,10 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <array>
 #include <optional>
 #include <string>
 #include <variant>
+#include <vector>
 
 #include "common_types.hpp"
 
@@ -16,7 +16,6 @@ namespace iso15118::message_20 {
 namespace datatypes {
 
 static constexpr auto TAX_RULE_LENGTH = 10;
-static constexpr auto PRICE_RULE_STACK_LENGTH = 1024;
 static constexpr auto PRICE_RULE_LENGTH = 8;
 static constexpr auto OVERSTAY_RULE_LENGTH = 5;
 static constexpr auto ADDITIONAL_SERVICE_LENGTH = 5;
@@ -50,7 +49,7 @@ struct PriceRule {
 
 struct PriceRuleStack {
     uint32_t duration;
-    std::array<PriceRule, PRICE_RULE_LENGTH> price_rule;
+    everest::lib::util::fixed_vector<PriceRule, PRICE_RULE_LENGTH> price_rule; // max 8
 };
 
 struct AdditionalService {
@@ -58,9 +57,11 @@ struct AdditionalService {
     RationalNumber service_fee;
 };
 
-using TaxRuleList = std::array<TaxRule, TAX_RULE_LENGTH>;
-using PriceRuleStackList = std::array<PriceRuleStack, PRICE_RULE_STACK_LENGTH>;
-using AdditionalServiceList = std::array<AdditionalService, ADDITIONAL_SERVICE_LENGTH>;
+using TaxRuleList = everest::lib::util::fixed_vector<TaxRule, TAX_RULE_LENGTH>;
+// Inline storage is not used here: the standard allows 1024 stacks, which would add over a megabyte
+// to every ScheduleExchangeResponse. The encoder bounds this against the codec's own limit of 64.
+using PriceRuleStackList = std::vector<PriceRuleStack>;
+using AdditionalServiceList = everest::lib::util::fixed_vector<AdditionalService, ADDITIONAL_SERVICE_LENGTH>;
 
 struct Dynamic_SEReqControlMode {
     uint32_t departure_time;

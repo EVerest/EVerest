@@ -66,7 +66,8 @@ message_20::ServiceSelectionResponse handle_request(const message_20::ServiceSel
     message_20::ServiceSelectionResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     bool energy_service_found = false;
@@ -80,7 +81,8 @@ message_20::ServiceSelectionResponse handle_request(const message_20::ServiceSel
     }
 
     if (!energy_service_found) {
-        return response_with_code(res, dt::ResponseCode::FAILED_NoEnergyTransferServiceSelected);
+        set_response_code(res, dt::ResponseCode::FAILED_NoEnergyTransferServiceSelected);
+        return res;
     }
 
     if (req.selected_vas_list.has_value()) {
@@ -96,13 +98,15 @@ message_20::ServiceSelectionResponse handle_request(const message_20::ServiceSel
         }
 
         if (not vas_services_found) {
-            return response_with_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+            set_response_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+            return res;
         }
     }
 
     if (not session.find_energy_parameter_set_id(req.selected_energy_transfer_service.service_id,
                                                  req.selected_energy_transfer_service.parameter_set_id)) {
-        return response_with_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+        set_response_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+        return res;
     }
 
     session.selected_service_parameters(req.selected_energy_transfer_service.service_id,
@@ -113,13 +117,15 @@ message_20::ServiceSelectionResponse handle_request(const message_20::ServiceSel
 
         for (auto& vas_service : selected_vas_list) {
             if (not session.find_vas_parameter_set_id(vas_service.service_id, vas_service.parameter_set_id)) {
-                return response_with_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+                set_response_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+                return res;
             }
             session.selected_service_parameters(vas_service.service_id, vas_service.parameter_set_id);
         }
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void ServiceSelection::enter() {

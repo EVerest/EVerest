@@ -30,7 +30,8 @@ constexpr uint64_t MICROSECONDS_PER_SECOND = 1'000'000;
 template <typename Response> Response handle_sequence_error(const d20::Session& session) {
     Response res;
     setup_header(res.header, session);
-    return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_SequenceError);
+    set_response_code(res, message_20::datatypes::ResponseCode::FAILED_SequenceError);
+    return res;
 }
 
 } // namespace

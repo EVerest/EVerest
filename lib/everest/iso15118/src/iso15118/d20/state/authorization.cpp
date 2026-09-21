@@ -32,17 +32,20 @@ message_20::AuthorizationResponse handle_request(const message_20::Authorization
     message_20::AuthorizationResponse res = message_20::AuthorizationResponse();
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     if (timeout_reached) {
-        return response_with_code(res, dt::ResponseCode::FAILED);
+        set_response_code(res, dt::ResponseCode::FAILED);
+        return res;
     }
 
     // [V2G20-2209] Check if authorization service was offered in authorization_setup res
     if (not find_auth_service_in_offered_services(req.selected_authorization_service, session)) {
-        return response_with_code(
-            res, dt::ResponseCode::WARNING_AuthorizationSelectionInvalid); // [V2G20-2226] Handling if warning
+        // [V2G20-2226] Handling if warning
+        set_response_code(res, dt::ResponseCode::WARNING_AuthorizationSelectionInvalid);
+        return res;
     }
 
     auto response_code = dt::ResponseCode::OK;
@@ -75,7 +78,8 @@ message_20::AuthorizationResponse handle_request(const message_20::Authorization
         break;
     }
 
-    return response_with_code(res, response_code);
+    set_response_code(res, response_code);
+    return res;
 }
 
 void Authorization::enter() {

@@ -248,12 +248,14 @@ handle_request(const message_20::DER_AC_ChargeParameterDiscoveryRequest& req, co
     message_20::DER_AC_ChargeParameterDiscoveryResponse res;
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
-        return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     if (not der_limits.has_value()) {
         logf_error("No DER limits are provided. Shutdown the session");
-        return response_with_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+        set_response_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+        return res;
     }
 
     // NOTE(SL): At this point, it's clear that it can only be DER TransferMode
@@ -294,7 +296,8 @@ handle_request(const message_20::DER_AC_ChargeParameterDiscoveryRequest& req, co
     mode.grid_connection_mode = grid_connection_mode;
     mode.der_control = der_control;
 
-    return response_with_code(res, message_20::datatypes::ResponseCode::OK);
+    set_response_code(res, message_20::datatypes::ResponseCode::OK);
+    return res;
 }
 
 } // namespace

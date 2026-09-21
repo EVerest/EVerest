@@ -17,12 +17,14 @@ message_20::DC_WeldingDetectionResponse handle_request(const message_20::DC_Weld
     message_20::DC_WeldingDetectionResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     res.present_voltage = dt::from_float(present_voltage);
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void DC_WeldingDetection::enter() {

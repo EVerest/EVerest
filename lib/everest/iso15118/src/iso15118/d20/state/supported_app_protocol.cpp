@@ -55,11 +55,13 @@ message_20::SupportedAppProtocolResponse handle_request(const message_20::Suppor
     }
 
     if (ev_supported_protocols.empty()) {
-        return response_with_code(res, ResponseCode::Failed_NoNegotiation);
+        set_response_code(res, ResponseCode::Failed_NoNegotiation);
+        return res;
     }
 
     res.schema_id = ev_supported_protocols.begin()->second; // [V2G20-167] Highest Prio: 1, Lowest Prio: 20
-    return response_with_code(res, ResponseCode::OK_SuccessfulNegotiation);
+    set_response_code(res, ResponseCode::OK_SuccessfulNegotiation);
+    return res;
 }
 
 } // namespace
