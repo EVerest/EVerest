@@ -59,6 +59,20 @@ heavy ones with `-DEVEREST_EXCLUDE_MODULES="EvseSlac;EvseV2G;IsoMux"`, quoting t
 list. `cmake -LH build` lists all options; the two easiest to miss are
 `EVEREST_ENABLE_COVERAGE` and `CMAKE_RUN_CLANG_TIDY`, both OFF.
 
+Rust modules (`modules/**/Rs*`) build only with `-DEVEREST_ENABLE_RS_SUPPORT=ON`. CMake
+assembles a cargo workspace in `build/rust_workspace` and runs cargo there, in release
+profile for every build type but Debug. Cross builds set `EVEREST_RS_TARGET_TRIPLE` and
+`EVEREST_RS_LINKER`; the defaults are `<CMAKE_SYSTEM_PROCESSOR>-unknown-linux-gnu` and
+`CMAKE_CXX_COMPILER`. `modules/Cargo.lock` pins the crates for Bazel and Yocto alike:
+after editing a Rust module's `Cargo.toml`, update it (`cargo update` in `modules/`),
+regenerate `yocto/scarthgap/meta-everest/recipes-core/everest/everest-core-crates.inc`
+with `bitbake -c update_crates everest-core`, and mirror a new zvt revision in
+`SRCREV_zvt` of `everest-core-rust.inc` next to it.
+
+The Yocto layer `yocto/scarthgap/meta-everest` builds everest-core from this tree. Its
+`rust` PACKAGECONFIG needs the meta-rust-bin layer, see
+`docs/source/explanation/linux-yocto/building-yocto.rst`.
+
 ## Running
 
 Generated run scripts are the simplest entry point:

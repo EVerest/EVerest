@@ -97,7 +97,11 @@ PACKAGECONFIG[admin-panel] = "-DEVEREST_ENABLE_ADMIN_PANEL_BACKEND=ON,-DEVEREST_
 PACKAGECONFIG[applications] = "-DEVEREST_BUILD_APPLICATIONS=ON,-DEVEREST_BUILD_APPLICATIONS=OFF,"
 PACKAGECONFIG[javascript] = "-DEVEREST_ENABLE_JS_SUPPORT=ON,-DEVEREST_ENABLE_JS_SUPPORT=OFF,nodejs-native"
 PACKAGECONFIG[python] = "-DEVEREST_ENABLE_PY_SUPPORT=ON,-DEVEREST_ENABLE_PY_SUPPORT=OFF,python3-pybind11 python3-pybind11-json"
+PACKAGECONFIG[rust] = "-DEVEREST_ENABLE_RS_SUPPORT=ON,-DEVEREST_ENABLE_RS_SUPPORT=OFF,cxxbridge-cmd-native"
 PACKAGECONFIG[tpm2] = "-DUSING_TPM2=ON,-DUSING_TPM2=OFF,"
+
+# Rust modules need the meta-rust-bin layer, see everest-core-rust.inc
+require ${@bb.utils.contains('PACKAGECONFIG', 'rust', 'everest-core-rust.inc', '', d)}
 
 do_install:append() {
     if ${@bb.utils.contains('DISTRO_FEATURES', 'systemd', 'true', 'false', d)}; then

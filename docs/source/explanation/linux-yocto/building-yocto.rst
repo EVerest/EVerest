@@ -84,6 +84,34 @@ Other debugging tools that may be useful during development phase are:
    The locale should be set to UTF-8 (otherwise BringUp & Qualification tools
    will look weird).
 
+Rust modules
+============
+
+``everest-core`` builds its Rust modules (``RsPaymentTerminal``, ``RsIskraMeter``
+and the Rust examples) when its ``PACKAGECONFIG`` contains ``rust``. The Rust
+toolchain that ships with scarthgap is 1.75, older than the 1.82 the crates
+need, so the recipe takes its toolchain from the
+`meta-rust-bin <https://github.com/rust-embedded/meta-rust-bin>`_ layer. Add
+that layer to your ``bblayers.conf`` and enable the option:
+
+.. code-block:: bash
+
+   PACKAGECONFIG:append:pn-everest-core = " rust"
+
+Without a pin, bitbake takes the newest Rust that meta-rust-bin offers. To pin
+it, set the cargo version; rustc follows:
+
+.. code-block:: bash
+
+   PREFERRED_VERSION_cargo-bin-cross-${TARGET_ARCH} = "1.86.0"
+
+The build runs without network access. The recipe fetches every crate of
+``modules/Cargo.lock`` up front (listed in ``everest-core-crates.inc``) and the
+git dependency of ``RsPaymentTerminal`` at the revision its ``Cargo.toml``
+names. After changing a Rust module's dependencies, update ``modules/Cargo.lock``,
+regenerate the crate list with ``bitbake -c update_crates everest-core`` and,
+for a new zvt revision, ``SRCREV_zvt`` in ``everest-core-rust.inc``.
+
 ----
 
 **Authors**: Cornelius Claussen, Manuel Ziegler
