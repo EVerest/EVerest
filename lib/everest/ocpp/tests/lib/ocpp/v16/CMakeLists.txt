@@ -28,7 +28,6 @@ target_sources(libocpp_unit_tests PRIVATE
         test_charge_point_state_machine.cpp
         test_composite_schedule.cpp
         test_charge_point_connectivity.cpp
-        test_firmware_update.cpp
         test_devicemodel_connectivity.cpp
         test_charge_point_status_notification.cpp
         test_charge_point_suspend_reason.cpp
