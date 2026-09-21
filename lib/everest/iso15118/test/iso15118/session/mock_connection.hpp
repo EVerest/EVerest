@@ -27,7 +27,8 @@ public:
         return {};
     }
 
-    void write(const uint8_t*, size_t) override {
+    void write(const uint8_t* buf, size_t len) override {
+        written.insert(written.end(), buf, buf + len);
     }
 
     io::ReadResult read(uint8_t* buf, size_t len) override {
@@ -36,7 +37,8 @@ public:
             const auto count = std::min(len, available);
             std::memcpy(buf, read_buffer.data() + read_pos, count);
             read_pos += count;
-            return {false, count, false};
+            // A short read blocks, like both real connections do.
+            return {count < len, count, false};
         }
         return next_read_result;
     }
@@ -77,8 +79,18 @@ public:
         read_pos = 0;
     }
 
+    // Append arbitrary bytes, so a test can queue a hand-built header or a second frame.
+    void queue_raw(const uint8_t* data, std::size_t len) {
+        read_buffer.insert(read_buffer.end(), data, data + len);
+    }
+
+    bool all_queued_data_read() const {
+        return read_pos == read_buffer.size();
+    }
+
     io::ReadResult next_read_result{};
     bool closed{false};
+    std::vector<uint8_t> written;
 
 private:
     io::ConnectionEventCallback event_callback;

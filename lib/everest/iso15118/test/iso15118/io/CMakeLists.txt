@@ -65,3 +65,7 @@ catch_discover_tests(connection_openssl_test
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     PROPERTIES RESOURCE_LOCK iso15118_tls_port_50000
 )
+
+add_executable(test_sdp_packet sdp_packet_test.cpp)
+target_link_libraries(test_sdp_packet PRIVATE iso15118 Catch2::Catch2WithMain)
+catch_discover_tests(test_sdp_packet)
