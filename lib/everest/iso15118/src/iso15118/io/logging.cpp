@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/io/logging.hpp>
 
 #include <cstdarg>
 #include <cstdio>
 #include <iostream>
+
+#include <everest/tls/openssl_util.hpp>
 
 static std::function<void(iso15118::LogLevel, std::string)> logging_callback = [](const iso15118::LogLevel& level,
                                                                                   const std::string& msg) {
@@ -85,9 +87,33 @@ void logf_trace(const char* fmt, ...) {
     va_end(args);
 }
 
+namespace {
+
+// Without a handler libtls writes to stderr, bypassing the prefix and level filter of the callback owner.
+void forward_tls_log(openssl::log_level_t level, const std::string& msg) {
+    switch (level) {
+    case openssl::log_level_t::debug:
+        log(LogLevel::Debug, msg);
+        break;
+    case openssl::log_level_t::info:
+        log(LogLevel::Info, msg);
+        break;
+    case openssl::log_level_t::warning:
+        log(LogLevel::Warning, msg);
+        break;
+    case openssl::log_level_t::error:
+    default:
+        log(LogLevel::Error, msg);
+        break;
+    }
+}
+
+} // namespace
+
 namespace io {
 void set_logging_callback(const std::function<void(LogLevel, std::string)>& callback) {
     logging_callback = callback;
+    openssl::set_log_handler(forward_tls_log);
 }
 } // namespace io
 
