@@ -39,6 +39,10 @@ template <> void insert_type(VariantAccess& va, const struct iso2_PreChargeReqTy
     va.insert_type<PreChargeRequest>(in);
 }
 
+template <> void insert_type(VariantAccess& va, const struct iso2_PreChargeResType& in) {
+    va.insert_type<PreChargeResponse>(in);
+}
+
 template <> int serialize_to_exi(const PreChargeRequest& in, exi_bitstream_t& out) {
     iso2_exiDocument doc{};
     convert(in.header, doc.V2G_Message.Header);

@@ -99,6 +99,10 @@ template <> void insert_type(VariantAccess& va, const struct din_PowerDeliveryRe
     va.insert_type<PowerDeliveryRequest>(in);
 }
 
+template <> void insert_type(VariantAccess& va, const struct din_PowerDeliveryResType& in) {
+    va.insert_type<PowerDeliveryResponse>(in);
+}
+
 template <> int serialize_to_exi(const PowerDeliveryRequest& in, exi_bitstream_t& out) {
     din_exiDocument doc;
     init_din_exiDocument(&doc);

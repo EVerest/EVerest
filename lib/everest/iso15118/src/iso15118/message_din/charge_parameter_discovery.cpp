@@ -198,6 +198,10 @@ template <> void insert_type(VariantAccess& va, const struct din_ChargeParameter
     va.insert_type<ChargeParameterDiscoveryRequest>(in);
 }
 
+template <> void insert_type(VariantAccess& va, const struct din_ChargeParameterDiscoveryResType& in) {
+    va.insert_type<ChargeParameterDiscoveryResponse>(in);
+}
+
 template <> int serialize_to_exi(const ChargeParameterDiscoveryRequest& in, exi_bitstream_t& out) {
     din_exiDocument doc;
     init_din_exiDocument(&doc);

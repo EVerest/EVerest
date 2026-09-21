@@ -130,6 +130,10 @@ template <> void insert_type(VariantAccess& va, const struct iso2_CurrentDemandR
     va.insert_type<CurrentDemandRequest>(in);
 }
 
+template <> void insert_type(VariantAccess& va, const struct iso2_CurrentDemandResType& in) {
+    va.insert_type<CurrentDemandResponse>(in);
+}
+
 template <> int serialize_to_exi(const CurrentDemandRequest& in, exi_bitstream_t& out) {
     iso2_exiDocument doc{};
     convert(in.header, doc.V2G_Message.Header);

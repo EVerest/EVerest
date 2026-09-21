@@ -60,6 +60,10 @@ template <> void insert_type(VariantAccess& va, const struct iso2_PaymentDetails
     va.insert_type<PaymentDetailsRequest>(in);
 }
 
+template <> void insert_type(VariantAccess& va, const struct iso2_PaymentDetailsResType& in) {
+    va.insert_type<PaymentDetailsResponse>(in);
+}
+
 template <> int serialize_to_exi(const PaymentDetailsRequest& in, exi_bitstream_t& out) {
     iso2_exiDocument doc{};
     convert(in.header, doc.V2G_Message.Header);

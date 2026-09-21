@@ -40,6 +40,10 @@ template <> void insert_type(VariantAccess& va, const struct iso2_AuthorizationR
     va.insert_type<AuthorizationRequest>(in);
 }
 
+template <> void insert_type(VariantAccess& va, const struct iso2_AuthorizationResType& in) {
+    va.insert_type<AuthorizationResponse>(in);
+}
+
 template <> int serialize_to_exi(const AuthorizationRequest& in, exi_bitstream_t& out) {
     iso2_exiDocument doc{};
     convert(in.header, doc.V2G_Message.Header);

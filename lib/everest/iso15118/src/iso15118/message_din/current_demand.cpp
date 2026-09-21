@@ -109,6 +109,10 @@ template <> void insert_type(VariantAccess& va, const struct din_CurrentDemandRe
     va.insert_type<CurrentDemandRequest>(in);
 }
 
+template <> void insert_type(VariantAccess& va, const struct din_CurrentDemandResType& in) {
+    va.insert_type<CurrentDemandResponse>(in);
+}
+
 template <> int serialize_to_exi(const CurrentDemandRequest& in, exi_bitstream_t& out) {
     din_exiDocument doc;
     init_din_exiDocument(&doc);

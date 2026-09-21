@@ -56,6 +56,10 @@ template <> void insert_type(VariantAccess& va, const struct iso2_ChargingStatus
     va.insert_type<ChargingStatusRequest>(in);
 }
 
+template <> void insert_type(VariantAccess& va, const struct iso2_ChargingStatusResType& in) {
+    va.insert_type<ChargingStatusResponse>(in);
+}
+
 template <> int serialize_to_exi(const ChargingStatusRequest& in, exi_bitstream_t& out) {
     iso2_exiDocument doc{};
     convert(in.header, doc.V2G_Message.Header);

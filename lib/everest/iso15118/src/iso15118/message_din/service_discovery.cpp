@@ -87,6 +87,10 @@ template <> void insert_type(VariantAccess& va, const struct din_ServiceDiscover
     va.insert_type<ServiceDiscoveryRequest>(in);
 }
 
+template <> void insert_type(VariantAccess& va, const struct din_ServiceDiscoveryResType& in) {
+    va.insert_type<ServiceDiscoveryResponse>(in);
+}
+
 template <> int serialize_to_exi(const ServiceDiscoveryRequest& in, exi_bitstream_t& out) {
     din_exiDocument doc;
     init_din_exiDocument(&doc);
