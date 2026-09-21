@@ -1287,8 +1287,11 @@ TEST_F(EvseSecurityTests, verify_ocsp_request_mo_generate) {
 }
 
 TEST_F(EvseSecurityTests, verify_ocsp_cache) {
-    std::string ocsp_mock_response_data = "OCSP_MOCK_RESPONSE_DATA";
-    std::string ocsp_mock_response_data_v2 = "OCSP_MOCK_RESPONSE_DATA_V2";
+    // The cache takes the OCPP wire format (base64) and stores DER
+    const std::string ocsp_mock_response_data = "OCSP_MOCK_RESPONSE_DATA";
+    const std::string ocsp_mock_response_data_v2 = "OCSP_MOCK_RESPONSE_DATA_V2";
+    const auto ocsp_mock_response_base64 = EvseSecurity::base64_encode_from_string(ocsp_mock_response_data);
+    const auto ocsp_mock_response_base64_v2 = EvseSecurity::base64_encode_from_string(ocsp_mock_response_data_v2);
 
     OCSPRequestDataList data = this->evse_security->get_v2g_ocsp_request_data();
 
@@ -1296,7 +1299,7 @@ TEST_F(EvseSecurityTests, verify_ocsp_cache) {
 
     // Mock a response
     for (auto& ocsp : data.ocsp_request_data_list) {
-        this->evse_security->update_ocsp_cache(ocsp.certificate_hash_data.value(), ocsp_mock_response_data);
+        this->evse_security->update_ocsp_cache(ocsp.certificate_hash_data.value(), ocsp_mock_response_base64);
     }
 
     // Make sure all info was written and that it is correct
@@ -1340,7 +1343,7 @@ TEST_F(EvseSecurityTests, verify_ocsp_cache) {
 
     // Write data again to test over-writing
     for (auto& ocsp : data.ocsp_request_data_list) {
-        this->evse_security->update_ocsp_cache(ocsp.certificate_hash_data.value(), ocsp_mock_response_data_v2);
+        this->evse_security->update_ocsp_cache(ocsp.certificate_hash_data.value(), ocsp_mock_response_base64_v2);
     }
 
     for (auto& ocsp : data.ocsp_request_data_list) {
@@ -1399,15 +1402,30 @@ TEST_F(EvseSecurityTests, verify_ocsp_cache) {
     }
 }
 
+TEST_F(EvseSecurityTests, verify_ocsp_cache_rejects_non_base64) {
+    OCSPRequestDataList data = this->evse_security->get_v2g_ocsp_request_data();
+    ASSERT_EQ(data.ocsp_request_data_list.size(), 3);
+
+    for (auto& ocsp : data.ocsp_request_data_list) {
+        this->evse_security->update_ocsp_cache(ocsp.certificate_hash_data.value(), "not base64 encoded!");
+    }
+
+    for (auto& ocsp : data.ocsp_request_data_list) {
+        ASSERT_FALSE(this->evse_security->retrieve_ocsp_cache(ocsp.certificate_hash_data.value()).has_value());
+    }
+    ASSERT_FALSE(fs::exists("certs/client/cso/ocsp"));
+}
+
 TEST_F(EvseSecurityTests, verify_ocsp_garbage_collect) {
-    std::string ocsp_mock_response_data = "OCSP_MOCK_RESPONSE_DATA";
+    const std::string ocsp_mock_response_data = "OCSP_MOCK_RESPONSE_DATA";
+    const auto ocsp_mock_response_base64 = EvseSecurity::base64_encode_from_string(ocsp_mock_response_data);
 
     OCSPRequestDataList data = this->evse_security->get_v2g_ocsp_request_data();
     ASSERT_EQ(data.ocsp_request_data_list.size(), 3);
 
     // Mock a response
     for (auto& ocsp : data.ocsp_request_data_list) {
-        this->evse_security->update_ocsp_cache(ocsp.certificate_hash_data.value(), ocsp_mock_response_data);
+        this->evse_security->update_ocsp_cache(ocsp.certificate_hash_data.value(), ocsp_mock_response_base64);
     }
 
     // Make sure all info was written and that it is correct
