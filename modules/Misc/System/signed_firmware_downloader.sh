@@ -1,5 +1,10 @@
 #!/bin/bash
 
+#
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+#
+
 . "${1}"
 
 SIGNATURE_VALIDATION_DIR=$(mktemp -d /tmp/signature_validation_XXXXX)
@@ -7,7 +12,7 @@ sleep 2
 echo "$DOWNLOADING"
 
 sleep 2
-curl --progress-bar --ssl --connect-timeout "$CONNECTION_TIMEOUT" "${2}" -o "${3}"
+curl --progress-bar --ssl --proto =ftp,ftps,http,https --proto-default https --connect-timeout "$CONNECTION_TIMEOUT" "${2}" -o "${3}"
 curl_exit_code=$?
 sleep 2
 if [[ $curl_exit_code -eq 0 ]]; then
