@@ -160,6 +160,42 @@ SCENARIO("Malformed V2GTP frames after the SupportedAppProtocol handshake") {
     }
 }
 
+SCENARIO("A V2GTP payload length shorter than the payload is ignored") {
+    GIVEN("a connected session") {
+        SessionFixture fixture;
+
+        WHEN("a SupportedAppProtocolReq declares one byte less than it carries") {
+            fixture.deliver(make_frame(VALID_VERSION, VALID_INVERSE_VERSION,
+                                       static_cast<uint16_t>(iso15118::io::v2gtp::PayloadType::SAP),
+                                       sizeof(sap_req) - 1, sap_req, sizeof(sap_req)));
+
+            THEN("it is neither answered nor a reason to close") {
+                REQUIRE(fixture.conn->written.empty());
+                REQUIRE_FALSE(fixture.conn->closed);
+                REQUIRE_FALSE(fixture.session->is_finished());
+            }
+        }
+    }
+
+    GIVEN("a completed SupportedAppProtocol handshake") {
+        SessionFixture fixture;
+        fixture.complete_sap_handshake();
+        const auto written_after_handshake = fixture.conn->written.size();
+
+        WHEN("a SessionSetupReq declares one byte less than it carries") {
+            fixture.deliver(make_frame(VALID_VERSION, VALID_INVERSE_VERSION,
+                                       static_cast<uint16_t>(iso15118::io::v2gtp::PayloadType::Part20Main),
+                                       sizeof(session_setup_req) - 1, session_setup_req, sizeof(session_setup_req)));
+
+            THEN("it is neither answered nor a reason to close") {
+                REQUIRE(fixture.conn->written.size() == written_after_handshake);
+                REQUIRE_FALSE(fixture.conn->closed);
+                REQUIRE_FALSE(fixture.session->is_finished());
+            }
+        }
+    }
+}
+
 SCENARIO("A dropped unknown payload type leaves the stream in sync") {
     GIVEN("a completed SupportedAppProtocol handshake") {
         SessionFixture fixture;

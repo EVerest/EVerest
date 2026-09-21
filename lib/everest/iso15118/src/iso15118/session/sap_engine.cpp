@@ -30,7 +30,10 @@ void SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamI
     const auto req = variant.get_if<message_20::SupportedAppProtocolRequest>();
     if (req == nullptr) {
         logf_warning("Expected SupportedAppProtocolReq! But code type id: %d", variant.get_type());
-        stopped = true;
+        // [V2G20-800]: an undecodable frame is ignored; a decodable wrong type ends the session.
+        if (variant.get_error().empty()) {
+            stopped = true;
+        }
         return;
     }
 
