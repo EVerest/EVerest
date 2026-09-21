@@ -96,7 +96,8 @@ void send_sequence_error(const message_20::Type req_type, d20::Context& ctx) {
         setup_header(res.header, ctx.session);
         res.signed_installation_data.id = "id1";
         res.signed_installation_data.contract_certificate_chain.sub_certificates.emplace_back();
-        ctx.respond(response_with_code(res, message_20::datatypes::ResponseCode::FAILED_SequenceError));
+        set_response_code(res, message_20::datatypes::ResponseCode::FAILED_SequenceError);
+        ctx.respond(res);
     } else if (req_type == message_20::Type::ServiceDiscoveryReq) {
         const auto res = handle_sequence_error<message_20::ServiceDiscoveryResponse>(ctx.session);
         ctx.respond(res);

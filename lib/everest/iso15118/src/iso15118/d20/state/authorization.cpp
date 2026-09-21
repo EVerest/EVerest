@@ -238,7 +238,8 @@ Result Authorization::handle_authorization_request(const message_20::Authorizati
         message_20::AuthorizationResponse res;
         res.header = header;
         res.evse_processing = dt::Processing::Finished;
-        m_ctx.respond(response_with_code(res, dt::ResponseCode::FAILED_SignatureError));
+        set_response_code(res, dt::ResponseCode::FAILED_SignatureError);
+        m_ctx.respond(res);
         m_ctx.session_stopped = true;
         return {};
     }
@@ -364,7 +365,8 @@ void Authorization::respond_certificate_installation(const message_20::Certifica
     res.signed_installation_data.id = "id1";
     res.signed_installation_data.contract_certificate_chain.sub_certificates.emplace_back();
     res.remaining_contract_certificate_chains = 0;
-    m_ctx.respond(response_with_code(res, code));
+    set_response_code(res, code);
+    m_ctx.respond(res);
 }
 
 Result Authorization::handle_certificate_installation_request(const message_20::CertificateInstallationRequest& req,
