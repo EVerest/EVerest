@@ -529,10 +529,12 @@ bool Session::create_engine(const SapEngine::Negotiated& negotiated) {
                                           vehicle_cert_hash);
             return true;
         case ProtocolId::ISO15118_2:
+            dlink_setup_timer_anchor = true;
             engine.emplace<D2SeccEngine>(engine_output_view(), config, d2_pause_ctx, callbacks, timeouts,
                                          connection->is_secure());
             return true;
         case ProtocolId::DIN70121:
+            dlink_setup_timer_anchor = true;
             engine.emplace<DinSeccEngine>(engine_output_view(), config, callbacks, timeouts);
             return true;
         }
@@ -583,6 +585,7 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
     case Event::ACCEPTED:
         assert(state.connected == false);
         state.connected = true;
+        connection_established_time = get_current_time_point();
         logf_info("Accepted connection on port %d", connection->get_public_endpoint().port);
         // Guard the wait for the first request with the sequence timeout, so an EV that connects and
         // sends nothing is closed rather than left open (EvseV2G parity).
