@@ -87,17 +87,20 @@ handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req
                 sae_limits.has_value() ? dt::from_RationalNumber(sae_limits->grid_limits.nominal_voltage) : 0.0f));
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
-        return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     if (not sae_limits.has_value()) {
         logf_error("No SAE limits are provided. Shutdown the session");
-        return response_with_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+        set_response_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+        return res;
     }
 
     if (not config.has_value()) {
         logf_error("No SAE DER control values are provided. Shutdown the session");
-        return response_with_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+        set_response_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+        return res;
     }
 
     // NOTE(mlitre): At this point, it's clear that it can only be DER TransferMode
@@ -109,7 +112,8 @@ handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req
     // same check, but the AC limits can change through a control event in between.
     if (const auto violation = validate_sae_nominals_within_maxima(der_limits, limits)) {
         logf_error("SAE nominal power not within maximum: %s. Shutdown the session", violation.value().c_str());
-        return response_with_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+        set_response_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+        return res;
     }
 
     auto& mode = res.transfer_mode;
@@ -174,7 +178,9 @@ handle_request(const message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest& req
 
     mode.update_time = sae_config.der_control_update_time;
 
-    return response_with_code(res, message_20::datatypes::ResponseCode::OK);
+    set_response_code(res, message_20::datatypes::ResponseCode::OK);
+
+    return res;
 }
 
 } // namespace
