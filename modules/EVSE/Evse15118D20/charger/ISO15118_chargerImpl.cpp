@@ -1589,6 +1589,7 @@ void ISO15118_chargerImpl::handle_setup(types::iso15118::EVSEID& evse_id,
 
     std::scoped_lock lock(GEL);
     setup_config.evse_id = evse_id.evse_id; // TODO(SL): Check format for d20
+    setup_config.evse_id_din = evse_id.evse_id_din.value_or("");
 
     setup_steps_done.set(SetupStep::SETUP);
 }

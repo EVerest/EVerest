@@ -32,6 +32,8 @@ struct VasService {
 
 struct EvseSetupConfig {
     std::string evse_id;
+    // DIN SPEC 70121 EVSEID as hexBinary (DIN SPEC 91286 digits, '*' as 0xA); empty packs evse_id instead.
+    std::string evse_id_din;
     std::vector<message_20::datatypes::ServiceCategory> supported_energy_services;
     std::vector<message_20::datatypes::Authorization> authorization_services;
     std::vector<uint16_t> supported_vas_services;
@@ -91,6 +93,7 @@ struct SessionConfig {
     void set_supported_energy_transfer_services(std::vector<message_20::datatypes::ServiceCategory> services);
 
     std::string evse_id;
+    std::string evse_id_din;
 
     bool cert_install_service;
     std::vector<message_20::datatypes::Authorization> authorization_services;

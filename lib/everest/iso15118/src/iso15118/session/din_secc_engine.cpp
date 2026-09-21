@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/session/din_secc_engine.hpp>
 
 #include <algorithm>
@@ -55,6 +55,42 @@ std::vector<uint8_t> din_evse_id_to_hex(const std::string& evse_id) {
     return out;
 }
 
+// The configured DIN EVSEID is the hexBinary of [V2G-DC-620/621] itself (EvseManager evse_id_din), so it is
+// copied byte-wise; an odd trailing nibble is padded with 0xF.
+std::vector<uint8_t> din_evse_id_from_hex(const std::string& evse_id_din) {
+    constexpr size_t MAX_CHARS = 32;
+
+    std::vector<uint8_t> nibbles;
+    for (const char c : evse_id_din) {
+        if (nibbles.size() >= MAX_CHARS) {
+            break;
+        }
+        if (c >= '0' and c <= '9') {
+            nibbles.push_back(static_cast<uint8_t>(c - '0'));
+        } else if (c >= 'a' and c <= 'f') {
+            nibbles.push_back(static_cast<uint8_t>(c - 'a' + 10));
+        } else if (c >= 'A' and c <= 'F') {
+            nibbles.push_back(static_cast<uint8_t>(c - 'A' + 10));
+        } else {
+            logf_warning("DIN EVSEID '%s' is not hexBinary; sending 0x00", evse_id_din.c_str());
+            return {0x00};
+        }
+    }
+
+    if (nibbles.empty()) {
+        return {0x00};
+    }
+
+    std::vector<uint8_t> out;
+    out.reserve((nibbles.size() + 1) / 2);
+    for (size_t i = 0; i < nibbles.size(); i += 2) {
+        const uint8_t hi = nibbles[i];
+        const uint8_t lo = (i + 1 < nibbles.size()) ? nibbles[i + 1] : 0x0F;
+        out.push_back(static_cast<uint8_t>((hi << 4) | lo));
+    }
+    return out;
+}
+
 bool has_dc_maxima(const d20::DcTransferLimits& dc) {
     namespace dt20 = message_20::datatypes;
     return dt20::from_RationalNumber(dc.charge_limits.power.max) > 0.0f or
@@ -68,7 +104,8 @@ bool has_dc_maxima(const d20::DcTransferLimits& dc) {
 din::SessionConfig make_din_config(const session::SessionConfig& config) {
     din::SessionConfig cfg;
 
-    cfg.evse_id = din_evse_id_to_hex(config.evse_id);
+    cfg.evse_id =
+        config.evse_id_din.empty() ? din_evse_id_to_hex(config.evse_id) : din_evse_id_from_hex(config.evse_id_din);
     cfg.evse_peak_current_ripple = 1.0;
 
     // The DIN ChargeService advertises exactly one mode: DC_extended when offered, else DC_core. With
