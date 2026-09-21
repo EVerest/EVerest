@@ -92,21 +92,46 @@ bool TbdController::poll_once() {
     return true;
 }
 
-void TbdController::service_active_session() {
-    next_event = offset_time_point_by_ms(get_current_time_point(), POLL_MANAGER_TIMEOUT_MS);
-
+void TbdController::update_communication_setup_timeout() {
     // The loop thread owns communication_setup_timeout; the command thread only publishes its request
     // via the generation counter / flag pair, so the std::optional<Timeout> is never touched across threads.
     const auto dlink_generation = dlink_ready_generation.load();
     if (dlink_generation != dlink_ready_applied) {
         dlink_ready_applied = dlink_generation;
+        communication_setup_uses_tcp_anchor = false;
         if (dlink_ready_requested.load()) {
             communication_setup_timeout.emplace(V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
+            communication_setup_dlink_deadline = communication_setup_timeout->get_timeout_point();
             logf_info("V2G communication setup timeout started (%u ms)", V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
         } else {
             communication_setup_timeout.reset();
+            communication_setup_dlink_deadline.reset();
         }
     }
+
+    if (not session or not communication_setup_timeout or not communication_setup_dlink_deadline) {
+        return;
+    }
+
+    const auto tcp_anchor = session->get_tcp_setup_timer_anchor();
+    if (tcp_anchor.has_value() == communication_setup_uses_tcp_anchor) {
+        return;
+    }
+
+    communication_setup_uses_tcp_anchor = tcp_anchor.has_value();
+    const auto deadline = tcp_anchor.has_value()
+                              ? offset_time_point_by_ms(*tcp_anchor, V2G_COMMUNICATION_SETUP_TIMEOUT_MS)
+                              : *communication_setup_dlink_deadline;
+    communication_setup_timeout.emplace(
+        static_cast<uint32_t>(get_timeout_ms_until(deadline, V2G_COMMUNICATION_SETUP_TIMEOUT_MS)));
+    logf_info("V2G communication setup timeout anchored at %s",
+              communication_setup_uses_tcp_anchor ? "TCP/TLS establishment" : "D-LINK ready");
+}
+
+void TbdController::service_active_session() {
+    next_event = offset_time_point_by_ms(get_current_time_point(), POLL_MANAGER_TIMEOUT_MS);
+
+    update_communication_setup_timeout();
 
     if (session and shutdown_active.load() and not shutdown_signaled) {
         session->request_shutdown(); // Stopping the session
