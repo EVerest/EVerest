@@ -366,12 +366,14 @@ TimePoint const& Session::poll() {
             // Timestamp the request so -2/DIN and the handshake can pace their response after it.
             last_request_rx_time = now;
 
+            // A sequence timer is armed on accept and on every response; stop it as soon as the next request
+            // arrives, the SupportedAppProtocolReq included.
+            timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
+
             if (not in_sap_phase()) {
                 // The first request to a protocol engine is the SessionSetupReq: the session is established, so
                 // V2G_SECC_CommunicationSetup_Timeout stops and the per-message sequence timeout takes over.
                 v2g_session_established = true;
-                // A sequence timer is armed on every response; stop it as soon as the next request arrives.
-                timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
             }
 
             // Publish the frame the engine is about to decode; cleared right after, the buffer is reused.
