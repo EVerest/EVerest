@@ -4,7 +4,10 @@
 # config: module default strategy) + EvseSlac on the ChargeBridge PLC tap, simulated power train
 # (DCSupplySimulator + IMDSimulator). Daemon config: config-CB-EVAL.yaml. Started by
 # run-mcs-evse-session.sh ccs. Differences to DC-SIM: no ENFORCE_NO_TLS, DIN enabled,
-# connector_type pinned to cCCS2, the unconnected SerialCommHub dropped.
+# connector_type pinned to cCCS2, the unconnected SerialCommHub dropped, and no over-voltage monitor:
+# the power path is simulated, the board's OVM measures the unpowered real HV and EvseManager's
+# voltage plausibility check (spread > 50 V for 30 s) would end every longer session in an
+# emergency shutdown - the MCS bench config has none either.
 settings:
   telemetry_enabled: false
 active_modules:
@@ -72,9 +75,6 @@ active_modules:
           implementation_id: main
       imd:
         - module_id: iso_monitor
-          implementation_id: main
-      over_voltage_monitor:
-        - module_id: cb_ovm
           implementation_id: main
     module: EvseManager
     telemetry:
@@ -156,11 +156,6 @@ active_modules:
     config_module:
       cfg_heartbeat_interval_ms: 500
     module: evse_board_support_API
-  cb_ovm:
-    connections: {}
-    config_module:
-      cfg_heartbeat_interval_ms: 500
-    module: over_voltage_monitor_API
   external_limits:
     connections:
       energy_node:
