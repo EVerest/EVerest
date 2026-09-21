@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <cstdint>
@@ -25,5 +25,19 @@ enum class PayloadType : uint16_t {
     Part20DerIec = 0x8010,
     Part20DerSae = 0x8011,
 };
+
+constexpr bool is_known_payload_type(PayloadType type) {
+    switch (type) {
+    case PayloadType::SAP:
+    case PayloadType::Part20Main:
+    case PayloadType::Part20AC:
+    case PayloadType::Part20DC:
+    case PayloadType::Part20DerIec:
+    case PayloadType::Part20DerSae:
+        return true;
+    }
+    // get_payload_type() casts any uint16_t, so a value outside the enum reaches here.
+    return false;
+}
 
 } // namespace iso15118::io::v2gtp
