@@ -186,8 +186,8 @@ TEST(RedistributionHelpers, AllocatedPowerNulloptWithoutAnyLimit) {
 
 TEST(RedistributionHelpers, StaticBoundsUseMinPhasesForMinimum) {
     // make_evse_node declares max 3 phases, min 1 phase.
-    const MarketFixture f(test::make_root_node("grid", 32.0f, std::nullopt, {test::make_evse_node("evse1", 32.0f, 6.0f)}),
-                          T0);
+    const MarketFixture f(
+        test::make_root_node("grid", 32.0f, std::nullopt, {test::make_evse_node("evse1", 32.0f, 6.0f)}), T0);
     const auto b = get_static_bounds_W(f.evse("evse1"), U);
     ASSERT_TRUE(b.min_W.has_value());
     ASSERT_TRUE(b.max_W.has_value());
@@ -202,7 +202,6 @@ TEST(RedistributionHelpers, StaticBoundsPreferTotalPowerForMaximum) {
     ASSERT_TRUE(b.max_W.has_value());
     EXPECT_FLOAT_EQ(b.max_W.value(), 11000.0f);
 }
-
 
 // ---------------------------------------------------------------- connector classification
 

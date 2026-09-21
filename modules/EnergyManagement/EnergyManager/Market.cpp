@@ -200,7 +200,9 @@ std::optional<ScheduleReq::size_type> active_slot_index(const ScheduleReq& sched
     }
 
     const auto& now = globals.start_time;
-    const auto at = [&schedule](ScheduleReq::size_type n) { return Everest::Date::from_rfc3339(schedule[n].timestamp); };
+    const auto at = [&schedule](ScheduleReq::size_type n) {
+        return Everest::Date::from_rfc3339(schedule[n].timestamp);
+    };
 
     if (now < at(0)) {
         // The whole schedule is still in the future; the first slot is the one to come.

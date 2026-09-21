@@ -160,6 +160,7 @@ struct BrokerContext {
     // cap first fell below the applied one. The reduction is applied once it has been
     // pending for the configured hold time; a recovering candidate clears it.
     std::optional<date::utc_clock::time_point> redistribution_reduction_pending_since;
+
     // Import power [W] the previous optimizer run handed to this connector: the "allotted"
     // side of the power redistribution inference, compared against the measurement of the
     // following run. nullopt before the first run of a session and while not in a session.

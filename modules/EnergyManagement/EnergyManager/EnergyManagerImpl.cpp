@@ -151,8 +151,7 @@ std::string format_W(const std::optional<float>& value) {
 
 } // namespace
 
-void EnergyManagerImpl::infer_redistribution(const Market& market,
-                                             const std::vector<std::shared_ptr<Broker>>& brokers,
+void EnergyManagerImpl::infer_redistribution(const Market& market, const std::vector<std::shared_ptr<Broker>>& brokers,
                                              const std::vector<types::energy::EnforcedLimits>& limits) {
     const auto nominal_ac_voltage = static_cast<float>(config.nominal_ac_voltage);
     const auto connector_margin = static_cast<float>(config.power_redistribution_connector_margin);
@@ -243,9 +242,9 @@ void EnergyManagerImpl::infer_redistribution(const Market& market,
     if (globals.debug) {
         EVLOG_info << fmt::format("Redistribution: grid limit {}, measured {} ({}), headroom {}, {} saturated, "
                                   "proposed increase {:.0f} W{}",
-                                  format_W(site.grid_limit_W), format_W(site.measured_W),
-                                  to_string(site.meter_source), format_W(site.headroom_W), site.saturated_connectors,
-                                  site.increase_W, site.held ? " (held)" : "");
+                                  format_W(site.grid_limit_W), format_W(site.measured_W), to_string(site.meter_source),
+                                  format_W(site.headroom_W), site.saturated_connectors, site.increase_W,
+                                  site.held ? " (held)" : "");
         for (const auto& [uuid, connector] : inference.connectors) {
             EVLOG_info << fmt::format("  {}: {} allotted {}, measured {}, reducible {:.0f} W{}", uuid,
                                       to_string(connector.connector_class), format_W(connector.allocated_W),
@@ -364,9 +363,8 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
         // Spell out the absence of a total rather than printing a zero that no meter reported.
         const auto power = site_aggregate.power_W.has_value() ? fmt::format("{}W", site_aggregate.power_W.value().total)
                                                               : std::string("no reading");
-        EVLOG_info << fmt::format("Site power: {} from {} ({} meter(s), {} stale)", power,
-                                  to_string(site_meter_source), site_aggregate.fresh_meters,
-                                  site_aggregate.stale_meters);
+        EVLOG_info << fmt::format("Site power: {} from {} ({} meter(s), {} stale)", power, to_string(site_meter_source),
+                                  site_aggregate.fresh_meters, site_aggregate.stale_meters);
     }
 
     time_probe market_tp;

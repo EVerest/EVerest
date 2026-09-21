@@ -5,8 +5,8 @@
 
 // headers for required interface implementations
 #include <generated/interfaces/energy/Interface.hpp>
-#include <utils/date.hpp>
 #include <optional>
+#include <utils/date.hpp>
 #include <vector>
 
 using namespace std::chrono_literals;

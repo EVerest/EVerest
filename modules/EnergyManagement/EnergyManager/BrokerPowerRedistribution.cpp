@@ -60,11 +60,13 @@ std::optional<float> add_margin(const std::optional<float>& phase, float margin_
     }
     return phase.value() + margin_A;
 }
+
 // Phase count to assume when a limit declares none. One, not three: an undeclared phase
 // count is missing information, and the safe reading of missing information about a limit
 // is the smaller limit. EnergyNode always declares it (energyImpl.cpp), so this only
 // covers a node that does not.
 constexpr int ASSUMED_PHASE_COUNT = 1;
+
 // An allocation this close to the static maximum counts as at the maximum. Trading happens
 // in slices of slice_ampere (0.5 A x 230 V = 115 W by default), so 1 W only absorbs
 // floating point noise of the two conversions.
