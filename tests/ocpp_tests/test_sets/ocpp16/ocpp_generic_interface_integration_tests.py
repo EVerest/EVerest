@@ -283,7 +283,7 @@ class TestOCPP16GenericInterfaceIntegration:
         for mock in availability_mocks:
             await wait_for_firmware_availability_state(mock, "Disable")
 
-        publish_firmware_status(_env.probe_module, "InstallationFailed", request_id=-1)
+        publish_firmware_status(_env.probe_module, "DownloadFailed", request_id=-1)
         for mock in availability_mocks:
             await wait_for_firmware_availability_state(mock, "Enable")
             assert [

@@ -524,6 +524,22 @@ TEST_F(AvailabilityTest,
     this->availability->handle_scheduled_change_availability_requests(2);
 }
 
+TEST_F(AvailabilityTest, DropNonPersistentScheduledChangesPreservesPersistentEntries) {
+    ChangeAvailabilityRequest request;
+    request.operationalStatus = OperationalStatusEnum::Inoperative;
+
+    request.evse = EVSE{1};
+    availability->set_scheduled_change_availability_requests(1, {request, false});
+    request.evse = EVSE{2};
+    availability->set_scheduled_change_availability_requests(2, {request, true});
+    availability->drop_non_persistent_scheduled_changes();
+
+    EXPECT_CALL(evse_1, set_evse_operative_status(_, _)).Times(0);
+    EXPECT_CALL(evse_2, set_evse_operative_status(OperationalStatusEnum::Inoperative, true));
+    availability->handle_scheduled_change_availability_requests(1);
+    availability->handle_scheduled_change_availability_requests(2);
+}
+
 TEST_F(AvailabilityTest, set_heartbeat_timer_interval) {
     // When setting the heartbeat timer interval, a heartbeat request should be sent after the interval has ended.
     EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillOnce(Invoke([](const json& call, bool /*triggered*/) {
