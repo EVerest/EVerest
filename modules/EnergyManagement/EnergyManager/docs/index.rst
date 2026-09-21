@@ -14,32 +14,74 @@ physical and logical components within the targeted energy system.
 Please see :doc:`Energy Management in EVerest </explanation/energymanagement/index>`
 for a detailed explanation of the concepts behind this module.
 
-Broker strategy and power meter observation
-===========================================
+Broker strategy and power redistribution
+========================================
 
 The ``broker_strategy`` option selects the broker that trades energy on behalf of each
 EVSE:
 
 - ``FastCharging`` (default): allocate as much as the limits allow.
-- ``PowerRedistribution``: currently trades identically to ``FastCharging`` and
-  additionally observes the connector's live power meter reading once per optimizer
-  run. Allocations are never modified by the observation.
+- ``PowerRedistribution``: trade with the ``FastCharging`` algorithm, but limit each
+  connector to its measured current plus ``redistribution_margin_A``, so a connector
+  that draws less than its allocation frees the unused budget for the other connectors
+  on the same fuse. The margin is the headroom the current can rise by per
+  ``update_interval`` (2 A per second at the defaults), so a connector whose budget
+  frees up again ramps back at that rate.
+
+The limit only ever lowers what ``FastCharging`` would allocate, never raises it: fuse
+limits and the equal split between connectors remain entirely with the market. Because
+every optimizer run re-trades all allocations from zero, a session joining a saturated
+fuse receives its start allocation within one update interval and the running sessions
+give up the difference in equal parts; as the newcomer's consumption rises, all
+connectors converge on the equal share.
+
+The limit applies per connector, only while the connector reports the ``Charging``
+state (a session that measures zero because it is authorizing, preparing or paused is
+not limited by that zero, and a resumed session starts over at its start value), only
+to the schedule slot covering now (later slots are forecast and keep the full request),
+and never below the connector's minimum current. Nodes that offer no AC current limit -
+DC connectors requesting energy as a watt limit - are traded exactly like
+``FastCharging`` trades them.
+
+Configuration:
+
+- ``redistribution_margin_A``: margin added on top of the measured current, and the
+  per-interval rise rate.
+- ``redistribution_start_with_lower_limit``: start value for a new charging session -
+  ``true`` starts at the minimum current plus the margin and ramps up; ``false`` starts
+  at the full allocation and tracks down once the reduction hold has elapsed.
+- ``redistribution_reduction_hold_s``: how long a reduction has to stay pending before
+  the limit is lowered. Increases always apply immediately; the hold is what keeps a
+  briefly dipping EV (or a freshly started one with the upper start value) from being
+  cut before it had a chance to draw. ``0`` follows the measurement down immediately.
+- ``redistribution_measurement_max_age_s``: maximum age of a reading, judged by the
+  reading's own timestamp, before it no longer carries the limit.
+
+A connector without a usable, fresh measurement is limited to its minimum current plus
+the margin rather than left uncapped - a dead meter must not hold an allocation open.
+This includes connectors that have no power meter at all: with this strategy such a
+connector charges pinned at its minimum plus the margin, and is warned about once per
+session.
 
 The measurement is taken from the EVSE's own power meter, reported through the
 ``energy_usage_leaves`` field of the energy flow request (with ``energy_usage_root``
-as fallback), so the observation is per connector. One reading is selected per run and
-the power, the per-phase current and the timestamp all come from it: a node whose two
-sides each report a different half of a measurement is read from one side only, so no
-value is ever paired with another meter's phases or age. The last observed value is
-retained per connector for the duration of the session and reset on unplug. A connector
-in an active charging session that reports no measurement is warned about once per
-session; connectors that are ``Unplugged`` or ``Finished`` are not observed.
+as fallback), so both observation and limit are per connector. One reading is selected
+per run and the power, the per-phase current and the timestamp all come from it: a node
+whose two sides each report a different half of a measurement is read from one side
+only, so no value is ever paired with another meter's phases or age. The last observed
+value is retained per connector for the duration of the session and reset on unplug.
 
-Each observation carries the reading's own measurement timestamp alongside its values.
-This is what lets a consumer tell a live reading from a frozen one: ``EnergyNode`` and
-``EvseManager`` republish the last power meter reading they received in every energy flow
-request, so a meter that stopped updating is indistinguishable from one holding steady
-unless the reading's own timestamp is checked. A reading whose timestamp cannot be parsed
-is reported without a timestamp rather than as a current one. Nothing acts on the age at
-this stage - the observation is log-only - but no consumer has to trust an age it cannot
-see.
+Each observation carries the reading's own measurement timestamp alongside its values,
+and ``redistribution_measurement_max_age_s`` is judged against it. This is what lets the
+broker tell a live reading from a frozen one: ``EnergyNode`` and ``EvseManager``
+republish the last power meter reading they received in every energy flow request, so a
+meter that stopped updating is indistinguishable from one holding steady unless the
+reading's own timestamp is checked. A reading whose timestamp cannot be parsed is
+treated like a missing one rather than a current one.
+
+The limit is computed per phase - from the measured per-phase current, falling back to
+per-phase power over the nominal voltage, then to the total power spread over the active
+phases - and collapsed to the single ``ac_max_current_A`` the energy interface expresses
+today by taking the highest of the known phases (the value applies to every phase, so
+the lowest would starve the phase that legitimately draws most). Trading each phase
+individually needs a per-phase limit in the energy types first.

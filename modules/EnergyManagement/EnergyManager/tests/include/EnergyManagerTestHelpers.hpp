@@ -14,6 +14,12 @@
 
 namespace module::test {
 
+// The instant most tests run the optimizer at. Measurements meant to be fresh must carry
+// this (or a nearby) timestamp: the redistribution broker rejects readings older than its
+// configured maximum age, and the older default timestamp of set_measurement() is half an
+// hour before this - deliberately stale.
+inline constexpr auto NOW_TS = "2026-08-04T12:30:00.000Z";
+
 // A schedule_total_duration of 1h with a 60min interval yields exactly one schedule slot,
 // which keeps assertions on enforced limits unambiguous.
 inline EnergyManagerConfig make_default_config() {
@@ -35,6 +41,15 @@ inline EnergyManagerConfig make_default_config() {
     c.redistribution_start_with_lower_limit = true;
     c.redistribution_reduction_hold_s = 30;
     c.redistribution_measurement_max_age_s = 10;
+    return c;
+}
+
+// PowerRedistribution with the reduction hold disabled, so allocation tests exercise the
+// measurement tracking directly; hold behaviour tests set their own hold time.
+inline EnergyManagerConfig make_redistribution_config() {
+    auto c = make_default_config();
+    c.broker_strategy = "PowerRedistribution";
+    c.redistribution_reduction_hold_s = 0;
     return c;
 }
 
@@ -66,6 +81,26 @@ inline types::energy::EnergyFlowRequest make_evse_node(const std::string& uuid, 
     n.priority_request = false;
     n.schedule_import = {make_schedule_entry(timestamp, max_current_A, min_current_A, total_power_W)};
     n.schedule_export = {make_schedule_entry(timestamp, 0.0f, 0.0f, 0.0f)};
+    return n;
+}
+
+// An EVSE whose schedule carries only a watt limit, the shape a DC connector requests
+// energy in. No ampere limit means the redistribution broker has nothing to narrow.
+inline types::energy::EnergyFlowRequest make_dc_evse_node(const std::string& uuid, float total_power_W,
+                                                          const std::string& timestamp = "2026-08-04T12:00:00.000Z") {
+    types::energy::EnergyFlowRequest n;
+    n.uuid = uuid;
+    n.node_type = types::energy::NodeType::Evse;
+    n.evse_state = types::energy::EvseState::Charging;
+    n.priority_request = false;
+    types::energy::ScheduleReqEntry import;
+    import.timestamp = timestamp;
+    import.limits_to_root.total_power_W = {total_power_W, "TEST_dc_total_power"};
+    n.schedule_import = {import};
+    types::energy::ScheduleReqEntry exp;
+    exp.timestamp = timestamp;
+    exp.limits_to_root.total_power_W = {0.0f, "TEST_dc_total_power"};
+    n.schedule_export = {exp};
     return n;
 }
 

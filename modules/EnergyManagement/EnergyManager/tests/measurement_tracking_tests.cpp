@@ -365,66 +365,9 @@ const auto AT = Everest::Date::from_rfc3339("2026-08-04T12:30:00.000Z");
 
 } // namespace
 
-// The load-bearing guarantee: the tracking broker only observes. With or without a
-// measurement, allocations must be exactly what BrokerFastCharging produces.
-
-TEST(MeasurementTrackingBroker, MeasurementDoesNotAlterAllocation) {
-    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
-    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
-    // The EV draws far less than the static limit; the allocation must stay at the limit.
-    test::set_measurement(request.children[0], 3000.0f);
-
-    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
-
-    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 32.0f, 0.01f);
-    // Repeated runs with a measurement present must not converge anywhere either.
-    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 32.0f, 0.01f);
-}
-
-TEST(MeasurementTrackingBroker, MissingMeasurementDoesNotAlterAllocation) {
-    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
-    const auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
-
-    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
-
-    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 32.0f, 0.01f);
-    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 32.0f, 0.01f);
-}
-
-TEST(MeasurementTrackingBroker, EquivalentToFastChargingUnderSharedFuse) {
-    // Two connectors competing for a fuse that cannot serve both fully: the sharing
-    // outcome must be identical whether tracking is enabled or not, measurement present
-    // or not.
-    auto make_request = []() {
-        auto evse1 = test::make_evse_node("evse1", 32.0f, 6.0f);
-        auto evse2 = test::make_evse_node("evse2", 32.0f, 6.0f);
-        return test::make_root_node("grid", 40.0f, std::nullopt, {evse1, evse2});
-    };
-
-    auto tracked_request = make_request();
-    test::set_measurement(tracked_request.children[0], 10000.0f);
-    auto static_request = make_request();
-    test::set_measurement(static_request.children[0], 10000.0f);
-
-    EnergyManagerImpl tracked(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
-    EnergyManagerImpl statik(test::make_default_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
-
-    for (int run = 0; run < 2; run++) {
-        const auto tracked_results = tracked.run_optimizer(tracked_request, AT);
-        const auto static_results = statik.run_optimizer(static_request, AT);
-
-        for (const auto* uuid : {"evse1", "evse2"}) {
-            const auto t = test::find_limit(tracked_results, uuid);
-            const auto s = test::find_limit(static_results, uuid);
-            ASSERT_TRUE(t.has_value());
-            ASSERT_TRUE(s.has_value());
-            ASSERT_TRUE(t.value().limits_root_side.ac_max_current_A.has_value());
-            ASSERT_TRUE(s.value().limits_root_side.ac_max_current_A.has_value());
-            EXPECT_FLOAT_EQ(t.value().limits_root_side.ac_max_current_A.value().value,
-                            s.value().limits_root_side.ac_max_current_A.value().value);
-        }
-    }
-}
+// Allocation behaviour of the redistribution broker - the limiting itself, its session
+// lifecycle and the fairness under a shared fuse - is pinned in
+// power_redistribution_tests.cpp. This file pins the observation that feeds it.
 
 // ---------------------------------------------------------------- observation
 
@@ -550,18 +493,6 @@ TEST(MeasurementTrackingBroker, NoPerPhaseObservationWhenTrackingDisabled) {
     EXPECT_FALSE(observed.L1.has_value());
     EXPECT_FALSE(observed.L2.has_value());
     EXPECT_FALSE(observed.L3.has_value());
-}
-
-TEST(MeasurementTrackingBroker, PerPhaseCurrentDoesNotAlterAllocation) {
-    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
-    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
-    // The EV draws far less per phase than the static limit; allocation must stay at the limit.
-    test::set_measurement_current(request.children[0], 6.0f, 6.0f, 6.0f);
-
-    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
-
-    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 32.0f, 0.01f);
-    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 32.0f, 0.01f);
 }
 
 TEST(MeasurementTrackingBroker, NoObservationWhenTrackingDisabled) {
