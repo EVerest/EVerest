@@ -595,7 +595,8 @@ void powermeterImpl::ready() {
                         (now - last_interval_overrun_warning) >= std::chrono::seconds{60}) {
                         last_interval_overrun_warning = now;
                         EVLOG_warning << "Measurement took longer than configured interval, consider increasing "
-                                         "interval or baudrate";
+                                         "interval or baudrate. Last measurement took " 
+                                      << now - measurement_start << "ms";
                     }
                 }
             }
