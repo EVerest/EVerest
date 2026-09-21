@@ -11,11 +11,11 @@ charge_bridge:
   type: EV
   # Device address: IPv4/IPv6 literal, hostname, or mDNS discovery (ANY_EVSE / ANY_EV,
   # optionally with an interface list, e.g. "ANY_EVSE(eth0)").
-  ip: ANY_EV(eth0,eth1)
+  ip: ANY_EV
   # Bring-up: flash the MCS firmware manually first and leave auto-update off until an
   # MCS .cbfw release exists.
   fw_file: ./firmware/charge-bridge-fw_complete.cbfw
-  fw_update_on_start: false
+  fw_update_on_start: true
   mdns_name: ""
 
 # Required for plc.carrier: firmware - the link status rides every heartbeat reply.
@@ -84,7 +84,6 @@ serial_2:
   baudrate: 19200
   stopbits: OneStopBit
   parity: Even
-
 
 
 plc:
