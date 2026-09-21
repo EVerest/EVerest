@@ -17,11 +17,11 @@ namespace dt = message_20::datatypes;
 
 SCENARIO("ISO15118-20 dc pre charge state transitions") {
 
-    const d20::EvseSetupConfig evse_setup = create_default_evse_setup();
+    const session::EvseSetupConfig evse_setup = create_default_evse_setup();
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
     session::feedback::Callbacks callbacks{};
 
-    auto state_helper = FsmStateHelper(d20::SessionConfig(evse_setup), pause_ctx, callbacks);
+    auto state_helper = FsmStateHelper(session::SessionConfig(evse_setup), pause_ctx, callbacks);
     auto ctx = state_helper.get_context();
     ctx.session = d20::Session();
 

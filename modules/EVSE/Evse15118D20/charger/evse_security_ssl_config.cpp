@@ -115,9 +115,4 @@ void handle_certificate_store_update(const types::evse_security::CertificateStor
     resync_ssl_config(rebuild, apply);
 }
 
-StartupChainPolicy decide_startup_empty_chains(iso15118::config::TlsNegotiationStrategy strategy) {
-    return strategy == iso15118::config::TlsNegotiationStrategy::ENFORCE_TLS ? StartupChainPolicy::Throw
-                                                                             : StartupChainPolicy::WarnAndContinue;
-}
-
 } // namespace module::charger

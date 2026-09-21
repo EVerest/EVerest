@@ -36,7 +36,7 @@ public:
     };
     ~Timeout() = default;
 
-    bool is_reached() {
+    bool is_reached() const {
         return get_current_time_point() >= timeout_point;
     }
 
