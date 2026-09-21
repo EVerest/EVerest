@@ -65,12 +65,12 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
     message_20::ScheduleExchangeResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        res.response_code = dt::ResponseCode::FAILED_UnknownSession;
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
         return res;
     }
 
     if (timeout_reached) {
-        res.response_code = dt::ResponseCode::FAILED;
+        set_response_code(res, dt::ResponseCode::FAILED);
         return res;
     }
 
@@ -101,13 +101,13 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
 
     } else {
         logf_error("The control mode of the req message does not match the previously agreed contol mode.");
-        res.response_code = dt::ResponseCode::FAILED;
+        set_response_code(res, dt::ResponseCode::FAILED);
         return res;
     }
 
     res.processing = dt::Processing::Finished;
 
-    res.response_code = dt::ResponseCode::OK;
+    set_response_code(res, dt::ResponseCode::OK);
     return res;
 }
 

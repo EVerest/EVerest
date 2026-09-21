@@ -88,7 +88,8 @@ handle_request(const message_20::AC_ChargeLoopRequest& req, const d20::Session& 
     message_20::AC_ChargeLoopResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     const auto& selected_services = session.get_selected_services();
@@ -101,7 +102,8 @@ handle_request(const message_20::AC_ChargeLoopRequest& req, const d20::Session& 
         // If the ev sends a false control mode or a false energy service other than the previous selected ones, then
         // the charger should terminate the session
         if (selected_control_mode != dt::ControlMode::Scheduled or selected_energy_service != dt::ServiceCategory::AC) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Scheduled_AC_Res>();
@@ -113,7 +115,8 @@ handle_request(const message_20::AC_ChargeLoopRequest& req, const d20::Session& 
         // the charger should terminate the session
         if (selected_control_mode != dt::ControlMode::Scheduled or
             selected_energy_service != dt::ServiceCategory::AC_BPT) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Scheduled_BPT_AC_Res>();
@@ -124,7 +127,8 @@ handle_request(const message_20::AC_ChargeLoopRequest& req, const d20::Session& 
         // If the ev sends a false control mode or a false energy service other than the previous selected ones, then
         // the charger should terminate the session
         if (selected_control_mode != dt::ControlMode::Dynamic or selected_energy_service != dt::ServiceCategory::AC) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Dynamic_AC_Res>();
@@ -140,7 +144,8 @@ handle_request(const message_20::AC_ChargeLoopRequest& req, const d20::Session& 
         // the charger should terminate the session
         if (selected_control_mode != dt::ControlMode::Dynamic or
             selected_energy_service != dt::ServiceCategory::AC_BPT) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Dynamic_BPT_AC_Res>();
@@ -167,7 +172,8 @@ handle_request(const message_20::AC_ChargeLoopRequest& req, const d20::Session& 
         // pause
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void AC_ChargeLoop::enter() {

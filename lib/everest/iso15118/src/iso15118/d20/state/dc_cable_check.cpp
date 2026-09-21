@@ -18,7 +18,8 @@ message_20::DC_CableCheckResponse handle_request(const message_20::DC_CableCheck
     message_20::DC_CableCheckResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     if (not cable_check_done) {
@@ -27,7 +28,8 @@ message_20::DC_CableCheckResponse handle_request(const message_20::DC_CableCheck
         res.processing = dt::Processing::Finished;
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void DC_CableCheck::enter() {

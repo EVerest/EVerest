@@ -66,7 +66,8 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
     message_20::ServiceDetailResponse res;
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     bool service_found = false;
@@ -86,7 +87,8 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
     }
 
     if (!service_found) {
-        return response_with_code(res, dt::ResponseCode::FAILED_ServiceIDInvalid);
+        set_response_code(res, dt::ResponseCode::FAILED_ServiceIDInvalid);
+        return res;
     }
 
     res.service_parameter_list.clear(); // reset default values
@@ -104,7 +106,8 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
 
         res.service = req.service;
         res.service_parameter_list = vas_services;
-        return response_with_code(res, dt::ResponseCode::OK);
+        set_response_code(res, dt::ResponseCode::OK);
+        return res;
     }
 
     uint8_t id = 0;
@@ -182,7 +185,8 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
         res.service_parameter_list = {dt::ParameterSet(0)};
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void ServiceDetail::enter() {

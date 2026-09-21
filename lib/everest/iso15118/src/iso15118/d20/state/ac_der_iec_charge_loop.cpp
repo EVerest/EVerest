@@ -139,7 +139,8 @@ handle_request(const message_20::DER_AC_ChargeLoopRequest& req, const d20::Sessi
     message_20::DER_AC_ChargeLoopResponse res;
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     const auto& selected_services = session.get_selected_services();
@@ -152,7 +153,8 @@ handle_request(const message_20::DER_AC_ChargeLoopRequest& req, const d20::Sessi
         // If the ev sends a false control mode other than the previous selected ones, then the charger should terminate
         // the session
         if (selected_control_mode != dt::ControlMode::Scheduled or not der_limits.has_value()) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Scheduled_DER_Res>();
@@ -163,7 +165,8 @@ handle_request(const message_20::DER_AC_ChargeLoopRequest& req, const d20::Sessi
         // If the ev sends a false control mode other than the previous selected ones, then the charger should terminate
         // the session
         if (selected_control_mode != dt::ControlMode::Dynamic or not der_limits.has_value()) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Dynamic_DER_Res>();
@@ -191,7 +194,8 @@ handle_request(const message_20::DER_AC_ChargeLoopRequest& req, const d20::Sessi
         // pause
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 } // namespace
 
