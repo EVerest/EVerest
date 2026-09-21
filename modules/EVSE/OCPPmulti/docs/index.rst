@@ -10,14 +10,8 @@ loading this module as part of the EVerest configuration. The module leverages l
 
 OCPPmulti is the recommended OCPP module for new EVerest configurations. It deprecates the separate
 :ref:`OCPP <everest_modules_OCPP>` (OCPP 1.6) and :ref:`OCPP201 <everest_modules_OCPP201>` (OCPP 2.0.1 / 2.1)
-modules.
-
-.. warning::
-
-   This module is currently **experimental**: configuration parameters and its
-   integration in EVerest may change without further notice. It is exempt from
-   the stability guarantees and the deprecation period of the EVerest public
-   API until promoted to stable (see :ref:`project-experimental-components`).
+modules; see :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>` for moving an
+existing deployment.
 
 In this document, **OCPP 2.x** refers to OCPP 2.0.1 and OCPP 2.1 collectively.
 

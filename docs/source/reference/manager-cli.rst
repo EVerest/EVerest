@@ -33,7 +33,10 @@ General
   Produce the help message.
 
 ``--check``
-  Check and validate all config files and exit. Exit code ``0`` means success.
+  Validate the YAML config given via ``--config`` and exit. Exit code ``0``
+  means success. Requires ``--config``: without it the manager exits with an
+  error instead of validating the default config. The check needs no MQTT
+  broker and neither reads nor seeds the configuration database.
 
 ``--prefix <path>``
   Prefix path of the EVerest installation.
@@ -47,7 +50,8 @@ Configuration and Storage
   it is looked up in the default config directory. Optional: defaults to the
   default config file in the default config directory. Without ``--db``, the
   config is loaded from YAML on every start and runtime configuration changes
-  are persisted to ``user-config/<config-name>.yaml``.
+  are persisted to ``user-config/<config-name>.yaml``. Only YAML is accepted;
+  configuration files in JSON format are not loaded.
 
 ``--conf <path>``
   **Deprecated.** Same as ``--config``. Do not use both — passing both is
@@ -58,6 +62,13 @@ Configuration and Storage
   in-memory database is used and the YAML config is authoritative on every
   start. With ``--db`` and ``--config``, the database wins when it holds a valid
   configuration; otherwise it is seeded from the YAML config.
+
+  The database holds module configurations only, never the manager
+  ``settings:`` block. With ``--db`` alone, the settings (installation paths,
+  MQTT broker and prefixes, controller port, ``run_as_user``, telemetry, schema
+  validation) are the compiled-in defaults. Pass ``--config`` alongside
+  ``--db`` whenever the deployment relies on non-default settings; the YAML
+  ``settings:`` block is then applied on every start.
 
 ``--reset-from-yaml``
   **Experimental.** Discard the existing database slot and re-seed from the YAML

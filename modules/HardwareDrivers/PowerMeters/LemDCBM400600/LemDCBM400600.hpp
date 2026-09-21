@@ -48,6 +48,8 @@ struct Conf {
     int command_timeout_ms;
     int poll_interval_ms;
     int transaction_ocmf_fetch_interval_s;
+    double min_import_current_A;
+    double min_export_current_A;
 };
 
 class LemDCBM400600 : public Everest::ModuleBase {

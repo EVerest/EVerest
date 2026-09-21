@@ -54,3 +54,9 @@ any experimental option it was given.
        in EVerest may change without further notice. The maintainer of
        ``eebus-go``, the EEBUS stack underneath the ``eebus_grpc_api`` sidecar
        the module drives, will not maintain it going forward.
+   * - :ref:`evse_security_consumer_API module <everest_modules_evse_security_consumer_API>`
+       and its ``evse_security_consumer_API`` AsyncAPI specification
+     - 2026.10.0
+     - External read access to the EvseSecurity module (``is_ca_certificate_installed``,
+       ``get_leaf_certificate_info``, ``get_verify_location``). Channels,
+       operations and message payloads may change without further notice.
