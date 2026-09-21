@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <cstddef>
@@ -12,6 +12,10 @@ namespace iso15118::io {
 // FIXME (aw): these shouldn't be necessary public - but nice to have
 static constexpr uint8_t SDP_PROTOCOL_VERSION = 0x01;
 static constexpr uint8_t SDP_INVERSE_PROTOCOL_VERSION = 0xFE;
+
+// Sized for ISO 15118-20 certificate installation replies (up to 17000 base64 characters), as
+// well as every other V2G message; matches EvseV2G's DEFAULT_BUFFER_SIZE.
+static constexpr std::size_t MAX_V2G_PACKET_SIZE = 16384;
 
 // FIXME (aw): should be called V2GTP or SDP buffer
 class SdpPacket {
@@ -61,13 +65,21 @@ public:
 
     void update_read_bytes(size_t len);
 
+    // Only the bookkeeping fields need clearing; copy-assigning a default-constructed SdpPacket would
+    // drag the whole 8 KiB buffer along.
+    void reset() {
+        state = State::BUFFER_EMPTY;
+        bytes_read = 0;
+        length = 0;
+    }
+
 private:
     void parse_header();
 
     State state{State::BUFFER_EMPTY};
-    uint8_t buffer[2048];
+    uint8_t buffer[MAX_V2G_PACKET_SIZE];
     size_t bytes_read{0};
-    size_t length; // length includes V2GTP_HEADER_SIZE
+    size_t length{0}; // length includes V2GTP_HEADER_SIZE
 };
 
 } // namespace iso15118::io

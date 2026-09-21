@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <algorithm>
 
 #include <iso15118/d20/state/service_detail.hpp>
@@ -69,6 +69,12 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     // Service renegotiation is not yet supported
     res.service_renegotiation_supported = false;
     session.service_renegotiation_supported = false;
+
+    // A DER session may re-enter service discovery from the schedule exchange state, so the offers of the
+    // previous pass are reset here and rebuilt below instead of accumulating.
+    session.offered_services.energy_services.clear();
+    session.offered_services.vas_services.clear();
+    ev_energy_services.clear();
 
     std::vector<dt::Service> energy_services_list;
     std::vector<dt::VasService> vas_services_list;
@@ -175,6 +181,7 @@ Result ServiceDiscovery::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
         m_ctx.session_stopped = true;
 
         return {};

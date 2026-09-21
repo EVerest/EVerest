@@ -2,7 +2,8 @@
 // Copyright 2025 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/timeout.hpp>
 
-#include <map>
+#include <algorithm>
+#include <utility>
 
 #include <iso15118/detail/helper.hpp>
 
@@ -30,28 +31,26 @@ void Timeouts::reset_timeout(TimeoutType type) {
     timeouts.at(type_u8).reset();
 }
 
-std::optional<std::vector<TimeoutType>> Timeouts::check() {
-    bool reached{false};
-
-    std::map<TimePoint, TimeoutType> active_timeouts_map;
+std::vector<TimeoutType> Timeouts::check() const {
+    std::vector<std::pair<TimePoint, TimeoutType>> reached;
+    reached.reserve(TIMEOUT_TYPE_SIZE);
 
     for (uint8_t i = 0; i < TIMEOUT_TYPE_SIZE; i++) {
-        auto timeout = timeouts.at(i);
-        if (timeout.has_value() and timeout.value().is_reached()) {
-            active_timeouts_map.insert({timeout.value().get_timeout_point(), static_cast<TimeoutType>(i)});
-            reached = true;
+        const auto& timeout = timeouts.at(i);
+        if (timeout.has_value() and timeout->is_reached()) {
+            reached.emplace_back(timeout->get_timeout_point(), static_cast<TimeoutType>(i));
         }
     }
 
-    if (reached) {
-        std::vector<TimeoutType> active_timeouts{};
-        for (const auto& [_, value] : active_timeouts_map) {
-            active_timeouts.push_back(value);
-        }
-        return active_timeouts;
-    }
+    std::stable_sort(reached.begin(), reached.end(),
+                     [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
 
-    return std::nullopt;
+    std::vector<TimeoutType> result;
+    result.reserve(reached.size());
+    for (const auto& [_, type] : reached) {
+        result.push_back(type);
+    }
+    return result;
 }
 
 } // namespace iso15118::d20

@@ -11,6 +11,7 @@ ev_setup_cpp_module()
 target_sources(${MODULE_NAME}
     PRIVATE
         charger/der_relay.cpp
+        charger/der_relay_sae.cpp
         charger/der_setup.cpp
         charger/evse_security_ssl_config.cpp
         charger/grid_event.cpp

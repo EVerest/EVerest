@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <cinttypes>
-#include <random>
 
 #include <iso15118/d20/state/authorization.hpp>
 #include <iso15118/d20/state/authorization_setup.hpp>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/detail/random.hpp>
 
 #include <iso15118/detail/d20/state/authorization_setup.hpp>
 #include <iso15118/detail/d20/state/session_stop.hpp>
@@ -27,6 +27,7 @@ message_20::AuthorizationSetupResponse handle_request(const message_20::Authoriz
     }
 
     res.certificate_installation_service = cert_install_service;
+    session.offered_services.cert_install_service = cert_install_service;
 
     if (authorization_services.empty()) {
         logf_warning("authorization_services was not set. Setting EIM as auth_mode");
@@ -42,13 +43,9 @@ message_20::AuthorizationSetupResponse handle_request(const message_20::Authoriz
     } else {
         auto& pnc_auth_mode = res.authorization_mode.emplace<dt::PnC_ASResAuthorizationMode>();
 
-        std::random_device rd;
-        std::mt19937 generator(rd());
-        std::uniform_int_distribution<uint8_t> distribution(0x00, 0xff);
-
-        for (auto& item : pnc_auth_mode.gen_challenge) {
-            item = distribution(generator);
-        }
+        // [V2G20-697/698/2108]: 128 bit GenChallenge from a cryptographically secure source, kept for
+        // the check in AuthorizationReq ([V2G20-2565]).
+        fill_random(pnc_auth_mode.gen_challenge.data(), pnc_auth_mode.gen_challenge.size());
     }
 
     return response_with_code(res, dt::ResponseCode::OK);
@@ -79,14 +76,24 @@ Result AuthorizationSetup::feed(Event ev) {
             return {};
         }
 
-        // Todo(sl): PnC is currently not supported
-        m_ctx.feedback.signal(session::feedback::Signal::REQUIRE_AUTH_EIM);
+        // With EIM the only offer the authorization can start right away; when PnC is offered too, the
+        // Authorization state signals it once the EV selects EIM.
+        const auto& offered = m_ctx.session.offered_services.auth_services;
+        if (offered.size() == 1 and offered[0] == dt::Authorization::EIM) {
+            m_ctx.feedback.signal(session::feedback::Signal::REQUIRE_AUTH_EIM);
+            m_ctx.session.authorization.eim_requested = true;
+        }
 
-        return m_ctx.create_state<Authorization>();
+        std::optional<dt::GenChallenge> challenge;
+        if (const auto* pnc = std::get_if<dt::PnC_ASResAuthorizationMode>(&res.authorization_mode)) {
+            challenge = pnc->gen_challenge;
+        }
+        return m_ctx.create_state<Authorization>(challenge);
     } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
         m_ctx.session_stopped = true;
 
         return {};

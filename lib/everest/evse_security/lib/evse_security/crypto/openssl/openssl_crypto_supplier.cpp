@@ -5,6 +5,7 @@
 #include <everest/logging.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstring>
 #include <iterator>
@@ -41,6 +42,58 @@ EVP_PKEY* get(KeyHandle* handle) {
     }
 
     return nullptr;
+}
+
+bool uses_iso20_curve(EVP_PKEY* pkey) {
+    if (pkey == nullptr) {
+        return false;
+    }
+    const int base = EVP_PKEY_base_id(pkey);
+    if (base == EVP_PKEY_ED448) {
+        return true;
+    }
+    if (base != EVP_PKEY_EC) {
+        return false;
+    }
+    char name[64] = {0};
+    std::size_t len = 0;
+    if (EVP_PKEY_get_group_name(pkey, name, sizeof(name), &len) != 1) {
+        return false;
+    }
+    const std::string group(name, len);
+    return group == "secp521r1" or group == "P-521";
+}
+
+// ISO 15118-20 Annex B marks the key identifiers and revocation pointers critical, which IETF RFC 5280
+// does not, so OpenSSL rejects a conforming contract certificate. Accept those, keep anything else fatal.
+int verify_iso20_extensions(int preverified, X509_STORE_CTX* ctx) {
+    if (preverified or X509_STORE_CTX_get_error(ctx) != X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION) {
+        return preverified;
+    }
+    X509* cert = X509_STORE_CTX_get_current_cert(ctx);
+    for (int i = 0; i < X509_get_ext_count(cert); ++i) {
+        X509_EXTENSION* ext = X509_get_ext(cert, i);
+        if (not X509_EXTENSION_get_critical(ext) or X509_supported_extension(ext)) {
+            continue;
+        }
+        const int nid = OBJ_obj2nid(X509_EXTENSION_get_object(ext));
+        if (nid != NID_authority_key_identifier and nid != NID_subject_key_identifier and nid != NID_info_access and
+            nid != NID_crl_distribution_points and nid != NID_sinfo_access) {
+            return 0;
+        }
+        const X509V3_EXT_METHOD* method = X509V3_EXT_get(ext);
+        void* decoded = X509V3_EXT_d2i(ext);
+        if (decoded == nullptr or method == nullptr) {
+            return 0;
+        }
+        if (method->it) {
+            ASN1_item_free(static_cast<ASN1_VALUE*>(decoded), ASN1_ITEM_ptr(method->it));
+        } else {
+            method->ext_free(decoded);
+        }
+    }
+    X509_STORE_CTX_set_error(ctx, X509_V_OK);
+    return 1;
 }
 
 CertificateValidationResult to_certificate_error(const int ec) {
@@ -124,6 +177,7 @@ bool s_generate_key(const KeyGenerationInfo& key_info, KeyHandle_ptr& out_key, E
     unsigned int bits = 0;
     std::string group_256 = "P-256";
     std::string group_384 = "P-384";
+    std::string group_521 = "P-521";
     char* group = nullptr;
     std::size_t group_sz = 0;
     int nid = NID_undef;
@@ -158,6 +212,11 @@ bool s_generate_key(const KeyGenerationInfo& key_info, KeyHandle_ptr& out_key, E
         group = group_256.data();
         group_sz = group_256.length();
         nid = NID_X9_62_prime256v1;
+        break;
+    case CryptoKeyType::EC_secp521r1:
+        group = group_521.data();
+        group_sz = group_521.length();
+        nid = NID_secp521r1;
         break;
     case CryptoKeyType::EC_secp384r1:
     default:
@@ -401,6 +460,31 @@ std::string OpenSSLSupplier::x509_get_key_hash(X509Handle* handle) {
     return ss.str();
 }
 
+std::string OpenSSLSupplier::x509_get_public_key_algorithm(X509Handle* handle) {
+    X509* x509 = get(handle);
+
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    // Borrowed reference, must not be freed
+    EVP_PKEY* pkey = X509_get0_pubkey(x509);
+    if (pkey == nullptr) {
+        return {};
+    }
+
+    // EC keys are told apart by their curve: that is what ISO 15118-2 (prime256v1) and
+    // ISO 15118-20 (secp521r1) prescribe for the SECC leaf.
+    std::array<char, 64> group{};
+    std::size_t group_len = 0;
+    if (EVP_PKEY_get_group_name(pkey, group.data(), group.size(), &group_len) == 1 && group_len > 0) {
+        return std::string(group.data(), group_len);
+    }
+
+    const char* type_name = EVP_PKEY_get0_type_name(pkey);
+    return (type_name != nullptr) ? std::string(type_name) : std::string{};
+}
+
 std::string OpenSSLSupplier::x509_get_responder_url(X509Handle* handle) {
     X509* x509 = get(handle);
 
@@ -469,6 +553,10 @@ bool OpenSSLSupplier::x509_is_child(X509Handle* child, X509Handle* parent) {
         // X509_STORE_CTX_set_flags(ctx.get(), X509_V_FLAG_X509_STRICT);
 
         X509_STORE_CTX_set_flags(ctx.get(), X509_V_FLAG_PARTIAL_CHAIN);
+    }
+
+    if (uses_iso20_curve(X509_get0_pubkey(x509_child))) {
+        X509_STORE_CTX_set_verify_cb(ctx.get(), verify_iso20_extensions);
     }
 
     if (X509_verify_cert(ctx.get()) != 1) {
@@ -546,6 +634,10 @@ CertificateValidationResult OpenSSLSupplier::x509_verify_certificate_chain(
     if (1 != X509_STORE_CTX_init(store_ctx_ptr.get(), store_ptr.get(), get(target), untrusted.get())) {
         EVLOG_error << "X509 could not init x509 store ctx!";
         return CertificateValidationResult::Unknown;
+    }
+
+    if (uses_iso20_curve(X509_get0_pubkey(get(target)))) {
+        X509_STORE_CTX_set_verify_cb(store_ctx_ptr.get(), verify_iso20_extensions);
     }
 
     if (allow_future_certificates) {
@@ -720,12 +812,19 @@ CertificateSignRequestResult OpenSSLSupplier::x509_generate_csr(const Certificat
         x509Name, "CN", MBSTRING_ASC,
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
         reinterpret_cast<const unsigned char*>(csr_info.commonName.c_str()), -1, -1, 0);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
-    X509_NAME_add_entry_by_txt(x509Name, "DC", MBSTRING_ASC, reinterpret_cast<const unsigned char*>("CPO"), -1, -1, 0);
+    if (csr_info.domain_component.has_value()) {
+        X509_NAME_add_entry_by_txt(
+            x509Name, "DC", MBSTRING_ASC,
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
+            reinterpret_cast<const unsigned char*>(csr_info.domain_component->c_str()), -1, -1, 0);
+    }
 
     STACK_OF(X509_EXTENSION)* extensions = sk_X509_EXTENSION_new_null();
-    X509_EXTENSION* ext_key_usage =
-        X509V3_EXT_conf_nid(nullptr, nullptr, NID_key_usage, "digitalSignature, keyAgreement");
+    std::string key_usage = "critical, digitalSignature";
+    if (csr_info.key_agreement) {
+        key_usage += ", keyAgreement";
+    }
+    X509_EXTENSION* ext_key_usage = X509V3_EXT_conf_nid(nullptr, nullptr, NID_key_usage, key_usage.c_str());
     X509_EXTENSION* ext_basic_constraints =
         X509V3_EXT_conf_nid(nullptr, nullptr, NID_basic_constraints, "critical,CA:false");
     sk_X509_EXTENSION_push(extensions, ext_key_usage);
@@ -761,8 +860,10 @@ CertificateSignRequestResult OpenSSLSupplier::x509_generate_csr(const Certificat
         return CertificateSignRequestResult::ExtensionsError;
     }
 
-    // sign the certificate with the private key
-    const bool x509_signed = X509_REQ_sign(x509_req_ptr.get(), key, EVP_sha256()) != 0;
+    // sign the certificate with the private key. ISO 15118-20 pairs secp521r1 with SHA-512
+    // (ecdsa-with-SHA512); everything else keeps SHA-256
+    const EVP_MD* digest = (csr_info.key_info.key_type == CryptoKeyType::EC_secp521r1) ? EVP_sha512() : EVP_sha256();
+    const bool x509_signed = X509_REQ_sign(x509_req_ptr.get(), key, digest) != 0;
 
     if (x509_signed == false) {
         EVLOG_error << "Failed to sign csr with error!";

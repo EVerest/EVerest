@@ -18,10 +18,6 @@ target_link_libraries(socket_helper_test
 )
 catch_discover_tests(socket_helper_test)
 
-add_executable(test_sdp_server sdp_server_test.cpp)
-target_link_libraries(test_sdp_server PRIVATE iso15118 Catch2::Catch2WithMain)
-catch_discover_tests(test_sdp_server)
-
 add_executable(test_socket_keepalive socket_keepalive.cpp)
 target_link_libraries(test_socket_keepalive PRIVATE iso15118 Catch2::Catch2WithMain)
 catch_discover_tests(test_socket_keepalive)
@@ -29,8 +25,13 @@ catch_discover_tests(test_socket_keepalive)
 add_executable(test_connection_plain connection_plain.cpp)
 target_link_libraries(test_connection_plain PRIVATE iso15118 Catch2::Catch2WithMain)
 catch_discover_tests(test_connection_plain
+    # ConnectionPlain listens on port 50000, like the TLS tests
     PROPERTIES RESOURCE_LOCK iso15118_tls_port_50000
 )
+
+add_executable(test_sdp_server sdp_server_test.cpp)
+target_link_libraries(test_sdp_server PRIVATE iso15118 Catch2::Catch2WithMain)
+catch_discover_tests(test_sdp_server)
 
 add_executable(ssl_config_builder_test ssl_config_builder_test.cpp)
 target_link_libraries(ssl_config_builder_test
@@ -46,7 +47,7 @@ add_custom_command(
     TARGET connection_openssl_test POST_BUILD
     COMMAND mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/pki
     COMMAND cd pki && cp pki.sh ${CMAKE_CURRENT_BINARY_DIR}/pki && cp -r configs ${CMAKE_CURRENT_BINARY_DIR}/pki
-    COMMAND cd ${CMAKE_CURRENT_BINARY_DIR}/pki && test -d certs/ca/v2g || sh pki.sh
+    COMMAND cd ${CMAKE_CURRENT_BINARY_DIR}/pki && test -f certs/client/cso/CPO_CERT_CHAIN_20.pem || sh pki.sh
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 target_sources(connection_openssl_test

@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/service_detail.hpp>
 
 #include <algorithm>
+#include <cstdint>
 
 #include <iso15118/d20/state/service_selection.hpp>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/service_detail.hpp>
+
+#include <everest/util/misc/container.hpp>
 #include <iso15118/detail/d20/state/session_stop.hpp>
 
 #include <iso15118/detail/helper.hpp>
@@ -19,7 +22,7 @@ namespace dt = message_20::datatypes;
 namespace {
 
 bool find_energy_services(const std::vector<uint16_t>& services, const uint16_t service) {
-    return std::find(services.begin(), services.end(), service) != services.end();
+    return everest::lib::util::exists(services, service);
 }
 
 void fill_internet_parameter_list(std::vector<dt::InternetParameterList>& internet_parameter_list,
@@ -60,7 +63,7 @@ void fill_parking_parameter_list(std::vector<message_20::datatypes::ParkingParam
 } // namespace
 
 message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetailRequest& req, d20::Session& session,
-                                                 const d20::SessionConfig& config,
+                                                 const session::SessionConfig& config,
                                                  const std::optional<dt::ServiceParameterList>& custom_vas_parameters) {
 
     message_20::ServiceDetailResponse res;
@@ -125,6 +128,13 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
         res.service = message_20::to_underlying_value(dt::ServiceCategory::AC_DER_IEC);
         for (auto& parameter_set : config.ac_der_iec_parameter_list) {
             session.offered_services.ac_der_iec_parameter_list[id] = parameter_set;
+            res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
+        }
+    } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::AC_DER_SAE)) {
+        res.service = message_20::to_underlying_value(dt::ServiceCategory::AC_DER_SAE);
+        // Using AC parameter list
+        for (auto& parameter_set : config.ac_parameter_list) {
+            session.offered_services.ac_parameter_list[id] = parameter_set;
             res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
         }
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::DC)) {
@@ -201,16 +211,13 @@ Result ServiceDetail::feed(Event ev) {
         logf_info("Requested info about ServiceID: %d", req->service);
 
         using Service = dt::ServiceCategory;
-        const std::vector<uint16_t> energy_services{message_20::to_underlying_value(Service::AC),
-                                                    message_20::to_underlying_value(Service::DC),
-                                                    message_20::to_underlying_value(Service::WPT),
-                                                    message_20::to_underlying_value(Service::DC_ACDP),
-                                                    message_20::to_underlying_value(Service::AC_BPT),
-                                                    message_20::to_underlying_value(Service::DC_BPT),
-                                                    message_20::to_underlying_value(Service::DC_ACDP_BPT),
-                                                    message_20::to_underlying_value(Service::MCS),
-                                                    message_20::to_underlying_value(Service::MCS_BPT),
-                                                    message_20::to_underlying_value(Service::AC_DER_IEC)};
+        const std::vector<std::uint16_t> energy_services{
+            message_20::to_underlying_value(Service::AC),          message_20::to_underlying_value(Service::DC),
+            message_20::to_underlying_value(Service::WPT),         message_20::to_underlying_value(Service::DC_ACDP),
+            message_20::to_underlying_value(Service::AC_BPT),      message_20::to_underlying_value(Service::DC_BPT),
+            message_20::to_underlying_value(Service::DC_ACDP_BPT), message_20::to_underlying_value(Service::MCS),
+            message_20::to_underlying_value(Service::MCS_BPT),     message_20::to_underlying_value(Service::AC_DER_IEC),
+            message_20::to_underlying_value(Service::AC_DER_SAE)};
 
         std::optional<dt::ServiceParameterList> custom_vas_parameters{std::nullopt};
 
@@ -249,6 +256,7 @@ Result ServiceDetail::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
         m_ctx.session_stopped = true;
 
         return {};

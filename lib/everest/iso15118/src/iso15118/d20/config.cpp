@@ -1,260 +1,519 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/config.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <string>
 
+#include <iso15118/detail/d20/config_validation.hpp>
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/message/ac_der_sae_types.hpp>
+#include <iso15118/session/config.hpp>
 
 namespace iso15118::d20 {
 
 namespace dt = message_20::datatypes;
+namespace dt_sae = message_20::datatypes::sae;
 
 namespace {
 
-auto get_mobility_needs_mode(const ControlMobilityNeedsModes& mode) {
-    using namespace dt;
+// Trip curves carry the duration on x and the voltage or frequency on y per M.2.2.1.10 and M.2.2.1.11,
+// which is the reverse of the IEEE 2030.5 DERCurve axis order. Points are ordered by ascending
+// duration; an EV validating monotonic x values rejects the reverse order.
+// Each curve point list carries two points because the schema's minimum list length is two.
+sae::VoltageTrip get_default_voltage_trip() {
+    sae::VoltageTrip voltage_trip{};
 
-    if (mode.control_mode == ControlMode::Scheduled and mode.mobility_mode == MobilityNeedsMode::ProvidedBySecc) {
-        logf_info("Setting the mobility needs mode to ProvidedByEvcc. In scheduled mode only ProvidedByEvcc is "
-                  "supported.");
-        return MobilityNeedsMode::ProvidedByEvcc;
-    }
+    voltage_trip.over_voltage_must_trip_curve.enable = false;
+    voltage_trip.over_voltage_must_trip_curve.priority = std::nullopt;
+    voltage_trip.over_voltage_must_trip_curve.x_unit = sae::DERUnit::s;
+    voltage_trip.over_voltage_must_trip_curve.y_unit = sae::DERUnit::PercentageV;
+    voltage_trip.over_voltage_must_trip_curve.curve_data_points = {{0.16f, 120.0f}, {2.0f, 110.0f}};
+    voltage_trip.over_voltage_must_trip_curve.curve_data_points_L2 = std::nullopt;
+    voltage_trip.over_voltage_must_trip_curve.curve_data_points_L3 = std::nullopt;
 
-    return mode.mobility_mode;
+    voltage_trip.under_voltage_must_trip_curve.enable = false;
+    voltage_trip.under_voltage_must_trip_curve.priority = std::nullopt;
+    voltage_trip.under_voltage_must_trip_curve.x_unit = sae::DERUnit::s;
+    voltage_trip.under_voltage_must_trip_curve.y_unit = sae::DERUnit::PercentageV;
+    voltage_trip.under_voltage_must_trip_curve.curve_data_points = {{0.16f, 50.0f}, {2.0f, 88.0f}};
+    voltage_trip.under_voltage_must_trip_curve.curve_data_points_L2 = std::nullopt;
+    voltage_trip.under_voltage_must_trip_curve.curve_data_points_L3 = std::nullopt;
+
+    voltage_trip.over_voltage_momentary_cessation_trip_curve = std::nullopt;
+    voltage_trip.under_voltage_momentary_cessation_trip_curve = std::nullopt;
+    voltage_trip.over_voltage_may_trip_curve = std::nullopt;
+    voltage_trip.under_voltage_may_trip_curve = std::nullopt;
+
+    return voltage_trip;
+}
+sae::FrequencyTrip get_default_frequency_trip() {
+    sae::FrequencyTrip frequency_trip{};
+
+    frequency_trip.over_frequency_must_trip_curve.enable = false;
+    frequency_trip.over_frequency_must_trip_curve.priority = std::nullopt;
+    frequency_trip.over_frequency_must_trip_curve.x_unit = sae::DERUnit::s;
+    frequency_trip.over_frequency_must_trip_curve.y_unit = sae::DERUnit::Hz;
+    frequency_trip.over_frequency_must_trip_curve.curve_data_points = {{0.16f, 52.0f}, {300.0f, 51.5f}};
+    frequency_trip.over_frequency_must_trip_curve.curve_data_points_L2 = std::nullopt;
+    frequency_trip.over_frequency_must_trip_curve.curve_data_points_L3 = std::nullopt;
+
+    frequency_trip.under_frequency_must_trip_curve.enable = false;
+    frequency_trip.under_frequency_must_trip_curve.priority = std::nullopt;
+    frequency_trip.under_frequency_must_trip_curve.x_unit = sae::DERUnit::s;
+    frequency_trip.under_frequency_must_trip_curve.y_unit = sae::DERUnit::Hz;
+    frequency_trip.under_frequency_must_trip_curve.curve_data_points = {{0.16f, 47.0f}, {300.0f, 47.5f}};
+    frequency_trip.under_frequency_must_trip_curve.curve_data_points_L2 = std::nullopt;
+    frequency_trip.under_frequency_must_trip_curve.curve_data_points_L3 = std::nullopt;
+
+    frequency_trip.over_frequency_may_trip_curve = std::nullopt;
+    frequency_trip.under_frequency_may_trip_curve = std::nullopt;
+
+    return frequency_trip;
 }
 
-auto get_default_ac_parameter_list(const std::vector<ControlMobilityNeedsModes>& control_mobility_modes,
-                                   const AcSetupConfig& ac_setup_config) {
-    using namespace dt;
+sae::EnterServiceCPDRes get_default_enter_service(float nominal_voltage_v) {
+    sae::EnterServiceCPDRes enter_service{};
 
-    std::vector<AcParameterList> param_list;
+    enter_service.permit_service = false;
+    // AMD1 Table 1: both bands are volts, not percentages.
+    enter_service.enter_service_voltage_high = 1.05f * nominal_voltage_v;
+    enter_service.enter_service_voltage_low = 0.917f * nominal_voltage_v;
+    enter_service.enter_service_frequency_high = 50.1f;
+    enter_service.enter_service_frequency_low = 49.5f;
+    enter_service.enter_service_delay = std::nullopt;
+    // NOTE(mlitre): 0 satisfies [V2G20-3364] and stays inert.
+    enter_service.enter_service_randomized_delay = 0.0f;
+    enter_service.enter_service_ramp_time = std::nullopt;
 
-    for (const auto& mode : control_mobility_modes) {
-        for (const auto& connector : ac_setup_config.connectors) {
-            param_list.push_back({
-                connector,
-                mode.control_mode,
-                get_mobility_needs_mode(mode),
-                ac_setup_config.voltage,
-                Pricing::NoPricing,
-            });
-        }
-    }
-
-    return param_list;
+    return enter_service;
 }
+sae::ReactivePowerSupportCPDRes get_default_reactive_power_support(float nominal_voltage_v) {
+    sae::ReactivePowerSupportCPDRes reactive_power_support{};
 
-auto get_default_ac_bpt_parameter_list(const std::vector<ControlMobilityNeedsModes>& control_mobility_modes,
-                                       const AcSetupConfig& ac_setup_config, const BptSetupConfig& bpt_setup_config) {
-    using namespace dt;
+    reactive_power_support.constant_power_factor.enable = false;
+    reactive_power_support.constant_power_factor.priority = std::nullopt;
+    reactive_power_support.constant_power_factor.power_factor_value = 1.0f;
+    reactive_power_support.constant_power_factor.power_factor_value_L2 = std::nullopt;
+    reactive_power_support.constant_power_factor.power_factor_value_L3 = std::nullopt;
+    reactive_power_support.constant_power_factor.power_factor_excitation = sae::PowerFactorExcitation::OverExcited;
+    reactive_power_support.constant_power_factor.power_factor_excitation_L2 = std::nullopt;
+    reactive_power_support.constant_power_factor.power_factor_excitation_L3 = std::nullopt;
 
-    std::vector<AcBptParameterList> param_list;
+    reactive_power_support.volt_var.enable = false;
+    reactive_power_support.volt_var.priority = std::nullopt;
+    reactive_power_support.volt_var.x_unit = sae::DERUnit::PercentageV;
+    reactive_power_support.volt_var.y_unit = sae::DERUnit::PercentageEVMaximumConfiguredReactivePower;
+    reactive_power_support.volt_var.curve_data_points = {{100.0f, 0.0f}, {110.0f, 0.0f}};
+    reactive_power_support.volt_var.curve_data_points_L2 = std::nullopt;
+    reactive_power_support.volt_var.curve_data_points_L3 = std::nullopt;
+    reactive_power_support.volt_var.open_loop_response_time = 5.0f;
+    reactive_power_support.volt_var.time_constant_pt1 = std::nullopt;
+    // AMD1 Table 1: the reference voltage is volts, not a percentage.
+    reactive_power_support.volt_var.reference_voltage = nominal_voltage_v;
+    reactive_power_support.volt_var.autonomous_reference_voltage_adjustment_enable = false;
+    reactive_power_support.volt_var.reference_voltage_adjustment_time_constant = 0;
 
-    for (const auto& mode : control_mobility_modes) {
-        for (const auto& connector : ac_setup_config.connectors) {
-            param_list.push_back(
-                {{
-                     connector,
-                     mode.control_mode,
-                     get_mobility_needs_mode(mode),
-                     ac_setup_config.voltage,
-                     Pricing::NoPricing,
-                 },
-                 bpt_setup_config.bpt_channel,
-                 bpt_setup_config.generator_mode,
-                 bpt_setup_config.grid_code_detection_method.value_or(dt::GridCodeIslandingDetectionMethod::Passive)});
-        }
-    }
+    reactive_power_support.watt_var.enable = false;
+    reactive_power_support.watt_var.priority = std::nullopt;
+    reactive_power_support.watt_var.x_unit = sae::DERUnit::PercentageEVMaximumConfiguredActivePower;
+    reactive_power_support.watt_var.y_unit = sae::DERUnit::PercentageEVMaximumConfiguredReactivePower;
+    reactive_power_support.watt_var.curve_data_points = {{0.0f, 0.0f}, {100.0f, 0.0f}};
+    reactive_power_support.watt_var.curve_data_points_L2 = std::nullopt;
+    reactive_power_support.watt_var.curve_data_points_L3 = std::nullopt;
+    reactive_power_support.watt_var.open_loop_response_time = std::nullopt;
+    reactive_power_support.watt_var.time_constant_pt1 = std::nullopt;
 
-    return param_list;
+    reactive_power_support.constant_var.enable = false;
+    reactive_power_support.constant_var.priority = std::nullopt;
+    reactive_power_support.constant_var.var_setpoint = 0.0f;
+    reactive_power_support.constant_var.var_setpoint_L2 = std::nullopt;
+    reactive_power_support.constant_var.var_setpoint_L3 = std::nullopt;
+    reactive_power_support.constant_var.unit = sae::DERUnit::PercentageEVMaximumConfiguredReactivePower;
+
+    return reactive_power_support;
 }
+sae::ActivePowerSupportCPDRes get_default_active_power_support() {
+    sae::ActivePowerSupportCPDRes active_power_support{};
 
-auto get_default_ac_der_iec_parameter_list(const std::vector<ControlMobilityNeedsModes>& control_mobility_modes,
-                                           const AcSetupConfig& ac_setup_config,
-                                           const DerIecSetupConfig& der_setup_config) {
-    using namespace dt;
+    active_power_support.frequency_droop.enable = false;
+    active_power_support.frequency_droop.priority = std::nullopt;
+    // Table M.33: an absent OverFrequencyDroop obliges UnderFrequencyDroop. Carrying a zeroed over
+    // frequency branch satisfies that unconditionally and stays inert.
+    sae::FrequencyDroopSettings over_frequency_droop{};
+    over_frequency_droop.db = 0.0f;
+    over_frequency_droop.droop_factor = 0.0f;
+    over_frequency_droop.power_reference = sae::PowerReference::MaximumActivePower;
+    over_frequency_droop.open_loop_response_time = 0.0f;
+    active_power_support.frequency_droop.over_frequency_droop = over_frequency_droop;
+    active_power_support.frequency_droop.under_frequency_droop = std::nullopt;
 
-    std::vector<AcDerParameterList> param_list;
+    active_power_support.volt_watt.enable = false;
+    active_power_support.volt_watt.priority = std::nullopt;
+    active_power_support.volt_watt.x_unit = sae::DERUnit::PercentageV;
+    active_power_support.volt_watt.y_unit = sae::DERUnit::PercentageEVMaximumConfiguredActivePower;
+    active_power_support.volt_watt.curve_data_points = {{100.0f, 100.0f}, {110.0f, 100.0f}};
+    active_power_support.volt_watt.curve_data_points_L2 = std::nullopt;
+    active_power_support.volt_watt.curve_data_points_L3 = std::nullopt;
+    active_power_support.volt_watt.open_loop_response_time = 5.0f;
+    active_power_support.volt_watt.time_constant_pt1 = std::nullopt;
 
-    constexpr auto MAX_IEC_CONTROL_FUNCTIONS = 12;
-    std::bitset<MAX_IEC_CONTROL_FUNCTIONS> control_functions{};
+    active_power_support.constant_watt.enable = false;
+    active_power_support.constant_watt.priority = std::nullopt;
+    active_power_support.constant_watt.watt_setpoint = 0.0f;
+    active_power_support.constant_watt.watt_setpoint_L2 = std::nullopt;
+    active_power_support.constant_watt.watt_setpoint_L3 = std::nullopt;
+    active_power_support.constant_watt.unit = sae::DERUnit::PercentageEVMaximumConfiguredActivePower;
 
-    static_assert(MAX_IEC_CONTROL_FUNCTIONS ==
-                      message_20::to_underlying_value(iec::DERControlName::UnderVoltageFaultRideThroughMode) + 1,
-                  "MAX_IEC_CONTROL_FUNCTIONS should be in sync with the DERControlName enum definition");
+    active_power_support.limit_max_discharge_power.enable = false;
+    active_power_support.limit_max_discharge_power.priority = std::nullopt;
+    active_power_support.limit_max_discharge_power.percentage_value = 100;
+    active_power_support.limit_max_discharge_power.percentage_value_L2 = std::nullopt;
+    active_power_support.limit_max_discharge_power.percentage_value_L3 = std::nullopt;
+    active_power_support.limit_max_discharge_power.open_loop_response_time = std::nullopt;
 
-    for (const auto& function : der_setup_config.supported_der_control_functions) {
-        control_functions.set(static_cast<size_t>(function.first), true);
-    }
-
-    for (const auto& mode : control_mobility_modes) {
-        for (const auto& connector : ac_setup_config.connectors) {
-            param_list.push_back({{
-                                      connector,
-                                      mode.control_mode,
-                                      get_mobility_needs_mode(mode),
-                                      ac_setup_config.voltage,
-                                      Pricing::NoPricing,
-                                  },
-                                  control_functions});
-        }
-    }
-
-    return param_list;
-}
-
-auto get_default_dc_parameter_list(const std::vector<ControlMobilityNeedsModes>& control_mobility_modes) {
-    using namespace dt;
-
-    // TODO(sl): Add check if a control mode is more than one in that vector
-
-    std::vector<DcParameterList> param_list;
-
-    for (const auto& mode : control_mobility_modes) {
-        param_list.push_back({
-            DcConnector::Extended,
-            mode.control_mode,
-            get_mobility_needs_mode(mode),
-            Pricing::NoPricing,
-        });
-    }
-
-    return param_list;
-}
-
-auto get_default_dc_bpt_parameter_list(const std::vector<ControlMobilityNeedsModes>& control_mobility_modes,
-                                       const BptSetupConfig& bpt_setup_config) {
-    using namespace dt;
-
-    // TODO(sl): Add check if a control mode is more than one in that vector
-
-    std::vector<DcBptParameterList> param_list;
-
-    for (const auto& mode : control_mobility_modes) {
-        param_list.push_back({{
-                                  DcConnector::Extended,
-                                  mode.control_mode,
-                                  get_mobility_needs_mode(mode),
-                                  Pricing::NoPricing,
-                              },
-                              bpt_setup_config.bpt_channel,
-                              bpt_setup_config.generator_mode});
-    }
-
-    return param_list;
-}
-
-auto get_default_mcs_parameter_list(const std::vector<ControlMobilityNeedsModes>& control_mobility_modes) {
-    using namespace dt;
-
-    // TODO(sl): Add check if a control mode is more than one in that vector
-    std::vector<McsParameterList> param_list;
-
-    for (const auto& mode : control_mobility_modes) {
-        param_list.push_back({
-            McsConnector::Mcs,
-            mode.control_mode,
-            get_mobility_needs_mode(mode),
-            Pricing::NoPricing,
-        });
-    }
-
-    return param_list;
-}
-
-auto get_default_mcs_bpt_parameter_list(const std::vector<ControlMobilityNeedsModes>& control_mobility_modes,
-                                        const BptSetupConfig& bpt_setup_config) {
-    using namespace dt;
-
-    // TODO(sl): Add check if a control mode is more than one in that vector
-    std::vector<McsBptParameterList> param_list;
-
-    for (const auto& mode : control_mobility_modes) {
-        param_list.push_back({{
-                                  McsConnector::Mcs,
-                                  mode.control_mode,
-                                  get_mobility_needs_mode(mode),
-                                  Pricing::NoPricing,
-                              },
-                              bpt_setup_config.bpt_channel,
-                              bpt_setup_config.generator_mode});
-    }
-
-    return param_list;
+    return active_power_support;
 }
 
 } // namespace
 
-SessionConfig::SessionConfig(EvseSetupConfig config) :
-    evse_id(std::move(config.evse_id)),
-    cert_install_service(config.enable_certificate_install_service),
-    authorization_services(std::move(config.authorization_services)),
-    supported_energy_transfer_services(std::move(config.supported_energy_services)),
-    supported_vas_services(std::move(config.supported_vas_services)),
-    dc_limits(config.dc_limits),
-    ac_limits(config.ac_limits),
-    der_limits(config.der_limits),
-    powersupply_limits(config.powersupply_limits),
-    supported_control_mobility_modes(std::move(config.control_mobility_modes)),
-    custom_protocol(std::move(config.custom_protocol)),
-    selecting_sap_based_on_energy_service(config.selecting_sap_based_on_energy_service) {
+// Every enable is false, so no grid code function is activated. Charge and discharge stay available.
+sae::DERControl get_default_sae_der_control(float nominal_voltage_v) {
+    sae::DERControl control{};
 
-    // TODO(SL): How to handle this probaly
-    const auto is_dc_bpt_service = [](dt::ServiceCategory service) {
-        return service == dt::ServiceCategory::DC_BPT or service == dt::ServiceCategory::MCS_BPT;
+    control.voltage_trip = get_default_voltage_trip();
+    control.frequency_trip = get_default_frequency_trip();
+    control.enter_service = get_default_enter_service(nominal_voltage_v);
+    control.reactive_power_support = get_default_reactive_power_support(nominal_voltage_v);
+    control.active_power_support = get_default_active_power_support();
+
+    return control;
+}
+
+DerSaeSetupConfig make_inert_default_sae_setup_config(float nominal_voltage_v) {
+    return DerSaeSetupConfig{get_default_sae_der_control(nominal_voltage_v),
+                             sae::RequiredDEROperatingMode::GridFollowing, sae::GridConnectionMode::GridConnected};
+}
+
+namespace {
+
+/// \brief One curve carrier's three data point lists, so the checks below can loop over heterogeneous carriers.
+///
+/// Trip carriers additionally record their x unit; the axis rules below apply to them only.
+struct CurveLists {
+    const char* name;
+    const sae::CurveDataPointsList* points;
+    const std::optional<sae::CurveDataPointsList>* points_L2;
+    const std::optional<sae::CurveDataPointsList>* points_L3;
+    bool trip;
+    sae::DERUnit x_unit;
+};
+
+template <typename Curve> CurveLists curve_lists(const char* name, const Curve& curve) {
+    return {name,        &curve.curve_data_points, &curve.curve_data_points_L2, &curve.curve_data_points_L3, false,
+            curve.x_unit};
+}
+
+CurveLists trip_curve_lists(const char* name, const sae::DERCurve& curve) {
+    return {name,        &curve.curve_data_points, &curve.curve_data_points_L2, &curve.curve_data_points_L3, true,
+            curve.x_unit};
+}
+
+std::optional<std::string> check_curve_length(const sae::CurveDataPointsList& points, const char* name,
+                                              const char* phase) {
+    if (points.size() >= static_cast<size_t>(dt_sae::CurveDataPointsMinLength)) {
+        return std::nullopt;
+    }
+    return std::string(name) + phase + " carries fewer than " + std::to_string(dt_sae::CurveDataPointsMinLength) +
+           " curve data points";
+}
+
+/// \brief Trip curve points are ordered by strictly ascending duration (M.2.2.1.10, M.2.2.1.11).
+std::optional<std::string> check_trip_curve_order(const sae::CurveDataPointsList& points, const char* name,
+                                                  const char* phase) {
+    const auto not_ascending = [](const sae::DataTuple& lhs, const sae::DataTuple& rhs) {
+        return lhs.x_value >= rhs.x_value;
     };
-    const auto dc_bpt_found = std::any_of(supported_energy_transfer_services.begin(),
-                                          supported_energy_transfer_services.end(), is_dc_bpt_service);
-
-    if (dc_bpt_found and not dc_limits.discharge_limits.has_value()) {
-        logf_warning("The supported energy services contain DC_BPT or MCS_BPT, but dc limits does not contain BPT "
-                     "limits. This can lead to session shutdowns.");
+    if (std::adjacent_find(points.begin(), points.end(), not_ascending) == points.end()) {
+        return std::nullopt;
     }
+    return std::string(name) + phase + " curve data points are not in ascending duration order";
+}
 
-    const auto is_ac_bpt_service = [](dt::ServiceCategory service) { return service == dt::ServiceCategory::AC_BPT; };
-    const auto ac_bpt_found = std::any_of(supported_energy_transfer_services.begin(),
-                                          supported_energy_transfer_services.end(), is_ac_bpt_service);
-
-    if (ac_bpt_found and not ac_limits.discharge_power.has_value()) {
-        logf_warning("The supported energy services contain AC_BPT, but ac limits does not contain BPT limits. This "
-                     "can lead to session shutdowns.");
+std::optional<std::string> check_curve_list(const CurveLists& entry, const sae::CurveDataPointsList& points,
+                                            const char* phase) {
+    if (auto violation = check_curve_length(points, entry.name, phase)) {
+        return violation;
     }
+    if (entry.trip) {
+        return check_trip_curve_order(points, entry.name, phase);
+    }
+    return std::nullopt;
+}
 
-    const auto is_ac_der_iec_service = [](dt::ServiceCategory service) {
-        return service == dt::ServiceCategory::AC_DER_IEC;
+std::optional<std::string> check_curve_lists(const CurveLists& entry) {
+    if (entry.trip and entry.x_unit != sae::DERUnit::s) {
+        return std::string(entry.name) + " x_unit must be s";
+    }
+    if (auto violation = check_curve_list(entry, *entry.points, "")) {
+        return violation;
+    }
+    if (entry.points_L2->has_value()) {
+        if (auto violation = check_curve_list(entry, entry.points_L2->value(), " L2")) {
+            return violation;
+        }
+    }
+    if (entry.points_L3->has_value()) {
+        if (auto violation = check_curve_list(entry, entry.points_L3->value(), " L3")) {
+            return violation;
+        }
+    }
+    return std::nullopt;
+}
+
+void add_optional_curve(std::vector<CurveLists>& entries, const char* name, const std::optional<sae::DERCurve>& curve) {
+    if (curve.has_value()) {
+        entries.push_back(trip_curve_lists(name, curve.value()));
+    }
+}
+
+/// \brief Checks every curve that ends up on the wire.
+///
+/// The enable flag is not a gate here: in DERControlCPDRes the trip curves and the volt var, watt var and
+/// volt watt blocks are mandatory elements, so their data point lists are sent whether or not the function is
+/// enabled. The optional trip curves are checked whenever they are present, for the same reason.
+std::optional<std::string> validate_sae_der_curves(const sae::DERControl& control) {
+    const auto& voltage_trip = control.voltage_trip;
+    const auto& frequency_trip = control.frequency_trip;
+
+    std::vector<CurveLists> entries{
+        trip_curve_lists("over voltage must trip curve", voltage_trip.over_voltage_must_trip_curve),
+        trip_curve_lists("under voltage must trip curve", voltage_trip.under_voltage_must_trip_curve),
+        trip_curve_lists("over frequency must trip curve", frequency_trip.over_frequency_must_trip_curve),
+        trip_curve_lists("under frequency must trip curve", frequency_trip.under_frequency_must_trip_curve),
+        curve_lists("volt var curve", control.reactive_power_support.volt_var),
+        curve_lists("watt var curve", control.reactive_power_support.watt_var),
+        curve_lists("volt watt curve", control.active_power_support.volt_watt),
     };
-    const auto ac_der_iec_found = std::any_of(supported_energy_transfer_services.begin(),
-                                              supported_energy_transfer_services.end(), is_ac_der_iec_service);
-    if (ac_der_iec_found and not der_limits.has_value()) {
-        logf_warning("The supported energy services contain AC_DER_IEC, but there is no der limits defined. This "
-                     "can lead to session shutdowns.");
+
+    add_optional_curve(entries, "over voltage momentary cessation trip curve",
+                       voltage_trip.over_voltage_momentary_cessation_trip_curve);
+    add_optional_curve(entries, "under voltage momentary cessation trip curve",
+                       voltage_trip.under_voltage_momentary_cessation_trip_curve);
+    add_optional_curve(entries, "over voltage may trip curve", voltage_trip.over_voltage_may_trip_curve);
+    add_optional_curve(entries, "under voltage may trip curve", voltage_trip.under_voltage_may_trip_curve);
+    add_optional_curve(entries, "over frequency may trip curve", frequency_trip.over_frequency_may_trip_curve);
+    add_optional_curve(entries, "under frequency may trip curve", frequency_trip.under_frequency_may_trip_curve);
+
+    for (const auto& entry : entries) {
+        if (auto violation = check_curve_lists(entry)) {
+            return violation;
+        }
     }
 
-    if (supported_control_mobility_modes.empty()) {
-        logf_warning("No control modes were provided, set to scheduled mode");
-        supported_control_mobility_modes = {{dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
+    return std::nullopt;
+}
+
+/// \brief A frequency droop carries at least one of its two branches (T.M33), enabled or not.
+std::optional<std::string> validate_sae_frequency_droop(const sae::FrequencyDroop& frequency_droop) {
+    if (not frequency_droop.over_frequency_droop.has_value() and
+        not frequency_droop.under_frequency_droop.has_value()) {
+        return "frequency droop carries neither over_frequency_droop nor under_frequency_droop (T.M33)";
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> validate_sae_enter_service(const sae::EnterServiceCPDRes& enter_service) {
+    if (not enter_service.enter_service_delay.has_value() and
+        not enter_service.enter_service_randomized_delay.has_value()) {
+        return "enter service carries neither enter_service_delay nor enter_service_randomized_delay "
+               "[V2G20-3364]";
+    }
+    if (enter_service.enter_service_delay.has_value() and not enter_service.enter_service_ramp_time.has_value()) {
+        return "enter service carries enter_service_delay without enter_service_ramp_time [V2G20-3365], "
+               "[V2G20-3367]";
+    }
+    return std::nullopt;
+}
+
+enum class Sign : std::uint8_t {
+    NonNegative,
+    NonPositive
+};
+
+struct SignedLimit {
+    const char* name;
+    dt::RationalNumber value;
+    Sign sign;
+};
+
+void add_limit(std::vector<SignedLimit>& limits, const char* name, const dt::RationalNumber& value, Sign sign) {
+    limits.push_back({name, value, sign});
+}
+
+void add_limit(std::vector<SignedLimit>& limits, const char* name, const std::optional<dt::RationalNumber>& value,
+               Sign sign) {
+    if (value.has_value()) {
+        limits.push_back({name, value.value(), sign});
+    }
+}
+
+/// \brief Checks the advertised limits against the sign conventions documented on SaeDerTransferLimits and
+/// EVSEReactivePowerLimits, which restate ISO 15118-20 AMD1 8.3.5.2.
+///
+/// The exponent never flips the sign of a RationalNumber, so the mantissa alone decides.
+std::optional<std::string> validate_sae_der_limits(const SaeDerTransferLimits& sae_limits) {
+    const auto& reactive = sae_limits.reactive_power_limits;
+
+    std::vector<SignedLimit> limits;
+    limits.reserve(18);
+
+    add_limit(limits, "maximum_var_absorption_during_charging", reactive.maximum_var_absorption_during_charging,
+              Sign::NonNegative);
+    add_limit(limits, "maximum_var_absorption_during_charging_L2", reactive.maximum_var_absorption_during_charging_L2,
+              Sign::NonNegative);
+    add_limit(limits, "maximum_var_absorption_during_charging_L3", reactive.maximum_var_absorption_during_charging_L3,
+              Sign::NonNegative);
+    add_limit(limits, "maximum_var_injection_during_charging", reactive.maximum_var_injection_during_charging,
+              Sign::NonPositive);
+    add_limit(limits, "maximum_var_injection_during_charging_L2", reactive.maximum_var_injection_during_charging_L2,
+              Sign::NonPositive);
+    add_limit(limits, "maximum_var_injection_during_charging_L3", reactive.maximum_var_injection_during_charging_L3,
+              Sign::NonPositive);
+    add_limit(limits, "maximum_var_absorption_during_discharging", reactive.maximum_var_absorption_during_discharging,
+              Sign::NonNegative);
+    add_limit(limits, "maximum_var_absorption_during_discharging_L2",
+              reactive.maximum_var_absorption_during_discharging_L2, Sign::NonNegative);
+    add_limit(limits, "maximum_var_absorption_during_discharging_L3",
+              reactive.maximum_var_absorption_during_discharging_L3, Sign::NonNegative);
+    add_limit(limits, "maximum_var_injection_during_discharging", reactive.maximum_var_injection_during_discharging,
+              Sign::NonPositive);
+    add_limit(limits, "maximum_var_injection_during_discharging_L2",
+              reactive.maximum_var_injection_during_discharging_L2, Sign::NonPositive);
+    add_limit(limits, "maximum_var_injection_during_discharging_L3",
+              reactive.maximum_var_injection_during_discharging_L3, Sign::NonPositive);
+
+    add_limit(limits, "nominal_discharge_power", sae_limits.nominal_discharge_power, Sign::NonPositive);
+    add_limit(limits, "nominal_discharge_power_L2", sae_limits.nominal_discharge_power_L2, Sign::NonPositive);
+    add_limit(limits, "nominal_discharge_power_L3", sae_limits.nominal_discharge_power_L3, Sign::NonPositive);
+    add_limit(limits, "max_discharge_power", sae_limits.max_discharge_power, Sign::NonPositive);
+    add_limit(limits, "max_discharge_power_L2", sae_limits.max_discharge_power_L2, Sign::NonPositive);
+    add_limit(limits, "max_discharge_power_L3", sae_limits.max_discharge_power_L3, Sign::NonPositive);
+
+    for (const auto& limit : limits) {
+        if (limit.sign == Sign::NonNegative and limit.value.value < 0) {
+            return std::string(limit.name) + " must be non-negative";
+        }
+        if (limit.sign == Sign::NonPositive and limit.value.value > 0) {
+            return std::string(limit.name) + " must be non-positive";
+        }
     }
 
-    const auto ac_setup_config = config.ac_setup_config.value_or(AcSetupConfig({230, {dt::AcConnector::SinglePhase}}));
-    const auto ac_bpt_setup_config = config.bpt_setup_config.value_or(BptSetupConfig(
-        {dt::BptChannel::Unified, dt::GeneratorMode::GridFollowing, dt::GridCodeIslandingDetectionMethod::Passive}));
-    const auto dc_bpt_setup_config = config.bpt_setup_config.value_or(
-        BptSetupConfig({dt::BptChannel::Unified, dt::GeneratorMode::GridFollowing, std::nullopt}));
-    der_iec_setup_config = config.der_iec_setup_config.value_or(
-        DerIecSetupConfig({{}, iec::OperatingMode::GridFollowing, iec::GridConnectionMode::GridConnected}));
+    return std::nullopt;
+}
 
-    ac_parameter_list = get_default_ac_parameter_list(supported_control_mobility_modes, ac_setup_config);
-    ac_bpt_parameter_list =
-        get_default_ac_bpt_parameter_list(supported_control_mobility_modes, ac_setup_config, ac_bpt_setup_config);
-    ac_der_iec_parameter_list =
-        get_default_ac_der_iec_parameter_list(supported_control_mobility_modes, ac_setup_config, der_iec_setup_config);
+std::optional<dt::RationalNumber> phase_maximum(const std::optional<Limit<dt::RationalNumber>>& limit) {
+    if (not limit.has_value()) {
+        return std::nullopt;
+    }
+    return limit.value().max;
+}
 
-    dc_parameter_list = get_default_dc_parameter_list(supported_control_mobility_modes);
-    dc_bpt_parameter_list = get_default_dc_bpt_parameter_list(supported_control_mobility_modes, dc_bpt_setup_config);
+struct NominalMaximumPair {
+    const char* nominal_name;
+    const std::optional<dt::RationalNumber>& nominal;
+    const char* maximum_name;
+    std::optional<dt::RationalNumber> maximum;
+    bool use_magnitude;
+};
 
-    mcs_parameter_list = get_default_mcs_parameter_list(supported_control_mobility_modes);
-    mcs_bpt_parameter_list = get_default_mcs_bpt_parameter_list(supported_control_mobility_modes, dc_bpt_setup_config);
+std::optional<std::string> check_nominal_within_maximum(const NominalMaximumPair& pair) {
+    if (not pair.nominal.has_value()) {
+        return std::nullopt;
+    }
+    if (not pair.maximum.has_value()) {
+        return std::string(pair.nominal_name) + " is configured but " + pair.maximum_name + " is not";
+    }
+
+    const auto value_of = [use_magnitude = pair.use_magnitude](const dt::RationalNumber& number) {
+        const auto value = dt::from_RationalNumber(number);
+        return use_magnitude ? std::fabs(value) : value;
+    };
+
+    const auto nominal_value = value_of(pair.nominal.value());
+    const auto maximum_value = value_of(pair.maximum.value());
+
+    if (nominal_value > maximum_value) {
+        return std::string(pair.nominal_name) + " " + std::to_string(nominal_value) + " exceeds " + pair.maximum_name +
+               " " + std::to_string(maximum_value);
+    }
+    return std::nullopt;
+}
+
+} // namespace
+
+std::optional<std::string> validate_sae_der_setup(const DerSaeSetupConfig& setup_config,
+                                                  const SaeDerTransferLimits& sae_limits,
+                                                  const AcTransferLimits& ac_limits) {
+    if (auto violation = validate_sae_der_curves(setup_config.der_control)) {
+        return violation;
+    }
+    if (auto violation = validate_sae_frequency_droop(setup_config.der_control.active_power_support.frequency_droop)) {
+        return violation;
+    }
+    if (auto violation = validate_sae_enter_service(setup_config.der_control.enter_service)) {
+        return violation;
+    }
+    if (auto violation = validate_sae_der_limits(sae_limits)) {
+        return violation;
+    }
+    return validate_sae_nominals_within_maxima(sae_limits, ac_limits);
+}
+
+std::optional<std::string> validate_sae_nominals_within_maxima(const SaeDerTransferLimits& sae_limits,
+                                                               const AcTransferLimits& ac_limits) {
+    const NominalMaximumPair pairs[] = {
+        {"nominal_charge_power", sae_limits.nominal_charge_power, "charge_power.max", ac_limits.charge_power.max,
+         false},
+        {"nominal_charge_power_L2", sae_limits.nominal_charge_power_L2, "charge_power_L2.max",
+         phase_maximum(ac_limits.charge_power_L2), false},
+        {"nominal_charge_power_L3", sae_limits.nominal_charge_power_L3, "charge_power_L3.max",
+         phase_maximum(ac_limits.charge_power_L3), false},
+        {"nominal_discharge_power", sae_limits.nominal_discharge_power, "max_discharge_power",
+         sae_limits.max_discharge_power, true},
+        {"nominal_discharge_power_L2", sae_limits.nominal_discharge_power_L2, "max_discharge_power_L2",
+         sae_limits.max_discharge_power_L2, true},
+        {"nominal_discharge_power_L3", sae_limits.nominal_discharge_power_L3, "max_discharge_power_L3",
+         sae_limits.max_discharge_power_L3, true},
+    };
+
+    for (const auto& pair : pairs) {
+        if (auto violation = check_nominal_within_maximum(pair)) {
+            return violation;
+        }
+    }
+    return std::nullopt;
+}
+
+bool install_der_sae_setup_config(session::SessionConfig& session_config, const DerSaeSetupConfig& setup_config) {
+    if (not session_config.der_sae_limits.has_value()) {
+        logf_warning("Rejecting mid-session SAE grid code revision %u: no sae der limits defined",
+                     setup_config.revision);
+        return false;
+    }
+
+    const auto violation =
+        validate_sae_der_setup(setup_config, session_config.der_sae_limits.value(), session_config.ac_limits);
+    if (violation.has_value()) {
+        logf_warning("Rejecting mid-session SAE grid code revision %u: %s", setup_config.revision,
+                     violation.value().c_str());
+        return false;
+    }
+
+    session_config.der_sae_setup_config = setup_config;
+    return true;
 }
 
 } // namespace iso15118::d20

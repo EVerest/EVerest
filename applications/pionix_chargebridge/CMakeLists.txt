@@ -86,6 +86,43 @@ add_custom_command(
 )
 
 
+# GTest is pulled in by the dependency manager only under EVEREST_CORE_BUILD_TESTING, which is not
+# implied by BUILD_TESTING when this project is configured as a dependency. As with ftxui above, skip
+# the tests with a warning instead of failing the configuration.
+if(BUILD_TESTING AND NOT TARGET GTest::gtest_main)
+    message(WARNING "Not building the pionix_chargebridge tests because GTest is not available.")
+elseif(BUILD_TESTING)
+    # The carrier decision and the uptime reboot detection are pure functions in headers, so this
+    # needs neither the application's objects nor any of its dependencies - only the include paths for
+    # the headers and the mirrored protocol definitions they read CbLinkTechnology from.
+    add_executable(pionix_chargebridge_tests
+      test/bsp_status_test.cpp
+      test/carrier_policy_test.cpp
+      test/cb_role_test.cpp
+      test/mcs_bsp_test.cpp
+      test/heartbeat_reply_test.cpp
+      test/mcu_uptime_test.cpp
+      test/plc_keepalive_test.cpp
+    )
+
+    target_include_directories(pionix_chargebridge_tests
+      PRIVATE include
+      PRIVATE shared
+    )
+
+    # heartbeat_reply_test pins the CbStructType message ids down with a switch that has no default
+    # arm, so an enumerator added to the protocol without being added to the test's list makes that
+    # switch non-exhaustive. Promoting that warning to an error here is what turns it into a gate.
+    target_compile_options(pionix_chargebridge_tests PRIVATE -Werror=switch)
+
+    target_link_libraries(pionix_chargebridge_tests
+      PRIVATE GTest::gtest_main
+    )
+
+    include(GoogleTest)
+    gtest_discover_tests(pionix_chargebridge_tests TEST_PREFIX "pionix_chargebridge.")
+endif()
+
 install (TARGETS pionix_chargebridge)
 install (FILES "${CMAKE_CURRENT_SOURCE_DIR}/${cb_firmware_binary}" DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/chargebridge/firmware)
 install (FILES "${CMAKE_CURRENT_SOURCE_DIR}/config/config-CB-EVAL.yaml" DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/chargebridge RENAME "config-CB-EVAL.yaml-example")

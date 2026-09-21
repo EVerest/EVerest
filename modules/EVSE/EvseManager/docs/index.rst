@@ -363,14 +363,45 @@ EvseManager exposes a ``set_der_available`` command that records, per EVSE, whet
 provides the ``grid_support`` connection (the OCPP module is one such provider, asserting it from the presence
 of a ``grid_support`` connection); the EV's runtime DER capability is never sent here.
 
-When DER is available and the EVSE is export-capable (its hardware capabilities report a non-zero export
-current and at least one export phase), EvseManager folds the ISO 15118-20 ``AC_DER_IEC`` energy transfer mode
-into the set it advertises, alongside ``AC_BPT`` (advertised whenever ``supported_iso_ac_bpt`` is set and the
-EVSE is export-capable). ISO 15118-20 has no combined ``AC_BPT_DER`` service category, so "AC_BPT_DER supported"
-is conveyed by advertising both ``AC_BPT`` and ``AC_DER_IEC`` as separate energy transfer modes; the EV selects
-one per session.
+Whether DER is available and which ISO 15118-20 AC DER annex the EVSE speaks are separate axes. The annex is a
+static per-EVSE choice made with the ``iso15118_der_flavor`` config option: ``NONE`` (the default, no AC DER
+advertised), ``IEC`` (Annex L, ``AC_DER_IEC``) or ``SAE`` (Annex M, ``AC_DER_SAE``). The two annexes are
+mutually exclusive per EVSE, so AC DER is opt-in even where DER availability is asserted.
+
+When DER is available, the EVSE is export-capable (its hardware capabilities report a non-zero export current
+and at least one export phase) and a flavor is configured, EvseManager folds that one AC DER energy transfer
+mode into the set it advertises, never both. This is in addition to ``AC_BPT`` (advertised whenever
+``supported_iso_ac_bpt`` is set and the EVSE is export-capable). ISO 15118-20 has no combined ``AC_BPT_DER``
+service category, so "AC_BPT_DER supported" is conveyed by advertising both ``AC_BPT`` and the configured AC
+DER mode as separate energy transfer modes; the EV selects one per session.
+
+The flavor is matched exactly. An unrecognized value advertises no AC DER and logs a warning naming it, a
+branch normally unreachable because the manifest enum is validated at config load.
+
+Configuring ``SAE`` is necessary but not sufficient. The :ref:`Evse15118D20 <everest_modules_Evse15118D20>`
+module withholds the SAE DER limits until AC parameters carrying a positive nominal frequency and a positive
+nominal voltage arrive, and the library then strips ``AC_DER_SAE`` from the advertised services. Neither value
+has a fallback. It is self-correcting, since the limits are derived again on every change to the energy
+services, the AC limits or the AC parameters, so an operator configuring ``SAE`` may briefly see no DER
+service advertised.
 
 The command returns ``NoHlc`` when no HLC is enabled for the EVSE (and does nothing), and ``Accepted`` otherwise.
+
+Nominal grid frequency
+----------------------
+
+``ac_nominal_frequency`` (default ``50``) is passed to the HLC stack on every AC parameters update.
+Informational for plain AC and ``AC_BPT``. For AC DER it is advertised at ChargeParameterDiscovery as the
+mandatory ``GridNominalFrequency`` the EV adopts as the frequency of the grid it is connecting to, so it must
+match the installation.
+
+It is not a denormalization base. The frequency-trip curves and the enter-service band are in absolute Hz and
+are not scaled by it, unlike the voltage curves, which are a percentage of the nominal voltage. Changing it
+from ``50`` to ``60`` moves no frequency threshold; the default grid code carries 50 Hz-family constants, so a
+60 Hz operator supplying a real setup config must supply 60 Hz curve values with it.
+
+It is also load-bearing: the SAE DER limits are only derived once a positive nominal frequency and a positive
+nominal voltage have arrived, as described above.
 
 Error Handling
 ==============

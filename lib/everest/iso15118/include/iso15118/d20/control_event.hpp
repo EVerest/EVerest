@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <variant>
 #include <vector>
 
 #include <iso15118/d20/ac_powers.hpp>
+#include <iso15118/d20/config.hpp>
 #include <iso15118/d20/dynamic_mode_parameters.hpp>
 #include <iso15118/d20/limits.hpp>
 
@@ -30,17 +32,58 @@ struct PresentVoltageCurrent {
     float current;
 };
 
+// Latched on the session context and reported as the MeterInfo element of the charge-loop responses;
+// the SECC must have sent one when it requests a signed MeteringReceipt ([V2G2-902]).
+struct MeterInfo {
+    std::string meter_id;
+    uint64_t meter_reading_wh{0};
+};
+
+// Mirrors types::authorization::CertificateStatus of the EVerest authorization_response command.
+enum class CertificateStatus : uint8_t {
+    Accepted,
+    SignatureError,
+    CertificateExpired,
+    CertificateRevoked,
+    NoCertificateAvailable,
+    CertChainError,
+    ContractCancelled,
+};
+
 class AuthorizationResponse {
 public:
-    explicit AuthorizationResponse(bool authorized_) : authorized(authorized_) {
+    explicit AuthorizationResponse(bool authorized_, bool certificate_revoked_ = false) :
+        authorized(authorized_),
+        certificate_status(certificate_revoked_ ? CertificateStatus::CertificateRevoked : CertificateStatus::Accepted) {
+    }
+
+    // token_unknown_: the backend does not know the token / eMAID at all ([V2G20-2211] on ISO 15118-20).
+    AuthorizationResponse(bool authorized_, CertificateStatus certificate_status_, bool token_unknown_ = false) :
+        authorized(authorized_), certificate_status(certificate_status_), token_unknown(token_unknown_) {
     }
 
     operator bool() const {
         return authorized;
     }
 
+    // ISO 15118-2 PnC: a revoked contract certificate is answered with FAILED_CertificateRevoked rather
+    // than a plain FAILED. Only meaningful when authorized is false; the other protocols ignore it.
+    bool is_certificate_revoked() const {
+        return certificate_status == CertificateStatus::CertificateRevoked;
+    }
+
+    CertificateStatus get_certificate_status() const {
+        return certificate_status;
+    }
+
+    bool is_token_unknown() const {
+        return token_unknown;
+    }
+
 private:
     bool authorized;
+    CertificateStatus certificate_status;
+    bool token_unknown{false};
 };
 
 class StopCharging {
@@ -87,8 +130,101 @@ private:
 // TODO(SL): Define this globally for message and states
 using SupportedVASs = std::vector<uint16_t>;
 
-using ControlEvent = std::variant<CableCheckFinished, PresentVoltageCurrent, AuthorizationResponse, StopCharging,
-                                  PauseCharging, DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters,
-                                  ClosedContactor, AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs>;
+// The module injects the raw CertificateInstallationRes EXI (base64) back into the engine that
+// forwarded the request, which splices it onto the wire verbatim.
+struct CertificateResponse {
+    bool status_accepted{false};
+    std::string exi_response_base64{};
+};
+
+// Malfunction / UtilityInterruptEvent become the DC EVSEStatusCode, RCD sets the AC RCD flag,
+// EmergencyShutdown aborts the session and None clears an active error. Contactor is informational.
+enum class EvseErrorCode : uint8_t {
+    None,
+    Contactor,
+    RCD,
+    UtilityInterruptEvent,
+    Malfunction,
+    EmergencyShutdown,
+};
+
+struct EvseError {
+    EvseErrorCode code{EvseErrorCode::None};
+};
+
+// Used for the CP checks tied to the message sequence, e.g. DIN [V2G-DC-988]/[V2G-DC-556]: CP State
+// B within the detection timeout after the request following PowerDelivery(off), else FAILED.
+enum class CpState : uint8_t {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+};
+
+struct CpStateChanged {
+    CpState state{CpState::A};
+};
+
+// Per phase, in A. The ISO 15118-2 engine reflects it as EVSEMaxCurrent in the next
+// ChargingStatusRes, which is how a zero-power limit reaches the EV in the AC charge loop.
+struct UpdateAcMaxCurrent {
+    float ampere{0.0f};
+};
+
+// Feeds the AC/DC EVSEChargeParameter elements of ChargeParameterDiscoveryRes; ISO 15118-20 carries
+// the same information in its own limit structures and ignores this. Every field is optional on its
+// own -- an absent one leaves the engine default in place.
+struct PhysicalValues {
+    std::optional<float> ac_nominal_voltage;
+    std::optional<float> dc_current_regulation_tolerance;
+    std::optional<float> dc_peak_current_ripple;
+    std::optional<float> dc_energy_to_be_delivered;
+};
+
+// Wrapped so the variant can tell them apart from the plain DcTransferLimits event: the capabilities
+// feed the ChargeParameterDiscoveryRes offer, the live limits the charge loop.
+struct UpdatePowersupplyLimits {
+    DcTransferLimits limits{};
+};
+
+// IEC 61851-23:2023 CC.3.5.3, plus a None state for "no pause requested".
+enum class NoEnergyPauseMode : uint8_t {
+    None,
+    // Pause before the cable check: the charger has no power at all for this session.
+    BeforeCableCheck,
+    // The charger can still run cable check and pre-charge, but must not start the charge loop.
+    AfterCableCheckPreCharge,
+    // Signal the pause but tolerate an EV that ignores it and charges anyway.
+    AllowEvToIgnorePause,
+};
+
+struct NoEnergyPause {
+    NoEnergyPauseMode mode{NoEnergyPauseMode::None};
+};
+
+// Reported as DC_EVSEStatus.EVSEIsolationStatus in the DC responses that follow the cable check.
+// ISO 15118-20 has no such element.
+enum class IsolationStatus : uint8_t {
+    Invalid,
+    Valid,
+    Warning,
+    Fault,
+    // No insulation monitoring device fitted, so the cable check was skipped. ISO 15118-2 has a No_IMD
+    // enumerator for this; DIN SPEC 70121 does not and reports Valid instead.
+    NoImd,
+};
+
+struct UpdateIsolationStatus {
+    IsolationStatus status{IsolationStatus::Invalid};
+};
+
+using ControlEvent =
+    std::variant<CableCheckFinished, PresentVoltageCurrent, MeterInfo, AuthorizationResponse, StopCharging,
+                 PauseCharging, DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters, ClosedContactor,
+                 AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs, CertificateResponse, EvseError,
+                 CpStateChanged, UpdateAcMaxCurrent, PhysicalValues, NoEnergyPause, UpdateIsolationStatus,
+                 UpdatePowersupplyLimits, DerSaeSetupConfig>;
 
 } // namespace iso15118::d20

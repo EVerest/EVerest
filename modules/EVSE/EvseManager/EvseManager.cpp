@@ -300,6 +300,14 @@ void EvseManager::init() {
     });
 }
 
+void EvseManager::shutdown() {
+    invoke_shutdown(*p_evse);
+    invoke_shutdown(*p_energy_grid);
+    invoke_shutdown(*p_token_provider);
+    invoke_shutdown(*p_random_delay);
+    invoke_shutdown(*p_dc_external_derate);
+}
+
 void EvseManager::ready() {
     bsp = std::make_unique<IECStateMachine>(r_bsp, config.lock_connector_in_state_b, config.unlock_when_deauthorized);
 
@@ -382,6 +390,7 @@ void EvseManager::ready() {
 
         r_hlc[0]->subscribe_dlink_error([this] {
             session_log.evse(true, "D-LINK_ERROR.req");
+            hlc_link_in_use = false;
             // In case the fake DC unexpectedly disconnects due to a d-link error, we'll need to switch
             // back to AC basic mode.
             if (fake_dc_enabled and config.ac_with_soc) {
@@ -396,6 +405,7 @@ void EvseManager::ready() {
         r_hlc[0]->subscribe_dlink_pause([this] {
             // tell charger (it will disable PWM)
             session_log.evse(true, "D-LINK_PAUSE.req");
+            hlc_link_in_use = false;
             charger->dlink_pause();
             r_slac[0]->call_dlink_pause();
         });
@@ -403,8 +413,17 @@ void EvseManager::ready() {
         r_hlc[0]->subscribe_dlink_terminate([this] {
             selected_d20_energy_service.reset();
             session_log.evse(true, "D-LINK_TERMINATE.req");
+            hlc_link_in_use = false;
             charger->dlink_terminate();
             r_slac[0]->call_dlink_terminate();
+        });
+
+        r_hlc[0]->subscribe_session_stop_res_sent([this](types::iso15118::SessionStopAction action) {
+            session_log.evse(true, "SessionStopRes sent, arming CP oscillator retain timer [V2G-DC-968]");
+            charger->notify_session_stop_res_sent(action);
+            // Deliberately no r_slac call here: only the oscillator timing hangs off this event. The
+            // PLC link must stay MATCHED so the EV's TCP close can still complete; link teardown
+            // remains anchored to the dlink_* events after the connection is closed.
         });
 
         r_hlc[0]->subscribe_v2g_setup_finished([this] { charger->set_hlc_charging_active(); });
@@ -464,8 +483,7 @@ void EvseManager::ready() {
             setup_physical_values.ac_nominal_voltage = config.ac_nominal_voltage;
             r_hlc[0]->call_set_charging_parameters(setup_physical_values);
 
-            const auto hw_caps = *hw_capabilities.handle();
-            initial_energy_transfers = get_supported_ac_energy_transfers(hw_caps, config.supported_iso_ac_bpt, false);
+            // The AC list is built later, just before call_setup. initial_energy_transfers is only for DC/MCS.
 
             r_hlc[0]->subscribe_ac_eamount([this](double e) {
                 // FIXME send only on change / throttle messages
@@ -989,7 +1007,12 @@ void EvseManager::ready() {
 
         r_hlc[0]->call_receipt_is_required(config.ev_receipt_required);
 
-        this->update_supported_energy_transfers(initial_energy_transfers);
+        if (config.charge_mode == "AC") {
+            // der_available may already be set, so rebuild the list instead of reusing initial_energy_transfers.
+            this->update_supported_energy_transfers(current_ac_energy_transfers());
+        } else {
+            this->update_supported_energy_transfers(initial_energy_transfers);
+        }
         r_hlc[0]->call_setup(evseid, sae_mode, config.session_logging);
         this->publish_and_update_supported_energy_transfers();
 
@@ -1067,10 +1090,14 @@ void EvseManager::ready() {
         if (config.session_logging) {
             r_hlc[0]->subscribe_v2g_messages(
                 [this](types::iso15118::V2gMessages const& v2g_messages) { log_v2g_message(v2g_messages); });
-
-            r_hlc[0]->subscribe_selected_protocol(
-                [this](std::string const& selected_protocol) { this->selected_protocol = selected_protocol; });
         }
+
+        // hlc_link_in_use steers the SLAC teardown on unplug (deferred while an HLC session is up);
+        // it must be maintained regardless of the session_logging debug switch.
+        r_hlc[0]->subscribe_selected_protocol([this](std::string const& selected_protocol) {
+            this->selected_protocol = selected_protocol;
+            hlc_link_in_use = true;
+        });
         // switch to DC mode for first session for AC with SoC
         if (config.ac_with_soc) {
 
@@ -1090,6 +1117,42 @@ void EvseManager::ready() {
         }
     }
 
+    // Inform the HLC stack about every measured CP state change. It needs it for the SECC-side CP
+    // checks tied to the message sequence (DIN 70121 [V2G-DC-988]: CP State B after
+    // PowerDelivery(off)), and on unplug (CP State A, [V2G-DC-962]) it closes the V2G TCP
+    // connection. IECStateMachine emits this signal BEFORE the derived CPEvents, so the stack
+    // learns state A before the SLAC teardown below is triggered.
+    if (hlc_enabled) {
+        bsp->signal_raw_cp_state_changed.connect([this](RawCPState state) {
+            std::optional<types::iso15118::CpState> cp_state;
+            switch (state) {
+            case RawCPState::A:
+                cp_state = types::iso15118::CpState::A;
+                break;
+            case RawCPState::B:
+                cp_state = types::iso15118::CpState::B;
+                break;
+            case RawCPState::C:
+                cp_state = types::iso15118::CpState::C;
+                break;
+            case RawCPState::D:
+                cp_state = types::iso15118::CpState::D;
+                break;
+            case RawCPState::E:
+                cp_state = types::iso15118::CpState::E;
+                break;
+            case RawCPState::F:
+                cp_state = types::iso15118::CpState::F;
+                break;
+            case RawCPState::Disabled:
+                break;
+            }
+            if (cp_state.has_value()) {
+                r_hlc[0]->call_cp_state_changed(cp_state.value());
+            }
+        });
+    }
+
     bsp->signal_event.connect([this](const CPEvent event) {
         // Forward events from BSP to SLAC module before we process the events in the charger
         if (slac_enabled) {
@@ -1107,13 +1170,32 @@ void EvseManager::ready() {
                 // r_slac[0]->call_reset(true);
                 // This is entering BCD from state A
                 car_manufacturer = types::evse_manager::CarManufacturer::Unknown;
+                // New session: restart the B/C transition counter used for BCB-toggle detection.
+                // Push the reset to SLAC too, otherwise EvseSlac's counter stays at the previous
+                // (stale) value and the CM_VALIDATE baseline is off, under-counting the BCB toggles.
+                bc_transition_count = 0;
+                r_slac[0]->call_count_bc(bc_transition_count);
                 r_slac[0]->call_enter_bcd();
+            } else if (event == CPEvent::CarRequestedPower) {
+                // Count only the B->C edge (CarRequestedPower): a BCB toggle is B->C->B, so one B->C
+                // per toggle. Pushing the running total to SLAC lets EvseSlac use it directly as the
+                // number of BCB toggles during CM_VALIDATE (no C->B counting, halving the command calls).
+                bc_transition_count += 1;
+                r_slac[0]->call_count_bc(bc_transition_count);
             } else if (event == CPEvent::CarUnplugged) {
-                // Make a local copy as leave_bcd() will overwrite the slac_unmatched flag
-                bool unmatched_on_unplug = not slac_unmatched;
-                r_slac[0]->call_leave_bcd();
-                if (unmatched_on_unplug) {
-                    r_slac[0]->call_reset(false);
+                if (hlc_link_in_use) {
+                    // An HLC session is still up: the stack closes the V2G TCP connection on the
+                    // CP State A it just received ([V2G-DC-962]) and its FIN must still traverse
+                    // the AVLN. Defer the SLAC leave to the dlink_terminate/dlink_error that
+                    // follows the session teardown ([V2G-DC-940]; the SLAC leave itself has
+                    // T_match_leave of budget).
+                } else {
+                    // Make a local copy as leave_bcd() will overwrite the slac_unmatched flag
+                    bool unmatched_on_unplug = not slac_unmatched;
+                    r_slac[0]->call_leave_bcd();
+                    if (unmatched_on_unplug) {
+                        r_slac[0]->call_reset(false);
+                    }
                 }
                 hlc_waiting_for_auth_pnc = false;
                 hlc_waiting_for_auth_eim = false;
@@ -1268,16 +1350,29 @@ void EvseManager::ready() {
     charger->signal_max_current.connect([this](float ampere) {
         // The charger changed the max current setting. Forward to HLC
         if (hlc_enabled) {
-            if (not selected_d20_energy_service.has_value() and ampere >= 0.0) {
-                r_hlc[0]->call_update_ac_max_current(ampere); // ISO-2
+            if (not selected_d20_energy_service.has_value()) {
+                // ISO-2 has no discharge direction, so a negative target is not forwarded.
+                if (ampere >= 0.0f) {
+                    r_hlc[0]->call_update_ac_max_current(ampere); // ISO-2
+                }
                 return;
             }
 
+            // The AC DER services carry the same AC target values: a DER charge loop that never
+            // receives one advertises a zero target for the whole session rather than omitting it.
             if (selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC or
-                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_BPT) {
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_BPT or
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_DER_IEC or
+                selected_d20_energy_service.value() == types::iso15118::ServiceCategory::AC_DER_SAE) {
+
+                // The sign of ampere carries the direction (see Charger::set_max_current), so an export
+                // target scales by the export phase count. Read through a temporary handle: binding the
+                // handle would hold the capabilities lock across the call below.
+                const auto phase_count = ampere < 0.0f ? hw_capabilities.handle()->max_phase_count_export
+                                                       : hw_capabilities.handle()->max_phase_count_import;
 
                 types::units::Power target_power = {ampere * static_cast<float>(config.ac_nominal_voltage) *
-                                                    hw_capabilities.handle()->max_phase_count_import};
+                                                    phase_count};
 
                 // TODO(SL): Adding target frequency
                 // TODO(SL): Adding reactive power
@@ -1627,22 +1722,13 @@ void EvseManager::setup_AC_mode(bool ac_hlc_enabled) {
 
     types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 
-    // Set up energy transfer modes for HLC. For now we only support either DC or AC, not both at the same time.
-    std::vector<types::iso15118::EnergyTransferMode> transfer_modes;
-
-    transfer_modes.push_back(types::iso15118::EnergyTransferMode::AC_single_phase_core);
-
-    if (hw_capabilities.handle()->max_phase_count_import == 3) {
-        transfer_modes.push_back(types::iso15118::EnergyTransferMode::AC_three_phase_core);
-    }
-
-    types::iso15118::SetupPhysicalValues setup_physical_values;
-
     constexpr auto sae_mode = types::iso15118::SaeJ2847BidiMode::None;
 
     if (ac_hlc_enabled) {
         r_hlc[0]->call_setup(evseid, sae_mode, config.session_logging);
-        this->update_supported_energy_transfers(transfer_modes);
+        // Publish unconditionally: the HLC was just set up again and must be told its modes even
+        // when the list is unchanged.
+        this->update_supported_energy_transfers(current_ac_energy_transfers());
         this->publish_and_update_supported_energy_transfers();
     } else {
         selected_protocol = "IEC61851-1";
@@ -1842,11 +1928,14 @@ bool EvseManager::update_supported_energy_transfers(const types::iso15118::Energ
     return update_supported_energy_transfers(std::vector<types::iso15118::EnergyTransferMode>{energy_transfer});
 }
 
-void EvseManager::recompute_and_publish_supported_ac_energy_transfers() {
+std::vector<types::iso15118::EnergyTransferMode> EvseManager::current_ac_energy_transfers() {
     const auto caps = *hw_capabilities.handle();
     const auto der = der_available.load();
-    const auto energy_transfers = get_supported_ac_energy_transfers(caps, config.supported_iso_ac_bpt, der);
-    if (update_supported_energy_transfers(energy_transfers)) {
+    return get_supported_ac_energy_transfers(caps, config.supported_iso_ac_bpt, der, config.iso15118_der_flavor);
+}
+
+void EvseManager::recompute_and_publish_supported_ac_energy_transfers() {
+    if (update_supported_energy_transfers(current_ac_energy_transfers())) {
         publish_and_update_supported_energy_transfers();
     }
 }
@@ -1897,10 +1986,14 @@ void EvseManager::update_hlc_ac_parameters() {
     if (hw_caps.max_phase_count_import == 3) {
         ac_connectors.push_back(types::iso15118::Connector::ThreePhase);
     }
-    r_hlc[0]->call_update_ac_parameters(
-        {50, static_cast<float>(config.ac_nominal_voltage), ac_connectors, std::nullopt, std::nullopt,
-         config.ac_max_reactive_power > 0 ? std::make_optional(static_cast<float>(config.ac_max_reactive_power))
-                                          : std::nullopt}); // TODO(sl): Getting nominal frequency
+    types::iso15118::AcParameters ac_parameters{};
+    ac_parameters.nominal_frequency = static_cast<float>(config.ac_nominal_frequency);
+    ac_parameters.nominal_voltage = static_cast<float>(config.ac_nominal_voltage);
+    ac_parameters.connectors = ac_connectors;
+    if (config.ac_max_reactive_power > 0) {
+        ac_parameters.evse_max_reactive_power = static_cast<float>(config.ac_max_reactive_power);
+    }
+    r_hlc[0]->call_update_ac_parameters(ac_parameters);
 }
 
 void EvseManager::log_v2g_message(types::iso15118::V2gMessages const& v2g_messages) {
@@ -2009,6 +2102,33 @@ bool EvseManager::cable_check_should_exit() {
     return charger->get_current_state() not_eq Charger::EvseState::PrepareCharging;
 }
 
+bool EvseManager::cable_check_wait_for_prepare_charging() {
+    // A fast EV can request CableCheck while the charger state machine is still in
+    // WaitingForAuthentication: with no energy available that state holds for up to
+    // WAIT_FOR_ENERGY_IN_AUTHLOOP_TIMEOUT_MS before it proceeds to PrepareCharging on its own. Wait for
+    // it to arrive instead of failing the cable check right away; the SECC keeps answering
+    // CableCheckRes with EVSEProcessing=Ongoing meanwhile. Any state other than
+    // WaitingForAuthentication/PrepareCharging means the session is stopping, so give up.
+    Timeout timeout;
+    timeout.start(10s);
+    bool waiting_logged = false;
+    while (not timeout.reached()) {
+        const auto state = charger->get_current_state();
+        if (state == Charger::EvseState::PrepareCharging) {
+            return true;
+        }
+        if (state not_eq Charger::EvseState::WaitingForAuthentication) {
+            return false;
+        }
+        if (not waiting_logged) {
+            waiting_logged = true;
+            session_log.evse(false, "CableCheck: waiting for charger to enter PrepareCharging...");
+        }
+        std::this_thread::sleep_for(100ms);
+    }
+    return false;
+}
+
 bool EvseManager::check_voltage_to_protective_earth_in_range(types::isolation_monitor::IsolationMeasurement m) {
     static constexpr double MAX_VOLTAGE_STATIC = 550.0; // defined by IEC 61851-23:2023, $6.3.1.112.2
     if (m.voltage_V.has_value() and m.voltage_to_earth_l1e_V.has_value() and m.voltage_to_earth_l2e_V.has_value()) {
@@ -2065,6 +2185,11 @@ void EvseManager::cable_check() {
         session_log.evse(true, "Start cable check...");
         charger->get_stopwatch().report_phase();
         charger->get_stopwatch().mark_phase("CableCheck");
+
+        if (not cable_check_wait_for_prepare_charging()) {
+            fail_cable_check("CableCheck: Charger did not enter PrepareCharging state.");
+            return;
+        }
 
         // Verify output is below 60V initially
         if (not wait_powersupply_DC_below_voltage(CABLECHECK_SAFE_VOLTAGE)) {
@@ -2284,8 +2409,11 @@ void EvseManager::cable_check() {
                 imd_stop();
                 std::ostringstream oss;
                 oss << "Isolation resistance too low: " << m.resistance_F_Ohm << " Ohm";
-                error_handling->raise_isolation_resistance_fault(oss.str(), "Resistance");
+                // The HLC stack must learn the cable check result before the fault below stops the Charger:
+                // its emergency shutdown would otherwise reach the stack first and the FAILED CableCheckRes
+                // would report EVSE_EmergencyShutdown instead of the isolation fault.
                 fail_cable_check(oss.str());
+                error_handling->raise_isolation_resistance_fault(oss.str(), "Resistance");
                 return;
             }
         } else {

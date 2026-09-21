@@ -13,10 +13,20 @@
 #include "../Evse15118D20.hpp"
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
+#include <atomic>
 #include <bitset>
+#include <cstdint>
 #include <mutex>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <iso15118/message/v2g_message_type.hpp>
 
 #include "der_relay.hpp"
+#include "der_relay_sae.hpp"
+#include "der_setup.hpp"
 #include "grid_event.hpp"
 #include "utils.hpp"
 
@@ -24,6 +34,7 @@
 
 #include <iso15118/config.hpp>
 #include <iso15118/d20/config.hpp>
+#include <iso15118/session/config.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/tbd_controller.hpp>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
@@ -56,6 +67,7 @@ protected:
     virtual void handle_authorization_response(types::authorization::AuthorizationStatus& authorization_status,
                                                types::authorization::CertificateStatus& certificate_status) override;
     virtual void handle_ac_contactor_closed(bool& status) override;
+    virtual void handle_cp_state_changed(types::iso15118::CpState& cp_state) override;
     virtual void handle_dlink_ready(bool& value) override;
     virtual void handle_cable_check_finished(bool& status) override;
     virtual void handle_receipt_is_required(bool& receipt_required) override;
@@ -95,14 +107,29 @@ private:
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     iso15118::session::feedback::Callbacks create_callbacks();
 
+    // ISO 15118-20 may actually be offered: configured AND a TLS chain exists, since -20 is TLS-only
+    // ([V2G20-2677]). Decided once in ready() and honoured by handle_update_supported_app_protocols too,
+    // so a runtime offer update cannot switch -20 back on when there is no certificate. Atomic: written
+    // on the ready thread, read from the command threads.
+    std::atomic_bool iso15118_20_offerable{false};
+
     std::unique_ptr<iso15118::TbdController> controller;
 
-    iso15118::d20::EvseSetupConfig setup_config;
-    std::bitset<NUMBER_OF_SETUP_STEPS> setup_steps_done{0};
+    iso15118::session::EvseSetupConfig setup_config;
+    SetupStepsDone setup_steps_done;
+
+    // The protocol offer as configured (module config, narrowed by update_supported_app_protocols), before
+    // the AC filter, plus whether an AC energy transfer mode is configured. apply_supported_protocols()
+    // combines both into setup_config.supported_protocols. All three need GEL held.
+    std::vector<iso15118::ProtocolId> configured_protocol_offer;
+    bool ac_energy_transfer_mode{false};
+    void apply_supported_protocols();
 
     std::optional<float> evse_max_reactive_power;
 
     std::vector<iso15118::d20::SupportedVASs> supported_vas_services_per_provider;
+    // The full offers (name, scope, free flag) for the ISO 15118-2 ServiceList; same index as above.
+    std::vector<std::vector<types::iso15118_vas::OfferedService>> offered_vas_per_provider;
     std::mutex vas_mutex;
 
     void update_supported_vas_services();
@@ -117,9 +144,34 @@ private:
     std::bitset<12> ev_selected_der_control_functions;
 
     // Serializes apply_active_der_directives so the per-name update loop cannot interleave between two
-    // concurrent applies and leave a mixed DER-function map. Outermost lock; acquired before GEL.
+    // concurrent applies and leave a mixed DER-function map.
+    //
+    // Lock rank, outermost first: der_apply_mutex > GEL > TbdController::evse_setup (a util::monitor, not a
+    // std::mutex). Never acquired in the reverse order. Calling the controller under GEL is therefore
+    // allowed, and relay_sae_grid_code and update_der_limits_locked both do so.
     std::mutex der_apply_mutex;
     void apply_active_der_directives();
+    // SAE half of apply_active_der_directives. Maps on the caller's GEL snapshot without GEL held, then
+    // re-acquires it to validate against the current limits and commit. Called with der_apply_mutex held.
+    void relay_sae_grid_code(const types::grid_support::ActiveDirectiveSet& directives,
+                             iso15118::TbdController& controller_ref, float nominal_voltage_v,
+                             float nominal_frequency_hz, const iso15118::d20::DerSaeSetupConfig& current_sae,
+                             std::uint32_t applied_revision, const std::optional<module::SaeRelayInput>& applied_input);
+
+    // hlc_session_failed derivation: the last V2G message handled this session (loop thread only, from
+    // the v2g_message feedback) is mapped to a reason at teardown.
+    std::optional<iso15118::V2gMessageType> last_v2g_message;
+    // Last published EV completion flags (DIN SPEC 70121 / ISO 15118-2 charge progress); published on
+    // change only. Reset when the session's data link ends.
+    std::optional<bool> last_charging_complete;
+    std::optional<bool> last_bulk_charging_complete;
+    // debug_mode from the setup command gates the v2g_messages and ev_app_protocol publishes (mirrors
+    // EvseV2G, which publishes both only with debugMode). Atomic: set from the command thread, read on
+    // the loop thread.
+    std::atomic_bool debug_mode{false};
+    void report_hlc_session_failed();
+    // Clear the per-session state above; called for every end of the data link (terminate, error, pause).
+    void reset_session_state();
 
     /// Builds the base SSLConfig: backend, V2G/MO trust-anchor paths, and the module-level
     /// TLS flags. Carries no certificate chains. Does not depend on leaf-certificate
@@ -137,6 +189,25 @@ private:
     /// SSLConfig, and applies it or preserves the last-good config; rebuild exceptions are
     /// caught there so the subscriber thread survives RPC failures.
     void on_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event);
+
+    // Re-derives the DER transfer limits and mirrors them into the controller. Call with GEL held, from
+    // every handler that writes one of its inputs.
+    void update_der_limits_locked();
+
+    // Last DER SAE derivation outcome that was logged, so a repeated derivation on unchanged inputs
+    // stays quiet. Guarded by GEL.
+    SaeDerStatus logged_sae_der_status{SaeDerStatus::NotRequested};
+    // Nominal voltage and frequency reported by the last logged Ready derivation, so a change to the
+    // advertised grid values is re-logged instead of staying hidden. Guarded by GEL.
+    std::optional<std::pair<std::uint32_t, float>> logged_sae_nominal;
+
+    // Revision of the SAE grid code last dictated from grid_support directives. Bumped only when the
+    // relay input changes, so an AC-limits re-derivation re-pushes the same revision and the session stays
+    // quiet. Guarded by GEL.
+    std::uint32_t sae_grid_code_revision{0};
+    // Relay input behind sae_grid_code_revision. Seeded with the empty set on every derivation that assigns
+    // SAE limits while the held config is still the seed (revision 0); nullopt until the first. Guarded by GEL.
+    std::optional<module::SaeRelayInput> sae_applied_input;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
