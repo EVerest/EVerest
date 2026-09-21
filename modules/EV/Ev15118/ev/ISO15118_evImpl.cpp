@@ -99,11 +99,18 @@ iso15118::shared_datatypes::EnergyTransferMode to_iso2_transfer_mode(types::iso1
         return Out::DC_combo_core;
     case In::DC_unique:
         return Out::DC_unique;
+    // ISO 15118-2 and DIN SPEC 70121 have no megawatt service. This mapping is only reached
+    // when a pre-20 protocol is offered alongside MCS, and the nearest DC equivalent is then
+    // the only thing that can be advertised.
+    case In::MCS_BPT:
+        warn_unidirectional();
+        return Out::DC_extended;
     case In::DC_BPT:
         warn_unidirectional();
         return Out::DC_extended;
     case In::DC:
     case In::DC_extended:
+    case In::MCS:
     // Rejected by start_charging before this runs; listed rather than folded into a default
     // arm so -Wswitch flags a new mode.
     case In::AC_two_phase:
@@ -112,8 +119,6 @@ iso15118::shared_datatypes::EnergyTransferMode to_iso2_transfer_mode(types::iso1
     case In::DC_ACDP:
     case In::DC_ACDP_BPT:
     case In::WPT:
-    case In::MCS:
-    case In::MCS_BPT:
         break;
     }
     return Out::DC_extended;
@@ -781,6 +786,14 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     case types::iso15118::EnergyTransferMode::AC_DER_IEC:
         energy_service = iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC;
         break;
+    // MCS is the megawatt DC service: same DC parameter discovery, cable check, pre-charge and
+    // charge loop, a different service id on the wire. ISO 15118-20 only.
+    case types::iso15118::EnergyTransferMode::MCS:
+        energy_service = iso15118::message_20::datatypes::ServiceCategory::MCS;
+        break;
+    case types::iso15118::EnergyTransferMode::MCS_BPT:
+        energy_service = iso15118::message_20::datatypes::ServiceCategory::MCS_BPT;
+        break;
     // Listed rather than folded into a default arm so -Wswitch flags a new mode.
     case types::iso15118::EnergyTransferMode::AC_two_phase:
     case types::iso15118::EnergyTransferMode::AC_BPT_DER:
@@ -790,11 +803,10 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     case types::iso15118::EnergyTransferMode::DC_ACDP:
     case types::iso15118::EnergyTransferMode::DC_ACDP_BPT:
     case types::iso15118::EnergyTransferMode::WPT:
-    case types::iso15118::EnergyTransferMode::MCS:
-    case types::iso15118::EnergyTransferMode::MCS_BPT:
         EVLOG_warning << "Ev15118: rejecting start_charging with unsupported EnergyTransferMode '"
                       << types::iso15118::energy_transfer_mode_to_string(EnergyTransferMode)
-                      << "'; only DC, DC BPT, AC single/three-phase, AC BPT and AC DER IEC are supported";
+                      << "'; only DC, DC BPT, MCS, MCS BPT, AC single/three-phase, AC BPT and "
+                         "AC DER IEC are supported";
         return false;
     }
     {
@@ -824,7 +836,7 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
             candidate.ac_params.max_discharge_power = static_cast<float>(mod->config.ac_max_discharge_power_w);
             candidate.ac_params.min_discharge_power = static_cast<float>(mod->config.ac_min_discharge_power_w);
         }
-        if (energy_service == dt::ServiceCategory::DC_BPT) {
+        if (energy_service == dt::ServiceCategory::DC_BPT or energy_service == dt::ServiceCategory::MCS_BPT) {
             // set_bpt_dc_params discharge limits win; config settings are the fallback
             candidate.dc_params.max_discharge_power =
                 candidate.cmd_max_discharge_power.value_or(static_cast<float>(mod->config.dc_max_discharge_power_w));
@@ -840,7 +852,7 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
         if (iso15118::ev::is_ac_family(energy_service)) {
             append(iso15118::ev::validate_ac_charge_params(candidate.ac_params));
         }
-        if (energy_service == dt::ServiceCategory::DC or energy_service == dt::ServiceCategory::DC_BPT) {
+        if (iso15118::ev::is_dc_family(energy_service)) {
             append(iso15118::ev::validate_dc_charge_params(candidate.dc_params));
         }
         if (not problems.empty()) {
