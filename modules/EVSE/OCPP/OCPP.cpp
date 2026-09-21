@@ -1008,16 +1008,16 @@ void OCPP::ready() {
         [this](const std::string& session_id, const ocpp::v16::StartTransactionRequest& request) {
             types::ocpp::OcppTransactionEvent tevent;
             tevent.transaction_event = types::ocpp::TransactionEvent::Started;
-            tevent.evse = {this->to_everest_evse_id(connector), 1};
+            tevent.evse = {this->to_everest_evse_id(request.connectorId), 1};
             tevent.session_id = session_id;
             tevent.timestamp = request.timestamp.to_rfc3339();
             p_ocpp_generic->publish_ocpp_transaction_event(tevent);
         });
 
     this->charge_point->register_transaction_updated_callback(
-        [this](const int32_t connector, const std::string& session_id, const int32_t transaction_id,
-               const ocpp::v16::IdTagInfo& id_tag_info) {
-            const auto everest_evse_id = this->to_everest_evse_id(connector);
+        [this](const std::string& session_id, const ocpp::v16::StartTransactionRequest& request,
+               const ocpp::v16::StartTransactionResponse& response) {
+            const auto everest_evse_id = this->to_everest_evse_id(request.connectorId);
             types::ocpp::OcppTransactionEvent tevent;
             tevent.transaction_event = types::ocpp::TransactionEvent::Updated;
             tevent.evse = {everest_evse_id, 1};
@@ -1035,22 +1035,24 @@ void OCPP::ready() {
                 id_token.type = types::authorization::IdTokenType::ISO14443;
                 result_update.validation_result.parent_id_token = id_token;
                 result_update.validation_result.authorization_status =
-                    conversions::to_everest_authorization_status(id_tag_info.status);
+                    conversions::to_everest_authorization_status(response.idTagInfo.status);
                 result_update.connector_id = everest_evse_id;
                 p_auth_validator->publish_validate_result_update(result_update);
             }
         });
 
-    this->charge_point->register_transaction_stopped_callback(
-        [this](const int32_t connector, const std::string& session_id, const int32_t transaction_id) {
-            EVLOG_info << "Transaction stopped at connector: " << connector << ", session_id: " << session_id;
-            types::ocpp::OcppTransactionEvent tevent;
-            tevent.transaction_event = types::ocpp::TransactionEvent::Ended;
-            tevent.evse = {this->to_everest_evse_id(connector), 1};
-            tevent.session_id = session_id;
-            tevent.transaction_id = std::to_string(transaction_id);
-            p_ocpp_generic->publish_ocpp_transaction_event(tevent);
-        });
+    this->charge_point->register_transaction_stopped_callback([this](const std::string& session_id,
+                                                                     const int32_t connector,
+                                                                     const ocpp::v16::StopTransactionRequest& request) {
+        EVLOG_info << "Transaction stopped at connector: " << connector << ", session_id: " << session_id;
+        types::ocpp::OcppTransactionEvent tevent;
+        tevent.transaction_event = types::ocpp::TransactionEvent::Ended;
+        tevent.evse = {this->to_everest_evse_id(connector), 1};
+        tevent.session_id = session_id;
+        tevent.transaction_id = std::to_string(request.transactionId);
+        tevent.timestamp = request.timestamp.to_rfc3339();
+        p_ocpp_generic->publish_ocpp_transaction_event(tevent);
+    });
 
     this->charge_point->register_boot_notification_response_callback(
         [this](const ocpp::v16::BootNotificationResponse& boot_notification_response) {
