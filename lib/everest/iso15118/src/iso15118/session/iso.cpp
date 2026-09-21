@@ -71,6 +71,7 @@ enum class V2GTPReadResult {
     complete,          //!< a full packet was read
     would_block,       //!< more data is needed to complete the packet
     connection_closed, //!< the peer closed the connection mid-read
+    invalid_header,    //!< the header was ill-formed and got discarded
 };
 } // namespace
 
@@ -78,6 +79,7 @@ enum class V2GTPReadResult {
 //            - would_block: it would block to read a complete packet
 //            - complete: the packet is complete
 //            - connection_closed: the peer closed the connection during the read
+//            - invalid_header: the header was ill-formed, the connection stays open
 V2GTPReadResult read_single_v2gtp_packet(io::IConnection& connection, io::SdpPacket& sdp_packet) {
     // NOTE (aw): not happy with this function
     //            main problem is, that it combines too much logic of the sdp packet and io related stuff
@@ -102,6 +104,11 @@ V2GTPReadResult read_single_v2gtp_packet(io::IConnection& connection, io::SdpPac
     if (sdp_packet.get_state() == PacketState::COMPLETE) {
         // done
         return V2GTPReadResult::complete;
+    }
+
+    // Only the 8 header bytes are consumed: the declared length cannot be trusted to skip the payload.
+    if (sdp_packet.get_state() == PacketState::INVALID_HEADER) {
+        return V2GTPReadResult::invalid_header;
     }
 
     // packet not finished
@@ -319,6 +326,11 @@ TimePoint const& Session::poll() {
         case V2GTPReadResult::would_block:
             state.new_data = false;
             break;
+        case V2GTPReadResult::invalid_header:
+            // new_data stays set: bytes already buffered inside OpenSSL never raise poll() again.
+            logf_warning("Dropping V2GTP packet with an invalid header");
+            packet.reset();
+            break;
         case V2GTPReadResult::complete:
             break;
         }
@@ -355,6 +367,11 @@ TimePoint const& Session::poll() {
             logf_warning("Ignoring data received after the V2G session ended");
             packet.reset();
             state.new_data = false; // reset new_data flag
+        } else if (not io::v2gtp::is_known_payload_type(packet.get_payload_type())) {
+            // Dropped here, after the full frame was read, so the stream stays in sync.
+            logf_warning("Ignoring V2GTP packet with unknown payload type");
+            packet.reset();
+            state.new_data = false;
         } else if (in_sap_phase() and visit_engine([](const auto& e) { return e.has_outgoing(); })) {
             // The SupportedAppProtocolRes is staged but paced, so the handover has not happened. Keep the
             // packet for the engine that will own the protocol instead of failing it against the handshake
