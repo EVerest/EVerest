@@ -106,9 +106,10 @@ template <> void convert(const struct iso20_ScheduleExchangeReqType& in, Schedul
 // Begin conversion for deserializing a ScheduleExchangeResponse (EVCCSide)
 template <> void convert(const struct iso20_PriceRuleStackType& in, datatypes::PriceRuleStack& out) {
     out.duration = in.Duration;
+    out.price_rule.clear();
     for (auto i = 0; i < in.PriceRule.arrayLen; ++i) {
         const auto& rule_in = in.PriceRule.array[i];
-        auto& rule_out = out.price_rule[i];
+        auto& rule_out = out.price_rule.emplace_back();
         convert(rule_in.EnergyFee, rule_out.energy_fee);
         CB2CPP_CONVERT_IF_USED(rule_in.ParkingFee, rule_out.parking_fee);
         CB2CPP_ASSIGN_IF_USED(rule_in.ParkingFeePeriod, rule_out.parking_fee_period);
@@ -159,7 +160,6 @@ template <> void convert(const struct iso20_OverstayRuleType& in, datatypes::Ove
     CB2CPP_STRING_IF_USED(in.OverstayRuleDescription, out.overstay_rule_description);
     convert(in.OverstayFee, out.overstay_fee);
     out.overstay_fee_period = in.OverstayFeePeriod;
-    convert(in.OverstayFee, out.overstay_fee);
 }
 
 template <> void convert(const struct iso20_AbsolutePriceScheduleType& in, datatypes::AbsolutePriceSchedule& out) {
@@ -175,18 +175,20 @@ template <> void convert(const struct iso20_AbsolutePriceScheduleType& in, datat
 
     const auto& stacks_in = in.PriceRuleStacks.PriceRuleStack;
     auto& stacks_out = out.price_rule_stacks;
+    stacks_out.clear();
+    stacks_out.reserve(stacks_in.arrayLen);
     for (auto i = 0; i < stacks_in.arrayLen; ++i) {
         const auto& stack_in = stacks_in.array[i];
-        auto& stack_out = stacks_out[i];
+        auto& stack_out = stacks_out.emplace_back();
         convert(stack_in, stack_out);
     }
 
     if (in.TaxRules_isUsed) {
         const auto& tax_rules_in = in.TaxRules.TaxRule;
-        out.tax_rules.emplace();
+        auto& tax_rules_out = out.tax_rules.emplace();
         for (auto i = 0; i < tax_rules_in.arrayLen; ++i) {
             const auto& tax_rule_in = tax_rules_in.array[i];
-            auto& tax_rule_out = out.tax_rules->at(i);
+            auto& tax_rule_out = tax_rules_out.emplace_back();
             convert(tax_rule_in, tax_rule_out);
         }
     }
@@ -208,10 +210,10 @@ template <> void convert(const struct iso20_AbsolutePriceScheduleType& in, datat
 
     if (in.AdditionalSelectedServices_isUsed) {
         const auto& in_add_services = in.AdditionalSelectedServices.AdditionalService;
-        out.additional_selected_services.emplace();
+        auto& add_services_out = out.additional_selected_services.emplace();
         for (auto i = 0; i < in_add_services.arrayLen; ++i) {
             const auto& add_service_in = in_add_services.array[i];
-            auto& add_service_out = out.additional_selected_services->at(i);
+            auto& add_service_out = add_services_out.emplace_back();
             add_service_out.service_name = CB2CPP_STRING(add_service_in.ServiceName);
             convert(add_service_in.ServiceFee, add_service_out.service_fee);
         }
@@ -375,7 +377,7 @@ template <> void convert(const datatypes::AbsolutePriceSchedule& in, struct iso2
     CPP2CB_STRING(in.currency, out.Currency);
     CPP2CB_STRING(in.language, out.Language);
     CPP2CB_STRING(in.price_algorithm, out.PriceAlgorithm);
-    CPP2CB_CONVERT_IF_USED(in.minimum_cost, out.MaximumCost);
+    CPP2CB_CONVERT_IF_USED(in.minimum_cost, out.MinimumCost);
     CPP2CB_CONVERT_IF_USED(in.maximum_cost, out.MaximumCost);
 
     if (in.tax_rules.has_value()) {
