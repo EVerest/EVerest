@@ -162,6 +162,7 @@ private:
     // shutdown, consumes the terminate request, polls the session and reaps it when
     // finished. Shared by loop()/tick() and start_session().
     void service_active_session();
+    void update_communication_setup_timeout();
 
     const TbdConfig config;
     const session::feedback::Callbacks callbacks;
@@ -178,6 +179,8 @@ private:
     // Owned by the loop thread (tick). Module command threads request changes via set_dlink_ready(),
     // which only publishes dlink_ready_requested + bumps dlink_ready_generation; tick applies them.
     std::optional<Timeout> communication_setup_timeout;
+    std::optional<TimePoint> communication_setup_dlink_deadline;
+    bool communication_setup_uses_tcp_anchor{false};
     std::atomic_bool dlink_ready_requested{false};
     std::atomic<uint64_t> dlink_ready_generation{0};
     uint64_t dlink_ready_applied{0};
