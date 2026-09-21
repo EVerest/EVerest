@@ -1,0 +1,258 @@
+# ChargeBridge MCS board in the EVSE role - bring-up template.
+# Derived from config-CB-EVAL.yaml; the MCS-specific keys are charge_bridge.type and
+# plc.carrier/carrier_fallback. Pairs with the EVerest instance started from
+# config/bringup/config-bringup-mcs-evse.yaml (module ids must match: evse_bsp.module_id
+# here == the evse_board_support_API instance id there).
+
+charge_bridge:
+  name: cb_mcs_evse
+  # The role this board plays. Latched by the MCU until reboot; also derives the PLCA
+  # station_id default (EVSE = 0, the coordinator). Only meaningful on MCS hardware.
+  type: EVSE
+  # Device address: IPv4/IPv6 literal, hostname, or mDNS discovery (ANY_EVSE / ANY_EV,
+  # optionally with an interface list, e.g. "ANY_EVSE(eth0)").
+  ip: ANY_EVSE
+  # Bring-up: flash the MCS firmware manually first and leave auto-update off until an
+  # MCS .cbfw release exists.
+  fw_file: ./firmware/charge-bridge-fw_complete.cbfw
+  fw_update_on_start: false
+  mdns_name: ""
+
+# Required for plc.carrier: firmware - the link status rides every heartbeat reply.
+heartbeat:
+  interval_s: 1
+  connection_to_s: 10
+  # Forward MCU debug-UART (printf) to this host over UDP; useful during bring-up.
+  enable_debug_uart_udp: true
+
+telemetry:
+  enable: true
+  mqtt_remote: "localhost"
+  mqtt_port: 1883
+  telemetry_topic: "pionix/chargebridge/mcs_evse/telemetry"
+
+safety:
+  # PP has no MCS meaning (the pin carries ID); firmware handles CE/ID itself on MCS boards.
+  pp_mode: "disabled"
+  cp_avg_ms: 10
+  inverted_emergency_input: 0
+  enable_stop_charging_input: 1
+  temperature_limit_C: 0
+  relay_1:
+    relay_mode: "PowerRelay"
+    feedback_enabled: false
+    feedback_delay_ms: 200
+    feedback_inverted: true
+    pwm_dc: 100
+    pwm_delay_ms: 0
+    switchoff_delay_ms: 10
+  relay_2:
+    relay_mode: "PowerRelay"
+    feedback_enabled: false
+    feedback_delay_ms: 200
+    feedback_inverted: true
+    pwm_dc: 100
+    pwm_delay_ms: 0
+    switchoff_delay_ms: 10
+  relay_3:
+    relay_mode: "GPIO"
+    feedback_enabled: false
+    feedback_delay_ms: 10
+    feedback_inverted: false
+    pwm_dc: 100
+    pwm_delay_ms: 0
+    switchoff_delay_ms: 10
+
+# Not needed for MCS bring-up.
+can_0:
+  enable: false
+serial_1:
+  enable: false
+serial_2:
+  enable: false
+
+plc:
+  enable: true
+  tap: "cb_plc"
+  # NOTE (single-host setups): the EV-side tap sits in the same subnet. Two local
+  # interfaces in one subnet short-circuit IP traffic via the local routing table, so
+  # cross-link IP tests (ping, neighbour/EV-MAC observation) need the EV daemon in a
+  # network namespace, or two hosts. Carrier and CE/ID interaction are unaffected.
+  ip: 172.25.6.2
+  netmask: 255.255.255.0
+  mtu: 1438
+  powersaving_mode: 1
+  # MCS: mirror the MCU's reported SPE PHY state onto the tap carrier and opt the MCU
+  # into link-status reporting. McsDataLink supervises this tap ("device: cb_plc").
+  carrier: firmware
+  # Refuse to start the plc bridge on a pre-5.0 kernel (no TUNSETCARRIER) instead of
+  # bridging with the carrier stuck on.
+  carrier_fallback: fail
+  # Additionally hold the carrier down unless the CE state says a vehicle is mated
+  # (BSP status packet), so the netdev's link exists exactly while one is present -
+  # no ISO 15118-20 session can race a stale link, and an unplug is an immediate
+  # deterministic link-down.
+  carrier_gate: ce_mated
+  # station_id defaults from charge_bridge.type (EVSE -> 0, the PLCA coordinator).
+
+evse_bsp:
+  enable: true
+  # Must match the evse_board_support_API module instance id in the EVerest config.
+  module_id: "cb_bsp"
+  mqtt_remote: "localhost"
+  mqtt_port: 1883
+  mqtt_bind: 127.0.0.1
+  mqtt_ping_interval_ms: 5000
+  ovm_enabled: false
+  ovm_module_id: "cb_ovm"
+  capabilities:
+    max_current_A_import: 16
+    min_current_A_import: 0
+    max_phase_count_import: 3
+    min_phase_count_import: 3
+    max_current_A_export: 16
+    min_current_A_export: 0
+    max_phase_count_export: 3
+    min_phase_count_export: 3
+    supports_changing_phases_during_charging: false
+    # No cMCS value exists on the evse_board_support interface yet (open BSP-types item);
+    # the capabilities announcement keeps a CCS connector type until that is settled.
+    connector_type: "IEC62196Type2Cable"
+
+io:
+  enable: true
+  interval_s: 1
+  mqtt_remote: "localhost"
+  mqtt_port: 1883
+  mqtt_bind: 127.0.0.1
+  mqtt_ping_interval_ms: 5000
+  gpio_0:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_1:
+    mode: "Input"
+    pulls: "NoPull"
+    config: 32767
+  gpio_2:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_3:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_4:
+    mode: "Output"
+    pulls: "PullUp"
+    mdns: false
+    config: 1000
+  gpio_5:
+    mode: "Output"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_6:
+    mode: "Output"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_7:
+    mode: "Output"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_8:
+    mode: "Output"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_9:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_10:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_11:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_12:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_13:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_14:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_15:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_16:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_17:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_18:
+    mode: "StatusLED_B"
+    pulls: "NoPull"
+    mdns: false
+    config: 0
+  gpio_19:
+    mode: "StatusLED_G"
+    pulls: "NoPull"
+    mdns: false
+    config: 0
+  gpio_20:
+    mode: "StatusLED_R"
+    pulls: "NoPull"
+    mdns: false
+    config: 0
+  # ADC calibration below is the CB-EVAL identity placeholder - calibrate for the
+  # cb-mcs board at bring-up.
+  adc_0:
+    mode: "Generic"
+    calib_c0: 0.0
+    calib_c1: 1.0
+    calib_c2: 0.0
+    calib_c3: 0.0
+  adc_1:
+    mode: "Generic"
+    calib_c0: 0.0
+    calib_c1: 1.0
+    calib_c2: 0.0
+    calib_c3: 0.0
+  adc_2:
+    mode: "Generic"
+    calib_c0: 0.0
+    calib_c1: 1.0
+    calib_c2: 0.0
+    calib_c3: 0.0
+  adc_3:
+    mode: "Generic"
+    calib_c0: 0.0
+    calib_c1: 1.0
+    calib_c2: 0.0
+    calib_c3: 0.0
