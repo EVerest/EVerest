@@ -10,18 +10,28 @@
 #  - the MCS ChargeBridge (EVSE role) reachable (see the daemon config)
 #  - the EV side: run-mcs-ev-session-netns.sh (netns - SDP/TCP must cross the wire)
 #
-# Usage: run-mcs-evse-session.sh [dist-prefix]
+# Usage: run-mcs-evse-session.sh [mcs|ccs] [dist-prefix]
+#   mcs (default): config-CB-EVAL-MCS.yaml + daemon config-CB-MCS-EVSE.yaml (McsDataLink)
+#   ccs:           config-CB-EVAL-CCS.yaml + daemon config-CB-EVAL.yaml (EvseSlac); the CCS twin
+#   BENCH=mcs|ccs in the environment works too; the positional argument wins.
 # Environment:
 #   CB_CONFIG   ChargeBridge daemon config
 #               (default: applications/pionix_chargebridge/config/config-CB-MCS-EVSE.yaml)
 
 set -e
+BENCH=${BENCH:-mcs}
+case "${1:-}" in mcs | ccs) BENCH=$1; shift ;; esac
+case "$BENCH" in
+    mcs) EVEREST_CONFIG_NAME=config-CB-EVAL-MCS.yaml; CB_CONFIG_NAME=config-CB-MCS-EVSE.yaml ;;
+    ccs) EVEREST_CONFIG_NAME=config-CB-EVAL-CCS.yaml; CB_CONFIG_NAME=config-CB-EVAL.yaml ;;
+    *) echo "BENCH must be mcs or ccs, got '$BENCH'" >&2; exit 2 ;;
+esac
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 if [ -d "$SCRIPT_DIR/../../applications/pionix_chargebridge" ]; then
     REPO_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
     DEFAULT_PREFIX=$REPO_DIR/build/dist
-    DEFAULT_CB_CONFIG=$REPO_DIR/applications/pionix_chargebridge/config/config-CB-MCS-EVSE.yaml
+    DEFAULT_CB_CONFIG=$REPO_DIR/applications/pionix_chargebridge/config/$CB_CONFIG_NAME
 else
     DEFAULT_PREFIX=$(cd "$SCRIPT_DIR/../.." && pwd)
     DEFAULT_CB_CONFIG=""
@@ -39,7 +49,7 @@ find_config() {
     echo "EVerest session config '$1' not found next to $SCRIPT_DIR or one level up" >&2
     return 1
 }
-EVEREST_CONFIG=$(find_config config-CB-EVAL-MCS.yaml)
+EVEREST_CONFIG=$(find_config $EVEREST_CONFIG_NAME)
 CB_CONFIG=${CB_CONFIG:-$DEFAULT_CB_CONFIG}
 if [ ! -f "$CB_CONFIG" ]; then
     echo "ChargeBridge daemon config not found ('$CB_CONFIG') - set CB_CONFIG=/path/to/config.yaml" >&2
