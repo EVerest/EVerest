@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/session/config.hpp>
 
 #include <algorithm>
@@ -241,6 +241,7 @@ void SessionConfig::set_supported_energy_transfer_services(std::vector<dt::Servi
 
 SessionConfig::SessionConfig(EvseSetupConfig config) :
     evse_id(std::move(config.evse_id)),
+    evse_id_din(std::move(config.evse_id_din)),
     cert_install_service(config.enable_certificate_install_service),
     authorization_services(std::move(config.authorization_services)),
     supported_vas_services(std::move(config.supported_vas_services)),
