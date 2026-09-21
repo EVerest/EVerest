@@ -1,4 +1,6 @@
-set(CXXBRIDGE_VERSION 1.0.194) # Must be kept in sync with `everestrs/Cargo.toml`
+# Must be kept in sync with `everestrs/Cargo.toml` and with the cxxbridge-cmd-native recipe in
+# `yocto/scarthgap/meta-everest/recipes-devtools/cxxbridge-cmd/`
+set(CXXBRIDGE_VERSION 1.0.194)
 set(CXXBRIDGE_INSTALL_PATH ${CMAKE_CURRENT_BINARY_DIR}/cargo/bin/cxxbridge)
 
 # Checks if the cxxbridge binary at CXXBRIDGE_PATH exists and matches the required version.
