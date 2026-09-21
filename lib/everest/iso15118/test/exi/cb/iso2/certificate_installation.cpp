@@ -19,7 +19,7 @@ SCENARIO("Se/Deserialize ISO-2 certificate installation messages") {
         req.header.session_id = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
         req.id = "id1";
         req.oem_provisioning_cert = {0x30, 0x82, 0x01, 0x02};
-        req.root_certificate_ids.push_back({"CN=V2G Root CA", 12345});
+        req.root_certificate_ids.push_back({"CN=V2G Root CA", {0x30, 0x39}});
 
         const auto serialized = serialize_helper(req);
         const io::StreamInputView stream_view{serialized.data(), serialized.size()};

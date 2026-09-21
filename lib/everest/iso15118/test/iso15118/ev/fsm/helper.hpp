@@ -22,9 +22,9 @@
 
 using namespace iso15118;
 
-inline constexpr auto SESSION_HEADER =
+inline const auto SESSION_HEADER =
     message_20::Header{std::array<uint8_t, 8>{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02}, 1691411798};
-inline constexpr auto WRONG_HEADER =
+inline const auto WRONG_HEADER =
     message_20::Header{std::array<uint8_t, 8>{0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00, 0x00}, 1691411798};
 
 // What a fixture advertises unless the test names its own list. Named so PrimedState

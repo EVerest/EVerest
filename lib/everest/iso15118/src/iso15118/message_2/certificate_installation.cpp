@@ -175,7 +175,12 @@ template <> void convert(const CertificateUpdateRequest& in, struct iso2_Certifi
     for (const auto& rid : in.root_certificate_ids) {
         auto& entry = list.array[index++];
         CPP2CB_STRING(rid.issuer_name, entry.X509IssuerName);
-        exi_basetypes_convert_64_to_signed(&entry.X509SerialNumber, rid.serial_number);
+        if (rid.serial_number.size() > MAX_SERIAL_NUMBER_BYTES) {
+            throw std::runtime_error("RootCertificateID serial number too wide for the EXI converter");
+        }
+        entry.X509SerialNumber.is_negative = 0;
+        exi_basetypes_convert_bytes_to_unsigned(&entry.X509SerialNumber.data, rid.serial_number.data(),
+                                                rid.serial_number.size());
     }
     list.arrayLen = in.root_certificate_ids.size();
 }
