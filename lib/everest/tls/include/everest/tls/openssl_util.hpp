@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 
 #ifndef OPENSSL_UTIL_HPP_
 #define OPENSSL_UTIL_HPP_
@@ -499,10 +499,15 @@ pkey_ptr certificate_public_key(x509_st* cert);
 bool certificate_sha_1(openssl::sha_1_digest_t& digest, const x509_st* cert);
 
 /**
- * \brief calculate SHA1 hash over the DER certificate's subject public key
+ * \brief calculate the RFC 6066 key_sha1_hash of the certificate's subject public key
  * \param[out] digest the SHA1 digest of the public key
  * \param[in] cert the certificate
  * \return true on success
+ * \note RFC 6066 6: for DSA and ECDSA keys the hash covers the subjectPublicKey
+ *       BIT STRING contents, for RSA keys the big-endian modulus without leading
+ *       zero bytes. The SubjectPublicKeyInfo wrapper (algorithm and curve OIDs) is
+ *       not included, so for EC keys the result equals an RFC 5280 4.2.1.2 (1)
+ *       Subject Key Identifier.
  */
 bool certificate_subject_public_key_sha_1(openssl::sha_1_digest_t& digest, const x509_st* cert);
 
