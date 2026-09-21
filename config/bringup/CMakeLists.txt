@@ -37,10 +37,13 @@ install(
     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )
 
-# MCS EVSE-side session test: the script also starts the pionix_chargebridge daemon and a tmux
-# server with ambient CAP_NET_ADMIN, so it does not go through run_tmux_helper.sh.
+# MCS two-ChargeBridge session test: these scripts also start the pionix_chargebridge daemon and,
+# on the EV side, a network namespace, so they do not go through
+# generate_config_tmux_run_script / run_tmux_helper.sh.
 install(
-    FILES "run-mcs-evse-session.sh"
+    FILES "run-mcs-evse-session.sh" "run-mcs-ev-session.sh"
+          "run-mcs-ev-session-netns.sh" "run-mcs-ev-bringup-netns.sh"
+          "run-mcs-evse-bringup.sh" "run-mcs-ev-bringup.sh" "run-mcs-wake-cycles.sh"
     DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/everest"
     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )

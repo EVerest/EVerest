@@ -51,8 +51,11 @@ active_modules:
     config_module:
       connector_id: 1
       auto_enable: true
-      auto_exec: true
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session mcs;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 120;iso_wait_v2g_session_stopped;sleep 36000
+      # No session at startup: mcs_ev_control (third pane of run-mcs-ev-session.sh) or a
+      # mosquitto_pub to .../carsim/cmd/execute_charging_session starts it. The command list
+      # below is the panel's default programme, kept for reference / auto_exec: true.
+      auto_exec: false
+      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session mcs;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 30;iso_wait_v2g_session_stopped;sleep 36000
       dc_target_current: 20
       dc_target_voltage: 400
     connections:

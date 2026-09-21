@@ -63,13 +63,29 @@ safety:
     pwm_delay_ms: 0
     switchoff_delay_ms: 10
 
-# Not needed for MCS bring-up.
+# Enabled like config-CB-EVAL-EV.yaml, with EV-side device names so both daemons can share one
+# host (the EVSE config uses cb_can, /dev/cb_uart, /dev/cb_rs485). Inside the netns harness the
+# vcan lives in the namespace; the pty links land in the shared /dev.
 can_0:
-  enable: false
+  enable: true
+  local: "cb_ev_can"
+  baudrate: 125000
+
 serial_1:
-  enable: false
+  enable: true
+  local: "/dev/cb_ev_uart"
+  baudrate: 115200
+  stopbits: OneStopBit
+  parity: None
+
 serial_2:
-  enable: false
+  enable: true
+  local: "/dev/cb_ev_rs485"
+  baudrate: 19200
+  stopbits: OneStopBit
+  parity: Even
+
+
 
 plc:
   enable: true
