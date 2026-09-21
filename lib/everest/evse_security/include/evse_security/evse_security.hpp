@@ -16,6 +16,7 @@
 #include <gtest/gtest_prod.h>
 #endif
 
+namespace ctl { struct TrustList; }
 namespace evse_security {
 
 struct LinkPaths {
@@ -78,6 +79,11 @@ static constexpr std::chrono::seconds DEFAULT_GARBAGE_COLLECT_TIME(20 * 60);
 class EvseSecurity {
 
 public:
+    /// @brief Install the roots carried by a decoded CTL into the trust store.
+    /// Caller owns I/O and decoding; this only routes roots to the correct
+    /// bundle (keyed by CaCertificateType) and persists them.
+    void install_ctl(const ctl::TrustList& tl);
+
     /// @brief Constructor initializes the certificate and key storage using the given \p file_paths for the different
     /// PKIs. For CA certificates either CA bundle files or directories containing the certificates can be specified.
     /// For the SECC and CSMS leaf certificates, directories must be specified.

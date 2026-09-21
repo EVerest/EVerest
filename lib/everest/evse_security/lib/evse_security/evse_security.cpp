@@ -280,6 +280,86 @@ bool get_oscp_data_of_certificate(const X509Wrapper& certificate, const Certific
 OCSPRequestDataList generate_ocsp_request_data_internal(const std::map<CaCertificateType, fs::path>& ca_bundle_path_map,
                                                         const std::set<CaCertificateType>& possible_roots,
                                                         const std::vector<X509Wrapper>& leaf_chain);
+
+void install_ctl_trust_list_internal(const ctl::TrustList& tl,
+                                     const std::map<CaCertificateType, fs::path>& ca_bundle_path_map) {
+    // Group by destination bundle so we export once per bundle.
+    std::map<CaCertificateType, std::vector<X509Wrapper>> to_install;
+
+    for (const auto& root : tl.roots) {
+        if (root.status == ctl::Status::Deprecated) {
+            EVLOG_info << "CTL: skipping deprecated cert: "
+                       << root.cert.get_common_name();
+            continue;
+        }
+        // X509Wrapper copy ctor duplicates the underlying X509 via CryptoSupplier.
+        to_install[root.type].push_back(X509Wrapper(root.cert));
+    }
+
+    for (auto& [ca_type, certs] : to_install) {
+        const auto& bundle_path = ca_bundle_path_map.at(ca_type);
+        try {
+            X509CertificateBundle bundle(bundle_path, EncodingFormat::PEM);
+
+            bool changed = false;
+            for (auto& cert : certs) {
+                if (!bundle.contains_certificate(cert)) {
+                    bundle.add_certificate(std::move(cert));
+                    changed = true;
+                }
+            }
+
+            if (changed && !bundle.export_certificates()) {
+                EVLOG_error << "CTL: failed to persist certificates to " << bundle_path;
+            } else if (changed) {
+                EVLOG_info << "CTL: installed certificates into "
+                           << conversions::ca_certificate_type_to_string(ca_type)
+                           << " (" << bundle_path << ")";
+            }
+        } catch (const CertificateLoadException& e) {
+            EVLOG_error << "CTL: could not load bundle " << bundle_path
+                        << ": " << e.what();
+        }
+    }
+}
+
+void install_ctl_from_directory(const fs::path& ctl_dir,
+                                const std::map<CaCertificateType, fs::path>& ca_bundle_path_map) {
+    if (!fs::exists(ctl_dir) || !fs::is_directory(ctl_dir)) {
+        EVLOG_info << "CTL: directory does not exist, skipping: " << ctl_dir;
+        return;
+    }
+
+    for (const auto& entry : fs::directory_iterator(ctl_dir)) {
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+
+        std::string bytes;
+        if (!filesystem_utils::read_from_file(entry.path(), bytes)) {
+            EVLOG_warning << "CTL: could not read " << entry.path();
+            continue;
+        }
+
+        ctl::TrustList tl;
+        if (!CryptoSupplier::decode_ctl(bytes, tl)) {
+            EVLOG_warning << "CTL: parse failure on " << entry.path();
+            continue;
+        }
+
+        if (auto err = ctl::validate(tl); err != ctl::ValidationError::None) {
+            EVLOG_warning << "CTL: validation failure on " << entry.path()
+                          << ": " << ctl::to_string(err);
+            continue;
+        }
+
+        EVLOG_info << "CTL: applying " << entry.path()
+                   << " (seq=" << tl.sequence_number
+                   << ", roots=" << tl.roots.size() << ")";
+
+        install_ctl_trust_list_internal(tl, ca_bundle_path_map);
+    }
+}
 } // namespace
 
 std::mutex EvseSecurity::security_mutex;
@@ -332,15 +412,6 @@ EvseSecurity::EvseSecurity(const FilePaths& file_paths, const std::optional<std:
         }
     }
 
-    fs::path ctl_dir =
-	     file_paths.directories.ctl_directory.empty() ? fs::path(CTL_DIR) : file_paths.directories.ctl_directory;
-     if (!ctl_dir.empty() && fs::exists(ctl_dir)) {
-        EVLOG_info << "Loading CTL from: " << ctl_dir;
-        load_ctl(ctl_dir, this->ca_bundle_path_map);
-    } else {
-        EVLOG_info << "No CTL directory configured or found, skipping CTL load";
-    }
-
     // Check that the leafs directory is not related to the bundle directory because
     // on garbage collect that can delete relevant CA certificates instead of leaf ones
     for (const auto& leaf_dir : dirs) {
@@ -351,6 +422,10 @@ EvseSecurity::EvseSecurity(const FilePaths& file_paths, const std::optional<std:
             }
         }
     }
+    const fs::path ctl_dir = file_paths.directories.ctl_directory.empty()
+                                ? fs::path("./lib/everest/evse_security/CTL")
+                                : file_paths.directories.ctl_directory;
+    install_ctl_from_directory(ctl_dir, this->ca_bundle_path_map);
 
     // Start GC timer
     garbage_collect_timer.interval([this]() { this->garbage_collect(); }, this->garbage_collect_time);
@@ -417,6 +492,11 @@ InstallCertificateResult EvseSecurity::install_ca_certificate(const std::string&
         EVLOG_error << "Certificate load error: " << e.what();
         return InstallCertificateResult::InvalidFormat;
     }
+}
+
+void EvseSecurity::install_ctl(const ctl::TrustList& tl) {
+    const std::lock_guard<std::mutex> guard(EvseSecurity::security_mutex);
+    install_ctl_trust_list_internal(tl, this->ca_bundle_path_map);
 }
 
 DeleteResult EvseSecurity::delete_certificate(const CertificateHashData& certificate_hash_data) {
