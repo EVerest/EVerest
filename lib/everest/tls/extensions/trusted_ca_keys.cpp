@@ -584,6 +584,9 @@ int ServerTrustedCaKeys::handle_certificate_cb(SSL* ssl, void* arg) {
             if (selected == nullptr) {
                 log_warning("certificate_authorities: no configured chain matched the peer's advertised CA names; "
                             "serving default chain");
+            } else {
+                log_info("certificate_authorities: peer's advertised CA names matched chain (" +
+                         leaf_subject_name(*selected) + ")");
             }
         } else {
             log_debug("certificate_authorities: peer sent no certificate_authorities; serving default chain");
@@ -596,6 +599,9 @@ int ServerTrustedCaKeys::handle_certificate_cb(SSL* ssl, void* arg) {
             if (selected == nullptr) {
                 log_warning("trusted_ca_keys: no configured chain matched the peer's trusted_ca_keys; "
                             "serving default chain");
+            } else {
+                log_info("trusted_ca_keys: peer's trusted_ca_keys matched chain (" + leaf_subject_name(*selected) +
+                         ")");
             }
         }
     }

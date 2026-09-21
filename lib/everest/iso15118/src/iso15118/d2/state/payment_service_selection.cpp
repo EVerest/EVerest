@@ -107,7 +107,8 @@ Result ServiceSelection::process_payment_selection(const message_2::PaymentServi
     }
 
     // Table 106: ParameterSetID 1 = Installation, 2 = Update; a certificate SelectedService without one
-    // permits either. PaymentDetails gates the relay on this [V2G2-432].
+    // names both. Recorded as session facts (diagnostics / feedback); the certificate exchange itself is
+    // allowed after PaymentServiceSelectionRes(OK) regardless of this selection [V2G2-551].
     bool cert_install_selected = false;
     bool cert_update_selected = false;
     for (const auto& s : req.selected_service_list) {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/session_stop.hpp>
 
 #include <iso15118/detail/d20/context_helper.hpp>
@@ -71,6 +71,7 @@ Result SessionStop::feed(Event ev) {
                 return {};
             }
             m_ctx.pause_ctx->selected_service_parameters = m_ctx.session.get_selected_services();
+            m_ctx.pause_ctx->authorization = m_ctx.session.authorization;
         } else if (req->charging_session == message_20::datatypes::ChargingSession::Terminate) {
             m_ctx.session_stopped = true;
             m_ctx.pause_ctx.reset();

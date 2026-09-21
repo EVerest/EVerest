@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -26,6 +27,7 @@ using CustomVasList = std::map<std::uint16_t, std::vector<uint16_t>>;
 struct OfferedServices {
 
     everest::lib::util::fixed_vector<dt::Authorization, 2> auth_services;
+    bool cert_install_service{false};
     std::vector<dt::ServiceCategory> energy_services;
     std::vector<uint16_t> vas_services;
 
@@ -98,12 +100,24 @@ struct SelectedVasParameter {
     dt::ParkingStatus parking_status;
 };
 
+// Cached for the session ([V2G20-1059]): once PnC succeeded, the contract identity that must not change
+// ([V2G20-2702]). Survives a pause ([V2G20-1844]).
+struct AuthorizationData {
+    bool eim_requested{false};
+    bool authorized{false};
+    std::optional<dt::Authorization> authorized_via{};
+    std::vector<uint8_t> contract_leaf_der{};
+    std::string emaid{};
+    std::string contract_chain_pem{};
+};
+
 // TODO(SL): How to handle d2 pause? Move Struct to a seperate header file?
 // TODO(SL): Missing handling scheduletuple in schedule mode [V2G20-1058]
 struct PauseContext {
     io::sha512_hash_t vehicle_cert_session_id_hash{};
     std::array<uint8_t, 8> old_session_id{};
     SelectedServiceParameters selected_service_parameters{};
+    AuthorizationData authorization{};
 };
 
 class Session {
@@ -191,6 +205,8 @@ public:
     ~Session();
 
     OfferedServices offered_services;
+
+    AuthorizationData authorization;
 
     bool service_renegotiation_supported{false};
 

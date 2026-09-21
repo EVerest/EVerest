@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "extensions/status_request.hpp"
 #include "extensions/trusted_ca_keys.hpp"
@@ -1174,7 +1174,7 @@ void Server::deinit_ssl() {
     m_context = std::make_unique<server_ctx>();
 }
 
-bool Server::init_certificates(const std::vector<certificate_config_t>& chain_files) {
+void Server::init_certificates(const std::vector<certificate_config_t>& chain_files) {
     std::vector<OcspCache::ocsp_entry_t> entries;
     openssl::chain_list chains;
     m_default_chain_index = 0;
@@ -1278,8 +1278,6 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
         config_index++;
     }
 
-    bool result{true};
-
     if (!any_trust_anchors) {
         // continue without trusted_ca_keys support
         log_warning("trusted_ca_keys support disabled");
@@ -1297,17 +1295,11 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
     }
     m_server_trusted_ca_keys.update(std::move(chains));
 
-    // don't error when there are no OCSP cached responses
-    if (!entries.empty()) {
-        if (!m_cache.load(entries)) {
-            result = false;
-        }
-    } else {
-        // remove any existing entries
-        (void)m_cache.load(entries);
+    // A staple that fails to load is served without status_request for that
+    // certificate; it must not take the whole TLS endpoint down with it
+    if (!m_cache.load(entries)) {
+        log_warning("one or more OCSP responses could not be loaded, stapling disabled for those certificates");
     }
-
-    return result;
 }
 
 void Server::deinit_certificates() {
@@ -1438,14 +1430,9 @@ Server::state_t Server::init(const config_t& cfg, const ConfigurationCallback& i
 bool Server::update(const config_t& cfg) {
     std::lock_guard lock(m_update_mutex);
     // does not change server socket settings, use init() if needed
-    std::vector<OcspCache::ocsp_entry_t> entries;
-
     m_timeout_ms = cfg.io_timeout_ms;
-    // always try init_certificates() and init_ssl()
-    bool result = init_certificates(cfg.chains);
-    if (!init_ssl(cfg)) {
-        result = false;
-    }
+    init_certificates(cfg.chains);
+    const bool result = init_ssl(cfg);
     m_state = (result) ? state_t::init_complete : state_t::init_socket;
     return result;
 }

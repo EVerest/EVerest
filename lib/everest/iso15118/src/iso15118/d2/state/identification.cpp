@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d2/state/identification.hpp>
 
-#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -11,71 +10,41 @@
 #include <iso15118/d2/state/session_stop.hpp>
 #include <iso15118/detail/d2/state/sequence_error.hpp>
 
+#include <iso15118/detail/base64.hpp>
 #include <iso15118/detail/d2/state/sequence_error.hpp>
 #include <iso15118/detail/helper.hpp>
+
+#include <cbv2g/common/exi_bitstream.h>
+#include <cbv2g/iso_2/iso2_msgDefDatatypes.h>
+#include <cbv2g/iso_2/iso2_msgDefDecoder.h>
+
+#include <memory>
 
 namespace iso15118::d2::state {
 
 namespace {
 
-constexpr char BASE64_ALPHABET[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-std::string base64_encode(const std::vector<uint8_t>& data) {
-    std::string out;
-    out.reserve(((data.size() + 2) / 3) * 4);
-    size_t i = 0;
-    for (; i + 2 < data.size(); i += 3) {
-        const uint32_t triple = (static_cast<uint32_t>(data[i]) << 16) | (static_cast<uint32_t>(data[i + 1]) << 8) |
-                                static_cast<uint32_t>(data[i + 2]);
-        out.push_back(BASE64_ALPHABET[(triple >> 18) & 0x3f]);
-        out.push_back(BASE64_ALPHABET[(triple >> 12) & 0x3f]);
-        out.push_back(BASE64_ALPHABET[(triple >> 6) & 0x3f]);
-        out.push_back(BASE64_ALPHABET[triple & 0x3f]);
+// The backend's CertificateInstallationRes / CertificateUpdateRes is relayed verbatim, so its
+// ResponseCode is only visible by decoding the raw EXI. [V2G2-539]: after the SECC sent a FAILED_*
+// ResponseCode it terminates the session -- that holds for a relayed FAILED_* response as much as for
+// one the SECC generated itself. Undecodable EXI is reported as "not failed": the EV, not the SECC,
+// judges the payload, and a spurious termination would mask the real problem.
+bool relayed_response_failed(const std::vector<uint8_t>& raw) {
+    exi_bitstream_t stream;
+    exi_bitstream_init(&stream, const_cast<uint8_t*>(raw.data()), raw.size(), 0, nullptr);
+    auto doc = std::make_unique<iso2_exiDocument>();
+    if (decode_iso2_exiDocument(&stream, doc.get()) != 0) {
+        logf_warning("Identification: backend response does not decode as an ISO 15118-2 message");
+        return false;
     }
-    const size_t remaining = data.size() - i;
-    if (remaining == 1) {
-        const uint32_t triple = static_cast<uint32_t>(data[i]) << 16;
-        out.push_back(BASE64_ALPHABET[(triple >> 18) & 0x3f]);
-        out.push_back(BASE64_ALPHABET[(triple >> 12) & 0x3f]);
-        out.push_back('=');
-        out.push_back('=');
-    } else if (remaining == 2) {
-        const uint32_t triple = (static_cast<uint32_t>(data[i]) << 16) | (static_cast<uint32_t>(data[i + 1]) << 8);
-        out.push_back(BASE64_ALPHABET[(triple >> 18) & 0x3f]);
-        out.push_back(BASE64_ALPHABET[(triple >> 12) & 0x3f]);
-        out.push_back(BASE64_ALPHABET[(triple >> 6) & 0x3f]);
-        out.push_back('=');
+    const auto& body = doc->V2G_Message.Body;
+    if (body.CertificateInstallationRes_isUsed) {
+        return body.CertificateInstallationRes.ResponseCode >= iso2_responseCodeType_FAILED;
     }
-    return out;
-}
-
-std::vector<uint8_t> base64_decode(const std::string& in) {
-    std::array<int8_t, 256> lut{};
-    lut.fill(-1);
-    for (int i = 0; i < 64; ++i) {
-        lut[static_cast<uint8_t>(BASE64_ALPHABET[i])] = static_cast<int8_t>(i);
+    if (body.CertificateUpdateRes_isUsed) {
+        return body.CertificateUpdateRes.ResponseCode >= iso2_responseCodeType_FAILED;
     }
-
-    std::vector<uint8_t> out;
-    out.reserve((in.size() / 4) * 3);
-    uint32_t buffer = 0;
-    int bits = 0;
-    for (const char c : in) {
-        if (c == '=' or c == '\n' or c == '\r' or c == ' ') {
-            continue;
-        }
-        const int8_t value = lut[static_cast<uint8_t>(c)];
-        if (value < 0) {
-            return {};
-        }
-        buffer = (buffer << 6) | static_cast<uint32_t>(value);
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            out.push_back(static_cast<uint8_t>((buffer >> bits) & 0xff));
-        }
-    }
-    return out;
+    return false;
 }
 
 } // namespace
@@ -103,6 +72,14 @@ Result Identification::on_event(Event ev) {
             return {};
         }
         m_ctx.respond_raw(raw);
+        if (relayed_response_failed(raw)) {
+            // [V2G2-539] / [V2G2-555] / [V2G2-558]: the FAILED_* response reaches the EV, then the SECC
+            // closes -- same discipline as respond_sequence_error() for locally generated failures.
+            logf_info("Identification: relayed a FAILED_* certificate response; terminating the session");
+            m_ctx.session_stopped = true;
+            m_ctx.session_stop_res_pending = session::feedback::SessionStopAction::FailedTermination;
+            return {};
+        }
         return m_ctx.create_state<PaymentDetails>();
     }
 
@@ -122,12 +99,16 @@ Result Identification::on_request(const message_2::Variant& received) {
     } else if (type == message_2::Type::PaymentDetailsReq) {
         return process_payment_details(m_ctx, received.get<message_2::PaymentDetailsRequest>());
     } else if (type == message_2::Type::CertificateInstallationReq or type == message_2::Type::CertificateUpdateReq) {
-        // [V2G2-432]: only for an action the EV selected in the certificate service.
-        const bool selected = (type == message_2::Type::CertificateInstallationReq)
-                                  ? m_ctx.session().cert_install_selected
-                                  : m_ctx.session().cert_update_selected;
-        if (not selected) {
-            logf_warning("Identification: certificate exchange requested for an action that was not selected");
+        // [V2G2-551]: after PaymentServiceSelectionRes(OK) with Contract, CertificateInstallationReq and
+        // CertificateUpdateReq are allowed next requests -- unconditionally. Whether the EV also selected the
+        // Certificate service (ServiceID 2 / Table 106) in PaymentServiceSelectionReq is not a precondition;
+        // [V2G2-432]/[V2G2-433] only govern the validity of the selected (ServiceID, ParameterSetID) pairs,
+        // and the ISO 15118-4 ATS (TC_SECC_CMN_VTB_CertificateInstallation_001, f_SECC_CMN_PR_
+        // PaymentServiceSelection_001) selects the charge service alone and expects the exchange to succeed.
+        // Only a SECC that does not offer certificate handling at all treats the request as out of sequence.
+        if (not m_ctx.session_config.cert_install_service) {
+            logf_warning("Identification: certificate exchange requested but the certificate service is not "
+                         "offered by this SECC");
             respond_sequence_error(m_ctx, received.get_type());
             return {};
         }
@@ -153,7 +134,7 @@ Result Identification::forward_to_backend(const message_2::Variant& received) {
     }
 
     request_forwarded = true;
-    m_ctx.feedback.certificate_request(base64_encode(exi), action);
+    m_ctx.feedback.certificate_request({base64_encode(exi), action, ProtocolId::ISO15118_2});
 
     // Park: no response is staged until the module injects the CertificateInstallationRes.
     return {};

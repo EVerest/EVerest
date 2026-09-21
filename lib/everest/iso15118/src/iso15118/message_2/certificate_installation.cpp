@@ -118,4 +118,80 @@ template <> size_t serialize(const CertificateInstallationResponse& in, const io
     return serialize_helper(in, out);
 }
 
+// -- CertificateUpdateReq/Res ------------------------------------------------------------------------
+
+template <> void convert(const struct iso2_CertificateUpdateResType& in, CertificateUpdateResponse& out) {
+    cb_convert_enum(in.ResponseCode, out.response_code);
+    convert(in.SAProvisioningCertificateChain, out.sa_provisioning_chain);
+    convert(in.ContractSignatureCertChain, out.contract_chain);
+    const auto& enc = in.ContractSignatureEncryptedPrivateKey.CONTENT;
+    out.encrypted_private_key.assign(enc.bytes, enc.bytes + enc.bytesLen);
+    const auto& dh = in.DHpublickey.CONTENT;
+    out.dh_public_key.assign(dh.bytes, dh.bytes + dh.bytesLen);
+    out.emaid = std::string(in.eMAID.CONTENT.characters, in.eMAID.CONTENT.charactersLen);
+    if (in.RetryCounter_isUsed) {
+        out.retry_counter = in.RetryCounter;
+    } else {
+        out.retry_counter.reset();
+    }
+}
+
+template <> void convert(const CertificateUpdateResponse& in, struct iso2_CertificateUpdateResType& out) {
+    init_iso2_CertificateUpdateResType(&out);
+    cb_convert_enum(in.response_code, out.ResponseCode);
+    convert(in.sa_provisioning_chain, out.SAProvisioningCertificateChain);
+    convert(in.contract_chain, out.ContractSignatureCertChain);
+    CPP2CB_BYTES(in.encrypted_private_key, out.ContractSignatureEncryptedPrivateKey.CONTENT);
+    CPP2CB_BYTES(in.dh_public_key, out.DHpublickey.CONTENT);
+    CPP2CB_STRING(in.emaid, out.eMAID.CONTENT);
+    CPP2CB_STRING(std::string("contractSignatureEncryptedPrivateKey"), out.ContractSignatureEncryptedPrivateKey.Id);
+    CPP2CB_STRING(std::string("dhPublicKey"), out.DHpublickey.Id);
+    CPP2CB_STRING(std::string("eMAID"), out.eMAID.Id);
+    if (in.retry_counter.has_value()) {
+        out.RetryCounter = in.retry_counter.value();
+        CB_SET_USED(out.RetryCounter);
+    }
+}
+
+template <> void convert(const CertificateUpdateRequest& in, struct iso2_CertificateUpdateReqType& out) {
+    init_iso2_CertificateUpdateReqType(&out);
+    CPP2CB_STRING(in.id, out.Id);
+    convert(in.contract_chain, out.ContractSignatureCertChain);
+    CPP2CB_STRING(in.emaid, out.eMAID);
+    auto& list = out.ListOfRootCertificateIDs.RootCertificateID;
+    CPP2CB_ARRAY_SIZE_CHECK(in.root_certificate_ids.size(), list.array);
+    uint16_t index = 0;
+    for (const auto& rid : in.root_certificate_ids) {
+        auto& entry = list.array[index++];
+        CPP2CB_STRING(rid.issuer_name, entry.X509IssuerName);
+        exi_basetypes_convert_64_to_signed(&entry.X509SerialNumber, rid.serial_number);
+    }
+    list.arrayLen = in.root_certificate_ids.size();
+}
+
+template <> int serialize_to_exi(const CertificateUpdateRequest& in, exi_bitstream_t& out) {
+    // Unsigned serialization (tests); a production EV signs the element with the contract leaf key.
+    iso2_exiDocument doc{};
+    convert(in.header, doc.V2G_Message.Header);
+    CB_SET_USED(doc.V2G_Message.Body.CertificateUpdateReq);
+    convert(in, doc.V2G_Message.Body.CertificateUpdateReq);
+    return encode_iso2_exiDocument(&out, &doc);
+}
+
+template <> size_t serialize(const CertificateUpdateRequest& in, const io::StreamOutputView& out) {
+    return serialize_helper(in, out);
+}
+
+template <> int serialize_to_exi(const CertificateUpdateResponse& in, exi_bitstream_t& out) {
+    iso2_exiDocument doc{};
+    convert(in.header, doc.V2G_Message.Header);
+    CB_SET_USED(doc.V2G_Message.Body.CertificateUpdateRes);
+    convert(in, doc.V2G_Message.Body.CertificateUpdateRes);
+    return encode_iso2_exiDocument(&out, &doc);
+}
+
+template <> size_t serialize(const CertificateUpdateResponse& in, const io::StreamOutputView& out) {
+    return serialize_helper(in, out);
+}
+
 } // namespace iso15118::message_2

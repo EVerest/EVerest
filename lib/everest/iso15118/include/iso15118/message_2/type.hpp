@@ -94,6 +94,8 @@ CREATE_TYPE_TRAIT(MeteringReceiptRequest, MeteringReceiptReq);
 CREATE_TYPE_TRAIT(MeteringReceiptResponse, MeteringReceiptRes);
 CREATE_TYPE_TRAIT(CertificateInstallationRequest, CertificateInstallationReq);
 CREATE_TYPE_TRAIT(CertificateInstallationResponse, CertificateInstallationRes);
+CREATE_TYPE_TRAIT(CertificateUpdateRequest, CertificateUpdateReq);
+CREATE_TYPE_TRAIT(CertificateUpdateResponse, CertificateUpdateRes);
 
 // header-local macro: drop it so the type-trait headers of the other protocols can redefine it
 #undef CREATE_TYPE_TRAIT
