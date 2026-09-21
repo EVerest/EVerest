@@ -2068,6 +2068,28 @@ void Charger::dlink_error() {
 
     shared_context.hlc_allow_close_contactor = false;
 
+    // If the session is being stopped for good (e.g. the transaction was stopped on request
+    // during cable check) or is already over, the D-LINK_ERROR is a consequence of the HLC
+    // session shutting down, not a communication error to recover from. Do not restart matching
+    // in this case as the session can not continue anyway; stop PWM and power instead so the
+    // StoppingCharging state can proceed to Finished once the contactors are open.
+    const bool stopping_for_good = shared_context.current_state == EvseState::StoppingCharging and
+                                   (not shared_context.flag_transaction_active or not shared_context.flag_authorized or
+                                    shared_context.flag_disable_requested);
+    if (stopping_for_good or shared_context.current_state == EvseState::Finished) {
+        session_log.evse(false, "D-LINK_ERROR while the session is stopping or finished: not restarting matching");
+        if (shared_context.pwm_running) {
+            cp_state_X1();
+        }
+
+        if (config_context.charge_mode == ChargeMode::DC) {
+            signal_dc_supply_off();
+        }
+
+        bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
+        return;
+    }
+
     // Is PWM on at the moment?
     if (not shared_context.pwm_running) {
         // [V2G3-M07-04]: With receiving a D-LINK_ERROR.request from HLE in X1 state, the EVSE's
