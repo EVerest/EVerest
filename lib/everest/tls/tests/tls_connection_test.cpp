@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "tls_connection_test.hpp"
 
 #include <arpa/inet.h>
 #include <condition_variable>
 #include <cstring>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <netdb.h>
@@ -882,6 +883,24 @@ TEST_F(TlsTest, TCKeysInvalid) {
     }
     EXPECT_TRUE(is_set(flags_t::connected));
     EXPECT_EQ(subject["CN"], server_root_CN);
+}
+
+TEST_F(TlsTest, UnparsableOcspResponseFileIsNotFatal) {
+    // A cache entry that is not DER (here: base64 text, as OCPP delivers it)
+    // must only lose its staple, not prevent the server from starting
+    using state_t = tls::Server::state_t;
+    {
+        std::ofstream bad("ocsp_response_base64.der", std::ios::trunc);
+        bad << "MIIFuAoBAKCCBbEwggWtBgkrBgEFBQcw";
+    }
+    server_config.chains[0].ocsp_response_files = {"ocsp_response_base64.der", "ocsp_response.der"};
+    client_config.status_request = true;
+
+    start();
+    EXPECT_EQ(server.state(), state_t::running);
+    connect();
+    EXPECT_TRUE(is_set(flags_t::connected));
+    EXPECT_FALSE(is_set(flags_t::status_request));
 }
 
 TEST_F(TlsTest, Suspend) {

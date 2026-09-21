@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 
 #ifndef TLS_HPP_
 #define TLS_HPP_
@@ -549,9 +549,10 @@ private:
     /**
      * \brief initialise server certificate chains
      * \param[in] chain_files server certificate chains
-     * \return true on success
+     * \note chains that fail verification and OCSP responses that fail to load are
+     *       reported and left out; neither prevents the server from starting
      */
-    bool init_certificates(const std::vector<certificate_config_t>& chain_files);
+    void init_certificates(const std::vector<certificate_config_t>& chain_files);
 
     /**
      * \brief unconfigure SSL certificates
