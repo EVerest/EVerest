@@ -24,6 +24,12 @@
 // ... - the same choreography run-mcs-wake-cycles.sh drives from the outside. "Unplug at end"
 // replaces the final indefinite park with "sleep <sleep>;unplug".
 //
+// Bench flavour (--bench mcs|ccs, default mcs, switchable in the panel): MCS runs the MCS energy
+// service and wakes with the CC.5.2.4 pulse; CCS runs the DC service and wakes with a BCB toggle
+// (iso_start_bcb_toggle 1). Protocol: the panel narrows Ev15118's SupportedAppProtocol offer per
+// session via its external command everest_external/nodered/ev15118/cmd/select_protocol
+// (all | iso20 | iso2 | din), published right before every Start / Wake programme.
+//
 // Broker: --host/--port, else MQTT_SERVER_ADDRESS / MQTT_SERVER_PORT (the netns harness exports
 // them - inside the namespace the broker sits on the veth, not on localhost), else localhost:1883.
 
@@ -48,10 +54,16 @@
 
 namespace {
 
+enum class Bench {
+    MCS,
+    CCS
+};
+
 struct Options {
     std::string host{"localhost"};
     int port{1883};
     int connector_id{1};
+    Bench bench{Bench::MCS};
 };
 
 Options parse_options(int argc, char** argv) {
@@ -77,9 +89,22 @@ Options parse_options(int argc, char** argv) {
             o.port = std::stoi(next("port number"));
         } else if (a == "--connector") {
             o.connector_id = std::stoi(next("connector id"));
+        } else if (a == "--bench") {
+            const auto b = next("bench flavour (mcs|ccs)");
+            if (b == "mcs") {
+                o.bench = Bench::MCS;
+            } else if (b == "ccs") {
+                o.bench = Bench::CCS;
+            } else {
+                std::cerr << "--bench takes mcs or ccs, got " << b << '\n';
+                std::exit(2);
+            }
+        } else if (a == "--ccs") {
+            o.bench = Bench::CCS;
         } else if (a == "-h" || a == "--help") {
-            std::cout << "usage: mcs_ev_control [--host H] [--port P] [--connector N]\n"
-                         "  defaults: $MQTT_SERVER_ADDRESS or localhost, $MQTT_SERVER_PORT or 1883, connector 1\n";
+            std::cout << "usage: mcs_ev_control [--host H] [--port P] [--connector N] [--bench mcs|ccs]\n"
+                         "  defaults: $MQTT_SERVER_ADDRESS or localhost, $MQTT_SERVER_PORT or 1883, connector 1, "
+                         "bench mcs\n";
             std::exit(0);
         } else {
             std::cerr << "unknown argument " << a << '\n';
@@ -174,22 +199,32 @@ int parse_or(const std::string& s, int fallback) {
 }
 
 struct Programme {
+    Bench bench{Bench::MCS};
     int charge_s{30};
     int sleep_s{10};
     int cycles{1};
     bool unplug_at_end{false};
 
+    // MCS: the megawatt DC service (same DC states, different service id). CCS: plain DC.
+    const char* energy() const {
+        return bench == Bench::MCS ? "mcs" : "DC";
+    }
+    // Resume from Car Paused: MCS wakes the EVSE with the CC.5.2.4 CP pulse, CCS with a BCB toggle.
+    const char* wake_step() const {
+        return bench == Bench::MCS ? "cp_c_pulse 4" : "iso_start_bcb_toggle 1";
+    }
+
     std::string session() const {
-        return "iso_wait_slac_matched;iso_start_v2g_session mcs;iso_wait_pwr_ready;iso_dc_power_on;"
-               "iso_wait_for_stop " +
-               std::to_string(charge_s) + ";iso_wait_v2g_session_stopped";
+        return std::string{"iso_wait_slac_matched;iso_start_v2g_session "} + energy() +
+               ";iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop " + std::to_string(charge_s) +
+               ";iso_wait_v2g_session_stopped";
     }
 
     // Everything after the first session: further wake cycles, then the park or the unplug.
     std::string tail() const {
         std::string t;
         for (int i = 1; i < cycles; ++i) {
-            t += ";sleep " + std::to_string(sleep_s) + ";cp_c_pulse 4;" + session();
+            t += ";sleep " + std::to_string(sleep_s) + ";" + wake_step() + ";" + session();
         }
         if (unplug_at_end) {
             t += ";sleep " + std::to_string(sleep_s) + ";unplug";
@@ -203,7 +238,7 @@ struct Programme {
         return "sleep 1;" + session() + tail();
     }
     std::string wake() const {
-        return "cp_c_pulse 4;" + session() + tail();
+        return std::string{wake_step()} + ";" + session() + tail();
     }
     static std::string stop() {
         return std::string{"iso_wait_for_stop 0;iso_wait_v2g_session_stopped;"} + PARK;
@@ -238,6 +273,14 @@ int main(int argc, char** argv) {
     std::string sleep_text = "10";
     std::string cycles_text = "1";
     bool unplug_at_end = false;
+    const std::vector<std::string> bench_entries{"MCS", "CCS"};
+    int bench_sel = opts.bench == Bench::CCS ? 1 : 0;
+    // Index order = payload order below.
+    const std::vector<std::string> protocol_entries{"all (-20, -2, DIN in that order)", "ISO 15118-20", "ISO 15118-2",
+                                                    "DIN SPEC 70121"};
+    const std::vector<std::string> protocol_payloads{"all", "iso20", "iso2", "din"};
+    int protocol_sel = 0;
+    const std::string protocol_topic = "everest_external/nodered/ev15118/cmd/select_protocol";
 
     std::deque<std::string> log;
     auto note = [&](std::string line) {
@@ -249,6 +292,7 @@ int main(int argc, char** argv) {
 
     auto programme = [&] {
         Programme p;
+        p.bench = bench_sel == 1 ? Bench::CCS : Bench::MCS;
         p.charge_s = std::max(0, parse_or(charge_text, 30));
         p.sleep_s = std::max(0, parse_or(sleep_text, 10));
         p.cycles = std::max(1, parse_or(cycles_text, 1));
@@ -266,6 +310,18 @@ int main(int argc, char** argv) {
         } else {
             note(std::string{label} + ": publish failed - " + mqtt.last_error());
         }
+    };
+    // A programme that starts a session first tells Ev15118 which protocol generation(s) to offer.
+    auto send_with_protocol = [&](const char* cmd, const std::string& payload, const char* label) {
+        if (mqtt.connected()) {
+            const auto& proto = protocol_payloads[static_cast<size_t>(protocol_sel)];
+            if (mqtt.publish(protocol_topic, proto)) {
+                note(std::string{"protocol -> "} + proto);
+            } else {
+                note(std::string{"protocol: publish failed - "} + mqtt.last_error());
+            }
+        }
+        send(cmd, payload, label);
     };
 
     auto digits_only = CatchEvent([](Event e) {
@@ -286,16 +342,20 @@ int main(int argc, char** argv) {
     auto sleep_input = num_input(sleep_text, sleep_cursor, "10");
     auto cycles_input = num_input(cycles_text, cycles_cursor, "1");
     auto unplug_box = Checkbox("Unplug at the end (instead of parking)", &unplug_at_end);
+    auto bench_toggle = Toggle(&bench_entries, &bench_sel);
+    auto protocol_radio = Radiobox(&protocol_entries, &protocol_sel);
 
     auto btn = ButtonOption::Ascii();
-    auto start_btn =
-        Button("Start session", [&] { send("execute_charging_session", programme().start(), "Start"); }, btn);
-    auto wake_btn = Button("Wake", [&] { send("modify_charging_session", programme().wake(), "Wake"); }, btn);
+    auto start_btn = Button(
+        "Start session", [&] { send_with_protocol("execute_charging_session", programme().start(), "Start"); }, btn);
+    auto wake_btn =
+        Button("Wake", [&] { send_with_protocol("modify_charging_session", programme().wake(), "Wake"); }, btn);
     auto stop_btn = Button("Stop charging", [&] { send("modify_charging_session", Programme::stop(), "Stop"); }, btn);
     auto unplug_btn = Button("Unplug", [&] { send("modify_charging_session", Programme::unplug(), "Unplug"); }, btn);
     auto quit_btn = Button("Quit", screen.ExitLoopClosure(), btn);
 
-    auto fields = Container::Vertical({charge_input, sleep_input, cycles_input, unplug_box});
+    auto fields =
+        Container::Vertical({charge_input, sleep_input, cycles_input, unplug_box, bench_toggle, protocol_radio});
     auto buttons = Container::Horizontal({start_btn, wake_btn, stop_btn, unplug_btn, quit_btn});
     auto root = Container::Vertical({fields, buttons});
 
@@ -321,6 +381,11 @@ int main(int argc, char** argv) {
                    field_row("Sleep time", sleep_input, " s   park between cycles / before unplug"),
                    field_row("Cycles", cycles_input, "     wake cycles chained onto Start/Wake"),
                    unplug_box->Render(),
+                   hbox({text("Bench") | size(WIDTH, EQUAL, 34), bench_toggle->Render(),
+                         text(p.bench == Bench::MCS ? "   MCS energy service, CC.5.2.4 wake"
+                                                    : "   DC energy service, BCB toggle wake") |
+                             dim}),
+                   hbox({text("Protocol offer (Ev15118)") | size(WIDTH, EQUAL, 34), protocol_radio->Render()}),
                    separator(),
                    hbox({start_btn->Render(), text(" "), wake_btn->Render(), text(" "), stop_btn->Render(), text(" "),
                          unplug_btn->Render(), filler(), quit_btn->Render()}),
@@ -343,8 +408,9 @@ int main(int argc, char** argv) {
 
     // ftxui's containers cycle Tab only among their own children, which would trap Tab inside the
     // field group. Cycle over one flat list instead, so Tab/Shift-Tab reach the buttons too.
-    const std::vector<Component> focusables{charge_input, sleep_input, cycles_input, unplug_box, start_btn,
-                                            wake_btn,     stop_btn,    unplug_btn,   quit_btn};
+    const std::vector<Component> focusables{charge_input, sleep_input,    cycles_input, unplug_box,
+                                            bench_toggle, protocol_radio, start_btn,    wake_btn,
+                                            stop_btn,     unplug_btn,     quit_btn};
     auto cycle_focus = [&](int step) {
         int current = 0;
         for (int i = 0; i < static_cast<int>(focusables.size()); ++i) {
@@ -374,7 +440,8 @@ int main(int argc, char** argv) {
         return false;
     });
 
-    note("ready - broker " + opts.host + ":" + std::to_string(opts.port));
+    note("ready - broker " + opts.host + ":" + std::to_string(opts.port) + ", bench " +
+         (opts.bench == Bench::MCS ? "MCS" : "CCS"));
     screen.Loop(ui);
     return 0;
 }

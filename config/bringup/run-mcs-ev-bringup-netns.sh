@@ -81,7 +81,7 @@ if [ "$(id -u)" != "0" ]; then
     # elevation - sudo strips the environment, so pass them as VAR=value arguments
     # (EV_MCU_IFACE too, including an explicitly EMPTY one = "do not move any interface").
     echo "one sudo prompt: namespace setup needs root"
-    exec sudo -- env ${EV_INNER_SCRIPT:+EV_INNER_SCRIPT="$EV_INNER_SCRIPT"} \
+    exec sudo -- env ${EV_INNER_SCRIPT:+EV_INNER_SCRIPT="$EV_INNER_SCRIPT"} ${BENCH:+BENCH="$BENCH"} \
         ${CB_CONFIG:+CB_CONFIG="$CB_CONFIG"} ${EV_MCU_IFACE+EV_MCU_IFACE="$EV_MCU_IFACE"} \
         ${EV_LAN_IFACE+EV_LAN_IFACE="$EV_LAN_IFACE"} ${EV_LAN_ADDR:+EV_LAN_ADDR="$EV_LAN_ADDR"} "$0" "$@"
 fi
@@ -129,7 +129,7 @@ if [ "${1:-}" = "--teardown" ]; then
     # would keep the namespace alive after its name is gone - and leave the veth host end behind.
     for pid in $(ip netns pids $NS 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
     ip netns del $NS 2>/dev/null || true # takes its veth end - and thereby the host end - with it
-    rm -f /tmp/config-CB-MCS-EV-netns.yaml
+    rm -f /tmp/config-CB-*-EV-netns.yaml
     iptables -t nat -D POSTROUTING -s $NET -j MASQUERADE 2>/dev/null || true
     iptables -D FORWARD -s $NET -j ACCEPT 2>/dev/null || true
     iptables -D FORWARD -d $NET -j ACCEPT 2>/dev/null || true
@@ -188,7 +188,12 @@ socat TCP-LISTEN:1883,bind=$HOST_IP,fork,reuseaddr TCP:127.0.0.1:1883 &
 echo $! >"$SOCAT_PIDFILE"
 
 # --- derived daemon config: every localhost MQTT endpoint -> the veth --------------------------
-CB_CONFIG_SRC=${CB_CONFIG:-$SCRIPT_DIR/../../applications/pionix_chargebridge/config/config-CB-MCS-EV.yaml}
+# Bench flavour: first argument mcs|ccs (also BENCH=...), passed on to the inner script untouched.
+# It only selects the default daemon config here; CB_CONFIG still overrides.
+BENCH=${BENCH:-mcs}
+case "${1:-}" in mcs | ccs) BENCH=$1 ;; esac
+case "$BENCH" in mcs) CB_CONFIG_NAME=config-CB-MCS-EV.yaml ;; ccs) CB_CONFIG_NAME=config-CB-EVAL-EV.yaml ;; *) echo "BENCH must be mcs or ccs" >&2; exit 2 ;; esac
+CB_CONFIG_SRC=${CB_CONFIG:-$SCRIPT_DIR/../../applications/pionix_chargebridge/config/$CB_CONFIG_NAME}
 if [ ! -f "$CB_CONFIG_SRC" ]; then
     echo "ChargeBridge daemon config not found ('$CB_CONFIG_SRC') - set CB_CONFIG" >&2
     exit 1
@@ -197,7 +202,7 @@ fi
 # daemon inside the namespace reads it, and restarting that daemon from its pane after the
 # wrapper has returned used to fail with "FAILED to parse configuration" because the file was
 # already gone. --teardown removes it, together with the namespace it belongs to.
-DERIVED_CONFIG=/tmp/config-CB-MCS-EV-netns.yaml
+DERIVED_CONFIG=/tmp/$(basename "$CB_CONFIG_SRC" .yaml)-netns.yaml
 # Relative paths in the daemon config resolve against the config file's own directory, and the
 # derived copy does not live there. fw_file is the one that matters: left relative it becomes
 # /tmp/./firmware/... , the upload fails, and the daemon retries it every ~10 s instead of

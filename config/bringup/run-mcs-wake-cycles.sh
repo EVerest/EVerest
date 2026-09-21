@@ -9,16 +9,20 @@
 # on 'sleep'); if the EV is idle/unplugged instead, the script primes it with one
 # execute_charging_session first (plug-in + first session, also parked).
 #
-# Usage: run-mcs-wake-cycles.sh [cycles]        (default 30)
+# Usage: run-mcs-wake-cycles.sh [mcs|ccs] [cycles]        (default mcs, 30)
+#   mcs: MCS energy service, CC.5.2.4 wake (cp_c_pulse 4); ccs: DC service, BCB toggle wake.
 
 set -u
 BROKER=${BROKER:-10.200.0.1}
 BASE_TOPIC='everest_external/nodered/1/carsim/cmd'
+BENCH=${BENCH:-mcs}
+case "${1:-}" in mcs | ccs) BENCH=$1; shift ;; esac
+case "$BENCH" in mcs) ENERGY=mcs; WAKE_STEP="cp_c_pulse 4" ;; ccs) ENERGY=DC; WAKE_STEP="iso_start_bcb_toggle 1" ;; *) echo "BENCH must be mcs or ccs" >&2; exit 2 ;; esac
 CYCLES=${1:-30}
 LOOP_S=${LOOP_S:-3} # charge-loop seconds per cycle
 
-SESSION_SEQ="iso_wait_slac_matched;iso_start_v2g_session mcs;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop $LOOP_S;iso_wait_v2g_session_stopped;sleep 36000"
-WAKE_SEQ="cp_c_pulse 4;$SESSION_SEQ"
+SESSION_SEQ="iso_wait_slac_matched;iso_start_v2g_session $ENERGY;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop $LOOP_S;iso_wait_v2g_session_stopped;sleep 36000"
+WAKE_SEQ="$WAKE_STEP;$SESSION_SEQ"
 
 evse_pane() { tmux -L mcs-evse-session capture-pane -t mcs-evse-session:0.1 -p -S - 2>/dev/null; }
 ev_pane() { tmux -L mcs-ev-session capture-pane -t mcs-ev-session:0.1 -p -S - 2>/dev/null; }

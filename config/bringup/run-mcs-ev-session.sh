@@ -9,18 +9,29 @@
 # vertical inside the mcs-ev network namespace so SDP/TCP/neighbour discovery genuinely
 # cross the SPE wire (two taps in one stack short-circuit via local routing).
 #
-# Usage: run-mcs-ev-session.sh [dist-prefix]
+# Usage: run-mcs-ev-session.sh [mcs|ccs] [dist-prefix]
+#   mcs (default): config-CB-EVAL-MCS-EV.yaml + daemon config-CB-MCS-EV.yaml (McsEvDataLink)
+#   ccs:           config-CB-EVAL-CCS-EV.yaml + daemon config-CB-EVAL-EV.yaml (EvSlac)
+#   BENCH=mcs|ccs in the environment works too; the positional argument wins. The panel is
+#   started in the matching mode (--bench).
 # Environment:
 #   CB_CONFIG   ChargeBridge daemon config
 #               (default: applications/pionix_chargebridge/config/config-CB-MCS-EV.yaml)
 
 set -e
+BENCH=${BENCH:-mcs}
+case "${1:-}" in mcs | ccs) BENCH=$1; shift ;; esac
+case "$BENCH" in
+    mcs) EVEREST_CONFIG_NAME=config-CB-EVAL-MCS-EV.yaml; CB_CONFIG_NAME=config-CB-MCS-EV.yaml ;;
+    ccs) EVEREST_CONFIG_NAME=config-CB-EVAL-CCS-EV.yaml; CB_CONFIG_NAME=config-CB-EVAL-EV.yaml ;;
+    *) echo "BENCH must be mcs or ccs, got '$BENCH'" >&2; exit 2 ;;
+esac
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 if [ -d "$SCRIPT_DIR/../../applications/pionix_chargebridge" ]; then
     REPO_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
     DEFAULT_PREFIX=$REPO_DIR/build/dist
-    DEFAULT_CB_CONFIG=$REPO_DIR/applications/pionix_chargebridge/config/config-CB-MCS-EV.yaml
+    DEFAULT_CB_CONFIG=$REPO_DIR/applications/pionix_chargebridge/config/$CB_CONFIG_NAME
 else
     DEFAULT_PREFIX=$(cd "$SCRIPT_DIR/../.." && pwd)
     DEFAULT_CB_CONFIG=""
@@ -38,7 +49,7 @@ find_config() {
     echo "EVerest session config '$1' not found next to $SCRIPT_DIR or one level up" >&2
     return 1
 }
-EVEREST_CONFIG=$(find_config config-CB-EVAL-MCS-EV.yaml)
+EVEREST_CONFIG=$(find_config $EVEREST_CONFIG_NAME)
 CB_CONFIG=${CB_CONFIG:-$DEFAULT_CB_CONFIG}
 if [ ! -f "$CB_CONFIG" ]; then
     echo "ChargeBridge daemon config not found ('$CB_CONFIG') - set CB_CONFIG=/path/to/config.yaml" >&2
@@ -90,7 +101,7 @@ PANE_CONTROL=$($TMUX split-window -h -l 45% -t "$PANE_MANAGER" -PF '#{pane_id}')
 $TMUX send -t "$PANE_DAEMON" "env LD_LIBRARY_PATH=$PREFIX/lib $PREFIX/bin/pionix_chargebridge $CB_CONFIG" ENTER
 $TMUX send -t "$PANE_MANAGER" "sleep 1 && $ENV $PREFIX/bin/manager --prefix $PREFIX --config $EVEREST_CONFIG" ENTER
 if [ -x "$PREFIX/bin/mcs_ev_control" ]; then
-    $TMUX send -t "$PANE_CONTROL" "sleep 2 && $ENV MQTT_SERVER_ADDRESS=${MQTT_SERVER_ADDRESS:-localhost} MQTT_SERVER_PORT=${MQTT_SERVER_PORT:-1883} $PREFIX/bin/mcs_ev_control" ENTER
+    $TMUX send -t "$PANE_CONTROL" "sleep 2 && $ENV MQTT_SERVER_ADDRESS=${MQTT_SERVER_ADDRESS:-localhost} MQTT_SERVER_PORT=${MQTT_SERVER_PORT:-1883} $PREFIX/bin/mcs_ev_control --bench $BENCH" ENTER
 else
     $TMUX send -t "$PANE_CONTROL" "echo 'mcs_ev_control not installed under $PREFIX/bin - build applications/mcs_ev_control; drive EvManager with mosquitto_pub instead'" ENTER
 fi

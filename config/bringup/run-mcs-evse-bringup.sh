@@ -21,13 +21,18 @@
 # short-circuited by local routing - see the note in the daemon config.
 
 set -e
+# CCS boards: BENCH=ccs (or first argument ccs) picks the CCS daemon config; the bring-up
+# EVerest config (BSP panels) is protocol-neutral.
+BENCH=${BENCH:-mcs}
+case "${1:-}" in mcs | ccs) BENCH=$1; shift ;; esac
+case "$BENCH" in mcs) CB_CONFIG_NAME=config-CB-MCS-EVSE.yaml ;; ccs) CB_CONFIG_NAME=config-CB-EVAL.yaml ;; *) echo "BENCH must be mcs or ccs" >&2; exit 2 ;; esac
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 if [ -d "$SCRIPT_DIR/../../applications/pionix_chargebridge" ]; then
     # running from the source tree (config/bringup/)
     REPO_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
     DEFAULT_PREFIX=$REPO_DIR/build/dist
-    DEFAULT_CB_CONFIG=$REPO_DIR/applications/pionix_chargebridge/config/config-CB-MCS-EVSE.yaml
+    DEFAULT_CB_CONFIG=$REPO_DIR/applications/pionix_chargebridge/config/${CB_CONFIG_NAME:-config-CB-MCS-EVSE.yaml}
 else
     # running from an installed copy (<prefix>/etc/everest/): the prefix is two levels
     # up, but no daemon config is installed there - CB_CONFIG must be set explicitly

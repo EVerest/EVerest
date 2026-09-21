@@ -1,0 +1,59 @@
+# CCS ChargeBridge, EV side, FULL EV SESSION stack for the two-ChargeBridge bench - the CCS twin
+# of config-CB-EVAL-MCS-EV.yaml: EvManager + Ev15118 (C++ EVCC) + EvSlac on the ChargeBridge PLC
+# tap cb_plc_ev instead of McsEvDataLink. Daemon config: config-CB-EVAL-EV.yaml. Started by
+# run-mcs-ev-session-netns.sh ccs. No session at startup (auto_exec false): mcs_ev_control in the
+# third pane, in CCS mode, or a mosquitto_pub to .../carsim/cmd/execute_charging_session starts it;
+# the reference programme below is the panel's default for a DC session.
+settings:
+  telemetry_enabled: false
+  mqtt_everest_prefix: everest_ccs_ev
+active_modules:
+  ev_bsp:
+    module: ev_board_support_API
+    config_module:
+      cfg_communication_check_to_s: 0
+  ev_slac:
+    module: EvSlac
+    config_implementation:
+      main:
+        device: cb_plc_ev
+  iso15118_car:
+    module: Ev15118
+    config_module:
+      device: cb_plc_ev
+      # All three protocol generations offered; the EV control panel narrows the offer per
+      # session (select_protocol). TLS as on the MCS bench: 1.3 for -20, 1.2 for -2, none for DIN.
+      supported_DIN70121: true
+      supported_ISO15118_2: true
+      tls_active: true
+      enable_tls_1_3: true
+      # Test PKI: the SECC's leaf is not anchored in a V2G root this EVCC ships with.
+      verify_server_certificate: false
+  ev_manager:
+    module: EvManager
+    config_module:
+      connector_id: 1
+      auto_enable: true
+      # No session at startup: mcs_ev_control (third pane of run-mcs-ev-session.sh) or a
+      # mosquitto_pub to .../carsim/cmd/execute_charging_session starts it. The command list
+      # below is the panel's default programme, kept for reference / auto_exec: true.
+      auto_exec: false
+      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session DC;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 30;iso_wait_v2g_session_stopped;sleep 36000
+      dc_target_current: 20
+      dc_target_voltage: 400
+    connections:
+      ev_board_support:
+        - module_id: ev_bsp
+          implementation_id: main
+      ev:
+        - module_id: iso15118_car
+          implementation_id: ev
+      slac:
+        - module_id: ev_slac
+          implementation_id: main
+  ev_api:
+    module: EvAPI
+    connections:
+      ev_manager:
+        - module_id: ev_manager
+          implementation_id: ev_manager
