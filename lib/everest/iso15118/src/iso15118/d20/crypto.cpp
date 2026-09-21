@@ -525,6 +525,16 @@ bool chain_matches_profile(const ParsedChain& chain, ChainRole leaf_role) {
     return true;
 }
 
+void log_verified_chain(X509_STORE_CTX* ctx) {
+    const auto* chain = X509_STORE_CTX_get0_chain(ctx);
+    const int depth = sk_X509_num(chain);
+    char anchor[256] = {};
+    if (depth > 0) {
+        X509_NAME_oneline(X509_get_subject_name(sk_X509_value(chain, depth - 1)), anchor, sizeof(anchor));
+    }
+    logf_info("PnC: contract chain verified locally, %d certificates, trust anchor %s", depth, anchor);
+}
+
 } // namespace
 
 ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& leaf_der,
@@ -582,6 +592,7 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
             X509_STORE_CTX_set_verify_cb(ctx, verify_annex_b_extensions);
             if (X509_verify_cert(ctx) == 1) {
                 result.response_code = dt::ResponseCode::OK;
+                log_verified_chain(ctx);
             } else {
                 const int err = X509_STORE_CTX_get_error(ctx);
                 logf_error("PnC: contract chain verification failed at depth %d: %s",
