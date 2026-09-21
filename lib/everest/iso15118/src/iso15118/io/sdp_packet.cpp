@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023-2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/io/sdp_packet.hpp>
 
 #include <cstdio>
@@ -60,7 +60,13 @@ void SdpPacket::parse_header() {
         state = State::INVALID_HEADER;
         return;
     }
-    // FIXME (aw): check for ill-formed header!
+
+    // No V2G message has an empty payload, so a declared length of zero is ill-formed.
+    if (len_in_buffer == 0) {
+        state = State::INVALID_HEADER;
+        return;
+    }
+
     length = len_in_buffer + V2GTP_HEADER_SIZE;
 
     if (length > sizeof(buffer)) {
