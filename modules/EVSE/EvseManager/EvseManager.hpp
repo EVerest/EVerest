@@ -43,6 +43,7 @@
 
 #include "CarManufacturer.hpp"
 #include "Charger.hpp"
+#include "CpStateFrameEmitter.hpp"
 #include "ErrorHandling.hpp"
 #include "PersistentStore.hpp"
 #include "SessionLog.hpp"
@@ -133,6 +134,8 @@ struct Conf {
     int dc_ramp_ampere_per_second;
     bool enable_nodered_interface;
     std::string phase_rotation_grid_side;
+    bool debug_emit_cp_state_hpav_frames;
+    std::string debug_cp_state_hpav_device;
 };
 
 class EvseManager : public Everest::ModuleBase {
@@ -258,6 +261,8 @@ public:
 
     void ready_to_start_charging();
 
+    // Declared before bsp so it outlives the IECStateMachine signals connected to it.
+    std::unique_ptr<CpStateFrameEmitter> cp_state_frame_emitter;
     std::unique_ptr<IECStateMachine> bsp;
     std::unique_ptr<ErrorHandling> error_handling;
     std::unique_ptr<PersistentStore> store;
