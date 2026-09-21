@@ -361,6 +361,15 @@ bool CarSimulation::iso_wait_slac_matched(const CmdArguments& arguments) {
     return false;
 }
 
+// Forget the current SLAC match and start over on the next iso_wait_slac_matched. The normal
+// path is automatic: the EV HLC's dlink_terminate / dlink_error drop the match (see
+// car_simulatorImpl). This is the manual override for programmes that need it anyway, e.g. an HLC
+// that does not publish the D-LINK events.
+bool CarSimulation::iso_slac_reset(const CmdArguments& arguments) {
+    stop_matching();
+    return true;
+}
+
 bool CarSimulation::iso_wait_pwr_ready(const CmdArguments& arguments) {
     if (sim_data.iso_pwr_ready) {
         sim_data.state = SimState::ISO_POWER_READY;

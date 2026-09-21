@@ -262,6 +262,9 @@ void car_simulatorImpl::register_all_commands() {
             }
             return this->car_simulation->iso_wait_slac_matched(arguments);
         });
+        command_registry->register_command("iso_slac_reset", 0, [this](const CmdArguments& arguments) {
+            return this->car_simulation->iso_slac_reset(arguments);
+        });
     }
 
     if (!mod->r_ev.empty()) {
@@ -527,6 +530,22 @@ void car_simulatorImpl::subscribe_to_variables_on_init() {
             const std::lock_guard<std::mutex> callback_lock{car_simulation_mutex};
             car_simulation->set_iso_charger_paused(true);
         });
+        // ISO 15118-3 D-LINK from the EV's HLE (mirror of EvseManager's handling of the charger
+        // side): terminate and error drop the SLAC match, so the next iso_wait_slac_matched runs
+        // SLAC again - the EVSE's provider left the network with its own D-LINK_TERMINATE and
+        // re-arms matching on the BCB toggle, while the EV-side provider cannot notice on its own
+        // (CCS bench 21.9.: 80 s wait for a CM_SLAC_PARM.REQ that never came). Pause keeps the match.
+        _ev->subscribe_dlink_terminate([this]() {
+            const std::lock_guard<std::mutex> callback_lock{car_simulation_mutex};
+            EVLOG_info << "D-LINK_TERMINATE from the EV HLC - dropping the SLAC match";
+            car_simulation->stop_matching();
+        });
+        _ev->subscribe_dlink_error([this]() {
+            const std::lock_guard<std::mutex> callback_lock{car_simulation_mutex};
+            EVLOG_info << "D-LINK_ERROR from the EV HLC - dropping the SLAC match";
+            car_simulation->stop_matching();
+        });
+        _ev->subscribe_dlink_pause([this]() { EVLOG_info << "D-LINK_PAUSE from the EV HLC - SLAC match kept"; });
     }
 }
 

@@ -580,8 +580,23 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
         publish_v2g_messages(types::iso15118::V2gMessages{.id = v2g_message_id(type)});
     };
 
-    callbacks.signal = [](iso15118::ev::feedback::Signal signal) {
-        EVLOG_debug << "Ev15118: signal " << signal_to_string(signal);
+    // ISO 15118-3: the EV's HLE ends the data link together with the session. The EV-side SLAC
+    // provider cannot see the EVSE leave the network, so the consumer (EvManager) drops the match
+    // on terminate/error and keeps it on pause - the mirror of Evse15118D20 -> EvseManager.
+    callbacks.signal = [this](iso15118::ev::feedback::Signal signal) {
+        using Signal = iso15118::ev::feedback::Signal;
+        EVLOG_info << "Ev15118: " << signal_to_string(signal);
+        switch (signal) {
+        case Signal::DLINK_TERMINATE:
+            publish_dlink_terminate(nullptr);
+            break;
+        case Signal::DLINK_PAUSE:
+            publish_dlink_pause(nullptr);
+            break;
+        case Signal::DLINK_ERROR:
+            publish_dlink_error(nullptr);
+            break;
+        }
     };
 
     callbacks.selected_protocol = [](iso15118::ProtocolId protocol) {

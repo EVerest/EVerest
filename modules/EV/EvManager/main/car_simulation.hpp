@@ -200,6 +200,7 @@ public:
     bool diode_fail(const CmdArguments&);
     bool rcd_current(const CmdArguments&);
     bool iso_wait_slac_matched(const CmdArguments&);
+    bool iso_slac_reset(const CmdArguments&);
     bool iso_wait_pwr_ready(const CmdArguments&);
     bool iso_dc_power_on(const CmdArguments&);
     bool iso_start_v2g_session(const CmdArguments&, bool);

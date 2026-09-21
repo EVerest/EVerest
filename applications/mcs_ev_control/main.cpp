@@ -210,6 +210,8 @@ struct Programme {
         return bench == Bench::MCS ? "mcs" : "DC";
     }
     // Resume from Car Paused: MCS wakes the EVSE with the CC.5.2.4 CP pulse, CCS with a BCB toggle.
+    // After a terminated session the EV re-runs SLAC by itself: Ev15118's dlink_terminate makes
+    // EvManager drop the match, iso_wait_slac_matched then triggers matching again.
     const char* wake_step() const {
         return bench == Bench::MCS ? "cp_c_pulse 4" : "iso_start_bcb_toggle 1";
     }

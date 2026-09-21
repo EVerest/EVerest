@@ -90,6 +90,22 @@ vars:
   v2g_session_finished:
     description: The v2g session between the charger and the car is finished
     type: 'null'
+  dlink_terminate:
+    description: >-
+      ISO 15118-3 D-LINK_TERMINATE.request from the EV's HLE: the session ended with Terminate,
+      the data link is to be torn down and the SLAC match dropped (UNMATCHED). Mirror of the
+      charger-side variable of the same name.
+    type: 'null'
+  dlink_error:
+    description: >-
+      ISO 15118-3 D-LINK_ERROR.request from the EV's HLE: tear the data link down and restart the
+      matching process.
+    type: 'null'
+  dlink_pause:
+    description: >-
+      ISO 15118-3 D-LINK_PAUSE.request from the EV's HLE: the session ended with Pause, the data
+      link may enter power saving while staying MATCHED.
+    type: 'null'
   ev_power_ready:
     description: The car is ready for power (HLC)
     type: boolean
