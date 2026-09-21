@@ -9,7 +9,10 @@ DER services of ISO 15118-20 Amendment 1, ``AC_DER_IEC`` (Annex L) and
 ``AC_DER_SAE`` (Annex M), and a ``grid_support`` provider that accepts active DER
 directives and raises grid alarms from EV-reported grid-event conditions.
 It also offers ISO 15118-2 and DIN SPEC 70121 (see ``supported_ISO15118_2``
-and ``supported_DIN70121``).
+and ``supported_DIN70121``). DIN SPEC 70121 sends the EVSEID from EvseManager's
+``evse_id_din`` (DIN SPEC 91286 as hexBinary, e.g. ``49A80737A45678``); when that
+is empty the eMI3 ``evse_id`` is packed instead, which only works for ids made of
+digits and ``*``, so an eMI3 id like ``DE*PNX*E12345*1`` is sent as ``0x00``.
 
 TLS and SECC leaf certificates
 ==============================
