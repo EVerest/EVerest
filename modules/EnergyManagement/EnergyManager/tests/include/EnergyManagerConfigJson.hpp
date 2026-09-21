@@ -25,6 +25,10 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             {"switch_3ph1ph_power_hysteresis_W", config.switch_3ph1ph_power_hysteresis_W},
             {"switch_3ph1ph_time_hysteresis_s", config.switch_3ph1ph_time_hysteresis_s},
             {"broker_strategy", config.broker_strategy},
+            {"redistribution_margin_A", config.redistribution_margin_A},
+            {"redistribution_start_with_lower_limit", config.redistribution_start_with_lower_limit},
+            {"redistribution_reduction_hold_s", config.redistribution_reduction_hold_s},
+            {"redistribution_measurement_max_age_s", config.redistribution_measurement_max_age_s},
         };
     }
     static module::EnergyManagerConfig from_json(const json& j) {
@@ -42,6 +46,10 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             j.at("switch_3ph1ph_power_hysteresis_W"),
             j.at("switch_3ph1ph_time_hysteresis_s"),
             j.value("broker_strategy", std::string("FastCharging")),
+            j.value("redistribution_margin_A", 2.0),
+            j.value("redistribution_start_with_lower_limit", true),
+            j.value("redistribution_reduction_hold_s", 30),
+            j.value("redistribution_measurement_max_age_s", 10),
         };
     }
 };

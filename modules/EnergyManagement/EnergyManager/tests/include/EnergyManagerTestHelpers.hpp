@@ -31,6 +31,10 @@ inline EnergyManagerConfig make_default_config() {
     c.switch_3ph1ph_power_hysteresis_W = 200;
     c.switch_3ph1ph_time_hysteresis_s = 0;
     c.broker_strategy = "FastCharging";
+    c.redistribution_margin_A = 2.0;
+    c.redistribution_start_with_lower_limit = true;
+    c.redistribution_reduction_hold_s = 30;
+    c.redistribution_measurement_max_age_s = 10;
     return c;
 }
 

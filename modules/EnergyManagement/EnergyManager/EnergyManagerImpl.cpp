@@ -67,6 +67,10 @@ static BrokerFastCharging::EnergyManagerConfig to_broker_fast_charging_config(co
     broker_conf.switch_1ph_3ph_mode = to_switch_1ph3ph_mode(config.switch_3ph1ph_while_charging_mode);
     broker_conf.time_hysteresis_s = config.switch_3ph1ph_time_hysteresis_s;
     broker_conf.stickyness = to_stickyness(config.switch_3ph1ph_switch_limit_stickyness);
+    broker_conf.redistribution.margin_A = config.redistribution_margin_A;
+    broker_conf.redistribution.start_with_lower_limit = config.redistribution_start_with_lower_limit;
+    broker_conf.redistribution.reduction_hold = std::chrono::seconds(config.redistribution_reduction_hold_s);
+    broker_conf.redistribution.measurement_max_age = std::chrono::seconds(config.redistribution_measurement_max_age_s);
 
     return broker_conf;
 }

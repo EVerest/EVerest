@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 #include "EnergyManager.hpp"
 #include "Broker.hpp"
 #include "BrokerFastCharging.hpp"
@@ -26,6 +26,10 @@ void EnergyManager::init() {
     energy_manager_config.switch_3ph1ph_power_hysteresis_W = config.switch_3ph1ph_power_hysteresis_W;
     energy_manager_config.switch_3ph1ph_time_hysteresis_s = config.switch_3ph1ph_time_hysteresis_s;
     energy_manager_config.broker_strategy = config.broker_strategy;
+    energy_manager_config.redistribution_margin_A = config.redistribution_margin_A;
+    energy_manager_config.redistribution_start_with_lower_limit = config.redistribution_start_with_lower_limit;
+    energy_manager_config.redistribution_reduction_hold_s = config.redistribution_reduction_hold_s;
+    energy_manager_config.redistribution_measurement_max_age_s = config.redistribution_measurement_max_age_s;
 
     const auto enforce_limits_callback = [this](const std::vector<types::energy::EnforcedLimits>& limits) {
         const types::energy::NumberWithSource nonumber = {-9999.0};

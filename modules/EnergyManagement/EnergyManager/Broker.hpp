@@ -3,6 +3,7 @@
 #ifndef BROKER_HPP
 #define BROKER_HPP
 
+#include <chrono>
 #include <optional>
 
 #include "Market.hpp"
@@ -50,6 +51,14 @@ struct ObservedMeasurement {
     std::optional<date::utc_clock::time_point> measured_at;
 };
 
+// Current [A] per phase. A phase that is nullopt is unknown, never zero: a single-phase
+// meter reports L1 only, and an unknown phase must not constrain anything.
+struct PhaseCurrents {
+    std::optional<float> L1;
+    std::optional<float> L2;
+    std::optional<float> L3;
+};
+
 // All context data that is stored in between optimization runs
 struct BrokerContext {
     BrokerContext() {
@@ -62,6 +71,8 @@ struct BrokerContext {
         ts_1ph_optimal = date::utc_clock::now();
         tracking_warned_no_measurement = false;
         last_observed_measurement = {};
+        redistribution_cap_A = std::nullopt;
+        redistribution_reduction_pending_since = std::nullopt;
     };
 
     int number_1ph3ph_cycles;
@@ -75,6 +86,16 @@ struct BrokerContext {
     // Reading last observed by the power redistribution broker for this connector.
     // Empty (all nullopt) while no measurement is available. Reset by clear() on unplug.
     ObservedMeasurement last_observed_measurement;
+
+    // Current cap the power redistribution broker last applied to this connector, per
+    // phase. nullopt while the connector is not being limited (FastCharging strategy, or
+    // the session is not drawing). Reset by clear() on unplug.
+    std::optional<PhaseCurrents> redistribution_cap_A;
+
+    // Set while a reduction of redistribution_cap_A is pending: the moment the candidate
+    // cap first fell below the applied one. The reduction is applied once it has been
+    // pending for the configured hold time; a recovering candidate clears it.
+    std::optional<date::utc_clock::time_point> redistribution_reduction_pending_since;
 };
 
 // base class for different Brokers
@@ -94,12 +115,22 @@ public:
         DontChange,
     };
 
+    // Configuration of the PowerRedistribution strategy, unused by FastCharging.
+    // Check manifest.yaml of this module for description (redistribution_* options).
+    struct RedistributionConfig {
+        float margin_A{2.0f};
+        bool start_with_lower_limit{true};
+        std::chrono::seconds reduction_hold{30};
+        std::chrono::seconds measurement_max_age{10};
+    };
+
     struct EnergyManagerConfig {
         Switch1ph3phMode switch_1ph_3ph_mode{Switch1ph3phMode::Never};
         StickyNess stickyness{StickyNess::DontChange};
         int max_nr_of_switches_per_session{0};
         int power_hysteresis_W{200};
         int time_hysteresis_s{600};
+        RedistributionConfig redistribution;
     };
 
     Broker(Market& market, BrokerContext& context, EnergyManagerConfig config);

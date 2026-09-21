@@ -80,15 +80,54 @@ config:
     description: >-
       Selects the broker that trades energy on behalf of each EVSE:
         - FastCharging: allocate as much as the limits allow (default)
-        - PowerRedistribution: currently trades identically to FastCharging and additionally
-          observes the live power meter measurement of each connector (total and per-phase
-          power, per-phase current) so under-consumption can be detected. Allocations are
-          not modified yet.
+        - PowerRedistribution: limit each connector to its measured current plus
+          redistribution_margin_A, so unused allocation is freed for the other connectors
+          on the same fuse while the margin still lets the current rise each update
+          interval. Only connectors in state Charging are limited, never below their
+          minimum current, and only on AC current limits (nodes offering only a watt
+          limit, e.g. DC, are traded like FastCharging). A connector without a usable,
+          fresh measurement is limited to its minimum current plus the margin.
     type: string
     enum:
       - FastCharging
       - PowerRedistribution
     default: FastCharging
+  redistribution_margin_A:
+    description: >-
+      Margin in ampere added on top of the measured current when the PowerRedistribution
+      broker limits a connector. This is the headroom the current can rise by per update
+      interval. Only used with broker_strategy PowerRedistribution.
+    type: number
+    default: 2.0
+  redistribution_start_with_lower_limit:
+    description: >-
+      Start value of the PowerRedistribution limit for a new charging session: true starts
+      at the connector's minimum current plus redistribution_margin_A and lets the limit
+      ramp up with the measurement; false starts at the full allocation and tracks down to
+      the measured current plus margin, gated by redistribution_reduction_hold_s. Only used
+      with broker_strategy PowerRedistribution.
+    type: boolean
+    default: true
+  redistribution_reduction_hold_s:
+    description: >-
+      Hold time in seconds before the PowerRedistribution broker lowers a connector's
+      limit: a reduction is applied only after the measured current has stayed below the
+      current limit for this long. Increases are always applied immediately. Set to 0 to
+      follow the measurement down immediately. Only used with broker_strategy
+      PowerRedistribution.
+    type: integer
+    default: 30
+  redistribution_measurement_max_age_s:
+    description: >-
+      Maximum age in seconds of a power meter reading (judged by the reading's own
+      timestamp) for the PowerRedistribution broker to trust it. EnergyNode and EvseManager
+      republish the last reading they received, so without this check a meter that stopped
+      updating would pin the allocation at whatever it last reported. A reading older than
+      this, or without a usable timestamp, limits the connector to its minimum current plus
+      the margin. Set to 0 to accept any age. Only used with broker_strategy
+      PowerRedistribution.
+    type: integer
+    default: 10
 provides:
   main:
     description: Main interface of the energy manager
