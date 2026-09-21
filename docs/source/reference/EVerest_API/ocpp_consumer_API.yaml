@@ -1997,6 +1997,7 @@ components:
       required:
         - transaction_event
         - session_id
+        - timestamp
       properties:
         transaction_event:
           description: >-
@@ -2017,6 +2018,15 @@ components:
             The CSMS assigned transaction ID. A string is used to support OCPP 2.0.1.
             For OCPP 1.6 the integer is converted to a string
           type: string
+        timestamp:
+          description: >-
+            Time of the transaction event in RFC3339 format. For OCPP 2.x this is the timestamp of the
+            TransactionEventRequest, for OCPP 1.6 the timestamp reported in the corresponding
+            StartTransaction.req or StopTransaction.req. For Updated events in OCPP 1.6 it is the time the
+            StartTransaction.conf that triggers them was processed, because that message carries no
+            timestamp of its own.
+          type: string
+          format: date-time
     RegistrationStatus:
       description: Indicates whether the Charging Station has been registered within the OCPP CSMS
       type: string

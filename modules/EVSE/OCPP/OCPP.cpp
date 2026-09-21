@@ -1005,11 +1005,12 @@ void OCPP::ready() {
     });
 
     this->charge_point->register_transaction_started_callback(
-        [this](const int32_t connector, const std::string& session_id) {
+        [this](const std::string& session_id, const ocpp::v16::StartTransactionRequest& request) {
             types::ocpp::OcppTransactionEvent tevent;
             tevent.transaction_event = types::ocpp::TransactionEvent::Started;
             tevent.evse = {this->to_everest_evse_id(connector), 1};
             tevent.session_id = session_id;
+            tevent.timestamp = request.timestamp.to_rfc3339();
             p_ocpp_generic->publish_ocpp_transaction_event(tevent);
         });
 
@@ -1021,12 +1022,14 @@ void OCPP::ready() {
             tevent.transaction_event = types::ocpp::TransactionEvent::Updated;
             tevent.evse = {everest_evse_id, 1};
             tevent.session_id = session_id;
-            tevent.transaction_id = std::to_string(transaction_id);
+            tevent.transaction_id = std::to_string(response.transactionId);
+            // StartTransaction.conf carries no time of its own, the update happens when it is processed
+            tevent.timestamp = ocpp::DateTime().to_rfc3339();
             p_ocpp_generic->publish_ocpp_transaction_event(tevent);
-            if (id_tag_info.parentIdTag.has_value()) {
+            if (response.idTagInfo.parentIdTag.has_value()) {
                 types::authorization::ValidationResultUpdate result_update;
                 types::authorization::IdToken id_token;
-                id_token.value = id_tag_info.parentIdTag.value();
+                id_token.value = response.idTagInfo.parentIdTag.value();
                 // Default to RFID auth type for parentIdTag since we have no
                 // information about it in ocpp1.6
                 id_token.type = types::authorization::IdTokenType::ISO14443;

@@ -1616,21 +1616,25 @@ void GenericOcpp::cb_time_sync(const ocpp::DateTime& current_time) {
 }
 
 void GenericOcpp::cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event,
-                                       const std::optional<std::string>& transaction_id) {
+                                       const std::optional<std::string>& transaction_id,
+                                       const ocpp::DateTime& timestamp) {
     using namespace module::conversions;
 
     auto ocpp_transaction_event = to_everest_ocpp_transaction_event(transaction_event);
     ocpp_transaction_event.transaction_id = transaction_id;
+    ocpp_transaction_event.timestamp = timestamp.to_rfc3339();
     mv_provides.ocpp_generic.publish_ocpp_transaction_event(ocpp_transaction_event);
 }
 
 void GenericOcpp::cb_transaction_event_response(const ocpp::v2::TransactionEventRequest& transaction_event,
                                                 const ocpp::v2::TransactionEventResponse& transaction_event_response,
-                                                const std::optional<std::string>& transaction_id) {
+                                                const std::optional<std::string>& transaction_id,
+                                                const ocpp::DateTime& timestamp) {
     using namespace module::conversions;
 
     auto ocpp_transaction_event = to_everest_ocpp_transaction_event(transaction_event);
     ocpp_transaction_event.transaction_id = transaction_id;
+    ocpp_transaction_event.timestamp = timestamp.to_rfc3339();
     auto ocpp_transaction_event_response = to_everest_transaction_event_response(transaction_event_response);
     ocpp_transaction_event_response.original_transaction_event = ocpp_transaction_event;
     mv_provides.ocpp_generic.publish_ocpp_transaction_event_response(ocpp_transaction_event_response);

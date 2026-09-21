@@ -20,6 +20,8 @@
 #include <ocpp/v16/messages/GetDiagnostics.hpp>
 #include <ocpp/v16/messages/GetLog.hpp>
 #include <ocpp/v16/messages/SignedUpdateFirmware.hpp>
+#include <ocpp/v16/messages/StartTransaction.hpp>
+#include <ocpp/v16/messages/StopTransaction.hpp>
 #include <ocpp/v16/messages/UpdateFirmware.hpp>
 
 // for OCPP1.6 PnC
@@ -607,24 +609,27 @@ public:
                                  const ocpp::v2::CertificateActionEnum& certificate_action)>& callback);
 
     /// \brief registers a \p callback function that is called when a StartTransaction.req message is sent by the
-    /// chargepoint
+    /// chargepoint. The \p request is the message as sent, the \p session_id correlates it with the EVerest session
+    /// because it is not part of the message.
     /// \param callback
     void register_transaction_started_callback(
-        const std::function<void(const std::int32_t connector, const std::string& session_id)>& callback);
+        const std::function<void(const std::string& session_id, const StartTransactionRequest& request)>& callback);
 
     /// \brief registers a \p callback function that is called when a StopTransaction.req message is sent by the
-    /// chargepoint
+    /// chargepoint. The \p request is the message as sent, \p session_id and \p connector correlate it with the
+    /// EVerest session and connector because neither is part of the message.
     /// \param callback
     void register_transaction_stopped_callback(
-        const std::function<void(const std::int32_t connector, const std::string& session_id,
-                                 const std::int32_t transaction_id)>& callback);
+        const std::function<void(const std::string& session_id, const std::int32_t connector,
+                                 const StopTransactionRequest& request)>& callback);
 
     /// \brief registers a \p callback function that is called when a StartTransaction.conf message is received by the
-    /// CSMS. This includes the transactionId.
+    /// CSMS. The \p response includes the transactionId and the idTagInfo, the \p request is the StartTransaction.req
+    /// it answers.
     /// \param callback
     void register_transaction_updated_callback(
-        const std::function<void(const std::int32_t connector, const std::string& session_id,
-                                 const std::int32_t transaction_id, const IdTagInfo& id_tag_info)>& callback);
+        const std::function<void(const std::string& session_id, const StartTransactionRequest& request,
+                                 const StartTransactionResponse& response)>& callback);
 
     /// \brief registers a \p callback function that can be used to react on changed configuration keys. This
     /// callback is called when a configuration key has been successfully changed by the CSMS or internally using the
