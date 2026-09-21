@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/message_din/power_delivery.hpp>
 
+#include <iso15118/detail/helper.hpp>
 #include <iso15118/detail/message_din/variant_access.hpp>
 
 #include <cbv2g/din/din_msgDefDatatypes.h>
@@ -37,6 +38,10 @@ static void convert(const datatypes::ChargingProfile& in, struct din_ChargingPro
     init_din_ChargingProfileType(&out);
     out.SAScheduleTupleID = in.sa_schedule_tuple_id;
     const auto count = std::min(in.profile_entries.size(), static_cast<size_t>(din_ProfileEntryType_24_ARRAY_SIZE));
+    if (count < in.profile_entries.size()) {
+        // The ISO 15118-2 side of this layer refuses to truncate: it throws. DIN clamps, so say so.
+        logf_warning("Truncating a DIN ChargingProfile from %zu to %zu entries", in.profile_entries.size(), count);
+    }
     out.ProfileEntry.arrayLen = static_cast<uint16_t>(count);
     for (size_t i = 0; i < count; ++i) {
         out.ProfileEntry.array[i].ChargingProfileEntryStart = in.profile_entries[i].charging_profile_entry_start;

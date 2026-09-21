@@ -24,4 +24,7 @@ constexpr auto ISO20_COMMON_MESSAGES_NAMESPACE = "urn:iso:std:iso:15118:-20:Comm
 // Maps a SupportedAppProtocol namespace string to its ProtocolId, if the namespace is known.
 std::optional<ProtocolId> protocol_id_from_namespace(const std::string& protocol_namespace);
 
+// EvseV2G-compatible names: "DIN70121", "ISO15118-2-2013", "ISO15118-20".
+const char* protocol_id_to_string(ProtocolId protocol);
+
 } // namespace iso15118

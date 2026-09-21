@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -60,6 +61,16 @@ private:
  * latency for the leg that did spend it.
  */
 constexpr int reconnect_delay_ms{100};
+
+/**
+ * @brief Inclusive range of local source ports for a client socket.
+ * @details ISO 15118-2 [V2G2-077]/[V2G2-124] require the EVCC source port in
+ * 49152..65535, while the Linux default ephemeral range starts at 32768.
+ */
+struct source_port_range {
+    std::uint16_t min{0}; //!< lowest port to bind, inclusive
+    std::uint16_t max{0}; //!< highest port to bind, inclusive
+};
 
 /**
  * @brief Open a UDP socket in server mode
@@ -178,12 +189,15 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, co
  * @param[in] device Optional interface name (e.g. "eth0"). When non-empty the socket is bound
  * to that device via SO_BINDTODEVICE before connect. If the caller lacks CAP_NET_RAW, falls back
  * to source-IP bind using the interface's IPv4 address (no privilege needed).
+ * @param[in] source_ports Optional local source port range bound before connect. Unset lets the
+ * kernel pick the port.
  * @return The managed file descriptor of the socket
  * @throws socket_error if the operation fails. Catch it rather than
  * std::runtime_error to recover the errno behind the failure.
  */
 event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms,
-                                              const std::string& device = {});
+                                              const std::string& device = {},
+                                              std::optional<source_port_range> const& source_ports = std::nullopt);
 
 /**
  * @brief Open a TCP socket in server mode (bound and listening).

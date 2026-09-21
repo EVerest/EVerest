@@ -170,6 +170,99 @@ target_sources(iso15118
         tbd_controller.cpp
 )
 
+# The EV side is opt-in: consumers that only implement a charger (the SECC) should not pay to
+# build or link it. everest-core turns it on for the Ev15118 module.
+if(ISO15118_BUILD_EV_SIDE)
+    target_sources(iso15118
+        PRIVATE
+        # message_din (DIN SPEC 70121)
+        message_din/variant.cpp
+        message_din/common_types.cpp
+        message_din/session_setup.cpp
+        message_din/service_discovery.cpp
+        message_din/service_payment_selection.cpp
+        message_din/contract_authentication.cpp
+        message_din/charge_parameter_discovery.cpp
+        message_din/cable_check.cpp
+        message_din/pre_charge.cpp
+        message_din/power_delivery.cpp
+        message_din/current_demand.cpp
+        message_din/welding_detection.cpp
+        message_din/session_stop.cpp
+
+        # message_2 (ISO 15118-2)
+        message_2/variant.cpp
+        message_2/common_types.cpp
+        message_2/session_setup.cpp
+        message_2/service_discovery.cpp
+        message_2/service_detail.cpp
+        message_2/payment_service_selection.cpp
+        message_2/payment_details.cpp
+        message_2/authorization.cpp
+        message_2/charge_parameter_discovery.cpp
+        message_2/power_delivery.cpp
+        message_2/charging_status.cpp
+        message_2/cable_check.cpp
+        message_2/pre_charge.cpp
+        message_2/current_demand.cpp
+        message_2/welding_detection.cpp
+        message_2/session_stop.cpp
+        message_2/metering_receipt.cpp
+        message_2/certificate_installation.cpp
+
+        session/protocol.cpp
+
+        ev/fsm_base.cpp
+        ev/sap_offer.cpp
+        ev/session/feedback.cpp
+
+        ev/d20/context.cpp
+        ev/d20/context_helper.cpp
+        ev/d20/engine.cpp
+        ev/d20/timeouts.cpp
+        ev/d20/state/supported_app_protocol.cpp
+        ev/d20/state/session_setup.cpp
+        ev/d20/state/authorization_setup.cpp
+        ev/d20/state/authorization.cpp
+        ev/d20/state/service_discovery.cpp
+        ev/d20/state/service_detail.cpp
+        ev/d20/state/service_selection.cpp
+        ev/d20/state/schedule_exchange.cpp
+        ev/d20/state/dc_charge_parameter_discovery.cpp
+        ev/d20/state/dc_cable_check.cpp
+        ev/d20/state/dc_pre_charge.cpp
+        ev/d20/state/dc_charge_loop.cpp
+        ev/d20/state/dc_welding_detection.cpp
+        ev/d20/state/power_delivery.cpp
+        ev/d20/state/session_stop.cpp
+        ev/d20/state/ac_charge_parameter_discovery.cpp
+        ev/d20/state/ac_charge_loop.cpp
+        ev/d20/state/ac_der_iec_charge_parameter_discovery.cpp
+        ev/d20/state/ac_der_iec_charge_loop.cpp
+        ev/ac_phase_split.cpp
+    )
+
+    add_subdirectory(ev/d2)
+    add_subdirectory(ev/din)
+
+    target_sources(iso15118
+        PRIVATE
+        ev/session.cpp
+        ev/controller.cpp
+        ev/config_validation.cpp
+        ev/transport/sdp_client.cpp
+        ev/transport/data_client.cpp
+    )
+
+    # Only the EV side uses everest::io, and only it speaks ISO 15118-2 or DIN SPEC 70121.
+    target_link_libraries(iso15118
+        PUBLIC
+            everest::io
+            cbv2g::iso2
+            cbv2g::din
+    )
+endif()
+
 target_link_libraries(iso15118
     PUBLIC
         # FIXME (aw): would be nice if we could make this private!

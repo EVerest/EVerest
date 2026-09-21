@@ -27,22 +27,13 @@ template <> void convert(const struct iso2_MeteringReceiptReqType& in, MeteringR
 
 template <> void convert(const MeteringReceiptRequest& in, struct iso2_MeteringReceiptReqType& out) {
     init_iso2_MeteringReceiptReqType(&out);
+    // Referenced by the xmldsig SignedInfo, so it is always set (default "id1", assigned by the EV state).
     std::copy(in.session_id.begin(), in.session_id.end(), out.SessionID.bytes);
     out.SessionID.bytesLen = datatypes::SESSION_ID_LENGTH;
     convert(in.meter_info, out.MeterInfo);
     if (in.sa_schedule_tuple_id.has_value()) {
         out.SAScheduleTupleID = in.sa_schedule_tuple_id.value();
         CB_SET_USED(out.SAScheduleTupleID);
-    }
-}
-
-template <> void convert(const struct iso2_MeteringReceiptResType& in, MeteringReceiptResponse& out) {
-    cb_convert_enum(in.ResponseCode, out.response_code);
-    if (in.AC_EVSEStatus_isUsed) {
-        convert(in.AC_EVSEStatus, out.ac_evse_status.emplace());
-    }
-    if (in.DC_EVSEStatus_isUsed) {
-        convert(in.DC_EVSEStatus, out.dc_evse_status.emplace());
     }
 }
 
@@ -58,10 +49,28 @@ template <> void convert(const MeteringReceiptResponse& in, struct iso2_Metering
     }
 }
 
+// EV direction: decode the SECC's MeteringReceiptRes.
+template <> void convert(const struct iso2_MeteringReceiptResType& in, MeteringReceiptResponse& out) {
+    cb_convert_enum(in.ResponseCode, out.response_code);
+    if (in.DC_EVSEStatus_isUsed) {
+        out.dc_evse_status.emplace();
+        convert(in.DC_EVSEStatus, out.dc_evse_status.value());
+    }
+    if (in.AC_EVSEStatus_isUsed) {
+        out.ac_evse_status.emplace();
+        convert(in.AC_EVSEStatus, out.ac_evse_status.value());
+    }
+}
+
 template <> void insert_type(VariantAccess& va, const struct iso2_MeteringReceiptReqType& in) {
     va.insert_type<MeteringReceiptRequest>(in);
 }
 
+template <> void insert_type(VariantAccess& va, const struct iso2_MeteringReceiptResType& in) {
+    va.insert_type<MeteringReceiptResponse>(in);
+}
+
+// Only the request->cbv2g direction existed, making this the one asymmetric ISO 15118-2 message pair.
 template <> int serialize_to_exi(const MeteringReceiptRequest& in, exi_bitstream_t& out) {
     iso2_exiDocument doc{};
     convert(in.header, doc.V2G_Message.Header);

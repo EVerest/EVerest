@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/message_2/charge_parameter_discovery.hpp>
 
+#include <iso15118/detail/helper.hpp>
 #include <iso15118/detail/message_2/variant_access.hpp>
 
 #include <cbv2g/iso_2/iso2_msgDefDatatypes.h>
@@ -122,6 +123,12 @@ static void convert(const struct iso2_SAScheduleListType& in, datatypes::SASched
         out_tuple.sa_schedule_tuple_id = tuple.SAScheduleTupleID;
         for (uint16_t j = 0; j < tuple.PMaxSchedule.PMaxScheduleEntry.arrayLen; j++) {
             const auto& entry = tuple.PMaxSchedule.PMaxScheduleEntry.array[j];
+            // Same choice as the SalesTariffEntry loop below: TimeInterval is abstract and empty,
+            // so an entry on that branch has no start to convert.
+            if (not entry.RelativeTimeInterval_isUsed) {
+                logf_warning("Dropping an ISO 15118-2 PMaxScheduleEntry that carries no RelativeTimeInterval");
+                continue;
+            }
             auto& out_entry = out_tuple.pmax_schedule.emplace_back();
             out_entry.start = entry.RelativeTimeInterval.start;
             if (entry.RelativeTimeInterval.duration_isUsed) {

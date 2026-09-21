@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
+
+#include <cbv2g/din/din_msgDefDatatypes.h>
+#include <cbv2g/din/din_msgDefEncoder.h>
+
+#include <iso15118/detail/cb_exi.hpp>
 
 #include <iso15118/message_din/charge_parameter_discovery.hpp>
 #include <iso15118/message_din/variant.hpp>
@@ -86,6 +93,59 @@ SCENARIO("Se/Deserialize DIN charge parameter discovery messages") {
             REQUIRE(d.evse_maximum_voltage_limit == 900.0);
             REQUIRE(d.evse_minimum_voltage_limit == 200.0);
             REQUIRE(d.evse_peak_current_ripple == 2.0);
+        }
+    }
+}
+
+// The library's own encoder always writes RelativeTimeInterval, so a round trip cannot reach the
+// other branch of the PMaxScheduleEntry choice. This builds that branch with the raw cbv2g
+// encoder, which is the only way a real SECC's bytes could ever produce it.
+SCENARIO("DIN charge_parameter_discovery_res with a TimeInterval schedule entry") {
+
+    const datatypes::SessionId session_id = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+
+    GIVEN("a schedule whose only entry is on the TimeInterval branch") {
+        din_exiDocument doc{};
+        init_din_exiDocument(&doc);
+        init_din_BodyType(&doc.V2G_Message.Body);
+        std::copy(session_id.begin(), session_id.end(), doc.V2G_Message.Header.SessionID.bytes);
+        doc.V2G_Message.Header.SessionID.bytesLen = static_cast<uint16_t>(session_id.size());
+
+        auto& res = doc.V2G_Message.Body.ChargeParameterDiscoveryRes;
+        init_din_ChargeParameterDiscoveryResType(&res);
+        doc.V2G_Message.Body.ChargeParameterDiscoveryRes_isUsed = 1u;
+        res.ResponseCode = din_responseCodeType_OK;
+        res.EVSEProcessing = din_EVSEProcessingType_Finished;
+
+        auto& tuple = res.SAScheduleList.SAScheduleTuple.array[0];
+        init_din_SAScheduleTupleType(&tuple);
+        tuple.SAScheduleTupleID = 1;
+        tuple.PMaxSchedule.PMaxScheduleID = 1;
+
+        auto& entry = tuple.PMaxSchedule.PMaxScheduleEntry.array[0];
+        init_din_PMaxScheduleEntryType(&entry);
+        // TimeInterval carries no content: din_IntervalType is the abstract, empty type.
+        entry.TimeInterval_isUsed = 1u;
+        entry.PMax = 42;
+        tuple.PMaxSchedule.PMaxScheduleEntry.arrayLen = 1;
+
+        res.SAScheduleList.SAScheduleTuple.arrayLen = 1;
+        res.SAScheduleList_isUsed = 1u;
+
+        uint8_t buffer[1024];
+        auto out = get_exi_output_stream(io::StreamOutputView{buffer, sizeof(buffer)});
+        REQUIRE(encode_din_exiDocument(&out, &doc) == 0);
+        const auto length = exi_bitstream_get_length(&out);
+
+        THEN("the entry is dropped rather than decoded from uninitialised memory") {
+            const io::StreamInputView view{buffer, length};
+            message_din::Variant variant(view);
+
+            REQUIRE(variant.get_type() == Type::ChargeParameterDiscoveryRes);
+            const auto& msg = variant.get<ChargeParameterDiscoveryResponse>();
+            REQUIRE(msg.sa_schedule_list.has_value());
+            REQUIRE(msg.sa_schedule_list->size() == 1);
+            REQUIRE(msg.sa_schedule_list->at(0).pmax_schedule.empty());
         }
     }
 }

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/message_din/charge_parameter_discovery.hpp>
 
+#include <iso15118/detail/helper.hpp>
 #include <iso15118/detail/message_din/variant_access.hpp>
 
 #include <cbv2g/din/din_msgDefDatatypes.h>
@@ -115,6 +116,13 @@ static void convert(const struct din_SAScheduleListType& in, datatypes::SASchedu
         for (uint16_t e = 0;
              e < in_tuple.PMaxSchedule.PMaxScheduleEntry.arrayLen and e < din_PMaxScheduleEntryType_5_ARRAY_SIZE; ++e) {
             const auto& in_entry = in_tuple.PMaxSchedule.PMaxScheduleEntry.array[e];
+            // PMaxScheduleEntry carries a choice, and RelativeTimeInterval is the only member DIN
+            // defines: TimeInterval's type is abstract and empty, so the other branch holds no
+            // start and no duration to read.
+            if (not in_entry.RelativeTimeInterval_isUsed) {
+                logf_warning("Dropping a DIN PMaxScheduleEntry that carries no RelativeTimeInterval");
+                continue;
+            }
             auto& out_entry = out_tuple.pmax_schedule.emplace_back();
             out_entry.start = in_entry.RelativeTimeInterval.start;
             // duration is optional in the DIN schema; reading it unconditionally would pull an

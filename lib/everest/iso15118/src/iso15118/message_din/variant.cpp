@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/message_din/variant.hpp>
 
 #include <cassert>
@@ -18,7 +18,7 @@ Variant::Variant(const io::StreamInputView& buffer_view) {
         get_exi_input_stream(buffer_view), nullptr, this->data, this->type, this->error,
     };
 
-    din_exiDocument doc;
+    din_exiDocument doc{};
 
     const auto decode_status = decode_din_exiDocument(&va.input_stream, &doc);
 

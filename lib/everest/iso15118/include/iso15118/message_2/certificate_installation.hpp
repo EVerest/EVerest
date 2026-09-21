@@ -2,6 +2,7 @@
 // Copyright 2025 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -11,11 +12,17 @@
 
 namespace iso15118::message_2 {
 
-// The serial is modelled as int64 for parity with the ISO 15118-20 layer; real X509 serials may
-// exceed 64 bit, which is a known simplification.
+// Widest serial the EXI integer converter can take. It writes ceil(8 * n / 7) octets into a fixed
+// 29-octet buffer and checks no length itself, so 26 bytes already overrun it while still reporting
+// success.
+inline constexpr std::size_t MAX_SERIAL_NUMBER_BYTES = 25;
+
+// One entry of the CertificateInstallationReq ListOfRootCertificateIDs (X509IssuerSerialType). The
+// serial is the big-endian magnitude as carried in the certificate; RFC 5280 allows up to 20 octets,
+// which no integer type of the C++ layer holds.
 struct RootCertificateId {
     std::string issuer_name;
-    int64_t serial_number{0};
+    std::vector<uint8_t> serial_number;
 };
 
 // The whole element is signed with the OEM provisioning certificate key and the signature is

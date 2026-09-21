@@ -2,6 +2,8 @@
 // Copyright 2025 Pionix GmbH and Contributors to EVerest
 #include <iso15118/message_2/certificate_installation.hpp>
 
+#include <stdexcept>
+
 #include <iso15118/detail/message_2/variant_access.hpp>
 
 #include <cbv2g/common/exi_basetypes.h>
@@ -86,9 +88,14 @@ template <> void convert(const CertificateInstallationRequest& in, struct iso2_C
     CPP2CB_ARRAY_SIZE_CHECK(in.root_certificate_ids.size(), list.array);
     uint16_t index = 0;
     for (const auto& rid : in.root_certificate_ids) {
+        if (rid.serial_number.size() > MAX_SERIAL_NUMBER_BYTES) {
+            throw std::runtime_error("RootCertificateID serial number too wide for the EXI converter");
+        }
         auto& entry = list.array[index++];
         CPP2CB_STRING(rid.issuer_name, entry.X509IssuerName);
-        exi_basetypes_convert_64_to_signed(&entry.X509SerialNumber, rid.serial_number);
+        entry.X509SerialNumber.is_negative = 0;
+        exi_basetypes_convert_bytes_to_unsigned(&entry.X509SerialNumber.data, rid.serial_number.data(),
+                                                rid.serial_number.size());
     }
     list.arrayLen = in.root_certificate_ids.size();
 }
