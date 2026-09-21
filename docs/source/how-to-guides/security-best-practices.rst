@@ -80,14 +80,15 @@ of its ``manifest.yaml``:
 
 Here is a list of capabilities required by the EVerest modules:
 
-================== ============================================
+================== ==============================================================
 Module name        Capabilities
-================== ============================================
+================== ==============================================================
 EvseSlac / EvSlac  CAP_NET_RAW
 Setup              CAP_NET_ADMIN, CAP_NET_RAW, CAP_DAC_OVERRIDE
 PacketSniffer      CAP_NET_RAW
 Huawei_V100R023C10 CAP_NET_RAW
-================== ============================================
+EvseManager        CAP_NET_RAW, only with ``debug_emit_cp_state_hpav_frames``
+================== ==============================================================
 
 The script ``applications/utils/scripts/set_module_capabilities.py`` reads
 the manifests of all installed modules and grants these capabilities to the
