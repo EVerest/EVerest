@@ -175,10 +175,6 @@ pyOpenSSL:
   description: "Python wrapper module around the OpenSSL library"
   license: "Apache-2.0"
 
-libfsm:
-  description: "A tiny C++14 library for writing maintainable finite state machines"
-  license: "Apache-2.0"
-
 liblog:
   description: "C++ logging and exceptions library for the EVerest framework"
   license: "Apache-2.0"
@@ -218,11 +214,6 @@ libevse-security:
 libslac:
   description: "Simple ISO15118-3 SLAC library"
   license: "Apache-2.0"
-# dependencies of libslac
-hash-library:
-  description: "Portable C++ hashing library"
-  license: "Zlib"
-
 libtimer:
   description: "C++ timer library for the EVerest framework"
   license: "Apache-2.0"
