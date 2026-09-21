@@ -90,7 +90,15 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 stop_socat() {
     if [ -f "$SOCAT_PIDFILE" ]; then
-        kill "$(cat "$SOCAT_PIDFILE")" 2>/dev/null || true
+        local pid
+        pid=$(cat "$SOCAT_PIDFILE")
+        kill "$pid" 2>/dev/null || true
+        # kill returns before the process is gone; the new forward binds the same address a few
+        # lines later and used to lose the race ("Address already in use", bench 21.9.).
+        for _ in $(seq 1 20); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.1
+        done
         rm -f "$SOCAT_PIDFILE"
     fi
 }
@@ -209,10 +217,14 @@ DERIVED_CONFIG=/tmp/$(basename "$CB_CONFIG_SRC" .yaml)-netns.yaml
 # bringing its bridges up - the board is connected the whole time, which makes it look like a
 # namespace networking fault. Absolutise it against the source config's directory.
 CB_CONFIG_DIR=$(cd "$(dirname "$CB_CONFIG_SRC")" && pwd)
-sed -e "s/mqtt_remote: \"localhost\"/mqtt_remote: \"$HOST_IP\"/" \
-    -e "s/mqtt_bind: 127.0.0.1/mqtt_bind: $NS_IP/" \
-    -e "s#^\([[:space:]]*fw_file:[[:space:]]*\)\./#\1$CB_CONFIG_DIR/#" \
-    -e "s#^\([[:space:]]*fw_file:[[:space:]]*\)\([^/[:space:]]\)#\1$CB_CONFIG_DIR/\2#" \
+# Every local broker spelling - "localhost", localhost, "127.0.0.1", 127.0.0.1 - goes to the veth:
+# the MCS EV config quotes "localhost", the CCS EV config (config-CB-EVAL-EV.yaml) writes a bare
+# 127.0.0.1 in its ev_bsp/evse_bsp sections, and a bridge left on 127.0.0.1 dials a port nothing
+# listens on inside the namespace (bench 21.9.: the CCS EV daemon came up, EVerest never saw it).
+sed -E -e "s/^([[:space:]]*mqtt_remote:[[:space:]]*)\"?(localhost|127\.0\.0\.1)\"?[[:space:]]*$/\1\"$HOST_IP\"/" \
+    -e "s/^([[:space:]]*mqtt_bind:[[:space:]]*)\"?(localhost|127\.0\.0\.1)\"?[[:space:]]*$/\1$NS_IP/" \
+    -e "s#^([[:space:]]*fw_file:[[:space:]]*)\./#\1$CB_CONFIG_DIR/#" \
+    -e "s#^([[:space:]]*fw_file:[[:space:]]*)([^/[:space:]])#\1$CB_CONFIG_DIR/\2#" \
     "$CB_CONFIG_SRC" >"$DERIVED_CONFIG"
 # mktemp under sudo creates the file root-owned mode 0600, and everything past the handoff runs
 # as the invoking user again - who must be able to read their own daemon config.

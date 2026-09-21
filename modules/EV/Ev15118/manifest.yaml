@@ -297,6 +297,9 @@ config:
     type: number
     minimum: 0
     default: 300
+# Bench control: everest_external/nodered/ev15118/cmd/select_protocol (all | iso20 | iso2 | din)
+# narrows the SupportedAppProtocol offer of the next sessions.
+enable_external_mqtt: true
 provides:
   ev:
     interface: ISO15118_ev

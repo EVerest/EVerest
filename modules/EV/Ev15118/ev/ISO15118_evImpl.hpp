@@ -8,6 +8,7 @@
 // template version 4
 //
 
+#include <atomic>
 #include <generated/interfaces/ISO15118_ev/Implementation.hpp>
 
 #include "../Ev15118.hpp"
@@ -127,6 +128,11 @@ private:
     iso15118::ev::d2::PnCConfig pnc_material;
     // False when ready() bailed out before starting the worker; start_charging then fails.
     bool worker_started{false};
+    // Bench control (external MQTT select_protocol): -1 = the configured offer in priority order,
+    // otherwise the one iso15118::ProtocolId to offer. Read per session in make_ev_config.
+    std::atomic<int> selected_protocol{-1};
+    // The SAP offer of the next session: the configured generations narrowed by selected_protocol.
+    std::vector<iso15118::ProtocolId> offered_protocols() const;
 
     void session_worker();
     void run_one_session();

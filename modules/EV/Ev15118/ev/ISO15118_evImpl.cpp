@@ -405,6 +405,25 @@ void ISO15118_evImpl::ready() {
         pnc_material = build_pnc_config(mod->config, mod->info.paths.etc);
     }
 
+    // Bench control: narrow the SupportedAppProtocol offer of the following sessions to one
+    // generation (or back to the configured list). Same external-MQTT style as EvManager's carsim
+    // commands, so the EV control panel can drive it without an interface change.
+    mod->mqtt.subscribe("everest_external/nodered/ev15118/cmd/select_protocol", [this](const std::string& message) {
+        int selection = -1;
+        if (message == "iso20") {
+            selection = static_cast<int>(iso15118::ProtocolId::ISO15118_20);
+        } else if (message == "iso2") {
+            selection = static_cast<int>(iso15118::ProtocolId::ISO15118_2);
+        } else if (message == "din") {
+            selection = static_cast<int>(iso15118::ProtocolId::DIN70121);
+        } else if (message != "all") {
+            EVLOG_warning << "Ev15118: select_protocol ignores '" << message << "' (all | iso20 | iso2 | din)";
+            return;
+        }
+        selected_protocol.store(selection);
+        EVLOG_info << "Ev15118: select_protocol -> " << message << " (applies to the next session start)";
+    });
+
     worker = std::thread([this] { session_worker(); });
     worker_started = true;
 }
@@ -428,6 +447,27 @@ ISO15118_evImpl::~ISO15118_evImpl() {
     shutdown();
 }
 
+std::vector<iso15118::ProtocolId> ISO15118_evImpl::offered_protocols() const {
+    std::vector<iso15118::ProtocolId> configured{iso15118::ProtocolId::ISO15118_20};
+    if (mod->config.supported_ISO15118_2) {
+        configured.push_back(iso15118::ProtocolId::ISO15118_2);
+    }
+    if (mod->config.supported_DIN70121) {
+        configured.push_back(iso15118::ProtocolId::DIN70121);
+    }
+    const int selection = selected_protocol.load();
+    if (selection < 0) {
+        return configured;
+    }
+    const auto wanted = static_cast<iso15118::ProtocolId>(selection);
+    if (std::find(configured.begin(), configured.end(), wanted) == configured.end()) {
+        EVLOG_warning << "Ev15118: select_protocol asks for a generation this module does not have enabled "
+                         "(supported_ISO15118_2 / supported_DIN70121); offering the configured list";
+        return configured;
+    }
+    return {wanted};
+}
+
 iso15118::ev::EvConfig ISO15118_evImpl::make_ev_config(const SessionState& state) const {
     iso15118::ev::EvConfig ev_config;
 
@@ -437,20 +477,26 @@ iso15118::ev::EvConfig ISO15118_evImpl::make_ev_config(const SessionState& state
     ev_config.response_timeout = std::chrono::milliseconds(mod->config.response_timeout_ms);
     ev_config.authorization_timeout = std::chrono::milliseconds(mod->config.authorization_timeout_ms);
 
-    // Priority order in the SAP offer.
-    ev_config.supported_protocols = {iso15118::ProtocolId::ISO15118_20};
-    if (mod->config.supported_ISO15118_2) {
-        ev_config.supported_protocols.push_back(iso15118::ProtocolId::ISO15118_2);
-    }
-    if (mod->config.supported_DIN70121) {
-        ev_config.supported_protocols.push_back(iso15118::ProtocolId::DIN70121);
-    }
+    // Priority order in the SAP offer, narrowed by a bench select_protocol.
+    ev_config.supported_protocols = offered_protocols();
+    const bool only_iso2 = ev_config.supported_protocols.size() == 1 and
+                           ev_config.supported_protocols.front() == iso15118::ProtocolId::ISO15118_2;
+    const bool only_din = ev_config.supported_protocols.size() == 1 and
+                          ev_config.supported_protocols.front() == iso15118::ProtocolId::DIN70121;
 
     auto& tls = ev_config.tls;
     // enforce_tls implies a TLS connection regardless of tls_active.
     tls.use_tls = mod->config.tls_active or mod->config.enforce_tls;
     tls.enforce_tls = mod->config.enforce_tls;
     tls.enable_tls_1_3 = mod->config.enable_tls_1_3;
+    // A narrowed offer takes the transport its generation needs: -2 mandates TLS 1.2 [V2G2-602]
+    // (a 1.3-only hello is refused), DIN SPEC 70121 has no TLS at all. Only an explicit enforce_tls
+    // keeps TLS on for DIN.
+    if (only_iso2) {
+        tls.enable_tls_1_3 = false;
+    } else if (only_din) {
+        tls.use_tls = mod->config.enforce_tls;
+    }
     tls.verify_server_certificate = mod->config.verify_server_certificate;
     tls.enable_key_logging = mod->config.enable_tls_key_logging;
     tls.key_logging_path = mod->config.tls_key_logging_path;
@@ -762,7 +808,9 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
         }
     }
 
-    const bool pre_20_offered = mod->config.supported_ISO15118_2 or mod->config.supported_DIN70121;
+    const auto offer = offered_protocols();
+    const bool pre_20_offered = std::any_of(
+        offer.begin(), offer.end(), [](iso15118::ProtocolId id) { return id != iso15118::ProtocolId::ISO15118_20; });
 
     auto energy_service = iso15118::message_20::datatypes::ServiceCategory::DC;
     switch (EnergyTransferMode) {

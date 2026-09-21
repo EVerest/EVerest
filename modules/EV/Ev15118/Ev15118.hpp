@@ -76,9 +76,11 @@ struct Conf {
 class Ev15118 : public Everest::ModuleBase {
 public:
     Ev15118() = delete;
-    Ev15118(const ModuleInfo& info, std::unique_ptr<ISO15118_evImplBase> p_ev, Conf& config) :
-        ModuleBase(info), p_ev(std::move(p_ev)), config(config){};
+    Ev15118(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider, std::unique_ptr<ISO15118_evImplBase> p_ev,
+            Conf& config) :
+        ModuleBase(info), mqtt(mqtt_provider), p_ev(std::move(p_ev)), config(config){};
 
+    Everest::MqttProvider& mqtt;
     const std::unique_ptr<ISO15118_evImplBase> p_ev;
     const Conf& config;
 
