@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 
 /*
  The IECStateMachine class provides an adapter between the board support package driver (in a seperate module) and the
@@ -115,6 +115,8 @@ public:
     // derived CPEvents of the same measurement: downstream consumers (HLC stack) must e.g. learn
     // state A before a signal_event handler triggers the SLAC teardown.
     sigslot::signal<RawCPState> signal_raw_cp_state_changed;
+    // PWM duty cycle in percent as commanded to the BSP, 100 for X1 (no PWM) and for states E and F.
+    sigslot::signal<double> signal_pwm_duty_cycle;
 
 private:
     void connector_lock();

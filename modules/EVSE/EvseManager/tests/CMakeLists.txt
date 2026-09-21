@@ -15,6 +15,7 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 )
 
 target_sources(${TEST_TARGET_NAME} PRIVATE
+    CpStateFrameEmitterTest.cpp
     EnergyTransferModesTest.cpp
     EventQueueTest.cpp
     ErrorHandlingTest.cpp
@@ -23,6 +24,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     PowermeterLimitsTest.cpp
     SessionLogTest.cpp
     VoltagePlausibilityMonitorTest.cpp
+    ../CpStateFrameEmitter.cpp
     ../ErrorHandling.cpp
     ../IECStateMachine.cpp
     ../SessionLog.cpp

@@ -403,6 +403,38 @@ from ``50`` to ``60`` moves no frequency threshold; the default grid code carrie
 It is also load-bearing: the SAE DER limits are only derived once a positive nominal frequency and a positive
 nominal voltage have arrived, as described above.
 
+CP state in packet captures
+===========================
+
+``debug_emit_cp_state_hpav_frames`` is a debugging aid, off by default. When set to ``true``, the
+EvseManager sends a HomePlug AV ``STP_CPSTATE.IND`` vendor MME (ethertype 0x88E1, ST/IoTecha OUI
+00:80:E1) on ``debug_cp_state_hpav_device`` each time the CP state reported by the board support
+module or the PWM duty cycle commanded to it changes. Wireshark decodes the frame natively as
+``CP State Change: B, 5%``. The dsV2Gshark plugin additionally derives the X1/X2 sub-state and the
+AC current limit from it and plots the CP state in its I/O graph. Capturing on the PLC modem
+interface therefore shows CP transitions interleaved with the SLAC and ISO 15118 traffic.
+
+The frame carries the CP state, the duty cycle in percent (100 while no PWM is generated, i.e. in
+X1 and in states E and F), 1000 Hz while PWM is active and a nominal CP voltage for the state
+(12, 9, 6 and 3 V for A to D, 0 V for E and F). It is sent unicast from the interface's own MAC address to the local
+modem address ``00:b0:52:00:00:01``, the destination used by the dSPACE reference captures shipped
+with dsV2Gshark.
+
+Sending raw Ethernet frames requires the ``CAP_NET_RAW`` capability. Without it the module logs a
+warning at startup and charges normally, but no frames are sent. Grant it in the configuration:
+
+.. code-block:: yaml
+
+   evse_manager:
+     module: EvseManager
+     capabilities:
+       - CAP_NET_RAW
+     config_module:
+       debug_emit_cp_state_hpav_frames: true
+       debug_cp_state_hpav_device: eth1
+
+Do not enable this option in production.
+
 Error Handling
 ==============
 

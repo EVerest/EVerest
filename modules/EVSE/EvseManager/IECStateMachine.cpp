@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "IECStateMachine.hpp"
 #include "everest/logging.hpp"
@@ -165,6 +165,7 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
                 pwm_running = false;
                 if (not cp_state_f_requested) {
                     r_bsp->call_cp_state_X1();
+                    signal_pwm_duty_cycle(100.0);
                 }
                 ev_simplified_mode = false;
                 timer_state_C1 = TimerControl::stop;
@@ -178,6 +179,7 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
                 pwm_running = false;
                 if (not cp_state_f_requested) {
                     r_bsp->call_cp_state_X1();
+                    signal_pwm_duty_cycle(100.0);
                 }
                 ev_simplified_mode = false;
                 car_plugged_in = false;
@@ -309,6 +311,7 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
                 pwm_running = false;
                 if (not state_e_triggered_by_evse and not cp_state_f_requested) {
                     r_bsp->call_cp_state_X1();
+                    signal_pwm_duty_cycle(100.0);
                 }
                 if (last_cp_state == RawCPState::B || last_cp_state == RawCPState::C ||
                     last_cp_state == RawCPState::D) {
@@ -394,6 +397,7 @@ void IECStateMachine::set_pwm(double value) {
     }
 
     r_bsp->call_pwm_on(value * 100);
+    signal_pwm_duty_cycle(value * 100);
 
     feed_state_machine(std::nullopt);
 }
@@ -406,6 +410,7 @@ void IECStateMachine::set_cp_state_X1() {
         cp_state_f_requested = false;
     }
     r_bsp->call_cp_state_X1();
+    signal_pwm_duty_cycle(100.0);
     // Don't run the state machine in the callers context
     feed_state_machine(std::nullopt);
 }
@@ -418,6 +423,7 @@ void IECStateMachine::set_cp_state_F() {
         cp_state_f_requested = true;
     }
     r_bsp->call_cp_state_F();
+    signal_pwm_duty_cycle(100.0);
     // Don't run the state machine in the callers context
     feed_state_machine(std::nullopt);
 }
@@ -430,6 +436,7 @@ void IECStateMachine::set_cp_state_E() {
         state_e_triggered_through_handle = true;
     }
     r_bsp->call_cp_state_E();
+    signal_pwm_duty_cycle(100.0);
     // Don't run the state machine in the callers context
     feed_state_machine(std::nullopt);
 }
