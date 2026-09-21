@@ -19,9 +19,11 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
         }
     }
     GIVEN("A valid prefix, but a non existing config file") {
-        THEN("It should throw BootException") {
+        THEN("It should throw BootException about the user provided path (not the short-form lookup)") {
             CHECK_THROWS_AS(Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "non-existing-config.yaml"),
                             Everest::BootException);
+            CHECK_THROWS_WITH(Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "non-existing-config.yaml"),
+                              Catch::Matchers::ContainsSubstring("User provided config"));
         }
     }
     GIVEN("A valid prefix and a valid config file") {
@@ -80,12 +82,49 @@ SCENARIO("Check ManagerSettings without a config file", "[!throws]") {
     auto prefix = bin_dir + "empty_yaml/";
 
     GIVEN("A valid prefix without any config file and without a default.yaml") {
-        THEN("Construction should not throw (proves there is no default.yaml fallback) and use built-in defaults") {
+        THEN("The WithoutConfig constructor never looks for default.yaml and uses built-in defaults") {
             auto ms = Everest::ManagerSettings(Everest::ManagerSettings::WithoutConfig{}, prefix, "");
             CHECK(ms.config_file.empty());
             CHECK(ms.config.is_object());
             CHECK(ms.config.empty());
             CHECK(ms.db_dir == fs::path(Everest::defaults::IN_MEMORY_DB_URI));
+        }
+        THEN("The default config lookup (no --config) tolerates the missing default.yaml") {
+            CHECK_NOTHROW(Everest::ManagerSettings(prefix, ""));
+            auto ms = Everest::ManagerSettings(prefix, "");
+            CHECK(ms.config_file.empty());
+            CHECK(ms.config.is_object());
+            CHECK(ms.config.empty());
+        }
+        THEN("The three-argument constructor without --config and --db falls back to an in-memory database") {
+            auto ms = Everest::ManagerSettings(prefix, "", "");
+            CHECK(ms.config_file.empty());
+            CHECK(ms.db_dir == fs::path(Everest::defaults::IN_MEMORY_DB_URI));
+        }
+        THEN("An explicitly given short-form config name that does not exist still throws") {
+            CHECK_THROWS_AS(Everest::ManagerSettings(prefix, "does-not-exist"), Everest::BootException);
+        }
+        THEN("An explicitly given config path that does not exist still throws") {
+            CHECK_THROWS_AS(Everest::ManagerSettings(prefix, prefix + "does-not-exist.yaml"), Everest::BootException);
+        }
+    }
+    GIVEN("A valid prefix without default.yaml, no --config and an explicit database path") {
+        auto db_path = bin_dir + "empty_yaml/no_default_config.db";
+        if (fs::exists(db_path)) {
+            fs::remove(db_path);
+        }
+        Everest::ManagerSettings ms(prefix, "", db_path);
+        CHECK(ms.config_file.empty());
+        CHECK(ms.db_dir == fs::path(db_path));
+
+        THEN("Bootstrap on a fresh database should seed an empty config slot without a config file path") {
+            auto bs = Everest::init_database_bootstrap(ms);
+            CHECK(bs.module_configs_initialized == true);
+
+            everest::config::SqliteConfigSlotManager slot_mgr(bs.db_connection);
+            const auto slots = slot_mgr.list_slots();
+            REQUIRE(slots.size() == 1);
+            CHECK_FALSE(slots.front().config_file_path.has_value());
         }
     }
     GIVEN("A valid prefix without a config file and an explicit database path") {
@@ -125,10 +164,29 @@ SCENARIO("Check ManagerSettings without a config file", "[!throws]") {
     }
 }
 
+SCENARIO("Check ManagerSettings default config lookup", "[!throws]") {
+    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+    // The default_yaml fixture is the only FHS fixture that contains etc/everest/default.yaml.
+    auto prefix = bin_dir + "default_yaml/";
+    const auto default_config = fs::canonical(bin_dir + "default_yaml/etc/everest/default.yaml");
+
+    GIVEN("A valid prefix that contains etc/everest/default.yaml") {
+        THEN("No --config resolves to the default config file") {
+            auto ms = Everest::ManagerSettings(prefix, "");
+            CHECK(ms.config_file == default_config);
+            CHECK(ms.config.is_object());
+        }
+        THEN("The short form 'default' resolves to the same file") {
+            auto ms = Everest::ManagerSettings(prefix, "default");
+            CHECK(ms.config_file == default_config);
+        }
+    }
+}
+
 SCENARIO("Check resolve_boot_source", "[!throws]") {
     using Everest::BootMode;
     GIVEN("Neither --config nor --db") {
-        THEN("The YAML mode with an in-memory database is selected (default config lookup)") {
+        THEN("The YAML mode with an in-memory database is selected (optional default config lookup)") {
             const auto src = Everest::resolve_boot_source("", "", false, false);
             CHECK(src.mode == BootMode::YamlWithInMemoryDb);
             CHECK(src.config_path.empty());

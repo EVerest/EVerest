@@ -5,6 +5,7 @@
 #include "everest/logging.hpp"
 #include "ocpp/common/types.hpp"
 #include "ocpp/common/utils.hpp"
+#include <set>
 
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
@@ -389,6 +390,22 @@ void GenericOcpp::handle_monitor_variables(const std::vector<types::ocpp::Compon
     }
 }
 
+std::vector<types::ocpp::GetVariableResult>
+GenericOcpp::handle_monitor_and_get_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) {
+    // register the monitors first so that no change between reading the values and the registration is lost;
+    // both delegates handle the not-yet-started case themselves (skip with warning / all Rejected)
+    handle_monitor_variables(component_variables);
+
+    std::vector<types::ocpp::GetVariableRequest> requests;
+    requests.reserve(component_variables.size());
+    for (const auto& cv : component_variables) {
+        types::ocpp::GetVariableRequest request;
+        request.component_variable = cv; // no attribute_type: Actual is the default
+        requests.push_back(request);
+    }
+    return handle_get_variables(requests);
+}
+
 // ----------------------------------------------------------------------------
 // internal methods
 
@@ -425,7 +442,6 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
 
     wait_all_ready();
     auto [evse_connector_structure, connector_mapping] = get_connector_structure();
-    const auto der_routing_structure = evse_connector_structure;
 
     const auto share_path = remove_dir(mv_info.paths.share);
 
@@ -452,14 +468,28 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     EVLOG_info << "v2 device model database path:      " << device_model_database_path;
     EVLOG_info << "EVerest device model database path: " << everest_device_model_database_path;
 
+    // Build the DER routing table first: its keys are the EVSEs with a wired grid_support connection,
+    // which is what provisioning needs, and it stays empty on 1.6 where DER does not apply.
+    if (ocpp_2_selected()) {
+        init_grid_support_routing();
+    } else if (not mv_requires.grid_support.empty()) {
+        EVLOG_warning << "grid_support connections are wired but the active OCPP version is 1.6; DER is a "
+                         "2.x-only feature and the grid_support wiring is inert";
+    }
+
+    std::set<std::int32_t> der_wired_evse_ids;
+    for (const auto& [evse_id, _] : m_grid_support_by_evse) {
+        der_wired_evse_ids.insert(evse_id);
+    }
+
     {
         std::lock_guard lock(m_member_mux);
         // initialise everest device model
         m_everest_device_model_storage = std::make_shared<module::device_model::EverestDeviceModelStorage>(
             mv_requires.evse_manager, mv_requires.extensions_15118, m_evse_hardware_capabilities_map,
             m_evse_supported_energy_transfer_modes, m_evse_service_renegotiation_supported,
-            /*with_der_components=*/true, everest_device_model_database_path, device_model_database_migration_path,
-            client);
+            /*with_der_components=*/true, der_wired_evse_ids, everest_device_model_database_path,
+            device_model_database_migration_path, client);
     }
 
     // clang-format off
@@ -486,15 +516,6 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     // properties which were loaded from configuration file(s)
     if (!mv_requires.charger_information.empty()) {
         args.charger_info = mv_requires.charger_information.at(0)->call_get_charger_information();
-    }
-
-    // must run before the charge point is built: der_active_directives_callback can fire during
-    // construction, and unmapped EVSEs need their DER controller disabled in the device model first
-    if (ocpp_2_selected()) {
-        init_grid_support_routing(der_routing_structure);
-    } else if (!mv_requires.grid_support.empty()) {
-        EVLOG_warning << "grid_support connections are wired but the active OCPP version is 1.6; DER is a "
-                         "2.x-only feature and the grid_support wiring is inert";
     }
 
     mv_charge_point.init(args);
@@ -585,17 +606,20 @@ void GenericOcpp::init_subscribe() {
     mv_requires.system.subscribe_firmware_update_status([this](auto arg) { cb_firmware_update_status(arg); });
     mv_requires.system.subscribe_log_status([this](auto arg) { cb_log_status(arg); });
 
-    mv_requires.system.subscribe_configure_network_status([this](const types::network::ConfigureNetworkStatus status) {
-        if (status.status != types::network::ConfigureNetworkFinalStatusEnum::Ready) {
-            EVLOG_warning << "configure_network_status for request_id " << status.request_id << " reported "
-                          << types::network::configure_network_final_status_enum_to_string(status.status)
-                          << "; treating as failure";
-        }
-        ocpp::ConfigNetworkResult result{};
-        result.success = (status.status == types::network::ConfigureNetworkFinalStatusEnum::Ready);
-        result.interface_address = status.interface_address;
-        fulfill_network_request(status.request_id, result);
-    });
+    if (mv_config.getDelegateNetworkConfigurationToSystem()) {
+        mv_requires.system.subscribe_configure_network_status(
+            [this](const types::network::ConfigureNetworkStatus status) {
+                if (status.status != types::network::ConfigureNetworkFinalStatusEnum::Ready) {
+                    EVLOG_warning << "configure_network_status for request_id " << status.request_id << " reported "
+                                  << types::network::configure_network_final_status_enum_to_string(status.status)
+                                  << "; treating as failure";
+                }
+                ocpp::ConfigNetworkResult result{};
+                result.success = (status.status == types::network::ConfigureNetworkFinalStatusEnum::Ready);
+                result.interface_address = status.interface_address;
+                fulfill_network_request(status.request_id, result);
+            });
+    }
 
     if (!mv_requires.reservation.empty() && mv_requires.reservation.at(0) != nullptr) {
         mv_requires.reservation.at(0)->subscribe_reservation_update([this](auto arg) { cb_reservation_update(arg); });
@@ -923,6 +947,14 @@ std::future<ocpp::ConfigNetworkResult> GenericOcpp::cb_configure_network_connect
     if (mv_shutting_down.load()) {
         ocpp::ConfigNetworkResult result{};
         result.success = false;
+        promise.set_value(result);
+        return future;
+    }
+
+    if (!mv_config.getDelegateNetworkConfigurationToSystem()) {
+        // no provider round-trip: connect as the OCPP201 module does, without an interface address
+        ocpp::ConfigNetworkResult result{};
+        result.success = true;
         promise.set_value(result);
         return future;
     }
@@ -1586,21 +1618,25 @@ void GenericOcpp::cb_time_sync(const ocpp::DateTime& current_time) {
 }
 
 void GenericOcpp::cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event,
-                                       const std::optional<std::string>& transaction_id) {
+                                       const std::optional<std::string>& transaction_id,
+                                       const ocpp::DateTime& timestamp) {
     using namespace module::conversions;
 
     auto ocpp_transaction_event = to_everest_ocpp_transaction_event(transaction_event);
     ocpp_transaction_event.transaction_id = transaction_id;
+    ocpp_transaction_event.timestamp = timestamp.to_rfc3339();
     mv_provides.ocpp_generic.publish_ocpp_transaction_event(ocpp_transaction_event);
 }
 
 void GenericOcpp::cb_transaction_event_response(const ocpp::v2::TransactionEventRequest& transaction_event,
                                                 const ocpp::v2::TransactionEventResponse& transaction_event_response,
-                                                const std::optional<std::string>& transaction_id) {
+                                                const std::optional<std::string>& transaction_id,
+                                                const ocpp::DateTime& timestamp) {
     using namespace module::conversions;
 
     auto ocpp_transaction_event = to_everest_ocpp_transaction_event(transaction_event);
     ocpp_transaction_event.transaction_id = transaction_id;
+    ocpp_transaction_event.timestamp = timestamp.to_rfc3339();
     auto ocpp_transaction_event_response = to_everest_transaction_event_response(transaction_event_response);
     ocpp_transaction_event_response.original_transaction_event = ocpp_transaction_event;
     mv_provides.ocpp_generic.publish_ocpp_transaction_event_response(ocpp_transaction_event_response);
@@ -2067,7 +2103,7 @@ void GenericOcpp::push_active_directive_sets() {
     }
 }
 
-void GenericOcpp::init_grid_support_routing(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) {
+void GenericOcpp::init_grid_support_routing() {
     for (const auto& grid_support : mv_requires.grid_support) {
         const auto mapping = grid_support->get_mapping();
         if (not mapping.has_value()) {
@@ -2079,13 +2115,6 @@ void GenericOcpp::init_grid_support_routing(const std::map<std::int32_t, std::in
         if (not inserted) {
             EVLOG_error << "grid_support connection on module " << grid_support->module_id << " maps evse "
                         << mapping->evse << " already served by another connection; keeping the first";
-        }
-    }
-
-    for (const auto& [evse_id, connector_count] : evse_connector_structure) {
-        if (m_grid_support_by_evse.find(evse_id) == m_grid_support_by_evse.end()) {
-            m_everest_device_model_storage->disable_der(evse_id);
-            EVLOG_info << "No grid_support connection for EVSE " << evse_id << ": DER controller disabled";
         }
     }
 }

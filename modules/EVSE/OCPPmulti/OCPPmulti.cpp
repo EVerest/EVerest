@@ -26,6 +26,9 @@ std::string ConfigAccess::getDatabasePath() const {
 int ConfigAccess::getDelayOcppStart() const {
     return m_config.DelayOcppStart;
 }
+bool ConfigAccess::getDelegateNetworkConfigurationToSystem() const {
+    return m_config.DelegateNetworkConfigurationToSystem;
+}
 std::string ConfigAccess::getDeviceModelConfigMappings() const {
     return m_config.DeviceModelConfigMappings;
 }
@@ -78,8 +81,6 @@ OCPPmulti::~OCPPmulti() {
 }
 
 void OCPPmulti::init() {
-    EVLOG_warning << "This OCPPmulti module is currently experimental! Configuration parameters and the integration in "
-                     "EVerest may change without further notice";
     // no code should be in the init methods
     // invoke_init(*p_ocpp16);
     // invoke_init(*p_auth_validator);

@@ -430,6 +430,13 @@ void IECStateMachine::set_cp_state_E() {
 void IECStateMachine::allow_power_on(bool value, types::evse_board_support::Reason reason) {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_allow_power_on);
+        // Change-gated diagnostic: the BSP forward is edge-triggered further down, and a lost
+        // edge is invisible in the logs otherwise (bench-found: a cable check that never closed
+        // the contactors, with every permissive provably set upstream).
+        if (power_on_allowed != value) {
+            EVLOG_info << "IEC allow_power_on requested: " << (value ? "true" : "false") << " (reason "
+                       << types::evse_board_support::reason_to_string(reason) << ")";
+        }
         // Only set the flags here in case of power on.
         power_on_allowed = value;
         power_on_reason = reason;
@@ -449,6 +456,12 @@ void IECStateMachine::call_allow_power_on_bsp(bool value) {
     if (not value) {
         power_on_allowed = false;
         power_on_reason = types::evse_board_support::Reason::PowerOff;
+    }
+    // Change-gated diagnostic, the counterpart of the one in allow_power_on(): a requested
+    // "true" that is never followed by this forward means the state machine swallowed the edge.
+    if (value != last_power_on_forwarded) {
+        last_power_on_forwarded = value;
+        EVLOG_info << "IEC allow_power_on forwarded to BSP: " << (value ? "true" : "false");
     }
     r_bsp->call_allow_power_on({value, power_on_reason});
 }

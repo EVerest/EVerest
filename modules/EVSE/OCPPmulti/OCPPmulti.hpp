@@ -52,6 +52,7 @@ public:
     [[nodiscard]] std::string getCustomMrecErrorMapPath() const override;
     [[nodiscard]] std::string getDatabasePath() const override;
     [[nodiscard]] int getDelayOcppStart() const override;
+    [[nodiscard]] bool getDelegateNetworkConfigurationToSystem() const override;
     [[nodiscard]] std::string getDeviceModelConfigMappings() const override;
     [[nodiscard]] std::string getDeviceModelConfigPath() const override;
     [[nodiscard]] std::string getDeviceModelDatabasePath() const override;
@@ -81,6 +82,7 @@ struct Conf {
     std::string CustomMrecErrorMapPath;
     std::string DatabasePath;
     int DelayOcppStart;
+    bool DelegateNetworkConfigurationToSystem;
     std::string DeviceModelConfigPath;
     std::string DeviceModelDatabasePath;
     std::string DeviceModelDatabaseMigrationPath;

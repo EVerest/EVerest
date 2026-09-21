@@ -302,6 +302,7 @@ void convert(const datatypes::BPT_Dynamic_DC_CLResControlMode& in,
     convert(in.min_voltage, out.EVSEMinimumVoltage);
 }
 
+namespace {
 struct ControlModeVisitor {
     using ScheduledCM = datatypes::Scheduled_DC_CLResControlMode;
     using BPT_ScheduledCM = datatypes::BPT_Scheduled_DC_CLResControlMode;
@@ -337,6 +338,7 @@ struct ControlModeVisitor {
 private:
     iso20_dc_DC_ChargeLoopResType& res;
 };
+} // namespace
 
 template <> void convert(const DC_ChargeLoopResponse& in, struct iso20_dc_DC_ChargeLoopResType& out) {
     init_iso20_dc_DC_ChargeLoopResType(&out);
@@ -449,6 +451,7 @@ void convert(const datatypes::BPT_Dynamic_DC_CLReqControlMode& in,
     CPP2CB_CONVERT_IF_USED(in.min_v2x_energy_request, out.EVMinimumV2XEnergyRequest);
 }
 
+namespace {
 struct RequestControlModeVisitor {
     using ScheduledCM = datatypes::Scheduled_DC_CLReqControlMode;
     using BPT_ScheduledCM = datatypes::BPT_Scheduled_DC_CLReqControlMode;
@@ -484,6 +487,7 @@ struct RequestControlModeVisitor {
 private:
     iso20_dc_DC_ChargeLoopReqType& req;
 };
+} // namespace
 
 template <> void convert(const DC_ChargeLoopRequest& in, iso20_dc_DC_ChargeLoopReqType& out) {
     init_iso20_dc_DC_ChargeLoopReqType(&out);

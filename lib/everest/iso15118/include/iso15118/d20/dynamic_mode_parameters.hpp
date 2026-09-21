@@ -3,13 +3,14 @@
 #pragma once
 
 #include <cstdint>
-#include <ctime>
 #include <optional>
 
 namespace iso15118::d20 {
 
 struct UpdateDynamicModeParameters {
-    std::optional<std::time_t> departure_time;
+    // NOTE: departure time needs to be in SECC time [V2G20-1529]:
+    // epoch seconds since UNIX time (UTC)
+    std::optional<std::uint64_t> departure_time;
     std::optional<std::uint8_t> target_soc;
     std::optional<std::uint8_t> min_soc;
 };

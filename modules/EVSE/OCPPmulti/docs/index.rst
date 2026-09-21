@@ -10,14 +10,8 @@ loading this module as part of the EVerest configuration. The module leverages l
 
 OCPPmulti is the recommended OCPP module for new EVerest configurations. It deprecates the separate
 :ref:`OCPP <everest_modules_OCPP>` (OCPP 1.6) and :ref:`OCPP201 <everest_modules_OCPP201>` (OCPP 2.0.1 / 2.1)
-modules.
-
-.. warning::
-
-   This module is currently **experimental**: configuration parameters and its
-   integration in EVerest may change without further notice. It is exempt from
-   the stability guarantees and the deprecation period of the EVerest public
-   API until promoted to stable (see :ref:`project-experimental-components`).
+modules; see :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>` for moving an
+existing deployment.
 
 In this document, **OCPP 2.x** refers to OCPP 2.0.1 and OCPP 2.1 collectively.
 
@@ -75,6 +69,19 @@ these MQTT topics (the message payload is ignored):
 * ``everest_api/ocpp/cmd/disconnect``: disconnect the OCPP websocket from the CSMS
 
 This is intended for debug and testing purposes.
+
+Network preparation via the system provider
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If ``DelegateNetworkConfigurationToSystem`` is set to ``true``, the module asks the ``system`` provider to prepare the network
+(**configure_network**) before every CSMS connection attempt and binds the websocket to the interface address the
+provider returns; see :ref:`Network connection configuration <handwritten_ocppmulti_network-connection-configuration>`.
+The provider must answer promptly (``NotSupported`` is acceptable). With the :ref:`system_API <everest_modules_system_API>`
+module the external client must reply to ``e2m/configure_network``; a client that stays silent blocks every
+connection attempt until the request times out, so the charge point never reaches the CSMS.
+
+With the default ``false`` no request is sent and the connection is established as with the
+:ref:`OCPP201 <everest_modules_OCPP201>` module (``IFace`` handling included).
 
 Device model configuration via component configs
 =================================================
@@ -188,10 +195,11 @@ previously used with OCPP 2.x, which writes back the negotiated version; OCPP 1.
 leaving the charge point unable to connect. The same fallback applies when the active slot's profile is
 incomplete; in OCPP 2.x an incomplete slot is simply skipped.
 
-The ``interface_address`` returned by the ``system`` provider's **configure_network** *replaces* the static
-``Internal``/``IFace`` configuration key when binding the websocket - including clearing it when the provider
-answers ``Ready`` or ``NotSupported`` without an address. Since this module always performs the configure_network
-round-trip, ``IFace`` is effectively not used on successful attempts.
+With ``DelegateNetworkConfigurationToSystem`` set to ``true``, the ``interface_address`` returned by the ``system`` provider's
+**configure_network** *replaces* the static ``Internal``/``IFace`` configuration key when binding the websocket -
+including clearing it when the provider answers ``Ready`` or ``NotSupported`` without an address, so ``IFace`` is
+effectively not used on successful attempts. With the default ``false`` no configure_network round-trip is performed
+and ``IFace`` is handled as in the OCPP201 module.
 
 The legacy JSON configuration backend (OCPP 1.6 without a device model, as used by the ``OCPP`` module) is
 unaffected by this and keeps the previous single-profile behavior.
@@ -420,6 +428,14 @@ Shares data between ISO 15118 and OCPP, e.g. **set_get_certificate_response** to
 Plug&Charge EV contract certificate installation. Variables received include **iso15118_certificate_request** (to
 trigger the corresponding request) and **charging_needs**.
 
+Each mapped connection provisions an **ISO15118Ctrlr** component for the served EVSE. Its **Enabled** variable is
+derived from the ``hlc_capable`` field reported by the serving :ref:`EvseManager <everest_modules_EvseManager>` via
+**get_evse**, collapsed per EVSE by **any** of its connectors, since the session runs on whichever plug can carry it.
+**Enabled** is provisioned ``ReadOnly``, so it states a static capability of the station rather than offering a CSMS
+runtime control: a station with an extensions_15118 provider mapped but HLC switched off now reports ``false`` where
+it previously reported a hardcoded ``true``. A provider mapped to an EVSE id the station does not serve is logged as
+an error and provisions no **ISO15118Ctrlr** component for that id.
+
 Requires: grid_support (0-128)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -435,10 +451,20 @@ The module maintains a per-EVSE snapshot of the DER directives currently applied
 EVSE's connection through the **set_active_directives** command. When libocpp applies, schedules, clears, supersedes, or
 expires a DER control, the snapshot is rebuilt and re-sent for every registered EVSE on its own connection.
 
-At startup the module pre-provisions an ``ACDERCtrlr`` or ``DCDERCtrlr`` device-model component (chosen by the EVSE's
-energy-transfer modes) for every DER-capable EVSE, so no static device-model JSON is required for the DER controllers.
-Any EVSE without a wired grid_support connection has its DER controller forced to ``Available="false"`` (preserving a
-CSMS-written ``"false"`` and its source), so the CSMS does not see DER as available after the wiring is removed.
+At startup the module pre-provisions an ``ACDERCtrlr`` or ``DCDERCtrlr`` device-model component for every EVSE with a
+wired grid_support connection, so no static device-model JSON is required for the DER controllers. Which of the two an
+EVSE gets follows the charge mode the serving EvseManager reports through ``get_evse``. Both facts are static and
+available before the device model is built, so the decision is made once, at provisioning.
+
+The component is deliberately not derived from the EVSE's supported energy-transfer modes: those are published
+asynchronously and are not waited on, so an EVSE whose modes had not arrived in time received no DER controller at all
+for the lifetime of the process and answered every DER message ``UnknownComponent``.
+
+The decision fails closed. An EVSE with no grid_support connection, or one whose EvseManager reports no charge mode,
+gets no DER controller, and the reason is logged. Whichever component was *not* selected is forced to
+``Available="false"`` and ``Enabled="false"`` after provisioning, since a component written by an earlier boot is
+otherwise retained in the device-model database; the forcing only clears a persisted ``"true"``, so a CSMS-written
+``"false"`` and its source survive an unwire/rewire cycle.
 
 The device declares its inverter capability through the ``capability`` variable. The module stores the capability, writes
 its config variables (``ModesSupported`` and the DC nameplate values) through the device model, and republishes the
@@ -495,12 +521,13 @@ for production use without modification). Used to execute and control system-wid
 * **set_system_time** to apply the time communicated by the CSMS
 * **get_boot_reason** for the boot notification at startup
 * **configure_network** to prepare the network for a connection attempt on a network profile slot (see
-  :ref:`Network connection configuration <handwritten_ocppmulti_network-connection-configuration>`); a provider
-  without special network handling answers ``NotSupported``
+  :ref:`Network connection configuration <handwritten_ocppmulti_network-connection-configuration>`); only called
+  when ``DelegateNetworkConfigurationToSystem`` is ``true``; a provider without special network handling answers
+  ``NotSupported``
 
 The **log_status** and **firmware_update_status** variables are received to report the corresponding status
-notifications to the CSMS, and **configure_network_status** reports the asynchronous outcome of
-**configure_network** requests.
+notifications to the CSMS, and **configure_network_status** (subscribed only when ``DelegateNetworkConfigurationToSystem``
+is ``true``) reports the asynchronous outcome of **configure_network** requests.
 
 Error reporting
 ===============
@@ -647,8 +674,9 @@ OCPP configuration can be read, written and monitored through three channels:
   ``SetVariables`` / ``SetVariableMonitoring`` in OCPP 2.x,
   ``GetConfiguration`` / ``ChangeConfiguration`` in OCPP 1.6.
 - **EVerest modules**: require the ``ocpp`` interface and call
-  ``call_get_variables`` / ``call_set_variables`` / ``call_monitor_variables``;
-  subscribe ``event_data`` for monitor notifications.
+  ``call_get_variables`` / ``call_set_variables`` / ``call_monitor_variables``
+  / ``call_monitor_and_get_variables``; subscribe ``event_data`` for monitor
+  notifications.
 - **External integrations** (web interface, configuration tools, vendor cloud
   agents): the :ref:`ocpp_consumer_API
   <everest_modules_handwritten_ocpp_consumer_API>` module, which republishes
@@ -780,16 +808,25 @@ Failover between slots
 """"""""""""""""""""""
 
 Slots are tried in priority order, and the list wraps around. A slot is skipped
-when the ``system`` provider's **configure_network** answers
-``Failed``/``Rejected`` (or does not respond within
-``InternalCtrlr``/``NetworkConfigTimeout`` seconds, default 60), when the
+when ``DelegateNetworkConfigurationToSystem`` is ``true`` and the ``system`` provider's
+**configure_network** answers ``Failed``/``Rejected`` or answers ``Processing``
+without publishing **configure_network_status** within
+``InternalCtrlr``/``NetworkConfigTimeout`` seconds (default 60), when the
 resulting profile is invalid, or when the websocket connection fails
 ``OCPPCommCtrlr``/``NetworkProfileConnectionAttempts`` times in a row. Setting
 ``NetworkProfileConnectionAttempts`` to ``-1`` means retry-forever and thereby
 disables the websocket-failure-driven part of the failover; only do that
 deliberately. There is no automatic fall-back to a higher-priority slot while a
-lower-priority one is connected. The address the ``system`` provider returns
-from **configure_network** is what the websocket is bound to for that attempt.
+lower-priority one is connected. With ``DelegateNetworkConfigurationToSystem`` the
+address the ``system`` provider returns from **configure_network** is what the
+websocket is bound to for that attempt; without it no provider request is made.
+
+The **configure_network** command itself is called synchronously on libocpp's
+connectivity thread, so a provider that does not answer the command at all is
+bounded by the EVerest framework command timeout (300 seconds), not by
+``NetworkConfigTimeout``. Each connection attempt then blocks for that long
+before the slot is retried, which is why the flag must only be enabled with a
+provider (and, for ``system_API``, an external client) that answers promptly.
 
 Profiles with a ``SecurityProfile`` below the *confirmed* security profile -
 the ``SecurityCtrlr``/``SecurityProfile`` value, which is raised only after a
@@ -940,6 +977,20 @@ Monitoring configuration changes
 
 Legacy-form registrations (empty component name) receive legacy-shaped events.
 Registrations are additive across calls.
+
+``monitor_and_get_variables`` takes the same request, registers the same
+monitors and additionally returns the current values in the reply (same result
+shape, order and echo semantics as ``get_variables``). The monitors are
+registered before the values are read, so no update is lost: every change from
+registration on is published as ``event_data``, and the returned value
+reflects the variable's state at some point after registration. The reply is
+not ordered against the event stream, however: a change around the call may
+show up both in the reply and as an event, and an event may arrive before the
+reply does. Treat ``event_data`` as authoritative for a variable once its
+first event arrived; use the returned value only until then. Use the command
+at startup to register monitors and obtain the initial values in a single
+call, without losing an update between the first read and the monitor
+registration.
 
 .. _handwritten_ocppmulti_migration-from-ocpp16-key-addressing:
 

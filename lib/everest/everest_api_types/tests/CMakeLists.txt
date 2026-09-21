@@ -99,7 +99,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
 
 add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
 
-file(GLOB API_FILES ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/include/everest_api_types/*/API.hpp)
+file(GLOB API_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/include/everest_api_types/*/API.hpp)
 file(GLOB TEST_GENERATOR_PY_FILES ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/*.py)
 set (TEST_DISABLE_FILE ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/disable.csv)
 set (SERIALIZATION_TEST_HELPERS_HPP ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/SerializationTestHelpers.hpp)
@@ -115,27 +115,24 @@ set(
      "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/"
      "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/disable.csv"
      "${GENERATED_TESTS_LOCATION}"
-    VERBATIM
 )
 
-add_custom_command(
-    OUTPUT "${GENERATED_TESTS_LOCATION}CMakeLists.txt"
-    COMMAND
-    ${GENERATE_COMMAND}
-    DEPENDS ${API_FILES} ${TEST_GENERATOR_PY_FILES} ${TEST_DISABLE_FILE} ${SERIALIZATION_TEST_HELPERS_HPP}
+execute_process(
+    COMMAND ${GENERATE_COMMAND}
+    RESULT_VARIABLE GENERATE_TESTS_RESULT
 )
-
-add_custom_target(generate_new_tests_on_file_change_only ALL
-    DEPENDS "${GENERATED_TESTS_LOCATION}CMakeLists.txt"
-)
-
-add_dependencies(${TEST_TARGET_NAME} generate_new_tests_on_file_change_only generate_actual_hash_csv)
-
-#generate tests for the first time
-
-if(NOT EXISTS ${GENERATED_TESTS_LOCATION}) 
-    execute_process(COMMAND ${GENERATE_COMMAND})
+if(NOT GENERATE_TESTS_RESULT EQUAL 0)
+    message(FATAL_ERROR
+        "Failed to generate the API serialization tests (exit code: ${GENERATE_TESTS_RESULT})")
 endif()
 
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${API_FILES}
+    ${TEST_GENERATOR_PY_FILES}
+    ${TEST_DISABLE_FILE}
+    ${SERIALIZATION_TEST_HELPERS_HPP}
+)
+
+add_dependencies(${TEST_TARGET_NAME} generate_actual_hash_csv)
 
 add_subdirectory(${GENERATED_TESTS_LOCATION} ${GENERATED_TESTS_LOCATION})

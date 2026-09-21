@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "OCPP201.hpp"
+#include <set>
 
 #include <fmt/core.h>
 #include <fstream>
@@ -381,6 +382,11 @@ ocpp::v2::ChargingRateUnitEnum get_unit_or_default(const std::string& unit_strin
 }
 
 void OCPP201::init() {
+    EVLOG_warning << "DEPRECATED MODULE\n"
+                     "  component       : OCPP201 (OCPP 2.0.1 / 2.1)\n"
+                     "  deprecated      : 2026.10.0, earliest removal 2027.04.0\n"
+                     "  migration guide : Migrate to the Combined OCPPmulti Module";
+
     invoke_init(*p_auth_provider);
     invoke_init(*p_auth_validator);
 
@@ -1018,8 +1024,8 @@ void OCPP201::ready() {
     this->everest_device_model_storage = std::make_shared<device_model::EverestDeviceModelStorage>(
         r_evse_manager, r_extensions_15118, this->evse_hardware_capabilities_map,
         this->evse_supported_energy_transfer_modes, this->evse_service_renegotiation_supported,
-        /*with_der_components=*/false, everest_device_model_database_path, device_model_database_migration_path,
-        get_config_service_client());
+        /*with_der_components=*/false, /*der_wired_evse_ids=*/std::set<int32_t>{}, everest_device_model_database_path,
+        device_model_database_migration_path, get_config_service_client());
 
     // initialize composed device model, this will be provided to the ChargePoint constructor
     auto composed_device_model_storage = std::make_unique<module::device_model::ComposedDeviceModelStorage>();

@@ -103,6 +103,8 @@ struct GenericOcppInterface {
     virtual types::ocpp::ChangeAvailabilityResponse
     handle_change_availability(const types::ocpp::ChangeAvailabilityRequest& request) = 0;
     virtual void handle_monitor_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) = 0;
+    virtual std::vector<types::ocpp::GetVariableResult>
+    handle_monitor_and_get_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) = 0;
     // session cost
 };
 
@@ -119,6 +121,7 @@ struct ConfigInterface {
     [[nodiscard]] virtual std::string getCustomMrecErrorMapPath() const = 0;
     [[nodiscard]] virtual std::string getDatabasePath() const = 0;
     [[nodiscard]] virtual int getDelayOcppStart() const = 0;
+    [[nodiscard]] virtual bool getDelegateNetworkConfigurationToSystem() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelConfigMappings() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelConfigPath() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelDatabasePath() const = 0;
@@ -261,6 +264,8 @@ public:
     types::ocpp::ChangeAvailabilityResponse
     handle_change_availability(const types::ocpp::ChangeAvailabilityRequest& request) override;
     void handle_monitor_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) override;
+    std::vector<types::ocpp::GetVariableResult>
+    handle_monitor_and_get_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) override;
 
     // ------------------------------------------------------------------------
     // startup
@@ -403,10 +408,12 @@ protected:
     void cb_tariff_message(const types::session_cost::TariffMessage& message) override;
     void cb_time_sync(const ocpp::DateTime& current_time) override;
     void cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event,
-                              const std::optional<std::string>& transaction_id) override;
+                              const std::optional<std::string>& transaction_id,
+                              const ocpp::DateTime& timestamp) override;
     void cb_transaction_event_response(const ocpp::v2::TransactionEventRequest& transaction_event,
                                        const ocpp::v2::TransactionEventResponse& transaction_event_response,
-                                       const std::optional<std::string>& transaction_id) override;
+                                       const std::optional<std::string>& transaction_id,
+                                       const ocpp::DateTime& timestamp) override;
     ocpp::v2::UnlockConnectorResponse cb_unlock_connector(std::int32_t evse_id, std::int32_t connector_id) override;
     bool cb_update_allowed_energy_transfer_modes(
         const std::vector<ocpp::v2::EnergyTransferModeEnum>& allowed_energy_transfer_modes,
@@ -473,10 +480,11 @@ protected:
     /// to the grid_support consumer after releasing the handle. No-op when no consumer is connected.
     void push_active_directive_sets();
 
-    /// \brief Populate m_grid_support_by_evse from the connections' framework mappings. Every connection
-    /// must carry a mapping; an unmapped connection is logged and excluded. Any EVSE without a wired
-    /// grid_support connection has its DER controller forced to Available=false.
-    void init_grid_support_routing(const std::map<std::int32_t, std::int32_t>& evse_connector_structure);
+    /// \brief Populate m_grid_support_by_evse from the connections' framework mappings. An unmapped
+    /// connection, or one mapping an already-served EVSE, is logged and excluded. Clearing an unwired
+    /// EVSE's DER controller is disable_other_der_ctrlrs' job, in the EverestDeviceModelStorage
+    /// constructor.
+    void init_grid_support_routing();
 
     /// \brief Resolve the grid_support connection mapped to \p evse_id, or nullptr if none.
     grid_supportIntf* grid_support_for_evse(std::int32_t evse_id) const;

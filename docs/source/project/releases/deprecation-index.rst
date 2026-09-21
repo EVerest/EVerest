@@ -21,15 +21,17 @@ to the corresponding migration guide.
      - Earliest removal
      - Migration guide
    * - :ref:`OCPP module <everest_modules_OCPP>` (OCPP 1.6), superseded by
-       :ref:`OCPPmulti <everest_modules_OCPPmulti>`
+       :ref:`OCPPmulti <everest_modules_OCPPmulti>` (stable since 2026.10.0).
      - 2026.10.0
      - 2027.04.0
-     - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`
+     - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`.
+       The module logs a deprecation warning at startup.
    * - :ref:`OCPP201 module <everest_modules_OCPP201>` (OCPP 2.0.1 / 2.1), superseded by
-       :ref:`OCPPmulti <everest_modules_OCPPmulti>`
+       :ref:`OCPPmulti <everest_modules_OCPPmulti>` (stable since 2026.10.0)
      - 2026.10.0
      - 2027.04.0
-     - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`
+     - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`.
+       The module logs a deprecation warning at startup.
    * - The `RsIskraMeter` deprecates its `meter` implementation_id in favor of `main`.
      - 2026.10.0
      - 2027.04.0

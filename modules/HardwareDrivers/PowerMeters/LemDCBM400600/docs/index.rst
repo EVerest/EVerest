@@ -48,6 +48,18 @@ single poll.
 By default, HTTP(S) connections to the device are kept alive and reused across requests. Set ``http_connection_reuse``
 to ``false`` to restore the previous behavior of one fresh connection per request.
 
+Variable Capabilities
+---------------------
+
+If ``min_import_current_A`` and/or ``min_export_current_A`` are configured to a value greater than 0, the module
+publishes the ``capabilities`` var once on startup. These values describe the minimum current above which the meter
+measures within its accuracy class (e.g. required by the German Calibration Law)
+
+The direction convention follows the DCBM's metering convention: ``min_import_current_A`` refers to the charging
+direction, which the DCBM accumulates in its ``energyImportTotal`` register.
+``min_export_current_A`` refers to the discharge direction (``energyExportTotal``). The values
+cannot be read from the device. Take them from the device datasheet.
+
 Command start_transaction
 -------------------------
 

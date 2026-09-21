@@ -231,7 +231,11 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_request_configure_network'
-    description: 'Direction: EVerest to Module'
+    description: >-
+      Direction: EVerest to Module.
+      A client without network-configuration support must still reply, with status NotSupported,
+      instead of staying silent: EVerest blocks the requesting module (e.g. the OCPP connection attempt)
+      until a reply arrives or the request times out.
     reply:
       address:
         location: "$message.header#/replyTo"
@@ -424,7 +428,9 @@ components:
     receive_request_configure_network:
       name: receive_request_configure_network
       title: 'Request configure network'
-      summary: 'Request to prepare a network interface for use.'
+      summary: >-
+        Request to prepare a network interface for use. Reply with status NotSupported if network
+        configuration is not supported; do not leave the request unanswered.
       contentType: application/json
       payload:
         type: object

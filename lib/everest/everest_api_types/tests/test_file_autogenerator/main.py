@@ -4,6 +4,7 @@
 import os
 import sys
 import csv
+import subprocess
 
 from pathlib import Path
 from filetestgenerator import FileTestGenerator
@@ -22,15 +23,33 @@ across_file_generator = AcrossFileGenerator()
 generators = []
 
 
+def write_if_changed(path, content):
+    if os.path.exists(path):
+        with open(path) as existing_file:
+            if existing_file.read() == content:
+                return
+
+    with open(path, 'w') as out_file:
+        out_file.write(content)
+
+
+def format_code(path, content):
+    try:
+        return subprocess.run(["clang-format", "--assume-filename=" + path],
+                              input=content, capture_output=True, text=True,
+                              check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return content
+
+
 def write_tests(generator):
     Path(write_path).mkdir(parents=True, exist_ok=True)
-    with open(generator.get_file_path("hpp"), 'w') as test_file:
-        test_file.write(generator.get_code_hpp())
-    with open(generator.get_file_path("cpp"), 'w') as test_file:
-        test_file.write(generator.get_code_cpp())
 
-    os.system("clang-format -i " + generator.get_file_path("hpp") +
-              " " + generator.get_file_path("cpp"))
+    hpp_path = generator.get_file_path("hpp")
+    write_if_changed(hpp_path, format_code(hpp_path, generator.get_code_hpp()))
+
+    cpp_path = generator.get_file_path("cpp")
+    write_if_changed(cpp_path, format_code(cpp_path, generator.get_code_cpp()))
 
 
 def get_make_contents():
@@ -81,5 +100,4 @@ for generator in generators:
 for generator in generators:
     write_tests(generator)
 
-with open(write_path + "CMakeLists.txt", 'w') as make_file:
-    make_file.write(get_make_contents())
+write_if_changed(write_path + "CMakeLists.txt", get_make_contents())

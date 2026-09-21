@@ -499,6 +499,7 @@ template <> void convert(const datatypes::ScheduleTuple& in, struct iso20_Schedu
     CPP2CB_CONVERT_IF_USED(in.discharging_schedule, out.DischargingSchedule);
 }
 
+namespace {
 struct ModeResponseVisitor {
     ModeResponseVisitor(iso20_ScheduleExchangeResType& res_) : res(res_){};
     void operator()(const datatypes::Dynamic_SEResControlMode& in) {
@@ -533,6 +534,7 @@ struct ModeResponseVisitor {
 private:
     iso20_ScheduleExchangeResType& res;
 };
+} // namespace
 
 template <> void convert(const ScheduleExchangeResponse& in, struct iso20_ScheduleExchangeResType& out) {
     init_iso20_ScheduleExchangeResType(&out);
@@ -622,6 +624,7 @@ template <> void convert(const datatypes::EVEnergyOffer& in, struct iso20_EVEner
     convert(in.absolute_price_schedule, out.EVAbsolutePriceSchedule);
 }
 
+namespace {
 struct ModeRequestVisitor {
     ModeRequestVisitor(iso20_ScheduleExchangeReqType& req_) : req(req_){};
     void operator()(const datatypes::Dynamic_SEReqControlMode& in) {
@@ -657,6 +660,7 @@ struct ModeRequestVisitor {
 private:
     iso20_ScheduleExchangeReqType& req;
 };
+} // namespace
 
 template <> void convert(const ScheduleExchangeRequest& in, iso20_ScheduleExchangeReqType& out) {
     init_iso20_ScheduleExchangeReqType(&out);

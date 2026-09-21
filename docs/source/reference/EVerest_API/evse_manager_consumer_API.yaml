@@ -2217,6 +2217,31 @@ components:
           description: Type of the connector
           type: string
           $ref: '#/components/schemas/ConnectorTypeEnum'
+        charge_mode:
+          description: >-
+            AC or DC power topology of this connector's power path. A static property of the plug and
+            its power electronics, configured rather than negotiated or measured, and settled before
+            any session. Not the charging state machine's current mode, which an EVSE running
+            ac_with_soc switches between AC and DC within a session.
+            Optional on this contract even though EVerest always populates it, so that adding it
+            does not constrain a client that validates against this schema.
+          type: string
+          $ref: '#/components/schemas/ChargeMode'
+        hlc_capable:
+          description: >-
+            Whether an ISO 15118 high level communication session can ever occur on this connector.
+            True only when an SECC and a SLAC provider are both wired and the configuration permits
+            HLC, so it is false on a connector whose SECC is wired but whose HLC is switched off.
+            Resolved once at startup; not a statement about the current session.
+            Optional on this contract even though EVerest always populates it, so that adding it
+            does not constrain a client that validates against this schema.
+          type: boolean
+    ChargeMode:
+      description: AC or DC power topology of a connector's power path
+      type: string
+      enum:
+        - AC
+        - DC
     ConnectorTypeEnum:
       description: |
         Type of a physical connector

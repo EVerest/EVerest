@@ -118,7 +118,13 @@ def implement_ocpp16_probe_commands(
         )
 
     for idx, evse_manager in enumerate(["evse_manager", "evse_manager_b"]):
-        _add(evse_manager, "get_evse", {"id": idx + 1, "connectors": [{"id": 1}]})
+        # charge_mode and hlc_capable are required on a Connector; no probe based test wires
+        # grid_support, so the values are inert and only their presence matters.
+        _add(
+            evse_manager,
+            "get_evse",
+            {"id": idx + 1, "connectors": [{"id": 1, "charge_mode": "AC", "hlc_capable": False}]},
+        )
         _add(evse_manager, "enable_disable", True)
         _add(evse_manager, "authorize_response", None)
         _add(evse_manager, "withdraw_authorization", None)

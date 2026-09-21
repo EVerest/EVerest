@@ -151,13 +151,24 @@ ChargePointImpl::ChargePointImpl(
                             << this->connectors.size() << " connectors including connector 0.";
                 return;
             }
+            const std::chrono::seconds minimum_status_duration(
+                this->configuration.getMinimumStatusDuration().value_or(0));
+
+            // Supersede a status that has not yet been stable for MinimumStatusDuration.
             this->status_notification_timers.at(connector)->stop();
-            this->status_notification_timers.at(connector)->timeout(
-                [this, connector, errorCode, status, timestamp, info, vendor_id, vendor_error_code]() {
-                    this->status_notification(connector, errorCode, status, timestamp, info, vendor_id,
-                                              vendor_error_code);
-                },
-                std::chrono::seconds(this->configuration.getMinimumStatusDuration().value_or(0)));
+
+            if (minimum_status_duration == std::chrono::seconds::zero()) {
+                // No debounce was configured, so there is nothing to wait for. Deferring to the timer thread
+                // would only expose the notification to cancellation by the next status change.
+                this->status_notification(connector, errorCode, status, timestamp, info, vendor_id, vendor_error_code);
+            } else {
+                this->status_notification_timers.at(connector)->timeout(
+                    [this, connector, errorCode, status, timestamp, info, vendor_id, vendor_error_code]() {
+                        this->status_notification(connector, errorCode, status, timestamp, info, vendor_id,
+                                                  vendor_error_code);
+                    },
+                    minimum_status_duration);
+            }
 
             // Check if the changed status should trigger to send a metervalue.
             const std::shared_ptr<Connector>& c = this->connectors.at(connector);
@@ -1564,7 +1575,7 @@ void ChargePointImpl::handle_message(const EnhancedMessage<v16::MessageType>& me
         break;
 
     case MessageType::StartTransactionResponse:
-        this->handleStartTransactionResponse(json_message);
+        this->handleStartTransactionResponse(message);
         break;
 
     case MessageType::StopTransactionResponse:
@@ -2395,7 +2406,10 @@ void ChargePointImpl::handleResetRequest(ocpp::Call<ResetRequest> call) {
     }
 }
 
-void ChargePointImpl::handleStartTransactionResponse(ocpp::CallResult<StartTransactionResponse> call_result) {
+void ChargePointImpl::handleStartTransactionResponse(const EnhancedMessage<v16::MessageType>& message) {
+
+    const CallResult<StartTransactionResponse> call_result = message.message;
+    const Call<StartTransactionRequest>& original_call = message.call_message;
 
     const StartTransactionResponse start_transaction_response = call_result.msg;
 
@@ -2437,9 +2451,8 @@ void ChargePointImpl::handleStartTransactionResponse(ocpp::CallResult<StartTrans
         }
 
         if (this->transaction_updated_callback != nullptr) {
-            this->transaction_updated_callback(connector, transaction->get_session_id(),
-                                               start_transaction_response.transactionId,
-                                               start_transaction_response.idTagInfo);
+            this->transaction_updated_callback(transaction->get_session_id(), original_call.msg,
+                                               start_transaction_response);
         }
     } else {
         EVLOG_warning << "Received StartTransaction.conf for transaction that is not known to transaction_handler";
@@ -4410,7 +4423,7 @@ void ChargePointImpl::start_transaction(std::shared_ptr<Transaction> transaction
     this->message_dispatcher->dispatch_call(call);
 
     if (this->transaction_started_callback != nullptr) {
-        this->transaction_started_callback(transaction->get_connector(), transaction->get_session_id());
+        this->transaction_started_callback(transaction->get_session_id(), call.msg);
     }
 }
 
@@ -4608,9 +4621,7 @@ void ChargePointImpl::stop_transaction(std::int32_t connector, Reason reason, st
     }
 
     if (this->transaction_stopped_callback != nullptr) {
-        this->transaction_stopped_callback(
-            connector, transaction->get_session_id(),
-            transaction->get_transaction_id().value_or(transaction->get_internal_transaction_id()));
+        this->transaction_stopped_callback(transaction->get_session_id(), connector, call.msg);
     }
 
     transaction->set_finished();
@@ -4946,20 +4957,19 @@ void ChargePointImpl::register_get_15118_ev_certificate_response_callback(
 }
 
 void ChargePointImpl::register_transaction_started_callback(
-    const std::function<void(const std::int32_t connector, const std::string& session_id)>& callback) {
+    const std::function<void(const std::string& session_id, const StartTransactionRequest& request)>& callback) {
     this->transaction_started_callback = callback;
 }
 
 void ChargePointImpl::register_transaction_stopped_callback(
-    const std::function<void(const std::int32_t connector, const std::string& session_id,
-                             const std::int32_t transaction_id)>& callback) {
+    const std::function<void(const std::string& session_id, const std::int32_t connector,
+                             const StopTransactionRequest& request)>& callback) {
     this->transaction_stopped_callback = callback;
 }
 
 void ChargePointImpl::register_transaction_updated_callback(
-    const std::function<void(const std::int32_t connector, const std::string& session_id,
-                             const std::int32_t transaction_id, const IdTagInfo& id_tag_info)>
-        callback) {
+    const std::function<void(const std::string& session_id, const StartTransactionRequest& request,
+                             const StartTransactionResponse& response)>& callback) {
     this->transaction_updated_callback = callback;
 }
 

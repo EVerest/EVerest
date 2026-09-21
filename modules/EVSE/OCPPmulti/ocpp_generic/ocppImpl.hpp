@@ -43,6 +43,8 @@ protected:
     virtual types::ocpp::ChangeAvailabilityResponse
     handle_change_availability(types::ocpp::ChangeAvailabilityRequest& request) override;
     virtual void handle_monitor_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) override;
+    virtual std::vector<types::ocpp::GetVariableResult>
+    handle_monitor_and_get_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) override;
 
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
     // insert your protected definitions here

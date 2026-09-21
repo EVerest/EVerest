@@ -2,6 +2,8 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
+
 #include <algorithm>
 #include <vector>
 
@@ -12,12 +14,15 @@
 #include <iso15118/d20/state/session_stop.hpp>
 
 #include <iso15118/d20/config.hpp>
+#include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/message/ac_der_iec_charge_loop.hpp>
 #include <iso15118/message/power_delivery.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/session_stop.hpp>
 
 using namespace iso15118;
+
+constexpr std::uint64_t MICROSECONDS_PER_SECOND = 1'000'000;
 
 namespace dt = message_20::datatypes;
 
@@ -305,7 +310,8 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
         present_power.present_active_power = {11, 3};
         state_helper.set_active_control_event(present_power);
         fsm.feed(d20::Event::CONTROL_MESSAGE);
-        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, 95, 80};
+        const d20::UpdateDynamicModeParameters dynamic_parameters = {
+            d20::now_in_secc_time() / MICROSECONDS_PER_SECOND + 40, 95, 80};
         state_helper.set_active_control_event(dynamic_parameters);
         fsm.feed(d20::Event::CONTROL_MESSAGE);
 

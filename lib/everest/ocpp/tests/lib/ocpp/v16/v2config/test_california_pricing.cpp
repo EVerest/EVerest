@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+
 #include "configuration_stub.hpp"
 
 /*
@@ -44,11 +46,84 @@ using namespace ocpp::v16::stubs;
 
 TEST_P(Configuration, CustomDisplayCostAndPriceEnabled) {
     ASSERT_NE(get(), nullptr);
-    EXPECT_FALSE(get()->getCustomDisplayCostAndPriceEnabled());
+    // model the ReadOnly default of OCPP16LegacyCtrlr.json in the device model backend
+    device_model->set_readonly("CustomDisplayCostAndPrice");
     auto kv = get()->getCustomDisplayCostAndPriceEnabledKeyValue();
-    EXPECT_EQ(kv.key, "CustomDisplayCostAndPrice");
-    EXPECT_EQ(kv.value, "false");
-    EXPECT_TRUE(kv.readonly);
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().key, "CustomDisplayCostAndPrice");
+    EXPECT_EQ(kv.value().value, "false");
+    EXPECT_TRUE(kv.value().readonly);
+}
+
+TEST_P(Configuration, CustomDisplayCostAndPriceSetRejectedWhenReadOnly) {
+    ASSERT_NE(get(), nullptr);
+    // by default the key is read-only (CostAndPrice.json / OCPP16LegacyCtrlr.json)
+    device_model->set_readonly("CustomDisplayCostAndPrice");
+    EXPECT_EQ(get()->set("CustomDisplayCostAndPrice", "true"), ocpp::v16::ConfigurationStatus::Rejected);
+    EXPECT_FALSE(get()->getCustomDisplayCostAndPriceEnabled());
+}
+
+TEST_P(Configuration, CustomDisplayCostAndPriceSetAcceptedWhenWritable) {
+    ASSERT_NE(get(), nullptr);
+    if (GetParam() != "sql") {
+        // JSON backend covered by CaliforniaPricingJsonSchema.CustomDisplayCostAndPriceSetAcceptedWhenWritable
+        GTEST_SKIP() << "the CostAndPrice.json schema in CONFIG_DIR_V16 ships read-only";
+    }
+    device_model->set_readwrite("CustomDisplayCostAndPrice");
+
+    auto kv = get()->getCustomDisplayCostAndPriceEnabledKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_FALSE(kv.value().readonly);
+
+    EXPECT_EQ(get()->set("CustomDisplayCostAndPrice", "not-a-bool"), ocpp::v16::ConfigurationStatus::Rejected);
+    EXPECT_EQ(get()->set("CustomDisplayCostAndPrice", "true"), ocpp::v16::ConfigurationStatus::Accepted);
+    EXPECT_TRUE(get()->getCustomDisplayCostAndPriceEnabled());
+}
+
+// JSON backend with a CostAndPrice.json schema that marks CustomDisplayCostAndPrice writable
+TEST(CaliforniaPricingJsonSchema, CustomDisplayCostAndPriceSetAcceptedWhenWritable) {
+    // copy the config directory and patch the schema to readOnly: false
+    const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const fs::path config_dir = fs::temp_directory_path() / ("ocpp16_cost_and_price_" + std::to_string(timestamp));
+    fs::copy(CONFIG_DIR_V16, config_dir, fs::copy_options::recursive);
+
+    const fs::path schema_path = config_dir / "profile_schemas" / "CostAndPrice.json";
+    json schema;
+    {
+        std::ifstream ifs(schema_path);
+        schema = json::parse(ifs);
+    }
+    schema["properties"]["CustomDisplayCostAndPrice"]["readOnly"] = false;
+    {
+        std::ofstream ofs(schema_path);
+        ofs << schema.dump(4);
+    }
+
+    const fs::path user_config_path = config_dir / "user_config.json";
+    std::ofstream(user_config_path) << "{}";
+
+    std::ifstream config_ifs(fs::path{CONFIG_DIR_V16} / "config.json");
+    const std::string config_file((std::istreambuf_iterator<char>(config_ifs)), (std::istreambuf_iterator<char>()));
+    ocpp::v16::ChargePointConfiguration config(config_file, config_dir, user_config_path);
+
+    auto kv = config.getCustomDisplayCostAndPriceEnabledKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().value, "false");
+    EXPECT_FALSE(kv.value().readonly);
+
+    EXPECT_EQ(config.set("CustomDisplayCostAndPrice", "not-a-bool"), ocpp::v16::ConfigurationStatus::Rejected);
+    EXPECT_EQ(config.set("CustomDisplayCostAndPrice", "true"), ocpp::v16::ConfigurationStatus::Accepted);
+    EXPECT_TRUE(config.getCustomDisplayCostAndPriceEnabled());
+
+    // the new value is persisted in the user config
+    json user_config;
+    {
+        std::ifstream ifs(user_config_path);
+        user_config = json::parse(ifs);
+    }
+    EXPECT_EQ(user_config["CostAndPrice"]["CustomDisplayCostAndPrice"], true);
+
+    fs::remove_all(config_dir);
 }
 
 TEST_P(Configuration, DefaultTariffMessage) {
