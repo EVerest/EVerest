@@ -79,13 +79,14 @@ should be given individual Linux capabilities like this:
 
 Here is a list of capabilities required by the EVerest modules:
 
-================= ============================================
+================= ==============================================================
 Module name       Capabilities
-================= ============================================
+================= ==============================================================
 EvseSlac / EvSlac CAP_NET_RAW
 Setup             CAP_NET_ADMIN, CAP_NET_RAW, CAP_DAC_OVERRIDE
 PacketSniffer     CAP_NET_RAW
-================= ============================================
+EvseManager       CAP_NET_RAW, only with ``debug_emit_cp_state_hpav_frames``
+================= ==============================================================
 
 The systemd service should start the manager process as root. It will
 then change the user for the child processes it forks (the modules) and

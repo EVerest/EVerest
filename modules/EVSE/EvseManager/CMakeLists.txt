@@ -17,6 +17,7 @@ target_sources(${MODULE_NAME}
         SessionLog.cpp
         v2gMessage.cpp
         CarManufacturer.cpp
+        CpStateFrameEmitter.cpp
         IECStateMachine.cpp
         ErrorHandling.cpp
         backtrace.cpp

@@ -315,6 +315,21 @@ void EvseManager::ready() {
         bsp->set_ev_simplified_mode_evse_limit(true);
     }
 
+    if (config.debug_emit_cp_state_hpav_frames) {
+        try {
+            cp_state_frame_emitter = std::make_unique<CpStateFrameEmitter>(config.debug_cp_state_hpav_device);
+            auto* emitter = cp_state_frame_emitter.get();
+            bsp->signal_raw_cp_state_changed.connect(
+                [emitter](RawCPState cp_state) { emitter->cp_state_changed(cp_state); });
+            bsp->signal_pwm_duty_cycle.connect([emitter](double percent) { emitter->pwm_duty_cycle_changed(percent); });
+            EVLOG_warning
+                << "Debug option debug_emit_cp_state_hpav_frames is enabled: sending CP state HomePlug AV frames on "
+                << config.debug_cp_state_hpav_device;
+        } catch (const std::runtime_error& e) {
+            EVLOG_warning << "CP state HomePlug AV debug frames disabled: " << e.what();
+        }
+    }
+
     // we provide the powermeter interface to the ErrorHandling only if we need to react to powermeter errors
     // otherwise we provide an empty vector of pointers to the powermeter interface
     error_handling = std::unique_ptr<ErrorHandling>(
