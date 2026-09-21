@@ -4770,7 +4770,9 @@ void ChargePointImpl::on_firmware_update_status_notification(
 
     if (firmware_update_status == FirmwareStatusNotification::InstallationFailed or
         firmware_update_status == FirmwareStatusNotification::Installed or
+        firmware_update_status == FirmwareStatusNotification::InvalidSignature or
         firmware_update_status == FirmwareStatusNotification::InstallVerificationFailed or
+        firmware_update_status == FirmwareStatusNotification::DownloadFailed or
         firmware_update_status == FirmwareStatusNotification::Idle) {
         try {
             auto connector_availability = this->database_handler->get_connector_availability();
