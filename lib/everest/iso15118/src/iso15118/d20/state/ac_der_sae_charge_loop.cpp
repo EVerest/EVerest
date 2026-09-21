@@ -151,23 +151,27 @@ handle_request(const message_20::DER_SAE_AC_ChargeLoopRequest& req, const d20::S
     message_20::DER_SAE_AC_ChargeLoopResponse res;
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     if (not sae_limits.has_value()) {
         logf_error("No SAE limits are provided. Shutdown the session");
-        return response_with_code(res, dt::ResponseCode::FAILED);
+        set_response_code(res, dt::ResponseCode::FAILED);
+        return res;
     }
 
     if (not der_config.has_value()) {
         logf_error("No SAE DER control values are provided. Shutdown the session");
-        return response_with_code(res, dt::ResponseCode::FAILED);
+        set_response_code(res, dt::ResponseCode::FAILED);
+        return res;
     }
 
     const auto ev_supported_modes = session.get_ev_supported_sae_functions();
     if (not ev_supported_modes.has_value()) {
         logf_error("The EV never declared its SAE SupportedModes. Shutdown the session");
-        return response_with_code(res, dt::ResponseCode::FAILED);
+        set_response_code(res, dt::ResponseCode::FAILED);
+        return res;
     }
 
     const auto secc_enabled_modes = session.get_enabled_der_control_modes();
@@ -186,7 +190,8 @@ handle_request(const message_20::DER_SAE_AC_ChargeLoopRequest& req, const d20::S
     if (std::holds_alternative<Scheduled_DER_Req>(req.control_mode)) {
         if (selected_control_mode != dt::ControlMode::Scheduled) {
             logf_error("EV sent a scheduled mode charge loop request but scheduled mode was not selected");
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Scheduled_DER_Res>();
@@ -196,14 +201,16 @@ handle_request(const message_20::DER_SAE_AC_ChargeLoopRequest& req, const d20::S
     } else if (std::holds_alternative<Dynamic_DER_Req>(req.control_mode)) {
         if (selected_control_mode != dt::ControlMode::Dynamic) {
             logf_error("EV sent a dynamic mode charge loop request but dynamic mode was not selected");
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         // 0 W is an instruction to stop importing and exporting, so a missing mandatory target is refused
         // instead of fabricated.
         if (not target_powers.target_active_power.has_value()) {
             logf_error("No target active power is available for the mandatory dynamic mode. Shutdown the session");
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Dynamic_DER_Res>();
@@ -215,7 +222,8 @@ handle_request(const message_20::DER_SAE_AC_ChargeLoopRequest& req, const d20::S
         }
     } else {
         logf_error("EV sent an unhandled charge loop control mode");
-        return response_with_code(res, dt::ResponseCode::FAILED);
+        set_response_code(res, dt::ResponseCode::FAILED);
+        return res;
     }
 
     // Conditional field: it must not be sent unless the operator provided a target frequency.
@@ -233,7 +241,9 @@ handle_request(const message_20::DER_SAE_AC_ChargeLoopRequest& req, const d20::S
         res.status = {NotificationMaxDelay, dt::EvseNotification::Pause};
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+
+    return res;
 }
 
 void AC_DER_SAE_ChargeLoop::enter() {
