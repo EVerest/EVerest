@@ -351,6 +351,13 @@ void Charger::run_state_machine() {
                 break;
             }
 
+            if (shared_context.flag_externally_cancelled) {
+                // Stop requested (e.g. board support stop button or OCPP remote stop) before
+                // authorization/transaction started: go straight to Finished, same as above.
+                set_state(EvseState::Finished);
+                break;
+            }
+
             // Read PP value in case of AC socket
             if (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket and
                 not shared_context.max_current_cable.has_value()) {
@@ -1471,8 +1478,7 @@ bool Charger::cancel_transaction(const types::evse_manager::StopTransactionReque
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_cancel_transaction);
 
     EVLOG_info << "Received external request to stop transaction with reason "
-               << types::evse_manager::stop_transaction_reason_to_string(request.reason)
-               << (shared_context.flag_transaction_active ? "" : " (ignored, no transaction active)");
+               << types::evse_manager::stop_transaction_reason_to_string(request.reason);
 
     if (shared_context.flag_transaction_active) {
 
@@ -1492,6 +1498,19 @@ bool Charger::cancel_transaction(const types::evse_manager::StopTransactionReque
         shared_context.stop_transaction_id_token = request.id_tag;
         return true;
     }
+
+    if (shared_context.session_active and shared_context.current_state == EvseState::WaitingForAuthentication) {
+        // No transaction has started yet, we are still stuck in the auth loop. Escape it the same
+        // way deauthorize_internal() does on a plug-in timeout, so the HLC stack (if any) gives up
+        // instead of retrying the authorization loop forever.
+        shared_context.flag_externally_cancelled = true;
+        shared_context.last_stop_transaction_reason = request.reason;
+        shared_context.stop_transaction_id_token = request.id_tag;
+        signal_hlc_plug_in_timeout();
+        return true;
+    }
+
+    EVLOG_info << "Ignored request to stop transaction, no transaction active";
     return false;
 }
 

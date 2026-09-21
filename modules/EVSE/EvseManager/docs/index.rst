@@ -125,7 +125,7 @@ Charging State Machine
        Finished --> Idle : EV unplugged
 
        %% Early exit / Errors
-       WaitingForAuthentication --> Finished : Fatal error or EV unplugged
+       WaitingForAuthentication --> Finished : Fatal error, stop requested, or EV unplugged
        PrepareCharging --> StoppingCharging : Fatal error, deauth, or EV unplugged
 
        %% Pauses
@@ -147,6 +147,8 @@ State Transitions
 
 * ``Idle`` -> ``WaitingForAuthentication``: EV plugged in.
 * ``WaitingForAuthentication`` -> ``PrepareCharging``: Authorized by EIM or PnC.
+* ``WaitingForAuthentication`` -> ``Finished``: Fatal error, stop requested (e.g. via
+  ``request_stop_transaction`` or ``disable``), or EV unplugged.
 * ``PrepareCharging`` -> ``Charging``: Contactor close allowed.
 * ``Charging`` -> ``StoppingCharging``: Triggered by any **Stop Condition** (see below).
 * ``StoppingCharging`` -> ``Finished``: No transaction, EV unplugged, or not authorized.
