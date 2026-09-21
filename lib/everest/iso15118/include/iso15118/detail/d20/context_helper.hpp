@@ -11,11 +11,8 @@
 
 namespace iso15118::d20 {
 
-// FIXME (aw): not sure about correct signature here for RVO
-template <typename Response, typename ResponseCode> Response& response_with_code(Response& res, ResponseCode code) {
-    // FIXME (aw): could add an static_assert here that ResponseCode is an enum?
+template <typename Response, typename ResponseCode> void set_response_code(Response& res, ResponseCode code) {
     res.response_code = code;
-    return res;
 }
 
 // [V2G20-1534] SECC time at the microsecond resolution the message header is encoded in.

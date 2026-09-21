@@ -63,7 +63,8 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     message_20::ServiceDiscoveryResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     // Service renegotiation is not yet supported
@@ -116,7 +117,8 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     if (energy_services_list.empty()) {
         logf_error("No energy transfer service is configured, rejecting service discovery. Sending the default AC "
                    "service to avoid encoding issues");
-        return response_with_code(res, dt::ResponseCode::FAILED);
+        set_response_code(res, dt::ResponseCode::FAILED);
+        return res;
     }
 
     // Reset default value
@@ -137,7 +139,8 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
         }
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void ServiceDiscovery::enter() {
