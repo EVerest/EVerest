@@ -667,7 +667,7 @@ void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) 
          * a FAILED response, which must omit the optional status elements (ISO 15118-4). */
         memset(v2g_ctx->evse_v2g_data.evse_status_code, (int)iso2_DC_EVSEStatusCodeType_EVSE_EmergencyShutdown,
                sizeof(v2g_ctx->evse_v2g_data.evse_status_code));
-        v2g_ctx->evse_v2g_data.evse_notification = (uint8_t)iso2_EVSENotificationType_StopCharging;
+        v2g_ctx->evse_v2g_data.evse_notification = static_cast<uint8_t>(iso2_EVSENotificationType_StopCharging);
         /* signal changes to possible waiters, according to man page, it never returns an error code */
         pthread_mutex_lock(&v2g_ctx->mqtt_lock);
         v2g_ctx->error_shutdown = true;

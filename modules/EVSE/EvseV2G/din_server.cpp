@@ -103,19 +103,15 @@ v2g_event din_validate_response_code(din_responseCodeType* const din_response_co
      * Once that has been reported, requests that would continue the energy transfer are answered
      * with FAILED; the stop sequence (PowerDelivery(Stop), WeldingDetection, SessionStop) is still
      * allowed to complete normally. */
-    if (conn->ctx->error_shutdown == true) {
-        if (conn->ctx->error_shutdown_reported == true) {
-            switch (conn->ctx->current_v2g_msg) {
-            case V2G_CABLE_CHECK_MSG:
-            case V2G_PRE_CHARGE_MSG:
-            case V2G_CURRENT_DEMAND_MSG:
-                *din_response_code = din_responseCodeType_FAILED;
-                break;
-            default:
-                break;
-            }
-        } else {
-            conn->ctx->error_shutdown_reported = true;
+    if ((conn->ctx->error_shutdown == true) && (conn->ctx->error_shutdown_reported == true)) {
+        switch (conn->ctx->current_v2g_msg) {
+        case V2G_CABLE_CHECK_MSG:
+        case V2G_PRE_CHARGE_MSG:
+        case V2G_CURRENT_DEMAND_MSG:
+            *din_response_code = din_responseCodeType_FAILED;
+            break;
+        default:
+            break;
         }
     }
 
@@ -143,6 +139,13 @@ v2g_event din_validate_response_code(din_responseCodeType* const din_response_co
         *din_response_code <= din_responseCodeType_FAILED_WrongEnergyTransferType) {
         dlog(DLOG_LEVEL_ERROR, "Failed response code detected for message \"%s\", error: %s",
              v2g_msg_type[conn->ctx->current_v2g_msg], dinResponse[*din_response_code]);
+    }
+
+    /* The error shutdown counts as reported only when the response actually leaves with an OK
+     * response code, i.e. carrying the shutdown status; a response that fails for another reason
+     * (unknown session, sequence error) must not consume the one-shot report. */
+    if ((conn->ctx->error_shutdown == true) && (*din_response_code < din_responseCodeType_FAILED)) {
+        conn->ctx->error_shutdown_reported = true;
     }
 
     return nextEvent;
@@ -982,7 +985,7 @@ static enum v2g_event handle_din_cable_check(struct v2g_connection* conn) {
                               ? din_EVSEProcessingType_Finished
                               : din_EVSEProcessingType_Ongoing;
 
-    if (conn->ctx->intl_emergency_shutdown == true) {
+    if ((conn->ctx->intl_emergency_shutdown == true) || (conn->ctx->error_shutdown == true)) {
         res->DC_EVSEStatus.EVSEStatusCode = din_DC_EVSEStatusCodeType_EVSE_EmergencyShutdown;
     } else if (res->EVSEProcessing == din_EVSEProcessingType_Finished) {
         res->DC_EVSEStatus.EVSEStatusCode = din_DC_EVSEStatusCodeType_EVSE_Ready;

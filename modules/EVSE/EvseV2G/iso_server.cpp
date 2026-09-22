@@ -88,20 +88,16 @@ static v2g_event iso_validate_response_code(iso2_responseCodeType* const v2g_res
      * which a FAILED response must omit (ISO 15118-4). Once that has been reported, requests that
      * would continue the energy transfer are answered with FAILED; the stop sequence
      * (PowerDelivery(Stop), WeldingDetection, SessionStop) is still allowed to complete normally. */
-    if (conn->ctx->error_shutdown == true) {
-        if (conn->ctx->error_shutdown_reported == true) {
-            switch (conn->ctx->current_v2g_msg) {
-            case V2G_CABLE_CHECK_MSG:
-            case V2G_PRE_CHARGE_MSG:
-            case V2G_CURRENT_DEMAND_MSG:
-            case V2G_CHARGING_STATUS_MSG:
-                *v2g_response_code = iso2_responseCodeType_FAILED;
-                break;
-            default:
-                break;
-            }
-        } else {
-            conn->ctx->error_shutdown_reported = true;
+    if ((conn->ctx->error_shutdown == true) && (conn->ctx->error_shutdown_reported == true)) {
+        switch (conn->ctx->current_v2g_msg) {
+        case V2G_CABLE_CHECK_MSG:
+        case V2G_PRE_CHARGE_MSG:
+        case V2G_CURRENT_DEMAND_MSG:
+        case V2G_CHARGING_STATUS_MSG: // AC: without failing ChargingStatus the session would never terminate
+            *v2g_response_code = iso2_responseCodeType_FAILED;
+            break;
+        default:
+            break;
         }
     }
 
@@ -135,6 +131,13 @@ static v2g_event iso_validate_response_code(iso2_responseCodeType* const v2g_res
         (*v2g_response_code <= iso2_responseCodeType_FAILED_CertificateRevoked)) {
         dlog(DLOG_LEVEL_ERROR, "Failed response code detected for message \"%s\", error: %s",
              v2g_msg_type[conn->ctx->current_v2g_msg], isoResponse[*v2g_response_code]);
+    }
+
+    /* The error shutdown counts as reported only when the response actually leaves with an OK
+     * response code, i.e. carrying the shutdown status; a response that fails for another reason
+     * (unknown session, sequence error) must not consume the one-shot report. */
+    if ((conn->ctx->error_shutdown == true) && (*v2g_response_code < iso2_responseCodeType_FAILED)) {
+        conn->ctx->error_shutdown_reported = true;
     }
 
     return next_event;

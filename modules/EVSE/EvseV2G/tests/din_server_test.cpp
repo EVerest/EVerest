@@ -602,6 +602,27 @@ TEST_F(DinServerTest, din_validate_response_code_error_shutdown_reported_fails_c
     EXPECT_EQ(given_response_code, din_responseCodeType_FAILED);
 }
 
+TEST_F(DinServerTest, din_validate_response_code_error_shutdown_failed_response_does_not_consume_report) {
+    // A response that fails for an unrelated reason (here: unknown session) is stripped of the
+    // status elements, so it must not consume the one-shot error shutdown report.
+
+    auto given_response_code = din_responseCodeType_OK;
+
+    ctx->is_connection_terminated = false;
+    ctx->terminate_connection_on_failed_response = false;
+    ctx->error_shutdown = true;
+    ctx->error_shutdown_reported = false;
+
+    ctx->current_v2g_msg = V2G_CURRENT_DEMAND_MSG;
+    ctx->state = (int)din_state_id::WAIT_FOR_CURRENTDEMAND;
+    ctx->evse_v2g_data.session_id = 1;
+    ctx->ev_v2g_data.received_session_id = 2;
+
+    EXPECT_EQ(utils::din_validate_response_code(&given_response_code, conn.get()), V2G_EVENT_NO_EVENT);
+    EXPECT_EQ(given_response_code, din_responseCodeType_FAILED_UnknownSession);
+    EXPECT_FALSE(ctx->error_shutdown_reported);
+}
+
 TEST_F(DinServerTest, din_validate_response_code_error_shutdown_allows_stop_sequence) {
     // The stop sequence (PowerDelivery(Stop), WeldingDetection, SessionStop) must still complete
     // normally after the error shutdown has been reported.
