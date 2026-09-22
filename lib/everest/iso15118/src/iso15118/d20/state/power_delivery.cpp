@@ -66,8 +66,17 @@ Result PowerDelivery::feed(Event ev) {
             ac_connector_closed = *control_data;
 
             if (not ac_connector_closed) {
-                logf_warning(
-                    "Got ClosedContactor event, but contactor is not closed.  Waiting until the contactor is closed");
+                if (not m_ctx.shutdown_requested()) {
+                    logf_warning("Got ClosedContactor event, but contactor is not closed.  Waiting until the "
+                                 "contactor is closed");
+                } else if (previous_req.has_value()) {
+                    // The contactor will never close now, and the timeout is what answers the saved
+                    // PowerDeliveryReq. Cancel it and answer here, terminating rather than failing.
+                    m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+                    m_ctx.respond(handle_request(previous_req.value(), m_ctx.session, /*contactor_error=*/false,
+                                                 /*shutdown_requested=*/true));
+                    m_ctx.session_stopped = true;
+                }
                 return {};
             }
 
