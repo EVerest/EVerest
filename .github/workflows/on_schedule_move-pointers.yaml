@@ -120,7 +120,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.HIMALAYA_ACCESSOR_APP_ID }}
+          client-id: ${{ secrets.HIMALAYA_ACCESSOR_APP_ID }}
           private-key: ${{ secrets.HIMALAYA_ACCESSOR_APP_PRIVATE_KEY }}
           owner: EVerest
           repositories: Himalayas
