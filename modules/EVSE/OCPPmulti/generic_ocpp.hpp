@@ -177,6 +177,11 @@ private:
     everest::lib::util::monitor<std::map<std::int32_t, bool>> mv_evse_ready_map;
     everest::lib::util::monitor<std::map<std::int32_t, std::optional<float>>> mv_evse_soc_map;
 
+    /// \brief EVerest evse id -> OCPP evse id
+    std::map<std::int32_t, std::int32_t> m_ocpp_evse_id_by_everest_evse_id;
+    /// \brief EVerest OCPP evse id -> evse id
+    std::map<std::int32_t, std::int32_t> m_everest_evse_id_by_ocpp_evse_id;
+
     // Pending configure_network requests, keyed by a unique request_id (not configuration_slot, which
     // repeats across libocpp's per-slot retries). The stored slot lets a re-request drop the stale attempt.
     struct PendingNetworkConfigRequest {
@@ -299,6 +304,13 @@ public:
         return m_monitor_list;
     }
 
+    /// \brief Translate an EVerest evse id into the OCPP evse id used by this instance.
+    /// \returns std::nullopt when the EVSE is not served by this instance. 0 maps to 0.
+    [[nodiscard]] std::optional<std::int32_t> to_ocpp_evse_id(std::int32_t everest_evse_id) const;
+
+    /// \brief Translate an OCPP evse id into the EVerest evse id it refers to. 0 maps to 0.
+    [[nodiscard]] std::int32_t to_everest_evse_id(std::int32_t ocpp_evse_id) const;
+
 protected:
     // Access to member variables for unit tests
     [[nodiscard]] auto& evse_evcc_id() {
@@ -318,6 +330,10 @@ protected:
     }
 
     EventInfo convert_error(const Everest::error::Error& error);
+
+    /// \brief Translate \p event_data's evse id into the OCPP domain and forward it to the charge
+    /// point. Events of EVSEs not served by this instance are dropped.
+    void dispatch_event_info(EventInfo event_data);
 
     void init_check_energy_sink();
     void init_error_handlers();

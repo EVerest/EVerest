@@ -326,7 +326,18 @@ GenericOcpp::handle_change_availability(const types::ocpp::ChangeAvailabilityReq
     result.status = ChangeAvailabilityStatusEnum::Rejected;
 
     if (mv_started.load()) {
-        const auto ocpp_request = to_ocpp_change_availability_request(request);
+        auto everest_request = request;
+        if (everest_request.evse.has_value()) {
+            const auto ocpp_evse_id = to_ocpp_evse_id(everest_request.evse->id);
+            if (not ocpp_evse_id.has_value()) {
+                result.statusInfo =
+                    ocpp::v2::StatusInfo{"InvalidInput", "evse " + std::to_string(everest_request.evse->id) +
+                                                             " is not served by this OCPP instance"};
+                return to_everest_change_availability_response(result);
+            }
+            everest_request.evse->id = ocpp_evse_id.value();
+        }
+        const auto ocpp_request = to_ocpp_change_availability_request(everest_request);
         try {
             result = mv_charge_point.on_change_availability(ocpp_request);
         } catch (const ocpp::v2::EvseOutOfRangeException& e) {
@@ -418,6 +429,17 @@ GenericOcpp::EventInfo GenericOcpp::convert_error(const Everest::error::Error& e
     event_data.error = error;
     event_data.event_cleared = true;
     return event_data;
+}
+
+void GenericOcpp::dispatch_event_info(EventInfo event_data) {
+    const auto ocpp_evse_id = to_ocpp_evse_id(event_data.evse_id);
+    if (not ocpp_evse_id.has_value()) {
+        EVLOG_debug << "Ignoring error of EVerest evse id " << event_data.evse_id
+                    << " which is not served by this OCPP instance";
+        return;
+    }
+    event_data.evse_id = ocpp_evse_id.value();
+    mv_charge_point.on_event(event_data);
 }
 
 void GenericOcpp::init() {
@@ -781,16 +803,23 @@ void GenericOcpp::visit_impl(std::int32_t evse_id, const types::evse_manager::Se
 }
 
 void GenericOcpp::visit_impl(std::int32_t evse_id, const EventInfo& event) {
+    const auto ocpp_evse_id = to_ocpp_evse_id(event.evse_id);
+    if (not ocpp_evse_id.has_value()) {
+        EVLOG_debug << "Dropping queued error event of EVerest evse id " << event.evse_id
+                    << " which is not served by this OCPP instance";
+        return;
+    }
     EVLOG_info << "Processing queued error event for evse_id: " << evse_id << ": " << event.evse_id;
-    mv_charge_point.on_event(event);
+    dispatch_event_info(event);
 
     if (event.error) {
         // We do only report inoperative errors as faults
         if (event.error->type == module::EVSE_MANAGER_INOPERATIVE_ERROR) {
             if (event.event_cleared) {
-                mv_charge_point.on_fault_cleared(evse_id, get_connector_id_from_error(event.error.value()));
+                mv_charge_point.on_fault_cleared(ocpp_evse_id.value(),
+                                                 get_connector_id_from_error(event.error.value()));
             } else {
-                mv_charge_point.on_faulted(evse_id, get_connector_id_from_error(event.error.value()));
+                mv_charge_point.on_faulted(ocpp_evse_id.value(), get_connector_id_from_error(event.error.value()));
             }
         }
     }
@@ -871,9 +900,15 @@ void GenericOcpp::cb_charging_needs(std::int32_t extensions_id, const types::iso
         const auto& mapping = mv_requires.extensions_15118.at(extensions_id)->get_mapping();
         if (mapping.has_value()) {
             try {
+                const auto ocpp_evse_id = to_ocpp_evse_id(mapping.value().evse);
+                if (not ocpp_evse_id.has_value()) {
+                    EVLOG_warning << "Dropping ChargingNeeds for EVerest evse id " << mapping.value().evse
+                                  << " which is not served by this OCPP instance";
+                    return;
+                }
                 ocpp::v2::NotifyEVChargingNeedsRequest charge_needs;
                 charge_needs.chargingNeeds = to_ocpp_charging_needs(charging_needs);
-                charge_needs.evseId = mapping.value().evse;
+                charge_needs.evseId = ocpp_evse_id.value();
 
                 mv_charge_point.on_ev_charging_needs(charge_needs);
             } catch (const std::out_of_range& e) {
@@ -1093,7 +1128,7 @@ void GenericOcpp::cb_error_cleared_handler(const Everest::error::Error& error) {
         auto event_data = convert_error(error);
         event_data.event_cleared = true;
         if (!enqueue_if_not_started(event_data.evse_id, event_data)) {
-            mv_charge_point.on_event(event_data);
+            dispatch_event_info(event_data);
         }
     }
 }
@@ -1106,7 +1141,7 @@ void GenericOcpp::cb_error_handler(const Everest::error::Error& error) {
         auto event_data = convert_error(error);
         event_data.event_cleared = false;
         if (!enqueue_if_not_started(event_data.evse_id, event_data)) {
-            mv_charge_point.on_event(event_data);
+            dispatch_event_info(event_data);
         }
     }
 }
@@ -1131,8 +1166,8 @@ void GenericOcpp::cb_fault_cleared_handler(std::int32_t evse_id, const Everest::
 
     auto event_data = convert_error(error);
     event_data.event_cleared = true;
-    if (!enqueue_if_not_started(event_data.evse_id, event_data)) {
-        mv_charge_point.on_event(event_data);
+    if (!enqueue_if_not_started(evse_id, event_data)) {
+        dispatch_event_info(event_data);
         mv_charge_point.on_fault_cleared(evse_id, get_connector_id_from_error(error));
     }
 }
@@ -1142,8 +1177,8 @@ void GenericOcpp::cb_fault_handler(std::int32_t evse_id, const Everest::error::E
 
     auto event_data = convert_error(error);
     event_data.event_cleared = false;
-    if (!enqueue_if_not_started(event_data.evse_id, event_data)) {
-        mv_charge_point.on_event(event_data);
+    if (!enqueue_if_not_started(evse_id, event_data)) {
+        dispatch_event_info(event_data);
         mv_charge_point.on_faulted(evse_id, get_connector_id_from_error(error));
     }
 }
@@ -1176,6 +1211,10 @@ void GenericOcpp::cb_get_15118_ev_certificate_response(std::int32_t connector_id
         everest_response.exi_response = response.exiResponse.get();
     }
 
+    if (connector_id < 0 or static_cast<std::size_t>(connector_id) >= mv_requires.extensions_15118.size()) {
+        EVLOG_error << "Received 15118 certificate response for unknown extensions id " << connector_id;
+        return;
+    }
     mv_requires.extensions_15118.at(connector_id)->call_set_get_certificate_response(everest_response);
 }
 
@@ -1220,7 +1259,7 @@ void GenericOcpp::cb_hw_capabilities(std::int32_t evse_id,
 }
 
 ocpp::ReservationCheckStatus
-GenericOcpp::cb_is_reservation_for_token(std::int32_t evse_id, const ocpp::CiString<255>& idToken,
+GenericOcpp::cb_is_reservation_for_token(std::int32_t ocpp_evse_id, const ocpp::CiString<255>& idToken,
                                          const std::optional<ocpp::CiString<255>>& groupIdToken) {
 
     // for v1.6 the incoming id is the OCPP1.6 connector id, which maps 1:1 to the EVerest evse_id
@@ -1228,7 +1267,7 @@ GenericOcpp::cb_is_reservation_for_token(std::int32_t evse_id, const ocpp::CiStr
 
     if (!mv_requires.reservation.empty() && mv_requires.reservation.at(0) != nullptr) {
         types::reservation::ReservationCheck reservation_check_request;
-        reservation_check_request.evse_id = evse_id;
+        reservation_check_request.evse_id = to_everest_evse_id(ocpp_evse_id);
         reservation_check_request.id_token = idToken.get();
         if (groupIdToken.has_value()) {
             reservation_check_request.group_id_token = groupIdToken.value().get();
@@ -1370,9 +1409,14 @@ void GenericOcpp::cb_provide_token(const IdToken& id_token) {
     }
 
     if (id_token.evse_id.has_value()) {
-        provided_token.connectors = std::vector<std::int32_t>{id_token.evse_id.value()};
+        provided_token.connectors = std::vector<std::int32_t>{to_everest_evse_id(id_token.evse_id.value())};
     } else if (!id_token.connectors.empty()) {
-        provided_token.connectors = id_token.connectors;
+        std::vector<std::int32_t> everest_evse_ids;
+        everest_evse_ids.reserve(id_token.connectors.size());
+        for (const auto ocpp_evse_id : id_token.connectors) {
+            everest_evse_ids.push_back(to_everest_evse_id(ocpp_evse_id));
+        }
+        provided_token.connectors = std::move(everest_evse_ids);
     }
     mv_provides.auth_provider.publish_provided_token(provided_token);
 }
@@ -1401,7 +1445,11 @@ ocpp::v2::ReserveNowStatusEnum GenericOcpp::cb_reserve_now(const ocpp::v2::Reser
         reservation.reservation_id = request.id;
         reservation.expiry_time = request.expiryDateTime.to_rfc3339();
         reservation.id_token = request.idToken.idToken;
-        reservation.evse_id = request.evseId;
+        if (request.evseId.has_value()) {
+            reservation.evse_id = to_everest_evse_id(request.evseId.value());
+        } else {
+            reservation.evse_id = std::nullopt;
+        }
         if (request.groupIdToken.has_value()) {
             reservation.parent_id_token = request.groupIdToken.value().idToken;
         }
@@ -1478,8 +1526,14 @@ void GenericOcpp::cb_security_event(const ocpp::CiString<50>& event_type,
 void GenericOcpp::cb_service_renegotiation_supported(std::int32_t extensions_id, bool service_renegotiation_supported) {
     const auto& mapping = mv_requires.extensions_15118.at(extensions_id)->get_mapping();
     if (mapping.has_value()) {
+        const auto ocpp_evse_id = to_ocpp_evse_id(mapping->evse);
+        if (not ocpp_evse_id.has_value()) {
+            EVLOG_warning << "ISO15118 Extension maps EVerest evse id " << mapping->evse
+                          << " which is not served by this OCPP instance; ignoring";
+            return;
+        }
         std::lock_guard lock(m_member_mux);
-        m_evse_service_renegotiation_supported[mapping->evse] = service_renegotiation_supported;
+        m_evse_service_renegotiation_supported[ocpp_evse_id.value()] = service_renegotiation_supported;
     } else {
         EVLOG_warning << "ISO15118 Extension interface mapping not set! Not retrieving 'Service "
                          "Renegotiation Supported'!";
@@ -1623,6 +1677,9 @@ void GenericOcpp::cb_transaction_event(const ocpp::v2::TransactionEventRequest& 
     auto ocpp_transaction_event = to_everest_ocpp_transaction_event(transaction_event);
     ocpp_transaction_event.transaction_id = transaction_id;
     ocpp_transaction_event.timestamp = timestamp.to_rfc3339();
+    if (ocpp_transaction_event.evse.has_value()) {
+        ocpp_transaction_event.evse->id = to_everest_evse_id(ocpp_transaction_event.evse->id);
+    }
     mv_provides.ocpp_generic.publish_ocpp_transaction_event(ocpp_transaction_event);
 }
 
@@ -1635,13 +1692,16 @@ void GenericOcpp::cb_transaction_event_response(const ocpp::v2::TransactionEvent
     auto ocpp_transaction_event = to_everest_ocpp_transaction_event(transaction_event);
     ocpp_transaction_event.transaction_id = transaction_id;
     ocpp_transaction_event.timestamp = timestamp.to_rfc3339();
+    if (ocpp_transaction_event.evse.has_value()) {
+        ocpp_transaction_event.evse->id = to_everest_evse_id(ocpp_transaction_event.evse->id);
+    }
     auto ocpp_transaction_event_response = to_everest_transaction_event_response(transaction_event_response);
     ocpp_transaction_event_response.original_transaction_event = ocpp_transaction_event;
     mv_provides.ocpp_generic.publish_ocpp_transaction_event_response(ocpp_transaction_event_response);
     if (transaction_event_response.idTokenInfo.has_value() and transaction_event.evse.has_value()) {
         types::authorization::ValidationResultUpdate result_update;
         result_update.validation_result = to_everest_validation_result(transaction_event_response.idTokenInfo.value());
-        result_update.connector_id = transaction_event.evse->id;
+        result_update.connector_id = to_everest_evse_id(transaction_event.evse->id);
         mv_provides.auth_validator.publish_validate_result_update(result_update);
     }
 }
@@ -2064,10 +2124,16 @@ void GenericOcpp::flush_pending_grid_support() {
         state_handle->set_capabilities_live();
         pending = state_handle->take_pending_capabilities();
     }
-    for (const auto& [pending_evse_id, pending_capability] : pending) {
-        const auto apply_result = apply_der_capability(pending_evse_id, pending_capability);
+    for (const auto& [pending_everest_evse_id, pending_capability] : pending) {
+        const auto pending_evse_id = to_ocpp_evse_id(pending_everest_evse_id);
+        if (not pending_evse_id.has_value()) {
+            EVLOG_debug << "Dropping buffered DER capability for EVerest EVSE " << pending_everest_evse_id
+                        << " which is not served by this OCPP instance";
+            continue;
+        }
+        const auto apply_result = apply_der_capability(pending_evse_id.value(), pending_capability);
         if (not apply_result.accepted) {
-            EVLOG_error << "Buffered DER capability for EVSE " << pending_evse_id
+            EVLOG_error << "Buffered DER capability for EVSE " << pending_evse_id.value()
                         << " rejected on flush (consumer already received Accepted, not re-notified): "
                         << apply_result.rejected_details;
         }
@@ -2109,7 +2175,13 @@ void GenericOcpp::init_grid_support_routing() {
                         << " has no evse mapping; excluding it from DER routing";
             continue;
         }
-        const auto [it, inserted] = m_grid_support_by_evse.emplace(mapping->evse, grid_support.get());
+        const auto ocpp_evse_id = to_ocpp_evse_id(mapping->evse);
+        if (not ocpp_evse_id.has_value()) {
+            EVLOG_debug << "grid_support connection on module " << grid_support->module_id << " maps EVerest evse "
+                        << mapping->evse << " which is not served by this OCPP instance; excluding it from DER routing";
+            continue;
+        }
+        const auto [it, inserted] = m_grid_support_by_evse.emplace(ocpp_evse_id.value(), grid_support.get());
         if (not inserted) {
             EVLOG_error << "grid_support connection on module " << grid_support->module_id << " maps evse "
                         << mapping->evse << " already served by another connection; keeping the first";
@@ -2142,11 +2214,12 @@ void GenericOcpp::grid_support_heartbeat_timer_stop() {
 }
 
 void GenericOcpp::on_grid_support_capability(const types::grid_support::EVSECapability& evse_capability) {
-    const auto evse_id = evse_capability.evse_id;
+    const auto everest_evse_id = evse_capability.evse_id;
     const auto& capability = evse_capability.capability;
 
     if (not capability.ac.has_value() and not capability.dc.has_value()) {
-        EVLOG_warning << "Ignoring DER capability for EVSE " << evse_id << ": no inverter class declared";
+        EVLOG_warning << "Ignoring DER capability for EVerest EVSE " << everest_evse_id
+                      << ": no inverter class declared";
         return;
     }
 
@@ -2154,14 +2227,21 @@ void GenericOcpp::on_grid_support_capability(const types::grid_support::EVSECapa
     {
         auto state_handle = m_grid_support_state.handle();
         if (not state_handle->capabilities_live()) {
-            state_handle->buffer_pending_capability(evse_id, capability);
+            state_handle->buffer_pending_capability(everest_evse_id, capability);
             return;
         }
     }
 
-    const auto apply_result = apply_der_capability(evse_id, capability);
+    const auto evse_id = to_ocpp_evse_id(everest_evse_id);
+    if (not evse_id.has_value()) {
+        EVLOG_debug << "Ignoring DER capability for EVerest EVSE " << everest_evse_id
+                    << " which is not served by this OCPP instance";
+        return;
+    }
+
+    const auto apply_result = apply_der_capability(evse_id.value(), capability);
     if (not apply_result.accepted) {
-        EVLOG_error << "Rejecting DER capability for EVSE " << evse_id
+        EVLOG_error << "Rejecting DER capability for EVSE " << evse_id.value()
                     << ": device model rejected DER capability variables: " << apply_result.rejected_details;
     }
 }
@@ -2252,10 +2332,37 @@ GenericOcpp::create_setpoint_entry(std::int32_t setpoint_priority, const std::st
     return result;
 }
 
+std::optional<std::int32_t> GenericOcpp::to_ocpp_evse_id(std::int32_t everest_evse_id) const {
+    if (everest_evse_id == 0) {
+        return 0;
+    }
+    const auto it = m_ocpp_evse_id_by_everest_evse_id.find(everest_evse_id);
+    if (it == m_ocpp_evse_id_by_everest_evse_id.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
+std::int32_t GenericOcpp::to_everest_evse_id(std::int32_t ocpp_evse_id) const {
+    if (ocpp_evse_id == 0) {
+        return 0;
+    }
+    const auto it = m_everest_evse_id_by_ocpp_evse_id.find(ocpp_evse_id);
+    if (it == m_everest_evse_id_by_ocpp_evse_id.end()) {
+        EVLOG_warning << "No EVerest evse id known for OCPP evse id " << ocpp_evse_id
+                      << "; falling back to identity mapping";
+        return ocpp_evse_id;
+    }
+    return it->second;
+}
+
 std::pair<GenericChargePointInterface::ConnectorStructure, GenericChargePointInterface::ConnectorStructureV16>
 GenericOcpp::get_connector_structure() {
     GenericChargePointInterface::ConnectorStructure evse_connector_structure;
     GenericChargePointInterface::ConnectorStructureV16 connector_mapping;
+
+    m_ocpp_evse_id_by_everest_evse_id.clear();
+    m_everest_evse_id_by_ocpp_evse_id.clear();
 
     std::int32_t evse_id = 1;
     std::int32_t v16_connector_id = 1; // this represents the OCPP connector id
@@ -2265,9 +2372,18 @@ GenericOcpp::get_connector_structure() {
         std::int32_t num_connectors = evse_info.connectors.size();
         std::map<int32_t, int32_t> v16_connector_map;
 
-        if (evse_info.id != evse_id) {
-            throw std::runtime_error("Configured evse_id(s) must start with 1 counting upwards");
+        if (evse_info.id < 1) {
+            throw std::runtime_error("Configured evse_id(s) must be >= 1, got " + std::to_string(evse_info.id));
         }
+        if (not m_ocpp_evse_id_by_everest_evse_id.emplace(evse_info.id, evse_id).second) {
+            throw std::runtime_error("Duplicate evse_id " + std::to_string(evse_info.id) +
+                                     " within the evse_manager connections of this OCPPmulti instance");
+        }
+        m_everest_evse_id_by_ocpp_evse_id[evse_id] = evse_info.id;
+        if (evse_info.id != evse_id) {
+            EVLOG_info << "Mapping EVerest evse id " << evse_info.id << " to OCPP evse id " << evse_id;
+        }
+
         if (num_connectors > 0) {
             std::int32_t connector_id = 1;
             for (const auto& connector : evse_info.connectors) {
@@ -2376,7 +2492,10 @@ void GenericOcpp::publish_charging_schedules(
     const std::vector<ocpp::v2::EnhancedCompositeSchedule>& composite_schedules) {
     using namespace module::conversions;
 
-    const auto everest_schedules = to_everest_charging_schedules(composite_schedules);
+    auto everest_schedules = to_everest_charging_schedules(composite_schedules);
+    for (auto& schedule : everest_schedules.schedules) {
+        schedule.evse = to_everest_evse_id(schedule.evse);
+    }
     mv_provides.ocpp_generic.publish_charging_schedules(everest_schedules);
 }
 
@@ -2395,7 +2514,10 @@ void GenericOcpp::set_external_limits(const std::vector<ocpp::v2::EnhancedCompos
     }
 
     for (const auto& composite_schedule : composite_schedules) {
-        auto evse_id = composite_schedule.evseId;
+        const auto evse_id = to_everest_evse_id(composite_schedule.evseId);
+        if (evse_id == 0) {
+            continue;
+        }
         if (not external_energy_limits::is_evse_sink_configured(mv_requires.evse_energy_sink, evse_id)) {
             EVLOG_warning << "Can not apply external limits! No evse energy sink configured for evse_id: " << evse_id;
             continue;
