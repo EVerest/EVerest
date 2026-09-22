@@ -15,7 +15,7 @@ from everest.testing.core_utils._configuration.everest_configuration_strategies.
     EvseBoardSupportApiConfigAdjustment
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP16ConfigAdjustment
 
-from ocpp.v16.enums import ChargePointErrorCode
+from ocpp.v16.enums import ChargePointErrorCode, ChargePointStatus
 
 MREC_MODULE_ID = "bsp_1"
 MREC_ERROR_TYPE = "MREC2GroundFailure"
@@ -31,6 +31,22 @@ NON_MREC_ERROR_TYPE = "VendorError"
 # vendorId used by the evse_manager/Inoperative error sent by the EVSEManager
 # to mark the connector as Faulted
 INOPERATIVE_VENDOR_ID = "EVerest"
+
+INITIAL_STATUS_NOTIFICATION_TIMEOUT_S = 60
+
+
+async def _wait_for_connector_available(test_utility: TestUtility, charge_point_v16: ChargePoint16):
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        {
+            "connector_id": 1,
+            "error_code": ChargePointErrorCode.no_error,
+            "status": ChargePointStatus.available,
+        },
+        timeout=INITIAL_STATUS_NOTIFICATION_TIMEOUT_S,
+    ), "connector 1 did not report Available after boot"
 
 
 def _raise_error_topic(test_controller: TestController) -> str:
@@ -91,6 +107,7 @@ async def test_mrec_error_with_message_sets_status_notification_info(
     test_controller: TestController,
 ):
     logging.info("######### test_mrec_error_with_message_sets_status_notification_info #########")
+    await _wait_for_connector_available(test_utility, charge_point_v16)
 
     # The `message` on an MREC error is sent to the CSMS in the `info` field
     message = "test error message"
@@ -153,6 +170,7 @@ async def test_mrec_error_without_message_is_unchanged_from_baseline(
     test_controller: TestController,
 ):
     logging.info("######### test_mrec_error_without_message_is_unchanged_from_baseline #########")
+    await _wait_for_connector_available(test_utility, charge_point_v16)
 
     # Raising an MREC error with an empty message results in no `info` value being sent
     test_controller.publish(
@@ -213,6 +231,7 @@ async def test_non_mrec_error_with_message_is_unchanged_from_baseline(
     test_controller: TestController,
 ):
     logging.info("######### test_non_mrec_error_with_message_is_unchanged_from_baseline #########")
+    await _wait_for_connector_available(test_utility, charge_point_v16)
 
     # On non-MREC errors, the `message` gets sent in the `vendorId` field, `info` carries the error origin
     sub_type = "some_subtype"
@@ -274,6 +293,7 @@ async def test_mrec_error_with_overlong_message_is_truncated(
     test_controller: TestController,
 ):
     logging.info("######### test_mrec_error_with_overlong_message_is_truncated #########")
+    await _wait_for_connector_available(test_utility, charge_point_v16)
 
     # Too long `message` values on MREC errors are truncated, but still sent
     long_message = "x" * 60
@@ -332,6 +352,7 @@ async def test_mrec_error_cleared_reports_nothing_while_still_faulted_by_default
 ):
     """ReportClearedErrors defaults to false: no ocpp_config_adaptions marker is applied here."""
     logging.info("######### test_mrec_error_cleared_reports_nothing_while_still_faulted_by_default #########")
+    await _wait_for_connector_available(test_utility, charge_point_v16)
 
     test_controller.publish(
         _raise_error_topic(test_controller),
