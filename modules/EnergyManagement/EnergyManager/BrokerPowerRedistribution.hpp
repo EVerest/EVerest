@@ -58,11 +58,17 @@ ObservedMeasurement read_measurement(const types::energy::EnergyFlowRequest& nod
 PhaseCurrents measured_phase_currents(const ObservedMeasurement& measurement, float nominal_ac_voltage,
                                       int active_phases);
 
-/// \brief True while \p measurement can carry a limit: it has a value, it has a timestamp
-/// of its own, and that timestamp is not older than \p max_age. EnergyNode and EvseManager
-/// republish the last reading they received on every request, so without the age check a
-/// meter that stopped publishing would pin the allocation at whatever it last reported. A
-/// timestamp in the future is accepted - clock skew is not staleness.
+/// \brief True while \p measurement can carry a limit: it has a value, and it is fresh.
+///
+/// The age is judged by is_fresh(), the module's one staleness rule, so the per connector
+/// limit and the site aggregate cannot disagree about which meters are alive - including at
+/// the boundary, where a reading exactly \p max_age old is stale for both. EnergyNode and
+/// EvseManager republish the last reading they received on every request, so without that
+/// check a meter that stopped publishing would pin the allocation at whatever it last
+/// reported.
+///
+/// What this adds on top of freshness is the value check: a reading that is fresh but
+/// carries neither power nor current has nothing a limit could be derived from.
 ///
 /// \param max_age zero accepts any age
 bool measurement_can_limit(const ObservedMeasurement& measurement, date::utc_clock::time_point now,

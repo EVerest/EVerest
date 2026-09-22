@@ -121,13 +121,7 @@ bool measurement_can_limit(const ObservedMeasurement& measurement, date::utc_clo
     if (not has_value) {
         return false;
     }
-    if (not measurement.measured_at.has_value()) {
-        return false;
-    }
-    if (max_age <= std::chrono::seconds::zero()) {
-        return true;
-    }
-    return now - measurement.measured_at.value() <= max_age;
+    return is_fresh(measurement.measured_at, now, max_age);
 }
 
 std::optional<float> to_scalar_cap(const PhaseCurrents& cap) {

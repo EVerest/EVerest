@@ -30,8 +30,9 @@ current are aggregated together.
 
 Size the window at or above the publish interval of the slowest meter in the tree. A
 window shorter than that discards readings the meter has had no chance to refresh, and
-the aggregate keeps reporting fewer contributing meters than the installation has.
-Setting it to ``0`` disables the filter and always sums the last reading of every meter.
+the aggregate keeps reporting fewer contributing meters than the installation has. The
+filter cannot be switched off: it is the only guard between a meter that has stopped
+updating and a limit computed from its last reading, so the smallest window is ``1``.
 
 **When a value is unknown it is reported as absent, never as zero.** If no meter has a
 fresh reading, the aggregate carries no total at all -- a consumer must read that as
@@ -47,9 +48,9 @@ one single phase meter leaves the site L2 and L3 sums absent instead of understa
      - Description
    * - ``power_meter_aggregation_window_s``
      - ``5``
-     - Validity window for a power meter reading when aggregating multiple meters [s].
-       Set it at or above the publish interval of the slowest meter. ``0`` disables the
-       staleness filter.
+     - Validity window for a power meter reading, both for the site aggregate and for the
+       per connector measurement [s]. Set it at or above the publish interval of the
+       slowest meter. Minimum ``1``: a slow meter needs a larger window, not no window.
 
 Broker strategy and power redistribution
 ========================================
