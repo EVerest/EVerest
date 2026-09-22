@@ -147,6 +147,57 @@ SCENARIO("ISO15118-20 EV emits a non-divisible AC total without overstating it")
     }
 }
 
+// [V2G20-1818]: on ThreePhase, L2 and L3 make the base read as L1 rather than as a sum.
+SCENARIO("ISO15118-20 EV emits a ratio undivided on every line of the connector") {
+    dt::RationalNumber base{};
+    std::optional<dt::RationalNumber> l2 = dt::from_float(1.0f);
+    std::optional<dt::RationalNumber> l3;
+    const auto same = [](const dt::RationalNumber& a, const dt::RationalNumber& b) {
+        return a.value == b.value and a.exponent == b.exponent;
+    };
+    const auto require_every_line = [&] {
+        REQUIRE(same(base, dt::from_float(0.9f)));
+        REQUIRE(l2.has_value());
+        REQUIRE(l3.has_value());
+        REQUIRE(same(*l2, base));
+        REQUIRE(same(*l3, base));
+    };
+
+    GIVEN("A power factor of 0.9") {
+        WHEN("the connector is SinglePhase") {
+            ev::emit_ac_ratio(0.9f, dt::AcConnector::SinglePhase, base, l2, l3);
+
+            THEN("only the base element carries the undivided ratio") {
+                REQUIRE(same(base, dt::from_float(0.9f)));
+                REQUIRE_FALSE(l2.has_value());
+                REQUIRE_FALSE(l3.has_value());
+            }
+        }
+
+        WHEN("a three-line EV uses a ThreePhase connector") {
+            ev::emit_ac_ratio(0.9f, dt::AcConnector::ThreePhase, base, l2, l3);
+
+            THEN("the base, L2 and L3 all carry the ratio") {
+                require_every_line();
+            }
+        }
+
+        WHEN("a single-line EV uses a ThreePhase connector") {
+            ev::emit_ac_ratio(0.9f, dt::AcConnector::ThreePhase, base, l2, l3);
+            std::optional<dt::RationalNumber> limit_l2;
+            std::optional<dt::RationalNumber> limit_l3;
+            dt::RationalNumber limit_base{};
+            ev::emit_ac_limit(0.9f, 1, dt::AcConnector::ThreePhase, limit_base, limit_l2, limit_l3);
+
+            THEN("the lines carry the ratio as for three lines, not the zero peers of a limit") {
+                require_every_line();
+                REQUIRE(limit_l2.has_value());
+                REQUIRE(dt::from_RationalNumber(*limit_l2) == 0.0f);
+            }
+        }
+    }
+}
+
 SCENARIO("ISO15118-20 EV emits a present measurement as one aggregate reading") {
     dt::RationalNumber base{};
     std::optional<dt::RationalNumber> l2 = dt::from_float(1.0f);
