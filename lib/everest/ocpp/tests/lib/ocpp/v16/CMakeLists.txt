@@ -31,6 +31,7 @@ target_sources(libocpp_unit_tests PRIVATE
         test_devicemodel_connectivity.cpp
         test_charge_point_status_notification.cpp
         test_charge_point_suspend_reason.cpp
+        test_charge_point_malformed_call_result.cpp
         test_config_validation.cpp
         utils_tests.cpp
         test_configuration.cpp
