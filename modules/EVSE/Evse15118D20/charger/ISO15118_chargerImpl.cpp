@@ -2377,6 +2377,8 @@ void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) 
         code = iso15118::d20::EvseErrorCode::Malfunction;
         break;
     case types::iso15118::EvseError::Error_EmergencyShutdown:
+    case types::iso15118::EvseError::Error_ErrorShutdown:
+        // The C++ stack has no keep-alive error shutdown (see EvseV2G); treat it as an emergency shutdown.
         code = iso15118::d20::EvseErrorCode::EmergencyShutdown;
         break;
     }
