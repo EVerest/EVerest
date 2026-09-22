@@ -331,8 +331,8 @@ protected:
 
     EventInfo convert_error(const Everest::error::Error& error);
 
-    /// \brief Translate \p event_data's evse id into the OCPP domain and forward it to the charge
-    /// point. Events of EVSEs not served by this instance are dropped.
+    /// \brief Translate \p event_data's evse id into the OCPP domain and forward it to the charge point.
+    /// Events of EVSEs not served by this instance are dropped.
     void dispatch_event_info(EventInfo event_data);
 
     void init_check_energy_sink();
