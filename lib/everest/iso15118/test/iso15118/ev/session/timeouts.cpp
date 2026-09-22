@@ -48,6 +48,7 @@ SCENARIO("ISO15118-20 EV Ongoing guard table") {
             // cable check and pre-charge.
             REQUIRE(timeouts::ongoing_timeout(StateID::Authorization) == 60000ms);
             REQUIRE(timeouts::ongoing_timeout(StateID::ScheduleExchange) == 60000ms);
+            REQUIRE(timeouts::ongoing_timeout(StateID::AC_DER_SAE_ChargeParameterDiscovery) == 60000ms);
             REQUIRE(timeouts::ongoing_timeout(StateID::DC_CableCheck) == 40000ms);
             REQUIRE(timeouts::ongoing_timeout(StateID::DC_PreCharge) == 10000ms);
             REQUIRE(timeouts::ongoing_timeout(StateID::DC_WeldingDetection) == 60000ms);
@@ -56,8 +57,9 @@ SCENARIO("ISO15118-20 EV Ongoing guard table") {
         THEN("every state that re-polls on Ongoing is bounded") {
             // The defect this guards against is a state that re-sends on Ongoing with no entry
             // here, which holds the EV in that state for as long as the SECC keeps answering.
-            for (const auto state : {StateID::Authorization, StateID::ScheduleExchange, StateID::DC_CableCheck,
-                                     StateID::DC_PreCharge, StateID::DC_WeldingDetection}) {
+            for (const auto state :
+                 {StateID::Authorization, StateID::ScheduleExchange, StateID::AC_DER_SAE_ChargeParameterDiscovery,
+                  StateID::DC_CableCheck, StateID::DC_PreCharge, StateID::DC_WeldingDetection}) {
                 REQUIRE(timeouts::ongoing_timeout(state).has_value());
             }
         }
