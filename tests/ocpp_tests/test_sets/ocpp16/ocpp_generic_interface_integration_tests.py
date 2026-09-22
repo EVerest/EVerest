@@ -193,19 +193,18 @@ class TestOCPP16GenericInterfaceIntegration:
             request_id=41,
             disable_connectors=True,
         )
-        await asyncio.sleep(0.5)
+        # Updates of one variable arrive in publication order: once the status
+        # below has taken effect, a duplicate that acted would already be visible.
+        publish_firmware_status(_env.probe_module, "Installed", request_id=41)
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Enable")
         assert installation_mock.call_count == 1
         for mock in availability_mocks:
             states = [
                 call["cmd_source"]["enable_state"]
                 for call in availability_calls(mock)
             ]
-            assert states
-            assert set(states) == {"Disable"}
-
-        publish_firmware_status(_env.probe_module, "Installed", request_id=41)
-        for mock in availability_mocks:
-            await wait_for_firmware_availability_state(mock, "Enable")
+            assert set(states[: states.index("Enable")]) == {"Disable"}
             mock.reset_mock()
 
         publish_firmware_status(
@@ -216,10 +215,10 @@ class TestOCPP16GenericInterfaceIntegration:
         )
         for mock in availability_mocks:
             await wait_for_firmware_availability_state(mock, "Disable")
-            assert [
+            assert set(
                 call["cmd_source"]["enable_state"]
                 for call in availability_calls(mock)
-            ] == ["Disable"]
+            ) == {"Disable"}
         await wait_for_mock_call_count(installation_mock, 2)
 
         publish_firmware_status(_env.probe_module, "Idle", request_id=42)
@@ -232,7 +231,9 @@ class TestOCPP16GenericInterfaceIntegration:
             request_id=42,
             disable_connectors=True,
         )
-        await asyncio.sleep(0.5)
+        publish_firmware_status(_env.probe_module, "Installed", request_id=42)
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Enable")
         assert installation_mock.call_count == 2
 
     async def test_firmware_install_scheduled_explicit_false_keeps_connectors_available(
@@ -275,13 +276,13 @@ class TestOCPP16GenericInterfaceIntegration:
             mock.reset_mock()
 
         publish_firmware_status(_env.probe_module, "InstallScheduled", request_id=-1)
-        await asyncio.sleep(0.5)
-        for mock in availability_mocks:
-            assert availability_calls(mock) == []
-
         publish_firmware_status(_env.probe_module, "Downloaded", request_id=-1)
         for mock in availability_mocks:
             await wait_for_firmware_availability_state(mock, "Disable")
+            assert [
+                call["cmd_source"]["enable_state"]
+                for call in availability_calls(mock)
+            ] == ["Disable"]
 
         publish_firmware_status(_env.probe_module, "DownloadFailed", request_id=-1)
         for mock in availability_mocks:
@@ -300,13 +301,13 @@ class TestOCPP16GenericInterfaceIntegration:
             mock.reset_mock()
 
         publish_firmware_status(_env.probe_module, "Downloaded", request_id=61)
-        await asyncio.sleep(0.5)
-        for mock in availability_mocks:
-            assert availability_calls(mock) == []
-
         publish_firmware_status(_env.probe_module, "SignatureVerified", request_id=61)
         for mock in availability_mocks:
             await wait_for_firmware_availability_state(mock, "Disable")
+            assert [
+                call["cmd_source"]["enable_state"]
+                for call in availability_calls(mock)
+            ] == ["Disable"]
 
         publish_firmware_status(_env.probe_module, "InvalidSignature", request_id=61)
         for mock in availability_mocks:
