@@ -307,7 +307,86 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
     }
 
     GIVEN("DeSerialize schedule_exchange_res - scheduled mode - absolute price") {
-        // TODO(rb): Add test + generate exi stream
+        // generated via exificient
+        uint8_t doc_raw[] = {
+            0x80, 0x70, 0x04, 0x1c, 0x90, 0x58, 0x02, 0x37, 0x25, 0x7c, 0x84, 0x8d, 0x7b, 0x0c, 0x4b, 0x70, 0x62, 0x00,
+            0x04, 0x00, 0x40, 0x00, 0x84, 0x80, 0xe0, 0x41, 0x80, 0x51, 0x21, 0x00, 0x00, 0x12, 0x05, 0x45, 0x55, 0x52,
+            0x00, 0xac, 0xad, 0xcc, 0xe0, 0xc9, 0xd5, 0xc9, 0xb8, 0xe9, 0xa5, 0xcd, 0xbc, 0xe9, 0xcd, 0xd1, 0x90, 0xe9,
+            0xa5, 0xcd, 0xbc, 0xe8, 0xc4, 0xd4, 0xc4, 0xc4, 0xe0, 0xe8, 0xb4, 0xc8, 0xc0, 0xe9, 0x41, 0xc9, 0xa5, 0x8d,
+            0x95, 0x05, 0xb1, 0x9d, 0xbd, 0xc9, 0xa5, 0xd1, 0xa1, 0xb4, 0xe8, 0xc4, 0xb5, 0x41, 0xbd, 0xdd, 0x95, 0xc8,
+            0x07, 0xe0, 0x01, 0x01, 0xfc, 0x02, 0x40, 0x00, 0x92, 0x00, 0x04, 0xc5, 0x00, 0x01, 0x08, 0x80, 0xe0, 0x3f,
+            0x80, 0x09, 0x08, 0x00, 0x00, 0x08, 0x48, 0x0e, 0x01, 0xfc, 0x00, 0x88, 0x40, 0x00, 0x00, 0x54, 0x04, 0xb8,
+            0x30, 0xb9, 0x35, 0xb4, 0xb7, 0x33, 0x84, 0x00, 0x01, 0x04, 0x50};
+
+        const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
+
+        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+
+        THEN("It should be decoded successfully") {
+
+            REQUIRE(variant.get_type() == message_20::Type::ScheduleExchangeRes);
+
+            const auto& msg = variant.get<message_20::ScheduleExchangeResponse>();
+            const auto& header = msg.header;
+
+            REQUIRE(header.session_id == std::array<uint8_t, 8>{0x39, 0x20, 0xB0, 0x04, 0x6E, 0x4A, 0xF9, 0x09});
+            REQUIRE(header.timestamp == 1727076439);
+
+            REQUIRE(msg.response_code == dt::ResponseCode::OK);
+            REQUIRE(msg.processing == dt::Processing::Finished);
+            REQUIRE(std::holds_alternative<dt::Scheduled_SEResControlMode>(msg.control_mode));
+            auto& control_mode = std::get<dt::Scheduled_SEResControlMode>(msg.control_mode);
+            REQUIRE(control_mode.schedule_tuple.size() == 1);
+
+            const auto& charging_schedule = control_mode.schedule_tuple.at(0).charging_schedule;
+            REQUIRE(control_mode.schedule_tuple.at(0).schedule_tuple_id == 1);
+            REQUIRE(charging_schedule.power_schedule.time_anchor == 0);
+            REQUIRE(charging_schedule.power_schedule.entries.size() == 1);
+            REQUIRE(charging_schedule.power_schedule.entries.at(0).duration == 3600);
+            REQUIRE(dt::from_RationalNumber(charging_schedule.power_schedule.entries.at(0).power) == 10000.0f);
+
+            REQUIRE(charging_schedule.price_schedule.index() == 1);
+            REQUIRE(std::holds_alternative<dt::AbsolutePriceSchedule>(charging_schedule.price_schedule));
+            auto& price_schedule = std::get<dt::AbsolutePriceSchedule>(charging_schedule.price_schedule);
+
+            REQUIRE(price_schedule.time_anchor == 0);
+            REQUIRE(price_schedule.price_schedule_id == 1);
+            REQUIRE(price_schedule.currency == "EUR");
+            REQUIRE(price_schedule.language == "eng");
+            REQUIRE(price_schedule.price_algorithm == "urn:iso:std:iso:15118:-20:PriceAlgorithm:1-Power");
+            REQUIRE(price_schedule.minimum_cost.has_value() == true);
+            REQUIRE(dt::from_RationalNumber(*price_schedule.minimum_cost) == 0.01f);
+            REQUIRE(price_schedule.maximum_cost.has_value() == true);
+            REQUIRE(dt::from_RationalNumber(*price_schedule.maximum_cost) == 0.9f);
+
+            REQUIRE(price_schedule.tax_rules.has_value() == true);
+            REQUIRE(price_schedule.tax_rules->size() == 1);
+            REQUIRE(price_schedule.tax_rules->at(0).tax_rule_id == 1);
+            REQUIRE(dt::from_RationalNumber(price_schedule.tax_rules->at(0).tax_rate) == 19.0f);
+            REQUIRE(price_schedule.tax_rules->at(0).applies_to_energy_fee == true);
+            REQUIRE(price_schedule.tax_rules->at(0).applies_to_parking_fee == false);
+            REQUIRE(price_schedule.tax_rules->at(0).applies_to_overstay_fee == false);
+            REQUIRE(price_schedule.tax_rules->at(0).applies_to_minimum_maximum_cost == false);
+
+            REQUIRE(price_schedule.price_rule_stacks.size() == 2);
+            REQUIRE(price_schedule.price_rule_stacks.at(0).duration == 1800);
+            REQUIRE(price_schedule.price_rule_stacks.at(0).price_rule.size() == 1);
+            REQUIRE(dt::from_RationalNumber(price_schedule.price_rule_stacks.at(0).price_rule.at(0).energy_fee) ==
+                    0.1f);
+            REQUIRE(dt::from_RationalNumber(
+                        price_schedule.price_rule_stacks.at(0).price_rule.at(0).power_range_start) == 0.0f);
+            REQUIRE(price_schedule.price_rule_stacks.at(1).duration == 3600);
+            REQUIRE(price_schedule.price_rule_stacks.at(1).price_rule.size() == 1);
+            REQUIRE(dt::from_RationalNumber(price_schedule.price_rule_stacks.at(1).price_rule.at(0).energy_fee) ==
+                    0.2f);
+
+            REQUIRE(price_schedule.overstay_rules.has_value() == false);
+
+            REQUIRE(price_schedule.additional_selected_services.has_value() == true);
+            REQUIRE(price_schedule.additional_selected_services->size() == 1);
+            REQUIRE(price_schedule.additional_selected_services->at(0).service_name == "parking");
+            REQUIRE(dt::from_RationalNumber(price_schedule.additional_selected_services->at(0).service_fee) == 2.0f);
+        }
     }
 
     GIVEN("Serialize schedule_exchange_res - dynamic mode") {
@@ -351,93 +430,6 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
             REQUIRE(std::holds_alternative<dt::Dynamic_SEResControlMode>(msg.control_mode));
             auto& control_mode = std::get<dt::Dynamic_SEResControlMode>(msg.control_mode);
             REQUIRE(control_mode.departure_time == 2000);
-        }
-    }
-
-    GIVEN("Se/Deserialize schedule_exchange_res - scheduled mode with an absolute price schedule") {
-        message_20::ScheduleExchangeResponse res;
-        res.header = message_20::Header{{0x39, 0x20, 0xB0, 0x04, 0x6E, 0x4A, 0xF9, 0x09}, 1727076439};
-        res.response_code = dt::ResponseCode::OK;
-        res.processing = dt::Processing::Finished;
-
-        auto& control_mode = res.control_mode.emplace<dt::Scheduled_SEResControlMode>();
-        auto& tuple = control_mode.schedule_tuple.emplace_back();
-        tuple.schedule_tuple_id = 1;
-        tuple.charging_schedule.power_schedule.time_anchor = 0;
-        auto& power_entry = tuple.charging_schedule.power_schedule.entries.emplace_back();
-        power_entry.duration = 3600;
-        power_entry.power = dt::RationalNumber{10, 3};
-
-        auto& price_schedule = tuple.charging_schedule.price_schedule.emplace<dt::AbsolutePriceSchedule>();
-        price_schedule.time_anchor = 0;
-        price_schedule.price_schedule_id = 1;
-        price_schedule.currency = "EUR";
-        price_schedule.language = "eng";
-        price_schedule.price_algorithm = "urn:iso:std:iso:15118:-20:PriceAlgorithm:1-Power";
-        price_schedule.minimum_cost = dt::RationalNumber{1, -2};
-        price_schedule.maximum_cost = dt::RationalNumber{9, -1};
-
-        auto& tax_rules = price_schedule.tax_rules.emplace();
-        auto& tax_rule = tax_rules.emplace_back();
-        tax_rule.tax_rule_id = 1;
-        tax_rule.tax_rate = dt::RationalNumber{19, 0};
-        tax_rule.applies_to_energy_fee = true;
-        tax_rule.applies_to_parking_fee = false;
-        tax_rule.applies_to_overstay_fee = false;
-        tax_rule.applies_to_minimum_maximum_cost = false;
-
-        for (uint32_t i = 0; i < 2; ++i) {
-            auto& stack = price_schedule.price_rule_stacks.emplace_back();
-            stack.duration = 1800 * (i + 1);
-            auto& rule = stack.price_rule.emplace_back();
-            rule.energy_fee = dt::RationalNumber{static_cast<int16_t>(i + 1), -1};
-            rule.power_range_start = dt::RationalNumber{0, 0};
-        }
-
-        auto& additional_services = price_schedule.additional_selected_services.emplace();
-        auto& additional_service = additional_services.emplace_back();
-        additional_service.service_name = "parking";
-        additional_service.service_fee = dt::RationalNumber{2, 0};
-
-        THEN("It should round-trip with the element counts that were set") {
-            const auto serialized = serialize_helper(res);
-            REQUIRE(serialized.empty() == false);
-
-            const io::StreamInputView stream_view{serialized.data(), serialized.size()};
-            message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
-
-            REQUIRE(variant.get_type() == message_20::Type::ScheduleExchangeRes);
-            const auto& msg = variant.get<message_20::ScheduleExchangeResponse>();
-
-            REQUIRE(std::holds_alternative<dt::Scheduled_SEResControlMode>(msg.control_mode));
-            const auto& schedules = std::get<dt::Scheduled_SEResControlMode>(msg.control_mode).schedule_tuple;
-            REQUIRE(schedules.size() == 1);
-
-            const auto& out_charging_schedule = schedules.front().charging_schedule;
-            REQUIRE(out_charging_schedule.power_schedule.entries.size() == 1);
-            REQUIRE(std::holds_alternative<dt::AbsolutePriceSchedule>(out_charging_schedule.price_schedule));
-            const auto& out_price = std::get<dt::AbsolutePriceSchedule>(out_charging_schedule.price_schedule);
-
-            REQUIRE(out_price.currency == "EUR");
-            REQUIRE(out_price.minimum_cost.has_value());
-            REQUIRE(out_price.minimum_cost->value == 1);
-            REQUIRE(out_price.minimum_cost->exponent == -2);
-            REQUIRE(out_price.maximum_cost.has_value());
-            REQUIRE(out_price.maximum_cost->value == 9);
-            REQUIRE(out_price.maximum_cost->exponent == -1);
-
-            REQUIRE(out_price.price_rule_stacks.size() == 2);
-            REQUIRE(out_price.price_rule_stacks.at(0).duration == 1800);
-            REQUIRE(out_price.price_rule_stacks.at(0).price_rule.size() == 1);
-            REQUIRE(out_price.price_rule_stacks.at(1).duration == 3600);
-
-            REQUIRE(out_price.tax_rules.has_value());
-            REQUIRE(out_price.tax_rules->size() == 1);
-            REQUIRE(out_price.tax_rules->front().tax_rule_id == 1);
-
-            REQUIRE(out_price.additional_selected_services.has_value());
-            REQUIRE(out_price.additional_selected_services->size() == 1);
-            REQUIRE(out_price.additional_selected_services->front().service_name == "parking");
         }
     }
 }
