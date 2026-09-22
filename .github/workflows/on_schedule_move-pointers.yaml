@@ -122,6 +122,8 @@ jobs:
         with:
           app-id: ${{ secrets.HIMALAYA_ACCESSOR_APP_ID }}
           private-key: ${{ secrets.HIMALAYA_ACCESSOR_APP_PRIVATE_KEY }}
+          owner: EVerest
+          repositories: Himalayas
 
       # The log lives in the OTHER repository, so this needs a credential with
       # dispatch access to it. Scope it to that repo only: a GitHub App
