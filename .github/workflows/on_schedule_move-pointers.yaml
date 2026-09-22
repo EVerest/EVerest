@@ -115,6 +115,16 @@ jobs:
           set -euo pipefail
           git push --force origin "$SHA:refs/heads/$POINTER"
 
+
+      - name: Generate App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.HIMALAYAS_ACCESSOR_CLIENT_ID }}
+          private-key: ${{ secrets.HIMALAYAS_ACCESSOR_APP_PRIVATE_KEY }}
+          owner: EVerest
+          repositories: Himalayas
+
       # The log lives in the OTHER repository, so this needs a credential with
       # dispatch access to it. Scope it to that repo only: a GitHub App
       # installation token, or a fine-grained PAT limited to
@@ -123,14 +133,14 @@ jobs:
       - name: Record the move in Himalayas
         if: steps.sha.outputs.unchanged != '1'
         env:
-          GH_TOKEN: ${{ secrets.HIMALAYAS_DISPATCH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           POINTER: ${{ matrix.pointer }}
           TRACKS: ${{ matrix.tracks }}
           SHA: ${{ steps.sha.outputs.sha }}
         run: |
           set -euo pipefail
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::HIMALAYAS_DISPATCH_TOKEN is not set." \
+            echo "::error::App token is not set." \
                  "The branch has moved but the move is now UNRECORDED, which" \
                  "invalidates submissions against it. Set the secret and re-run."
             exit 1
