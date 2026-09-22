@@ -13,10 +13,27 @@ namespace iso15118::ev {
 
 /**
  * @brief Report the problems in an \ref EvConfig.
- * @details Nothing here is recoverable by the stack: a non-positive response timeout
- * disarms the response watchdog, and a non MAC-formatted \c evcc_id goes on the wire
- * as the EVCCID and is rejected by the SECC. Consumers surface the messages and
- * refuse the session rather than starting one that cannot succeed.
+ * @details Rejects, for every energy service:
+ * - a negative \c response_timeout
+ * - an \c evcc_id outside 1 to 255 characters
+ * - an empty protocol offer
+ * - \c enforce_tls without SDP on a non-TLS \c direct_security
+ * - zero \c cpd_rounds
+ *
+ * and, for \c AC_DER_SAE only, in \c sae_profile:
+ * - an inverter identity string longer than 32 bytes
+ * - \c supported_modes with bits outside \c sae::SAE_MODE_BITMAP_MASK, or without
+ *   ChargeFunction and DischargeFunction
+ * - a nominal, minimum or maximum voltage that is not finite and positive
+ * - once those pass, a maximum voltage not above the minimum, else a nominal voltage
+ *   outside the window
+ * - a non-finite \c nominal_voltage_offset_v
+ * - a \c nominal_frequency_hz that is not finite and positive
+ * - a power factor outside (0, 1]
+ * - a VA, var, susceptance or excited discharge power total that is not finite and
+ *   non-negative
+ *
+ * Consumers surface the messages and refuse the session.
  * @param[in] config The configuration to check.
  * @return One message per problem, empty if the config is usable.
  */

@@ -16,6 +16,7 @@
 #include <iso15118/session/protocol.hpp>
 
 #include <iso15118/ev/der_control_functions.hpp>
+#include <iso15118/ev/sae_inverter_profile.hpp>
 #include <iso15118/ev/session_params.hpp>
 
 namespace iso15118::ev {
@@ -111,6 +112,17 @@ struct EvConfig {
     // false selects a set demanding unsupported functions anyway, which deviates from
     // [V2G20-3191]: the EV may only select AC_DER_IEC when it supports every demanded function.
     bool der_stop_on_unsupported_functions{true};
+
+    // Static inverter description for AC_DER_SAE.
+    SaeInverterProfile sae_profile{};
+
+    // ChargeParameterDiscovery rounds before the EV reports Processing::Finished.
+    // 1 finishes on the first request.
+    std::uint16_t cpd_rounds{1};
+
+    // Structurally invalid received DER control content: true stops the session,
+    // false warns and continues. Annex M does not oblige the EV to reject it.
+    bool der_stop_on_invalid_control{false};
 
     // Security byte of the SDP request: TLS when TLS is requested, else the paused session's.
     io::v2gtp::Security sdp_security() const {
