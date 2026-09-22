@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
-"""Integration tests for the generic `ocpp` interface with OCPP2.x."""
+
+"""Integration tests for the generic `ocpp` interface with OCPP2.x.
+
+OCPP2.x analog of the OCPP1.6 ocpp_generic_interface_integration_tests. Currently only covers the `connection_status` var.
+"""
 
 import asyncio
 import logging
@@ -198,9 +202,7 @@ class TestFirmwareAvailability201:
         installation_mock.reset_mock()
 
         _publish_firmware_status(probe_module, "Downloaded", request_id=82)
-        # Updates of one variable arrive in publication order: once the status
-        # below has taken effect, a Downloaded phase that disabled the connectors
-        # would already be visible.
+
         _publish_firmware_status(probe_module, "SignatureVerified", request_id=82)
         for command_mock in availability_mocks.values():
             await _wait_for_command_state(command_mock, "Disable")

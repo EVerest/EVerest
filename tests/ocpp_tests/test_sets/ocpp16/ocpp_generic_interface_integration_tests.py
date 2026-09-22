@@ -193,8 +193,6 @@ class TestOCPP16GenericInterfaceIntegration:
             request_id=41,
             disable_connectors=True,
         )
-        # Updates of one variable arrive in publication order: once the status
-        # below has taken effect, a duplicate that acted would already be visible.
         publish_firmware_status(_env.probe_module, "Installed", request_id=41)
         for mock in availability_mocks:
             await wait_for_firmware_availability_state(mock, "Enable")
