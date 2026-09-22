@@ -22,6 +22,7 @@ constexpr auto MESSAGE_CHARGE_LOOP = 500ms;
 // pre-charge values are the DC-specific overrides V2G_EVCC_DC_CableCheck_Timeout and
 // V2G_EVCC_DC_PreCharge_Timeout.
 constexpr auto ONGOING_AUTHORIZATION = 60000ms;
+constexpr auto ONGOING_CHARGE_PARAMETER_DISCOVERY = 60000ms;
 constexpr auto ONGOING_SCHEDULE_EXCHANGE = 60000ms;
 constexpr auto ONGOING_CABLE_CHECK = 40000ms;
 constexpr auto ONGOING_PRE_CHARGE = 10000ms;
