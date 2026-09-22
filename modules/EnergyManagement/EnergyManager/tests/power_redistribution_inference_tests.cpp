@@ -467,7 +467,10 @@ TEST(RedistributionIntegration, ComparesMeasurementWithPreviousAllocation) {
 
     const auto c = impl.get_redistribution_inference().connectors.at("evse1");
     ASSERT_TRUE(c.allocated_W.has_value());
-    EXPECT_FLOAT_EQ(c.allocated_W.value(), 32.0f * 3 * U);
+    // The allocation the inference compares against is the capped one, not the 32 A fuse
+    // limit: the first drawing run of a session starts the connector at its minimum current
+    // plus the margin (6 A + 2 A), and the reduction hold keeps it there for the second.
+    EXPECT_FLOAT_EQ(c.allocated_W.value(), 8.0f * 3 * U);
     ASSERT_TRUE(c.measured_W.has_value());
     EXPECT_FLOAT_EQ(c.measured_W.value(), 4000.0f);
     EXPECT_EQ(c.connector_class, ConnectorClass::UnderConsuming);
@@ -512,9 +515,11 @@ TEST(RedistributionIntegration, TransientCaughtUpRestartsTheHold) {
     run_at(1, 4000.0f);
     run_at(6, 4000.0f);
 
-    // EV briefly draws its full allocation.
+    // EV briefly draws everything it was allotted. The cap holds the allocation below the
+    // connector's static maximum, so catching up reads as Saturated rather than AtMaximum;
+    // what the hold turns on is that the connector is no longer under-consuming.
     run_at(7, 22000.0f);
-    EXPECT_EQ(impl.get_redistribution_inference().connectors.at("evse1").connector_class, ConnectorClass::AtMaximum);
+    EXPECT_EQ(impl.get_redistribution_inference().connectors.at("evse1").connector_class, ConnectorClass::Saturated);
 
     run_at(8, 4000.0f);
     run_at(12, 4000.0f);
@@ -825,8 +830,12 @@ TEST(RedistributionIntegration, NoIncreaseAtTheFuseLimitWithHouseLoad) {
     EXPECT_FLOAT_EQ(site.increase_W, 0.0f);
 }
 
-TEST(RedistributionIntegration, AllocationsIdenticalToFastCharging) {
-    // The inference must never touch the allocation, whatever it concludes.
+TEST(RedistributionIntegration, InferenceDoesNotAffectAllocations) {
+    // Allocations are no longer identical to FastCharging - the PowerRedistribution broker
+    // caps each connector at its measured current plus the margin. What must still hold is
+    // that the *inference* is side effect free: it reads allocations and measurements and
+    // reports, and changing its parameters cannot move a single ampere. Two brokers that
+    // differ only in the inference hold time must therefore allocate identically.
     auto make_request = []() {
         auto evse1 = test::make_evse_node("evse1", 32.0f, 6.0f);
         auto evse2 = test::make_evse_node("evse2", 32.0f, 6.0f);
@@ -837,14 +846,15 @@ TEST(RedistributionIntegration, AllocationsIdenticalToFastCharging) {
     };
     const auto request = make_request();
 
-    EnergyManagerImpl inferring(make_redistribution_config(0),
-                                [](const std::vector<types::energy::EnforcedLimits>&) {});
-    EnergyManagerImpl statik(test::make_default_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    EnergyManagerImpl reporting_at_once(make_redistribution_config(0),
+                                        [](const std::vector<types::energy::EnforcedLimits>&) {});
+    EnergyManagerImpl reporting_after_hold(make_redistribution_config(10),
+                                           [](const std::vector<types::energy::EnforcedLimits>&) {});
 
     for (int run = 0; run < 3; run++) {
         const auto at = T0 + std::chrono::seconds(run);
-        const auto a = inferring.run_optimizer(request, at);
-        const auto b = statik.run_optimizer(request, at);
+        const auto a = reporting_at_once.run_optimizer(request, at);
+        const auto b = reporting_after_hold.run_optimizer(request, at);
         for (const auto* uuid : {"evse1", "evse2"}) {
             const auto la = test::find_limit(a, uuid);
             const auto lb = test::find_limit(b, uuid);
@@ -854,8 +864,11 @@ TEST(RedistributionIntegration, AllocationsIdenticalToFastCharging) {
                             lb.value().limits_root_side.ac_max_current_A.value().value);
         }
     }
-    EXPECT_EQ(inferring.get_redistribution_inference().connectors.at("evse1").connector_class,
+    // The two disagree about what to report, and still allocated the same.
+    EXPECT_EQ(reporting_at_once.get_redistribution_inference().connectors.at("evse1").connector_class,
               ConnectorClass::UnderConsuming);
+    EXPECT_TRUE(reporting_at_once.get_redistribution_inference().connectors.at("evse1").held);
+    EXPECT_FALSE(reporting_after_hold.get_redistribution_inference().connectors.at("evse1").held);
 }
 
 } // namespace module
