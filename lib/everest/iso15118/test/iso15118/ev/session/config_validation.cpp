@@ -3,6 +3,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <cstdint>
+#include <limits>
+#include <string>
+#include <vector>
 
 #include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/config.hpp>
@@ -14,10 +18,21 @@ using namespace std::chrono_literals;
 
 namespace {
 
+using Problems = std::vector<std::string>;
+
+constexpr float NAN_VALUE = std::numeric_limits<float>::quiet_NaN();
+constexpr float INF_VALUE = std::numeric_limits<float>::infinity();
+
 ev::EvConfig sane_config() {
     ev::EvConfig config{};
     config.interface_name = "lo";
     config.evcc_id = "02:00:00:00:00:01";
+    return config;
+}
+
+ev::EvConfig sae_config() {
+    auto config = sane_config();
+    config.energy_service = message_20::datatypes::ServiceCategory::AC_DER_SAE;
     return config;
 }
 
@@ -149,6 +164,340 @@ SCENARIO("ISO15118-20 EV config validation rejects a negative response timeout")
 
         THEN("the problem is reported") {
             REQUIRE(ev::validate_config(config).size() == 1);
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV config validation rejects zero cpd_rounds") {
+    GIVEN("an EvConfig with cpd_rounds set to zero") {
+        auto config = sane_config();
+        config.cpd_rounds = 0;
+
+        THEN("the problem is reported") {
+            REQUIRE(ev::validate_config(config) == Problems{"cpd_rounds must be positive (is 0)"});
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV config validation checks the SAE voltage window") {
+    GIVEN("the default profile") {
+        THEN("no problems are reported") {
+            REQUIRE(ev::validate_config(sae_config()).empty());
+        }
+    }
+
+    GIVEN("a maximum voltage equal to the minimum") {
+        auto config = sae_config();
+        config.sae_profile.maximum_voltage_v = 207.0f;
+        config.sae_profile.minimum_voltage_v = 207.0f;
+        config.sae_profile.nominal_voltage_v = 207.0f;
+
+        THEN("only the inverted window is reported") {
+            REQUIRE(ev::validate_config(config) ==
+                    Problems{"sae_profile maximum_voltage_v (207.000000) must exceed minimum_voltage_v (207.000000)"});
+        }
+    }
+
+    GIVEN("a maximum voltage below the minimum and a nominal voltage above both") {
+        auto config = sae_config();
+        config.sae_profile.maximum_voltage_v = 100.0f;
+
+        THEN("only the inverted window is reported") {
+            REQUIRE(ev::validate_config(config) ==
+                    Problems{"sae_profile maximum_voltage_v (100.000000) must exceed minimum_voltage_v (207.000000)"});
+        }
+    }
+
+    GIVEN("a nominal voltage above the window") {
+        auto config = sae_config();
+        config.sae_profile.nominal_voltage_v = 300.0f;
+
+        THEN("the nominal voltage is reported") {
+            REQUIRE(ev::validate_config(config) ==
+                    Problems{"sae_profile nominal_voltage_v (300.000000) must lie within [minimum_voltage_v, "
+                             "maximum_voltage_v] = [207.000000, 253.000000]"});
+        }
+    }
+
+    GIVEN("a nominal voltage below the window") {
+        auto config = sae_config();
+        config.sae_profile.nominal_voltage_v = 100.0f;
+
+        THEN("the nominal voltage is reported") {
+            REQUIRE(ev::validate_config(config) ==
+                    Problems{"sae_profile nominal_voltage_v (100.000000) must lie within [minimum_voltage_v, "
+                             "maximum_voltage_v] = [207.000000, 253.000000]"});
+        }
+    }
+
+    GIVEN("a zero minimum voltage") {
+        auto config = sae_config();
+        config.sae_profile.minimum_voltage_v = 0.0f;
+
+        THEN("only the voltage is reported") {
+            REQUIRE(ev::validate_config(config) ==
+                    Problems{"sae_profile minimum_voltage_v must be finite and positive (is 0.000000)"});
+        }
+    }
+
+    GIVEN("a NaN maximum voltage") {
+        auto config = sae_config();
+        config.sae_profile.maximum_voltage_v = NAN_VALUE;
+
+        THEN("only the voltage is reported") {
+            REQUIRE(ev::validate_config(config) ==
+                    Problems{"sae_profile maximum_voltage_v must be finite and positive (is nan)"});
+        }
+    }
+
+    GIVEN("an infinite nominal voltage") {
+        auto config = sae_config();
+        config.sae_profile.nominal_voltage_v = INF_VALUE;
+
+        THEN("only the voltage is reported") {
+            REQUIRE(ev::validate_config(config) ==
+                    Problems{"sae_profile nominal_voltage_v must be finite and positive (is inf)"});
+        }
+    }
+
+    GIVEN("a negative nominal voltage offset") {
+        auto config = sae_config();
+        config.sae_profile.nominal_voltage_offset_v = -5.0f;
+
+        THEN("no problems are reported") {
+            REQUIRE(ev::validate_config(config).empty());
+        }
+    }
+
+    GIVEN("a NaN nominal voltage offset") {
+        auto config = sae_config();
+        config.sae_profile.nominal_voltage_offset_v = NAN_VALUE;
+
+        THEN("the offset is reported") {
+            REQUIRE(ev::validate_config(config) ==
+                    Problems{"sae_profile nominal_voltage_offset_v must be finite (is nan)"});
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV config validation checks the SAE nominal frequency") {
+    const auto frequency_problems = [](float frequency) {
+        auto config = sae_config();
+        config.sae_profile.nominal_frequency_hz = frequency;
+        return ev::validate_config(config);
+    };
+
+    GIVEN("a zero, a NaN and an infinite nominal frequency") {
+        THEN("each is reported") {
+            REQUIRE(frequency_problems(0.0f) ==
+                    Problems{"sae_profile nominal_frequency_hz must be finite and positive (is 0.000000)"});
+            REQUIRE(frequency_problems(NAN_VALUE) ==
+                    Problems{"sae_profile nominal_frequency_hz must be finite and positive (is nan)"});
+            REQUIRE(frequency_problems(INF_VALUE) ==
+                    Problems{"sae_profile nominal_frequency_hz must be finite and positive (is inf)"});
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV config validation checks the SAE power factors") {
+    GIVEN("both power factors at exactly 1") {
+        auto config = sae_config();
+        config.sae_profile.over_excited_power_factor = 1.0f;
+        config.sae_profile.under_excited_power_factor = 1.0f;
+
+        THEN("no problems are reported") {
+            REQUIRE(ev::validate_config(config).empty());
+        }
+    }
+
+    GIVEN("out-of-range and non-finite power factors") {
+        const auto over_problems = [](float power_factor) {
+            auto config = sae_config();
+            config.sae_profile.over_excited_power_factor = power_factor;
+            return ev::validate_config(config);
+        };
+        const auto under_problems = [](float power_factor) {
+            auto config = sae_config();
+            config.sae_profile.under_excited_power_factor = power_factor;
+            return ev::validate_config(config);
+        };
+
+        THEN("each is reported") {
+            REQUIRE(over_problems(90.0f) ==
+                    Problems{"sae_profile over_excited_power_factor must be in (0, 1] (is 90.000000)"});
+            REQUIRE(over_problems(NAN_VALUE) ==
+                    Problems{"sae_profile over_excited_power_factor must be in (0, 1] (is nan)"});
+            REQUIRE(over_problems(INF_VALUE) ==
+                    Problems{"sae_profile over_excited_power_factor must be in (0, 1] (is inf)"});
+            REQUIRE(under_problems(0.0f) ==
+                    Problems{"sae_profile under_excited_power_factor must be in (0, 1] (is 0.000000)"});
+            REQUIRE(under_problems(-0.5f) ==
+                    Problems{"sae_profile under_excited_power_factor must be in (0, 1] (is -0.500000)"});
+        }
+    }
+
+    GIVEN("a bad power factor and a nominal voltage outside the window") {
+        auto config = sae_config();
+        config.sae_profile.over_excited_power_factor = 90.0f;
+        config.sae_profile.nominal_voltage_v = 300.0f;
+
+        THEN("both are reported") {
+            REQUIRE(ev::validate_config(config) ==
+                    Problems{"sae_profile nominal_voltage_v (300.000000) must lie within [minimum_voltage_v, "
+                             "maximum_voltage_v] = [207.000000, 253.000000]",
+                             "sae_profile over_excited_power_factor must be in (0, 1] (is 90.000000)"});
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV config validation checks the SAE per-phase totals") {
+    struct Total {
+        float ev::SaeInverterProfile::*field;
+        const char* name;
+    };
+    const std::vector<Total> totals{
+        {&ev::SaeInverterProfile::max_apparent_power_charging_var_absorption_va,
+         "max_apparent_power_charging_var_absorption_va"},
+        {&ev::SaeInverterProfile::max_apparent_power_charging_var_injection_va,
+         "max_apparent_power_charging_var_injection_va"},
+        {&ev::SaeInverterProfile::max_apparent_power_discharging_var_absorption_va,
+         "max_apparent_power_discharging_var_absorption_va"},
+        {&ev::SaeInverterProfile::max_apparent_power_discharging_var_injection_va,
+         "max_apparent_power_discharging_var_injection_va"},
+        {&ev::SaeInverterProfile::max_var_absorption_charging_var, "max_var_absorption_charging_var"},
+        {&ev::SaeInverterProfile::max_var_injection_charging_var, "max_var_injection_charging_var"},
+        {&ev::SaeInverterProfile::max_var_absorption_discharging_var, "max_var_absorption_discharging_var"},
+        {&ev::SaeInverterProfile::max_var_injection_discharging_var, "max_var_injection_discharging_var"},
+        {&ev::SaeInverterProfile::reactive_susceptance_s, "reactive_susceptance_s"},
+        {&ev::SaeInverterProfile::over_excited_discharge_power_w, "over_excited_discharge_power_w"},
+        {&ev::SaeInverterProfile::under_excited_discharge_power_w, "under_excited_discharge_power_w"},
+    };
+
+    GIVEN("each total set negative, then NaN") {
+        THEN("each is reported by name") {
+            for (const auto& total : totals) {
+                auto config = sae_config();
+                config.sae_profile.*total.field = -1.0f;
+                REQUIRE(ev::validate_config(config) == Problems{std::string{"sae_profile "} + total.name +
+                                                                " must be finite and not negative (is -1.000000)"});
+
+                config.sae_profile.*total.field = NAN_VALUE;
+                REQUIRE(ev::validate_config(config) == Problems{std::string{"sae_profile "} + total.name +
+                                                                " must be finite and not negative (is nan)"});
+            }
+        }
+    }
+
+    GIVEN("every total at zero") {
+        auto config = sae_config();
+        for (const auto& total : totals) {
+            config.sae_profile.*total.field = 0.0f;
+        }
+
+        THEN("no problems are reported") {
+            REQUIRE(ev::validate_config(config).empty());
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV config validation checks the SAE supported_modes") {
+    const auto modes_problems = [](std::uint32_t modes) {
+        auto config = sae_config();
+        config.sae_profile.supported_modes = modes;
+        return ev::validate_config(config);
+    };
+
+    GIVEN("ChargeFunction, DischargeFunction and EnterService") {
+        THEN("no problems are reported") {
+            REQUIRE(modes_problems(0x0000000Bu).empty());
+        }
+    }
+
+    GIVEN("every bit set") {
+        THEN("only the unused bits are reported") {
+            REQUIRE(modes_problems(0xFFFFFFFFu) == Problems{"sae_profile supported_modes sets unused bits 0xFA000204"});
+        }
+    }
+
+    GIVEN("ChargeFunction without DischargeFunction, and no bits at all") {
+        THEN("each is reported") {
+            REQUIRE(
+                modes_problems(0x00000001u) ==
+                Problems{"sae_profile supported_modes must set ChargeFunction and DischargeFunction (is 0x00000001)"});
+            REQUIRE(
+                modes_problems(0x00000000u) ==
+                Problems{"sae_profile supported_modes must set ChargeFunction and DischargeFunction (is 0x00000000)"});
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV config validation checks the SAE inverter string lengths") {
+    struct Text {
+        void (*set)(ev::SaeInverterProfile&, const std::string&);
+        const char* name;
+    };
+    const std::vector<Text> texts{
+        {[](ev::SaeInverterProfile& p, const std::string& s) { p.inverter_sw_version = s; }, "inverter_sw_version"},
+        {[](ev::SaeInverterProfile& p, const std::string& s) { p.inverter_hw_version = s; }, "inverter_hw_version"},
+        {[](ev::SaeInverterProfile& p, const std::string& s) { p.inverter_manufacturer = s; }, "inverter_manufacturer"},
+        {[](ev::SaeInverterProfile& p, const std::string& s) { p.inverter_model = s; }, "inverter_model"},
+        {[](ev::SaeInverterProfile& p, const std::string& s) { p.inverter_serial_number = s; },
+         "inverter_serial_number"},
+    };
+
+    GIVEN("each string at 32 bytes, then 33") {
+        THEN("only 33 is reported by name") {
+            for (const auto& text : texts) {
+                auto config = sae_config();
+                text.set(config.sae_profile, std::string(32, 'A'));
+                REQUIRE(ev::validate_config(config).empty());
+
+                text.set(config.sae_profile, std::string(33, 'A'));
+                REQUIRE(ev::validate_config(config) ==
+                        Problems{std::string{"sae_profile "} + text.name + " must be at most 32 bytes (is 33)"});
+            }
+        }
+    }
+
+    GIVEN("no inverter_hw_version") {
+        auto config = sae_config();
+        config.sae_profile.inverter_hw_version.reset();
+
+        THEN("no problems are reported") {
+            REQUIRE(ev::validate_config(config).empty());
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV config validation checks the SAE profile for AC_DER_SAE only") {
+    const auto broken = [](message_20::datatypes::ServiceCategory service) {
+        auto config = sane_config();
+        config.energy_service = service;
+        config.sae_profile.maximum_voltage_v = 100.0f;
+        config.sae_profile.nominal_frequency_hz = NAN_VALUE;
+        config.sae_profile.over_excited_power_factor = 90.0f;
+        config.sae_profile.max_var_injection_charging_var = -1.0f;
+        config.sae_profile.supported_modes = 0;
+        return config;
+    };
+
+    GIVEN("DC and AC_DER_IEC configs with a broken profile") {
+        THEN("the profile is not checked") {
+            REQUIRE(ev::validate_config(broken(message_20::datatypes::ServiceCategory::DC)).empty());
+            REQUIRE(ev::validate_config(broken(message_20::datatypes::ServiceCategory::AC_DER_IEC)).empty());
+        }
+    }
+
+    GIVEN("the same profile under AC_DER_SAE") {
+        THEN("it is checked") {
+            REQUIRE(ev::validate_config(broken(message_20::datatypes::ServiceCategory::AC_DER_SAE)) ==
+                    Problems{
+                        "sae_profile supported_modes must set ChargeFunction and DischargeFunction (is 0x00000000)",
+                        "sae_profile maximum_voltage_v (100.000000) must exceed minimum_voltage_v (207.000000)",
+                        "sae_profile nominal_frequency_hz must be finite and positive (is nan)",
+                        "sae_profile over_excited_power_factor must be in (0, 1] (is 90.000000)",
+                        "sae_profile max_var_injection_charging_var must be finite and not negative (is -1.000000)",
+                    });
         }
     }
 }
