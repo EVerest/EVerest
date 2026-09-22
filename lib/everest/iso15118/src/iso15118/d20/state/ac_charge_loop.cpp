@@ -219,7 +219,7 @@ Result AC_ChargeLoop::feed(Event ev) {
                 m_ctx.session_stopped = true;
                 return {};
             }
-
+            m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
             return m_ctx.create_state<SessionStop>();
         }
 
@@ -274,6 +274,7 @@ Result AC_ChargeLoop::feed(Event ev) {
         }
 
         if (req->charge_progress == dt::Progress::Stop and not ac_connector_closed) {
+            m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
             return m_ctx.create_state<SessionStop>();
         }
         return {};
