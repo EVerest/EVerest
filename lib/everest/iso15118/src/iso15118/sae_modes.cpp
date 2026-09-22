@@ -3,6 +3,7 @@
 #include <iso15118/sae_modes.hpp>
 
 #include <cstdint>
+#include <initializer_list>
 #include <optional>
 
 #include <iso15118/message/common_types.hpp>
@@ -48,13 +49,23 @@ void add_enabled_modes(std::uint32_t& modes, const dt_sae::FrequencyTrip& freque
     set_bit_if(modes, frequency.under_frequency_may_trip_curve, DerFn::LowFrequencyMayTripFunction);
 }
 
+DerFn excitation_function(dt_sae::PowerFactorExcitation excitation) {
+    return excitation == dt_sae::PowerFactorExcitation::OverExcited ? DerFn::ConstantPowerFactorOverExcitedFunction
+                                                                    : DerFn::ConstantPowerFactorUnderExcitedFunction;
+}
+
+// One bit per excitation direction sent on any line.
 void add_enabled_modes(std::uint32_t& modes, const dt_sae::ConstantPowerFactor& constant_power_factor) {
-    // One bit per excitation direction; only the one sent is set.
-    const auto over_excited =
-        constant_power_factor.power_factor_excitation == dt_sae::PowerFactorExcitation::OverExcited;
-    set_bit_if(modes, constant_power_factor.enable and over_excited, DerFn::ConstantPowerFactorOverExcitedFunction);
-    set_bit_if(modes, constant_power_factor.enable and not over_excited,
-               DerFn::ConstantPowerFactorUnderExcitedFunction);
+    if (not constant_power_factor.enable) {
+        return;
+    }
+    modes |= sae_function_bit(excitation_function(constant_power_factor.power_factor_excitation));
+    for (const auto& excitation :
+         {constant_power_factor.power_factor_excitation_L2, constant_power_factor.power_factor_excitation_L3}) {
+        if (excitation.has_value()) {
+            modes |= sae_function_bit(excitation_function(excitation.value()));
+        }
+    }
 }
 
 void add_enabled_modes(std::uint32_t& modes, const dt_sae::VoltVar& volt_var) {

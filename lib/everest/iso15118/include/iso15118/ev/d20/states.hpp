@@ -29,6 +29,7 @@ enum class StateID {
     AC_ChargeLoop,
     AC_DER_IEC_ChargeParameterDiscovery,
     AC_DER_IEC_ChargeLoop,
+    AC_DER_SAE_ChargeParameterDiscovery,
     DC_ChargeParameterDiscovery,
     DC_PreCharge,
     DC_ChargeLoop,
