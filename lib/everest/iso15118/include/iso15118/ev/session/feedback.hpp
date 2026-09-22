@@ -2,16 +2,20 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <string>
 
 #include <iso15118/d20/ac_powers.hpp>
 #include <iso15118/ev/d20/evse_session_info.hpp>
+#include <iso15118/ev/der_sae_control_validation.hpp>
 #include <iso15118/io/ipv6_endpoint.hpp>
 #include <iso15118/message/ac_charge_loop.hpp>
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
 #include <iso15118/message/ac_der_iec_charge_loop.hpp>
 #include <iso15118/message/ac_der_iec_charge_parameter_discovery.hpp>
+#include <iso15118/message/ac_der_sae_charge_loop.hpp>
+#include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/message/dc_charge_parameter_discovery.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/type.hpp>
@@ -61,6 +65,15 @@ struct Callbacks {
     std::function<void(const message_20::datatypes::DER_Dynamic_AC_CLResControlMode&)> der_control;
     std::function<void(const message_20::datatypes::DER_Scheduled_AC_CLResControlMode&)> der_control_scheduled;
     std::function<void(const message_20::datatypes::DerControl&)> der_curves;
+    // AC_DER_SAE blocks with the validate_der_control problems found in them, empty when clean.
+    std::function<void(const message_20::datatypes::sae::DER_SAE_AC_CPDResEnergyTransferMode&,
+                       const DerControlProblems&)>
+        sae_cpd_limits;
+    std::function<void(const message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode&, const DerControlProblems&)>
+        sae_der_control;
+    // AC_DER_SAE only; bits are sae_function_bit() positions (AMD1 Table M.6). Fired once per
+    // CPD round, and in the charge loop only when the mask changes.
+    std::function<void(std::uint32_t)> der_enabled_modes;
 };
 
 } // namespace iso15118::ev::feedback
@@ -95,6 +108,11 @@ public:
     void der_control(const message_20::datatypes::DER_Dynamic_AC_CLResControlMode&) const;
     void der_control_scheduled(const message_20::datatypes::DER_Scheduled_AC_CLResControlMode&) const;
     void der_curves(const message_20::datatypes::DerControl&) const;
+    void sae_cpd_limits(const message_20::datatypes::sae::DER_SAE_AC_CPDResEnergyTransferMode&,
+                        const DerControlProblems&) const;
+    void sae_der_control(const message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode&,
+                         const DerControlProblems&) const;
+    void der_enabled_modes(std::uint32_t) const;
 
 private:
     feedback::Callbacks callbacks;
