@@ -29,6 +29,7 @@
 #include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/der_control_functions.hpp>
 #include <iso15118/ev/message_exchange.hpp>
+#include <iso15118/ev/sae_inverter_profile.hpp>
 #include <iso15118/ev/sap_offer.hpp>
 #include <iso15118/ev/service_family.hpp>
 #include <iso15118/ev/session/feedback.hpp>
@@ -76,6 +77,12 @@ struct SessionOptions {
     DerControlFunctions der_control_functions{};
     // false selects a set demanding unsupported functions anyway, deviating from [V2G20-3191].
     bool der_stop_on_unsupported_functions{true};
+    // AC_DER_SAE only.
+    SaeInverterProfile sae_profile{};
+    // ChargeParameterDiscovery rounds before Processing::Finished.
+    std::uint16_t cpd_rounds{1};
+    // AC_DER_SAE only. Structurally invalid received DER control: true stops the session, false warns.
+    bool der_stop_on_invalid_control{false};
 };
 
 class Context {
@@ -267,6 +274,61 @@ public:
         return session_options.der_stop_on_unsupported_functions;
     }
 
+    const SaeInverterProfile& sae_profile() const {
+        return session_options.sae_profile;
+    }
+
+    // [V2G20-3409]: bits unused by AMD1 Table M.6 are dropped.
+    std::uint32_t sae_supported_modes() const {
+        return session_options.sae_profile.supported_modes & sae::SAE_MODE_BITMAP_MASK;
+    }
+
+    std::uint16_t cpd_rounds() const {
+        return session_options.cpd_rounds;
+    }
+
+    bool der_stop_on_invalid_control() const {
+        return session_options.der_stop_on_invalid_control;
+    }
+
+    // EnabledModes the EV echoes, AMD1 Table M.6 bit positions.
+    std::uint32_t sae_enabled_modes() const {
+        return sae_enabled_modes_;
+    }
+
+    void set_sae_enabled_modes(std::uint32_t modes) {
+        sae_enabled_modes_ = modes;
+    }
+
+    std::uint16_t cpd_rounds_sent() const {
+        return cpd_rounds_sent_;
+    }
+
+    // Saturates at cpd_rounds(), so the count never wraps the wire back to Ongoing.
+    void note_cpd_round_sent() {
+        if (cpd_rounds_sent_ < session_options.cpd_rounds) {
+            ++cpd_rounds_sent_;
+        }
+    }
+
+    bool sae_permit_service() const {
+        return sae_permit_service_;
+    }
+
+    void set_sae_permit_service(bool permit) {
+        sae_permit_service_ = permit;
+    }
+
+    // EVUpdateTime, AMD1 Tables M.5 and M.8: microseconds of SECC time (8.3.3.3), as
+    // iso15118::d20::now_in_secc_time() returns.
+    std::uint64_t sae_settings_update_time() const {
+        return sae_settings_update_time_;
+    }
+
+    void set_sae_settings_update_time(std::uint64_t update_time) {
+        sae_settings_update_time_ = update_time;
+    }
+
     // [V2G20-3190]: what the SECC demands for the selected AC_DER_IEC set, as demanded.
     void set_der_demanded_functions(std::bitset<DER_CONTROL_FUNCTION_COUNT> functions) {
         der_demanded_functions_ = functions;
@@ -308,6 +370,11 @@ private:
     std::optional<message_20::datatypes::AcConnector> selected_ac_connector_{};
 
     std::bitset<DER_CONTROL_FUNCTION_COUNT> der_demanded_functions_{};
+
+    std::uint32_t sae_enabled_modes_{0};
+    std::uint16_t cpd_rounds_sent_{0};
+    bool sae_permit_service_{true};
+    std::uint64_t sae_settings_update_time_{0};
 
     EVSESessionInfo evse_session_info;
 
