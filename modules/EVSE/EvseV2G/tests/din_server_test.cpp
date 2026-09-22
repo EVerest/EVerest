@@ -573,7 +573,7 @@ TEST_F(DinServerTest, din_validate_response_code_error_shutdown_first_response_s
     ctx->error_shutdown_reported = false;
 
     ctx->current_v2g_msg = V2G_CURRENT_DEMAND_MSG;
-    ctx->state = (int)din_state_id::WAIT_FOR_CURRENTDEMAND;
+    ctx->state = static_cast<int>(din_state_id::WAIT_FOR_CURRENTDEMAND);
     ctx->evse_v2g_data.session_id = 1;
     ctx->ev_v2g_data.received_session_id = 1;
 
@@ -594,7 +594,7 @@ TEST_F(DinServerTest, din_validate_response_code_error_shutdown_reported_fails_c
     ctx->error_shutdown_reported = true;
 
     ctx->current_v2g_msg = V2G_CURRENT_DEMAND_MSG;
-    ctx->state = (int)din_state_id::WAIT_FOR_CURRENTDEMAND;
+    ctx->state = static_cast<int>(din_state_id::WAIT_FOR_CURRENTDEMAND);
     ctx->evse_v2g_data.session_id = 1;
     ctx->ev_v2g_data.received_session_id = 1;
 
@@ -614,7 +614,7 @@ TEST_F(DinServerTest, din_validate_response_code_error_shutdown_failed_response_
     ctx->error_shutdown_reported = false;
 
     ctx->current_v2g_msg = V2G_CURRENT_DEMAND_MSG;
-    ctx->state = (int)din_state_id::WAIT_FOR_CURRENTDEMAND;
+    ctx->state = static_cast<int>(din_state_id::WAIT_FOR_CURRENTDEMAND);
     ctx->evse_v2g_data.session_id = 1;
     ctx->ev_v2g_data.received_session_id = 2;
 
@@ -635,7 +635,7 @@ TEST_F(DinServerTest, din_validate_response_code_error_shutdown_allows_stop_sequ
     ctx->error_shutdown_reported = true;
 
     ctx->current_v2g_msg = V2G_WELDING_DETECTION_MSG;
-    ctx->state = (int)din_state_id::WAIT_FOR_WELDINGDETECTION_SESSIONSTOP;
+    ctx->state = static_cast<int>(din_state_id::WAIT_FOR_WELDINGDETECTION_SESSIONSTOP);
     ctx->evse_v2g_data.session_id = 1;
     ctx->ev_v2g_data.received_session_id = 1;
 
