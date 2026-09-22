@@ -2,7 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
-#include <iso15118/ev/ac_phase_split.hpp>
+#include <iso15118/ev/d20/ac_phase_split.hpp>
 
 using namespace iso15118;
 namespace dt = message_20::datatypes;
@@ -17,7 +17,7 @@ SCENARIO("ISO15118-20 EV states an advertised AC total for the selected connecto
         constexpr uint8_t phase_count = 3;
 
         WHEN("the selected parameter set is ThreePhase") {
-            const auto split = ev::split_ac_limit(total, phase_count, dt::AcConnector::ThreePhase);
+            const auto split = ev::d20::split_ac_limit(total, phase_count, dt::AcConnector::ThreePhase);
 
             // [V2G20-1820]: a symmetric EV states the sum, and [V2G20-1817] has the SECC read a
             // lone base element as that sum, evenly distributed.
@@ -29,7 +29,7 @@ SCENARIO("ISO15118-20 EV states an advertised AC total for the selected connecto
         }
 
         WHEN("the selected parameter set is SinglePhase") {
-            const auto split = ev::split_ac_limit(total, phase_count, dt::AcConnector::SinglePhase);
+            const auto split = ev::d20::split_ac_limit(total, phase_count, dt::AcConnector::SinglePhase);
 
             THEN("only the base element is emitted, carrying what one phase can draw") {
                 REQUIRE(split.base == 3680.0f);
@@ -48,7 +48,7 @@ SCENARIO("ISO15118-20 EV states an advertised AC total for the selected connecto
         constexpr uint8_t phase_count = 1;
 
         WHEN("the selected parameter set is SinglePhase") {
-            const auto split = ev::split_ac_limit(total, phase_count, dt::AcConnector::SinglePhase);
+            const auto split = ev::d20::split_ac_limit(total, phase_count, dt::AcConnector::SinglePhase);
 
             THEN("the base element carries the whole total and no peers are emitted") {
                 REQUIRE(split.base == total);
@@ -58,7 +58,7 @@ SCENARIO("ISO15118-20 EV states an advertised AC total for the selected connecto
         }
 
         WHEN("the selected parameter set is ThreePhase") {
-            const auto split = ev::split_ac_limit(total, phase_count, dt::AcConnector::ThreePhase);
+            const auto split = ev::d20::split_ac_limit(total, phase_count, dt::AcConnector::ThreePhase);
 
             THEN("everything goes on L1 and the peers are emitted as zero so L1 is not read as a sum") {
                 REQUIRE(split.base == total);
@@ -78,7 +78,7 @@ SCENARIO("ISO15118-20 EV states an advertised AC total for the selected connecto
         constexpr float total = 11040.0f;
 
         WHEN("the total is split across a ThreePhase connector") {
-            const auto split = ev::split_ac_limit(total, 4, dt::AcConnector::ThreePhase);
+            const auto split = ev::d20::split_ac_limit(total, 4, dt::AcConnector::ThreePhase);
 
             THEN("the count folds to three, so the base element states the total") {
                 REQUIRE(split.base == total);
@@ -90,7 +90,7 @@ SCENARIO("ISO15118-20 EV states an advertised AC total for the selected connecto
 
     GIVEN("A zero limit") {
         WHEN("split across three phases") {
-            const auto split = ev::split_ac_limit(0.0f, 3, dt::AcConnector::ThreePhase);
+            const auto split = ev::d20::split_ac_limit(0.0f, 3, dt::AcConnector::ThreePhase);
 
             THEN("the base element is zero") {
                 REQUIRE(split.base == 0.0f);
@@ -104,7 +104,7 @@ SCENARIO("ISO15118-20 EV states an advertised AC total for the selected connecto
     // manifest enum, but it must not land on the single-line reading and overstate L1.
     GIVEN("A line count of two, which no config should produce") {
         WHEN("the total is split across a ThreePhase connector") {
-            const auto split = ev::split_ac_limit(11040.0f, 2, dt::AcConnector::ThreePhase);
+            const auto split = ev::d20::split_ac_limit(11040.0f, 2, dt::AcConnector::ThreePhase);
 
             THEN("it folds up to three lines rather than stating the total on L1") {
                 REQUIRE(split.base == 11040.0f);
@@ -116,7 +116,7 @@ SCENARIO("ISO15118-20 EV states an advertised AC total for the selected connecto
 
     GIVEN("A phase count of zero, which no config should produce") {
         WHEN("splitting a total") {
-            const auto split = ev::split_ac_limit(11040.0f, 0, dt::AcConnector::SinglePhase);
+            const auto split = ev::d20::split_ac_limit(11040.0f, 0, dt::AcConnector::SinglePhase);
 
             THEN("the total passes through undivided rather than dividing by zero") {
                 REQUIRE(split.base == 11040.0f);
@@ -135,13 +135,64 @@ SCENARIO("ISO15118-20 EV emits a non-divisible AC total without overstating it")
         std::optional<dt::RationalNumber> l3;
 
         WHEN("a three-line EV is limited to one line") {
-            ev::emit_ac_limit(11000.0f, 3, dt::AcConnector::SinglePhase, base, l2, l3);
+            ev::d20::emit_ac_limit(11000.0f, 3, dt::AcConnector::SinglePhase, base, l2, l3);
 
             THEN("the one line decodes to 3666 W, at most a third of the total") {
                 REQUIRE(dt::from_RationalNumber(base) == 3666.0f);
                 REQUIRE(dt::from_RationalNumber(base) * 3.0f <= 11000.0f);
                 REQUIRE_FALSE(l2.has_value());
                 REQUIRE_FALSE(l3.has_value());
+            }
+        }
+    }
+}
+
+// [V2G20-1818]: on ThreePhase, L2 and L3 make the base read as L1 rather than as a sum.
+SCENARIO("ISO15118-20 EV emits a ratio undivided on every line of the connector") {
+    dt::RationalNumber base{};
+    std::optional<dt::RationalNumber> l2 = dt::from_float(1.0f);
+    std::optional<dt::RationalNumber> l3;
+    const auto same = [](const dt::RationalNumber& a, const dt::RationalNumber& b) {
+        return a.value == b.value and a.exponent == b.exponent;
+    };
+    const auto require_every_line = [&] {
+        REQUIRE(same(base, dt::from_float(0.9f)));
+        REQUIRE(l2.has_value());
+        REQUIRE(l3.has_value());
+        REQUIRE(same(*l2, base));
+        REQUIRE(same(*l3, base));
+    };
+
+    GIVEN("A power factor of 0.9") {
+        WHEN("the connector is SinglePhase") {
+            ev::d20::emit_ac_ratio(0.9f, dt::AcConnector::SinglePhase, base, l2, l3);
+
+            THEN("only the base element carries the undivided ratio") {
+                REQUIRE(same(base, dt::from_float(0.9f)));
+                REQUIRE_FALSE(l2.has_value());
+                REQUIRE_FALSE(l3.has_value());
+            }
+        }
+
+        WHEN("a three-line EV uses a ThreePhase connector") {
+            ev::d20::emit_ac_ratio(0.9f, dt::AcConnector::ThreePhase, base, l2, l3);
+
+            THEN("the base, L2 and L3 all carry the ratio") {
+                require_every_line();
+            }
+        }
+
+        WHEN("a single-line EV uses a ThreePhase connector") {
+            ev::d20::emit_ac_ratio(0.9f, dt::AcConnector::ThreePhase, base, l2, l3);
+            std::optional<dt::RationalNumber> limit_l2;
+            std::optional<dt::RationalNumber> limit_l3;
+            dt::RationalNumber limit_base{};
+            ev::d20::emit_ac_limit(0.9f, 1, dt::AcConnector::ThreePhase, limit_base, limit_l2, limit_l3);
+
+            THEN("the lines carry the ratio as for three lines, not the zero peers of a limit") {
+                require_every_line();
+                REQUIRE(limit_l2.has_value());
+                REQUIRE(dt::from_RationalNumber(*limit_l2) == 0.0f);
             }
         }
     }
@@ -154,7 +205,7 @@ SCENARIO("ISO15118-20 EV emits a present measurement as one aggregate reading") 
 
     GIVEN("A three-line EV measuring 5100 W") {
         WHEN("the connector is SinglePhase") {
-            ev::emit_ac_present(5100.0f, 3, dt::AcConnector::SinglePhase, base, l2, l3);
+            ev::d20::emit_ac_present(5100.0f, 3, dt::AcConnector::SinglePhase, base, l2, l3);
 
             THEN("the whole reading is on the base element and the peers are cleared") {
                 REQUIRE(dt::from_RationalNumber(base) == 5100.0f);
@@ -164,7 +215,7 @@ SCENARIO("ISO15118-20 EV emits a present measurement as one aggregate reading") 
         }
 
         WHEN("the connector is ThreePhase") {
-            ev::emit_ac_present(5100.0f, 3, dt::AcConnector::ThreePhase, base, l2, l3);
+            ev::d20::emit_ac_present(5100.0f, 3, dt::AcConnector::ThreePhase, base, l2, l3);
 
             THEN("the whole reading stays on the base element, as the sum of the three lines") {
                 REQUIRE(dt::from_RationalNumber(base) == 5100.0f);

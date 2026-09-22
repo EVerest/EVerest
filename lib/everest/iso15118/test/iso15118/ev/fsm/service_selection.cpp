@@ -4,6 +4,7 @@
 
 #include "helper.hpp"
 
+#include <iso15118/ev/d20/state/service_detail.hpp>
 #include <iso15118/ev/d20/state/service_selection.hpp>
 #include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/service_selection.hpp>
@@ -21,13 +22,26 @@ message_20::ServiceSelectionResponse make_response(const message_20::Header& hea
     res.response_code = code;
     return res;
 }
+
+// ServiceSelection's first request, sent by ServiceDetail as it selects the one offered Dynamic set.
+DecodedRequests first_request(ServiceCategory service, uint16_t parameter_set_id) {
+    auto detail = Predecessor::in<ev::d20::state::ServiceDetail>(service, {});
+    message_20::datatypes::ParameterSet set{};
+    set.id = parameter_set_id;
+    set.parameter.push_back({"Connector", static_cast<int32_t>(1)});
+    set.parameter.push_back({"ControlMode", static_cast<int32_t>(message_20::datatypes::ControlMode::Dynamic)});
+    message_20::ServiceDetailResponse res{};
+    res.header = SESSION_HEADER;
+    res.response_code = ResponseCode::OK;
+    res.service = message_20::to_underlying_value(service);
+    res.service_parameter_list.clear();
+    res.service_parameter_list.push_back(set);
+    return detail.transitions_to(ev::d20::StateID::ServiceSelection, res);
+}
 } // namespace
 
-SCENARIO("ISO15118-20 EV ServiceSelection emits a DC ServiceSelectionRequest on enter") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, no_seed, uint16_t{3}};
-
-    const auto requests = primed.take_requests();
+SCENARIO("ISO15118-20 EV ServiceDetail sends a DC ServiceSelectionRequest") {
+    const auto requests = first_request(ServiceCategory::DC, 3);
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
@@ -48,11 +62,8 @@ SCENARIO("ISO15118-20 EV ServiceSelection transitions to DC_ChargeParameterDisco
     REQUIRE(primed.ctx.is_session_stopped() == false);
 }
 
-SCENARIO("ISO15118-20 EV ServiceSelection emits an AC ServiceSelectionRequest on enter") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::AC, no_seed, uint16_t{3}};
-
-    const auto requests = primed.take_requests();
+SCENARIO("ISO15118-20 EV ServiceDetail sends an AC ServiceSelectionRequest") {
+    const auto requests = first_request(ServiceCategory::AC, 3);
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->selected_energy_transfer_service.service_id == ServiceCategory::AC);
@@ -72,11 +83,8 @@ SCENARIO("ISO15118-20 EV ServiceSelection transitions to AC_ChargeParameterDisco
     REQUIRE(primed.ctx.selected_service() == ServiceCategory::AC);
 }
 
-SCENARIO("ISO15118-20 EV ServiceSelection emits an AC_BPT ServiceSelectionRequest on enter") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::AC_BPT, no_seed, uint16_t{5}};
-
-    const auto requests = primed.take_requests();
+SCENARIO("ISO15118-20 EV ServiceDetail sends an AC_BPT ServiceSelectionRequest") {
+    const auto requests = first_request(ServiceCategory::AC_BPT, 5);
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->selected_energy_transfer_service.service_id == ServiceCategory::AC_BPT);
@@ -96,11 +104,8 @@ SCENARIO("ISO15118-20 EV ServiceSelection transitions to AC_ChargeParameterDisco
     REQUIRE(primed.ctx.selected_service() == ServiceCategory::AC_BPT);
 }
 
-SCENARIO("ISO15118-20 EV ServiceSelection emits a DC_BPT ServiceSelectionRequest on enter") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::DC_BPT, no_seed, uint16_t{7}};
-
-    const auto requests = primed.take_requests();
+SCENARIO("ISO15118-20 EV ServiceDetail sends a DC_BPT ServiceSelectionRequest") {
+    const auto requests = first_request(ServiceCategory::DC_BPT, 7);
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->selected_energy_transfer_service.service_id == ServiceCategory::DC_BPT);
@@ -120,11 +125,8 @@ SCENARIO("ISO15118-20 EV ServiceSelection transitions to DC_ChargeParameterDisco
     REQUIRE(primed.ctx.selected_service() == ServiceCategory::DC_BPT);
 }
 
-SCENARIO("ISO15118-20 EV ServiceSelection emits an MCS ServiceSelectionRequest on enter") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::MCS, no_seed, uint16_t{8}};
-
-    const auto requests = primed.take_requests();
+SCENARIO("ISO15118-20 EV ServiceDetail sends an MCS ServiceSelectionRequest") {
+    const auto requests = first_request(ServiceCategory::MCS, 8);
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->selected_energy_transfer_service.service_id == ServiceCategory::MCS);
@@ -159,11 +161,8 @@ SCENARIO("ISO15118-20 EV ServiceSelection transitions to DC_ChargeParameterDisco
     REQUIRE(primed.ctx.selected_service() == ServiceCategory::MCS_BPT);
 }
 
-SCENARIO("ISO15118-20 EV ServiceSelection emits an AC_DER_IEC ServiceSelectionRequest on enter") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::AC_DER_IEC, no_seed, uint16_t{5}};
-
-    const auto requests = primed.take_requests();
+SCENARIO("ISO15118-20 EV ServiceDetail sends an AC_DER_IEC ServiceSelectionRequest") {
+    const auto requests = first_request(ServiceCategory::AC_DER_IEC, 5);
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->selected_energy_transfer_service.service_id == ServiceCategory::AC_DER_IEC);
@@ -181,6 +180,23 @@ SCENARIO("ISO15118-20 EV ServiceSelection transitions to AC_DER_IEC_ChargeParame
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_DER_IEC_ChargeParameterDiscovery);
     REQUIRE(primed.ctx.is_session_stopped() == false);
     REQUIRE(primed.ctx.selected_service() == ServiceCategory::AC_DER_IEC);
+}
+
+SCENARIO("ISO15118-20 EV ServiceSelection transitions to AC_DER_SAE_ChargeParameterDiscovery on OK") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto requests = first_request(ServiceCategory::AC_DER_SAE, 4);
+    const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->selected_energy_transfer_service.service_id == ServiceCategory::AC_DER_SAE);
+    REQUIRE(request_message->selected_energy_transfer_service.parameter_set_id == 4);
+
+    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::AC_DER_SAE, no_seed, uint16_t{4}};
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_DER_SAE_ChargeParameterDiscovery);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
 }
 
 SCENARIO("ISO15118-20 EV ServiceSelection stops the session on an unsupported service category") {

@@ -13,8 +13,6 @@ namespace iso15118::ev::din {
 // What the SECC told the EV during the handshake.
 struct EvseInfo {
     std::string evse_id;
-    // ServiceDiscoveryRes
-    uint16_t charge_service_id{0};
     // ChargeParameterDiscoveryRes, merged with the CurrentDemandRes limits.
     std::optional<iso15118::session::feedback::DcMaximumLimits> dc_present_limits{std::nullopt};
 };

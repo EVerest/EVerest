@@ -80,9 +80,13 @@ std::optional<feedback::DcMaximumLimits> present_limits(const message_din::Curre
 
 } // namespace
 
+BasePointerType to_current_demand(Context& ctx) {
+    send(ctx);
+    return ctx.create_state<CurrentDemand>();
+}
+
 void CurrentDemand::enter() {
     logf_debug("Enter state: CurrentDemand (DIN 70121)");
-    send(m_ctx);
 }
 
 Result CurrentDemand::feed(Event ev) {
@@ -107,9 +111,8 @@ Result CurrentDemand::feed(Event ev) {
 
     if (current_demand::charger_requests_stop(*res)) {
         m_ctx.feedback.stop_from_charger();
-        // A charger stop terminates the session; it never pauses it.
-        m_ctx.set_stop_charging_requested(true);
-        return m_ctx.create_state<PowerDelivery>(PowerDelivery::Phase::Stop);
+        // A charger stop terminates the session, even over an EV pause; it never pauses it.
+        return to_power_delivery(m_ctx, PowerDelivery::Stop{session::StopReason::EvseTerminate});
     }
 
     if (res->dc_evse_status.evse_notification == dt::EvseNotification::ReNegotiation and not renegotiation_warned) {
@@ -117,9 +120,9 @@ Result CurrentDemand::feed(Event ev) {
         renegotiation_warned = true;
     }
 
-    // An EV stop or pause leaves the loop; SessionStop decides which of the two it is.
-    if (m_ctx.is_stop_charging_requested() or m_ctx.is_pause_charging_requested()) {
-        return m_ctx.create_state<PowerDelivery>(PowerDelivery::Phase::Stop);
+    // An EV stop or pause leaves the loop, carrying which of the two it is to SessionStop.
+    if (const auto reason = session::requested_by_ev(m_ctx)) {
+        return to_power_delivery(m_ctx, PowerDelivery::Stop{*reason});
     }
 
     send(m_ctx);

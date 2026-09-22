@@ -2,12 +2,13 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
-#include <iso15118/io/sdp.hpp>
 #include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/message/variant.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
+#include <iso15118/ev/d20/engine.hpp>
 #include <iso15118/ev/d20/state/supported_app_protocol.hpp>
 #include <iso15118/ev/session/latches.hpp>
 
@@ -24,10 +25,31 @@ std::vector<uint8_t> serialize_helper(const message_20::SupportedAppProtocolResp
     return std::vector<uint8_t>(buffer, buffer + size);
 }
 
-std::unique_ptr<message_20::Variant> make_sap_response_variant(const message_20::SupportedAppProtocolResponse& res) {
+std::unique_ptr<message_20::ResponseVariant>
+make_sap_response_variant(const message_20::SupportedAppProtocolResponse& res) {
     const auto bytes = serialize_helper(res);
-    return std::make_unique<message_20::Variant>(io::v2gtp::PayloadType::SAP,
-                                                 io::StreamInputView{bytes.data(), bytes.size()});
+    return std::make_unique<message_20::ResponseVariant>(v2gtp::PayloadType::SAP,
+                                                         io::StreamInputView{bytes.data(), bytes.size()});
+}
+
+// The engine sends the SupportedAppProtocolRequest as it starts, before the first state exists.
+std::optional<std::pair<std::vector<uint8_t>, v2gtp::PayloadType>>
+request_on_start(std::vector<message_20::SupportedAppProtocol> protocols) {
+    ev::session::Latches latches;
+    everest::lib::util::monitor<ev::params::DcChargeParams> dc_params{ev::params::DcChargeParams{}};
+    everest::lib::util::monitor<ev::params::AcChargeParams> ac_params{ev::params::AcChargeParams{}};
+    ev::d20::Engine engine{{},
+                           "EVTESTID01",
+                           std::move(protocols),
+                           latches,
+                           dc_params,
+                           ac_params,
+                           message_20::datatypes::ServiceCategory::DC,
+                           {}};
+    engine.start();
+    auto request = engine.take_request();
+    REQUIRE_FALSE(engine.has_request());
+    return request;
 }
 
 } // namespace
@@ -47,15 +69,19 @@ SCENARIO("ISO15118-20 EV SupportedAppProtocol entry state initiates negotiation"
         WHEN("The state is entered") {
             state.enter();
 
-            THEN("A SupportedAppProtocolRequest is produced") {
-                REQUIRE(mx.has_request());
+            THEN("It sends nothing") {
+                REQUIRE_FALSE(mx.has_request());
+            }
+        }
 
-                const auto taken = mx.take_request();
+        WHEN("The engine starts") {
+            THEN("A SupportedAppProtocolRequest is produced") {
+                const auto taken = request_on_start(DEFAULT_APP_PROTOCOLS);
                 REQUIRE(taken.has_value());
                 const auto& [bytes, type] = *taken;
-                REQUIRE(type == io::v2gtp::PayloadType::SAP);
+                REQUIRE(type == v2gtp::PayloadType::SAP);
 
-                message_20::Variant variant(type, io::StreamInputView{bytes.data(), bytes.size()});
+                message_20::RequestVariant variant(type, io::StreamInputView{bytes.data(), bytes.size()});
                 REQUIRE(variant.get_type() == message_20::Type::SupportedAppProtocolReq);
 
                 const auto* req = variant.get_if<message_20::SupportedAppProtocolRequest>();
@@ -73,7 +99,6 @@ SCENARIO("ISO15118-20 EV SupportedAppProtocol entry state initiates negotiation"
 
         WHEN("A successful SupportedAppProtocolResponse is fed") {
             state.enter();
-            mx.take_request(); // take the SAP request
 
             const auto res = message_20::SupportedAppProtocolResponse{
                 message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation, 1};
@@ -81,21 +106,18 @@ SCENARIO("ISO15118-20 EV SupportedAppProtocol entry state initiates negotiation"
 
             auto result = state.feed(ev::d20::Event::V2GTP_MESSAGE);
 
-            THEN("It transitions to SessionSetup, whose enter() produces a SessionSetupRequest") {
+            THEN("It sends a SessionSetupRequest as it transitions to SessionSetup") {
                 REQUIRE(result.new_state != nullptr);
                 REQUIRE(result.new_state->get_id() == ev::d20::StateID::SessionSetup);
                 REQUIRE(ctx.is_session_stopped() == false);
-
-                // The Session enters the successor on transition; do so here to observe the request.
-                result.new_state->enter();
                 REQUIRE(mx.has_request());
 
                 const auto taken = mx.take_request();
                 REQUIRE(taken.has_value());
                 const auto& [bytes, type] = *taken;
-                REQUIRE(type == io::v2gtp::PayloadType::Part20Main);
+                REQUIRE(type == v2gtp::PayloadType::Part20Main);
 
-                message_20::Variant variant(type, io::StreamInputView{bytes.data(), bytes.size()});
+                message_20::RequestVariant variant(type, io::StreamInputView{bytes.data(), bytes.size()});
                 REQUIRE(variant.get_type() == message_20::Type::SessionSetupReq);
 
                 const auto* req = variant.get_if<message_20::SessionSetupRequest>();
@@ -106,7 +128,6 @@ SCENARIO("ISO15118-20 EV SupportedAppProtocol entry state initiates negotiation"
 
         WHEN("A SupportedAppProtocolResponse with a minor deviation is fed") {
             state.enter();
-            mx.take_request(); // take the SAP request
 
             const auto res = message_20::SupportedAppProtocolResponse{
                 message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiationWithMinorDeviation, 1};
@@ -114,27 +135,24 @@ SCENARIO("ISO15118-20 EV SupportedAppProtocol entry state initiates negotiation"
 
             auto result = state.feed(ev::d20::Event::V2GTP_MESSAGE);
 
-            THEN("It is accepted and transitions to SessionSetup, whose enter() produces a SessionSetupRequest") {
+            THEN("It is accepted and sends a SessionSetupRequest as it transitions to SessionSetup") {
                 REQUIRE(result.new_state != nullptr);
                 REQUIRE(result.new_state->get_id() == ev::d20::StateID::SessionSetup);
                 REQUIRE(ctx.is_session_stopped() == false);
-
-                result.new_state->enter();
                 REQUIRE(mx.has_request());
 
                 const auto taken = mx.take_request();
                 REQUIRE(taken.has_value());
                 const auto& [bytes, type] = *taken;
-                REQUIRE(type == io::v2gtp::PayloadType::Part20Main);
+                REQUIRE(type == v2gtp::PayloadType::Part20Main);
 
-                message_20::Variant variant(type, io::StreamInputView{bytes.data(), bytes.size()});
+                message_20::RequestVariant variant(type, io::StreamInputView{bytes.data(), bytes.size()});
                 REQUIRE(variant.get_if<message_20::SessionSetupRequest>() != nullptr);
             }
         }
 
         WHEN("A failed SupportedAppProtocolResponse is fed") {
             state.enter();
-            mx.take_request();
 
             const auto res = message_20::SupportedAppProtocolResponse{
                 message_20::SupportedAppProtocolResponse::ResponseCode::Failed_NoNegotiation, std::nullopt};
@@ -150,13 +168,12 @@ SCENARIO("ISO15118-20 EV SupportedAppProtocol entry state initiates negotiation"
 
         WHEN("A wrong-variant response is fed") {
             state.enter();
-            mx.take_request();
 
             // A SessionSetupResponse is not the expected SAP response variant.
             message_20::SessionSetupResponse session_res{};
             session_res.response_code = message_20::datatypes::ResponseCode::OK_NewSessionEstablished;
             session_res.evseid = "DE*PNX*E1234";
-            mx.set_response(std::make_unique<message_20::Variant>(session_res));
+            mx.set_response(std::make_unique<message_20::ResponseVariant>(session_res));
 
             auto result = state.feed(ev::d20::Event::V2GTP_MESSAGE);
 
@@ -168,7 +185,6 @@ SCENARIO("ISO15118-20 EV SupportedAppProtocol entry state initiates negotiation"
 
         WHEN("A non-V2GTP event is fed") {
             state.enter();
-            mx.take_request();
 
             auto result = state.feed(ev::d20::Event::RESET);
 
@@ -183,35 +199,24 @@ SCENARIO("ISO15118-20 EV SupportedAppProtocol entry state initiates negotiation"
 
 SCENARIO("ISO15118-20 EV SupportedAppProtocol advertises a multi-entry app protocol list") {
 
-    GIVEN("A SupportedAppProtocol state whose context advertises two app protocols in order") {
+    GIVEN("An engine whose context advertises two app protocols in order") {
 
-        const ev::feedback::Callbacks callbacks{};
+        // Two distinct namespaces with descending priority. The request must carry every
+        // advertised entry, preserving order.
+        const std::vector<message_20::SupportedAppProtocol> protocols{
+            {"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1},
+            {"urn:iso:std:iso:15118:-20:AC", 1, 0, 2, 2},
+        };
 
-        // Two distinct namespaces with descending priority. The state must copy every
-        // advertised entry into the request, preserving order.
-        FsmStateHelper helper{callbacks,
-                              {
-                                  {"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1},
-                                  {"urn:iso:std:iso:15118:-20:AC", 1, 0, 2, 2},
-                              }};
-
-        auto& ctx = helper.get_context();
-        auto& mx = helper.get_message_exchange();
-
-        ev::d20::state::SupportedAppProtocol state{ctx};
-
-        WHEN("The state is entered") {
-            state.enter();
+        WHEN("The engine starts") {
+            const auto taken = request_on_start(protocols);
 
             THEN("The emitted SupportedAppProtocolRequest carries both entries in order") {
-                REQUIRE(mx.has_request());
-
-                const auto taken = mx.take_request();
                 REQUIRE(taken.has_value());
                 const auto& [bytes, type] = *taken;
-                REQUIRE(type == io::v2gtp::PayloadType::SAP);
+                REQUIRE(type == v2gtp::PayloadType::SAP);
 
-                message_20::Variant variant(type, io::StreamInputView{bytes.data(), bytes.size()});
+                message_20::RequestVariant variant(type, io::StreamInputView{bytes.data(), bytes.size()});
                 const auto* req = variant.get_if<message_20::SupportedAppProtocolRequest>();
                 REQUIRE(req != nullptr);
 

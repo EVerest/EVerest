@@ -39,8 +39,8 @@
 #include <iso15118/message_din/welding_detection.hpp>
 
 #include <iso15118/ev/d20/control_event.hpp>
-#include <iso15118/ev/sap_offer.hpp>
-#include <iso15118/ev/session_params.hpp>
+#include <iso15118/ev/params/iso2_ac.hpp>
+#include <iso15118/ev/session/sap_offer.hpp>
 
 #include "test_support.hpp"
 
@@ -51,7 +51,7 @@ using namespace iso15118::ev::test;
 namespace {
 
 namespace dt = message_din::datatypes;
-using PT = io::v2gtp::PayloadType;
+using PT = v2gtp::PayloadType;
 
 constexpr dt::SessionId DIN_SID{0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18};
 constexpr std::array<uint8_t, 6> EVCC_MAC{0x02, 0xDE, 0xAD, 0xBE, 0xEF, 0x02};
@@ -108,8 +108,8 @@ message_20::SupportedAppProtocolResponse sap_response(uint8_t schema_id) {
     return {message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation, schema_id};
 }
 
-ev::DcChargeParams walk_dc_params() {
-    ev::DcChargeParams params{};
+ev::params::DcChargeParams walk_dc_params() {
+    ev::params::DcChargeParams params{};
     params.max_charge_power = 60000.0f;
     params.max_charge_current = MAX_CHARGE_CURRENT;
     params.max_voltage = MAX_VOLTAGE;
@@ -122,8 +122,8 @@ ev::DcChargeParams walk_dc_params() {
     return params;
 }
 
-ev::EvSessionParams walk_params() {
-    ev::EvSessionParams params;
+ev::params::EvSessionParams walk_params() {
+    ev::params::EvSessionParams params;
     params.evcc_mac = EVCC_MAC;
     params.energy_transfer_mode = dt::EnergyTransferMode::DC_extended;
     return params;
@@ -131,8 +131,10 @@ ev::EvSessionParams walk_params() {
 
 std::unique_ptr<SessionFixture> make_fixture(bool has_cp_state_feedback = false,
                                              std::optional<ProtocolId> resume = std::nullopt,
-                                             std::optional<dt::SessionId> resumed_session_id = std::nullopt) {
-    ev::SapOfferInput input;
+                                             std::optional<dt::SessionId> resumed_session_id = std::nullopt,
+                                             ev::config::WeldingDetectionConfig welding = {},
+                                             ev::session::SessionTiming timing = {5ms, 1000ms}) {
+    ev::session::SapOfferInput input;
     input.supported_protocols = {ProtocolId::ISO15118_20, ProtocolId::ISO15118_2, ProtocolId::DIN70121};
     input.energy_service = message_20::datatypes::ServiceCategory::DC;
     input.resume_protocol = resume;
@@ -146,10 +148,13 @@ std::unique_ptr<SessionFixture> make_fixture(bool has_cp_state_feedback = false,
     ev::d20::SessionOptions options;
     options.offered_protocols = offer;
     options.has_cp_state_feedback = has_cp_state_feedback;
-    options.resumed_session_id = resumed_session_id;
+    if (resumed_session_id.has_value()) {
+        options.resume = ev::d20::Resume{*resumed_session_id};
+    }
+    options.welding_detection = welding;
 
-    return std::make_unique<SessionFixture>("EVTESTID01", ev::SessionTiming{5ms, 1000ms}, walk_dc_params(), advertised,
-                                            message_20::datatypes::ServiceCategory::DC, ev::AcChargeParams{},
+    return std::make_unique<SessionFixture>("EVTESTID01", timing, walk_dc_params(), advertised,
+                                            message_20::datatypes::ServiceCategory::DC, ev::params::AcChargeParams{},
                                             default_der_control_functions(), true, std::move(options), walk_params());
 }
 
@@ -441,6 +446,58 @@ SCENARIO("DIN SPEC 70121 EV Session pauses and re-joins the paused session id") 
     }
 }
 
+SCENARIO("DIN SPEC 70121 EV Session stops on an invalid message") {
+    // DIN SPEC 70121 closes the connection on a V2GTP header error ([V2G-DC-169], [V2G-DC-173]) and
+    // has no counterpart of [V2G2-440]; ISO 15118-2 and -20 ignore such messages instead.
+    GIVEN("a Session that handed over to the DIN engine and awaits SessionSetupRes") {
+        auto fx = make_fixture();
+        walk_sap(*fx, 3, 3);
+        const auto captured_before = fx->captured.size();
+
+        const auto stopped_without_timeout = [&]() {
+            REQUIRE(fx->session.is_finished());
+            REQUIRE(fx->captured.size() == captured_before);
+            REQUIRE_FALSE(fx->timed_out);
+        };
+
+        WHEN("a frame with a malformed V2GTP header arrives") {
+            fx->session.on_bytes_received(bad_version_header());
+            THEN("the session stops at once") {
+                stopped_without_timeout();
+            }
+            THEN("further bytes on the stopped session change nothing") {
+                const auto signals_before = fx->signals.size();
+                fx->session.on_bytes_received(std::vector<uint8_t>(32, 0x00));
+                fx->session.on_bytes_received(std::vector<uint8_t>(32, 0xFF));
+                stopped_without_timeout();
+                REQUIRE(fx->signals.size() == signals_before);
+            }
+        }
+
+        WHEN("a frame with an oversized payload length arrives") {
+            fx->session.on_bytes_received(oversized_header());
+            THEN("the session stops at once") {
+                stopped_without_timeout();
+            }
+        }
+
+        WHEN("an undecodable EXI payload arrives") {
+            fx->session.on_bytes_received(frame_payload(PT::SAP, garbage_exi()));
+            THEN("the session stops at once") {
+                stopped_without_timeout();
+            }
+        }
+
+        WHEN("a valid response of the wrong type arrives") {
+            fx->session.on_bytes_received(
+                frame_payload(PT::SAP, serialize_din(ok_din<message_din::SessionStopResponse>())));
+            THEN("the session stops at once") {
+                stopped_without_timeout();
+            }
+        }
+    }
+}
+
 SCENARIO("DIN SPEC 70121 EV Session holds CableCheck until CP state C or D") {
     GIVEN("a DIN Session configured with CP state feedback") {
         auto fx = make_fixture(true);
@@ -465,4 +522,59 @@ SCENARIO("DIN SPEC 70121 EV Session holds CableCheck until CP state C or D") {
             }
         }
     }
+}
+
+// The CP state latched while the -20 engine ran the SAP handshake reaches the DIN engine's Context.
+SCENARIO("DIN SPEC 70121 EV Session keeps a CP state reported before the handover") {
+    GIVEN("a DIN Session configured with CP state feedback and CP state C/D reported before SAP") {
+        auto fx = make_fixture(true);
+        fx->session.deliver_control_event(ev::d20::ControlEvent{ev::d20::CpState{true}});
+        walk_sap(*fx, 3, 3);
+        walk_to_charge_parameter_discovery(*fx);
+
+        THEN("CableCheckReq follows ChargeParameterDiscovery without a further CP state event") {
+            step<message_din::CableCheckRequest>(*fx, "ChargeParameterDiscovery -> CableCheck", cpd_res());
+        }
+    }
+}
+
+SCENARIO("DIN 70121 EV welding timeout reports failure and terminates a pending pause") {
+    auto fx = make_fixture(false, std::nullopt, std::nullopt, {60.0f, 20, 500ms}, {5ms, 1000ms});
+    walk_to_current_demand(*fx);
+    fx->session.deliver_control_event(ev::d20::ControlEvent{ev::d20::PauseCharging{true}});
+    step<message_din::PowerDeliveryRequest>(*fx, "pause -> Stop", current_demand_res());
+    step<message_din::WeldingDetectionRequest>(*fx, "accepted Stop -> welding", power_delivery_res());
+    auto unsafe = welding_detection_res();
+    unsafe.evse_present_voltage = 400.0;
+    step<message_din::WeldingDetectionRequest>(*fx, "unsafe -> poll", unsafe);
+    const auto before = fx->captured.size();
+    int expected_cycles = 1;
+    SECTION("the outstanding response never arrives") {
+        REQUIRE(run_reactor_until(
+            fx->reactor, [&] { return fx->session.is_finished(); }, 1500ms));
+        REQUIRE(fx->captured.size() == before);
+        REQUIRE(fx->welding_failures == std::vector<std::pair<float, int>>{{400.0f, 1}});
+        REQUIRE(fx->timed_out_count == 1);
+        REQUIRE_FALSE(fx->session.is_paused());
+        return;
+    }
+    SECTION("the outstanding response arrives after the welding deadline") {
+        REQUIRE_FALSE(run_reactor_until(
+            fx->reactor, [&] { return fx->captured.size() > before; }, 450ms));
+        REQUIRE(fx->welding_failures.empty());
+        fx->session.on_bytes_received(frame_payload(PT::SAP, serialize_din(unsafe)));
+        expected_cycles = 2;
+    }
+    REQUIRE(run_reactor_until(
+        fx->reactor, [&] { return fx->captured.size() > before; }, 2s));
+    const auto decoded = decode_din(fx->captured.back());
+    const auto* request = decoded.get_if<message_din::SessionStopRequest>();
+    REQUIRE(request != nullptr);
+
+    REQUIRE(fx->welding_failures == std::vector<std::pair<float, int>>{{400.0f, expected_cycles}});
+    REQUIRE_FALSE(fx->timed_out);
+    fx->session.on_bytes_received(frame_payload(PT::SAP, serialize_din(ok_din<message_din::SessionStopResponse>())));
+    REQUIRE(fx->session.is_finished());
+    REQUIRE_FALSE(fx->session.is_paused());
+    REQUIRE(fx->signals.back() == ev::feedback::Signal::DLINK_TERMINATE);
 }

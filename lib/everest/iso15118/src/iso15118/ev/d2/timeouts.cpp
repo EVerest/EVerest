@@ -10,6 +10,8 @@ std::chrono::milliseconds response_timeout(StateID state) {
         return MESSAGE_POWER_DELIVERY;
     case StateID::CurrentDemand:
         return MESSAGE_CURRENT_DEMAND;
+    case StateID::ServiceDetail:
+        return MESSAGE_SERVICE_DETAIL;
     case StateID::CertificateInstallation:
         return MESSAGE_CERTIFICATE_INSTALLATION;
     default:
@@ -26,8 +28,6 @@ std::optional<std::chrono::milliseconds> ongoing_timeout(StateID state) {
         return ONGOING_CABLE_CHECK;
     case StateID::PreCharge:
         return ONGOING_PRE_CHARGE;
-    case StateID::WeldingDetection:
-        return ONGOING_WELDING_DETECTION;
     default:
         return std::nullopt;
     }

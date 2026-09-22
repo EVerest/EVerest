@@ -51,7 +51,6 @@ Result handle_response(const message_2::ServiceDiscoveryResponse& res, dt::Energ
 
 void ServiceDiscovery::enter() {
     logf_debug("Enter state: ServiceDiscovery (ISO 15118-2)");
-    m_ctx.send_request(service_discovery::create_request());
 }
 
 Result ServiceDiscovery::feed(Event ev) {
@@ -74,7 +73,7 @@ Result ServiceDiscovery::feed(Event ev) {
     const bool want_contract = pnc.enforce_contract or (pnc.prefer_contract and result.contract_offered);
     if (not result.eim_offered and not want_contract) {
         logf_error("SECC offers no usable payment option; stopping the session");
-        return Result{m_ctx.create_state<SessionStop>()};
+        return to_session_stop(m_ctx, session::StopReason::EvStop);
     }
 
     if (not result.mode_supported) {
@@ -86,12 +85,13 @@ Result ServiceDiscovery::feed(Event ev) {
 
     m_ctx.evse_info.selected_charge_service_id = result.charge_service_id;
     m_ctx.evse_info.contract_offered = result.contract_offered;
+    m_ctx.evse_info.eim_offered = result.eim_offered;
     m_ctx.evse_info.certificate_service_offered = result.certificate_service_offered;
 
     if (auto stop = stop_before_start(m_ctx)) {
         return std::move(*stop);
     }
-    return m_ctx.create_state<PaymentServiceSelection>();
+    return to_service_detail_or_payment_selection(m_ctx);
 }
 
 } // namespace iso15118::ev::d2::state

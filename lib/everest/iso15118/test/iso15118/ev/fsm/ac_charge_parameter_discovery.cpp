@@ -5,9 +5,11 @@
 #include "helper.hpp"
 
 #include <iso15118/ev/d20/state/ac_charge_parameter_discovery.hpp>
+#include <iso15118/ev/d20/state/service_selection.hpp>
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/schedule_exchange.hpp>
+#include <iso15118/message/service_selection.hpp>
 #include <iso15118/message/type.hpp>
 
 using namespace iso15118;
@@ -29,7 +31,7 @@ message_20::AC_ChargeParameterDiscoveryResponse make_response(const message_20::
 
 // AC_ChargeParameterDiscovery builds its request from the EV's AC charge params.
 const auto seed_charge_limits = [](FsmStateHelper& helper) {
-    ev::AcChargeParams p{};
+    ev::params::AcChargeParams p{};
     p.phase_count = 1;
     p.max_charge_power = 22000.0f;
     p.min_charge_power = 1000.0f;
@@ -37,7 +39,7 @@ const auto seed_charge_limits = [](FsmStateHelper& helper) {
 };
 
 const auto seed_bpt_limits = [](FsmStateHelper& helper) {
-    ev::AcChargeParams p{};
+    ev::params::AcChargeParams p{};
     p.phase_count = 1;
     p.max_charge_power = 22000.0f;
     p.min_charge_power = 1000.0f;
@@ -59,13 +61,18 @@ message_20::AC_ChargeParameterDiscoveryResponse make_bpt_response(const message_
     res.transfer_mode = mode;
     return res;
 }
+
+// AC_ChargeParameterDiscovery's first request, sent by ServiceSelection as the SECC accepts `service`.
+template <typename Seed> DecodedRequests first_request(message_20::datatypes::ServiceCategory service, Seed seed) {
+    auto selection = Predecessor::in<ev::d20::state::ServiceSelection>(service, {}, uint16_t{1});
+    seed(*selection.helper);
+    return selection.transitions_to(ev::d20::StateID::AC_ChargeParameterDiscovery,
+                                    message_20::ServiceSelectionResponse{SESSION_HEADER, ResponseCode::OK});
+}
 } // namespace
 
-SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery emits a request built from the AC params on enter") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{callbacks, seed_charge_limits};
-
-    const auto requests = primed.take_requests();
+SCENARIO("ISO15118-20 EV ServiceSelection sends an AC_ChargeParameterDiscoveryRequest built from the AC params") {
+    const auto requests = first_request(message_20::datatypes::ServiceCategory::AC, seed_charge_limits);
     const auto request_message = requests.get<message_20::AC_ChargeParameterDiscoveryRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
@@ -82,18 +89,14 @@ SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery emits a request built from 
 }
 
 SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery states the advertised totals for a ThreePhase connector") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{
-        callbacks, [](FsmStateHelper& helper) {
-            ev::AcChargeParams p{};
-            p.phase_count = 3;
-            p.max_charge_power = 22500.0f;
-            p.min_charge_power = 1500.0f;
-            helper.set_ac_params(p);
-            helper.get_context().set_selected_ac_connector(message_20::datatypes::AcConnector::ThreePhase);
-        }};
-
-    const auto requests = primed.take_requests();
+    const auto requests = first_request(message_20::datatypes::ServiceCategory::AC, [](FsmStateHelper& helper) {
+        ev::params::AcChargeParams p{};
+        p.phase_count = 3;
+        p.max_charge_power = 22500.0f;
+        p.min_charge_power = 1500.0f;
+        helper.set_ac_params(p);
+        helper.get_context().set_selected_ac_connector(message_20::datatypes::AcConnector::ThreePhase);
+    });
     const auto request_message = requests.get<message_20::AC_ChargeParameterDiscoveryRequest>();
     REQUIRE(request_message.has_value());
 
@@ -156,12 +159,8 @@ SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery rejects a BPT transfer-mode
     REQUIRE(fired == false);
 }
 
-SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery emits a BPT request with discharge limits for a BPT session") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::AC_ChargeParameterDiscovery> primed{
-        callbacks, message_20::datatypes::ServiceCategory::AC_BPT, seed_bpt_limits};
-
-    const auto requests = primed.take_requests();
+SCENARIO("ISO15118-20 EV ServiceSelection sends a BPT AC_ChargeParameterDiscoveryRequest for a BPT session") {
+    const auto requests = first_request(message_20::datatypes::ServiceCategory::AC_BPT, seed_bpt_limits);
     const auto request_message = requests.get<message_20::AC_ChargeParameterDiscoveryRequest>();
     REQUIRE(request_message.has_value());
 
@@ -170,8 +169,8 @@ SCENARIO("ISO15118-20 EV AC_ChargeParameterDiscovery emits a BPT request with di
     REQUIRE(mode != nullptr);
     REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_charge_power) == 22000.0f);
     REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_charge_power) == 1000.0f);
-    REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_power) == 15000.0f);
-    REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_discharge_power) == 800.0f);
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_power) == -15000.0f);
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_discharge_power) == -800.0f);
     // The limits are three-phase totals: no per-phase charge or discharge field is advertised.
     REQUIRE_FALSE(mode->max_charge_power_L2.has_value());
     REQUIRE_FALSE(mode->max_charge_power_L3.has_value());

@@ -2,41 +2,22 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/ev/transport/sdp_client.hpp>
 
-#include <cstring>
 #include <stdexcept>
-#include <type_traits>
 #include <utility>
-
-#include <arpa/inet.h>
-
-#include <cbv2g/exi_v2gtp.h>
 
 #include <everest/io/udp/endpoint.hpp>
 #include <everest/io/udp/udp_payload.hpp>
 
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
 namespace iso15118::ev::transport {
 
 namespace {
 constexpr auto LINK_LOCAL_ALL_NODES = "ff02::1";
-
-constexpr size_t SDP_REQUEST_SIZE = 10;
-constexpr size_t SDP_RESPONSE_SIZE = 28;
-constexpr size_t SDP_RESPONSE_PAYLOAD_LEN = 20;
-
-constexpr size_t RESPONSE_ADDRESS_OFFSET = 8;
-constexpr size_t RESPONSE_PORT_OFFSET = 24;
-constexpr size_t RESPONSE_SECURITY_OFFSET = 26;
-constexpr size_t RESPONSE_TRANSPORT_OFFSET = 27;
-
-bool is_known_security(uint8_t value) {
-    return value == static_cast<uint8_t>(iso15118::io::v2gtp::Security::TLS) or
-           value == static_cast<uint8_t>(iso15118::io::v2gtp::Security::NO_TRANSPORT_SECURITY);
-}
 } // namespace
 
-SdpClient::SdpClient(std::string interface_name_, iso15118::io::v2gtp::Security security_) :
+SdpClient::SdpClient(std::string interface_name_, iso15118::v2gtp::Security security_) :
     interface_name(std::move(interface_name_)), security(security_) {
 }
 
@@ -46,51 +27,9 @@ SdpClient::~SdpClient() {
     }
 }
 
-std::vector<uint8_t> SdpClient::build_request(iso15118::io::v2gtp::Security security,
-                                              iso15118::io::v2gtp::TransportProtocol transport) {
-    std::vector<uint8_t> buffer(SDP_REQUEST_SIZE, 0);
-
-    V2GTP20_WriteHeader(buffer.data(), 2, V2GTP20_SDP_REQUEST_PAYLOAD_ID);
-
-    buffer[8] = static_cast<std::underlying_type_t<iso15118::io::v2gtp::Security>>(security);
-    buffer[9] = static_cast<std::underlying_type_t<iso15118::io::v2gtp::TransportProtocol>>(transport);
-
-    return buffer;
-}
-
-std::optional<SdpResponse> SdpClient::parse_response(const uint8_t* buf, size_t len) {
-    if (buf == nullptr or len < SDP_RESPONSE_SIZE) {
-        return std::nullopt;
-    }
-
-    uint32_t payload_len = 0;
-    const auto read_result = V2GTP20_ReadHeader(buf, &payload_len, V2GTP20_SDP_RESPONSE_PAYLOAD_ID);
-    if (read_result != V2GTP_ERROR__NO_ERROR or payload_len != SDP_RESPONSE_PAYLOAD_LEN) {
-        return std::nullopt;
-    }
-
-    SdpResponse response{};
-
-    // The address stays in wire byte order; only the port below is swapped.
-    std::memcpy(response.endpoint.address, buf + RESPONSE_ADDRESS_OFFSET, sizeof(response.endpoint.address));
-
-    uint16_t port_net = 0;
-    std::memcpy(&port_net, buf + RESPONSE_PORT_OFFSET, sizeof(port_net));
-    response.endpoint.port = ntohs(port_net);
-
-    // Only TLS and no-security are defined [V2G2-142]; anything else names a transport this EV
-    // cannot build.
-    if (not is_known_security(buf[RESPONSE_SECURITY_OFFSET])) {
-        return std::nullopt;
-    }
-    response.security = static_cast<iso15118::io::v2gtp::Security>(buf[RESPONSE_SECURITY_OFFSET]);
-
-    // Only TCP is a valid transport [V2G2-142].
-    if (buf[RESPONSE_TRANSPORT_OFFSET] != static_cast<uint8_t>(iso15118::io::v2gtp::TransportProtocol::TCP)) {
-        return std::nullopt;
-    }
-
-    return response;
+std::vector<uint8_t> SdpClient::build_request(iso15118::v2gtp::Security security,
+                                              iso15118::v2gtp::TransportProtocol transport) {
+    return v2gtp::encode_sdp_request({security, transport});
 }
 
 bool SdpClient::register_events(everest::lib::io::event::fd_event_handler& handler) {
@@ -107,8 +46,10 @@ bool SdpClient::register_events(everest::lib::io::event::fd_event_handler& handl
         // endpoint construction resolves the egress interface (if_nametoindex); a
         // down or unknown interface_name throws. Don't let it escape this
         // bool-returning function onto the reactor thread.
-        const endpoint target{LINK_LOCAL_ALL_NODES, iso15118::io::v2gtp::SDP_SERVER_PORT, interface_name};
-        client = std::make_unique<udp_unconnected_client>(target, interface_name);
+        const endpoint target{LINK_LOCAL_ALL_NODES, iso15118::v2gtp::SDP_SERVER_PORT, interface_name};
+        const everest::lib::io::socket::SourcePortRange source_ports{iso15118::v2gtp::SDP_CLIENT_PORT_MIN,
+                                                                     iso15118::v2gtp::SDP_CLIENT_PORT_MAX};
+        client = std::make_unique<udp_unconnected_client>(target, interface_name, source_ports);
     } catch (const std::runtime_error& e) {
         logf_error("Failed to build SDP endpoint on interface '%s': %s", interface_name.c_str(), e.what());
         client.reset();
@@ -116,7 +57,7 @@ bool SdpClient::register_events(everest::lib::io::event::fd_event_handler& handl
     }
 
     client->set_rx_handler([this](everest::lib::io::udp::udp_payload const& payload, auto& /*device*/) {
-        const auto parsed = parse_response(payload.buffer.data(), payload.buffer.size());
+        const auto parsed = v2gtp::decode_sdp_response(payload.buffer.data(), payload.buffer.size());
         if (not parsed) {
             logf_warning("Received an unexpected SDP response, ignoring");
             return;
@@ -138,7 +79,7 @@ bool SdpClient::register_events(everest::lib::io::event::fd_event_handler& handl
     return true;
 }
 
-void SdpClient::discover(std::function<void(SdpResponse)> on_found_) {
+void SdpClient::discover(std::function<void(v2gtp::SdpResponse)> on_found_) {
     on_found = std::move(on_found_);
     if (registered_handler == nullptr) {
         send_request();
@@ -155,7 +96,7 @@ void SdpClient::send_request() {
         return;
     }
 
-    const auto request = build_request(security, iso15118::io::v2gtp::TransportProtocol::TCP);
+    const auto request = build_request(security, iso15118::v2gtp::TransportProtocol::TCP);
 
     everest::lib::io::udp::udp_payload payload;
     payload.set_message(request.data(), request.size());

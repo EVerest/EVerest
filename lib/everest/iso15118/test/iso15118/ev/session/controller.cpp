@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_exception.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <stdexcept>
 #include <thread>
 
-#include <iso15118/io/sdp.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
-#include <iso15118/ev/config.hpp>
+#include <iso15118/ev/config/config.hpp>
 #include <iso15118/ev/controller.hpp>
-#include <iso15118/ev/session.hpp>
-#include <iso15118/ev/session/feedback.hpp>
+#include <iso15118/ev/detail/session/session.hpp>
+#include <iso15118/ev/detail/session_options.hpp>
+#include <iso15118/ev/feedback.hpp>
 
 #include "test_support.hpp"
 
@@ -23,10 +26,10 @@ using iso15118::ev::test::poll_until;
 
 SCENARIO("ISO15118-20 EV Controller config defaults") {
     GIVEN("A default-constructed EvConfig") {
-        ev::EvConfig config{};
+        ev::config::EvConfig config{};
 
         THEN("It defaults to no transport security") {
-            REQUIRE(config.sdp_security() == io::v2gtp::Security::NO_TRANSPORT_SECURITY);
+            REQUIRE(config.sdp_security() == v2gtp::Security::NO_TRANSPORT_SECURITY);
         }
 
         THEN("It paces re-poll sends with a non-zero default send delay") {
@@ -41,13 +44,90 @@ SCENARIO("ISO15118-20 EV Controller config defaults") {
     }
 }
 
+SCENARIO("ISO15118-20 EV Controller copies the AC_DER_SAE config into the session options") {
+    GIVEN("An EvConfig with non-default SAE settings") {
+        ev::config::EvConfig config{};
+        config.d20.sae_profile.inverter_serial_number = "SN-TEST";
+        config.d20.sae_profile.supported_modes = 0x40U;
+        config.d20.cpd_rounds = 4;
+        config.d20.der_stop_on_invalid_control = true;
+
+        WHEN("the session options are built from it") {
+            const auto options = ev::make_session_options(config, {});
+
+            THEN("the three SAE fields arrive unchanged") {
+                REQUIRE(options.d20.sae_profile.inverter_serial_number == "SN-TEST");
+                REQUIRE(options.d20.sae_profile.supported_modes == 0x40U);
+                REQUIRE(options.d20.cpd_rounds == 4);
+                REQUIRE(options.d20.der_stop_on_invalid_control == true);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Controller copies start_charging's energy request into the session options") {
+    ev::config::EvConfig config{};
+    const auto departure = std::chrono::steady_clock::now() + std::chrono::hours(1);
+    config.params.energy_request.energy_wh = 20000.0f;
+    config.params.energy_request.departure = departure;
+
+    const auto options = ev::make_session_options(config, {});
+
+    REQUIRE(options.energy_request.energy_wh == 20000.0f);
+    REQUIRE(options.energy_request.departure == departure);
+}
+
+SCENARIO("ISO15118-20 EV Controller resumes a paused session in its SECC time and selection") {
+    GIVEN("An EvConfig resuming a paused -20 session") {
+        ev::d20::SeccClock::State clock{};
+        clock.reference = ev::d20::SeccClock::Reference{5'000'000, std::chrono::steady_clock::now()};
+        clock.last_stamp = 5'000'100;
+
+        ev::config::EvConfig config{};
+        config.resume =
+            ev::config::PausedSession{{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
+                                      ProtocolId::ISO15118_20,
+                                      v2gtp::Security::NO_TRANSPORT_SECURITY,
+                                      clock,
+                                      ev::d20::SelectedService{message_20::datatypes::ServiceCategory::AC,
+                                                               message_20::datatypes::ControlMode::Scheduled,
+                                                               message_20::datatypes::AcConnector::ThreePhase}};
+
+        WHEN("the session options are built from it") {
+            const auto options = ev::make_session_options(config, {});
+            REQUIRE(options.resume.has_value());
+
+            THEN("the clock state arrives unchanged") {
+                REQUIRE(options.resume->secc_clock.reference.has_value());
+                REQUIRE(options.resume->secc_clock.reference->secc_time == 5'000'000);
+                REQUIRE(options.resume->secc_clock.reference->taken_at == clock.reference->taken_at);
+                REQUIRE(options.resume->secc_clock.last_stamp == 5'000'100);
+            }
+
+            THEN("the retained service selection arrives unchanged") {
+                REQUIRE(options.resume->selected_service.has_value());
+                REQUIRE(options.resume->selected_service->service == message_20::datatypes::ServiceCategory::AC);
+                REQUIRE(options.resume->selected_service->control_mode ==
+                        message_20::datatypes::ControlMode::Scheduled);
+                REQUIRE(options.resume->selected_service->ac_connector ==
+                        message_20::datatypes::AcConnector::ThreePhase);
+            }
+
+            THEN("the paused session id arrives unchanged") {
+                REQUIRE(options.resume->session_id ==
+                        std::array<uint8_t, 8>{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08});
+            }
+        }
+    }
+}
+
 SCENARIO("ISO15118-20 EV Controller shutdown stops the loop") {
     // No SECC responding keeps the reactor in the pre-session phase, far from the
     // 18 s setup timeout, so an early stop can only be shutdown() itself. Does not
     // isolate that from the periodic SDP retry timer also waking poll(); a
     // socket-level walk is deferred to the Session-level FSM-walk test.
     GIVEN("A Controller running SDP discovery with no SECC present") {
-        ev::EvConfig config{};
+        ev::config::EvConfig config{};
         config.interface_name = "lo";
         config.send_delay = 5ms;
         config.response_timeout = 100ms;
@@ -80,7 +160,7 @@ SCENARIO("ISO15118-20 EV Session on_finished callback throwing does not escape")
     // on_finished runs on the reactor thread inside check_finished(); a throwing
     // owner callback must be swallowed (logged), not propagate, and fire only once.
     GIVEN("A Session whose on_finished throws on first invocation") {
-        ev::test::SessionFixture fx{"EVTESTID01", ev::SessionTiming{5ms, 50ms}};
+        ev::test::SessionFixture fx{"EVTESTID01", ev::session::SessionTiming{5ms, 50ms}};
 
         int finished_count = 0;
         fx.session.set_on_finished([&finished_count]() {
@@ -111,7 +191,7 @@ SCENARIO("ISO15118-20 EV Controller request_stop marshals onto the reactor befor
     // request_stop must be safe to call off the reactor thread before loop() runs:
     // it only queues an action, never touching session/timer state synchronously.
     GIVEN("A Controller that has never run its loop") {
-        ev::EvConfig config{};
+        ev::config::EvConfig config{};
         config.interface_name = "lo";
         config.send_delay = 5ms;
         config.response_timeout = 100ms;
@@ -133,7 +213,7 @@ SCENARIO("ISO15118-20 EV Controller stop grace is never shorter than the gracefu
     // 3x the per-message timeout. Pinned via the consequence: the loop is still alive well past
     // 3x response_timeout after request_stop().
     GIVEN("A Controller with a 50 ms response timeout and no SECC present") {
-        ev::EvConfig config{};
+        ev::config::EvConfig config{};
         config.interface_name = "lo";
         config.send_delay = 5ms;
         config.response_timeout = 50ms; // 3x = 150 ms, far below the stop walk
@@ -176,7 +256,7 @@ SCENARIO("ISO15118-20 EV Controller loop releases its reactor timers before retu
     // second run must still be alive 50 ms in. Uses terminate, not shutdown, since
     // shutdown latches stop_requested and the second loop() would early-return on it.
     GIVEN("A Controller whose loop is run twice, ended by request_stop each time") {
-        ev::EvConfig config{};
+        ev::config::EvConfig config{};
         config.interface_name = "lo";
         config.send_delay = 5ms;
         config.response_timeout = 50ms; // 3x = 150 ms grace
@@ -223,7 +303,7 @@ SCENARIO("ISO15118-20 EV Controller aborts the pre-session phase on the setup ti
     // place that actually pins it firing. Fixed 18 s production constant, no
     // injection seam, so this scenario pays the wall time.
     GIVEN("A Controller running SDP discovery on lo with no SECC present") {
-        ev::EvConfig config{};
+        ev::config::EvConfig config{};
         config.interface_name = "lo";
         config.send_delay = 5ms;
         config.response_timeout = 100ms;
@@ -266,7 +346,7 @@ SCENARIO("ISO15118-20 EV Controller aborts the pre-session phase on the setup ti
 
 SCENARIO("ISO15118-20 EV Controller reports no paused session for a session that never paused") {
     GIVEN("A Controller whose loop never ran") {
-        ev::EvConfig config{};
+        ev::config::EvConfig config{};
         config.interface_name = "lo";
         config.send_delay = 5ms;
 
@@ -277,4 +357,39 @@ SCENARIO("ISO15118-20 EV Controller reports no paused session for a session that
             REQUIRE_FALSE(controller.paused_session().has_value());
         }
     }
+}
+
+SCENARIO("EV Controller rejects a missing explicit interface before connection setup") {
+    ev::config::EvConfig config{};
+    config.interface_name = "missing-ev-interface";
+
+    SECTION("SDP discovery enabled") {
+        config.enable_sdp = true;
+    }
+    SECTION("Direct endpoint configured") {
+        config.enable_sdp = false;
+        config.direct_secc_endpoint = io::Ipv6EndPoint{1, {}};
+    }
+
+    REQUIRE_THROWS_MATCHES((ev::Controller{config, ev::feedback::Callbacks{}}), std::runtime_error,
+                           Catch::Matchers::Message("Ethernet interface was not found: missing-ev-interface"));
+}
+
+SCENARIO("EV stop grace budgets configured welding and response bounds") {
+    ev::config::EvConfig config;
+    config.welding_detection.timeout = 70s;
+    config.response_timeout = 50ms;
+    REQUIRE(ev::stop_grace(config) >= 70s + 2s + 5s + 2s + 2s + 400ms);
+    config.welding_detection.timeout = 120s;
+    config.response_timeout = 30s;
+    config.send_delay = 2s;
+    REQUIRE(ev::stop_grace(config) >= 278s);
+}
+
+SCENARIO("EV stop grace covers the -2 PowerDelivery bound at a long welding timeout") {
+    ev::config::EvConfig config;
+    config.welding_detection.timeout = 60s;
+    // Charge-loop response, PowerDelivery(Stop) at its 5 s -2 bound, the outstanding welding response,
+    // -20 Finished and SessionStop at 2 s each, and four sends.
+    REQUIRE(ev::stop_grace(config) >= 60s + 500ms + 5s + 3 * 2s + 4 * 100ms);
 }

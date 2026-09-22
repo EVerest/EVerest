@@ -2,16 +2,21 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <iso15118/ev/params/dc.hpp>
+#include <iso15118/message/dc_pre_charge.hpp>
+
 #include "../states.hpp"
 
 namespace iso15118::ev::d20::state {
 
 struct DC_PreCharge : public StateBase {
 public:
-    DC_PreCharge(Context& ctx) : StateBase(ctx, StateID::DC_PreCharge) {
+    explicit DC_PreCharge(Context& ctx) : StateBase(ctx, StateID::DC_PreCharge) {
     }
 
-    void enter() final;
+    static message_20::DC_PreChargeRequest make_request(message_20::datatypes::Processing processing,
+                                                        const params::DcChargeParams& params);
+
     Result feed(Event) final;
 
 private:

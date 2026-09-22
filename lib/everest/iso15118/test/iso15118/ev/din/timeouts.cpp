@@ -34,12 +34,12 @@ SCENARIO("DIN 70121 EV per-message response timeout table") {
 
 SCENARIO("DIN 70121 EV Ongoing guard table") {
     GIVEN("the ongoing timeout table") {
-        THEN("every state that re-polls on Ongoing is bounded") {
+        THEN("states with standard Ongoing bounds are covered") {
             // The defect this guards against is a state that re-sends on EVSEProcessing::Ongoing
             // with no entry here, which holds the EV in that state for as long as the SECC keeps
             // answering. For PreCharge that is an unbounded loop with the DC link ramping.
             for (const auto state : {StateID::ContractAuthentication, StateID::ChargeParameterDiscovery,
-                                     StateID::CableCheck, StateID::PreCharge, StateID::WeldingDetection}) {
+                                     StateID::CableCheck, StateID::PreCharge}) {
                 REQUIRE(timeouts::ongoing_timeout(state).has_value());
             }
         }
@@ -51,7 +51,6 @@ SCENARIO("DIN 70121 EV Ongoing guard table") {
             REQUIRE(timeouts::ongoing_timeout(StateID::ChargeParameterDiscovery) == 60000ms);
             REQUIRE(timeouts::ongoing_timeout(StateID::CableCheck) == 40000ms);
             REQUIRE(timeouts::ongoing_timeout(StateID::PreCharge) == 50000ms);
-            REQUIRE(timeouts::ongoing_timeout(StateID::WeldingDetection) == 60000ms);
         }
 
         THEN("pre-charge keeps the DIN bound rather than the ISO 15118-2 one") {

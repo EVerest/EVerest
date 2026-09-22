@@ -18,19 +18,22 @@ message_2::WeldingDetectionRequest create_request(const dt::DC_EVStatus& dc_ev_s
     return req;
 }
 
-bool should_finish(int cycles, float present_voltage) {
-    return (present_voltage < SAFE_VOLTAGE_V) or (cycles >= CYCLES);
-}
-
 } // namespace welding_detection
 
 void WeldingDetection::enter() {
     logf_debug("Enter state: WeldingDetection (ISO 15118-2)");
-    // Charging has ended; the EV is no longer ready to take power (DIN mirror).
-    m_ctx.send_request(welding_detection::create_request(make_dc_ev_status(m_ctx.get_dc_params(), false)));
 }
 
 Result WeldingDetection::feed(Event ev) {
+    if (ev == Event::RESPONSE_TIMEOUT) {
+        return progress.response_timeout<Result>(m_ctx);
+    }
+    // A poll still queued is dropped and fails the check. One already sent is judged when its answer
+    // arrives, against the bound this deadline shares.
+    if (ev == Event::WELDING_TIMEOUT and m_ctx.has_request()) {
+        m_ctx.discard_request();
+        return to_session_stop(m_ctx, progress.report_failure(m_ctx));
+    }
     if (ev != Event::V2GTP_MESSAGE) {
         return Result::ignored();
     }
@@ -41,10 +44,14 @@ Result WeldingDetection::feed(Event ev) {
         return Result::stopping();
     }
 
-    ++cycles;
-    const auto present_voltage = static_cast<float>(dt::from_physical_value(res->evse_present_voltage));
-    if (welding_detection::should_finish(cycles, present_voltage)) {
-        return m_ctx.create_state<SessionStop>();
+    switch (progress.record(static_cast<float>(dt::from_physical_value(res->evse_present_voltage)),
+                            m_ctx.welding_detection)) {
+    case welding_detection::Outcome::Safe:
+        return to_session_stop(m_ctx, m_stop_reason);
+    case welding_detection::Outcome::Failed:
+        return to_session_stop(m_ctx, progress.report_failure(m_ctx));
+    case welding_detection::Outcome::Continue:
+        break;
     }
 
     m_ctx.send_request(welding_detection::create_request(make_dc_ev_status(m_ctx.get_dc_params(), false)));

@@ -16,6 +16,7 @@ target_sources(iso15118
         misc/base64.cpp
 
         sae_modes.cpp
+        v2gtp/sdp.cpp
 
         io/connection_plain.cpp
         io/logging.cpp
@@ -55,6 +56,7 @@ target_sources(iso15118
         d20/context.cpp
         d20/context_helper.cpp
         d20/session.cpp
+        d20/pause_notification.cpp
         d20/crypto.cpp
         d20/timeout.cpp
 
@@ -105,6 +107,7 @@ target_sources(iso15118
         d20/state/session_stop.cpp
         
         message/variant.cpp
+        message/response_variant.cpp
         message/supported_app_protocol.cpp
         message/session_setup.cpp
         message/common_types.cpp
@@ -170,22 +173,25 @@ target_sources(iso15118
         tbd_controller.cpp
 )
 
-# The EV side is opt-in: consumers that only implement a charger (the SECC) should not pay to
-# build or link it. everest-core turns it on for the Ev15118 module.
+# EV state machines and the DIN/-2 response decoders are opt-in.
+# The SECC also needs the -20 response decoder for received-message feedback.
 if(ISO15118_BUILD_EV_SIDE)
     target_sources(iso15118
         PRIVATE
         message_din/response_variant.cpp
         message_2/response_variant.cpp
+        message/ac_der_sae_names.cpp
 
         ev/crypto.cpp
-        ev/fsm_base.cpp
-        ev/sap_offer.cpp
-        ev/session/feedback.cpp
+        ev/session/fsm.cpp
+        ev/session/sap_offer.cpp
+        ev/session/stop_reason.cpp
+        ev/feedback.cpp
 
         ev/d20/context.cpp
         ev/d20/context_helper.cpp
         ev/d20/engine.cpp
+        ev/d20/secc_clock.cpp
         ev/d20/timeouts.cpp
         ev/d20/state/supported_app_protocol.cpp
         ev/d20/state/session_setup.cpp
@@ -206,7 +212,11 @@ if(ISO15118_BUILD_EV_SIDE)
         ev/d20/state/ac_charge_loop.cpp
         ev/d20/state/ac_der_iec_charge_parameter_discovery.cpp
         ev/d20/state/ac_der_iec_charge_loop.cpp
-        ev/ac_phase_split.cpp
+        ev/d20/state/ac_der_sae_charge_parameter_discovery.cpp
+        ev/d20/state/ac_der_sae_charge_loop.cpp
+        ev/d20/ac_phase_split.cpp
+        ev/d20/der/sae_validation.cpp
+        ev/d20/der/sae_requests.cpp
     )
 
     add_subdirectory(ev/d2)
@@ -214,11 +224,12 @@ if(ISO15118_BUILD_EV_SIDE)
 
     target_sources(iso15118
         PRIVATE
-        ev/session.cpp
+        ev/detail/session/session.cpp
         ev/controller.cpp
-        ev/config_validation.cpp
+        ev/session_deleter.cpp
+        ev/config/validation.cpp
         ev/transport/sdp_client.cpp
-        ev/transport/data_client.cpp
+        ev/transport/connection.cpp
     )
 
     # Only the EV side uses everest::io.
@@ -238,11 +249,13 @@ target_link_libraries(iso15118
 )
 
 target_link_libraries(iso15118
+    PUBLIC
+        # Installed detail headers include everest/tls headers.
+        everest::tls
     PRIVATE
         OpenSSL::SSL
         OpenSSL::Crypto
         everest::evse_security
-        everest::tls
 )
 target_sources(iso15118
     PRIVATE

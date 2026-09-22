@@ -9,9 +9,13 @@
 #include "helper.hpp"
 
 #include <iso15118/d20/der_functions.hpp>
-#include <iso15118/ev/ac_charge_params.hpp>
-#include <iso15118/ev/dc_charge_params.hpp>
-#include <iso15118/ev/der_control_functions.hpp>
+#include <iso15118/ev/d20/der/iec_functions.hpp>
+#include <iso15118/ev/d20/der/sae_profile.hpp>
+#include <iso15118/ev/params/ac.hpp>
+#include <iso15118/ev/params/dc.hpp>
+#include <iso15118/message/ac_der_sae_charge_loop.hpp>
+#include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
+#include <iso15118/sae_modes.hpp>
 
 using namespace iso15118;
 
@@ -22,7 +26,7 @@ SCENARIO("ISO15118-20 EV Context returns a locked-copy snapshot of the seeded AC
         const ev::feedback::Callbacks callbacks{};
         FsmStateHelper helper{callbacks};
 
-        ev::AcChargeParams params{};
+        ev::params::AcChargeParams params{};
         params.max_charge_power = 11000.0f;
         params.min_charge_power = 1000.0f;
         params.max_discharge_power = 9000.0f;
@@ -71,7 +75,7 @@ SCENARIO("ISO15118-20 EV Context returns a locked-copy snapshot of the seeded DC
         const ev::feedback::Callbacks callbacks{};
         FsmStateHelper helper{callbacks};
 
-        ev::DcChargeParams params{};
+        ev::params::DcChargeParams params{};
         params.max_charge_power = 150000.0f;
         params.max_charge_current = 200.0f;
         params.max_discharge_power = 120000.0f;
@@ -176,7 +180,7 @@ SCENARIO("ISO15118-20 EV DerControlFunctions to_bitset maps flags to DERControlN
     using iso15118::iec::DERControlName;
 
     GIVEN("A DerControlFunctions with the two DSO setpoint flags set") {
-        ev::DerControlFunctions functions{};
+        ev::d20::der::DerControlFunctions functions{};
         functions.dso_q_setpoint_provision = true;
         functions.dso_cos_phi_setpoint_provision = true;
 
@@ -191,7 +195,7 @@ SCENARIO("ISO15118-20 EV DerControlFunctions to_bitset maps flags to DERControlN
     }
 
     GIVEN("A DerControlFunctions with the first and last flags set") {
-        ev::DerControlFunctions functions{};
+        ev::d20::der::DerControlFunctions functions{};
         functions.over_frequency_watt_mode = true;
         functions.under_voltage_fault_ride_through_mode = true;
 
@@ -206,12 +210,10 @@ SCENARIO("ISO15118-20 EV DerControlFunctions to_bitset maps flags to DERControlN
 }
 
 SCENARIO("ISO15118-20 EV Context exposes the configured DER supported functions") {
-    using iso15118::iec::DERControlName;
-
     const ev::feedback::Callbacks callbacks{};
 
     GIVEN("A Context constructed with DSO setpoint DER support") {
-        ev::DerControlFunctions functions{};
+        ev::d20::der::DerControlFunctions functions{};
         functions.dso_q_setpoint_provision = true;
         functions.dso_cos_phi_setpoint_provision = true;
 
@@ -229,17 +231,63 @@ SCENARIO("ISO15118-20 EV Context exposes the configured DER supported functions"
         THEN("der_stop_on_unsupported_functions() reflects the ctor argument") {
             REQUIRE(ctx.der_stop_on_unsupported_functions() == false);
         }
+    }
+}
 
-        WHEN("a negotiated mask is recorded") {
-            std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> negotiated{};
-            negotiated.set(static_cast<size_t>(DERControlName::DSOQSetpointProvision));
-            ctx.set_der_demanded_functions(negotiated);
+SCENARIO("ISO15118-20 EV Context exposes the SAE session options") {
 
-            THEN("der_demanded_functions() returns it") {
-                REQUIRE(ctx.der_demanded_functions() == negotiated);
-            }
+    const ev::feedback::Callbacks callbacks{};
+
+    GIVEN("A Context constructed with default SessionOptions") {
+
+        FsmStateHelper helper{callbacks,
+                              {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                              message_20::datatypes::ServiceCategory::AC_DER_SAE};
+        auto& ctx = helper.get_context();
+
+        THEN("the accessors return the SessionOptions defaults") {
+            REQUIRE(ctx.sae_profile().supported_modes == ev::d20::der::SaeInverterProfile{}.supported_modes);
+            REQUIRE(ctx.sae_supported_modes() == ev::d20::der::SaeInverterProfile{}.supported_modes);
+            REQUIRE(ctx.cpd_rounds() == 1);
+            REQUIRE(ctx.der_stop_on_invalid_control() == false);
         }
     }
+
+    GIVEN("A Context constructed with SAE SessionOptions and unused SupportedModes bits") {
+
+        ev::d20::SessionOptions options{};
+        options.d20.sae_profile.supported_modes = sae::sae_function_bit(sae::DerBitMapFunctions::ChargeFunction) |
+                                                  sae::sae_function_bit(sae::DerBitMapFunctions::VoltVarFunction) |
+                                                  (1U << 2) | (1U << 25) | (1U << 31);
+        options.d20.sae_profile.inverter_model = "TEST-MODEL";
+        options.d20.cpd_rounds = 3;
+        options.d20.der_stop_on_invalid_control = true;
+
+        FsmStateHelper helper{callbacks,
+                              {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                              message_20::datatypes::ServiceCategory::AC_DER_SAE,
+                              options};
+        auto& ctx = helper.get_context();
+
+        THEN("the accessors return the configured values") {
+            REQUIRE(ctx.sae_profile().inverter_model == "TEST-MODEL");
+            REQUIRE(ctx.sae_profile().supported_modes == options.d20.sae_profile.supported_modes);
+            REQUIRE(ctx.cpd_rounds() == 3);
+            REQUIRE(ctx.der_stop_on_invalid_control() == true);
+        }
+
+        THEN("sae_supported_modes() drops the bits AMD1 Table M.6 does not use") {
+            REQUIRE(ctx.sae_supported_modes() == (sae::sae_function_bit(sae::DerBitMapFunctions::ChargeFunction) |
+                                                  sae::sae_function_bit(sae::DerBitMapFunctions::VoltVarFunction)));
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Codec sends AC_DER_SAE requests as Part20DerSae") {
+    STATIC_REQUIRE(ev::d20::Codec::payload_type_of<message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest>() ==
+                   v2gtp::PayloadType::Part20DerSae);
+    STATIC_REQUIRE(ev::d20::Codec::payload_type_of<message_20::DER_SAE_AC_ChargeLoopRequest>() ==
+                   v2gtp::PayloadType::Part20DerSae);
 }
 
 SCENARIO("ISO15118-20 EV Context encodes a request that round-trips back to the same message") {
@@ -265,11 +313,11 @@ SCENARIO("ISO15118-20 EV Context encodes a request that round-trips back to the 
                 const auto& [bytes, type] = *taken;
 
                 AND_THEN("The payload type is Part20Main") {
-                    REQUIRE(type == io::v2gtp::PayloadType::Part20Main);
+                    REQUIRE(type == v2gtp::PayloadType::Part20Main);
                 }
 
                 AND_THEN("The EXI bytes decode back to the same SessionSetupRequest") {
-                    message_20::Variant variant(type, io::StreamInputView{bytes.data(), bytes.size()});
+                    message_20::RequestVariant variant(type, io::StreamInputView{bytes.data(), bytes.size()});
 
                     REQUIRE(variant.get_type() == message_20::Type::SessionSetupReq);
 
@@ -287,30 +335,31 @@ SCENARIO("ISO15118-20 EV Context classifies the energy service families") {
 
     GIVEN("The AC family") {
         THEN("every AC service is in it, and no DC one is") {
-            REQUIRE(ev::is_ac_family(ServiceCategory::AC));
-            REQUIRE(ev::is_ac_family(ServiceCategory::AC_BPT));
-            REQUIRE(ev::is_ac_family(ServiceCategory::AC_DER_IEC));
-            REQUIRE_FALSE(ev::is_ac_family(ServiceCategory::DC));
-            REQUIRE_FALSE(ev::is_ac_family(ServiceCategory::DC_BPT));
+            REQUIRE(ev::d20::is_ac_family(ServiceCategory::AC));
+            REQUIRE(ev::d20::is_ac_family(ServiceCategory::AC_BPT));
+            REQUIRE(ev::d20::is_ac_family(ServiceCategory::AC_DER_IEC));
+            REQUIRE(ev::d20::is_ac_family(ServiceCategory::AC_DER_SAE));
+            REQUIRE_FALSE(ev::d20::is_ac_family(ServiceCategory::DC));
+            REQUIRE_FALSE(ev::d20::is_ac_family(ServiceCategory::DC_BPT));
         }
     }
 
     GIVEN("The DC family") {
         THEN("every DC service is in it, and no AC one is") {
-            REQUIRE(ev::is_dc_family(ServiceCategory::DC));
-            REQUIRE(ev::is_dc_family(ServiceCategory::DC_BPT));
-            REQUIRE_FALSE(ev::is_dc_family(ServiceCategory::AC));
-            REQUIRE_FALSE(ev::is_dc_family(ServiceCategory::AC_DER_IEC));
+            REQUIRE(ev::d20::is_dc_family(ServiceCategory::DC));
+            REQUIRE(ev::d20::is_dc_family(ServiceCategory::DC_BPT));
+            REQUIRE_FALSE(ev::d20::is_dc_family(ServiceCategory::AC));
+            REQUIRE_FALSE(ev::d20::is_dc_family(ServiceCategory::AC_DER_IEC));
         }
     }
 
     GIVEN("The bidirectional services") {
         THEN("both BPT services are in it, whichever family they belong to") {
-            REQUIRE(ev::is_bpt(ServiceCategory::AC_BPT));
-            REQUIRE(ev::is_bpt(ServiceCategory::DC_BPT));
-            REQUIRE_FALSE(ev::is_bpt(ServiceCategory::AC));
-            REQUIRE_FALSE(ev::is_bpt(ServiceCategory::DC));
-            REQUIRE_FALSE(ev::is_bpt(ServiceCategory::AC_DER_IEC));
+            REQUIRE(ev::d20::is_bpt(ServiceCategory::AC_BPT));
+            REQUIRE(ev::d20::is_bpt(ServiceCategory::DC_BPT));
+            REQUIRE_FALSE(ev::d20::is_bpt(ServiceCategory::AC));
+            REQUIRE_FALSE(ev::d20::is_bpt(ServiceCategory::DC));
+            REQUIRE_FALSE(ev::d20::is_bpt(ServiceCategory::AC_DER_IEC));
         }
     }
 }

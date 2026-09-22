@@ -4,7 +4,9 @@
 
 #include "helper.hpp"
 
+#include <iso15118/ev/din/state/cable_check.hpp>
 #include <iso15118/ev/din/state/pre_charge.hpp>
+#include <iso15118/message_din/cable_check.hpp>
 #include <iso15118/message_din/power_delivery.hpp>
 #include <iso15118/message_din/pre_charge.hpp>
 #include <iso15118/message_din/session_stop.hpp>
@@ -17,7 +19,7 @@ using ev::din::StateID;
 using State = ev::din::state::PreCharge;
 
 const auto seed_params = [](DinStateHelper& helper) {
-    ev::DcChargeParams params;
+    ev::params::DcChargeParams params;
     params.target_voltage = 400.0f;
     params.present_soc = 50.0;
     helper.set_dc_params(params);
@@ -36,11 +38,27 @@ message_din::PreChargeResponse make_response(const message_din::Header& hdr, dt:
 message_din::PreChargeResponse ok_response(const message_din::Header& hdr) {
     return make_response(hdr, dt::ResponseCode::OK, 395.0);
 }
+using ev::din::state::CableCheck;
+
+const auto by_cable_check = entered_by([](DinStateHelper& helper) {
+    message_din::CableCheckResponse res{};
+    res.header = header();
+    res.response_code = dt::ResponseCode::OK;
+    res.evse_processing = dt::EvseProcessing::Finished;
+    res.dc_evse_status.evse_status_code = dt::DcEvseStatusCode::EVSE_Ready;
+    auto cable_check = CableCheck::begin(helper.get_context()).new_state;
+    // Draining the first request, the response answers it.
+    helper.handle_response(res);
+    auto result = cable_check->feed(ev::din::Event::V2GTP_MESSAGE);
+    REQUIRE(result.output == ev::din::Disposition::Transitioning);
+    return std::move(result.new_state);
+});
+
 } // namespace
 
-SCENARIO("DIN 70121 EV PreCharge sends the target voltage at zero current on enter") {
+SCENARIO("DIN 70121 EV PreCharge's target voltage at zero current goes out on the CableCheck transition") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<State> primed{callbacks, seed_params};
+    PrimedState<State> primed{callbacks, seed_params, by_cable_check};
 
     const auto request = primed.take_requests().get<message_din::PreChargeRequest>();
     REQUIRE(request.has_value());
@@ -101,7 +119,7 @@ SCENARIO("DIN 70121 EV PreCharge keeps ramping while the voltage has not converg
     }
     SECTION("a non-positive target voltage never converges") {
         const auto seed_zero_target = [](DinStateHelper& helper) {
-            ev::DcChargeParams params;
+            ev::params::DcChargeParams params;
             params.target_voltage = 0.0f;
             params.present_soc = 50.0;
             helper.set_dc_params(params);

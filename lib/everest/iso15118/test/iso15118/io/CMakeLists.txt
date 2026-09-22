@@ -30,7 +30,7 @@ catch_discover_tests(test_connection_plain
 
 add_executable(test_sdp_server sdp_server_test.cpp)
 target_link_libraries(test_sdp_server PRIVATE iso15118 Catch2::Catch2WithMain)
-catch_discover_tests(test_sdp_server)
+catch_discover_tests(test_sdp_server PROPERTIES RUN_SERIAL TRUE)
 
 add_executable(ssl_config_builder_test ssl_config_builder_test.cpp)
 target_link_libraries(ssl_config_builder_test

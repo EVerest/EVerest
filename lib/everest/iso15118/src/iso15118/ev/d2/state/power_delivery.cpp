@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/ev/d2/state/power_delivery.hpp>
 
+#include <variant>
+
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d2/state/charge_parameter_discovery.hpp>
 #include <iso15118/ev/d2/state/charging_status.hpp>
@@ -9,8 +11,11 @@
 #include <iso15118/ev/d2/state/session_stop.hpp>
 #include <iso15118/ev/d2/state/welding_detection.hpp>
 #include <iso15118/ev/detail/d2/context_helper.hpp>
+#include <iso15118/ev/detail/d2/state/charging_status.hpp>
+#include <iso15118/ev/detail/d2/state/current_demand.hpp>
 #include <iso15118/ev/detail/d2/state/power_delivery.hpp>
 #include <iso15118/ev/detail/d2/state/state_helper.hpp>
+#include <iso15118/ev/detail/d2/state/welding_detection.hpp>
 
 namespace iso15118::ev::d2::state {
 
@@ -62,38 +67,84 @@ message_2::PowerDeliveryRequest create_ac_request(dt::ChargeProgress charge_prog
 
 } // namespace power_delivery
 
-void PowerDelivery::enter() {
-    logf_debug("Enter state: PowerDelivery (ISO 15118-2)");
+namespace {
 
-    const auto progress = (m_phase == Phase::Start)         ? dt::ChargeProgress::Start
-                          : (m_phase == Phase::Renegotiate) ? dt::ChargeProgress::Renegotiate
-                                                            : dt::ChargeProgress::Stop;
-    const bool is_dc = is_dc_mode(m_ctx.params().energy_transfer_mode);
-    const auto dc_params = m_ctx.get_dc_params();
+dt::ChargeProgress wire_progress(PowerDelivery::Start) {
+    return dt::ChargeProgress::Start;
+}
+
+dt::ChargeProgress wire_progress(const PowerDelivery::Stop&) {
+    return dt::ChargeProgress::Stop;
+}
+
+dt::ChargeProgress wire_progress(PowerDelivery::Renegotiate) {
+    return dt::ChargeProgress::Renegotiate;
+}
+
+Result accepted(Context& ctx, bool, PowerDelivery::Start) {
+    return to_charge_loop(ctx);
+}
+
+// The SECC answers a renegotiation by returning to ChargeParameterDiscovery for a new
+// SAScheduleList; for DC that re-runs CableCheck -> PreCharge before charging resumes.
+Result accepted(Context& ctx, bool, PowerDelivery::Renegotiate) {
+    return to_charge_parameter_discovery(ctx);
+}
+
+Result accepted(Context& ctx, bool is_dc, const PowerDelivery::Stop& stop) {
+    ctx.feedback.power_delivery_stopped();
+    if (is_dc) {
+        // Charging has ended; the EV is no longer ready to take power (DIN mirror).
+        ctx.send_request(welding_detection::create_request(make_dc_ev_status(ctx.get_dc_params(), false)));
+        return ctx.create_state<WeldingDetection>(stop.reason);
+    }
+    return to_session_stop(ctx, stop.reason);
+}
+
+} // namespace
+
+BasePointerType to_charge_loop(Context& ctx) {
+    if (is_dc_mode(ctx.params().energy_transfer_mode)) {
+        ctx.send_request(current_demand::create_request(ctx.get_dc_params()));
+        return ctx.create_state<CurrentDemand>();
+    }
+    ctx.send_request(charging_status::create_request());
+    return ctx.create_state<ChargingStatus>();
+}
+
+BasePointerType to_power_delivery(Context& ctx, PowerDelivery::Phase phase) {
+    const auto progress = std::visit([](const auto& p) { return wire_progress(p); }, phase);
+    const bool is_dc = is_dc_mode(ctx.params().energy_transfer_mode);
+    const auto dc_params = ctx.get_dc_params();
 
     // [V2G2-673]: the ChargingProfile accompanies Start in both modes, stating the power the EV intends
     // to draw within the selected SAScheduleTuple. Stop/Renegotiate announce nothing. The fallback power
     // comes from the EV's own voltage/current limits, not from an energy amount.
     std::optional<dt::ChargingProfile> profile{std::nullopt};
-    if (m_phase == Phase::Start) {
+    if (std::holds_alternative<PowerDelivery::Start>(phase)) {
         const float fallback_power_w =
             is_dc ? (dc_params.max_charge_power > 0.0f ? dc_params.max_charge_power
                                                        : dc_params.max_voltage * dc_params.max_charge_current)
-                  : m_ctx.params().ac.ev_max_voltage * m_ctx.params().ac.ev_max_current;
-        profile = power_delivery::build_charging_profile(m_ctx.evse_info.selected_pmax_schedule, fallback_power_w);
+                  : ctx.params().ac.ev_max_voltage * ctx.params().ac.ev_max_current;
+        profile = power_delivery::build_charging_profile(ctx.evse_info.selected_pmax_schedule, fallback_power_w);
     }
 
-    const auto tuple_id = m_ctx.evse_info.sa_schedule_tuple_id;
+    const auto tuple_id = ctx.sa_schedule_tuple_id();
     if (is_dc) {
         // Table 103 [V2G2-375]: ChargingComplete means fully charged, not merely that the session ends.
         const bool charging_complete = (dc_params.present_soc >= 100.0);
         // EVReady drops with the Stop request; Start and Renegotiate keep the EV ready to take power.
-        const bool ev_ready = (m_phase != Phase::Stop);
-        m_ctx.send_request(power_delivery::create_dc_request(progress, tuple_id, make_dc_ev_status(dc_params, ev_ready),
-                                                             charging_complete, std::move(profile)));
+        const bool ev_ready = not std::holds_alternative<PowerDelivery::Stop>(phase);
+        ctx.send_request(power_delivery::create_dc_request(progress, tuple_id, make_dc_ev_status(dc_params, ev_ready),
+                                                           charging_complete, std::move(profile)));
     } else {
-        m_ctx.send_request(power_delivery::create_ac_request(progress, tuple_id, std::move(profile)));
+        ctx.send_request(power_delivery::create_ac_request(progress, tuple_id, std::move(profile)));
     }
+    return ctx.create_state<PowerDelivery>(phase);
+}
+
+void PowerDelivery::enter() {
+    logf_debug("Enter state: PowerDelivery (ISO 15118-2)");
 }
 
 Result PowerDelivery::feed(Event ev) {
@@ -107,24 +158,7 @@ Result PowerDelivery::feed(Event ev) {
     }
 
     const bool is_dc = is_dc_mode(m_ctx.params().energy_transfer_mode);
-
-    if (m_phase == Phase::Start) {
-        if (is_dc) {
-            return m_ctx.create_state<CurrentDemand>();
-        }
-        return m_ctx.create_state<ChargingStatus>();
-    }
-
-    if (m_phase == Phase::Renegotiate) {
-        // The SECC answers a renegotiation by returning to ChargeParameterDiscovery for a new
-        // SAScheduleList; for DC that re-runs CableCheck -> PreCharge before charging resumes.
-        return m_ctx.create_state<ChargeParameterDiscovery>();
-    }
-
-    if (is_dc) {
-        return m_ctx.create_state<WeldingDetection>();
-    }
-    return m_ctx.create_state<SessionStop>();
+    return std::visit([this, is_dc](const auto& phase) { return accepted(m_ctx, is_dc, phase); }, m_phase);
 }
 
 } // namespace iso15118::ev::d2::state

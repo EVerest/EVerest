@@ -8,7 +8,7 @@
 #include <iso15118/ev/d2/state/session_setup.hpp>
 #include <iso15118/ev/d2/states.hpp>
 #include <iso15118/ev/d2/timeouts.hpp>
-#include <iso15118/ev/pre_iso20_engine.hpp>
+#include <iso15118/ev/session/pre_iso20_engine.hpp>
 
 namespace iso15118::ev::d2 {
 
@@ -27,7 +27,7 @@ struct TimeoutTable {
 
 } // namespace detail
 
-// What ISO 15118-2 contributes to ev::PreIso20Engine; everything else an engine does is the same
+// What ISO 15118-2 contributes to ev::session::PreIso20Engine; everything else an engine does is the same
 // as DIN SPEC 70121's and lives in the template.
 struct EngineTraits {
     using Context = d2::Context;
@@ -38,12 +38,16 @@ struct EngineTraits {
     using InitialState = state::SessionSetup;
     using Timeouts = detail::TimeoutTable;
 
+    // SessionSetupReq goes out ahead of the initial state.
+    static void send_first_request(Context& ctx);
+
     static constexpr ProtocolId PROTOCOL = ProtocolId::ISO15118_2;
-    static const char* name() {
+    static constexpr bool STRICT_FRAMING = false;
+    static std::string_view name() {
         return "ISO 15118-2";
     }
 };
 
-using Engine = ev::PreIso20Engine<EngineTraits>;
+using Engine = ev::session::PreIso20Engine<EngineTraits>;
 
 } // namespace iso15118::ev::d2

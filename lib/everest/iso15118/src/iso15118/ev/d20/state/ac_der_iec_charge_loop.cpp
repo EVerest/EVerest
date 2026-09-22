@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <bitset>
+#include <utility>
 
 #include <iso15118/d20/der_functions.hpp>
 #include <iso15118/detail/helper.hpp>
-#include <iso15118/ev/ac_phase_split.hpp>
+#include <iso15118/ev/d20/ac_phase_split.hpp>
 #include <iso15118/ev/d20/context.hpp>
+#include <iso15118/ev/d20/der/iec_functions.hpp>
+#include <iso15118/ev/d20/discharge_sign.hpp>
 #include <iso15118/ev/d20/state/ac_der_iec_charge_loop.hpp>
-#include <iso15118/ev/d20/state/power_delivery.hpp>
-#include <iso15118/ev/der_control_functions.hpp>
+#include <iso15118/ev/d20/state/leave_charge_loop.hpp>
+#include <iso15118/ev/detail/d20/ac_target_power.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/ac_der_iec_charge_loop.hpp>
 
@@ -19,7 +22,8 @@ namespace {
 namespace dt = message_20::datatypes;
 
 // Charge and present-power elements are shared by both DER control modes.
-template <typename Mode> void fill_der_common(Mode& mode, const AcChargeParams& params, dt::AcConnector connector) {
+template <typename Mode>
+void fill_der_common(Mode& mode, const params::AcChargeParams& params, dt::AcConnector connector) {
     emit_ac_limit(params.max_charge_power, params.phase_count, connector, mode.max_charge_power,
                   mode.max_charge_power_L2, mode.max_charge_power_L3);
     emit_ac_limit(params.min_charge_power, params.phase_count, connector, mode.min_charge_power,
@@ -29,10 +33,7 @@ template <typename Mode> void fill_der_common(Mode& mode, const AcChargeParams& 
     emit_ac_present(params.present_active_power, params.phase_count, connector, mode.present_active_power,
                     mode.present_active_power_L2, mode.present_active_power_L3);
 
-    emit_ac_limit(params.max_discharge_power, params.phase_count, connector, mode.max_discharge_power,
-                  mode.max_discharge_power_L2, mode.max_discharge_power_L3);
-    emit_ac_limit(params.min_discharge_power, params.phase_count, connector, mode.min_discharge_power,
-                  mode.min_discharge_power_L2, mode.min_discharge_power_L3);
+    emit_ac_discharge_limits(params, connector, mode);
 
     mode.grid_event_condition = 0;
 }
@@ -40,7 +41,8 @@ template <typename Mode> void fill_der_common(Mode& mode, const AcChargeParams& 
 // [V2G20-3192]: neither side sends parameters outside the functions the SECC enabled. A setpoint
 // for a function the EV does not support cannot be acted on, so it is dropped rather than obeyed.
 template <typename Mode>
-Mode without_unsupported_setpoints(const Mode& res_mode, std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> supported) {
+Mode without_unsupported_setpoints(const Mode& res_mode,
+                                   std::bitset<ev::d20::der::DER_CONTROL_FUNCTION_COUNT> supported) {
     auto directive = res_mode;
     if (directive.dso_q_setpoint.has_value() and
         not supported.test(static_cast<size_t>(iec::DERControlName::DSOQSetpointProvision))) {
@@ -55,10 +57,13 @@ Mode without_unsupported_setpoints(const Mode& res_mode, std::bitset<ev::DER_CON
     return directive;
 }
 
-message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, const AcChargeParams& params,
-                                                  dt::AcConnector connector, dt::ControlMode control_mode) {
+} // namespace
+
+message_20::DER_AC_ChargeLoopRequest AC_DER_IEC_ChargeLoop::make_request(const params::AcChargeParams& params,
+                                                                         dt::AcConnector connector,
+                                                                         dt::ControlMode control_mode,
+                                                                         const EnergyRequest& energy) {
     message_20::DER_AC_ChargeLoopRequest req;
-    setup_header(req.header, session);
     req.meter_info_requested = false;
     req.display_parameters = std::nullopt;
 
@@ -73,10 +78,7 @@ message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, cons
     }
 
     dt::DER_Dynamic_AC_CLReqControlMode mode;
-    mode.departure_time = std::nullopt;
-    mode.target_energy_request = {0, 0};
-    mode.max_energy_request = {0, 0};
-    mode.min_energy_request = {0, 0};
+    fill_energy_request(mode, energy);
     fill_der_common(mode, params, connector);
     mode.present_reactive_power = {0, 0};
     req.control_mode = mode;
@@ -84,12 +86,12 @@ message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, cons
     return req;
 }
 
-} // namespace
+message_20::DER_AC_ChargeLoopRequest AC_DER_IEC_ChargeLoop::make_request(const Context& ctx) {
+    return make_request(ctx.get_ac_params(), ctx.ac_connector(), ctx.selected_control_mode(), ctx.energy_request());
+}
 
 void AC_DER_IEC_ChargeLoop::enter() {
     logf_debug("Enter state: AC_DER_IEC_ChargeLoop");
-    m_ctx.send_request(
-        make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.ac_connector(), m_ctx.selected_control_mode()));
 }
 
 Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
@@ -111,21 +113,8 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
         return Result::stopping();
     }
 
-    if (res->status.has_value()) {
-        if (res->status->notification == dt::EvseNotification::Terminate) {
-            m_ctx.feedback.stop_from_charger();
-            return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
-        }
-        if (res->status->notification == dt::EvseNotification::Pause) {
-            m_ctx.feedback.pause_from_charger();
-            // SessionStop carries Pause, so the session id may be re-joined.
-            m_ctx.set_pause_charging_requested(true);
-            return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
-        }
-    }
-
-    if (m_ctx.is_stop_charging_requested() or m_ctx.is_pause_charging_requested()) {
-        return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
+    if (auto stop = leave_charge_loop(m_ctx, res->status)) {
+        return std::move(*stop);
     }
 
     const auto supported = m_ctx.der_supported_functions();
@@ -133,12 +122,12 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
         m_ctx.feedback.der_control_scheduled(without_unsupported_setpoints(
             std::get<dt::DER_Scheduled_AC_CLResControlMode>(res->control_mode), supported));
     } else {
-        m_ctx.feedback.der_control(
-            without_unsupported_setpoints(std::get<dt::DER_Dynamic_AC_CLResControlMode>(res->control_mode), supported));
+        const auto& mode = std::get<dt::DER_Dynamic_AC_CLResControlMode>(res->control_mode);
+        m_ctx.feedback.ac_target_power(make_ac_target_power(mode, res->target_frequency));
+        m_ctx.feedback.der_control(without_unsupported_setpoints(mode, supported));
     }
 
-    m_ctx.send_request(
-        make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.ac_connector(), m_ctx.selected_control_mode()));
+    m_ctx.send_request(make_request(m_ctx));
     return Result::awaiting();
 }
 

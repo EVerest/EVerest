@@ -2,9 +2,11 @@
 target_sources(iso15118
     PRIVATE
         context.cpp
-        crypto.cpp
+        engine.cpp
+        pnc_material.cpp
         timeouts.cpp
         state/session_setup.cpp
+        state/service_detail.cpp
         state/service_discovery.cpp
         state/payment_service_selection.cpp
         state/certificate_installation.cpp

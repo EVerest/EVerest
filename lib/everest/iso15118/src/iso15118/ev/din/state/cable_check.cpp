@@ -38,17 +38,21 @@ void send(Context& ctx) {
 
 } // namespace
 
+Result CableCheck::begin(Context& ctx) {
+    // Without CP-state feedback there is nothing to wait for.
+    if (ctx.has_cp_state_feedback() and not ctx.cp_state_c_or_d()) {
+        return Result::waiting(ctx.create_state<CableCheck>(Entry{false}));
+    }
+    send(ctx);
+    return ctx.create_state<CableCheck>(Entry{true});
+}
+
 void CableCheck::enter() {
     logf_debug("Enter state: CableCheck (DIN 70121)");
-    // [V2G-DC-547]: the first CableCheckReq only goes out once the EV applied CP state C or D.
-    // Without CP-state feedback there is nothing to wait for. The session's ongoing guard bounds
-    // the wait.
-    if (m_ctx.has_cp_state_feedback() and not m_ctx.cp_state_c_or_d()) {
+    // The Session's ongoing guard bounds the wait for CP state C or D.
+    if (not request_sent) {
         logf_debug("CableCheck holds the first request until CP state C or D");
-        return;
     }
-    send(m_ctx);
-    request_sent = true;
 }
 
 Result CableCheck::feed(Event ev) {
@@ -74,6 +78,12 @@ Result CableCheck::feed(Event ev) {
 
     const auto variant = m_ctx.pull_response();
 
+    if (not request_sent) {
+        logf_error("CableCheck received a response before sending its request; stopping the session");
+        m_ctx.stop_session();
+        return Result::stopping();
+    }
+
     const auto* res = expect_response<message_din::CableCheckResponse>(m_ctx, *variant);
     if (res == nullptr) {
         return Result::stopping();
@@ -82,7 +92,7 @@ Result CableCheck::feed(Event ev) {
     const auto result = cable_check::handle_response(*res);
     if (result.evse_shutdown) {
         logf_error("CableCheck finished with an EVSE (emergency) shutdown, stopping the session");
-        return m_ctx.create_state<SessionStop>();
+        return to_session_stop(m_ctx, session::StopReason::EvseTerminate);
     }
 
     if (auto stop = stop_before_start(m_ctx)) {
@@ -90,7 +100,7 @@ Result CableCheck::feed(Event ev) {
     }
 
     if (result.finished) {
-        return m_ctx.create_state<PreCharge>();
+        return to_pre_charge(m_ctx);
     }
 
     // EVSEProcessing::Ongoing: re-poll. The session owns the ongoing guard.

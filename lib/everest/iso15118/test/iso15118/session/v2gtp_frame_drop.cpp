@@ -102,7 +102,7 @@ struct SessionFixture {
 
     // Run the SupportedAppProtocol handshake so the negotiated protocol's engine owns the session.
     void complete_sap_handshake(const uint8_t* request = sap_req, size_t request_len = sizeof(sap_req)) {
-        conn->queue_v2gtp_packet(iso15118::io::v2gtp::PayloadType::SAP, request, request_len);
+        conn->queue_v2gtp_packet(iso15118::v2gtp::PayloadType::SAP, request, request_len);
         conn->fire(iso15118::io::ConnectionEvent::NEW_DATA);
         // The SupportedAppProtocolRes is paced, so the second poll is the one that writes it.
         session->poll();
@@ -125,7 +125,7 @@ SCENARIO("Malformed V2GTP frames during the SupportedAppProtocol handshake") {
     GIVEN("a connected session") {
         WHEN("a malformed SupportedAppProtocolReq arrives") {
             THEN("the frame is dropped and the connection is kept") {
-                const auto sap_type = static_cast<uint16_t>(iso15118::io::v2gtp::PayloadType::SAP);
+                const auto sap_type = static_cast<uint16_t>(iso15118::v2gtp::PayloadType::SAP);
                 for (const auto& defect : malformed_frames(sap_type, sap_req, sizeof(sap_req))) {
                     INFO("defect: " << defect.name);
                     SessionFixture fixture;
@@ -154,7 +154,7 @@ SCENARIO("Malformed V2GTP frames after the SupportedAppProtocol handshake") {
     GIVEN("a completed SupportedAppProtocol handshake") {
         WHEN("a malformed SessionSetupReq arrives") {
             THEN("the frame is dropped, the connection is kept and no session is established") {
-                const auto main_type = static_cast<uint16_t>(iso15118::io::v2gtp::PayloadType::Part20Main);
+                const auto main_type = static_cast<uint16_t>(iso15118::v2gtp::PayloadType::Part20Main);
                 for (const auto& defect : malformed_frames(main_type, session_setup_req, sizeof(session_setup_req))) {
                     INFO("defect: " << defect.name);
                     SessionFixture fixture;
@@ -176,7 +176,7 @@ SCENARIO("Malformed V2GTP frames after the SupportedAppProtocol handshake") {
 SCENARIO("Malformed V2GTP headers in a DIN SPEC 70121 session") {
     GIVEN("a completed SupportedAppProtocol handshake that negotiated DIN SPEC 70121") {
         // DIN messages share payload type 0x8001 with the SupportedAppProtocol messages.
-        const auto din_type = static_cast<uint16_t>(iso15118::io::v2gtp::PayloadType::SAP);
+        const auto din_type = static_cast<uint16_t>(iso15118::v2gtp::PayloadType::SAP);
         const auto len = static_cast<uint32_t>(sizeof(session_setup_req));
 
         WHEN("the version, inverse version or payload length of the SessionSetupReq header is invalid") {
@@ -227,8 +227,8 @@ SCENARIO("A V2GTP payload length shorter than the payload is ignored") {
 
         WHEN("a SupportedAppProtocolReq declares one byte less than it carries") {
             fixture.deliver(make_frame(VALID_VERSION, VALID_INVERSE_VERSION,
-                                       static_cast<uint16_t>(iso15118::io::v2gtp::PayloadType::SAP),
-                                       sizeof(sap_req) - 1, sap_req, sizeof(sap_req)));
+                                       static_cast<uint16_t>(iso15118::v2gtp::PayloadType::SAP), sizeof(sap_req) - 1,
+                                       sap_req, sizeof(sap_req)));
 
             THEN("it is neither answered nor a reason to close") {
                 REQUIRE(fixture.conn->written.empty());
@@ -245,7 +245,7 @@ SCENARIO("A V2GTP payload length shorter than the payload is ignored") {
 
         WHEN("a SessionSetupReq declares one byte less than it carries") {
             fixture.deliver(make_frame(VALID_VERSION, VALID_INVERSE_VERSION,
-                                       static_cast<uint16_t>(iso15118::io::v2gtp::PayloadType::Part20Main),
+                                       static_cast<uint16_t>(iso15118::v2gtp::PayloadType::Part20Main),
                                        sizeof(session_setup_req) - 1, session_setup_req, sizeof(session_setup_req)));
 
             THEN("it is neither answered nor a reason to close") {
@@ -270,7 +270,7 @@ SCENARIO("A dropped unknown payload type leaves the stream in sync") {
             REQUIRE(fixture.conn->written.size() == written_after_handshake);
 
             fixture.deliver(make_frame(VALID_VERSION, VALID_INVERSE_VERSION,
-                                       static_cast<uint16_t>(iso15118::io::v2gtp::PayloadType::Part20Main),
+                                       static_cast<uint16_t>(iso15118::v2gtp::PayloadType::Part20Main),
                                        sizeof(session_setup_req), session_setup_req, sizeof(session_setup_req)));
             std::this_thread::sleep_for(std::chrono::milliseconds(120));
             fixture.session->poll();
@@ -289,7 +289,7 @@ SCENARIO("The payload behind a dropped header is drained without spinning") {
 
         WHEN("a frame with an invalid header and a fully queued payload arrives") {
             fixture.deliver(make_frame(0xFF, VALID_INVERSE_VERSION,
-                                       static_cast<uint16_t>(iso15118::io::v2gtp::PayloadType::SAP), sizeof(sap_req),
+                                       static_cast<uint16_t>(iso15118::v2gtp::PayloadType::SAP), sizeof(sap_req),
                                        sap_req, sizeof(sap_req)),
                             20);
 

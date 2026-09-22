@@ -20,10 +20,13 @@ struct EvseInfo {
     // ServiceDiscoveryRes
     uint16_t selected_charge_service_id{0};
     bool contract_offered{false};
+    bool eim_offered{false};
     bool certificate_service_offered{false};
 
+    // ServiceDetailRes
+    bool certificate_installation_offered{false};
+
     // ChargeParameterDiscoveryRes
-    uint8_t sa_schedule_tuple_id{0};
     everest::lib::util::fixed_vector<message_2::datatypes::PMaxScheduleEntry, 12> selected_pmax_schedule{};
     std::optional<message_2::datatypes::PhysicalValue> ac_nominal_voltage{std::nullopt};
 };

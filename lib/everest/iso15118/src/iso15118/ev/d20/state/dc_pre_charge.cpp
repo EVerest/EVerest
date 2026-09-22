@@ -18,21 +18,15 @@ namespace {
 // target (absorbs converter voltage settling).
 constexpr float PRECHARGE_VOLTAGE_TOLERANCE_V = 20.0f;
 
-message_20::DC_PreChargeRequest make_request(const SessionId& session, message_20::datatypes::Processing processing,
-                                             const DcChargeParams& params) {
+} // namespace
+
+message_20::DC_PreChargeRequest DC_PreCharge::make_request(message_20::datatypes::Processing processing,
+                                                           const params::DcChargeParams& params) {
     message_20::DC_PreChargeRequest req;
-    setup_header(req.header, session);
     req.processing = processing;
     req.present_voltage = message_20::datatypes::from_float(params.present_voltage);
     req.target_voltage = message_20::datatypes::from_float(params.target_voltage);
     return req;
-}
-
-} // namespace
-
-void DC_PreCharge::enter() {
-    const auto params = m_ctx.get_dc_params();
-    m_ctx.send_request(make_request(m_ctx.get_session(), message_20::datatypes::Processing::Ongoing, params));
 }
 
 Result DC_PreCharge::feed(Event ev) {
@@ -56,7 +50,7 @@ Result DC_PreCharge::feed(Event ev) {
     // Its present voltage is no longer a transition criterion.
     if (finished_sent) {
         m_ctx.feedback.dc_power_on();
-        return m_ctx.create_state<PowerDelivery>(message_20::datatypes::Progress::Start);
+        return to_power_delivery(m_ctx, PowerDelivery::Start{});
     }
 
     const auto params = m_ctx.get_dc_params();
@@ -72,7 +66,7 @@ Result DC_PreCharge::feed(Event ev) {
                                                                    : message_20::datatypes::Processing::Ongoing;
     finished_sent = (processing == message_20::datatypes::Processing::Finished);
 
-    m_ctx.send_request(make_request(m_ctx.get_session(), processing, params));
+    m_ctx.send_request(make_request(processing, params));
     return Result::awaiting();
 }
 

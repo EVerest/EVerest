@@ -1,25 +1,27 @@
 include(Catch)
 
-function(create_ev_session_test_target NAME)
-    add_executable(test_ev_${NAME} ${NAME}.cpp)
-    target_link_libraries(test_ev_${NAME}
-        PRIVATE
-            iso15118
-            Catch2::Catch2WithMain
-            OpenSSL::Crypto
-    )
-    catch_discover_tests(test_ev_${NAME})
-endfunction()
-
-create_ev_session_test_target(config_validation)
-create_ev_session_test_target(session_reactor)
-create_ev_session_test_target(controller)
-create_ev_session_test_target(controller_transport)
-create_ev_session_test_target(integration_walk)
-create_ev_session_test_target(integration_walk_d2)
-create_ev_session_test_target(integration_walk_din)
-create_ev_session_test_target(feedback)
-create_ev_session_test_target(sap_offer)
-create_ev_session_test_target(protocol_handover)
-create_ev_session_test_target(timeouts)
-create_ev_session_test_target(session_lifecycle)
+# Select one source file's tests with: test_ev_session -# "[#<file stem>]"
+add_executable(test_ev_session
+    config_validation.cpp
+    controller.cpp
+    controller_header.cpp
+    controller_transport.cpp
+    feedback.cpp
+    integration_walk.cpp
+    integration_walk_d2.cpp
+    integration_walk_din.cpp
+    protocol_handover.cpp
+    sap_offer.cpp
+    session_lifecycle.cpp
+    session_reactor.cpp
+    stop_reason.cpp
+    timeouts.cpp
+)
+target_link_libraries(test_ev_session
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+        OpenSSL::Crypto
+        ${CMAKE_DL_LIBS}
+)
+catch_discover_tests(test_ev_session DISCOVERY_MODE PRE_TEST)

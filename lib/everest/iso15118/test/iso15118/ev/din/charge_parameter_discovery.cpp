@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+
+#include <string>
 
 #include "helper.hpp"
 
 #include <iso15118/ev/din/state/charge_parameter_discovery.hpp>
+#include <iso15118/ev/din/state/contract_authentication.hpp>
+#include <iso15118/io/logging.hpp>
 #include <iso15118/message_din/cable_check.hpp>
 #include <iso15118/message_din/charge_parameter_discovery.hpp>
+#include <iso15118/message_din/contract_authentication.hpp>
 #include <iso15118/message_din/session_stop.hpp>
 
 using namespace iso15118;
@@ -16,8 +22,8 @@ namespace dt = message_din::datatypes;
 using ev::din::StateID;
 using State = ev::din::state::ChargeParameterDiscovery;
 
-ev::DcChargeParams charge_params() {
-    ev::DcChargeParams params;
+ev::params::DcChargeParams charge_params() {
+    ev::params::DcChargeParams params;
     params.max_charge_current = 200.0f;
     params.max_charge_power = 150000.0f;
     params.max_voltage = 900.0f;
@@ -54,11 +60,19 @@ message_din::ChargeParameterDiscoveryResponse ok_response(const message_din::Hea
     return make_response(hdr, dt::ResponseCode::OK, dt::EvseProcessing::Finished,
                          evse_parameter(dt::DcEvseStatusCode::EVSE_Ready, dt::EvseNotification::None, 120000.0));
 }
+const auto by_contract_authentication = entered_by([](DinStateHelper& helper) {
+    message_din::ContractAuthenticationResponse res{};
+    res.header = header();
+    res.response_code = dt::ResponseCode::OK;
+    res.evse_processing = dt::EvseProcessing::Finished;
+    return successor_of<ev::din::state::ContractAuthentication>(helper, res);
+});
+
 } // namespace
 
-SCENARIO("DIN 70121 EV ChargeParameterDiscovery sends the EV charge parameters on enter") {
+SCENARIO("DIN 70121 EV ChargeParameterDiscovery's EV charge parameters go out on the transition into it") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<State> primed{callbacks, seed_params};
+    PrimedState<State> primed{callbacks, seed_params, by_contract_authentication};
 
     const auto request = primed.take_requests().get<message_din::ChargeParameterDiscoveryRequest>();
     REQUIRE(request.has_value());
@@ -84,7 +98,7 @@ SCENARIO("DIN 70121 EV ChargeParameterDiscovery omits an unset EV maximum power 
         params.max_charge_power = 0.0f;
         helper.set_dc_params(params);
     };
-    PrimedState<State> primed{callbacks, seed_no_power};
+    PrimedState<State> primed{callbacks, seed_no_power, by_contract_authentication};
 
     const auto request = primed.take_requests().get<message_din::ChargeParameterDiscoveryRequest>();
     REQUIRE(request.has_value());
@@ -95,16 +109,16 @@ SCENARIO("DIN 70121 EV ChargeParameterDiscovery clamps the requested energy tran
     const ev::feedback::Callbacks callbacks{};
 
     SECTION("an AC request becomes DC_extended") {
-        ev::EvSessionParams params;
+        ev::params::EvSessionParams params;
         params.energy_transfer_mode = dt::EnergyTransferMode::AC_three_phase_core;
-        PrimedState<State> primed{callbacks, params, false, seed_params};
+        PrimedState<State> primed{callbacks, params, false, seed_params, by_contract_authentication};
         const auto request = primed.take_requests().get<message_din::ChargeParameterDiscoveryRequest>();
         REQUIRE(request->ev_requested_energy_transfer_type == dt::EnergyTransferMode::DC_extended);
     }
     SECTION("DC_core is kept") {
-        ev::EvSessionParams params;
+        ev::params::EvSessionParams params;
         params.energy_transfer_mode = dt::EnergyTransferMode::DC_core;
-        PrimedState<State> primed{callbacks, params, false, seed_params};
+        PrimedState<State> primed{callbacks, params, false, seed_params, by_contract_authentication};
         const auto request = primed.take_requests().get<message_din::ChargeParameterDiscoveryRequest>();
         REQUIRE(request->ev_requested_energy_transfer_type == dt::EnergyTransferMode::DC_core);
     }
@@ -187,6 +201,29 @@ SCENARIO("DIN 70121 EV ChargeParameterDiscovery diverts to SessionStop when the 
     }
 }
 
+SCENARIO("DIN 70121 EV ChargeParameterDiscovery terminates on a SECC stop over a latched EV pause") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto status_code = GENERATE(dt::DcEvseStatusCode::EVSE_Ready, dt::DcEvseStatusCode::EVSE_Shutdown);
+    const auto notification = status_code == dt::DcEvseStatusCode::EVSE_Ready ? dt::EvseNotification::StopCharging
+                                                                              : dt::EvseNotification::None;
+    PrimedState<State> primed{callbacks, seed_params};
+
+    primed.ctx.set_pause_charging_requested(true);
+    primed.handle_response(make_response(header(), dt::ResponseCode::OK, dt::EvseProcessing::Finished,
+                                         evse_parameter(status_code, notification, 120000.0)));
+    primed.feed(ev::din::Event::V2GTP_MESSAGE);
+    REQUIRE(primed.fsm.get_current_state_id() == StateID::SessionStop);
+
+    message_din::SessionStopResponse session_stop{};
+    session_stop.header = header();
+    session_stop.response_code = dt::ResponseCode::OK;
+    primed.handle_response(session_stop);
+    primed.feed(ev::din::Event::V2GTP_MESSAGE);
+
+    REQUIRE(primed.ctx.is_session_stopped() == true);
+    REQUIRE(primed.ctx.is_session_paused() == false);
+}
+
 SCENARIO("DIN 70121 EV ChargeParameterDiscovery stops the session when a finished response omits the charge "
          "parameter") {
     bool power_ready = false;
@@ -244,4 +281,69 @@ SCENARIO("DIN 70121 EV ChargeParameterDiscovery rejects malformed responses") {
     wrong.header = header();
     wrong.response_code = dt::ResponseCode::OK;
     check_rejection_paths(callbacks, StateID::ChargeParameterDiscovery, make_fsm, ok_response, wrong);
+}
+
+SCENARIO("DIN 70121 EV ChargeParameterDiscovery states start_charging's energy as EVEnergyRequest") {
+    const ev::feedback::Callbacks callbacks{};
+    ev::params::EvSessionParams params{};
+    params.energy_request.energy_wh = 20000.0f;
+    PrimedState<State> primed{callbacks, params, false, seed_params, by_contract_authentication};
+
+    const auto request = primed.take_requests().get<message_din::ChargeParameterDiscoveryRequest>();
+    REQUIRE(request.has_value());
+    const auto& param = request->dc_ev_charge_parameter.value();
+    REQUIRE(param.ev_energy_request.has_value());
+    REQUIRE(param.ev_energy_request.value() == 20000.0);
+}
+
+namespace {
+
+// Counts the energy-cap warnings libiso15118 logs while alive; the logging callback is process global.
+class CapWarnings {
+public:
+    CapWarnings() {
+        io::set_logging_callback([this](LogLevel level, const std::string& message) {
+            if (level == LogLevel::Warning and message.find("capped") != std::string::npos) {
+                ++count;
+            }
+        });
+    }
+    CapWarnings(const CapWarnings&) = delete;
+    CapWarnings& operator=(const CapWarnings&) = delete;
+    ~CapWarnings() {
+        io::set_logging_callback([](LogLevel, const std::string&) {});
+    }
+
+    int count{0};
+};
+
+double sent_ev_energy_request(float energy_wh) {
+    const ev::feedback::Callbacks callbacks{};
+    ev::params::EvSessionParams params{};
+    params.energy_request.energy_wh = energy_wh;
+    PrimedState<State> primed{callbacks, params, false, seed_params, by_contract_authentication};
+    const auto request = primed.take_requests().get<message_din::ChargeParameterDiscoveryRequest>();
+    REQUIRE(request.has_value());
+    REQUIRE(request->dc_ev_charge_parameter->ev_energy_request.has_value());
+    return request->dc_ev_charge_parameter->ev_energy_request.value();
+}
+
+} // namespace
+
+// DIN SPEC 70121 Table 55: a PhysicalValueType carries at most 32767 * 10^3.
+SCENARIO("DIN 70121 EV ChargeParameterDiscovery caps EVEnergyRequest at the PhysicalValueType maximum") {
+    REQUIRE(sent_ev_energy_request(40000000.0f) == 32767000.0);
+    REQUIRE(sent_ev_energy_request(250000.0f) == 250000.0);
+}
+
+SCENARIO("DIN 70121 EV ChargeParameterDiscovery warns once per session when it caps the energy") {
+    const CapWarnings warnings;
+    const ev::feedback::Callbacks callbacks{};
+    ev::params::EvSessionParams params{};
+    params.energy_request.energy_wh = 40000000.0f;
+    PrimedState<State> primed{callbacks, params, false, seed_params, by_contract_authentication};
+    primed.handle_response(make_response(header(), dt::ResponseCode::OK, dt::EvseProcessing::Ongoing, std::nullopt));
+    REQUIRE(primed.feed(ev::din::Event::V2GTP_MESSAGE).output == ev::din::Disposition::Awaiting);
+    REQUIRE(primed.take_requests().get<message_din::ChargeParameterDiscoveryRequest>().has_value());
+    REQUIRE(warnings.count == 1);
 }

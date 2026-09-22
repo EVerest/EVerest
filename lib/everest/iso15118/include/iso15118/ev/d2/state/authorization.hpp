@@ -14,10 +14,10 @@ struct Authorization : public StateBase {
 
     void enter() final;
     Result feed(Event) final;
-
-private:
-    // False when the PnC request could not be signed; the session stops instead of polling.
-    bool send();
 };
+
+// Sends the AuthorizationReq, signed with the contract key on a Contract session, and creates the
+// state awaiting it. A request that cannot be signed stops the session with nothing sent.
+Result to_authorization(Context& ctx);
 
 } // namespace iso15118::ev::d2::state

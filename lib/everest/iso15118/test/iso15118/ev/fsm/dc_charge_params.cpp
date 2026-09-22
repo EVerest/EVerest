@@ -7,14 +7,14 @@
 
 #include "helper.hpp"
 
-#include <iso15118/ev/dc_charge_params.hpp>
+#include <iso15118/ev/params/dc.hpp>
 
 using namespace iso15118;
 
 SCENARIO("ISO15118-20 EV DcChargeParams channel exposes a consistent snapshot via the Context") {
 
     GIVEN("A monitor initialized with static DcChargeParams wired into a Context") {
-        ev::DcChargeParams initial{};
+        ev::params::DcChargeParams initial{};
         initial.max_charge_power = 11000.0f;
         initial.max_charge_current = 200.0f;
         initial.max_voltage = 500.0f;

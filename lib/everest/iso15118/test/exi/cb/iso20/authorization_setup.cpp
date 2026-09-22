@@ -3,6 +3,7 @@
 #include <string>
 
 #include <iso15118/message/authorization_setup.hpp>
+#include <iso15118/message/response_variant.hpp>
 #include <iso15118/message/variant.hpp>
 
 #include "helper.hpp"
@@ -18,7 +19,7 @@ SCENARIO("Se/Deserialize authorization setup messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::RequestVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
             REQUIRE(variant.get_type() == message_20::Type::AuthorizationSetupReq);
@@ -93,7 +94,7 @@ SCENARIO("Se/Deserialize authorization setup messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
             REQUIRE(variant.get_type() == message_20::Type::AuthorizationSetupRes);
@@ -118,7 +119,7 @@ SCENARIO("Se/Deserialize authorization setup messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
             REQUIRE(variant.get_type() == message_20::Type::AuthorizationSetupRes);

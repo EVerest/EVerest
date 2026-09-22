@@ -5,17 +5,30 @@
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d2/state/authorization.hpp>
 #include <iso15118/ev/detail/d2/context_helper.hpp>
-#include <iso15118/message_2/payment_details.hpp>
+#include <iso15118/ev/detail/d2/state/payment_details.hpp>
 
 namespace iso15118::ev::d2::state {
 
+namespace payment_details {
+
+message_2::PaymentDetailsRequest create_request(const ContractMaterial& contract) {
+    message_2::PaymentDetailsRequest req;
+    req.emaid = contract.emaid;
+    req.contract_certificate = contract.cert_der;
+    req.sub_certificates = contract.sub_certs_der;
+    return req;
+}
+
+} // namespace payment_details
+
+BasePointerType to_payment_details(Context& ctx) {
+    // Without a contract (enforce_contract only) the request carries empty material.
+    ctx.send_request(payment_details::create_request(ctx.pnc.contract ? *ctx.pnc.contract : ContractMaterial{}));
+    return ctx.create_state<PaymentDetails>();
+}
+
 void PaymentDetails::enter() {
     logf_debug("Enter state: PaymentDetails (ISO 15118-2)");
-    message_2::PaymentDetailsRequest req;
-    req.emaid = m_ctx.pnc.emaid;
-    req.contract_certificate = m_ctx.pnc.contract_cert_der;
-    req.sub_certificates = m_ctx.pnc.contract_sub_certs_der;
-    m_ctx.send_request(req);
 }
 
 Result PaymentDetails::feed(Event ev) {
@@ -35,7 +48,7 @@ Result PaymentDetails::feed(Event ev) {
     if (auto stop = stop_before_start(m_ctx)) {
         return std::move(*stop);
     }
-    return m_ctx.create_state<Authorization>();
+    return to_authorization(m_ctx);
 }
 
 } // namespace iso15118::ev::d2::state

@@ -10,11 +10,12 @@
 
 #include <iso15118/d20/der_functions.hpp>
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/enum_names.hpp>
 #include <iso15118/ev/d20/context.hpp>
+#include <iso15118/ev/d20/der/iec_functions.hpp>
 #include <iso15118/ev/d20/state/service_detail.hpp>
 #include <iso15118/ev/d20/state/service_selection.hpp>
 #include <iso15118/ev/d20/state/stop_before_start.hpp>
-#include <iso15118/ev/der_control_functions.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/service_detail.hpp>
 
@@ -153,7 +154,7 @@ std::optional<SetChoice> find_parameter_set(const message_20::datatypes::Service
 }
 
 struct DerControlFunctionsDemand {
-    std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> mask;
+    std::bitset<ev::d20::der::DER_CONTROL_FUNCTION_COUNT> mask;
     // Set when the demand names functions the EV cannot model: bits at or above
     // DER_CONTROL_FUNCTION_COUNT (dropped by the bitset constructor) or a
     // DERControlFunctions value that is not an integer.
@@ -174,8 +175,8 @@ DerControlFunctionsDemand get_der_control_functions(const message_20::datatypes:
         return DerControlFunctionsDemand{{}, true};
     }
     const auto raw = static_cast<unsigned long long>(static_cast<uint32_t>(value.value()));
-    constexpr auto known_functions = (1ULL << ev::DER_CONTROL_FUNCTION_COUNT) - 1ULL;
-    return {std::bitset<ev::DER_CONTROL_FUNCTION_COUNT>(raw), (raw & ~known_functions) != 0ULL};
+    constexpr auto known_functions = (1ULL << ev::d20::der::DER_CONTROL_FUNCTION_COUNT) - 1ULL;
+    return {std::bitset<ev::d20::der::DER_CONTROL_FUNCTION_COUNT>(raw), (raw & ~known_functions) != 0ULL};
 }
 
 DerControlFunctionsDemand demand_of(const message_20::datatypes::ServiceParameterList& sets, uint16_t id) {
@@ -187,28 +188,31 @@ DerControlFunctionsDemand demand_of(const message_20::datatypes::ServiceParamete
     return {};
 }
 
-std::string describe_functions(const std::bitset<ev::DER_CONTROL_FUNCTION_COUNT>& bits) {
+std::string describe_functions(const std::bitset<ev::d20::der::DER_CONTROL_FUNCTION_COUNT>& bits) {
     std::string out;
-    for (std::size_t index = 0; index < bits.size(); ++index) {
-        if (bits.test(index)) {
+    for_each_enum_value<iec::DERControlName, ev::d20::der::DER_CONTROL_FUNCTION_COUNT>(
+        iec::der_control_name, [&out, &bits](iec::DERControlName function) {
+            if (not bits.test(static_cast<std::size_t>(function))) {
+                return;
+            }
             if (not out.empty()) {
                 out += ", ";
             }
-            out += iec::der_control_name(static_cast<iec::DERControlName>(index));
-        }
-    }
+            out += iec::der_control_name(function);
+        });
     return out;
 }
 
 } // namespace
 
+message_20::ServiceDetailRequest ServiceDetail::make_request(message_20::datatypes::ServiceCategory service) {
+    message_20::ServiceDetailRequest req;
+    req.service = message_20::to_underlying_value(service);
+    return req;
+}
+
 void ServiceDetail::enter() {
     logf_debug("Enter state: ServiceDetail");
-
-    message_20::ServiceDetailRequest req;
-    setup_header(req.header, m_ctx.get_session());
-    req.service = message_20::to_underlying_value(m_ctx.selected_service());
-    m_ctx.send_request(req);
 }
 
 Result ServiceDetail::feed(Event ev) {
@@ -234,13 +238,33 @@ Result ServiceDetail::feed(Event ev) {
     }
 
     const auto preferred = preferred_connector(m_ctx);
-    const auto preferred_mode = m_ctx.preferred_control_mode();
     const bool der_iec = (m_ctx.selected_service() == message_20::datatypes::ServiceCategory::AC_DER_IEC);
+    const bool der_sae = (m_ctx.selected_service() == message_20::datatypes::ServiceCategory::AC_DER_SAE);
+
+    // The AC_DER_SAE ChargeLoop drives Dynamic only.
+    const auto preferred_mode = der_sae ? message_20::datatypes::ControlMode::Dynamic : m_ctx.preferred_control_mode();
+    if (der_sae and m_ctx.preferred_control_mode() != preferred_mode) {
+        const auto ignored = control_mode_name(m_ctx.preferred_control_mode());
+        logf_warning("AC_DER_SAE supports only the Dynamic control mode; ignoring the preferred %.*s control mode",
+                     static_cast<int>(ignored.size()), ignored.data());
+    }
 
     const auto accept_any = [](const message_20::datatypes::ParameterSet&) { return true; };
 
     std::optional<SetChoice> selected_set;
-    if (der_iec) {
+    if (der_sae) {
+        // AMD1 Table M.54 [V2G20-3280]: the plain AC parameters, no DER ones. The SAE modes are
+        // negotiated later, in DERControlCPDRes.
+        const auto dynamic_only = [](const message_20::datatypes::ParameterSet& set) {
+            return get_control_mode(set) == message_20::datatypes::ControlMode::Dynamic;
+        };
+        selected_set = find_parameter_set(res->service_parameter_list, preferred_mode, preferred, dynamic_only);
+        if (not selected_set.has_value()) {
+            logf_error("AC_DER_SAE needs a Dynamic parameter set, but ServiceDetailResponse offers none; stopping");
+            m_ctx.stop_session();
+            return Result::stopping();
+        }
+    } else if (der_iec) {
         // [V2G20-3191]: the EV may only select AC_DER_IEC when it supports every demanded
         // function, so an unsupported set is not a candidate at all.
         const auto supported = m_ctx.der_supported_functions();
@@ -279,7 +303,8 @@ Result ServiceDetail::feed(Event ev) {
                          unsupported.c_str(), fallback->id);
             selected_set = fallback;
         }
-        m_ctx.set_der_demanded_functions(demand_of(res->service_parameter_list, selected_set->id).mask);
+        const auto negotiated = demand_of(res->service_parameter_list, selected_set->id).mask;
+        m_ctx.feedback.der_enabled_modes(static_cast<std::uint32_t>(negotiated.to_ulong()));
     } else {
         selected_set = find_parameter_set(res->service_parameter_list, preferred_mode, preferred, accept_any);
     }
@@ -311,6 +336,7 @@ Result ServiceDetail::feed(Event ev) {
         }
         m_ctx.set_selected_ac_connector(selected_set->connector.value());
     }
+    m_ctx.send_request(ServiceSelection::make_request(m_ctx.selected_service(), selected_set->id));
     return m_ctx.create_state<ServiceSelection>(selected_set->id);
 }
 

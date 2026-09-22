@@ -2,12 +2,12 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <iso15118/ev/fsm_base.hpp>
+#include <iso15118/ev/session/fsm.hpp>
 
 namespace iso15118::ev::din {
 
-using ev::Disposition;
-using ev::Event;
+using ev::session::Disposition;
+using ev::session::Event;
 
 class Context;
 
@@ -26,10 +26,10 @@ enum class StateID {
 };
 
 struct StateBase;
-using Result = ev::BasicResult<StateBase>;
+using Result = ev::session::BasicResult<StateBase>;
 using BasePointerType = std::unique_ptr<StateBase>;
 
-struct StateBase : ev::BasicStateBase<Context, StateID, StateBase> {
+struct StateBase : ev::session::BasicStateBase<Context, StateID, StateBase> {
     using BasicStateBase::BasicStateBase;
 };
 

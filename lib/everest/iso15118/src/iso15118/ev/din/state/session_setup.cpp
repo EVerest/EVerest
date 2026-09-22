@@ -7,8 +7,9 @@
 
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/detail/din/context_helper.hpp>
+#include <iso15118/ev/detail/din/state/service_discovery.hpp>
+#include <iso15118/ev/detail/din/state/session_setup.hpp>
 #include <iso15118/ev/din/state/service_discovery.hpp>
-#include <iso15118/message_din/session_setup.hpp>
 
 namespace iso15118::ev::din::state {
 
@@ -29,12 +30,18 @@ std::string to_hex_string(const dt::EvseId& bytes) {
 
 } // namespace
 
+namespace session_setup {
+
+message_din::SessionSetupRequest create_request(const std::array<uint8_t, 6>& evcc_mac) {
+    message_din::SessionSetupRequest req{};
+    req.evcc_id.assign(evcc_mac.begin(), evcc_mac.end());
+    return req;
+}
+
+} // namespace session_setup
+
 void SessionSetup::enter() {
     logf_debug("Enter state: SessionSetup (DIN 70121)");
-    message_din::SessionSetupRequest req{};
-    const auto& mac = m_ctx.params().evcc_mac;
-    req.evcc_id.assign(mac.begin(), mac.end());
-    m_ctx.send_request(req);
 }
 
 Result SessionSetup::feed(Event ev) {
@@ -44,10 +51,8 @@ Result SessionSetup::feed(Event ev) {
 
     const auto variant = m_ctx.pull_response();
 
-    const auto* res = variant->get_if<message_din::SessionSetupResponse>();
+    const auto* res = expect_response_type<message_din::SessionSetupResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        logf_error("expected SessionSetupRes, got message type id: %d", static_cast<int>(variant->get_type()));
-        m_ctx.stop_session();
         return Result::stopping();
     }
 
@@ -76,6 +81,7 @@ Result SessionSetup::feed(Event ev) {
     if (auto stop = stop_before_start(m_ctx)) {
         return std::move(*stop);
     }
+    m_ctx.send_request(service_discovery::create_request());
     return m_ctx.create_state<ServiceDiscovery>();
 }
 

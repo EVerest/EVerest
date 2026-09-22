@@ -10,7 +10,8 @@ namespace dt = message_2::datatypes;
 
 namespace authorization {
 
-// EIM: id and gen_challenge omitted.
+// Unsigned request with id and GenChallenge omitted: the EIM request, and every session's re-poll
+// while EVSEProcessing is Ongoing.
 message_2::AuthorizationRequest create_request();
 
 // Plug & Charge: the request echoes the GenChallenge from PaymentDetailsRes and is signed with the

@@ -7,6 +7,7 @@
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/detail/din/context_helper.hpp>
 #include <iso15118/ev/detail/din/state/service_discovery.hpp>
+#include <iso15118/ev/detail/din/state/service_payment_selection.hpp>
 #include <iso15118/ev/detail/din/state/state_helper.hpp>
 #include <iso15118/ev/din/state/service_payment_selection.hpp>
 
@@ -51,7 +52,6 @@ Result handle_response(const message_din::ServiceDiscoveryResponse& res, dt::Ene
 
 void ServiceDiscovery::enter() {
     logf_debug("Enter state: ServiceDiscovery (DIN 70121)");
-    m_ctx.send_request(service_discovery::create_request());
 }
 
 Result ServiceDiscovery::feed(Event ev) {
@@ -71,11 +71,11 @@ Result ServiceDiscovery::feed(Event ev) {
 
     if (not result.eim_offered) {
         logf_error("SECC does not offer ExternalPayment, stopping the session");
-        return m_ctx.create_state<SessionStop>();
+        return to_session_stop(m_ctx, session::StopReason::EvStop);
     }
     if (not result.charge_service_offers_dc) {
         logf_error("SECC ChargeService offers no DC energy transfer mode, stopping the session");
-        return m_ctx.create_state<SessionStop>();
+        return to_session_stop(m_ctx, session::StopReason::EvStop);
     }
     if (not result.charge_service_supported) {
         // Continue anyway, like the ISO 15118-2 sibling: ChargeParameterDiscovery carries the
@@ -84,11 +84,10 @@ Result ServiceDiscovery::feed(Event ev) {
                      "ChargeParameterDiscovery rejection if it cannot serve it");
     }
 
-    m_ctx.evse_info.charge_service_id = result.charge_service_id;
-
     if (auto stop = stop_before_start(m_ctx)) {
         return std::move(*stop);
     }
+    m_ctx.send_request(service_payment_selection::create_request(result.charge_service_id));
     return m_ctx.create_state<ServicePaymentSelection>();
 }
 

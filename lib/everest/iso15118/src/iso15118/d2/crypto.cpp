@@ -14,23 +14,23 @@
 #include <cbv2g/iso_2/iso2_msgDefDecoder.h>
 #include <cbv2g/iso_2/iso2_msgDefEncoder.h>
 
-// The EVCC contract-key handling below uses the classic EC_KEY / EC_POINT API to parse the
-// DHpublickey point and rebuild the contract key from its raw scalar. Deprecated in OpenSSL 3.0 but
-// fully supported; suppressed here rather than reimplemented via the more verbose OSSL_PARAM path.
+// The contract-key handling below uses the classic EC_KEY / EC_POINT API to parse the DHpublickey point.
+// Deprecated in OpenSSL 3.0 but fully supported; suppressed for this translation unit rather than
+// reimplemented over OSSL_PARAM.
 #define OPENSSL_SUPPRESS_DEPRECATED
 
 #include <openssl/bn.h>
+#include <openssl/crypto.h>
 #include <openssl/ec.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
-#include <openssl/sha.h>
 #include <openssl/x509.h>
-#include <openssl/x509_vfy.h>
 
-#include <iso15118/detail/x509_helper.hpp>
+#include <everest/tls/openssl_util.hpp>
 
 #include <iso15118/detail/cb_exi.hpp>
+#include <iso15118/detail/x509_helper.hpp>
 
 namespace iso15118::d2::crypto {
 
@@ -43,8 +43,9 @@ using x509::X509_ptr;
 namespace {
 
 constexpr std::size_t MAX_EXI_SIZE = 8192;
+constexpr std::size_t ECDSA_SIG_LEN = 2 * openssl::signature_n_size; // r || s
+
 constexpr std::size_t SHA256_LEN = 32;
-constexpr std::size_t ECDSA_SIG_LEN = 64; // r (32) || s (32)
 
 bool sha256(const uint8_t* data, std::size_t len, std::array<uint8_t, SHA256_LEN>& out) {
     unsigned int md_len = 0;
@@ -91,59 +92,43 @@ bool ecdsa_verify(EVP_PKEY* pkey, const uint8_t* sig_rs, std::size_t sig_len,
     return ok;
 }
 
-// xmldsig algorithm identifiers (ISO 15118-2 uses EXI canonicalization).
+// xmldsig algorithm identifiers; ISO 15118-2 uses EXI canonicalization.
 constexpr char ALGO_CANONICAL_EXI[] = "http://www.w3.org/TR/canonical-exi/";
 constexpr char ALGO_ECDSA_SHA256[] = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256";
 constexpr char ALGO_SHA256[] = "http://www.w3.org/2001/04/xmlenc#sha256";
 
-template <typename CbStringField> void set_cb_string(CbStringField& field, const char* value) {
+using BN_ptr = std::unique_ptr<BIGNUM, decltype(&BN_free)>;
+
+// Key material must not outlive its use in freed heap pages. std::vector's deallocation does not
+// wipe, and the compiler is free to drop a plain memset over a dying buffer.
+class Wipe {
+public:
+    explicit Wipe(std::vector<uint8_t>& buffer) : m_buffer(buffer) {
+    }
+    Wipe(const Wipe&) = delete;
+    Wipe& operator=(const Wipe&) = delete;
+    ~Wipe() {
+        wipe(m_buffer);
+    }
+
+private:
+    std::vector<uint8_t>& m_buffer;
+};
+
+// False when `value` does not fit the fixed cbv2g character array; the field is then left untouched.
+template <typename CbStringField> bool set_cb_string(CbStringField& field, const char* value) {
     const std::size_t len = std::strlen(value);
+    if (len + 1 > sizeof(field.characters)) {
+        logf_error("PnC: string of %zu bytes does not fit the %zu-byte EXI field", len, sizeof(field.characters));
+        return false;
+    }
     std::memcpy(field.characters, value, len);
     field.charactersLen = static_cast<uint16_t>(len);
+    return true;
 }
 
-std::vector<uint8_t> ecdsa_sign(EVP_PKEY* pkey, const std::array<uint8_t, SHA256_LEN>& digest) {
-    std::vector<uint8_t> out;
-    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(pkey, nullptr);
-    if (ctx == nullptr or EVP_PKEY_sign_init(ctx) != 1) {
-        EVP_PKEY_CTX_free(ctx);
-        ERR_clear_error();
-        return out;
-    }
-
-    size_t der_len = 0;
-    if (EVP_PKEY_sign(ctx, nullptr, &der_len, digest.data(), digest.size()) != 1) {
-        EVP_PKEY_CTX_free(ctx);
-        ERR_clear_error();
-        return out;
-    }
-    std::vector<uint8_t> der(der_len);
-    if (EVP_PKEY_sign(ctx, der.data(), &der_len, digest.data(), digest.size()) != 1) {
-        EVP_PKEY_CTX_free(ctx);
-        ERR_clear_error();
-        return out;
-    }
-    EVP_PKEY_CTX_free(ctx);
-    der.resize(der_len);
-
-    const unsigned char* p = der.data();
-    ECDSA_SIG* sig = d2i_ECDSA_SIG(nullptr, &p, static_cast<long>(der.size()));
-    if (sig == nullptr) {
-        ERR_clear_error();
-        return out;
-    }
-    const BIGNUM* r = nullptr;
-    const BIGNUM* s = nullptr;
-    ECDSA_SIG_get0(sig, &r, &s);
-    out.assign(ECDSA_SIG_LEN, 0);
-    if (BN_bn2binpad(r, out.data(), 32) != 32 or BN_bn2binpad(s, out.data() + 32, 32) != 32) {
-        out.clear();
-    }
-    ECDSA_SIG_free(sig);
-    return out;
-}
-
-// ConcatKDF (NIST SP 800-56A) with SHA-256, single block over counter(0x00000001) || Z || OtherInfo.
+// ConcatKDF (NIST SP 800-56A) with SHA-256, single block (output <= 32 bytes) over
+// counter(0x00000001) || Z || OtherInfo.
 std::vector<uint8_t> concat_kdf_sha256(const std::vector<uint8_t>& shared_secret,
                                        const std::vector<uint8_t>& other_info, std::size_t out_len) {
     std::vector<uint8_t> input;
@@ -153,14 +138,245 @@ std::vector<uint8_t> concat_kdf_sha256(const std::vector<uint8_t>& shared_secret
     input.insert(input.end(), shared_secret.begin(), shared_secret.end());
     input.insert(input.end(), other_info.begin(), other_info.end());
 
-    std::array<uint8_t, SHA256_LEN> hash{};
-    if (not sha256(input.data(), input.size(), hash)) {
+    openssl::sha_256_digest_t hash{};
+    if (not openssl::sha_256(input.data(), input.size(), hash)) {
         return {};
     }
     if (out_len > hash.size()) {
         return {};
     }
     return std::vector<uint8_t>(hash.begin(), hash.begin() + out_len);
+}
+
+// Clear the optional SignedInfo fields the verifier also clears [V2G2-771], so both sides digest the
+// same fragment.
+void normalize_signed_info(iso2_SignedInfoType& signed_info) {
+    signed_info.Id_isUsed = 0;
+    signed_info.CanonicalizationMethod.ANY_isUsed = 0;
+    signed_info.SignatureMethod.HMACOutputLength_isUsed = 0;
+    signed_info.SignatureMethod.ANY_isUsed = 0;
+    for (auto* r = signed_info.Reference.array; r != signed_info.Reference.array + signed_info.Reference.arrayLen;
+         ++r) {
+        r->Type_isUsed = 0;
+        r->Transforms.Transform.ANY_isUsed = 0;
+        r->Transforms.Transform.XPath_isUsed = 0;
+        r->DigestMethod.ANY_isUsed = 0;
+    }
+}
+
+// SHA-256 over the EXI fragment of a normalized SignedInfo.
+bool digest_signed_info(const iso2_SignedInfoType& signed_info, openssl::sha_256_digest_t& out) {
+    auto fragment = std::make_unique<iso2_xmldsigFragment>();
+    init_iso2_xmldsigFragment(fragment.get());
+    fragment->SignedInfo_isUsed = 1;
+    fragment->SignedInfo = signed_info;
+    normalize_signed_info(fragment->SignedInfo);
+
+    std::array<uint8_t, MAX_EXI_SIZE> buffer{};
+    exi_bitstream_t stream;
+    exi_bitstream_init(&stream, buffer.data(), MAX_EXI_SIZE, 0, nullptr);
+    if (encode_iso2_xmldsigFragment(&stream, fragment.get()) != 0) {
+        logf_error("PnC: failed to encode the SignedInfo fragment");
+        return false;
+    }
+    return openssl::sha_256(buffer.data(), exi_bitstream_get_length(&stream), out);
+}
+
+// The fragment models eMAID with the schema-informed element fragment grammar, so its member is a
+// distinct generated type from the message's EMAIDType and the two character fields are copied
+// across. The asserts fire if either buffer stops matching, rather than truncating in silence.
+iso2_eMAIDElementFragment as_fragment(const iso2_EMAIDType& emaid) {
+    iso2_eMAIDElementFragment fragment{};
+    static_assert(sizeof(fragment.Id.characters) == sizeof(emaid.Id.characters));
+    static_assert(sizeof(fragment.CONTENT.characters) == sizeof(emaid.CONTENT.characters));
+    fragment.Id_isUsed = 1;
+    fragment.Id.charactersLen = emaid.Id.charactersLen;
+    std::memcpy(fragment.Id.characters, emaid.Id.characters, sizeof(fragment.Id.characters));
+    fragment.CONTENT_isUsed = 1;
+    fragment.CONTENT.charactersLen = emaid.CONTENT.charactersLen;
+    std::memcpy(fragment.CONTENT.characters, emaid.CONTENT.characters, sizeof(fragment.CONTENT.characters));
+    return fragment;
+}
+
+// SHA-256 over an iso2_exiFragment carrying the single element `fill` sets.
+// `fill` assigns the element rather than memcpy'ing it: the fragment member and the message
+// member are separate generated types that happen to coincide today, and a memcpy between
+// them keeps compiling after they diverge while silently encoding the wrong bytes.
+template <typename Fill> bool digest_fragment(Fill fill, openssl::sha_256_digest_t& out) {
+    auto fragment = std::make_unique<iso2_exiFragment>();
+    init_iso2_exiFragment(fragment.get());
+    fill(*fragment);
+
+    std::array<uint8_t, MAX_EXI_SIZE> buffer{};
+    exi_bitstream_t stream;
+    exi_bitstream_init(&stream, buffer.data(), MAX_EXI_SIZE, 0, nullptr);
+    if (encode_iso2_exiFragment(&stream, fragment.get()) != 0) {
+        return false;
+    }
+    return openssl::sha_256(buffer.data(), exi_bitstream_get_length(&stream), out);
+}
+
+// SHA-256 over the EXI fragment of the single set request body element in `doc`.
+bool digest_request_fragment(const iso2_exiDocument& doc, openssl::sha_256_digest_t& out) {
+    const auto& body = doc.V2G_Message.Body;
+    const auto fill = [&body](iso2_exiFragment& fragment) {
+        if (body.AuthorizationReq_isUsed) {
+            fragment.AuthorizationReq_isUsed = 1;
+            fragment.AuthorizationReq = body.AuthorizationReq;
+        } else if (body.MeteringReceiptReq_isUsed) {
+            fragment.MeteringReceiptReq_isUsed = 1;
+            fragment.MeteringReceiptReq = body.MeteringReceiptReq;
+        } else if (body.CertificateInstallationReq_isUsed) {
+            fragment.CertificateInstallationReq_isUsed = 1;
+            fragment.CertificateInstallationReq = body.CertificateInstallationReq;
+        }
+    };
+
+    if (not(body.AuthorizationReq_isUsed or body.MeteringReceiptReq_isUsed or body.CertificateInstallationReq_isUsed)) {
+        return false;
+    }
+    if (not digest_fragment(fill, out)) {
+        logf_error("PnC: failed to encode the request fragment for signing");
+        return false;
+    }
+    return true;
+}
+
+// [V2G2-771]/[V2G2-909]: the CertificateInstallationRes signature covers four elements. Each must have
+// a Reference with URI "#"+Id whose DigestValue is SHA-256 over that element's EXI fragment.
+bool verify_res_references(const iso2_CertificateInstallationResType& res, const iso2_SignedInfoType& signed_info) {
+    struct Element {
+        const char* name;
+        std::string id;
+        openssl::sha_256_digest_t digest;
+    };
+
+    std::vector<Element> elements;
+    const auto add = [&elements](const char* name, const char* id_chars, uint16_t id_len, auto fill) {
+        Element element{name, std::string(id_chars, id_len), {}};
+        if (not digest_fragment(fill, element.digest)) {
+            logf_error("PnC: failed to encode the %s fragment", name);
+            return false;
+        }
+        elements.push_back(std::move(element));
+        return true;
+    };
+
+    const bool built =
+        add("ContractSignatureCertChain",
+            (res.ContractSignatureCertChain.Id_isUsed != 0) ? res.ContractSignatureCertChain.Id.characters : "",
+            (res.ContractSignatureCertChain.Id_isUsed != 0) ? res.ContractSignatureCertChain.Id.charactersLen
+                                                            : static_cast<uint16_t>(0),
+            [&res](iso2_exiFragment& f) {
+                f.ContractSignatureCertChain_isUsed = 1;
+                f.ContractSignatureCertChain = res.ContractSignatureCertChain;
+            }) and
+        add("ContractSignatureEncryptedPrivateKey", res.ContractSignatureEncryptedPrivateKey.Id.characters,
+            res.ContractSignatureEncryptedPrivateKey.Id.charactersLen,
+            [&res](iso2_exiFragment& f) {
+                f.ContractSignatureEncryptedPrivateKey_isUsed = 1;
+                f.ContractSignatureEncryptedPrivateKey = res.ContractSignatureEncryptedPrivateKey;
+            }) and
+        add("DHpublickey", res.DHpublickey.Id.characters, res.DHpublickey.Id.charactersLen,
+            [&res](iso2_exiFragment& f) {
+                f.DHpublickey_isUsed = 1;
+                f.DHpublickey = res.DHpublickey;
+            }) and
+        add("eMAID", res.eMAID.Id.characters, res.eMAID.Id.charactersLen, [&res](iso2_exiFragment& f) {
+            f.eMAID_isUsed = 1;
+            f.eMAID = as_fragment(res.eMAID);
+        });
+    if (not built) {
+        return false;
+    }
+
+    for (const auto& element : elements) {
+        if (element.id.empty()) {
+            logf_error("PnC: CertificateInstallationRes %s carries no Id", element.name);
+            return false;
+        }
+        const std::string uri = "#" + element.id;
+        const iso2_ReferenceType* match = nullptr;
+        for (uint16_t i = 0; i < signed_info.Reference.arrayLen; ++i) {
+            const auto& ref = signed_info.Reference.array[i];
+            if (ref.URI_isUsed != 0 and std::string(ref.URI.characters, ref.URI.charactersLen) == uri) {
+                match = &ref;
+                break;
+            }
+        }
+        if (match == nullptr) {
+            logf_error("PnC: CertificateInstallationRes signature references no %s", element.name);
+            return false;
+        }
+        if (match->DigestValue.bytesLen != element.digest.size() or
+            std::memcmp(match->DigestValue.bytes, element.digest.data(), element.digest.size()) != 0) {
+            logf_error("PnC: CertificateInstallationRes %s digest mismatch", element.name);
+            return false;
+        }
+    }
+    return true;
+}
+
+// Build the xmldsig Signature over the set request body element (already carrying its Id), attach it to
+// the header and encode the document. Returns the EXI payload or empty.
+std::vector<uint8_t> finalize_signed(iso2_exiDocument& doc, const std::string& element_id, const PrivateKey& key) {
+    openssl::sha_256_digest_t element_digest{};
+    if (not digest_request_fragment(doc, element_digest)) {
+        return {};
+    }
+
+    auto& signature = doc.V2G_Message.Header.Signature;
+    init_iso2_SignatureType(&signature);
+    auto& signed_info = signature.SignedInfo;
+
+    signed_info.Reference.arrayLen = 1;
+    auto& ref = signed_info.Reference.array[0];
+    const std::string uri = "#" + element_id;
+    if (not set_cb_string(signed_info.CanonicalizationMethod.Algorithm, ALGO_CANONICAL_EXI) or
+        not set_cb_string(signed_info.SignatureMethod.Algorithm, ALGO_ECDSA_SHA256) or
+        not set_cb_string(ref.URI, uri.c_str()) or
+        not set_cb_string(ref.Transforms.Transform.Algorithm, ALGO_CANONICAL_EXI) or
+        not set_cb_string(ref.DigestMethod.Algorithm, ALGO_SHA256)) {
+        return {};
+    }
+    ref.URI_isUsed = 1;
+    ref.Transforms_isUsed = 1;
+    std::memcpy(ref.DigestValue.bytes, element_digest.data(), element_digest.size());
+    ref.DigestValue.bytesLen = static_cast<uint16_t>(element_digest.size());
+
+    openssl::sha_256_digest_t si_digest{};
+    if (not digest_signed_info(signed_info, si_digest)) {
+        return {};
+    }
+
+    auto pkey = x509::load_private_key(key.pem, key.password);
+    if (pkey == nullptr) {
+        return {};
+    }
+    openssl::bn_t r{};
+    openssl::bn_t s{};
+    const bool signed_ok = openssl::sign(pkey.get(), r, s, si_digest);
+    ERR_clear_error();
+    if (not signed_ok) {
+        logf_error("PnC: failed to ECDSA-sign the SignedInfo");
+        return {};
+    }
+    // xmldsig carries the ECDSA signature as raw r || s.
+    auto& signature_value = signature.SignatureValue.CONTENT;
+    std::memcpy(signature_value.bytes, r.data(), r.size());
+    std::memcpy(signature_value.bytes + r.size(), s.data(), s.size());
+    signature_value.bytesLen = static_cast<uint16_t>(ECDSA_SIG_LEN);
+    doc.V2G_Message.Header.Signature_isUsed = 1;
+
+    std::array<uint8_t, MAX_EXI_SIZE> out_buffer{};
+    exi_bitstream_t out_stream;
+    exi_bitstream_init(&out_stream, out_buffer.data(), MAX_EXI_SIZE, 0, nullptr);
+    if (encode_iso2_exiDocument(&out_stream, &doc) != 0) {
+        logf_error("PnC: failed to encode the signed message document");
+        return {};
+    }
+    const auto len = exi_bitstream_get_length(&out_stream);
+    return std::vector<uint8_t>(out_buffer.data(), out_buffer.data() + len);
 }
 
 } // namespace
@@ -497,126 +713,15 @@ bool verify_metering_receipt_signature(const std::vector<uint8_t>& request_exi, 
     return ok;
 }
 
-namespace {
-
-bool digest_request_fragment(const iso2_exiDocument& doc, std::array<uint8_t, SHA256_LEN>& out) {
-    auto fragment = std::make_unique<iso2_exiFragment>();
-    init_iso2_exiFragment(fragment.get());
-
-    const auto& body = doc.V2G_Message.Body;
-    if (body.AuthorizationReq_isUsed) {
-        fragment->AuthorizationReq_isUsed = 1;
-        std::memcpy(&fragment->AuthorizationReq, &body.AuthorizationReq, sizeof(fragment->AuthorizationReq));
-    } else if (body.MeteringReceiptReq_isUsed) {
-        fragment->MeteringReceiptReq_isUsed = 1;
-        std::memcpy(&fragment->MeteringReceiptReq, &body.MeteringReceiptReq, sizeof(fragment->MeteringReceiptReq));
-    } else if (body.CertificateInstallationReq_isUsed) {
-        fragment->CertificateInstallationReq_isUsed = 1;
-        std::memcpy(&fragment->CertificateInstallationReq, &body.CertificateInstallationReq,
-                    sizeof(fragment->CertificateInstallationReq));
-    } else {
-        return false;
-    }
-
-    std::array<uint8_t, MAX_EXI_SIZE> buffer{};
-    exi_bitstream_t stream;
-    exi_bitstream_init(&stream, buffer.data(), MAX_EXI_SIZE, 0, nullptr);
-    if (encode_iso2_exiFragment(&stream, fragment.get()) != 0) {
-        logf_error("PnC: failed to encode request fragment for signing");
-        return false;
-    }
-    return sha256(buffer.data(), exi_bitstream_get_length(&stream), out);
-}
-
-// Returns the EXI payload, or empty on failure.
-std::vector<uint8_t> finalize_signed(iso2_exiDocument& doc, const std::string& element_id, const PrivateKey& key) {
-    std::array<uint8_t, SHA256_LEN> element_digest{};
-    if (not digest_request_fragment(doc, element_digest)) {
-        return {};
-    }
-
-    auto& signature = doc.V2G_Message.Header.Signature;
-    init_iso2_SignatureType(&signature);
-    auto& signed_info = signature.SignedInfo;
-    set_cb_string(signed_info.CanonicalizationMethod.Algorithm, ALGO_CANONICAL_EXI);
-    set_cb_string(signed_info.SignatureMethod.Algorithm, ALGO_ECDSA_SHA256);
-
-    signed_info.Reference.arrayLen = 1;
-    auto& ref = signed_info.Reference.array[0];
-    const std::string uri = "#" + element_id;
-    set_cb_string(ref.URI, uri.c_str());
-    ref.URI_isUsed = 1;
-    ref.Transforms_isUsed = 1;
-    set_cb_string(ref.Transforms.Transform.Algorithm, ALGO_CANONICAL_EXI);
-    set_cb_string(ref.DigestMethod.Algorithm, ALGO_SHA256);
-    std::memcpy(ref.DigestValue.bytes, element_digest.data(), element_digest.size());
-    ref.DigestValue.bytesLen = static_cast<uint16_t>(element_digest.size());
-
-    // Digest over the SignedInfo xmldsig fragment (optional fields cleared per [V2G2-771], matching the
-    // verifier), then ECDSA-P256 sign it with the signing key.
-    std::array<uint8_t, SHA256_LEN> si_digest{};
-    {
-        auto sig_fragment = std::make_unique<iso2_xmldsigFragment>();
-        init_iso2_xmldsigFragment(sig_fragment.get());
-        sig_fragment->SignedInfo_isUsed = 1;
-        sig_fragment->SignedInfo = signed_info;
-        sig_fragment->SignedInfo.Id_isUsed = 0;
-        sig_fragment->SignedInfo.CanonicalizationMethod.ANY_isUsed = 0;
-        sig_fragment->SignedInfo.SignatureMethod.HMACOutputLength_isUsed = 0;
-        sig_fragment->SignedInfo.SignatureMethod.ANY_isUsed = 0;
-        for (auto* r = sig_fragment->SignedInfo.Reference.array;
-             r != sig_fragment->SignedInfo.Reference.array + sig_fragment->SignedInfo.Reference.arrayLen; ++r) {
-            r->Type_isUsed = 0;
-            r->Transforms.Transform.ANY_isUsed = 0;
-            r->Transforms.Transform.XPath_isUsed = 0;
-            r->DigestMethod.ANY_isUsed = 0;
-        }
-
-        std::array<uint8_t, MAX_EXI_SIZE> buffer{};
-        exi_bitstream_t stream;
-        exi_bitstream_init(&stream, buffer.data(), MAX_EXI_SIZE, 0, nullptr);
-        if (encode_iso2_xmldsigFragment(&stream, sig_fragment.get()) != 0) {
-            logf_error("PnC: failed to encode SignedInfo fragment for signing");
-            return {};
-        }
-        if (not sha256(buffer.data(), exi_bitstream_get_length(&stream), si_digest)) {
-            return {};
-        }
-    }
-
-    auto pkey = x509::load_private_key(key.pem, key.password);
-    if (pkey == nullptr) {
-        return {};
-    }
-    const auto sig_rs = ecdsa_sign(pkey.get(), si_digest);
-    if (sig_rs.size() != ECDSA_SIG_LEN) {
-        logf_error("PnC: failed to ECDSA-sign the SignedInfo");
-        return {};
-    }
-    std::memcpy(signature.SignatureValue.CONTENT.bytes, sig_rs.data(), sig_rs.size());
-    signature.SignatureValue.CONTENT.bytesLen = static_cast<uint16_t>(sig_rs.size());
-    doc.V2G_Message.Header.Signature_isUsed = 1;
-
-    std::array<uint8_t, MAX_EXI_SIZE> out_buffer{};
-    exi_bitstream_t out_stream;
-    exi_bitstream_init(&out_stream, out_buffer.data(), MAX_EXI_SIZE, 0, nullptr);
-    if (encode_iso2_exiDocument(&out_stream, &doc) != 0) {
-        logf_error("PnC: failed to encode signed message document");
-        return {};
-    }
-    const auto len = exi_bitstream_get_length(&out_stream);
-    return std::vector<uint8_t>(out_buffer.data(), out_buffer.data() + len);
-}
-
-} // namespace
-
 std::vector<uint8_t> serialize_signed(const message_2::AuthorizationRequest& req, const PrivateKey& key) {
     iso2_exiDocument doc{};
     message_2::convert(req.header, doc.V2G_Message.Header);
     CB_SET_USED(doc.V2G_Message.Body.AuthorizationReq);
     message_2::convert(req, doc.V2G_Message.Body.AuthorizationReq);
     const std::string id = req.id.value_or("id1");
-    set_cb_string(doc.V2G_Message.Body.AuthorizationReq.Id, id.c_str());
+    if (not set_cb_string(doc.V2G_Message.Body.AuthorizationReq.Id, id.c_str())) {
+        return {};
+    }
     doc.V2G_Message.Body.AuthorizationReq.Id_isUsed = 1;
     return finalize_signed(doc, id, key);
 }
@@ -626,8 +731,11 @@ std::vector<uint8_t> serialize_signed(const message_2::MeteringReceiptRequest& r
     message_2::convert(req.header, doc.V2G_Message.Header);
     CB_SET_USED(doc.V2G_Message.Body.MeteringReceiptReq);
     message_2::convert(req, doc.V2G_Message.Body.MeteringReceiptReq);
+    // MeteringReceiptRequest has no id field; the signature reference needs one.
     const std::string id = "id1";
-    set_cb_string(doc.V2G_Message.Body.MeteringReceiptReq.Id, id.c_str());
+    if (not set_cb_string(doc.V2G_Message.Body.MeteringReceiptReq.Id, id.c_str())) {
+        return {};
+    }
     doc.V2G_Message.Body.MeteringReceiptReq.Id_isUsed = 1;
     return finalize_signed(doc, id, key);
 }
@@ -637,6 +745,7 @@ std::vector<uint8_t> serialize_signed(const message_2::CertificateInstallationRe
     message_2::convert(req.header, doc.V2G_Message.Header);
     CB_SET_USED(doc.V2G_Message.Body.CertificateInstallationReq);
     message_2::convert(req, doc.V2G_Message.Body.CertificateInstallationReq);
+    // convert() already set Id from req.id; reuse it as the signature reference.
     return finalize_signed(doc, req.id, key);
 }
 
@@ -662,7 +771,7 @@ bool verify_certificate_installation_res(const std::vector<uint8_t>& res_exi, co
 
     // The signing key is the SAProvisioningCertificateChain leaf; validate it up to the trusted V2G root.
     const auto& sa_leaf = res.SAProvisioningCertificateChain.Certificate;
-    std::vector<uint8_t> sa_leaf_der(sa_leaf.bytes, sa_leaf.bytes + sa_leaf.bytesLen);
+    const std::vector<uint8_t> sa_leaf_der(sa_leaf.bytes, sa_leaf.bytes + sa_leaf.bytesLen);
     std::vector<std::vector<uint8_t>> sa_subs;
     if (res.SAProvisioningCertificateChain.SubCertificates_isUsed) {
         const auto& subs = res.SAProvisioningCertificateChain.SubCertificates.Certificate;
@@ -673,88 +782,64 @@ bool verify_certificate_installation_res(const std::vector<uint8_t>& res_exi, co
 
     auto leaf = der_to_x509(sa_leaf_der);
     if (leaf == nullptr) {
-        logf_error("PnC: failed to parse SAProvisioningCertificate leaf");
+        logf_error("PnC: failed to parse the SAProvisioningCertificate leaf");
         return false;
     }
 
     {
-        std::vector<X509_ptr> sub_x509;
-        STACK_OF(X509)* untrusted = sk_X509_new_null();
+        openssl::certificate_list untrusted;
         for (const auto& der : sa_subs) {
             auto x = der_to_x509(der);
             if (x != nullptr) {
-                sk_X509_push(untrusted, x.get());
-                sub_x509.push_back(std::move(x));
+                untrusted.push_back(std::move(x));
             }
         }
-        X509_STORE* store = X509_STORE_new();
-        bool any_root = store != nullptr and not v2g_root_path.empty() and
-                        X509_STORE_load_locations(store, v2g_root_path.c_str(), nullptr) == 1;
-        bool chain_ok = false;
-        if (any_root) {
-            X509_STORE_CTX* ctx = X509_STORE_CTX_new();
-            if (ctx != nullptr and X509_STORE_CTX_init(ctx, store, leaf.get(), untrusted) == 1) {
-                chain_ok = X509_verify_cert(ctx) == 1;
-                if (not chain_ok) {
-                    logf_error("PnC: SAProvisioningCertificate chain verification failed: %s",
-                               X509_verify_cert_error_string(X509_STORE_CTX_get_error(ctx)));
-                }
-            }
-            if (ctx != nullptr) {
-                X509_STORE_CTX_free(ctx);
-            }
-        } else {
+        const auto roots =
+            v2g_root_path.empty() ? openssl::certificate_list{} : openssl::load_certificates(v2g_root_path.c_str());
+        if (roots.empty()) {
+            ERR_clear_error();
             logf_error("PnC: no V2G root available to validate the SAProvisioningCertificate chain");
+            return false;
         }
-        if (store != nullptr) {
-            X509_STORE_free(store);
-        }
-        sk_X509_free(untrusted);
+        const auto result = openssl::verify_certificate(leaf.get(), roots, untrusted);
         ERR_clear_error();
-        if (not chain_ok) {
+        if (result != openssl::verify_result_t::Verified) {
+            logf_error("PnC: SAProvisioningCertificate chain verification failed");
             return false;
         }
     }
 
-    PKEY_ptr pkey(X509_get_pubkey(leaf.get()), &EVP_PKEY_free);
+    auto pkey = openssl::certificate_public_key(leaf.get());
     if (pkey == nullptr) {
         return false;
     }
 
-    std::array<uint8_t, MAX_EXI_SIZE> exi_buffer{};
-    exi_bitstream_t stream;
-    std::array<uint8_t, SHA256_LEN> si_digest{};
-    {
-        auto sig_fragment = std::make_unique<iso2_xmldsigFragment>();
-        init_iso2_xmldsigFragment(sig_fragment.get());
-        sig_fragment->SignedInfo_isUsed = 1;
-        sig_fragment->SignedInfo = signature.SignedInfo;
-        sig_fragment->SignedInfo.Id_isUsed = 0;
-        sig_fragment->SignedInfo.CanonicalizationMethod.ANY_isUsed = 0;
-        sig_fragment->SignedInfo.SignatureMethod.HMACOutputLength_isUsed = 0;
-        sig_fragment->SignedInfo.SignatureMethod.ANY_isUsed = 0;
-        for (auto* r = sig_fragment->SignedInfo.Reference.array;
-             r != sig_fragment->SignedInfo.Reference.array + sig_fragment->SignedInfo.Reference.arrayLen; ++r) {
-            r->Type_isUsed = 0;
-            r->Transforms.Transform.ANY_isUsed = 0;
-            r->Transforms.Transform.XPath_isUsed = 0;
-            r->DigestMethod.ANY_isUsed = 0;
-        }
-        exi_bitstream_init(&stream, exi_buffer.data(), MAX_EXI_SIZE, 0, nullptr);
-        if (encode_iso2_xmldsigFragment(&stream, sig_fragment.get()) != 0) {
-            return false;
-        }
-        if (not sha256(exi_buffer.data(), exi_bitstream_get_length(&stream), si_digest)) {
-            return false;
-        }
+    if (not verify_res_references(res, signature.SignedInfo)) {
+        return false;
     }
 
-    const bool ok = ecdsa_verify(pkey.get(), signature.SignatureValue.CONTENT.bytes,
-                                 signature.SignatureValue.CONTENT.bytesLen, si_digest);
+    openssl::sha_256_digest_t si_digest{};
+    if (not digest_signed_info(signature.SignedInfo, si_digest)) {
+        return false;
+    }
+
+    const auto& signature_value = signature.SignatureValue.CONTENT;
+    const bool ok = signature_value.bytesLen == ECDSA_SIG_LEN and
+                    openssl::verify(pkey.get(), signature_value.bytes,
+                                    signature_value.bytes + openssl::signature_n_size, si_digest);
+    // A failed verify leaves an entry on OpenSSL's thread-local error queue, which poisons the next
+    // OpenSSL call on this thread (including the TLS read/write of the session). Clear it always.
+    ERR_clear_error();
     if (not ok) {
         logf_error("PnC: CertificateInstallationRes signature verification failed");
     }
     return ok;
+}
+
+void wipe(std::vector<uint8_t>& buffer) {
+    if (not buffer.empty()) {
+        OPENSSL_cleanse(buffer.data(), buffer.size());
+    }
 }
 
 std::vector<uint8_t> decrypt_contract_private_key(const std::vector<uint8_t>& encrypted_with_iv,
@@ -772,6 +857,7 @@ std::vector<uint8_t> decrypt_contract_private_key(const std::vector<uint8_t>& en
         return {};
     }
 
+    // Peer (sender ephemeral) public key on prime256v1 from the uncompressed point.
     EC_GROUP* group = EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1);
     EC_POINT* point = (group != nullptr) ? EC_POINT_new(group) : nullptr;
     EC_KEY* peer_ec = (group != nullptr) ? EC_KEY_new_by_curve_name(NID_X9_62_prime256v1) : nullptr;
@@ -802,6 +888,7 @@ std::vector<uint8_t> decrypt_contract_private_key(const std::vector<uint8_t>& en
     }
 
     std::vector<uint8_t> shared_secret;
+    const Wipe wipe_secret(shared_secret);
     {
         EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(oem_key.get(), nullptr);
         size_t secret_len = 0;
@@ -824,14 +911,15 @@ std::vector<uint8_t> decrypt_contract_private_key(const std::vector<uint8_t>& en
         return {};
     }
 
-    // ConcatKDF-SHA256, OtherInfo = AlgorithmID(0x01) || PartyU(0x55) || PartyV(0x56), 16-byte session key.
+    // OtherInfo = AlgorithmID(0x01) || PartyU(0x55) || PartyV(0x56), 16-byte session key.
     const std::vector<uint8_t> other_info{0x01, 0x55, 0x56};
-    const auto session_key = concat_kdf_sha256(shared_secret, other_info, 16);
+    auto session_key = concat_kdf_sha256(shared_secret, other_info, 16);
+    const Wipe wipe_session_key(session_key);
     if (session_key.size() != 16) {
         return {};
     }
 
-    // AES-128-CBC decrypt (no padding: the plaintext is exactly the 32-byte private scalar).
+    // AES-128-CBC, no padding: the plaintext is exactly the 32-byte private scalar.
     const uint8_t* iv = encrypted_with_iv.data();
     const uint8_t* ciphertext = encrypted_with_iv.data() + IV_LEN;
     const int ct_len = static_cast<int>(encrypted_with_iv.size() - IV_LEN);
@@ -853,13 +941,16 @@ std::vector<uint8_t> decrypt_contract_private_key(const std::vector<uint8_t>& en
     ERR_clear_error();
     if (not ok) {
         logf_error("PnC: AES-128-CBC decryption of the contract private key failed");
+        wipe(plaintext);
         return {};
     }
     plaintext.resize(static_cast<std::size_t>(out_len + final_len));
     if (plaintext.size() != PRIV_KEY_LEN) {
         logf_error("PnC: decrypted contract private key has unexpected length %zu", plaintext.size());
+        wipe(plaintext);
         return {};
     }
+    // The caller owns the scalar from here and wipes it once it is in PEM form.
     return plaintext;
 }
 
@@ -871,29 +962,15 @@ std::string emaid_from_contract_der(const std::vector<uint8_t>& leaf_der) {
     return strip_dashes(x509::subject_common_name(leaf.get()));
 }
 
-message_2::RootCertificateId root_cert_id_from_der(const std::vector<uint8_t>& root_der) {
-    message_2::RootCertificateId id;
-    auto root = der_to_x509(root_der);
-    if (root == nullptr) {
-        return id;
+bool contract_key_matches(const std::vector<uint8_t>& leaf_der, const PrivateKey& key) {
+    auto leaf = der_to_x509(leaf_der);
+    if (leaf == nullptr) {
+        return false;
     }
-    char* issuer = X509_NAME_oneline(X509_get_issuer_name(root.get()), nullptr, 0);
-    if (issuer != nullptr) {
-        id.issuer_name = issuer;
-        OPENSSL_free(issuer);
-    }
-    const ASN1_INTEGER* serial = X509_get0_serialNumber(root.get());
-    if (serial != nullptr) {
-        std::unique_ptr<BIGNUM, decltype(&BN_free)> bn{ASN1_INTEGER_to_BN(serial, nullptr), &BN_free};
-        if (bn != nullptr and not BN_is_negative(bn.get())) {
-            const auto serial_bytes = static_cast<std::size_t>(BN_num_bytes(bn.get()));
-            if (serial_bytes <= message_2::MAX_SERIAL_NUMBER_BYTES) {
-                id.serial_number.resize(serial_bytes);
-                BN_bn2bin(bn.get(), id.serial_number.data());
-            }
-        }
-    }
-    return id;
+    auto pkey = x509::load_private_key(key.pem, key.password);
+    const bool matches = pkey != nullptr and X509_check_private_key(leaf.get(), pkey.get()) == 1;
+    ERR_clear_error();
+    return matches;
 }
 
 std::string contract_scalar_to_pem(const std::vector<uint8_t>& scalar) {
@@ -930,6 +1007,69 @@ std::string contract_scalar_to_pem(const std::vector<uint8_t>& scalar) {
     }
     ERR_clear_error();
     return pem;
+}
+
+message_2::RootCertificateId root_cert_id_from_der(const std::vector<uint8_t>& root_der) {
+    message_2::RootCertificateId id;
+    auto root = der_to_x509(root_der);
+    if (root == nullptr) {
+        return id;
+    }
+    // ISO 15118-2 X509IssuerName is the RFC 2253 form of the DN.
+    BIO* bio = BIO_new(BIO_s_mem());
+    if (bio != nullptr) {
+        if (X509_NAME_print_ex(bio, X509_get_issuer_name(root.get()), 0, XN_FLAG_RFC2253) >= 0) {
+            char* data = nullptr;
+            const long n = BIO_get_mem_data(bio, &data);
+            if (n > 0 and data != nullptr) {
+                id.issuer_name.assign(data, static_cast<std::size_t>(n));
+            }
+        }
+        BIO_free(bio);
+    }
+    const ASN1_INTEGER* serial = X509_get0_serialNumber(root.get());
+    BN_ptr bn{serial == nullptr ? nullptr : ASN1_INTEGER_to_BN(serial, nullptr), &BN_free};
+    if (bn == nullptr or BN_is_negative(bn.get())) {
+        logf_error("V2G root certificate has no usable serial number; omitting the RootCertificateID");
+        return {};
+    }
+    const auto length = static_cast<std::size_t>(BN_num_bytes(bn.get()));
+    if (length > message_2::MAX_SERIAL_NUMBER_BYTES) {
+        logf_error("V2G root certificate serial number is %zu bytes, wider than the EXI converter takes; "
+                   "omitting the RootCertificateID",
+                   length);
+        return {};
+    }
+    id.serial_number.resize(length);
+    BN_bn2bin(bn.get(), id.serial_number.data());
+    return id;
+}
+
+std::string der_chain_to_pem(const std::vector<uint8_t>& leaf_der, const std::vector<std::vector<uint8_t>>& subs_der) {
+    std::string pem;
+    auto append = [&pem](const std::vector<uint8_t>& der) {
+        auto x = der_to_x509(der);
+        if (x != nullptr) {
+            pem += cert_to_pem(x.get());
+        }
+    };
+    append(leaf_der);
+    for (const auto& sub : subs_der) {
+        append(sub);
+    }
+    return pem;
+}
+
+std::vector<std::vector<uint8_t>> pem_chain_to_der(const std::string& pem) {
+    std::vector<std::vector<uint8_t>> out;
+    for (const auto& cert : openssl::load_certificates_pem(pem.c_str())) {
+        const auto der = openssl::certificate_to_der(cert.get());
+        if (der) {
+            out.emplace_back(der.get(), der.get() + der.size());
+        }
+    }
+    ERR_clear_error(); // libtls logs only the first OpenSSL error of a failed read and leaves the rest queued
+    return out;
 }
 
 } // namespace iso15118::d2::crypto

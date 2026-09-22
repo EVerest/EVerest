@@ -109,6 +109,13 @@ static_assert((SAE_ENABLED_MODE_MASK & ~SAE_MODE_BITMAP_MASK) == 0,
 
 bool is_function_set(std::uint32_t bitmap, DerBitMapFunctions function);
 
+// The constant power factor bit of one excitation direction, shared by the SECC gate and the echo reference.
+constexpr DerBitMapFunctions excitation_function(message_20::datatypes::sae::PowerFactorExcitation excitation) {
+    return excitation == message_20::datatypes::sae::PowerFactorExcitation::OverExcited
+               ? DerBitMapFunctions::ConstantPowerFactorOverExcitedFunction
+               : DerBitMapFunctions::ConstantPowerFactorUnderExcitedFunction;
+}
+
 // The bits the gated response actually enables, and the reference the EV's EnabledModes echo is compared
 // against in the charge loop. Both response shapes are read the same way, so identical enables yield
 // identical bits.

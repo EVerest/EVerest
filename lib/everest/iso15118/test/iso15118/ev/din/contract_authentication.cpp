@@ -5,8 +5,10 @@
 #include "helper.hpp"
 
 #include <iso15118/ev/din/state/contract_authentication.hpp>
+#include <iso15118/ev/din/state/service_payment_selection.hpp>
 #include <iso15118/message_din/charge_parameter_discovery.hpp>
 #include <iso15118/message_din/contract_authentication.hpp>
+#include <iso15118/message_din/service_payment_selection.hpp>
 #include <iso15118/message_din/session_stop.hpp>
 
 using namespace iso15118;
@@ -28,11 +30,18 @@ message_din::ContractAuthenticationResponse make_response(const message_din::Hea
 message_din::ContractAuthenticationResponse ok_response(const message_din::Header& hdr) {
     return make_response(hdr, dt::ResponseCode::OK, dt::EvseProcessing::Finished);
 }
+const auto by_service_payment_selection = entered_by([](DinStateHelper& helper) {
+    message_din::ServicePaymentSelectionResponse res{};
+    res.header = header();
+    res.response_code = dt::ResponseCode::OK;
+    return successor_of<ev::din::state::ServicePaymentSelection>(helper, res);
+});
+
 } // namespace
 
-SCENARIO("DIN 70121 EV ContractAuthentication sends the EIM request on enter") {
+SCENARIO("DIN 70121 EV ContractAuthentication's EIM request goes out on the ServicePaymentSelection transition") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<State> primed{callbacks, no_seed};
+    PrimedState<State> primed{callbacks, no_seed, by_service_payment_selection};
 
     const auto request = primed.take_requests().get<message_din::ContractAuthenticationRequest>();
     REQUIRE(request.has_value());

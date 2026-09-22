@@ -7,9 +7,16 @@
 #include <string>
 #include <vector>
 
-#include <iso15118/message_2/certificate_installation.hpp>
-
 namespace iso15118::ev::d2 {
+
+// A contract: leaf and sub-CA certificates DER, key PEM, and the eMAID the leaf names.
+struct ContractMaterial {
+    std::vector<uint8_t> cert_der;
+    std::vector<std::vector<uint8_t>> sub_certs_der;
+    std::string key_pem;
+    std::optional<std::string> key_password;
+    std::string emaid;
+};
 
 // ISO 15118-2 Plug & Charge (Contract) material. Certificates DER, keys PEM.
 struct PnCConfig {
@@ -29,24 +36,13 @@ struct PnCConfig {
     std::string oem_prov_key_pem;
     std::optional<std::string> oem_prov_key_password;
 
-    // Roots declared in CertificateInstallationReq; v2g_root_path verifies the CPS signature.
-    std::vector<message_2::RootCertificateId> root_certificate_ids;
-    std::string v2g_root_path;
-
     // Pre-installed contract; presented in PaymentDetailsReq unless force_cert_install.
-    std::vector<uint8_t> contract_cert_der;
-    std::vector<std::vector<uint8_t>> contract_sub_certs_der;
-    std::string contract_key_pem;
-    std::optional<std::string> contract_key_password;
-    std::string contract_emaid;
+    std::optional<ContractMaterial> contract;
 
     bool force_cert_install{false};
 
-    bool has_contract_cert() const {
-        return not contract_cert_der.empty();
-    }
     bool needs_cert_install() const {
-        return force_cert_install or not has_contract_cert();
+        return force_cert_install or not contract.has_value();
     }
 };
 

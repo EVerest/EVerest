@@ -14,18 +14,18 @@
 #include <iso15118/io/logging.hpp>
 #include <iso15118/message/type.hpp>
 
-#include <iso15118/ev/config.hpp>
+#include <iso15118/ev/config/config.hpp>
 #include <variant>
 
 #include <iso15118/ev/controller.hpp>
-#include <iso15118/ev/session/feedback.hpp>
+#include <iso15118/ev/feedback.hpp>
 
 int main(int argc, char* argv[]) {
     const std::string interface = (argc > 1) ? argv[1] : "lo";
 
     iso15118::io::set_logging_callback([](iso15118::LogLevel, std::string msg) { printf("%s\n", msg.c_str()); });
 
-    iso15118::ev::EvConfig config{};
+    iso15118::ev::config::EvConfig config{};
     config.interface_name = interface;
     config.evcc_id = "02:00:00:00:00:01";
 

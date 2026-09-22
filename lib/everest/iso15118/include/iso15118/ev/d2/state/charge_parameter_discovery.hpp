@@ -15,9 +15,10 @@ struct ChargeParameterDiscovery : public StateBase {
 
     void enter() final;
     Result feed(Event) final;
-
-private:
-    void send();
 };
+
+// Sends the ChargeParameterDiscoveryReq for the session's energy transfer mode and creates the state
+// awaiting it.
+BasePointerType to_charge_parameter_discovery(Context& ctx);
 
 } // namespace iso15118::ev::d2::state

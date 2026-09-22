@@ -5,8 +5,10 @@
 #include "helper.hpp"
 
 #include <iso15118/ev/d2/state/payment_details.hpp>
+#include <iso15118/ev/d2/state/payment_service_selection.hpp>
 #include <iso15118/message_2/authorization.hpp>
 #include <iso15118/message_2/payment_details.hpp>
+#include <iso15118/message_2/payment_service_selection.hpp>
 
 using namespace iso15118;
 namespace dt = message_2::datatypes;
@@ -26,16 +28,34 @@ message_2::PaymentDetailsResponse make_response(const message_2::Header& header,
 const auto seed_contract = [](D2StateHelper& helper) {
     auto& pnc = helper.get_context().pnc;
     pnc.contract_selected = true;
-    pnc.emaid = "DEPNXCONTRACT1";
-    pnc.contract_cert_der = {0x30, 0x02, 0x03};
-    pnc.contract_sub_certs_der = {{0x30, 0x04}};
+    pnc.contract = ev::d2::ContractMaterial{
+        {0x30, 0x02, 0x03}, {{0x30, 0x04}}, make_test_ec_key_pem(), std::nullopt, "DEPNXCONTRACT1"};
 };
+
+// A preloaded contract, entered through PaymentServiceSelection.
+ev::params::EvSessionParams params_with_contract() {
+    ev::params::EvSessionParams params;
+    params.secure_transport = true;
+    params.pnc.prefer_contract = true;
+    params.pnc.contract =
+        ev::d2::ContractMaterial{{0x30, 0x02, 0x03}, {{0x30, 0x04}}, "key", std::nullopt, "DEPNXCONTRACT1"};
+    return params;
+}
+
+const auto by_payment_service_selection = d2_entered_by([](D2StateHelper& helper) {
+    helper.get_context().pnc.contract_selected = true;
+    message_2::PaymentServiceSelectionResponse res;
+    res.header = d2_header();
+    res.response_code = dt::ResponseCode::OK;
+    return d2_successor_of<ev::d2::state::PaymentServiceSelection>(helper, res);
+});
 
 } // namespace
 
 SCENARIO("ISO15118-2 EV PaymentDetails presents the contract chain") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d2::state::PaymentDetails> primed{callbacks, seed_contract};
+    PrimedState<ev::d2::state::PaymentDetails> primed{callbacks, params_with_contract(), false, d2_no_seed,
+                                                      by_payment_service_selection};
 
     const auto request = primed.take_requests().get<message_2::PaymentDetailsRequest>();
     REQUIRE(request.has_value());

@@ -4,7 +4,9 @@
 
 #include "helper.hpp"
 
+#include <iso15118/ev/d20/state/authorization.hpp>
 #include <iso15118/ev/d20/state/service_discovery.hpp>
+#include <iso15118/message/authorization.hpp>
 #include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/service_discovery.hpp>
 #include <iso15118/message/type.hpp>
@@ -52,10 +54,11 @@ SCENARIO("ISO15118-20 EV ServiceDiscovery stops session when DC not offered") {
 }
 
 SCENARIO("ISO15118-20 EV ServiceDiscovery lists the configured AC service") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceDiscovery> primed{callbacks, ServiceCategory::AC, no_seed};
-
-    const auto requests = primed.take_requests();
+    auto authorization = Predecessor::in<ev::d20::state::Authorization>(ServiceCategory::AC, {});
+    const auto requests =
+        authorization.transitions_to(ev::d20::StateID::ServiceDiscovery,
+                                     message_20::AuthorizationResponse{SESSION_HEADER, ResponseCode::OK,
+                                                                       message_20::datatypes::Processing::Finished});
     const auto request_message = requests.get<message_20::ServiceDiscoveryRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->supported_service_ids.has_value());

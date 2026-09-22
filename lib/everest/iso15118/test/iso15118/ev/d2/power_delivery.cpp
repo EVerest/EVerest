@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "helper.hpp"
 
@@ -10,7 +11,8 @@
 
 using namespace iso15118;
 namespace dt = message_2::datatypes;
-using Phase = ev::d2::state::PowerDelivery::Phase;
+using PowerDelivery = ev::d2::state::PowerDelivery;
+using Phase = PowerDelivery::Phase;
 
 namespace {
 
@@ -22,20 +24,26 @@ message_2::PowerDeliveryResponse make_response(const message_2::Header& header, 
 }
 
 const auto seed_schedule = [](D2StateHelper& helper) {
+    helper.get_context().set_sa_schedule_tuple_id(7);
     auto& info = helper.get_context().evse_info;
-    info.sa_schedule_tuple_id = 7;
     info.selected_pmax_schedule.push_back(
         dt::PMaxScheduleEntry{0, std::nullopt, dt::to_physical_value(11000.0, dt::Unit::W)});
     info.selected_pmax_schedule.push_back(
         dt::PMaxScheduleEntry{1800, std::nullopt, dt::to_physical_value(7000.0, dt::Unit::W)});
 };
 
+// PowerDelivery entered through the transition helper every predecessor uses.
+auto entered_with(Phase phase) {
+    return d2_entered_by(
+        [phase](D2StateHelper& helper) { return ev::d2::state::to_power_delivery(helper.get_context(), phase); });
+}
+
 } // namespace
 
 SCENARIO("ISO15118-2 EV PowerDelivery(Start) carries the schedule-derived ChargingProfile") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, ev::EvSessionParams{}, false, seed_schedule,
-                                                     Phase::Start};
+    PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, ev::params::EvSessionParams{}, false, seed_schedule,
+                                                     entered_with(PowerDelivery::Start{})};
 
     const auto request = primed.take_requests().get<message_2::PowerDeliveryRequest>();
     REQUIRE(request.has_value());
@@ -51,7 +59,7 @@ SCENARIO("ISO15118-2 EV PowerDelivery(Start) carries the schedule-derived Chargi
 
 SCENARIO("ISO15118-2 EV PowerDelivery(Start) falls back to a flat profile without a schedule") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, d2_no_seed, Phase::Start};
+    PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, d2_no_seed, entered_with(PowerDelivery::Start{})};
 
     const auto request = primed.take_requests().get<message_2::PowerDeliveryRequest>();
     REQUIRE(request.has_value());
@@ -66,7 +74,8 @@ SCENARIO("ISO15118-2 EV PowerDelivery reports ChargingComplete at full SoC") {
         params.present_soc = 100.0;
         helper.set_dc_params(params);
     };
-    PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, ev::EvSessionParams{}, false, seed_full, Phase::Start};
+    PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, ev::params::EvSessionParams{}, false, seed_full,
+                                                     entered_with(PowerDelivery::Start{})};
 
     const auto request = primed.take_requests().get<message_2::PowerDeliveryRequest>();
     REQUIRE(request.has_value());
@@ -75,7 +84,8 @@ SCENARIO("ISO15118-2 EV PowerDelivery reports ChargingComplete at full SoC") {
 
 SCENARIO("ISO15118-2 EV PowerDelivery(Stop) announces no ChargingProfile") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, d2_no_seed, Phase::Stop};
+    PrimedState<ev::d2::state::PowerDelivery> primed{
+        callbacks, d2_no_seed, entered_with(PowerDelivery::Stop{ev::session::StopReason::EvStop})};
 
     const auto request = primed.take_requests().get<message_2::PowerDeliveryRequest>();
     REQUIRE(request.has_value());
@@ -85,44 +95,66 @@ SCENARIO("ISO15118-2 EV PowerDelivery(Stop) announces no ChargingProfile") {
 }
 
 SCENARIO("ISO15118-2 EV PowerDelivery(Start) enters the matching charge loop") {
-    const ev::feedback::Callbacks callbacks{};
+    int stopped = 0;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.power_delivery_stopped = [&] { ++stopped; };
 
     GIVEN("A DC session") {
-        PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, d2_no_seed, Phase::Start};
+        PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, d2_no_seed, entered_with(PowerDelivery::Start{})};
         primed.handle_response(make_response(d2_header(), dt::ResponseCode::OK));
         REQUIRE(primed.feed(ev::d2::Event::V2GTP_MESSAGE).transitioned() == true);
         REQUIRE(primed.fsm.get_current_state_id() == ev::d2::StateID::CurrentDemand);
     }
 
     GIVEN("An AC session") {
-        PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, ac_params(), false, d2_no_seed, Phase::Start};
+        PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, ac_params(), false, d2_no_seed,
+                                                         entered_with(PowerDelivery::Start{})};
         primed.handle_response(make_response(d2_header(), dt::ResponseCode::OK));
         REQUIRE(primed.feed(ev::d2::Event::V2GTP_MESSAGE).transitioned() == true);
         REQUIRE(primed.fsm.get_current_state_id() == ev::d2::StateID::ChargingStatus);
     }
+    REQUIRE(stopped == 0);
 }
 
 SCENARIO("ISO15118-2 EV PowerDelivery(Stop) tears the session down per mode") {
-    const ev::feedback::Callbacks callbacks{};
+    int stopped = 0;
+    D2StateHelper* active_helper = nullptr;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.power_delivery_stopped = [&] {
+        REQUIRE(active_helper != nullptr);
+        REQUIRE_FALSE(active_helper->get_message_exchange().has_request());
+        ++stopped;
+    };
 
     GIVEN("A DC session") {
-        PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, d2_no_seed, Phase::Stop};
+        PrimedState<ev::d2::state::PowerDelivery> primed{
+            callbacks, d2_no_seed, entered_with(PowerDelivery::Stop{ev::session::StopReason::EvStop})};
+        REQUIRE(stopped == 0);
+        active_helper = &primed.helper;
         primed.handle_response(make_response(d2_header(), dt::ResponseCode::OK));
         REQUIRE(primed.feed(ev::d2::Event::V2GTP_MESSAGE).transitioned() == true);
+        REQUIRE(stopped == 1);
         REQUIRE(primed.fsm.get_current_state_id() == ev::d2::StateID::WeldingDetection);
     }
 
     GIVEN("An AC session") {
-        PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, ac_params(), false, d2_no_seed, Phase::Stop};
+        PrimedState<ev::d2::state::PowerDelivery> primed{
+            callbacks, ac_params(), false, d2_no_seed,
+            entered_with(PowerDelivery::Stop{ev::session::StopReason::EvStop})};
+        REQUIRE(stopped == 0);
+        active_helper = &primed.helper;
         primed.handle_response(make_response(d2_header(), dt::ResponseCode::OK));
         REQUIRE(primed.feed(ev::d2::Event::V2GTP_MESSAGE).transitioned() == true);
+        REQUIRE(stopped == 1);
         REQUIRE(primed.fsm.get_current_state_id() == ev::d2::StateID::SessionStop);
     }
 }
 
 SCENARIO("ISO15118-2 EV PowerDelivery(Renegotiate) returns to ChargeParameterDiscovery") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, d2_no_seed, Phase::Renegotiate};
+    int stopped = 0;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.power_delivery_stopped = [&] { ++stopped; };
+    PrimedState<ev::d2::state::PowerDelivery> primed{callbacks, d2_no_seed, entered_with(PowerDelivery::Renegotiate{})};
 
     const auto request = primed.take_requests().get<message_2::PowerDeliveryRequest>();
     REQUIRE(request.has_value());
@@ -131,14 +163,19 @@ SCENARIO("ISO15118-2 EV PowerDelivery(Renegotiate) returns to ChargeParameterDis
     primed.handle_response(make_response(d2_header(), dt::ResponseCode::OK));
     REQUIRE(primed.feed(ev::d2::Event::V2GTP_MESSAGE).transitioned() == true);
     REQUIRE(primed.fsm.get_current_state_id() == ev::d2::StateID::ChargeParameterDiscovery);
+    REQUIRE(stopped == 0);
 }
 
 SCENARIO("ISO15118-2 EV PowerDelivery rejects malformed responses") {
-    const ev::feedback::Callbacks callbacks{};
-    const auto make_fsm = [](D2StateHelper& helper) {
+    int stopped = 0;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.power_delivery_stopped = [&] { ++stopped; };
+    const auto phase = GENERATE(as<Phase>{}, PowerDelivery::Start{},
+                                PowerDelivery::Stop{ev::session::StopReason::EvStop}, PowerDelivery::Renegotiate{});
+    const auto make_fsm = [phase](D2StateHelper& helper) {
         auto& ctx = helper.get_context();
         ctx.set_session_id(D2_SESSION_ID);
-        return fsm::v2::FSM<ev::d2::StateBase>{ctx.create_state<ev::d2::state::PowerDelivery>(Phase::Start)};
+        return fsm::v2::FSM<ev::d2::StateBase>{ctx.create_state<ev::d2::state::PowerDelivery>(phase)};
     };
     const auto make_ok = [](const message_2::Header& header) { return make_response(header, dt::ResponseCode::OK); };
     message_2::AuthorizationResponse wrong;
@@ -146,4 +183,5 @@ SCENARIO("ISO15118-2 EV PowerDelivery rejects malformed responses") {
     wrong.response_code = dt::ResponseCode::OK;
     wrong.evse_processing = dt::EVSEProcessing::Finished;
     check_rejection_paths(callbacks, ev::d2::StateID::PowerDelivery, make_fsm, make_ok, wrong);
+    REQUIRE(stopped == 0);
 }

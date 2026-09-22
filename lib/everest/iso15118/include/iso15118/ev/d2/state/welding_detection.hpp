@@ -4,20 +4,23 @@
 
 #include <iso15118/ev/d2/context.hpp>
 #include <iso15118/ev/d2/states.hpp>
+#include <iso15118/ev/session/stop_reason.hpp>
+#include <iso15118/ev/welding_detection.hpp>
 
 namespace iso15118::ev::d2::state {
 
-// DC WeldingDetection loop; exits to SessionStop once the EVSE voltage is safe or the cycle backstop is
-// reached.
+// Polls until voltage is safe; an exhausted bound reports failure and terminates the session.
 struct WeldingDetection : public StateBase {
-    WeldingDetection(Context& ctx) : StateBase(ctx, StateID::WeldingDetection) {
+    WeldingDetection(Context& ctx, session::StopReason stop_reason) :
+        StateBase(ctx, StateID::WeldingDetection), m_stop_reason(stop_reason) {
     }
 
     void enter() final;
     Result feed(Event) final;
 
 private:
-    int cycles{0};
+    session::StopReason m_stop_reason;
+    ev::welding_detection::Progress progress;
 };
 
 } // namespace iso15118::ev::d2::state

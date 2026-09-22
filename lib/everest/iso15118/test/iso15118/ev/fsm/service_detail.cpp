@@ -3,6 +3,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <bitset>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -10,11 +12,13 @@
 #include "helper.hpp"
 
 #include <iso15118/d20/der_functions.hpp>
+#include <iso15118/ev/d20/der/iec_functions.hpp>
 #include <iso15118/ev/d20/state/service_detail.hpp>
-#include <iso15118/ev/der_control_functions.hpp>
+#include <iso15118/ev/d20/state/service_discovery.hpp>
 #include <iso15118/io/log_levels.hpp>
 #include <iso15118/io/logging.hpp>
 #include <iso15118/message/service_detail.hpp>
+#include <iso15118/message/service_discovery.hpp>
 #include <iso15118/message/service_selection.hpp>
 #include <iso15118/message/type.hpp>
 
@@ -80,7 +84,7 @@ using iso15118::iec::DERControlName;
 // width so a narrow EXI encoding (int8_t/int16_t) can be exercised too.
 template <typename Int = int32_t>
 ParameterSet make_der_param_set(uint16_t id, ControlMode control_mode,
-                                std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> der_mask) {
+                                std::bitset<ev::d20::der::DER_CONTROL_FUNCTION_COUNT> der_mask) {
     ParameterSet set{};
     set.id = id;
     set.parameter.push_back({"Connector", static_cast<int32_t>(1)});
@@ -90,17 +94,33 @@ ParameterSet make_der_param_set(uint16_t id, ControlMode control_mode,
     return set;
 }
 
-std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> der_mask(std::initializer_list<DERControlName> functions) {
-    std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> mask;
+std::bitset<ev::d20::der::DER_CONTROL_FUNCTION_COUNT> der_mask(std::initializer_list<DERControlName> functions) {
+    std::bitset<ev::d20::der::DER_CONTROL_FUNCTION_COUNT> mask;
     for (const auto function : functions) {
         mask.set(static_cast<std::size_t>(function));
     }
     return mask;
 }
 
+// The AC_DER_IEC demand ServiceDetail reports through der_enabled_modes.
+struct DemandRecorder {
+    std::optional<std::bitset<ev::d20::der::DER_CONTROL_FUNCTION_COUNT>> demand;
+    ev::feedback::Callbacks callbacks{};
+
+    DemandRecorder() {
+        callbacks.der_enabled_modes = [this](std::uint32_t modes) { demand.emplace(modes); };
+    }
+    DemandRecorder(const DemandRecorder&) = delete;
+    DemandRecorder& operator=(const DemandRecorder&) = delete;
+
+    bool demands(DERControlName function) const {
+        return demand.has_value() and demand->test(static_cast<std::size_t>(function));
+    }
+};
+
 // A DER parameter set with an explicit Connector value.
 ParameterSet make_der_param_set_on(uint16_t id, ControlMode control_mode, int32_t connector,
-                                   std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> der_mask) {
+                                   std::bitset<ev::d20::der::DER_CONTROL_FUNCTION_COUNT> der_mask) {
     auto set = make_der_param_set(id, control_mode, der_mask);
     set.parameter[0] = {"Connector", connector};
     return set;
@@ -119,23 +139,23 @@ ParameterSet make_der_param_set_raw(uint16_t id, ControlMode control_mode, int32
 }
 
 // The lowest bit position the EV models no function for.
-constexpr int32_t UNKNOWN_FUNCTION_BIT = int32_t{1} << ev::DER_CONTROL_FUNCTION_COUNT;
+constexpr int32_t UNKNOWN_FUNCTION_BIT = int32_t{1} << ev::d20::der::DER_CONTROL_FUNCTION_COUNT;
 
 int32_t raw_der_mask(std::initializer_list<DERControlName> functions) {
     return static_cast<int32_t>(der_mask(functions).to_ulong());
 }
 
 // An EV supporting the two DSO setpoint functions, requesting the AC_DER_IEC service.
-ev::DerControlFunctions dso_setpoint_support() {
-    ev::DerControlFunctions functions{};
+ev::d20::der::DerControlFunctions dso_setpoint_support() {
+    ev::d20::der::DerControlFunctions functions{};
     functions.dso_q_setpoint_provision = true;
     functions.dso_cos_phi_setpoint_provision = true;
     return functions;
 }
 
 // An EV supporting every IEC DER control function.
-ev::DerControlFunctions all_der_support() {
-    ev::DerControlFunctions functions{};
+ev::d20::der::DerControlFunctions all_der_support() {
+    ev::d20::der::DerControlFunctions functions{};
     functions.over_frequency_watt_mode = true;
     functions.under_frequency_watt_mode = true;
     functions.volt_watt_mode = true;
@@ -154,7 +174,7 @@ ev::DerControlFunctions all_der_support() {
 // Seeds an AC session for an EV drawing on \p phase_count lines.
 auto seed_ac_lines(uint8_t phase_count) {
     return [phase_count](FsmStateHelper& helper) {
-        ev::AcChargeParams params{};
+        ev::params::AcChargeParams params{};
         params.phase_count = phase_count;
         helper.set_ac_params(params);
     };
@@ -170,34 +190,6 @@ uint16_t selected_parameter_set_id(ev::d20::MessageExchange& msg_exch) {
     return request_message->selected_energy_transfer_service.parameter_set_id;
 }
 
-// Collects libiso15118 log lines while alive, then restores a no-op callback so a later
-// scenario cannot log into freed storage.
-class LogCapture {
-public:
-    LogCapture() {
-        io::set_logging_callback(
-            [this](LogLevel level, std::string message) { lines.emplace_back(level, std::move(message)); });
-    }
-
-    ~LogCapture() {
-        io::set_logging_callback([](LogLevel, const std::string&) {});
-    }
-
-    LogCapture(const LogCapture&) = delete;
-    LogCapture& operator=(const LogCapture&) = delete;
-
-    bool has_warning_containing(const std::string& needle) const {
-        for (const auto& [level, message] : lines) {
-            if (level == LogLevel::Warning and message.find(needle) != std::string::npos) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-private:
-    std::vector<std::pair<LogLevel, std::string>> lines;
-};
 } // namespace
 
 SCENARIO("ISO15118-20 EV ServiceDetail transitions to ServiceSelection with the Dynamic parameter set") {
@@ -219,22 +211,28 @@ SCENARIO("ISO15118-20 EV ServiceDetail transitions to ServiceSelection with the 
     REQUIRE(request_message->selected_energy_transfer_service.parameter_set_id == 7);
 }
 
-SCENARIO("ISO15118-20 EV ServiceDetail emits a DC ServiceDetailRequest on enter") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, no_seed};
+namespace {
+// ServiceDetail's first request, sent by ServiceDiscovery as it finds `service` offered.
+DecodedRequests first_request(ServiceCategory service) {
+    auto discovery = Predecessor::in<ev::d20::state::ServiceDiscovery>(service, {});
+    message_20::ServiceDiscoveryResponse res{};
+    res.header = SESSION_HEADER;
+    res.response_code = ResponseCode::OK;
+    res.energy_transfer_service_list = {{service, false}};
+    return discovery.transitions_to(ev::d20::StateID::ServiceDetail, res);
+}
+} // namespace
 
-    const auto requests = primed.take_requests();
+SCENARIO("ISO15118-20 EV ServiceDiscovery sends a DC ServiceDetailRequest") {
+    const auto requests = first_request(ServiceCategory::DC);
     const auto request_message = requests.get<message_20::ServiceDetailRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
     REQUIRE(request_message->service == message_20::to_underlying_value(ServiceCategory::DC));
 }
 
-SCENARIO("ISO15118-20 EV ServiceDetail requests the configured AC service on enter") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC, no_seed};
-
-    const auto requests = primed.take_requests();
+SCENARIO("ISO15118-20 EV ServiceDiscovery requests the details of the configured AC service") {
+    const auto requests = first_request(ServiceCategory::AC);
     const auto request_message = requests.get<message_20::ServiceDetailRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->service == message_20::to_underlying_value(ServiceCategory::AC));
@@ -347,7 +345,8 @@ SCENARIO("ISO15118-20 EV ServiceDetail rejects malformed responses") {
 }
 
 SCENARIO("ISO15118-20 EV ServiceDetail selects the first AC_DER_IEC set whose functions are a subset") {
-    const ev::feedback::Callbacks callbacks{};
+    DemandRecorder recorder{};
+    const auto& callbacks = recorder.callbacks;
     FsmStateHelper helper{callbacks,
                           {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
                           ServiceCategory::AC_DER_IEC,
@@ -367,7 +366,7 @@ SCENARIO("ISO15118-20 EV ServiceDetail selects the first AC_DER_IEC set whose fu
     REQUIRE(result.transitioned() == true);
     REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
     REQUIRE(ctx.is_session_stopped() == false);
-    REQUIRE(ctx.der_demanded_functions().test(static_cast<size_t>(DERControlName::DSOQSetpointProvision)));
+    REQUIRE(recorder.demands(DERControlName::DSOQSetpointProvision));
 
     const auto requests = take_all_requests(helper.get_message_exchange());
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
@@ -395,7 +394,9 @@ SCENARIO("ISO15118-20 EV ServiceDetail stops the session when no AC_DER_IEC set 
 }
 
 SCENARIO("ISO15118-20 EV ServiceDetail selects a set demanding unsupported functions when not strict") {
-    const ev::feedback::Callbacks callbacks{};
+    const LogCapture logs{};
+    DemandRecorder recorder{};
+    const auto& callbacks = recorder.callbacks;
     FsmStateHelper helper{callbacks,
                           {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
                           ServiceCategory::AC_DER_IEC,
@@ -416,8 +417,9 @@ SCENARIO("ISO15118-20 EV ServiceDetail selects a set demanding unsupported funct
     REQUIRE(ctx.is_session_stopped() == false);
     // [V2G20-3190]: the whole demand is recorded, including what the EV cannot support. Narrowing
     // it here would hide that this session deviates from [V2G20-3191].
-    REQUIRE(ctx.der_demanded_functions().test(static_cast<size_t>(DERControlName::DSOQSetpointProvision)));
-    REQUIRE(ctx.der_demanded_functions().test(static_cast<size_t>(DERControlName::VoltWattMode)));
+    REQUIRE(recorder.demands(DERControlName::DSOQSetpointProvision));
+    REQUIRE(recorder.demands(DERControlName::VoltWattMode));
+    REQUIRE(logs.has_warning_containing("does not support (VoltWattMode)"));
 
     const auto requests = take_all_requests(helper.get_message_exchange());
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
@@ -474,7 +476,8 @@ SCENARIO("ISO15118-20 EV ServiceDetail stops on AC_DER_IEC functions above the s
 
 SCENARIO("ISO15118-20 EV ServiceDetail warns on AC_DER_IEC functions above the supported width when not strict") {
     const LogCapture logs{};
-    const ev::feedback::Callbacks callbacks{};
+    DemandRecorder recorder{};
+    const auto& callbacks = recorder.callbacks;
     FsmStateHelper helper{callbacks,
                           {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
                           ServiceCategory::AC_DER_IEC,
@@ -495,7 +498,7 @@ SCENARIO("ISO15118-20 EV ServiceDetail warns on AC_DER_IEC functions above the s
     REQUIRE(ctx.is_session_stopped() == false);
     REQUIRE(logs.has_warning_containing("unknown function bits"));
     // Bits above the modelled width are dropped by the bitset; the modelled demand survives.
-    REQUIRE(ctx.der_demanded_functions().test(static_cast<size_t>(DERControlName::VoltWattMode)));
+    REQUIRE(recorder.demands(DERControlName::VoltWattMode));
 
     const auto requests = take_all_requests(helper.get_message_exchange());
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
@@ -504,7 +507,8 @@ SCENARIO("ISO15118-20 EV ServiceDetail warns on AC_DER_IEC functions above the s
 }
 
 SCENARIO("ISO15118-20 EV ServiceDetail skips an AC_DER_IEC set with functions above the supported width") {
-    const ev::feedback::Callbacks callbacks{};
+    DemandRecorder recorder{};
+    const auto& callbacks = recorder.callbacks;
     FsmStateHelper helper{callbacks,
                           {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
                           ServiceCategory::AC_DER_IEC,
@@ -525,7 +529,7 @@ SCENARIO("ISO15118-20 EV ServiceDetail skips an AC_DER_IEC set with functions ab
     REQUIRE(result.transitioned() == true);
     REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
     REQUIRE(ctx.is_session_stopped() == false);
-    REQUIRE(ctx.der_demanded_functions().test(static_cast<size_t>(DERControlName::DSOCosPhiSetpointProvision)));
+    REQUIRE(recorder.demands(DERControlName::DSOCosPhiSetpointProvision));
 
     const auto requests = take_all_requests(helper.get_message_exchange());
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
@@ -560,7 +564,8 @@ SCENARIO("ISO15118-20 EV ServiceDetail treats a non-integer DERControlFunctions 
 SCENARIO("ISO15118-20 EV ServiceDetail selects the first Dynamic set on a non-integer DERControlFunctions value when "
          "not strict") {
     const LogCapture logs{};
-    const ev::feedback::Callbacks callbacks{};
+    DemandRecorder recorder{};
+    const auto& callbacks = recorder.callbacks;
     FsmStateHelper helper{callbacks,
                           {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
                           ServiceCategory::AC_DER_IEC,
@@ -579,7 +584,7 @@ SCENARIO("ISO15118-20 EV ServiceDetail selects the first Dynamic set on a non-in
     REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
     REQUIRE(ctx.is_session_stopped() == false);
     REQUIRE(logs.has_warning_containing("non-integer DERControlFunctions"));
-    REQUIRE(ctx.der_demanded_functions().none());
+    REQUIRE(recorder.demand == std::bitset<ev::d20::der::DER_CONTROL_FUNCTION_COUNT>{});
 
     const auto requests = take_all_requests(helper.get_message_exchange());
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
@@ -649,7 +654,8 @@ SCENARIO("ISO15118-20 EV ServiceDetail falls back to SinglePhase with a warning 
 }
 
 SCENARIO("ISO15118-20 EV ServiceDetail records the DER mask of the set it selects") {
-    const ev::feedback::Callbacks callbacks{};
+    DemandRecorder recorder{};
+    const auto& callbacks = recorder.callbacks;
     FsmStateHelper helper{callbacks,
                           {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
                           ServiceCategory::AC_DER_IEC,
@@ -657,15 +663,15 @@ SCENARIO("ISO15118-20 EV ServiceDetail records the DER mask of the set it select
                           true};
     auto& ctx = helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
-    ev::AcChargeParams params{};
+    ev::params::AcChargeParams params{};
     params.phase_count = 3;
     helper.set_ac_params(params);
     auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
 
     // Both sets are acceptable and neither is on the preferred connector, so the first one is
     // selected; its mask, not the last one scanned, is what was negotiated.
-    const std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> first_mask{0b11};
-    const std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> second_mask{0b1};
+    const std::bitset<ev::d20::der::DER_CONTROL_FUNCTION_COUNT> first_mask{0b11};
+    const std::bitset<ev::d20::der::DER_CONTROL_FUNCTION_COUNT> second_mask{0b1};
     helper.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC,
                                          {make_der_param_set_on(1, ControlMode::Dynamic, SINGLE_PHASE, first_mask),
                                           make_der_param_set_on(2, ControlMode::Dynamic, SINGLE_PHASE, second_mask)}));
@@ -674,14 +680,37 @@ SCENARIO("ISO15118-20 EV ServiceDetail records the DER mask of the set it select
     REQUIRE(result.transitioned() == true);
     REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
     REQUIRE(selected_parameter_set_id(helper.get_message_exchange()) == 1);
-    REQUIRE(ctx.der_demanded_functions() == first_mask);
+    REQUIRE(recorder.demand == first_mask);
     REQUIRE(ctx.selected_ac_connector() == message_20::datatypes::AcConnector::SinglePhase);
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail reports the recorded AC_DER_IEC mask through der_enabled_modes") {
+    std::vector<std::uint32_t> notified;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.der_enabled_modes = [&notified](std::uint32_t modes) { notified.push_back(modes); };
+    FsmStateHelper helper{callbacks,
+                          {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                          ServiceCategory::AC_DER_IEC,
+                          dso_setpoint_support(),
+                          false};
+    auto& ctx = helper.get_context();
+    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
+
+    // Not strict, so the unsupported VoltWattMode demand is selected and reported with the rest.
+    const auto demand = der_mask({DERControlName::VoltWattMode, DERControlName::DSOQSetpointProvision});
+    helper.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC,
+                                         {make_der_param_set(5, ControlMode::Dynamic, demand)}));
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(notified == std::vector<std::uint32_t>{static_cast<std::uint32_t>(demand.to_ulong())});
 }
 
 namespace {
 ev::d20::SessionOptions prefer(ControlMode mode) {
     ev::d20::SessionOptions options{};
-    options.control_mode = mode;
+    options.d20.control_mode = mode;
     return options;
 }
 } // namespace
@@ -760,7 +789,7 @@ SCENARIO("ISO15118-20 EV ServiceDetail falls back to the offered AC_DER_IEC mode
                           prefer(ControlMode::Scheduled)};
     auto& ctx = helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
-    ev::AcChargeParams params{};
+    ev::params::AcChargeParams params{};
     params.phase_count = 1;
     helper.set_ac_params(params);
     auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
@@ -785,7 +814,7 @@ SCENARIO("ISO15118-20 EV ServiceDetail selects a Scheduled AC_DER_IEC set when i
                           prefer(ControlMode::Scheduled)};
     auto& ctx = helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
-    ev::AcChargeParams params{};
+    ev::params::AcChargeParams params{};
     params.phase_count = 1;
     helper.set_ac_params(params);
     auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
@@ -816,7 +845,7 @@ SCENARIO("ISO15118-20 EV ServiceDetail accepts a Scheduled-only AC_DER_IEC offer
                           true};
     auto& ctx = helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
-    ev::AcChargeParams params{};
+    ev::params::AcChargeParams params{};
     params.phase_count = 1;
     helper.set_ac_params(params);
     auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
@@ -829,4 +858,54 @@ SCENARIO("ISO15118-20 EV ServiceDetail accepts a Scheduled-only AC_DER_IEC offer
     REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
     REQUIRE(ctx.is_session_stopped() == false);
     REQUIRE(ctx.selected_control_mode() == ControlMode::Scheduled);
+}
+
+// AMD1 Table M.54 [V2G20-3280]: AC_DER_SAE offers the plain AC parameters.
+SCENARIO("ISO15118-20 EV ServiceDetail selects the Dynamic AC_DER_SAE set on the preferred connector") {
+    const LogCapture logs{};
+    DemandRecorder recorder{};
+    const auto& callbacks = recorder.callbacks;
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC_DER_SAE, seed_ac_lines(3)};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_SAE,
+                                         {make_param_set(1, ControlMode::Scheduled, THREE_PHASE),
+                                          make_param_set(2, ControlMode::Dynamic, SINGLE_PHASE),
+                                          make_param_set(3, ControlMode::Dynamic, THREE_PHASE)}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
+    REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 3);
+    REQUIRE(primed.ctx.selected_control_mode() == ControlMode::Dynamic);
+    REQUIRE(primed.ctx.selected_ac_connector() == message_20::datatypes::AcConnector::ThreePhase);
+    REQUIRE_FALSE(recorder.demand.has_value());
+    REQUIRE_FALSE(logs.has_warning_containing("preferred"));
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail selects a Dynamic AC_DER_SAE set even when Scheduled is preferred") {
+    const LogCapture logs{};
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC_DER_SAE,
+                                                      prefer(ControlMode::Scheduled), seed_ac_lines(1)};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_SAE,
+                                         {make_param_set(1, ControlMode::Scheduled, SINGLE_PHASE),
+                                          make_param_set(2, ControlMode::Dynamic, SINGLE_PHASE)}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 2);
+    REQUIRE(primed.ctx.selected_control_mode() == ControlMode::Dynamic);
+    REQUIRE(logs.has_warning_containing("ignoring the preferred Scheduled control mode"));
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail stops the session when AC_DER_SAE is offered only Scheduled sets") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC_DER_SAE, seed_ac_lines(3)};
+
+    expect_stops_session(primed,
+                         make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_SAE,
+                                       {make_param_set(1, ControlMode::Scheduled, SINGLE_PHASE),
+                                        make_param_set(2, ControlMode::Scheduled, THREE_PHASE)}),
+                         ev::d20::StateID::ServiceDetail);
 }

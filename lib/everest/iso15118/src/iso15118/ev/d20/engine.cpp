@@ -5,7 +5,7 @@
 #include <memory>
 
 #include <iso15118/detail/helper.hpp>
-#include <iso15118/message/variant.hpp>
+#include <iso15118/message/response_variant.hpp>
 
 #include <iso15118/ev/d20/state/supported_app_protocol.hpp>
 #include <iso15118/ev/d20/timeouts.hpp>
@@ -13,14 +13,14 @@
 
 namespace iso15118::ev::d20 {
 
-bool decodable_payload_type(io::v2gtp::PayloadType payload_type) {
+bool decodable_payload_type(v2gtp::PayloadType payload_type) {
     switch (payload_type) {
-    case io::v2gtp::PayloadType::SAP:
-    case io::v2gtp::PayloadType::Part20Main:
-    case io::v2gtp::PayloadType::Part20DC:
-    case io::v2gtp::PayloadType::Part20AC:
-    case io::v2gtp::PayloadType::Part20DerIec:
-    case io::v2gtp::PayloadType::Part20DerSae:
+    case v2gtp::PayloadType::SAP:
+    case v2gtp::PayloadType::Part20Main:
+    case v2gtp::PayloadType::Part20DC:
+    case v2gtp::PayloadType::Part20AC:
+    case v2gtp::PayloadType::Part20DerIec:
+    case v2gtp::PayloadType::Part20DerSae:
         return true;
     default:
         return false;
@@ -29,15 +29,27 @@ bool decodable_payload_type(io::v2gtp::PayloadType payload_type) {
 
 Engine::Engine(feedback::Callbacks callbacks, message_20::datatypes::Identifier evcc_id,
                std::vector<message_20::SupportedAppProtocol> advertised_app_protocols, session::Latches& latches,
-               everest::lib::util::monitor<DcChargeParams>& dc_params,
-               everest::lib::util::monitor<AcChargeParams>& ac_params,
+               everest::lib::util::monitor<params::DcChargeParams>& dc_params,
+               everest::lib::util::monitor<params::AcChargeParams>& ac_params,
                message_20::datatypes::ServiceCategory energy_service, SessionOptions options) :
     ctx(std::move(callbacks), message_exchange, std::move(evcc_id), std::move(advertised_app_protocols), latches,
         dc_params, ac_params, energy_service, std::move(options)) {
 }
 
 void Engine::start() {
+    const auto& advertised = ctx.get_advertised_app_protocols();
+    const auto req = state::SupportedAppProtocol::make_request(advertised);
+    // The request has no way to report the protocols that did not fit, so say what was left out.
+    if (req.app_protocol.size() < advertised.size()) {
+        logf_warning("Advertising %zu of %zu configured app protocols: the request holds at most %zu",
+                     req.app_protocol.size(), advertised.size(), req.app_protocol.max_size());
+    }
+    ctx.send_request(req);
     fsm.emplace(ctx.create_state<state::SupportedAppProtocol>());
+}
+
+void Engine::set_offer(std::vector<session::OfferedProtocol> offer) {
+    ctx.set_offer(std::move(offer));
 }
 
 bool Engine::started() const {
@@ -46,13 +58,20 @@ bool Engine::started() const {
 
 // [V2G20-800]: a V2GTP header carrying a payload type this entity does not support is ignored.
 // Staging it instead would reach the states as an unexpected response and end the session.
-bool Engine::stage_response(io::v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
+bool Engine::stage_response(v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
     if (not decodable_payload_type(payload_type)) {
         logf_warning("Ignoring V2GTP payload type 0x%04x on an ISO 15118-20 session",
                      static_cast<unsigned>(payload_type));
         return false;
     }
-    message_exchange.set_response(std::make_unique<message_20::Variant>(payload_type, view));
+    auto response = std::make_unique<message_20::ResponseVariant>(payload_type, view);
+    // [V2G20-440]: so is a message that does not answer the pending request, SAP included.
+    if (not message_exchange.answers_request_on_wire(*response)) {
+        logf_warning("Ignoring a message that does not answer the pending request (message type id %d)",
+                     static_cast<int>(response->get_type()));
+        return false;
+    }
+    message_exchange.set_response(std::move(response));
     return true;
 }
 
@@ -72,8 +91,9 @@ FeedOutcome Engine::feed(Event ev) {
 
     const auto negotiated = ctx.negotiated_protocol();
     const bool handover = negotiated.has_value() and negotiated.value() != ProtocolId::ISO15118_20;
-    outcome.violation = disposition_violation(fed.output, ev == Event::V2GTP_MESSAGE, message_exchange.has_request(),
-                                              ctx.is_session_stopped(), outcome.transitioned, handover);
+    outcome.violation = session::disposition_violation(fed.output, ev == Event::V2GTP_MESSAGE,
+                                                       message_exchange.has_request(), ctx.is_session_stopped(),
+                                                       outcome.transitioned, handover, ongoing_timeout().has_value());
     return outcome;
 }
 
@@ -81,7 +101,7 @@ bool Engine::has_request() const {
     return message_exchange.has_request();
 }
 
-std::optional<std::pair<std::vector<uint8_t>, io::v2gtp::PayloadType>> Engine::take_request() {
+std::optional<std::pair<std::vector<uint8_t>, v2gtp::PayloadType>> Engine::take_request() {
     return message_exchange.take_request();
 }
 
@@ -98,11 +118,18 @@ std::chrono::milliseconds Engine::response_timeout() const {
     return timeouts::response_timeout(fsm->get_current_state_id());
 }
 
+bool Engine::is_welding_detection() const {
+    return current_state() == StateID::DC_WeldingDetection;
+}
+
 std::optional<std::chrono::milliseconds> Engine::ongoing_timeout() const {
+    if (is_welding_detection()) {
+        return ctx.welding_detection.timeout;
+    }
     if (not fsm.has_value()) {
         return std::nullopt;
     }
-    return timeouts::ongoing_timeout(fsm->get_current_state_id(), ctx.options().authorization_timeout);
+    return timeouts::ongoing_timeout(fsm->get_current_state_id(), ctx.options().d20.authorization_timeout);
 }
 
 std::chrono::milliseconds Engine::min_request_interval() const {

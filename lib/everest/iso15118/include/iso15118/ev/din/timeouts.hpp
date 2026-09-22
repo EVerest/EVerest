@@ -21,7 +21,6 @@ constexpr auto ONGOING_CHARGE_PARAMETER_DISCOVERY = 60000ms;
 constexpr auto ONGOING_CABLE_CHECK = 40000ms;
 // Table 77 V2G_EVCC_PRE_CHARGE_TIMEOUT, Section 9.6.5.5 (Josev din_spec/timeouts.py).
 constexpr auto ONGOING_PRE_CHARGE = 50000ms;
-constexpr auto ONGOING_WELDING_DETECTION = 60000ms;
 
 // EvseV2G MAX_RES_TIME parity.
 constexpr auto MIN_REQUEST_INTERVAL = 100ms;

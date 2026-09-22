@@ -2,10 +2,10 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/ev/d2/state/authorization.hpp>
 
+#include <iso15118/detail/d2/crypto.hpp>
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d2/state/charge_parameter_discovery.hpp>
 #include <iso15118/ev/detail/d2/context_helper.hpp>
-#include <iso15118/ev/detail/d2/crypto.hpp>
 #include <iso15118/ev/detail/d2/state/authorization.hpp>
 
 namespace iso15118::ev::d2::state {
@@ -25,28 +25,39 @@ message_2::AuthorizationRequest create_pnc_request(const dt::GenChallenge& gen_c
 
 } // namespace authorization
 
-bool Authorization::send() {
-    if (not m_ctx.pnc.contract_selected) {
-        m_ctx.send_request(authorization::create_request());
-        return true;
-    }
+namespace {
 
-    auto req = authorization::create_pnc_request(m_ctx.pnc.gen_challenge);
-    req.header.session_id = m_ctx.get_session_id();
-    const crypto::PrivateKey key{m_ctx.pnc.contract_key_pem, m_ctx.pnc.contract_key_password};
-    auto signed_exi = crypto::serialize_signed(req, key);
+// Signs the Plug & Charge request with the contract key. False when it cannot be signed; the session
+// is stopped and nothing is sent.
+bool send_pnc_request(Context& ctx) {
+    auto req = authorization::create_pnc_request(ctx.pnc.gen_challenge);
+    req.header.session_id = ctx.get_session_id();
+    const auto& contract = ctx.pnc.contract;
+    const auto key = contract ? iso15118::d2::crypto::PrivateKey{contract->key_pem, contract->key_password}
+                              : iso15118::d2::crypto::PrivateKey{};
+    auto signed_exi = iso15118::d2::crypto::serialize_signed(req, key);
     if (signed_exi.empty()) {
         logf_error("Authorization: failed to sign the Plug & Charge AuthorizationReq; stopping the session");
-        m_ctx.stop_session();
+        ctx.stop_session();
         return false;
     }
-    m_ctx.send_raw(std::move(signed_exi), message_2::Type::AuthorizationReq);
+    ctx.send_raw(std::move(signed_exi), message_2::Type::AuthorizationReq);
     return true;
+}
+
+} // namespace
+
+Result to_authorization(Context& ctx) {
+    if (not ctx.pnc.contract_selected) {
+        ctx.send_request(authorization::create_request());
+    } else if (not send_pnc_request(ctx)) {
+        return Result::stopping();
+    }
+    return ctx.create_state<Authorization>();
 }
 
 void Authorization::enter() {
     logf_debug("Enter state: Authorization (ISO 15118-2)");
-    send();
 }
 
 Result Authorization::feed(Event ev) {
@@ -65,13 +76,11 @@ Result Authorization::feed(Event ev) {
     }
 
     if (res->evse_processing != dt::EVSEProcessing::Finished) {
-        if (not send()) {
-            return Result::stopping();
-        }
+        m_ctx.send_request(authorization::create_request());
         return Result::awaiting();
     }
 
-    return m_ctx.create_state<ChargeParameterDiscovery>();
+    return to_charge_parameter_discovery(m_ctx);
 }
 
 } // namespace iso15118::ev::d2::state

@@ -9,16 +9,23 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
 #include <bitset>
+#include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <optional>
 #include <vector>
 
+#include <dlfcn.h>
+#include <sys/timerfd.h>
+
 #include <iso15118/message/ac_charge_loop.hpp>
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
 #include <iso15118/message/ac_der_iec_charge_loop.hpp>
 #include <iso15118/message/ac_der_iec_charge_parameter_discovery.hpp>
+#include <iso15118/message/ac_der_sae_charge_loop.hpp>
+#include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/common_types.hpp>
@@ -39,7 +46,9 @@
 
 #include <iso15118/d20/der_functions.hpp>
 #include <iso15118/ev/d20/control_event.hpp>
-#include <iso15118/ev/der_control_functions.hpp>
+#include <iso15118/ev/d20/der/iec_functions.hpp>
+#include <iso15118/ev/d20/timeouts.hpp>
+#include <iso15118/sae_modes.hpp>
 
 #include "test_support.hpp"
 
@@ -48,12 +57,29 @@ using namespace std::chrono_literals;
 using namespace iso15118::ev::test;
 
 namespace {
+// While set, arming a timer for the DC_CableCheck ongoing bound fails as timerfd_settime would.
+std::atomic<bool> refuse_cable_check_guard{false};
+} // namespace
+
+extern "C" int timerfd_settime(int fd, int flags, const itimerspec* new_value, itimerspec* old_value) {
+    using timerfd_settime_fn = int (*)(int, int, const itimerspec*, itimerspec*);
+    static const auto real = reinterpret_cast<timerfd_settime_fn>(dlsym(RTLD_NEXT, "timerfd_settime"));
+    const auto guard = std::chrono::duration_cast<std::chrono::seconds>(ev::d20::timeouts::ONGOING_CABLE_CHECK);
+    if (refuse_cable_check_guard and new_value != nullptr and new_value->it_value.tv_sec == guard.count() and
+        new_value->it_value.tv_nsec == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    return real(fd, flags, new_value, old_value);
+}
+
+namespace {
 
 using message_20::datatypes::ControlMode;
 using message_20::datatypes::ParameterSet;
 using message_20::datatypes::Processing;
 using message_20::datatypes::ResponseCode;
-using PT = io::v2gtp::PayloadType;
+using PT = v2gtp::PayloadType;
 
 constexpr message_20::datatypes::SessionId WALK_SESSION_ID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
 
@@ -64,6 +90,8 @@ constexpr float AC_MAX_CHARGE_POWER = 22000.0f;
 constexpr float AC_MIN_CHARGE_POWER = 1000.0f;
 constexpr float AC_PRESENT_ACTIVE_POWER = 5000.0f;
 constexpr float AC_TARGET_ACTIVE_POWER = 7000.0f;
+// Injected in the AC_DER_IEC loop response, asserted on the published target.
+constexpr float AC_TARGET_FREQUENCY = 50.5f;
 
 // Discharge limits seeded for the AC_BPT and AC_DER_IEC walks; asserted on the
 // BPT and DER CPD requests and the BPT charge-loop requests.
@@ -92,9 +120,9 @@ ParameterSet make_param_set(uint16_t id, ControlMode control_mode) {
     return set;
 }
 
-std::bitset<iso15118::ev::DER_CONTROL_FUNCTION_COUNT>
+std::bitset<iso15118::ev::d20::der::DER_CONTROL_FUNCTION_COUNT>
 der_mask(std::initializer_list<iso15118::iec::DERControlName> functions) {
-    std::bitset<iso15118::ev::DER_CONTROL_FUNCTION_COUNT> mask;
+    std::bitset<iso15118::ev::d20::der::DER_CONTROL_FUNCTION_COUNT> mask;
     for (const auto function : functions) {
         mask.set(static_cast<std::size_t>(function));
     }
@@ -104,16 +132,16 @@ der_mask(std::initializer_list<iso15118::iec::DERControlName> functions) {
 // A ServiceDetail parameter set carrying a DERControlFunctions bitmask, as the SECC
 // encodes it for AC_DER_IEC sets.
 ParameterSet make_der_param_set(uint16_t id, ControlMode control_mode,
-                                std::bitset<iso15118::ev::DER_CONTROL_FUNCTION_COUNT> functions_mask) {
+                                std::bitset<iso15118::ev::d20::der::DER_CONTROL_FUNCTION_COUNT> functions_mask) {
     auto set = make_param_set(id, control_mode);
     set.parameter.push_back({"DERControlFunctions", static_cast<int32_t>(functions_mask.to_ulong())});
     return set;
 }
 
-// Walk an ev::Session from start() through the first DC_CableCheckRequest by injecting
+// Walk an ev::session::Session from start() through the ScheduleExchangeRequest by injecting
 // canned response frames, asserting the request emitted at each step and the feedback
 // fired along the way. Returns the established session id.
-message_20::datatypes::SessionId walk_to_dc_cable_check(SessionFixture& fx) {
+message_20::datatypes::SessionId walk_to_schedule_exchange(SessionFixture& fx) {
     const auto sid = WALK_SESSION_ID;
 
     // start() -> SupportedAppProtocolRequest
@@ -197,6 +225,13 @@ message_20::datatypes::SessionId walk_to_dc_cable_check(SessionFixture& fx) {
             fx, "DC_ChargeParameterDiscovery -> ScheduleExchange", cpd_res, PT::Part20DC);
         REQUIRE(req.header.session_id == sid);
     }
+
+    return sid;
+}
+
+// Continue through the first DC_CableCheckRequest. Returns the established session id.
+message_20::datatypes::SessionId walk_to_dc_cable_check(SessionFixture& fx) {
+    const auto sid = walk_to_schedule_exchange(fx);
 
     // ScheduleExchangeResponse(OK, Finished) -> DC_CableCheckRequest; fires ev_power_ready.
     REQUIRE_FALSE(fx.ev_power_ready);
@@ -303,7 +338,7 @@ void walk_stop_to_finish(SessionFixture& fx, const message_20::datatypes::Sessio
     REQUIRE_FALSE(fx.timed_out);
 }
 
-// Walk an AC-configured ev::Session from start() through the first AC_ChargeLoopRequest,
+// Walk an AC-configured ev::session::Session from start() through the first AC_ChargeLoopRequest,
 // asserting the emitted request at each step and the feedback fired along the way. The
 // energy service routes past the DC-only states: ScheduleExchange -> PowerDelivery(Start)
 // -> AC_ChargeLoop, never DC_CableCheck/DC_PreCharge. Returns the established session id.
@@ -450,8 +485,8 @@ void walk_ac_stop_to_finish(SessionFixture& fx, const message_20::datatypes::Ses
 }
 
 // Seeded AC charge params the AC_CPD/AC_ChargeLoop requests are built from.
-ev::AcChargeParams ac_seed_params() {
-    ev::AcChargeParams p{};
+ev::params::AcChargeParams ac_seed_params() {
+    ev::params::AcChargeParams p{};
     // A single-line EV, so the advertised totals reach the wire unsplit and these walks stay
     // about sequencing. The per-line split is pinned by the four AC state scenarios in ev/fsm/.
     p.phase_count = 1;
@@ -461,7 +496,7 @@ ev::AcChargeParams ac_seed_params() {
     return p;
 }
 
-// Walk an AC_DER_IEC-configured ev::Session from start() through the first
+// Walk an AC_DER_IEC-configured ev::session::Session from start() through the first
 // DER_AC_ChargeLoopRequest. The energy service (service id 10) routes through the DER
 // parameter-discovery and charge-loop states, past the DC-only path, exactly like
 // plain AC: ScheduleExchange -> PowerDelivery(Start) -> AC_DER_IEC_ChargeLoop.
@@ -534,9 +569,9 @@ message_20::datatypes::SessionId walk_to_ac_der_iec_charge_loop(SessionFixture& 
                 Catch::Approx(AC_MAX_CHARGE_POWER));
         // Discharge limits come from the discharge params, never mirrored from charge.
         REQUIRE(message_20::datatypes::from_RationalNumber(req.transfer_mode.max_discharge_power) ==
-                Catch::Approx(AC_MAX_DISCHARGE_POWER));
+                Catch::Approx(-AC_MAX_DISCHARGE_POWER));
         REQUIRE(message_20::datatypes::from_RationalNumber(req.transfer_mode.min_discharge_power) ==
-                Catch::Approx(AC_MIN_DISCHARGE_POWER));
+                Catch::Approx(-AC_MIN_DISCHARGE_POWER));
     }
 
     // DER_AC_ChargeParameterDiscoveryResponse(OK) -> ScheduleExchangeRequest; fires ac_der_limits.
@@ -589,10 +624,11 @@ message_20::datatypes::SessionId walk_to_ac_der_iec_charge_loop(SessionFixture& 
     return sid;
 }
 
-// A DER_AC_ChargeLoopResponse carrying a Dynamic control mode; target_active_power set
-// so the der_control feedback observation is meaningful.
+// A DER_AC_ChargeLoopResponse carrying a Dynamic control mode, with a target power and
+// frequency for the ac_target_power observation.
 message_20::DER_AC_ChargeLoopResponse make_der_loop_res(const message_20::datatypes::SessionId& sid) {
     auto res = ok_res<message_20::DER_AC_ChargeLoopResponse>(sid);
+    res.target_frequency = message_20::datatypes::from_float(AC_TARGET_FREQUENCY);
     message_20::datatypes::DER_Dynamic_AC_CLResControlMode mode{};
     mode.target_active_power = message_20::datatypes::from_float(AC_TARGET_ACTIVE_POWER);
     mode.max_charge_power = message_20::datatypes::from_float(AC_MAX_CHARGE_POWER);
@@ -601,8 +637,8 @@ message_20::DER_AC_ChargeLoopResponse make_der_loop_res(const message_20::dataty
     return res;
 }
 
-// Walk an AC_DER_IEC-configured ev::Session from start() up to the emitted
-ev::AcChargeParams ac_bpt_seed_params() {
+// Walk an AC_DER_IEC-configured ev::session::Session from start() up to the emitted
+ev::params::AcChargeParams ac_bpt_seed_params() {
     auto p = ac_seed_params();
     p.max_discharge_power = AC_MAX_DISCHARGE_POWER;
     p.min_discharge_power = AC_MIN_DISCHARGE_POWER;
@@ -612,8 +648,8 @@ ev::AcChargeParams ac_bpt_seed_params() {
 // DC charge params seeded with charge and discharge fields for the DC_BPT walk.
 // target_voltage matches the injected DC_PreChargeResponse present voltage so
 // precharge converges in one step, mirroring the plain-DC walk.
-ev::DcChargeParams dc_bpt_seed_params() {
-    ev::DcChargeParams p{};
+ev::params::DcChargeParams dc_bpt_seed_params() {
+    ev::params::DcChargeParams p{};
     p.max_charge_power = DC_MAX_CHARGE_POWER;
     p.max_charge_current = DC_MAX_CHARGE_CURRENT;
     p.max_voltage = DC_MAX_VOLTAGE;
@@ -625,7 +661,7 @@ ev::DcChargeParams dc_bpt_seed_params() {
     return p;
 }
 
-// Walk an AC_BPT-configured ev::Session from start() through the first BPT AC_ChargeLoop
+// Walk an AC_BPT-configured ev::session::Session from start() through the first BPT AC_ChargeLoop
 // request. Service id 5 routes through AC parameter-discovery and charge-loop states with
 // the BPT request variants, past the DC-only path exactly like plain AC:
 // ScheduleExchange -> PowerDelivery(Start) -> AC_ChargeLoop (BPT). Returns the session id.
@@ -693,9 +729,9 @@ message_20::datatypes::SessionId walk_to_ac_bpt_charge_loop(SessionFixture& fx) 
         REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_charge_power) ==
                 Catch::Approx(AC_MAX_CHARGE_POWER));
         REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_power) ==
-                Catch::Approx(AC_MAX_DISCHARGE_POWER));
+                Catch::Approx(-AC_MAX_DISCHARGE_POWER));
         REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_discharge_power) ==
-                Catch::Approx(AC_MIN_DISCHARGE_POWER));
+                Catch::Approx(-AC_MIN_DISCHARGE_POWER));
     }
 
     // BPT AC_ChargeParameterDiscoveryResponse(OK) -> ScheduleExchangeRequest; fires ac_bpt_limits.
@@ -739,7 +775,7 @@ message_20::datatypes::SessionId walk_to_ac_bpt_charge_loop(SessionFixture& fx) 
         REQUIRE(message_20::datatypes::from_RationalNumber(mode->present_active_power) ==
                 Catch::Approx(AC_PRESENT_ACTIVE_POWER));
         REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_power) ==
-                Catch::Approx(AC_MAX_DISCHARGE_POWER));
+                Catch::Approx(-AC_MAX_DISCHARGE_POWER));
     }
 
     return sid;
@@ -755,7 +791,7 @@ message_20::AC_ChargeLoopResponse make_ac_bpt_loop_res(const message_20::datatyp
     return res;
 }
 
-// Walk a DC_BPT-configured ev::Session from start() through the first BPT DC_ChargeLoop
+// Walk a DC_BPT-configured ev::session::Session from start() through the first BPT DC_ChargeLoop
 // request. Service id 6 uses the BPT request variants for parameter discovery and the
 // charge loop; cable-check and precharge stay the plain DC requests: ScheduleExchange ->
 // DC_CableCheck -> DC_PreCharge(Ongoing) -> DC_PreCharge(Finished) -> PowerDelivery(Start)
@@ -828,11 +864,11 @@ message_20::datatypes::SessionId walk_to_dc_bpt_charge_loop(SessionFixture& fx) 
         REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_voltage) == Catch::Approx(DC_MAX_VOLTAGE));
         REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_voltage) == Catch::Approx(DC_MIN_VOLTAGE));
         REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_power) ==
-                Catch::Approx(DC_MAX_DISCHARGE_POWER));
+                Catch::Approx(-DC_MAX_DISCHARGE_POWER));
         REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_discharge_power) ==
-                Catch::Approx(DC_MIN_DISCHARGE_POWER));
+                Catch::Approx(-DC_MIN_DISCHARGE_POWER));
         REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_current) ==
-                Catch::Approx(DC_MAX_DISCHARGE_CURRENT));
+                Catch::Approx(-DC_MAX_DISCHARGE_CURRENT));
     }
 
     // BPT DC_ChargeParameterDiscoveryResponse(OK) -> ScheduleExchangeRequest; fires dc_bpt_limits.
@@ -905,9 +941,9 @@ message_20::datatypes::SessionId walk_to_dc_bpt_charge_loop(SessionFixture& fx) 
         const auto* mode = std::get_if<message_20::datatypes::BPT_Dynamic_DC_CLReqControlMode>(&req.control_mode);
         REQUIRE(mode != nullptr);
         REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_power) ==
-                Catch::Approx(DC_MAX_DISCHARGE_POWER));
+                Catch::Approx(-DC_MAX_DISCHARGE_POWER));
         REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_current) ==
-                Catch::Approx(DC_MAX_DISCHARGE_CURRENT));
+                Catch::Approx(-DC_MAX_DISCHARGE_CURRENT));
     }
 
     return sid;
@@ -931,9 +967,9 @@ message_20::DC_ChargeLoopResponse make_dc_bpt_loop_res(const message_20::datatyp
 }
 
 // ServiceDetailRequest, so a scenario can then inject a tailored ServiceDetailResponse.
-message_20::datatypes::SessionId walk_to_ac_der_iec_service_detail(SessionFixture& fx) {
+message_20::datatypes::SessionId walk_to_service_detail(SessionFixture& fx,
+                                                        message_20::datatypes::ServiceCategory service) {
     const auto sid = WALK_SESSION_ID;
-    using SC = message_20::datatypes::ServiceCategory;
 
     fx.session.start();
     REQUIRE(run_reactor_until(
@@ -964,12 +1000,111 @@ message_20::datatypes::SessionId walk_to_ac_der_iec_service_detail(SessionFixtur
                                                             PT::Part20Main);
 
     auto discovery_res = ok_res<message_20::ServiceDiscoveryResponse>(sid);
-    discovery_res.energy_transfer_service_list = {{SC::AC_DER_IEC, false}};
+    discovery_res.energy_transfer_service_list = {{service, false}};
     {
         const auto req = inject_then_expect<message_20::ServiceDetailRequest>(fx, "ServiceDiscovery -> ServiceDetail",
                                                                               discovery_res, PT::Part20Main);
-        REQUIRE(req.service == message_20::to_underlying_value(SC::AC_DER_IEC));
+        REQUIRE(req.service == message_20::to_underlying_value(service));
     }
+
+    return sid;
+}
+
+// Fixture profile for the AC_DER_SAE walks: the defaults plus volt var, so the CPD enabling volt var
+// and volt watt negotiates volt var alone.
+constexpr std::uint32_t SAE_VOLT_VAR_BIT = sae::sae_function_bit(sae::DerBitMapFunctions::VoltVarFunction);
+
+ev::d20::SessionOptions sae_walk_options() {
+    ev::d20::SessionOptions options{};
+    options.d20.sae_profile.supported_modes |= SAE_VOLT_VAR_BIT;
+    options.d20.cpd_rounds = 2;
+    return options;
+}
+
+using SaeClReqMode = message_20::datatypes::sae::DER_Dynamic_AC_CLReqControlMode;
+
+SaeClReqMode sae_loop_mode(const message_20::DER_SAE_AC_ChargeLoopRequest& req) {
+    const auto* mode = std::get_if<SaeClReqMode>(&req.control_mode);
+    REQUIRE(mode != nullptr);
+    return *mode;
+}
+
+// Walk an AC_DER_SAE-configured ev::session::Session from start() through the first DER_SAE_AC_ChargeLoopRequest,
+// with two CPD rounds.
+message_20::datatypes::SessionId walk_to_ac_der_sae_charge_loop(SessionFixture& fx) {
+    using SC = message_20::datatypes::ServiceCategory;
+    const auto sid = walk_to_service_detail(fx, SC::AC_DER_SAE);
+
+    // Table M.54: plain AC parameters. The Scheduled set is skipped; the SAE loop is Dynamic only.
+    auto detail_res = ok_res<message_20::ServiceDetailResponse>(sid);
+    detail_res.service = message_20::to_underlying_value(SC::AC_DER_SAE);
+    detail_res.service_parameter_list = {make_param_set(11, ControlMode::Scheduled),
+                                         make_param_set(12, ControlMode::Dynamic)};
+    {
+        const auto req = inject_then_expect<message_20::ServiceSelectionRequest>(
+            fx, "ServiceDetail -> ServiceSelection", detail_res, PT::Part20Main);
+        REQUIRE(req.selected_energy_transfer_service.service_id == SC::AC_DER_SAE);
+        REQUIRE(req.selected_energy_transfer_service.parameter_set_id == 12);
+    }
+
+    const auto profile = sae_walk_options().d20.sae_profile;
+    {
+        const auto req = inject_then_expect<message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest>(
+            fx, "ServiceSelection -> AC_DER_SAE_ChargeParameterDiscovery",
+            ok_res<message_20::ServiceSelectionResponse>(sid), PT::Part20Main);
+        REQUIRE(header_payload_type(fx.captured.back()) == PT::Part20DerSae);
+        // First of two rounds.
+        REQUIRE(req.transfer_mode.processing == Processing::Ongoing);
+        REQUIRE(req.transfer_mode.supported_modes == profile.supported_modes);
+        REQUIRE(req.transfer_mode.enabled_modes == 0);
+        REQUIRE(req.transfer_mode.inverter_details.inverter_serial_number == profile.inverter_serial_number);
+        REQUIRE(message_20::datatypes::from_RationalNumber(req.transfer_mode.max_charge_power) ==
+                Catch::Approx(AC_MAX_CHARGE_POWER));
+        REQUIRE(message_20::datatypes::from_RationalNumber(req.transfer_mode.nominal_voltage) ==
+                Catch::Approx(profile.nominal_voltage_v));
+    }
+
+    auto cpd_res = ok_res<message_20::DER_SAE_AC_ChargeParameterDiscoveryResponse>(sid);
+    cpd_res.transfer_mode.max_charge_power = message_20::datatypes::from_float(AC_MAX_CHARGE_POWER);
+    cpd_res.transfer_mode.min_charge_power = message_20::datatypes::from_float(AC_MIN_CHARGE_POWER);
+    cpd_res.transfer_mode.nominal_frequency = message_20::datatypes::from_float(50.0f);
+    cpd_res.transfer_mode.der_control_cpd_res = make_sae_cpd_control();
+    cpd_res.transfer_mode.processing = Processing::Ongoing;
+    {
+        const auto req = inject_then_expect<message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest>(
+            fx, "AC_DER_SAE_ChargeParameterDiscovery Ongoing -> AC_DER_SAE_ChargeParameterDiscovery", cpd_res,
+            PT::Part20DerSae);
+        REQUIRE(req.transfer_mode.processing == Processing::Finished);
+        // Volt var and volt watt enabled, EnterService permitted; only volt var is supported.
+        REQUIRE(req.transfer_mode.enabled_modes == SAE_VOLT_VAR_BIT);
+    }
+
+    cpd_res.transfer_mode.processing = Processing::Finished;
+    inject_then_expect<message_20::ScheduleExchangeRequest>(
+        fx, "AC_DER_SAE_ChargeParameterDiscovery -> ScheduleExchange", cpd_res, PT::Part20DerSae);
+    REQUIRE(fx.ac_limits);
+    REQUIRE(fx.sae_cpd_problems == std::vector<ev::d20::der::DerControlProblems>{{}, {}});
+    REQUIRE(fx.der_enabled_modes == std::vector<std::uint32_t>{SAE_VOLT_VAR_BIT, SAE_VOLT_VAR_BIT});
+
+    auto schedule_res = ok_res<message_20::ScheduleExchangeResponse>(sid);
+    schedule_res.processing = Processing::Finished;
+    {
+        const auto req = inject_then_expect<message_20::PowerDeliveryRequest>(
+            fx, "ScheduleExchange -> PowerDelivery(Start)", schedule_res, PT::Part20Main);
+        REQUIRE(req.charge_progress == message_20::datatypes::Progress::Start);
+    }
+
+    {
+        const auto req = inject_then_expect<message_20::DER_SAE_AC_ChargeLoopRequest>(
+            fx, "PowerDelivery -> AC_DER_SAE_ChargeLoop", ok_res<message_20::PowerDeliveryResponse>(sid),
+            PT::Part20Main);
+        const auto mode = sae_loop_mode(req);
+        REQUIRE(mode.enabled_modes == SAE_VOLT_VAR_BIT);
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode.present_active_power) ==
+                Catch::Approx(AC_PRESENT_ACTIVE_POWER));
+        REQUIRE(mode.der_operational_state == message_20::datatypes::sae::DEROperationalState::On);
+    }
+    REQUIRE(fx.sae_der_controls.empty());
 
     return sid;
 }
@@ -1082,12 +1217,143 @@ SCENARIO("ISO15118-20 EV Session: EV stop requested during DC_CableCheck sends S
     }
 }
 
+SCENARIO("ISO15118-20 EV Session holds DC_CableCheck until CP state C or D") {
+    GIVEN("A DC Session with CP state feedback walked to the ScheduleExchangeRequest") {
+        ev::d20::SessionOptions options{};
+        options.has_cp_state_feedback = true;
+        SessionFixture fx{"EVTESTID01",
+                          ev::session::SessionTiming{5ms, 100ms},
+                          ev::params::DcChargeParams{},
+                          default_advertised_app_protocols(),
+                          message_20::datatypes::ServiceCategory::DC,
+                          ev::params::AcChargeParams{},
+                          default_der_control_functions(),
+                          true,
+                          options};
+        const auto sid = walk_to_schedule_exchange(fx);
+
+        WHEN("ScheduleExchange finishes before any CP state event") {
+            const auto captured_before = fx.captured.size();
+            auto schedule_res = ok_res<message_20::ScheduleExchangeResponse>(sid);
+            schedule_res.processing = Processing::Finished;
+            fx.session.on_bytes_received(frame_payload(PT::Part20Main, serialize_msg(schedule_res)));
+
+            THEN("no request goes out, past the response watchdog, until CpState C/D is delivered") {
+                REQUIRE_FALSE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.captured.size() > captured_before; }, 300ms));
+                REQUIRE(fx.ev_power_ready);
+                REQUIRE_FALSE(fx.session.is_finished());
+                REQUIRE_FALSE(fx.timed_out);
+
+                fx.session.deliver_control_event(ev::d20::ControlEvent{ev::d20::CpState{true}});
+                REQUIRE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.captured.size() > captured_before; }, 1s));
+                const auto variant = decode_frame(fx.captured.back());
+                const auto* req = variant.get_if<message_20::DC_CableCheckRequest>();
+                REQUIRE(req != nullptr);
+                REQUIRE(req->header.session_id == sid);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session stops when the ongoing guard of a held DC_CableCheck cannot be armed") {
+    GIVEN("A DC Session with CP state feedback walked to the ScheduleExchangeRequest") {
+        ev::d20::SessionOptions options{};
+        options.has_cp_state_feedback = true;
+        SessionFixture fx{"EVTESTID01",
+                          ev::session::SessionTiming{5ms, 100ms},
+                          ev::params::DcChargeParams{},
+                          default_advertised_app_protocols(),
+                          message_20::datatypes::ServiceCategory::DC,
+                          ev::params::AcChargeParams{},
+                          default_der_control_functions(),
+                          true,
+                          options};
+        const auto sid = walk_to_schedule_exchange(fx);
+
+        WHEN("ScheduleExchange finishes before any CP state event and the guard timer refuses to arm") {
+            const auto captured_before = fx.captured.size();
+            auto schedule_res = ok_res<message_20::ScheduleExchangeResponse>(sid);
+            schedule_res.processing = Processing::Finished;
+            refuse_cable_check_guard = true;
+            fx.session.on_bytes_received(frame_payload(PT::Part20Main, serialize_msg(schedule_res)));
+            refuse_cable_check_guard = false;
+
+            THEN("the session finishes without sending a request") {
+                REQUIRE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.session.is_finished(); }, 300ms));
+                REQUIRE(fx.captured.size() == captured_before);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session discards the queued DC_CableCheckRequest when its ongoing guard cannot be armed") {
+    GIVEN("A DC Session without CP state feedback walked to the ScheduleExchangeRequest") {
+        SessionFixture fx;
+        const auto sid = walk_to_schedule_exchange(fx);
+
+        WHEN("ScheduleExchange finishes, queueing the DC_CableCheckRequest, and the guard timer refuses to arm") {
+            const auto captured_before = fx.captured.size();
+            auto schedule_res = ok_res<message_20::ScheduleExchangeResponse>(sid);
+            schedule_res.processing = Processing::Finished;
+            refuse_cable_check_guard = true;
+            fx.session.on_bytes_received(frame_payload(PT::Part20Main, serialize_msg(schedule_res)));
+            refuse_cable_check_guard = false;
+
+            THEN("the session finishes and the queued request never goes on the wire") {
+                REQUIRE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.session.is_finished(); }, 300ms));
+                REQUIRE_FALSE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.captured.size() > captured_before; }, 50ms));
+            }
+        }
+    }
+}
+
+// The give-up signals the owner from inside the feed, while the frame is still being handled. An owner
+// that re-enters from the signal finds the session finished and can change nothing.
+SCENARIO("ISO15118-20 EV Session giving up inside a feed signals once to an owner that re-enters it") {
+    GIVEN("A DC Session walked to the ScheduleExchangeRequest whose owner re-enters on the signal") {
+        SessionFixture fx;
+        const auto sid = walk_to_schedule_exchange(fx);
+        const auto signals_before = fx.signals.size();
+        std::optional<bool> finished_at_signal;
+        fx.on_signal = [&](ev::feedback::Signal) {
+            finished_at_signal = fx.session.is_finished();
+            fx.session.deliver_control_event(ev::d20::ControlEvent{ev::d20::StopCharging{true}});
+            fx.session.on_bytes_received(
+                frame_payload(PT::Part20Main, serialize_msg(ok_res<message_20::DC_CableCheckResponse>(sid))));
+            fx.session.terminate();
+        };
+
+        WHEN("ScheduleExchange finishes and the DC_CableCheck guard refuses to arm in that feed") {
+            const auto captured_before = fx.captured.size();
+            auto schedule_res = ok_res<message_20::ScheduleExchangeResponse>(sid);
+            schedule_res.processing = Processing::Finished;
+            refuse_cable_check_guard = true;
+            fx.session.on_bytes_received(frame_payload(PT::Part20Main, serialize_msg(schedule_res)));
+            refuse_cable_check_guard = false;
+
+            THEN("the signal fires once, on a finished session, and nothing more goes out") {
+                REQUIRE(fx.signals.size() == signals_before + 1);
+                REQUIRE(finished_at_signal == true);
+                REQUIRE(fx.session.is_finished());
+                REQUIRE_FALSE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.captured.size() > captured_before; }, 50ms));
+                REQUIRE(fx.signals.size() == signals_before + 1);
+            }
+        }
+    }
+}
+
 SCENARIO("ISO15118-20 EV Session drives the states byte-by-byte through a full AC session to SessionStop") {
 
     GIVEN("An AC-configured Session bound to a reactor with short send-delay and watchdog timers") {
         SessionFixture fx{"EVTESTID01",
-                          ev::SessionTiming{5ms, 100ms},
-                          ev::DcChargeParams{},
+                          ev::session::SessionTiming{5ms, 100ms},
+                          ev::params::DcChargeParams{},
                           default_advertised_ac_app_protocols(),
                           message_20::datatypes::ServiceCategory::AC,
                           ac_seed_params()};
@@ -1140,8 +1406,8 @@ SCENARIO("ISO15118-20 EV Session drives a graceful EV-initiated stop from an act
     // PowerDelivery(Stop) -> SessionStop without any SECC Terminate notification.
     GIVEN("An AC-configured Session walked to an active AC_ChargeLoop") {
         SessionFixture fx{"EVTESTID01",
-                          ev::SessionTiming{5ms, 100ms},
-                          ev::DcChargeParams{},
+                          ev::session::SessionTiming{5ms, 100ms},
+                          ev::params::DcChargeParams{},
                           default_advertised_ac_app_protocols(),
                           message_20::datatypes::ServiceCategory::AC,
                           ac_seed_params()};
@@ -1173,12 +1439,58 @@ SCENARIO("ISO15118-20 EV Session drives a graceful EV-initiated stop from an act
     }
 }
 
+SCENARIO("ISO15118-20 EV Session paused from an AC_ChargeLoop hands on the selection it negotiated") {
+    GIVEN("An AC Session preferring Scheduled, walked to an AC_ChargeLoop on the only, Dynamic, set") {
+        ev::d20::SessionOptions options{};
+        options.d20.control_mode = ControlMode::Scheduled;
+        SessionFixture fx{"EVTESTID01",
+                          ev::session::SessionTiming{5ms, 100ms},
+                          ev::params::DcChargeParams{},
+                          default_advertised_ac_app_protocols(),
+                          message_20::datatypes::ServiceCategory::AC,
+                          ac_seed_params(),
+                          default_der_control_functions(),
+                          true,
+                          options};
+        const auto sid = walk_to_ac_charge_loop(fx);
+
+        WHEN("a PauseCharging is delivered and the SECC acknowledges SessionStop(Pause)") {
+            fx.session.deliver_control_event(ev::d20::ControlEvent{ev::d20::PauseCharging{true}});
+            auto loop = ok_res<message_20::AC_ChargeLoopResponse>(sid);
+            loop.control_mode = message_20::datatypes::Dynamic_AC_CLResControlMode{};
+            inject_then_expect<message_20::PowerDeliveryRequest>(fx, "pause -> PowerDelivery(Stop)", loop,
+                                                                 PT::Part20AC);
+            const auto stop = inject_then_expect<message_20::SessionStopRequest>(
+                fx, "PowerDelivery(Stop) -> SessionStop", ok_res<message_20::PowerDeliveryResponse>(sid),
+                PT::Part20Main);
+            REQUIRE(stop.charging_session == message_20::datatypes::ChargingSession::Pause);
+            fx.session.on_bytes_received(
+                frame_payload(PT::Part20Main, serialize_msg(ok_res<message_20::SessionStopResponse>(sid))));
+            REQUIRE(fx.session.is_paused());
+
+            THEN("the selection is the negotiated service, control mode and connector") {
+                const auto selection = fx.session.service_selection();
+                REQUIRE(selection.has_value());
+                REQUIRE(selection->service == message_20::datatypes::ServiceCategory::AC);
+                REQUIRE(selection->control_mode == ControlMode::Dynamic);
+                REQUIRE(selection->ac_connector == message_20::datatypes::AcConnector::SinglePhase);
+            }
+
+            THEN("the paused session hands on its SECC clock, up to the last stamp") {
+                const auto clock = fx.session.secc_clock_state();
+                REQUIRE(clock.reference.has_value());
+                REQUIRE(clock.last_stamp == stop.header.timestamp);
+            }
+        }
+    }
+}
+
 SCENARIO("ISO15118-20 EV Session drives a full AC_DER_IEC session through the DER charge loop to SessionStop") {
 
     GIVEN("An AC_DER_IEC-configured Session bound to a reactor with short send-delay and watchdog timers") {
         SessionFixture fx{"EVTESTID01",
-                          ev::SessionTiming{5ms, 100ms},
-                          ev::DcChargeParams{},
+                          ev::session::SessionTiming{5ms, 100ms},
+                          ev::params::DcChargeParams{},
                           default_advertised_ac_app_protocols(),
                           message_20::datatypes::ServiceCategory::AC_DER_IEC,
                           ac_bpt_seed_params()};
@@ -1189,11 +1501,19 @@ SCENARIO("ISO15118-20 EV Session drives a full AC_DER_IEC session through the DE
             REQUIRE_FALSE(fx.session.is_finished());
             REQUIRE_FALSE(fx.timed_out);
 
-            // DER_AC_ChargeLoopResponse(OK, Dynamic) -> DER_AC_ChargeLoopRequest; fires der_control.
+            // DER_AC_ChargeLoopResponse(OK, Dynamic) -> DER_AC_ChargeLoopRequest; fires ac_target_power and
+            // der_control.
             REQUIRE_FALSE(fx.der_control);
+            REQUIRE_FALSE(fx.ac_target_power);
             inject_then_expect<message_20::DER_AC_ChargeLoopRequest>(
                 fx, "AC_DER_IEC_ChargeLoop OK -> AC_DER_IEC_ChargeLoop", make_der_loop_res(sid), PT::Part20DerIec);
             REQUIRE(fx.der_control);
+            REQUIRE(fx.ac_targets.size() == 1);
+            REQUIRE(message_20::datatypes::from_RationalNumber(fx.ac_targets.back().target_active_power.value()) ==
+                    Catch::Approx(AC_TARGET_ACTIVE_POWER));
+            REQUIRE(fx.ac_targets.back().target_frequency.has_value());
+            REQUIRE(message_20::datatypes::from_RationalNumber(*fx.ac_targets.back().target_frequency) ==
+                    Catch::Approx(AC_TARGET_FREQUENCY));
             REQUIRE_FALSE(fx.stop_from_charger);
 
             // DER_AC_ChargeLoopResponse(OK, Terminate) -> PowerDeliveryRequest(Stop); fires stop_from_charger.
@@ -1206,6 +1526,8 @@ SCENARIO("ISO15118-20 EV Session drives a full AC_DER_IEC session through the DE
                 REQUIRE(req.charge_progress == message_20::datatypes::Progress::Stop);
             }
             REQUIRE(fx.stop_from_charger);
+            // Terminate publishes no target.
+            REQUIRE(fx.ac_targets.size() == 1);
 
             THEN("PowerDelivery(Stop) walks straight to SessionStop, skipping WeldingDetection") {
                 walk_ac_stop_to_finish(fx, sid);
@@ -1219,8 +1541,8 @@ SCENARIO("ISO15118-20 EV Session stops cleanly when the only AC_DER_IEC set dema
 
     GIVEN("An AC_DER_IEC-configured strict Session (supporting only the two DSO setpoints)") {
         SessionFixture fx{"EVTESTID01",
-                          ev::SessionTiming{5ms, 100ms},
-                          ev::DcChargeParams{},
+                          ev::session::SessionTiming{5ms, 100ms},
+                          ev::params::DcChargeParams{},
                           default_advertised_ac_app_protocols(),
                           message_20::datatypes::ServiceCategory::AC_DER_IEC,
                           ac_seed_params(),
@@ -1228,7 +1550,7 @@ SCENARIO("ISO15118-20 EV Session stops cleanly when the only AC_DER_IEC set dema
                           true};
 
         WHEN("the ServiceDetailResponse offers only a set demanding VoltWattMode") {
-            const auto sid = walk_to_ac_der_iec_service_detail(fx);
+            const auto sid = walk_to_service_detail(fx, message_20::datatypes::ServiceCategory::AC_DER_IEC);
             const auto before = fx.captured.size();
 
             auto detail_res = ok_res<message_20::ServiceDetailResponse>(sid);
@@ -1252,8 +1574,8 @@ SCENARIO("ISO15118-20 EV Session drives a full AC_BPT session through the BPT ch
 
     GIVEN("An AC_BPT-configured Session bound to a reactor with short send-delay and watchdog timers") {
         SessionFixture fx{"EVTESTID01",
-                          ev::SessionTiming{5ms, 100ms},
-                          ev::DcChargeParams{},
+                          ev::session::SessionTiming{5ms, 100ms},
+                          ev::params::DcChargeParams{},
                           default_advertised_ac_app_protocols(),
                           message_20::datatypes::ServiceCategory::AC_BPT,
                           ac_bpt_seed_params()};
@@ -1294,7 +1616,7 @@ SCENARIO("ISO15118-20 EV Session drives a full AC_BPT session through the BPT ch
 SCENARIO("ISO15118-20 EV Session drives a full DC_BPT session through the BPT charge loop to SessionStop") {
 
     GIVEN("A DC_BPT-configured Session bound to a reactor with short send-delay and watchdog timers") {
-        SessionFixture fx{"EVTESTID01", ev::SessionTiming{5ms, 100ms}, dc_bpt_seed_params(),
+        SessionFixture fx{"EVTESTID01", ev::session::SessionTiming{5ms, 100ms}, dc_bpt_seed_params(),
                           default_advertised_app_protocols(), message_20::datatypes::ServiceCategory::DC_BPT};
 
         WHEN("the session is walked to an active BPT DC_ChargeLoop and the SECC then signals Terminate") {
@@ -1327,4 +1649,179 @@ SCENARIO("ISO15118-20 EV Session drives a full DC_BPT session through the BPT ch
             }
         }
     }
+}
+
+SCENARIO("ISO15118-20 EV Session drives a full AC_DER_SAE session through the SAE charge loop to SessionStop") {
+    GIVEN("An AC_DER_SAE-configured Session with two CPD rounds") {
+        SessionFixture fx{"EVTESTID01",
+                          ev::session::SessionTiming{5ms, 100ms},
+                          ev::params::DcChargeParams{},
+                          default_advertised_ac_app_protocols(),
+                          message_20::datatypes::ServiceCategory::AC_DER_SAE,
+                          ac_seed_params(),
+                          default_der_control_functions(),
+                          true,
+                          sae_walk_options()};
+
+        WHEN("the session is walked to the SAE charge loop and the SECC then signals Terminate") {
+            const auto sid = walk_to_ac_der_sae_charge_loop(fx);
+
+            // Constant var is enabled too, but unsupported, so the echo keeps volt var alone.
+            auto loop_res = make_sae_loop_res(sid, AC_TARGET_ACTIVE_POWER);
+            auto& dictate =
+                std::get<message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode>(loop_res.control_mode);
+            auto& constant_var = dictate.der_control_cl_res.reactive_power_support_cl_res->constant_var.emplace();
+            constant_var.enable = true;
+            {
+                const auto req = inject_then_expect<message_20::DER_SAE_AC_ChargeLoopRequest>(
+                    fx, "AC_DER_SAE_ChargeLoop OK -> AC_DER_SAE_ChargeLoop", loop_res, PT::Part20DerSae);
+                REQUIRE(sae_loop_mode(req).enabled_modes == SAE_VOLT_VAR_BIT);
+            }
+
+            // The whole mode reaches the owner, clean.
+            REQUIRE(fx.sae_der_controls.size() == 1);
+            const auto& forwarded = fx.sae_der_controls.front();
+            REQUIRE(message_20::datatypes::from_RationalNumber(forwarded.target_active_power) ==
+                    Catch::Approx(AC_TARGET_ACTIVE_POWER));
+            REQUIRE(forwarded.der_control_cl_res.enter_service_cl_res.permit_service);
+            REQUIRE(forwarded.der_control_cl_res.reactive_power_support_cl_res->volt_var->enable);
+            REQUIRE(forwarded.der_control_cl_res.reactive_power_support_cl_res->constant_var->enable);
+            REQUIRE(fx.sae_der_control_problems == std::vector<ev::d20::der::DerControlProblems>{{}});
+            REQUIRE(fx.ac_targets.size() == 1);
+            REQUIRE(message_20::datatypes::from_RationalNumber(fx.ac_targets.front().target_active_power.value()) ==
+                    Catch::Approx(AC_TARGET_ACTIVE_POWER));
+            // The mask did not change, so der_enabled_modes did not fire again.
+            REQUIRE(fx.der_enabled_modes.size() == 2);
+
+            auto loop_terminate = make_sae_loop_res(sid, AC_TARGET_ACTIVE_POWER);
+            loop_terminate.status =
+                message_20::datatypes::EvseStatus{0, message_20::datatypes::EvseNotification::Terminate};
+            {
+                const auto req = inject_then_expect<message_20::PowerDeliveryRequest>(
+                    fx, "AC_DER_SAE_ChargeLoop Terminate -> PowerDelivery(Stop)", loop_terminate, PT::Part20DerSae);
+                REQUIRE(req.charge_progress == message_20::datatypes::Progress::Stop);
+            }
+            REQUIRE(fx.stop_from_charger);
+
+            THEN("PowerDelivery(Stop) walks straight to SessionStop") {
+                walk_ac_stop_to_finish(fx, sid);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session keeps charging while the SECC withdraws PermitService [V2G20-3366]") {
+    GIVEN("An AC_DER_SAE-configured Session walked to the SAE charge loop") {
+        SessionFixture fx{"EVTESTID01",
+                          ev::session::SessionTiming{5ms, 100ms},
+                          ev::params::DcChargeParams{},
+                          default_advertised_ac_app_protocols(),
+                          message_20::datatypes::ServiceCategory::AC_DER_SAE,
+                          ac_seed_params(),
+                          default_der_control_functions(),
+                          true,
+                          sae_walk_options()};
+        const auto sid = walk_to_ac_der_sae_charge_loop(fx);
+
+        WHEN("a ChargeLoopResponse withdraws PermitService") {
+            auto denied = make_sae_loop_res(sid, AC_TARGET_ACTIVE_POWER);
+            std::get<message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode>(denied.control_mode)
+                .der_control_cl_res.enter_service_cl_res.permit_service = false;
+            const auto off = sae_loop_mode(inject_then_expect<message_20::DER_SAE_AC_ChargeLoopRequest>(
+                fx, "AC_DER_SAE_ChargeLoop permit withdrawn", denied, PT::Part20DerSae));
+
+            THEN("the next request reports Off and Disconnected, and the session continues") {
+                REQUIRE(off.der_operational_state == message_20::datatypes::sae::DEROperationalState::Off);
+                REQUIRE(off.der_connection_status == message_20::datatypes::sae::DERConnectionStatus::Disconnected);
+                REQUIRE(message_20::datatypes::from_RationalNumber(off.max_charge_power) ==
+                        Catch::Approx(AC_MAX_CHARGE_POWER));
+                REQUIRE_FALSE(fx.session.is_finished());
+                REQUIRE_FALSE(fx.stop_from_charger);
+
+                const auto on = sae_loop_mode(inject_then_expect<message_20::DER_SAE_AC_ChargeLoopRequest>(
+                    fx, "AC_DER_SAE_ChargeLoop permit granted", make_sae_loop_res(sid, AC_TARGET_ACTIVE_POWER),
+                    PT::Part20DerSae));
+                REQUIRE(on.der_operational_state == message_20::datatypes::sae::DEROperationalState::On);
+                REQUIRE(on.der_connection_status == message_20::datatypes::sae::DERConnectionStatus::Connected);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV welding timeout waits for the outstanding response before Finished") {
+    ev::d20::SessionOptions options;
+    options.welding_detection.timeout = 500ms;
+    ev::params::DcChargeParams params;
+    params.target_voltage = 400.0f;
+    SessionFixture fx{"EVTESTID01",
+                      {5ms, 1000ms},
+                      params,
+                      default_advertised_app_protocols(),
+                      message_20::datatypes::ServiceCategory::DC,
+                      {},
+                      default_der_control_functions(),
+                      true,
+                      options};
+    const auto sid = walk_to_dc_charge_loop(fx);
+    fx.session.deliver_control_event(ev::d20::ControlEvent{ev::d20::PauseCharging{true}});
+    auto loop = ok_res<message_20::DC_ChargeLoopResponse>(sid);
+    loop.control_mode = message_20::datatypes::Dynamic_DC_CLResControlMode{};
+    inject_then_expect<message_20::PowerDeliveryRequest>(fx, "pause -> Stop", loop, PT::Part20DC);
+    inject_then_expect<message_20::DC_WeldingDetectionRequest>(
+        fx, "accepted Stop -> welding", ok_res<message_20::PowerDeliveryResponse>(sid), PT::Part20Main);
+    auto unsafe = ok_res<message_20::DC_WeldingDetectionResponse>(sid);
+    unsafe.present_voltage = message_20::datatypes::from_float(400.0f);
+    const auto poll =
+        inject_then_expect<message_20::DC_WeldingDetectionRequest>(fx, "unsafe -> poll", unsafe, PT::Part20DC);
+    REQUIRE(poll.processing == message_20::datatypes::Processing::Ongoing);
+    const auto before = fx.captured.size();
+    int expected_cycles = 1;
+    SECTION("the outstanding response never arrives") {
+        REQUIRE(run_reactor_until(
+            fx.reactor, [&] { return fx.session.is_finished(); }, 1500ms));
+        REQUIRE(fx.captured.size() == before);
+        REQUIRE(fx.welding_failures == std::vector<std::pair<float, int>>{{400.0f, 1}});
+        REQUIRE(fx.timed_out_count == 1);
+        REQUIRE_FALSE(fx.session.is_paused());
+        return;
+    }
+    SECTION("the outstanding response arrives after the welding deadline") {
+        REQUIRE_FALSE(run_reactor_until(
+            fx.reactor, [&] { return fx.captured.size() > before; }, 520ms));
+        REQUIRE(fx.welding_failures.empty());
+        fx.session.on_bytes_received(frame_payload(PT::Part20DC, serialize_msg(unsafe)));
+        expected_cycles = 2;
+    }
+    REQUIRE(run_reactor_until(
+        fx.reactor, [&] { return fx.captured.size() > before; }, 2s));
+    const auto closing = decode_frame(fx.captured.back());
+    REQUIRE(closing.get_if<message_20::DC_WeldingDetectionRequest>() != nullptr);
+    REQUIRE(closing.get_if<message_20::DC_WeldingDetectionRequest>()->processing ==
+            message_20::datatypes::Processing::Finished);
+    inject_then_expect<message_20::SessionStopRequest>(fx, "Finished -> SessionStop", unsafe, PT::Part20DC);
+    const auto decoded = decode_frame(fx.captured.back());
+    const auto* request = decoded.get_if<message_20::SessionStopRequest>();
+    REQUIRE(request != nullptr);
+    REQUIRE(request->charging_session == message_20::datatypes::ChargingSession::Terminate);
+    REQUIRE(fx.welding_failures == std::vector<std::pair<float, int>>{{400.0f, expected_cycles}});
+    REQUIRE_FALSE(fx.timed_out);
+    fx.session.on_bytes_received(
+        frame_payload(PT::Part20Main, serialize_msg(ok_res<message_20::SessionStopResponse>(sid))));
+    REQUIRE(fx.session.is_finished());
+    REQUIRE_FALSE(fx.session.is_paused());
+    REQUIRE(fx.signals.back() == ev::feedback::Signal::DLINK_TERMINATE);
+}
+
+std::unique_ptr<SessionFixture> iso15118::ev::test::welding_fixture_d20() {
+    ev::params::DcChargeParams params;
+    params.target_voltage = 400.0f;
+    auto fx = std::make_unique<SessionFixture>("EVTESTID01", ev::session::SessionTiming{5ms, 0ms}, params);
+    const auto sid = walk_to_dc_charge_loop(*fx);
+    fx->session.deliver_control_event(ev::d20::ControlEvent{ev::d20::PauseCharging{true}});
+    auto loop = ok_res<message_20::DC_ChargeLoopResponse>(sid);
+    loop.control_mode = message_20::datatypes::Dynamic_DC_CLResControlMode{};
+    inject_then_expect<message_20::PowerDeliveryRequest>(*fx, "pause -> Stop", loop, PT::Part20DC);
+    inject_then_expect<message_20::DC_WeldingDetectionRequest>(
+        *fx, "accepted Stop -> welding", ok_res<message_20::PowerDeliveryResponse>(sid), PT::Part20Main);
+    return fx;
 }

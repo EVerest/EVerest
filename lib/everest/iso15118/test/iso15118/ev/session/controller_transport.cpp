@@ -8,6 +8,7 @@
 // with ENETUNREACH. These tests instead find the EV's SDP rx port among the
 // process's own descriptors and unicast the SDP response directly.
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
@@ -15,10 +16,13 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <arpa/inet.h>
@@ -29,22 +33,28 @@
 
 #include <cbv2g/exi_v2gtp.h>
 
+#include <iso15118/message/ac_der_sae_charge_loop.hpp>
+#include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/dc_cable_check.hpp>
 #include <iso15118/message/dc_charge_loop.hpp>
 #include <iso15118/message/dc_charge_parameter_discovery.hpp>
 #include <iso15118/message/dc_pre_charge.hpp>
+#include <iso15118/message/dc_welding_detection.hpp>
 #include <iso15118/message/power_delivery.hpp>
 #include <iso15118/message/schedule_exchange.hpp>
 #include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/service_discovery.hpp>
 #include <iso15118/message/service_selection.hpp>
 #include <iso15118/message/session_setup.hpp>
+#include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 
-#include <iso15118/ev/config.hpp>
+#include <iso15118/ev/config/config.hpp>
 #include <iso15118/ev/controller.hpp>
+#include <iso15118/io/logging.hpp>
+#include <iso15118/session/protocol.hpp>
 
 #include "test_support.hpp"
 
@@ -54,7 +64,7 @@ using namespace iso15118::ev::test;
 
 namespace {
 
-using PT = io::v2gtp::PayloadType;
+using PT = v2gtp::PayloadType;
 using message_20::datatypes::ControlMode;
 using message_20::datatypes::Processing;
 using message_20::datatypes::ResponseCode;
@@ -156,8 +166,8 @@ public:
         std::memcpy(buffer.data() + 8, &in6addr_loopback, sizeof(in6addr_loopback));
         const auto port_net = htons(tcp_port);
         std::memcpy(buffer.data() + 24, &port_net, sizeof(port_net));
-        buffer[26] = static_cast<uint8_t>(io::v2gtp::Security::NO_TRANSPORT_SECURITY);
-        buffer[27] = static_cast<uint8_t>(io::v2gtp::TransportProtocol::TCP);
+        buffer[26] = static_cast<uint8_t>(v2gtp::Security::NO_TRANSPORT_SECURITY);
+        buffer[27] = static_cast<uint8_t>(v2gtp::TransportProtocol::TCP);
 
         sockaddr_in6 to{};
         to.sin6_family = AF_INET6;
@@ -217,6 +227,11 @@ public:
     SeccLink(const SeccLink&) = delete;
     SeccLink& operator=(const SeccLink&) = delete;
 
+    using Response = std::pair<PT, std::vector<uint8_t>>;
+
+    // Consulted before the DC canned table; nullopt falls through to it.
+    std::function<std::optional<Response>(const message_20::RequestVariant&)> responder_override;
+
     uint16_t port() const {
         return bound_port;
     }
@@ -251,7 +266,10 @@ public:
             if (variant.get_if<message_20::DC_ChargeLoopRequest>() != nullptr) {
                 ++loop_request_count;
             }
-            const auto response = canned_response(variant);
+            auto response = responder_override ? responder_override(variant) : std::nullopt;
+            if (not response.has_value()) {
+                response = canned_response(variant);
+            }
             if (not response.has_value()) {
                 ++unanswered_count;
                 continue;
@@ -310,10 +328,8 @@ private:
         return frame;
     }
 
-    using Response = std::pair<PT, std::vector<uint8_t>>;
-
     // The SECC's canned answer for one DC entry-sequence request.
-    static std::optional<Response> canned_response(const message_20::Variant& request) {
+    static std::optional<Response> canned_response(const message_20::RequestVariant& request) {
         const auto sid = LINK_SESSION_ID;
 
         if (request.get_if<message_20::SupportedAppProtocolRequest>() != nullptr) {
@@ -433,8 +449,8 @@ private:
     std::vector<uint8_t> inbound;
 };
 
-ev::EvConfig link_config() {
-    ev::EvConfig config{};
+ev::config::EvConfig link_config() {
+    ev::config::EvConfig config{};
     config.interface_name = "lo";
     config.evcc_id = "02:00:00:00:00:01";
     config.send_delay = 5ms;
@@ -443,7 +459,7 @@ ev::EvConfig link_config() {
     return config;
 }
 
-// The SECC listener as a direct endpoint, in the raw wire byte order parse_response yields.
+// The SECC listener as a direct endpoint, in the raw wire byte order the SDP response carries.
 io::Ipv6EndPoint loopback_endpoint(uint16_t port) {
     io::Ipv6EndPoint endpoint{};
     endpoint.port = port;
@@ -451,8 +467,8 @@ io::Ipv6EndPoint loopback_endpoint(uint16_t port) {
     return endpoint;
 }
 
-ev::DcChargeParams link_dc_params() {
-    ev::DcChargeParams params{};
+ev::params::DcChargeParams link_dc_params() {
+    ev::params::DcChargeParams params{};
     params.target_voltage = PRECHARGE_VOLTAGE;
     return params;
 }
@@ -555,7 +571,7 @@ SCENARIO("ISO15118-20 EV Controller fires stopped once when the connected callba
                     2s));
                 REQUIRE(connected_count == 1);
                 REQUIRE(stopped_count == 1);
-                // The throw pre-empted the data client, so the EV never connected.
+                // The throw pre-empted the connection, so the EV never connected.
                 REQUIRE_FALSE(secc.accepted());
             }
         }
@@ -571,7 +587,7 @@ SCENARIO("ISO15118-20 EV Controller connects to a direct endpoint with SDP disab
         auto config = link_config();
         config.enable_sdp = false;
         config.direct_secc_endpoint = loopback_endpoint(secc.port());
-        config.direct_security = io::v2gtp::Security::NO_TRANSPORT_SECURITY;
+        config.direct_security = v2gtp::Security::NO_TRANSPORT_SECURITY;
 
         ev::feedback::Callbacks callbacks{};
         std::atomic_int connected_count{0};
@@ -602,16 +618,16 @@ SCENARIO("ISO15118-20 EV Controller connects to a direct endpoint with SDP disab
     }
 }
 
-SCENARIO("ISO15118-20 EV Controller ignores a plaintext SDP response when enforce_tls is set") {
+SCENARIO("ISO15118-20 EV Controller ignores a plaintext SDP response when tls is require") {
     // The downgrade guard drops the response instead of connecting; the run then only
     // ends on the 18 s setup timeout, so this asserts the non-connect inside a short window.
-    GIVEN("a Controller with enforce_tls and a SECC advertising NO_TRANSPORT_SECURITY") {
+    GIVEN("a Controller with tls require and a SECC advertising NO_TRANSPORT_SECURITY") {
         SdpResponder responder;
         SeccLink secc;
         const std::set<int> own_sockets{responder.descriptor()};
 
         auto config = link_config();
-        config.tls.enforce_tls = true;
+        config.tls.mode = ev::config::TlsMode::Require;
 
         ev::feedback::Callbacks callbacks{};
         std::atomic_int connected_count{0};
@@ -644,4 +660,294 @@ SCENARIO("ISO15118-20 EV Controller ignores a plaintext SDP response when enforc
             }
         }
     }
+}
+
+SCENARIO("ISO15118-20 EV Controller carries its AC_DER_SAE config and live inputs into the SAE requests") {
+    GIVEN("a Controller walked over a loopback link to a running AC_DER_SAE charge loop") {
+        // Filled on the test thread inside secc.service(), and declared first so they outlive secc.
+        std::vector<std::string> sap_namespaces;
+        std::vector<message_20::datatypes::sae::DER_SAE_AC_CPDReqEnergyTransferMode> cpd_requests;
+        std::vector<message_20::datatypes::sae::DER_Dynamic_AC_CLReqControlMode> loop_modes;
+        bool send_invalid = false;
+        int invalid_answers = 0;
+        int stop_requests = 0;
+
+        SdpResponder responder;
+        SeccLink secc;
+        const std::set<int> own_sockets{responder.descriptor()};
+
+        secc.responder_override = [&](const message_20::RequestVariant& request) -> std::optional<SeccLink::Response> {
+            const auto sid = LINK_SESSION_ID;
+            const auto sae = message_20::datatypes::ServiceCategory::AC_DER_SAE;
+            if (const auto* req = request.get_if<message_20::SupportedAppProtocolRequest>()) {
+                for (const auto& protocol : req->app_protocol) {
+                    sap_namespaces.push_back(protocol.protocol_namespace);
+                }
+                return std::nullopt;
+            }
+            const auto* power_delivery = request.get_if<message_20::PowerDeliveryRequest>();
+            if ((power_delivery != nullptr and
+                 power_delivery->charge_progress == message_20::datatypes::Progress::Stop) or
+                request.get_if<message_20::SessionStopRequest>() != nullptr) {
+                ++stop_requests;
+                return std::nullopt;
+            }
+            if (request.get_if<message_20::ServiceDiscoveryRequest>() != nullptr) {
+                auto res = ok_res<message_20::ServiceDiscoveryResponse>(sid);
+                res.energy_transfer_service_list = {{sae, false}};
+                return SeccLink::Response{PT::Part20Main, serialize_msg(res)};
+            }
+            if (request.get_if<message_20::ServiceDetailRequest>() != nullptr) {
+                auto res = ok_res<message_20::ServiceDetailResponse>(sid);
+                res.service = message_20::to_underlying_value(sae);
+                res.service_parameter_list = {make_param_set(1, ControlMode::Dynamic)};
+                return SeccLink::Response{PT::Part20Main, serialize_msg(res)};
+            }
+            if (const auto* req = request.get_if<message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest>()) {
+                cpd_requests.push_back(req->transfer_mode);
+                auto res = ok_res<message_20::DER_SAE_AC_ChargeParameterDiscoveryResponse>(sid);
+                // [V2G20-3352]: Ongoing answers Ongoing.
+                res.transfer_mode.processing = req->transfer_mode.processing;
+                res.transfer_mode.nominal_frequency = message_20::datatypes::from_float(50.0f);
+                res.transfer_mode.der_control_cpd_res = make_sae_cpd_control();
+                return SeccLink::Response{PT::Part20DerSae, serialize_msg(res)};
+            }
+            if (const auto* req = request.get_if<message_20::DER_SAE_AC_ChargeLoopRequest>()) {
+                loop_modes.push_back(
+                    std::get<message_20::datatypes::sae::DER_Dynamic_AC_CLReqControlMode>(req->control_mode));
+                auto res = make_sae_loop_res(sid, 5000.0f);
+                if (send_invalid) {
+                    ++invalid_answers;
+                    // Decreasing x is invalid but still encodes.
+                    std::get<message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode>(res.control_mode)
+                        .der_control_cl_res.reactive_power_support_cl_res->volt_var->curve_data_points =
+                        make_sae_points({108.0f, 92.0f});
+                }
+                return SeccLink::Response{PT::Part20DerSae, serialize_msg(res)};
+            }
+            return std::nullopt;
+        };
+
+        ev::feedback::Callbacks callbacks{};
+        std::atomic_int stopped_count{0};
+        std::atomic_int timed_out_count{0};
+        std::atomic_int problem_reports{0};
+        callbacks.stopped = [&stopped_count]() { ++stopped_count; };
+        callbacks.timed_out = [&timed_out_count]() { ++timed_out_count; };
+        callbacks.sae_der_control = [&problem_reports](const auto&, const ev::d20::der::DerControlProblems& problems) {
+            if (not problems.empty()) {
+                ++problem_reports;
+            }
+        };
+        auto config = link_config();
+        config.energy_service = message_20::datatypes::ServiceCategory::AC_DER_SAE;
+        config.d20.sae_profile.inverter_serial_number = "SAE-LINK-01";
+        config.d20.cpd_rounds = 2;
+        config.d20.der_stop_on_invalid_control = true;
+        ev::Controller controller{config, callbacks, ev::params::DcChargeParams{}, ev::params::AcChargeParams{}};
+        ControllerRun run{controller};
+
+        std::optional<uint16_t> ev_port;
+        REQUIRE(poll_until(
+            [&]() {
+                ev_port = sdp_rx_port(own_sockets);
+                return ev_port.has_value();
+            },
+            5s));
+        REQUIRE(responder.respond(*ev_port, secc.port()));
+        REQUIRE(poll_until(
+            [&]() {
+                secc.service();
+                return not loop_modes.empty();
+            },
+            10s));
+        REQUIRE(secc.unanswered() == 0);
+
+        // [V2G20-3216], and the SECC side accepted it.
+        REQUIRE(sap_namespaces == std::vector<std::string>{ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE});
+
+        // sae_profile and cpd_rounds reached the running session.
+        REQUIRE(cpd_requests.size() == 2);
+        REQUIRE(cpd_requests[0].processing == Processing::Ongoing);
+        REQUIRE(cpd_requests[1].processing == Processing::Finished);
+        REQUIRE(cpd_requests[0].inverter_details.inverter_serial_number == "SAE-LINK-01");
+
+        // Nothing measured yet: the profile nominals.
+        REQUIRE(message_20::datatypes::from_RationalNumber(loop_modes.front().present_voltage) ==
+                Catch::Approx(230.0f));
+        REQUIRE(message_20::datatypes::from_RationalNumber(loop_modes.front().present_frequency) ==
+                Catch::Approx(50.0f));
+        REQUIRE(loop_modes.front().der_alarm_status == 0);
+
+        WHEN("present voltage, frequency and DER alarm status are updated mid-loop") {
+            controller.update_present_voltage(240.0f);
+            controller.update_present_frequency(49.5f);
+            controller.update_der_alarm_status(0x3);
+
+            THEN("a later SAE charge-loop request carries them") {
+                REQUIRE(poll_until(
+                    [&]() {
+                        secc.service();
+                        const auto& mode = loop_modes.back();
+                        return message_20::datatypes::from_RationalNumber(mode.present_voltage) ==
+                                   Catch::Approx(240.0f) and
+                               message_20::datatypes::from_RationalNumber(mode.present_frequency) ==
+                                   Catch::Approx(49.5f) and
+                               mode.der_alarm_status == 0x3;
+                    },
+                    10s));
+                REQUIRE(secc.unanswered() == 0);
+                REQUIRE(stopped_count == 0);
+
+                // der_stop_on_invalid_control reached the running session too.
+                send_invalid = true;
+                REQUIRE(poll_until(
+                    [&]() {
+                        secc.service();
+                        return stopped_count > 0;
+                    },
+                    2s));
+                secc.service();
+
+                // The first invalid control ended the session, without warning and continuing, without
+                // PowerDelivery(Stop) or SessionStop, and before any response timeout. Its block still
+                // reached the owner, once, with its problems.
+                REQUIRE(invalid_answers == 1);
+                REQUIRE(problem_reports == 1);
+                REQUIRE(stop_requests == 0);
+                REQUIRE(timed_out_count == 0);
+                REQUIRE(secc.unanswered() == 0);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Controller re-joins its paused session at ChargeParameterDiscovery") {
+    GIVEN("a Controller paused from a running DC charge loop over a loopback link") {
+        SeccLink first_secc;
+        first_secc.responder_override =
+            [](const message_20::RequestVariant& request) -> std::optional<SeccLink::Response> {
+            if (request.get_if<message_20::DC_WeldingDetectionRequest>() != nullptr) {
+                auto res = ok_res<message_20::DC_WeldingDetectionResponse>(LINK_SESSION_ID);
+                res.present_voltage = message_20::datatypes::from_float(0.0f);
+                return SeccLink::Response{PT::Part20DC, serialize_msg(res)};
+            }
+            if (request.get_if<message_20::SessionStopRequest>() != nullptr) {
+                return SeccLink::Response{PT::Part20Main,
+                                          serialize_msg(ok_res<message_20::SessionStopResponse>(LINK_SESSION_ID))};
+            }
+            return std::nullopt;
+        };
+
+        auto config = link_config();
+        config.enable_sdp = false;
+        config.direct_secc_endpoint = loopback_endpoint(first_secc.port());
+        config.direct_security = v2gtp::Security::NO_TRANSPORT_SECURITY;
+
+        std::optional<ev::config::PausedSession> paused;
+        {
+            ev::feedback::Callbacks callbacks{};
+            std::atomic_int stopped_count{0};
+            callbacks.stopped = [&stopped_count]() { ++stopped_count; };
+            ev::Controller controller{config, callbacks, link_dc_params()};
+            ControllerRun run{controller};
+
+            REQUIRE(poll_until(
+                [&]() {
+                    first_secc.service();
+                    return first_secc.charge_loop_requests() >= 1;
+                },
+                5s));
+            controller.request_pause();
+            REQUIRE(poll_until(
+                [&]() {
+                    first_secc.service();
+                    return stopped_count > 0;
+                },
+                5s));
+            REQUIRE(first_secc.unanswered() == 0);
+            paused = controller.paused_session();
+        }
+        REQUIRE(paused.has_value());
+
+        WHEN("the next Controller starts from paused_session() and the SECC joins the old session") {
+            SeccLink resumed_secc;
+            int authorization_setup_requests = 0;
+            int cpd_requests = 0;
+            resumed_secc.responder_override =
+                [&](const message_20::RequestVariant& request) -> std::optional<SeccLink::Response> {
+                if (request.get_if<message_20::SessionSetupRequest>() != nullptr) {
+                    auto res = ok_res<message_20::SessionSetupResponse>(LINK_SESSION_ID);
+                    res.response_code = ResponseCode::OK_OldSessionJoined;
+                    res.evseid = "DE*PNX*E12345";
+                    return SeccLink::Response{PT::Part20Main, serialize_msg(res)};
+                }
+                authorization_setup_requests += request.get_if<message_20::AuthorizationSetupRequest>() != nullptr;
+                cpd_requests += request.get_if<message_20::DC_ChargeParameterDiscoveryRequest>() != nullptr;
+                return std::nullopt;
+            };
+
+            config.direct_secc_endpoint = loopback_endpoint(resumed_secc.port());
+            config.resume = paused;
+            ev::Controller controller{config, ev::feedback::Callbacks{}, link_dc_params()};
+            ControllerRun run{controller};
+
+            THEN("the resumed session's first request after SessionSetup is DC ChargeParameterDiscovery") {
+                REQUIRE(poll_until(
+                    [&]() {
+                        resumed_secc.service();
+                        return cpd_requests > 0;
+                    },
+                    5s));
+                REQUIRE(authorization_setup_requests == 0);
+                REQUIRE(resumed_secc.unanswered() == 0);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Controller names the connection in connect failure logs") {
+    struct Capture {
+        int fd{::socket(AF_INET6, SOCK_STREAM, 0)};
+        std::atomic_bool connection_failure{false};
+        std::atomic_bool old_name{false};
+
+        ~Capture() {
+            io::set_logging_callback([](LogLevel, const std::string&) {});
+            if (fd >= 0) {
+                ::close(fd);
+            }
+        }
+    } capture;
+    REQUIRE(capture.fd >= 0);
+    sockaddr_in6 address{};
+    address.sin6_family = AF_INET6;
+    address.sin6_addr = in6addr_loopback;
+    REQUIRE(::bind(capture.fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
+    socklen_t length = sizeof(address);
+    REQUIRE(::getsockname(capture.fd, reinterpret_cast<sockaddr*>(&address), &length) == 0);
+
+    io::set_logging_callback([&](LogLevel, const std::string& message) {
+        if (message.find("EV Controller: connect failed; stopping") != std::string::npos) {
+            capture.connection_failure = true;
+        }
+        if (message.find("data client") != std::string::npos) {
+            capture.old_name = true;
+        }
+    });
+
+    auto config = link_config();
+    config.enable_sdp = false;
+    config.direct_secc_endpoint = loopback_endpoint(ntohs(address.sin6_port));
+    config.direct_security = v2gtp::Security::NO_TRANSPORT_SECURITY;
+    std::atomic_bool stopped{false};
+    ev::feedback::Callbacks callbacks{};
+    callbacks.stopped = [&]() { stopped = true; };
+    {
+        ev::Controller controller{config, callbacks, link_dc_params()};
+        ControllerRun run{controller};
+        REQUIRE(poll_until([&]() { return stopped.load(); }, 2s));
+    }
+    CHECK(capture.connection_failure);
+    CHECK_FALSE(capture.old_name);
 }

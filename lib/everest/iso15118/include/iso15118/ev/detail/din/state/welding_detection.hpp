@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <iso15118/ev/welding_detection.hpp>
+
 #include <iso15118/message_din/welding_detection.hpp>
 
 namespace iso15118::ev::din::state {
@@ -10,11 +12,7 @@ namespace dt = message_din::datatypes;
 
 namespace welding_detection {
 
-// WeldingDetectionRes carries no EVSEProcessing, so the loop ends on a safe voltage instead, with a
-// cycle-count backstop (Josev parity).
-constexpr int WELDING_DETECTION_CYCLES = 3;
-// Below this EVSE present voltage the DC link is considered safe.
-constexpr float WELDING_DETECTION_SAFE_VOLTAGE_V = 60.0f;
+using ev::welding_detection::Outcome;
 
 message_din::WeldingDetectionRequest create_request(const dt::DcEvStatus& dc_ev_status);
 

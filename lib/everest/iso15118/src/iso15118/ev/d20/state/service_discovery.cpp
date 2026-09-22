@@ -12,14 +12,14 @@
 
 namespace iso15118::ev::d20::state {
 
+message_20::ServiceDiscoveryRequest ServiceDiscovery::make_request(message_20::datatypes::ServiceCategory service) {
+    message_20::ServiceDiscoveryRequest req;
+    req.supported_service_ids = message_20::datatypes::ServiceIdList{message_20::to_underlying_value(service)};
+    return req;
+}
+
 void ServiceDiscovery::enter() {
     logf_debug("Enter state: ServiceDiscovery");
-
-    message_20::ServiceDiscoveryRequest req;
-    setup_header(req.header, m_ctx.get_session());
-    req.supported_service_ids =
-        message_20::datatypes::ServiceIdList{message_20::to_underlying_value(m_ctx.selected_service())};
-    m_ctx.send_request(req);
 }
 
 Result ServiceDiscovery::feed(Event ev) {
@@ -49,6 +49,7 @@ Result ServiceDiscovery::feed(Event ev) {
         return Result::stopping();
     }
 
+    m_ctx.send_request(ServiceDetail::make_request(requested));
     return m_ctx.create_state<ServiceDetail>();
 }
 

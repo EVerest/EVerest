@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/helper.hpp>
-#include <iso15118/ev/ac_phase_split.hpp>
+#include <iso15118/ev/d20/ac_phase_split.hpp>
+#include <iso15118/ev/d20/discharge_sign.hpp>
+#include <iso15118/ev/d20/service_family.hpp>
 #include <iso15118/ev/d20/state/ac_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
 #include <iso15118/ev/d20/state/stop_before_start.hpp>
@@ -10,11 +12,12 @@
 
 namespace iso15118::ev::d20::state {
 
-namespace {
-
 namespace dt = message_20::datatypes;
 
-void fill_charge_limits(dt::AC_CPDReqEnergyTransferMode& mode, const AcChargeParams& p, dt::AcConnector connector) {
+namespace {
+
+void fill_charge_limits(dt::AC_CPDReqEnergyTransferMode& mode, const params::AcChargeParams& p,
+                        dt::AcConnector connector) {
     emit_ac_limit(p.max_charge_power, p.phase_count, connector, mode.max_charge_power, mode.max_charge_power_L2,
                   mode.max_charge_power_L3);
     emit_ac_limit(p.min_charge_power, p.phase_count, connector, mode.min_charge_power, mode.min_charge_power_L2,
@@ -23,23 +26,16 @@ void fill_charge_limits(dt::AC_CPDReqEnergyTransferMode& mode, const AcChargePar
 
 } // namespace
 
-void AC_ChargeParameterDiscovery::enter() {
-    logf_debug("Enter state: AC_ChargeParameterDiscovery");
-
-    const auto p = m_ctx.get_ac_params();
-    const auto connector = m_ctx.ac_connector();
-
+message_20::AC_ChargeParameterDiscoveryRequest
+AC_ChargeParameterDiscovery::make_request(const params::AcChargeParams& p, dt::AcConnector connector,
+                                          dt::ServiceCategory service) {
     message_20::AC_ChargeParameterDiscoveryRequest req;
-    setup_header(req.header, m_ctx.get_session());
 
-    if (m_ctx.is_bpt()) {
+    if (is_bpt(service)) {
         dt::BPT_AC_CPDReqEnergyTransferMode mode{};
         fill_charge_limits(mode, p, connector);
 
-        emit_ac_limit(p.max_discharge_power, p.phase_count, connector, mode.max_discharge_power,
-                      mode.max_discharge_power_L2, mode.max_discharge_power_L3);
-        emit_ac_limit(p.min_discharge_power, p.phase_count, connector, mode.min_discharge_power,
-                      mode.min_discharge_power_L2, mode.min_discharge_power_L3);
+        emit_ac_discharge_limits(p, connector, mode);
 
         req.transfer_mode = mode;
     } else {
@@ -48,7 +44,11 @@ void AC_ChargeParameterDiscovery::enter() {
         req.transfer_mode = mode;
     }
 
-    m_ctx.send_request(req);
+    return req;
+}
+
+void AC_ChargeParameterDiscovery::enter() {
+    logf_debug("Enter state: AC_ChargeParameterDiscovery");
 }
 
 Result AC_ChargeParameterDiscovery::feed(Event ev) {
@@ -75,6 +75,7 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
             return Result::stopping();
         }
         m_ctx.feedback.ac_bpt_limits(*mode);
+        m_ctx.send_request(ScheduleExchange::make_request(m_ctx));
         return m_ctx.create_state<ScheduleExchange>();
     }
 
@@ -86,6 +87,7 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
     }
     m_ctx.feedback.ac_limits(*mode);
 
+    m_ctx.send_request(ScheduleExchange::make_request(m_ctx));
     return m_ctx.create_state<ScheduleExchange>();
 }
 

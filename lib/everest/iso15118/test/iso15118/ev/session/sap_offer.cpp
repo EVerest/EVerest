@@ -5,10 +5,10 @@
 #include <string>
 #include <vector>
 
-#include <iso15118/ev/sap_offer.hpp>
+#include <iso15118/ev/session/sap_offer.hpp>
 
 using namespace iso15118;
-using namespace iso15118::ev;
+using namespace iso15118::ev::session;
 
 namespace {
 
@@ -74,6 +74,32 @@ SCENARIO("ISO15118-20 EV build_sap_offer covers the offered generations") {
 
         THEN("the AC -20 namespace is used") {
             REQUIRE(namespaces(offer) == std::vector<std::string>{ISO20_AC_PROTOCOL_NAMESPACE});
+        }
+    }
+
+    GIVEN("an AC_DER_IEC service offering -20 only") {
+        SapOfferInput input;
+        input.energy_service = ServiceCategory::AC_DER_IEC;
+        const auto offer = build_sap_offer(input);
+
+        THEN("only the AC-DER-IEC namespace is offered [V2G20-3020]") {
+            REQUIRE(namespaces(offer) == std::vector<std::string>{ISO20_AC_DER_IEC_PROTOCOL_NAMESPACE});
+            REQUIRE(offer[0].entry.version_number_major == 1);
+            REQUIRE(offer[0].entry.version_number_minor == 0);
+            REQUIRE(offer[0].protocol == ProtocolId::ISO15118_20);
+        }
+    }
+
+    GIVEN("an AC_DER_SAE service offering -20 only") {
+        SapOfferInput input;
+        input.energy_service = ServiceCategory::AC_DER_SAE;
+        const auto offer = build_sap_offer(input);
+
+        THEN("only the AC-DER-SAE namespace is offered [V2G20-3216]") {
+            REQUIRE(namespaces(offer) == std::vector<std::string>{ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE});
+            REQUIRE(offer[0].entry.version_number_major == 1);
+            REQUIRE(offer[0].entry.version_number_minor == 0);
+            REQUIRE(offer[0].protocol == ProtocolId::ISO15118_20);
         }
     }
 
@@ -165,15 +191,21 @@ SCENARIO("ISO15118-20 EV offer_from_app_protocols adopts an explicit list") {
     GIVEN("a list mixing known and unknown namespaces") {
         const std::vector<message_20::SupportedAppProtocol> list{{ISO20_DC_PROTOCOL_NAMESPACE, 1, 0, 3, 3},
                                                                  {"urn:example:unknown:MsgDef", 1, 0, 4, 4},
-                                                                 {DIN70121_NAMESPACE, 2, 0, 5, 5}};
+                                                                 {DIN70121_NAMESPACE, 2, 0, 5, 5},
+                                                                 {ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE, 1, 0, 6, 6},
+                                                                 {ISO20_AC_DER_IEC_PROTOCOL_NAMESPACE, 1, 0, 7, 7}};
         const auto offer = offer_from_app_protocols(list);
 
         THEN("the unknown namespace is dropped and the given schema ids are kept verbatim") {
-            REQUIRE(offer.size() == 2);
+            REQUIRE(offer.size() == 4);
             REQUIRE(offer[0].entry.schema_id == 3);
             REQUIRE(offer[0].protocol == ProtocolId::ISO15118_20);
             REQUIRE(offer[1].entry.schema_id == 5);
             REQUIRE(offer[1].protocol == ProtocolId::DIN70121);
+            REQUIRE(offer[2].entry.schema_id == 6);
+            REQUIRE(offer[2].protocol == ProtocolId::ISO15118_20);
+            REQUIRE(offer[3].entry.schema_id == 7);
+            REQUIRE(offer[3].protocol == ProtocolId::ISO15118_20);
         }
     }
 
@@ -182,6 +214,131 @@ SCENARIO("ISO15118-20 EV offer_from_app_protocols adopts an explicit list") {
 
         THEN("the offer is empty") {
             REQUIRE(offer.empty());
+        }
+    }
+}
+
+SCENARIO("EV offer_for_config narrows a tls_version auto offer to the negotiated TLS version") {
+    using ev::config::TlsVersion;
+
+    ev::config::EvConfig config;
+    config.supported_protocols = {ProtocolId::ISO15118_20, ProtocolId::ISO15118_2, ProtocolId::DIN70121};
+    config.tls.mode = ev::config::TlsMode::Require;
+    config.tls.version = TlsVersion::Auto;
+
+    GIVEN("TLS 1.3 negotiated") {
+        const auto offer = offer_for_config(config, TlsVersion::Tls1_3);
+
+        THEN("only ISO 15118-20 is offered, numbered from 1") {
+            REQUIRE(namespaces(offer) == std::vector<std::string>{ISO20_DC_PROTOCOL_NAMESPACE});
+            REQUIRE(offer[0].entry.schema_id == 1);
+        }
+    }
+
+    GIVEN("TLS 1.3 negotiated for an AC_DER_IEC service") {
+        config.energy_service = ServiceCategory::AC_DER_IEC;
+        const auto offer = offer_for_config(config, TlsVersion::Tls1_3);
+
+        THEN("the AMD1 namespace stays in the offer") {
+            REQUIRE(namespaces(offer) == std::vector<std::string>{ISO20_AC_DER_IEC_PROTOCOL_NAMESPACE});
+        }
+    }
+
+    GIVEN("TLS 1.2 negotiated") {
+        const auto offer = offer_for_config(config, TlsVersion::Tls1_2);
+
+        THEN("only ISO 15118-2 is offered, numbered from 1") {
+            REQUIRE(namespaces(offer) == std::vector<std::string>{ISO2_NAMESPACE});
+            REQUIRE(offer[0].entry.schema_id == 1);
+        }
+    }
+
+    GIVEN("only ISO 15118-20 enabled and TLS 1.2 negotiated") {
+        config.supported_protocols = {ProtocolId::ISO15118_20};
+
+        THEN("nothing is left to offer") {
+            REQUIRE(offer_for_config(config, TlsVersion::Tls1_2).empty());
+        }
+    }
+
+    GIVEN("an explicit advertised_app_protocols list") {
+        config.advertised_app_protocols = {{ISO20_DC_PROTOCOL_NAMESPACE, 1, 0, 1, 1}, {ISO2_NAMESPACE, 2, 0, 2, 2}};
+
+        THEN("it is offered unfiltered under either version") {
+            const auto both = std::vector<std::string>{ISO20_DC_PROTOCOL_NAMESPACE, ISO2_NAMESPACE};
+            REQUIRE(namespaces(offer_for_config(config, TlsVersion::Tls1_3)) == both);
+            REQUIRE(namespaces(offer_for_config(config, TlsVersion::Tls1_2)) == both);
+        }
+    }
+
+    GIVEN("a pinned tls_version") {
+        config.tls.version = TlsVersion::Tls1_3;
+
+        THEN("the negotiated version does not narrow the offer") {
+            REQUIRE(namespaces(offer_for_config(config, TlsVersion::Tls1_3)) ==
+                    std::vector<std::string>{ISO20_DC_PROTOCOL_NAMESPACE, ISO2_NAMESPACE});
+        }
+    }
+}
+
+SCENARIO("EV auto_tls_versions offers a TLS version only for a protocol the offer holds") {
+    ev::config::EvConfig config;
+    config.tls.mode = ev::config::TlsMode::Require;
+
+    GIVEN("ISO 15118-20 and ISO 15118-2 enabled") {
+        config.supported_protocols = {ProtocolId::ISO15118_20, ProtocolId::ISO15118_2};
+
+        THEN("both versions are offered") {
+            const auto versions = auto_tls_versions(config);
+            REQUIRE(versions.tls_1_2);
+            REQUIRE(versions.tls_1_3);
+        }
+    }
+
+    GIVEN("only ISO 15118-2 enabled") {
+        config.supported_protocols = {ProtocolId::ISO15118_2};
+
+        THEN("only TLS 1.2 is offered") {
+            const auto versions = auto_tls_versions(config);
+            REQUIRE(versions.tls_1_2);
+            REQUIRE_FALSE(versions.tls_1_3);
+        }
+    }
+
+    GIVEN("only ISO 15118-20 enabled") {
+        config.supported_protocols = {ProtocolId::ISO15118_20};
+
+        THEN("only TLS 1.3 is offered") {
+            const auto versions = auto_tls_versions(config);
+            REQUIRE_FALSE(versions.tls_1_2);
+            REQUIRE(versions.tls_1_3);
+        }
+    }
+
+    GIVEN("a resumed ISO 15118-2 session with both protocols enabled") {
+        config.supported_protocols = {ProtocolId::ISO15118_20, ProtocolId::ISO15118_2};
+        config.resume = ev::config::PausedSession{{}, ProtocolId::ISO15118_2, v2gtp::Security::TLS};
+
+        THEN("only TLS 1.2 is offered") {
+            const auto versions = auto_tls_versions(config);
+            REQUIRE(versions.tls_1_2);
+            REQUIRE_FALSE(versions.tls_1_3);
+        }
+    }
+
+    GIVEN("an advertised_app_protocols list holding ISO 15118-2 alone") {
+        config.supported_protocols = {ProtocolId::ISO15118_20};
+        message_20::SupportedAppProtocol entry;
+        entry.protocol_namespace = ISO2_NAMESPACE;
+        entry.version_number_major = 2;
+        entry.schema_id = 1;
+        entry.priority = 1;
+        config.advertised_app_protocols = {entry};
+
+        THEN("the list counts as the offer: only TLS 1.2 is offered") {
+            const auto versions = auto_tls_versions(config);
+            REQUIRE(versions.tls_1_2);
+            REQUIRE_FALSE(versions.tls_1_3);
         }
     }
 }

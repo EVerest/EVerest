@@ -8,6 +8,7 @@
 #include "helper.hpp"
 
 #include <iso15118/ev/din/state/current_demand.hpp>
+#include <iso15118/ev/din/state/power_delivery.hpp>
 #include <iso15118/message_din/current_demand.hpp>
 #include <iso15118/message_din/power_delivery.hpp>
 
@@ -19,7 +20,7 @@ using ev::din::StateID;
 using State = ev::din::state::CurrentDemand;
 
 const auto seed_params = [](DinStateHelper& helper) {
-    ev::DcChargeParams params;
+    ev::params::DcChargeParams params;
     params.target_voltage = 400.0f;
     params.target_current = 125.0f;
     params.max_voltage = 900.0f;
@@ -54,11 +55,19 @@ void expect_continues(PrimedState<State>& primed, const message_din::CurrentDema
     REQUIRE(primed.fsm.get_current_state_id() == StateID::CurrentDemand);
     REQUIRE(primed.take_requests().get<message_din::CurrentDemandRequest>().has_value());
 }
+const auto by_power_delivery_start = entered_by([](DinStateHelper& helper) {
+    message_din::PowerDeliveryResponse res{};
+    res.header = header();
+    res.response_code = dt::ResponseCode::OK;
+    using ev::din::state::PowerDelivery;
+    return successor_of<PowerDelivery>(helper, res, PowerDelivery::Start{});
+});
+
 } // namespace
 
-SCENARIO("DIN 70121 EV CurrentDemand sends the targets and limits on enter") {
+SCENARIO("DIN 70121 EV CurrentDemand's targets and limits go out on the PowerDelivery(Start) transition") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<State> primed{callbacks, seed_params};
+    PrimedState<State> primed{callbacks, seed_params, by_power_delivery_start};
 
     const auto request = primed.take_requests().get<message_din::CurrentDemandRequest>();
     REQUIRE(request.has_value());
@@ -122,6 +131,7 @@ SCENARIO("DIN 70121 EV CurrentDemand leaves the loop when the charger requests a
 
     const auto run = [&](const message_din::CurrentDemandResponse& res) {
         PrimedState<State> primed{callbacks, seed_params};
+        primed.ctx.set_pause_charging_requested(true);
         primed.handle_response(res);
         const auto result = primed.feed(ev::din::Event::V2GTP_MESSAGE);
 
@@ -131,8 +141,8 @@ SCENARIO("DIN 70121 EV CurrentDemand leaves the loop when the charger requests a
         const auto request = primed.take_requests().get<message_din::PowerDeliveryRequest>();
         REQUIRE(request.has_value());
         REQUIRE(request->ready_to_charge_state == false);
-        // A charger stop terminates the session rather than pausing it.
-        REQUIRE(primed.ctx.stop_is_pause() == false);
+        // A charger stop terminates the session rather than pausing it, even over an EV pause.
+        REQUIRE_FALSE(walk_stop_paused(primed));
     };
 
     SECTION("EVSENotification StopCharging") {
@@ -171,9 +181,22 @@ SCENARIO("DIN 70121 EV CurrentDemand leaves the loop on an EV pause request") {
     primed.handle_response(ok_response(header()));
     primed.feed(ev::din::Event::V2GTP_MESSAGE);
 
-    REQUIRE(primed.fsm.get_current_state_id() == StateID::PowerDelivery);
     // DIN has no pause on the wire: SessionStop pauses, so its session id can be re-joined.
-    REQUIRE(primed.ctx.stop_is_pause() == true);
+    REQUIRE(walk_stop_paused(primed));
+}
+
+SCENARIO("DIN 70121 EV CurrentDemand terminates on an EV stop latched during the stop walk after an EV pause") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<State> primed{callbacks, seed_params};
+
+    primed.ctx.set_pause_charging_requested(true);
+    primed.handle_response(ok_response(header()));
+    primed.feed(ev::din::Event::V2GTP_MESSAGE);
+
+    // The driver ends the session while PowerDelivery(Stop) is outstanding.
+    primed.ctx.set_stop_charging_requested(true);
+
+    REQUIRE_FALSE(walk_stop_paused(primed));
 }
 
 SCENARIO("DIN 70121 EV CurrentDemand rejects malformed responses") {

@@ -9,11 +9,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <iso15118/io/sdp.hpp>
 #include <iso15118/io/sdp_packet.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
 using iso15118::io::SdpPacket;
-using iso15118::io::v2gtp::PayloadType;
+using iso15118::v2gtp::PayloadType;
 
 namespace {
 

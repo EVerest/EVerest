@@ -16,4 +16,11 @@ struct PaymentServiceSelection : public StateBase {
     Result feed(Event) final;
 };
 
+// Requests certificate service details when installation is needed; otherwise selects payment.
+BasePointerType to_service_detail_or_payment_selection(Context& ctx);
+
+// Sends PaymentServiceSelectionReq, or SessionStopReq if no offered payment option is usable, and
+// creates the state awaiting the response.
+BasePointerType to_payment_service_selection(Context& ctx);
+
 } // namespace iso15118::ev::d2::state

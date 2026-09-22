@@ -7,6 +7,19 @@ add_subdirectory(fsm)
 add_subdirectory(io)
 add_subdirectory(session)
 add_subdirectory(states)
+add_subdirectory(v2gtp)
+
+include(Catch)
+
+add_executable(test_enum_names enum_names.cpp)
+
+target_link_libraries(test_enum_names
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_enum_names)
 
 # add_executable(secc)
 #

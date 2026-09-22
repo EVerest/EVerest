@@ -40,36 +40,32 @@ template <typename InType, typename OutType> void convert(const InType&, OutType
 
 template <typename MessageType> size_t serialize(const MessageType&, const io::StreamOutputView&);
 
-#define CREATE_TYPE_TRAIT(struct_name, enum_name)                                                                      \
-    struct struct_name;                                                                                                \
-    template <> struct TypeTrait<struct_name> {                                                                        \
-        static const Type type = Type::enum_name;                                                                      \
-    }
+// A request and its response per message.
+#define CREATE_TYPE_TRAITS(name)                                                                                       \
+    struct name##Request;                                                                                              \
+    struct name##Response;                                                                                             \
+    template <> struct TypeTrait<name##Request> {                                                                      \
+        static const Type type = Type::name##Req;                                                                      \
+    };                                                                                                                 \
+    template <> struct TypeTrait<name##Response> {                                                                     \
+        static const Type type = Type::name##Res;                                                                      \
+    };                                                                                                                 \
+    static_assert(static_cast<int>(Type::name##Res) == static_cast<int>(Type::name##Req) + 1,                          \
+                  "a response must follow its request in Type")
 
-CREATE_TYPE_TRAIT(SessionSetupRequest, SessionSetupReq);
-CREATE_TYPE_TRAIT(SessionSetupResponse, SessionSetupRes);
-CREATE_TYPE_TRAIT(ServiceDiscoveryRequest, ServiceDiscoveryReq);
-CREATE_TYPE_TRAIT(ServiceDiscoveryResponse, ServiceDiscoveryRes);
-CREATE_TYPE_TRAIT(ServicePaymentSelectionRequest, ServicePaymentSelectionReq);
-CREATE_TYPE_TRAIT(ServicePaymentSelectionResponse, ServicePaymentSelectionRes);
-CREATE_TYPE_TRAIT(ContractAuthenticationRequest, ContractAuthenticationReq);
-CREATE_TYPE_TRAIT(ContractAuthenticationResponse, ContractAuthenticationRes);
-CREATE_TYPE_TRAIT(ChargeParameterDiscoveryRequest, ChargeParameterDiscoveryReq);
-CREATE_TYPE_TRAIT(ChargeParameterDiscoveryResponse, ChargeParameterDiscoveryRes);
-CREATE_TYPE_TRAIT(CableCheckRequest, CableCheckReq);
-CREATE_TYPE_TRAIT(CableCheckResponse, CableCheckRes);
-CREATE_TYPE_TRAIT(PreChargeRequest, PreChargeReq);
-CREATE_TYPE_TRAIT(PreChargeResponse, PreChargeRes);
-CREATE_TYPE_TRAIT(PowerDeliveryRequest, PowerDeliveryReq);
-CREATE_TYPE_TRAIT(PowerDeliveryResponse, PowerDeliveryRes);
-CREATE_TYPE_TRAIT(CurrentDemandRequest, CurrentDemandReq);
-CREATE_TYPE_TRAIT(CurrentDemandResponse, CurrentDemandRes);
-CREATE_TYPE_TRAIT(WeldingDetectionRequest, WeldingDetectionReq);
-CREATE_TYPE_TRAIT(WeldingDetectionResponse, WeldingDetectionRes);
-CREATE_TYPE_TRAIT(SessionStopRequest, SessionStopReq);
-CREATE_TYPE_TRAIT(SessionStopResponse, SessionStopRes);
+CREATE_TYPE_TRAITS(SessionSetup);
+CREATE_TYPE_TRAITS(ServiceDiscovery);
+CREATE_TYPE_TRAITS(ServicePaymentSelection);
+CREATE_TYPE_TRAITS(ContractAuthentication);
+CREATE_TYPE_TRAITS(ChargeParameterDiscovery);
+CREATE_TYPE_TRAITS(CableCheck);
+CREATE_TYPE_TRAITS(PreCharge);
+CREATE_TYPE_TRAITS(PowerDelivery);
+CREATE_TYPE_TRAITS(CurrentDemand);
+CREATE_TYPE_TRAITS(WeldingDetection);
+CREATE_TYPE_TRAITS(SessionStop);
 
 // header-local macro: drop it so the type-trait headers of the other protocols can redefine it
-#undef CREATE_TYPE_TRAIT
+#undef CREATE_TYPE_TRAITS
 
 } // namespace iso15118::message_din

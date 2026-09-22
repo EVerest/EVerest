@@ -4,7 +4,7 @@
 
 #include <optional>
 
-#include <iso15118/ev/dc_charge_params.hpp>
+#include <iso15118/ev/params/dc.hpp>
 #include <iso15118/message_2/current_demand.hpp>
 #include <iso15118/session/feedback.hpp>
 
@@ -14,7 +14,7 @@ namespace dt = message_2::datatypes;
 
 namespace current_demand {
 
-message_2::CurrentDemandRequest create_request(const DcChargeParams& params);
+message_2::CurrentDemandRequest create_request(const params::DcChargeParams& params);
 
 struct Result {
     dt::EVSENotification notification{dt::EVSENotification::None};

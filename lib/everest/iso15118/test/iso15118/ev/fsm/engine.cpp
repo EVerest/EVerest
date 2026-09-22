@@ -5,7 +5,7 @@
 #include <iso15118/ev/d20/engine.hpp>
 
 using namespace iso15118;
-using io::v2gtp::PayloadType;
+using v2gtp::PayloadType;
 
 // The engine stages a response only for a payload type it can decode; anything else is dropped so
 // the frame never reaches the states as an unexpected response [V2G20-800].

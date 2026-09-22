@@ -7,10 +7,10 @@
 
 #include <iso15118/d20/control_event.hpp>
 #include <iso15118/d20/timeout.hpp>
-#include <iso15118/io/sdp.hpp>
 #include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/type.hpp>
 #include <iso15118/message/v2g_message_type.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
 namespace iso15118 {
 
@@ -21,7 +21,7 @@ enum class SessionStopAction;
 // An outgoing response staged by an engine, its payload sitting in the Session's output buffer.
 struct SeccOutgoing {
     size_t payload_size;
-    io::v2gtp::PayloadType payload_type;
+    v2gtp::PayloadType payload_type;
     V2gMessageType message_type;
 };
 

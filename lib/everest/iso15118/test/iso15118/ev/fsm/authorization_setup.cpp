@@ -69,9 +69,10 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
 
         const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
 
-        THEN("Check if passes to authorization state, stops the session and sends no AuthorizationRequest") {
-            REQUIRE(result.transitioned() == true);
-            REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::Authorization);
+        THEN("Check that the session stops in AuthorizationSetup without sending an AuthorizationRequest") {
+            REQUIRE(result.transitioned() == false);
+            REQUIRE(result.output == ev::d20::Disposition::Stopping);
+            REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::AuthorizationSetup);
             REQUIRE(ctx.is_session_stopped() == true);
 
             const auto requests = take_all_requests(state_helper.get_message_exchange());
@@ -79,8 +80,7 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
         }
     }
 
-    // An EVSE offering nothing at all is rejected before the Authorization state is created,
-    // unlike the PnC-only case above which is rejected on entering it.
+    // An EVSE offering nothing at all is rejected before the Authorization state is created.
     GIVEN("Bad case - authorization setup response with OK and no authorization services") {
 
         const auto header = message_20::Header{{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02}, 1691411798};
@@ -122,11 +122,10 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
 
         const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
 
-        THEN("Check that both services are recorded and EIM is the one selected") {
+        THEN("Check that EIM is the one selected") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::Authorization);
             REQUIRE(ctx.is_session_stopped() == false);
-            REQUIRE(ctx.get_evse_session_info().auth_services.size() == 2);
 
             const auto requests = take_all_requests(state_helper.get_message_exchange());
             const auto request_message = requests.get<message_20::AuthorizationRequest>();
@@ -161,16 +160,10 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
 
         const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
 
-        THEN("Check that the PnC provider data is recorded and EIM is still selected") {
+        THEN("Check that EIM is still selected") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::Authorization);
             REQUIRE(ctx.is_session_stopped() == false);
-
-            const auto& info = ctx.get_evse_session_info();
-            REQUIRE(info.gen_challenge == pnc_mode.gen_challenge);
-            REQUIRE(info.supported_providers.has_value());
-            REQUIRE(info.supported_providers->size() == 1);
-            REQUIRE((*info.supported_providers)[0] == "PIONIX");
 
             const auto requests = take_all_requests(state_helper.get_message_exchange());
             const auto request_message = requests.get<message_20::AuthorizationRequest>();
@@ -195,11 +188,10 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
 
         const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
 
-        THEN("Check that the offer is recorded and the session proceeds over EIM") {
+        THEN("Check that the session proceeds over EIM") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::Authorization);
             REQUIRE(ctx.is_session_stopped() == false);
-            REQUIRE(ctx.get_evse_session_info().certificate_installation_service == true);
             REQUIRE(take_all_requests(state_helper.get_message_exchange())
                         .get<message_20::AuthorizationRequest>()
                         .has_value());
@@ -228,4 +220,35 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
             REQUIRE(ctx.is_session_stopped() == true);
         }
     }
+}
+
+SCENARIO("ISO15118-20 EV AuthorizationSetup reports the EVSE session info") {
+    std::optional<ev::d20::EVSESessionInfo> reported;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.evse_session_info = [&reported](const ev::d20::EVSESessionInfo& info) { reported = info; };
+    FsmStateHelper helper{callbacks};
+    helper.get_context().get_session().set_id(SESSION_HEADER.session_id);
+
+    message_20::datatypes::PnC_ASResAuthorizationMode pnc_mode{};
+    pnc_mode.gen_challenge = std::array<uint8_t, 16>{0x01, 0x02, 0x03};
+    everest::lib::util::fixed_vector<message_20::datatypes::Name, 128> providers{};
+    providers.push_back("PIONIX");
+    pnc_mode.supported_providers = providers;
+    auto res = message_20::AuthorizationSetupResponse{
+        SESSION_HEADER,
+        message_20::datatypes::ResponseCode::OK,
+        {message_20::datatypes::Authorization::PnC, message_20::datatypes::Authorization::EIM},
+        true};
+    res.authorization_mode = pnc_mode;
+
+    const auto successor = successor_of<ev::d20::state::AuthorizationSetup>(helper, res);
+    REQUIRE(successor->get_id() == ev::d20::StateID::Authorization);
+
+    REQUIRE(reported.has_value());
+    REQUIRE(reported->auth_services.size() == 2);
+    REQUIRE(reported->certificate_installation_service == true);
+    REQUIRE(reported->gen_challenge == pnc_mode.gen_challenge);
+    REQUIRE(reported->supported_providers.has_value());
+    REQUIRE(reported->supported_providers->size() == 1);
+    REQUIRE((*reported->supported_providers)[0] == "PIONIX");
 }
