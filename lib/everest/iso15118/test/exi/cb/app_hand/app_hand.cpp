@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <iso15118/message/response_variant.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/message/variant.hpp>
 
@@ -17,7 +18,7 @@ SCENARIO("App Protocol Ser/Des") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::SAP, stream_view);
+        message_20::RequestVariant variant(v2gtp::PayloadType::SAP, stream_view);
 
         THEN("It should be decoded succussfully") {
             REQUIRE(variant.get_type() == message_20::Type::SupportedAppProtocolReq);
@@ -50,7 +51,7 @@ SCENARIO("App Protocol Ser/Des") {
 
         const io::StreamInputView stream_view{serialization_buffer, size};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::SAP, stream_view);
+        message_20::ResponseVariant variant(v2gtp::PayloadType::SAP, stream_view);
 
         THEN("It should be decoded succussfully") {
             REQUIRE(variant.get_type() == message_20::Type::SupportedAppProtocolRes);

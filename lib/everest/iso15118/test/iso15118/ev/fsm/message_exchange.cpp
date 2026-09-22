@@ -16,7 +16,7 @@
 #include <vector>
 
 #include <iso15118/ev/d20/context.hpp>
-#include <iso15118/ev/message_exchange.hpp>
+#include <iso15118/ev/session/message_exchange.hpp>
 #include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/dc_pre_charge.hpp>
 #include <iso15118/message/schedule_exchange.hpp>
@@ -25,7 +25,7 @@
 
 using namespace iso15118;
 using iso15118::io::StreamOutputView;
-using iso15118::io::v2gtp::PayloadType;
+using iso15118::v2gtp::PayloadType;
 
 namespace {
 
@@ -93,7 +93,7 @@ template <> constexpr PayloadType StubCodec::payload_type_of<OversizedRequest>()
     return PayloadType::SAP;
 }
 
-using Exchange = iso15118::ev::MessageExchange<StubCodec>;
+using Exchange = iso15118::ev::session::MessageExchange<StubCodec>;
 
 } // namespace
 
@@ -218,14 +218,14 @@ SCENARIO("ISO15118-20 EV MessageExchange serializes requests") {
             THEN("it yields a non-empty Part20Main payload and clears the pending flag") {
                 REQUIRE(taken.has_value());
                 REQUIRE(taken->first.empty() == false);
-                REQUIRE(taken->second == io::v2gtp::PayloadType::Part20Main);
+                REQUIRE(taken->second == v2gtp::PayloadType::Part20Main);
                 REQUIRE(msg_exch.has_request() == false);
             }
 
             THEN("the framed bytes round-trip-decode back to the SessionSetupRequest") {
                 REQUIRE(taken.has_value());
                 const auto& bytes = taken->first;
-                message_20::Variant decoded{taken->second, io::StreamInputView{bytes.data(), bytes.size()}};
+                message_20::RequestVariant decoded{taken->second, io::StreamInputView{bytes.data(), bytes.size()}};
                 const auto* decoded_request = decoded.get_if<message_20::SessionSetupRequest>();
                 REQUIRE(decoded_request != nullptr);
                 REQUIRE(decoded_request->evccid == request.evccid);
@@ -266,8 +266,8 @@ SCENARIO("ISO15118-20 EV MessageExchange holds a single request and guards the s
                 const auto taken = msg_exch.take_request();
                 REQUIRE(taken.has_value());
 
-                message_20::Variant decoded{taken->second,
-                                            io::StreamInputView{taken->first.data(), taken->first.size()}};
+                message_20::RequestVariant decoded{taken->second,
+                                                   io::StreamInputView{taken->first.data(), taken->first.size()}};
                 const auto* pre_charge_decoded = decoded.get_if<message_20::DC_PreChargeRequest>();
                 REQUIRE(pre_charge_decoded != nullptr);
                 REQUIRE(pre_charge_decoded->processing == message_20::datatypes::Processing::Finished);
@@ -331,10 +331,10 @@ SCENARIO("ISO15118-20 EV MessageExchange guards its response slot") {
         message_20::SessionSetupResponse res{};
         res.response_code = message_20::datatypes::ResponseCode::OK_NewSessionEstablished;
         res.evseid = "DE*PNX*E12345";
-        msg_exch.set_response(std::make_unique<message_20::Variant>(res));
+        msg_exch.set_response(std::make_unique<message_20::ResponseVariant>(res));
 
         THEN("a second set_response throws rather than dropping the unhandled response") {
-            auto second = std::make_unique<message_20::Variant>(res);
+            auto second = std::make_unique<message_20::ResponseVariant>(res);
             REQUIRE_THROWS_AS(msg_exch.set_response(std::move(second)), std::runtime_error);
         }
     }

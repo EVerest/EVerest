@@ -24,7 +24,7 @@ using namespace iso15118::ev::test;
 
 namespace {
 
-using PT = io::v2gtp::PayloadType;
+using PT = v2gtp::PayloadType;
 using message_20::datatypes::ChargingSession;
 using message_20::datatypes::ResponseCode;
 
@@ -197,7 +197,7 @@ SCENARIO("ISO15118-20 EV Session stop request ends the session with SessionStop(
     }
 }
 
-SCENARIO("ISO15118-20 EV Session pause request ends the session with SessionStop(Pause)") {
+SCENARIO("ISO15118-20 EV Session pause request before charging starts ends the session with SessionStop(Terminate)") {
     GIVEN("a Session with PauseCharging delivered before start()") {
         SessionFixture fx;
         fx.session.deliver_control_event(ev::d20::PauseCharging{true});
@@ -209,17 +209,16 @@ SCENARIO("ISO15118-20 EV Session pause request ends the session with SessionStop
             const auto req = inject_then_expect<message_20::SessionStopRequest>(
                 fx, "EV pause -> SessionStop", ok_authorization_setup_response(), PT::Part20Main);
 
-            THEN("the SessionStopRequest carries Pause") {
-                REQUIRE(req.charging_session == ChargingSession::Pause);
+            THEN("the SessionStopRequest carries Terminate [V2G20-2644]") {
+                REQUIRE(req.charging_session == ChargingSession::Terminate);
             }
 
-            THEN("the SessionStopResponse leaves the session paused and signals DLINK_PAUSE") {
+            THEN("the SessionStopResponse finishes the session without pausing it") {
                 fx.session.on_bytes_received(frame_payload(
                     PT::Part20Main, serialize_msg(ok_res<message_20::SessionStopResponse>(LIFECYCLE_SESSION_ID))));
                 REQUIRE(fx.session.is_finished());
-                REQUIRE(fx.session.is_paused());
-                REQUIRE(fx.session.session_id() == LIFECYCLE_SESSION_ID);
-                REQUIRE(fx.signals == std::vector<ev::feedback::Signal>{ev::feedback::Signal::DLINK_PAUSE});
+                REQUIRE_FALSE(fx.session.is_paused());
+                REQUIRE(fx.signals == std::vector<ev::feedback::Signal>{ev::feedback::Signal::DLINK_TERMINATE});
             }
         }
     }

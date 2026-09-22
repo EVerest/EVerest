@@ -8,6 +8,7 @@
 #include <iso15118/session/secc_sap.hpp>
 
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/detail/received_message_type.hpp>
 #include <iso15118/message/variant.hpp>
 
 namespace iso15118 {
@@ -23,18 +24,19 @@ SapEngine::SapEngine(io::StreamOutputView output_view_, const session::SessionCo
     tls_active(tls_active_) {
 }
 
-bool SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
-    const message_20::Variant variant{payload_type, view};
+bool SapEngine::on_packet(v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
+    const message_20::RequestVariant variant{payload_type, view};
     if (variant.is_undecodable()) {
         // [V2G20-800]: an undecodable frame is ignored, unreported like in D20SeccEngine.
         logf_warning("Ignoring a SupportedAppProtocol frame that could not be decoded [V2G20-800]");
         return false;
     }
-    feedback.v2g_message(variant.get_type());
+    const auto type = message_20::received_message_type(variant, payload_type, view);
+    feedback.v2g_message(type);
 
     const auto req = variant.get_if<message_20::SupportedAppProtocolRequest>();
     if (req == nullptr) {
-        logf_warning("Expected SupportedAppProtocolReq! But code type id: %d", variant.get_type());
+        logf_warning("Expected SupportedAppProtocolReq! But code type id: %d", type);
         stopped = true;
         return true;
     }
@@ -51,7 +53,7 @@ bool SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamI
                                           selecting_sap_based_on_energy_service, custom_protocol, tls_active);
 
     const auto payload_size = message_20::serialize(result.response, output_view);
-    outgoing = SeccOutgoing{payload_size, io::v2gtp::PayloadType::SAP, message_20::Type::SupportedAppProtocolRes};
+    outgoing = SeccOutgoing{payload_size, v2gtp::PayloadType::SAP, message_20::Type::SupportedAppProtocolRes};
 
     if (result.response.response_code == message_20::SupportedAppProtocolResponse::ResponseCode::Failed_NoNegotiation) {
         std::string ev_supported_namespaces{};

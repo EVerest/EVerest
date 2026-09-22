@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <cstdint>
+#include <limits>
+#include <optional>
+#include <stdexcept>
 #include <variant>
 
 #include <iso15118/detail/helper.hpp>
@@ -14,42 +17,57 @@
 
 namespace iso15118::ev::d20::state {
 
-namespace {
-
 namespace dt = message_20::datatypes;
+
+namespace {
 
 constexpr uint16_t MAX_SUPPORTING_POINTS = 12;
 
 constexpr dt::NumericId MIN_SCHEDULE_TUPLE_ID = 1;
 constexpr dt::NumericId MAX_SCHEDULE_TUPLE_ID = 255;
 
-message_20::ScheduleExchangeRequest make_request(const SessionId& session, dt::ControlMode control_mode) {
+} // namespace
+
+ScheduleExchange::ScheduleExchange(Context& ctx) : StateBase(ctx, StateID::ScheduleExchange) {
+    if (ctx.selected_service() == dt::ServiceCategory::AC_DER_SAE) {
+        throw std::logic_error("AC_DER_SAE ScheduleExchange created without the negotiated SAE settings");
+    }
+}
+
+message_20::ScheduleExchangeRequest ScheduleExchange::make_request(dt::ControlMode control_mode,
+                                                                   const EnergyRequest& energy) {
     message_20::ScheduleExchangeRequest req;
-    setup_header(req.header, session);
     req.max_supporting_points = MAX_SUPPORTING_POINTS;
 
     if (control_mode == dt::ControlMode::Scheduled) {
-        // Every Scheduled_SEReqControlMode field is optional: the EV states no energy window,
-        // no departure time and no EVEnergyOffer, leaving the schedule to the SECC.
-        req.control_mode = dt::Scheduled_SEReqControlMode{};
+        // Every Scheduled_SEReqControlMode field is optional: the EV states only what start_charging
+        // stated, and no energy window or EVEnergyOffer, leaving the schedule to the SECC.
+        dt::Scheduled_SEReqControlMode scheduled_mode{};
+        scheduled_mode.departure_time = energy.departure_time;
+        if (energy.energy_wh.has_value()) {
+            scheduled_mode.target_energy = dt::from_float(*energy.energy_wh);
+        }
+        req.control_mode = scheduled_mode;
         return req;
     }
 
     dt::Dynamic_SEReqControlMode dynamic_mode{};
-    dynamic_mode.departure_time = 0;
-    dynamic_mode.target_energy = dt::RationalNumber{0, 0};
-    dynamic_mode.max_energy = dt::RationalNumber{0, 0};
+    // Mandatory (Table 107) and above 0 ([V2G20-2103]): without a departure, no deadline.
+    dynamic_mode.departure_time = energy.departure_time.value_or(std::numeric_limits<std::uint32_t>::max());
+    dynamic_mode.target_energy = dt::from_float(energy.dynamic_energy_wh());
+    dynamic_mode.max_energy = dynamic_mode.target_energy;
     dynamic_mode.min_energy = dt::RationalNumber{0, 0};
     req.control_mode = dynamic_mode;
 
     return req;
 }
 
-} // namespace
+message_20::ScheduleExchangeRequest ScheduleExchange::make_request(const Context& ctx) {
+    return make_request(ctx.selected_control_mode(), ctx.energy_request());
+}
 
 void ScheduleExchange::enter() {
     logf_debug("Enter state: ScheduleExchange");
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.selected_control_mode()));
 }
 
 Result ScheduleExchange::feed(Event ev) {
@@ -89,18 +107,18 @@ Result ScheduleExchange::feed(Event ev) {
                 m_ctx.stop_session();
                 return Result::stopping();
             }
-            m_ctx.set_selected_schedule_tuple_id(static_cast<uint8_t>(tuple_id));
+            m_ctx.set_schedule_tuple_id(static_cast<uint8_t>(tuple_id));
         }
 
         m_ctx.feedback.ev_power_ready();
         if (m_ctx.is_ac_family()) {
-            return m_ctx.create_state<PowerDelivery>(dt::Progress::Start);
+            return to_power_delivery(m_ctx, PowerDelivery::Start{m_sae});
         }
-        return m_ctx.create_state<DC_CableCheck>();
+        return DC_CableCheck::begin(m_ctx);
     }
 
     // Processing::Ongoing: re-send the request and stay.
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.selected_control_mode()));
+    m_ctx.send_request(make_request(m_ctx));
     return Result::awaiting();
 }
 

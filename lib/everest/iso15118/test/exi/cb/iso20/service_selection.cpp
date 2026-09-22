@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <iso15118/message/response_variant.hpp>
 #include <iso15118/message/service_selection.hpp>
 #include <iso15118/message/variant.hpp>
 
@@ -18,7 +19,7 @@ SCENARIO("Se/Deserialize service_selection messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::RequestVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
@@ -42,7 +43,7 @@ SCENARIO("Se/Deserialize service_selection messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::RequestVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
@@ -124,7 +125,7 @@ SCENARIO("Se/Deserialize service_selection messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 

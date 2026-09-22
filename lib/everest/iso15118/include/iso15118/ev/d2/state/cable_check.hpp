@@ -10,15 +10,26 @@ namespace iso15118::ev::d2::state {
 // DC CableCheck poll until EVSEProcessing=Finished, then PreCharge. The Session's Ongoing guard bounds
 // both the poll and the CP-state wait.
 struct CableCheck : public StateBase {
-    CableCheck(Context& ctx) : StateBase(ctx, StateID::CableCheck) {
+    // Only begin() makes one, so whether the first request went out is decided where it is sent.
+    class Entry {
+        explicit Entry(bool request_sent_) : request_sent(request_sent_) {
+        }
+        bool request_sent;
+        friend CableCheck;
+    };
+
+    CableCheck(Context& ctx, Entry entry) : StateBase(ctx, StateID::CableCheck), request_sent(entry.request_sent) {
     }
+
+    // Sends the first CableCheckReq and creates the state awaiting it. [V2G2-847]: while CP is not yet in
+    // state C or D, it creates the state holding that request for the CpState event instead.
+    static Result begin(Context& ctx);
 
     void enter() final;
     Result feed(Event) final;
 
 private:
-    // [V2G2-847]: with CP-state feedback the first request waits for state C or D.
-    bool request_sent{false};
+    bool request_sent;
 };
 
 } // namespace iso15118::ev::d2::state

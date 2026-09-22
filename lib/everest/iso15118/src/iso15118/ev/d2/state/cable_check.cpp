@@ -6,6 +6,7 @@
 #include <iso15118/ev/d2/state/pre_charge.hpp>
 #include <iso15118/ev/detail/d2/context_helper.hpp>
 #include <iso15118/ev/detail/d2/state/cable_check.hpp>
+#include <iso15118/ev/detail/d2/state/pre_charge.hpp>
 #include <iso15118/ev/detail/d2/state/state_helper.hpp>
 
 namespace iso15118::ev::d2::state {
@@ -36,16 +37,29 @@ Result handle_response(const message_2::CableCheckResponse& res) {
 
 } // namespace cable_check
 
+namespace {
+
+void send(Context& ctx) {
+    ctx.send_request(cable_check::create_request(make_dc_ev_status(ctx.get_dc_params(), true)));
+}
+
+} // namespace
+
+Result CableCheck::begin(Context& ctx) {
+    // Without CP-state feedback there is nothing to wait for.
+    if (ctx.has_cp_state_feedback() and not ctx.cp_state_c_or_d()) {
+        return Result::waiting(ctx.create_state<CableCheck>(Entry{false}));
+    }
+    send(ctx);
+    return ctx.create_state<CableCheck>(Entry{true});
+}
+
 void CableCheck::enter() {
     logf_debug("Enter state: CableCheck (ISO 15118-2)");
-    // [V2G2-847]: the first CableCheckReq only goes out once the EV applied CP state C or D. Without
-    // CP-state feedback there is nothing to wait for; the Session's ongoing guard bounds the wait.
-    if (m_ctx.has_cp_state_feedback() and not m_ctx.cp_state_c_or_d()) {
+    // The Session's ongoing guard bounds the wait for CP state C or D.
+    if (not request_sent) {
         logf_debug("CableCheck holds the first request until CP state C or D");
-        return;
     }
-    m_ctx.send_request(cable_check::create_request(make_dc_ev_status(m_ctx.get_dc_params(), true)));
-    request_sent = true;
 }
 
 Result CableCheck::feed(Event ev) {
@@ -60,7 +74,7 @@ Result CableCheck::feed(Event ev) {
         if (not m_ctx.cp_state_c_or_d()) {
             return Result::ignored();
         }
-        m_ctx.send_request(cable_check::create_request(make_dc_ev_status(m_ctx.get_dc_params(), true)));
+        send(m_ctx);
         request_sent = true;
         return Result::awaiting();
     }
@@ -70,6 +84,13 @@ Result CableCheck::feed(Event ev) {
     }
 
     const auto variant = m_ctx.pull_response();
+
+    if (not request_sent) {
+        logf_error("CableCheck received a response before sending its request; stopping the session");
+        m_ctx.stop_session();
+        return Result::stopping();
+    }
+
     const auto* res = expect_response<message_2::CableCheckResponse>(m_ctx, *variant);
     if (res == nullptr) {
         return Result::stopping();
@@ -78,7 +99,7 @@ Result CableCheck::feed(Event ev) {
     const auto result = cable_check::handle_response(*res);
 
     if (not result.finished) {
-        m_ctx.send_request(cable_check::create_request(make_dc_ev_status(m_ctx.get_dc_params(), true)));
+        send(m_ctx);
         return Result::awaiting();
     }
 
@@ -97,6 +118,8 @@ Result CableCheck::feed(Event ev) {
     if (auto stop = stop_before_start(m_ctx)) {
         return std::move(*stop);
     }
+    const auto params = m_ctx.get_dc_params();
+    m_ctx.send_request(pre_charge::create_request(make_dc_ev_status(params, true), params.target_voltage));
     return m_ctx.create_state<PreCharge>();
 }
 

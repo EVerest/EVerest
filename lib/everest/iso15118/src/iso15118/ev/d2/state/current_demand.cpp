@@ -4,7 +4,6 @@
 
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d2/state/metering_receipt.hpp>
-#include <iso15118/ev/d2/state/power_delivery.hpp>
 #include <iso15118/ev/detail/d2/context_helper.hpp>
 #include <iso15118/ev/detail/d2/state/current_demand.hpp>
 #include <iso15118/ev/detail/d2/state/state_helper.hpp>
@@ -13,7 +12,7 @@ namespace iso15118::ev::d2::state {
 
 namespace current_demand {
 
-message_2::CurrentDemandRequest create_request(const DcChargeParams& params) {
+message_2::CurrentDemandRequest create_request(const params::DcChargeParams& params) {
     message_2::CurrentDemandRequest req;
     req.dc_ev_status = make_dc_ev_status(params, true);
     req.ev_target_current = dt::to_physical_value(params.target_current, dt::Unit::A);
@@ -64,7 +63,6 @@ evse_present_limits(const message_2::CurrentDemandResponse& res) {
 
 void CurrentDemand::enter() {
     logf_debug("Enter state: CurrentDemand (ISO 15118-2)");
-    m_ctx.send_request(current_demand::create_request(m_ctx.get_dc_params()));
 }
 
 Result CurrentDemand::feed(Event ev) {
@@ -87,27 +85,21 @@ Result CurrentDemand::feed(Event ev) {
     m_ctx.feedback.dc_evse_present_values(static_cast<float>(dt::from_physical_value(res->evse_present_voltage)),
                                           static_cast<float>(dt::from_physical_value(res->evse_present_current)));
 
+    std::optional<session::StopReason> charger_stop;
     if (result.charger_requested_stop) {
         m_ctx.feedback.stop_from_charger();
-        m_ctx.set_stop_charging_requested(true);
-        return m_ctx.create_state<PowerDelivery>(PowerDelivery::Phase::Stop);
-    }
-
-    // ISO 15118-2 has no Pause notification; a renegotiation is not supported, so end cleanly.
-    if (result.notification == dt::EVSENotification::ReNegotiation) {
+        charger_stop = session::StopReason::EvseTerminate;
+    } else if (result.notification == dt::EVSENotification::ReNegotiation) {
+        // ISO 15118-2 has no Pause notification; a renegotiation is not supported, so end cleanly.
         logf_warning("CurrentDemand received ReNegotiation, which is not supported; stopping the session");
-        m_ctx.set_stop_charging_requested(true);
-        return m_ctx.create_state<PowerDelivery>(PowerDelivery::Phase::Stop);
+        charger_stop = session::StopReason::EvStop;
     }
 
-    if (m_ctx.is_stop_charging_requested() or m_ctx.is_pause_charging_requested()) {
-        return m_ctx.create_state<PowerDelivery>(PowerDelivery::Phase::Stop);
+    if (auto next = leave_charge_loop(m_ctx, charger_stop, result.receipt_required, res->meter_info)) {
+        return std::move(*next);
     }
 
     if (result.receipt_required) {
-        if (m_ctx.pnc.contract_selected and res->meter_info.has_value()) {
-            return m_ctx.create_state<MeteringReceipt>(res->meter_info.value(), res->sa_schedule_tuple_id);
-        }
         // Without a contract there is nothing to sign; the loop continues.
         if (not receipt_warned) {
             receipt_warned = true;

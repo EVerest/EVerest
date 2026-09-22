@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <iso15118/message/response_variant.hpp>
 #include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/variant.hpp>
 
@@ -16,7 +17,7 @@ SCENARIO("Se/Deserialize session stop messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::RequestVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
             REQUIRE(variant.get_type() == message_20::Type::SessionStopReq);
@@ -67,7 +68,7 @@ SCENARIO("Se/Deserialize session stop messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
             REQUIRE(variant.get_type() == message_20::Type::SessionStopRes);

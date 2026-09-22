@@ -4,7 +4,6 @@
 
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d2/state/metering_receipt.hpp>
-#include <iso15118/ev/d2/state/power_delivery.hpp>
 #include <iso15118/ev/detail/d2/context_helper.hpp>
 #include <iso15118/ev/detail/d2/state/charging_status.hpp>
 #include <iso15118/message/common_types.hpp>
@@ -43,7 +42,6 @@ iso15118::d20::AcTargetPower compute_ac_target_power(const std::optional<dt::Phy
 
 void ChargingStatus::enter() {
     logf_debug("Enter state: ChargingStatus (ISO 15118-2)");
-    m_ctx.send_request(charging_status::create_request());
 }
 
 Result ChargingStatus::feed(Event ev) {
@@ -59,30 +57,28 @@ Result ChargingStatus::feed(Event ev) {
 
     const auto result = charging_status::handle_response(*res);
 
+    if (result.evse_max_current.has_value()) {
+        m_ctx.feedback.ac_evse_max_current(
+            static_cast<float>(dt::from_physical_value(result.evse_max_current.value())));
+    }
     m_ctx.feedback.ac_target_power(
         charging_status::compute_ac_target_power(result.evse_max_current, m_ctx.evse_info.ac_nominal_voltage));
 
+    std::optional<session::StopReason> charger_stop;
     if (result.notification == dt::EVSENotification::StopCharging) {
         m_ctx.feedback.stop_from_charger();
-        m_ctx.set_stop_charging_requested(true);
-        return m_ctx.create_state<PowerDelivery>(PowerDelivery::Phase::Stop);
-    }
-
-    // ISO 15118-2 has no Pause notification; a renegotiation is not supported, so end cleanly.
-    if (result.notification == dt::EVSENotification::ReNegotiation) {
+        charger_stop = session::StopReason::EvseTerminate;
+    } else if (result.notification == dt::EVSENotification::ReNegotiation) {
+        // ISO 15118-2 has no Pause notification; a renegotiation is not supported, so end cleanly.
         logf_warning("ChargingStatus received ReNegotiation, which is not supported; stopping the session");
-        m_ctx.set_stop_charging_requested(true);
-        return m_ctx.create_state<PowerDelivery>(PowerDelivery::Phase::Stop);
+        charger_stop = session::StopReason::EvStop;
     }
 
-    if (m_ctx.is_stop_charging_requested() or m_ctx.is_pause_charging_requested()) {
-        return m_ctx.create_state<PowerDelivery>(PowerDelivery::Phase::Stop);
+    if (auto next = leave_charge_loop(m_ctx, charger_stop, result.receipt_required, res->meter_info)) {
+        return std::move(*next);
     }
 
     if (result.receipt_required) {
-        if (m_ctx.pnc.contract_selected and res->meter_info.has_value()) {
-            return m_ctx.create_state<MeteringReceipt>(res->meter_info.value(), res->sa_schedule_tuple_id);
-        }
         if (not receipt_warned) {
             receipt_warned = true;
             logf_warning("ChargingStatus received ReceiptRequired without a Contract session or MeterInfo; "

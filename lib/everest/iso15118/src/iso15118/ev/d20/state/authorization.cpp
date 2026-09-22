@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include <algorithm>
-
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/authorization.hpp>
@@ -12,40 +10,16 @@
 
 namespace iso15118::ev::d20::state {
 
-namespace {
-
 // TODO(mlitre): offer PnC once the EV has a contract certificate.
-message_20::AuthorizationRequest make_request(Context& ctx) {
+message_20::AuthorizationRequest Authorization::make_request() {
     message_20::AuthorizationRequest req;
-    setup_header(req.header, ctx.get_session());
     req.selected_authorization_service = message_20::datatypes::Authorization::EIM;
     req.authorization_mode = message_20::datatypes::EIM_ASReqAuthorizationMode{};
     return req;
 }
 
-} // namespace
-
 void Authorization::enter() {
     logf_debug("Enter state: Authorization");
-
-    const auto& auth_services = m_ctx.get_evse_session_info().auth_services;
-
-    if (auth_services.empty()) {
-        logf_error("No authorization services available to send AuthorizationRequest. Abort the session.");
-        m_ctx.stop_session();
-        return;
-    }
-
-    const auto offers_eim = std::find(auth_services.begin(), auth_services.end(),
-                                      message_20::datatypes::Authorization::EIM) != auth_services.end();
-
-    if (not offers_eim) {
-        logf_error("EVSE does not offer EIM authorization and the EV supports no other mode. Abort the session.");
-        m_ctx.stop_session();
-        return;
-    }
-
-    m_ctx.send_request(make_request(m_ctx));
 }
 
 Result Authorization::feed(Event ev) {
@@ -76,10 +50,11 @@ Result Authorization::feed(Event ev) {
     }
 
     if (declined or res->evse_processing == message_20::datatypes::Processing::Ongoing) {
-        m_ctx.send_request(make_request(m_ctx));
+        m_ctx.send_request(make_request());
         return Result::awaiting();
     }
 
+    m_ctx.send_request(ServiceDiscovery::make_request(m_ctx.selected_service()));
     return m_ctx.create_state<ServiceDiscovery>();
 }
 

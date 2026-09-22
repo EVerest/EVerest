@@ -43,8 +43,8 @@
 #include <iso15118/message_2/welding_detection.hpp>
 
 #include <iso15118/ev/d20/control_event.hpp>
-#include <iso15118/ev/sap_offer.hpp>
-#include <iso15118/ev/session_params.hpp>
+#include <iso15118/ev/params/iso2_ac.hpp>
+#include <iso15118/ev/session/sap_offer.hpp>
 
 #include "test_support.hpp"
 
@@ -55,7 +55,7 @@ using namespace iso15118::ev::test;
 namespace {
 
 namespace dt = message_2::datatypes;
-using PT = io::v2gtp::PayloadType;
+using PT = v2gtp::PayloadType;
 
 constexpr dt::SessionId D2_SID{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
 constexpr std::array<uint8_t, 6> EVCC_MAC{0x02, 0xDE, 0xAD, 0xBE, 0xEF, 0x01};
@@ -119,8 +119,8 @@ message_20::SupportedAppProtocolResponse sap_response(uint8_t schema_id) {
     return {message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation, schema_id};
 }
 
-ev::DcChargeParams walk_dc_params() {
-    ev::DcChargeParams params{};
+ev::params::DcChargeParams walk_dc_params() {
+    ev::params::DcChargeParams params{};
     params.max_charge_power = 60000.0f;
     params.max_charge_current = MAX_CHARGE_CURRENT;
     params.max_voltage = MAX_VOLTAGE;
@@ -133,8 +133,8 @@ ev::DcChargeParams walk_dc_params() {
     return params;
 }
 
-ev::EvSessionParams walk_params(dt::EnergyTransferMode mode = dt::EnergyTransferMode::DC_extended) {
-    ev::EvSessionParams params;
+ev::params::EvSessionParams walk_params(dt::EnergyTransferMode mode = dt::EnergyTransferMode::DC_extended) {
+    ev::params::EvSessionParams params;
     params.evcc_mac = EVCC_MAC;
     params.energy_transfer_mode = mode;
     return params;
@@ -142,11 +142,12 @@ ev::EvSessionParams walk_params(dt::EnergyTransferMode mode = dt::EnergyTransfer
 
 // A Session advertising @p supported in SAP priority order, mapping the negotiated schema id back
 // through SessionOptions::offered_protocols.
-std::unique_ptr<SessionFixture> make_fixture(const std::vector<ProtocolId>& supported, ev::EvSessionParams params,
-                                             message_20::datatypes::ServiceCategory service,
-                                             std::optional<ProtocolId> resume = std::nullopt,
-                                             std::optional<dt::SessionId> resumed_session_id = std::nullopt) {
-    ev::SapOfferInput input;
+std::unique_ptr<SessionFixture>
+make_fixture(const std::vector<ProtocolId>& supported, ev::params::EvSessionParams params,
+             message_20::datatypes::ServiceCategory service, std::optional<ProtocolId> resume = std::nullopt,
+             std::optional<dt::SessionId> resumed_session_id = std::nullopt,
+             ev::config::WeldingDetectionConfig welding = {}, ev::session::SessionTiming timing = {5ms, 1000ms}) {
+    ev::session::SapOfferInput input;
     input.supported_protocols = supported;
     input.energy_service = service;
     input.resume_protocol = resume;
@@ -159,10 +160,13 @@ std::unique_ptr<SessionFixture> make_fixture(const std::vector<ProtocolId>& supp
 
     ev::d20::SessionOptions options;
     options.offered_protocols = offer;
-    options.resumed_session_id = resumed_session_id;
+    if (resumed_session_id.has_value()) {
+        options.resume = ev::d20::Resume{*resumed_session_id};
+    }
+    options.welding_detection = welding;
 
-    return std::make_unique<SessionFixture>("EVTESTID01", ev::SessionTiming{5ms, 1000ms}, walk_dc_params(), advertised,
-                                            service, ev::AcChargeParams{}, default_der_control_functions(), true,
+    return std::make_unique<SessionFixture>("EVTESTID01", timing, walk_dc_params(), advertised, service,
+                                            ev::params::AcChargeParams{}, default_der_control_functions(), true,
                                             std::move(options), std::move(params));
 }
 
@@ -593,10 +597,8 @@ SCENARIO("ISO15118-2 EV Session runs a Plug & Charge contract session") {
         // Controller sets this from the SDP response, and the fixture has no Controller.
         params.secure_transport = true;
         params.pnc.prefer_contract = true;
-        params.pnc.contract_cert_der = {0x30, 0x02, 0x03};
-        params.pnc.contract_sub_certs_der = {{0x30, 0x04}};
-        params.pnc.contract_key_pem = make_test_ec_key_pem();
-        params.pnc.contract_emaid = "DEPNXCONTRACT1";
+        params.pnc.contract = ev::d2::ContractMaterial{
+            {0x30, 0x02, 0x03}, {{0x30, 0x04}}, make_test_ec_key_pem(), std::nullopt, "DEPNXCONTRACT1"};
 
         auto fx = make_fixture({ProtocolId::ISO15118_20, ProtocolId::ISO15118_2, ProtocolId::DIN70121},
                                std::move(params), message_20::datatypes::ServiceCategory::DC);
@@ -666,6 +668,47 @@ SCENARIO("ISO15118-2 EV Session ignores frames with a non-SAP payload type") {
     }
 }
 
+SCENARIO("ISO15118-2 EV Session ignores a message that is not a valid response") {
+    // [V2G2-440]: ignored, and the exchange goes on under the same deadline.
+    GIVEN("a Session that handed over to the ISO 15118-2 engine") {
+        auto fx = make_fixture({ProtocolId::ISO15118_20, ProtocolId::ISO15118_2, ProtocolId::DIN70121}, walk_params(),
+                               message_20::datatypes::ServiceCategory::DC);
+        walk_sap(*fx, 2, 3);
+        const auto captured_before = fx->captured.size();
+
+        const auto continues_on_valid_response = [&]() {
+            REQUIRE_FALSE(fx->session.is_finished());
+            REQUIRE(fx->captured.size() == captured_before);
+
+            const auto req =
+                step<message_2::ServiceDiscoveryRequest>(*fx, "SessionSetup -> ServiceDiscovery", session_setup_res());
+            REQUIRE(req.header.session_id == D2_SID);
+            REQUIRE_FALSE(fx->timed_out);
+        };
+
+        WHEN("a frame with a malformed V2GTP header arrives") {
+            fx->session.on_bytes_received(bad_version_header());
+            THEN("the SessionSetupRes still advances the session") {
+                continues_on_valid_response();
+            }
+        }
+
+        WHEN("an undecodable EXI payload arrives") {
+            fx->session.on_bytes_received(frame_payload(PT::SAP, garbage_exi()));
+            THEN("the SessionSetupRes still advances the session") {
+                continues_on_valid_response();
+            }
+        }
+
+        WHEN("a valid response of the wrong type arrives") {
+            fx->session.on_bytes_received(frame_payload(PT::SAP, serialize_2(ok2<message_2::SessionStopResponse>())));
+            THEN("the SessionSetupRes still advances the session") {
+                continues_on_valid_response();
+            }
+        }
+    }
+}
+
 SCENARIO("ISO15118-2 EV Session survives a frame larger than the old accumulator ceiling") {
     // A real ISO 15118-2 CertificateInstallationRes carries six certificates plus the
     // encrypted contract key, the DH public key, the eMAID and the XML signature, and
@@ -698,7 +741,7 @@ SCENARIO("ISO15118-2 EV Session survives a frame larger than the old accumulator
     }
 }
 
-SCENARIO("ISO15118-2 EV Session re-arms a dropped frame with the configured response timeout") {
+SCENARIO("ISO15118-2 EV Session retains the configured response timeout after a dropped frame") {
     GIVEN("a Session with a 1000 ms override against the 2000 ms -2 message timeout") {
         auto fx = make_fixture({ProtocolId::ISO15118_20, ProtocolId::ISO15118_2, ProtocolId::DIN70121}, walk_params(),
                                message_20::datatypes::ServiceCategory::DC);
@@ -740,4 +783,97 @@ SCENARIO("EV Session hands over to the DIN SPEC 70121 engine the SECC selected")
             }
         }
     }
+}
+
+// The Session owns the latches and every engine's Context refers to them, so the -2 engine reads
+// what the EV latched while the -20 engine ran the SAP handshake.
+SCENARIO("EV Session keeps a stop or pause latched before the handover to the ISO 15118-2 engine") {
+    GIVEN("a Session offering ISO 15118-20, ISO 15118-2 and DIN SPEC 70121 with its SAP request sent") {
+        auto fx = make_fixture({ProtocolId::ISO15118_20, ProtocolId::ISO15118_2, ProtocolId::DIN70121}, walk_params(),
+                               message_20::datatypes::ServiceCategory::DC);
+        fx->session.start();
+        REQUIRE(run_reactor_until(
+            fx->reactor, [&]() { return fx->captured.size() >= 1; }, 1s));
+
+        const auto hand_over_to_d2 = [&]() {
+            const auto before = fx->captured.size();
+            fx->session.on_bytes_received(frame_payload(PT::SAP, serialize_msg(sap_response(2))));
+            REQUIRE(fx->selected_protocol == ProtocolId::ISO15118_2);
+            REQUIRE(run_reactor_until(
+                fx->reactor, [&]() { return fx->captured.size() > before; }, 1s));
+            REQUIRE(decode_2(fx->captured.back()).get_if<message_2::SessionSetupRequest>() != nullptr);
+        };
+
+        WHEN("the EV stops before the SECC picks ISO 15118-2") {
+            fx->session.deliver_control_event(ev::d20::ControlEvent{ev::d20::StopCharging{true}});
+            hand_over_to_d2();
+
+            THEN("the -2 engine goes from SessionSetup straight to SessionStop(Terminate)") {
+                const auto req = step<message_2::SessionStopRequest>(*fx, "latched stop", session_setup_res());
+                REQUIRE(req.charging_session == dt::ChargingSession::Terminate);
+            }
+        }
+
+        WHEN("the EV pauses before the SECC picks ISO 15118-2") {
+            fx->session.deliver_control_event(ev::d20::ControlEvent{ev::d20::PauseCharging{true}});
+            hand_over_to_d2();
+
+            THEN("the -2 engine goes from SessionSetup straight to SessionStop") {
+                step<message_2::SessionStopRequest>(*fx, "latched pause", session_setup_res());
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-2 EV welding timeout reports failure and terminates a pending pause") {
+    auto fx = make_fixture({ProtocolId::ISO15118_20, ProtocolId::ISO15118_2, ProtocolId::DIN70121}, walk_params(),
+                           message_20::datatypes::ServiceCategory::DC, std::nullopt, std::nullopt, {60.0f, 20, 500ms},
+                           {5ms, 1000ms});
+    walk_dc_to_current_demand(*fx);
+    fx->session.deliver_control_event(ev::d20::ControlEvent{ev::d20::PauseCharging{true}});
+    step<message_2::PowerDeliveryRequest>(*fx, "pause -> Stop", current_demand_res());
+    step<message_2::WeldingDetectionRequest>(*fx, "accepted Stop -> welding", ok2<message_2::PowerDeliveryResponse>());
+    auto unsafe = welding_detection_res();
+    unsafe.evse_present_voltage = dt::to_physical_value(400.0, dt::Unit::V);
+    step<message_2::WeldingDetectionRequest>(*fx, "unsafe -> poll", unsafe);
+    const auto before = fx->captured.size();
+    int expected_cycles = 1;
+    SECTION("the outstanding response never arrives") {
+        REQUIRE(run_reactor_until(
+            fx->reactor, [&] { return fx->session.is_finished(); }, 1500ms));
+        REQUIRE(fx->captured.size() == before);
+        REQUIRE(fx->welding_failures == std::vector<std::pair<float, int>>{{400.0f, 1}});
+        REQUIRE(fx->timed_out_count == 1);
+        REQUIRE_FALSE(fx->session.is_paused());
+        return;
+    }
+    SECTION("the outstanding response arrives after the welding deadline") {
+        REQUIRE_FALSE(run_reactor_until(
+            fx->reactor, [&] { return fx->captured.size() > before; }, 450ms));
+        REQUIRE(fx->welding_failures.empty());
+        fx->session.on_bytes_received(frame_payload(PT::SAP, serialize_2(unsafe)));
+        expected_cycles = 2;
+    }
+    REQUIRE(run_reactor_until(
+        fx->reactor, [&] { return fx->captured.size() > before; }, 2s));
+    const auto decoded = decode_2(fx->captured.back());
+    const auto* request = decoded.get_if<message_2::SessionStopRequest>();
+    REQUIRE(request != nullptr);
+    REQUIRE(request->charging_session == dt::ChargingSession::Terminate);
+    REQUIRE(fx->welding_failures == std::vector<std::pair<float, int>>{{400.0f, expected_cycles}});
+    REQUIRE_FALSE(fx->timed_out);
+    fx->session.on_bytes_received(frame_payload(PT::SAP, serialize_2(ok2<message_2::SessionStopResponse>())));
+    REQUIRE(fx->session.is_finished());
+    REQUIRE_FALSE(fx->session.is_paused());
+    REQUIRE(fx->signals.back() == ev::feedback::Signal::DLINK_TERMINATE);
+}
+
+std::unique_ptr<SessionFixture> iso15118::ev::test::welding_fixture_d2() {
+    auto fx = make_fixture({ProtocolId::ISO15118_20, ProtocolId::ISO15118_2, ProtocolId::DIN70121}, walk_params(),
+                           message_20::datatypes::ServiceCategory::DC, std::nullopt, std::nullopt, {}, {5ms, 0ms});
+    walk_dc_to_current_demand(*fx);
+    fx->session.deliver_control_event(ev::d20::ControlEvent{ev::d20::PauseCharging{true}});
+    step<message_2::PowerDeliveryRequest>(*fx, "pause -> Stop", current_demand_res());
+    step<message_2::WeldingDetectionRequest>(*fx, "accepted Stop -> welding", ok2<message_2::PowerDeliveryResponse>());
+    return fx;
 }

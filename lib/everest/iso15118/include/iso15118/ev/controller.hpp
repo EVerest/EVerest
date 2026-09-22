@@ -6,32 +6,44 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/event/timer_fd.hpp>
 #include <everest/util/async/monitor.hpp>
 
-#include <iso15118/io/ipv6_endpoint.hpp>
-
-#include <iso15118/ev/ac_charge_params.hpp>
-#include <iso15118/ev/config.hpp>
-#include <iso15118/ev/dc_charge_params.hpp>
-#include <iso15118/ev/session.hpp>
-#include <iso15118/ev/session/feedback.hpp>
-#include <iso15118/ev/transport/data_client.hpp>
-#include <iso15118/ev/transport/sdp_client.hpp>
+#include <iso15118/ev/config/config.hpp>
+#include <iso15118/ev/d20/control_event.hpp>
+#include <iso15118/ev/feedback.hpp>
+#include <iso15118/ev/params/ac.hpp>
+#include <iso15118/ev/params/dc.hpp>
 
 namespace iso15118::ev {
 
+namespace session {
+class Session;
+} // namespace session
+
+namespace transport {
+class Connection;
+class SdpClient;
+} // namespace transport
+
+// Resolve "auto" to an IPv6 interface and validate the resulting name.
+bool resolve_interface(std::string& interface_name);
+
 /**
- * One EV charging session attempt: reactor, SdpClient, DataClient, Session. Mirrors
- * \ref iso15118::TbdController. A paused session is handed on via EvConfig::resume.
+ * One EV charging session attempt: reactor, SdpClient, Connection, Session.
+ * A paused session is handed on to the next Controller via config::EvConfig::resume.
  * The mutators must not be called after this object is destroyed; the owner clears its pointer first.
  */
 class Controller {
 public:
-    Controller(EvConfig config, feedback::Callbacks callbacks, DcChargeParams initial_dc_params = {},
-               AcChargeParams initial_ac_params = {});
+    Controller(config::EvConfig config, feedback::Callbacks callbacks, params::DcChargeParams initial_dc_params = {},
+               params::AcChargeParams initial_ac_params = {});
+    ~Controller();
+
+    const std::string& interface_name() const;
 
     Controller(const Controller&) = delete;
     Controller& operator=(const Controller&) = delete;
@@ -62,24 +74,32 @@ public:
 
     // Module -> FSM parameter channels (any thread).
     void update_present_soc(double present_soc);
+    // V. DC inlet voltage, and the AC measured grid voltage for AC_DER_SAE.
     void update_present_voltage(float present_voltage);
     void update_present_active_power(float present_active_power);
+    // Hz. AC measured grid frequency for AC_DER_SAE.
+    void update_present_frequency(float present_frequency);
+    // DERAlarmStatus bitmap, AMD1 Table M.9, for AC_DER_SAE.
+    void update_der_alarm_status(std::uint32_t der_alarm_status);
     // Replace the static DC fields; the live fields keep their current values.
-    void update_dc_params(const DcChargeParams& params);
+    void update_dc_params(const params::DcChargeParams& params);
 
     // After loop(): the paused session to re-join, if the session ended with SessionStop(Pause).
-    std::optional<PausedSession> paused_session() const;
+    std::optional<config::PausedSession> paused_session() const;
 
 private:
-    void establish_data_path(const iso15118::io::Ipv6EndPoint& endpoint, iso15118::io::v2gtp::Security security);
-    void on_sdp_response(const transport::SdpResponse& response);
+    void establish_data_path(const iso15118::io::Ipv6EndPoint& endpoint, iso15118::v2gtp::Security security);
+    void on_sdp_response(const iso15118::v2gtp::SdpResponse& response);
+    // Under tls_version auto, rebuild the SAP offer for the negotiated TLS version. False, logged, when
+    // nothing enabled runs over it.
+    bool narrow_offer_to_negotiated_tls();
     template <typename F> void guarded(const char* op, F&& f);
     // Setup failure: log, DLINK_ERROR, stopped.
     void abort_loop(const char* reason);
     void deliver(const d20::ControlEvent& event);
     void arm_stop_grace();
 
-    EvConfig config;
+    config::EvConfig config;
     const Feedback feedback;
 
     std::atomic_bool online{false};
@@ -95,17 +115,20 @@ private:
     // Set once a Session ran; a loop that ends without one reports DLINK_ERROR.
     bool session_started{false};
     // Transport security of the data path, recorded for paused_session().
-    iso15118::io::v2gtp::Security data_path_security{iso15118::io::v2gtp::Security::NO_TRANSPORT_SECURITY};
+    iso15118::v2gtp::Security data_path_security{iso15118::v2gtp::Security::NO_TRANSPORT_SECURITY};
 
     everest::lib::io::event::fd_event_handler reactor;
-    std::optional<transport::SdpClient> sdp_client;
-    std::unique_ptr<transport::DataClient> data_client;
+    std::unique_ptr<transport::SdpClient> sdp_client;
+    std::unique_ptr<transport::Connection> connection;
 
     // Outlive the Session (its Context references them).
-    everest::lib::util::monitor<DcChargeParams> dc_params;
-    everest::lib::util::monitor<AcChargeParams> ac_params;
+    everest::lib::util::monitor<params::DcChargeParams> dc_params;
+    everest::lib::util::monitor<params::AcChargeParams> ac_params;
 
-    std::unique_ptr<Session> session;
+    struct SessionDeleter {
+        void operator()(session::Session*) const noexcept;
+    };
+    std::unique_ptr<session::Session, SessionDeleter> session;
 };
 
 } // namespace iso15118::ev

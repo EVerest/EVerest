@@ -50,9 +50,13 @@ void send(Context& ctx) {
 
 } // namespace
 
+BasePointerType to_pre_charge(Context& ctx) {
+    send(ctx);
+    return ctx.create_state<PreCharge>();
+}
+
 void PreCharge::enter() {
     logf_debug("Enter state: PreCharge (DIN 70121)");
-    send(m_ctx);
 }
 
 Result PreCharge::feed(Event ev) {
@@ -81,7 +85,7 @@ Result PreCharge::feed(Event ev) {
     if (pre_charge::converged(*res, target_voltage)) {
         // Published immediately before PowerDeliveryReq(ready=true).
         m_ctx.feedback.dc_power_on();
-        return m_ctx.create_state<PowerDelivery>(PowerDelivery::Phase::Start);
+        return to_power_delivery(m_ctx, PowerDelivery::Start{});
     }
 
     // Not converged: resend and stay. The SECC keeps answering pre-charge requests while its

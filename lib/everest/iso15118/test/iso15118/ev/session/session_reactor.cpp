@@ -13,6 +13,7 @@
 #include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/session_setup.hpp>
+#include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/message/type.hpp>
 #include <iso15118/message/variant.hpp>
@@ -39,6 +40,14 @@ message_20::SessionSetupResponse established_session_setup_response() {
     res.evseid = "DE*PNX*E12345";
     return res;
 }
+
+message_20::SessionStopResponse stop_response() {
+    message_20::SessionStopResponse res{};
+    res.header.session_id = established_session_setup_response().header.session_id;
+    res.response_code = message_20::datatypes::ResponseCode::OK;
+    return res;
+}
+
 } // namespace
 
 SCENARIO("ISO15118-20 EV Session holds each request and transmits it after the send delay") {
@@ -59,7 +68,7 @@ SCENARIO("ISO15118-20 EV Session holds each request and transmits it after the s
                 REQUIRE(fx.captured.size() == 1);
 
                 const auto& frame = fx.captured.front();
-                REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::SAP);
+                REQUIRE(header_payload_type(frame) == v2gtp::PayloadType::SAP);
 
                 auto variant = decode_frame(frame);
                 REQUIRE(variant.get_if<message_20::SupportedAppProtocolRequest>() != nullptr);
@@ -69,8 +78,7 @@ SCENARIO("ISO15118-20 EV Session holds each request and transmits it after the s
                 REQUIRE(run_reactor_until(
                     fx.reactor, [&]() { return fx.captured.size() >= 1; }, 1s));
 
-                fx.session.on_bytes_received(
-                    frame_payload(io::v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response())));
+                fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response())));
 
                 THEN("The SessionSetupRequest is not sent synchronously but after the send delay") {
                     REQUIRE(fx.captured.size() == 1);
@@ -78,7 +86,7 @@ SCENARIO("ISO15118-20 EV Session holds each request and transmits it after the s
                         fx.reactor, [&]() { return fx.captured.size() >= 2; }, 1s));
 
                     const auto& frame = fx.captured.back();
-                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20Main);
+                    REQUIRE(header_payload_type(frame) == v2gtp::PayloadType::Part20Main);
 
                     auto variant = decode_frame(frame);
                     REQUIRE(variant.get_if<message_20::SessionSetupRequest>() != nullptr);
@@ -88,7 +96,7 @@ SCENARIO("ISO15118-20 EV Session holds each request and transmits it after the s
                     REQUIRE(run_reactor_until(
                         fx.reactor, [&]() { return fx.captured.size() >= 2; }, 1s));
 
-                    fx.session.on_bytes_received(frame_payload(io::v2gtp::PayloadType::Part20Main,
+                    fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::Part20Main,
                                                                serialize_msg(established_session_setup_response())));
 
                     THEN("An AuthorizationSetupRequest is emitted and the session keeps running") {
@@ -96,7 +104,7 @@ SCENARIO("ISO15118-20 EV Session holds each request and transmits it after the s
                             fx.reactor, [&]() { return fx.captured.size() >= 3; }, 1s));
 
                         const auto& frame = fx.captured.back();
-                        REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20Main);
+                        REQUIRE(header_payload_type(frame) == v2gtp::PayloadType::Part20Main);
 
                         auto variant = decode_frame(frame);
                         REQUIRE(variant.get_if<message_20::AuthorizationSetupRequest>() != nullptr);
@@ -126,7 +134,7 @@ SCENARIO("ISO15118-20 EV Session holds each request and transmits it after the s
             REQUIRE(run_reactor_until(
                 fx.reactor, [&]() { return fx.captured.size() >= 1; }, 1s));
 
-            const auto frame = frame_payload(io::v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response()));
+            const auto frame = frame_payload(v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response()));
 
             const auto split = frame.size() / 2;
             fx.session.on_bytes_received(std::vector<uint8_t>(frame.begin(), frame.begin() + split));
@@ -138,7 +146,7 @@ SCENARIO("ISO15118-20 EV Session holds each request and transmits it after the s
 
                 REQUIRE(run_reactor_until(
                     fx.reactor, [&]() { return fx.captured.size() >= 2; }, 1s));
-                REQUIRE(header_payload_type(fx.captured.back()) == io::v2gtp::PayloadType::Part20Main);
+                REQUIRE(header_payload_type(fx.captured.back()) == v2gtp::PayloadType::Part20Main);
             }
         }
 
@@ -154,9 +162,9 @@ SCENARIO("ISO15118-20 EV Session holds each request and transmits it after the s
             REQUIRE(run_reactor_until(
                 fx.reactor, [&]() { return fx.captured.size() >= 1; }, 1s));
 
-            const auto sap_frame = frame_payload(io::v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response()));
+            const auto sap_frame = frame_payload(v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response()));
             const auto setup_frame =
-                frame_payload(io::v2gtp::PayloadType::Part20Main, serialize_msg(established_session_setup_response()));
+                frame_payload(v2gtp::PayloadType::Part20Main, serialize_msg(established_session_setup_response()));
 
             // Split the SessionSetup frame past its 8-byte header so the accumulator has to
             // buffer a parsed-header-but-incomplete-payload frame across the read boundary.
@@ -174,7 +182,7 @@ SCENARIO("ISO15118-20 EV Session holds each request and transmits it after the s
                 // produces nothing further.
                 REQUIRE(run_reactor_until(
                     fx.reactor, [&]() { return fx.captured.size() >= 2; }, 1s));
-                REQUIRE(header_payload_type(fx.captured.back()) == io::v2gtp::PayloadType::Part20Main);
+                REQUIRE(header_payload_type(fx.captured.back()) == v2gtp::PayloadType::Part20Main);
                 {
                     auto variant = decode_frame(fx.captured.back());
                     REQUIRE(variant.get_if<message_20::SessionSetupRequest>() != nullptr);
@@ -196,64 +204,70 @@ SCENARIO("ISO15118-20 EV Session holds each request and transmits it after the s
             }
         }
 
-        WHEN("a frame with a malformed V2GTP header arrives") {
-            // A peer sending garbage (here a bad SDP version byte) drives the accumulator
-            // into a terminal INVALID_HEADER state. The Session must stop loudly rather than
-            // silently dropping the byte stream and waiting for the watchdog.
+        WHEN("frames with a malformed V2GTP header arrive before the SAP response") {
+            // [V2G2-800] [V2G20-800]: ignored, and the exchange goes on under the same deadline.
             fx.session.start();
             REQUIRE(run_reactor_until(
                 fx.reactor, [&]() { return fx.captured.size() >= 1; }, 1s));
 
-            // Valid header is {0x01, 0xFE, ...}; corrupt the version so parse_header
-            // rejects it. Payload bytes are irrelevant once the header is invalid.
-            std::vector<uint8_t> bad_frame(io::SdpPacket::V2GTP_HEADER_SIZE, 0x00);
-            bad_frame[0] = 0xFF; // not SDP_PROTOCOL_VERSION
-            bad_frame[1] = 0xFF; // not SDP_INVERSE_PROTOCOL_VERSION
+            fx.session.on_bytes_received(bad_version_header());
+            fx.session.on_bytes_received(oversized_header());
 
-            fx.session.on_bytes_received(bad_frame);
-
-            THEN("The session stops and finishes instead of hanging until the watchdog") {
-                REQUIRE(fx.session.is_finished());
-                // No second request was transmitted: the malformed frame produced nothing.
+            THEN("The session keeps waiting and the valid SAP response still advances it") {
+                REQUIRE_FALSE(fx.session.is_finished());
                 REQUIRE(fx.captured.size() == 1);
-                // The failure was reported as a stop, not masqueraded as a timeout.
-                REQUIRE_FALSE(fx.timed_out);
-            }
 
-            THEN("Further bytes on the dead session change nothing") {
-                const auto signals_before = fx.signals.size();
-
-                fx.session.on_bytes_received(std::vector<uint8_t>(32, 0x00));
-                fx.session.on_bytes_received(std::vector<uint8_t>(32, 0xFF));
-
-                REQUIRE(fx.session.is_finished());
-                REQUIRE(fx.captured.size() == 1);
-                REQUIRE(fx.signals.size() == signals_before);
+                fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response())));
+                REQUIRE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.captured.size() >= 2; }, 1s));
+                REQUIRE(decode_frame(fx.captured.back()).get_if<message_20::SessionSetupRequest>() != nullptr);
+                REQUIRE_FALSE(fx.session.is_finished());
                 REQUIRE_FALSE(fx.timed_out);
             }
         }
 
         WHEN("a frame with a valid header but a garbage EXI payload arrives") {
-            // Unlike the malformed-header case, the V2GTP header parses and the declared
-            // length matches, so the accumulator completes the frame and hands it to the
-            // decoder. The EXI payload is garbage: the Variant decode fails and yields a
-            // Type::None variant, which the active state (SupportedAppProtocol) rejects as
-            // the wrong variant and stops the session. Either way the Session must stop
-            // loudly the same reactor pass rather than hanging until the response watchdog.
+            // [V2G2-440] [V2G20-440]: an undecodable response is not a valid response, so it is ignored.
             fx.session.start();
             REQUIRE(run_reactor_until(
                 fx.reactor, [&]() { return fx.captured.size() >= 1; }, 1s));
 
-            // A well-formed 4-byte payload framed for a real payload type, but the bytes
-            // are not a valid EXI document for it: decode fails inside handle_complete_frame.
-            const std::vector<uint8_t> garbage_payload{0xde, 0xad, 0xbe, 0xef};
-            fx.session.on_bytes_received(frame_payload(io::v2gtp::PayloadType::Part20Main, garbage_payload));
+            fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::SAP, garbage_exi()));
 
-            THEN("The session stops synchronously, not via the response watchdog") {
-                REQUIRE(fx.session.is_finished());
-                // No further request was produced from the undecodable frame.
+            THEN("The session keeps waiting and the valid SAP response still advances it") {
+                REQUIRE_FALSE(fx.session.is_finished());
                 REQUIRE(fx.captured.size() == 1);
-                // Stopped on the decode/dispatch path, not masqueraded as a response timeout.
+
+                fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response())));
+                REQUIRE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.captured.size() >= 2; }, 1s));
+                REQUIRE(decode_frame(fx.captured.back()).get_if<message_20::SessionSetupRequest>() != nullptr);
+                REQUIRE_FALSE(fx.session.is_finished());
+                REQUIRE_FALSE(fx.timed_out);
+            }
+        }
+
+        WHEN("a valid response of the wrong type arrives while SessionSetupRes is outstanding") {
+            // [V2G20-440]: a response to another request is not a valid response, so it is ignored.
+            fx.session.start();
+            REQUIRE(run_reactor_until(
+                fx.reactor, [&]() { return fx.captured.size() >= 1; }, 1s));
+            fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response())));
+            REQUIRE(run_reactor_until(
+                fx.reactor, [&]() { return fx.captured.size() >= 2; }, 1s));
+
+            fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::Part20Main, serialize_msg(stop_response())));
+
+            THEN("The session keeps waiting and the SessionSetupRes still advances it") {
+                REQUIRE_FALSE(fx.session.is_finished());
+                REQUIRE(fx.captured.size() == 2);
+
+                fx.session.on_bytes_received(
+                    frame_payload(v2gtp::PayloadType::Part20Main, serialize_msg(established_session_setup_response())));
+                REQUIRE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.captured.size() >= 3; }, 1s));
+                REQUIRE(decode_frame(fx.captured.back()).get_if<message_20::AuthorizationSetupRequest>() != nullptr);
+                REQUIRE_FALSE(fx.session.is_finished());
                 REQUIRE_FALSE(fx.timed_out);
             }
         }
@@ -273,7 +287,7 @@ SCENARIO("ISO15118-20 EV Session holds each request and transmits it after the s
             REQUIRE(run_reactor_until(
                 fx.reactor, [&]() { return fx.captured.size() >= 1; }, 1s));
 
-            fx.session.on_bytes_received(frame_payload(io::v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response())));
+            fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response())));
 
             THEN("Nothing further is transmitted, the session stops and finishes, no watchdog fires") {
                 REQUIRE(run_reactor_until(
@@ -358,37 +372,29 @@ SCENARIO("ISO15118-20 EV Session holds each request and transmits it after the s
     }
 }
 
-SCENARIO("ISO15118-20 EV Session discards a queued request when the watchdog fires") {
-
-    // Send delay deliberately longer than the watchdog, so that with both armed the watchdog wins.
+SCENARIO("ISO15118-20 EV dropped frames leave a queued request's watchdog disarmed") {
     GIVEN("A Session whose send delay outlasts its response watchdog") {
-        SessionFixture fx{"EVTESTID01", ev::SessionTiming{200ms, 60ms}};
+        SessionFixture fx{"EVTESTID01", ev::session::SessionTiming{200ms, 60ms}};
 
-        WHEN("an undecodable frame re-arms the watchdog while the next request is still held") {
+        WHEN("an unsupported frame arrives while the next request is still held") {
             fx.session.start();
             REQUIRE(run_reactor_until(
-                fx.reactor, [&]() { return fx.captured.size() >= 1; }, 1s));
-            const auto sent_before = fx.captured.size();
-
-            // Queues SessionSetupRequest behind the send delay and disarms the watchdog.
-            fx.session.on_bytes_received(frame_payload(io::v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response())));
-
-            // A payload type this generation cannot decode is dropped, and dropping it re-arms
-            // the watchdog. Both timers now run with a request sitting in the exchange.
+                fx.reactor, [&]() { return fx.captured.size() == 1; }, 1s));
+            fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response())));
             fx.session.on_bytes_received(
-                frame_payload(static_cast<io::v2gtp::PayloadType>(0x9000), std::vector<uint8_t>{0x00}));
+                frame_payload(static_cast<v2gtp::PayloadType>(0x9000), std::vector<uint8_t>{0x00}));
 
-            THEN("The session finishes at once and the held request never reaches the wire") {
+            THEN("the queued request is sent before its response watchdog starts") {
+                REQUIRE_FALSE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.timed_out; }, 100ms));
+                REQUIRE(fx.captured.size() == 1);
                 REQUIRE(run_reactor_until(
-                    fx.reactor, [&]() { return fx.timed_out; }, 2s));
-
-                // A request left in the exchange would hold is_finished() false until the send
-                // delay fired, and that transmission is what must not happen.
-                REQUIRE(fx.session.is_finished());
-
-                run_reactor_until(
-                    fx.reactor, [&]() { return fx.captured.size() > sent_before; }, 400ms);
-                REQUIRE(fx.captured.size() == sent_before);
+                    fx.reactor, [&]() { return fx.captured.size() == 2; }, 1s));
+                REQUIRE(decode_frame(fx.captured.back()).get_if<message_20::SessionSetupRequest>() != nullptr);
+                REQUIRE_FALSE(fx.timed_out);
+                REQUIRE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.session.is_finished(); }, 1s));
+                REQUIRE(fx.timed_out_count == 1);
             }
         }
     }
@@ -412,6 +418,126 @@ SCENARIO("ISO15118-20 EV Session stops loudly when the outbound send is refused"
                 REQUIRE(fx.send_attempts == 1);
                 // Stopped via the send-failure path, not the watchdog.
                 REQUIRE_FALSE(fx.timed_out);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session that gives up on a refused send leaves no timer to fire later") {
+    // Authorization arms its ongoing guard on entry. Giving up on the refused AuthorizationReq must
+    // disarm it, or it fires on the finished session and reports a timeout that never happened.
+    GIVEN("A Session with a 50 ms Authorization bound walked to the AuthorizationSetupReq") {
+        ev::d20::SessionOptions options{};
+        options.d20.authorization_timeout = 50ms;
+        SessionFixture fx{"EVTESTID01",
+                          ev::session::SessionTiming{5ms, 1000ms},
+                          ev::params::DcChargeParams{},
+                          default_advertised_app_protocols(),
+                          message_20::datatypes::ServiceCategory::DC,
+                          ev::params::AcChargeParams{},
+                          default_der_control_functions(),
+                          true,
+                          options};
+        fx.session.start();
+        REQUIRE(run_reactor_until(
+            fx.reactor, [&]() { return fx.captured.size() == 1; }, 1s));
+        fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response())));
+        REQUIRE(run_reactor_until(
+            fx.reactor, [&]() { return fx.captured.size() == 2; }, 1s));
+        fx.session.on_bytes_received(
+            frame_payload(v2gtp::PayloadType::Part20Main, serialize_msg(established_session_setup_response())));
+        REQUIRE(run_reactor_until(
+            fx.reactor, [&]() { return fx.captured.size() == 3; }, 1s));
+
+        WHEN("the AuthorizationReq the AuthorizationSetupRes leads to is refused") {
+            fx.refuse_send = true;
+            message_20::AuthorizationSetupResponse res{};
+            res.header.session_id = established_session_setup_response().header.session_id;
+            res.response_code = message_20::datatypes::ResponseCode::OK;
+            res.authorization_services = {message_20::datatypes::Authorization::EIM};
+            res.certificate_installation_service = false;
+            res.authorization_mode = message_20::datatypes::EIM_ASResAuthorizationMode{};
+            fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::Part20Main, serialize_msg(res)));
+
+            THEN("the session finishes and no timeout follows past the Authorization bound") {
+                REQUIRE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.session.is_finished(); }, 1s));
+                REQUIRE(fx.send_attempts == 4);
+                REQUIRE_FALSE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.timed_out; }, 150ms));
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session ends an exchange that draws only invalid messages as a timeout") {
+    // The ignored message neither extends nor re-arms the response deadline: it arrives 300 ms into
+    // a 400 ms window, and the watchdog still fires before a re-armed one could.
+    GIVEN("A Session with a 400 ms response watchdog waiting for the SAP response") {
+        SessionFixture fx{"EVTESTID01", ev::session::SessionTiming{5ms, 400ms}};
+        fx.session.start();
+        REQUIRE(run_reactor_until(
+            fx.reactor, [&]() { return fx.captured.size() >= 1; }, 1s));
+        REQUIRE_FALSE(run_reactor_until(
+            fx.reactor, [&]() { return fx.timed_out; }, 300ms));
+
+        const auto times_out_on_original_deadline = [&]() {
+            REQUIRE_FALSE(fx.session.is_finished());
+            REQUIRE(run_reactor_until(
+                fx.reactor, [&]() { return fx.timed_out; }, 250ms));
+            REQUIRE(fx.session.is_finished());
+            REQUIRE(fx.captured.size() == 1);
+        };
+
+        WHEN("a frame with a malformed V2GTP header arrives") {
+            fx.session.on_bytes_received(bad_version_header());
+            THEN("the session ends through the response watchdog") {
+                times_out_on_original_deadline();
+            }
+        }
+
+        WHEN("a frame with an oversized payload length arrives") {
+            fx.session.on_bytes_received(oversized_header());
+            THEN("the session ends through the response watchdog") {
+                times_out_on_original_deadline();
+            }
+        }
+
+        WHEN("an undecodable EXI payload arrives") {
+            fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::SAP, garbage_exi()));
+            THEN("the session ends through the response watchdog") {
+                times_out_on_original_deadline();
+            }
+        }
+
+        WHEN("a valid response of the wrong type arrives") {
+            fx.session.on_bytes_received(
+                frame_payload(v2gtp::PayloadType::Part20Main, serialize_msg(established_session_setup_response())));
+            THEN("the session ends through the response watchdog") {
+                times_out_on_original_deadline();
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session keeps the send delay of a held request across an ignored message") {
+    GIVEN("A Session holding its SessionSetupReq for a 200 ms send delay") {
+        SessionFixture fx{"EVTESTID01", ev::session::SessionTiming{200ms, 1000ms}};
+        fx.session.start();
+        REQUIRE(run_reactor_until(
+            fx.reactor, [&]() { return fx.captured.size() == 1; }, 1s));
+        fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::SAP, serialize_msg(ok_sap_response())));
+        REQUIRE_FALSE(run_reactor_until(
+            fx.reactor, [&]() { return fx.captured.size() == 2; }, 150ms));
+
+        WHEN("an undecodable EXI payload arrives before the delay elapses") {
+            fx.session.on_bytes_received(frame_payload(v2gtp::PayloadType::SAP, garbage_exi()));
+
+            THEN("the request goes out on its original schedule") {
+                REQUIRE(run_reactor_until(
+                    fx.reactor, [&]() { return fx.captured.size() == 2; }, 120ms));
+                REQUIRE(decode_frame(fx.captured.back()).get_if<message_20::SessionSetupRequest>() != nullptr);
+                REQUIRE_FALSE(fx.session.is_finished());
             }
         }
     }

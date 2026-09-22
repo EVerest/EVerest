@@ -17,4 +17,7 @@ struct ChargeParameterDiscovery : public StateBase {
     Result feed(Event) final;
 };
 
+// Sends the ChargeParameterDiscoveryReq and creates the state awaiting it.
+BasePointerType to_charge_parameter_discovery(Context& ctx);
+
 } // namespace iso15118::ev::din::state

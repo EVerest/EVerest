@@ -18,7 +18,9 @@ using dt::to_physical_value;
 using dt::Unit;
 
 message_2::ChargeParameterDiscoveryRequest create_dc_request(dt::EnergyTransferMode mode,
-                                                             const DcChargeParams& params) {
+                                                             const params::DcChargeParams& params,
+                                                             const params::EnergyRequest& energy,
+                                                             std::chrono::steady_clock::time_point now) {
     message_2::ChargeParameterDiscoveryRequest req;
     req.requested_energy_transfer_mode = mode;
     req.max_entries_sa_schedule_tuple = MAX_ENTRIES_SA_SCHEDULE_TUPLE;
@@ -33,16 +35,24 @@ message_2::ChargeParameterDiscoveryRequest create_dc_request(dt::EnergyTransferM
         dc.ev_maximum_power_limit = to_physical_value(params.max_charge_power, Unit::W);
     }
     dc.ev_energy_capacity = to_physical_value(params.energy_capacity, Unit::Wh);
+    if (const auto energy_wh = energy.stated_energy_wh()) {
+        dc.ev_energy_request = to_physical_value(*energy_wh, Unit::Wh);
+    }
+    dc.departure_time = energy.departure_in(now);
     return req;
 }
 
-message_2::ChargeParameterDiscoveryRequest create_ac_request(dt::EnergyTransferMode mode, const Iso2AcParams& params) {
+message_2::ChargeParameterDiscoveryRequest create_ac_request(dt::EnergyTransferMode mode,
+                                                             const params::Iso2AcParams& params,
+                                                             const params::EnergyRequest& energy,
+                                                             std::chrono::steady_clock::time_point now) {
     message_2::ChargeParameterDiscoveryRequest req;
     req.requested_energy_transfer_mode = mode;
     req.max_entries_sa_schedule_tuple = MAX_ENTRIES_SA_SCHEDULE_TUPLE;
 
     auto& ac = req.ac_ev_charge_parameter.emplace();
-    ac.e_amount = to_physical_value(params.e_amount, Unit::Wh);
+    ac.departure_time = energy.departure_in(now);
+    ac.e_amount = to_physical_value(energy.stated_energy_wh().value_or(params.e_amount), Unit::Wh);
     ac.ev_max_voltage = to_physical_value(params.ev_max_voltage, Unit::V);
     ac.ev_max_current = to_physical_value(params.ev_max_current, Unit::A);
     ac.ev_min_current = to_physical_value(params.ev_min_current, Unit::A);
@@ -76,6 +86,7 @@ Result handle_response(const message_2::ChargeParameterDiscoveryResponse& res) {
 
     if (res.ac_evse_charge_parameter.has_value()) {
         result.ac_nominal_voltage = res.ac_evse_charge_parameter->evse_nominal_voltage;
+        result.ac_evse_max_current = res.ac_evse_charge_parameter->evse_max_current;
     }
 
     return result;
@@ -83,15 +94,26 @@ Result handle_response(const message_2::ChargeParameterDiscoveryResponse& res) {
 
 } // namespace charge_parameter_discovery
 
-void ChargeParameterDiscovery::send() {
-    const auto mode = m_ctx.params().energy_transfer_mode;
-    m_ctx.send_request(is_dc_mode(mode) ? charge_parameter_discovery::create_dc_request(mode, m_ctx.get_dc_params())
-                                        : charge_parameter_discovery::create_ac_request(mode, m_ctx.params().ac));
+namespace {
+
+void send_request(Context& ctx) {
+    const auto mode = ctx.params().energy_transfer_mode;
+    const auto& energy = ctx.params().energy_request;
+    const auto now = std::chrono::steady_clock::now();
+    ctx.send_request(is_dc_mode(mode)
+                         ? charge_parameter_discovery::create_dc_request(mode, ctx.get_dc_params(), energy, now)
+                         : charge_parameter_discovery::create_ac_request(mode, ctx.params().ac, energy, now));
+}
+
+} // namespace
+
+BasePointerType to_charge_parameter_discovery(Context& ctx) {
+    send_request(ctx);
+    return ctx.create_state<ChargeParameterDiscovery>();
 }
 
 void ChargeParameterDiscovery::enter() {
     logf_debug("Enter state: ChargeParameterDiscovery (ISO 15118-2)");
-    send();
 }
 
 Result ChargeParameterDiscovery::feed(Event ev) {
@@ -112,7 +134,7 @@ Result ChargeParameterDiscovery::feed(Event ev) {
     }
 
     if (not result.finished) {
-        send();
+        send_request(m_ctx);
         return Result::awaiting();
     }
 
@@ -126,7 +148,7 @@ Result ChargeParameterDiscovery::feed(Event ev) {
     m_ctx.feedback.ev_power_ready();
 
     if (result.sa_schedule_tuple_id.has_value()) {
-        m_ctx.evse_info.sa_schedule_tuple_id = result.sa_schedule_tuple_id.value();
+        m_ctx.set_sa_schedule_tuple_id(result.sa_schedule_tuple_id.value());
     }
     m_ctx.evse_info.selected_pmax_schedule = result.selected_pmax_schedule;
 
@@ -137,11 +159,14 @@ Result ChargeParameterDiscovery::feed(Event ev) {
     if (result.ac_nominal_voltage.has_value()) {
         m_ctx.evse_info.ac_nominal_voltage = result.ac_nominal_voltage;
     }
+    if (not is_dc and result.ac_evse_max_current.has_value()) {
+        m_ctx.feedback.ac_evse_max_current(static_cast<float>(from_physical_value(result.ac_evse_max_current.value())));
+    }
 
     if (is_dc) {
-        return m_ctx.create_state<CableCheck>();
+        return CableCheck::begin(m_ctx);
     }
-    return m_ctx.create_state<PowerDelivery>(PowerDelivery::Phase::Start);
+    return to_power_delivery(m_ctx, PowerDelivery::Start{});
 }
 
 } // namespace iso15118::ev::d2::state

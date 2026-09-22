@@ -4,8 +4,10 @@
 
 #include "helper.hpp"
 
+#include <iso15118/ev/din/state/service_discovery.hpp>
 #include <iso15118/ev/din/state/service_payment_selection.hpp>
 #include <iso15118/message_din/contract_authentication.hpp>
+#include <iso15118/message_din/service_discovery.hpp>
 #include <iso15118/message_din/service_payment_selection.hpp>
 #include <iso15118/message_din/session_stop.hpp>
 
@@ -23,12 +25,21 @@ message_din::ServicePaymentSelectionResponse ok_response(const message_din::Head
     return res;
 }
 
-const auto seed_charge_service = [](DinStateHelper& helper) { helper.get_context().evse_info.charge_service_id = 7; };
+const auto by_service_discovery = entered_by([](DinStateHelper& helper) {
+    message_din::ServiceDiscoveryResponse res{};
+    res.header = header();
+    res.response_code = dt::ResponseCode::OK;
+    res.payment_options = {dt::PaymentOption::ExternalPayment};
+    res.charge_service.service_tag.service_id = 7;
+    res.charge_service.energy_transfer_type = dt::SupportedEnergyTransferMode::DC_extended;
+    return successor_of<ev::din::state::ServiceDiscovery>(helper, res);
+});
+
 } // namespace
 
 SCENARIO("DIN 70121 EV ServicePaymentSelection selects ExternalPayment and the offered ChargeService") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<State> primed{callbacks, seed_charge_service};
+    PrimedState<State> primed{callbacks, no_seed, by_service_discovery};
 
     const auto request = primed.take_requests().get<message_din::ServicePaymentSelectionRequest>();
     REQUIRE(request.has_value());
@@ -39,7 +50,7 @@ SCENARIO("DIN 70121 EV ServicePaymentSelection selects ExternalPayment and the o
 
 SCENARIO("DIN 70121 EV ServicePaymentSelection transitions to ContractAuthentication on OK") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<State> primed{callbacks, seed_charge_service};
+    PrimedState<State> primed{callbacks, no_seed};
 
     primed.handle_response(ok_response(header()));
     const auto result = primed.feed(ev::din::Event::V2GTP_MESSAGE);
@@ -51,7 +62,7 @@ SCENARIO("DIN 70121 EV ServicePaymentSelection transitions to ContractAuthentica
 
 SCENARIO("DIN 70121 EV ServicePaymentSelection diverts to SessionStop on a latched pause request") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<State> primed{callbacks, seed_charge_service};
+    PrimedState<State> primed{callbacks, no_seed};
 
     primed.ctx.set_pause_charging_requested(true);
     primed.handle_response(ok_response(header()));

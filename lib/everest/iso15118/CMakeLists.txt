@@ -26,15 +26,7 @@ install(
 )
 
 # detail headers included too: modules/EVSE/Evse15118D20 uses iso15118/detail/d20/config_validation.hpp
-# ev/ and the response variants declare symbols that are only in the library when the EV
-# side was built, so a charger-only install must not ship those headers.
-set(ISO15118_HEADER_EXCLUDES)
-if(NOT ISO15118_BUILD_EV_SIDE)
-    list(APPEND ISO15118_HEADER_EXCLUDES PATTERN "ev" EXCLUDE PATTERN "response_variant.hpp" EXCLUDE)
-endif()
-
 install(
     DIRECTORY include/
     TYPE INCLUDE
-    ${ISO15118_HEADER_EXCLUDES}
 )

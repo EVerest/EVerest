@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-#include <iso15118/io/sdp.hpp>
 #include <iso15118/io/stream_view.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
 #include "common_types.hpp"
 #include "type.hpp"

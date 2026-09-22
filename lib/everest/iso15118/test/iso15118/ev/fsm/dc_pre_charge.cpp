@@ -5,10 +5,12 @@
 
 #include "helper.hpp"
 
+#include <iso15118/ev/d20/state/dc_cable_check.hpp>
 #include <iso15118/ev/d20/state/dc_pre_charge.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/common_types.hpp>
+#include <iso15118/message/dc_cable_check.hpp>
 #include <iso15118/message/dc_pre_charge.hpp>
 #include <iso15118/message/power_delivery.hpp>
 #include <iso15118/message/session_stop.hpp>
@@ -22,7 +24,7 @@ using message_20::datatypes::ResponseCode;
 // DC_PreCharge reads target_voltage from the DC params to size its request and its
 // in-tolerance check.
 const auto seed_target_400 = [](FsmStateHelper& helper) {
-    ev::DcChargeParams params{};
+    ev::params::DcChargeParams params{};
     params.target_voltage = 400.0f;
     helper.set_dc_params(params);
 };
@@ -31,13 +33,25 @@ message_20::DC_PreChargeResponse make_response(const message_20::Header& header,
                                                message_20::datatypes::RationalNumber present_voltage) {
     return message_20::DC_PreChargeResponse{header, code, present_voltage};
 }
+
+// DC_PreCharge's first request, sent by DC_CableCheck on its Finished response.
+template <typename Seed> DecodedRequests first_request(Seed seed) {
+    using CableCheck = ev::d20::state::DC_CableCheck;
+    auto cable_check = Predecessor::dc_from([](ev::d20::Context& ctx) {
+        auto entered = CableCheck::begin(ctx);
+        // The Finished response below answers this first request.
+        ctx.discard_request();
+        return std::move(entered.new_state);
+    });
+    seed(*cable_check.helper);
+    return cable_check.transitions_to(ev::d20::StateID::DC_PreCharge,
+                                      message_20::DC_CableCheckResponse{SESSION_HEADER, ResponseCode::OK,
+                                                                        message_20::datatypes::Processing::Finished});
+}
 } // namespace
 
-SCENARIO("ISO15118-20 EV DC_PreCharge sends initial Starting request on enter") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::DC_PreCharge> primed{callbacks, seed_target_400};
-
-    const auto requests = primed.take_requests();
+SCENARIO("ISO15118-20 EV DC_CableCheck sends the initial Ongoing DC_PreChargeRequest") {
+    const auto requests = first_request(seed_target_400);
     const auto request_message = requests.get<message_20::DC_PreChargeRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
@@ -50,14 +64,6 @@ SCENARIO("ISO15118-20 EV DC_PreCharge closes precharge with Finished before Powe
     ev::feedback::Callbacks callbacks{};
     callbacks.dc_power_on = [&dc_power_on_fired]() { dc_power_on_fired = true; };
     PrimedState<ev::d20::state::DC_PreCharge> primed{callbacks, seed_target_400};
-
-    // enter() queues an Ongoing DC_PreChargeRequest.
-    {
-        const auto enter_requests = primed.take_requests();
-        const auto pre_charge_request = enter_requests.get<message_20::DC_PreChargeRequest>();
-        REQUIRE(pre_charge_request.has_value());
-        REQUIRE(pre_charge_request->processing == message_20::datatypes::Processing::Ongoing);
-    }
 
     // SECC reports present voltage in tolerance of the 400 V target. Reaching
     // tolerance must not transition yet: while EVProcessing is Ongoing the SECC

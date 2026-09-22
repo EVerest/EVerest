@@ -6,6 +6,7 @@
 
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/detail/din/context_helper.hpp>
+#include <iso15118/ev/detail/din/state/contract_authentication.hpp>
 #include <iso15118/ev/detail/din/state/service_payment_selection.hpp>
 #include <iso15118/ev/din/state/contract_authentication.hpp>
 
@@ -26,7 +27,6 @@ message_din::ServicePaymentSelectionRequest create_request(uint16_t charge_servi
 
 void ServicePaymentSelection::enter() {
     logf_debug("Enter state: ServicePaymentSelection (DIN 70121)");
-    m_ctx.send_request(service_payment_selection::create_request(m_ctx.evse_info.charge_service_id));
 }
 
 Result ServicePaymentSelection::feed(Event ev) {
@@ -44,6 +44,7 @@ Result ServicePaymentSelection::feed(Event ev) {
     if (auto stop = stop_before_start(m_ctx)) {
         return std::move(*stop);
     }
+    m_ctx.send_request(contract_authentication::create_request());
     return m_ctx.create_state<ContractAuthentication>();
 }
 

@@ -26,8 +26,8 @@ class MessageExchange {
 public:
     MessageExchange(io::StreamOutputView);
 
-    void set_request(std::unique_ptr<message_20::Variant> new_request);
-    std::unique_ptr<message_20::Variant> pull_request();
+    void set_request(std::unique_ptr<message_20::RequestVariant> new_request);
+    std::unique_ptr<message_20::RequestVariant> pull_request();
     message_20::Type peek_request_type() const;
 
     template <typename MessageType> void set_response(const MessageType& msg) {
@@ -53,7 +53,7 @@ public:
     // Stages an already encoded response verbatim. False when it is empty or exceeds the output buffer.
     bool set_raw_response(const uint8_t* data, size_t len, message_20::Type type);
 
-    std::tuple<bool, size_t, io::v2gtp::PayloadType, message_20::Type> check_and_clear_response();
+    std::tuple<bool, size_t, v2gtp::PayloadType, message_20::Type> check_and_clear_response();
     bool has_response() const {
         return response_available;
     }
@@ -63,13 +63,13 @@ public:
 
 private:
     // input
-    std::unique_ptr<message_20::Variant> request{nullptr};
+    std::unique_ptr<message_20::RequestVariant> request{nullptr};
 
     // output
     const io::StreamOutputView response;
     size_t response_size{0};
     bool response_available{false};
-    io::v2gtp::PayloadType payload_type;
+    v2gtp::PayloadType payload_type;
     message_20::Type response_type;
     std::any response_message;
 };
@@ -89,7 +89,7 @@ public:
         return std::make_unique<StateType>(*this, std::forward<Args>(args)...);
     }
 
-    std::unique_ptr<message_20::Variant> pull_request();
+    std::unique_ptr<message_20::RequestVariant> pull_request();
     message_20::Type peek_request_type() const;
 
     template <typename MessageType> void respond(const MessageType& msg) {

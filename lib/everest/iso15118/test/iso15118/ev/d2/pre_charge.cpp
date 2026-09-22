@@ -4,6 +4,9 @@
 
 #include "helper.hpp"
 
+#include <iso15118/ev/d2/state/cable_check.hpp>
+#include <iso15118/message_2/cable_check.hpp>
+
 #include <iso15118/ev/d2/state/pre_charge.hpp>
 #include <iso15118/message_2/authorization.hpp>
 #include <iso15118/message_2/pre_charge.hpp>
@@ -23,11 +26,23 @@ message_2::PreChargeResponse make_response(const message_2::Header& header, dt::
     return res;
 }
 
+const auto by_cable_check = d2_entered_by([](D2StateHelper& helper) {
+    auto res = d2_ok<message_2::CableCheckResponse>();
+    res.evse_processing = dt::EVSEProcessing::Finished;
+    res.dc_evse_status.isolation_status = dt::IsolationLevel::Valid;
+    auto cable_check = ev::d2::state::CableCheck::begin(helper.get_context()).new_state;
+    // Draining the first request, the response answers it.
+    helper.handle_response(res);
+    auto result = cable_check->feed(ev::d2::Event::V2GTP_MESSAGE);
+    REQUIRE(result.output == ev::d2::Disposition::Transitioning);
+    return std::move(result.new_state);
+});
+
 } // namespace
 
-SCENARIO("ISO15118-2 EV PreCharge sends the target voltage at zero current") {
+SCENARIO("ISO15118-2 EV PreCharge's request carries the target voltage at zero current") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d2::state::PreCharge> primed{callbacks, d2_no_seed};
+    PrimedState<ev::d2::state::PreCharge> primed{callbacks, d2_no_seed, by_cable_check};
 
     const auto request = primed.take_requests().get<message_2::PreChargeRequest>();
     REQUIRE(request.has_value());
@@ -39,7 +54,7 @@ SCENARIO("ISO15118-2 EV PreCharge sends the target voltage at zero current") {
 
 SCENARIO("ISO15118-2 EV PreCharge resends until the voltage converges") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d2::state::PreCharge> primed{callbacks, d2_no_seed};
+    PrimedState<ev::d2::state::PreCharge> primed{callbacks, d2_no_seed, by_cable_check};
 
     REQUIRE(primed.helper.get_message_exchange().take_request().has_value());
     primed.handle_response(make_response(d2_header(), dt::ResponseCode::OK, 100.0));
@@ -85,7 +100,8 @@ SCENARIO("ISO15118-2 EV PreCharge never converges on a non-positive target volta
         params.target_voltage = 0.0f;
         helper.set_dc_params(params);
     };
-    PrimedState<ev::d2::state::PreCharge> primed{callbacks, ev::EvSessionParams{}, false, seed_zero_target};
+    PrimedState<ev::d2::state::PreCharge> primed{callbacks, ev::params::EvSessionParams{}, false, seed_zero_target,
+                                                 by_cable_check};
 
     REQUIRE(primed.helper.get_message_exchange().take_request().has_value());
     primed.handle_response(make_response(d2_header(), dt::ResponseCode::OK, 0.0));

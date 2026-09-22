@@ -43,14 +43,22 @@ inline PKEY_ptr generate_key(const char* curve) {
     return PKEY_ptr(EVP_PKEY_Q_keygen(nullptr, nullptr, "EC", curve), &EVP_PKEY_free);
 }
 
-inline std::string key_to_pem(EVP_PKEY* key) {
+template <typename Write> std::string key_to_pem_with(EVP_PKEY* key, Write write) {
     BIO* bio = BIO_new(BIO_s_mem());
-    REQUIRE(PEM_write_bio_PrivateKey(bio, key, nullptr, nullptr, 0, nullptr, nullptr) == 1);
+    REQUIRE(write(bio, key, nullptr, nullptr, 0, nullptr, nullptr) == 1);
     char* data = nullptr;
     const long n = BIO_get_mem_data(bio, &data);
     std::string pem(data, static_cast<std::size_t>(n));
     BIO_free(bio);
     return pem;
+}
+
+inline std::string key_to_pem(EVP_PKEY* key) {
+    return key_to_pem_with(key, PEM_write_bio_PrivateKey);
+}
+
+inline std::string key_to_sec1_pem(EVP_PKEY* key) {
+    return key_to_pem_with(key, PEM_write_bio_PrivateKey_traditional);
 }
 
 inline std::vector<uint8_t> to_der(X509* cert) {

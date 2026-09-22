@@ -2,6 +2,7 @@
 target_sources(iso15118
     PRIVATE
         context.cpp
+        engine.cpp
         timeouts.cpp
         state/session_setup.cpp
         state/session_stop.cpp

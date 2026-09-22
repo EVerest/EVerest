@@ -15,24 +15,19 @@ namespace iso15118::ev::d20::state {
 
 using ResponseCode = message_20::SupportedAppProtocolResponse::ResponseCode;
 
-void SupportedAppProtocol::enter() {
-    logf_debug("Enter state: SupportedAppProtocol");
-
+message_20::SupportedAppProtocolRequest
+SupportedAppProtocol::make_request(const std::vector<message_20::SupportedAppProtocol>& advertised) {
     message_20::SupportedAppProtocolRequest req{};
-    const auto& advertised = m_ctx.get_advertised_app_protocols();
-    // The request carries a fixed_vector, which throws once it is full, and enter() has no way to
-    // report that. Advertise what fits and say what was left out.
-    const auto capacity = req.app_protocol.max_size();
-    const auto count = std::min(advertised.size(), capacity);
-    if (advertised.size() > capacity) {
-        logf_warning("Advertising %zu of %zu configured app protocols: the request holds at most %zu", count,
-                     advertised.size(), capacity);
-    }
+    // The request carries a fixed_vector, which throws once it is full.
+    const auto count = std::min(advertised.size(), req.app_protocol.max_size());
     for (std::size_t i = 0; i < count; ++i) {
         req.app_protocol.push_back(advertised[i]);
     }
+    return req;
+}
 
-    m_ctx.send_request(req);
+void SupportedAppProtocol::enter() {
+    logf_debug("Enter state: SupportedAppProtocol");
 }
 
 Result SupportedAppProtocol::feed(Event ev) {
@@ -42,13 +37,8 @@ Result SupportedAppProtocol::feed(Event ev) {
 
     auto variant = m_ctx.pull_response();
 
-    // SupportedAppProtocolResponse carries no session id and its own response-code
-    // enum, so it is validated inline rather than through expect_response.
-    const auto* res = variant->get_if<message_20::SupportedAppProtocolResponse>();
+    const auto* res = expect_response_type<message_20::SupportedAppProtocolResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        logf_error("expected SupportedAppProtocolRes, but got message type id: %d",
-                   static_cast<int>(variant->get_type()));
-        m_ctx.stop_session();
         return Result::stopping();
     }
 
@@ -86,6 +76,12 @@ Result SupportedAppProtocol::feed(Event ev) {
     if (protocol != ProtocolId::ISO15118_20) {
         return Result::handover();
     }
+
+    // Re-joining a paused session: its id goes into the header, otherwise all zeros.
+    if (const auto& resume = m_ctx.options().resume) {
+        m_ctx.get_session().set_id(resume->session_id);
+    }
+    m_ctx.send_request(SessionSetup::make_request(m_ctx.get_evcc_id()));
     return m_ctx.create_state<SessionSetup>();
 }
 

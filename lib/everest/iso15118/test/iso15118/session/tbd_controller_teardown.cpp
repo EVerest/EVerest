@@ -77,11 +77,11 @@ constexpr uint8_t session_setup_req[] = {0x80, 0x8c, 0x04, 0x00, 0x00, 0x00, 0x0
 
 // Drive the current session until a response is deferred by the 100 ms rate limiter.
 void arm_deferred_response(iso15118::TbdController& controller, MockConnection& conn) {
-    conn.queue_v2gtp_packet(iso15118::io::v2gtp::PayloadType::SAP, sap_req, sizeof(sap_req));
+    conn.queue_v2gtp_packet(iso15118::v2gtp::PayloadType::SAP, sap_req, sizeof(sap_req));
     conn.fire(iso15118::io::ConnectionEvent::NEW_DATA);
     controller.tick();
 
-    conn.queue_v2gtp_packet(iso15118::io::v2gtp::PayloadType::Part20Main, session_setup_req, sizeof(session_setup_req));
+    conn.queue_v2gtp_packet(iso15118::v2gtp::PayloadType::Part20Main, session_setup_req, sizeof(session_setup_req));
     conn.fire(iso15118::io::ConnectionEvent::NEW_DATA);
     controller.tick();
 }
@@ -123,7 +123,7 @@ template <typename Request> void queue(MockConnection& conn, const Request& req)
     std::array<uint8_t, 256> buffer{};
     const auto size = serialize(req, iso15118::io::StreamOutputView{buffer.data(), buffer.size()});
     conn.written.clear();
-    conn.queue_v2gtp_packet(iso15118::io::v2gtp::PayloadType::SAP, buffer.data(), size);
+    conn.queue_v2gtp_packet(iso15118::v2gtp::PayloadType::SAP, buffer.data(), size);
     conn.fire(iso15118::io::ConnectionEvent::NEW_DATA);
 }
 

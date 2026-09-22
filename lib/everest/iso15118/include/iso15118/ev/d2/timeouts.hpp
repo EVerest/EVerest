@@ -17,12 +17,12 @@ constexpr auto MESSAGE_POWER_DELIVERY = 5000ms;
 constexpr auto MESSAGE_CURRENT_DEMAND = 250ms;
 // The SECC relays CertificateInstallation to a backend.
 constexpr auto MESSAGE_CERTIFICATE_INSTALLATION = 5000ms;
+constexpr auto MESSAGE_SERVICE_DETAIL = 5000ms;
 
 constexpr auto ONGOING = 60000ms; // V2G_EVCC_Ongoing_Timeout (Authorization, ChargeParameterDiscovery)
 constexpr auto ONGOING_CABLE_CHECK = 40000ms;
 // Table 109: 7 s; relaxed to 10 s for slow power supplies (deliberate deviation).
 constexpr auto ONGOING_PRE_CHARGE = 10000ms;
-constexpr auto ONGOING_WELDING_DETECTION = 20000ms;
 
 // EvseV2G MAX_RES_TIME parity: no request faster than this.
 constexpr auto MIN_REQUEST_INTERVAL = 100ms;

@@ -6,20 +6,21 @@
 #include <utility>
 
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/ev/detail/context_helper.hpp>
 #include <iso15118/ev/din/context.hpp>
 #include <iso15118/ev/din/state/session_stop.hpp>
+#include <iso15118/ev/session/stop_reason.hpp>
 #include <iso15118/message_din/common_types.hpp>
 #include <iso15118/message_din/response_variant.hpp>
 
 namespace iso15118::ev::din {
 
 // Validate a response: expected variant, session id of the active session, response code below FAILED.
-// On failure logs, stops the session and returns nullptr; the caller returns Result::stopping().
+// On failure, logs it unless the decoder already did, stops the session and returns nullptr; the
+// caller then returns Result::stopping().
 template <typename Res> const Res* expect_response(Context& ctx, const message_din::ResponseVariant& variant) {
-    const auto* res = variant.get_if<Res>();
+    const auto* res = expect_response_type<Res>(ctx, variant);
     if (res == nullptr) {
-        logf_error("Unexpected DIN 70121 response, got message type id: %d", static_cast<int>(variant.get_type()));
-        ctx.stop_session();
         return nullptr;
     }
     if (res->header.session_id != ctx.get_session_id()) {
@@ -37,8 +38,8 @@ template <typename Res> const Res* expect_response(Context& ctx, const message_d
 
 // Before PowerDelivery(Start): an EV stop or pause goes straight to SessionStop.
 inline std::optional<Result> stop_before_start(Context& ctx) {
-    if (ctx.is_stop_charging_requested() or ctx.is_pause_charging_requested()) {
-        return Result{ctx.create_state<state::SessionStop>()};
+    if (const auto reason = session::requested_by_ev(ctx)) {
+        return Result{state::to_session_stop(ctx, *reason)};
     }
     return std::nullopt;
 }

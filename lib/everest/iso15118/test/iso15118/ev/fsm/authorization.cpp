@@ -8,6 +8,7 @@
 #include <iso15118/ev/d20/state/authorization.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/service_discovery.hpp>
+#include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/type.hpp>
 
 using namespace iso15118;
@@ -15,11 +16,6 @@ using namespace iso15118;
 namespace {
 using message_20::datatypes::Processing;
 using message_20::datatypes::ResponseCode;
-
-// Authorization reads the EIM auth service the EVSE advertised in AuthorizationSetup.
-const auto seed_eim = [](FsmStateHelper& helper) {
-    helper.get_context().get_evse_session_info().auth_services = {message_20::datatypes::Authorization::EIM};
-};
 
 message_20::AuthorizationResponse make_auth_res(const message_20::Header& header, ResponseCode code,
                                                 Processing processing) {
@@ -29,7 +25,7 @@ message_20::AuthorizationResponse make_auth_res(const message_20::Header& header
 
 SCENARIO("ISO15118-20 EV Authorization transitions to ServiceDiscovery on Finished") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::Authorization> primed{callbacks, seed_eim};
+    PrimedState<ev::d20::state::Authorization> primed{callbacks, no_seed};
 
     primed.handle_response(make_auth_res(SESSION_HEADER, ResponseCode::OK, Processing::Finished));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
@@ -46,7 +42,7 @@ SCENARIO("ISO15118-20 EV Authorization transitions to ServiceDiscovery on Finish
 
 SCENARIO("ISO15118-20 EV Authorization stays and resends on Ongoing") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::Authorization> primed{callbacks, seed_eim};
+    PrimedState<ev::d20::state::Authorization> primed{callbacks, no_seed};
 
     primed.handle_response(make_auth_res(SESSION_HEADER, ResponseCode::OK, Processing::Ongoing));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
@@ -62,39 +58,9 @@ SCENARIO("ISO15118-20 EV Authorization stays and resends on Ongoing") {
     REQUIRE(request_message->selected_authorization_service == message_20::datatypes::Authorization::EIM);
 }
 
-// The EV only ever selects EIM, whatever order the SECC offers its services in.
-SCENARIO("ISO15118-20 EV Authorization selects EIM when the SECC lists PnC first") {
-    const ev::feedback::Callbacks callbacks{};
-    const auto seed_pnc_first = [](FsmStateHelper& helper) {
-        helper.get_context().get_evse_session_info().auth_services = {message_20::datatypes::Authorization::PnC,
-                                                                      message_20::datatypes::Authorization::EIM};
-    };
-    PrimedState<ev::d20::state::Authorization> primed{callbacks, seed_pnc_first};
-
-    REQUIRE(primed.ctx.is_session_stopped() == false);
-
-    const auto requests = primed.take_requests();
-    const auto request_message = requests.get<message_20::AuthorizationRequest>();
-    REQUIRE(request_message.has_value());
-    REQUIRE(request_message->selected_authorization_service == message_20::datatypes::Authorization::EIM);
-    REQUIRE(
-        std::holds_alternative<message_20::datatypes::EIM_ASReqAuthorizationMode>(request_message->authorization_mode));
-}
-
-SCENARIO("ISO15118-20 EV Authorization stops the session when the SECC offers no EIM") {
-    const ev::feedback::Callbacks callbacks{};
-    const auto seed_pnc_only = [](FsmStateHelper& helper) {
-        helper.get_context().get_evse_session_info().auth_services = {message_20::datatypes::Authorization::PnC};
-    };
-    PrimedState<ev::d20::state::Authorization> primed{callbacks, seed_pnc_only};
-
-    REQUIRE(primed.ctx.is_session_stopped() == true);
-    REQUIRE(primed.take_requests().empty());
-}
-
 SCENARIO("ISO15118-20 EV Authorization stops the session on a FAILED response after an Ongoing one") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::Authorization> primed{callbacks, seed_eim};
+    PrimedState<ev::d20::state::Authorization> primed{callbacks, no_seed};
 
     // Poll once so the rejection below happens mid-authorization and not on the first response.
     primed.handle_response(make_auth_res(SESSION_HEADER, ResponseCode::OK, Processing::Ongoing));
@@ -112,7 +78,6 @@ SCENARIO("ISO15118-20 EV Authorization rejects malformed responses") {
     const auto make_fsm = [](FsmStateHelper& helper) {
         auto& ctx = helper.get_context();
         ctx.get_session().set_id(SESSION_HEADER.session_id);
-        seed_eim(helper);
         return fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::Authorization>()};
     };
     const auto make_ok = [](const message_20::Header& header) {
@@ -130,7 +95,7 @@ SCENARIO("ISO15118-20 EV Authorization retries a declined attempt instead of wal
     const auto declined =
         GENERATE(ResponseCode::WARNING_EIMAuthorizationFailure, ResponseCode::WARNING_AuthorizationSelectionInvalid);
 
-    PrimedState<ev::d20::state::Authorization> primed{callbacks, seed_eim};
+    PrimedState<ev::d20::state::Authorization> primed{callbacks, no_seed};
 
     primed.handle_response(make_auth_res(SESSION_HEADER, declined, Processing::Finished));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
@@ -142,4 +107,33 @@ SCENARIO("ISO15118-20 EV Authorization retries a declined attempt instead of wal
     const auto requests = primed.take_requests();
     REQUIRE(requests.get<message_20::AuthorizationRequest>().has_value());
     REQUIRE_FALSE(requests.get<message_20::ServiceDiscoveryRequest>().has_value());
+}
+
+SCENARIO("ISO15118-20 EV Authorization terminates the session on a stop or pause requested before charging starts") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::Authorization> primed{callbacks, no_seed};
+
+    const bool stop = GENERATE(true, false);
+    if (stop) {
+        primed.ctx.set_stop_charging_requested(true);
+    } else {
+        primed.ctx.set_pause_charging_requested(true);
+    }
+
+    primed.handle_response(make_auth_res(SESSION_HEADER, ResponseCode::OK, Processing::Finished));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.output == ev::d20::Disposition::Transitioning);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
+    const auto requests = primed.take_requests();
+    REQUIRE_FALSE(requests.get<message_20::ServiceDiscoveryRequest>().has_value());
+    const auto session_stop = requests.get<message_20::SessionStopRequest>();
+    REQUIRE(session_stop.has_value());
+    // [V2G20-2644]: before PowerDeliveryReq(Start) a pause terminates too.
+    REQUIRE(session_stop->charging_session == message_20::datatypes::ChargingSession::Terminate);
+
+    primed.handle_response(message_20::SessionStopResponse{SESSION_HEADER, ResponseCode::OK});
+    REQUIRE(primed.feed(ev::d20::Event::V2GTP_MESSAGE).output == ev::d20::Disposition::Stopping);
+    REQUIRE(primed.ctx.is_session_stopped());
+    REQUIRE_FALSE(primed.ctx.is_session_paused());
 }

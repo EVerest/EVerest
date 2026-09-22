@@ -4,18 +4,17 @@
 
 #include "context.hpp"
 
-#include <iso15118/ev/fsm_base.hpp>
+#include <iso15118/ev/session/fsm.hpp>
 
 namespace iso15118::ev::d20 {
 
-// Mirrors iso15118/d20/states.hpp on purpose: the Context type differs and the EV has no TIMEOUT
-// event. Kept as a separate header so either side can change its Result without touching the other.
+// Kept separate from the SECC states: the Context and timeout events differ.
 // Result carries a Disposition the Session enforces.
 
 class Context;
 
-using ev::Disposition;
-using ev::Event;
+using ev::session::Disposition;
+using ev::session::Event;
 
 enum class StateID {
     SupportedAppProtocol,
@@ -29,6 +28,8 @@ enum class StateID {
     AC_ChargeLoop,
     AC_DER_IEC_ChargeParameterDiscovery,
     AC_DER_IEC_ChargeLoop,
+    AC_DER_SAE_ChargeParameterDiscovery,
+    AC_DER_SAE_ChargeLoop,
     DC_ChargeParameterDiscovery,
     DC_PreCharge,
     DC_ChargeLoop,
@@ -40,9 +41,9 @@ enum class StateID {
 };
 
 struct StateBase;
-using Result = ev::BasicResult<StateBase>;
+using Result = ev::session::BasicResult<StateBase>;
 
-struct StateBase : ev::BasicStateBase<Context, StateID, StateBase> {
+struct StateBase : ev::session::BasicStateBase<Context, StateID, StateBase> {
     using BasicStateBase::BasicStateBase;
 };
 

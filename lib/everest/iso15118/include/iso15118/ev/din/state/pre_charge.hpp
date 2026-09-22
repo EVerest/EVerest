@@ -21,4 +21,7 @@ private:
     bool nonpositive_target_warned{false};
 };
 
+// Sends the PreChargeReq and creates the state awaiting it.
+BasePointerType to_pre_charge(Context& ctx);
+
 } // namespace iso15118::ev::din::state

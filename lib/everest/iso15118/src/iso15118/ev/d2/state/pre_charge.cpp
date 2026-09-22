@@ -36,8 +36,6 @@ bool converged(const message_2::PreChargeResponse& res, float target_voltage) {
 
 void PreCharge::enter() {
     logf_debug("Enter state: PreCharge (ISO 15118-2)");
-    const auto params = m_ctx.get_dc_params();
-    m_ctx.send_request(pre_charge::create_request(make_dc_ev_status(params, true), params.target_voltage));
 }
 
 Result PreCharge::feed(Event ev) {
@@ -71,7 +69,7 @@ Result PreCharge::feed(Event ev) {
 
     // Published immediately before PowerDeliveryReq(Start).
     m_ctx.feedback.dc_power_on();
-    return m_ctx.create_state<PowerDelivery>(PowerDelivery::Phase::Start);
+    return to_power_delivery(m_ctx, PowerDelivery::Start{});
 }
 
 } // namespace iso15118::ev::d2::state

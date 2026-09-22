@@ -5,18 +5,25 @@
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d2/state/service_discovery.hpp>
 #include <iso15118/ev/detail/d2/context_helper.hpp>
-#include <iso15118/message_2/session_setup.hpp>
+#include <iso15118/ev/detail/d2/state/service_discovery.hpp>
+#include <iso15118/ev/detail/d2/state/session_setup.hpp>
 
 namespace iso15118::ev::d2::state {
 
 namespace dt = message_2::datatypes;
 
+namespace session_setup {
+
+message_2::SessionSetupRequest create_request(const dt::EvccId& evcc_id) {
+    message_2::SessionSetupRequest req{};
+    req.evcc_id = evcc_id;
+    return req;
+}
+
+} // namespace session_setup
+
 void SessionSetup::enter() {
     logf_debug("Enter state: SessionSetup (ISO 15118-2)");
-    // Header carries the resumed id or all zeros (set in the Context ctor).
-    message_2::SessionSetupRequest req{};
-    req.evcc_id = m_ctx.params().evcc_mac;
-    m_ctx.send_request(req);
 }
 
 Result SessionSetup::feed(Event ev) {
@@ -27,10 +34,8 @@ Result SessionSetup::feed(Event ev) {
     const auto variant = m_ctx.pull_response();
 
     // The session id arrives in this response, so the generic session-id check does not apply.
-    const auto* res = variant->get_if<message_2::SessionSetupResponse>();
+    const auto* res = expect_response_type<message_2::SessionSetupResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        logf_error("expected SessionSetupRes, got message type id: %d", static_cast<int>(variant->get_type()));
-        m_ctx.stop_session();
         return Result::stopping();
     }
 
@@ -60,6 +65,7 @@ Result SessionSetup::feed(Event ev) {
     if (auto stop = stop_before_start(m_ctx)) {
         return std::move(*stop);
     }
+    m_ctx.send_request(service_discovery::create_request());
     return m_ctx.create_state<ServiceDiscovery>();
 }
 

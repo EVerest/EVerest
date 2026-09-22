@@ -4,10 +4,13 @@
 
 #include "helper.hpp"
 
+#include <iso15118/ev/d20/discharge_sign.hpp>
 #include <iso15118/ev/d20/state/dc_charge_parameter_discovery.hpp>
+#include <iso15118/ev/d20/state/service_selection.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/dc_charge_parameter_discovery.hpp>
 #include <iso15118/message/schedule_exchange.hpp>
+#include <iso15118/message/service_selection.hpp>
 #include <iso15118/message/type.hpp>
 
 using namespace iso15118;
@@ -38,7 +41,7 @@ message_20::DC_ChargeParameterDiscoveryResponse make_bpt_response(const message_
 
 // DC_ChargeParameterDiscovery builds its request from the EV's DC charge params.
 const auto seed_params = [](FsmStateHelper& helper) {
-    ev::DcChargeParams p{};
+    ev::params::DcChargeParams p{};
     p.max_charge_power = 11000.0f;
     p.max_charge_current = 200.0f;
     p.max_voltage = 500.0f;
@@ -47,7 +50,7 @@ const auto seed_params = [](FsmStateHelper& helper) {
 };
 
 const auto seed_bpt_params = [](FsmStateHelper& helper) {
-    ev::DcChargeParams p{};
+    ev::params::DcChargeParams p{};
     p.max_charge_power = 11000.0f;
     p.max_charge_current = 200.0f;
     p.max_voltage = 500.0f;
@@ -57,13 +60,18 @@ const auto seed_bpt_params = [](FsmStateHelper& helper) {
     p.max_discharge_current = 180.0f;
     helper.set_dc_params(p);
 };
+
+// DC_ChargeParameterDiscovery's first request, sent by ServiceSelection as the SECC accepts `service`.
+template <typename Seed> DecodedRequests first_request(message_20::datatypes::ServiceCategory service, Seed seed) {
+    auto selection = Predecessor::in<ev::d20::state::ServiceSelection>(service, {}, uint16_t{1});
+    seed(*selection.helper);
+    return selection.transitions_to(ev::d20::StateID::DC_ChargeParameterDiscovery,
+                                    message_20::ServiceSelectionResponse{SESSION_HEADER, ResponseCode::OK});
+}
 } // namespace
 
-SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery emits a DC request built from the DC params on enter") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::DC_ChargeParameterDiscovery> primed{callbacks, seed_params};
-
-    const auto requests = primed.take_requests();
+SCENARIO("ISO15118-20 EV ServiceSelection sends a DC_ChargeParameterDiscoveryRequest built from the DC params") {
+    const auto requests = first_request(message_20::datatypes::ServiceCategory::DC, seed_params);
     const auto request_message = requests.get<message_20::DC_ChargeParameterDiscoveryRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
@@ -89,12 +97,8 @@ SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery transitions to ScheduleExch
     REQUIRE(primed.ctx.is_session_stopped() == false);
 }
 
-SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery emits a BPT request with discharge limits for a BPT session") {
-    const ev::feedback::Callbacks callbacks{};
-    PrimedState<ev::d20::state::DC_ChargeParameterDiscovery> primed{
-        callbacks, message_20::datatypes::ServiceCategory::DC_BPT, seed_bpt_params};
-
-    const auto requests = primed.take_requests();
+SCENARIO("ISO15118-20 EV ServiceSelection sends a BPT DC_ChargeParameterDiscoveryRequest for a BPT session") {
+    const auto requests = first_request(message_20::datatypes::ServiceCategory::DC_BPT, seed_bpt_params);
     const auto request_message = requests.get<message_20::DC_ChargeParameterDiscoveryRequest>();
     REQUIRE(request_message.has_value());
 
@@ -109,10 +113,10 @@ SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery emits a BPT request with di
     REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_voltage) == 500.0f);
     REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_voltage) == 150.0f);
     REQUIRE_FALSE(mode->target_soc.has_value());
-    // Discharge limits sourced from the DC params; min_discharge_current pinned to {0,0}.
-    REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_power) == 9000.0f);
-    REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_discharge_power) == 500.0f);
-    REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_current) == 180.0f);
+    // Discharge limits sourced from the DC params, sent negative [V2G20-1035]; min_discharge_current pinned to {0,0}.
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_power) == -9000.0f);
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_discharge_power) == -500.0f);
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_current) == -180.0f);
     REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_discharge_current) == 0.0f);
 }
 
@@ -216,4 +220,10 @@ SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery publishes the SECC limits f
 
     REQUIRE(obs.limits.has_value());
     REQUIRE(obs.limits->power == 15000.0f);
+}
+
+SCENARIO("ISO15118-20 EV discharge limits go on the wire <=0 whatever the sign of the setting") {
+    // [V2G20-1035]
+    CHECK(ev::d20::discharge_on_wire(20000.0f) == -20000.0f);
+    CHECK(ev::d20::discharge_on_wire(-20000.0f) == -20000.0f);
 }

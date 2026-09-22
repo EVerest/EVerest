@@ -18,4 +18,9 @@ struct CertificateInstallation : public StateBase {
     Result feed(Event) final;
 };
 
+// Advertises the first certificate of the configured V2G root, signs the CertificateInstallationReq
+// with the OEM provisioning key, sends it and creates the state awaiting it. An unreadable root, one
+// without a usable certificate ID, or a failed signature stops the session with nothing sent.
+Result to_certificate_installation(Context& ctx);
+
 } // namespace iso15118::ev::d2::state

@@ -26,7 +26,6 @@ bool authorization_finished(const message_din::ContractAuthenticationResponse& r
 
 void ContractAuthentication::enter() {
     logf_debug("Enter state: ContractAuthentication (DIN 70121)");
-    m_ctx.send_request(contract_authentication::create_request());
 }
 
 Result ContractAuthentication::feed(Event ev) {
@@ -46,7 +45,7 @@ Result ContractAuthentication::feed(Event ev) {
     }
 
     if (contract_authentication::authorization_finished(*res)) {
-        return m_ctx.create_state<ChargeParameterDiscovery>();
+        return to_charge_parameter_discovery(m_ctx);
     }
 
     // EVSEProcessing::Ongoing: re-poll. The session owns the ongoing guard.

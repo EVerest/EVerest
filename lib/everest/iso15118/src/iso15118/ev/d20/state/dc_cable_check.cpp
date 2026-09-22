@@ -10,27 +10,25 @@
 
 namespace iso15118::ev::d20::state {
 
-namespace {
-
-message_20::DC_CableCheckRequest make_request(const SessionId& session) {
+message_20::DC_CableCheckRequest DC_CableCheck::make_request() {
     message_20::DC_CableCheckRequest req;
-    setup_header(req.header, session);
     return req;
 }
 
-} // namespace
+Result DC_CableCheck::begin(Context& ctx) {
+    // Without CP-state feedback there is nothing to wait for.
+    if (ctx.has_cp_state_feedback() and not ctx.cp_state_c_or_d()) {
+        return Result::waiting(ctx.create_state<DC_CableCheck>(Entry{false}));
+    }
+    ctx.send_request(make_request());
+    return ctx.create_state<DC_CableCheck>(Entry{true});
+}
 
 void DC_CableCheck::enter() {
-    // [V2G20-912]: after ScheduleExchangeRes(Finished) and before DC_CableCheckReq, the EVCC
-    // changes to CP State C or D, so the first request waits for it.
-    // Without CP-state feedback there is nothing to wait for. The session's ongoing guard bounds
-    // the wait.
-    if (m_ctx.has_cp_state_feedback() and not m_ctx.cp_state_c_or_d()) {
+    // The session's ongoing guard bounds the wait for CP state C or D.
+    if (not request_sent) {
         logf_debug("DC_CableCheck holds the first request until CP state C or D");
-        return;
     }
-    m_ctx.send_request(make_request(m_ctx.get_session()));
-    request_sent = true;
 }
 
 Result DC_CableCheck::feed(Event ev) {
@@ -45,7 +43,7 @@ Result DC_CableCheck::feed(Event ev) {
         if (not m_ctx.cp_state_c_or_d()) {
             return Result::ignored();
         }
-        m_ctx.send_request(make_request(m_ctx.get_session()));
+        m_ctx.send_request(make_request());
         request_sent = true;
         return Result::awaiting();
     }
@@ -55,6 +53,12 @@ Result DC_CableCheck::feed(Event ev) {
     }
 
     const auto variant = m_ctx.pull_response();
+
+    if (not request_sent) {
+        logf_error("DC_CableCheck received a response before sending its request; stopping the session");
+        m_ctx.stop_session();
+        return Result::stopping();
+    }
 
     const auto* res = expect_response<message_20::DC_CableCheckResponse>(m_ctx, *variant);
     if (res == nullptr) {
@@ -66,11 +70,13 @@ Result DC_CableCheck::feed(Event ev) {
     }
 
     if (res->processing == message_20::datatypes::Processing::Finished) {
+        m_ctx.send_request(
+            DC_PreCharge::make_request(message_20::datatypes::Processing::Ongoing, m_ctx.get_dc_params()));
         return m_ctx.create_state<DC_PreCharge>();
     }
 
     // Processing::Ongoing: re-poll
-    m_ctx.send_request(make_request(m_ctx.get_session()));
+    m_ctx.send_request(make_request());
     return Result::awaiting();
 }
 

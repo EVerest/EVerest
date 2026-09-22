@@ -38,3 +38,18 @@ if(ISO15118_BUILD_EV_SIDE)
             everest::iso15118
     )
 endif()
+
+# Every header the install ships compiles on its own, the EV ones too when the EV side is off.
+file(GLOB_RECURSE ISO15118_PUBLIC_HEADERS CONFIGURE_DEPENDS RELATIVE ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/*.hpp)
+set(ISO15118_PUBLIC_HEADER_SOURCES)
+foreach(header IN LISTS ISO15118_PUBLIC_HEADERS)
+    set(translation_unit ${CMAKE_CURRENT_BINARY_DIR}/public_headers/${header}.cpp)
+    if(NOT EXISTS ${translation_unit})
+        file(WRITE ${translation_unit} "#include <${header}>\n")
+    endif()
+    list(APPEND ISO15118_PUBLIC_HEADER_SOURCES ${translation_unit})
+endforeach()
+add_library(iso15118_public_headers OBJECT ${ISO15118_PUBLIC_HEADER_SOURCES})
+# everest::io for the EV headers, which only an EV side build links.
+target_link_libraries(iso15118_public_headers PRIVATE everest::iso15118 everest::io)

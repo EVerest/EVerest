@@ -1,41 +1,45 @@
 include(Catch)
 
-function(create_ev_fsm_test_target NAME)
-    add_executable(test_ev_fsm_${NAME} ${NAME}.cpp)
-    target_sources(test_ev_fsm_${NAME}
-        PRIVATE
-            helper.cpp
-    )
-    target_link_libraries(test_ev_fsm_${NAME}
-        PRIVATE
-            iso15118
-            Catch2::Catch2WithMain
-    )
-    catch_discover_tests(test_ev_fsm_${NAME})
-endfunction()
-
-create_ev_fsm_test_target(context)
-create_ev_fsm_test_target(supported_app_protocol)
-create_ev_fsm_test_target(session_setup)
-create_ev_fsm_test_target(authorization_setup)
-create_ev_fsm_test_target(authorization)
-create_ev_fsm_test_target(service_discovery)
-create_ev_fsm_test_target(service_detail)
-create_ev_fsm_test_target(service_selection)
-create_ev_fsm_test_target(ac_charge_parameter_discovery)
-create_ev_fsm_test_target(ac_charge_loop)
-create_ev_fsm_test_target(ac_der_iec_charge_parameter_discovery)
-create_ev_fsm_test_target(ac_der_iec_charge_loop)
-create_ev_fsm_test_target(ac_phase_split)
-create_ev_fsm_test_target(dc_charge_parameter_discovery)
-create_ev_fsm_test_target(schedule_exchange)
-create_ev_fsm_test_target(dc_cable_check)
-create_ev_fsm_test_target(dc_pre_charge)
-create_ev_fsm_test_target(dc_charge_loop)
-create_ev_fsm_test_target(power_delivery)
-create_ev_fsm_test_target(session_stop)
-create_ev_fsm_test_target(dc_welding_detection)
-create_ev_fsm_test_target(message_exchange)
-create_ev_fsm_test_target(dc_charge_params)
-create_ev_fsm_test_target(disposition)
-create_ev_fsm_test_target(engine)
+# Select one source file's tests with: test_ev_fsm -# "[#<file stem>]"
+add_executable(test_ev_fsm
+    ac_charge_loop.cpp
+    ac_charge_parameter_discovery.cpp
+    ac_der_iec_charge_loop.cpp
+    ac_der_iec_charge_parameter_discovery.cpp
+    ac_der_sae_charge_loop.cpp
+    ac_der_sae_charge_parameter_discovery.cpp
+    ac_phase_split.cpp
+    authorization.cpp
+    authorization_setup.cpp
+    context.cpp
+    dc_cable_check.cpp
+    dc_charge_loop.cpp
+    dc_charge_parameter_discovery.cpp
+    dc_charge_params.cpp
+    dc_pre_charge.cpp
+    dc_welding_detection.cpp
+    der_sae_control_validation.cpp
+    disposition.cpp
+    engine.cpp
+    message_exchange.cpp
+    power_delivery.cpp
+    request_construction.cpp
+    response_variant.cpp
+    sae_profile_emit.cpp
+    schedule_exchange.cpp
+    secc_clock.cpp
+    send_on_transition.cpp
+    service_detail.cpp
+    service_discovery.cpp
+    service_selection.cpp
+    session_setup.cpp
+    session_stop.cpp
+    supported_app_protocol.cpp
+    helper.cpp
+)
+target_link_libraries(test_ev_fsm
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+catch_discover_tests(test_ev_fsm DISCOVERY_MODE PRE_TEST)

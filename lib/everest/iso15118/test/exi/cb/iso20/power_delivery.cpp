@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <iso15118/message/power_delivery.hpp>
+#include <iso15118/message/response_variant.hpp>
 #include <iso15118/message/variant.hpp>
 
 #include "helper.hpp"
@@ -16,7 +18,7 @@ SCENARIO("Se/Deserialize power delivery messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::RequestVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
             REQUIRE(variant.get_type() == message_20::Type::PowerDeliveryReq);
@@ -69,6 +71,53 @@ SCENARIO("Se/Deserialize power delivery messages") {
         }
     }
 
+    GIVEN("Round-trip a power_delivery_req profile in either control mode on every progress the EV sends") {
+        namespace dt = message_20::datatypes;
+        const auto progress = GENERATE(dt::Progress::Start, dt::Progress::Stop, dt::Progress::Standby);
+        const bool scheduled = GENERATE(false, true);
+
+        message_20::PowerDeliveryRequest req;
+        req.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456333};
+        req.processing = dt::Processing::Finished;
+        req.charge_progress = progress;
+        auto& profile = req.power_profile.emplace();
+        profile.time_anchor = 5000000;
+        if (scheduled) {
+            profile.control_mode = dt::Scheduled_EVPPTControlMode{3, std::nullopt};
+        } else {
+            profile.control_mode = dt::Dynamic_EVPPTControlMode{};
+        }
+        profile.entries.push_back({86400, dt::from_float(0.0f), dt::from_float(0.0f), dt::from_float(0.0f)});
+
+        const auto raw = serialize_helper(req);
+        const io::StreamInputView stream_view{raw.data(), raw.size()};
+        message_20::RequestVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
+
+        THEN("It decodes to the same profile") {
+            REQUIRE(variant.get_type() == message_20::Type::PowerDeliveryReq);
+            const auto& msg = variant.get<message_20::PowerDeliveryRequest>();
+            REQUIRE(msg.charge_progress == progress);
+            REQUIRE(msg.power_profile.has_value());
+            REQUIRE(msg.power_profile->time_anchor == 5000000);
+            if (scheduled) {
+                const auto* mode = std::get_if<dt::Scheduled_EVPPTControlMode>(&msg.power_profile->control_mode);
+                REQUIRE(mode != nullptr);
+                REQUIRE(mode->selected_schedule == 3);
+                REQUIRE_FALSE(mode->power_tolerance_acceptance.has_value());
+            } else {
+                REQUIRE(std::holds_alternative<dt::Dynamic_EVPPTControlMode>(msg.power_profile->control_mode));
+            }
+            REQUIRE(msg.power_profile->entries.size() == 1);
+            const auto& entry = msg.power_profile->entries[0];
+            REQUIRE(entry.duration == 86400);
+            REQUIRE(dt::from_RationalNumber(entry.power) == 0.0f);
+            REQUIRE(entry.power_l2.has_value());
+            REQUIRE(dt::from_RationalNumber(*entry.power_l2) == 0.0f);
+            REQUIRE(entry.power_l3.has_value());
+            REQUIRE(dt::from_RationalNumber(*entry.power_l3) == 0.0f);
+        }
+    }
+
     GIVEN("Serialize power_delivery_res") {
 
         message_20::PowerDeliveryResponse res;
@@ -91,7 +140,7 @@ SCENARIO("Se/Deserialize power delivery messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
             REQUIRE(variant.get_type() == message_20::Type::PowerDeliveryRes);

@@ -28,9 +28,9 @@ public:
 
 private:
     Result handle_authorization_request(const message_20::AuthorizationRequest& req,
-                                        const message_20::Variant& variant);
+                                        const message_20::RequestVariant& variant);
     Result handle_certificate_installation_request(const message_20::CertificateInstallationRequest& req,
-                                                   const message_20::Variant& variant);
+                                                   const message_20::RequestVariant& variant);
     void respond_certificate_installation(const message_20::CertificateInstallationRequest& req,
                                           message_20::datatypes::ResponseCode code,
                                           message_20::datatypes::Processing processing);

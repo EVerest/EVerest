@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/ev/din/state/power_delivery.hpp>
 
+#include <variant>
+
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/detail/din/context_helper.hpp>
 #include <iso15118/ev/detail/din/state/power_delivery.hpp>
@@ -26,12 +28,29 @@ message_din::PowerDeliveryRequest create_request(bool ready_to_charge, const dt:
 
 } // namespace power_delivery
 
+namespace {
+
+Result accepted(Context& ctx, PowerDelivery::Start) {
+    return to_current_demand(ctx);
+}
+
+Result accepted(Context& ctx, const PowerDelivery::Stop& stop) {
+    ctx.feedback.power_delivery_stopped();
+    return to_welding_detection(ctx, stop.reason);
+}
+
+} // namespace
+
+BasePointerType to_power_delivery(Context& ctx, PowerDelivery::Phase phase) {
+    const auto params = ctx.get_dc_params();
+    const bool ev_ready = not std::holds_alternative<PowerDelivery::Stop>(phase);
+    ctx.send_request(
+        power_delivery::create_request(ev_ready, make_dc_ev_status(params, ev_ready), charging_complete(params)));
+    return ctx.create_state<PowerDelivery>(phase);
+}
+
 void PowerDelivery::enter() {
     logf_debug("Enter state: PowerDelivery (DIN 70121)");
-    const auto params = m_ctx.get_dc_params();
-    const bool ev_ready = (m_phase != Phase::Stop);
-    m_ctx.send_request(
-        power_delivery::create_request(ev_ready, make_dc_ev_status(params, ev_ready), charging_complete(params)));
 }
 
 Result PowerDelivery::feed(Event ev) {
@@ -46,10 +65,7 @@ Result PowerDelivery::feed(Event ev) {
         return Result::stopping();
     }
 
-    if (m_phase == Phase::Start) {
-        return m_ctx.create_state<CurrentDemand>();
-    }
-    return m_ctx.create_state<WeldingDetection>();
+    return std::visit([this](const auto& phase) { return accepted(m_ctx, phase); }, m_phase);
 }
 
 } // namespace iso15118::ev::din::state

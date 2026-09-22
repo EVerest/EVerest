@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <iso15118/ev/config/config.hpp>
+
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -15,13 +17,13 @@
 #include <iso15118/message_din/type.hpp>
 
 #include <iso15118/ev/d20/control_event.hpp>
-#include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/din/evse_info.hpp>
 #include <iso15118/ev/din/states.hpp>
-#include <iso15118/ev/message_exchange.hpp>
-#include <iso15118/ev/session/feedback.hpp>
+#include <iso15118/ev/feedback.hpp>
+#include <iso15118/ev/params/dc.hpp>
+#include <iso15118/ev/params/iso2_ac.hpp>
 #include <iso15118/ev/session/latches.hpp>
-#include <iso15118/ev/session_params.hpp>
+#include <iso15118/ev/session/message_exchange.hpp>
 
 namespace iso15118::ev::din {
 
@@ -40,20 +42,21 @@ struct Codec {
         return message_din::TypeTrait<Msg>::type;
     }
     // Every DIN SPEC 70121 message travels as V2GTP payload type 0x8001.
-    template <typename Msg> static constexpr io::v2gtp::PayloadType payload_type_of() {
-        return io::v2gtp::PayloadType::SAP;
+    template <typename Msg> static constexpr v2gtp::PayloadType payload_type_of() {
+        return v2gtp::PayloadType::SAP;
     }
 };
 
-using MessageExchange = ev::MessageExchange<Codec>;
+using MessageExchange = ev::session::MessageExchange<Codec>;
 
 // DIN SPEC 70121 EV session context, the DIN counterpart of ev::d20::Context. DIN has no pause on
 // the wire; a pause is a SessionStop whose session id is re-joined later.
 class Context {
 public:
-    Context(feedback::Callbacks feedback_callbacks, MessageExchange& message_exchange_, EvSessionParams params_,
-            session::Latches& latches_, everest::lib::util::monitor<DcChargeParams>& dc_params_,
-            bool has_cp_state_feedback_, std::optional<message_din::datatypes::SessionId> resumed_session_id_);
+    Context(feedback::Callbacks feedback_callbacks, MessageExchange& message_exchange_, params::EvSessionParams params_,
+            session::Latches& latches_, everest::lib::util::monitor<params::DcChargeParams>& dc_params_,
+            bool has_cp_state_feedback_, std::optional<message_din::datatypes::SessionId> resumed_session_id_,
+            config::WeldingDetectionConfig welding_detection_);
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;
 
@@ -68,6 +71,14 @@ public:
 
     std::unique_ptr<message_din::ResponseVariant> pull_response() {
         return message_exchange.pull_response();
+    }
+
+    bool has_request() const {
+        return message_exchange.has_request();
+    }
+
+    void discard_request() {
+        message_exchange.discard();
     }
 
     void stop_session() {
@@ -96,10 +107,6 @@ public:
     bool is_pause_charging_requested() const {
         return latches.pause;
     }
-    // True when the pending stop is a pause (SessionStop then pauses the session).
-    bool stop_is_pause() const {
-        return latches.pause and not latches.stop;
-    }
 
     bool has_cp_state_feedback() const {
         return has_cp_state_feedback_;
@@ -121,24 +128,25 @@ public:
         return resumed_session_id_;
     }
 
-    const EvSessionParams& params() const {
+    const params::EvSessionParams& params() const {
         return params_;
     }
 
-    DcChargeParams get_dc_params() const {
+    params::DcChargeParams get_dc_params() const {
         auto h = dc_params.handle();
         return *h;
     }
 
+    const config::WeldingDetectionConfig welding_detection;
     const iso15118::ev::Feedback feedback;
     EvseInfo evse_info;
 
 private:
     MessageExchange& message_exchange;
-    EvSessionParams params_;
+    params::EvSessionParams params_;
     // Session-owned, so a handover keeps them.
     session::Latches& latches;
-    everest::lib::util::monitor<DcChargeParams>& dc_params;
+    everest::lib::util::monitor<params::DcChargeParams>& dc_params;
     bool has_cp_state_feedback_{false};
     std::optional<message_din::datatypes::SessionId> resumed_session_id_;
 

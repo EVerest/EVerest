@@ -5,35 +5,23 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/udp/udp_unconnected_client.hpp>
 
-#include <iso15118/io/ipv6_endpoint.hpp>
-#include <iso15118/io/sdp.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
 namespace iso15118::ev::transport {
-
-/**
- * Parsed SDP response: the SECC's TCP/TLS endpoint plus the transport security it
- * advertises. The security drives which transport client the controller creates
- * (plain TCP vs. TLS).
- */
-struct SdpResponse {
-    iso15118::io::Ipv6EndPoint endpoint;
-    iso15118::io::v2gtp::Security security;
-};
 
 /**
  * EV-side SECC Discovery Protocol client.
  *
  * Sends an SDP request to the link-local all-nodes multicast address on the
  * egress interface and parses the unicast reply to learn the SECC TCP/TLS
- * endpoint. The pure wire codecs (\ref build_request / \ref parse_response)
- * are socket-free and independently testable.
+ * endpoint. The request codec (\ref build_request) is socket-free and
+ * independently testable.
  */
 class SdpClient {
 public:
@@ -44,7 +32,7 @@ public:
      * @param[in] security Transport security advertised in the SDP request.
      */
     explicit SdpClient(std::string interface_name,
-                       iso15118::io::v2gtp::Security security = iso15118::io::v2gtp::Security::NO_TRANSPORT_SECURITY);
+                       iso15118::v2gtp::Security security = iso15118::v2gtp::Security::NO_TRANSPORT_SECURITY);
 
     /**
      * @brief Unregister the internal UDP client from the reactor it registered with.
@@ -80,19 +68,8 @@ public:
      * @param[in] transport Requested transport protocol.
      * @return The serialized request.
      */
-    static std::vector<uint8_t> build_request(iso15118::io::v2gtp::Security security,
-                                              iso15118::io::v2gtp::TransportProtocol transport);
-
-    /**
-     * @brief Parse a 28-byte SDP response buffer.
-     * @details Returns std::nullopt for a short buffer or a header that does
-     * not carry the SDP response payload id (0x9001).
-     * @param[in] buf Pointer to the response bytes.
-     * @param[in] len Number of bytes available at @p buf.
-     * @return The advertised endpoint and security, or std::nullopt on a malformed
-     * response.
-     */
-    static std::optional<SdpResponse> parse_response(const uint8_t* buf, size_t len);
+    static std::vector<uint8_t> build_request(iso15118::v2gtp::Security security,
+                                              iso15118::v2gtp::TransportProtocol transport);
 
     /**
      * @brief Send a discovery request to ff02::1 port SDP_SERVER_PORT and report the learned endpoint.
@@ -100,7 +77,7 @@ public:
      * transmitted from the reactor rather than synchronously.
      * @param[in] on_found Callback invoked with the parsed SDP response.
      */
-    void discover(std::function<void(SdpResponse)> on_found);
+    void discover(std::function<void(iso15118::v2gtp::SdpResponse)> on_found);
 
     /**
      * @brief Re-transmit the SDP request to the same multicast group.
@@ -114,12 +91,12 @@ public:
 
 private:
     std::string interface_name;
-    iso15118::io::v2gtp::Security security;
+    iso15118::v2gtp::Security security;
 
     // The reactor a successful register_events registered with; the destructor
     // unregisters from it. Null until then.
     everest::lib::io::event::fd_event_handler* registered_handler{nullptr};
-    std::function<void(SdpResponse)> on_found;
+    std::function<void(iso15118::v2gtp::SdpResponse)> on_found;
     std::unique_ptr<everest::lib::io::udp::udp_unconnected_client> client;
 };
 

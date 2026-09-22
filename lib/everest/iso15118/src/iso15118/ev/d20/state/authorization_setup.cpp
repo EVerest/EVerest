@@ -1,23 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH, Roger Bedell and Contributors to EVerest
+#include <algorithm>
+#include <utility>
+
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/authorization.hpp>
 #include <iso15118/ev/d20/state/authorization_setup.hpp>
 #include <iso15118/ev/d20/state/stop_before_start.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
-#include <iso15118/ev/session/feedback.hpp>
+#include <iso15118/ev/feedback.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
 
 namespace iso15118::ev::d20::state {
 
+message_20::AuthorizationSetupRequest AuthorizationSetup::make_request() {
+    return {};
+}
+
 void AuthorizationSetup::enter() {
     logf_debug("Enter state: AuthorizationSetup");
-
-    message_20::AuthorizationSetupRequest req;
-    setup_header(req.header, m_ctx.get_session());
-    m_ctx.send_request(req);
 }
 
 Result AuthorizationSetup::feed(Event ev) {
@@ -36,7 +39,7 @@ Result AuthorizationSetup::feed(Event ev) {
         return std::move(*stop);
     }
 
-    auto& info = m_ctx.get_evse_session_info();
+    EVSESessionInfo info{};
 
     if (res->certificate_installation_service) {
         // TODO(mlitre): Implement certificate installation service
@@ -63,6 +66,15 @@ Result AuthorizationSetup::feed(Event ev) {
         return Result::stopping();
     }
 
+    const auto offers_eim = std::find(info.auth_services.begin(), info.auth_services.end(),
+                                      message_20::datatypes::Authorization::EIM) != info.auth_services.end();
+    if (not offers_eim) {
+        logf_error("EVSE does not offer EIM authorization and the EV supports no other mode. Abort the session.");
+        m_ctx.stop_session();
+        return Result::stopping();
+    }
+
+    m_ctx.send_request(Authorization::make_request());
     return m_ctx.create_state<Authorization>();
 }
 

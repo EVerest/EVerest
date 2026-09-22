@@ -109,11 +109,33 @@ static_assert((SAE_ENABLED_MODE_MASK & ~SAE_MODE_BITMAP_MASK) == 0,
 
 bool is_function_set(std::uint32_t bitmap, DerBitMapFunctions function);
 
+// The constant power factor bit of one excitation direction, shared by the SECC gate and the echo reference.
+constexpr DerBitMapFunctions excitation_function(message_20::datatypes::sae::PowerFactorExcitation excitation) {
+    return excitation == message_20::datatypes::sae::PowerFactorExcitation::OverExcited
+               ? DerBitMapFunctions::ConstantPowerFactorOverExcitedFunction
+               : DerBitMapFunctions::ConstantPowerFactorUnderExcitedFunction;
+}
+
 // The bits the gated response actually enables, and the reference the EV's EnabledModes echo is compared
 // against in the charge loop. Both response shapes are read the same way, so identical enables yield
 // identical bits.
 std::uint32_t derive_enabled_modes(const message_20::datatypes::sae::DERControlCPDRes& res);
+// Reads an absent leaf as disabled, so it fits only a full control set such as the SECC resends.
 std::uint32_t derive_enabled_modes(const message_20::datatypes::sae::DERControlCLRes& res);
+
+// The EV's view of a charge loop response: `modes` with only the bits of the leaves the response carries
+// replaced. A leaf is a whole VoltageTrip or FrequencyTrip, EnterService, or one power support function
+// (ConstantPowerFactor, VoltVar, WattVar, ConstantVar, FrequencyDroop, VoltWatt, ConstantWatt,
+// LimitMaxDischargePower). A leaf the response omits keeps its bits, a leaf it carries with Enable false
+// clears them. A carried trip block restates its whole family, as at CPD, so a curve missing from it clears
+// its bit. An empty power support block carries no leaf.
+//
+// [V2G20-3236] makes DERControlCLRes the channel that updates what DERControlCPDRes sent, and [V2G20-3230]
+// keeps the EV bound to the CPD settings no update replaced. AMD1 Table M.8 describes EnabledModes as the
+// functions whose element "in DERControlCLRes contained Enable = 'TRUE'"; that parenthetical is read as
+// assuming the element is present. Read literally, an omitted element would clear its bit and the EV would
+// echo only EnterService once the SECC repeats nothing but the mandatory block.
+std::uint32_t update_enabled_modes(std::uint32_t modes, const message_20::datatypes::sae::DERControlCLRes& res);
 
 // Comma separated function names for the set bits, "none" for an empty bitmap. For log lines only.
 std::string sae_function_names(std::uint32_t bitmap);

@@ -21,4 +21,7 @@ private:
     bool renegotiation_warned{false};
 };
 
+// Sends the first CurrentDemandReq and creates the charging loop awaiting it.
+BasePointerType to_current_demand(Context& ctx);
+
 } // namespace iso15118::ev::din::state

@@ -80,6 +80,7 @@ void send(Context& ctx) {
     if (params.energy_capacity > 0.0f) {
         dc_param.ev_energy_capacity = params.energy_capacity;
     }
+    dc_param.ev_energy_request = ctx.params().energy_request.stated_energy_wh();
 
     ctx.send_request(charge_parameter_discovery::create_request(
         din_energy_transfer_mode(ctx.params().energy_transfer_mode), dc_param));
@@ -87,9 +88,13 @@ void send(Context& ctx) {
 
 } // namespace
 
+BasePointerType to_charge_parameter_discovery(Context& ctx) {
+    send(ctx);
+    return ctx.create_state<ChargeParameterDiscovery>();
+}
+
 void ChargeParameterDiscovery::enter() {
     logf_debug("Enter state: ChargeParameterDiscovery (DIN 70121)");
-    send(m_ctx);
 }
 
 Result ChargeParameterDiscovery::feed(Event ev) {
@@ -118,6 +123,11 @@ Result ChargeParameterDiscovery::feed(Event ev) {
         }
     }
 
+    if (result.evse_stopping) {
+        logf_warning("ChargeParameterDiscovery finished with a SECC stop request, transitioning to SessionStop");
+        return to_session_stop(m_ctx, session::StopReason::EvseTerminate);
+    }
+
     if (auto stop = stop_before_start(m_ctx)) {
         return std::move(*stop);
     }
@@ -128,13 +138,8 @@ Result ChargeParameterDiscovery::feed(Event ev) {
         return Result::awaiting();
     }
 
-    if (result.evse_stopping) {
-        logf_warning("ChargeParameterDiscovery finished with a SECC stop request, transitioning to SessionStop");
-        return m_ctx.create_state<SessionStop>();
-    }
-
     m_ctx.feedback.ev_power_ready();
-    return m_ctx.create_state<CableCheck>();
+    return CableCheck::begin(m_ctx);
 }
 
 } // namespace iso15118::ev::din::state

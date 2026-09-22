@@ -98,11 +98,11 @@ void MessageExchange::set_raw_response(const uint8_t* data, size_t len, message_
     std::memcpy(response.payload, data, len);
     response_size = len;
     response_available = true;
-    payload_type = io::v2gtp::PayloadType::SAP;
+    payload_type = v2gtp::PayloadType::SAP;
     response_type = type;
 }
 
-std::tuple<bool, size_t, io::v2gtp::PayloadType, message_2::Type> MessageExchange::check_and_clear_response() {
+std::tuple<bool, size_t, v2gtp::PayloadType, message_2::Type> MessageExchange::check_and_clear_response() {
     auto retval = std::make_tuple(response_available, response_size, payload_type, response_type);
 
     response_available = false;

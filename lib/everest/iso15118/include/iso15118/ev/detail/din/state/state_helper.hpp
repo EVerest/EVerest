@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-#include <iso15118/ev/dc_charge_params.hpp>
+#include <iso15118/ev/params/dc.hpp>
 #include <iso15118/message_din/common_types.hpp>
 
 namespace iso15118::ev::din::state {
@@ -12,7 +12,7 @@ namespace iso15118::ev::din::state {
 namespace dt = message_din::datatypes;
 
 // DC_EVStatus with the given ready flag, no error and the module's present SoC.
-inline dt::DcEvStatus make_dc_ev_status(const DcChargeParams& params, bool ev_ready) {
+inline dt::DcEvStatus make_dc_ev_status(const params::DcChargeParams& params, bool ev_ready) {
     dt::DcEvStatus status;
     status.ev_ready = ev_ready;
     status.ev_error_code = dt::DcEvErrorCode::NO_ERROR;
@@ -27,7 +27,7 @@ inline dt::EnergyTransferMode din_energy_transfer_mode(dt::EnergyTransferMode re
 }
 
 // DIN Table 73: ChargingComplete means the EV is fully charged, not that charging is ending.
-inline bool charging_complete(const DcChargeParams& params) {
+inline bool charging_complete(const params::DcChargeParams& params) {
     return params.present_soc >= 100.0;
 }
 

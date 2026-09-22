@@ -16,7 +16,7 @@
 #include <iso15118/message_2/session_setup.hpp>
 #include <iso15118/message_2/variant.hpp>
 
-#include <iso15118/ev/sap_offer.hpp>
+#include <iso15118/ev/session/sap_offer.hpp>
 
 #include "test_support.hpp"
 
@@ -26,11 +26,11 @@ using namespace iso15118::ev::test;
 
 namespace {
 
-using PT = io::v2gtp::PayloadType;
+using PT = v2gtp::PayloadType;
 
 // DC offer of -20 (schema id 1) and -2 (schema id 2).
-std::vector<ev::OfferedProtocol> dual_offer() {
-    ev::SapOfferInput input;
+std::vector<ev::session::OfferedProtocol> dual_offer() {
+    ev::session::SapOfferInput input;
     input.supported_protocols = {ProtocolId::ISO15118_20, ProtocolId::ISO15118_2};
     return build_sap_offer(input);
 }
@@ -43,10 +43,10 @@ std::unique_ptr<SessionFixture> dual_offer_fixture() {
     }
     ev::d20::SessionOptions options;
     options.offered_protocols = offer;
-    return std::make_unique<SessionFixture>("EVTESTID01", ev::SessionTiming{5ms, 100ms}, ev::DcChargeParams{},
-                                            advertised, message_20::datatypes::ServiceCategory::DC,
-                                            ev::AcChargeParams{}, default_der_control_functions(), true,
-                                            std::move(options));
+    return std::make_unique<SessionFixture>("EVTESTID01", ev::session::SessionTiming{5ms, 100ms},
+                                            ev::params::DcChargeParams{}, advertised,
+                                            message_20::datatypes::ServiceCategory::DC, ev::params::AcChargeParams{},
+                                            default_der_control_functions(), true, std::move(options));
 }
 
 message_20::SupportedAppProtocolResponse sap_response(uint8_t schema_id) {
@@ -119,6 +119,34 @@ SCENARIO("ISO15118-20 EV Session maps the negotiated schema id back to a protoco
                 REQUIRE(run_reactor_until(
                     fx.reactor, [&]() { return fx.captured.size() >= 2; }, 1s));
                 REQUIRE_FALSE(fx.session.is_finished());
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session sends the offer set before start") {
+    GIVEN("a Session offering -20 and -2, narrowed to -2 alone before start") {
+        auto fx = dual_offer_fixture();
+        ev::session::SapOfferInput input;
+        input.supported_protocols = {ProtocolId::ISO15118_2};
+        fx->session.set_offer(build_sap_offer(input));
+        fx->session.start();
+        REQUIRE(run_reactor_until(
+            fx->reactor, [&]() { return fx->captured.size() >= 1; }, 1s));
+
+        THEN("the SupportedAppProtocolReq carries -2 alone") {
+            auto variant = decode_frame(fx->captured.front());
+            const auto* request = variant.get_if<message_20::SupportedAppProtocolRequest>();
+            REQUIRE(request != nullptr);
+            REQUIRE(request->app_protocol.size() == 1);
+            REQUIRE(request->app_protocol[0].protocol_namespace == ISO2_NAMESPACE);
+        }
+
+        WHEN("the SECC selects schema id 1") {
+            fx->session.on_bytes_received(frame_payload(PT::SAP, serialize_msg(sap_response(1))));
+
+            THEN("the narrowed offer maps it to ISO 15118-2") {
+                REQUIRE(fx->selected_protocol == ProtocolId::ISO15118_2);
             }
         }
     }

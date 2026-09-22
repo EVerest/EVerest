@@ -17,10 +17,10 @@
 #include <iso15118/d20/timeout.hpp>
 #include <iso15118/detail/cb_exi.hpp>
 #include <iso15118/io/logging.hpp>
-#include <iso15118/io/sdp.hpp>
 #include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/variant.hpp>
 #include <iso15118/session/feedback.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
 using namespace iso15118;
 
@@ -71,14 +71,14 @@ public:
     }
 
     template <typename RequestType> void handle_request(const RequestType& request) {
-        msg_exch.set_request(std::make_unique<message_20::Variant>(request));
+        msg_exch.set_request(std::make_unique<message_20::RequestVariant>(request));
     }
 
     // For requests whose raw EXI matters to the state, e.g. a signed PnC AuthorizationReq.
-    void handle_raw_request(io::v2gtp::PayloadType payload_type, const std::vector<uint8_t>& exi) {
+    void handle_raw_request(v2gtp::PayloadType payload_type, const std::vector<uint8_t>& exi) {
         REQUIRE_FALSE(exi.empty());
         const io::StreamInputView view{exi.data(), exi.size()};
-        msg_exch.set_request(std::make_unique<message_20::Variant>(payload_type, view));
+        msg_exch.set_request(std::make_unique<message_20::RequestVariant>(payload_type, view));
     }
 
     d20::MessageExchange& get_message_exchange() {

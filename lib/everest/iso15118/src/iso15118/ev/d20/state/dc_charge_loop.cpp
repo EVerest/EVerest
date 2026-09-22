@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <optional>
+#include <utility>
 #include <variant>
 
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
+#include <iso15118/ev/d20/discharge_sign.hpp>
+#include <iso15118/ev/d20/service_family.hpp>
 #include <iso15118/ev/d20/state/dc_charge_loop.hpp>
-#include <iso15118/ev/d20/state/power_delivery.hpp>
+#include <iso15118/ev/d20/state/leave_charge_loop.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
-#include <iso15118/ev/service_family.hpp>
 #include <iso15118/message/dc_charge_loop.hpp>
 
 namespace iso15118::ev::d20::state {
@@ -17,11 +19,9 @@ namespace {
 
 namespace dt = message_20::datatypes;
 
-void fill_dynamic_charge(dt::Dynamic_DC_CLReqControlMode& mode, const DcChargeParams& params) {
-    mode.departure_time = std::nullopt;
-    mode.target_energy_request = dt::from_float(params.energy_capacity);
-    mode.max_energy_request = dt::from_float(params.energy_capacity);
-    mode.min_energy_request = {0, 0};
+void fill_dynamic_charge(dt::Dynamic_DC_CLReqControlMode& mode, const params::DcChargeParams& params,
+                         const EnergyRequest& energy) {
+    fill_energy_request(mode, energy);
     mode.max_charge_power = dt::from_float(params.max_charge_power);
     mode.min_charge_power = {0, 0};
     mode.max_charge_current = dt::from_float(params.max_charge_current);
@@ -31,7 +31,7 @@ void fill_dynamic_charge(dt::Dynamic_DC_CLReqControlMode& mode, const DcChargePa
 
 // Scheduled mode dictates a set point instead of an energy window: the limits stay, the energy
 // request fields do not exist here.
-void fill_scheduled_charge(dt::Scheduled_DC_CLReqControlMode& mode, const DcChargeParams& params) {
+void fill_scheduled_charge(dt::Scheduled_DC_CLReqControlMode& mode, const params::DcChargeParams& params) {
     mode.target_voltage = dt::from_float(params.target_voltage);
     mode.target_current = dt::from_float(params.target_current);
     mode.max_charge_power = dt::from_float(params.max_charge_power);
@@ -41,25 +41,25 @@ void fill_scheduled_charge(dt::Scheduled_DC_CLReqControlMode& mode, const DcChar
     mode.min_voltage = dt::from_float(params.min_voltage);
 }
 
-message_20::DC_ChargeLoopRequest make_request(const SessionId& session, const DcChargeParams& params,
-                                              dt::ServiceCategory service, dt::ControlMode control_mode) {
+} // namespace
+
+message_20::DC_ChargeLoopRequest DC_ChargeLoop::make_request(const params::DcChargeParams& params,
+                                                             dt::ServiceCategory service, dt::ControlMode control_mode,
+                                                             const EnergyRequest& energy) {
     message_20::DC_ChargeLoopRequest req;
-    setup_header(req.header, session);
     req.meter_info_requested = false;
     req.display_parameters = std::nullopt;
     // Only ever the module's measurement: substituting the EV's target or the SECC's
     // own reading would be indistinguishable from it on the wire.
     req.present_voltage = dt::from_float(params.present_voltage);
 
-    const bool bpt = ev::is_bpt(service);
+    const bool bpt = ev::d20::is_bpt(service);
 
     if (control_mode == dt::ControlMode::Scheduled) {
         if (bpt) {
             dt::BPT_Scheduled_DC_CLReqControlMode mode;
             fill_scheduled_charge(mode, params);
-            mode.max_discharge_power = dt::from_float(params.max_discharge_power);
-            mode.min_discharge_power = dt::from_float(params.min_discharge_power);
-            mode.max_discharge_current = dt::from_float(params.max_discharge_current);
+            fill_dc_discharge_limits(params, mode);
             req.control_mode = mode;
         } else {
             dt::Scheduled_DC_CLReqControlMode mode;
@@ -71,23 +71,27 @@ message_20::DC_ChargeLoopRequest make_request(const SessionId& session, const Dc
 
     if (bpt) {
         dt::BPT_Dynamic_DC_CLReqControlMode mode;
-        fill_dynamic_charge(mode, params);
-        mode.max_discharge_power = dt::from_float(params.max_discharge_power);
-        mode.min_discharge_power = dt::from_float(params.min_discharge_power);
-        mode.max_discharge_current = dt::from_float(params.max_discharge_current);
+        fill_dynamic_charge(mode, params, energy);
+        fill_dc_discharge_limits(params, mode);
         req.control_mode = mode;
     } else {
         dt::Dynamic_DC_CLReqControlMode mode;
-        fill_dynamic_charge(mode, params);
+        fill_dynamic_charge(mode, params, energy);
         req.control_mode = mode;
     }
 
     return req;
 }
 
+message_20::DC_ChargeLoopRequest DC_ChargeLoop::make_request(const Context& ctx) {
+    return make_request(ctx.get_dc_params(), ctx.selected_service(), ctx.selected_control_mode(), ctx.energy_request());
+}
+
+namespace {
+
 bool mode_matches_session(const message_20::DC_ChargeLoopResponse& res, dt::ServiceCategory service,
                           dt::ControlMode control_mode) {
-    const bool bpt = ev::is_bpt(service);
+    const bool bpt = ev::d20::is_bpt(service);
     if (control_mode == dt::ControlMode::Scheduled) {
         return bpt ? std::holds_alternative<dt::BPT_Scheduled_DC_CLResControlMode>(res.control_mode)
                    : std::holds_alternative<dt::Scheduled_DC_CLResControlMode>(res.control_mode);
@@ -129,8 +133,6 @@ std::optional<feedback::DcMaximumLimits> evse_present_limits(const message_20::D
 
 void DC_ChargeLoop::enter() {
     logf_debug("Enter state: DC_ChargeLoop");
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service(),
-                                    m_ctx.selected_control_mode()));
 }
 
 Result DC_ChargeLoop::feed(Event ev) {
@@ -159,25 +161,11 @@ Result DC_ChargeLoop::feed(Event ev) {
     m_ctx.feedback.dc_evse_present_values(dt::from_RationalNumber(res->present_voltage),
                                           dt::from_RationalNumber(res->present_current));
 
-    if (res->status.has_value()) {
-        if (res->status->notification == dt::EvseNotification::Terminate) {
-            m_ctx.feedback.stop_from_charger();
-            return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
-        }
-        if (res->status->notification == dt::EvseNotification::Pause) {
-            m_ctx.feedback.pause_from_charger();
-            // SessionStop carries Pause, so the session id may be re-joined.
-            m_ctx.set_pause_charging_requested(true);
-            return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
-        }
+    if (auto stop = leave_charge_loop(m_ctx, res->status)) {
+        return std::move(*stop);
     }
 
-    if (m_ctx.is_stop_charging_requested() or m_ctx.is_pause_charging_requested()) {
-        return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
-    }
-
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service(),
-                                    m_ctx.selected_control_mode()));
+    m_ctx.send_request(make_request(m_ctx));
     return Result::awaiting();
 }
 

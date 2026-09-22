@@ -6,8 +6,10 @@
 #include "helper.hpp"
 
 #include <iso15118/ev/din/state/service_discovery.hpp>
+#include <iso15118/ev/din/state/session_setup.hpp>
 #include <iso15118/message_din/service_discovery.hpp>
 #include <iso15118/message_din/service_payment_selection.hpp>
+#include <iso15118/message_din/session_setup.hpp>
 #include <iso15118/message_din/session_stop.hpp>
 
 using namespace iso15118;
@@ -32,11 +34,18 @@ message_din::ServiceDiscoveryResponse ok_response(const message_din::Header& hdr
     return make_response(hdr, dt::ResponseCode::OK, dt::SupportedEnergyTransferMode::DC_extended,
                          dt::PaymentOption::ExternalPayment);
 }
+const auto by_session_setup = entered_by([](DinStateHelper& helper) {
+    message_din::SessionSetupResponse res{};
+    res.header = header();
+    res.response_code = dt::ResponseCode::OK_NewSessionEstablished;
+    return successor_of<ev::din::state::SessionSetup>(helper, res);
+});
+
 } // namespace
 
-SCENARIO("DIN 70121 EV ServiceDiscovery sends the request on enter") {
+SCENARIO("DIN 70121 EV ServiceDiscovery's request goes out on the SessionSetup transition") {
     const ev::feedback::Callbacks callbacks{};
-    PrimedState<State> primed{callbacks, no_seed};
+    PrimedState<State> primed{callbacks, no_seed, by_session_setup};
 
     const auto requests = primed.take_requests();
     const auto request = requests.get<message_din::ServiceDiscoveryRequest>();
@@ -53,8 +62,9 @@ SCENARIO("DIN 70121 EV ServiceDiscovery transitions to ServicePaymentSelection o
 
     REQUIRE(result.transitioned() == true);
     REQUIRE(primed.fsm.get_current_state_id() == StateID::ServicePaymentSelection);
-    REQUIRE(primed.ctx.evse_info.charge_service_id == 7);
-    REQUIRE(primed.take_requests().get<message_din::ServicePaymentSelectionRequest>().has_value());
+    const auto request = primed.take_requests().get<message_din::ServicePaymentSelectionRequest>();
+    REQUIRE(request.has_value());
+    REQUIRE(request->selected_service_list.front().service_id == 7);
 }
 
 SCENARIO("DIN 70121 EV ServiceDiscovery stops when the SECC offers no ExternalPayment") {

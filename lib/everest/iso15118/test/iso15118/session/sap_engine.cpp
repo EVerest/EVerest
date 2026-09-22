@@ -10,7 +10,7 @@
 
 #include <iso15118/io/logging.hpp>
 #include <iso15118/io/stream_view.hpp>
-#include <iso15118/message/variant.hpp>
+#include <iso15118/message/response_variant.hpp>
 #include <iso15118/session/config.hpp>
 #include <iso15118/session/sap_engine.hpp>
 
@@ -28,7 +28,15 @@ public:
     SapEngineHelper(std::vector<ProtocolId> supported_protocols, bool tls_active) :
         config(make_config(std::move(supported_protocols))),
         engine(io::StreamOutputView{buffer.data(), buffer.size()}, config, make_callbacks(), tls_active) {
-        io::set_logging_callback([](LogLevel, std::string) {});
+        io::set_logging_callback([this](LogLevel level, const std::string& message) {
+            if (level == LogLevel::Error) {
+                errors.push_back(message);
+            }
+        });
+    }
+
+    ~SapEngineHelper() {
+        io::set_logging_callback([](LogLevel, const std::string&) {});
     }
 
     SapEngine& get_engine() {
@@ -47,11 +55,11 @@ public:
     message_20::SupportedAppProtocolResponse take_response() {
         const auto outgoing = engine.take_outgoing();
         REQUIRE(outgoing.has_value());
-        REQUIRE(outgoing->payload_type == io::v2gtp::PayloadType::SAP);
+        REQUIRE(outgoing->payload_type == v2gtp::PayloadType::SAP);
         REQUIRE(outgoing->message_type == V2gMessageType{message_20::Type::SupportedAppProtocolRes});
 
-        const message_20::Variant variant{io::v2gtp::PayloadType::SAP,
-                                          io::StreamInputView{buffer.data(), outgoing->payload_size}};
+        const message_20::ResponseVariant variant{v2gtp::PayloadType::SAP,
+                                                  io::StreamInputView{buffer.data(), outgoing->payload_size}};
         const auto* res = variant.get_if<message_20::SupportedAppProtocolResponse>();
         REQUIRE(res != nullptr);
         return *res;
@@ -60,12 +68,13 @@ public:
     // As the Session does with a V2GTP payload that is not a message at all.
     void feed_raw(const std::vector<uint8_t>& payload) {
         accepted.push_back(
-            engine.on_packet(io::v2gtp::PayloadType::SAP, io::StreamInputView{payload.data(), payload.size()}));
+            engine.on_packet(v2gtp::PayloadType::SAP, io::StreamInputView{payload.data(), payload.size()}));
     }
 
     std::vector<std::string> selected_protocols;
     std::vector<V2gMessageType> reported_messages;
     std::vector<bool> accepted;
+    std::vector<std::string> errors;
 
 private:
     static session::SessionConfig make_config(std::vector<ProtocolId> supported_protocols) {
@@ -87,7 +96,7 @@ private:
         std::array<uint8_t, 1024> request_buffer{};
         const auto len =
             message_20::serialize(message, io::StreamOutputView{request_buffer.data(), request_buffer.size()});
-        engine.on_packet(io::v2gtp::PayloadType::SAP, io::StreamInputView{request_buffer.data(), len});
+        engine.on_packet(v2gtp::PayloadType::SAP, io::StreamInputView{request_buffer.data(), len});
     }
 
     std::array<uint8_t, 4096> buffer{};
@@ -227,6 +236,11 @@ SCENARIO("SapEngine ends the session when no protocol can be negotiated") {
             REQUIRE(engine.is_finished());
             REQUIRE_FALSE(engine.take_negotiated().has_value());
         }
+
+        THEN("The decoded type is reported without a decode error") {
+            REQUIRE(helper.reported_messages == std::vector<V2gMessageType>{message_20::Type::SupportedAppProtocolRes});
+            REQUIRE(helper.errors.empty());
+        }
     }
 
     GIVEN("An EV sending a frame that does not decode") {
@@ -238,6 +252,7 @@ SCENARIO("SapEngine ends the session when no protocol can be negotiated") {
         THEN("the frame is ignored and not reported as a message [V2G20-800]") {
             REQUIRE(helper.accepted == std::vector<bool>{false});
             REQUIRE(helper.reported_messages.empty());
+            REQUIRE(helper.errors.size() == 1);
             REQUIRE_FALSE(engine.has_outgoing());
             REQUIRE_FALSE(engine.is_finished());
         }

@@ -17,4 +17,7 @@ struct PaymentDetails : public StateBase {
     Result feed(Event) final;
 };
 
+// Sends the PaymentDetailsReq for the contract in the runtime PnC state and creates the state awaiting it.
+BasePointerType to_payment_details(Context& ctx);
+
 } // namespace iso15118::ev::d2::state
