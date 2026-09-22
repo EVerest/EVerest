@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <optional>
@@ -58,9 +58,12 @@ struct AdditionalService {
 };
 
 using TaxRuleList = everest::lib::util::fixed_vector<TaxRule, TAX_RULE_LENGTH>;
-// Inline storage is not used here: the standard allows 1024 stacks, which would add over a megabyte
-// to every ScheduleExchangeResponse. The encoder bounds this against the codec's own limit of 64.
+
+// PriceRuleStackList is dynamically allocated for now, as it would lead to a pretty large blob
+// on the stack if used as a static array with 1024 elements
+// currently cbv2g encodes at most iso20_PriceRuleStackType_64_ARRAY_SIZE entries
 using PriceRuleStackList = std::vector<PriceRuleStack>;
+
 using AdditionalServiceList = everest::lib::util::fixed_vector<AdditionalService, ADDITIONAL_SERVICE_LENGTH>;
 
 struct Dynamic_SEReqControlMode {
