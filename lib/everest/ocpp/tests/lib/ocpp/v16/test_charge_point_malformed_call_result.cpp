@@ -9,6 +9,7 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -44,6 +45,14 @@ constexpr auto SETTLE_TIMEOUT = std::chrono::milliseconds(500);
 constexpr auto BOOT_RETRY_TIMEOUT = std::chrono::seconds(90);
 constexpr std::int32_t CONNECTOR = 1;
 const std::string BOOT_NOTIFICATION_ACTION = "BootNotification";
+const std::string START_TRANSACTION_ACTION = "StartTransaction";
+const std::string STOP_TRANSACTION_ACTION = "StopTransaction";
+// Transaction messages are repeated after TransactionMessageRetryInterval, which the fixture sets to one second
+constexpr std::int32_t TRANSACTION_MESSAGE_RETRY_INTERVAL_S = 1;
+constexpr auto TRANSACTION_RETRY_TIMEOUT = std::chrono::seconds(10);
+const std::string SESSION_ID = "session-1";
+const std::string ID_TAG = "TAG1";
+constexpr std::int32_t TRANSACTION_ID = 42;
 } // namespace
 
 class ChargePointMalformedCallResultTest : public ::testing::Test {
@@ -123,17 +132,21 @@ protected:
         return true;
     }
 
-    /// \brief payload for the given \p action
+    /// \brief payload for the given \p action . A payload staged with stage_payload() is used once, in staging order,
+    /// before the well-formed default answer.
     nlohmann::json response_payload_for_locked(const std::string& action) {
+        auto staged = this->staged_payloads.find(action);
+        if (staged != this->staged_payloads.end() and not staged->second.empty()) {
+            auto payload = staged->second.front();
+            staged->second.pop_front();
+            return payload;
+        }
         if (action == BOOT_NOTIFICATION_ACTION) {
-            /// The first BootNotification.req gets a specific payload, all others are accepted
-            if (this->first_boot_notification_payload.has_value()) {
-                auto payload = this->first_boot_notification_payload.value();
-                this->first_boot_notification_payload.reset();
-                return payload;
-            }
             return nlohmann::json{
                 {"currentTime", ocpp::DateTime().to_rfc3339()}, {"interval", 86400}, {"status", "Accepted"}};
+        }
+        if (action == START_TRANSACTION_ACTION) {
+            return nlohmann::json{{"idTagInfo", {{"status", "Accepted"}}}, {"transactionId", TRANSACTION_ID}};
         }
         return nlohmann::json::object();
     }
@@ -179,6 +192,12 @@ protected:
         return this->cv.wait_for(lock, WAIT_TIMEOUT, [this, count]() { return this->delivered >= count; });
     }
 
+    /// \brief Wait until every call sent so far has been answered and the answer was processed by the charge point.
+    bool wait_for_all_answered() {
+        std::unique_lock<std::mutex> lock(this->mtx);
+        return this->cv.wait_for(lock, WAIT_TIMEOUT, [this]() { return this->delivered >= this->sent.size(); });
+    }
+
     /// \brief Wait until at least \p count calls with \p action have been sent by the charge point.
     bool wait_for_action_count(const std::string& action, std::size_t count, std::chrono::milliseconds timeout) {
         std::unique_lock<std::mutex> lock(this->mtx);
@@ -221,9 +240,43 @@ protected:
         return this->escaped_exceptions;
     }
 
-    void stage_first_boot_notification_payload(nlohmann::json payload) {
+    /// \brief Answer the next \p action call with \p payload instead of the well-formed default.
+    void stage_payload(const std::string& action, nlohmann::json payload) {
         const std::lock_guard<std::mutex> lock(this->mtx);
-        this->first_boot_notification_payload = std::move(payload);
+        this->staged_payloads[action].push_back(std::move(payload));
+    }
+
+    /// \brief The payload of the most recent call with \p action , if any was sent.
+    std::optional<nlohmann::json> last_payload(const std::string& action) {
+        const std::lock_guard<std::mutex> lock(this->mtx);
+        for (auto it = this->sent.rbegin(); it != this->sent.rend(); ++it) {
+            if (it->at(2) == action) {
+                return it->at(3);
+            }
+        }
+        return std::nullopt;
+    }
+
+    /// \brief Bring a charge point up to an accepted BootNotification with \p CONNECTOR available.
+    std::unique_ptr<ChargePointImpl> make_booted_charge_point() {
+        auto charge_point = make_connected_charge_point();
+        EXPECT_TRUE(wait_for_status("Available"))
+            << "boot handshake did not produce the initial StatusNotification.req";
+        return charge_point;
+    }
+
+    void start_transaction(ChargePointImpl& charge_point) {
+        charge_point.on_session_started(CONNECTOR, SESSION_ID, ocpp::SessionStartedReason::EVConnected, std::nullopt);
+        charge_point.on_transaction_started(CONNECTOR, SESSION_ID, ID_TAG, /*meter_start=*/0.0,
+                                            /*reservation_id=*/std::nullopt, ocpp::DateTime(),
+                                            /*signed_meter_value=*/std::nullopt);
+    }
+
+    void stop_transaction(ChargePointImpl& charge_point) {
+        charge_point.on_transaction_stopped(CONNECTOR, SESSION_ID, Reason::Local, ocpp::DateTime(),
+                                            /*energy_wh_import=*/1000.0F, /*id_tag_end=*/std::nullopt,
+                                            /*signed_meter_value=*/std::nullopt,
+                                            /*start_signed_meter_value=*/std::nullopt);
     }
 
     std::shared_ptr<NiceMock<EvseSecurityMock>> evse_security;
@@ -235,7 +288,7 @@ protected:
     std::condition_variable cv;
     std::vector<nlohmann::json> sent;
     std::deque<nlohmann::json> pending_responses;
-    std::optional<nlohmann::json> first_boot_notification_payload;
+    std::map<std::string, std::deque<nlohmann::json>> staged_payloads;
     std::vector<std::string> escaped_exceptions;
     std::size_t delivered{0};
     std::function<void(const std::string&)> to_charge_point;
@@ -245,7 +298,7 @@ protected:
 
 // Ensure that a malformed CALLRESULT does not throw a json type_error.
 TEST_F(ChargePointMalformedCallResultTest, NumberPayloadDoesNotEscapeMessageCallback) {
-    stage_first_boot_notification_payload(12345);
+    stage_payload(BOOT_NOTIFICATION_ACTION, 12345);
 
     auto charge_point = make_connected_charge_point();
 
@@ -261,7 +314,7 @@ TEST_F(ChargePointMalformedCallResultTest, NumberPayloadDoesNotEscapeMessageCall
 // a registration status nor an interval. The charge point has to repeat it, and once the CSMS answers properly the boot
 // completes with the initial StatusNotification.req.
 TEST_F(ChargePointMalformedCallResultTest, NumberPayloadIsFollowedByBootNotificationRetry) {
-    stage_first_boot_notification_payload(12345);
+    stage_payload(BOOT_NOTIFICATION_ACTION, 12345);
 
     auto charge_point = make_connected_charge_point();
 
@@ -288,6 +341,56 @@ TEST_F(ChargePointMalformedCallResultTest, WellFormedPayloadBoots) {
     EXPECT_TRUE(wait_for_status("Available")) << "boot handshake did not produce the initial StatusNotification.req";
     EXPECT_THAT(get_escaped_exceptions(), ::testing::IsEmpty());
     EXPECT_EQ(count_action(BOOT_NOTIFICATION_ACTION), 1u);
+
+    charge_point->stop();
+}
+
+// A StartTransaction.conf whose payload is a bare number carries no transactionId. Like a CALLERROR, it must lead to
+// the StartTransaction.req being repeated, and the transactionId from the repeated exchange has to reach the
+// StopTransaction.req.
+TEST_F(ChargePointMalformedCallResultTest, NumberPayloadForStartTransactionIsRetried) {
+    this->configuration->setTransactionMessageRetryInterval(TRANSACTION_MESSAGE_RETRY_INTERVAL_S);
+    stage_payload(START_TRANSACTION_ACTION, 12345);
+
+    auto charge_point = make_booted_charge_point();
+    start_transaction(*charge_point);
+
+    ASSERT_TRUE(wait_for_action_count(START_TRANSACTION_ACTION, 1, WAIT_TIMEOUT)) << "no StartTransaction.req was sent";
+    EXPECT_TRUE(wait_for_action_count(START_TRANSACTION_ACTION, 2, TRANSACTION_RETRY_TIMEOUT))
+        << "the StartTransaction.req was not repeated after the malformed CALLRESULT";
+    ASSERT_TRUE(wait_for_all_answered()) << "not every call was answered";
+    EXPECT_THAT(get_escaped_exceptions(), ::testing::IsEmpty());
+
+    stop_transaction(*charge_point);
+
+    ASSERT_TRUE(wait_for_action_count(STOP_TRANSACTION_ACTION, 1, WAIT_TIMEOUT)) << "no StopTransaction.req was sent";
+    const auto stop_payload = last_payload(STOP_TRANSACTION_ACTION);
+    ASSERT_TRUE(stop_payload.has_value());
+    EXPECT_EQ(stop_payload->at("transactionId"), TRANSACTION_ID)
+        << "the StopTransaction.req does not carry the transactionId of the repeated StartTransaction.conf";
+    EXPECT_THAT(get_escaped_exceptions(), ::testing::IsEmpty());
+
+    charge_point->stop();
+}
+
+// A StopTransaction.conf whose payload is a bare number must lead to the StopTransaction.req being repeated; dropping
+// it silently would lose the end of the transaction on the CSMS side.
+TEST_F(ChargePointMalformedCallResultTest, NumberPayloadForStopTransactionIsRetried) {
+    this->configuration->setTransactionMessageRetryInterval(TRANSACTION_MESSAGE_RETRY_INTERVAL_S);
+    stage_payload(STOP_TRANSACTION_ACTION, 12345);
+
+    auto charge_point = make_booted_charge_point();
+    start_transaction(*charge_point);
+
+    ASSERT_TRUE(wait_for_action_count(START_TRANSACTION_ACTION, 1, WAIT_TIMEOUT)) << "no StartTransaction.req was sent";
+    ASSERT_TRUE(wait_for_all_answered()) << "the StartTransaction.conf was not processed";
+
+    stop_transaction(*charge_point);
+
+    ASSERT_TRUE(wait_for_action_count(STOP_TRANSACTION_ACTION, 1, WAIT_TIMEOUT)) << "no StopTransaction.req was sent";
+    EXPECT_TRUE(wait_for_action_count(STOP_TRANSACTION_ACTION, 2, TRANSACTION_RETRY_TIMEOUT))
+        << "the StopTransaction.req was not repeated after the malformed CALLRESULT";
+    EXPECT_THAT(get_escaped_exceptions(), ::testing::IsEmpty());
 
     charge_point->stop();
 }
