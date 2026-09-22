@@ -83,6 +83,28 @@ static v2g_event iso_validate_response_code(iso2_responseCodeType* const v2g_res
         *v2g_response_code = iso2_responseCodeType_FAILED;
     }
 
+    /* Error shutdown (IEC 61851-23 Table CC.10): the first response after the error is sent with an
+     * OK response code so it still carries the shutdown cause (EVSEStatusCode, EVSEIsolationStatus),
+     * which a FAILED response must omit (ISO 15118-4). Once that has been reported, requests that
+     * would continue the energy transfer are answered with FAILED; the stop sequence
+     * (PowerDelivery(Stop), WeldingDetection, SessionStop) is still allowed to complete normally. */
+    if (conn->ctx->error_shutdown == true) {
+        if (conn->ctx->error_shutdown_reported == true) {
+            switch (conn->ctx->current_v2g_msg) {
+            case V2G_CABLE_CHECK_MSG:
+            case V2G_PRE_CHARGE_MSG:
+            case V2G_CURRENT_DEMAND_MSG:
+            case V2G_CHARGING_STATUS_MSG:
+                *v2g_response_code = iso2_responseCodeType_FAILED;
+                break;
+            default:
+                break;
+            }
+        } else {
+            conn->ctx->error_shutdown_reported = true;
+        }
+    }
+
     /* [V2G2-460]: check whether the session id matches the expected one of the active session */
     *v2g_response_code =
         ((conn->ctx->current_v2g_msg != V2G_SESSION_SETUP_MSG) && (conn->ctx->ev_v2g_data.received_session_id != 0) &&
@@ -2146,7 +2168,8 @@ static enum v2g_event handle_iso_cable_check(struct v2g_connection* conn) {
     res->EVSEProcessing =
         static_cast<iso2_EVSEProcessingType>(conn->ctx->evse_v2g_data.evse_processing[PHASE_ISOLATION]);
 
-    if (conn->ctx->intl_emergency_shutdown == false && res->EVSEProcessing == iso2_EVSEProcessingType_Finished) {
+    if (conn->ctx->intl_emergency_shutdown == false && conn->ctx->error_shutdown == false &&
+        res->EVSEProcessing == iso2_EVSEProcessingType_Finished) {
         res->DC_EVSEStatus.EVSEStatusCode = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
     } else {
         res->DC_EVSEStatus.EVSEStatusCode = get_emergency_status_code(conn->ctx, PHASE_ISOLATION);
