@@ -102,4 +102,18 @@ void Feedback::der_curves(const message_20::datatypes::DerControl& control) cons
     call_if_available(callbacks.der_curves, control);
 }
 
+void Feedback::sae_cpd_limits(const message_20::datatypes::sae::DER_SAE_AC_CPDResEnergyTransferMode& mode,
+                              const DerControlProblems& problems) const {
+    call_if_available(callbacks.sae_cpd_limits, mode, problems);
+}
+
+void Feedback::sae_der_control(const message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode& mode,
+                               const DerControlProblems& problems) const {
+    call_if_available(callbacks.sae_der_control, mode, problems);
+}
+
+void Feedback::der_enabled_modes(std::uint32_t modes) const {
+    call_if_available(callbacks.der_enabled_modes, modes);
+}
+
 } // namespace iso15118::ev

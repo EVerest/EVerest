@@ -11,6 +11,7 @@
 
 #include <iso15118/ev/config.hpp>
 #include <iso15118/ev/controller.hpp>
+#include <iso15118/ev/detail/session_options.hpp>
 #include <iso15118/ev/session.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 
@@ -37,6 +38,27 @@ SCENARIO("ISO15118-20 EV Controller config defaults") {
             REQUIRE(config.supported_protocols == std::vector<ProtocolId>{ProtocolId::ISO15118_20});
             REQUIRE(config.advertised_app_protocols.empty());
             REQUIRE(config.response_timeout == std::chrono::milliseconds{0});
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Controller copies the AC_DER_SAE config into the session options") {
+    GIVEN("An EvConfig with non-default SAE settings") {
+        ev::EvConfig config{};
+        config.sae_profile.inverter_serial_number = "SN-TEST";
+        config.sae_profile.supported_modes = 0x40U;
+        config.cpd_rounds = 4;
+        config.der_stop_on_invalid_control = true;
+
+        WHEN("the session options are built from it") {
+            const auto options = ev::make_session_options(config, {});
+
+            THEN("the three SAE fields arrive unchanged") {
+                REQUIRE(options.sae_profile.inverter_serial_number == "SN-TEST");
+                REQUIRE(options.sae_profile.supported_modes == 0x40U);
+                REQUIRE(options.cpd_rounds == 4);
+                REQUIRE(options.der_stop_on_invalid_control == true);
+            }
         }
     }
 }

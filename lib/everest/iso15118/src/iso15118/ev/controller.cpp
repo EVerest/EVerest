@@ -13,6 +13,7 @@
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/detail/io/socket_helper.hpp>
 #include <iso15118/ev/d20/timeouts.hpp>
+#include <iso15118/ev/detail/session_options.hpp>
 #include <iso15118/ev/sap_offer.hpp>
 
 namespace iso15118::ev {
@@ -39,21 +40,6 @@ private:
     F m_f;
 };
 
-d20::SessionOptions make_session_options(const EvConfig& config, std::vector<OfferedProtocol> offer) {
-    d20::SessionOptions options;
-    options.control_mode = config.control_mode;
-    options.supported_auth_options = config.supported_auth_options;
-    options.has_cp_state_feedback = config.has_cp_state_feedback;
-    options.authorization_timeout = config.authorization_timeout;
-    if (config.resume.has_value()) {
-        options.resumed_session_id = config.resume->session_id;
-    }
-    options.offered_protocols = std::move(offer);
-    options.der_control_functions = config.der_control_functions;
-    options.der_stop_on_unsupported_functions = config.der_stop_on_unsupported_functions;
-    return options;
-}
-
 std::vector<OfferedProtocol> make_offer(const EvConfig& config) {
     if (not config.advertised_app_protocols.empty()) {
         return offer_from_app_protocols(config.advertised_app_protocols);
@@ -70,6 +56,24 @@ std::vector<OfferedProtocol> make_offer(const EvConfig& config) {
 }
 
 } // namespace
+
+d20::SessionOptions make_session_options(const EvConfig& config, std::vector<OfferedProtocol> offer) {
+    d20::SessionOptions options;
+    options.control_mode = config.control_mode;
+    options.supported_auth_options = config.supported_auth_options;
+    options.has_cp_state_feedback = config.has_cp_state_feedback;
+    options.authorization_timeout = config.authorization_timeout;
+    if (config.resume.has_value()) {
+        options.resumed_session_id = config.resume->session_id;
+    }
+    options.offered_protocols = std::move(offer);
+    options.der_control_functions = config.der_control_functions;
+    options.der_stop_on_unsupported_functions = config.der_stop_on_unsupported_functions;
+    options.sae_profile = config.sae_profile;
+    options.cpd_rounds = config.cpd_rounds;
+    options.der_stop_on_invalid_control = config.der_stop_on_invalid_control;
+    return options;
+}
 
 Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcChargeParams initial_dc_params,
                        AcChargeParams initial_ac_params) :
