@@ -5,7 +5,6 @@
 #include "ocpp/v2/ocpp_enums.hpp"
 #include "ocpp/v2/ocpp_types.hpp"
 #include <boost/algorithm/string/join.hpp>
-#include <boost/range/adaptor/transformed.hpp>
 #include <everest/database/sqlite/statement.hpp>
 #include <numeric>
 #include <ocpp/common/message_queue.hpp>
@@ -29,6 +28,19 @@ std::int64_t to_unix_milliseconds(const DateTime& dt) {
 
 DateTime from_unix_milliseconds(std::int64_t ms_since_epoch) {
     return DateTime(date::utc_clock::time_point(std::chrono::milliseconds(ms_since_epoch)));
+}
+
+std::string placeholder_name(const std::string& prefix, std::size_t index) {
+    return "@" + prefix + "_" + std::to_string(index);
+}
+
+std::string placeholder_list(const std::string& prefix, std::size_t count) {
+    std::vector<std::string> names;
+    names.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        names.push_back(placeholder_name(prefix, i));
+    }
+    return boost::algorithm::join(names, ", ");
 }
 } // namespace
 
@@ -887,12 +899,8 @@ DatabaseHandler::get_charging_profiles_matching_criteria(const std::optional<std
     }
 
     if (criteria.chargingProfileId.has_value() && !criteria.chargingProfileId->empty()) {
-        const std::string profile_ids =
-            boost::algorithm::join(criteria.chargingProfileId.value() |
-                                       boost::adaptors::transformed([](std::int32_t id) { return std::to_string(id); }),
-                                   ", ");
-
-        where_clauses.push_back("ID IN (" + profile_ids + ")");
+        const auto& profile_ids = criteria.chargingProfileId.value();
+        where_clauses.push_back("ID IN (" + placeholder_list("profile_id", profile_ids.size()) + ")");
 
         select_stmt += " WHERE " + boost::algorithm::join(where_clauses, " AND ");
 
@@ -902,7 +910,16 @@ DatabaseHandler::get_charging_profiles_matching_criteria(const std::optional<std
             stmt->bind_int("@evse_id", evse_id.value());
         }
 
+<<<<<<< HEAD
         while (stmt->step() != SQLITE_DONE) {
+=======
+        for (std::size_t i = 0; i < profile_ids.size(); i++) {
+            stmt->bind_int(placeholder_name("profile_id", i), profile_ids[i]);
+        }
+
+        int status = SQLITE_ERROR;
+        while ((status = stmt->step()) == SQLITE_ROW) {
+>>>>>>> c4fa1ab (fix(libocpp): bind GetChargingProfiles criteria (#2861))
             results.emplace_back(json::parse(stmt->column_text(1)), // profile
                                  stmt->column_int(0),               // EVSE ID
                                  CiString<20>(stmt->column_text(2)) // source
@@ -920,12 +937,8 @@ DatabaseHandler::get_charging_profiles_matching_criteria(const std::optional<std
     }
 
     if (criteria.chargingLimitSource.has_value() && !criteria.chargingLimitSource->empty()) {
-        const std::string sources = boost::algorithm::join(
-            criteria.chargingLimitSource.value() |
-                boost::adaptors::transformed([](CiString<20> source) { return "'" + source.get() + "'"; }),
-            ", ");
-
-        where_clauses.push_back("CHARGING_LIMIT_SOURCE IN (" + sources + ")");
+        where_clauses.push_back("CHARGING_LIMIT_SOURCE IN (" +
+                                placeholder_list("charging_limit_source", criteria.chargingLimitSource->size()) + ")");
     }
 
     if (!where_clauses.empty()) {
@@ -942,6 +955,13 @@ DatabaseHandler::get_charging_profiles_matching_criteria(const std::optional<std
 
     if (criteria.stackLevel.has_value()) {
         stmt->bind_int("@stack_level", criteria.stackLevel.value());
+    }
+
+    if (criteria.chargingLimitSource.has_value()) {
+        const auto& sources = criteria.chargingLimitSource.value();
+        for (std::size_t i = 0; i < sources.size(); i++) {
+            stmt->bind_text(placeholder_name("charging_limit_source", i), sources[i].get(), SQLiteString::Transient);
+        }
     }
 
     if (evse_id.has_value()) {

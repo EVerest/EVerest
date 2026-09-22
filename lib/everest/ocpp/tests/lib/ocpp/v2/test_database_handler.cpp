@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "comparators.hpp"
 #include "database_testing_utils.hpp"
@@ -997,6 +997,51 @@ TEST_F(DatabaseHandlerTest, GetChargingProfilesMatchingCriteria_MatchingProfileS
         this->database_handler.get_charging_profiles_matching_criteria(std::nullopt, criteria);
 
     EXPECT_EQ(sut.size(), 3);
+}
+
+TEST_F(DatabaseHandlerTest, GetChargingProfilesMatchingCriteria_QuotedChargingLimitSourceIsNotInterpretedAsSql) {
+    ChargingProfile profile1;
+    profile1.id = 1;
+    profile1.stackLevel = 1;
+    profile1.chargingProfilePurpose = ChargingProfilePurposeEnum::TxDefaultProfile;
+    profile1.chargingProfileKind = ChargingProfileKindEnum::Absolute;
+    this->database_handler.insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile1,
+                                                             ChargingLimitSourceEnumStringType::CSO);
+
+    ChargingProfile profile2;
+    profile2.id = 2;
+    profile2.stackLevel = 2;
+    profile2.chargingProfilePurpose = ChargingProfilePurposeEnum::TxProfile;
+    profile2.chargingProfileKind = ChargingProfileKindEnum::Absolute;
+    this->database_handler.insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile2,
+                                                             ChargingLimitSourceEnumStringType::EMS);
+
+    auto profiles = this->database_handler.get_all_charging_profiles();
+    EXPECT_EQ(profiles.size(), 2);
+
+    ChargingProfileCriterion criteria;
+    criteria.chargingLimitSource = {{CiString<20>("') OR 1=1--")}};
+
+    std::vector<ReportedChargingProfile> sut =
+        this->database_handler.get_charging_profiles_matching_criteria(std::nullopt, criteria);
+
+    EXPECT_EQ(sut.size(), 0);
+}
+
+TEST_F(DatabaseHandlerTest, GetChargingProfilesMatchingCriteria_QuoteInChargingLimitSourceDoesNotThrow) {
+    ChargingProfile profile;
+    profile.id = 1;
+    profile.stackLevel = 1;
+    profile.chargingProfilePurpose = ChargingProfilePurposeEnum::TxDefaultProfile;
+    profile.chargingProfileKind = ChargingProfileKindEnum::Absolute;
+    this->database_handler.insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+
+    ChargingProfileCriterion criteria;
+    criteria.chargingLimitSource = {{CiString<20>("Oh'no")}};
+
+    std::vector<ReportedChargingProfile> sut;
+    EXPECT_NO_THROW(sut = this->database_handler.get_charging_profiles_matching_criteria(std::nullopt, criteria));
+    EXPECT_EQ(sut.size(), 0);
 }
 
 TEST_F(DatabaseHandlerTest, GetChargingProfilesMatchingCriteria_AllCriteriaSetReturnsOne) {
