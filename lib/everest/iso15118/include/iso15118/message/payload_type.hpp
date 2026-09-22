@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 // FIXME (aw): how to streamline this with type.hpp?
@@ -42,6 +42,8 @@ CREATE_TYPE_TRAIT(AC_ChargeLoopRequest, Part20AC);
 CREATE_TYPE_TRAIT(DC_ChargeLoopRequest, Part20DC);
 CREATE_TYPE_TRAIT(DER_AC_ChargeParameterDiscoveryRequest, Part20DerIec);
 CREATE_TYPE_TRAIT(DER_AC_ChargeLoopRequest, Part20DerIec);
+CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeParameterDiscoveryRequest, Part20DerSae);
+CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeLoopRequest, Part20DerSae);
 
 CREATE_TYPE_TRAIT(SupportedAppProtocolResponse, SAP);
 CREATE_TYPE_TRAIT(SessionSetupResponse, Part20Main);

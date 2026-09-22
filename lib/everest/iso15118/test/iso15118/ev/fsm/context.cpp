@@ -12,6 +12,10 @@
 #include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/der_control_functions.hpp>
+#include <iso15118/ev/sae_inverter_profile.hpp>
+#include <iso15118/message/ac_der_sae_charge_loop.hpp>
+#include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
+#include <iso15118/sae_modes.hpp>
 
 using namespace iso15118;
 
@@ -240,6 +244,107 @@ SCENARIO("ISO15118-20 EV Context exposes the configured DER supported functions"
             }
         }
     }
+}
+
+SCENARIO("ISO15118-20 EV Context exposes the SAE session options") {
+
+    const ev::feedback::Callbacks callbacks{};
+
+    GIVEN("A Context constructed with default SessionOptions") {
+
+        FsmStateHelper helper{callbacks,
+                              {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                              message_20::datatypes::ServiceCategory::AC_DER_SAE};
+        auto& ctx = helper.get_context();
+
+        THEN("the accessors return the SessionOptions defaults") {
+            REQUIRE(ctx.sae_profile().supported_modes == ev::SaeInverterProfile{}.supported_modes);
+            REQUIRE(ctx.sae_supported_modes() == ev::SaeInverterProfile{}.supported_modes);
+            REQUIRE(ctx.cpd_rounds() == 1);
+            REQUIRE(ctx.der_stop_on_invalid_control() == false);
+        }
+    }
+
+    GIVEN("A Context constructed with SAE SessionOptions and unused SupportedModes bits") {
+
+        ev::d20::SessionOptions options{};
+        options.sae_profile.supported_modes = sae::sae_function_bit(sae::DerBitMapFunctions::ChargeFunction) |
+                                              sae::sae_function_bit(sae::DerBitMapFunctions::VoltVarFunction) |
+                                              (1U << 2) | (1U << 25) | (1U << 31);
+        options.sae_profile.inverter_model = "TEST-MODEL";
+        options.cpd_rounds = 3;
+        options.der_stop_on_invalid_control = true;
+
+        FsmStateHelper helper{callbacks,
+                              {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                              message_20::datatypes::ServiceCategory::AC_DER_SAE,
+                              options};
+        auto& ctx = helper.get_context();
+
+        THEN("the accessors return the configured values") {
+            REQUIRE(ctx.sae_profile().inverter_model == "TEST-MODEL");
+            REQUIRE(ctx.sae_profile().supported_modes == options.sae_profile.supported_modes);
+            REQUIRE(ctx.cpd_rounds() == 3);
+            REQUIRE(ctx.der_stop_on_invalid_control() == true);
+        }
+
+        THEN("sae_supported_modes() drops the bits AMD1 Table M.6 does not use") {
+            REQUIRE(ctx.sae_supported_modes() == (sae::sae_function_bit(sae::DerBitMapFunctions::ChargeFunction) |
+                                                  sae::sae_function_bit(sae::DerBitMapFunctions::VoltVarFunction)));
+        }
+
+        WHEN("more CPD rounds are noted than cpd_rounds()") {
+            REQUIRE(ctx.cpd_rounds_sent() == 0);
+
+            THEN("the count rises by one per round and saturates at cpd_rounds()") {
+                for (const int expected : {1, 2, 3, 3, 3}) {
+                    ctx.note_cpd_round_sent();
+                    REQUIRE(ctx.cpd_rounds_sent() == expected);
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Context holds the session SAE state") {
+
+    const ev::feedback::Callbacks callbacks{};
+
+    GIVEN("A freshly constructed Context") {
+
+        FsmStateHelper helper{callbacks,
+                              {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                              message_20::datatypes::ServiceCategory::AC_DER_SAE};
+        auto& ctx = helper.get_context();
+
+        THEN("nothing is enabled, the service is permitted and no update time is recorded") {
+            REQUIRE(ctx.sae_enabled_modes() == 0);
+            REQUIRE(ctx.cpd_rounds_sent() == 0);
+            REQUIRE(ctx.sae_permit_service() == true);
+            REQUIRE(ctx.sae_settings_update_time() == 0);
+        }
+
+        WHEN("each value is set") {
+            const auto modes = sae::sae_function_bit(sae::DerBitMapFunctions::EnterService) |
+                               sae::sae_function_bit(sae::DerBitMapFunctions::VoltWattFunction);
+            ctx.set_sae_enabled_modes(modes);
+            ctx.set_sae_permit_service(false);
+            ctx.set_sae_settings_update_time(1691411798000000U);
+
+            THEN("its accessor returns it") {
+                REQUIRE(ctx.sae_enabled_modes() == modes);
+                REQUIRE(ctx.sae_permit_service() == false);
+                REQUIRE(ctx.sae_settings_update_time() == 1691411798000000U);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Codec sends AC_DER_SAE requests as Part20DerSae") {
+    STATIC_REQUIRE(ev::d20::Codec::payload_type_of<message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest>() ==
+                   io::v2gtp::PayloadType::Part20DerSae);
+    STATIC_REQUIRE(ev::d20::Codec::payload_type_of<message_20::DER_SAE_AC_ChargeLoopRequest>() ==
+                   io::v2gtp::PayloadType::Part20DerSae);
 }
 
 SCENARIO("ISO15118-20 EV Context encodes a request that round-trips back to the same message") {

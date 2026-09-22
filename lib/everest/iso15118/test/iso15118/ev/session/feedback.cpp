@@ -2,6 +2,7 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <variant>
@@ -147,6 +148,66 @@ SCENARIO("ISO15118-20 EV Feedback session-level signals") {
             REQUIRE_NOTHROW(feedback.pause_from_charger());
             REQUIRE_NOTHROW(feedback.dc_evse_present_limits({}));
             REQUIRE_NOTHROW(feedback.v2g_message(iso15118::message_20::Type::SessionStopRes));
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Feedback AC_DER_SAE signals") {
+    namespace dt_sae = iso15118::message_20::datatypes::sae;
+    feedback::Callbacks callbacks;
+
+    GIVEN("the sae_cpd_limits, sae_der_control and der_enabled_modes callbacks are set") {
+        std::vector<dt_sae::DER_SAE_AC_CPDResEnergyTransferMode> cpd_modes;
+        std::vector<DerControlProblems> cpd_problems;
+        std::vector<dt_sae::DER_Dynamic_AC_CLResControlMode> controls;
+        std::vector<DerControlProblems> control_problems;
+        std::vector<std::uint32_t> enabled_modes;
+        callbacks.sae_cpd_limits = [&](const dt_sae::DER_SAE_AC_CPDResEnergyTransferMode& mode,
+                                       const DerControlProblems& problems) {
+            cpd_modes.push_back(mode);
+            cpd_problems.push_back(problems);
+        };
+        callbacks.sae_der_control = [&](const dt_sae::DER_Dynamic_AC_CLResControlMode& control,
+                                        const DerControlProblems& problems) {
+            controls.push_back(control);
+            control_problems.push_back(problems);
+        };
+        callbacks.der_enabled_modes = [&](std::uint32_t modes) { enabled_modes.push_back(modes); };
+        const auto feedback = Feedback(callbacks);
+
+        WHEN("each is invoked") {
+            dt_sae::DER_SAE_AC_CPDResEnergyTransferMode mode{};
+            mode.processing = iso15118::message_20::datatypes::Processing::Finished;
+            dt_sae::DER_Dynamic_AC_CLResControlMode control{};
+            control.target_active_power = {7400, -1};
+            control.der_control_cl_res.enter_service_cl_res.permit_service = true;
+            const DerControlProblems problems{"volt_var curve carries one point"};
+
+            feedback.sae_cpd_limits(mode, problems);
+            feedback.sae_der_control(control, {});
+            feedback.der_enabled_modes(0x40U);
+
+            THEN("every argument reaches its callback once, the problems with their payload") {
+                REQUIRE(cpd_modes.size() == 1);
+                REQUIRE(cpd_modes[0].processing == iso15118::message_20::datatypes::Processing::Finished);
+                REQUIRE(cpd_problems == std::vector<DerControlProblems>{problems});
+                REQUIRE(controls.size() == 1);
+                REQUIRE(controls[0].target_active_power.value == 7400);
+                REQUIRE(controls[0].target_active_power.exponent == -1);
+                REQUIRE(controls[0].der_control_cl_res.enter_service_cl_res.permit_service == true);
+                REQUIRE(control_problems == std::vector<DerControlProblems>{DerControlProblems{}});
+                REQUIRE(enabled_modes == std::vector<std::uint32_t>{0x40U});
+            }
+        }
+    }
+
+    GIVEN("no AC_DER_SAE callbacks are set") {
+        const auto feedback = Feedback(callbacks);
+
+        THEN("invoking each signal is a safe no-op") {
+            REQUIRE_NOTHROW(feedback.sae_cpd_limits({}, DerControlProblems{"problem"}));
+            REQUIRE_NOTHROW(feedback.sae_der_control({}, {}));
+            REQUIRE_NOTHROW(feedback.der_enabled_modes(0x40U));
         }
     }
 }
