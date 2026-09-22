@@ -43,9 +43,8 @@ active_modules:
   iso15118_car:
     module: Ev15118
     config_module:
+      supported_protocols: ISO15118_20,ISO15118_2,DIN70121
       device: auto
-      supported_DIN70121: true
-      supported_ISO15118_2: true
   evse_manager:
     module: EvseManager
     config_module:

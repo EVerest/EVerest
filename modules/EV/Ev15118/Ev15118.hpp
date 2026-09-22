@@ -24,14 +24,11 @@ struct Conf {
     std::string evcc_id;
     int response_timeout_ms;
     int authorization_timeout_ms;
-    std::string d20_control_mode;
-    bool supported_ISO15118_20;
-    bool supported_DIN70121;
-    bool supported_ISO15118_2;
-    bool tls_active;
-    bool enforce_tls;
+    std::string control_mode;
+    std::string supported_protocols;
+    std::string tls;
     bool allow_pnc_without_tls;
-    bool enable_tls_1_3;
+    std::string tls_version;
     bool verify_server_certificate;
     bool enable_tls_key_logging;
     std::string tls_key_logging_path;
@@ -51,6 +48,7 @@ struct Conf {
     std::string pnc_oem_prov_key_path;
     std::string pnc_oem_prov_key_password_path;
     bool pnc_force_cert_install;
+    std::string pnc_contract_store_dir;
     int ac_phase_count;
     double ac_max_charge_power_w;
     double ac_min_charge_power_w;
@@ -72,6 +70,9 @@ struct Conf {
     double dc_max_discharge_power_w;
     double dc_min_discharge_power_w;
     double dc_max_discharge_current_a;
+    std::string sae_inverter_profile_path;
+    int cpd_rounds;
+    bool der_stop_on_invalid_control;
 };
 
 class Ev15118 : public Everest::ModuleBase {

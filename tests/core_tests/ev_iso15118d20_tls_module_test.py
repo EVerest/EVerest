@@ -14,28 +14,30 @@ from everest.testing.core_utils.controller.test_controller_interface import (
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.probe_module import ProbeModule
 
-from ev_iso15118d20_common import _ev_config_adaptions, wait_for_call
+from ev_iso15118d20_common import _ev_config_adaptions, wait_for_call, wait_for_v2g_message
 
 
 D20_DC_PROTOCOL = "ISO15118-20:DC"
+# The DC charge-loop response id the EV reports in v2g_messages.
+D20_DC_CHARGE_LOOP_RES = "DcChargeLoopRes"
+
+DC_AUTO_EXEC = (
+    "sleep 1;iso_wait_slac_matched;iso_start_v2g_session DC;"
+    "iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 10;"
+    "iso_wait_v2g_session_stopped;unplug"
+)
+
+PROBE_CONNECTIONS = {
+    "charger": [Requirement("iso15118_charger", "charger")],
+    "ev": [Requirement("iso15118_car", "ev")],
+}
 
 
 @pytest.mark.asyncio
 @pytest.mark.xdist_group(name="ISO15118")
-@pytest.mark.probe_module(
-    connections={
-        "charger": [Requirement("iso15118_charger", "charger")],
-        "ev": [Requirement("iso15118_car", "ev")],
-    }
-)
+@pytest.mark.probe_module(connections=PROBE_CONNECTIONS)
 @pytest.mark.everest_core_config("config-sil-dc-d20-tls.yaml")
-@pytest.mark.everest_config_adaptions(
-    *_ev_config_adaptions(
-        "sleep 1;iso_wait_slac_matched;iso_start_v2g_session DC;"
-        "iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 10;"
-        "iso_wait_v2g_session_stopped;unplug"
-    )
-)
+@pytest.mark.everest_config_adaptions(*_ev_config_adaptions(DC_AUTO_EXEC))
 async def test_ev_iso15118d20_tls_dc_charge_loop(
     test_controller: TestController, everest_core: EverestCore
 ):
@@ -45,10 +47,12 @@ async def test_ev_iso15118d20_tls_dc_charge_loop(
 
     selected_protocol_mock = Mock()
     dc_power_on_mock = Mock()
+    v2g_messages_mock = Mock()
     finished_mock = Mock()
 
     probe_module.subscribe_variable("charger", "selected_protocol", selected_protocol_mock)
     probe_module.subscribe_variable("ev", "dc_power_on", dc_power_on_mock)
+    probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
     probe_module.subscribe_variable("ev", "v2g_session_finished", finished_mock)
 
     probe_module.start()
@@ -58,4 +62,6 @@ async def test_ev_iso15118d20_tls_dc_charge_loop(
     assert selected_protocol_mock.call_args[0][0] == D20_DC_PROTOCOL
 
     await wait_for_call(dc_power_on_mock, timeout=30)
+    await wait_for_v2g_message(v2g_messages_mock, D20_DC_CHARGE_LOOP_RES, timeout=30, min_count=2)
     await wait_for_call(finished_mock, timeout=40)
+

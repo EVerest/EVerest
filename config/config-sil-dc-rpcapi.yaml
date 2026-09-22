@@ -13,9 +13,7 @@ active_modules:
     module: Ev15118
     config_module:
       device: auto
-      supported_ISO15118_20: false
-      supported_DIN70121: true
-      supported_ISO15118_2: true
+      supported_protocols: ISO15118_2,DIN70121
   evse_manager:
     module: EvseManager
     mapping:

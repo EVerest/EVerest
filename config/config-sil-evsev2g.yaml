@@ -125,7 +125,7 @@ active_modules:
     config_module:
       device: auto
       response_timeout_ms: 8000
-      supported_ISO15118_2: true
+      supported_protocols: ISO15118_2
       ac_phase_count: 3
       iso2_ac_e_amount_wh: 60000
       iso2_ac_ev_max_voltage_v: 400

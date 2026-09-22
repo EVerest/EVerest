@@ -10,10 +10,9 @@ active_modules:
   iso15118_ev:
     module: Ev15118
     config_module:
+      supported_protocols: ISO15118_20,ISO15118_2,DIN70121
       device: cb_ev_plc
-      supported_DIN70121: true
-      supported_ISO15118_2: true
-      tls_active: false
+      tls: "off"
   ev_bsp_1:
     module: ev_board_support_API
     config_module:

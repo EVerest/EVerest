@@ -4,14 +4,11 @@
 
 """SIL gates for the ISO 15118-2 / DIN SPEC 70121 engines of the C++ EVCC (Ev15118).
 
-The EIM tests use EvseV2G, which speaks -2 and DIN but not -20, so the SAP handshake
-selects the pre-20 generation from the EV's offer. The Plug & Charge test uses Evse15118D20
-with ISO 15118-20 left out of its offer. Each test requires Ev15118 and its SECC module;
-it is skipped when either module or its config is missing from the everest prefix.
+The SECC is Evse15118D20 with ISO 15118-20 left out of its offer, so the SAP handshake
+selects the pre-20 generation from the EV's offer.
 """
 
 from copy import deepcopy
-from pathlib import Path
 from typing import Dict, List
 from unittest.mock import Mock
 
@@ -26,17 +23,21 @@ from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.probe_module import ProbeModule
 from everest.testing.core_utils import EverestConfigAdjustmentStrategy
 
-from ev_iso15118d20_common import _ev_config_adaptions, wait_for_call
+from ev_iso15118d20_common import _ev_config_adaptions, wait_for_call, wait_for_v2g_message
 
 
-# selected_protocol literals published by EvseV2G (v2g_server.cpp) and Evse15118D20 (sap_engine.cpp).
+# selected_protocol literals published by Evse15118D20 (sap_engine.cpp).
 DIN_PROTOCOL = "DIN70121"
 ISO2_PROTOCOL = "ISO15118-2-2013"
 
-DC_CONFIG = "config-sil-dc-evsev2g.yaml"
-DC_TLS_CONFIG = "config-sil-dc-tls-evsev2g.yaml"
-DC_TLS_PNC_CONFIG = "config-sil-dc-tls.yaml"
-AC_CONFIG = "config-sil-evsev2g.yaml"
+# Charge-loop response ids the EV reports in v2g_messages, the same for DIN and -2.
+DC_CHARGE_LOOP_RES = "CurrentDemandRes"
+AC_CHARGE_LOOP_RES = "ChargingStatusRes"
+
+DC_CONFIG = "config-sil-dc-d20-iso2-din.yaml"
+DC_TLS_CONFIG = "config-sil-dc-d20-iso2-tls.yaml"
+DC_TLS_PNC_CONFIG = "config-sil-dc-d20-iso2-tls-pnc.yaml"
+AC_CONFIG = "config-sil-ac-d20-iso2.yaml"
 
 # The whole DC flow, event-gated after the initial settling sleep.
 DC_AUTO_EXEC = (
@@ -49,45 +50,13 @@ DC_PNC_AUTO_EXEC = (
     "iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 10;"
     "iso_wait_v2g_session_stopped;unplug"
 )
-# AC has no power-on step; hold the charge loop briefly, then stop.
+# iso_wait_pwr_ready moves the EV to CP state C, so the EvseManager closes the contactor that
+# PowerDelivery(Start) waits for; the EV then holds the charge loop briefly and stops.
 AC_AUTO_EXEC = (
     "sleep 1;iso_wait_slac_matched;iso_start_v2g_session AC;"
+    "iso_wait_pwr_ready;iso_draw_power_regulated 16,3;"
     "sleep 5;iso_stop_charging;iso_wait_v2g_session_stopped;unplug"
 )
-
-
-def _everest_prefix(request) -> Path:
-    """The --everest-prefix option; a relative value is resolved the way core_config does."""
-    prefix = Path(request.config.getoption("--everest-prefix"))
-    if prefix.is_absolute():
-        return prefix
-    candidates = [
-        (Path.cwd() / prefix).resolve(),
-        (request.config.rootpath / prefix).resolve(),
-        (request.config.rootpath.parent / prefix).resolve(),
-    ]
-    return next((path for path in candidates if path.exists()), candidates[0])
-
-
-@pytest.fixture
-def required_modules():
-    return ("Ev15118", "EvseV2G")
-
-
-@pytest.fixture(autouse=True)
-def require_everest_artifacts(request, required_modules):
-    """Skip when a required module or the test's config is missing from the everest prefix.
-
-    Autouse rather than a decorator: the prefix is only known once pytest has parsed its
-    options, which is after collection.
-    """
-    prefix = _everest_prefix(request)
-    for module in required_modules:
-        if not (prefix / "libexec/everest/modules" / module).exists():
-            pytest.skip(f"{module} is not built into the everest prefix")
-    marker = request.node.get_closest_marker("everest_core_config")
-    if marker and marker.args and not (prefix / "etc/everest" / marker.args[0]).exists():
-        pytest.skip(f"{marker.args[0]} is not installed")
 
 
 class EvProtocolAdjustmentStrategy(EverestConfigAdjustmentStrategy):
@@ -103,45 +72,6 @@ class EvProtocolAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         return adjusted_config
 
 
-class Iso2TlsPncAdjustmentStrategy(EverestConfigAdjustmentStrategy):
-    """Turn config-sil-dc-tls.yaml into an ISO 15118-2 Plug & Charge session over TLS 1.2.
-
-    Evse15118D20 drops -20 and DIN from its offer and the EvseManager offers Contract; the EV
-    is Ev15118 with PnC, presenting the installed MO contract certificate (etc/everest/certs/
-    client/mo) in PaymentDetails and signing the AuthorizationReq.
-    """
-
-    def adjust_everest_configuration(self, everest_config: Dict) -> Dict:
-        adjusted_config = deepcopy(everest_config)
-        modules = adjusted_config["active_modules"]
-        charger = modules["iso15118_charger"]["config_module"]
-        charger["supported_ISO15118_20"] = False
-        charger["supported_DIN70121"] = False
-        charger["enforce_tls_1_3"] = False
-        # The SECC only offers Contract over TLS.
-        modules["evse_manager"]["config_module"]["payment_enable_contract"] = True
-        # An EIM authorization before the V2G session makes EvseManager offer ExternalPayment only,
-        # so the token comes from EvseManager, fed by require_auth_pnc, and not from an EIM provider.
-        modules["auth"]["connections"]["token_provider"] = [
-            {"module_id": "evse_manager", "implementation_id": "token_provider"}
-        ]
-        modules.pop("token_provider", None)
-        car = modules["iso15118_car"]
-        car["module"] = "Ev15118"
-        car["config_module"] = {
-            "device": car["config_module"].get("device", "auto"),
-            "response_timeout_ms": 8000,
-            "supported_DIN70121": False,
-            "supported_ISO15118_2": True,
-            "tls_active": True,
-            "enforce_tls": True,
-            "enable_tls_1_3": False,
-            "enable_tls_key_logging": True,
-            "enable_pnc": True,
-        }
-        return adjusted_config
-
-
 def _dc_adaptions(auto_exec: str = DC_AUTO_EXEC, **car_keys) -> List[EverestConfigAdjustmentStrategy]:
     adaptions = list(_ev_config_adaptions(auto_exec))
     if car_keys:
@@ -150,15 +80,17 @@ def _dc_adaptions(auto_exec: str = DC_AUTO_EXEC, **car_keys) -> List[EverestConf
 
 
 async def _run_dc_session(everest_core: EverestCore, expected_protocol: str):
-    """Drive the auto_exec DC flow and assert the negotiated protocol and a clean end."""
+    """Drive the auto_exec DC flow and assert the negotiated protocol, two charge-loop exchanges and a clean end."""
     probe_module = ProbeModule(everest_core.get_runtime_session())
 
     selected_protocol_mock = Mock()
     dc_power_on_mock = Mock()
+    v2g_messages_mock = Mock()
     finished_mock = Mock()
 
     probe_module.subscribe_variable("charger", "selected_protocol", selected_protocol_mock)
     probe_module.subscribe_variable("ev", "dc_power_on", dc_power_on_mock)
+    probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
     probe_module.subscribe_variable("ev", "v2g_session_finished", finished_mock)
 
     probe_module.start()
@@ -171,6 +103,7 @@ async def _run_dc_session(everest_core: EverestCore, expected_protocol: str):
     )
 
     await wait_for_call(dc_power_on_mock, timeout=30)
+    await wait_for_v2g_message(v2g_messages_mock, DC_CHARGE_LOOP_RES, timeout=30, min_count=2)
     await wait_for_call(finished_mock, timeout=40)
 
 
@@ -184,7 +117,7 @@ PROBE_CONNECTIONS = {
 @pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(connections=PROBE_CONNECTIONS)
 @pytest.mark.everest_core_config(DC_CONFIG)
-@pytest.mark.everest_config_adaptions(*_dc_adaptions(supported_ISO15118_2=False, supported_DIN70121=True))
+@pytest.mark.everest_config_adaptions(*_dc_adaptions(supported_protocols="ISO15118_20,DIN70121"))
 async def test_ev_din70121_dc_charge_loop(
     test_controller: TestController, everest_core: EverestCore
 ):
@@ -203,7 +136,7 @@ async def test_ev_iso15118_2_dc_charge_loop(
 ):
     """ISO 15118-2 DC charge loop over plain TCP with EIM.
 
-    The EV offers -2 ahead of DIN, and EvseV2G honors the EV's priority order.
+    The EV and the SECC both rank -2 ahead of DIN.
     """
     test_controller.start()
     await _run_dc_session(everest_core, ISO2_PROTOCOL)
@@ -226,12 +159,11 @@ async def test_ev_iso15118_2_dc_tls_charge_loop(
 @pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(connections=PROBE_CONNECTIONS)
 @pytest.mark.everest_core_config(DC_TLS_PNC_CONFIG)
-@pytest.mark.parametrize("required_modules", [("Ev15118", "Evse15118D20")])
-@pytest.mark.everest_config_adaptions(*_dc_adaptions(DC_PNC_AUTO_EXEC), Iso2TlsPncAdjustmentStrategy())
+@pytest.mark.everest_config_adaptions(*_dc_adaptions(DC_PNC_AUTO_EXEC))
 async def test_ev_iso15118_2_dc_tls_pnc_charge_loop(
     test_controller: TestController, everest_core: EverestCore
 ):
-    """ISO 15118-2 DC charge loop over TLS 1.2 with Plug & Charge, against Evse15118D20.
+    """ISO 15118-2 DC charge loop over TLS 1.2 with Plug & Charge.
 
     The EvManager selects the Contract payment option; the EV presents the installed MO
     contract certificate in PaymentDetails and signs the AuthorizationReq. require_auth_pnc
@@ -244,11 +176,13 @@ async def test_ev_iso15118_2_dc_tls_pnc_charge_loop(
     selected_protocol_mock = Mock()
     require_auth_pnc_mock = Mock()
     dc_power_on_mock = Mock()
+    v2g_messages_mock = Mock()
     finished_mock = Mock()
 
     probe_module.subscribe_variable("charger", "selected_protocol", selected_protocol_mock)
     probe_module.subscribe_variable("charger", "require_auth_pnc", require_auth_pnc_mock)
     probe_module.subscribe_variable("ev", "dc_power_on", dc_power_on_mock)
+    probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
     probe_module.subscribe_variable("ev", "v2g_session_finished", finished_mock)
 
     probe_module.start()
@@ -267,6 +201,7 @@ async def test_ev_iso15118_2_dc_tls_pnc_charge_loop(
     )
 
     await wait_for_call(dc_power_on_mock, timeout=30)
+    await wait_for_v2g_message(v2g_messages_mock, DC_CHARGE_LOOP_RES, timeout=30, min_count=2)
     await wait_for_call(finished_mock, timeout=40)
 
 
@@ -280,16 +215,18 @@ async def test_ev_iso15118_2_ac_session(
 ):
     """ISO 15118-2 AC session over plain TCP with EIM.
 
-    AC has no power-on handshake, so the gate is protocol selection plus a clean
-    SessionStop reported by the EV.
+    The gate is protocol selection, a ChargingStatus exchange and a clean SessionStop
+    reported by the EV.
     """
     test_controller.start()
     probe_module = ProbeModule(everest_core.get_runtime_session())
 
     selected_protocol_mock = Mock()
+    v2g_messages_mock = Mock()
     finished_mock = Mock()
 
     probe_module.subscribe_variable("charger", "selected_protocol", selected_protocol_mock)
+    probe_module.subscribe_variable("ev", "v2g_messages", v2g_messages_mock)
     probe_module.subscribe_variable("ev", "v2g_session_finished", finished_mock)
 
     probe_module.start()
@@ -301,4 +238,5 @@ async def test_ev_iso15118_2_ac_session(
         f"selected_protocol '{selected_protocol}' != expected '{ISO2_PROTOCOL}'"
     )
 
+    await wait_for_v2g_message(v2g_messages_mock, AC_CHARGE_LOOP_RES, timeout=30, min_count=2)
     await wait_for_call(finished_mock, timeout=40)

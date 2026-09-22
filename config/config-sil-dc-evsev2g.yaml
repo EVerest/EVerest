@@ -16,8 +16,7 @@ active_modules:
     config_module:
       device: auto
       response_timeout_ms: 8000
-      supported_ISO15118_2: true
-      supported_DIN70121: true
+      supported_protocols: ISO15118_20,ISO15118_2,DIN70121
   evse_manager:
     module: EvseManager
     config_module:

@@ -14,21 +14,27 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <everest/util/async/monitor.hpp>
 
-#include <iso15118/ev/ac_charge_params.hpp>
-#include <iso15118/ev/config.hpp>
+#include <iso15118/ev/config/config.hpp>
 #include <iso15118/ev/controller.hpp>
 #include <iso15118/ev/d2/pnc_config.hpp>
-#include <iso15118/ev/dc_charge_params.hpp>
-#include <iso15118/ev/session/feedback.hpp>
-#include <iso15118/ev/session_params.hpp>
+#include <iso15118/ev/d20/der/sae_profile.hpp>
+#include <iso15118/ev/feedback.hpp>
+#include <iso15118/ev/params/ac.hpp>
+#include <iso15118/ev/params/dc.hpp>
+#include <iso15118/ev/params/energy_request.hpp>
+#include <iso15118/ev/params/iso2_ac.hpp>
 #include <iso15118/message/shared_datatypes.hpp>
+
+#include "contract_store.hpp"
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -87,14 +93,20 @@ private:
         // The worker gave up after repeated failures; start_charging must stop accepting work
         // it can no longer answer.
         bool worker_dead{false};
-        // A cancelled request owes a v2g_session_finished; the worker publishes it.
-        bool finish_pending{false};
+        // One v2g_session_finished per accepted start cancelled before its Controller existed;
+        // the worker publishes them before running the next session. A count, since a new start
+        // may follow before it wakes.
+        std::uint32_t finishes_owed{0};
+        // A stop or abort reached the running Controller; the session's pause is not kept,
+        // even when its loop had already ended and could no longer act on the request.
+        bool discard_pause{false};
         iso15118::ev::Controller* current{nullptr};
-        iso15118::ev::DcChargeParams dc_params;
-        // From set_bpt_dc_params; overlay the config values at start_charging.
+        iso15118::ev::params::DcChargeParams dc_params;
+        // From set_bpt_dc_params; overlay the config values at start_charging. Vehicle limits, like
+        // dc_params: they stay for every later BPT session until the next set_bpt_dc_params.
         std::optional<float> cmd_max_discharge_power;
         std::optional<float> cmd_max_discharge_current;
-        iso15118::ev::AcChargeParams ac_params;
+        iso15118::ev::params::AcChargeParams ac_params;
         iso15118::message_20::datatypes::ServiceCategory energy_service{
             iso15118::message_20::datatypes::ServiceCategory::DC};
         // ISO 15118-2 / DIN granularity of the requested EnergyTransferMode.
@@ -105,12 +117,17 @@ private:
         // the SECC does not offer it.
         bool eim_requested{false};
         bool enforce_contract{false};
+        // start_charging's EAmount and DepartureTime.
+        iso15118::ev::params::EnergyRequest energy_request;
         // Latched cp_state_changed report; replayed to every new Controller. Its presence
         // is what tells the stack the control pilot is reported at all.
         std::optional<bool> cp_c_or_d;
         // Left by the previous session when it ended with SessionStop(Pause); handed to the
         // next Controller as EvConfig::resume.
-        std::optional<iso15118::ev::PausedSession> paused;
+        std::optional<iso15118::ev::config::PausedSession> paused;
+        // Installed by the running or paused session; a resume of that session presents it again,
+        // whatever happened to the stored copy.
+        std::optional<iso15118::ev::d2::ContractMaterial> installed_contract;
     };
 
     // Graceful end requested by the EV, applied to the running Controller.
@@ -125,21 +142,40 @@ private:
     std::optional<std::array<uint8_t, 6>> evcc_mac;
     // make_ev_config is const and runs per session; warn about PnC-without-TLS only once.
     mutable bool pnc_without_tls_warned{false};
-    // PnC material read once in ready(); copied per session. Static config, so no file IO
+    // Configured PnC material read once in ready(); copied per session. Static config, so no file IO
     // ever runs under the session monitor.
     iso15118::ev::d2::PnCConfig pnc_material;
-    // False when ready() bailed out before starting the worker; start_charging then fails.
-    bool worker_started{false};
+    // supported_protocols in SAP priority order, parsed once in ready(), which fails on an invalid list.
+    std::vector<iso15118::ProtocolId> protocols;
+    // False until ready() starts the worker; start_charging fails until then. Stored last in
+    // ready() with release ordering. hlc_device, evcc_mac, pnc_material, protocols and sae_profile
+    // are immutable once it is true, so a handler that reads them loads it first, with acquire.
+    std::atomic<bool> worker_started{false};
+    // Parsed once in init(), which fails on a file that does not parse.
+    iso15118::ev::d20::der::SaeInverterProfile sae_profile;
 
     void session_worker();
     void recover_worker_state() noexcept;
-    void run_one_session();
+    // False when the request was cancelled before its Controller was built; the cancellation's
+    // own finish debt answers it then.
+    bool run_one_session();
     // Runs `action` on the live Controller, or cancels a session that was requested but not
     // yet constructed. drop_paused discards a stored paused session (stop and abort end it).
     void end_session(ControllerAction action, bool drop_paused);
+    // end_session's work for a caller that holds the session lock; true when it cancelled a
+    // requested session, whose worker the caller wakes once the lock is released.
+    static bool end_session_locked(SessionState& state, ControllerAction action, bool drop_paused);
+    // pnc_material with the contract in pnc_contract_store_dir presented instead of the configured
+    // one when it is complete and valid. Reads files, so it runs before taking the session lock.
+    iso15118::ev::d2::PnCConfig session_pnc_material() const;
+    // Read for each session before the session lock is taken, so no file IO runs under it.
+    struct SessionFiles {
+        iso15118::ev::d2::PnCConfig pnc;
+        std::string key_password;
+    };
     // Caller holds the session lock; reads energy_service, paused and cp_c_or_d from `state`.
-    iso15118::ev::EvConfig make_ev_config(const SessionState& state) const;
-    iso15118::ev::feedback::Callbacks make_callbacks();
+    iso15118::ev::config::EvConfig make_ev_config(const SessionState& state, const SessionFiles& files) const;
+    iso15118::ev::feedback::Callbacks make_callbacks(iso15118::message_20::datatypes::ServiceCategory energy_service);
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
