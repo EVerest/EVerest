@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef OCPP_COMMON_MESSAGE_QUEUE_HPP
 #define OCPP_COMMON_MESSAGE_QUEUE_HPP
 
@@ -847,6 +847,16 @@ public:
                 // this message
                 next_message_to_send.emplace(enhanced_message.uniqueId);
             }
+        }
+
+        // The CALLRESULT payload must be an object.
+        // Anything else must not count as an answer to the message in flight and take the CALLERROR path instead.
+        if (enhanced_message.messageTypeId == MessageTypeId::CALLRESULT and
+            not(enhanced_message.message.size() > CALLRESULT_PAYLOAD and
+                enhanced_message.message.at(CALLRESULT_PAYLOAD).is_object())) {
+            EVLOG_error << "Received a CALLRESULT without an object payload for message with UID: "
+                        << enhanced_message.uniqueId << ", treating it as CALLERROR";
+            enhanced_message.messageTypeId = MessageTypeId::CALLERROR;
         }
 
         // TODO(kai): what happens if we receive a CallResult or CallError out of order?

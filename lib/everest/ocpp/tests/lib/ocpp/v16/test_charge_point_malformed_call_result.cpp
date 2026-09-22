@@ -47,8 +47,10 @@ constexpr std::int32_t CONNECTOR = 1;
 const std::string BOOT_NOTIFICATION_ACTION = "BootNotification";
 const std::string START_TRANSACTION_ACTION = "StartTransaction";
 const std::string STOP_TRANSACTION_ACTION = "StopTransaction";
-// Transaction messages are repeated after TransactionMessageRetryInterval, which the fixture sets to one second
+// Transaction messages are repeated after TransactionMessageRetryInterval, which the fixture sets to one second.
+// The test configuration allows a single attempt, so retries have to be enabled per test.
 constexpr std::int32_t TRANSACTION_MESSAGE_RETRY_INTERVAL_S = 1;
+constexpr std::int32_t TRANSACTION_MESSAGE_ATTEMPTS = 3;
 constexpr auto TRANSACTION_RETRY_TIMEOUT = std::chrono::seconds(10);
 const std::string SESSION_ID = "session-1";
 const std::string ID_TAG = "TAG1";
@@ -125,8 +127,13 @@ protected:
         {
             const std::lock_guard<std::mutex> lock(this->mtx);
             this->sent.push_back(call);
-            this->pending_responses.push_back(
-                nlohmann::json::array({3, unique_id, this->response_payload_for_locked(action)}));
+            const auto payload = this->response_payload_for_locked(action);
+            if (payload.is_null()) {
+                this->pending_responses.push_back(
+                    nlohmann::json::array({4, unique_id, "InternalError", "", nlohmann::json::object()}));
+            } else {
+                this->pending_responses.push_back(nlohmann::json::array({3, unique_id, payload}));
+            }
         }
         this->cv.notify_all();
         return true;
@@ -240,7 +247,8 @@ protected:
         return this->escaped_exceptions;
     }
 
-    /// \brief Answer the next \p action call with \p payload instead of the well-formed default.
+    /// \brief Answer the next \p action call with \p payload instead of the well-formed default. A null payload
+    /// answers with a CALLERROR instead of a CALLRESULT.
     void stage_payload(const std::string& action, nlohmann::json payload) {
         const std::lock_guard<std::mutex> lock(this->mtx);
         this->staged_payloads[action].push_back(std::move(payload));
@@ -263,6 +271,20 @@ protected:
         EXPECT_TRUE(wait_for_status("Available"))
             << "boot handshake did not produce the initial StatusNotification.req";
         return charge_point;
+    }
+
+    /// \brief Let transaction messages be repeated quickly. Has to be called before the charge point is constructed.
+    void enable_transaction_message_retries() {
+        this->configuration->setTransactionMessageAttempts(TRANSACTION_MESSAGE_ATTEMPTS);
+        this->configuration->setTransactionMessageRetryInterval(TRANSACTION_MESSAGE_RETRY_INTERVAL_S);
+    }
+
+    /// \brief Stop the charge point once every answer has been processed. The websocket joins its receive thread
+    /// before disconnect() returns, so no message callback runs during teardown; the responder thread has no such
+    /// coupling and has to be drained explicitly.
+    void stop_charge_point(ChargePointImpl& charge_point) {
+        EXPECT_TRUE(wait_for_all_answered()) << "not every answer was processed before stopping";
+        charge_point.stop();
     }
 
     void start_transaction(ChargePointImpl& charge_point) {
@@ -307,7 +329,7 @@ TEST_F(ChargePointMalformedCallResultTest, NumberPayloadDoesNotEscapeMessageCall
 
     EXPECT_THAT(get_escaped_exceptions(), ::testing::IsEmpty());
 
-    charge_point->stop();
+    stop_charge_point(*charge_point);
 }
 
 // After a malformed answer the BootNotification.req is unanswered from the charge point's point of view: it has neither
@@ -330,7 +352,7 @@ TEST_F(ChargePointMalformedCallResultTest, NumberPayloadIsFollowedByBootNotifica
         << "the BootNotification.req was not repeated after the malformed CALLRESULT";
     EXPECT_TRUE(wait_for_status("Available")) << "the repeated BootNotification.req did not complete the boot";
 
-    charge_point->stop();
+    stop_charge_point(*charge_point);
 }
 
 // The unhappy path must not disturb an ordinary boot: with a proper BootNotification.conf the same fixture reaches
@@ -342,14 +364,56 @@ TEST_F(ChargePointMalformedCallResultTest, WellFormedPayloadBoots) {
     EXPECT_THAT(get_escaped_exceptions(), ::testing::IsEmpty());
     EXPECT_EQ(count_action(BOOT_NOTIFICATION_ACTION), 1u);
 
-    charge_point->stop();
+    stop_charge_point(*charge_point);
+}
+
+// A transaction with well-formed answers completes with a single StartTransaction.req and StopTransaction.req.
+TEST_F(ChargePointMalformedCallResultTest, WellFormedTransactionRoundTrip) {
+    enable_transaction_message_retries();
+
+    auto charge_point = make_booted_charge_point();
+    start_transaction(*charge_point);
+
+    ASSERT_TRUE(wait_for_action_count(START_TRANSACTION_ACTION, 1, WAIT_TIMEOUT)) << "no StartTransaction.req was sent";
+    ASSERT_TRUE(wait_for_all_answered()) << "the StartTransaction.conf was not processed";
+
+    stop_transaction(*charge_point);
+
+    ASSERT_TRUE(wait_for_action_count(STOP_TRANSACTION_ACTION, 1, WAIT_TIMEOUT)) << "no StopTransaction.req was sent";
+    ASSERT_TRUE(wait_for_all_answered()) << "the StopTransaction.conf was not processed";
+    EXPECT_EQ(count_action(START_TRANSACTION_ACTION), 1u);
+    EXPECT_EQ(count_action(STOP_TRANSACTION_ACTION), 1u);
+    EXPECT_THAT(get_escaped_exceptions(), ::testing::IsEmpty());
+
+    stop_charge_point(*charge_point);
+}
+
+// A genuine CALLERROR for a StopTransaction.req takes the retry path without involving CALLRESULT validation.
+TEST_F(ChargePointMalformedCallResultTest, CallErrorForStopTransactionIsRetried) {
+    enable_transaction_message_retries();
+    stage_payload(STOP_TRANSACTION_ACTION, nullptr);
+
+    auto charge_point = make_booted_charge_point();
+    start_transaction(*charge_point);
+
+    ASSERT_TRUE(wait_for_action_count(START_TRANSACTION_ACTION, 1, WAIT_TIMEOUT)) << "no StartTransaction.req was sent";
+    ASSERT_TRUE(wait_for_all_answered()) << "the StartTransaction.conf was not processed";
+
+    stop_transaction(*charge_point);
+
+    ASSERT_TRUE(wait_for_action_count(STOP_TRANSACTION_ACTION, 1, WAIT_TIMEOUT)) << "no StopTransaction.req was sent";
+    EXPECT_TRUE(wait_for_action_count(STOP_TRANSACTION_ACTION, 2, TRANSACTION_RETRY_TIMEOUT))
+        << "the StopTransaction.req was not repeated after the CALLERROR";
+    EXPECT_THAT(get_escaped_exceptions(), ::testing::IsEmpty());
+
+    stop_charge_point(*charge_point);
 }
 
 // A StartTransaction.conf whose payload is a bare number carries no transactionId. Like a CALLERROR, it must lead to
 // the StartTransaction.req being repeated, and the transactionId from the repeated exchange has to reach the
 // StopTransaction.req.
 TEST_F(ChargePointMalformedCallResultTest, NumberPayloadForStartTransactionIsRetried) {
-    this->configuration->setTransactionMessageRetryInterval(TRANSACTION_MESSAGE_RETRY_INTERVAL_S);
+    enable_transaction_message_retries();
     stage_payload(START_TRANSACTION_ACTION, 12345);
 
     auto charge_point = make_booted_charge_point();
@@ -370,13 +434,13 @@ TEST_F(ChargePointMalformedCallResultTest, NumberPayloadForStartTransactionIsRet
         << "the StopTransaction.req does not carry the transactionId of the repeated StartTransaction.conf";
     EXPECT_THAT(get_escaped_exceptions(), ::testing::IsEmpty());
 
-    charge_point->stop();
+    stop_charge_point(*charge_point);
 }
 
 // A StopTransaction.conf whose payload is a bare number must lead to the StopTransaction.req being repeated; dropping
 // it silently would lose the end of the transaction on the CSMS side.
 TEST_F(ChargePointMalformedCallResultTest, NumberPayloadForStopTransactionIsRetried) {
-    this->configuration->setTransactionMessageRetryInterval(TRANSACTION_MESSAGE_RETRY_INTERVAL_S);
+    enable_transaction_message_retries();
     stage_payload(STOP_TRANSACTION_ACTION, 12345);
 
     auto charge_point = make_booted_charge_point();
@@ -392,7 +456,7 @@ TEST_F(ChargePointMalformedCallResultTest, NumberPayloadForStopTransactionIsRetr
         << "the StopTransaction.req was not repeated after the malformed CALLRESULT";
     EXPECT_THAT(get_escaped_exceptions(), ::testing::IsEmpty());
 
-    charge_point->stop();
+    stop_charge_point(*charge_point);
 }
 
 } // namespace v16
