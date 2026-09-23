@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d2/state/authorization.hpp>
 
 #include <iso15118/d2/state/charge_parameter_discovery.hpp>
@@ -104,7 +104,13 @@ Result Authorization::on_request(const message_2::Variant& received) {
                 return {};
             }
 
-            m_ctx.feedback.require_auth_pnc(m_ctx.session().contract_emaid, m_ctx.session().contract_chain_pem);
+            if (m_ctx.session().session_resumed) {
+                // The paused session was already authorized and the module keeps that authorization across
+                // the pause without answering a repeated PnC request, like the -20 resume that skips it.
+                authorized = true;
+            } else {
+                m_ctx.feedback.require_auth_pnc(m_ctx.session().contract_emaid, m_ctx.session().contract_chain_pem);
+            }
         } else {
             m_ctx.feedback.signal(session::feedback::Signal::REQUIRE_AUTH_EIM);
         }
