@@ -312,6 +312,13 @@ vars:
   dc_open_contactor:
     description: The contactor should be opened
     type: "null"
+  dc_renegotiation_started:
+    description: >-
+      The EV sent PowerDeliveryReq with ChargeProgress Renegotiate in DC. The charger disables
+      the DC output and keeps the session: the EV opens its contactor and changes to CP state B,
+      then the session continues with ChargeParameterDiscovery and a new cable check
+      (IEC 61851-23:2023 CC.3.6).
+    type: "null"
   v2g_setup_finished:
     description: >-
       v2g_setup_finished from ISO15118-3. Trigger when EV sends a PowerDeliveryReq

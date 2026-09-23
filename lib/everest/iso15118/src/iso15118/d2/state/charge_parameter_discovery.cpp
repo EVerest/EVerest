@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d2/state/charge_parameter_discovery.hpp>
 
 #include <cmath>
@@ -303,8 +303,7 @@ Result process_charge_parameter_discovery(Context& m_ctx, const message_2::Charg
 
     auto res = handle_request(req, m_ctx.get_session_id(), m_ctx.session_config, m_ctx.evse().charger_stop_requested,
                               m_ctx.error_status_code(), m_ctx.rcd_error());
-    // The builder reports Invalid isolation, correct for the initial exchange. On the [V2G2-813]
-    // renegotiation path the isolation was verified, so report the module's value instead.
+    // The builder reports Invalid isolation; a value reported by the module takes precedence.
     if (res.dc_evse_charge_parameter.has_value()) {
         apply_isolation_status(m_ctx, res.dc_evse_charge_parameter->dc_evse_status);
     }

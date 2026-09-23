@@ -880,6 +880,12 @@ void EvseManager::ready() {
                 imd_stop();
             });
 
+            r_hlc[0]->subscribe_dc_renegotiation_started([this] {
+                powersupply_DC_off();
+                imd_stop();
+                charger->dc_renegotiation_started();
+            });
+
             // Back up switch off - charger signalled that it needs to switch off now.
             // During normal operation this should be done earlier before switching off relais by HLC protocol.
             charger->signal_dc_supply_off.connect([this] {

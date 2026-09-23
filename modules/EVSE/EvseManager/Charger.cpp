@@ -247,6 +247,7 @@ void Charger::run_state_machine() {
                 shared_context.hlc_allow_close_contactor = false;
                 shared_context.max_current_cable.reset();
                 shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Unknown;
+                shared_context.hlc_dc_renegotiation = false;
                 internal_context.session_stop_pwm_off_deadline.reset();
                 shared_context.legacy_wakeup_done = false;
                 shared_context.hlc_d20_active = false;
@@ -740,7 +741,7 @@ void Charger::run_state_machine() {
                 if (config_context.charge_mode == ChargeMode::DC) {
                     // Create a copy of the atomic struct
                     types::iso15118::DcEvseMaximumLimits evse_limit = shared_context.current_evse_max_limits;
-                    if (not power_available()) {
+                    if (not power_available() and not shared_context.hlc_dc_renegotiation) {
                         signal_hlc_no_energy_available();
                     }
                 }
@@ -1100,6 +1101,7 @@ void Charger::run_state_machine() {
             */
         case EvseState::StoppingCharging:
             if (initialize_state) {
+                shared_context.hlc_dc_renegotiation = false;
                 bcb_toggle_reset();
                 shared_context.legacy_wakeup_done = false;
 
@@ -1243,7 +1245,11 @@ void Charger::process_cp_events_state(CPEvent cp_event) {
         } else if (cp_event == CPEvent::CarRequestedStopPower) {
             shared_context.iec_allow_close_contactor = false;
             signal_dc_supply_off();
-            shared_context.current_state = EvseState::ChargingPausedEVSE;
+            // CC.3.6 t806: the EV signals its open disconnection device with C->B and continues with
+            // ChargeParameterDiscovery, so the session stays in PrepareCharging.
+            if (not shared_context.hlc_dc_renegotiation) {
+                shared_context.current_state = EvseState::ChargingPausedEVSE;
+            }
         }
         break;
 
@@ -2242,6 +2248,7 @@ void Charger::notify_currentdemand_started() {
     Everest::scoped_lock_timeout lock(state_machine_mutex,
                                       Everest::MutexDescription::Charger_notify_currentdemand_started);
     if (shared_context.current_state == EvseState::PrepareCharging) {
+        shared_context.hlc_dc_renegotiation = false;
         shared_context.current_state = EvseState::Charging;
     }
 }
@@ -2433,6 +2440,20 @@ void Charger::dc_open_contactor_request() {
     session_log.car(true, "DC HLC Open contactor");
     set_hlc_allow_close_contactor(false);
     bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
+}
+
+void Charger::dc_renegotiation_started() {
+    // PowerDelivery(Renegotiate), IEC 61851-23:2023 CC.3.6: side B is disabled (t803) and the session
+    // restarts from ChargeParameterDiscovery with a new cable check (t809), which needs PrepareCharging.
+    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_dc_renegotiation_started);
+    if (shared_context.current_state != EvseState::Charging) {
+        return;
+    }
+    session_log.car(true, "DC HLC renegotiation");
+    shared_context.hlc_dc_renegotiation = true;
+    shared_context.hlc_allow_close_contactor = false;
+    bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
+    shared_context.current_state = EvseState::PrepareCharging;
 }
 
 std::optional<types::evse_manager::StopTransactionReason> Charger::get_last_stop_transaction_reason() {

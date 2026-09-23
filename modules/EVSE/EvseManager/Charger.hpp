@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2021 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 /*
  * Charger.h
  *
@@ -209,6 +209,7 @@ public:
     void set_hlc_charging_active();
     void set_hlc_allow_close_contactor(bool on);
     void dc_open_contactor_request();
+    void dc_renegotiation_started();
 
     void set_hlc_d20_active();
 
@@ -335,6 +336,8 @@ private:
         bool contactor_open{true};
         bool hlc_charging_active{false};
         HlcTerminatePause hlc_charging_terminate_pause;
+        // ISO 15118-2 DC renegotiation (IEC 61851-23:2023 CC.3.6): the EV's C->B is not a stop.
+        bool hlc_dc_renegotiation{false};
         types::iso15118::DcEvseMaximumLimits current_evse_max_limits{0, 0, 0, std::nullopt, std::nullopt};
         types::iso15118::DcEvseMinimumLimits current_evse_min_limits{0, 0, 0, std::nullopt, std::nullopt};
         bool pwm_running{false};

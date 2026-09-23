@@ -845,6 +845,76 @@ SCENARIO("ISO 15118-2 SECC isolation status in ChargeParameterDiscoveryRes") {
     }
 }
 
+SCENARIO("ISO 15118-2 SECC DC renegotiation") {
+
+    // IEC 61851-23:2023 CC.3.6: side B is disabled, the EV opens its contactor and changes to CP B, and
+    // the session continues as a normal startup including a new cable check.
+    GIVEN("A DC machine in the charge loop") {
+        Secc secc;
+        to_current_demand(secc);
+        secc.drive(current_demand_req());
+
+        WHEN("The EV renegotiates") {
+            secc.signals.clear();
+            secc.drive(power_delivery_req(dt::ChargeProgress::Renegotiate));
+
+            THEN("The charge loop ends and the module is told about the renegotiation") {
+                const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                REQUIRE(secc.fsm.state() == StateID::ChargeParameterDiscovery);
+                REQUIRE(secc.saw_signal(session::feedback::Signal::CHARGE_LOOP_FINISHED));
+                REQUIRE(secc.saw_signal(session::feedback::Signal::DC_RENEGOTIATION_STARTED));
+                REQUIRE_FALSE(secc.fsm.context().evse().cable_check_done);
+            }
+
+            AND_WHEN("The EV returns to CP C and requests the cable check") {
+                secc.drive(charge_parameter_req(dt::EnergyTransferMode::DC_extended));
+                REQUIRE(secc.fsm.state() == StateID::CableCheck);
+                secc.fsm.context().set_cp_state(d20::CpState::B);
+                secc.fsm.context().set_cp_state(d20::CpState::C);
+                secc.signals.clear();
+                secc.drive(message_2::CableCheckRequest{});
+
+                THEN("A physical cable check runs instead of an immediate Finished") {
+                    const auto res = secc.fsm.response<message_2::CableCheckResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(res->evse_processing == dt::EVSEProcessing::Ongoing);
+                    REQUIRE(secc.saw_signal(session::feedback::Signal::START_CABLE_CHECK));
+                }
+
+                AND_WHEN("The cable check finishes") {
+                    secc.fsm.control(d20::CableCheckFinished{true});
+                    secc.drive(message_2::CableCheckRequest{});
+
+                    THEN("PreCharge follows") {
+                        const auto res = secc.fsm.response<message_2::CableCheckResponse>();
+                        REQUIRE(res.has_value());
+                        REQUIRE(res->evse_processing == dt::EVSEProcessing::Finished);
+                        REQUIRE(secc.fsm.state() == StateID::PreChargeStart);
+                    }
+                }
+            }
+        }
+    }
+
+    GIVEN("An AC machine in the charge loop") {
+        Secc secc(dt::EnergyTransferMode::AC_three_phase_core);
+        to_ac_charge_loop(secc);
+
+        WHEN("The EV renegotiates") {
+            secc.signals.clear();
+            secc.drive(power_delivery_req(dt::ChargeProgress::Renegotiate));
+
+            THEN("No DC renegotiation is reported") {
+                REQUIRE(secc.fsm.state() == StateID::ChargeParameterDiscovery);
+                REQUIRE_FALSE(secc.saw_signal(session::feedback::Signal::DC_RENEGOTIATION_STARTED));
+            }
+        }
+    }
+}
+
 SCENARIO("ISO 15118-2 SECC no-energy pause") {
 
     Secc secc;
