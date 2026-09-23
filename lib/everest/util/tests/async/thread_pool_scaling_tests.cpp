@@ -423,17 +423,36 @@ TEST(ThreadPoolScalingTest, FixedSizeScalingGrowsAtLimit) {
     std::promise<void> block;
     auto fut = block.get_future().share();
 
-    pool.run([fut]() { fut.wait(); });
-
-    // queue_size == 2 after this push, 2 >= 2 → growth
-    std::atomic<bool> task2_ran{false};
-    pool.run([&]() { task2_ran = true; });
+    // Wait until the sole min thread is confirmed to be inside the blocking task. Only then is
+    // the queue guaranteed to still hold everything pushed below, so the depth the policy sees
+    // is deterministic instead of a race against that thread popping.
+    std::atomic<bool> blocker_running{false};
+    pool.run([fut, &blocker_running]() {
+        blocker_running = true;
+        fut.wait();
+    });
 
     auto start = std::chrono::steady_clock::now();
-    while (!task2_ran.load() && std::chrono::steady_clock::now() - start < 2s) {
+    while (!blocker_running.load() && std::chrono::steady_clock::now() - start < 2s) {
+        std::this_thread::sleep_for(1ms);
+    }
+    ASSERT_TRUE(blocker_running.load());
+
+    // queue_size == 1 after this push, 1 < 2 → no growth
+    std::atomic<int> ran{0};
+    pool.run([&]() { ran++; });
+
+    std::this_thread::sleep_for(100ms);
+    EXPECT_EQ(ran.load(), 0);
+
+    // queue_size == 2 after this push, 2 >= 2 → growth
+    pool.run([&]() { ran++; });
+
+    start = std::chrono::steady_clock::now();
+    while (ran.load() < 2 && std::chrono::steady_clock::now() - start < 2s) {
         std::this_thread::sleep_for(10ms);
     }
-    EXPECT_TRUE(task2_ran.load());
+    EXPECT_EQ(ran.load(), 2);
 
     block.set_value();
 }
