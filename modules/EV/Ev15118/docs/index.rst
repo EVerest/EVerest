@@ -15,7 +15,7 @@ Protocols
 The SAP offer carries ISO 15118-20 first, then ISO 15118-2 and DIN SPEC 70121
 when ``supported_ISO15118_2`` / ``supported_DIN70121`` are set:
 
-- **ISO 15118-20** (AC, AC BPT, AC DER IEC, DC, DC BPT), EIM, plaintext or
+- **ISO 15118-20** (AC, AC BPT, AC DER IEC, AC DER SAE, DC, DC BPT), EIM, plaintext or
   TLS 1.3 with a client certificate.
 - **ISO 15118-2** (AC and DC), EIM or Plug & Charge (Contract). PnC needs TLS
   [V2G2-632]: with ``enable_pnc`` and TLS the EV offers ``PnC`` and ``EIM``, and
@@ -44,9 +44,9 @@ select Contract even when the SECC does not offer it (negative testing).
 Without ``enable_pnc`` the EV offers EIM only.
 
 The session runs over plain TCP or TLS (``tls_active`` / ``enforce_tls``). The
-AC DER IEC service is also negotiated (assuming a three-phase inverter relay);
-received DER directives are logged only, as ``ISO15118_ev`` has no DER variable
-to publish them on.
+AC DER IEC and AC DER SAE services are also negotiated (assuming a three-phase
+inverter relay). The EV negotiates DER functions but never executes one; it
+publishes what was negotiated and received (see `Published DER variables`_).
 
 Bidirectional power transfer (BPT) is negotiated for both AC_BPT and DC_BPT in
 Dynamic control mode. The advertised discharge limits come from the
@@ -238,12 +238,12 @@ Configuration
      - Stop the session if no AC_DER_IEC parameter set fits the supported DER functions.
    * - ``ac_max_discharge_power_w``
      - ``11040``
-     - Advertised AC maximum discharge power in watts (AC_BPT and AC_DER_IEC),
-       as a three-phase total. The default is 16 A x 230 V x 3.
+     - Advertised AC maximum discharge power in watts (AC_BPT, AC_DER_IEC and
+       AC_DER_SAE), as a three-phase total. The default is 16 A x 230 V x 3.
    * - ``ac_min_discharge_power_w``
      - ``4140``
-     - Advertised AC minimum discharge power in watts (AC_BPT and AC_DER_IEC),
-       as a three-phase total. The default is 6 A x 230 V x 3.
+     - Advertised AC minimum discharge power in watts (AC_BPT, AC_DER_IEC and
+       AC_DER_SAE), as a three-phase total. The default is 6 A x 230 V x 3.
    * - ``dc_max_discharge_power_w``
      - ``150000``
      - Advertised DC maximum discharge power in watts (BPT).
@@ -253,6 +253,20 @@ Configuration
    * - ``dc_max_discharge_current_a``
      - ``300``
      - Advertised DC maximum discharge current in amperes (BPT).
+   * - ``sae_inverter_profile_path``
+     - ``""``
+     - JSON file describing the EV inverter for AC_DER_SAE (see
+       `SAE inverter profile`_). Empty uses the built-in profile. A file that
+       fails to parse makes ``start_charging`` refuse AC_DER_SAE; other services
+       are unaffected.
+   * - ``cpd_rounds``
+     - ``1``
+     - ChargeParameterDiscovery rounds the EV drives before it reports
+       ``Finished``, 1 to 65535. AC_DER_SAE only.
+   * - ``der_stop_on_invalid_control``
+     - ``false``
+     - Stop the session on a structurally invalid DER control block from the
+       SECC instead of warning and continuing. AC_DER_SAE only.
 
 DER control function negotiation
 --------------------------------
@@ -271,22 +285,97 @@ arrives in a charge-loop response without the matching function having been
 negotiated is dropped before the directive is surfaced; all other fields pass
 through unchanged.
 
+For the AC DER SAE service (ISO 15118-20 AMD1 Annex M) the EV describes its
+inverter in the ChargeParameterDiscovery request; the SECC enables functions in
+its responses and the EV acknowledges them.
+
+SAE inverter profile
+--------------------
+
+The file named by ``sae_inverter_profile_path`` is one JSON object. Every key is
+optional and keeps its built-in default when absent; an unknown or repeated key,
+a wrong JSON type, an out-of-range number or an illegal enum string fails the
+parse. The values are then checked when ``start_charging`` validates the
+session. Powers, var, VA and siemens values are totals across ``ac_phase_count``
+lines.
+
+- Identity strings, at most 32 bytes: ``inverter_sw_version``,
+  ``inverter_hw_version`` (absent by default), ``inverter_manufacturer``,
+  ``inverter_model``, ``inverter_serial_number``.
+- ``supported_modes``: array of SAE function names, which must include
+  ``"ChargeFunction"`` and ``"DischargeFunction"``. The names are the AMD1
+  Table M.6 bit names: ``ChargeFunction``, ``DischargeFunction``,
+  ``EnterService``, ``ConstantPowerFactorUnderExcitedFunction``,
+  ``ConstantPowerFactorOverExcitedFunction``, ``ConstantReactivePowerFunction``,
+  ``ConstantActivePowerFunction``, ``FrequencyDroopFunction``,
+  ``HighFrequencyMayTripFunction``, ``HighFrequencyMustTripFunction``,
+  ``HighVoltageMayTripFunction``, ``HighVoltageMomentaryCessationFunction``,
+  ``HighVoltageMustTripFunction``, ``LowFrequencyMayTripFunction``,
+  ``LowFrequencyMustTripFunction``, ``LowVoltageMayTripFunction``,
+  ``LowVoltageMomentaryCessationFunction``, ``LowVoltageMustTripFunction``,
+  ``LimitMaximumActiveDischargePowerFunction``,
+  ``EVSETargetReactivePowerFunction``, ``EVSETargetActivePowerFunction``,
+  ``VoltVarFunction``, ``VoltWattFunction`` and ``WattVarFunction``.
+- Numbers, unit in the key suffix: ``max_apparent_power_{charging,discharging}_var_{absorption,injection}_va``,
+  ``max_var_{absorption,injection}_{charging,discharging}_var``,
+  ``reactive_susceptance_s``, ``over_excited_discharge_power_w``,
+  ``under_excited_discharge_power_w``, ``nominal_voltage_v``,
+  ``maximum_voltage_v``, ``minimum_voltage_v``, ``nominal_voltage_offset_v``,
+  ``nominal_frequency_hz``; and the ratios ``over_excited_power_factor`` and
+  ``under_excited_power_factor``, in (0, 1].
+- Unsigned integers: ``useable_watt_hours``, ``minimum_charging_duration_s``,
+  ``duration_maximum_charge_rate_s``, ``duration_maximum_discharge_rate_s``, and
+  ``j3072_certification_date`` in seconds since the Unix epoch.
+- ``j3072_certified``: boolean.
+- Enum strings: ``ieee1547_normal_category`` (``CategoryA``, ``CategoryB``),
+  ``ieee1547_abnormal_category`` (``CategoryI``, ``CategoryII``,
+  ``CategoryIII``), ``operational_state`` (``On``, ``Off``),
+  ``connection_status`` (``Connected``, ``Disconnected``).
+
+Published DER variables
+-----------------------
+
+- ``der_negotiated_functions``: the negotiated functions, with the ``flavor``
+  (``AC_DER_IEC`` or ``AC_DER_SAE``) and their names. For AC_DER_IEC this is the
+  demand of the selected parameter set, published once from ServiceDetail;
+  without ``der_stop_on_unsupported_functions`` the fallback set can demand
+  functions the EV does not support. Its names are ``iec::DERControlName``
+  spellings. For AC_DER_SAE it is the enabled modes the EV echoes, with the
+  ``supported_modes`` names above, published every ChargeParameterDiscovery
+  round and when the charge loop changes the set.
+- ``der_control_received``: a summary of each DER control block the SECC sends,
+  with the ``flavor`` and the ``source`` (``ChargeParameterDiscovery`` or
+  ``ChargeLoop``). SAE blocks carry ``permit_service``, ``enabled_functions``
+  and any structural ``problems``; a block that stops the session under
+  ``der_stop_on_invalid_control`` is still published, with its problems, before
+  the session ends. IEC Dynamic charge loop blocks carry the DSO Q and cos phi
+  setpoints when present. IEC Scheduled charge loop blocks are not published.
+- ``ac_evse_target_power``: the Dynamic charge loop targets, for AC_DER_IEC and
+  AC_DER_SAE as for plain AC.
+
+``update_present_values`` also takes ``present_frequency`` in Hz and
+``der_alarm_status`` (AMD1 Table M.9), both for AC_DER_SAE, where the voltage is
+the measured grid voltage. ``start_charging`` clears the voltage, frequency and
+DER alarm status, so values reported before it are discarded; a voltage or
+frequency not reported since falls back to the profile's nominal value.
+
 Limitations
 -----------
 
 The implementation has a deliberately narrow scope:
 
 - **DC, MCS and AC only.** ``start_charging`` accepts DC, DC BPT, MCS, MCS BPT,
-  AC single/three-phase, AC BPT, and AC DER IEC energy-transfer modes; WPT sessions
+  AC single/three-phase, AC BPT, AC DER IEC and AC DER SAE energy-transfer modes; WPT sessions
   are not supported. MCS is the megawatt DC service of ISO 15118-20: the same DC
   parameter discovery, cable check, pre-charge and charge loop under a different
   service id, so it rides the DC states and has no ISO 15118-2 or DIN equivalent.
-- **DER directives are log-only.** AC DER IEC directives (target active power,
-  DSO Q and cos phi setpoints) are logged, not published, pending an interface
-  variable. The three-phase inverter relay use case is assumed.
-- **DER curves are log-only.** DER curves dictated in
-  ``DER_AC_ChargeParameterDiscoveryRes`` are logged, not applied; the EV negotiates
-  the functions and observes what the SECC dictates.
+- **DER functions are never executed.** Received DER control blocks, except IEC
+  Scheduled ones, are published as summaries; acting on them is the consumer's
+  job. DER curves dictated in ``DER_AC_ChargeParameterDiscoveryRes`` are logged,
+  and the summary carries none of their values. The three-phase inverter relay
+  use case is assumed.
+- **AC DER SAE is Dynamic only.** A preferred Scheduled control mode is ignored
+  for that service.
 - **Plug & Charge is ISO 15118-2 only.** ISO 15118-20 authorization is EIM only,
   and an installed contract is logged rather than persisted to ``EvseSecurity``.
 - **Dynamic BPT only.** BPT is negotiated in Dynamic control mode; reverse power
