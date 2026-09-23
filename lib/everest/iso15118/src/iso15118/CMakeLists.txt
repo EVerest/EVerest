@@ -177,6 +177,7 @@ if(ISO15118_BUILD_EV_SIDE)
         PRIVATE
         message_din/response_variant.cpp
         message_2/response_variant.cpp
+        message/ac_der_sae_names.cpp
 
         ev/crypto.cpp
         ev/fsm_base.cpp
