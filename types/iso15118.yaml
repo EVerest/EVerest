@@ -1819,10 +1819,14 @@ types:
         maximum: 1500
   EvPresentValues:
     description: >-
-      Values the EV measures during a charging loop. Both are mandatory on the wire. A value
-      never fed is transmitted as zero and reads as a measured zero at the SECC; a field absent
-      from one update keeps its last value. Which one applies depends on the energy transfer
-      mode, hence both are optional: DC carries the voltage, AC the active power.
+      Values the EV measures during a charging loop. A field absent from one update keeps its
+      last value. Voltage and active power are mandatory on the wire, so a value never fed is
+      transmitted as zero and reads as a measured zero at the SECC, except for AC_DER_SAE, where
+      a voltage or frequency not fed since start_charging falls back to the inverter profile's
+      nominal value; start_charging clears the voltage, frequency and DER alarm bitmap. Which
+      fields apply depends on the energy transfer mode, hence all are optional: DC carries the
+      voltage, AC the active power, and AC_DER_SAE also the voltage, the frequency and the DER
+      alarm bitmap.
     type: object
     additionalProperties: false
     properties:
@@ -1837,6 +1841,89 @@ types:
         type: number
         minimum: -500000
         maximum: 500000
+      present_frequency:
+        description: "[Hz] Grid frequency the EV measures (AC_DER_SAE)"
+        type: number
+        minimum: 0
+        maximum: 100
+      der_alarm_status:
+        description: >-
+          DERAlarmStatus bitmap of the alarms the EV detects, ISO 15118-20 AMD1 Table M.9
+          (AC_DER_SAE)
+        type: integer
+        minimum: 0
+  DerFlavor:
+    description: Which DER annex of ISO 15118-20 AMD1 a session negotiated
+    type: string
+    enum:
+      - AC_DER_IEC
+      - AC_DER_SAE
+  DerControlSource:
+    description: Which exchange carried a DER control block
+    type: string
+    enum:
+      - ChargeParameterDiscovery
+      - ChargeLoop
+  DerNegotiatedFunctions:
+    description: >-
+      The DER control functions negotiated for the session. For AC_DER_SAE, the functions the
+      SECC enabled that the EV supports, as the EV echoes them. For AC_DER_IEC, the demand of the
+      parameter set the EV selected, which in the non-strict fallback can include functions the
+      EV does not support. The names are the iec::DERControlName spellings for AC_DER_IEC and the
+      AMD1 Table M.6 bit names for AC_DER_SAE.
+    type: object
+    additionalProperties: false
+    required:
+      - flavor
+      - functions
+    properties:
+      flavor:
+        description: Which DER annex the session negotiated
+        type: string
+        $ref: /iso15118#/DerFlavor
+      functions:
+        description: Names of the negotiated DER control functions
+        type: array
+        items:
+          description: One negotiated DER control function name
+          type: string
+  DerControlReceived:
+    description: Summary of each DER control block the SECC sends
+    type: object
+    additionalProperties: false
+    required:
+      - flavor
+      - source
+    properties:
+      flavor:
+        description: Which DER annex the session negotiated
+        type: string
+        $ref: /iso15118#/DerFlavor
+      source:
+        description: Which exchange carried the block
+        type: string
+        $ref: /iso15118#/DerControlSource
+      permit_service:
+        description: The PermitService flag of the block (AC_DER_SAE)
+        type: boolean
+      enabled_functions:
+        description: Names of the DER functions the block enables (AC_DER_SAE)
+        type: array
+        items:
+          description: One enabled DER function name
+          type: string
+      problems:
+        description: Structural problems found in the block; absent when clean (AC_DER_SAE)
+        type: array
+        items:
+          description: One validation problem
+          type: string
+      dso_q_setpoint:
+        description: "[var] DSO reactive power setpoint (AC_DER_IEC)"
+        type: number
+      dso_cos_phi_setpoint:
+        description: DSO cos phi setpoint (AC_DER_IEC)
+        type: number
   DcEvBPTParameters:
     description: BPT settings for dc charging
     type: object

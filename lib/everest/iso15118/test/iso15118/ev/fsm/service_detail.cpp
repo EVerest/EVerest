@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <bitset>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -678,6 +679,30 @@ SCENARIO("ISO15118-20 EV ServiceDetail records the DER mask of the set it select
     REQUIRE(selected_parameter_set_id(helper.get_message_exchange()) == 1);
     REQUIRE(ctx.der_demanded_functions() == first_mask);
     REQUIRE(ctx.selected_ac_connector() == message_20::datatypes::AcConnector::SinglePhase);
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail reports the recorded AC_DER_IEC mask through der_enabled_modes") {
+    std::vector<std::uint32_t> notified;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.der_enabled_modes = [&notified](std::uint32_t modes) { notified.push_back(modes); };
+    FsmStateHelper helper{callbacks,
+                          {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                          ServiceCategory::AC_DER_IEC,
+                          dso_setpoint_support(),
+                          false};
+    auto& ctx = helper.get_context();
+    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    auto fsm = fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::ServiceDetail>()};
+
+    // Not strict, so the unsupported VoltWattMode demand is selected and reported with the rest.
+    const auto demand = der_mask({DERControlName::VoltWattMode, DERControlName::DSOQSetpointProvision});
+    helper.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_IEC,
+                                         {make_der_param_set(5, ControlMode::Dynamic, demand)}));
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(ctx.der_demanded_functions() == demand);
+    REQUIRE(notified == std::vector<std::uint32_t>{static_cast<std::uint32_t>(demand.to_ulong())});
 }
 
 namespace {

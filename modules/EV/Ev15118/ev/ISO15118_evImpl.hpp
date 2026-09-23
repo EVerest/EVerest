@@ -26,6 +26,7 @@
 #include <iso15118/ev/controller.hpp>
 #include <iso15118/ev/d2/pnc_config.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
+#include <iso15118/ev/sae_inverter_profile.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 #include <iso15118/ev/session_params.hpp>
 #include <iso15118/message/shared_datatypes.hpp>
@@ -130,6 +131,10 @@ private:
     iso15118::ev::d2::PnCConfig pnc_material;
     // False when ready() bailed out before starting the worker; start_charging then fails.
     bool worker_started{false};
+    // Parsed once in init(). Empty when the file failed to parse; start_charging then refuses
+    // AC_DER_SAE with sae_profile_error.
+    std::optional<iso15118::ev::SaeInverterProfile> sae_profile;
+    std::string sae_profile_error;
 
     void session_worker();
     void recover_worker_state() noexcept;
@@ -139,7 +144,7 @@ private:
     void end_session(ControllerAction action, bool drop_paused);
     // Caller holds the session lock; reads energy_service, paused and cp_c_or_d from `state`.
     iso15118::ev::EvConfig make_ev_config(const SessionState& state) const;
-    iso15118::ev::feedback::Callbacks make_callbacks();
+    iso15118::ev::feedback::Callbacks make_callbacks(iso15118::message_20::datatypes::ServiceCategory energy_service);
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

@@ -27,7 +27,11 @@
 #include <iso15118/io/logging.hpp>
 #include <iso15118/message/type.hpp>
 #include <iso15118/message/v2g_message_type.hpp>
+#include <iso15118/sae_modes.hpp>
 #include <iso15118/session/protocol.hpp>
+
+#include "der_publish_names.hpp"
+#include "sae_profile_config.hpp"
 
 namespace {
 template <class F> class ScopeGuard {
@@ -91,6 +95,7 @@ iso15118::shared_datatypes::EnergyTransferMode to_iso2_transfer_mode(types::iso1
         return Out::AC_three_phase_core;
     case In::AC_BPT:
     case In::AC_DER_IEC:
+    case In::AC_DER_SAE:
         warn_unidirectional();
         return Out::AC_three_phase_core;
     case In::DC_core:
@@ -115,7 +120,6 @@ iso15118::shared_datatypes::EnergyTransferMode to_iso2_transfer_mode(types::iso1
     // arm so -Wswitch flags a new mode.
     case In::AC_two_phase:
     case In::AC_BPT_DER:
-    case In::AC_DER_SAE:
     case In::DC_ACDP:
     case In::DC_ACDP_BPT:
     case In::WPT:
@@ -222,6 +226,19 @@ iso15118::ev::d2::PnCConfig build_pnc_config(const module::Conf& config, const s
     }
 
     return pnc;
+}
+
+// The Dynamic mode's targets, in the shape the plain AC charge loop reports them.
+iso15118::d20::AcTargetPower
+dynamic_target_power(const iso15118::message_20::datatypes::Dynamic_AC_CLResControlMode& mode) {
+    iso15118::d20::AcTargetPower target;
+    target.target_active_power = mode.target_active_power;
+    target.target_active_power_L2 = mode.target_active_power_L2;
+    target.target_active_power_L3 = mode.target_active_power_L3;
+    target.target_reactive_power = mode.target_reactive_power;
+    target.target_reactive_power_L2 = mode.target_reactive_power_L2;
+    target.target_reactive_power_L3 = mode.target_reactive_power_L3;
+    return target;
 }
 
 const char* signal_to_string(iso15118::ev::feedback::Signal signal) {
@@ -367,6 +384,13 @@ void ISO15118_evImpl::init() {
             break;
         }
     });
+
+    // Read once, before any command can reach start_charging.
+    sae_profile = parse_sae_inverter_profile(mod->config.sae_inverter_profile_path, sae_profile_error);
+    if (not sae_profile) {
+        EVLOG_error << "Ev15118: SAE inverter profile '" << mod->config.sae_inverter_profile_path
+                    << "' is invalid, start_charging refuses AC_DER_SAE: " << sae_profile_error;
+    }
 }
 
 void ISO15118_evImpl::ready() {
@@ -522,10 +546,18 @@ iso15118::ev::EvConfig ISO15118_evImpl::make_ev_config(const SessionState& state
         ev_config.der_stop_on_unsupported_functions = mod->config.der_stop_on_unsupported_functions;
     }
 
+    if (sae_profile) {
+        ev_config.sae_profile = *sae_profile;
+    }
+    // The manager validates config values against the manifest bounds, [1, 65535] here.
+    ev_config.cpd_rounds = static_cast<std::uint16_t>(mod->config.cpd_rounds);
+    ev_config.der_stop_on_invalid_control = mod->config.der_stop_on_invalid_control;
+
     return ev_config;
 }
 
-iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
+iso15118::ev::feedback::Callbacks
+ISO15118_evImpl::make_callbacks(iso15118::message_20::datatypes::ServiceCategory energy_service) {
     iso15118::ev::feedback::Callbacks callbacks;
 
     callbacks.connected = [](const iso15118::io::Ipv6EndPoint&) { EVLOG_info << "Ev15118: connected to SECC"; };
@@ -609,7 +641,7 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
                                                                                            : "GridConnected");
     };
 
-    callbacks.ac_target_power = [this](const iso15118::d20::AcTargetPower& control) {
+    const auto publish_target_power = [this](const iso15118::d20::AcTargetPower& control) {
         namespace dt = iso15118::message_20::datatypes;
         const auto convert = [](const std::optional<dt::RationalNumber>& value) -> std::optional<float> {
             return value.has_value() ? std::make_optional(dt::from_RationalNumber(*value)) : std::nullopt;
@@ -623,26 +655,27 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
         target.target_reactive_power_L3 = convert(control.target_reactive_power_L3);
         publish_ac_evse_target_power(target);
     };
+    callbacks.ac_target_power = publish_target_power;
 
-    // ISO15118_ev has no DER variable; log the directive rather than publish it
-    callbacks.der_control = [](const iso15118::message_20::datatypes::DER_Dynamic_AC_CLResControlMode& control) {
-        namespace dt = iso15118::message_20::datatypes;
-        std::ostringstream line;
-        line << "Ev15118: DER directive: target active power " << dt::from_RationalNumber(control.target_active_power)
-             << " W";
-        if (control.dso_q_setpoint) {
-            line << ", DSO Q setpoint " << dt::from_RationalNumber(control.dso_q_setpoint->dso_q_setpoint_value)
-                 << " var";
-        }
-        if (control.dso_cos_phi_setpoint) {
-            line << ", DSO cos phi setpoint "
-                 << dt::from_RationalNumber(control.dso_cos_phi_setpoint->dso_cos_phi_setpoint_value);
-        }
-        EVLOG_info << line.str();
-    };
+    callbacks.der_control =
+        [this, publish_target_power](const iso15118::message_20::datatypes::DER_Dynamic_AC_CLResControlMode& control) {
+            namespace dt = iso15118::message_20::datatypes;
+            publish_target_power(dynamic_target_power(control));
+            types::iso15118::DerControlReceived received;
+            received.flavor = types::iso15118::DerFlavor::AC_DER_IEC;
+            received.source = types::iso15118::DerControlSource::ChargeLoop;
+            if (control.dso_q_setpoint) {
+                received.dso_q_setpoint = dt::from_RationalNumber(control.dso_q_setpoint->dso_q_setpoint_value);
+            }
+            if (control.dso_cos_phi_setpoint) {
+                received.dso_cos_phi_setpoint =
+                    dt::from_RationalNumber(control.dso_cos_phi_setpoint->dso_cos_phi_setpoint_value);
+            }
+            publish_der_control_received(received);
+        };
 
-    // Dictated DER curves are observed, not applied
-    callbacks.der_curves = [](const iso15118::message_20::datatypes::DerControl& control) {
+    // Dictated DER curves are observed, not applied. The published summary has no curve fields.
+    callbacks.der_curves = [this](const iso15118::message_20::datatypes::DerControl& control) {
         std::ostringstream line;
         line << "Ev15118: DER curves dictated:";
         bool any = false;
@@ -662,7 +695,33 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
             line << " none";
         }
         EVLOG_info << line.str();
+        publish_der_control_received({.flavor = types::iso15118::DerFlavor::AC_DER_IEC,
+                                      .source = types::iso15118::DerControlSource::ChargeParameterDiscovery});
     };
+
+    callbacks.sae_cpd_limits =
+        [this](const iso15118::message_20::datatypes::sae::DER_SAE_AC_CPDResEnergyTransferMode& limits,
+               const iso15118::ev::DerControlProblems& problems) {
+            const auto& control = limits.der_control_cpd_res;
+            publish_der_control_received(sae_der_control_received(
+                types::iso15118::DerControlSource::ChargeParameterDiscovery,
+                control.enter_service_cpd_res.permit_service, iso15118::sae::derive_enabled_modes(control), problems));
+        };
+
+    callbacks.sae_der_control = [this](
+                                    const iso15118::message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode& mode,
+                                    const iso15118::ev::DerControlProblems& problems) {
+        const auto& control = mode.der_control_cl_res;
+        publish_der_control_received(sae_der_control_received(types::iso15118::DerControlSource::ChargeLoop,
+                                                              control.enter_service_cl_res.permit_service,
+                                                              iso15118::sae::derive_enabled_modes(control), problems));
+    };
+
+    if (const auto flavor = der_flavor_for(energy_service)) {
+        callbacks.der_enabled_modes = [this, flavor = *flavor](std::uint32_t bitmap) {
+            publish_der_negotiated_functions(der_negotiated_functions(flavor, bitmap));
+        };
+    }
 
     return callbacks;
 }
@@ -749,7 +808,7 @@ void ISO15118_evImpl::run_one_session() {
             }
             // Config, parameters and registration in one lock hold: a cp_state_changed or a
             // parameter update landing in between would otherwise miss this session.
-            controller.emplace(make_ev_config(*h), make_callbacks(), (*h).dc_params, (*h).ac_params);
+            controller.emplace(make_ev_config(*h), make_callbacks((*h).energy_service), (*h).dc_params, (*h).ac_params);
             (*h).current = &controller.value();
             (*h).phase = SessionPhase::running;
             // The CP report is latched, so a session starting after it still gets the state.
@@ -839,6 +898,14 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     case types::iso15118::EnergyTransferMode::AC_DER_IEC:
         energy_service = iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC;
         break;
+    case types::iso15118::EnergyTransferMode::AC_DER_SAE:
+        if (not sae_profile) {
+            EVLOG_error << "Ev15118: rejecting start_charging with AC_DER_SAE; the SAE inverter profile '"
+                        << mod->config.sae_inverter_profile_path << "' is invalid: " << sae_profile_error;
+            return false;
+        }
+        energy_service = iso15118::message_20::datatypes::ServiceCategory::AC_DER_SAE;
+        break;
     // MCS is the megawatt DC service: same DC parameter discovery, cable check, pre-charge and
     // charge loop, a different service id on the wire. ISO 15118-20 only.
     case types::iso15118::EnergyTransferMode::MCS:
@@ -850,7 +917,6 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     // Listed rather than folded into a default arm so -Wswitch flags a new mode.
     case types::iso15118::EnergyTransferMode::AC_two_phase:
     case types::iso15118::EnergyTransferMode::AC_BPT_DER:
-    case types::iso15118::EnergyTransferMode::AC_DER_SAE:
     case types::iso15118::EnergyTransferMode::DC_combo_core:
     case types::iso15118::EnergyTransferMode::DC_unique:
     case types::iso15118::EnergyTransferMode::DC_ACDP:
@@ -858,8 +924,8 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     case types::iso15118::EnergyTransferMode::WPT:
         EVLOG_warning << "Ev15118: rejecting start_charging with unsupported EnergyTransferMode '"
                       << types::iso15118::energy_transfer_mode_to_string(EnergyTransferMode)
-                      << "'; only DC, DC BPT, MCS, MCS BPT, AC single/three-phase, AC BPT and "
-                         "AC DER IEC are supported";
+                      << "'; only DC, DC BPT, MCS, MCS BPT, AC single/three-phase, AC BPT, "
+                         "AC DER IEC and AC DER SAE are supported";
         return false;
     }
     {
@@ -872,20 +938,25 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
         // returning on a problem would leave the rejected request's energy service, transfer mode
         // and any discharge limits behind, and the next accepted start would inherit whichever of
         // them it does not itself overwrite: the discharge limits are written only for BPT and
-        // AC_DER_IEC, so they survive a change of energy service with nothing resetting them.
+        // the DER services, so they survive a change of energy service with nothing resetting them.
         auto candidate = *h;
         candidate.energy_service = energy_service;
         candidate.iso2_transfer_mode = to_iso2_transfer_mode(EnergyTransferMode, pre_20_offered);
         candidate.eim_requested = eim_requested;
         candidate.enforce_contract = enforce_contract;
+        // Measurements from an earlier session, a DC battery voltage above all, are not this grid's.
+        candidate.ac_params.present_voltage.reset();
+        candidate.ac_params.present_frequency.reset();
+        candidate.ac_params.der_alarm_status = 0;
         namespace dt = iso15118::message_20::datatypes;
         if (iso15118::ev::is_ac_family(energy_service)) {
             candidate.ac_params.phase_count = static_cast<uint8_t>(mod->config.ac_phase_count);
             candidate.ac_params.max_charge_power = static_cast<float>(mod->config.ac_max_charge_power_w);
             candidate.ac_params.min_charge_power = static_cast<float>(mod->config.ac_min_charge_power_w);
         }
-        // AC_DER_IEC carries mandatory discharge limits on the wire just as AC_BPT does.
-        if (energy_service == dt::ServiceCategory::AC_BPT or energy_service == dt::ServiceCategory::AC_DER_IEC) {
+        // The DER services carry mandatory discharge limits on the wire just as AC_BPT does.
+        if (energy_service == dt::ServiceCategory::AC_BPT or energy_service == dt::ServiceCategory::AC_DER_IEC or
+            energy_service == dt::ServiceCategory::AC_DER_SAE) {
             candidate.ac_params.max_discharge_power = static_cast<float>(mod->config.ac_max_discharge_power_w);
             candidate.ac_params.min_discharge_power = static_cast<float>(mod->config.ac_min_discharge_power_w);
         }
@@ -1068,6 +1139,7 @@ void ISO15118_evImpl::handle_update_present_values(types::iso15118::EvPresentVal
     if (PresentValues.present_voltage.has_value()) {
         const auto voltage = PresentValues.present_voltage.value();
         (*h).dc_params.present_voltage = voltage;
+        (*h).ac_params.present_voltage = voltage;
         if ((*h).current) {
             (*h).current->update_present_voltage(voltage);
         }
@@ -1077,6 +1149,25 @@ void ISO15118_evImpl::handle_update_present_values(types::iso15118::EvPresentVal
         (*h).ac_params.present_active_power = power;
         if ((*h).current) {
             (*h).current->update_present_active_power(power);
+        }
+    }
+    if (PresentValues.present_frequency.has_value()) {
+        const auto frequency = PresentValues.present_frequency.value();
+        (*h).ac_params.present_frequency = frequency;
+        if ((*h).current) {
+            (*h).current->update_present_frequency(frequency);
+        }
+    }
+    if (PresentValues.der_alarm_status.has_value()) {
+        const auto alarm_status = PresentValues.der_alarm_status.value();
+        // Command arguments are schema-checked only when the manager validates, so the minimum may not hold.
+        if (alarm_status < 0) {
+            EVLOG_warning << "Ev15118: ignoring negative der_alarm_status " << alarm_status;
+        } else {
+            (*h).ac_params.der_alarm_status = static_cast<std::uint32_t>(alarm_status);
+            if ((*h).current) {
+                (*h).current->update_der_alarm_status(static_cast<std::uint32_t>(alarm_status));
+            }
         }
     }
 }
