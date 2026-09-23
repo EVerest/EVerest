@@ -2,13 +2,13 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <optional>
 
-#include <iso15118/d20/ac_powers.hpp>
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/ac_der_sae_charge_loop.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
 #include <iso15118/ev/der_sae_control_validation.hpp>
+#include <iso15118/ev/detail/d20/ac_target_power.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/ev/detail/d20/sae_helper.hpp>
 #include <iso15118/ev/sae_profile_emit.hpp>
@@ -35,19 +35,6 @@ message_20::DER_SAE_AC_ChargeLoopRequest make_request(const Context& ctx) {
         params.present_frequency.value_or(profile.nominal_frequency_hz), params.der_alarm_status,
         ctx.sae_enabled_modes(), ctx.sae_permit_service(), ctx.sae_settings_update_time());
     return req;
-}
-
-iso15118::d20::AcTargetPower target_power(const dt_sae::DER_Dynamic_AC_CLResControlMode& mode,
-                                          const std::optional<dt::RationalNumber>& target_frequency) {
-    iso15118::d20::AcTargetPower target;
-    target.target_active_power = mode.target_active_power;
-    target.target_active_power_L2 = mode.target_active_power_L2;
-    target.target_active_power_L3 = mode.target_active_power_L3;
-    target.target_reactive_power = mode.target_reactive_power;
-    target.target_reactive_power_L2 = mode.target_reactive_power_L2;
-    target.target_reactive_power_L3 = mode.target_reactive_power_L3;
-    target.target_frequency = target_frequency;
-    return target;
 }
 
 } // namespace
@@ -139,7 +126,7 @@ Result AC_DER_SAE_ChargeLoop::feed(Event ev) {
     }
 
     m_ctx.feedback.sae_der_control(*mode, last_problems_);
-    m_ctx.feedback.ac_target_power(target_power(*mode, res->target_frequency));
+    m_ctx.feedback.ac_target_power(make_ac_target_power(*mode, res->target_frequency));
 
     m_ctx.send_request(make_request(m_ctx));
     return Result::awaiting();

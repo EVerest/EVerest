@@ -3,8 +3,12 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <string>
+#include <vector>
+
 #include "helper.hpp"
 
+#include <iso15118/d20/ac_powers.hpp>
 #include <iso15118/d20/der_functions.hpp>
 #include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/d20/state/ac_der_iec_charge_loop.hpp>
@@ -47,17 +51,19 @@ const auto seed_present_5000 = [](FsmStateHelper& helper) {
     helper.set_ac_params(p);
 };
 
-// Observes stop_from_charger and whether der_control fired, so stop paths can prove no
-// directive was surfaced.
+// Observes stop_from_charger and whether der_control or ac_target_power fired, so stop paths
+// can prove no directive was surfaced.
 struct StopObserver {
     bool fired = false;
     bool der_control_fired = false;
+    bool ac_target_fired = false;
     ev::feedback::Callbacks callbacks{};
     StopObserver() {
         callbacks.stop_from_charger = [this]() { fired = true; };
         callbacks.der_control = [this](const message_20::datatypes::DER_Dynamic_AC_CLResControlMode&) {
             der_control_fired = true;
         };
+        callbacks.ac_target_power = [this](const iso15118::d20::AcTargetPower&) { ac_target_fired = true; };
     }
 };
 } // namespace
@@ -154,6 +160,43 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop fires der_control on a Dynamic re
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_DER_IEC_ChargeLoop);
 }
 
+SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop fires ac_target_power with the powers and frequency of a Dynamic "
+         "response") {
+    namespace dt = message_20::datatypes;
+    std::vector<std::string> order;
+    std::optional<iso15118::d20::AcTargetPower> captured;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.ac_target_power = [&](const iso15118::d20::AcTargetPower& target) {
+        order.emplace_back("ac_target_power");
+        captured = target;
+    };
+    callbacks.der_control = [&](const dt::DER_Dynamic_AC_CLResControlMode&) { order.emplace_back("der_control"); };
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{callbacks, seed_present_5000};
+
+    auto res = make_res(SESSION_HEADER, ResponseCode::OK);
+    auto& mode = std::get<dt::DER_Dynamic_AC_CLResControlMode>(res.control_mode);
+    mode.target_active_power_L2 = dt::from_float(2100.0f);
+    mode.target_active_power_L3 = dt::from_float(2200.0f);
+    mode.target_reactive_power = dt::from_float(300.0f);
+    mode.target_reactive_power_L2 = dt::from_float(310.0f);
+    mode.target_reactive_power_L3 = dt::from_float(320.0f);
+    res.target_frequency = dt::from_float(50.2f);
+    primed.handle_response(res);
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(order == std::vector<std::string>{"ac_target_power", "der_control"});
+    REQUIRE(captured.has_value());
+    REQUIRE(dt::from_RationalNumber(captured->target_active_power.value()) == Catch::Approx(7000.0f));
+    REQUIRE(dt::from_RationalNumber(captured->target_active_power_L2.value()) == Catch::Approx(2100.0f));
+    REQUIRE(dt::from_RationalNumber(captured->target_active_power_L3.value()) == Catch::Approx(2200.0f));
+    REQUIRE(dt::from_RationalNumber(captured->target_reactive_power.value()) == Catch::Approx(300.0f));
+    REQUIRE(dt::from_RationalNumber(captured->target_reactive_power_L2.value()) == Catch::Approx(310.0f));
+    REQUIRE(dt::from_RationalNumber(captured->target_reactive_power_L3.value()) == Catch::Approx(320.0f));
+    REQUIRE(captured->target_frequency.has_value());
+    REQUIRE(dt::from_RationalNumber(*captured->target_frequency) == Catch::Approx(50.2f));
+}
+
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop stays and re-emits a request on a non-Terminate response") {
     StopObserver obs;
     PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{obs.callbacks, seed_present_5000};
@@ -213,6 +256,7 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop fires stop_from_charger and drive
 
     REQUIRE(obs.fired == true);
     REQUIRE(obs.der_control_fired == false);
+    REQUIRE(obs.ac_target_fired == false);
     REQUIRE(result.transitioned() == true);
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
     REQUIRE(primed.ctx.is_session_stopped() == false);
@@ -243,6 +287,7 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop defers an EV-initiated stop to th
     REQUIRE(obs.fired == false);
     // The stop is EV-driven, not a SECC directive: no der_control surfaced.
     REQUIRE(obs.der_control_fired == false);
+    REQUIRE(obs.ac_target_fired == false);
 
     const auto requests = primed.take_requests();
     const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
@@ -273,6 +318,7 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop honors a stop request set before 
     REQUIRE(obs.fired == false);
     // A pre-entry stop request tears down without surfacing a der_control directive.
     REQUIRE(obs.der_control_fired == false);
+    REQUIRE(obs.ac_target_fired == false);
 
     const auto requests = primed.take_requests();
     const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
@@ -360,11 +406,13 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop stops the session on a FAILED res
     REQUIRE(primed.ctx.is_session_stopped() == false);
     REQUIRE(primed.take_requests().get<message_20::DER_AC_ChargeLoopRequest>().has_value());
     obs.der_control_fired = false;
+    obs.ac_target_fired = false;
 
     expect_stops_session(primed, make_res(SESSION_HEADER, ResponseCode::FAILED_SequenceError),
                          ev::d20::StateID::AC_DER_IEC_ChargeLoop);
     REQUIRE(obs.fired == false);
     REQUIRE(obs.der_control_fired == false);
+    REQUIRE(obs.ac_target_fired == false);
     REQUIRE(primed.take_requests().empty());
 }
 
@@ -384,9 +432,11 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop rejects malformed responses") {
 namespace {
 struct PauseObserver {
     bool fired = false;
+    bool ac_target_fired = false;
     ev::feedback::Callbacks callbacks{};
     PauseObserver() {
         callbacks.pause_from_charger = [this]() { fired = true; };
+        callbacks.ac_target_power = [this](const iso15118::d20::AcTargetPower&) { ac_target_fired = true; };
     }
 };
 } // namespace
@@ -402,6 +452,7 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop fires pause_from_charger and driv
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
 
     REQUIRE(obs.fired == true);
+    REQUIRE(obs.ac_target_fired == false);
     REQUIRE(result.transitioned() == true);
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
     REQUIRE(primed.ctx.requested_stop_reason() == message_20::datatypes::ChargingSession::Pause);
@@ -423,6 +474,7 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop diverts to PowerDelivery(Stop) on
 
     REQUIRE(obs.fired == false);
     REQUIRE(obs.der_control_fired == false);
+    REQUIRE(obs.ac_target_fired == false);
     REQUIRE(result.transitioned() == true);
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
 }
@@ -475,6 +527,26 @@ SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop drives a Scheduled DER session") 
     REQUIRE(result.transitioned() == false);
     REQUIRE(primed.ctx.is_session_stopped() == false);
     REQUIRE(captured.has_value());
+}
+
+SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop publishes no target for a Scheduled response") {
+    bool scheduled_fired = false;
+    StopObserver obs;
+    obs.callbacks.der_control_scheduled = [&](const message_20::datatypes::DER_Scheduled_AC_CLResControlMode&) {
+        scheduled_fired = true;
+    };
+    PrimedState<ev::d20::state::AC_DER_IEC_ChargeLoop> primed{obs.callbacks, seed_scheduled};
+
+    auto res = make_scheduled_res(SESSION_HEADER);
+    auto& mode = std::get<message_20::datatypes::DER_Scheduled_AC_CLResControlMode>(res.control_mode);
+    mode.target_active_power = message_20::datatypes::from_float(7000.0f);
+    res.target_frequency = message_20::datatypes::from_float(50.2f);
+    primed.handle_response(res);
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(scheduled_fired == true);
+    REQUIRE(obs.ac_target_fired == false);
 }
 
 SCENARIO("ISO15118-20 EV AC_DER_IEC_ChargeLoop stops when the DER response changes control mode") {

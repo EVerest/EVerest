@@ -9,6 +9,7 @@
 #include <iso15118/ev/d20/state/ac_der_iec_charge_loop.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
 #include <iso15118/ev/der_control_functions.hpp>
+#include <iso15118/ev/detail/d20/ac_target_power.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/ac_der_iec_charge_loop.hpp>
 
@@ -133,8 +134,9 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
         m_ctx.feedback.der_control_scheduled(without_unsupported_setpoints(
             std::get<dt::DER_Scheduled_AC_CLResControlMode>(res->control_mode), supported));
     } else {
-        m_ctx.feedback.der_control(
-            without_unsupported_setpoints(std::get<dt::DER_Dynamic_AC_CLResControlMode>(res->control_mode), supported));
+        const auto& mode = std::get<dt::DER_Dynamic_AC_CLResControlMode>(res->control_mode);
+        m_ctx.feedback.ac_target_power(make_ac_target_power(mode, res->target_frequency));
+        m_ctx.feedback.der_control(without_unsupported_setpoints(mode, supported));
     }
 
     m_ctx.send_request(
