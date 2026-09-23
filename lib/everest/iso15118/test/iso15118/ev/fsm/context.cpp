@@ -395,6 +395,7 @@ SCENARIO("ISO15118-20 EV Context classifies the energy service families") {
             REQUIRE(ev::is_ac_family(ServiceCategory::AC));
             REQUIRE(ev::is_ac_family(ServiceCategory::AC_BPT));
             REQUIRE(ev::is_ac_family(ServiceCategory::AC_DER_IEC));
+            REQUIRE(ev::is_ac_family(ServiceCategory::AC_DER_SAE));
             REQUIRE_FALSE(ev::is_ac_family(ServiceCategory::DC));
             REQUIRE_FALSE(ev::is_ac_family(ServiceCategory::DC_BPT));
         }

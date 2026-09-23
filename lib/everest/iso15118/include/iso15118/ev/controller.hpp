@@ -62,8 +62,13 @@ public:
 
     // Module -> FSM parameter channels (any thread).
     void update_present_soc(double present_soc);
+    // V. DC inlet voltage, and the AC measured grid voltage for AC_DER_SAE.
     void update_present_voltage(float present_voltage);
     void update_present_active_power(float present_active_power);
+    // Hz. AC measured grid frequency for AC_DER_SAE.
+    void update_present_frequency(float present_frequency);
+    // DERAlarmStatus bitmap, AMD1 Table M.9, for AC_DER_SAE.
+    void update_der_alarm_status(std::uint32_t der_alarm_status);
     // Replace the static DC fields; the live fields keep their current values.
     void update_dc_params(const DcChargeParams& params);
 

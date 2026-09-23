@@ -6,6 +6,7 @@
 
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
 #include <iso15118/message/authorization.hpp>
+#include <iso15118/message/power_delivery.hpp>
 #include <iso15118/message/schedule_exchange.hpp>
 #include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/type.hpp>
@@ -100,6 +101,23 @@ SCENARIO(
     REQUIRE(result.transitioned() == true);
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
     REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV ScheduleExchange transitions to PowerDelivery on Finished for AC_DER_SAE") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, ServiceCategory::AC_DER_SAE, no_seed};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->charge_progress == message_20::datatypes::Progress::Start);
 }
 
 SCENARIO("ISO15118-20 EV ScheduleExchange goes to SessionStop when a stop was requested") {

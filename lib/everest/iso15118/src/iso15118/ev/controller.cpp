@@ -356,13 +356,27 @@ void Controller::update_present_soc(double present_soc) {
 }
 
 void Controller::update_present_voltage(float present_voltage) {
-    auto h = dc_params.handle();
+    {
+        auto h = dc_params.handle();
+        (*h).present_voltage = present_voltage;
+    }
+    auto h = ac_params.handle();
     (*h).present_voltage = present_voltage;
 }
 
 void Controller::update_present_active_power(float present_active_power) {
     auto h = ac_params.handle();
     (*h).present_active_power = present_active_power;
+}
+
+void Controller::update_present_frequency(float present_frequency) {
+    auto h = ac_params.handle();
+    (*h).present_frequency = present_frequency;
+}
+
+void Controller::update_der_alarm_status(std::uint32_t der_alarm_status) {
+    auto h = ac_params.handle();
+    (*h).der_alarm_status = der_alarm_status;
 }
 
 void Controller::update_dc_params(const DcChargeParams& params) {

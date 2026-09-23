@@ -4,6 +4,7 @@
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/ac_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
+#include <iso15118/ev/d20/state/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/dc_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/service_selection.hpp>
 #include <iso15118/ev/d20/state/stop_before_start.hpp>
@@ -37,18 +38,26 @@ Result ServiceSelection::feed(Event ev) {
         return std::move(*stop);
     }
 
-    // AC_DER_IEC is part of the AC family, so it must be matched before the
-    // family test or it would take the plain AC parameter discovery.
-    if (m_ctx.selected_service() == message_20::datatypes::ServiceCategory::AC_DER_IEC) {
-        return m_ctx.create_state<AC_DER_IEC_ChargeParameterDiscovery>();
-    }
-
-    if (m_ctx.is_ac_family()) {
+    using ServiceCategory = message_20::datatypes::ServiceCategory;
+    switch (m_ctx.selected_service()) {
+    case ServiceCategory::AC:
+    case ServiceCategory::AC_BPT:
         return m_ctx.create_state<AC_ChargeParameterDiscovery>();
-    }
-
-    if (m_ctx.is_dc_family()) {
+    case ServiceCategory::AC_DER_IEC:
+        return m_ctx.create_state<AC_DER_IEC_ChargeParameterDiscovery>();
+    case ServiceCategory::AC_DER_SAE:
+        return m_ctx.create_state<AC_DER_SAE_ChargeParameterDiscovery>();
+    case ServiceCategory::DC:
+    case ServiceCategory::DC_BPT:
+    case ServiceCategory::MCS:
+    case ServiceCategory::MCS_BPT:
         return m_ctx.create_state<DC_ChargeParameterDiscovery>();
+    case ServiceCategory::WPT:
+    case ServiceCategory::DC_ACDP:
+    case ServiceCategory::DC_ACDP_BPT:
+    case ServiceCategory::Internet:
+    case ServiceCategory::ParkingStatus:
+        break;
     }
 
     logf_error("selected service category is not supported by the EV");

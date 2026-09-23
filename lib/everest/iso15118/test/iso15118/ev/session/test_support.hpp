@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -29,6 +30,8 @@
 #include <iso15118/io/sdp.hpp>
 #include <iso15118/io/sdp_packet.hpp>
 #include <iso15118/io/stream_view.hpp>
+#include <iso15118/message/ac_der_sae_charge_loop.hpp>
+#include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/message/type.hpp>
@@ -39,6 +42,7 @@
 #include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/controller.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
+#include <iso15118/ev/der_sae_control_validation.hpp>
 #include <iso15118/ev/session.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 #include <iso15118/ev/session_params.hpp>
@@ -73,6 +77,64 @@ inline DerControlFunctions default_der_control_functions() {
     functions.dso_q_setpoint_provision = true;
     functions.dso_cos_phi_setpoint_provision = true;
     return functions;
+}
+
+// Points with the given x values, y fixed at 1.
+inline message_20::datatypes::sae::CurveDataPointsList make_sae_points(std::initializer_list<float> x_values) {
+    message_20::datatypes::sae::CurveDataPointsList points;
+    for (const auto x : x_values) {
+        points.push_back({message_20::datatypes::from_float(x), message_20::datatypes::from_float(1.0f)});
+    }
+    return points;
+}
+
+// AMD1 M.2.2.1.10 and M.2.2.1.11: x in s, y in V or Hz.
+inline message_20::datatypes::sae::DERCurve make_sae_trip_curve(message_20::datatypes::sae::DERUnit y_unit) {
+    message_20::datatypes::sae::DERCurve curve;
+    curve.x_unit = message_20::datatypes::sae::DERUnit::s;
+    curve.y_unit = y_unit;
+    curve.curve_data_points = make_sae_points({0.16f, 2.0f});
+    return curve;
+}
+
+// A DERControlCPDRes that encodes to EXI: every mandatory curve carries points. Permits service
+// and enables volt var and volt watt.
+inline message_20::datatypes::sae::DERControlCPDRes make_sae_cpd_control() {
+    using DERUnit = message_20::datatypes::sae::DERUnit;
+    message_20::datatypes::sae::DERControlCPDRes control;
+    control.voltage_trip.over_voltage_must_trip_curve = make_sae_trip_curve(DERUnit::V);
+    control.voltage_trip.under_voltage_must_trip_curve = make_sae_trip_curve(DERUnit::V);
+    control.frequency_trip.over_frequency_must_trip_curve = make_sae_trip_curve(DERUnit::Hz);
+    control.frequency_trip.under_frequency_must_trip_curve = make_sae_trip_curve(DERUnit::Hz);
+    control.enter_service_cpd_res.permit_service = true;
+
+    auto& reactive = control.reactive_power_support_cpd_res;
+    reactive.volt_var.enable = true;
+    reactive.volt_var.curve_data_points = make_sae_points({92.0f, 108.0f});
+    reactive.watt_var.curve_data_points = make_sae_points({-100.0f, 100.0f});
+
+    auto& active = control.active_power_support_cpd_res;
+    active.volt_watt.enable = true;
+    active.volt_watt.curve_data_points = make_sae_points({106.0f, 110.0f});
+    return control;
+}
+
+// A Dynamic SAE ChargeLoopResponse: service permitted, volt var enabled, the given active power target.
+inline message_20::DER_SAE_AC_ChargeLoopResponse make_sae_loop_res(const message_20::datatypes::SessionId& sid,
+                                                                   float target_active_power) {
+    message_20::DER_SAE_AC_ChargeLoopResponse res{};
+    res.header.session_id = sid;
+    res.response_code = message_20::datatypes::ResponseCode::OK;
+    message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode mode{};
+    mode.target_active_power = message_20::datatypes::from_float(target_active_power);
+    mode.der_control_cl_res.enter_service_cl_res.permit_service = true;
+    message_20::datatypes::sae::VoltVar volt_var{};
+    volt_var.enable = true;
+    volt_var.curve_data_points = make_sae_points({92.0f, 108.0f});
+    mode.der_control_cl_res.reactive_power_support_cl_res =
+        message_20::datatypes::sae::ReactivePowerSupportCLRes{std::nullopt, volt_var, std::nullopt, std::nullopt};
+    res.control_mode = mode;
+    return res;
 }
 
 // Frame a payload with the 8-byte V2GTP header, mirroring Session's own framing.
@@ -195,6 +257,13 @@ public:
     bool ac_target_power = false;
     bool der_control = false;
 
+    // AC_DER_SAE feedback, every firing in order.
+    std::vector<iso15118::d20::AcTargetPower> ac_targets;
+    std::vector<DerControlProblems> sae_cpd_problems;
+    std::vector<message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode> sae_der_controls;
+    std::vector<DerControlProblems> sae_der_control_problems;
+    std::vector<std::uint32_t> der_enabled_modes;
+
     // Session-level feedback observation.
     std::vector<feedback::Signal> signals;
     std::optional<ProtocolId> selected_protocol{std::nullopt};
@@ -241,7 +310,18 @@ private:
         cb.dc_bpt_limits = [this](const message_20::datatypes::BPT_DC_CPDResEnergyTransferMode&) {
             dc_bpt_limits = true;
         };
-        cb.ac_target_power = [this](const iso15118::d20::AcTargetPower&) { ac_target_power = true; };
+        cb.ac_target_power = [this](const iso15118::d20::AcTargetPower& target) {
+            ac_target_power = true;
+            ac_targets.push_back(target);
+        };
+        cb.sae_cpd_limits = [this](const message_20::datatypes::sae::DER_SAE_AC_CPDResEnergyTransferMode&,
+                                   const DerControlProblems& problems) { sae_cpd_problems.push_back(problems); };
+        cb.sae_der_control = [this](const message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode& mode,
+                                    const DerControlProblems& problems) {
+            sae_der_controls.push_back(mode);
+            sae_der_control_problems.push_back(problems);
+        };
+        cb.der_enabled_modes = [this](std::uint32_t modes) { der_enabled_modes.push_back(modes); };
         cb.der_control = [this](const message_20::datatypes::DER_Dynamic_AC_CLResControlMode&) { der_control = true; };
         cb.signal = [this](feedback::Signal s) { signals.push_back(s); };
         cb.selected_protocol = [this](ProtocolId p) { selected_protocol = p; };

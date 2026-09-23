@@ -8,6 +8,7 @@
 // with ENETUNREACH. These tests instead find the EV's SDP rx port among the
 // process's own descriptors and unicast the SDP response directly.
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
@@ -15,10 +16,13 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <arpa/inet.h>
@@ -29,6 +33,8 @@
 
 #include <cbv2g/exi_v2gtp.h>
 
+#include <iso15118/message/ac_der_sae_charge_loop.hpp>
+#include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/dc_cable_check.hpp>
@@ -41,10 +47,12 @@
 #include <iso15118/message/service_discovery.hpp>
 #include <iso15118/message/service_selection.hpp>
 #include <iso15118/message/session_setup.hpp>
+#include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 
 #include <iso15118/ev/config.hpp>
 #include <iso15118/ev/controller.hpp>
+#include <iso15118/session/protocol.hpp>
 
 #include "test_support.hpp"
 
@@ -217,6 +225,11 @@ public:
     SeccLink(const SeccLink&) = delete;
     SeccLink& operator=(const SeccLink&) = delete;
 
+    using Response = std::pair<PT, std::vector<uint8_t>>;
+
+    // Consulted before the DC canned table; nullopt falls through to it.
+    std::function<std::optional<Response>(const message_20::Variant&)> responder_override;
+
     uint16_t port() const {
         return bound_port;
     }
@@ -251,7 +264,10 @@ public:
             if (variant.get_if<message_20::DC_ChargeLoopRequest>() != nullptr) {
                 ++loop_request_count;
             }
-            const auto response = canned_response(variant);
+            auto response = responder_override ? responder_override(variant) : std::nullopt;
+            if (not response.has_value()) {
+                response = canned_response(variant);
+            }
             if (not response.has_value()) {
                 ++unanswered_count;
                 continue;
@@ -309,8 +325,6 @@ private:
         inbound.erase(inbound.begin(), inbound.begin() + total);
         return frame;
     }
-
-    using Response = std::pair<PT, std::vector<uint8_t>>;
 
     // The SECC's canned answer for one DC entry-sequence request.
     static std::optional<Response> canned_response(const message_20::Variant& request) {
@@ -641,6 +655,166 @@ SCENARIO("ISO15118-20 EV Controller ignores a plaintext SDP response when enforc
                 REQUIRE_FALSE(connected);
                 REQUIRE(connected_count == 0);
                 REQUIRE_FALSE(secc.accepted());
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Controller carries its AC_DER_SAE config and live inputs into the SAE requests") {
+    GIVEN("a Controller walked over a loopback link to a running AC_DER_SAE charge loop") {
+        // Filled on the test thread inside secc.service(), and declared first so they outlive secc.
+        std::vector<std::string> sap_namespaces;
+        std::vector<message_20::datatypes::sae::DER_SAE_AC_CPDReqEnergyTransferMode> cpd_requests;
+        std::vector<message_20::datatypes::sae::DER_Dynamic_AC_CLReqControlMode> loop_modes;
+        bool send_invalid = false;
+        int invalid_answers = 0;
+        int stop_requests = 0;
+
+        SdpResponder responder;
+        SeccLink secc;
+        const std::set<int> own_sockets{responder.descriptor()};
+
+        secc.responder_override = [&](const message_20::Variant& request) -> std::optional<SeccLink::Response> {
+            const auto sid = LINK_SESSION_ID;
+            const auto sae = message_20::datatypes::ServiceCategory::AC_DER_SAE;
+            if (const auto* req = request.get_if<message_20::SupportedAppProtocolRequest>()) {
+                for (const auto& protocol : req->app_protocol) {
+                    sap_namespaces.push_back(protocol.protocol_namespace);
+                }
+                return std::nullopt;
+            }
+            const auto* power_delivery = request.get_if<message_20::PowerDeliveryRequest>();
+            if ((power_delivery != nullptr and
+                 power_delivery->charge_progress == message_20::datatypes::Progress::Stop) or
+                request.get_if<message_20::SessionStopRequest>() != nullptr) {
+                ++stop_requests;
+                return std::nullopt;
+            }
+            if (request.get_if<message_20::ServiceDiscoveryRequest>() != nullptr) {
+                auto res = ok_res<message_20::ServiceDiscoveryResponse>(sid);
+                res.energy_transfer_service_list = {{sae, false}};
+                return SeccLink::Response{PT::Part20Main, serialize_msg(res)};
+            }
+            if (request.get_if<message_20::ServiceDetailRequest>() != nullptr) {
+                auto res = ok_res<message_20::ServiceDetailResponse>(sid);
+                res.service = message_20::to_underlying_value(sae);
+                res.service_parameter_list = {make_param_set(1, ControlMode::Dynamic)};
+                return SeccLink::Response{PT::Part20Main, serialize_msg(res)};
+            }
+            if (const auto* req = request.get_if<message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest>()) {
+                cpd_requests.push_back(req->transfer_mode);
+                auto res = ok_res<message_20::DER_SAE_AC_ChargeParameterDiscoveryResponse>(sid);
+                // [V2G20-3352]: Ongoing answers Ongoing.
+                res.transfer_mode.processing = req->transfer_mode.processing;
+                res.transfer_mode.nominal_frequency = message_20::datatypes::from_float(50.0f);
+                res.transfer_mode.der_control_cpd_res = make_sae_cpd_control();
+                return SeccLink::Response{PT::Part20DerSae, serialize_msg(res)};
+            }
+            if (const auto* req = request.get_if<message_20::DER_SAE_AC_ChargeLoopRequest>()) {
+                loop_modes.push_back(
+                    std::get<message_20::datatypes::sae::DER_Dynamic_AC_CLReqControlMode>(req->control_mode));
+                auto res = make_sae_loop_res(sid, 5000.0f);
+                if (send_invalid) {
+                    ++invalid_answers;
+                    // Decreasing x is invalid but still encodes.
+                    std::get<message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode>(res.control_mode)
+                        .der_control_cl_res.reactive_power_support_cl_res->volt_var->curve_data_points =
+                        make_sae_points({108.0f, 92.0f});
+                }
+                return SeccLink::Response{PT::Part20DerSae, serialize_msg(res)};
+            }
+            return std::nullopt;
+        };
+
+        ev::feedback::Callbacks callbacks{};
+        std::atomic_int stopped_count{0};
+        std::atomic_int timed_out_count{0};
+        std::atomic_int problem_reports{0};
+        callbacks.stopped = [&stopped_count]() { ++stopped_count; };
+        callbacks.timed_out = [&timed_out_count]() { ++timed_out_count; };
+        callbacks.sae_der_control = [&problem_reports](const auto&, const ev::DerControlProblems& problems) {
+            if (not problems.empty()) {
+                ++problem_reports;
+            }
+        };
+        auto config = link_config();
+        config.energy_service = message_20::datatypes::ServiceCategory::AC_DER_SAE;
+        config.sae_profile.inverter_serial_number = "SAE-LINK-01";
+        config.cpd_rounds = 2;
+        config.der_stop_on_invalid_control = true;
+        ev::Controller controller{config, callbacks, ev::DcChargeParams{}, ev::AcChargeParams{}};
+        ControllerRun run{controller};
+
+        std::optional<uint16_t> ev_port;
+        REQUIRE(poll_until(
+            [&]() {
+                ev_port = sdp_rx_port(own_sockets);
+                return ev_port.has_value();
+            },
+            5s));
+        REQUIRE(responder.respond(*ev_port, secc.port()));
+        REQUIRE(poll_until(
+            [&]() {
+                secc.service();
+                return not loop_modes.empty();
+            },
+            10s));
+        REQUIRE(secc.unanswered() == 0);
+
+        // [V2G20-3216], and the SECC side accepted it.
+        REQUIRE(sap_namespaces == std::vector<std::string>{ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE});
+
+        // sae_profile and cpd_rounds reached the running session.
+        REQUIRE(cpd_requests.size() == 2);
+        REQUIRE(cpd_requests[0].processing == Processing::Ongoing);
+        REQUIRE(cpd_requests[1].processing == Processing::Finished);
+        REQUIRE(cpd_requests[0].inverter_details.inverter_serial_number == "SAE-LINK-01");
+
+        // Nothing measured yet: the profile nominals.
+        REQUIRE(message_20::datatypes::from_RationalNumber(loop_modes.front().present_voltage) ==
+                Catch::Approx(230.0f));
+        REQUIRE(message_20::datatypes::from_RationalNumber(loop_modes.front().present_frequency) ==
+                Catch::Approx(50.0f));
+        REQUIRE(loop_modes.front().der_alarm_status == 0);
+
+        WHEN("present voltage, frequency and DER alarm status are updated mid-loop") {
+            controller.update_present_voltage(240.0f);
+            controller.update_present_frequency(49.5f);
+            controller.update_der_alarm_status(0x3);
+
+            THEN("a later SAE charge-loop request carries them") {
+                REQUIRE(poll_until(
+                    [&]() {
+                        secc.service();
+                        const auto& mode = loop_modes.back();
+                        return message_20::datatypes::from_RationalNumber(mode.present_voltage) ==
+                                   Catch::Approx(240.0f) and
+                               message_20::datatypes::from_RationalNumber(mode.present_frequency) ==
+                                   Catch::Approx(49.5f) and
+                               mode.der_alarm_status == 0x3;
+                    },
+                    10s));
+                REQUIRE(secc.unanswered() == 0);
+                REQUIRE(stopped_count == 0);
+
+                // der_stop_on_invalid_control reached the running session too.
+                send_invalid = true;
+                REQUIRE(poll_until(
+                    [&]() {
+                        secc.service();
+                        return stopped_count > 0;
+                    },
+                    2s));
+                secc.service();
+
+                // The first invalid control ended the session, without warning and continuing, without
+                // PowerDelivery(Stop) or SessionStop, and before any response timeout. Its block still
+                // reached the owner, once, with its problems.
+                REQUIRE(invalid_answers == 1);
+                REQUIRE(problem_reports == 1);
+                REQUIRE(stop_requests == 0);
+                REQUIRE(timed_out_count == 0);
+                REQUIRE(secc.unanswered() == 0);
             }
         }
     }

@@ -8,6 +8,7 @@
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/ac_charge_loop.hpp>
 #include <iso15118/ev/d20/state/ac_der_iec_charge_loop.hpp>
+#include <iso15118/ev/d20/state/ac_der_sae_charge_loop.hpp>
 #include <iso15118/ev/d20/state/dc_charge_loop.hpp>
 #include <iso15118/ev/d20/state/dc_welding_detection.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
@@ -64,6 +65,37 @@ message_20::PowerDeliveryRequest make_request(Context& ctx, dt::Progress charge_
     return req;
 }
 
+// PowerDelivery(Start) enters the service's charge loop.
+Result enter_charge_loop(Context& ctx) {
+    using ServiceCategory = message_20::datatypes::ServiceCategory;
+    switch (ctx.selected_service()) {
+    case ServiceCategory::AC:
+    case ServiceCategory::AC_BPT:
+        return ctx.create_state<AC_ChargeLoop>();
+    case ServiceCategory::AC_DER_IEC:
+        return ctx.create_state<AC_DER_IEC_ChargeLoop>();
+    case ServiceCategory::AC_DER_SAE:
+        return ctx.create_state<AC_DER_SAE_ChargeLoop>();
+    case ServiceCategory::DC:
+    case ServiceCategory::DC_BPT:
+    case ServiceCategory::MCS:
+    case ServiceCategory::MCS_BPT:
+        return ctx.create_state<DC_ChargeLoop>();
+    // Not reached: ServiceSelection stops the session for these.
+    case ServiceCategory::WPT:
+    case ServiceCategory::DC_ACDP:
+    case ServiceCategory::DC_ACDP_BPT:
+    case ServiceCategory::Internet:
+    case ServiceCategory::ParkingStatus:
+        break;
+    }
+
+    logf_error("PowerDelivery(Start) has no charge loop for energy transfer service %d; stopping the session",
+               static_cast<int>(message_20::to_underlying_value(ctx.selected_service())));
+    ctx.stop_session();
+    return Result::stopping();
+}
+
 } // namespace
 
 void PowerDelivery::enter() {
@@ -83,20 +115,11 @@ Result PowerDelivery::feed(Event ev) {
     }
 
     using Progress = message_20::datatypes::Progress;
-    using ServiceCategory = message_20::datatypes::ServiceCategory;
-    const bool is_ac = m_ctx.is_ac_family();
-    const bool is_ac_der_iec = m_ctx.selected_service() == ServiceCategory::AC_DER_IEC;
     switch (m_charge_progress) {
     case Progress::Start:
-        if (is_ac_der_iec) {
-            return m_ctx.create_state<AC_DER_IEC_ChargeLoop>();
-        }
-        if (is_ac) {
-            return m_ctx.create_state<AC_ChargeLoop>();
-        }
-        return m_ctx.create_state<DC_ChargeLoop>();
+        return enter_charge_loop(m_ctx);
     case Progress::Stop:
-        if (is_ac) {
+        if (m_ctx.is_ac_family()) {
             return m_ctx.create_state<SessionStop>();
         }
         return m_ctx.create_state<DC_WeldingDetection>();

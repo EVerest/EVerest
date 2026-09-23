@@ -183,6 +183,24 @@ SCENARIO("ISO15118-20 EV ServiceSelection transitions to AC_DER_IEC_ChargeParame
     REQUIRE(primed.ctx.selected_service() == ServiceCategory::AC_DER_IEC);
 }
 
+SCENARIO("ISO15118-20 EV ServiceSelection transitions to AC_DER_SAE_ChargeParameterDiscovery on OK") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::AC_DER_SAE, no_seed, uint16_t{4}};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->selected_energy_transfer_service.service_id == ServiceCategory::AC_DER_SAE);
+    REQUIRE(request_message->selected_energy_transfer_service.parameter_set_id == 4);
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_DER_SAE_ChargeParameterDiscovery);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
 SCENARIO("ISO15118-20 EV ServiceSelection stops the session on an unsupported service category") {
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::ServiceSelection> primed{callbacks, ServiceCategory::WPT, no_seed, uint16_t{1}};
