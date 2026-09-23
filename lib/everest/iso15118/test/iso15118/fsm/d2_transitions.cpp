@@ -1808,3 +1808,62 @@ SCENARIO("ISO 15118-2 SECC gates a post-charge SessionStopReq on CP State B") {
         }
     }
 }
+
+SCENARIO("ISO 15118-2 SECC resumes a PnC-paused session") {
+
+    // The module withdraws Contract once the session is authorized, so a resume sees pnc_enabled false.
+    auto config = make_pnc_config();
+    config.pnc_enabled = false;
+
+    const dt::SessionId paused_session_id{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+
+    const auto resume = [&](Secc& secc) {
+        secc.fsm.context().pause_ctx = d2::PauseContext{paused_session_id, dt::PaymentOption::Contract};
+        message_2::SessionSetupRequest req;
+        req.header.session_id = paused_session_id;
+        req.evcc_id = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
+        secc.fsm.drive(req);
+        secc.session_id = secc.fsm.context().get_session_id();
+        secc.drive(message_2::ServiceDiscoveryRequest{});
+    };
+
+    GIVEN("A PnC pause resumed over TLS") {
+        Secc secc{config, {}};
+        resume(secc);
+
+        THEN("Only Contract is offered [V2G2-741]") {
+            const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
+            REQUIRE(res.has_value());
+            REQUIRE(res->response_code == dt::ResponseCode::OK);
+            REQUIRE(res->payment_option_list.size() == 1);
+            REQUIRE(res->payment_option_list[0] == dt::PaymentOption::Contract);
+        }
+
+        WHEN("The EV selects Contract again") {
+            message_2::PaymentServiceSelectionRequest req;
+            req.selected_payment_option = dt::PaymentOption::Contract;
+            req.selected_service_list.push_back({CHARGE_SERVICE_ID, std::nullopt});
+            secc.drive(req);
+
+            THEN("The selection is accepted and the machine moves to PaymentDetails") {
+                const auto res = secc.fsm.response<message_2::PaymentServiceSelectionResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                REQUIRE(secc.fsm.state() == StateID::Identification);
+            }
+        }
+    }
+
+    GIVEN("A PnC pause resumed over plain TCP") {
+        config.tls_active = false;
+        Secc secc{config, {}};
+        resume(secc);
+
+        THEN("Contract is not offered [V2G2-632]") {
+            const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
+            REQUIRE(res.has_value());
+            REQUIRE(res->payment_option_list.size() == 1);
+            REQUIRE(res->payment_option_list[0] == dt::PaymentOption::ExternalPayment);
+        }
+    }
+}
