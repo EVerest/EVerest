@@ -227,7 +227,15 @@ static int encode_appHand_supportedAppProtocolReq(exi_bitstream_t* stream, const
                     error = encode_appHand_AppProtocolType(stream, &supportedAppProtocolReq->AppProtocol.array[AppProtocol_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 8;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (AppProtocol_currentIndex < 20)
+                        {
+                            grammar_id = 8;
+                        }
+                        else
+                        {
+                            grammar_id = 5;
+                        }
                     }
                 }
             }
