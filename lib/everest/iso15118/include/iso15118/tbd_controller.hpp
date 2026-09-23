@@ -154,6 +154,16 @@ private:
     // callbacks for sdp server
     void handle_sdp_server_input();
 
+    // The endpoint announced for the current session, so a repeated SDP request can be answered again
+    // until the EV connects. The response is unicast: if the EV does not answer neighbour discovery in
+    // time, the kernel drops it and only a repeat reaches the EV.
+    struct SdpOffer {
+        io::v2gtp::Security requested; // the EV's request after the TLS negotiation strategy
+        io::v2gtp::Security offered;   // what the response announces (differs on the plain-TCP fallback)
+        io::Ipv6EndPoint endpoint;
+    };
+    std::optional<SdpOffer> sdp_offer;
+
     // Runs one poll_manager.poll() step using next_event; returns false if poll()
     // threw, so the caller can break out of its loop.
     bool poll_once();
