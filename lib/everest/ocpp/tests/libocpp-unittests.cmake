@@ -26,38 +26,9 @@ set(TEST_PROFILES_LOCATION_V21 "${CMAKE_CURRENT_BINARY_DIR}/resources/profiles/v
 
 # Add variables that can be used for all tests if needed.
 set(GTEST_LIBRARIES GTest::gmock_main GTest::gtest_main)
-set(TEST_COMPILE_OPTIONS -pedantic-errors)
-# Relative to the tests' WORKING_DIRECTORY, so the compile flags don't differ between build trees.
-set(TEST_COMPILE_DEFINITIONS
-    CONFIG_FILE_LOCATION_V16="resources/config/v16/config.json"
-    USER_CONFIG_FILE_LOCATION_V16="resources/config/v16/user_config.json"
-    CONFIG_DIR_V16="resources/v16/"
-    MIGRATION_FILES_LOCATION_V16="resources/v16/migration_files"
-    MIGRATION_FILES_LOCATION_V2="resources/v2/migration_files"
-    MIGRATION_FILE_VERSION_V16=${MIGRATION_FILE_VERSION_V16}
-    MIGRATION_FILE_VERSION_V2=${MIGRATION_FILE_VERSION_V2}
-    TEST_PROFILES_LOCATION_V16="resources/profiles/v16"
-    TEST_PROFILES_LOCATION_V2="resources/profiles/v2"
-    TEST_PROFILES_LOCATION_V21="resources/profiles/v21")
-set(TEST_COMPILE_FEATURES cxx_std_17)
 set(LIBOCPP_INCLUDE_PATH ${PROJECT_SOURCE_DIR}/include)
 set(LIBOCPP_LIB_PATH ${PROJECT_SOURCE_DIR}/lib)
 set(LIBOCPP_3RDPARTY_PATH ${PROJECT_SOURCE_DIR}/3rd_party)
-set(TEST_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}
-                             ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp/common
-                             ${LIBOCPP_INCLUDE_PATH}
-)
-# If the test is not linked against the ocpp library, most probably those libraries are needed to link against.
-set(LIBOCPP_TEST_DEFAULT_LINK_LIBRARIES
-        SQLite3::SQLite3
-        nlohmann_json::nlohmann_json
-        nlohmann_json_schema_validator
-        date::date-tz
-        everest::log
-        everest::util
-        everest::evse_security
-        everest::sqlite
-)
 
 # If the test is not linked against the ocpp library, those default sources can be linked against, they will often
 # be needed to link against.
@@ -108,15 +79,37 @@ function(add_libocpp_unittest)
     add_test(NAME ${arg_NAME} COMMAND ${arg_NAME} WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
     list(APPEND GCOVR_DEPENDENCIES ${arg_NAME})
     target_link_libraries(${arg_NAME} PUBLIC ${GTEST_LIBRARIES})
-    target_link_libraries(${arg_NAME} PRIVATE ${LIBOCPP_TEST_DEFAULT_LINK_LIBRARIES})
+    # If the test is not linked against the ocpp library, most probably those libraries are needed to link against.
+    target_link_libraries(${arg_NAME} PRIVATE
+        SQLite3::SQLite3
+        nlohmann_json::nlohmann_json
+        nlohmann_json_schema_validator
+        date::date-tz
+        everest::log
+        everest::util
+        everest::evse_security
+        everest::sqlite
+    )
+    # Paths are relative to the WORKING_DIRECTORY, so the compile flags don't differ between build trees.
     target_compile_definitions(${arg_NAME}
         PRIVATE
-            ${TEST_COMPILE_DEFINITIONS}
+            CONFIG_FILE_LOCATION_V16="resources/config/v16/config.json"
+            USER_CONFIG_FILE_LOCATION_V16="resources/config/v16/user_config.json"
+            CONFIG_DIR_V16="resources/v16/"
+            MIGRATION_FILES_LOCATION_V16="resources/v16/migration_files"
+            MIGRATION_FILES_LOCATION_V2="resources/v2/migration_files"
+            TEST_PROFILES_LOCATION_V16="resources/profiles/v16"
+            TEST_PROFILES_LOCATION_V2="resources/profiles/v2"
+            TEST_PROFILES_LOCATION_V21="resources/profiles/v21"
             MIGRATION_FILE_VERSION_V16=${MIGRATION_FILE_VERSION_V16}
             MIGRATION_FILE_VERSION_V2=${MIGRATION_FILE_VERSION_V2}
             MIGRATION_DEVICE_MODEL_FILE_VERSION_V2=${MIGRATION_DEVICE_MODEL_FILE_VERSION_V2})
-    target_compile_options(${arg_NAME} PRIVATE ${TEST_COMPILE_OPTIONS})
-    target_compile_features(${arg_NAME} PUBLIC ${TEST_COMPILE_FEATURES})
-    target_include_directories(${arg_NAME} PRIVATE ${TEST_INCLUDE_DIRECTORIES})
+    target_compile_options(${arg_NAME} PRIVATE -pedantic-errors)
+    target_compile_features(${arg_NAME} PUBLIC cxx_std_17)
+    target_include_directories(${arg_NAME} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp/common
+        ${LIBOCPP_INCLUDE_PATH}
+    )
     message("Add test ${arg_NAME}")
 endfunction()
