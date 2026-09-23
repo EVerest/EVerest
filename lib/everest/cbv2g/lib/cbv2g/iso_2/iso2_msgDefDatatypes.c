@@ -549,6 +549,11 @@ void init_iso2_BodyType(struct iso2_BodyType* BodyType) {
 void init_iso2_V2G_Message(struct iso2_V2G_Message* V2G_Message) {
     (void) V2G_Message;
 }
+// init for element fragment eMAID
+void init_iso2_eMAIDElementFragment(struct iso2_eMAIDElementFragment* eMAIDElementFragment) {
+    eMAIDElementFragment->Id_isUsed = 0u;
+    eMAIDElementFragment->CONTENT_isUsed = 0u;
+}
 
 // init for fragment
 void init_iso2_exiFragment(struct iso2_exiFragment* exiFrag) {
