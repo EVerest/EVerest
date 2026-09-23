@@ -6,6 +6,7 @@ namespace iso15118 {
 
 std::optional<ProtocolId> protocol_id_from_namespace(const std::string& protocol_namespace) {
     if (protocol_namespace == ISO20_DC_PROTOCOL_NAMESPACE or protocol_namespace == ISO20_AC_PROTOCOL_NAMESPACE or
+        protocol_namespace == ISO20_AC_DER_IEC_PROTOCOL_NAMESPACE or
         protocol_namespace == ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE) {
         return ProtocolId::ISO15118_20;
     }

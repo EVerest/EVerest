@@ -10,7 +10,11 @@ namespace iso15118::ev {
 
 namespace {
 
+// A DER service offers only its AMD1 namespace, with no -20:AC fallback: an SECC without AMD1 cannot serve it.
 const char* iso20_namespace(message_20::datatypes::ServiceCategory service) {
+    if (service == message_20::datatypes::ServiceCategory::AC_DER_IEC) {
+        return ISO20_AC_DER_IEC_PROTOCOL_NAMESPACE;
+    }
     if (service == message_20::datatypes::ServiceCategory::AC_DER_SAE) {
         return ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE;
     }
