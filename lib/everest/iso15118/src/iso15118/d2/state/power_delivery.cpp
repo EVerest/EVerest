@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d2/state/power_delivery.hpp>
 
 #include <algorithm>
@@ -166,6 +166,14 @@ Result renegotiate(Context& ctx, const message_2::PowerDeliveryRequest& req, boo
     if (not respond(ctx, req, is_dc)) {
         return {};
     }
+    if (is_dc) {
+        // IEC 61851-23:2023 CC.3.6: the EVSE disables side B (t803), the EV opens its disconnection
+        // device and changes to CP B (t805, t806), and the session continues as a normal startup, so
+        // the isolation has to be verified again (t809).
+        ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
+        ctx.feedback.signal(session::feedback::Signal::DC_RENEGOTIATION_STARTED);
+        ctx.invalidate_cable_check();
+    }
     return ctx.create_state<ChargeParameterDiscovery>();
 }
 
@@ -309,8 +317,7 @@ Result process_dc_power_delivery(Context& m_ctx, const message_2::PowerDeliveryR
     m_ctx.arm_cp_state_b_gate();
 
     // With the contactor open the verified isolation no longer holds, so a post-stop restart must re-run
-    // the physical test. Renegotiation keeps the contactor closed and so keeps cable_check_done (NOTE 1
-    // of 8.7.4.3).
+    // the physical test.
     m_ctx.invalidate_cable_check();
     m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
     return m_ctx.create_state<PostCharge>();
