@@ -151,6 +151,17 @@ void ISO15118_chargerImpl::init() {
         }
     });
 
+    mod->r_iso2->subscribe_dc_renegotiation_started([this]() {
+        if (not mod->selected_iso20()) {
+            publish_dc_renegotiation_started(nullptr);
+        }
+    });
+    mod->r_iso20->subscribe_dc_renegotiation_started([this]() {
+        if (mod->selected_iso20()) {
+            publish_dc_renegotiation_started(nullptr);
+        }
+    });
+
     mod->r_iso2->subscribe_current_demand_finished([this]() {
         if (not mod->selected_iso20()) {
             publish_current_demand_finished(nullptr);
