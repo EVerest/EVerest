@@ -10,6 +10,7 @@ std::chrono::milliseconds response_timeout(StateID state) {
         return MESSAGE_SERVICE_DETAIL;
     case StateID::AC_ChargeLoop:
     case StateID::AC_DER_IEC_ChargeLoop:
+    case StateID::AC_DER_SAE_ChargeLoop:
     case StateID::DC_ChargeLoop:
         return MESSAGE_CHARGE_LOOP;
     default:

@@ -18,6 +18,8 @@
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
 #include <iso15118/message/ac_der_iec_charge_loop.hpp>
 #include <iso15118/message/ac_der_iec_charge_parameter_discovery.hpp>
+#include <iso15118/message/ac_der_sae_charge_loop.hpp>
+#include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/common_types.hpp>
@@ -39,6 +41,7 @@
 #include <iso15118/d20/der_functions.hpp>
 #include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/der_control_functions.hpp>
+#include <iso15118/sae_modes.hpp>
 
 #include "test_support.hpp"
 
@@ -930,9 +933,9 @@ message_20::DC_ChargeLoopResponse make_dc_bpt_loop_res(const message_20::datatyp
 }
 
 // ServiceDetailRequest, so a scenario can then inject a tailored ServiceDetailResponse.
-message_20::datatypes::SessionId walk_to_ac_der_iec_service_detail(SessionFixture& fx) {
+message_20::datatypes::SessionId walk_to_service_detail(SessionFixture& fx,
+                                                        message_20::datatypes::ServiceCategory service) {
     const auto sid = WALK_SESSION_ID;
-    using SC = message_20::datatypes::ServiceCategory;
 
     fx.session.start();
     REQUIRE(run_reactor_until(
@@ -963,12 +966,111 @@ message_20::datatypes::SessionId walk_to_ac_der_iec_service_detail(SessionFixtur
                                                             PT::Part20Main);
 
     auto discovery_res = ok_res<message_20::ServiceDiscoveryResponse>(sid);
-    discovery_res.energy_transfer_service_list = {{SC::AC_DER_IEC, false}};
+    discovery_res.energy_transfer_service_list = {{service, false}};
     {
         const auto req = inject_then_expect<message_20::ServiceDetailRequest>(fx, "ServiceDiscovery -> ServiceDetail",
                                                                               discovery_res, PT::Part20Main);
-        REQUIRE(req.service == message_20::to_underlying_value(SC::AC_DER_IEC));
+        REQUIRE(req.service == message_20::to_underlying_value(service));
     }
+
+    return sid;
+}
+
+// Fixture profile for the AC_DER_SAE walks: the defaults plus volt var, so the CPD enabling volt var
+// and volt watt negotiates volt var alone.
+constexpr std::uint32_t SAE_VOLT_VAR_BIT = sae::sae_function_bit(sae::DerBitMapFunctions::VoltVarFunction);
+
+ev::d20::SessionOptions sae_walk_options() {
+    ev::d20::SessionOptions options{};
+    options.sae_profile.supported_modes |= SAE_VOLT_VAR_BIT;
+    options.cpd_rounds = 2;
+    return options;
+}
+
+using SaeClReqMode = message_20::datatypes::sae::DER_Dynamic_AC_CLReqControlMode;
+
+SaeClReqMode sae_loop_mode(const message_20::DER_SAE_AC_ChargeLoopRequest& req) {
+    const auto* mode = std::get_if<SaeClReqMode>(&req.control_mode);
+    REQUIRE(mode != nullptr);
+    return *mode;
+}
+
+// Walk an AC_DER_SAE-configured ev::Session from start() through the first DER_SAE_AC_ChargeLoopRequest,
+// with two CPD rounds.
+message_20::datatypes::SessionId walk_to_ac_der_sae_charge_loop(SessionFixture& fx) {
+    using SC = message_20::datatypes::ServiceCategory;
+    const auto sid = walk_to_service_detail(fx, SC::AC_DER_SAE);
+
+    // Table M.54: plain AC parameters. The Scheduled set is skipped; the SAE loop is Dynamic only.
+    auto detail_res = ok_res<message_20::ServiceDetailResponse>(sid);
+    detail_res.service = message_20::to_underlying_value(SC::AC_DER_SAE);
+    detail_res.service_parameter_list = {make_param_set(11, ControlMode::Scheduled),
+                                         make_param_set(12, ControlMode::Dynamic)};
+    {
+        const auto req = inject_then_expect<message_20::ServiceSelectionRequest>(
+            fx, "ServiceDetail -> ServiceSelection", detail_res, PT::Part20Main);
+        REQUIRE(req.selected_energy_transfer_service.service_id == SC::AC_DER_SAE);
+        REQUIRE(req.selected_energy_transfer_service.parameter_set_id == 12);
+    }
+
+    const auto profile = sae_walk_options().sae_profile;
+    {
+        const auto req = inject_then_expect<message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest>(
+            fx, "ServiceSelection -> AC_DER_SAE_ChargeParameterDiscovery",
+            ok_res<message_20::ServiceSelectionResponse>(sid), PT::Part20Main);
+        REQUIRE(header_payload_type(fx.captured.back()) == PT::Part20DerSae);
+        // First of two rounds.
+        REQUIRE(req.transfer_mode.processing == Processing::Ongoing);
+        REQUIRE(req.transfer_mode.supported_modes == profile.supported_modes);
+        REQUIRE(req.transfer_mode.enabled_modes == 0);
+        REQUIRE(req.transfer_mode.inverter_details.inverter_serial_number == profile.inverter_serial_number);
+        REQUIRE(message_20::datatypes::from_RationalNumber(req.transfer_mode.max_charge_power) ==
+                Catch::Approx(AC_MAX_CHARGE_POWER));
+        REQUIRE(message_20::datatypes::from_RationalNumber(req.transfer_mode.nominal_voltage) ==
+                Catch::Approx(profile.nominal_voltage_v));
+    }
+
+    auto cpd_res = ok_res<message_20::DER_SAE_AC_ChargeParameterDiscoveryResponse>(sid);
+    cpd_res.transfer_mode.max_charge_power = message_20::datatypes::from_float(AC_MAX_CHARGE_POWER);
+    cpd_res.transfer_mode.min_charge_power = message_20::datatypes::from_float(AC_MIN_CHARGE_POWER);
+    cpd_res.transfer_mode.nominal_frequency = message_20::datatypes::from_float(50.0f);
+    cpd_res.transfer_mode.der_control_cpd_res = make_sae_cpd_control();
+    cpd_res.transfer_mode.processing = Processing::Ongoing;
+    {
+        const auto req = inject_then_expect<message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest>(
+            fx, "AC_DER_SAE_ChargeParameterDiscovery Ongoing -> AC_DER_SAE_ChargeParameterDiscovery", cpd_res,
+            PT::Part20DerSae);
+        REQUIRE(req.transfer_mode.processing == Processing::Finished);
+        // Volt var and volt watt enabled, EnterService permitted; only volt var is supported.
+        REQUIRE(req.transfer_mode.enabled_modes == SAE_VOLT_VAR_BIT);
+    }
+
+    cpd_res.transfer_mode.processing = Processing::Finished;
+    inject_then_expect<message_20::ScheduleExchangeRequest>(
+        fx, "AC_DER_SAE_ChargeParameterDiscovery -> ScheduleExchange", cpd_res, PT::Part20DerSae);
+    REQUIRE(fx.ac_limits);
+    REQUIRE(fx.sae_cpd_problems == std::vector<ev::DerControlProblems>{{}, {}});
+    REQUIRE(fx.der_enabled_modes == std::vector<std::uint32_t>{SAE_VOLT_VAR_BIT, SAE_VOLT_VAR_BIT});
+
+    auto schedule_res = ok_res<message_20::ScheduleExchangeResponse>(sid);
+    schedule_res.processing = Processing::Finished;
+    {
+        const auto req = inject_then_expect<message_20::PowerDeliveryRequest>(
+            fx, "ScheduleExchange -> PowerDelivery(Start)", schedule_res, PT::Part20Main);
+        REQUIRE(req.charge_progress == message_20::datatypes::Progress::Start);
+    }
+
+    {
+        const auto req = inject_then_expect<message_20::DER_SAE_AC_ChargeLoopRequest>(
+            fx, "PowerDelivery -> AC_DER_SAE_ChargeLoop", ok_res<message_20::PowerDeliveryResponse>(sid),
+            PT::Part20Main);
+        const auto mode = sae_loop_mode(req);
+        REQUIRE(mode.enabled_modes == SAE_VOLT_VAR_BIT);
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode.present_active_power) ==
+                Catch::Approx(AC_PRESENT_ACTIVE_POWER));
+        REQUIRE(mode.der_operational_state == message_20::datatypes::sae::DEROperationalState::On);
+    }
+    REQUIRE(fx.sae_der_controls.empty());
 
     return sid;
 }
@@ -1227,7 +1329,7 @@ SCENARIO("ISO15118-20 EV Session stops cleanly when the only AC_DER_IEC set dema
                           true};
 
         WHEN("the ServiceDetailResponse offers only a set demanding VoltWattMode") {
-            const auto sid = walk_to_ac_der_iec_service_detail(fx);
+            const auto sid = walk_to_service_detail(fx, message_20::datatypes::ServiceCategory::AC_DER_IEC);
             const auto before = fx.captured.size();
 
             auto detail_res = ok_res<message_20::ServiceDetailResponse>(sid);
@@ -1323,6 +1425,103 @@ SCENARIO("ISO15118-20 EV Session drives a full DC_BPT session through the BPT ch
             THEN("PowerDelivery(Stop) walks through DC_WeldingDetection to a clean SessionStop") {
                 walk_stop_to_finish(fx, sid);
                 REQUIRE(fx.stop_from_charger);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session drives a full AC_DER_SAE session through the SAE charge loop to SessionStop") {
+    GIVEN("An AC_DER_SAE-configured Session with two CPD rounds") {
+        SessionFixture fx{"EVTESTID01",
+                          ev::SessionTiming{5ms, 100ms},
+                          ev::DcChargeParams{},
+                          default_advertised_ac_app_protocols(),
+                          message_20::datatypes::ServiceCategory::AC_DER_SAE,
+                          ac_seed_params(),
+                          default_der_control_functions(),
+                          true,
+                          sae_walk_options()};
+
+        WHEN("the session is walked to the SAE charge loop and the SECC then signals Terminate") {
+            const auto sid = walk_to_ac_der_sae_charge_loop(fx);
+
+            // Constant var is enabled too, but unsupported, so the echo keeps volt var alone.
+            auto loop_res = make_sae_loop_res(sid, AC_TARGET_ACTIVE_POWER);
+            auto& dictate =
+                std::get<message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode>(loop_res.control_mode);
+            auto& constant_var = dictate.der_control_cl_res.reactive_power_support_cl_res->constant_var.emplace();
+            constant_var.enable = true;
+            {
+                const auto req = inject_then_expect<message_20::DER_SAE_AC_ChargeLoopRequest>(
+                    fx, "AC_DER_SAE_ChargeLoop OK -> AC_DER_SAE_ChargeLoop", loop_res, PT::Part20DerSae);
+                REQUIRE(sae_loop_mode(req).enabled_modes == SAE_VOLT_VAR_BIT);
+            }
+
+            // The whole mode reaches the owner, clean.
+            REQUIRE(fx.sae_der_controls.size() == 1);
+            const auto& forwarded = fx.sae_der_controls.front();
+            REQUIRE(message_20::datatypes::from_RationalNumber(forwarded.target_active_power) ==
+                    Catch::Approx(AC_TARGET_ACTIVE_POWER));
+            REQUIRE(forwarded.der_control_cl_res.enter_service_cl_res.permit_service);
+            REQUIRE(forwarded.der_control_cl_res.reactive_power_support_cl_res->volt_var->enable);
+            REQUIRE(forwarded.der_control_cl_res.reactive_power_support_cl_res->constant_var->enable);
+            REQUIRE(fx.sae_der_control_problems == std::vector<ev::DerControlProblems>{{}});
+            REQUIRE(fx.ac_targets.size() == 1);
+            REQUIRE(message_20::datatypes::from_RationalNumber(fx.ac_targets.front().target_active_power.value()) ==
+                    Catch::Approx(AC_TARGET_ACTIVE_POWER));
+            // The mask did not change, so der_enabled_modes did not fire again.
+            REQUIRE(fx.der_enabled_modes.size() == 2);
+
+            auto loop_terminate = make_sae_loop_res(sid, AC_TARGET_ACTIVE_POWER);
+            loop_terminate.status =
+                message_20::datatypes::EvseStatus{0, message_20::datatypes::EvseNotification::Terminate};
+            {
+                const auto req = inject_then_expect<message_20::PowerDeliveryRequest>(
+                    fx, "AC_DER_SAE_ChargeLoop Terminate -> PowerDelivery(Stop)", loop_terminate, PT::Part20DerSae);
+                REQUIRE(req.charge_progress == message_20::datatypes::Progress::Stop);
+            }
+            REQUIRE(fx.stop_from_charger);
+
+            THEN("PowerDelivery(Stop) walks straight to SessionStop") {
+                walk_ac_stop_to_finish(fx, sid);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session keeps charging while the SECC withdraws PermitService [V2G20-3366]") {
+    GIVEN("An AC_DER_SAE-configured Session walked to the SAE charge loop") {
+        SessionFixture fx{"EVTESTID01",
+                          ev::SessionTiming{5ms, 100ms},
+                          ev::DcChargeParams{},
+                          default_advertised_ac_app_protocols(),
+                          message_20::datatypes::ServiceCategory::AC_DER_SAE,
+                          ac_seed_params(),
+                          default_der_control_functions(),
+                          true,
+                          sae_walk_options()};
+        const auto sid = walk_to_ac_der_sae_charge_loop(fx);
+
+        WHEN("a ChargeLoopResponse withdraws PermitService") {
+            auto denied = make_sae_loop_res(sid, AC_TARGET_ACTIVE_POWER);
+            std::get<message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode>(denied.control_mode)
+                .der_control_cl_res.enter_service_cl_res.permit_service = false;
+            const auto off = sae_loop_mode(inject_then_expect<message_20::DER_SAE_AC_ChargeLoopRequest>(
+                fx, "AC_DER_SAE_ChargeLoop permit withdrawn", denied, PT::Part20DerSae));
+
+            THEN("the next request reports Off and Disconnected, and the session continues") {
+                REQUIRE(off.der_operational_state == message_20::datatypes::sae::DEROperationalState::Off);
+                REQUIRE(off.der_connection_status == message_20::datatypes::sae::DERConnectionStatus::Disconnected);
+                REQUIRE(message_20::datatypes::from_RationalNumber(off.max_charge_power) ==
+                        Catch::Approx(AC_MAX_CHARGE_POWER));
+                REQUIRE_FALSE(fx.session.is_finished());
+                REQUIRE_FALSE(fx.stop_from_charger);
+
+                const auto on = sae_loop_mode(inject_then_expect<message_20::DER_SAE_AC_ChargeLoopRequest>(
+                    fx, "AC_DER_SAE_ChargeLoop permit granted", make_sae_loop_res(sid, AC_TARGET_ACTIVE_POWER),
+                    PT::Part20DerSae));
+                REQUIRE(on.der_operational_state == message_20::datatypes::sae::DEROperationalState::On);
+                REQUIRE(on.der_connection_status == message_20::datatypes::sae::DERConnectionStatus::Connected);
             }
         }
     }
