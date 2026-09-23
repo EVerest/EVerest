@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
 #include "helper.hpp"
@@ -8,6 +8,7 @@
 #include <iso15118/d20/state/supported_app_protocol.hpp>
 
 #include <iso15118/message/supported_app_protocol.hpp>
+#include <iso15118/session/protocol.hpp>
 
 using namespace iso15118;
 
@@ -232,6 +233,60 @@ SCENARIO("ISO15118-20 supported app protocol state transitions") {
             REQUIRE(supported_app_res.response_code ==
                     message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
             REQUIRE(supported_app_res.schema_id.value_or(0) == 2);
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 supported app protocol accepts the AMD1 DER namespaces on an AC EVSE") {
+    auto evse_setup = create_default_evse_setup();
+    evse_setup.supported_energy_services = {dt::ServiceCategory::AC};
+    evse_setup.selecting_sap_based_on_energy_service = true;
+
+    std::optional<d20::PauseContext> pause_ctx{std::nullopt};
+    const session::feedback::Callbacks callbacks{};
+
+    auto state_helper = FsmStateHelper(d20::SessionConfig(evse_setup), pause_ctx, callbacks);
+    auto& ctx = state_helper.get_context();
+
+    const auto negotiate = [&](const std::string& protocol_namespace) {
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::SupportedAppProtocol>()};
+
+        message_20::SupportedAppProtocolRequest req;
+        auto& ap = req.app_protocol.emplace_back();
+        ap.priority = 1;
+        ap.protocol_namespace = protocol_namespace;
+        ap.schema_id = 4;
+        ap.version_number_major = 1;
+        ap.version_number_minor = 0;
+
+        state_helper.handle_request(req);
+        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        REQUIRE(result.transitioned() == true);
+        REQUIRE(fsm.get_current_state_id() == d20::StateID::SessionSetup);
+
+        const auto response_message = ctx.get_response<message_20::SupportedAppProtocolResponse>();
+        REQUIRE(response_message.has_value());
+        return response_message.value();
+    };
+
+    GIVEN("Only the AC-DER-IEC namespace is offered [V2G20-3020]") {
+        const auto res = negotiate(ISO20_AC_DER_IEC_PROTOCOL_NAMESPACE);
+
+        THEN("It is negotiated with the offered schema id") {
+            REQUIRE(res.response_code ==
+                    message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
+            REQUIRE(res.schema_id.value_or(0) == 4);
+        }
+    }
+
+    GIVEN("Only the AC-DER-SAE namespace is offered [V2G20-3216]") {
+        const auto res = negotiate(ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE);
+
+        THEN("It is negotiated with the offered schema id") {
+            REQUIRE(res.response_code ==
+                    message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
+            REQUIRE(res.schema_id.value_or(0) == 4);
         }
     }
 }

@@ -77,6 +77,19 @@ SCENARIO("ISO15118-20 EV build_sap_offer covers the offered generations") {
         }
     }
 
+    GIVEN("an AC_DER_IEC service offering -20 only") {
+        SapOfferInput input;
+        input.energy_service = ServiceCategory::AC_DER_IEC;
+        const auto offer = build_sap_offer(input);
+
+        THEN("only the AC-DER-IEC namespace is offered [V2G20-3020]") {
+            REQUIRE(namespaces(offer) == std::vector<std::string>{ISO20_AC_DER_IEC_PROTOCOL_NAMESPACE});
+            REQUIRE(offer[0].entry.version_number_major == 1);
+            REQUIRE(offer[0].entry.version_number_minor == 0);
+            REQUIRE(offer[0].protocol == ProtocolId::ISO15118_20);
+        }
+    }
+
     GIVEN("an AC_DER_SAE service offering -20 only") {
         SapOfferInput input;
         input.energy_service = ServiceCategory::AC_DER_SAE;
@@ -179,17 +192,20 @@ SCENARIO("ISO15118-20 EV offer_from_app_protocols adopts an explicit list") {
         const std::vector<message_20::SupportedAppProtocol> list{{ISO20_DC_PROTOCOL_NAMESPACE, 1, 0, 3, 3},
                                                                  {"urn:example:unknown:MsgDef", 1, 0, 4, 4},
                                                                  {DIN70121_NAMESPACE, 2, 0, 5, 5},
-                                                                 {ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE, 1, 0, 6, 6}};
+                                                                 {ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE, 1, 0, 6, 6},
+                                                                 {ISO20_AC_DER_IEC_PROTOCOL_NAMESPACE, 1, 0, 7, 7}};
         const auto offer = offer_from_app_protocols(list);
 
         THEN("the unknown namespace is dropped and the given schema ids are kept verbatim") {
-            REQUIRE(offer.size() == 3);
+            REQUIRE(offer.size() == 4);
             REQUIRE(offer[0].entry.schema_id == 3);
             REQUIRE(offer[0].protocol == ProtocolId::ISO15118_20);
             REQUIRE(offer[1].entry.schema_id == 5);
             REQUIRE(offer[1].protocol == ProtocolId::DIN70121);
             REQUIRE(offer[2].entry.schema_id == 6);
             REQUIRE(offer[2].protocol == ProtocolId::ISO15118_20);
+            REQUIRE(offer[3].entry.schema_id == 7);
+            REQUIRE(offer[3].protocol == ProtocolId::ISO15118_20);
         }
     }
 
