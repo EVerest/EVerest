@@ -49,7 +49,8 @@ handle_request(const message_20::DC_ChargeParameterDiscoveryRequest& req, const 
     message_20::DC_ChargeParameterDiscoveryResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     const auto selected_energy_service = session.get_selected_services().selected_energy_service;
@@ -57,7 +58,8 @@ handle_request(const message_20::DC_ChargeParameterDiscoveryRequest& req, const 
     if (std::holds_alternative<DC_ModeReq>(req.transfer_mode)) {
         if (not(selected_energy_service == dt::ServiceCategory::DC or
                 selected_energy_service == dt::ServiceCategory::MCS)) {
-            return response_with_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+            set_response_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+            return res;
         }
 
         auto& mode = res.transfer_mode.emplace<DC_ModeRes>();
@@ -66,12 +68,14 @@ handle_request(const message_20::DC_ChargeParameterDiscoveryRequest& req, const 
     } else if (std::holds_alternative<BPT_DC_ModeReq>(req.transfer_mode)) {
         if (not(selected_energy_service == dt::ServiceCategory::DC_BPT or
                 selected_energy_service == dt::ServiceCategory::MCS_BPT)) {
-            return response_with_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+            set_response_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+            return res;
         }
 
         if (not dc_limits.discharge_limits.has_value()) {
             logf_error("Transfer mode is BPT, but only dc limits without discharge limits are provided!");
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& mode = res.transfer_mode.emplace<BPT_DC_ModeRes>();
@@ -79,10 +83,12 @@ handle_request(const message_20::DC_ChargeParameterDiscoveryRequest& req, const 
 
     } else {
         // Not supported transfer_mode
-        return response_with_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+        set_response_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+        return res;
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void DC_ChargeParameterDiscovery::enter() {

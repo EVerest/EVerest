@@ -23,7 +23,8 @@ message_20::AuthorizationSetupResponse handle_request(const message_20::Authoriz
     auto res = message_20::AuthorizationSetupResponse(); // default mandatory values [V2G20-736]
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     res.certificate_installation_service = cert_install_service;
@@ -51,7 +52,8 @@ message_20::AuthorizationSetupResponse handle_request(const message_20::Authoriz
         }
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void AuthorizationSetup::enter() {
