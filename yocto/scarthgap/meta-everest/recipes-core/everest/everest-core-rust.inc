@@ -1,15 +1,8 @@
 # The "rust" PACKAGECONFIG. CMake drives cargo; this adds what a bitbake build lacks:
-# the toolchain and cross linker, crates fetched ahead of time and the git dependency
-# of RsPaymentTerminal. Needs the meta-rust-bin layer, see everest_rust.bbclass.
+# the Rust toolchain and cross linker, crates fetched ahead of time and the git
+# dependency of RsPaymentTerminal. Requires a current Rust, see everest_rust.bbclass.
 
-inherit everest_rust cargo-update-recipe-crates
-
-# ev-cli's jsonschema is built on rpds-py, a Rust extension compiled with poky's own
-# cargo. Native build tools are staged transitively, so without this poky's
-# /usr/bin/cargo and /usr/bin/rustc would land in this sysroot next to meta-rust-bin's
-# and bitbake aborts on the duplicate files. Build tools are never needed recursively;
-# poky applies the same rule to autoconf, quilt and friends.
-SSTATE_EXCLUDEDEPS_SYSROOT += ".*->cargo-native .*->rust-native"
+inherit everest_rust cargo_common cargo-update-recipe-crates
 
 # modules/Cargo.lock pins the crates of the Bazel build and of the cargo workspace
 # CMake generates. `bitbake -c update_crates everest-core` turns it into
@@ -17,14 +10,22 @@ SSTATE_EXCLUDEDEPS_SYSROOT += ".*->cargo-native .*->rust-native"
 CARGO_LOCK_SRC_DIR = "${S}/modules"
 require everest-core-crates.inc
 
-# The revision in modules/HardwareDrivers/Payment/RsPaymentTerminal/Cargo.toml
-SRC_URI += "git://github.com/Everest/zvt.git;protocol=https;branch=main;name=zvt;destsuffix=zvt"
-SRCREV_zvt = "c784c20401764978fd6287a55e50bc65d083d68c"
+# The revision in modules/HardwareDrivers/Payment/RsPaymentTerminal/Cargo.toml. Without a
+# name parameter cargo_common leaves the patching below to us; its own would point cargo
+# at the repository root instead of the crate directories.
+SRC_URI += "git://github.com/Everest/zvt.git;protocol=https;branch=main;destsuffix=zvt"
+SRCREV = "c784c20401764978fd6287a55e50bc65d083d68c"
 
 EXTRA_OECMAKE += " \
-    -DEVEREST_RS_TARGET_TRIPLE=${EVEREST_RUST_TARGET} \
-    -DEVEREST_RS_LINKER=${EVEREST_RUST_TARGET_LINKER} \
+    -DEVEREST_RS_TARGET_TRIPLE=${RUST_HOST_SYS} \
+    -DEVEREST_RS_LINKER=${RUST_TARGET_CCLD} \
 "
+
+# cargo runs under CMake, so what cargo_common only prepares as variables is exported here.
+export RUSTFLAGS
+export CARGO_NET_OFFLINE = "true"
+# cargo_common points cargo at ${B}/target; CMake installs from its own workspace.
+export CARGO_TARGET_DIR = "${B}/rust_workspace/target"
 
 # Size over speed for the module binaries, matching the Bazel release configuration.
 # panic=abort ends a panicking module process without unwinding, so Drop code does not run.
@@ -34,8 +35,8 @@ export CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "1"
 export CARGO_PROFILE_RELEASE_PANIC = "abort"
 
 do_configure() {
-    everest_rust_do_configure
-    cat >> "${CARGO_HOME}/config.toml" <<CARGO_CONFIG
+    cargo_common_do_configure
+    cat >> "${CARGO_HOME}/config" <<CARGO_CONFIG
 
 [patch."https://github.com/Everest/zvt.git"]
 zvt = { path = "${WORKDIR}/zvt/zvt" }

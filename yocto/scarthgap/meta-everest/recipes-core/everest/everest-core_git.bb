@@ -100,7 +100,7 @@ PACKAGECONFIG[python] = "-DEVEREST_ENABLE_PY_SUPPORT=ON,-DEVEREST_ENABLE_PY_SUPP
 PACKAGECONFIG[rust] = "-DEVEREST_ENABLE_RS_SUPPORT=ON,-DEVEREST_ENABLE_RS_SUPPORT=OFF,cxxbridge-cmd-native"
 PACKAGECONFIG[tpm2] = "-DUSING_TPM2=ON,-DUSING_TPM2=OFF,"
 
-# Rust modules need the meta-rust-bin layer, see everest-core-rust.inc
+# Rust modules need a current Rust toolchain, see everest-core-rust.inc
 require ${@bb.utils.contains('PACKAGECONFIG', 'rust', 'everest-core-rust.inc', '', d)}
 
 do_install:append() {

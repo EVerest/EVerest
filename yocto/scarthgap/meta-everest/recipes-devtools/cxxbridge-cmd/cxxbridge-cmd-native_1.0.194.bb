@@ -10,26 +10,11 @@ LIC_FILES_CHKSUM = " \
 # version must match CXXBRIDGE_VERSION in lib/everest/framework/everestrs/CMakeLists.txt,
 # otherwise CMake tries to cargo install it, which fails without network access.
 
-inherit everest_rust cargo-update-recipe-crates native
-
-SRC_URI = "crate://crates.io/cxxbridge-cmd/${PV}"
-SRC_URI[cxxbridge-cmd-1.0.194.sha256sum] = "d0956799fa8678d4c50eed028f2de1c0552ae183c76e976cf7ca8c4e36a7c328"
+SRC_URI = "crate://crates.io/cxxbridge-cmd/${PV};name=cxxbridge-cmd"
+SRC_URI[cxxbridge-cmd.sha256sum] = "d0956799fa8678d4c50eed028f2de1c0552ae183c76e976cf7ca8c4e36a7c328"
+S = "${CARGO_VENDORING_DIRECTORY}/cxxbridge-cmd-${PV}"
 
 # `bitbake -c update_crates cxxbridge-cmd-native` regenerates this from the crate's Cargo.lock
 require cxxbridge-cmd-crates.inc
 
-S = "${WORKDIR}/${BP}"
-B = "${WORKDIR}/build"
-
-do_configure() {
-    everest_rust_do_configure
-}
-
-do_compile() {
-    cargo build --release --frozen --target ${EVEREST_RUST_TARGET} \
-        --manifest-path ${S}/Cargo.toml --target-dir ${B}
-}
-
-do_install() {
-    install -D -m 0755 ${B}/${EVEREST_RUST_TARGET}/release/cxxbridge ${D}${bindir}/cxxbridge
-}
+inherit everest_rust cargo cargo-update-recipe-crates native

@@ -66,12 +66,12 @@ profile for every build type but Debug. Cross builds set `EVEREST_RS_TARGET_TRIP
 `CMAKE_CXX_COMPILER`. `modules/Cargo.lock` pins the crates for Bazel and Yocto alike:
 after editing a Rust module's `Cargo.toml`, update it (`cargo update` in `modules/`),
 regenerate `yocto/scarthgap/meta-everest/recipes-core/everest/everest-core-crates.inc`
-with `bitbake -c update_crates everest-core`, and mirror a new zvt revision in
-`SRCREV_zvt` of `everest-core-rust.inc` next to it.
+with `bitbake -c update_crates everest-core`, and mirror a new zvt revision in the
+`SRCREV` of `everest-core-rust.inc` next to it.
 
 The Yocto layer `yocto/scarthgap/meta-everest` builds everest-core from this tree. Its
-`rust` PACKAGECONFIG needs the meta-rust-bin layer, see
-`docs/source/explanation/linux-yocto/building-yocto.rst`.
+`rust` PACKAGECONFIG needs Rust 1.82 or newer, on scarthgap the meta-lts-mixins
+`scarthgap/rust` layer, see `docs/source/explanation/linux-yocto/building-yocto.rst`.
 
 ## Running
 
