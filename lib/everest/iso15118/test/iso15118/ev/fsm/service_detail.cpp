@@ -395,6 +395,7 @@ SCENARIO("ISO15118-20 EV ServiceDetail stops the session when no AC_DER_IEC set 
 }
 
 SCENARIO("ISO15118-20 EV ServiceDetail selects a set demanding unsupported functions when not strict") {
+    const LogCapture logs{};
     const ev::feedback::Callbacks callbacks{};
     FsmStateHelper helper{callbacks,
                           {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
@@ -418,6 +419,7 @@ SCENARIO("ISO15118-20 EV ServiceDetail selects a set demanding unsupported funct
     // it here would hide that this session deviates from [V2G20-3191].
     REQUIRE(ctx.der_demanded_functions().test(static_cast<size_t>(DERControlName::DSOQSetpointProvision)));
     REQUIRE(ctx.der_demanded_functions().test(static_cast<size_t>(DERControlName::VoltWattMode)));
+    REQUIRE(logs.has_warning_containing("does not support (VoltWattMode)"));
 
     const auto requests = take_all_requests(helper.get_message_exchange());
     const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
@@ -829,4 +831,53 @@ SCENARIO("ISO15118-20 EV ServiceDetail accepts a Scheduled-only AC_DER_IEC offer
     REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
     REQUIRE(ctx.is_session_stopped() == false);
     REQUIRE(ctx.selected_control_mode() == ControlMode::Scheduled);
+}
+
+// AMD1 Table M.54 [V2G20-3280]: AC_DER_SAE offers the plain AC parameters.
+SCENARIO("ISO15118-20 EV ServiceDetail selects the Dynamic AC_DER_SAE set on the preferred connector") {
+    const LogCapture logs{};
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC_DER_SAE, seed_ac_lines(3)};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_SAE,
+                                         {make_param_set(1, ControlMode::Scheduled, THREE_PHASE),
+                                          make_param_set(2, ControlMode::Dynamic, SINGLE_PHASE),
+                                          make_param_set(3, ControlMode::Dynamic, THREE_PHASE)}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::ServiceSelection);
+    REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 3);
+    REQUIRE(primed.ctx.selected_control_mode() == ControlMode::Dynamic);
+    REQUIRE(primed.ctx.selected_ac_connector() == message_20::datatypes::AcConnector::ThreePhase);
+    REQUIRE(primed.ctx.der_demanded_functions().none());
+    REQUIRE_FALSE(logs.has_warning_containing("preferred"));
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail selects a Dynamic AC_DER_SAE set even when Scheduled is preferred") {
+    const LogCapture logs{};
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC_DER_SAE,
+                                                      prefer(ControlMode::Scheduled), seed_ac_lines(1)};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_SAE,
+                                         {make_param_set(1, ControlMode::Scheduled, SINGLE_PHASE),
+                                          make_param_set(2, ControlMode::Dynamic, SINGLE_PHASE)}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(selected_parameter_set_id(primed.helper.get_message_exchange()) == 2);
+    REQUIRE(primed.ctx.selected_control_mode() == ControlMode::Dynamic);
+    REQUIRE(logs.has_warning_containing("ignoring the preferred Scheduled control mode"));
+}
+
+SCENARIO("ISO15118-20 EV ServiceDetail stops the session when AC_DER_SAE is offered only Scheduled sets") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::ServiceDetail> primed{callbacks, ServiceCategory::AC_DER_SAE, seed_ac_lines(3)};
+
+    expect_stops_session(primed,
+                         make_response(SESSION_HEADER, ResponseCode::OK, ServiceCategory::AC_DER_SAE,
+                                       {make_param_set(1, ControlMode::Scheduled, SINGLE_PHASE),
+                                        make_param_set(2, ControlMode::Scheduled, THREE_PHASE)}),
+                         ev::d20::StateID::ServiceDetail);
 }
