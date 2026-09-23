@@ -71,8 +71,9 @@ struct Callbacks {
         sae_cpd_limits;
     std::function<void(const message_20::datatypes::sae::DER_Dynamic_AC_CLResControlMode&, const DerControlProblems&)>
         sae_der_control;
-    // AC_DER_SAE only; bits are sae_function_bit() positions (AMD1 Table M.6). Fired once per
-    // CPD round, and in the charge loop only when the mask changes.
+    // AC_DER_SAE: sae_function_bit() positions (AMD1 Table M.6), fired once per CPD round and in
+    // the charge loop only when the mask changes. AC_DER_IEC: iec::DERControlName positions of the
+    // selected set's demand, fired once in ServiceDetail.
     std::function<void(std::uint32_t)> der_enabled_modes;
 };
 
