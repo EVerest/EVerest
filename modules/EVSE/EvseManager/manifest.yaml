@@ -344,6 +344,19 @@ config:
       IEC61851-1:2019 D.6.5 Table D.9 line 4 and should not be used in public environments!
     type: boolean
     default: false
+  keep_cable_locked:
+    description: >-
+      Captive cable mode for AC sockets with a connector lock (fleet/private use): keep the cable locked in the
+      socket whenever a plug is present, in every CP state - including state A with no EV attached. The only way
+      to unlock is the force_unlock command (e.g. triggered by OCPP UnlockConnector); the connector then stays
+      unlocked until the cable is removed, and the next plug insertion locks it again. Takes precedence over
+      lock_connector_in_state_b and unlock_when_deauthorized. Can be changed at runtime via the configuration
+      service (applied immediately, no restart required). Requires a BSP that publishes ac_pp_ampacity on every
+      change, also outside of charging sessions, and once at startup with the current value (only needed when this
+      option is used).
+    type: boolean
+    default: false
+    mutability: ReadWrite
   state_F_after_fault_ms:
     description: >-
       Set state F after any fault that stops charging for the specified time in ms while in Charging mode (CX->F(300ms)->C1/B1).

@@ -73,11 +73,12 @@ const std::string cpevent_to_string(CPEvent e) {
 }
 
 IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_, bool lock_connector_in_state_b_,
-                                 bool use_authorized_) :
+                                 bool use_authorized_, bool keep_cable_locked_) :
     r_bsp(r_bsp_),
     lock_connector_in_state_b(lock_connector_in_state_b_),
     use_authorized(use_authorized_),
-    authorized(!use_authorized_) {
+    authorized(!use_authorized_),
+    keep_cable_locked(keep_cable_locked_) {
     // feed the state machine whenever the timer expires
     timeout_state_c1.signal_reached.connect([this]() { feed_state_machine(std::nullopt); });
     timeout_unlock_state_F.signal_reached.connect([this]() { feed_state_machine(std::nullopt); });
@@ -467,25 +468,40 @@ void IECStateMachine::call_allow_power_on_bsp(bool value) {
 }
 
 void IECStateMachine::set_pp_ampacity(types::board_support_common::ProximityPilot const& pp) {
-    switch (pp.ampacity) {
-    case types::board_support_common::Ampacity::A_13:
-        pp_ampacity = 13.;
-        break;
-    case types::board_support_common::Ampacity::A_20:
-        pp_ampacity = 20.;
-        break;
-    case types::board_support_common::Ampacity::A_32:
-        pp_ampacity = 32.;
-        break;
-    case types::board_support_common::Ampacity::A_63_3ph_70_1ph:
-        if (max_phases == AcPhases::SinglePhase) {
-            pp_ampacity = 70.;
-        } else {
-            pp_ampacity = 63.;
+    {
+        // Serialized with connector_force_unlock(): a force unlock racing a cable removal must not
+        // leave the captive window open on an empty socket.
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_set_pp_ampacity);
+
+        switch (pp.ampacity) {
+        case types::board_support_common::Ampacity::A_13:
+            pp_ampacity = 13.;
+            break;
+        case types::board_support_common::Ampacity::A_20:
+            pp_ampacity = 20.;
+            break;
+        case types::board_support_common::Ampacity::A_32:
+            pp_ampacity = 32.;
+            break;
+        case types::board_support_common::Ampacity::A_63_3ph_70_1ph:
+            if (max_phases == AcPhases::SinglePhase) {
+                pp_ampacity = 70.;
+            } else {
+                pp_ampacity = 63.;
+            }
+            break;
+        default:
+            pp_ampacity = 0.;
         }
-        break;
-    default:
-        pp_ampacity = 0.;
+
+        if (keep_cable_locked and pp_ampacity == 0.) {
+            // Cable removed: the next insertion locks again
+            captive_unlock_window = false;
+        }
+    }
+
+    if (keep_cable_locked) {
+        feed_state_machine(std::nullopt);
     }
 }
 
@@ -542,24 +558,38 @@ void IECStateMachine::connector_force_unlock() {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_force_unlock);
         cp = last_cp_state;
-    }
 
-    if (not relais_on) {
-        // Unconditionally try to unlock, as `is_locked` might not always reflect the physical state of the lock.
-        // This can occur for example in case of a failed unlock due to a hardware issue.
-        signal_unlock();
-        is_locked = false;
+        if (keep_cable_locked and pp_ampacity > 0.) {
+            // Only with a plug present: a retried UnlockConnector on an empty socket must not leave
+            // the next inserted cable unlocked.
+            captive_unlock_window = true;
+        }
+
+        if (not relais_on) {
+            // Unconditionally try to unlock, as `is_locked` might not always reflect the physical state of the lock.
+            // This can occur for example in case of a failed unlock due to a hardware issue.
+            // Under the mutex so it cannot clobber a captive re-lock from a concurrent removal + reinsertion.
+            signal_unlock();
+            is_locked = false;
+        }
     }
 
     if (cp == RawCPState::B or cp == RawCPState::C) {
         force_unlocked = true;
-        check_connector_lock();
     }
+    check_connector_lock();
 }
 
 void IECStateMachine::check_connector_lock() {
-    bool should_be_locked_considering_relais_and_force =
-        relais_on or (should_be_locked and not force_unlocked and authorized);
+    bool should_be_locked_considering_relais_and_force;
+
+    if (keep_cable_locked) {
+        const bool plug_present = pp_ampacity > 0.;
+        should_be_locked_considering_relais_and_force = relais_on or (plug_present and not captive_unlock_window);
+    } else {
+        should_be_locked_considering_relais_and_force =
+            relais_on or (should_be_locked and not force_unlocked and authorized);
+    }
 
     if (not is_locked and should_be_locked_considering_relais_and_force) {
         signal_lock();
@@ -576,6 +606,21 @@ void IECStateMachine::set_authorized(bool a) {
         return;
     }
     authorized = a;
+    feed_state_machine(std::nullopt);
+}
+
+void IECStateMachine::set_keep_cable_locked(bool enabled) {
+    if (keep_cable_locked == enabled) {
+        return;
+    }
+    EVLOG_info << "Captive cable mode (keep_cable_locked) " << (enabled ? "enabled" : "disabled") << " at runtime";
+    {
+        // Reset both flags so the new mode starts deterministic; serialized with the other flag writers.
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_set_keep_cable_locked);
+        keep_cable_locked = enabled;
+        captive_unlock_window = false;
+        force_unlocked = false;
+    }
     feed_state_machine(std::nullopt);
 }
 

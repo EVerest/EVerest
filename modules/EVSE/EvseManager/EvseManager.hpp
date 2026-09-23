@@ -39,7 +39,10 @@
 #include <date/tz.h>
 #include <future>
 #include <iostream>
+#include <mutex>
 #include <optional>
+
+#include <utils/mqtt_config_service.hpp>
 
 #include "CarManufacturer.hpp"
 #include "Charger.hpp"
@@ -54,6 +57,33 @@
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
+
+struct RwConf {
+    bool keep_cable_locked;
+};
+
+struct RwConfUpdate {
+    using ConfigChangeResult = Everest::config::ConfigChangeResult;
+
+    virtual ~RwConfUpdate() = default;
+
+    // override in class EvseManager adding the implementation to EvseManager.cpp
+    // or inline
+    //
+    // note: these handlers are invoked from a different thread than the one
+    // executing your module code, so guard rw_config with a mutex both here
+    // and wherever your module accesses config or rw_config
+    // e.g.
+    // ConfigChangeResult on_keep_cable_locked_changed(const bool& value) override {
+    //     std::scoped_lock lock(config_mutex);
+    //     rw_config.keep_cable_locked = value;
+    //     return ConfigChangeResult::Accepted();
+    // }
+
+    virtual ConfigChangeResult on_keep_cable_locked_changed(const bool& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+};
 
 struct Conf {
     int connector_id;
@@ -130,9 +160,14 @@ struct Conf {
     int dc_ramp_ampere_per_second;
     bool enable_nodered_interface;
     std::string phase_rotation_grid_side;
+
+    const bool& keep_cable_locked;
+
+    Conf(const RwConf& rw) : keep_cable_locked(rw.keep_cable_locked) {
+    }
 };
 
-class EvseManager : public Everest::ModuleBase {
+class EvseManager : public Everest::ModuleBase, public RwConfUpdate {
 public:
     EvseManager() = delete;
     EvseManager(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider, Everest::TelemetryProvider& telemetry,
@@ -148,7 +183,7 @@ public:
                 std::vector<std::unique_ptr<isolation_monitorIntf>> r_imd,
                 std::vector<std::unique_ptr<over_voltage_monitorIntf>> r_over_voltage_monitor,
                 std::vector<std::unique_ptr<power_supply_DCIntf>> r_powersupply_DC,
-                std::vector<std::unique_ptr<kvsIntf>> r_store, Conf& config) :
+                std::vector<std::unique_ptr<kvsIntf>> r_store, Conf& config, RwConf& rw_config) :
         ModuleBase(info),
         mqtt(mqtt_provider),
         telemetry(telemetry),
@@ -168,7 +203,8 @@ public:
         r_over_voltage_monitor(std::move(r_over_voltage_monitor)),
         r_powersupply_DC(std::move(r_powersupply_DC)),
         r_store(std::move(r_store)),
-        config(config){};
+        config(config),
+        rw_config(rw_config){};
 
     Everest::MqttProvider& mqtt;
     Everest::TelemetryProvider& telemetry;
@@ -189,6 +225,7 @@ public:
     const std::vector<std::unique_ptr<power_supply_DCIntf>> r_powersupply_DC;
     const std::vector<std::unique_ptr<kvsIntf>> r_store;
     const Conf& config;
+    RwConf& rw_config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
@@ -251,6 +288,12 @@ public:
     std::unique_ptr<IECStateMachine> bsp;
     std::unique_ptr<ErrorHandling> error_handling;
     std::unique_ptr<PersistentStore> store;
+
+    ConfigChangeResult on_keep_cable_locked_changed(const bool& value) override;
+    // Guards rw_config and the bsp hand-over; the handler runs on a config service thread and may
+    // fire before ready() constructs bsp.
+    std::mutex keep_cable_locked_mutex;
+    bool bsp_constructed{false};
     // Declared last so it is destroyed first; ~Charger dereferences bsp/error_handling/store.
     std::unique_ptr<Charger> charger;
 

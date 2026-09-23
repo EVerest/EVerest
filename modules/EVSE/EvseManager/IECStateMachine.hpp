@@ -75,7 +75,7 @@ class IECStateMachine {
 public:
     // We need the r_bsp reference to be able to talk to the bsp driver module
     IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_, bool lock_connector_in_state_b_,
-                    bool use_authorized_);
+                    bool use_authorized_, bool keep_cable_locked_);
     // Call when new events from BSP requirement come in. Will signal internal events
     void process_bsp_event(types::board_support_common::BspEvent const& bsp_event);
     // Allow power on from Charger state machine
@@ -102,6 +102,8 @@ public:
     void connector_force_unlock();
 
     void set_authorized(bool a);
+
+    void set_keep_cable_locked(bool enabled);
 
     void set_ev_simplified_mode_evse_limit(bool l) {
         ev_simplified_mode_evse_limit = l;
@@ -154,6 +156,12 @@ private:
     // If to pay attention to the authorized flag.
     bool use_authorized{false};
     std::atomic_bool authorized{false};
+
+    // Captive cable mode: lock whenever PP reports a plug, in any CP state; only a force unlock
+    // releases, and only until the cable is removed.
+    std::atomic_bool keep_cable_locked{false};
+    // Open from force unlock until cable removal; suppresses the plug-present lock. Not persisted.
+    std::atomic_bool captive_unlock_window{false};
 
     std::atomic_bool is_locked{false};
     std::atomic_bool should_be_locked{false};
