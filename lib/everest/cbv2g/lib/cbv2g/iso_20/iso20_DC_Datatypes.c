@@ -38,7 +38,9 @@ void init_iso20_dc_exiDocument(struct iso20_dc_exiDocument* exiDoc) {
     exiDoc->DC_CPDResEnergyTransferMode_isUsed = 0u;
     exiDoc->BPT_DC_CPDReqEnergyTransferMode_isUsed = 0u;
     exiDoc->BPT_DC_CPDResEnergyTransferMode_isUsed = 0u;
+    exiDoc->CLReqControlMode_isUsed = 0u;
     exiDoc->Scheduled_DC_CLReqControlMode_isUsed = 0u;
+    exiDoc->CLResControlMode_isUsed = 0u;
     exiDoc->Scheduled_DC_CLResControlMode_isUsed = 0u;
     exiDoc->BPT_Scheduled_DC_CLReqControlMode_isUsed = 0u;
     exiDoc->BPT_Scheduled_DC_CLResControlMode_isUsed = 0u;
@@ -46,8 +48,6 @@ void init_iso20_dc_exiDocument(struct iso20_dc_exiDocument* exiDoc) {
     exiDoc->Dynamic_DC_CLResControlMode_isUsed = 0u;
     exiDoc->BPT_Dynamic_DC_CLReqControlMode_isUsed = 0u;
     exiDoc->BPT_Dynamic_DC_CLResControlMode_isUsed = 0u;
-    exiDoc->CLReqControlMode_isUsed = 0u;
-    exiDoc->CLResControlMode_isUsed = 0u;
     exiDoc->Signature_isUsed = 0u;
     exiDoc->SignatureValue_isUsed = 0u;
     exiDoc->SignedInfo_isUsed = 0u;

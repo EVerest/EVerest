@@ -31,7 +31,7 @@ option(CB_V2G_INSTALL "Install the library (shared data might be installed anywa
 
 add_subdirectory(lib)
 
-message(STATUS "library code based on cbexigen generator version: 871fcb3")
+message(STATUS "library code based on cbexigen generator version: bdf082f4c")
 
 # tests
 if (CB_V2G_BUILD_TESTS)
