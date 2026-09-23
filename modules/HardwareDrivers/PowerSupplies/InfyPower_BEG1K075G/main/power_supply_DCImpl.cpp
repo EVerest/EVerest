@@ -32,7 +32,7 @@ void power_supply_DCImpl::init() {
     caps.current_regulation_tolerance_A = 1;
     caps.peak_current_ripple_A = 0.2;
 
-    caps.min_export_current_A = 1;
+    caps.min_export_current_A = 0;
     caps.max_export_current_A = 73.3;
     caps.min_export_voltage_V = 200;
     caps.max_export_voltage_V = 1000;
