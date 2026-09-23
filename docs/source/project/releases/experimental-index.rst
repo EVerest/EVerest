@@ -87,3 +87,11 @@ any experimental option it was given.
        PersistentSessionStorage module (``get_sessions``, ``get_session``,
        ``clear_sessions``). Channels, operations and message payloads may change
        without further notice.
+   * - ``entrypoint_API`` AsyncAPI specification (``everest_api/discover``,
+       ``everest_api/query-modules/{api_type}``, ``everest_api/ready_beacon``),
+       implemented by every EVerestAPI module
+     - 2026.10.0
+     - API discovery and the :ref:`ready beacon <tutorial_everest_api_ready_beacon>`.
+       Channels, operations and message payloads, including the beacon's election
+       and guarantees, may change without further notice. Every API module logs a
+       warning at startup.
