@@ -10,6 +10,7 @@
 
 #include <iso15118/d20/der_functions.hpp>
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/enum_names.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/service_detail.hpp>
 #include <iso15118/ev/d20/state/service_selection.hpp>
@@ -189,14 +190,16 @@ DerControlFunctionsDemand demand_of(const message_20::datatypes::ServiceParamete
 
 std::string describe_functions(const std::bitset<ev::DER_CONTROL_FUNCTION_COUNT>& bits) {
     std::string out;
-    for (std::size_t index = 0; index < bits.size(); ++index) {
-        if (bits.test(index)) {
+    for_each_enum_value<iec::DERControlName, ev::DER_CONTROL_FUNCTION_COUNT>(
+        iec::der_control_name, [&out, &bits](iec::DERControlName function) {
+            if (not bits.test(static_cast<std::size_t>(function))) {
+                return;
+            }
             if (not out.empty()) {
                 out += ", ";
             }
-            out += iec::der_control_name(static_cast<iec::DERControlName>(index));
-        }
-    }
+            out += iec::der_control_name(function);
+        });
     return out;
 }
 
@@ -234,13 +237,32 @@ Result ServiceDetail::feed(Event ev) {
     }
 
     const auto preferred = preferred_connector(m_ctx);
-    const auto preferred_mode = m_ctx.preferred_control_mode();
     const bool der_iec = (m_ctx.selected_service() == message_20::datatypes::ServiceCategory::AC_DER_IEC);
+    const bool der_sae = (m_ctx.selected_service() == message_20::datatypes::ServiceCategory::AC_DER_SAE);
+
+    // The AC_DER_SAE ChargeLoop drives Dynamic only.
+    const auto preferred_mode = der_sae ? message_20::datatypes::ControlMode::Dynamic : m_ctx.preferred_control_mode();
+    if (der_sae and m_ctx.preferred_control_mode() != preferred_mode) {
+        logf_warning("AC_DER_SAE supports only the Dynamic control mode; ignoring the preferred %s control mode",
+                     control_mode_name(m_ctx.preferred_control_mode()));
+    }
 
     const auto accept_any = [](const message_20::datatypes::ParameterSet&) { return true; };
 
     std::optional<SetChoice> selected_set;
-    if (der_iec) {
+    if (der_sae) {
+        // AMD1 Table M.54 [V2G20-3280]: the plain AC parameters, no DER ones. The SAE modes are
+        // negotiated later, in DERControlCPDRes.
+        const auto dynamic_only = [](const message_20::datatypes::ParameterSet& set) {
+            return get_control_mode(set) == message_20::datatypes::ControlMode::Dynamic;
+        };
+        selected_set = find_parameter_set(res->service_parameter_list, preferred_mode, preferred, dynamic_only);
+        if (not selected_set.has_value()) {
+            logf_error("AC_DER_SAE needs a Dynamic parameter set, but ServiceDetailResponse offers none; stopping");
+            m_ctx.stop_session();
+            return Result::stopping();
+        }
+    } else if (der_iec) {
         // [V2G20-3191]: the EV may only select AC_DER_IEC when it supports every demanded
         // function, so an unsupported set is not a candidate at all.
         const auto supported = m_ctx.der_supported_functions();

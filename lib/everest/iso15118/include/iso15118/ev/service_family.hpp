@@ -9,7 +9,8 @@ namespace iso15118::ev {
 constexpr bool is_ac_family(message_20::datatypes::ServiceCategory service) {
     return service == message_20::datatypes::ServiceCategory::AC or
            service == message_20::datatypes::ServiceCategory::AC_BPT or
-           service == message_20::datatypes::ServiceCategory::AC_DER_IEC;
+           service == message_20::datatypes::ServiceCategory::AC_DER_IEC or
+           service == message_20::datatypes::ServiceCategory::AC_DER_SAE;
 }
 
 // True for every DC energy service, MCS included. MCS is the megawatt DC service: it uses the
