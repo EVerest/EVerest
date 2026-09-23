@@ -126,7 +126,7 @@ config:
       whether the discharge limits should be negative. Until this is clarified, the positive limits
       can be converted using this option.
     type: boolean
-    default: false
+    default: true
   selecting_sap_based_on_energy_service:
     description: >-
       Based on ISO15118-20 AMD1, selecting the SAP namespace does not imply a final selection.
