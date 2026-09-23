@@ -66,6 +66,8 @@ constexpr float AC_MAX_CHARGE_POWER = 22000.0f;
 constexpr float AC_MIN_CHARGE_POWER = 1000.0f;
 constexpr float AC_PRESENT_ACTIVE_POWER = 5000.0f;
 constexpr float AC_TARGET_ACTIVE_POWER = 7000.0f;
+// Injected in the AC_DER_IEC loop response, asserted on the published target.
+constexpr float AC_TARGET_FREQUENCY = 50.5f;
 
 // Discharge limits seeded for the AC_BPT and AC_DER_IEC walks; asserted on the
 // BPT and DER CPD requests and the BPT charge-loop requests.
@@ -591,10 +593,11 @@ message_20::datatypes::SessionId walk_to_ac_der_iec_charge_loop(SessionFixture& 
     return sid;
 }
 
-// A DER_AC_ChargeLoopResponse carrying a Dynamic control mode; target_active_power set
-// so the der_control feedback observation is meaningful.
+// A DER_AC_ChargeLoopResponse carrying a Dynamic control mode, with a target power and
+// frequency for the ac_target_power observation.
 message_20::DER_AC_ChargeLoopResponse make_der_loop_res(const message_20::datatypes::SessionId& sid) {
     auto res = ok_res<message_20::DER_AC_ChargeLoopResponse>(sid);
+    res.target_frequency = message_20::datatypes::from_float(AC_TARGET_FREQUENCY);
     message_20::datatypes::DER_Dynamic_AC_CLResControlMode mode{};
     mode.target_active_power = message_20::datatypes::from_float(AC_TARGET_ACTIVE_POWER);
     mode.max_charge_power = message_20::datatypes::from_float(AC_MAX_CHARGE_POWER);
@@ -1290,11 +1293,19 @@ SCENARIO("ISO15118-20 EV Session drives a full AC_DER_IEC session through the DE
             REQUIRE_FALSE(fx.session.is_finished());
             REQUIRE_FALSE(fx.timed_out);
 
-            // DER_AC_ChargeLoopResponse(OK, Dynamic) -> DER_AC_ChargeLoopRequest; fires der_control.
+            // DER_AC_ChargeLoopResponse(OK, Dynamic) -> DER_AC_ChargeLoopRequest; fires ac_target_power and
+            // der_control.
             REQUIRE_FALSE(fx.der_control);
+            REQUIRE_FALSE(fx.ac_target_power);
             inject_then_expect<message_20::DER_AC_ChargeLoopRequest>(
                 fx, "AC_DER_IEC_ChargeLoop OK -> AC_DER_IEC_ChargeLoop", make_der_loop_res(sid), PT::Part20DerIec);
             REQUIRE(fx.der_control);
+            REQUIRE(fx.ac_targets.size() == 1);
+            REQUIRE(message_20::datatypes::from_RationalNumber(fx.ac_targets.back().target_active_power.value()) ==
+                    Catch::Approx(AC_TARGET_ACTIVE_POWER));
+            REQUIRE(fx.ac_targets.back().target_frequency.has_value());
+            REQUIRE(message_20::datatypes::from_RationalNumber(*fx.ac_targets.back().target_frequency) ==
+                    Catch::Approx(AC_TARGET_FREQUENCY));
             REQUIRE_FALSE(fx.stop_from_charger);
 
             // DER_AC_ChargeLoopResponse(OK, Terminate) -> PowerDeliveryRequest(Stop); fires stop_from_charger.
@@ -1307,6 +1318,8 @@ SCENARIO("ISO15118-20 EV Session drives a full AC_DER_IEC session through the DE
                 REQUIRE(req.charge_progress == message_20::datatypes::Progress::Stop);
             }
             REQUIRE(fx.stop_from_charger);
+            // Terminate publishes no target.
+            REQUIRE(fx.ac_targets.size() == 1);
 
             THEN("PowerDelivery(Stop) walks straight to SessionStop, skipping WeldingDetection") {
                 walk_ac_stop_to_finish(fx, sid);

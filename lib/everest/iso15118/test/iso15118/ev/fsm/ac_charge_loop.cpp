@@ -174,10 +174,12 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop reports the aggregate present power on a 
 SCENARIO("ISO15118-20 EV AC_ChargeLoop fires ac_target_power on a Dynamic response") {
     float reported = 0.0f;
     bool fired = false;
+    bool frequency = true;
     ev::feedback::Callbacks callbacks{};
     callbacks.ac_target_power = [&](const iso15118::d20::AcTargetPower& mode) {
         fired = true;
         reported = message_20::datatypes::from_RationalNumber(mode.target_active_power.value());
+        frequency = mode.target_frequency.has_value();
     };
     PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, seed_present_5000};
 
@@ -186,8 +188,40 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop fires ac_target_power on a Dynamic respon
 
     REQUIRE(fired == true);
     REQUIRE(reported == Catch::Approx(7000.0f));
+    // The response states no frequency, so none is forwarded.
+    REQUIRE(frequency == false);
     REQUIRE(result.transitioned() == false);
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
+}
+
+SCENARIO("ISO15118-20 EV AC_ChargeLoop forwards every power and the frequency of a Dynamic response") {
+    namespace dt = message_20::datatypes;
+    std::optional<iso15118::d20::AcTargetPower> captured;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.ac_target_power = [&](const iso15118::d20::AcTargetPower& target) { captured = target; };
+    PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, seed_present_5000};
+
+    auto res = make_res(SESSION_HEADER, ResponseCode::OK);
+    auto& mode = std::get<dt::Dynamic_AC_CLResControlMode>(res.control_mode);
+    mode.target_active_power_L2 = dt::from_float(2100.0f);
+    mode.target_active_power_L3 = dt::from_float(2200.0f);
+    mode.target_reactive_power = dt::from_float(300.0f);
+    mode.target_reactive_power_L2 = dt::from_float(310.0f);
+    mode.target_reactive_power_L3 = dt::from_float(320.0f);
+    res.target_frequency = dt::from_float(49.5f);
+    primed.handle_response(res);
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(captured.has_value());
+    REQUIRE(dt::from_RationalNumber(captured->target_active_power.value()) == Catch::Approx(7000.0f));
+    REQUIRE(dt::from_RationalNumber(captured->target_active_power_L2.value()) == Catch::Approx(2100.0f));
+    REQUIRE(dt::from_RationalNumber(captured->target_active_power_L3.value()) == Catch::Approx(2200.0f));
+    REQUIRE(dt::from_RationalNumber(captured->target_reactive_power.value()) == Catch::Approx(300.0f));
+    REQUIRE(dt::from_RationalNumber(captured->target_reactive_power_L2.value()) == Catch::Approx(310.0f));
+    REQUIRE(dt::from_RationalNumber(captured->target_reactive_power_L3.value()) == Catch::Approx(320.0f));
+    REQUIRE(captured->target_frequency.has_value());
+    REQUIRE(dt::from_RationalNumber(*captured->target_frequency) == Catch::Approx(49.5f));
 }
 
 SCENARIO("ISO15118-20 EV AC_ChargeLoop does not substitute the dictated target for a measurement") {
@@ -591,6 +625,26 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop fires ac_target_power on a Scheduled resp
     REQUIRE(message_20::datatypes::from_RationalNumber(target) == Catch::Approx(7000.0f));
 }
 
+SCENARIO("ISO15118-20 EV AC_ChargeLoop forwards the frequency of a Scheduled response") {
+    std::optional<iso15118::d20::AcTargetPower> captured;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.ac_target_power = [&](const iso15118::d20::AcTargetPower& target) { captured = target; };
+    PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, message_20::datatypes::ServiceCategory::AC,
+                                                      seed_scheduled_present_5000};
+
+    auto res = make_scheduled_res(SESSION_HEADER, ResponseCode::OK);
+    res.target_frequency = message_20::datatypes::from_float(50.5f);
+    primed.handle_response(res);
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(captured.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(captured->target_active_power.value()) ==
+            Catch::Approx(7000.0f));
+    REQUIRE(captured->target_frequency.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(*captured->target_frequency) == Catch::Approx(50.5f));
+}
+
 SCENARIO("ISO15118-20 EV AC_ChargeLoop keeps looping when a Scheduled response states no target power") {
     StopObserver obs;
     PrimedState<ev::d20::state::AC_ChargeLoop> primed{obs.callbacks, message_20::datatypes::ServiceCategory::AC,
@@ -598,7 +652,10 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop keeps looping when a Scheduled response s
 
     REQUIRE(primed.helper.get_message_exchange().take_request().has_value());
 
-    primed.handle_response(make_scheduled_res(SESSION_HEADER, ResponseCode::OK, std::nullopt, std::nullopt));
+    // A frequency without a target power publishes no target.
+    auto res = make_scheduled_res(SESSION_HEADER, ResponseCode::OK, std::nullopt, std::nullopt);
+    res.target_frequency = message_20::datatypes::from_float(50.5f);
+    primed.handle_response(res);
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
 
     REQUIRE(result.transitioned() == false);

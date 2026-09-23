@@ -432,4 +432,42 @@ SCENARIO("Se/Deserialize ac der iec charge loop messages") {
             REQUIRE(serialize_helper(res) == expected);
         }
     }
+
+    GIVEN("Deserialize ac_der_charge_loop_res + dynamic mode with a target frequency") {
+        uint8_t doc_raw[] = {0x80, 0x0c, 0x04, 0x1e, 0xa6, 0x5f, 0xc9, 0x9b, 0xa7, 0x6c, 0x4d, 0x89, 0x1c,
+                             0x0e, 0x1b, 0x60, 0x62, 0x00, 0x31, 0xfc, 0x3e, 0x40, 0xc7, 0x07, 0xe0, 0x80,
+                             0x19, 0x20, 0x7e, 0x08, 0x01, 0x92, 0x1f, 0x82, 0x00, 0x64, 0x70};
+
+        const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
+
+        message_20::Variant variant(io::v2gtp::PayloadType::Part20DerIec, stream_view);
+
+        THEN("It should be deserialized successfully") {
+            REQUIRE(variant.get_type() == message_20::Type::DER_AC_ChargeLoopRes);
+
+            const auto& msg = variant.get<message_20::DER_AC_ChargeLoopResponse>();
+            REQUIRE(msg.header.timestamp == 1725456401);
+            REQUIRE(msg.response_code == dt::ResponseCode::OK);
+            REQUIRE(msg.target_frequency.has_value());
+            REQUIRE_THAT(dt::from_RationalNumber(msg.target_frequency.value()),
+                         Catch::Matchers::WithinRel(50.5, 0.001));
+
+            REQUIRE(std::holds_alternative<dt::DER_Dynamic_AC_CLResControlMode>(msg.control_mode));
+            const auto& control_mode = std::get<dt::DER_Dynamic_AC_CLResControlMode>(msg.control_mode);
+            REQUIRE(dt::from_RationalNumber(control_mode.target_active_power) == 32);
+        }
+
+        THEN("It should serialize back to the same bytes") {
+            message_20::DER_AC_ChargeLoopResponse res;
+            res.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456401};
+            res.response_code = dt::ResponseCode::OK;
+            res.target_frequency = dt::RationalNumber{505, -1};
+            auto& control_mode = res.control_mode.emplace<dt::DER_Dynamic_AC_CLResControlMode>();
+            control_mode.target_active_power = {3200, -2};
+            control_mode.max_charge_power = {3200, -2};
+            control_mode.max_discharge_power = {3200, -2};
+
+            REQUIRE(serialize_helper(res) == std::vector<uint8_t>(doc_raw, doc_raw + sizeof(doc_raw)));
+        }
+    }
 }
