@@ -20,6 +20,8 @@ constexpr auto ISO20_DC_PROTOCOL_NAMESPACE = "urn:iso:std:iso:15118:-20:DC";
 constexpr auto ISO20_AC_PROTOCOL_NAMESPACE = "urn:iso:std:iso:15118:-20:AC";
 // Schema namespace of the -20 common message set, e.g. for CertificateInstallationReq relayed to a backend.
 constexpr auto ISO20_COMMON_MESSAGES_NAMESPACE = "urn:iso:std:iso:15118:-20:CommonMessages";
+// AMD1 [V2G20-3020].
+constexpr auto ISO20_AC_DER_IEC_PROTOCOL_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-IEC";
 // AMD1 [V2G20-3216].
 constexpr auto ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-SAE";
 
