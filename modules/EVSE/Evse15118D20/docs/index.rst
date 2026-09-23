@@ -402,4 +402,13 @@ grid code restarts service selection.
 Terminations that any state performs on a ``SessionStopReq`` or a sequence error
 are omitted, since they end the session rather than move it to another state.
 
+On a DC ``PowerDeliveryReq`` with ``Stop``, or any ``PowerDeliveryReq`` while a
+shutdown is requested, ``current_demand_finished`` and ``dc_open_contactor`` are
+published before the response, and the response is held
+until ``ac_contactor_closed(false)`` reports the power path off, for at most 500 ms.
+The EV leaves state C as soon as it has the response, so this withdraws the power
+permissive first (IEC 61851-23-3 Table CC.111, t103 before t105). An MCS board
+support treats a C exit under a standing permissive as an emergency shutdown
+(CC.4.3).
+
 .. mermaid:: d20-state-machine.mmd
