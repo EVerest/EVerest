@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "power_supply_DCImpl.hpp"
 #include <cmath>
@@ -48,9 +48,9 @@ void power_supply_DCImpl::init() {
 
     mod->acdc.signalVoltageCurrent.connect([this](float voltage, float current) {
         types::power_supply_DC::VoltageCurrent vc;
-        if (last_publish_mode == types::power_supply_DC::Mode::Import) {
-            // According to ISO 15118-20 V2G20-1034 / V2G20-1035,
-            // negative current indicates EV -> EVSE power transfer (discharging).
+        // The module reports current as a magnitude, so the sign follows the commanded mode.
+        // ISO 15118-20 V2G20-1034 / V2G20-1035: negative current indicates EV -> EVSE power transfer.
+        if (commanded_mode == types::power_supply_DC::Mode::Import) {
             current = -current;
         }
         vc.current_A = current;
@@ -95,7 +95,7 @@ void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
                                          types::power_supply_DC::ChargingPhase& phase) {
     std::scoped_lock lock(settings_mutex);
 
-    if (mode != last_publish_mode) {
+    if (mode != commanded_mode.exchange(mode)) {
         last_logged_export_voltage.reset();
         last_logged_export_current.reset();
         last_logged_import_voltage.reset();
