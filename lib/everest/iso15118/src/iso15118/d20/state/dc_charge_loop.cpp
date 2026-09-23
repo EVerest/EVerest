@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/dc_charge_loop.hpp>
 #include <iso15118/d20/state/dc_welding_detection.hpp>
 
@@ -14,6 +14,9 @@
 namespace iso15118::d20::state {
 
 namespace dt = message_20::datatypes;
+
+// Bounds how long PowerDeliveryRes(Stop) waits for the board support to report the power path off.
+constexpr uint32_t DC_OPEN_CONTACTOR_TIMEOUT = 500;
 
 using Scheduled_DC_Req = dt::Scheduled_DC_CLReqControlMode;
 using Scheduled_BPT_DC_Req = dt::BPT_Scheduled_DC_CLReqControlMode;
@@ -220,9 +223,24 @@ Result DC_ChargeLoop::feed(Event ev) {
             pause = *control_data;
         } else if (const auto* control_data = m_ctx.get_control_event<UpdateDynamicModeParameters>()) {
             dynamic_parameters = *control_data;
+        } else if (const auto* control_data = m_ctx.get_control_event<ClosedContactor>()) {
+            contactor_closed = static_cast<bool>(*control_data);
+            if (pending_stop_res.has_value() and not *contactor_closed) {
+                m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+                return send_pending_stop_res();
+            }
         }
 
-        // Ignore control message
+        return {};
+    }
+
+    if (ev == Event::TIMEOUT) {
+        const auto* const timeout = m_ctx.get_active_timeout();
+        if (pending_stop_res.has_value() and timeout != nullptr and *timeout == d20::TimeoutType::CONTACTOR) {
+            logf_warning("Power path not reported off within %ums, sending PowerDeliveryRes anyway",
+                         DC_OPEN_CONTACTOR_TIMEOUT);
+            return send_pending_stop_res();
+        }
         return {};
     }
 
@@ -238,22 +256,30 @@ Result DC_ChargeLoop::feed(Event ev) {
 
         const auto res = handle_request(*req, m_ctx.session, false, shutdown_requested);
 
-        m_ctx.respond(res);
-
-        if (res.response_code >= dt::ResponseCode::FAILED) {
-            m_ctx.session_stopped = true;
-            return {};
-        }
-
         // Reset
         first_entry_in_charge_loop = true;
 
         // Todo(sl): React properly to Start, Stop, Standby and ScheduleRenegotiation
         // TODO(Sl): How to check if the EV wants do a pause in dynamic mode (This should not happen)
-        if (req->charge_progress == dt::Progress::Stop or shutdown_requested) {
+        if (res.response_code < dt::ResponseCode::FAILED and
+            (req->charge_progress == dt::Progress::Stop or shutdown_requested)) {
+            // The EV leaves power-transfer readiness (CP/CE C -> B) as soon as it gets the response, so
+            // the power permissive has to be withdrawn first (IEC 61851-23-3 Table CC.111, t103 before
+            // t105); on MCS a C-exit under a standing permissive is an emergency shutdown (CC.4.3).
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
             m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
-            return m_ctx.create_state<DC_WeldingDetection>();
+            pending_stop_res = res;
+            if (contactor_closed.has_value() and not *contactor_closed) {
+                return send_pending_stop_res();
+            }
+            m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, DC_OPEN_CONTACTOR_TIMEOUT);
+            return {};
+        }
+
+        m_ctx.respond(res);
+
+        if (res.response_code >= dt::ResponseCode::FAILED) {
+            m_ctx.session_stopped = true;
         }
 
         return {};
@@ -291,6 +317,12 @@ Result DC_ChargeLoop::feed(Event ev) {
         m_ctx.session_stopped = true;
         return {};
     }
+}
+
+Result DC_ChargeLoop::send_pending_stop_res() {
+    m_ctx.respond(*pending_stop_res);
+    pending_stop_res.reset();
+    return m_ctx.create_state<DC_WeldingDetection>();
 }
 
 } // namespace iso15118::d20::state

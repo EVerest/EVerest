@@ -45,7 +45,7 @@ stateDiagram-v2
     AC_ChargeLoop --> SessionStop : PowerDeliveryReq Stop or shutdown
     AC_DER_IEC_ChargeLoop --> SessionStop : PowerDeliveryReq Stop or shutdown
     AC_DER_SAE_ChargeLoop --> SessionStop : PowerDeliveryReq Stop or shutdown
-    DC_ChargeLoop --> DC_WeldingDetection : PowerDeliveryReq Stop or shutdown
+    DC_ChargeLoop --> DC_WeldingDetection : PowerDeliveryReq Stop or shutdown, after power path off
     DC_WeldingDetection --> SessionStop : EV Processing Finished
 
     SessionStop --> [*]
