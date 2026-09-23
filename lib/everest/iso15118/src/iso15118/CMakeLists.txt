@@ -148,6 +148,7 @@ if(ISO15118_BUILD_EV_SIDE)
         ev/d20/state/ac_der_iec_charge_parameter_discovery.cpp
         ev/d20/state/ac_der_iec_charge_loop.cpp
         ev/d20/state/ac_der_sae_charge_parameter_discovery.cpp
+        ev/d20/state/ac_der_sae_charge_loop.cpp
         ev/ac_phase_split.cpp
         ev/der_sae_control_validation.cpp
         ev/sae_profile_emit.cpp
