@@ -761,17 +761,23 @@ void ChargePoint::build_der_control_if_enabled() {
 }
 
 OcspUpdater ChargePoint::make_ocsp_updater() {
-    return OcspUpdater(this->evse_security, [this](GetCertificateStatusRequest req) -> GetCertificateStatusResponse {
-        try {
-            return this->send_callback<GetCertificateStatusRequest, GetCertificateStatusResponse>(
-                MessageType::GetCertificateStatusResponse)(req);
-        } catch (const UnexpectedMessageTypeFromCSMS& e) {
-            EVLOG_warning << e.what();
-        }
-        GetCertificateStatusResponse response;
-        response.status = GetCertificateStatusEnum::Failed;
-        return response;
+    return OcspUpdater(this->evse_security, [this](const GetCertificateStatusRequest& request) {
+        return this->get_certificate_status_from_csms(request);
     });
+}
+
+GetCertificateStatusResponse ChargePoint::get_certificate_status_from_csms(const GetCertificateStatusRequest& request) {
+    try {
+        return this->send_callback<GetCertificateStatusRequest, GetCertificateStatusResponse>(
+            MessageType::GetCertificateStatusResponse)(request);
+    } catch (const UnexpectedMessageTypeFromCSMS& e) {
+        EVLOG_warning << e.what();
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Malformed GetCertificateStatusResponse from CSMS: " << e.what();
+    }
+    GetCertificateStatusResponse response;
+    response.status = GetCertificateStatusEnum::Failed;
+    return response;
 }
 
 void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message) {

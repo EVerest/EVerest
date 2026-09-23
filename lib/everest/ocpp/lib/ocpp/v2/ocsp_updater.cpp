@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include <chrono>
 #include <condition_variable>
@@ -7,7 +7,6 @@
 
 #include <everest/logging.hpp>
 
-#include <ocpp/v2/charge_point.hpp>
 #include <ocpp/v2/messages/GetCertificateStatus.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 #include <ocpp/v2/ocsp_updater.hpp>
@@ -88,8 +87,8 @@ void OcspUpdater::updater_thread_loop() {
                 EVLOG_error << "libocpp FATAL: OCSP status update failed: " << e.what();
                 throw;
             }
-        } catch (UnexpectedMessageTypeFromCSMS& e) {
-            EVLOG_warning << "libocpp: " << e.what() << ", will retry.";
+        } catch (const std::exception& e) {
+            EVLOG_warning << "libocpp: OCSP status update failed: " << e.what() << ", will retry.";
             this->update_deadline = std::chrono::steady_clock::now() + this->ocsp_cache_update_retry_interval;
         }
     }
