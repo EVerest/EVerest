@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d2/state/service_discovery.hpp>
 
 #include <iso15118/d2/state/service_selection.hpp>
@@ -108,12 +108,13 @@ Result ServiceDiscovery::on_request(const message_2::Variant& received) {
     const bool offer_eim = m_ctx.session_config.eim_enabled or not offer_contract;
     const bool cert_service_offered = offer_contract and m_ctx.session_config.cert_install_service;
 
-    // Resumed session: only the previously selected option [V2G2-741] -- unless it no longer passes the
-    // gating (a PnC pause resumed over plain TCP), where offering Contract would break [V2G2-632].
+    // Resumed session: only the previously selected option [V2G2-741] -- unless a PnC pause is resumed over
+    // plain TCP, where offering Contract would break [V2G2-632]. pnc_enabled is not consulted: the module
+    // withdraws Contract once the session is authorized, and the resumed session is that same session.
     std::optional<dt::PaymentOption> resumed_payment_option;
     if (m_ctx.session().session_resumed and m_ctx.pause_ctx.has_value()) {
         const auto stored_option = m_ctx.pause_ctx->selected_payment_option;
-        if (stored_option != dt::PaymentOption::Contract or offer_contract) {
+        if (stored_option != dt::PaymentOption::Contract or m_ctx.session_config.tls_active) {
             resumed_payment_option = stored_option;
         } else {
             logf_warning("Resumed a PnC-paused session without TLS; offering the normal payment options");
