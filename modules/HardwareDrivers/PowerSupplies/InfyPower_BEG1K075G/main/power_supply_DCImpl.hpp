@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef MAIN_POWER_SUPPLY_DC_IMPL_HPP
 #define MAIN_POWER_SUPPLY_DC_IMPL_HPP
 
@@ -14,6 +14,7 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
+#include <atomic>
 #include <optional>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
@@ -60,6 +61,7 @@ private:
     types::power_supply_DC::Capabilities caps;
 
     types::power_supply_DC::Mode last_publish_mode{types::power_supply_DC::Mode::Off};
+    std::atomic<types::power_supply_DC::Mode> commanded_mode{types::power_supply_DC::Mode::Off};
     std::optional<double> last_logged_export_voltage;
     std::optional<double> last_logged_export_current;
     std::optional<double> last_logged_import_voltage;
