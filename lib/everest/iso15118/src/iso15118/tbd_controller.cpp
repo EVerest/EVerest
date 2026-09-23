@@ -531,14 +531,6 @@ void TbdController::handle_sdp_server_input() {
         return;
     }
 
-    if (session) {
-        // A reconnect SDP arriving in the same poll cycle as a pending teardown
-        // is dropped here; the EVCC retransmits its SDP request (~250 ms) and
-        // recovers.
-        logf_warning("Ignoring sdp request message because a session is already created and running");
-        return;
-    }
-
     if (not request) {
         return;
     }
@@ -554,6 +546,26 @@ void TbdController::handle_sdp_server_input() {
         request.security = io::v2gtp::Security::NO_TRANSPORT_SECURITY;
         break;
     }
+
+    if (session) {
+        // The EV repeats its SDP request until it gets a response. As long as it has not connected, the
+        // previous response may have been lost (e.g. the EV did not answer neighbour discovery for the
+        // unicast reply in time), so announce the same endpoint again instead of going silent until the
+        // communication setup timeout.
+        if (sdp_offer and session->awaiting_connection() and request.security == sdp_offer->requested) {
+            logf_info("Repeated SDP request before the EV connected; sending the SDP response again");
+            request.security = sdp_offer->offered;
+            sdp_server->send_response(request, sdp_offer->endpoint);
+            return;
+        }
+        // A reconnect SDP arriving in the same poll cycle as a pending teardown
+        // is dropped here; the EVCC retransmits its SDP request (~250 ms) and
+        // recovers.
+        logf_warning("Ignoring sdp request message because a session is already created and running");
+        return;
+    }
+
+    const auto requested_security = request.security;
 
     auto make_connection = [this](bool secure_connection) -> std::unique_ptr<io::IConnection> {
         try {
@@ -586,6 +598,7 @@ void TbdController::handle_sdp_server_input() {
     }
 
     const auto ipv6_endpoint = connection->get_public_endpoint();
+    sdp_offer = SdpOffer{requested_security, request.security, ipv6_endpoint};
 
     // One-shot: handing it to this session and clearing it keeps it from silently pausing every later
     // session too. Built before taking session_mutex so the two locks are never held at once.

@@ -128,3 +128,30 @@ SCENARIO("The communication setup timer anchor follows the negotiated protocol")
         }
     }
 }
+
+SCENARIO("A session awaits the EV's connection until TCP/TLS is accepted") {
+    GIVEN("a session created from an SDP request whose connection is not accepted yet") {
+        Fixture fixture{{ProtocolId::ISO15118_20}, false};
+
+        THEN("it is awaiting the connection, so a repeated SDP request is answered again") {
+            REQUIRE(fixture.session->awaiting_connection());
+        }
+    }
+
+    GIVEN("a session whose connection has been accepted") {
+        Fixture fixture{{ProtocolId::ISO15118_20}};
+
+        THEN("it no longer awaits the connection") {
+            REQUIRE_FALSE(fixture.session->awaiting_connection());
+        }
+    }
+
+    GIVEN("a session whose accepted connection has closed again") {
+        Fixture fixture{{ProtocolId::ISO15118_20}};
+        fixture.conn->fire(iso15118::io::ConnectionEvent::CLOSED);
+
+        THEN("it does not go back to awaiting a connection") {
+            REQUIRE_FALSE(fixture.session->awaiting_connection());
+        }
+    }
+}

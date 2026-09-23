@@ -93,6 +93,12 @@ public:
         return connection_established_time;
     }
 
+    // True until the EV has opened TCP/TLS to the endpoint announced in the SDP response. While it is,
+    // a repeated SDP request means the EV has not received the response yet.
+    bool awaiting_connection() const {
+        return not connection_established_time.has_value();
+    }
+
     void close();
 
     void request_shutdown();
