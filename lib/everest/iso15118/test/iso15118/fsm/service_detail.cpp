@@ -54,7 +54,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             auto& parameter_set = service_parameter_list.emplace_back();
             parameter_set.id = 0;
             parameter_set.parameter.push_back({"Service1", 40});
-            parameter_set.parameter.push_back({"Service2", "house"});
+            parameter_set.parameter.push_back({"Service2", std::string{"house"}});
         } else if (id == message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)) {
             auto& parameter_set = service_parameter_list.emplace_back();
             parameter_set.id = 0;
@@ -63,7 +63,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
         } else if (id == message_20::to_underlying_value(dt::ServiceCategory::Internet)) {
             auto& parameter_set = service_parameter_list.emplace_back();
             parameter_set.id = 3;
-            parameter_set.parameter.push_back({"Protocol", "http"});
+            parameter_set.parameter.push_back({"Protocol", std::string{"http"}});
             parameter_set.parameter.push_back({"Port", 80});
         }
 
