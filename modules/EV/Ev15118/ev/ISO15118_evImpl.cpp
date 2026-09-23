@@ -228,19 +228,6 @@ iso15118::ev::d2::PnCConfig build_pnc_config(const module::Conf& config, const s
     return pnc;
 }
 
-// The Dynamic mode's targets, in the shape the plain AC charge loop reports them.
-iso15118::d20::AcTargetPower
-dynamic_target_power(const iso15118::message_20::datatypes::Dynamic_AC_CLResControlMode& mode) {
-    iso15118::d20::AcTargetPower target;
-    target.target_active_power = mode.target_active_power;
-    target.target_active_power_L2 = mode.target_active_power_L2;
-    target.target_active_power_L3 = mode.target_active_power_L3;
-    target.target_reactive_power = mode.target_reactive_power;
-    target.target_reactive_power_L2 = mode.target_reactive_power_L2;
-    target.target_reactive_power_L3 = mode.target_reactive_power_L3;
-    return target;
-}
-
 const char* signal_to_string(iso15118::ev::feedback::Signal signal) {
     using Signal = iso15118::ev::feedback::Signal;
     switch (signal) {
@@ -657,22 +644,20 @@ ISO15118_evImpl::make_callbacks(iso15118::message_20::datatypes::ServiceCategory
     };
     callbacks.ac_target_power = publish_target_power;
 
-    callbacks.der_control =
-        [this, publish_target_power](const iso15118::message_20::datatypes::DER_Dynamic_AC_CLResControlMode& control) {
-            namespace dt = iso15118::message_20::datatypes;
-            publish_target_power(dynamic_target_power(control));
-            types::iso15118::DerControlReceived received;
-            received.flavor = types::iso15118::DerFlavor::AC_DER_IEC;
-            received.source = types::iso15118::DerControlSource::ChargeLoop;
-            if (control.dso_q_setpoint) {
-                received.dso_q_setpoint = dt::from_RationalNumber(control.dso_q_setpoint->dso_q_setpoint_value);
-            }
-            if (control.dso_cos_phi_setpoint) {
-                received.dso_cos_phi_setpoint =
-                    dt::from_RationalNumber(control.dso_cos_phi_setpoint->dso_cos_phi_setpoint_value);
-            }
-            publish_der_control_received(received);
-        };
+    callbacks.der_control = [this](const iso15118::message_20::datatypes::DER_Dynamic_AC_CLResControlMode& control) {
+        namespace dt = iso15118::message_20::datatypes;
+        types::iso15118::DerControlReceived received;
+        received.flavor = types::iso15118::DerFlavor::AC_DER_IEC;
+        received.source = types::iso15118::DerControlSource::ChargeLoop;
+        if (control.dso_q_setpoint) {
+            received.dso_q_setpoint = dt::from_RationalNumber(control.dso_q_setpoint->dso_q_setpoint_value);
+        }
+        if (control.dso_cos_phi_setpoint) {
+            received.dso_cos_phi_setpoint =
+                dt::from_RationalNumber(control.dso_cos_phi_setpoint->dso_cos_phi_setpoint_value);
+        }
+        publish_der_control_received(received);
+    };
 
     // Dictated DER curves are observed, not applied. The published summary has no curve fields.
     callbacks.der_curves = [this](const iso15118::message_20::datatypes::DerControl& control) {
