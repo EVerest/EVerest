@@ -54,7 +54,7 @@ SCENARIO("Feedback Tests") {
         auto& parameter_set = service_parameter_list.emplace_back();
         parameter_set.id = 0;
         parameter_set.parameter.push_back({"Service1", 40});
-        parameter_set.parameter.push_back({"Service2", "house"});
+        parameter_set.parameter.push_back({"Service2", std::string{"house"}});
 
         return std::make_optional(service_parameter_list);
     };
