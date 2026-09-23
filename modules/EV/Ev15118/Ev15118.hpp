@@ -71,6 +71,9 @@ struct Conf {
     double dc_max_discharge_power_w;
     double dc_min_discharge_power_w;
     double dc_max_discharge_current_a;
+    std::string sae_inverter_profile_path;
+    int cpd_rounds;
+    bool der_stop_on_invalid_control;
 };
 
 class Ev15118 : public Everest::ModuleBase {

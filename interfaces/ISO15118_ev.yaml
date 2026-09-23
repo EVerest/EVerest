@@ -118,3 +118,15 @@ vars:
   dc_evse_present_voltage:
     description: EVSE-delivered present voltage during DC charging (V)
     type: number
+  der_negotiated_functions:
+    description: >-
+      The DER control functions negotiated for the session, for either DER annex: the demand of
+      the selected parameter set for AC_DER_IEC, the enabled modes the EV echoes for AC_DER_SAE.
+      AC_DER_IEC publishes once, from ServiceDetail; AC_DER_SAE once per ChargeParameterDiscovery
+      round and in the charge loop whenever the set changes.
+    type: object
+    $ref: /iso15118#/DerNegotiatedFunctions
+  der_control_received:
+    description: Summary of each DER control block the SECC sends, for either DER annex
+    type: object
+    $ref: /iso15118#/DerControlReceived

@@ -301,7 +301,9 @@ Result ServiceDetail::feed(Event ev) {
                          unsupported.c_str(), fallback->id);
             selected_set = fallback;
         }
-        m_ctx.set_der_demanded_functions(demand_of(res->service_parameter_list, selected_set->id).mask);
+        const auto negotiated = demand_of(res->service_parameter_list, selected_set->id).mask;
+        m_ctx.set_der_demanded_functions(negotiated);
+        m_ctx.feedback.der_enabled_modes(static_cast<std::uint32_t>(negotiated.to_ulong()));
     } else {
         selected_set = find_parameter_set(res->service_parameter_list, preferred_mode, preferred, accept_any);
     }

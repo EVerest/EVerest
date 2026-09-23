@@ -270,14 +270,14 @@ config:
     default: true
   ac_max_discharge_power_w:
     description:
-      Advertised AC maximum discharge power in watts (AC_BPT and AC_DER_IEC), as a
+      Advertised AC maximum discharge power in watts (AC_BPT, AC_DER_IEC and AC_DER_SAE), as a
       three-phase total. The default is 16 A x 230 V x 3.
     type: number
     minimum: 0
     default: 11040
   ac_min_discharge_power_w:
     description:
-      Advertised AC minimum discharge power in watts (AC_BPT and AC_DER_IEC), as a
+      Advertised AC minimum discharge power in watts (AC_BPT, AC_DER_IEC and AC_DER_SAE), as a
       three-phase total. The default is 6 A x 230 V x 3.
     type: number
     minimum: 0
@@ -297,6 +297,25 @@ config:
     type: number
     minimum: 0
     default: 300
+  sae_inverter_profile_path:
+    description:
+      JSON file describing the EV inverter for AC_DER_SAE. Empty uses the built-in profile. A
+      file that fails to parse makes start_charging refuse AC_DER_SAE.
+    type: string
+    default: ""
+  cpd_rounds:
+    description:
+      ChargeParameterDiscovery rounds the EV drives before it reports Finished. AC_DER_SAE only.
+    type: integer
+    minimum: 1
+    maximum: 65535
+    default: 1
+  der_stop_on_invalid_control:
+    description:
+      Stop the session on a structurally invalid DER control block from the SECC instead of
+      warning and continuing. AC_DER_SAE only.
+    type: boolean
+    default: false
 provides:
   ev:
     interface: ISO15118_ev
