@@ -798,7 +798,8 @@ void EvseManager::ready() {
 
                     bool target_changed{false};
 
-                    double min_charge_power{0.0};
+                    double ev_min_power{0.0};
+                    double ev_max_power{0.0};
                     double max_charge_power{0.0};
                     double max_charge_current{0.0};
 
@@ -821,14 +822,9 @@ void EvseManager::ready() {
                                                    : ev_max_discharge_power;
                         }
 
-                        if (values.min_discharge_power.has_value() and
-                            min_hlc_limits.evse_minimum_discharge_power_limit.has_value()) {
-                            const auto ev_min_discharge_power = std::fabs(values.min_discharge_power.value());
-                            const auto evse_min_discharge_power =
-                                std::fabs(min_hlc_limits.evse_minimum_discharge_power_limit.value());
-                            min_charge_power = (ev_min_discharge_power < evse_min_discharge_power)
-                                                   ? evse_min_discharge_power
-                                                   : ev_min_discharge_power;
+                        if (values.min_discharge_power.has_value() and values.max_discharge_power.has_value()) {
+                            ev_min_power = std::fabs(values.min_discharge_power.value());
+                            ev_max_power = std::fabs(values.max_discharge_power.value());
                         }
 
                         if (values.max_discharge_current.has_value() and
@@ -845,17 +841,18 @@ void EvseManager::ready() {
                         max_charge_power = (values.max_charge_power > max_hlc_limits.evse_maximum_power_limit)
                                                ? max_hlc_limits.evse_maximum_power_limit
                                                : values.max_charge_power;
-                        min_charge_power = (values.min_charge_power > min_hlc_limits.evse_minimum_power_limit)
-                                               ? values.min_charge_power
-                                               : min_hlc_limits.evse_minimum_power_limit;
+                        ev_min_power = values.min_charge_power;
+                        ev_max_power = values.max_charge_power;
                         max_charge_current = (values.max_charge_current > max_hlc_limits.evse_maximum_current_limit)
                                                  ? max_hlc_limits.evse_maximum_current_limit
                                                  : values.max_charge_current;
                     }
 
-                    if (min_charge_power > max_charge_power) {
-                        EVLOG_error << "Minimum charge power limit is greater then the maximum charge power limit";
-                        return;
+                    if (ev_min_power > ev_max_power) {
+                        EVLOG_error << "EV minimum power (" << ev_min_power << " W) is greater than EV maximum power ("
+                                    << ev_max_power << " W), setting target current to 0 A";
+                        max_charge_power = 0.0;
+                        max_charge_current = 0.0;
                     }
 
                     // Setting voltage. charging: EvMaxVoltage, discharging: EvMinVoltage
@@ -2526,7 +2523,7 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
             }
 
             if (caps.min_import_current_A.has_value() and current < caps.min_import_current_A.value()) {
-                current = caps.min_import_current_A.value();
+                current = 0.0;
             }
 
             // Now it is within limits of DC power supply.
@@ -2563,7 +2560,7 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
             current = caps.max_export_current_A;
 
         if (current < caps.min_export_current_A)
-            current = caps.min_export_current_A;
+            current = 0.0;
 
         // Now it is within limits of DC power supply.
         // now also limit with the limits given by the energymanager.
