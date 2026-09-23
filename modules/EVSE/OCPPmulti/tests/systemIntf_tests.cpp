@@ -183,6 +183,27 @@ TEST_F(GenericOcppRequiresTester, callIsResetAllowed) {
     EXPECT_EQ(received[1], R"({"type":"Soft"})"_json);
 }
 
+TEST_F(GenericOcppRequiresTester, callIsResetAllowedImmediateAndResume) {
+    // B13.FR.01: rejected without transaction resumption support
+
+    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
+
+    std::vector<json> received;
+    interfaces->subscribe_var("system", "call_is_reset_allowed",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    interfaces->add_cmd_result(R"(true)"_json);
+    interfaces->add_cmd_result(R"(true)"_json);
+
+    EXPECT_FALSE(ocpp->cb_is_reset_allowed(std::nullopt, ResetType::ImmediateAndResume));
+    EXPECT_TRUE(received.empty());
+
+    EXPECT_TRUE(ocpp->cb_is_reset_allowed(std::nullopt, ResetType::Immediate));
+    EXPECT_EQ(received.size(), 1);
+    EXPECT_TRUE(ocpp->cb_is_reset_allowed(std::nullopt, ResetType::OnIdle));
+    EXPECT_EQ(received.size(), 2);
+}
+
 TEST_F(GenericOcppRequiresTester, callReset) {
     // call_reset() used in cb_is_reset_allowed()
 
