@@ -30,7 +30,6 @@ void AC_DER_IEC_ChargeParameterDiscovery::enter() {
     mode.processing = dt::Processing::Finished;
 
     message_20::DER_AC_ChargeParameterDiscoveryRequest req;
-    setup_header(req.header, m_ctx.get_session());
     req.transfer_mode = mode;
     m_ctx.send_request(req);
 }

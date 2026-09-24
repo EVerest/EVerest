@@ -56,10 +56,9 @@ Mode without_unsupported_setpoints(const Mode& res_mode, std::bitset<ev::DER_CON
     return directive;
 }
 
-message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, const AcChargeParams& params,
-                                                  dt::AcConnector connector, dt::ControlMode control_mode) {
+message_20::DER_AC_ChargeLoopRequest make_request(const AcChargeParams& params, dt::AcConnector connector,
+                                                  dt::ControlMode control_mode) {
     message_20::DER_AC_ChargeLoopRequest req;
-    setup_header(req.header, session);
     req.meter_info_requested = false;
     req.display_parameters = std::nullopt;
 
@@ -89,8 +88,7 @@ message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, cons
 
 void AC_DER_IEC_ChargeLoop::enter() {
     logf_debug("Enter state: AC_DER_IEC_ChargeLoop");
-    m_ctx.send_request(
-        make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.ac_connector(), m_ctx.selected_control_mode()));
+    m_ctx.send_request(make_request(m_ctx.get_ac_params(), m_ctx.ac_connector(), m_ctx.selected_control_mode()));
 }
 
 Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
@@ -139,8 +137,7 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
         m_ctx.feedback.der_control(without_unsupported_setpoints(mode, supported));
     }
 
-    m_ctx.send_request(
-        make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.ac_connector(), m_ctx.selected_control_mode()));
+    m_ctx.send_request(make_request(m_ctx.get_ac_params(), m_ctx.ac_connector(), m_ctx.selected_control_mode()));
     return Result::awaiting();
 }
 

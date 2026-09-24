@@ -27,7 +27,6 @@ void SessionSetup::enter() {
     if (const auto resumed = m_ctx.options().resumed_session_id) {
         m_ctx.get_session().set_id(resumed.value());
     }
-    setup_header(req.header, m_ctx.get_session());
     req.evccid = m_ctx.get_evcc_id();
     m_ctx.send_request(req);
 }
@@ -95,6 +94,7 @@ Result SessionSetup::feed(Event ev) {
         m_ctx.get_session().set_id(res->header.session_id);
     }
 
+    m_ctx.secc_clock().synchronize(res->header.timestamp);
     m_ctx.feedback.evse_id(res->evseid);
 
     return {m_ctx.create_state<AuthorizationSetup>()};

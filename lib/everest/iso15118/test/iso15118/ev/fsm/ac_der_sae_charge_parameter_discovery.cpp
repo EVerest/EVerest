@@ -154,6 +154,23 @@ SCENARIO("ISO15118-20 EV AC_DER_SAE_ChargeParameterDiscovery emits the first req
     }
 }
 
+SCENARIO("ISO15118-20 EV AC_DER_SAE_ChargeParameterDiscovery stamps EVUpdateTime in SECC time") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto synchronized = [](FsmStateHelper& helper) {
+        seed_ac_params(helper);
+        helper.get_context().secc_clock().synchronize(SECC_REFERENCE_US);
+    };
+    const auto since = std::chrono::steady_clock::now();
+    Primed primed{callbacks, dt::ServiceCategory::AC_DER_SAE, sae_options(), synchronized};
+
+    const auto request = take_request(primed);
+    REQUIRE(request.has_value());
+    require_tracks_reference(request->transfer_mode.update_time, SECC_REFERENCE_US, since);
+
+    (void)feed_response(primed, make_response(Processing::Finished));
+    require_tracks_reference(primed.ctx.sae_settings_update_time(), SECC_REFERENCE_US, since);
+}
+
 SCENARIO("ISO15118-20 EV AC_DER_SAE_ChargeParameterDiscovery owns the termination of the rounds") {
     const ev::feedback::Callbacks callbacks{};
 

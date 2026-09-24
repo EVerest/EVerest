@@ -24,6 +24,7 @@ Context::Context(feedback::Callbacks feedback_callbacks, MessageExchange& messag
     selected_service_(requested_service_),
     advertised_app_protocols(std::move(advertised_app_protocols_)),
     session_options(std::move(options_)) {
+    secc_clock_.resume(session_options.secc_clock);
 }
 
 std::unique_ptr<message_20::Variant> Context::pull_response() {

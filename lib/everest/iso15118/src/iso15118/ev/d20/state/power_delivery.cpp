@@ -55,12 +55,11 @@ std::optional<dt::PowerProfile> make_scheduled_power_profile(const Context& ctx,
 message_20::PowerDeliveryRequest make_request(Context& ctx, dt::Progress charge_progress,
                                               std::optional<dt::Processing> processing = std::nullopt) {
     message_20::PowerDeliveryRequest req;
-    setup_header(req.header, ctx.get_session());
     req.processing = processing.value_or(dt::Processing::Finished);
     req.charge_progress = charge_progress;
     // channel_selection deliberately left nullopt
     if (charge_progress == dt::Progress::Start and ctx.selected_control_mode() == dt::ControlMode::Scheduled) {
-        req.power_profile = make_scheduled_power_profile(ctx, req.header.timestamp);
+        req.power_profile = make_scheduled_power_profile(ctx, ctx.secc_clock().now());
     }
     return req;
 }

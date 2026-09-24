@@ -11,10 +11,8 @@ namespace iso15118::ev::d20::state {
 
 namespace {
 
-message_20::DC_WeldingDetectionRequest make_request(const SessionId& session,
-                                                    message_20::datatypes::Processing processing) {
+message_20::DC_WeldingDetectionRequest make_request(message_20::datatypes::Processing processing) {
     message_20::DC_WeldingDetectionRequest req;
-    setup_header(req.header, session);
     req.processing = processing;
     return req;
 }
@@ -22,7 +20,7 @@ message_20::DC_WeldingDetectionRequest make_request(const SessionId& session,
 } // namespace
 
 void DC_WeldingDetection::enter() {
-    m_ctx.send_request(make_request(m_ctx.get_session(), message_20::datatypes::Processing::Ongoing));
+    m_ctx.send_request(make_request(message_20::datatypes::Processing::Ongoing));
 }
 
 Result DC_WeldingDetection::feed(Event ev) {
@@ -45,7 +43,7 @@ Result DC_WeldingDetection::feed(Event ev) {
     }
 
     finished_sent = true;
-    m_ctx.send_request(make_request(m_ctx.get_session(), message_20::datatypes::Processing::Finished));
+    m_ctx.send_request(make_request(message_20::datatypes::Processing::Finished));
     return Result::awaiting();
 }
 

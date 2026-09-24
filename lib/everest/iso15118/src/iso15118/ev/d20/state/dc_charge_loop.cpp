@@ -41,10 +41,9 @@ void fill_scheduled_charge(dt::Scheduled_DC_CLReqControlMode& mode, const DcChar
     mode.min_voltage = dt::from_float(params.min_voltage);
 }
 
-message_20::DC_ChargeLoopRequest make_request(const SessionId& session, const DcChargeParams& params,
-                                              dt::ServiceCategory service, dt::ControlMode control_mode) {
+message_20::DC_ChargeLoopRequest make_request(const DcChargeParams& params, dt::ServiceCategory service,
+                                              dt::ControlMode control_mode) {
     message_20::DC_ChargeLoopRequest req;
-    setup_header(req.header, session);
     req.meter_info_requested = false;
     req.display_parameters = std::nullopt;
     // Only ever the module's measurement: substituting the EV's target or the SECC's
@@ -128,8 +127,7 @@ std::optional<feedback::DcMaximumLimits> evse_present_limits(const message_20::D
 
 void DC_ChargeLoop::enter() {
     logf_debug("Enter state: DC_ChargeLoop");
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service(),
-                                    m_ctx.selected_control_mode()));
+    m_ctx.send_request(make_request(m_ctx.get_dc_params(), m_ctx.selected_service(), m_ctx.selected_control_mode()));
 }
 
 Result DC_ChargeLoop::feed(Event ev) {
@@ -175,8 +173,7 @@ Result DC_ChargeLoop::feed(Event ev) {
         return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
     }
 
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service(),
-                                    m_ctx.selected_control_mode()));
+    m_ctx.send_request(make_request(m_ctx.get_dc_params(), m_ctx.selected_service(), m_ctx.selected_control_mode()));
     return Result::awaiting();
 }
 
