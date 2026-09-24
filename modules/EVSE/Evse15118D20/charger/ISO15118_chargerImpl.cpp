@@ -1301,6 +1301,9 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
             report_hlc_session_failed();
             publish_dlink_error(nullptr);
             break;
+        case Signal::PAUSE_NOTIFIED:
+            publish_pause_notified(nullptr);
+            break;
         }
     };
 
