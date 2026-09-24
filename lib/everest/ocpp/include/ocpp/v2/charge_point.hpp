@@ -457,6 +457,11 @@ protected:
     void handle_message(const EnhancedMessage<v2::MessageType>& message);
     void clear_invalid_charging_profiles();
 
+    /// \brief Requests the OCSP status of a V2G certificate from the CSMS on behalf of the OcspUpdater
+    /// \return the response of the CSMS, or a response with status Failed when the CSMS did not answer with a
+    /// GetCertificateStatusResponse
+    GetCertificateStatusResponse get_certificate_status_from_csms(const GetCertificateStatusRequest& request);
+
 public:
     /// \addtogroup chargepoint_constructors
     /// @{
