@@ -296,8 +296,12 @@ async def test_F01_F02_F03(
     assert transaction.stopped_reason == ReasonEnumType.remote
     assert transaction.remote_start_id == remote_start_id
 
+    tx_meter_values = [
+        mv for mv in r.meter_value
+        if mv["sampled_value"][0]["context"] != ReadingContextEnumType.sample_clock
+    ]
     assert validate_measurands_match(
-        MeterValueType(**r.meter_value[0]), expected_ended_measurands
+        MeterValueType(**tx_meter_values[0]), expected_ended_measurands
     )
 
 
