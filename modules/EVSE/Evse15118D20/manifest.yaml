@@ -129,11 +129,11 @@ config:
     default: true
   selecting_sap_based_on_energy_service:
     description: >-
-      Based on ISO15118-20 AMD1, selecting the SAP namespace does not imply a final selection.
-      The final decision on which service to select is made later in the D20 service states.
-      However, since AMD1 is relatively new, it is possible that EVs will only support certain energy services
-      after the SAP namespace has been selected. If this is the case, this option should be set to true
-      so that libiso15118 will select the sap namespace based on the supported energy services.
+      The SAP namespace matching the supported energy services is always preferred: a DC charger selects
+      -20:DC (or -2 / DIN) and an AC charger -20:AC, even if the EV ranks the other -20 namespace higher.
+      Based on ISO15118-20 AMD1, selecting the SAP namespace does not imply a final selection, so by default
+      an EV offering only non-matching namespaces still gets one and selects its service later in the D20
+      service states. Set this option to true to refuse such namespaces instead (Failed_NoNegotiation).
     type: boolean
     default: false
 provides:

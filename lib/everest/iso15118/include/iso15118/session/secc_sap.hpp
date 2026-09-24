@@ -21,7 +21,9 @@ struct HandleResult {
 };
 
 // Picks the highest-priority match [V2G20-167]. Only generations present in supported_protocols are
-// accepted; the custom protocol is always accepted when offered.
+// accepted; the custom protocol is always accepted when offered. Namespaces matching the energy families in
+// \p supported_energy_services (e.g. -20:DC on a DC charger) win over the other -20 namespaces; those are
+// only accepted when nothing matches, and never with \p selecting_sap_based_on_energy_service.
 // \p tls_active gates plaintext-only protocols: DIN SPEC 70121 is not offered over TLS
 // [V2G-DC-869]. The converse is NOT enforced -- ISO 15118-20 mandates TLS [V2G20-2677] but is still
 // negotiated on a plain connection so bring-up and ENFORCE_NO_TLS deployments keep working.
