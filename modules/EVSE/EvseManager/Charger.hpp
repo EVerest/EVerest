@@ -490,6 +490,10 @@ private:
         // CP oscillator off (X1), whatever state it is in ([V2G-DC-968] retain time).
         std::optional<std::chrono::time_point<std::chrono::steady_clock>> session_stop_pwm_off_deadline{};
 
+        // StoppingCharging was entered for a user pause (flag_paused_by_evse), even if resume_charging() has
+        // cleared that flag since.
+        bool stopping_for_evse_pause{false};
+
     } internal_context;
 
     // main Charger thread
