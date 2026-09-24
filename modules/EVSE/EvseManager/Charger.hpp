@@ -261,6 +261,8 @@ private:
     void bcb_toggle_detect_start_pulse();
     void bcb_toggle_detect_stop_pulse();
     bool bcb_toggle_detected();
+    bool evse_pause_resumable() const;
+    void resume_evse_pause_marker();
 
     void clear_errors_on_unplug();
 
@@ -336,6 +338,11 @@ private:
         bool contactor_open{true};
         bool hlc_charging_active{false};
         HlcTerminatePause hlc_charging_terminate_pause;
+        // The HLC session was stopped by the EVSE for a pause (StoppingCharging -> ChargingPausedEVSE: user
+        // pause, no energy or error). The EV ends the session with SessionStop(Pause) on -20 or SessionStop
+        // (Terminate) on -2/DIN, which sets hlc_charging_terminate_pause. Unlike an EV-initiated stop, the EVSE
+        // resumes such a session itself via PrepareCharging once the pause reasons are gone.
+        bool hlc_session_paused_by_evse{false};
         // ISO 15118-2 DC renegotiation (IEC 61851-23:2023 CC.3.6): the EV's C->B is not a stop.
         bool hlc_dc_renegotiation{false};
         types::iso15118::DcEvseMaximumLimits current_evse_max_limits{0, 0, 0, std::nullopt, std::nullopt};
@@ -480,6 +487,7 @@ private:
         // Armed by notify_session_stop_res_sent(); when it expires, the state machine switches the
         // CP oscillator off (X1), whatever state it is in ([V2G-DC-968] retain time).
         std::optional<std::chrono::time_point<std::chrono::steady_clock>> session_stop_pwm_off_deadline{};
+
     } internal_context;
 
     // main Charger thread

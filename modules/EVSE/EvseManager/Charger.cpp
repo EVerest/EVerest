@@ -249,6 +249,7 @@ void Charger::run_state_machine() {
                 shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Unknown;
                 shared_context.hlc_dc_renegotiation = false;
                 internal_context.session_stop_pwm_off_deadline.reset();
+                shared_context.hlc_session_paused_by_evse = false;
                 shared_context.legacy_wakeup_done = false;
                 shared_context.hlc_d20_active = false;
                 cp_state_X1();
@@ -769,10 +770,16 @@ void Charger::run_state_machine() {
             // restart or unplug instead. Without this guard an EV stopping from PrepareCharging
             // would bounce via ChargingPausedEVSE back here and get 5% re-enabled after the
             // session ended.
+            // Exception: a pause that the EVSE itself initiated and has now lifted. The SessionStop /
+            // dlink_* may also arrive only after the resume, so clear the marker here as well.
             if (shared_context.hlc_charging_active and
                 shared_context.hlc_charging_terminate_pause != HlcTerminatePause::Unknown) {
-                shared_context.current_state = EvseState::ChargingPausedEV;
-                break;
+                if (evse_pause_resumable()) {
+                    resume_evse_pause_marker();
+                } else {
+                    shared_context.current_state = EvseState::ChargingPausedEV;
+                    break;
+                }
             }
 
             // make sure we are enabling PWM
@@ -836,6 +843,7 @@ void Charger::run_state_machine() {
                 signal_simple_event(types::evse_manager::SessionEventEnum::ChargingStarted);
                 shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Unknown;
                 internal_context.session_stop_pwm_off_deadline.reset();
+                shared_context.hlc_session_paused_by_evse = false;
                 stopwatch.mark("Charging started");
                 stopwatch.report_phase();
                 auto report = stopwatch.report_all_phases();
@@ -1066,6 +1074,14 @@ void Charger::run_state_machine() {
                 if (r.reasons.size() == 0) {
                     if (shared_context.hlc_charging_active and
                         shared_context.hlc_charging_terminate_pause != HlcTerminatePause::Unknown) {
+                        if (evse_pause_resumable()) {
+                            // Pause initiated by us (user pause, no energy, error) and lifted again: resume in
+                            // PrepareCharging, which re-enables the 5% PWM so the EV starts a new session.
+                            session_log.evse(false, "Resume EVSE-initiated HLC pause");
+                            resume_evse_pause_marker();
+                            shared_context.current_state = EvseState::PrepareCharging;
+                            break;
+                        }
                         // The HLC session already ended with a SessionStop: this is not an EVSE
                         // pause to resume from. Park in ChargingPausedEV (no SLAC restart, no PWM
                         // re-enable); the EV comes back via BCB toggle or unplug.
@@ -1144,6 +1160,7 @@ void Charger::run_state_machine() {
             if (not power_available() or shared_context.flag_paused_by_evse or
                 stop_charging_on_fatal_error_internal()) {
                 // Paused was initiated by EVSE, continue to PausedEVSE
+                shared_context.hlc_session_paused_by_evse = shared_context.hlc_charging_active;
                 set_state(EvseState::ChargingPausedEVSE);
                 break;
             } else {
@@ -1244,6 +1261,7 @@ void Charger::process_cp_events_state(CPEvent cp_event) {
             shared_context.iec_allow_close_contactor = true;
         } else if (cp_event == CPEvent::CarRequestedStopPower) {
             shared_context.iec_allow_close_contactor = false;
+            shared_context.hlc_session_paused_by_evse = false;
             signal_dc_supply_off();
             // CC.3.6 t806: the EV signals its open disconnection device with C->B and continues with
             // ChargeParameterDiscovery, so the session stays in PrepareCharging.
@@ -1477,6 +1495,22 @@ bool Charger::resume_charging() {
     }
     return false;
     return true;
+}
+
+// The HLC session was ended by the EV because the EVSE paused it, and the user pause has been lifted.
+bool Charger::evse_pause_resumable() const {
+    return shared_context.hlc_session_paused_by_evse and not shared_context.flag_paused_by_evse;
+}
+
+void Charger::resume_evse_pause_marker() {
+    // After dlink_terminate (-2/DIN) the slac provider was reset and needs enter_bcd to match again. After a
+    // dlink_pause (-20) it is still Matched and SLAC is not restarted.
+    if (shared_context.hlc_charging_terminate_pause != HlcTerminatePause::Pause) {
+        signal_slac_start();
+    }
+    shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Unknown;
+    // A pending [V2G-DC-968] retain timer from the pause SessionStopRes would switch the new 5% PWM off again.
+    internal_context.session_stop_pwm_off_deadline.reset();
 }
 
 // Cancel transaction/charging from external EvseManager interface (e.g. via OCPP)
