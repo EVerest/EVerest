@@ -42,9 +42,17 @@ void set_default_scheduled_control_mode(ScheduledResControlMode& mode, const dt:
     power_schedule.power = max_power;
     power_schedule.duration = dt::SCHEDULED_POWER_DURATION_S;
     schedule.charging_schedule.power_schedule.entries.push_back(power_schedule);
+}
 
-    // Providing no price schedule!
-    // NOTE: Agreement on iso15118.elaad.io: [V2G20-2176] is not required and should be ignored.
+// HACK: some testers reject a ScheduleExchangeRes without a price schedule. The actual tariff is unknown here, so
+// send a PriceLevelSchedule that provides no price indication ([V2G20-2166]: NumberOfPriceLevels and PriceLevel 0).
+dt::PriceLevelSchedule create_no_price_level_schedule() {
+    dt::PriceLevelSchedule price_schedule;
+    price_schedule.time_anchor = now_in_secc_time();
+    price_schedule.price_schedule_id = 1;
+    price_schedule.number_of_price_levels = 0;
+    price_schedule.price_level_schedule_entries.push_back({dt::SCHEDULED_POWER_DURATION_S, 0});
+    return price_schedule;
 }
 
 void set_dynamic_parameters_in_res(DynamicResControlMode& res_mode, const UpdateDynamicModeParameters& parameters,
@@ -85,8 +93,8 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
 
         auto& mode = res.control_mode.emplace<ScheduledResControlMode>();
         set_default_scheduled_control_mode(mode, max_power);
+        mode.schedule_tuple.front().charging_schedule.price_schedule = create_no_price_level_schedule();
 
-        // TODO(sl): Adding price schedule
         // TODO(sl): Adding discharging schedule
 
     } else if (selected_control_mode == dt::ControlMode::Dynamic &&
@@ -98,6 +106,7 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
         if (selected_mobility_needs_mode == dt::MobilityNeedsMode::ProvidedBySecc) {
             set_dynamic_parameters_in_res(mode, dynamic_parameters, res.header.timestamp);
         }
+        mode.price_schedule = create_no_price_level_schedule();
 
     } else {
         logf_error("The control mode of the req message does not match the previously agreed contol mode.");
