@@ -8,12 +8,18 @@ on:
         required: false
         default: 'ubuntu-24.04'
         type: string
-      build_env_base_image_tag:
-        description: 'Tag of the build-env-base image to run in. Keep in sync with the image used by
-          the run-clang-format action of everest-ci, so that generated files are formatted with the
-          same clang-format version the lint job checks against.'
+      build_kit_artifact_name:
+        description: 'The name of the build kit artifact to download'
+        required: true
+        type: string
+      build_kit_image_tag:
+        description: 'The tag of the build-kit image to run the check in'
+        required: true
+        type: string
+      build_kit_scripts_directory:
+        description: 'Directory in the repository where the build kit scripts are located'
         required: false
-        default: 'v1.5.4'
+        default: '.ci/build-kit/scripts'
         type: string
 
 jobs:
@@ -23,27 +29,34 @@ jobs:
     # Not mandatory yet: the job fails when a module would lose hand-written code, but it must
     # not block a merge.
     continue-on-error: true
-    container:
-      image: ghcr.io/everest/everest-ci/build-env-base:${{ inputs.build_env_base_image_tag }}
     env:
       REPORT_NAME: ev-cli-mod-update-report
     steps:
+      - name: Download build-kit image
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.build_kit_artifact_name }}
+      - name: Load build-kit image
+        run: |
+          docker load -i build-kit.tar
+          docker image tag ${{ inputs.build_kit_image_tag }} build-kit
       - name: Checkout repository
         uses: actions/checkout@v7
-      - name: Allow git to operate on the checkout
-        run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
-      - name: Install ev-cli
+        with:
+          path: source
+      - name: Setup run scripts
         run: |
-          python3 -m venv /tmp/ev-cli-venv
-          /tmp/ev-cli-venv/bin/pip install --quiet ./applications/utils/ev-dev-tools
+          mkdir scripts
+          rsync -a source/${{ inputs.build_kit_scripts_directory }}/ scripts
       - name: Check that ev-cli mod update --force is a no-op
         id: check
         run: |
           set +e
-          /tmp/ev-cli-venv/bin/python applications/utils/scripts/check_mod_update.py \
-            --ev-cli /tmp/ev-cli-venv/bin/ev-cli \
-            --markdown "${REPORT_NAME}.md" \
-            --json "${REPORT_NAME}.json"
+          docker run \
+          --env REPORT_NAME="${REPORT_NAME}" \
+          --volume "${{ github.workspace }}:/ext" \
+          --name ev-cli-mod-update-container \
+          build-kit run-script check_mod_update
           echo "exit_code=$?" >> "${GITHUB_OUTPUT}"
       - name: Write report to job summary
         if: ${{ always() && steps.check.outcome != 'skipped' }}
