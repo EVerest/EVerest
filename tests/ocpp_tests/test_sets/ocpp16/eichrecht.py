@@ -145,6 +145,9 @@ async def test_meter_public_key(
 @pytest.mark.everest_core_config(
     get_everest_config_path_str("everest-config-two-connectors.yaml")
 )
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP16ConfigAdjustment([("Core", "ClockAlignedDataInterval", 0)])
+)
 async def test_meter_signed_meter_values(
     charge_point_v16: ChargePoint16, test_utility: TestUtility, test_controller: TestController, test_config: OcppTestConfiguration,
 ):
@@ -242,6 +245,9 @@ async def test_meter_signed_meter_values(
 @pytest.mark.asyncio
 @pytest.mark.everest_core_config(
     get_everest_config_path_str("everest-config-two-connectors.yaml")
+)
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP16ConfigAdjustment([("Core", "ClockAlignedDataInterval", 0)])
 )
 @pytest.mark.everest_config_adaptions(YetiSimulatorDisableMeterTransactionStartStrategy())
 async def test_meter_signed_meter_values_no_start(
