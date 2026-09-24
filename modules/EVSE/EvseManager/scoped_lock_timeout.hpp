@@ -49,7 +49,6 @@ enum class MutexDescription {
     Charger_dlink_error,
     Charger_notify_session_stop_res_sent,
     Charger_notify_hlc_session_started_by_ev,
-    Charger_get_dc_pause_ramp_start,
     Charger_notify_hlc_pause_notified,
     Charger_set_hlc_charging_active,
     Charger_set_hlc_allow_close_contactor,
@@ -164,8 +163,6 @@ static std::string to_string(MutexDescription d) {
         return "Charger.cpp: notify_session_stop_res_sent";
     case MutexDescription::Charger_notify_hlc_session_started_by_ev:
         return "Charger.cpp: notify_hlc_session_started_by_ev";
-    case MutexDescription::Charger_get_dc_pause_ramp_start:
-        return "Charger.cpp: get_dc_pause_ramp_start";
     case MutexDescription::Charger_notify_hlc_pause_notified:
         return "Charger.cpp: notify_hlc_pause_notified";
     case MutexDescription::Charger_set_hlc_charging_active:

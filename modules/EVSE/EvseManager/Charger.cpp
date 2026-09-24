@@ -1265,6 +1265,11 @@ void Charger::run_state_machine() {
                           << " current_state: " << evse_state_to_string(shared_context.current_state);
         }
     } while (internal_context.last_state_detect_state_change not_eq shared_context.current_state);
+
+    // Kept after the pause was requested: the output has to stay at 0 A until the EV has paused.
+    const bool dc_pause_ramp_active = shared_context.current_state == EvseState::StoppingCharging and
+                                      internal_context.d20_pause_ramp_start.has_value();
+    dc_pause_ramp_start = dc_pause_ramp_active ? internal_context.d20_pause_ramp_start.value() : NO_DC_PAUSE_RAMP;
 }
 
 void Charger::process_event(CPEvent cp_event) {
@@ -2605,12 +2610,12 @@ void Charger::update_dc_present_current(float current_A) {
 }
 
 std::optional<std::chrono::steady_clock::time_point> Charger::get_dc_pause_ramp_start() {
-    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_get_dc_pause_ramp_start);
-    // Kept after the pause was requested: the output has to stay at 0 A until the EV has paused.
-    if (shared_context.current_state != EvseState::StoppingCharging) {
+    // Lock-free: called from signal_dc_enforce_target_limits, which the state machine emits with its mutex held.
+    const auto ramp_start = dc_pause_ramp_start.load();
+    if (ramp_start == NO_DC_PAUSE_RAMP) {
         return std::nullopt;
     }
-    return internal_context.d20_pause_ramp_start;
+    return ramp_start;
 }
 
 // this resets the BCB sequence (which may contain 1-3 toggle pulses)

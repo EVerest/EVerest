@@ -533,6 +533,9 @@ private:
     Everest::Thread error_thread_handle;
 
     std::atomic<std::chrono::steady_clock::time_point> last_dc_enforce_target_limits{};
+    // Snapshot of the -20 pause ramp start, updated by the state machine and read by get_dc_pause_ramp_start().
+    static constexpr auto NO_DC_PAUSE_RAMP = std::chrono::steady_clock::time_point::min();
+    std::atomic<std::chrono::steady_clock::time_point> dc_pause_ramp_start{NO_DC_PAUSE_RAMP};
 
     const std::unique_ptr<IECStateMachine>& bsp;
     const std::unique_ptr<ErrorHandling>& error_handling;
