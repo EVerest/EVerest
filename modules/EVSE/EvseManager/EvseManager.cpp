@@ -417,6 +417,8 @@ void EvseManager::ready() {
             r_slac[0]->call_dlink_error();
         });
 
+        r_hlc[0]->subscribe_pause_notified([this] { charger->notify_hlc_pause_notified(); });
+
         r_hlc[0]->subscribe_dlink_pause([this] {
             // tell charger (it will disable PWM)
             session_log.evse(true, "D-LINK_PAUSE.req");
@@ -468,6 +470,7 @@ void EvseManager::ready() {
         // Ask HLC to stop charging session
         charger->signal_hlc_stop_charging.connect([this] { r_hlc[0]->call_stop_charging(true); });
         charger->signal_hlc_pause_charging.connect([this] { r_hlc[0]->call_pause_charging(true); });
+        charger->signal_hlc_resume_charging.connect([this] { r_hlc[0]->call_pause_charging(false); });
         charger->signal_hlc_plug_in_timeout.connect([this] {
             r_hlc[0]->call_authorization_response(types::authorization::AuthorizationStatus::Unknown,
                                                   types::authorization::CertificateStatus::NoCertificateAvailable);

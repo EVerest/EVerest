@@ -411,4 +411,13 @@ permissive first (IEC 61851-23-3 Table CC.111, t103 before t105). An MCS board
 support treats a C exit under a standing permissive as an emergency shutdown
 (CC.4.3).
 
+A pause requested with ``pause_charging`` is sent as ``EVSENotification`` ``Pause``
+with ``NotificationMaxDelay`` 60 s ([V2G20-1850]). In scheduled control mode it may
+only be sent while the applied entry of the EV's power profile, from its latest
+``PowerDeliveryReq``, is 0 kW ([V2G20-1198]): until then every charge loop response
+goes out without it and the check is repeated. ``pause_notified`` is published once
+the notification has gone out. In dynamic control mode the SECC has to bring the power
+to 0 kW before asking ([V2G20-2115]); EvseManager does that before it requests the
+pause.
+
 .. mermaid:: d20-state-machine.mmd

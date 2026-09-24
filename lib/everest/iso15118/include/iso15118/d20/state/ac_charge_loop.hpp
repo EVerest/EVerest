@@ -6,6 +6,7 @@
 
 #include <iso15118/d20/ac_powers.hpp>
 #include <iso15118/d20/dynamic_mode_parameters.hpp>
+#include <iso15118/d20/pause_notification.hpp>
 
 namespace iso15118::d20::state {
 struct AC_ChargeLoop : public StateBase {
@@ -20,6 +21,7 @@ private:
     std::optional<float> target_frequency; // TODO(SL): Adding updating feature
     bool stop{false};
     bool pause{false};
+    PauseNotification pause_notification;
 
     UpdateDynamicModeParameters dynamic_parameters{};
     AcTargetPower target_powers{};

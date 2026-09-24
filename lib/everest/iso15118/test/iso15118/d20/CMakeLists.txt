@@ -60,3 +60,13 @@ target_link_libraries(test_d20_crypto
 )
 
 catch_discover_tests(test_d20_crypto)
+
+add_executable(test_ev_power_profile ev_power_profile.cpp)
+
+target_link_libraries(test_ev_power_profile
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_ev_power_profile)

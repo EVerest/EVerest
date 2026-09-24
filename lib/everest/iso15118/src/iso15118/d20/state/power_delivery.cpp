@@ -127,6 +127,11 @@ Result PowerDelivery::feed(Event ev) {
 
     if (const auto* const req = variant->get_if<message_20::PowerDeliveryRequest>()) {
 
+        if (req->power_profile.has_value()) {
+            m_ctx.session.ev_power_profile =
+                EvPowerProfile::from(req->power_profile->time_anchor, req->power_profile->entries);
+        }
+
         const auto shutdown_requested = m_ctx.shutdown_requested();
 
         if (not shutdown_requested) {

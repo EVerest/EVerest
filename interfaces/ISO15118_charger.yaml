@@ -478,6 +478,12 @@ vars:
   dlink_pause:
     description: Request power saving mode, while staying MATCHED.
     type: "null"
+  pause_notified:
+    description: >-
+      ISO 15118-20 only: the pause requested with pause_charging has been notified to the EV
+      (EVSENotification set to Pause). In scheduled control mode the notification is held back until
+      the applied EVPowerProfileEntry is 0 kW, so this may follow the request much later, or not at all.
+    type: "null"
   ev_app_protocol:
     description: >-
       Debug_Lite - This request message provides a list of charging protocols

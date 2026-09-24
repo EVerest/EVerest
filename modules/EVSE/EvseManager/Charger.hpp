@@ -170,6 +170,7 @@ public:
 
     sigslot::signal<> signal_hlc_stop_charging;
     sigslot::signal<> signal_hlc_pause_charging;
+    sigslot::signal<> signal_hlc_resume_charging;
     sigslot::signal<types::iso15118::EvseError> signal_hlc_error;
     sigslot::signal<> signal_hlc_plug_in_timeout;
 
@@ -217,6 +218,9 @@ public:
     void dc_renegotiation_started();
 
     void set_hlc_d20_active(bool dynamic_control_mode);
+
+    // The HLC stack notified the requested ISO 15118-20 pause to the EV.
+    void notify_hlc_pause_notified();
 
     // Measured DC output current, for the zero-current check before an ISO 15118-20 pause.
     void update_dc_present_current(float current_A);
@@ -517,6 +521,10 @@ private:
         // StoppingCharging ramps the output down; pause_notified once EVSENotification=Pause was requested.
         std::optional<std::chrono::steady_clock::time_point> d20_pause_ramp_start;
         bool d20_pause_notified{false};
+        // Scheduled control mode: the pause was requested from Charging and is held back by the HLC stack until the
+        // EV's power profile is at 0 kW [V2G20-1198]; confirmed once it has gone out.
+        bool d20_pause_requested{false};
+        bool d20_pause_confirmed{false};
 
     } internal_context;
 

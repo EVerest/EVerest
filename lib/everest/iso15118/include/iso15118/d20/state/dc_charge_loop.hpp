@@ -8,6 +8,7 @@
 #include <optional>
 
 #include <iso15118/d20/dynamic_mode_parameters.hpp>
+#include <iso15118/d20/pause_notification.hpp>
 #include <iso15118/message/power_delivery.hpp>
 
 namespace iso15118::d20::state {
@@ -25,6 +26,7 @@ private:
     float present_current{0};
     bool stop{false};
     bool pause{false};
+    PauseNotification pause_notification;
 
     UpdateDynamicModeParameters dynamic_parameters;
 

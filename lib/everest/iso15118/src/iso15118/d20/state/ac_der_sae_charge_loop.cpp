@@ -331,7 +331,8 @@ Result AC_DER_SAE_ChargeLoop::feed(Event ev) {
         const auto changed_since_cpd =
             der_config.has_value() and m_ctx.session.der_control_changed_since_cpd(der_config->revision);
 
-        const auto res = handle_request(*req, m_ctx.session, stop, pause, target_powers, present_powers,
+        const bool notify_pause = pause_notification.update(pause and not stop, m_ctx.session, m_ctx.feedback);
+        const auto res = handle_request(*req, m_ctx.session, stop, notify_pause, target_powers, present_powers,
                                         dynamic_parameters, m_ctx.session_config.ac_limits,
                                         m_ctx.session_config.der_sae_limits, der_config, changed_since_cpd, log_state);
 

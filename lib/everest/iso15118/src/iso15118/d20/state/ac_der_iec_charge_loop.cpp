@@ -285,7 +285,8 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
             }
         }
 
-        const auto res = handle_request(*req, m_ctx.session, stop, pause, target_frequency, target_powers,
+        const bool notify_pause = pause_notification.update(pause and not stop, m_ctx.session, m_ctx.feedback);
+        const auto res = handle_request(*req, m_ctx.session, stop, notify_pause, target_frequency, target_powers,
                                         present_powers, dynamic_parameters, m_ctx.session_config.ac_limits,
                                         m_ctx.session_config.der_iec_limits, dso_q_setpoint, dso_cos_phi_setpoint);
 
