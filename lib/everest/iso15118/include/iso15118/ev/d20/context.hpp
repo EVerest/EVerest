@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -25,6 +26,7 @@
 #include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/d20/evse_session_info.hpp>
+#include <iso15118/ev/d20/secc_clock.hpp>
 #include <iso15118/ev/d20/session_id.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/der_control_functions.hpp>
@@ -55,6 +57,11 @@ struct Codec {
 
 using MessageExchange = ev::MessageExchange<Codec>;
 
+// Every -20 message but SupportedAppProtocol carries a Header.
+template <typename Msg, typename = void> struct HasHeader : std::false_type {};
+template <typename Msg>
+struct HasHeader<Msg, std::void_t<decltype(Msg::header)>> : std::is_same<decltype(Msg::header), message_20::Header> {};
+
 struct StateBase;
 using BasePointerType = std::unique_ptr<StateBase>;
 
@@ -71,6 +78,8 @@ struct SessionOptions {
     bool has_cp_state_feedback{false};
     // Re-join this paused session (SessionSetupReq carries it; OK_OldSessionJoined expected).
     std::optional<std::array<uint8_t, SessionId::ID_LENGTH>> resumed_session_id{std::nullopt};
+    // The paused session's clock, so the resumed SessionSetupReq is already in SECC time.
+    SeccClock::State secc_clock{};
     // schema_id -> protocol map of the SAP offer; empty = every offered entry is ISO 15118-20.
     std::vector<OfferedProtocol> offered_protocols{};
     // IEC DER control functions the EV supports, matched against the SECC's AC_DER_IEC demand.
@@ -104,7 +113,12 @@ public:
     std::unique_ptr<message_20::Variant> pull_response();
     message_20::Type peek_response_type() const;
 
-    template <typename MessageType> void send_request(const MessageType& msg) {
+    // Stamps the header, if the message has one, with the session id and SECC time.
+    template <typename MessageType> void send_request(MessageType msg) {
+        if constexpr (HasHeader<MessageType>::value) {
+            msg.header.session_id = session.get_id();
+            msg.header.timestamp = secc_clock_.stamp();
+        }
         message_exchange.set_request(msg);
     }
 
@@ -224,6 +238,14 @@ public:
         return session;
     }
 
+    // Synchronized by SessionSetup; stamps every request header in send_request.
+    SeccClock& secc_clock() {
+        return secc_clock_;
+    }
+    const SeccClock& secc_clock() const {
+        return secc_clock_;
+    }
+
     // Locked-copy snapshot of the EV DC charge params (module -> FSM channel).
     DcChargeParams get_dc_params() const {
         auto h = dc_params.handle();
@@ -319,8 +341,7 @@ public:
         sae_permit_service_ = permit;
     }
 
-    // EVUpdateTime, AMD1 Tables M.5 and M.8: microseconds of SECC time (8.3.3.3), as
-    // iso15118::d20::now_in_secc_time() returns.
+    // EVUpdateTime, AMD1 Tables M.5 and M.8: microseconds of SECC time (8.3.3.3), from secc_clock().
     std::uint64_t sae_settings_update_time() const {
         return sae_settings_update_time_;
     }
@@ -381,6 +402,7 @@ private:
     std::vector<message_20::SupportedAppProtocol> advertised_app_protocols;
 
     SessionId session{std::array<uint8_t, SessionId::ID_LENGTH>{}};
+    SeccClock secc_clock_{};
 
     bool session_stopped{false};
     bool session_paused{false};

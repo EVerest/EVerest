@@ -6,6 +6,7 @@
 #include <cstdint>
 
 #include <iso15118/ev/ac_charge_params.hpp>
+#include <iso15118/ev/d20/secc_clock.hpp>
 #include <iso15118/ev/sae_inverter_profile.hpp>
 #include <iso15118/message/ac_der_sae_charge_loop.hpp>
 #include <iso15118/message/ac_der_sae_charge_parameter_discovery.hpp>
@@ -19,7 +20,8 @@ namespace iso15118::ev {
  * Build the AC_DER_SAE CPD request transfer mode (AMD1 Table M.5).
  *
  * SupportedModes is \p profile.supported_modes masked with sae::SAE_MODE_BITMAP_MASK.
- * J3072CertificationDate is \p profile.j3072_certification_date in microseconds (Table M.5), saturated.
+ * J3072CertificationDate is \p profile.j3072_certification_date in microseconds (Table M.5), saturated,
+ * and moved from the Unix epoch into SECC time with \p secc_clock.
  *
  * \param enabled_modes EnabledModes, the Table M.6 bitmap.
  * \param update_time   EVUpdateTime, microseconds of SECC time (Table M.5).
@@ -27,7 +29,7 @@ namespace iso15118::ev {
 message_20::datatypes::sae::DER_SAE_AC_CPDReqEnergyTransferMode
 make_sae_cpd_transfer_mode(const SaeInverterProfile& profile, const AcChargeParams& params,
                            message_20::datatypes::AcConnector connector, message_20::datatypes::Processing processing,
-                           std::uint32_t enabled_modes, std::uint64_t update_time);
+                           std::uint32_t enabled_modes, std::uint64_t update_time, const d20::SeccClock& secc_clock);
 
 /**
  * Build the AC_DER_SAE dynamic charge-loop control mode (AMD1 Table M.8).

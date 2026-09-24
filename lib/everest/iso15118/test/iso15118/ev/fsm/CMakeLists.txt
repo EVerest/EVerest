@@ -15,6 +15,7 @@ function(create_ev_fsm_test_target NAME)
 endfunction()
 
 create_ev_fsm_test_target(context)
+create_ev_fsm_test_target(secc_clock)
 create_ev_fsm_test_target(supported_app_protocol)
 create_ev_fsm_test_target(session_setup)
 create_ev_fsm_test_target(authorization_setup)

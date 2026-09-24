@@ -4,6 +4,7 @@
 
 #include "helper.hpp"
 
+#include <iso15118/ev/d20/secc_clock.hpp>
 #include <iso15118/ev/d20/state/session_setup.hpp>
 #include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/session_setup.hpp>
@@ -139,4 +140,85 @@ SCENARIO("ISO15118-20 EV session setup rejects a resumed session") {
     GIVEN("a DC selected service") {
         run(message_20::datatypes::ServiceCategory::DC);
     }
+}
+
+SCENARIO("ISO15118-20 EV request headers carry SECC time in microseconds [V2G20-1534]") {
+
+    const ev::feedback::Callbacks callbacks{};
+
+    const auto first_header_after_setup = [&](std::uint64_t reference) {
+        auto state_helper = FsmStateHelper(callbacks);
+        auto& ctx = state_helper.get_context();
+
+        const auto before = ev::d20::SeccClock::system_now_us();
+        fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::SessionSetup>()};
+        const auto after = ev::d20::SeccClock::system_now_us();
+
+        const auto setup_req =
+            take_all_requests(state_helper.get_message_exchange()).get<message_20::SessionSetupRequest>();
+        REQUIRE(setup_req.has_value());
+        // [V2G20-1535]: the local UTC guess.
+        REQUIRE(setup_req->header.timestamp >= before);
+        REQUIRE(setup_req->header.timestamp <= after);
+
+        const auto received = std::chrono::steady_clock::now();
+        state_helper.handle_response(message_20::SessionSetupResponse{
+            message_20::Header{SESSION_HEADER.session_id, reference},
+            message_20::datatypes::ResponseCode::OK_NewSessionEstablished, "everest se"});
+        REQUIRE(fsm.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned());
+
+        const auto auth_setup_req =
+            take_all_requests(state_helper.get_message_exchange()).get<message_20::AuthorizationSetupRequest>();
+        REQUIRE(auth_setup_req.has_value());
+        REQUIRE(auth_setup_req->header.session_id == SESSION_HEADER.session_id);
+        // [V2G20-1536]
+        require_tracks_reference(auth_setup_req->header.timestamp, reference, received);
+        REQUIRE(auth_setup_req->header.timestamp > reference);
+    };
+
+    GIVEN("a new session whose SECC time is far below local UTC") {
+        first_header_after_setup(SECC_REFERENCE_US);
+    }
+
+    GIVEN("a new session whose SECC time is far above local UTC") {
+        first_header_after_setup(ev::d20::SeccClock::system_now_us() * 2);
+    }
+}
+
+SCENARIO("ISO15118-20 EV request headers keep increasing across a resume [V2G20-1537]") {
+
+    const ev::feedback::Callbacks callbacks{};
+
+    // The paused session, synchronized to an SECC epoch at power-on.
+    auto paused = FsmStateHelper(callbacks);
+    paused.get_context().secc_clock().synchronize(SECC_REFERENCE_US);
+    paused.get_context().send_request(message_20::AuthorizationSetupRequest{});
+    const auto last = take_all_requests(paused.get_message_exchange()).get<message_20::AuthorizationSetupRequest>();
+    REQUIRE(last.has_value());
+
+    ev::d20::SessionOptions options{};
+    options.resumed_session_id = SESSION_HEADER.session_id;
+    options.secc_clock = paused.get_context().secc_clock().state();
+    auto state_helper = FsmStateHelper(callbacks, DEFAULT_APP_PROTOCOLS, message_20::datatypes::ServiceCategory::DC,
+                                       std::move(options));
+    auto& ctx = state_helper.get_context();
+
+    fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::SessionSetup>()};
+    const auto setup_req =
+        take_all_requests(state_helper.get_message_exchange()).get<message_20::SessionSetupRequest>();
+    REQUIRE(setup_req.has_value());
+    // Already in SECC time, not the local UTC guess.
+    REQUIRE(setup_req->header.timestamp > last->header.timestamp);
+    REQUIRE(setup_req->header.timestamp < ev::d20::SeccClock::system_now_us() / 2);
+
+    // An SECC reference no later than the stamps already sent: they still do not go back.
+    state_helper.handle_response(
+        message_20::SessionSetupResponse{message_20::Header{SESSION_HEADER.session_id, SECC_REFERENCE_US},
+                                         message_20::datatypes::ResponseCode::OK_OldSessionJoined, "everest se"});
+    REQUIRE(fsm.feed(ev::d20::Event::V2GTP_MESSAGE).transitioned());
+
+    const auto auth_setup_req =
+        take_all_requests(state_helper.get_message_exchange()).get<message_20::AuthorizationSetupRequest>();
+    REQUIRE(auth_setup_req.has_value());
+    REQUIRE(auth_setup_req->header.timestamp > setup_req->header.timestamp);
 }

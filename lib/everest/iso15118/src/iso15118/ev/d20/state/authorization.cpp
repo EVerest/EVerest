@@ -15,9 +15,8 @@ namespace iso15118::ev::d20::state {
 namespace {
 
 // TODO(mlitre): offer PnC once the EV has a contract certificate.
-message_20::AuthorizationRequest make_request(Context& ctx) {
+message_20::AuthorizationRequest make_request() {
     message_20::AuthorizationRequest req;
-    setup_header(req.header, ctx.get_session());
     req.selected_authorization_service = message_20::datatypes::Authorization::EIM;
     req.authorization_mode = message_20::datatypes::EIM_ASReqAuthorizationMode{};
     return req;
@@ -45,7 +44,7 @@ void Authorization::enter() {
         return;
     }
 
-    m_ctx.send_request(make_request(m_ctx));
+    m_ctx.send_request(make_request());
 }
 
 Result Authorization::feed(Event ev) {
@@ -76,7 +75,7 @@ Result Authorization::feed(Event ev) {
     }
 
     if (declined or res->evse_processing == message_20::datatypes::Processing::Ongoing) {
-        m_ctx.send_request(make_request(m_ctx));
+        m_ctx.send_request(make_request());
         return Result::awaiting();
     }
 

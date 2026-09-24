@@ -553,4 +553,11 @@ std::optional<ProtocolId> Session::selected_protocol() const {
         engine);
 }
 
+d20::SeccClock::State Session::secc_clock_state() const {
+    if (const auto* e = std::get_if<d20::Engine>(&engine)) {
+        return e->context().secc_clock().state();
+    }
+    return {};
+}
+
 } // namespace iso15118::ev

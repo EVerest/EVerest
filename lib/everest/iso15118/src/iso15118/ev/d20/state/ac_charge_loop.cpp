@@ -55,11 +55,9 @@ void fill_scheduled_charge(dt::Scheduled_AC_CLReqControlMode& mode, const AcChar
     mode.present_reactive_power = dt::RationalNumber{0, 0};
 }
 
-message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const AcChargeParams& params,
-                                              dt::ServiceCategory service, dt::AcConnector connector,
-                                              dt::ControlMode control_mode) {
+message_20::AC_ChargeLoopRequest make_request(const AcChargeParams& params, dt::ServiceCategory service,
+                                              dt::AcConnector connector, dt::ControlMode control_mode) {
     message_20::AC_ChargeLoopRequest req;
-    setup_header(req.header, session);
     req.meter_info_requested = false;
     req.display_parameters = std::nullopt;
 
@@ -127,8 +125,8 @@ bool mode_matches_session(const message_20::AC_ChargeLoopResponse& res, dt::Serv
 
 void AC_ChargeLoop::enter() {
     logf_debug("Enter state: AC_ChargeLoop");
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service(),
-                                    m_ctx.ac_connector(), m_ctx.selected_control_mode()));
+    m_ctx.send_request(make_request(m_ctx.get_ac_params(), m_ctx.selected_service(), m_ctx.ac_connector(),
+                                    m_ctx.selected_control_mode()));
 }
 
 Result AC_ChargeLoop::feed(Event ev) {
@@ -170,8 +168,8 @@ Result AC_ChargeLoop::feed(Event ev) {
     if (const auto target = target_power(*res)) {
         m_ctx.feedback.ac_target_power(*target);
     }
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service(),
-                                    m_ctx.ac_connector(), m_ctx.selected_control_mode()));
+    m_ctx.send_request(make_request(m_ctx.get_ac_params(), m_ctx.selected_service(), m_ctx.ac_connector(),
+                                    m_ctx.selected_control_mode()));
     return Result::awaiting();
 }
 

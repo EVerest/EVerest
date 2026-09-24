@@ -504,6 +504,20 @@ SCENARIO("ISO15118-20 EV AC_DER_SAE_ChargeLoop echoes the update time and refres
     REQUIRE(stay_on(primed, make_droop_and_volt_watt()).update_time == refreshed);
 }
 
+SCENARIO("ISO15118-20 EV AC_DER_SAE_ChargeLoop refreshes the update time in SECC time") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto synchronized = [](FsmStateHelper& helper) {
+        seed_present_5000(helper);
+        helper.get_context().secc_clock().synchronize(SECC_REFERENCE_US);
+    };
+    const auto since = std::chrono::steady_clock::now();
+    auto primed = make_primed(callbacks, sae_options(DROOP_BIT), synchronized);
+    take_mode(primed);
+
+    const auto refreshed = stay_on(primed, make_droop_and_volt_watt()).update_time;
+    require_tracks_reference(refreshed, SECC_REFERENCE_US, since);
+}
+
 SCENARIO("ISO15118-20 EV AC_DER_SAE_ChargeLoop stops the session on a Scheduled response") {
     Observer obs;
     auto primed = make_primed(obs.callbacks);

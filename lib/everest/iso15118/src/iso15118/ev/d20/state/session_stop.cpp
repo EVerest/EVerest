@@ -10,7 +10,6 @@ namespace iso15118::ev::d20::state {
 
 void SessionStop::enter() {
     message_20::SessionStopRequest req;
-    setup_header(req.header, m_ctx.get_session());
     req.charging_session = m_ctx.requested_stop_reason();
     m_ctx.send_request(req);
 }

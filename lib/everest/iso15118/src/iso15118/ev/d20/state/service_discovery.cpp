@@ -16,7 +16,6 @@ void ServiceDiscovery::enter() {
     logf_debug("Enter state: ServiceDiscovery");
 
     message_20::ServiceDiscoveryRequest req;
-    setup_header(req.header, m_ctx.get_session());
     req.supported_service_ids =
         message_20::datatypes::ServiceIdList{message_20::to_underlying_value(m_ctx.selected_service())};
     m_ctx.send_request(req);
