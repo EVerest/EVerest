@@ -66,6 +66,9 @@ private:
     std::optional<double> last_logged_export_current;
     std::optional<double> last_logged_import_voltage;
     std::optional<double> last_logged_import_current;
+    // The modules do not regulate to 0 A, so a 0 A request switches the DC side off instead.
+    bool off_for_zero_current{false};
+    void apply_setpoint(double voltage, double current, types::power_supply_DC::Mode setpoint_mode);
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

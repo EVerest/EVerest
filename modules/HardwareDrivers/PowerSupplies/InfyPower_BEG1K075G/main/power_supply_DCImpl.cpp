@@ -100,6 +100,7 @@ void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
         last_logged_export_current.reset();
         last_logged_import_voltage.reset();
         last_logged_import_current.reset();
+        off_for_zero_current = false;
     }
 
     if (mode == types::power_supply_DC::Mode::Off) {
@@ -107,10 +108,10 @@ void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
         mod->acdc.set_inverter_mode(false);
     } else if (mode == types::power_supply_DC::Mode::Export) {
         mod->acdc.set_inverter_mode(false);
-        mod->acdc.switch_on_off(true);
+        mod->acdc.switch_on_off(not off_for_zero_current);
     } else if (mode == types::power_supply_DC::Mode::Import) {
         mod->acdc.set_inverter_mode(true);
-        mod->acdc.switch_on_off(true);
+        mod->acdc.switch_on_off(not off_for_zero_current);
     } else if (mode == types::power_supply_DC::Mode::Fault) {
         mod->acdc.switch_on_off(false);
         mod->acdc.set_inverter_mode(false);
@@ -139,7 +140,7 @@ void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double
         EVLOG_info << std::fixed << std::setprecision(2) << "Updating voltage/current via CAN: " << exportVoltage
                    << "V / " << exportCurrentLimit << "A";
     }
-    mod->acdc.set_voltage_current(exportVoltage, exportCurrentLimit);
+    apply_setpoint(exportVoltage, exportCurrentLimit, types::power_supply_DC::Mode::Export);
 };
 
 void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double& current) {
@@ -165,7 +166,28 @@ void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double
             EVLOG_info << std::fixed << std::setprecision(2) << "Updating voltage/current via CAN: " << minImportVoltage
                        << "V / " << importCurrentLimit << "A";
         }
-        mod->acdc.set_voltage_current(minImportVoltage, importCurrentLimit);
+        apply_setpoint(minImportVoltage, importCurrentLimit, types::power_supply_DC::Mode::Import);
+    }
+}
+
+void power_supply_DCImpl::apply_setpoint(double voltage, double current, types::power_supply_DC::Mode setpoint_mode) {
+    const bool mode_active = commanded_mode == setpoint_mode;
+
+    if (current <= 0. and mode_active) {
+        if (not off_for_zero_current) {
+            EVLOG_info << "0 A requested, switching DC output off";
+            off_for_zero_current = true;
+            mod->acdc.switch_on_off(false);
+        }
+        return;
+    }
+
+    mod->acdc.set_voltage_current(voltage, current);
+
+    if (off_for_zero_current and mode_active) {
+        EVLOG_info << "Current above 0 A requested, switching DC output on";
+        off_for_zero_current = false;
+        mod->acdc.switch_on_off(true);
     }
 }
 
