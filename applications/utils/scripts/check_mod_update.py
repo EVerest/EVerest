@@ -33,6 +33,7 @@ import json
 import re
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 
 # Truncate per-module diffs in the report, some are huge.
@@ -53,6 +54,12 @@ class Exit:
     TEMPLATE_ONLY = 1
     CRITICAL = 2
     UNUSABLE = 3
+
+
+class ArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(Exit.UNUSABLE, f'{self.prog}: error: {message}\n')
 
 
 class Kind:
@@ -249,8 +256,7 @@ def tool_version(cmd):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--repo', help='path to the EVerest checkout (default: git toplevel)')
     parser.add_argument('--ev-cli', default='ev-cli', help='ev-cli executable to use (default: ev-cli)')
     parser.add_argument('--everest-dir', help='everest directory holding the interface definitions '
@@ -268,12 +274,15 @@ def main():
     else:
         toplevel = run(['git', 'rev-parse', '--show-toplevel'], cwd=Path.cwd())
         if toplevel.returncode != 0:
-            parser.error('not inside a git repository, pass --repo')  # exits with 2
+            parser.error('not inside a git repository, pass --repo')
         repo = Path(toplevel.stdout.strip())
     everest_dir = Path(args.everest_dir).resolve() if args.everest_dir else repo
 
-    dirty_tree = git(repo, 'status', '--porcelain', '--', 'modules').stdout.strip()
-    if dirty_tree and not args.allow_dirty:
+    status = git(repo, 'status', '--porcelain', '--', 'modules')
+    if status.returncode != 0:
+        print(f'{repo} is not a git checkout: {status.stderr.strip()}', file=sys.stderr)
+        return Exit.UNUSABLE
+    if status.stdout.strip() and not args.allow_dirty:
         print('modules/ has uncommitted changes - this checker restores files by discarding them.',
               file=sys.stderr)
         print('Commit or stash your work first, or pass --allow-dirty.', file=sys.stderr)
@@ -285,6 +294,9 @@ def main():
         skipped = []
     else:
         modules = all_modules
+    if not modules:
+        print(f'no C++ modules found under {repo / "modules"}', file=sys.stderr)
+        return Exit.UNUSABLE
 
     ev_cli_version = tool_version([args.ev_cli, '--version'])
     clang_format_version = tool_version(['clang-format', '--version'])
@@ -328,4 +340,8 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception:
+        traceback.print_exc()
+        sys.exit(Exit.UNUSABLE)
