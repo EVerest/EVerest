@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef MAIN_POWER_SUPPLY_DC_IMPL_HPP
 #define MAIN_POWER_SUPPLY_DC_IMPL_HPP
 
@@ -69,6 +69,8 @@ private:
     // single "compute + push to modules" sequence cannot interleave when the same handler
     // runs concurrently on the command thread and the CAN rx thread (settings restore).
     std::mutex command_mutex;
+    // The modules do not regulate to 0 A, so a 0 A export request switches the DC side off instead.
+    bool off_for_zero_current{false};
 
     bool firsttime{true};
     // last_module_count has a single writer (CAN rx thread) and is read on the command
