@@ -17,6 +17,7 @@
 #include <string.h>
 #include <thread>
 #include <type_traits>
+#include <utility>
 
 #include <fmt/core.h>
 
@@ -250,6 +251,7 @@ void Charger::run_state_machine() {
                 shared_context.hlc_dc_renegotiation = false;
                 internal_context.session_stop_pwm_off_deadline.reset();
                 shared_context.hlc_session_paused_by_evse = false;
+                internal_context.hlc_session_restarted_by_ev = false;
                 shared_context.legacy_wakeup_done = false;
                 shared_context.hlc_d20_active = false;
                 cp_state_X1();
@@ -983,7 +985,13 @@ void Charger::run_state_machine() {
             if (shared_context.hlc_charging_active) {
                 // This is for HLC charging (both AC and DC)
 
-                if (bcb_toggle_detected()) {
+                // Some EVs resume a paused -20 session by reconnecting directly, without the B->C->B toggle
+                // (bench-found with an MCS truck: SDP ~3 s after SessionStop(Pause)). Take it as the same request.
+                const bool restarted_by_ev = std::exchange(internal_context.hlc_session_restarted_by_ev, false);
+                if (bcb_toggle_detected() or restarted_by_ev) {
+                    if (restarted_by_ev) {
+                        session_log.evse(false, "EV reconnected after SessionStop: resuming the session");
+                    }
                     // The EV restarts the session: clear the ended-session marker and a pending
                     // oscillator retain timer so PrepareCharging re-applies PWM again.
                     shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Unknown;
@@ -2392,6 +2400,16 @@ void Charger::notify_session_stop_res_sent(types::iso15118::SessionStopAction ac
     shared_context.hlc_charging_terminate_pause =
         action == types::iso15118::SessionStopAction::Pause ? HlcTerminatePause::Pause : HlcTerminatePause::Terminate;
     internal_context.session_stop_pwm_off_deadline = std::chrono::steady_clock::now() + V2G_SECC_CP_OSCILLATOR_RETAIN;
+}
+
+void Charger::notify_hlc_session_started_by_ev() {
+    Everest::scoped_lock_timeout lock(state_machine_mutex,
+                                      Everest::MutexDescription::Charger_notify_hlc_session_started_by_ev);
+    // Only a session the EV ended itself is resumed this way; an EVSE pause resumes when its reason is gone.
+    if (shared_context.current_state == EvseState::ChargingPausedEV and shared_context.hlc_charging_active and
+        shared_context.hlc_charging_terminate_pause != HlcTerminatePause::Unknown) {
+        internal_context.hlc_session_restarted_by_ev = true;
+    }
 }
 
 void Charger::dlink_error() {

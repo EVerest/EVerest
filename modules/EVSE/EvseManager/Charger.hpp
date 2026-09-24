@@ -208,6 +208,9 @@ public:
     // today and applies a harmless second X1.
     void notify_session_stop_res_sent(types::iso15118::SessionStopAction action);
 
+    // The EV opened a new V2G session (application protocol negotiated).
+    void notify_hlc_session_started_by_ev();
+
     void set_hlc_charging_active();
     void set_hlc_allow_close_contactor(bool on);
     void dc_open_contactor_request();
@@ -493,6 +496,9 @@ private:
         // StoppingCharging was entered for a user pause (flag_paused_by_evse), even if resume_charging() has
         // cleared that flag since.
         bool stopping_for_evse_pause{false};
+
+        // The EV reconnected to resume a session it had ended with a SessionStop; consumed by ChargingPausedEV.
+        bool hlc_session_restarted_by_ev{false};
 
     } internal_context;
 
