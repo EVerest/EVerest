@@ -100,6 +100,9 @@ public:
     // session (the handshake reads the session config); priority order is kept.
     void update_supported_protocols(const std::vector<ProtocolId>&);
     void update_ac_limits(const d20::AcTransferLimits&);
+    // AC nominal voltage and connector phases (EvseManager update_ac_parameters), the ISO 15118-20
+    // counterpart of update_pre20_energy_transfer_modes. Applied to the next session.
+    void update_ac_setup_config(const d20::AcSetupConfig&);
     void update_iso2_ac_max_current(float ampere);
     // ISO 15118-2 / DIN SPEC 70121 physical EVSE parameters (EvseManager set_charging_parameters).
     void update_physical_values(const d20::PhysicalValues&);

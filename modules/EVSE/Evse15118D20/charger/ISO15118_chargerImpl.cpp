@@ -2133,6 +2133,7 @@ void ISO15118_chargerImpl::handle_update_ac_parameters(types::iso15118::AcParame
 
         if (controller) {
             controller->update_ac_limits(setup_config.ac_limits);
+            controller->update_ac_setup_config(ac_setup_config);
         }
     }
 
