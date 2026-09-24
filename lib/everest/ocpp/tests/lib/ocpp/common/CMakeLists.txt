@@ -1,4 +1,5 @@
 target_sources(libocpp_unit_tests PRIVATE
+    test_charging_station_base.cpp
     test_database_migration_files.cpp
     test_message_queue.cpp
     test_websocket_uri.cpp
