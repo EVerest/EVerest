@@ -1255,8 +1255,12 @@ bool GenericOcpp::cb_is_reset_allowed(const std::optional<std::int32_t>& evse_id
             r_type = types::system::ResetType::Soft;
             break;
         case ResetType::Immediate:
-        case ResetType::ImmediateAndResume:
         case ResetType::OnIdle:
+            break;
+        case ResetType::ImmediateAndResume:
+            // B13.FR.01: TxCtrlr.ResumptionTimeout is not reported
+            EVLOG_info << "Rejecting ImmediateAndResume reset: transaction resumption is not supported";
+            do_reset = false;
             break;
         default:
             EVLOG_warning << "Could not convert OCPP ResetEnum to EVerest ResetType while executing "
