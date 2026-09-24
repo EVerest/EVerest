@@ -1544,6 +1544,9 @@ void OCPP201::process_session_started(const int32_t evse_id, const int32_t conne
     this->process_tx_event_effect(evse_id, tx_event_effect, session_event);
     if (session_started.reason == types::evse_manager::StartSessionReason::EVConnected) {
         this->charge_point->on_session_started(evse_id, connector_id);
+    } else if (reservation_id.has_value()) {
+        // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+        this->charge_point->on_reservation_cleared(evse_id, connector_id);
     }
     if (tx_event == TxEvent::EV_CONNECTED) {
         this->everest_device_model_storage->update_connected_ev_available(evse_id, true);
@@ -1625,6 +1628,10 @@ void OCPP201::process_transaction_started(const int32_t evse_id, const int32_t c
     transaction_data->trigger_reason = trigger_reason;
     const auto tx_event_effect = this->transaction_handler->submit_event(evse_id, tx_event);
     this->process_tx_event_effect(evse_id, tx_event_effect, session_event);
+    if (transaction_started.reservation_id.has_value()) {
+        // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+        this->charge_point->on_reservation_cleared(evse_id, connector_id);
+    }
     if (tx_event == TxEvent::EV_CONNECTED) {
         this->everest_device_model_storage->update_connected_ev_available(evse_id, true);
     }
