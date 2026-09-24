@@ -22,6 +22,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     test_database_migration_files.cpp
     test_filesystem_helpers.cpp
     test_helpers.cpp
+    test_local_bus.cpp
     test_message_handler.cpp
     test_message_handler_scaling_policy.cpp
     test_mqtt_abstraction.cpp

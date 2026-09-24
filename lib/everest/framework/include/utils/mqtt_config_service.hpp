@@ -141,6 +141,41 @@ struct ConfigChangeResult {
     }
 };
 
+/// \brief Answers a ConfigService \p request from the module named in its origin, enforcing that module's access rules
+Response handle_config_request(const Request& request, ConfigServiceInterface& config_svc);
+
+/// \brief Transport between ConfigServiceClient and the ConfigService when both live in the same process
+class ConfigServiceTransport {
+public:
+    using SetHandler = std::function<Response(const SetRequest& request)>;
+
+    virtual ~ConfigServiceTransport() = default;
+    /// \brief Answers a request made by a module
+    virtual Response request(const Request& request) = 0;
+    /// \brief Registers the \p handler that applies runtime parameter changes to the module \p module_id
+    virtual void register_set_handler(const std::string& module_id, SetHandler handler) = 0;
+};
+
+/// \brief In-process ConfigService transport backed by a ConfigServiceInterface
+class LocalConfigService : public ConfigServiceTransport {
+public:
+    explicit LocalConfigService(ConfigServiceInterface& config_svc);
+
+    Response request(const Request& request) override;
+    void register_set_handler(const std::string& module_id, SetHandler handler) override;
+
+    /// \brief Applies a runtime change of \p cfg_param_id to the owning module, the in-process counterpart of
+    /// MqttConfigServiceHandler::cmd_set_cfg_param
+    std::optional<SetResponse>
+    set_module_parameter(const everest::config::ConfigurationParameterIdentifier& cfg_param_id,
+                         const std::string& value);
+
+private:
+    ConfigServiceInterface& m_config_svc;
+    std::mutex m_mutex;
+    std::map<std::string, SetHandler> m_set_handlers;
+};
+
 class ConfigServiceClient {
 public:
     using ConfigChangeHandler = std::function<ConfigChangeResult(const std::string& new_value)>;
@@ -148,6 +183,10 @@ public:
     /// \brief ConfigService client using the provided \p mqtt_abstraction for the module identified by \p module_id
     /// \p module_names is a mapping of all module ids to module names/types for usage in get_module_configs()
     ConfigServiceClient(std::shared_ptr<MQTTAbstraction> mqtt_abstraction, const std::string& module_id,
+                        const std::map<std::string, std::string, std::less<>>& module_names);
+
+    /// \brief ConfigService client talking to the ConfigService through the in-process \p transport
+    ConfigServiceClient(std::shared_ptr<ConfigServiceTransport> transport, const std::string& module_id,
                         const std::map<std::string, std::string, std::less<>>& module_names);
 
     /// \brief Compiles and \returns all module configs that this module has access to
@@ -172,6 +211,7 @@ public:
 
 private:
     std::shared_ptr<MQTTAbstraction> m_mqtt_abstraction;
+    std::shared_ptr<ConfigServiceTransport> m_transport;
     std::string m_origin;
     std::map<std::string, std::string, std::less<>> m_module_names;
     // a key-value (parameter-name to handler) store for each implementation_id
@@ -181,6 +221,8 @@ private:
     // mqtt_set_request().
     std::mutex m_change_callbacks_mutex;
 
+    Response send_request(const Request& request);
+    Response apply_set_request(const SetRequest& set_request);
     void mqtt_set_request(const nlohmann::json& data);
 };
 

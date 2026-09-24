@@ -59,6 +59,36 @@ heavy ones with `-DEVEREST_EXCLUDE_MODULES="EvseSlac;EvseV2G;IsoMux"`, quoting t
 list. `cmake -LH build` lists all options; the two easiest to miss are
 `EVEREST_ENABLE_COVERAGE` and `CMAKE_RUN_CLANG_TIDY`, both OFF.
 
+### Single-process build (proof of concept)
+
+`-DEVEREST_BUILD_MODULE_PLUGINS=ON` builds every C++ module as a shared object instead of an
+executable and adds the `everest-neo` binary, which runs a whole configuration in one process
+(see `lib/everest/framework/README.md`). Use a separate build directory, since the module
+binaries of a normal build are not produced in this mode:
+
+```bash
+cmake -S . -B build-neo -DCMAKE_INSTALL_PREFIX=./build-neo/dist \
+  -DEVEREST_BUILD_MODULE_PLUGINS=ON -DBUILD_TESTING=ON -Deverest-framework_BUILD_TESTING=ON
+cmake --build build-neo --target install
+build-neo/run-scripts/run-neo.sh config/config-sil-dc.yaml      # any config: full path or installed name
+build-neo/run-scripts/run-neo-CB-EVAL-DC-SIM.sh                  # config/config-CB-EVAL-DC-SIM.yaml
+```
+
+`everest-neo` loads only the modules a configuration names, so one build with all C++ modules
+serves every configuration. Modules without a shared object (Python, Rust, JavaScript) are
+skipped with a warning, and their connections stay unfulfilled. `EVEREST_INCLUDE_MODULES`
+works here too; with a partial module list, exclude the OCPP-only libraries
+(`-DEVEREST_EXCLUDE_LIBS="ocpp;ocpp_module_common"`) because `ocpp_module_common` needs the
+OCPP conversions that only OCPP modules pull in. The broker carries only external MQTT and
+telemetry (the stable API modules of `config-CB-EVAL-DC-SIM.yaml` talk to a `pionix_chargebridge`
+through it); variables, commands, errors, configuration and the lifecycle stay inside the process.
+`kill -USR1 $(pgrep everest-neo)` logs the state of every bus subscription. Hardware access such as raw
+sockets for SLAC needs the capabilities the multi-process manager would grant per module, so
+run `everest-neo` with the union of them, for example under `sudo`.
+
+Python and Rust modules, `--standalone` modules and per-module process names in the logging
+filter are not available in this mode. The multi-process `manager` cannot start plugin builds.
+
 ## Running
 
 Generated run scripts are the simplest entry point:

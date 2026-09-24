@@ -7,6 +7,7 @@
 #endif
 #include <boost/log/attributes/current_process_id.hpp>
 #include <boost/log/attributes/current_process_name.hpp>
+#include <boost/log/attributes/function.hpp>
 #include <boost/log/attributes/current_thread_id.hpp>
 #include <boost/log/expressions.hpp>
 #include <boost/log/expressions/attr.hpp>
@@ -80,6 +81,17 @@ std::string process_name_padding(const std::string& process_name) {
 }
 
 attrs::mutable_constant<std::string> current_process_name(process_name_padding(logging::aux::get_process_name()));
+
+// Per-thread override of the process name, so a process hosting several modules can attribute log records to the
+// module whose code the thread is running.
+thread_local std::string thread_process_name;
+
+std::string effective_process_name() {
+    if (not thread_process_name.empty()) {
+        return thread_process_name;
+    }
+    return current_process_name.get();
+}
 
 // The operator puts a human-friendly representation of the severity level to the stream
 std::ostream& operator<<(std::ostream& strm, severity_level level) {
@@ -164,7 +176,7 @@ int init(const std::string& logconf, std::string process_name) {
         padded_process_name = process_name_padding(process_name);
     }
 
-    logging::core::get()->add_global_attribute("Process", current_process_name);
+    logging::core::get()->add_global_attribute("Process", attrs::make_function(&effective_process_name));
     if (!padded_process_name.empty()) {
         current_process_name.set(padded_process_name);
     }
@@ -224,6 +236,22 @@ void update_process_name(std::string process_name) {
         padded_process_name = process_name_padding(process_name);
         current_process_name.set(padded_process_name);
     }
+}
+
+void set_thread_process_name(const std::string& process_name) {
+    thread_process_name = process_name.empty() ? std::string{} : process_name_padding(process_name);
+}
+
+std::string get_thread_process_name() {
+    return thread_process_name;
+}
+
+ThreadProcessNameScope::ThreadProcessNameScope(const std::string& process_name) : m_previous(thread_process_name) {
+    set_thread_process_name(process_name);
+}
+
+ThreadProcessNameScope::~ThreadProcessNameScope() {
+    thread_process_name = m_previous;
 }
 
 void ffi_log(int level, int line, const std::string& file, const std::string& message) {

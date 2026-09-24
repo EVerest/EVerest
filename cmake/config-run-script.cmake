@@ -11,6 +11,7 @@ function(generate_config_run_script)
         CONFIG
         LOGGING_CONFIG
         OUTPUT
+        TEMPLATE
     )
     set(multi_value_args
         ADDITIONAL_ARGUMENTS
@@ -56,6 +57,11 @@ function(generate_config_run_script)
     set(LD_LIBRARY_VAR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
     set(PATH_VAR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}")
 
-    configure_file("${EVEREST_CONFIG_ASSET_DIR}/run_template.sh.in" ${SCRIPT_OUTPUT_FILE})
+    set(TEMPLATE_FILE "run_template.sh.in")
+    if (OPTNS_TEMPLATE)
+        set(TEMPLATE_FILE "${OPTNS_TEMPLATE}")
+    endif()
+
+    configure_file("${EVEREST_CONFIG_ASSET_DIR}/${TEMPLATE_FILE}" ${SCRIPT_OUTPUT_FILE})
 
 endfunction()
