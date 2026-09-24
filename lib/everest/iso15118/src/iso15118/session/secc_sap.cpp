@@ -59,24 +59,24 @@ HandleResult handle_request(const message_20::SupportedAppProtocolRequest& req,
                             const std::vector<dt::ServiceCategory>& supported_energy_services,
                             bool selecting_sap_based_on_energy_service,
                             const std::optional<std::string>& custom_protocol, bool tls_active) {
-    SupportedEnergyModes energy_modes{false, false, false, false};
-
-    if (selecting_sap_based_on_energy_service) {
-        for (const auto& service : supported_energy_services) {
-            if (service == dt::ServiceCategory::AC or service == dt::ServiceCategory::AC_BPT or
-                service == dt::ServiceCategory::AC_DER_IEC or service == dt::ServiceCategory::AC_DER_SAE) {
-                energy_modes.ac = true;
-            } else if (service == dt::ServiceCategory::DC or service == dt::ServiceCategory::DC_BPT or
-                       service == dt::ServiceCategory::MCS or service == dt::ServiceCategory::MCS_BPT) {
-                energy_modes.dc = true;
-            } else if (service == dt::ServiceCategory::DC_ACDP or service == dt::ServiceCategory::DC_ACDP_BPT) {
-                energy_modes.acdp = true;
-            } else if (service == dt::ServiceCategory::WPT) {
-                energy_modes.wpt = true;
-            }
+    // The energy families the SECC actually offers. Before the first energy service update the list is empty;
+    // nothing is known then, so every family counts as offered.
+    SupportedEnergyModes offered_modes{false, false, false, false};
+    for (const auto& service : supported_energy_services) {
+        if (service == dt::ServiceCategory::AC or service == dt::ServiceCategory::AC_BPT or
+            service == dt::ServiceCategory::AC_DER_IEC or service == dt::ServiceCategory::AC_DER_SAE) {
+            offered_modes.ac = true;
+        } else if (service == dt::ServiceCategory::DC or service == dt::ServiceCategory::DC_BPT or
+                   service == dt::ServiceCategory::MCS or service == dt::ServiceCategory::MCS_BPT) {
+            offered_modes.dc = true;
+        } else if (service == dt::ServiceCategory::DC_ACDP or service == dt::ServiceCategory::DC_ACDP_BPT) {
+            offered_modes.acdp = true;
+        } else if (service == dt::ServiceCategory::WPT) {
+            offered_modes.wpt = true;
         }
-    } else {
-        energy_modes = SupportedEnergyModes{true, true, true, true};
+    }
+    if (supported_energy_services.empty()) {
+        offered_modes = SupportedEnergyModes{true, true, true, true};
     }
 
     const bool iso20_supported = protocol_supported(ProtocolId::ISO15118_20, supported_protocols);
@@ -84,49 +84,67 @@ HandleResult handle_request(const message_20::SupportedAppProtocolRequest& req,
     // DIN SPEC 70121 is plaintext-only; never negotiate it on a TLS connection [V2G-DC-869].
     const bool din_supported = protocol_supported(ProtocolId::DIN70121, supported_protocols) and not tls_active;
 
-    std::map<uint8_t, uint8_t> ev_supported_protocols{};                      // key: priority, value: schema_id
-    std::map<uint8_t, std::string> ev_supported_namespaces{};                 // key: priority, value: namespace
-    std::map<uint8_t, std::pair<uint32_t, uint32_t>> ev_supported_versions{}; // key: priority, value: (major, minor)
+    struct Candidate {
+        uint8_t schema_id;
+        std::string protocol_namespace;
+        std::pair<uint32_t, uint32_t> version; // (major, minor)
+    };
 
-    for (const auto& protocol : req.app_protocol) {
-        const auto is_dc =
-            iso20_supported and protocol.protocol_namespace == ISO20_DC_PROTOCOL_NAMESPACE and energy_modes.dc;
-        const auto is_ac = iso20_supported and is_ac_namespace(protocol.protocol_namespace) and energy_modes.ac;
-        // ISO 15118-2 covers both AC and DC under a single namespace.
-        const auto is_iso2 =
-            iso2_supported and protocol.protocol_namespace == ISO2_NAMESPACE and (energy_modes.ac or energy_modes.dc);
-        // DIN SPEC 70121 is DC only.
-        const auto is_din = din_supported and protocol.protocol_namespace == DIN70121_NAMESPACE and energy_modes.dc;
-        const auto is_custom =
-            custom_protocol.has_value() ? protocol.protocol_namespace == custom_protocol.value() : false;
+    // key: priority
+    const auto collect_candidates = [&](const SupportedEnergyModes& energy_modes) {
+        std::map<uint8_t, Candidate> candidates{};
+        for (const auto& protocol : req.app_protocol) {
+            const auto is_dc =
+                iso20_supported and protocol.protocol_namespace == ISO20_DC_PROTOCOL_NAMESPACE and energy_modes.dc;
+            const auto is_ac = iso20_supported and is_ac_namespace(protocol.protocol_namespace) and energy_modes.ac;
+            // ISO 15118-2 covers both AC and DC under a single namespace.
+            const auto is_iso2 = iso2_supported and protocol.protocol_namespace == ISO2_NAMESPACE and
+                                 (energy_modes.ac or energy_modes.dc);
+            // DIN SPEC 70121 is DC only.
+            const auto is_din =
+                din_supported and protocol.protocol_namespace == DIN70121_NAMESPACE and energy_modes.dc;
+            const auto is_custom =
+                custom_protocol.has_value() ? protocol.protocol_namespace == custom_protocol.value() : false;
 
-        if (is_dc or is_ac or is_iso2 or is_din or is_custom) {
-            // [V2G2-170]/[V2G20-149]: a protocol may only be confirmed when its VersionNumberMajor matches the
-            // SECC's; a differing minor is answered with OK_SuccessfulNegotiationWithMinorDeviation below. With
-            // no entry left the SECC answers Failed_NoNegotiation [V2G2-172]; a custom namespace is accepted as-is.
-            const auto secc_version = secc_protocol_version(protocol.protocol_namespace);
-            if (secc_version.has_value() and protocol.version_number_major != secc_version->first) {
-                continue;
+            if (is_dc or is_ac or is_iso2 or is_din or is_custom) {
+                // [V2G2-170]/[V2G20-149]: a protocol may only be confirmed when its VersionNumberMajor matches the
+                // SECC's; a differing minor is answered with OK_SuccessfulNegotiationWithMinorDeviation below. With
+                // no entry left the SECC answers Failed_NoNegotiation [V2G2-172]; a custom namespace is accepted
+                // as-is.
+                const auto secc_version = secc_protocol_version(protocol.protocol_namespace);
+                if (secc_version.has_value() and protocol.version_number_major != secc_version->first) {
+                    continue;
+                }
+                candidates[protocol.priority] = {protocol.schema_id, protocol.protocol_namespace,
+                                                 {protocol.version_number_major, protocol.version_number_minor}};
             }
-            ev_supported_protocols[protocol.priority] = protocol.schema_id;
-            ev_supported_namespaces[protocol.priority] = protocol.protocol_namespace;
-            ev_supported_versions[protocol.priority] = {protocol.version_number_major, protocol.version_number_minor};
         }
+        return candidates;
+    };
+
+    // Prefer the namespaces matching the offered energy transfer: a DC charger picks -20:DC (or -2 / DIN) and an
+    // AC charger -20:AC even if the EV ranks the other -20 namespace higher. Since ISO 15118-20 AMD1 the SAP
+    // namespace no longer fixes the energy service, so unless selecting_sap_based_on_energy_service demands a
+    // strict match, an EV offering only non-matching namespaces still gets one and picks its service later.
+    auto candidates = collect_candidates(offered_modes);
+    if (candidates.empty() and not selecting_sap_based_on_energy_service) {
+        candidates = collect_candidates(SupportedEnergyModes{true, true, true, true});
     }
 
     HandleResult result;
 
-    if (ev_supported_protocols.empty()) {
+    if (candidates.empty()) {
         result.response.response_code = ResponseCode::Failed_NoNegotiation;
         return result;
     }
 
     // [V2G20-167] Highest Prio: 1, Lowest Prio: 20
-    result.response.schema_id = ev_supported_protocols.begin()->second;
-    result.selected_namespace = ev_supported_namespaces.begin()->second;
+    const auto& selected = candidates.begin()->second;
+    result.response.schema_id = selected.schema_id;
+    result.selected_namespace = selected.protocol_namespace;
 
     // [V2G2-098] / [V2G20-149]: same namespace and major version, different minor (EvseV2G parity).
-    const auto& [offered_major, offered_minor] = ev_supported_versions.begin()->second;
+    const auto& [offered_major, offered_minor] = selected.version;
     const auto secc_version = secc_protocol_version(result.selected_namespace.value());
     if (secc_version.has_value() and offered_major == secc_version->first and offered_minor != secc_version->second) {
         result.response.response_code = ResponseCode::OK_SuccessfulNegotiationWithMinorDeviation;
