@@ -8,9 +8,10 @@ if [ $retVal -ne 0 ]; then
     exit $retVal
 fi
 
-# The Rust modules are the only ones whose runpath nothing else checks: cargo
-# emits none and install(PROGRAMS) does no RPATH rewriting, so a regression here
-# is invisible until a module is started outside the development run scripts.
+# C++ modules get their runpath from CMake's install-time RPATH rewriting.
+# Rust ones get none: cargo emits no runpath and install(PROGRAMS) rewrites
+# nothing. A regression shows up only when a module is started outside the
+# generated development run scripts, which no other job does.
 m="$EXT_MOUNT/dist/libexec/everest/modules/RsExample/RsExample"
 readelf -d "$m" | grep -q 'RUNPATH.*\$ORIGIN' || {
     echo "No relocatable RUNPATH on installed Rust module"

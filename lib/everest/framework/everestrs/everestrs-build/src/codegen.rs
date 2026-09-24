@@ -85,96 +85,97 @@ fn is_reserved_keyword(s: &str) -> bool {
 
 fn lazy_load<'a, T: DeserializeOwned>(
     storage: &'a mut HashMap<String, T>,
-    read_paths: &mut Vec<PathBuf>,
-    everest_root: &Vec<PathBuf>,
+    reader: &mut YamlReader,
     prefix: &str,
     postfix: &str,
-) -> Result<&'a mut T> {
-    if storage.contains_key(postfix) {
-        return Ok(storage.get_mut(postfix).unwrap());
-    }
+) -> &'a mut T {
+    storage
+        .entry(postfix.to_string())
+        .or_insert_with(|| reader.read(prefix, postfix))
+}
 
-    let mut matches = everest_root
-        .iter()
-        .filter_map(|core| {
-            let p = core.join(format!("{prefix}/{postfix}.yaml"));
-            // If the file is missing we ignore the error since it may be
-            // present in an different root.
-            let Ok(blob) = fs::read_to_string(&p) else {
-                return None;
-            };
-            read_paths.push(p.clone());
-            let out = serde_yaml::from_str(&blob).with_context(|| format!("Failed to parse {p:?}"));
-            match out {
-                Err(err) => {
-                    println!("{err:?}");
-                    None
+/// Reads YAML files out of the EVerest roots. Recording the path is not
+/// optional, which is what keeps `read_paths` complete.
+#[derive(Default, Debug)]
+struct YamlReader {
+    // This might be also a HashMap of "namespaces" and paths.
+    everest_root: Vec<PathBuf>,
+    /// Every YAML file this reader read, so that a module's build script can
+    /// emit a `cargo:rerun-if-changed` for each one. Without that, editing an
+    /// interface or type YAML does not re-run codegen and the module keeps
+    /// building against the old bindings.
+    read_paths: Vec<PathBuf>,
+}
+
+impl YamlReader {
+    fn read<T: DeserializeOwned>(&mut self, prefix: &str, postfix: &str) -> T {
+        let Self {
+            everest_root,
+            read_paths,
+        } = self;
+        let mut matches = everest_root
+            .iter()
+            .filter_map(|core| {
+                let p = core.join(format!("{prefix}/{postfix}.yaml"));
+                // If the file is missing we ignore the error since it may be
+                // present in an different root.
+                let Ok(blob) = fs::read_to_string(&p) else {
+                    return None;
+                };
+                read_paths.push(p.clone());
+                let out =
+                    serde_yaml::from_str(&blob).with_context(|| format!("Failed to parse {p:?}"));
+                match out {
+                    Err(err) => {
+                        println!("{err:?}");
+                        None
+                    }
+                    Ok(res) => Some(res),
                 }
-                Ok(res) => Some(res),
-            }
-        })
-        .collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
-    assert!(
-        matches.len() == 1,
-        "The name `{prefix}/{postfix}` must be defined exactly once: Found {}",
-        { matches.len() }
-    );
+        assert!(
+            matches.len() == 1,
+            "The name `{prefix}/{postfix}` must be defined exactly once: Found {}",
+            { matches.len() }
+        );
 
-    storage.insert(postfix.to_string(), matches.pop().unwrap());
-    Ok(storage.get_mut(postfix).unwrap())
+        matches.pop().unwrap()
+    }
 }
 
 /// A lazy loader for YAML files. If the same file is requested twice, it will
 /// not be re-parsed again.
 #[derive(Default, Debug)]
 struct YamlRepo {
-    // This might be also a HashMap of "namespaces" and paths.
-    everest_root: Vec<PathBuf>,
+    reader: YamlReader,
     interfaces: HashMap<String, Interface>,
     data_types: HashMap<String, DataTypes>,
     error_types: HashMap<String, ErrorList>,
-    /// Every YAML file this repo actually read, so that a build script can
-    /// declare them and an edit to one is not invisible.
-    read_paths: Vec<PathBuf>,
 }
 
 impl YamlRepo {
     pub fn new(everest_root: Vec<PathBuf>) -> Self {
         Self {
-            everest_root,
+            reader: YamlReader {
+                everest_root,
+                ..Default::default()
+            },
             ..Default::default()
         }
     }
 
-    pub fn get_interface<'a>(&'a mut self, name: &str) -> Result<&'a mut Interface> {
-        lazy_load(
-            &mut self.interfaces,
-            &mut self.read_paths,
-            &self.everest_root,
-            "interfaces",
-            name,
-        )
+    pub fn get_interface<'a>(&'a mut self, name: &str) -> &'a mut Interface {
+        lazy_load(&mut self.interfaces, &mut self.reader, "interfaces", name)
     }
 
-    pub fn get_data_types<'a>(&'a mut self, name: &str) -> Result<&'a mut DataTypes> {
-        lazy_load(
-            &mut self.data_types,
-            &mut self.read_paths,
-            &self.everest_root,
-            "types",
-            name,
-        )
+    pub fn get_data_types<'a>(&'a mut self, name: &str) -> &'a mut DataTypes {
+        lazy_load(&mut self.data_types, &mut self.reader, "types", name)
     }
 
-    pub fn get_errors<'a>(&'a mut self, prefix: &str, name: &str) -> Result<&'a mut ErrorList> {
-        lazy_load(
-            &mut self.error_types,
-            &mut self.read_paths,
-            &self.everest_root,
-            prefix,
-            name,
-        )
+    pub fn get_errors<'a>(&'a mut self, prefix: &str, name: &str) -> &'a mut ErrorList {
+        lazy_load(&mut self.error_types, &mut self.reader, prefix, name)
     }
 }
 
@@ -443,9 +444,7 @@ impl ErrorGroupContext {
         let mut output = Vec::new();
         // Load the error yaml form the disk.
         for (error_path, error_option) in error_definitions {
-            let error_list = yaml_repo
-                .get_errors(error_path.prefix, error_path.file)
-                .unwrap();
+            let error_list = yaml_repo.get_errors(error_path.prefix, error_path.file);
 
             let mut error_group_context = ErrorGroupContext {
                 name: error_path.file.to_string(),
@@ -488,7 +487,7 @@ impl InterfaceContext {
         name: &str,
         type_refs: &mut BTreeSet<TypeRef>,
     ) -> Result<Self> {
-        let interface_yaml = yaml_repo.get_interface(name)?;
+        let interface_yaml = yaml_repo.get_interface(name);
         let mut vars = Vec::new();
         for (name, var) in &interface_yaml.vars {
             vars.push(ArgumentContext::from_schema(name.clone(), var, type_refs)?);
@@ -548,7 +547,7 @@ fn type_context_from_ref(
     use TypeEnum::*;
 
     let module_path = r.module_path.join("/");
-    let data_types_yaml = yaml_repo.get_data_types(&module_path)?;
+    let data_types_yaml = yaml_repo.get_data_types(&module_path);
 
     let type_descr = data_types_yaml
         .types
@@ -728,29 +727,33 @@ fn emit_config(config: BTreeMap<String, ConfigEntry>) -> Vec<ArgumentContext> {
         .collect::<Vec<_>>()
 }
 
+/// Generated Rust source, and every YAML file the generator read to produce
+/// it.
+pub struct Emitted {
+    pub generated: String,
+    pub dependencies: Vec<PathBuf>,
+}
+
 pub fn emit(manifest_path: PathBuf, everest_core: Vec<PathBuf>) -> Result<String> {
-    Ok(emit_with_inputs(manifest_path, everest_core)?.0)
+    Ok(emit_with_inputs(manifest_path, everest_core)?.generated)
 }
 
 /// Like [`emit`], but also returns every YAML file the generator read.
-pub fn emit_with_inputs(
-    manifest_path: PathBuf,
-    everest_core: Vec<PathBuf>,
-) -> Result<(String, Vec<PathBuf>)> {
+pub fn emit_with_inputs(manifest_path: PathBuf, everest_core: Vec<PathBuf>) -> Result<Emitted> {
     let blob = fs::read_to_string(&manifest_path).context("While reading manifest file")?;
     let manifest: Manifest = serde_yaml::from_str(&blob).context("While parsing manifest")?;
     emit_manifest_with_inputs(manifest, everest_core)
 }
 
 pub fn emit_manifest(manifest: Manifest, everest_core: Vec<PathBuf>) -> Result<String> {
-    Ok(emit_manifest_with_inputs(manifest, everest_core)?.0)
+    Ok(emit_manifest_with_inputs(manifest, everest_core)?.generated)
 }
 
 /// Like [`emit_manifest`], but also returns every YAML file the generator read.
 pub fn emit_manifest_with_inputs(
     manifest: Manifest,
     everest_core: Vec<PathBuf>,
-) -> Result<(String, Vec<PathBuf>)> {
+) -> Result<Emitted> {
     let mut yaml_repo = YamlRepo::new(everest_core);
 
     let mut env = Environment::new();
@@ -896,7 +899,10 @@ pub fn emit_manifest_with_inputs(
         provided_config,
     };
     let tmpl = env.get_template("module").unwrap();
-    Ok((tmpl.render(context).unwrap(), yaml_repo.read_paths))
+    Ok(Emitted {
+        generated: tmpl.render(context).unwrap(),
+        dependencies: yaml_repo.reader.read_paths,
+    })
 }
 
 #[cfg(test)]
@@ -943,7 +949,7 @@ mod tests {
         )
         .unwrap();
 
-        let (_, inputs) =
+        let emitted =
             super::emit_with_inputs(root.join("manifest.yaml"), vec![root.clone()]).unwrap();
 
         let expected: BTreeSet<_> = [
@@ -955,10 +961,35 @@ mod tests {
         .iter()
         .map(|p| root.join(p))
         .collect();
-        let got: BTreeSet<_> = inputs.into_iter().collect();
+        let got: BTreeSet<_> = emitted.dependencies.into_iter().collect();
 
         fs::remove_dir_all(&root).unwrap();
         assert_eq!(got, expected);
+    }
+
+    /// Two requests for the same interface must read the file once. A
+    /// duplicate declaration would be invisible to the set comparison above.
+    #[test]
+    fn a_repeated_request_reads_once() {
+        use std::fs;
+
+        let root = std::env::temp_dir().join(format!(
+            "everestrs-build-repeated-request-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("interfaces")).unwrap();
+        fs::write(root.join("interfaces/probe.yaml"), "description: fixture\n").unwrap();
+
+        let mut repo = super::YamlRepo::new(vec![root.clone()]);
+        repo.get_interface("probe");
+        repo.get_interface("probe");
+
+        fs::remove_dir_all(&root).unwrap();
+        assert_eq!(
+            repo.reader.read_paths,
+            vec![root.join("interfaces/probe.yaml")]
+        );
     }
 
     #[test]

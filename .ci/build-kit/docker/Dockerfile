@@ -22,7 +22,8 @@ RUN npm install -g corepack@0.33.0 \
     && corepack prepare npm@10.9.8 --activate
 
 # Rust toolchain for EVEREST_ENABLE_RS_SUPPORT. Pinned rather than floating, and
-# kept in sync with RUST_VERSION in MODULE.bazel so the two lanes agree;
+# kept in sync with RUST_VERSION in MODULE.bazel and
+# .devcontainer/general-devcontainer/Dockerfile so all three agree;
 # Debian's packaged rustc is 1.63 and far too old. rustfmt is not part of the
 # minimal profile, and everestrs-build ignores a failing rustfmt, so leaving it
 # out ships unformatted generated code without saying so.
