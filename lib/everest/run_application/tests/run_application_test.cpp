@@ -242,6 +242,133 @@ TEST(RunApplication, KillChildOnParentDeathReapsChildWhenParentDies) {
 
     EXPECT_TRUE(reaped) << "grandchild outlived its parent — PR_SET_PDEATHSIG did not fire";
 }
+
+TEST(RunApplication, StopRequestedTerminatesGrandchildren) {
+    // The shell runs sleep in the foreground on the shared stdout, as a script runs curl. Signalling
+    // only the shell orphans sleep, which then holds stdout open until its own ~7 s elapse.
+    const std::string needle = "7." + std::to_string(::getpid());
+    ASSERT_EQ(find_process_with_arg(needle), -1) << "a stale sleeper is present before the test";
+
+    auto stop = std::make_shared<std::atomic_bool>(false);
+    bool grandchild_started = false;
+    std::chrono::steady_clock::time_point stop_time;
+    std::thread setter([&] {
+        grandchild_started = wait_until([&] { return find_process_with_arg(needle) > 0; }, std::chrono::seconds(5));
+        stop_time = std::chrono::steady_clock::now();
+        *stop = true;
+    });
+
+    RunOptions opts;
+    opts.stop_requested = stop;
+    opts.terminate_grace = std::chrono::milliseconds(500);
+
+    const auto result = run_application("bash", {"-c", "sleep " + needle + "; echo done"}, opts);
+    const auto returned = std::chrono::steady_clock::now();
+
+    setter.join();
+
+    const pid_t leaked = find_process_with_arg(needle);
+    if (leaked > 0) {
+        kill(leaked, SIGKILL);
+    }
+
+    ASSERT_TRUE(grandchild_started) << "grandchild sleeper never started";
+    const auto stop_to_return = std::chrono::duration_cast<std::chrono::milliseconds>(returned - stop_time);
+    EXPECT_LT(stop_to_return.count(), (opts.terminate_grace + std::chrono::milliseconds(1500)).count());
+    EXPECT_EQ(result.exit_code, SIGTERM);
+}
+
+TEST(RunApplication, StopRequestedTerminateKillsGrandchildren) {
+    // The callback returns Terminate within the watcher's poll interval of setting the flag, so the
+    // callback path, not the watcher, has to stop the backgrounded sleeper.
+    const std::string needle = "271828." + std::to_string(::getpid());
+    ASSERT_EQ(find_process_with_arg(needle), -1) << "a stale sleeper is present before the test";
+
+    auto stop = std::make_shared<std::atomic_bool>(false);
+    bool grandchild_started = false;
+    RunOptions opts;
+    opts.stop_requested = stop;
+    opts.callback = [&](const std::string&) {
+        grandchild_started = wait_until([&] { return find_process_with_arg(needle) > 0; }, std::chrono::seconds(5));
+        *stop = true;
+        return CmdControl::Terminate;
+    };
+
+    run_application("bash", {"-c", "sleep " + needle + " & echo go; wait"}, opts);
+
+    const bool reaped = wait_until([&] { return find_process_with_arg(needle) == -1; }, std::chrono::seconds(1));
+    const pid_t leaked = find_process_with_arg(needle);
+    if (leaked > 0) {
+        kill(leaked, SIGKILL);
+    }
+
+    ASSERT_TRUE(grandchild_started) << "grandchild sleeper never started";
+    EXPECT_TRUE(reaped) << "grandchild outlived the terminated child";
+}
+
+TEST(RunApplication, StopRequestedTerminatesChildThatLeftItsGroup) {
+    // The child joins the test runner's process group, so signalling only its own group misses it
+    // and the read loop waits out its 5 s sleep.
+    auto stop = std::make_shared<std::atomic_bool>(false);
+    bool child_moved = false;
+    std::chrono::steady_clock::time_point stop_time;
+    RunOptions opts;
+    opts.stop_requested = stop;
+    opts.terminate_grace = std::chrono::milliseconds(500);
+    opts.callback = [&](const std::string& line) {
+        child_moved = line == "moved";
+        stop_time = std::chrono::steady_clock::now();
+        *stop = true;
+        return CmdControl::Continue;
+    };
+
+    const auto result = run_application(
+        "/usr/bin/python3",
+        {"-c", "import os, time; os.setpgid(0, os.getpgid(os.getppid())); print('moved', flush=True); time.sleep(5)"},
+        opts);
+    const auto returned = std::chrono::steady_clock::now();
+
+    ASSERT_TRUE(child_moved) << "child did not leave its process group";
+    const auto stop_to_return = std::chrono::duration_cast<std::chrono::milliseconds>(returned - stop_time);
+    EXPECT_LT(stop_to_return.count(), (opts.terminate_grace + std::chrono::milliseconds(1500)).count());
+    EXPECT_EQ(result.exit_code, SIGTERM);
+}
+
+TEST(RunApplication, StopRequestedKillsSigtermIgnoringGrandchild) {
+    // The shell dies on SIGTERM, but the sleeper ignores it and keeps stdout open until SIGKILL.
+    const std::string needle = "161803." + std::to_string(::getpid());
+    ASSERT_EQ(find_process_with_arg(needle), -1) << "a stale sleeper is present before the test";
+
+    auto stop = std::make_shared<std::atomic_bool>(false);
+    bool grandchild_started = false;
+    std::chrono::steady_clock::time_point stop_time;
+    std::thread setter([&] {
+        grandchild_started = wait_until([&] { return find_process_with_arg(needle) > 0; }, std::chrono::seconds(5));
+        stop_time = std::chrono::steady_clock::now();
+        *stop = true;
+    });
+
+    RunOptions opts;
+    opts.stop_requested = stop;
+    opts.terminate_grace = std::chrono::milliseconds(500);
+
+    run_application("bash", {"-c", "(trap '' TERM; exec sleep " + needle + "); echo done"}, opts);
+    const auto returned = std::chrono::steady_clock::now();
+
+    setter.join();
+
+    const bool reaped = wait_until([&] { return find_process_with_arg(needle) == -1; }, std::chrono::seconds(1));
+    const pid_t leaked = find_process_with_arg(needle);
+    if (leaked > 0) {
+        kill(leaked, SIGKILL);
+    }
+
+    ASSERT_TRUE(grandchild_started) << "grandchild sleeper never started";
+    const auto stop_to_return = std::chrono::duration_cast<std::chrono::milliseconds>(returned - stop_time);
+    EXPECT_GE(stop_to_return, opts.terminate_grace);
+    EXPECT_LT(stop_to_return, std::chrono::seconds(2));
+    EXPECT_TRUE(reaped) << "SIGTERM-ignoring grandchild survived the stop";
+}
 #endif
 
 namespace {
