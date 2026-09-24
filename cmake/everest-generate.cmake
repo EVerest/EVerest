@@ -358,15 +358,17 @@ everestrs-derive = { path = \"everestrs-derive\" }
         CONTENT "$<JOIN:${RUST_LINK_DEPENDENCIES},\n>\n"
     )
 
-    # Both files above are written at configure time, so they are inputs to
-    # cargo rather than build-time outputs; listing them as DEPENDS would turn a
-    # deleted file into a ninja error with no rule to recreate it.
+    # The workspace Cargo.toml and everestrs-link-dependencies.txt are both
+    # written at configure time, so they are inputs to cargo rather than
+    # build-time outputs; listing them as DEPENDS would turn a deleted file
+    # into a ninja error with no rule to recreate it.
     add_custom_target(generate_rust)
 
-    # Cargo counts a path dependency living inside the workspace directory as a
-    # member, and the lock is a lock over that member set. Linking the crates in
-    # rather than pointing at them keeps the two sets equal, which is what lets
-    # cargo enforce the lock instead of quietly updating it.
+    # Cargo counts a path dependency living inside the workspace directory as
+    # a workspace member, and Cargo.lock is a lock over the member set.
+    # Symlinking the everestrs crates in, rather than pointing at them where
+    # they live, keeps the member set and the locked set identical, which is
+    # what lets `--locked` fail on a mismatch instead of cargo re-resolving.
     foreach (crate IN ITEMS everestrs everestrs-build everestrs-derive)
         add_custom_command(OUTPUT ${RUST_WORKSPACE_DIR}/${crate}
             COMMAND
@@ -394,15 +396,25 @@ everestrs-derive = { path = \"everestrs-derive\" }
     set(EVEREST_RUST_BUILD_JOBS "" CACHE STRING
         "Value for cargo's --jobs when building Rust modules; empty means cargo's default")
 
+    # A build that replaces a locked dependency with a [patch] in a cargo
+    # config, as Yocto's cargo_common does for git dependencies, must change
+    # that dependency's lock entries, which --locked refuses. Such a build
+    # owes the pinning another way, for example offline from crates vendored
+    # out of the same Cargo.lock.
+    option(EVEREST_RS_CARGO_LOCKED
+        "Pass --locked to cargo; OFF for builds that patch a locked dependency and pin versions another way"
+        ON)
+
     # Runpath for installed Rust modules, relative to the module binary's own
-    # directory so that the install tree stays relocatable.
+    # directory so that the install tree stays relocatable. Builder::generate
+    # adds the $ORIGIN, which ninja would otherwise expand as its own variable.
     file(RELATIVE_PATH EVEREST_RUST_INSTALL_RPATH_REL
         "/${CMAKE_INSTALL_LIBEXECDIR}/everest/modules/MODULE"
         "/${CMAKE_INSTALL_LIBDIR}")
 
-    # Cargo settings belong in the workspace's own config file rather than on the
-    # cargo command line: a --config argument has to survive CMake, ninja and
-    # /bin/sh, and ninja alone expands a literal $ORIGIN as one of its variables.
+    # The linker and job count live in the workspace's own config file rather
+    # than on the cargo command line, so that cargo run by hand in the workspace
+    # picks them up too.
     file(GENERATE
         OUTPUT ${RUST_WORKSPACE_DIR}/.cargo/config.toml
         CONTENT
@@ -411,9 +423,6 @@ everestrs-derive = { path = \"everestrs-derive\" }
 # cross compiling: https://github.com/rust-lang/rust/issues/28924
 [target.$<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>]
 linker = \"${CMAKE_CXX_COMPILER}\"
-# Cargo emits no runpath of its own and install(PROGRAMS) does no RPATH
-# rewriting, so without this the installed module cannot find libframework.so.
-rustflags = [\"-C\", \"link-arg=-Wl,-rpath,$ORIGIN/${EVEREST_RUST_INSTALL_RPATH_REL}\"]
 $<$<BOOL:${EVEREST_RUST_BUILD_JOBS}>:
 # Ninja has no jobserver to hand down, so without this cargo runs one rustc per
 # core no matter what -j the surrounding build was given.
@@ -431,9 +440,10 @@ jobs = ${EVEREST_RUST_BUILD_JOBS}
             ${CMAKE_COMMAND} -E env
             EVEREST_CORE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
             EVEREST_RS_LINK_DEPENDENCIES="${RUST_LINK_DEPENDENCIES_FILE}"
+            EVEREST_RS_INSTALL_RPATH="${EVEREST_RUST_INSTALL_RPATH_REL}"
             ${CARGO_EXECUTABLE} build
             # Fail rather than re-resolve when a manifest and the lock disagree.
-            --locked
+            $<$<BOOL:${EVEREST_RS_CARGO_LOCKED}>:--locked>
             $<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:--release>
             --target $<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>
         WORKING_DIRECTORY

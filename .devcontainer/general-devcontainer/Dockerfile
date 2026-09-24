@@ -37,6 +37,22 @@ RUN apt-get update && apt-get install -y \
 
 ENV LANG en_US.UTF-8
 
+# Rust toolchain for EVEREST_ENABLE_RS_SUPPORT, the same one the CI image gets.
+# Keep RUST_VERSION in sync with MODULE.bazel and .ci/build-kit/docker/Dockerfile.
+# The chmod matters here: the docker user's UID and GID are rewritten below,
+# and that user still has to write both directories.
+ARG RUST_VERSION=1.86.0
+# Must be kept in sync with `everestrs/CMakeLists.txt`.
+ARG CXXBRIDGE_VERSION=1.0.194
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --no-modify-path --profile minimal \
+           --component rustfmt --default-toolchain ${RUST_VERSION} \
+ && cargo install cxxbridge-cmd --locked --version ${CXXBRIDGE_VERSION} \
+ && rm -rf ${CARGO_HOME}/registry ${CARGO_HOME}/git \
+ && chmod -R a+w ${CARGO_HOME} ${RUSTUP_HOME}
 
 
 # EVerest Development Tool - Dependencies

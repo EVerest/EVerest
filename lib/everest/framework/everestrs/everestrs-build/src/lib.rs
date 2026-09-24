@@ -41,7 +41,7 @@ impl Builder {
             .join("generated.rs");
 
         let manifest_path = self.manifest_path.clone();
-        let (out, inputs) = codegen::emit_with_inputs(self.manifest_path, self.everest_root)?;
+        let emitted = codegen::emit_with_inputs(self.manifest_path, self.everest_root)?;
 
         // Cargo replaces its default "rerun if anything in the package changed"
         // with whatever the build script declares, so every YAML the generator
@@ -51,13 +51,26 @@ impl Builder {
         if std::env::var_os("CARGO").is_some() {
             println!("cargo:rerun-if-env-changed=EVEREST_CORE_ROOT");
             println!("cargo:rerun-if-changed={}", manifest_path.display());
-            for input in &inputs {
+            for input in &emitted.dependencies {
                 println!("cargo:rerun-if-changed={}", input.display());
             }
         }
 
+        // Cargo emits no runpath of its own and install(PROGRAMS) does no
+        // RPATH rewriting. This has to be printed from the module's own build
+        // script: a link arg printed by a dependency's build script, everestrs'
+        // included, applies only to that package's targets. Config rustflags
+        // are no substitute: cargo drops them whenever RUSTFLAGS is set.
+        if let Some(rpath) = std::env::var_os("EVEREST_RS_INSTALL_RPATH") {
+            println!("cargo:rerun-if-env-changed=EVEREST_RS_INSTALL_RPATH");
+            println!(
+                "cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN/{}",
+                PathBuf::from(rpath).display()
+            );
+        }
+
         let mut f = std::fs::File::create(&path).context("Could not generate the output file.")?;
-        f.write_all(out.as_bytes())?;
+        f.write_all(emitted.generated.as_bytes())?;
 
         if let Err(_) = Command::new("rustfmt").args(path.to_str()).output() {
             println!("Failed to format code");

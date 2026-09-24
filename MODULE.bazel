@@ -113,6 +113,8 @@ use_repo(pip_deps, "everest-testing_pip_deps")
 
 RUST_EDITION = "2021"
 
+# Keep in sync with RUST_VERSION in .ci/build-kit/docker/Dockerfile and
+# .devcontainer/general-devcontainer/Dockerfile.
 RUST_VERSION = "1.86.0"
 
 RUST_EXTRA_TARGET_TRIPLES = {
