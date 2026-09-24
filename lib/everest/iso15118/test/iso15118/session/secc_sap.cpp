@@ -6,6 +6,7 @@
 
 using namespace iso15118;
 using ResponseCode = message_20::SupportedAppProtocolResponse::ResponseCode;
+namespace dt = message_20::datatypes;
 
 namespace {
 
@@ -68,6 +69,78 @@ SCENARIO("SECC SupportedAppProtocol version matching [V2G2-170][V2G2-172]") {
             REQUIRE(result.response.response_code == ResponseCode::OK_SuccessfulNegotiation);
             REQUIRE(result.response.schema_id.value() == 2);
             REQUIRE(result.selected_namespace.value() == ISO20_DC_PROTOCOL_NAMESPACE);
+        }
+    }
+}
+
+SCENARIO("SECC SupportedAppProtocol namespace follows the offered energy transfer") {
+    const std::vector<ProtocolId> protocols{ProtocolId::ISO15118_20, ProtocolId::ISO15118_2};
+    const std::vector<dt::ServiceCategory> dc_services{dt::ServiceCategory::DC, dt::ServiceCategory::DC_BPT};
+    const std::vector<dt::ServiceCategory> ac_services{dt::ServiceCategory::AC, dt::ServiceCategory::AC_BPT};
+
+    message_20::SupportedAppProtocolRequest ac_first;
+    ac_first.app_protocol.push_back({ISO20_AC_PROTOCOL_NAMESPACE, 1, 0, 1, 1});
+    ac_first.app_protocol.push_back({ISO20_DC_PROTOCOL_NAMESPACE, 1, 0, 2, 2});
+    ac_first.app_protocol.push_back({ISO2_NAMESPACE, 2, 0, 3, 3});
+
+    GIVEN("A DC charger and an EV ranking -20:AC above -20:DC") {
+        const auto result =
+            session::secc_sap::handle_request(ac_first, protocols, dc_services, false, std::nullopt, true);
+        THEN("-20:DC is selected") {
+            REQUIRE(result.response.response_code == ResponseCode::OK_SuccessfulNegotiation);
+            REQUIRE(result.response.schema_id.value() == 2);
+            REQUIRE(result.selected_namespace.value() == ISO20_DC_PROTOCOL_NAMESPACE);
+        }
+    }
+
+    GIVEN("An AC charger and an EV ranking -20:DC above -20:AC") {
+        message_20::SupportedAppProtocolRequest dc_first;
+        dc_first.app_protocol.push_back({ISO20_DC_PROTOCOL_NAMESPACE, 1, 0, 1, 1});
+        dc_first.app_protocol.push_back({ISO20_AC_PROTOCOL_NAMESPACE, 1, 0, 2, 2});
+
+        const auto result =
+            session::secc_sap::handle_request(dc_first, protocols, ac_services, false, std::nullopt, true);
+        THEN("-20:AC is selected") {
+            REQUIRE(result.selected_namespace.value() == ISO20_AC_PROTOCOL_NAMESPACE);
+        }
+    }
+
+    GIVEN("A DC charger and an EV offering -20:AC above ISO 15118-2") {
+        message_20::SupportedAppProtocolRequest req;
+        req.app_protocol.push_back({ISO20_AC_PROTOCOL_NAMESPACE, 1, 0, 1, 1});
+        req.app_protocol.push_back({ISO2_NAMESPACE, 2, 0, 2, 2});
+
+        const auto result = session::secc_sap::handle_request(req, protocols, dc_services, false, std::nullopt, true);
+        THEN("ISO 15118-2 is selected, as it can carry DC") {
+            REQUIRE(result.selected_namespace.value() == ISO2_NAMESPACE);
+        }
+    }
+
+    GIVEN("A DC charger and an EV offering only -20:AC") {
+        const auto req = make_request(ISO20_AC_PROTOCOL_NAMESPACE, 1, 0, 1, 1);
+
+        WHEN("selecting_sap_based_on_energy_service is disabled") {
+            const auto result =
+                session::secc_sap::handle_request(req, protocols, dc_services, false, std::nullopt, true);
+            THEN("-20:AC is still accepted (ISO 15118-20 AMD1)") {
+                REQUIRE(result.response.response_code == ResponseCode::OK_SuccessfulNegotiation);
+                REQUIRE(result.selected_namespace.value() == ISO20_AC_PROTOCOL_NAMESPACE);
+            }
+        }
+
+        WHEN("selecting_sap_based_on_energy_service is enabled") {
+            const auto result =
+                session::secc_sap::handle_request(req, protocols, dc_services, true, std::nullopt, true);
+            THEN("The negotiation fails") {
+                REQUIRE(result.response.response_code == ResponseCode::Failed_NoNegotiation);
+            }
+        }
+    }
+
+    GIVEN("No energy services known yet") {
+        const auto result = session::secc_sap::handle_request(ac_first, protocols, {}, true, std::nullopt, true);
+        THEN("The EV's highest priority is selected") {
+            REQUIRE(result.selected_namespace.value() == ISO20_AC_PROTOCOL_NAMESPACE);
         }
     }
 }
