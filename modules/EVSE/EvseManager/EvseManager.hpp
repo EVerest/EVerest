@@ -370,6 +370,11 @@ private:
     std::atomic<std::chrono::steady_clock::time_point> latest_target_current_low_pass_last_update{};
     std::atomic<double> latest_target_voltage{0.};
     std::atomic<double> latest_target_current{0.};
+    // Ramp to 0 A before an ISO 15118-20 pause in dynamic control mode (see Charger::get_dc_pause_ramp_start()):
+    // which ramp the start current belongs to, and the setpoint it started from.
+    std::mutex dc_pause_ramp_mutex;
+    std::optional<std::chrono::steady_clock::time_point> dc_pause_ramp_start;
+    double dc_pause_ramp_from_A{0.};
     std::atomic<double> last_power_supply_voltage{0.};
     std::atomic<double> last_power_supply_current{0.};
 

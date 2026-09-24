@@ -216,7 +216,15 @@ public:
     void dc_open_contactor_request();
     void dc_renegotiation_started();
 
-    void set_hlc_d20_active();
+    void set_hlc_d20_active(bool dynamic_control_mode);
+
+    // Measured DC output current, for the zero-current check before an ISO 15118-20 pause.
+    void update_dc_present_current(float current_A);
+    // While StoppingCharging handles an ISO 15118-20 pause in dynamic control mode: when the ramp of the DC output
+    // to 0 A started. The caller caps the current setpoint accordingly, down to 0 A for the rest of the state.
+    std::optional<std::chrono::steady_clock::time_point> get_dc_pause_ramp_start();
+    // Rate of that ramp: the normal shutdown rate (IEC 61851-23 CC.3.3, at most 100 A/s).
+    static constexpr double D20_PAUSE_RAMP_AMPERE_PER_SECOND = 100.;
 
     bool stop_charging_on_fatal_error();
     bool entered_fatal_error_state();
@@ -396,6 +404,8 @@ private:
         std::optional<types::units_signed::SignedMeterValue> start_signed_meter_value;
 
         std::atomic_bool hlc_d20_active{false};
+        // ISO 15118-20 dynamic control mode: the EVSE sets the power, not the EV.
+        std::atomic_bool hlc_d20_dynamic_mode{false};
     } shared_context;
 
     struct ConfigContext {
@@ -435,6 +445,7 @@ private:
     // Used by different threads, but requires no complete state machine locking
     std::atomic<float> soft_over_current_tolerance_percent{10.};
     std::atomic<float> soft_over_current_measurement_noise_A{0.5};
+    std::atomic<float> dc_present_current_A{0.};
     std::atomic_bool supports_cp_state_E{false};
     // HLC uses 5 percent signalling. Used both for AC and DC modes.
     std::atomic_bool hlc_use_5percent_current_session;
@@ -502,6 +513,11 @@ private:
         // The EV reconnected to resume a session it had ended with a SessionStop; consumed by ChargingPausedEV.
         bool hlc_session_restarted_by_ev{false};
 
+        // [V2G20-2115]: an ISO 15118-20 pause in dynamic control mode is only notified at 0 kW. Set while
+        // StoppingCharging ramps the output down; pause_notified once EVSENotification=Pause was requested.
+        std::optional<std::chrono::steady_clock::time_point> d20_pause_ramp_start;
+        bool d20_pause_notified{false};
+
     } internal_context;
 
     // main Charger thread
@@ -554,6 +570,10 @@ private:
     // An ISO 15118-20 pause grants the EV NotificationMaxDelay, fixed at 60 s [V2G20-3308], to react before the
     // EVSE may act on its own. Plus a margin for the EV's last charge loop round trip.
     static constexpr int STOPPING_CHARGING_D20_PAUSE_TIMEOUT_MS = 65000;
+    // "No current drawn" [V2G20-2115] is taken as below 1 A. The timeout covers a ramp from 3000 A at
+    // D20_PAUSE_RAMP_AMPERE_PER_SECOND with a margin; a ramp that does not get there ends in the hard stop.
+    static constexpr float D20_PAUSE_ZERO_CURRENT_A = 1.0f;
+    static constexpr int D20_PAUSE_RAMP_TIMEOUT_MS = 35000;
     // Ensures apply_new_target_voltage_current() is called at least every DC_ENFORCE_TARGET_LIMITS_INTERVAL_MS
     // during DC charging. This re-applies EVSE limits to the power supply even when the EV does not send
     // new target values or ignores updated limits from energy management.
