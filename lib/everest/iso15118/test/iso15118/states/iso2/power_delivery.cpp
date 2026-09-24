@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
 #include <iso15118/detail/d2/state/power_delivery.hpp>
@@ -52,8 +52,9 @@ SCENARIO("ISO 15118-2 SECC PowerDelivery handling") {
         req.charge_progress = dt::ChargeProgress::Start;
         req.sa_schedule_tuple_id = 1;
         const auto res = d2::state::handle_request(req, id, false, 1, dt::IsolationLevel::Invalid, false, schedule);
-        THEN("FAILED_ChargingProfileInvalid") {
-            REQUIRE(res.response_code == dt::ResponseCode::FAILED_ChargingProfileInvalid);
+        THEN("OK, ChargingProfile is optional for the EVCC (Table 104)") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.ac_evse_status.has_value());
         }
     }
 
