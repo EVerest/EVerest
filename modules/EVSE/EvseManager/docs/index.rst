@@ -161,12 +161,30 @@ State Transitions
 * ``ChargingPausedEVSE`` -> ``PrepareCharging``: Power available, no EVSE pause and errors cleared.
 * ``StoppingCharging`` -> ``ChargingPausedEV``: EV-initiated pause after stop sequence.
 
+**ISO 15118-20 EVSE pause**
+
+An EVSE pause of an ISO 15118-20 session follows the control mode the EV selected:
+
+* Dynamic control mode: the SECC may only ask for a pause at 0 kW ([V2G20-2115]).
+  ``StoppingCharging`` ramps the DC setpoint down at 100 A/s while the charge loop
+  continues, requests the pause once the measured output current is below 1 A and keeps
+  the setpoint at 0 A until the EV has paused. A ramp that does not reach 0 A within
+  35 s ends in the hard stop.
+* Scheduled control mode: a pause may only be notified while the applied entry of the
+  EV's power profile is 0 kW ([V2G20-1198]). The pause is requested from ``Charging``,
+  the HLC stack holds the notification back and publishes ``pause_notified`` once it
+  has gone out; charging continues until then. A resume in between withdraws the
+  request.
+
+Once notified the EV has ``NotificationMaxDelay``, fixed at 60 s ([V2G20-1850]), to
+pause; ``StoppingCharging`` waits 65 s before the hard stop.
+
 **Stop Conditions**
 
 The transition ``Charging`` -> ``StoppingCharging`` occurs if:
     * Fatal error
     * Deauthorization
-    * EVSE pause requested
+    * EVSE pause requested (ISO 15118-20 scheduled control mode: once notified to the EV)
     * EV unplugged
     * IEC contactor opened
     * No power available (Immediate for AC BASIC; timeout for HLC).
