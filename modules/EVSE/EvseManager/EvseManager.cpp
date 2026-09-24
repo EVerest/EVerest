@@ -1122,6 +1122,7 @@ void EvseManager::ready() {
         r_hlc[0]->subscribe_selected_protocol([this](std::string const& selected_protocol) {
             this->selected_protocol = selected_protocol;
             hlc_link_in_use = true;
+            charger->notify_hlc_session_started_by_ev();
         });
         // switch to DC mode for first session for AC with SoC
         if (config.ac_with_soc) {
