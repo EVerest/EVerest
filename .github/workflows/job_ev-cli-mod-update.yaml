@@ -40,7 +40,7 @@ jobs:
         id: check
         run: |
           set +e
-          /tmp/ev-cli-venv/bin/python tests/ev-cli/check_mod_update.py \
+          /tmp/ev-cli-venv/bin/python applications/utils/scripts/check_mod_update.py \
             --ev-cli /tmp/ev-cli-venv/bin/ev-cli \
             --markdown "${REPORT_NAME}.md" \
             --json "${REPORT_NAME}.json"
