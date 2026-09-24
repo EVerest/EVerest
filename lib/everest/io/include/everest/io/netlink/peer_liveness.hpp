@@ -20,6 +20,9 @@ namespace everest::lib::io::netlink {
  * Neighbour discovery actively probes, so it notices a peer that stopped answering while the PHY still
  * reports carrier (10BASE-T1S with autonegotiation off: PLCA status reflects only the local node).
  * Conservative, since a false positive tears down a working session:
+ * - A peer that has not been alive since the last \ref clear cannot be lost: an EV may ignore neighbour
+ *   solicitations for seconds after link up (bench-found: ~6 s), and a peer that never answers is the
+ *   communication setup timeout's business, not a link loss (V2G10-036).
  * - An empty table is no opinion (the state before the peer sent anything, and after the kernel garbage
  *   collected an idle entry). Exception: a removal carrying NUD_FAILED (the kernel garbage collects failed
  *   entries within seconds) leaves the verdict in place, so a running grace period continues.
@@ -57,9 +60,10 @@ public:
 
     /**
      * @brief Whether the peer counts as gone. Ask when the grace period expires.
-     * @details True when the device had neighbours and none is alive, or when its last neighbour was
-     * removed while NUD_FAILED. NUD_INCOMPLETE counts as lost here although \ref apply arms no grace
-     * period for it: grace is only armed by a NUD_FAILED, so at expiry re-resolution has not succeeded.
+     * @details True when a neighbour has been alive since the last \ref clear, and now the device has
+     * neighbours and none is alive, or its last neighbour was removed while NUD_FAILED. NUD_INCOMPLETE counts as lost
+     * here although \ref apply arms no grace period for it: grace is only armed by a NUD_FAILED, so at expiry
+     * re-resolution has not succeeded.
      * @return True if the peer counts as gone, false otherwise
      */
     bool peer_is_lost() const;
@@ -83,6 +87,8 @@ private:
      * @details Set by \ref apply on such a removal; cleared by a live neighbour, a non-failure removal, or \ref clear.
      */
     bool m_last_entry_failed{false};
+    /// A neighbour has been alive since construction or the last \ref clear.
+    bool m_seen_alive{false};
 };
 
 } // namespace everest::lib::io::netlink

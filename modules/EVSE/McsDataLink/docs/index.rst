@@ -314,6 +314,13 @@ deliberately conservative, because a false positive kills a charging session:
   before the EV has sent anything, and also after the kernel has
   garbage-collected an idle entry - removal of the last entry is explicitly not
   a loss.
+* An EV that has **not been alive yet** on this link cannot be lost. Some EVs
+  ignore neighbour solicitations for seconds after link up (bench-found with an
+  MCS truck: ~6 s) while already sending SDP requests; their entry goes
+  ``NUD_FAILED`` before they ever answer. An EV that never answers is left to
+  the communication setup timeout and its restart routine, not reported as a
+  link loss. The neighbour table is forgotten on every carrier drop, D-LINK
+  command and pause, so each link starts without a peer to lose.
 * ``NUD_STALE``, ``NUD_DELAY``, ``NUD_PROBE`` and ``NUD_PERMANENT`` all count as
   **alive**. The kernel only re-probes when something wants to send, so an idle
   but healthy link legitimately sits in STALE indefinitely.

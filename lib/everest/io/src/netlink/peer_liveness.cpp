@@ -16,9 +16,15 @@ peer_liveness::verdict peer_liveness::apply(neighbor_report const& report) {
 
     // update.alive as well: at the table's cap a live peer's entry may not have been stored.
     if (m_table.any_alive() or update.alive) {
+        m_seen_alive = true;
         m_last_entry_failed = false;
         result.cancel_grace = true;
         result.reachable_mac = update.reachable_mac;
+        return result;
+    }
+
+    if (not m_seen_alive) {
+        // A peer that never answered has not been lost: it may still be starting up. No grace can be running.
         return result;
     }
 
@@ -46,6 +52,9 @@ peer_liveness::verdict peer_liveness::apply(neighbor_report const& report) {
 }
 
 bool peer_liveness::peer_is_lost() const {
+    if (not m_seen_alive) {
+        return false;
+    }
     if (m_last_entry_failed) {
         return true;
     }
@@ -55,6 +64,7 @@ bool peer_liveness::peer_is_lost() const {
 void peer_liveness::clear() {
     m_table.clear();
     m_last_entry_failed = false;
+    m_seen_alive = false;
 }
 
 bool peer_liveness::empty() const {
