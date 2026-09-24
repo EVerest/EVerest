@@ -496,6 +496,8 @@ private:
         // StoppingCharging was entered for a user pause (flag_paused_by_evse), even if resume_charging() has
         // cleared that flag since.
         bool stopping_for_evse_pause{false};
+        // How long StoppingCharging waits for the EV before the hard stop; chosen when the state is entered.
+        int stopping_charging_timeout_ms{STOPPING_CHARGING_TIMEOUT_MS};
 
         // The EV reconnected to resume a session it had ended with a SessionStop; consumed by ChargingPausedEV.
         bool hlc_session_restarted_by_ev{false};
@@ -549,6 +551,9 @@ private:
     static constexpr int WAIT_FOR_ENERGY_IN_AUTHLOOP_TIMEOUT_MS = 5000;
     static constexpr int AC_X1_FALLBACK_TO_NOMINAL_TIMEOUT_MS = 10000;
     static constexpr int STOPPING_CHARGING_TIMEOUT_MS = 20000;
+    // An ISO 15118-20 pause grants the EV NotificationMaxDelay, fixed at 60 s [V2G20-3308], to react before the
+    // EVSE may act on its own. Plus a margin for the EV's last charge loop round trip.
+    static constexpr int STOPPING_CHARGING_D20_PAUSE_TIMEOUT_MS = 65000;
     // Ensures apply_new_target_voltage_current() is called at least every DC_ENFORCE_TARGET_LIMITS_INTERVAL_MS
     // during DC charging. This re-applies EVSE limits to the power supply even when the EV does not send
     // new target values or ignores updated limits from energy management.
