@@ -1122,6 +1122,7 @@ void Charger::run_state_machine() {
                 shared_context.legacy_wakeup_done = false;
 
                 signal_simple_event(types::evse_manager::SessionEventEnum::StoppingCharging);
+                internal_context.stopping_for_evse_pause = shared_context.flag_paused_by_evse;
 
                 if (shared_context.hlc_charging_active) {
                     if (shared_context.hlc_d20_active and shared_context.flag_paused_by_evse) {
@@ -1156,9 +1157,10 @@ void Charger::run_state_machine() {
                 break;
             }
 
-            // Charging is stopped now, move on to paused state
+            // Charging is stopped now, move on to paused state. A pause the user lifted while it was still being
+            // stopped is still an EVSE pause: ChargingPausedEVSE resumes it, ChargingPausedEV would wait for the EV.
             if (not power_available() or shared_context.flag_paused_by_evse or
-                stop_charging_on_fatal_error_internal()) {
+                internal_context.stopping_for_evse_pause or stop_charging_on_fatal_error_internal()) {
                 // Paused was initiated by EVSE, continue to PausedEVSE
                 shared_context.hlc_session_paused_by_evse = shared_context.hlc_charging_active;
                 set_state(EvseState::ChargingPausedEVSE);
