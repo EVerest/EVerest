@@ -109,17 +109,25 @@ contributor prior to submission.
 Labels
 ------
 
-GitHub labels help organize issues and pull requests. EVerest does not yet have
-a standardized label system. When contributing:
+GitHub labels group issues and pull requests by component and by kind of change.
+Pull requests are labeled automatically from their changed paths and from the
+Conventional Commits type in their title, so title your pull request like
+``fix(EvseManager): handle unplug during timed charging``. Automation only adds
+labels; labels set by hand stay in place.
 
-- Browse existing labels in the repository and use them consistently
-- Common labels to look for: ``bug``, ``enhancement``, ``documentation``,
-  ``help-wanted``, ``good-first-issue``
-- Backport workflow: Use ``backport-candidate`` to mark PRs that should be
-  considered for backporting to stable releases. To trigger the automated
-  backport workflow, maintainers can add a label in the format ``backport <branch>`` (e.g. ``backport stable/2026.02``). This will automatically create
-  a cherry-pick PR targeting the specified branch once the original PR is merged. If the cherry-pick does not apply cleanly, the workflow will comment on the
-  original PR and the backport must be performed manually.
+The release related labels are always set by hand:
+
+- ``backport-candidate`` marks PRs that should be considered for backporting to
+  stable releases. To trigger the automated backport workflow, maintainers add a
+  label in the format ``backport <branch>`` (e.g. ``backport stable/2026.02``).
+  This automatically creates a cherry-pick PR targeting the specified branch once
+  the original PR is merged. If the cherry-pick does not apply cleanly, the
+  workflow comments on the original PR and the backport must be performed
+  manually.
+- ``include-in-release`` and ``post-release`` steer the merge window of the
+  upcoming release.
+- ``EVerestAPI changed``, ``EVerestAPI breaking change``, ``experimental`` and
+  ``deprecation`` track changes to the EVerest public API.
 
 If you need a label that doesn't exist, discuss with maintainers before creating it.
 

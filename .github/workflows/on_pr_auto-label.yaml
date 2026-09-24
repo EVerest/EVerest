@@ -1,0 +1,72 @@
+# Labels every pull request by its changed paths (.github/labeler.yml) and by
+# the Conventional Commit type of its title. Labels are only added, never
+# removed. Runs on pull_request_target so fork PRs can be labeled; nothing from
+# the PR is checked out or executed.
+
+name: Label PR
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
+
+concurrency:
+  group: label-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: label pr
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Label by changed paths
+        uses: actions/labeler@v7
+        with:
+          sync-labels: false
+
+      - name: Label by Conventional Commit type
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const typeLabels = {
+              feat: 'enhancement',
+              feature: 'enhancement',
+              fix: 'bug',
+              bugfix: 'bug',
+              hotfix: 'bug',
+              docs: 'documentation',
+              doc: 'documentation',
+              ci: 'CI/CD',
+              test: 'testing',
+              tests: 'testing',
+              chore: 'chore',
+              refactor: 'refactor',
+              perf: 'performance',
+            };
+            // Optional "[Backport stable/2026.02] " prefix, then type(scope)!: subject
+            const match = context.payload.pull_request.title
+              .match(/^(?:\[[^\]]*\]\s*)?([A-Za-z]+)(?:\(([^)]*)\))?!?:/);
+            if (!match) {
+              core.info('Title does not follow Conventional Commits, no type label');
+              return;
+            }
+            const type = match[1].toLowerCase();
+            const label = typeLabels[type];
+            if (!label) {
+              core.info(`No label for type "${type}"`);
+              return;
+            }
+            if (context.payload.pull_request.labels.some((l) => l.name === label)) {
+              return;
+            }
+            await github.rest.issues.addLabels({
+              ...context.repo,
+              issue_number: context.payload.pull_request.number,
+              labels: [label],
+            });
