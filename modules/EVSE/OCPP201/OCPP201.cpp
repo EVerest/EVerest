@@ -1771,7 +1771,19 @@ void OCPP201::process_deauthorized(const int32_t evse_id, const int32_t connecto
                                    const types::evse_manager::SessionEvent& session_event) {
     auto transaction_data = this->transaction_handler->get_transaction_data(evse_id);
     if (transaction_data != nullptr) {
-        transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::StopAuthorized;
+        const auto ev_connection_timeout = this->charge_point->request_value<int32_t>(
+            ocpp::v2::ControllerComponents::TxCtrlr, ocpp::v2::Variable{EV_CONNECTION_TIMEOUT_VAR_NAME},
+            ocpp::v2::AttributeEnum::Actual);
+        // E03.FR.05
+        if (ev_connection_timeout.status == ocpp::v2::GetVariableStatusEnum::Accepted and
+            ev_connection_timeout.value.has_value() and
+            this->transaction_handler->is_ev_connect_timeout(
+                evse_id, std::chrono::seconds(ev_connection_timeout.value.value()))) {
+            transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::EVConnectTimeout;
+            transaction_data->stop_reason = ocpp::v2::ReasonEnum::Timeout;
+        } else {
+            transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::StopAuthorized;
+        }
     }
     const auto tx_event_effect = this->transaction_handler->submit_event(evse_id, TxEvent::DEAUTHORIZED);
     this->process_tx_event_effect(evse_id, tx_event_effect, session_event);

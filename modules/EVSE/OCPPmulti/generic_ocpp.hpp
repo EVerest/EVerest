@@ -429,6 +429,7 @@ protected:
                          const std::shared_ptr<module::TransactionData>& transaction_data) override;
     std::shared_ptr<module::TransactionData> transaction_data(std::int32_t evse_id) override;
     module::TxEventEffect transaction_event(std::int32_t evse_id, module::TxEvent tx_event) override;
+    bool transaction_is_ev_connect_timeout(std::int32_t evse_id, std::chrono::seconds ev_connection_timeout) override;
     void transaction_reset(std::int32_t evse_id) override;
     void update_evcc_id_token(std::int32_t evse, ocpp::v2::IdToken& id_token) override;
 
