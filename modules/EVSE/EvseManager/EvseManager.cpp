@@ -2520,6 +2520,12 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
         current = std::abs(current);
     }
 
+    // Power supplies switch their output off at 0 A, which would abort precharge.
+    if (power_supply_DC_charging_phase == types::power_supply_DC::ChargingPhase::PreCharge and
+        current < PRECHARGE_MIN_CURRENT_A) {
+        current = PRECHARGE_MIN_CURRENT_A;
+    }
+
     auto caps = get_powersupply_capabilities();
 
     if (((config.hack_allow_bpt_with_iso2 or sae_bidi_active or session_is_iso_d20_dc_bpt()) and
