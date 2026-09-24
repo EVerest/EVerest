@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "power_supply_DCImpl.hpp"
 #include <iomanip>
@@ -147,11 +147,14 @@ void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
     if (mode == types::power_supply_DC::Mode::Off) {
         mod->acdc->switch_on_off(false);
     } else if (mode == types::power_supply_DC::Mode::Export) {
-        mod->acdc->switch_on_off(true);
+        mod->acdc->switch_on_off(not off_for_zero_current);
     } else if (mode == types::power_supply_DC::Mode::Import) {
         mod->acdc->switch_on_off(true);
     } else if (mode == types::power_supply_DC::Mode::Fault) {
         mod->acdc->switch_on_off(false);
+    }
+    if (mode != types::power_supply_DC::Mode::Export) {
+        off_for_zero_current = false;
     }
     this->mode.store(mode);
     this->phase.store(phase);
@@ -159,6 +162,15 @@ void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
 
 void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double& current) {
     std::lock_guard<std::mutex> command_lock(command_mutex);
+    if (current <= 0. and mode.load() == types::power_supply_DC::Mode::Export) {
+        exportCurrentLimit.store(0.);
+        if (not off_for_zero_current) {
+            EVLOG_info << "Infy: 0 A requested, switching DC output off";
+            off_for_zero_current = true;
+            mod->acdc->switch_on_off(false);
+        }
+        return;
+    }
     {
         std::lock_guard<std::mutex> caps_lock(caps_mutex);
         if (voltage > caps.max_export_voltage_V)
@@ -186,6 +198,14 @@ void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double
                    << exportCurrentLimit.load() << "A (but no active modules detected)";
     }
     mod->acdc->set_voltage_current(exportVoltage.load(), exportCurrentLimit.load());
+
+    if (off_for_zero_current) {
+        off_for_zero_current = false;
+        if (mode.load() == types::power_supply_DC::Mode::Export) {
+            EVLOG_info << "Infy: current above 0 A requested, switching DC output on";
+            mod->acdc->switch_on_off(true);
+        }
+    }
 };
 
 void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double& current) {
