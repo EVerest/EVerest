@@ -109,11 +109,15 @@ contributor prior to submission.
 Labels
 ------
 
-GitHub labels group issues and pull requests by component and by kind of change.
-Pull requests are labeled automatically from their changed paths and from the
-Conventional Commits type in their title, so title your pull request like
-``fix(EvseManager): handle unplug during timed charging``. Automation only adds
-labels; labels set by hand stay in place.
+GitHub labels group issues and pull requests by component, by kind of change and
+by size. Pull requests are labeled automatically from their changed paths and
+from the Conventional Commits type in their title, so title your pull request
+like ``fix(EvseManager): handle unplug during timed charging``. Automation only
+adds these labels; labels set by hand stay in place.
+
+The ``size/XS`` to ``size/XXL`` label is the exception: it is recomputed on
+every push from the number of changed lines, ignoring vendored and generated
+code, so there is no point in setting it by hand.
 
 The release related labels are always set by hand:
 
