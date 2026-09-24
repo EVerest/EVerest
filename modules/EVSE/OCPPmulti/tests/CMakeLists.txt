@@ -66,12 +66,17 @@ target_compile_definitions(${TEST_TARGET_NAME}
     UNIT_TESTS
 )
 
+# Relative to the WORKING_DIRECTORY, so the compile flags don't differ between build trees.
+file(RELATIVE_PATH LIBOCPP_COMPONENT_CONFIG_DIR ${CMAKE_CURRENT_BINARY_DIR}
+    ${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/common/component_config)
+file(RELATIVE_PATH LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR ${CMAKE_CURRENT_BINARY_DIR}
+    ${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/common/device_model_migrations)
 set_property(
     SOURCE charge_point_config_factory_v16_tests.cpp
     APPEND
     PROPERTY COMPILE_DEFINITIONS
-        LIBOCPP_COMPONENT_CONFIG_DIR="${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/common/component_config"
-        LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR="${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/common/device_model_migrations"
+        LIBOCPP_COMPONENT_CONFIG_DIR="${LIBOCPP_COMPONENT_CONFIG_DIR}"
+        LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR="${LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR}"
 
 )
 
@@ -129,5 +134,5 @@ add_custom_target(${TEST_TARGET_NAME}_CONFIG
 
 add_dependencies(${TEST_TARGET_NAME} ${TEST_TARGET_NAME}_CONFIG)
 
-add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
+add_test(NAME ${TEST_TARGET_NAME} COMMAND ${TEST_TARGET_NAME} WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 ev_register_test_target(${TEST_TARGET_NAME})
