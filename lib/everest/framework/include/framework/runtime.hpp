@@ -140,6 +140,44 @@ struct VersionInformation {
     std::string git_version;     ///< Git version containing tag and branch information
 };
 
+class LocalBus;
+
+/// Builds the adapter through which generated module code reaches \p everest. \p local may be null.
+ModuleAdapter make_module_adapter(Everest& everest, const std::string& module_id, std::shared_ptr<LocalBus> local);
+
+/// One running module instance: the framework-side state between "config is known" and "module has shut down".
+/// Used by the per-process ModuleLoader and by hosts that run several modules in one process. The steps are
+/// separate so a host can register every module before initializing any of them.
+class ModuleRuntime {
+public:
+    ModuleRuntime(std::string module_id, const Config& config, const RuntimeSettings& runtime_settings,
+                  std::shared_ptr<MQTTAbstraction> mqtt, ModuleCallbacks callbacks,
+                  std::shared_ptr<LocalBus> local = nullptr);
+    ModuleRuntime(const ModuleRuntime&) = delete;
+    ModuleRuntime& operator=(const ModuleRuntime&) = delete;
+
+    /// Connects the framework side; false when the transport is unreachable.
+    bool connect();
+    /// Hands the adapter to the module, collects its provided commands and registers them.
+    void register_module();
+    /// Passes configuration and module info to the module and runs its init().
+    void init_module();
+    /// Registers the ready and shutdown handlers and signals readiness to the manager.
+    void start();
+    /// Blocks until the transport main loop ends, which happens after shutdown.
+    void wait();
+
+    Everest& everest();
+
+private:
+    std::string m_module_id;
+    const Config& m_config;
+    const RuntimeSettings& m_runtime_settings;
+    Everest m_everest;
+    ModuleCallbacks m_callbacks;
+    std::shared_ptr<LocalBus> m_local;
+};
+
 class ModuleLoader {
 private:
     std::unique_ptr<RuntimeSettings> m_runtime_settings;

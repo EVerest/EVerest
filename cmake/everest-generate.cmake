@@ -698,12 +698,25 @@ function (ev_add_cpp_module MODULE_NAME)
 
             add_dependencies(generate_cpp_files ld-ev_${MODULE_NAME})
 
-            add_executable(${MODULE_NAME})
+            if(EVEREST_BUILD_MODULE_PLUGINS)
+                add_library(${MODULE_NAME} MODULE)
 
-            set_target_properties(${MODULE_NAME}
-                PROPERTIES
-                    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${MODULE_NAME}"
-            )
+                set_target_properties(${MODULE_NAME}
+                    PROPERTIES
+                        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${MODULE_NAME}"
+                        PREFIX ""
+                        OUTPUT_NAME ${MODULE_NAME}
+                )
+
+                target_compile_definitions(${MODULE_NAME} PRIVATE LD_EV_EXCLUDE_MAIN)
+            else()
+                add_executable(${MODULE_NAME})
+
+                set_target_properties(${MODULE_NAME}
+                    PROPERTIES
+                        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${MODULE_NAME}"
+                )
+            endif()
 
             target_include_directories(${MODULE_NAME}
                 PRIVATE
@@ -736,9 +749,15 @@ function (ev_add_cpp_module MODULE_NAME)
 
             ev_register_module_target(${MODULE_NAME})
 
-            install(TARGETS ${MODULE_NAME}
-                DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"
-            )
+            if(EVEREST_BUILD_MODULE_PLUGINS)
+                install(TARGETS ${MODULE_NAME}
+                    LIBRARY DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"
+                )
+            else()
+                install(TARGETS ${MODULE_NAME}
+                    DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"
+                )
+            endif()
 
             install(FILES ${MODULE_PATH}/manifest.yaml
                 DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"

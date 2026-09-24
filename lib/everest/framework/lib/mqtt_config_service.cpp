@@ -293,20 +293,32 @@ ConfigServiceClient::ConfigServiceClient(std::shared_ptr<MQTTAbstraction> mqtt_a
     m_mqtt_abstraction(mqtt_abstraction), m_origin(module_id), m_module_names(module_names) {
 }
 
+ConfigServiceClient::ConfigServiceClient(std::shared_ptr<ConfigServiceTransport> transport,
+                                         const std::string& module_id,
+                                         const std::map<std::string, std::string, std::less<>>& module_names) :
+    m_transport(std::move(transport)), m_origin(module_id), m_module_names(module_names) {
+}
+
+Response ConfigServiceClient::send_request(const Request& request) {
+    if (m_transport) {
+        return m_transport->request(request);
+    }
+    MQTTRequest mqtt_request;
+    mqtt_request.response_topic =
+        fmt::format("{}modules/{}/response", m_mqtt_abstraction->get_everest_prefix(), request.origin);
+    mqtt_request.request_topic = fmt::format("{}config/request", m_mqtt_abstraction->get_everest_prefix());
+    mqtt_request.request_data = json(request).dump();
+    return m_mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
+}
+
 std::map<ModuleIdType, everest::config::ModuleConfigurationParameters> ConfigServiceClient::get_module_configs() {
     Request get_request;
     get_request.type = Type::Get;
     get_request.request = GetRequest{GetType::All};
     get_request.origin = m_origin;
 
-    MQTTRequest mqtt_request;
-    mqtt_request.response_topic =
-        fmt::format("{}modules/{}/response", m_mqtt_abstraction->get_everest_prefix(), get_request.origin);
-    mqtt_request.request_topic = fmt::format("{}config/request", m_mqtt_abstraction->get_everest_prefix());
-    mqtt_request.request_data = json(get_request).dump();
-
     try {
-        Response response = m_mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
+        Response response = send_request(get_request);
         if (response.status != ResponseStatus::Ok) {
             EVLOG_error << "Could not get module configs via MQTT";
             return {};
@@ -335,14 +347,8 @@ std::map<std::string, ModuleTierMappings> ConfigServiceClient::get_mappings() {
     get_request.request = GetRequest{GetType::AllMappings};
     get_request.origin = m_origin;
 
-    MQTTRequest mqtt_request;
-    mqtt_request.response_topic =
-        fmt::format("{}modules/{}/response", m_mqtt_abstraction->get_everest_prefix(), get_request.origin);
-    mqtt_request.request_topic = fmt::format("{}config/request", m_mqtt_abstraction->get_everest_prefix());
-    mqtt_request.request_data = json(get_request).dump();
-
     try {
-        Response response = m_mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
+        Response response = send_request(get_request);
         if (response.status != ResponseStatus::Ok) {
             EVLOG_error << "Could not get mappings configs via MQTT";
             return {};
@@ -375,13 +381,7 @@ ConfigServiceClient::set_config_value(const everest::config::ConfigurationParame
     request.request = set_request;
 
     try {
-        MQTTRequest mqtt_request;
-        mqtt_request.response_topic =
-            fmt::format("{}modules/{}/response", m_mqtt_abstraction->get_everest_prefix(), request.origin);
-        mqtt_request.request_topic = fmt::format("{}config/request", m_mqtt_abstraction->get_everest_prefix());
-        mqtt_request.request_data = json(request).dump();
-
-        const Response response = m_mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
+        const Response response = send_request(request);
         result.status = response.status;
         result.status_info = response.status_info;
         if (response.status == ResponseStatus::Ok) {
@@ -412,12 +412,7 @@ ConfigServiceClient::get_config_value(const everest::config::ConfigurationParame
     request.request = get_request;
 
     try {
-        MQTTRequest mqtt_request;
-        mqtt_request.response_topic =
-            fmt::format("{}modules/{}/response", m_mqtt_abstraction->get_everest_prefix(), request.origin);
-        mqtt_request.request_topic = fmt::format("{}config/request", m_mqtt_abstraction->get_everest_prefix());
-        mqtt_request.request_data = json(request).dump();
-        const Response response = m_mqtt_abstraction->get(mqtt_request, mqtt_get_config_retries);
+        const Response response = send_request(request);
         result.status = response.status;
         result.status_info = response.status_info;
         if (response.status == ResponseStatus::Ok) {
@@ -439,7 +434,10 @@ void ConfigServiceClient::register_config_change_handler(const std::string& impl
                                                          ConfigChangeHandler handler) {
     const std::lock_guard<std::mutex> lock(m_change_callbacks_mutex);
 
-    if (m_change_callbacks.empty()) {
+    if (m_change_callbacks.empty() and m_transport) {
+        m_transport->register_set_handler(
+            m_origin, [this](const SetRequest& set_request) { return apply_set_request(set_request); });
+    } else if (m_change_callbacks.empty()) {
         // subscribe to the MQTT topic
         const auto mqtt_handler = [this](const std::string& /*topic*/, const nlohmann::json& data) {
             mqtt_set_request(data);
@@ -457,13 +455,12 @@ void ConfigServiceClient::register_config_change_handler(const std::string& impl
     m_change_callbacks[impl_id].insert_or_assign(std::string(param_name), std::move(handler));
 }
 
-void ConfigServiceClient::mqtt_set_request(const nlohmann::json& data) {
+Response ConfigServiceClient::apply_set_request(const SetRequest& set_request) {
     Response response;
     response.type = Type::Set;
     SetResponse set_response;
 
     try {
-        SetRequest set_request = data;
         const auto& name = set_request.identifier.configuration_parameter_name;
 
         // Copy the handler out under the lock and invoke it outside of it: the callback is
@@ -502,6 +499,20 @@ void ConfigServiceClient::mqtt_set_request(const nlohmann::json& data) {
     }
 
     response.response = set_response;
+    return response;
+}
+
+void ConfigServiceClient::mqtt_set_request(const nlohmann::json& data) {
+    Response response;
+    try {
+        const SetRequest set_request = data;
+        response = apply_set_request(set_request);
+    } catch (const std::exception& e) {
+        response.type = Type::Set;
+        response.status = ResponseStatus::Error;
+        response.status_info = std::string("Exception in config change handler: ") + e.what();
+        response.response = SetResponse{};
+    }
 
     // Publish response back to manager using the existing Response type
     const std::string topic =
@@ -509,6 +520,83 @@ void ConfigServiceClient::mqtt_set_request(const nlohmann::json& data) {
 
     MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, response};
     m_mqtt_abstraction->publish(topic, payload, QOS::QOS2);
+}
+
+Response handle_config_request(const Request& request, ConfigServiceInterface& config_svc) {
+    Response response;
+    response.status = ResponseStatus::Error;
+    response.type = request.type;
+
+    const auto module_configs_ptr = config_svc.get_active_module_configurations();
+    const auto& module_configs = *module_configs_ptr;
+
+    if (request.type == Type::Get) {
+        const GetRequest get_request = std::get<GetRequest>(request.request);
+        if (module_configs.find(request.origin) == module_configs.end()) {
+            // Reply explicitly (like the Set path does): without a reply the requesting
+            // client would block until its timeout. Error responses carry no type/payload.
+            response.type.reset();
+            response.status = ResponseStatus::Error;
+            response.status_info = fmt::format("Unknown origin module: {}", request.origin);
+        } else if (get_request.type == GetType::Module) {
+            response.response = handle_get_module_config(request.origin, module_configs);
+            response.status = ResponseStatus::Ok;
+        } else if (get_request.type == GetType::Value) {
+            response = handle_get_config_value(get_request, request.origin, module_configs);
+        } else if (get_request.type == GetType::All) {
+            response.response = handle_get_all_configs(request.origin, module_configs);
+            response.status = ResponseStatus::Ok;
+        } else if (get_request.type == GetType::AllMappings) {
+            response.response = handle_get_all_mappings(request.origin, module_configs);
+            response.status = ResponseStatus::Ok;
+        }
+    } else if (request.type == Type::Set) {
+        auto set_request = std::get<SetRequest>(request.request);
+        response = handle_set_request(set_request, request.origin, module_configs, config_svc);
+    }
+    return response;
+}
+
+LocalConfigService::LocalConfigService(ConfigServiceInterface& config_svc) : m_config_svc(config_svc) {
+}
+
+Response LocalConfigService::request(const Request& request) {
+    try {
+        return handle_config_request(request, m_config_svc);
+    } catch (const std::exception& e) {
+        EVLOG_error << "Exception during handling of config request from " << request.origin << ": " << e.what();
+        Response error_response;
+        error_response.status = ResponseStatus::Error;
+        error_response.status_info = std::string("Exception during handling of request: ") + e.what();
+        return error_response;
+    }
+}
+
+void LocalConfigService::register_set_handler(const std::string& module_id, SetHandler handler) {
+    const std::lock_guard<std::mutex> lock(m_mutex);
+    m_set_handlers.insert_or_assign(module_id, std::move(handler));
+}
+
+std::optional<SetResponse>
+LocalConfigService::set_module_parameter(const everest::config::ConfigurationParameterIdentifier& cfg_param_id,
+                                         const std::string& value) {
+    SetHandler handler;
+    {
+        const std::lock_guard<std::mutex> lock(m_mutex);
+        const auto it = m_set_handlers.find(cfg_param_id.module_id);
+        if (it == m_set_handlers.end()) {
+            return std::nullopt;
+        }
+        handler = it->second;
+    }
+    SetRequest set_request;
+    set_request.identifier = cfg_param_id;
+    set_request.value = value;
+    const auto response = handler(set_request);
+    if (response.status == ResponseStatus::Ok and response.type == Type::Set) {
+        return std::get<SetResponse>(response.response);
+    }
+    return std::nullopt;
 }
 
 MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstraction,
@@ -526,37 +614,9 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
         std::optional<std::string> response_topic;
         try {
             Request request = data;
-            response.type = request.type;
             response_topic =
                 fmt::format("{}modules/{}/response", mqtt_abstraction.get_everest_prefix(), request.origin);
-
-            const auto module_configs_ptr = config_svc.get_active_module_configurations();
-            const auto& module_configs = *module_configs_ptr;
-
-            if (request.type == Type::Get) {
-                const GetRequest get_request = std::get<GetRequest>(request.request);
-                if (module_configs.find(request.origin) == module_configs.end()) {
-                    // Reply explicitly (like the Set path does): without a reply the requesting
-                    // client would block until its timeout. Error responses carry no type/payload.
-                    response.type.reset();
-                    response.status = ResponseStatus::Error;
-                    response.status_info = fmt::format("Unknown origin module: {}", request.origin);
-                } else if (get_request.type == GetType::Module) {
-                    response.response = handle_get_module_config(request.origin, module_configs);
-                    response.status = ResponseStatus::Ok;
-                } else if (get_request.type == GetType::Value) {
-                    response = handle_get_config_value(get_request, request.origin, module_configs);
-                } else if (get_request.type == GetType::All) {
-                    response.response = handle_get_all_configs(request.origin, module_configs);
-                    response.status = ResponseStatus::Ok;
-                } else if (get_request.type == GetType::AllMappings) {
-                    response.response = handle_get_all_mappings(request.origin, module_configs);
-                    response.status = ResponseStatus::Ok;
-                }
-            } else if (request.type == Type::Set) {
-                auto set_request = std::get<SetRequest>(request.request);
-                response = handle_set_request(set_request, request.origin, module_configs, config_svc);
-            }
+            response = handle_config_request(request, config_svc);
 
             MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, response};
             mqtt_abstraction.publish(response_topic.value(), payload, QOS::QOS2);

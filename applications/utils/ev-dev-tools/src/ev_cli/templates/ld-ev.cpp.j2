@@ -1,6 +1,6 @@
 {% from "helper_macros.j2" import print_template_info, var_to_cpp, print_spdx_line %}
 {{ print_spdx_line('Apache-2.0') }}
-{{ print_template_info('5') }}
+{{ print_template_info('6') }}
 
 #include "{{ info.ld_ev_header }}"
 
@@ -13,10 +13,13 @@
 #include "{{ impl.class_header }}"
 {% endfor %}
 
+#include <framework/module_plugin.hpp>
 #include <framework/runtime.hpp>
 #include <utils/types.hpp>
 
 #include <everest/project_info.hpp>
+
+#include <memory>
 
 {% if info.enable_global_errors %}
 #include <utils/error/error_manager_req_global.hpp>
@@ -24,51 +27,106 @@
 {% endif %}
 namespace module {
 
-// FIXME (aw): could this way of keeping static variables be changed somehow?
-static Everest::ModuleAdapter adapter {};
-static Everest::PtrContainer<{{info.class_name }}> mod_ptr {};
+// all state of one instance of this module; the declaration order is the construction order
+class ModuleInstance final : public Everest::ModulePluginInstance {
+public:
+    Everest::ModuleAdapter adapter{};
+    Everest::PtrContainer<{{ info.class_name }}> mod_ptr{};
 
-// per module configs
-{# FIXME (aw): instead of being static, this could also be inside a map #}
+    // per implementation configs
 {% for impl in provides %}
 {% if impl.rwconfig|length > 0 %}
-static {{ impl.id }}::RwConf {{ impl.id }}_rwconfig;
-static {{ impl.id }}::Conf {{ impl.id }}_config({{ impl.id }}_rwconfig);
-// pointer to the concrete implementation, set in everest_register(), so config change
-// handlers can be registered without casting the module's base class pointer
-static {{ impl.id }}::{{ impl.class_name }}* {{ impl.id }}_impl_p{nullptr};
+    {{ impl.id }}::RwConf {{ impl.id }}_rwconfig{};
+    {{ impl.id }}::Conf {{ impl.id }}_config{ {{- impl.id }}_rwconfig};
+    // pointer to the concrete implementation, set in everest_register(), so config change
+    // handlers can be registered without casting the module's base class pointer
+    {{ impl.id }}::{{ impl.class_name }}* {{ impl.id }}_impl_p{nullptr};
 {% else %}
-static {{ impl.id }}::Conf {{ impl.id }}_config;
+    {{ impl.id }}::Conf {{ impl.id }}_config{};
 {% endif %}
 {% endfor %}
 {% if info.module_rwconfig|length > 0 %}
-static RwConf module_rwconf;
-static Conf module_conf(module_rwconf);
+    RwConf module_rwconf{};
+    Conf module_conf{module_rwconf};
 {% else %}
-static Conf module_conf;
+    Conf module_conf{};
 {% endif %}
-static ModuleInfo module_info;
+    ModuleInfo module_info{};
+
+{% if info.enable_external_mqtt %}
+    Everest::MqttProvider mqtt_provider{adapter};
+{% endif %}
+    Everest::TelemetryProvider telemetry_provider{adapter};
+
+    // declared last so it is destroyed first, while everything it references still exists
+    std::unique_ptr<{{ info.class_name }}> module;
+
+    void register_module_adapter(Everest::ModuleAdapter module_adapter);
+    std::vector<Everest::cmd> everest_register(const RequirementInitialization& requirement_init);
+
+    Everest::ModuleCallbacks callbacks() override {
+        return Everest::ModuleCallbacks(
+            [this](Everest::ModuleAdapter module_adapter) { register_module_adapter(std::move(module_adapter)); },
+            [this](const RequirementInitialization& requirement_init) { return everest_register(requirement_init); },
+            [this](ModuleConfigs module_configs, const ModuleInfo& info) {
+                LdEverest::init(*this, std::move(module_configs), info);
+            },
+            [this]() { LdEverest::ready(*this); }, [this]() { LdEverest::shutdown(*this); });
+    }
+};
+
+namespace {
+// The instance the framework entered last. Instances of one module are brought up sequentially, so free functions
+// called during that bring-up resolve to the right instance. Calls from module-owned threads made after another
+// instance was entered resolve to that other instance.
+ModuleInstance* g_current_instance{nullptr};
+} // namespace
+
+ModuleInstance& default_instance() {
+    static ModuleInstance instance;
+    return instance;
+}
+
+ModuleInstance& current_instance() {
+    if (g_current_instance != nullptr) {
+        return *g_current_instance;
+    }
+    return default_instance();
+}
 
 {% if info.enable_global_errors %}
 void subscribe_global_all_errors(
     const Everest::error::ErrorCallback& callback,
     const Everest::error::ErrorCallback& clear_callback
 ) {
-    adapter.get_global_error_manager()->subscribe_global_all_errors(callback, clear_callback);
+    current_instance().adapter.get_global_error_manager()->subscribe_global_all_errors(callback, clear_callback);
 }
 
 std::shared_ptr<Everest::error::ErrorStateMonitor> get_global_error_state_monitor() {
-    return adapter.get_global_error_state_monitor();
+    return current_instance().adapter.get_global_error_state_monitor();
 }
 
 {% endif %}
-
 std::shared_ptr<Everest::config::ConfigServiceClient> get_config_service_client() {
-    return adapter.get_config_service_client();
+    return current_instance().adapter.get_config_service_client();
 }
 
 void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
+    init(default_instance(), std::move(module_configs), mod_info);
+}
+
+void LdEverest::ready() {
+    ready(default_instance());
+}
+
+void LdEverest::shutdown() {
+    shutdown(default_instance());
+}
+
+void LdEverest::init(ModuleInstance& inst, ModuleConfigs module_configs, const ModuleInfo& mod_info) {
     using namespace Everest::config;
+
+    g_current_instance = &inst;
 
     EVLOG_debug << "init() called on module {{ info.name }}";
 
@@ -76,21 +134,21 @@ void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
     {% for impl in provides %}
     auto {{ impl.id }}_config_input = std::move(module_configs["{{ impl.id }}"]);
     {% for item in impl.config %}
-    {{ impl.id }}_config.{{ item.name }} = std::get<{{ item.cpp_type }}>({{ impl.id }}_config_input["{{ item.name }}"]);
+    inst.{{ impl.id }}_config.{{ item.name }} = std::get<{{ item.cpp_type }}>({{ impl.id }}_config_input["{{ item.name }}"]);
     {% endfor %}
     {% for item in impl.rwconfig %}
-    {{ impl.id }}_rwconfig.{{ item.name }} = std::get<{{ item.cpp_type }}>({{ impl.id }}_config_input["{{ item.name }}"]);
+    inst.{{ impl.id }}_rwconfig.{{ item.name }} = std::get<{{ item.cpp_type }}>({{ impl.id }}_config_input["{{ item.name }}"]);
     {% endfor %}
     {% endfor %}
 
     {% for item in info.module_config %}
-    module_conf.{{ item.name }} = std::get<{{ item.cpp_type }}>(module_configs["!module"]["{{ item.name }}"]);
+    inst.module_conf.{{ item.name }} = std::get<{{ item.cpp_type }}>(module_configs["!module"]["{{ item.name }}"]);
     {% endfor %}
     {% for item in info.module_rwconfig %}
-    module_rwconf.{{ item.name }} = std::get<{{ item.cpp_type }}>(module_configs["!module"]["{{ item.name }}"]);
+    inst.module_rwconf.{{ item.name }} = std::get<{{ item.cpp_type }}>(module_configs["!module"]["{{ item.name }}"]);
     {% endfor %}
 
-    module_info = mod_info;
+    inst.module_info = mod_info;
 
     {% set config_client_was_created = namespace(value=false) %}
 
@@ -99,19 +157,19 @@ void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
     {% if loop.first %}
     // register runtime config change handlers for rw parameters for implementations
     {% if not config_client_was_created.value %}
-    auto config_client = adapter.get_config_service_client();
+    auto config_client = inst.adapter.get_config_service_client();
     {% set config_client_was_created.value = true %}
     {% endif %}
     if (config_client) {
     {% endif %}
         config_client->register_config_change_handler("{{ impl.id }}", "{{ item.name }}",
-            [](const std::string& new_value) -> Everest::config::ConfigChangeResult {
+            [&inst](const std::string& new_value) -> Everest::config::ConfigChangeResult {
     {% if item.cpp_type == "std::string" %}
-                return {{ impl.id }}_impl_p->on_{{ item.name }}_changed(new_value);
+                return inst.{{ impl.id }}_impl_p->on_{{ item.name }}_changed(new_value);
     {% else %}
                 {# fully qualified: a module-namespace "conversions" alias (e.g. in OCPP.hpp) would otherwise shadow the using-directive above #}
                 const auto typed_value = Everest::config::conversions::ConfigFromString<{{ item.cpp_type }}>(new_value);
-                return {{ impl.id }}_impl_p->on_{{ item.name }}_changed(typed_value);
+                return inst.{{ impl.id }}_impl_p->on_{{ item.name }}_changed(typed_value);
     {% endif %}
             });
     {% if loop.last %}
@@ -124,18 +182,18 @@ void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
     {% if loop.first %}
     {% if not config_client_was_created.value %}
     // register runtime config change handlers for rw parameters
-    auto config_client = adapter.get_config_service_client();
+    auto config_client = inst.adapter.get_config_service_client();
     {% endif %}
     if (config_client) {
     {% endif %}
         config_client->register_config_change_handler("!module", "{{ item.name }}",
-            [](const std::string& new_value) -> Everest::config::ConfigChangeResult {
+            [&inst](const std::string& new_value) -> Everest::config::ConfigChangeResult {
     {% if item.cpp_type == "std::string" %}
-                return mod_ptr->on_{{ item.name }}_changed(new_value);
+                return inst.mod_ptr->on_{{ item.name }}_changed(new_value);
     {% else %}
                 {# fully qualified: a module-namespace "conversions" alias (e.g. in OCPP.hpp) would otherwise shadow the using-directive above #}
                 const auto typed_value = Everest::config::conversions::ConfigFromString<{{ item.cpp_type }}>(new_value);
-                return mod_ptr->on_{{ item.name }}_changed(typed_value);
+                return inst.mod_ptr->on_{{ item.name }}_changed(typed_value);
     {% endif %}
             });
     {% if loop.last %}
@@ -143,24 +201,37 @@ void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
     {% endif %}
     {% endfor %}
 
-    mod_ptr->init();
+    inst.mod_ptr->init();
 }
 
-void LdEverest::ready() {
+void LdEverest::ready(ModuleInstance& inst) {
+    g_current_instance = &inst;
     EVLOG_debug << "ready() called on module {{ info.name }}";
-    mod_ptr->ready();
+    inst.mod_ptr->ready();
 }
 
-void LdEverest::shutdown() {
+void LdEverest::shutdown(ModuleInstance& inst) {
+    g_current_instance = &inst;
     EVLOG_debug << "shutdown() called on module {{ info.name }}";
-    mod_ptr->shutdown();
+    inst.mod_ptr->shutdown();
 }
 
 void register_module_adapter(Everest::ModuleAdapter module_adapter) {
-    adapter = std::move(module_adapter);
+    default_instance().register_module_adapter(std::move(module_adapter));
 }
 
 std::vector<Everest::cmd> everest_register(const RequirementInitialization& requirement_init) {
+    return default_instance().everest_register(requirement_init);
+}
+
+void ModuleInstance::register_module_adapter(Everest::ModuleAdapter module_adapter) {
+    g_current_instance = this;
+    adapter = std::move(module_adapter);
+}
+
+std::vector<Everest::cmd> ModuleInstance::everest_register(const RequirementInitialization& requirement_init) {
+    g_current_instance = this;
+
     EVLOG_debug << "everest_register() called on module {{ info.name }}";
 
     adapter.check_complete();
@@ -205,12 +276,7 @@ std::vector<Everest::cmd> everest_register(const RequirementInitialization& requ
         (void) requirement_init; // no requirements -> unused requirement initialization
     {% endfor %}
 
-    {% if info.enable_external_mqtt %}
-    static Everest::MqttProvider mqtt_provider(adapter);
-    {% endif %}
-    static Everest::TelemetryProvider telemetry_provider(adapter);
-
-    static {{ info.class_name }} module(
+    module = std::make_unique<{{ info.class_name }}>(
     module_info,
     {%- if info.enable_external_mqtt %}mqtt_provider, {% endif -%}
     {%- if info.enable_telemetry %}telemetry_provider, {% endif -%}
@@ -226,12 +292,22 @@ std::vector<Everest::cmd> everest_register(const RequirementInitialization& requ
     module_conf);
     {% endif %}
 
-    mod_ptr.set(&module);
+    mod_ptr.set(module.get());
 
     return adapter.registered_commands;
 }
 
 } // namespace module
+
+extern "C" const Everest::ModulePluginEntry* everest_module_entry() {
+    static const Everest::ModulePluginEntry entry{
+        Everest::MODULE_PLUGIN_ABI_VERSION, "{{ info.name }}",
+        Everest::VersionInformation{std::string{everest::project_info::name()},
+                                    std::string{everest::project_info::version()},
+                                    std::string{everest::project_info::git_commit()}},
+        []() -> std::unique_ptr<Everest::ModulePluginInstance> { return std::make_unique<module::ModuleInstance>(); }};
+    return &entry;
+}
 
 #ifndef LD_EV_EXCLUDE_MAIN
 int main(int argc, char* argv[]) {
@@ -239,9 +315,7 @@ int main(int argc, char* argv[]) {
     everest::helpers::install_signal_handlers_for_gcov();
 #endif
 
-    auto module_loader = Everest::ModuleLoader(argc, argv, Everest::ModuleCallbacks(
-        module::register_module_adapter, module::everest_register,
-        module::LdEverest::init, module::LdEverest::ready, module::LdEverest::shutdown),
+    auto module_loader = Everest::ModuleLoader(argc, argv, module::default_instance().callbacks(),
         {std::string{everest::project_info::name()}, std::string{everest::project_info::version()},
          std::string{everest::project_info::git_commit()}});
 

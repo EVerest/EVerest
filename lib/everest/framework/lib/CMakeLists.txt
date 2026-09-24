@@ -40,12 +40,15 @@ target_sources(framework
         module_adapter.cpp
         module_config.cpp
         mqtt_abstraction_impl.cpp
+        local_bus.cpp
+        local_module.cpp
         thread.cpp
         types.cpp
         serial.cpp
         status_fifo.cpp
         date.cpp
         runtime.cpp
+        startup_metadata.cpp
         message_handler.cpp
 )
 

@@ -4,6 +4,7 @@
 #define MODULE_ADAPTER_HPP
 
 #include "everest.hpp"
+#include "local_bus.hpp"
 #include <everest/logging.hpp>
 #include <utils/conversions.hpp>
 #include <utils/date.hpp>
@@ -123,6 +124,11 @@ struct ModuleAdapter {
     TelemetryPublishFunc telemetry_publish;
     GetMappingFunc get_mapping;
     GetConfigServiceClientFunc get_config_service_client;
+    /// Id of the module this adapter belongs to; empty in stubs.
+    std::string module_id;
+    /// Typed in-process bus. When set, generated code delivers variables and commands through it instead of the
+    /// json transport path.
+    std::shared_ptr<LocalBus> local;
 
     void check_complete();
 
