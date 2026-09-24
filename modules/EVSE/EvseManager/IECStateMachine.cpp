@@ -215,8 +215,10 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
             }
 
             // Table A.6: Sequence 1.1 Plug-in
+            // A plug-in may pass through a transient E (e.g. MCS CE/ID mating order), so E->B
+            // without a plugged-in car is a plug-in as well.
             if (last_cp_state == RawCPState::A || last_cp_state == RawCPState::Disabled ||
-                (!car_plugged_in && last_cp_state == RawCPState::F)) {
+                (!car_plugged_in && (last_cp_state == RawCPState::F || last_cp_state == RawCPState::E))) {
                 events.push(CPEvent::CarPluggedIn);
                 car_plugged_in = true;
                 ev_simplified_mode = false;
