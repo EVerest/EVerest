@@ -18,7 +18,7 @@ on:
 
 jobs:
   ev-cli-mod-update:
-    name: ev-cli mod update
+    name: check
     runs-on: ${{ inputs.runner }}
     # Not mandatory yet: the job fails when a module would lose hand-written code, but it must
     # not block a merge.

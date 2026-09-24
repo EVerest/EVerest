@@ -111,7 +111,7 @@ jobs:
       instance_name: ${{ format('{0} @ {1}', github.ref_name, github.sha) }}
 
   ev-cli-mod-update:
-    name: Call ev-cli Module Update Check workflow
+    name: Modules (ev-cli)
     uses: ./.github/workflows/job_ev-cli-mod-update.yaml
     with:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
