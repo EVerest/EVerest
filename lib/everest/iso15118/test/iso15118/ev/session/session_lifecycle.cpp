@@ -221,6 +221,12 @@ SCENARIO("ISO15118-20 EV Session pause request ends the session with SessionStop
                 REQUIRE(fx.session.session_id() == LIFECYCLE_SESSION_ID);
                 REQUIRE(fx.signals == std::vector<ev::feedback::Signal>{ev::feedback::Signal::DLINK_PAUSE});
             }
+
+            THEN("the paused session hands on its SECC clock, up to the last stamp") {
+                const auto clock = fx.session.secc_clock_state();
+                REQUIRE(clock.reference.has_value());
+                REQUIRE(clock.last_stamp == req.header.timestamp);
+            }
         }
     }
 }

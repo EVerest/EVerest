@@ -23,9 +23,8 @@ constexpr uint16_t MAX_SUPPORTING_POINTS = 12;
 constexpr dt::NumericId MIN_SCHEDULE_TUPLE_ID = 1;
 constexpr dt::NumericId MAX_SCHEDULE_TUPLE_ID = 255;
 
-message_20::ScheduleExchangeRequest make_request(const SessionId& session, dt::ControlMode control_mode) {
+message_20::ScheduleExchangeRequest make_request(dt::ControlMode control_mode) {
     message_20::ScheduleExchangeRequest req;
-    setup_header(req.header, session);
     req.max_supporting_points = MAX_SUPPORTING_POINTS;
 
     if (control_mode == dt::ControlMode::Scheduled) {
@@ -49,7 +48,7 @@ message_20::ScheduleExchangeRequest make_request(const SessionId& session, dt::C
 
 void ScheduleExchange::enter() {
     logf_debug("Enter state: ScheduleExchange");
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.selected_control_mode()));
+    m_ctx.send_request(make_request(m_ctx.selected_control_mode()));
 }
 
 Result ScheduleExchange::feed(Event ev) {
@@ -100,7 +99,7 @@ Result ScheduleExchange::feed(Event ev) {
     }
 
     // Processing::Ongoing: re-send the request and stay.
-    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.selected_control_mode()));
+    m_ctx.send_request(make_request(m_ctx.selected_control_mode()));
     return Result::awaiting();
 }
 

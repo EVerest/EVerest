@@ -16,7 +16,6 @@ void AuthorizationSetup::enter() {
     logf_debug("Enter state: AuthorizationSetup");
 
     message_20::AuthorizationSetupRequest req;
-    setup_header(req.header, m_ctx.get_session());
     m_ctx.send_request(req);
 }
 

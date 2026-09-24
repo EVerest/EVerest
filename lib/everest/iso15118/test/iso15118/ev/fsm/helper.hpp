@@ -3,6 +3,8 @@
 #pragma once
 
 #include <array>
+#include <chrono>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <type_traits>
@@ -26,6 +28,19 @@ inline constexpr auto SESSION_HEADER =
     message_20::Header{std::array<uint8_t, 8>{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02}, 1691411798};
 inline constexpr auto WRONG_HEADER =
     message_20::Header{std::array<uint8_t, 8>{0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00, 0x00}, 1691411798};
+
+// SECC time far from local UTC: an SECC epoch at power-on [V2G20-1532], five seconds ago.
+inline constexpr std::uint64_t SECC_REFERENCE_US = 5'000'000;
+
+// `secc_time` was read from a clock synchronized to `reference` no earlier than `since`.
+inline void require_tracks_reference(std::uint64_t secc_time, std::uint64_t reference,
+                                     std::chrono::steady_clock::time_point since) {
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - since);
+    REQUIRE(secc_time >= reference);
+    // + 1: a header stamp is bumped past the reference itself.
+    REQUIRE(secc_time <= reference + static_cast<std::uint64_t>(elapsed.count()) + 1);
+}
 
 // What a fixture advertises unless the test names its own list. Named so PrimedState
 // can reach the third constructor argument without restating it.

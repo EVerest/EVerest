@@ -12,9 +12,8 @@ namespace iso15118::ev::d20::state {
 
 namespace {
 
-message_20::DC_CableCheckRequest make_request(const SessionId& session) {
+message_20::DC_CableCheckRequest make_request() {
     message_20::DC_CableCheckRequest req;
-    setup_header(req.header, session);
     return req;
 }
 
@@ -29,7 +28,7 @@ void DC_CableCheck::enter() {
         logf_debug("DC_CableCheck holds the first request until CP state C or D");
         return;
     }
-    m_ctx.send_request(make_request(m_ctx.get_session()));
+    m_ctx.send_request(make_request());
     request_sent = true;
 }
 
@@ -45,7 +44,7 @@ Result DC_CableCheck::feed(Event ev) {
         if (not m_ctx.cp_state_c_or_d()) {
             return Result::ignored();
         }
-        m_ctx.send_request(make_request(m_ctx.get_session()));
+        m_ctx.send_request(make_request());
         request_sent = true;
         return Result::awaiting();
     }
@@ -70,7 +69,7 @@ Result DC_CableCheck::feed(Event ev) {
     }
 
     // Processing::Ongoing: re-poll
-    m_ctx.send_request(make_request(m_ctx.get_session()));
+    m_ctx.send_request(make_request());
     return Result::awaiting();
 }
 

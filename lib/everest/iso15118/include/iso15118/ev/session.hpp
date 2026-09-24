@@ -92,6 +92,8 @@ public:
     bool is_paused() const;
     std::optional<std::array<uint8_t, 8>> session_id() const;
     std::optional<ProtocolId> selected_protocol() const;
+    // The -20 engine's clock; empty for the other generations.
+    d20::SeccClock::State secc_clock_state() const;
 
     // Invoked once when the session becomes finished (may happen inside a timer callback).
     void set_on_finished(std::function<void()> on_finished);

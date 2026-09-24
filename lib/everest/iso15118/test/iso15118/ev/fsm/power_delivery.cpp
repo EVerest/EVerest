@@ -281,6 +281,24 @@ SCENARIO("ISO15118-20 EV PowerDelivery carries the selected ScheduleTupleID on S
     REQUIRE(message_20::datatypes::from_RationalNumber(profile.entries[0].power) == 11000.0f);
 }
 
+SCENARIO("ISO15118-20 EV PowerDelivery anchors the power profile in SECC time") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto synchronized = [](FsmStateHelper& helper) {
+        seed_scheduled_tuple(helper);
+        helper.get_context().secc_clock().synchronize(SECC_REFERENCE_US);
+    };
+    const auto since = std::chrono::steady_clock::now();
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, synchronized, Progress::Start};
+
+    const auto request_message = primed.take_requests().get<message_20::PowerDeliveryRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->power_profile.has_value());
+    // Table 103: microseconds of SECC time, the present.
+    const auto anchor = request_message->power_profile->time_anchor;
+    require_tracks_reference(anchor, SECC_REFERENCE_US, since);
+    REQUIRE(anchor <= request_message->header.timestamp);
+}
+
 SCENARIO("ISO15118-20 EV PowerDelivery omits the power profile on Stop in Scheduled mode") {
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_scheduled_tuple, Progress::Stop};

@@ -41,7 +41,6 @@ void DC_ChargeParameterDiscovery::enter() {
     const auto p = m_ctx.get_dc_params();
 
     message_20::DC_ChargeParameterDiscoveryRequest req;
-    setup_header(req.header, m_ctx.get_session());
 
     if (m_ctx.is_bpt()) {
         dt::BPT_DC_CPDReqEnergyTransferMode mode{};
