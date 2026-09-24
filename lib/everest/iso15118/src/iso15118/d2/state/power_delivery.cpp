@@ -88,10 +88,8 @@ handle_request(const message_2::PowerDeliveryRequest& req, const dt::SessionId& 
     }
 
     if (req.charge_progress == dt::ChargeProgress::Start) {
-        if (not is_dc and not req.charging_profile.has_value()) {
-            res.response_code = dt::ResponseCode::FAILED_ChargingProfileInvalid;
-            return res;
-        }
+        // ChargingProfile is optional for the EVCC in every Message Set (Table 104), so only a present
+        // profile can be invalid [V2G2-225].
         if (req.charging_profile.has_value() and
             not charging_profile_within_limits(req.charging_profile.value(), sa_schedule_list,
                                                advertised_sa_schedule_tuple_id)) {
