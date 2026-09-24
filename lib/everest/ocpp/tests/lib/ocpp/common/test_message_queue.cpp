@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -186,7 +186,7 @@ protected:
             if (respond) {
                 reception_timer.timeout(
                     [this, s]() {
-                        this->message_queue->receive(json{3, s[1], ""}.dump());
+                        this->message_queue->receive(json{3, s[1], json::object()}.dump());
                     },
                     std::chrono::milliseconds(0));
             }
@@ -534,7 +534,7 @@ TEST_F(MessageQueueTest, test_transactional_order_strictness) {
 
             reception_timer.timeout(
                 [this, msg]() {
-                    this->message_queue->receive(json{3, msg[1], ""}.dump());
+                    this->message_queue->receive(json{3, msg[1], json::object()}.dump());
                 },
                 std::chrono::milliseconds(0));
             return true;
@@ -595,7 +595,7 @@ TEST_F(MessageQueueTest, test_message_dropped_after_max_retries_then_next_messag
             // Succeed and respond to everything else
             reception_timer.timeout(
                 [this, msg]() {
-                    this->message_queue->receive(json{3, msg[1], ""}.dump());
+                    this->message_queue->receive(json{3, msg[1], json::object()}.dump());
                 },
                 std::chrono::milliseconds(0));
             return true;
@@ -765,7 +765,7 @@ TEST_F(MessageQueueTest, test_boot_notification_not_dropped_on_queue_overflow) {
             this->mark_call_sent();
             reception_timer.timeout(
                 [this, msg]() {
-                    this->message_queue->receive(json{3, msg[1], ""}.dump());
+                    this->message_queue->receive(json{3, msg[1], json::object()}.dump());
                 },
                 std::chrono::milliseconds(0));
             return true;
@@ -818,7 +818,7 @@ TEST_F(MessageQueueTest, test_boot_notification_survives_when_only_message_in_no
             this->mark_call_sent();
             reception_timer.timeout(
                 [this, msg]() {
-                    this->message_queue->receive(json{3, msg[1], ""}.dump());
+                    this->message_queue->receive(json{3, msg[1], json::object()}.dump());
                 },
                 std::chrono::milliseconds(0));
             return true;
