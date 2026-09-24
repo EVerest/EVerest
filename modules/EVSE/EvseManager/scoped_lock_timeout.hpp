@@ -84,8 +84,9 @@ enum class MutexDescription {
     EVSE_subscribe_evcc_id,
     EVSE_subscribe_powermeter,
     EVSE_get_latest_powermeter_data_billing,
-    EVSE_get_reservation_id,
+    EVSE_get_reservation_id_to_report,
     EVSE_reserve,
+    EVSE_use_reservation,
     EVSE_cancel_reservation,
     EVSE_is_reserved,
     EVSE_get_ev_info
@@ -229,10 +230,12 @@ static std::string to_string(MutexDescription d) {
         return "EvseManager.cpp: subscribe_powermeter";
     case MutexDescription::EVSE_get_latest_powermeter_data_billing:
         return "EvseManager.cpp: get_latest_powermeter_data_billing";
-    case MutexDescription::EVSE_get_reservation_id:
-        return "EvseManager.cpp: get_reservation_id";
+    case MutexDescription::EVSE_get_reservation_id_to_report:
+        return "EvseManager.cpp: get_reservation_id_to_report";
     case MutexDescription::EVSE_reserve:
         return "EvseManager.cpp: reserve";
+    case MutexDescription::EVSE_use_reservation:
+        return "EvseManager.cpp: use_reservation";
     case MutexDescription::EVSE_cancel_reservation:
         return "EvseManager.cpp: cancel_reservation";
     case MutexDescription::EVSE_is_reserved:
