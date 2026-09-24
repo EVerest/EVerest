@@ -129,7 +129,7 @@ enum class ChargingSession {
 
 enum class AcConnector {
     SinglePhase = 1,
-    ThreePhase = 3,
+    ThreePhase = 2,
 };
 enum class DcConnector {
     Core = 1,
