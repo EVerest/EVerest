@@ -264,6 +264,8 @@ TEST_F(MonitorTest, TryLockHandleTimeout) {
 
     // The shared object is used as the resource for the lock
 
+    auto start_success = std::chrono::steady_clock::now();
+
     std::thread blocker([&] {
         // Acquire the lock
         auto handle = timed_mtx_monitor_.handle(); // 🔒 Lock acquired
@@ -285,15 +287,12 @@ TEST_F(MonitorTest, TryLockHandleTimeout) {
     EXPECT_FALSE(handle_opt.has_value());
 
     // Test 2: Try to acquire the lock with a long timeout (Expected to SUCCEED eventually)
-    // The total wait time will be slightly longer than BLOCK_TIME (200ms).
-    auto start_success = std::chrono::steady_clock::now();
     auto handle_long_opt = timed_mtx_monitor_.handle(LONG_WAIT);
 
     auto duration_success = std::chrono::steady_clock::now() - start_success;
 
     EXPECT_TRUE(handle_long_opt.has_value());
-    // FIX 2: Explicitly compare the count() to ensure stable comparison and output
-    EXPECT_GE(duration_success.count(), BLOCK_TIME.count());
+    EXPECT_GE(duration_success, BLOCK_TIME);
 
     blocker.join();
 }
@@ -304,6 +303,8 @@ TEST_F(MonitorTest, TimedMutexLockAcquisition) {
     // Synchronization barrier: Blocker signals it has acquired the lock
     std::promise<void> blocker_locked_promise;
     std::future<void> blocker_locked_future = blocker_locked_promise.get_future();
+
+    auto start_success_timing = std::chrono::steady_clock::now();
 
     // THREAD A: The Blocker (Holds the lock on timed_mtx_monitor_)
     std::thread blocker([&] {
@@ -325,8 +326,6 @@ TEST_F(MonitorTest, TimedMutexLockAcquisition) {
     EXPECT_FALSE(fail_handle.has_value());
 
     // --- Test 2: Success Case (Wait is longer than remaining lock time) ---
-    auto start_success_timing = std::chrono::steady_clock::now();
-
     // Acquire the lock with a sufficient timeout (300ms)
     auto success_handle = timed_mtx_monitor_.handle(LONG_WAIT);
 
@@ -335,8 +334,7 @@ TEST_F(MonitorTest, TimedMutexLockAcquisition) {
     // Must succeed acquisition
     EXPECT_TRUE(success_handle.has_value());
 
-    // FIX 3: Explicitly compare the count() to ensure stable comparison and output
-    EXPECT_GE(duration_success.count(), BLOCK_TIME.count());
+    EXPECT_GE(duration_success, BLOCK_TIME);
 
     blocker.join();
 }
