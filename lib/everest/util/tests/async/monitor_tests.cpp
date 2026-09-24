@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "gtest/gtest.h"
 #include <everest/util/async/monitor.hpp>
@@ -403,6 +403,8 @@ TEST_F(MonitorTest, ThreadSafeMoveOperations) {
     std::promise<void> blocker_locked_promise;
     std::future<void> blocker_locked_future = blocker_locked_promise.get_future();
 
+    auto start_move = std::chrono::steady_clock::now();
+
     // THREAD A: The Blocker (Holds the lock on m1 to force the move operation to wait)
     std::thread blocker([&] {
         auto handle = m1.handle(); // Lock m1
@@ -417,7 +419,6 @@ TEST_F(MonitorTest, ThreadSafeMoveOperations) {
 
     // Because the move assignment operator calls monitor::swap(m2, m1), and swap locks both,
     // it must wait for m1's lock (held by blocker thread) to be released.
-    auto start_move = std::chrono::steady_clock::now();
     m2 = std::move(m1); // Should block here until blocker releases m1's lock
     auto duration_move = std::chrono::steady_clock::now() - start_move;
 
