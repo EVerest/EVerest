@@ -67,7 +67,8 @@ profile for every build type but Debug. Cross builds set `EVEREST_RS_TARGET_TRIP
 after editing a Rust module's `Cargo.toml`, update it (`cargo update` in `modules/`),
 regenerate `yocto/scarthgap/meta-everest/recipes-core/everest/everest-core-crates.inc`
 with `bitbake -c update_crates everest-core`, and mirror a new zvt revision in the
-`SRCREV` of `everest-core-rust.inc` next to it.
+`SRCREV` of `everest-core-rust.inc` next to it. `bazel test //yocto:rust_pins_test` checks
+that manifests, lock file and recipe name the same revision.
 
 The Yocto layer `yocto/scarthgap/meta-everest` builds everest-core from this tree. Its
 `rust` PACKAGECONFIG needs Rust 1.82 or newer, on scarthgap the meta-lts-mixins
