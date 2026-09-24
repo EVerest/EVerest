@@ -256,6 +256,8 @@ void Charger::run_state_machine() {
                 shared_context.legacy_wakeup_done = false;
                 shared_context.hlc_d20_active = false;
                 shared_context.hlc_d20_dynamic_mode = false;
+                internal_context.d20_pause_requested = false;
+                internal_context.d20_pause_confirmed = false;
                 cp_state_X1();
                 deauthorize_internal();
                 shared_context.flag_transaction_active = false;
@@ -864,8 +866,27 @@ void Charger::run_state_machine() {
             // Stop charging on errors, user stops, pause requests, or disable
             {
                 const bool fatal_error = stop_charging_on_fatal_error_internal();
+                // [V2G20-1198]: in ISO 15118-20 scheduled control mode the pause may only be notified while the
+                // applied EVPowerProfileEntry is 0 kW. The HLC stack holds it back and retries with every charge loop
+                // response; charging continues until it has gone out (notify_hlc_pause_notified()).
+                bool pause_stops = shared_context.flag_paused_by_evse;
+                if (shared_context.hlc_charging_active and shared_context.hlc_d20_active and
+                    not shared_context.hlc_d20_dynamic_mode) {
+                    if (shared_context.flag_paused_by_evse and not internal_context.d20_pause_requested) {
+                        session_log.evse(false, "ISO 15118-20 pause in scheduled control mode: requested, charging "
+                                                "continues until it can be notified at 0 kW");
+                        signal_hlc_pause_charging();
+                        internal_context.d20_pause_requested = true;
+                    } else if (not shared_context.flag_paused_by_evse and internal_context.d20_pause_requested and
+                               not internal_context.d20_pause_confirmed) {
+                        session_log.evse(false, "Pause withdrawn before it was notified to the EV");
+                        signal_hlc_resume_charging();
+                        internal_context.d20_pause_requested = false;
+                    }
+                    pause_stops = internal_context.d20_pause_confirmed;
+                }
                 if (fatal_error or not shared_context.flag_authorized or not shared_context.flag_transaction_active or
-                    not shared_context.flag_ev_plugged_in or shared_context.flag_paused_by_evse or
+                    not shared_context.flag_ev_plugged_in or pause_stops or
                     not shared_context.iec_allow_close_contactor or shared_context.flag_disable_requested) {
                     auto reasons = stop_reason_flags(fatal_error);
                     if (shared_context.flag_paused_by_evse) {
@@ -1132,22 +1153,29 @@ void Charger::run_state_machine() {
                 shared_context.legacy_wakeup_done = false;
 
                 signal_simple_event(types::evse_manager::SessionEventEnum::StoppingCharging);
-                internal_context.stopping_for_evse_pause = shared_context.flag_paused_by_evse;
+                // A scheduled -20 pause that has gone out to the EV is an EVSE pause even if the user resumed since.
+                const bool evse_pause = shared_context.flag_paused_by_evse or internal_context.d20_pause_confirmed;
+                const bool d20_pause_already_notified = internal_context.d20_pause_confirmed;
+                internal_context.d20_pause_requested = false;
+                internal_context.d20_pause_confirmed = false;
+                internal_context.stopping_for_evse_pause = evse_pause;
                 internal_context.stopping_charging_timeout_ms = STOPPING_CHARGING_TIMEOUT_MS;
                 internal_context.d20_pause_ramp_start.reset();
                 internal_context.d20_pause_notified = false;
 
                 if (shared_context.hlc_charging_active) {
-                    if (shared_context.hlc_d20_active and shared_context.flag_paused_by_evse and
-                        shared_context.hlc_d20_dynamic_mode) {
+                    if (shared_context.hlc_d20_active and evse_pause and shared_context.hlc_d20_dynamic_mode) {
                         // [V2G20-2115]: in dynamic control mode the SECC sets the power and may only ask for a pause
                         // at 0 kW. Ramp the output down first; the pause is requested below once no current flows.
                         internal_context.d20_pause_ramp_start = std::chrono::steady_clock::now();
                         internal_context.stopping_charging_timeout_ms = D20_PAUSE_RAMP_TIMEOUT_MS;
                         session_log.evse(false, "ISO 15118-20 pause in dynamic control mode: ramping to 0 A first");
-                    } else if (shared_context.hlc_d20_active and shared_context.flag_paused_by_evse) {
-                        // Request pause via ISO protocol, EV is expected to stop the charging process
-                        signal_hlc_pause_charging();
+                    } else if (shared_context.hlc_d20_active and evse_pause) {
+                        // Request pause via ISO protocol, EV is expected to stop the charging process. From Charging in
+                        // scheduled control mode it was requested there and has already been notified.
+                        if (not d20_pause_already_notified) {
+                            signal_hlc_pause_charging();
+                        }
                         internal_context.d20_pause_notified = true;
                         internal_context.stopping_charging_timeout_ms = STOPPING_CHARGING_D20_PAUSE_TIMEOUT_MS;
                     } else {
@@ -2562,6 +2590,14 @@ std::optional<types::evse_manager::StopTransactionReason> Charger::get_last_stop
 void Charger::set_hlc_d20_active(bool dynamic_control_mode) {
     shared_context.hlc_d20_active = true;
     shared_context.hlc_d20_dynamic_mode = dynamic_control_mode;
+}
+
+void Charger::notify_hlc_pause_notified() {
+    Everest::scoped_lock_timeout lock(state_machine_mutex,
+                                      Everest::MutexDescription::Charger_notify_hlc_pause_notified);
+    if (internal_context.d20_pause_requested) {
+        internal_context.d20_pause_confirmed = true;
+    }
 }
 
 void Charger::update_dc_present_current(float current_A) {

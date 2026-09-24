@@ -289,7 +289,8 @@ Result DC_ChargeLoop::feed(Event ev) {
             first_entry_in_charge_loop = false;
         }
 
-        const auto res = handle_request(*req, m_ctx.session, present_voltage, present_current, stop, pause,
+        const bool notify_pause = pause_notification.update(pause and not stop, m_ctx.session, m_ctx.feedback);
+        const auto res = handle_request(*req, m_ctx.session, present_voltage, present_current, stop, notify_pause,
                                         m_ctx.session_config.dc_limits, dynamic_parameters);
 
         m_ctx.respond(res);
