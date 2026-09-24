@@ -60,7 +60,6 @@ bool split_key_value(const std::string& key_value, std::string& key, std::string
 
 void systemImpl::init() {
     this->scripts_path = mod->info.paths.libexec;
-    this->firmware_download_running = false;
     this->firmware_installation_running = false;
     this->standard_firmware_update_running = false;
     this->boot_reason_key = "ocpp_boot_reason";
@@ -187,12 +186,23 @@ systemImpl::handle_signed_fimware_update(const types::system::FirmwareUpdateRequ
     EVLOG_info << "Executing signed firmware update download callback";
 
     // Capture the running state before (potentially) launching the worker thread. The
-    // worker (download_signed_firmware) sets firmware_download_running once it starts;
+    // worker (download_signed_firmware) sets firmware_download_state once it starts;
     // deciding the response from the value captured here - rather than re-reading the
-    // flag after the thread is spawned - avoids a race in which the worker flips the
-    // flag first and we report AcceptedCanceled for what is actually a fresh request.
-    const bool download_already_running = this->firmware_download_running.load();
-    const bool installation_running = this->firmware_installation_running.load();
+    // state after the thread is spawned - avoids a race in which the worker flips the
+    // state first and we report AcceptedCanceled for what is actually a fresh request.
+    bool download_already_running = false;
+    bool installation_running = false;
+    {
+        auto state = this->firmware_download_state.handle();
+        download_already_running = *state == FirmwareDownloadState::Downloading;
+        installation_running = this->firmware_installation_running.load();
+
+        if (download_already_running) {
+            EVLOG_info
+                << "Received Firmware update request and firmware update already running, cancelling firmware update";
+            this->interrupt_firmware_download->store(true);
+        }
+    }
 
     if (firmware_update_request.retrieve_timestamp.has_value() &&
         Everest::Date::from_rfc3339(firmware_update_request.retrieve_timestamp.value()) > date::utc_clock::now()) {
@@ -238,20 +248,17 @@ void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateReq
         return;
     }
 
-    if (this->firmware_download_running) {
-        EVLOG_info
-            << "Received Firmware update request and firmware update already running - cancelling firmware update";
-        this->interrupt_firmware_download.exchange(true);
-        EVLOG_info << "Waiting for other firmware download to finish...";
-        std::unique_lock<std::mutex> lk(this->firmware_update_mutex);
-        this->firmware_update_cv.wait(lk, [this]() { return !this->firmware_download_running; });
-        EVLOG_info << "Previous Firmware download finished!";
+    {
+        auto state = this->firmware_download_state.handle();
+        if (*state != FirmwareDownloadState::Idle) {
+            EVLOG_info << "Waiting for other firmware download to finish...";
+            state.wait([&state]() { return *state == FirmwareDownloadState::Idle; });
+            EVLOG_info << "Previous Firmware download finished!";
+        }
+        *state = FirmwareDownloadState::Downloading;
+        this->interrupt_firmware_download->store(false);
     }
-
-    std::lock_guard<std::mutex> lg(this->firmware_update_mutex);
     EVLOG_info << "Starting Firmware update";
-    this->interrupt_firmware_download.exchange(false);
-    this->firmware_download_running = true;
 
     // // create temporary file
     const auto date_time = Everest::Date::to_rfc3339(date::utc_clock::now());
@@ -274,34 +281,59 @@ void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateReq
     firmware_status.request_id = firmware_update_request.request_id;
     firmware_status.firmware_update_status = firmware_status_enum;
 
-    while (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::DownloadFailed &&
-           retries < total_retries && !this->interrupt_firmware_download) {
-        run_application(
-            firmware_downloader.string(), download_args, [this, &firmware_status](const std::string& output_line) {
-                firmware_status.firmware_update_status =
-                    types::system::string_to_firmware_update_status_enum(output_line);
-                // Defer sending the SignatureVerified message because it needs to have the metadata attached to it
-                if (firmware_status.firmware_update_status !=
-                    types::system::FirmwareUpdateStatusEnum::SignatureVerified) {
-                    this->publish_firmware_update_status(firmware_status);
-                }
-                if (this->interrupt_firmware_download) {
-                    EVLOG_info << "Updating firmware was interrupted, terminating firmware update script, requestId: "
-                               << firmware_status.request_id;
-                    return CmdControl::Terminate;
-                }
-                return CmdControl::Continue;
-            });
+    bool download_failed_published = false;
+    bool verdict_published = false;
+    RunOptions options;
+    options.stop_requested = this->interrupt_firmware_download;
+    options.callback = [this, &firmware_status, &download_failed_published,
+                        &verdict_published](const std::string& output_line) {
+        if (this->interrupt_firmware_download->load()) {
+            return CmdControl::Terminate;
+        }
+        firmware_status.firmware_update_status = types::system::string_to_firmware_update_status_enum(output_line);
+        // Defer sending the SignatureVerified message because it needs to have the metadata attached to it
+        if (firmware_status.firmware_update_status != types::system::FirmwareUpdateStatusEnum::SignatureVerified) {
+            this->publish_firmware_update_status(firmware_status);
+            download_failed_published =
+                firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::DownloadFailed;
+            if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::InvalidSignature) {
+                verdict_published = true;
+            }
+        }
+        return CmdControl::Continue;
+    };
+    bool cancelled = false;
+    while (retries < total_retries) {
         retries += 1;
-        if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::DownloadFailed &&
-            retries < total_retries) {
-            std::this_thread::sleep_for(std::chrono::seconds(retry_interval));
+        download_failed_published = false;
+        run_application(firmware_downloader.string(), download_args, options);
+        if (verdict_published) {
+            break;
+        }
+        cancelled = this->interrupt_firmware_download->load();
+        if (!cancelled &&
+            firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::SignatureVerified) {
+            break;
+        }
+        if (!cancelled && retries < total_retries) {
+            const auto retry_at = std::chrono::steady_clock::now() + std::chrono::seconds(retry_interval);
+            while (!cancelled && std::chrono::steady_clock::now() < retry_at) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                cancelled = this->interrupt_firmware_download->load();
+            }
+        }
+        if (cancelled) {
+            EVLOG_info << "Firmware download was interrupted, requestId: " << firmware_status.request_id;
+            break;
         }
     }
-    if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::SignatureVerified) {
+    const bool parse_metadata = !cancelled && firmware_status.firmware_update_status ==
+                                                  types::system::FirmwareUpdateStatusEnum::SignatureVerified;
+    std::map<std::string, std::string> parsed_metadata;
+    bool metadata_parsed = false;
+    if (parse_metadata) {
         const std::vector<std::string> parser_args = {constants.string(), firmware_update_request.location,
                                                       firmware_file_path.string()};
-        std::map<std::string, std::string> parsed_metadata;
         auto terminated = false;
         run_application(firmware_metadata_parser.string(), parser_args,
                         [&parsed_metadata, &terminated](const std::string& output_line) {
@@ -319,20 +351,42 @@ void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateReq
                             parsed_metadata[key] = value;
                             return CmdControl::Continue;
                         });
-        if (!terminated) {
-            types::system::FirmwareUpdateMetadata metadata;
-            if (parsed_metadata.count("disable_connectors_during_install") != 0) {
-                metadata.disable_connectors_during_install =
-                    parsed_metadata["disable_connectors_during_install"] == "true";
-            }
-            firmware_status.firmware_update_metadata.emplace(metadata);
-            this->publish_firmware_update_status(firmware_status);
-            this->initialize_firmware_installation(firmware_update_request, firmware_file_path);
-        }
+        metadata_parsed = !terminated;
     }
 
-    this->firmware_download_running = false;
-    this->firmware_update_cv.notify_one();
+    bool handed_over = false;
+    {
+        auto state = this->firmware_download_state.handle();
+        cancelled = this->interrupt_firmware_download->load();
+        // Handed over to installation, a later request no longer cancels it
+        handed_over = !cancelled && metadata_parsed;
+        *state = FirmwareDownloadState::Reporting;
+    }
+
+    if (handed_over) {
+        types::system::FirmwareUpdateMetadata metadata;
+        if (parsed_metadata.count("disable_connectors_during_install") != 0) {
+            metadata.disable_connectors_during_install = parsed_metadata["disable_connectors_during_install"] == "true";
+        }
+        firmware_status.firmware_update_metadata.emplace(metadata);
+        this->publish_firmware_update_status(firmware_status);
+        verdict_published = true;
+        this->initialize_firmware_installation(firmware_update_request, firmware_file_path);
+    } else if (parse_metadata && cancelled) {
+        EVLOG_info << "Firmware download was interrupted before SignatureVerified, requestId: "
+                   << firmware_status.request_id;
+    }
+    if (!verdict_published && !download_failed_published) {
+        firmware_status.firmware_update_status = types::system::FirmwareUpdateStatusEnum::DownloadFailed;
+        this->publish_firmware_update_status(firmware_status);
+    }
+
+    {
+        auto state = this->firmware_download_state.handle();
+        *state = FirmwareDownloadState::Idle;
+    }
+    this->firmware_download_state.notify_all();
+
     EVLOG_info << "Firmware update thread finished";
 }
 
