@@ -4,6 +4,14 @@
 .. session_storage_consumer_API
 .. *******************************************
 
+.. warning::
+
+   This API module is currently **experimental**: its AsyncAPI channels,
+   operations and message payloads may change without further notice. It is
+   exempt from the stability guarantees and the deprecation period of the
+   EVerest public API until promoted to stable (see
+   :ref:`project-experimental-components`).
+
 This module bridges the ``session_storage`` interface of a session record store,
 such as the ``PersistentSessionStorage`` module, to external MQTT.
 
