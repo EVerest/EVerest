@@ -1288,6 +1288,62 @@ TEST_F(ReservationHandlerTest, cancelled_reservation_not_resurrected_after_reloa
     EXPECT_TRUE(r.global_reservations.empty());
 }
 
+TEST_F(ReservationHandlerTest, restored_reservation_taken_once) {
+    add_connector(1, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
+    add_connector(2, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
+
+    const Reservation reservation = create_reservation(types::evse_manager::ConnectorTypeEnum::cCCS2);
+    EXPECT_EQ(r.make_reservation(1, reservation), ReservationResult::Accepted);
+    EXPECT_EQ(r.make_reservation(std::nullopt, create_reservation(types::evse_manager::ConnectorTypeEnum::cCCS2)),
+              ReservationResult::Accepted);
+    EXPECT_EQ(r.take_restored_reservation(1), std::nullopt);
+
+    r.evse_reservations.clear();
+    r.global_reservations.clear();
+    r.reservation_id_to_reservation_timeout_timer_map.clear();
+    r.load_reservations();
+
+    EXPECT_EQ(r.take_restored_reservation(1), reservation.reservation_id);
+    EXPECT_EQ(r.take_restored_reservation(1), std::nullopt);
+    EXPECT_EQ(r.take_restored_reservation(2), std::nullopt);
+}
+
+TEST_F(ReservationHandlerTest, restored_reservation_cancelled_before_taken) {
+    add_connector(1, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
+
+    const Reservation reservation = create_reservation(types::evse_manager::ConnectorTypeEnum::cCCS2);
+    EXPECT_EQ(r.make_reservation(1, reservation), ReservationResult::Accepted);
+
+    r.evse_reservations.clear();
+    r.reservation_id_to_reservation_timeout_timer_map.clear();
+    r.load_reservations();
+
+    EXPECT_TRUE(r.cancel_reservation(reservation.reservation_id, false, ReservationEndReason::Cancelled).first);
+    // A fresh reservation on the same EVSE is signalled by its own ReserveNow, not as a restored one.
+    EXPECT_EQ(r.make_reservation(1, create_reservation(types::evse_manager::ConnectorTypeEnum::cCCS2)),
+              ReservationResult::Accepted);
+
+    EXPECT_EQ(r.take_restored_reservation(1), std::nullopt);
+}
+
+TEST_F(ReservationHandlerTest, restored_reservation_replaced_before_taken) {
+    add_connector(1, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
+
+    const Reservation reservation = create_reservation(types::evse_manager::ConnectorTypeEnum::cCCS2);
+    EXPECT_EQ(r.make_reservation(1, reservation), ReservationResult::Accepted);
+
+    r.evse_reservations.clear();
+    r.reservation_id_to_reservation_timeout_timer_map.clear();
+    r.load_reservations();
+
+    // Removed without going through cancel_reservation.
+    r.evse_reservations.erase(1);
+    EXPECT_EQ(r.make_reservation(1, create_reservation(types::evse_manager::ConnectorTypeEnum::cCCS2)),
+              ReservationResult::Accepted);
+
+    EXPECT_EQ(r.take_restored_reservation(1), std::nullopt);
+}
+
 TEST_F(ReservationHandlerTest, store_load_reservations_connector_unavailable) {
     add_connector(0, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
     add_connector(0, 1, types::evse_manager::ConnectorTypeEnum::cType2, this->evses);

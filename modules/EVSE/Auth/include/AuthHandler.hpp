@@ -141,7 +141,8 @@ public:
      * @param evse_id
      * @param reservation_id
      *
-     * @return true of EvseManager accepted the reservation.
+     * @return true if the EvseManager accepted the reservation. On false the
+     *         reservation is still held here and the caller cancels it.
      */
     bool call_reserved(const int reservation_id, const std::optional<int>& evse_id);
 
@@ -356,6 +357,12 @@ private:
      * This will check the reservation status of the evse's and send the statusses to the evse manager.
      */
     void check_evse_reserved_and_send_updates();
+
+    /**
+     * @brief Signals reservation \p reservation_id, restored from the store, to the EvseManager of \p evse_id. The
+     * event_mutex must not be held, since a refusal cancels the reservation through it.
+     */
+    void apply_restored_reservation(const int evse_id, const int32_t reservation_id);
 };
 
 } // namespace module
