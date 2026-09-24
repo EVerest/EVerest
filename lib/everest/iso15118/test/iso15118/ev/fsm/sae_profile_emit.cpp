@@ -2,6 +2,7 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <limits>
 
 #include <iso15118/ev/sae_profile_emit.hpp>
@@ -10,6 +11,18 @@ using namespace iso15118;
 namespace dt = message_20::datatypes;
 
 namespace {
+
+const ev::d20::SeccClock UNSYNCHRONIZED{};
+
+constexpr std::uint64_t LOCAL_UTC_US = 1'800'000'000'000'000ULL;
+constexpr std::uint64_t ONE_HOUR_US = 3'600'000'000ULL;
+
+// Local UTC and the steady clock stand still, so the SECC offset is exactly what synchronize set.
+ev::d20::SeccClock synchronized_clock(std::uint64_t secc_time) {
+    ev::d20::SeccClock clock{[]() { return LOCAL_UTC_US; }, []() { return std::chrono::steady_clock::time_point{}; }};
+    clock.synchronize(secc_time);
+    return clock;
+}
 
 bool same_rational(const dt::RationalNumber& a, const dt::RationalNumber& b) {
     return a.value == b.value and a.exponent == b.exponent;
@@ -104,7 +117,7 @@ SCENARIO("ISO15118-20 EV emits the SAE CPD transfer mode from the inverter profi
 
         WHEN("the selected connector is ThreePhase") {
             const auto mode = ev::make_sae_cpd_transfer_mode(profile, params, dt::AcConnector::ThreePhase,
-                                                             dt::Processing::Ongoing, 0x1, 42);
+                                                             dt::Processing::Ongoing, 0x1, 42, UNSYNCHRONIZED);
 
             THEN("each charge and discharge limit is its own total") {
                 require_total(mode.max_charge_power, mode.max_charge_power_L2, mode.max_charge_power_L3, 11040.0f);
@@ -186,7 +199,7 @@ SCENARIO("ISO15118-20 EV emits the SAE CPD transfer mode from the inverter profi
             wide_profile.supported_modes |= 1u << 2; // unused in AMD1 Table M.6
             wide_profile.j3072_certification_date = std::numeric_limits<std::uint64_t>::max() / 1'000'000 + 1;
             const auto mode = ev::make_sae_cpd_transfer_mode(wide_profile, params, dt::AcConnector::ThreePhase,
-                                                             dt::Processing::Ongoing, 0x1, 42);
+                                                             dt::Processing::Ongoing, 0x1, 42, UNSYNCHRONIZED);
 
             THEN("the unused bit is masked out and the date saturates") {
                 REQUIRE(mode.supported_modes == DISTINCT_SUPPORTED_MODES);
@@ -194,9 +207,25 @@ SCENARIO("ISO15118-20 EV emits the SAE CPD transfer mode from the inverter profi
             }
         }
 
+        WHEN("SECC time is far from local UTC") {
+            const auto emit = [&](std::uint64_t secc_time) {
+                return ev::make_sae_cpd_transfer_mode(profile, params, dt::AcConnector::ThreePhase,
+                                                      dt::Processing::Ongoing, 0x1, 42, synchronized_clock(secc_time))
+                    .j3072_certification_date;
+            };
+
+            THEN("the J3072 date moves by the SECC offset (AMD1 Table M.5)") {
+                REQUIRE(emit(LOCAL_UTC_US + ONE_HOUR_US) == 1'700'000'000'000'000ULL + ONE_HOUR_US);
+            }
+
+            THEN("a date before an SECC epoch at power-on clamps at zero") {
+                REQUIRE(emit(ONE_HOUR_US) == 0);
+            }
+        }
+
         WHEN("the selected connector is SinglePhase") {
             const auto mode = ev::make_sae_cpd_transfer_mode(profile, params, dt::AcConnector::SinglePhase,
-                                                             dt::Processing::Finished, 0x3, 0);
+                                                             dt::Processing::Finished, 0x3, 0, UNSYNCHRONIZED);
 
             THEN("only the base elements are emitted") {
                 REQUIRE(equals_float(mode.max_charge_power, 3680.0f));
@@ -232,7 +261,7 @@ SCENARIO("ISO15118-20 EV emits the SAE CPD transfer mode from the inverter profi
             auto single_phase_params = params;
             single_phase_params.phase_count = 1;
             const auto mode = ev::make_sae_cpd_transfer_mode(profile, single_phase_params, dt::AcConnector::ThreePhase,
-                                                             dt::Processing::Finished, 0x3, 0);
+                                                             dt::Processing::Finished, 0x3, 0, UNSYNCHRONIZED);
 
             THEN("each charge and discharge total lands on the base element with explicit zero peers") {
                 require_line_one(mode.max_charge_power, mode.max_charge_power_L2, mode.max_charge_power_L3, 11040.0f);
@@ -297,7 +326,7 @@ SCENARIO("ISO15118-20 EV emits the SAE CPD transfer mode from the inverter profi
 
         WHEN("a transfer mode is built for a ThreePhase connector") {
             const auto mode = ev::make_sae_cpd_transfer_mode(profile, params, dt::AcConnector::ThreePhase,
-                                                             dt::Processing::Finished, 0x3, 0);
+                                                             dt::Processing::Finished, 0x3, 0, UNSYNCHRONIZED);
 
             THEN("the mandatory rational members are all set from the profile defaults") {
                 REQUIRE(equals_float(

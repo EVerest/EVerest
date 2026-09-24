@@ -30,7 +30,6 @@ void AC_ChargeParameterDiscovery::enter() {
     const auto connector = m_ctx.ac_connector();
 
     message_20::AC_ChargeParameterDiscoveryRequest req;
-    setup_header(req.header, m_ctx.get_session());
 
     if (m_ctx.is_bpt()) {
         dt::BPT_AC_CPDReqEnergyTransferMode mode{};

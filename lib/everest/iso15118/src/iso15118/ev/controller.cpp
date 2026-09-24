@@ -65,6 +65,7 @@ d20::SessionOptions make_session_options(const EvConfig& config, std::vector<Off
     options.authorization_timeout = config.authorization_timeout;
     if (config.resume.has_value()) {
         options.resumed_session_id = config.resume->session_id;
+        options.secc_clock = config.resume->secc_clock;
     }
     options.offered_protocols = std::move(offer);
     options.der_control_functions = config.der_control_functions;
@@ -397,7 +398,7 @@ std::optional<PausedSession> Controller::paused_session() const {
     if (not id.has_value() or not protocol.has_value()) {
         return std::nullopt;
     }
-    return PausedSession{id.value(), protocol.value(), data_path_security};
+    return PausedSession{id.value(), protocol.value(), data_path_security, session->secc_clock_state()};
 }
 
 } // namespace iso15118::ev

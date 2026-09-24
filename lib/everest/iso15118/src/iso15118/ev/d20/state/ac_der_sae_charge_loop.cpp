@@ -2,7 +2,6 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <optional>
 
-#include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/ac_der_sae_charge_loop.hpp>
@@ -27,7 +26,6 @@ message_20::DER_SAE_AC_ChargeLoopRequest make_request(const Context& ctx) {
     const auto& profile = ctx.sae_profile();
 
     message_20::DER_SAE_AC_ChargeLoopRequest req;
-    setup_header(req.header, ctx.get_session());
     req.meter_info_requested = false;
     req.display_parameters = std::nullopt;
     req.control_mode = make_sae_cl_control_mode(
@@ -122,7 +120,7 @@ Result AC_DER_SAE_ChargeLoop::feed(Event ev) {
     m_ctx.set_sae_permit_service(permit);
 
     if (enabled_changed or permit_changed) {
-        m_ctx.set_sae_settings_update_time(iso15118::d20::now_in_secc_time());
+        m_ctx.set_sae_settings_update_time(m_ctx.secc_clock().now());
     }
 
     m_ctx.feedback.sae_der_control(*mode, last_problems_);
