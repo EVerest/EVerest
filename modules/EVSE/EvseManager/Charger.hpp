@@ -198,7 +198,9 @@ public:
 
     void dlink_pause();
     void dlink_error();
-    void dlink_terminate();
+    // Returns true if the terminate was a data link loss during session setup and was handled as a D-LINK_ERROR;
+    // the caller then forwards a D-LINK_ERROR rather than a D-LINK_TERMINATE to the data link layer.
+    bool dlink_terminate();
 
     // A positive SessionStopRes was sent to the EV: remember terminate/pause and arm the
     // CP-oscillator retain timer [V2G-DC-968] (PWM off V2G_SECC_CP_OSCILLATOR_RETAIN after the Res,

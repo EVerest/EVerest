@@ -429,8 +429,15 @@ void EvseManager::ready() {
             selected_d20_energy_service.reset();
             session_log.evse(true, "D-LINK_TERMINATE.req");
             hlc_link_in_use = false;
-            charger->dlink_terminate();
-            r_slac[0]->call_dlink_terminate();
+            if (charger->dlink_terminate()) {
+                // A data link loss during session setup, handled as D-LINK_ERROR: see Charger::dlink_terminate().
+                if (fake_dc_enabled and config.ac_with_soc) {
+                    setup_AC_mode(false);
+                }
+                r_slac[0]->call_dlink_error();
+            } else {
+                r_slac[0]->call_dlink_terminate();
+            }
         });
 
         r_hlc[0]->subscribe_session_stop_res_sent([this](types::iso15118::SessionStopAction action) {
