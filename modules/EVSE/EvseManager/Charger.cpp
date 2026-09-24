@@ -1760,7 +1760,7 @@ std::string Charger::get_session_id() const {
     return shared_context.session_uuid;
 }
 
-void Charger::authorize(bool a, const types::authorization::ProvidedIdToken& token,
+bool Charger::authorize(bool a, const types::authorization::ProvidedIdToken& token,
                         const types::authorization::ValidationResult& result) {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_authorize);
     if (a) {
@@ -1770,7 +1770,7 @@ void Charger::authorize(bool a, const types::authorization::ProvidedIdToken& tok
             // Ignore (delayed) authorization responses after an external cancellation or while EVSE is disabled.
             // Without this guard, a delayed auth could restore flag_authorized and prevent the state machine
             // from routing to EvseState::Finished
-            return;
+            return false;
         }
         shared_context.id_token = token;
         shared_context.validation_result = result;
@@ -1788,6 +1788,7 @@ void Charger::authorize(bool a, const types::authorization::ProvidedIdToken& tok
         }
         shared_context.flag_authorized = false;
     }
+    return true;
 }
 
 bool Charger::deauthorize() {
