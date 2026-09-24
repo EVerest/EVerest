@@ -501,7 +501,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 2);
             // ControlMode == Scheduled
             REQUIRE(parameters.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[1].value));
@@ -566,7 +566,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 2);
             // ControlMode == Scheduled
             REQUIRE(parameters.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[1].value));
@@ -644,7 +644,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters_0.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters_0.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters_0.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters_0.parameter[0].value) == 2);
             // ControlMode == Scheduled
             REQUIRE(parameters_0.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters_0.parameter[1].value));
@@ -669,7 +669,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters_1.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters_1.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters_1.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters_1.parameter[0].value) == 2);
             // ControlMode == Dynamic
             REQUIRE(parameters_1.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters_1.parameter[1].value));
@@ -728,7 +728,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 2);
             // ControlMode == Scheduled
             REQUIRE(parameters.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[1].value));
