@@ -45,8 +45,10 @@ def rel_exp_test1():
             charging_schedule_period=[
                 ChargingSchedulePeriod(
                     start_period=0, limit=16, number_phases=1),
+                # the 1 s sleep before SetChargingProfile plus per-second
+                # rounding shifts this period by 1 or 2
                 ChargingSchedulePeriod(
-                    start_period=50, limit=20, number_phases=3),
+                    start_period=49, limit=20, number_phases=3),
             ],
         ),
     )
