@@ -91,6 +91,7 @@ TEST(LifecycleGate, WaitingBlocksUntilTheLoopReportsItHasExited) {
         lifecycle->ready_entered = true;
     }
 
+    auto const start = std::chrono::steady_clock::now();
     std::thread loop([&] {
         std::this_thread::sleep_for(50ms);
         {
@@ -100,7 +101,6 @@ TEST(LifecycleGate, WaitingBlocksUntilTheLoopReportsItHasExited) {
         monitor.notify_all();
     });
 
-    auto const start = std::chrono::steady_clock::now();
     auto const result = wait_for_loop_exit(monitor, 5000ms);
     auto const elapsed = std::chrono::steady_clock::now() - start;
     loop.join();
