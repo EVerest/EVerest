@@ -435,6 +435,7 @@ private:
     bool check_voltage_to_protective_earth_in_range(types::isolation_monitor::IsolationMeasurement m);
 
     static constexpr double CABLECHECK_CURRENT_LIMIT{2};
+    static constexpr double PRECHARGE_MIN_CURRENT_A{2};
     static constexpr double CABLECHECK_INSULATION_FAULT_RESISTANCE_OHM{100000.};
     static constexpr double CABLECHECK_MCS_INSULATION_FAULT_RESISTANCE_OHM{125000.};
     static constexpr double CABLECHECK_SAFE_VOLTAGE{60.};
