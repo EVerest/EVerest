@@ -60,3 +60,16 @@ any experimental option it was given.
      - External read access to the EvseSecurity module (``is_ca_certificate_installed``,
        ``get_leaf_certificate_info``, ``get_verify_location``). Channels,
        operations and message payloads may change without further notice.
+   * - :ref:`PersistentSessionStorage module <everest_modules_PersistentSessionStorage>`
+     - 2026.10.0
+     - Persists a session record per charging session in a SQLite database and
+       provides paginated read and clear access. Configuration parameters, the
+       stored record format and the integration in EVerest may change without
+       further notice.
+   * - :ref:`session_storage_consumer_API module <everest_modules_session_storage_consumer_API>`
+       and its ``session_storage_consumer_API`` AsyncAPI specification
+     - 2026.10.0
+     - External read and clear access to the session records of the
+       PersistentSessionStorage module (``get_sessions``, ``get_session``,
+       ``clear_sessions``). Channels, operations and message payloads may change
+       without further notice.

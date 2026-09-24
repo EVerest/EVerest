@@ -16,6 +16,9 @@
 namespace module {
 
 void PersistentSessionStorage::init() {
+    EVLOG_warning << "This PersistentSessionStorage module is currently experimental! Configuration parameters, the "
+                     "stored record format and the integration in EVerest may change without further notice";
+
     m_store =
         std::make_unique<storage::SessionStore>(std::make_unique<everest::db::sqlite::Connection>(config.database_path),
                                                 std::filesystem::path(info.paths.share) / "migrations",
