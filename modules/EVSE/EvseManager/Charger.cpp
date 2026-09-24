@@ -11,6 +11,7 @@
 #include "Charger.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <generated/types/powermeter.hpp>
 #include <math.h>
 #include <optional>
@@ -254,6 +255,7 @@ void Charger::run_state_machine() {
                 internal_context.hlc_session_restarted_by_ev = false;
                 shared_context.legacy_wakeup_done = false;
                 shared_context.hlc_d20_active = false;
+                shared_context.hlc_d20_dynamic_mode = false;
                 cp_state_X1();
                 deauthorize_internal();
                 shared_context.flag_transaction_active = false;
@@ -1132,11 +1134,21 @@ void Charger::run_state_machine() {
                 signal_simple_event(types::evse_manager::SessionEventEnum::StoppingCharging);
                 internal_context.stopping_for_evse_pause = shared_context.flag_paused_by_evse;
                 internal_context.stopping_charging_timeout_ms = STOPPING_CHARGING_TIMEOUT_MS;
+                internal_context.d20_pause_ramp_start.reset();
+                internal_context.d20_pause_notified = false;
 
                 if (shared_context.hlc_charging_active) {
-                    if (shared_context.hlc_d20_active and shared_context.flag_paused_by_evse) {
+                    if (shared_context.hlc_d20_active and shared_context.flag_paused_by_evse and
+                        shared_context.hlc_d20_dynamic_mode) {
+                        // [V2G20-2115]: in dynamic control mode the SECC sets the power and may only ask for a pause
+                        // at 0 kW. Ramp the output down first; the pause is requested below once no current flows.
+                        internal_context.d20_pause_ramp_start = std::chrono::steady_clock::now();
+                        internal_context.stopping_charging_timeout_ms = D20_PAUSE_RAMP_TIMEOUT_MS;
+                        session_log.evse(false, "ISO 15118-20 pause in dynamic control mode: ramping to 0 A first");
+                    } else if (shared_context.hlc_d20_active and shared_context.flag_paused_by_evse) {
                         // Request pause via ISO protocol, EV is expected to stop the charging process
                         signal_hlc_pause_charging();
+                        internal_context.d20_pause_notified = true;
                         internal_context.stopping_charging_timeout_ms = STOPPING_CHARGING_D20_PAUSE_TIMEOUT_MS;
                     } else {
                         // Request stop via ISO protocol, EV is expected to shut down session
@@ -1145,6 +1157,16 @@ void Charger::run_state_machine() {
                 } else {
                     cp_state_X1();
                 }
+            }
+
+            if (internal_context.d20_pause_ramp_start.has_value() and not internal_context.d20_pause_notified and
+                std::fabs(dc_present_current_A.load()) < D20_PAUSE_ZERO_CURRENT_A) {
+                session_log.evse(false, "Output at 0 A: requesting the ISO 15118-20 pause");
+                signal_hlc_pause_charging();
+                internal_context.d20_pause_notified = true;
+                // The EV gets the full NotificationMaxDelay from now on.
+                internal_context.stopping_charging_timeout_ms =
+                    static_cast<int>(time_in_current_state) + STOPPING_CHARGING_D20_PAUSE_TIMEOUT_MS;
             }
 
             // Now the EV is informed and we need to wait until the relays open or a timeout occurs.
@@ -2537,8 +2559,22 @@ std::optional<types::evse_manager::StopTransactionReason> Charger::get_last_stop
     return shared_context.last_stop_transaction_reason;
 }
 
-void Charger::set_hlc_d20_active() {
+void Charger::set_hlc_d20_active(bool dynamic_control_mode) {
     shared_context.hlc_d20_active = true;
+    shared_context.hlc_d20_dynamic_mode = dynamic_control_mode;
+}
+
+void Charger::update_dc_present_current(float current_A) {
+    dc_present_current_A = current_A;
+}
+
+std::optional<std::chrono::steady_clock::time_point> Charger::get_dc_pause_ramp_start() {
+    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_get_dc_pause_ramp_start);
+    // Kept after the pause was requested: the output has to stay at 0 A until the EV has paused.
+    if (shared_context.current_state != EvseState::StoppingCharging) {
+        return std::nullopt;
+    }
+    return internal_context.d20_pause_ramp_start;
 }
 
 // this resets the BCB sequence (which may contain 1-3 toggle pulses)

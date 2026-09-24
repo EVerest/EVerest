@@ -752,6 +752,7 @@ void EvseManager::ready() {
             if (not r_powersupply_DC.empty()) {
                 r_powersupply_DC[0]->subscribe_voltage_current([this](types::power_supply_DC::VoltageCurrent const& m) {
                     powersupply_measurement = m;
+                    charger->update_dc_present_current(m.current_A);
                     if (voltage_plausibility_monitor) {
                         voltage_plausibility_monitor->update_power_supply_voltage(m.voltage_V);
                     }
@@ -1023,7 +1024,7 @@ void EvseManager::ready() {
         r_hlc[0]->subscribe_selected_service_parameters(
             [this](types::iso15118::SelectedServiceParameters const& parameters) {
                 selected_d20_energy_service.emplace(parameters.energy_transfer);
-                charger->set_hlc_d20_active();
+                charger->set_hlc_d20_active(parameters.control_mode == types::iso15118::ControlMode::DynamicControl);
 
                 session_log.car(true,
                                 fmt::format("EV selected service: {}",
@@ -2802,6 +2803,19 @@ void EvseManager::process_dc_ev_target_voltage_current(const types::iso15118::Dc
     if (target_power > hlc_limits.evse_maximum_power_limit) {
         clamped_current = hlc_limits.evse_maximum_power_limit / actual_voltage;
         car_breaks_limit = true;
+    }
+
+    // [V2G20-2115]: before an ISO 15118-20 pause in dynamic control mode the output is ramped to 0 A.
+    if (const auto ramp_start = charger->get_dc_pause_ramp_start()) {
+        std::scoped_lock lock(dc_pause_ramp_mutex);
+        if (dc_pause_ramp_start != ramp_start) {
+            dc_pause_ramp_start = ramp_start;
+            dc_pause_ramp_from_A = latest_target_current_low_pass.load();
+        }
+        const double elapsed_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - *ramp_start).count();
+        const double ceiling =
+            std::max(0., dc_pause_ramp_from_A - elapsed_s * Charger::D20_PAUSE_RAMP_AMPERE_PER_SECOND);
+        clamped_current = std::min(clamped_current, ceiling);
     }
 
     bool target_changed = false;
