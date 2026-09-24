@@ -312,6 +312,89 @@ TEST_F(ChargePointV2Test, sessionStartedCreatesTransactionData) {
     EXPECT_EQ(transaction_data->remote_start_id, 77);
 }
 
+types::evse_manager::SessionEvent session_started_event(types::evse_manager::StartSessionReason reason,
+                                                        const std::optional<std::int32_t>& reservation_id) {
+    types::evse_manager::SessionEvent session_event;
+    session_event.uuid = SESSION_ID;
+    session_event.timestamp = TIMESTAMP;
+    session_event.event = types::evse_manager::SessionEventEnum::SessionStarted;
+    session_event.connector_id = CONNECTOR_ID;
+    types::evse_manager::SessionStarted session_started;
+    session_started.reason = reason;
+    session_started.meter_value = meter_value_wh(0.0F);
+    if (reason == types::evse_manager::StartSessionReason::Authorized) {
+        session_started.id_tag = provided_id_token("TOKEN123");
+    }
+    session_started.reservation_id = reservation_id;
+    session_event.session_started = session_started;
+    return session_event;
+}
+
+// H03.FR.09/10: authorizing with the reserving token consumes the reservation; H01.FR.15: its id still reaches
+// TransactionEvent(Started)
+TEST_F(ChargePointV2Test, sessionStartedWithReservationClearsReservation) {
+    std::shared_ptr<module::TransactionData> transaction_data;
+    EXPECT_CALL(m_callbacks, transaction_add(EVSE_ID, _)).WillOnce(SaveArg<1>(&transaction_data));
+    ON_CALL(m_callbacks, transaction_data(EVSE_ID)).WillByDefault([&transaction_data] { return transaction_data; });
+    EXPECT_CALL(m_callbacks, transaction_event(EVSE_ID, module::TxEvent::AUTHORIZED))
+        .WillOnce(Return(module::TxEventEffect::START_TRANSACTION));
+
+    EXPECT_CALL(*m_libocpp, on_transaction_started(EVSE_ID, CONNECTOR_ID, SESSION_ID, _, _, _, _, _,
+                                                   std::optional<std::int32_t>{5}, _, _));
+    EXPECT_CALL(*m_libocpp, on_reservation_cleared(EVSE_ID, CONNECTOR_ID)).Times(1);
+
+    m_chargepoint.on_event_session_started(
+        EVSE_ID, CONNECTOR_ID, session_started_event(types::evse_manager::StartSessionReason::Authorized, 5));
+}
+
+TEST_F(ChargePointV2Test, sessionStartedWithoutReservationKeepsReservation) {
+    ON_CALL(m_callbacks, transaction_event(EVSE_ID, _)).WillByDefault(Return(module::TxEventEffect::NONE));
+    EXPECT_CALL(*m_libocpp, on_reservation_cleared(_, _)).Times(0);
+
+    m_chargepoint.on_event_session_started(
+        EVSE_ID, CONNECTOR_ID,
+        session_started_event(types::evse_manager::StartSessionReason::Authorized, std::nullopt));
+}
+
+TEST_F(ChargePointV2Test, sessionStartedByPlugInKeepsReservation) {
+    ON_CALL(m_callbacks, transaction_event(EVSE_ID, _)).WillByDefault(Return(module::TxEventEffect::NONE));
+    EXPECT_CALL(*m_libocpp, on_reservation_cleared(_, _)).Times(0);
+
+    m_chargepoint.on_event_session_started(
+        EVSE_ID, CONNECTOR_ID, session_started_event(types::evse_manager::StartSessionReason::EVConnected, 5));
+}
+
+types::evse_manager::SessionEvent transaction_started_event(const std::optional<std::int32_t>& reservation_id) {
+    types::evse_manager::SessionEvent session_event;
+    session_event.uuid = SESSION_ID;
+    session_event.timestamp = TIMESTAMP;
+    session_event.event = types::evse_manager::SessionEventEnum::TransactionStarted;
+    session_event.connector_id = CONNECTOR_ID;
+    types::evse_manager::TransactionStarted transaction_started;
+    transaction_started.id_tag = provided_id_token("TOKEN123");
+    transaction_started.meter_value = meter_value_wh(0.0F);
+    transaction_started.reservation_id = reservation_id;
+    session_event.transaction_started = transaction_started;
+    return session_event;
+}
+
+// H03.FR.09/10: the reserving token authorizing after plug-in consumes the reservation
+TEST_F(ChargePointV2Test, transactionStartedWithReservationClearsReservation) {
+    make_transaction_data(ocpp::v2::TriggerReasonEnum::CablePluggedIn, ocpp::v2::ChargingStateEnum::EVConnected);
+    ON_CALL(m_callbacks, transaction_event(EVSE_ID, _)).WillByDefault(Return(module::TxEventEffect::NONE));
+    EXPECT_CALL(*m_libocpp, on_reservation_cleared(EVSE_ID, CONNECTOR_ID)).Times(1);
+
+    m_chargepoint.on_event_transaction_started(EVSE_ID, CONNECTOR_ID, transaction_started_event(5));
+}
+
+TEST_F(ChargePointV2Test, transactionStartedWithoutReservationKeepsReservation) {
+    make_transaction_data(ocpp::v2::TriggerReasonEnum::CablePluggedIn, ocpp::v2::ChargingStateEnum::EVConnected);
+    ON_CALL(m_callbacks, transaction_event(EVSE_ID, _)).WillByDefault(Return(module::TxEventEffect::NONE));
+    EXPECT_CALL(*m_libocpp, on_reservation_cleared(_, _)).Times(0);
+
+    m_chargepoint.on_event_transaction_started(EVSE_ID, CONNECTOR_ID, transaction_started_event(std::nullopt));
+}
+
 // a registered variable listener receives changes reported by libocpp
 TEST_F(ChargePointV2Test, variableListenerForwardsChanges) {
     stubs::Ocpp2ChargePointMock::variable_listener_t libocpp_listener;

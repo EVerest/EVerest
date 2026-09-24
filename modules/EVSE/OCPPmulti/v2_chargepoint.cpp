@@ -769,6 +769,9 @@ ChargePointV2::on_event_session_started(std::int32_t evse_id, std::int32_t conne
         process_tx_event_effect(evse_id, tx_event_effect, session_event);
         if (session_started.reason == types::evse_manager::StartSessionReason::EVConnected) {
             m_charge_point->on_session_started(evse_id, connector_id);
+        } else if (reservation_id.has_value()) {
+            // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+            m_charge_point->on_reservation_cleared(evse_id, connector_id);
         }
         result = tx_event == module::TxEvent::EV_CONNECTED;
     } else {
@@ -901,6 +904,10 @@ ChargePointV2::on_event_transaction_started(std::int32_t evse_id, std::int32_t c
             transaction_data->trigger_reason = trigger_reason;
             const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, tx_event);
             process_tx_event_effect(evse_id, tx_event_effect, session_event);
+            if (transaction_started.reservation_id.has_value()) {
+                // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+                m_charge_point->on_reservation_cleared(evse_id, connector_id);
+            }
             result = tx_event == module::TxEvent::EV_CONNECTED;
         }
     } else {
