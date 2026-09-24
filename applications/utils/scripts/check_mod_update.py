@@ -87,7 +87,7 @@ def git(repo, *args):
 
 
 def discover_modules(repo: Path):
-    """Return (cpp_modules, skipped) as lists of (name, reason)."""
+    """Return (cpp_modules, skipped): module paths relative to modules/, and (path, reason) pairs."""
     cpp_modules = []
     skipped = []
     for manifest in sorted((repo / 'modules').rglob('manifest.yaml')):
