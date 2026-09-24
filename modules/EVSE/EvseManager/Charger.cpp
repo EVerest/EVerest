@@ -1131,11 +1131,13 @@ void Charger::run_state_machine() {
 
                 signal_simple_event(types::evse_manager::SessionEventEnum::StoppingCharging);
                 internal_context.stopping_for_evse_pause = shared_context.flag_paused_by_evse;
+                internal_context.stopping_charging_timeout_ms = STOPPING_CHARGING_TIMEOUT_MS;
 
                 if (shared_context.hlc_charging_active) {
                     if (shared_context.hlc_d20_active and shared_context.flag_paused_by_evse) {
                         // Request pause via ISO protocol, EV is expected to stop the charging process
                         signal_hlc_pause_charging();
+                        internal_context.stopping_charging_timeout_ms = STOPPING_CHARGING_D20_PAUSE_TIMEOUT_MS;
                     } else {
                         // Request stop via ISO protocol, EV is expected to shut down session
                         signal_hlc_stop_charging();
@@ -1146,7 +1148,7 @@ void Charger::run_state_machine() {
             }
 
             // Now the EV is informed and we need to wait until the relays open or a timeout occurs.
-            if (time_in_current_state > STOPPING_CHARGING_TIMEOUT_MS) {
+            if (time_in_current_state > internal_context.stopping_charging_timeout_ms) {
                 EVLOG_warning << "StoppingCharging: EV did not stop within timeout, forcing hard stop.";
                 // Perform hard stop
                 signal_dc_supply_off();
