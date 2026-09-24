@@ -10,6 +10,7 @@ cc_everest_module(
     deps = [
         "//lib:run_application",
         "//lib/everest/timer:libtimer",
+        "//lib/everest/util",
         "@com_github_HowardHinnant_date//:date",
     ],
 )
