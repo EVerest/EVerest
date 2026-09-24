@@ -24,7 +24,18 @@ fn print_link_options(p: &Path) {
         "cargo:rustc-link-search=native={}",
         p.parent().unwrap().to_string_lossy()
     );
-    println!("cargo:rustc-link-lib={}", libname_from_path(p));
+    // everestrs_sys is this crate's own C++ glue. As a static library it travels inside the
+    // rlib, ahead of the rlibs it depends on at link time, notably cxx's bundled C++ runtime;
+    // as a shared library it needs no such ordering. Everything else is an external library,
+    // resolved at the final link like any other -l.
+    let libname = libname_from_path(p);
+    let is_static = p.extension().is_some_and(|ext| ext == "a");
+    let kind = if libname == "everestrs_sys" && is_static {
+        "static="
+    } else {
+        ""
+    };
+    println!("cargo:rustc-link-lib={kind}{libname}");
 }
 
 /// Registers the libraries specified in the `EVEREST_RS_LINK_DEPENDENCIES` environment variable.

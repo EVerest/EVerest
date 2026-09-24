@@ -35,8 +35,10 @@ export CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "1"
 export CARGO_PROFILE_RELEASE_PANIC = "abort"
 
 do_configure() {
+    # cargo ignores config.toml when a file named config sits next to it
+    rm -f "${CARGO_HOME}/config" "${CARGO_HOME}/config.toml"
     cargo_common_do_configure
-    cat >> "${CARGO_HOME}/config" <<CARGO_CONFIG
+    cat >> "${CARGO_HOME}/config.toml" <<CARGO_CONFIG
 
 [patch."https://github.com/Everest/zvt.git"]
 zvt = { path = "${WORKDIR}/zvt/zvt" }
