@@ -387,6 +387,10 @@ void TbdController::update_pre20_energy_transfer_modes(const std::vector<shared_
     evse_setup.handle()->pre20_energy_transfer_modes = modes;
 }
 
+void TbdController::update_ac_setup_config(const d20::AcSetupConfig& ac_setup_config) {
+    evse_setup.handle()->ac_setup_config = ac_setup_config;
+}
+
 void TbdController::update_pre20_vas_services(const std::vector<session::VasService>& services) {
     evse_setup.handle()->pre20_vas_services = services;
 }
