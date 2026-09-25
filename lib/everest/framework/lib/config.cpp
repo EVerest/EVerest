@@ -20,6 +20,7 @@
 #include <utils/config/storage.hpp>
 #include <utils/config/types.hpp>
 #include <utils/formatter.hpp>
+#include <utils/telemetry/catalog.hpp>
 
 using namespace everest::config;
 
@@ -1139,12 +1140,64 @@ ManagerConfig::ManagerConfig(const ManagerSettings& ms, everest::config::ModuleC
     BOOST_LOG_FUNCTION();
     m_settings = ms.runtime_settings;
     init_from_preloaded(std::move(preloaded_configs));
+    validate_telemetry_receiver(ms.runtime_settings.telemetry_socket_enabled);
 }
 
 ManagerConfig::ManagerConfig(const ManagerSettings& ms) : ConfigBase(ms.mqtt_settings), m_ps(ms) {
     BOOST_LOG_FUNCTION();
     m_settings = ms.runtime_settings;
     init_from_yaml();
+    validate_telemetry_receiver(ms.runtime_settings.telemetry_socket_enabled);
+}
+
+void ManagerConfig::validate_telemetry_receiver(bool telemetry_socket_enabled) {
+    std::vector<std::string> receivers;
+    for (const auto& [module_id, module_config] : m_module_configs) {
+        const auto manifest = m_manifests.find(module_config.module_name);
+        if (manifest == m_manifests.end() or not manifest->value("telemetry_receiver", false)) {
+            continue;
+        }
+        if (module_config.standalone) {
+            EVLOG_AND_THROW(EverestConfigError(
+                fmt::format("Telemetry receiver {} cannot be a standalone module, because it inherits the telemetry "
+                            "socket from the manager",
+                            printable_identifier(module_id))));
+        }
+        receivers.push_back(module_id);
+    }
+
+    if (not telemetry_socket_enabled) {
+        if (not receivers.empty()) {
+            EVLOG_AND_THROW(EverestConfigError(
+                fmt::format("Telemetry receiver {} is configured, but settings.telemetry_socket_enabled is not set",
+                            printable_identifier(receivers.front()))));
+        }
+        return;
+    }
+    if (receivers.size() != 1) {
+        EVLOG_AND_THROW(
+            EverestConfigError(fmt::format("settings.telemetry_socket_enabled requires exactly one active module with "
+                                           "telemetry_receiver set in its manifest, found {}",
+                                           receivers.size())));
+    }
+    m_telemetry_receiver = receivers.front();
+}
+
+const std::optional<std::string>& ManagerConfig::get_telemetry_receiver() const {
+    return m_telemetry_receiver;
+}
+
+everest::telemetry::TelemetryCatalog ManagerConfig::get_telemetry_catalog() const {
+    const everest::telemetry::MappingLookup module_mapping =
+        [this](const std::string& module_id) -> std::optional<Mapping> {
+        const auto module_config = m_module_configs.find(module_id);
+        if (module_config == m_module_configs.end()) {
+            return std::nullopt;
+        }
+        return module_config->second.mapping.module;
+    };
+    return everest::telemetry::build_telemetry_catalog(
+        m_manifests, m_module_names, module_mapping, everest::telemetry::make_types_dir_enum_resolver(m_ps.types_dir));
 }
 
 ManagerConfig::ManagerConfig(const ConfigParseSettings& ps) : ConfigBase(MQTTSettings{}), m_ps(ps) {

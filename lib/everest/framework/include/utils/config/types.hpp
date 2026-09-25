@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -180,6 +180,8 @@ struct Settings {
     std::optional<std::string> mqtt_external_prefix;
     std::optional<std::string> telemetry_prefix;
     std::optional<bool> telemetry_enabled;
+    std::optional<bool> telemetry_socket_enabled;
+    std::optional<std::string> telemetry_socket_path;
     std::optional<bool> validate_schema;
     std::optional<std::string> run_as_user;
     std::optional<bool> forward_exceptions;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include <nlohmann/json.hpp>
 #include <utils/config/types.hpp>
@@ -111,6 +111,12 @@ Settings parse_settings(const json& settings_json) {
     }
     if (auto it = settings_json.find("telemetry_enabled"); it != settings_json.end()) {
         settings.telemetry_enabled = it->get<bool>();
+    }
+    if (auto it = settings_json.find("telemetry_socket_enabled"); it != settings_json.end()) {
+        settings.telemetry_socket_enabled = it->get<bool>();
+    }
+    if (auto it = settings_json.find("telemetry_socket_path"); it != settings_json.end()) {
+        settings.telemetry_socket_path = it->get<std::string>();
     }
     if (auto it = settings_json.find("validate_schema"); it != settings_json.end()) {
         settings.validate_schema = it->get<bool>();

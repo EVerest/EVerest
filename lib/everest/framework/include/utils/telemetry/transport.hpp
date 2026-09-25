@@ -31,6 +31,10 @@ public:
     virtual SendResult send(const std::uint8_t* data, std::size_t size) = 0;
 };
 
+/// \brief Place \p socket_fd on RECEIVER_FD without close-on-exec, so that it survives exec()
+/// \throws std::runtime_error if the descriptor cannot be moved
+void hand_over_to_receiver_fd(int socket_fd);
+
 /// \brief Sender to the Unix-domain datagram socket at \p path
 /// \throws std::runtime_error if the path is invalid or no socket can be created
 std::unique_ptr<DatagramSender> make_uds_datagram_sender(const std::string& path);

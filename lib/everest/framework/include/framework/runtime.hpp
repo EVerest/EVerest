@@ -102,6 +102,8 @@ inline constexpr auto MQTT_EVEREST_PREFIX = "everest";
 inline constexpr auto MQTT_EXTERNAL_PREFIX = "";
 inline constexpr auto TELEMETRY_PREFIX = "everest-telemetry";
 inline constexpr auto TELEMETRY_ENABLED = false;
+inline constexpr auto TELEMETRY_SOCKET_ENABLED = false;
+inline constexpr auto TELEMETRY_SOCKET_PATH = "/tmp/everest_telemetry.sock";
 inline constexpr auto VALIDATE_SCHEMA = false;
 inline constexpr auto FORWARD_EXCEPTIONS = false;
 

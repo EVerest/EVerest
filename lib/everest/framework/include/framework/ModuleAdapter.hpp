@@ -8,6 +8,7 @@
 #include <utils/conversions.hpp>
 #include <utils/date.hpp>
 #include <utils/error.hpp>
+#include <utils/telemetry/catalog.hpp>
 
 #include <iomanip>
 #include <iostream>
@@ -105,6 +106,8 @@ struct ModuleAdapter {
         std::function<void(const std::string&, const std::string&, const std::string&, const TelemetryMap&)>;
     using GetMappingFunc = std::function<std::optional<ModuleTierMappings>()>;
     using GetConfigServiceClientFunc = std::function<std::shared_ptr<config::ConfigServiceClient>()>;
+    using MakeTelemetryFunc = std::function<everest::telemetry::ModuleTelemetry()>;
+    using GetTelemetryCatalogFunc = std::function<everest::telemetry::TelemetryCatalog()>;
 
     CallFunc call;
     PublishFunc publish;
@@ -123,6 +126,11 @@ struct ModuleAdapter {
     TelemetryPublishFunc telemetry_publish;
     GetMappingFunc get_mapping;
     GetConfigServiceClientFunc get_config_service_client;
+    /// Creates the telemetry context of this module, disabled when telemetry is disabled or not declared;
+    /// called once by the generated code, which owns the result
+    MakeTelemetryFunc make_telemetry;
+    /// Telemetry declarations of all active modules; only set for the module marked as telemetry_receiver
+    GetTelemetryCatalogFunc get_telemetry_catalog;
 
     void check_complete();
 

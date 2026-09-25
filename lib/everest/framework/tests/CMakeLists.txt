@@ -94,6 +94,26 @@ setup_test_directory(missing_interface TESTMissingInterface)
 setup_test_directory(broken_manifest_telemetry TESTBrokenManifestTelemetry test_interface)
 setup_test_directory(valid_telemetry TESTValidManifestTelemetry test_interface
     TYPE_FILES test_telemetry_types.yaml)
+setup_test_directory(telemetry_receiver
+    MODULES TESTValidManifestTelemetry TESTTelemetryReceiver
+    INTERFACE_FILES test_interface
+    TYPE_FILES test_telemetry_types.yaml)
+setup_test_directory(telemetry_no_receiver
+    MODULES TESTValidManifestTelemetry TESTTelemetryReceiver
+    INTERFACE_FILES test_interface
+    TYPE_FILES test_telemetry_types.yaml)
+setup_test_directory(telemetry_two_receivers
+    MODULES TESTValidManifestTelemetry TESTTelemetryReceiver
+    INTERFACE_FILES test_interface
+    TYPE_FILES test_telemetry_types.yaml)
+setup_test_directory(telemetry_receiver_disabled
+    MODULES TESTValidManifestTelemetry TESTTelemetryReceiver
+    INTERFACE_FILES test_interface
+    TYPE_FILES test_telemetry_types.yaml)
+setup_test_directory(telemetry_standalone_receiver
+    MODULES TESTValidManifestTelemetry TESTTelemetryReceiver
+    INTERFACE_FILES test_interface
+    TYPE_FILES test_telemetry_types.yaml)
 
 setup_test_directory(unknown_impls TESTValidManifest test_interface)
 setup_test_directory(missing_config_entry TESTValidManifest test_interface)

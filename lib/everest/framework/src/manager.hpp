@@ -88,6 +88,8 @@ public:
     /// \param vm Parsed command line options used by manager startup/runtime.
     explicit Manager(const boost::program_options::variables_map& vm);
 
+    ~Manager();
+
     /// \brief Start manager lifecycle and main event loop.
     /// \return Process exit code (EXIT_SUCCESS / EXIT_FAILURE).
     int run();
@@ -231,6 +233,10 @@ private:
     /// process visible to ModuleProcessGuard in run(). Requires m_module_handles to be empty on entry.
     /// \param ctx Runtime dependencies for the current run.
     void handle_start_modules(const RuntimeContext& ctx);
+
+    /// \brief Bind the telemetry socket unless it is already bound at the configured path.
+    /// The socket stays bound for the lifetime of the manager, across module restarts.
+    void open_telemetry_socket(const Everest::ManagerSettings& ms);
 
     /// \brief Settle into Idle after a failed start or reload, logging \p reason and reporting
     /// FailedToStart to the Configuration API. Shared by the boot and restart paths.
@@ -435,4 +441,6 @@ private:
     std::vector<std::function<void(ManagerState, ManagerState)>> m_state_transition_handlers;
     std::shared_ptr<everest::db::sqlite::ConnectionInterface> m_db_connection;
     std::unique_ptr<Everest::config::ConfigServiceCore> m_config_service_core{};
+    struct TelemetrySocket;
+    std::unique_ptr<TelemetrySocket> m_telemetry_socket;
 };

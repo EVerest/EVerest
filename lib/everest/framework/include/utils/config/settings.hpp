@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -25,10 +25,12 @@ struct RuntimeSettings {
     fs::path etc_dir;     ///< Directory that contains configs, certificates
     fs::path data_dir;    ///< Directory for general data, definitions for EVerest interfaces, types, errors an schemas
     fs::path modules_dir; ///< Directory that contains EVerest modules
-    fs::path logging_config_file;   ///< Path to the logging configuration file
-    std::string telemetry_prefix;   ///< MQTT prefix for telemetry
-    bool telemetry_enabled{false};  ///< If telemetry is enabled
-    bool validate_schema{false};    ///< If schema validation for all var publishes and cmd calls is enabled
+    fs::path logging_config_file;         ///< Path to the logging configuration file
+    std::string telemetry_prefix;         ///< MQTT prefix for telemetry
+    bool telemetry_enabled{false};        ///< If telemetry is enabled
+    bool telemetry_socket_enabled{false}; ///< If manifest-declared telemetry is sent to the telemetry receiver
+    std::string telemetry_socket_path;    ///< Path of the telemetry datagram socket
+    bool validate_schema{false};          ///< If schema validation for all var publishes and cmd calls is enabled
     bool forward_exceptions{false}; ///< If exceptions in cmd handlers should be caught and forwarded to the caller
 };
 

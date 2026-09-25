@@ -16,6 +16,7 @@
 #include <utils/error/error_manager_req.hpp>
 #include <utils/error/error_state_monitor.hpp>
 #include <utils/filesystem.hpp>
+#include <utils/telemetry/module_telemetry.hpp>
 
 #include <boost/program_options.hpp>
 
@@ -511,6 +512,9 @@ void ManagerSettings::init_settings(const everest::config::Settings& settings) {
 
     populate_runtime_settings(runtime_settings, prefix, etc_dir, data_dir, modules_dir, logging_config_file,
                               telemetry_prefix, telemetry_enabled, validate_schema, forward_exceptions);
+    runtime_settings.telemetry_socket_enabled =
+        settings.telemetry_socket_enabled.value_or(defaults::TELEMETRY_SOCKET_ENABLED);
+    runtime_settings.telemetry_socket_path = settings.telemetry_socket_path.value_or(defaults::TELEMETRY_SOCKET_PATH);
     this->modules_dir = modules_dir;
     this->validate_schema = validate_schema;
 }
@@ -787,6 +791,27 @@ int ModuleLoader::initialize() {
         };
 
         module_adapter.get_mapping = [&everest]() { return everest.get_3_tier_model_mapping(); };
+
+        const auto& manifest = config.get_manifests().at(module_name);
+        std::vector<std::string> telemetry_errors;
+        const auto telemetry_elements = everest::telemetry::parse_element_declarations(
+            manifest.value("telemetry", json::object()), telemetry_errors);
+        for (const auto& error : telemetry_errors) {
+            EVLOG_error << fmt::format("Module '{}': {}", m_module_id, error);
+        }
+        module_adapter.make_telemetry = [module_id = m_module_id, telemetry_elements,
+                                         enabled = rs->telemetry_socket_enabled,
+                                         socket_path = rs->telemetry_socket_path]() {
+            return everest::telemetry::make_module_telemetry(module_id, telemetry_elements, enabled, socket_path);
+        };
+        if (manifest.value("telemetry_receiver", false)) {
+            module_adapter.get_telemetry_catalog = [mqtt = m_mqtt]() {
+                return mqtt
+                    ->get(fmt::format("{}telemetry_catalog", mqtt->get_everest_prefix()), QOS::QOS2,
+                          config::mqtt_get_config_retries)
+                    .get<everest::telemetry::TelemetryCatalog>();
+            };
+        }
 
         m_callbacks.register_module_adapter(module_adapter);
 

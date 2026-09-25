@@ -20,6 +20,7 @@
 #include <signal.h>
 #include <sys/eventfd.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -42,6 +43,7 @@
 #include <utils/date.hpp>
 #include <utils/mqtt_abstraction.hpp>
 #include <utils/status_fifo.hpp>
+#include <utils/telemetry/transport.hpp>
 
 #include "manager.hpp"
 #include "manager_admin_panel.hpp"
@@ -80,6 +82,9 @@ struct ModuleStartInfo {
     std::string printable_name;
     Language language;
     fs::path path;
+
+    // the telemetry receiver gets the telemetry socket on everest::telemetry::RECEIVER_FD
+    bool inherit_telemetry_fd{false};
 };
 
 namespace {
@@ -248,7 +253,7 @@ void exec_module(const RuntimeSettings& rs, const MQTTSettings& mqtt_settings, c
 /// check_child_executed() throw, and a pid the caller cannot see when they do is a module process
 /// nobody can stop afterwards (see ModuleProcessGuard in Manager::run()).
 void spawn_modules(const std::vector<ModuleStartInfo>& modules, const ManagerSettings& ms,
-                   std::map<pid_t, std::string>& started_modules) {
+                   std::map<pid_t, std::string>& started_modules, int telemetry_socket_fd) {
     const auto& rs = ms.runtime_settings;
 
     for (const auto& module : modules) {
@@ -257,6 +262,9 @@ void spawn_modules(const std::vector<ModuleStartInfo>& modules, const ManagerSet
 
         if (proc_handle.is_child()) {
             try {
+                if (module.inherit_telemetry_fd) {
+                    everest::telemetry::hand_over_to_receiver_fd(telemetry_socket_fd);
+                }
                 exec_module(rs, ms.mqtt_settings, module, proc_handle);
             } catch (const std::exception& err) {
                 proc_handle.send_error_and_exit(err.what());
@@ -369,6 +377,13 @@ void Manager::publish_startup_metadata(const RuntimeContext& ctx) const {
 
     mqtt_abstraction.publish(fmt::format("{}module_names", ms.mqtt_settings.everest_prefix), module_names_payload,
                              QOS::QOS2, true);
+
+    if (config.get_telemetry_receiver().has_value()) {
+        MqttMessagePayload telemetry_catalog_payload{MqttMessageType::ConfigurationResponse,
+                                                     nlohmann::json(config.get_telemetry_catalog())};
+        mqtt_abstraction.publish(fmt::format("{}telemetry_catalog", ms.mqtt_settings.everest_prefix),
+                                 telemetry_catalog_payload, QOS::QOS2, true);
+    }
 }
 
 /// \brief Unregister all module ready handlers and clear tracked ready state.
@@ -954,6 +969,9 @@ int Manager::run() {
     }
     if (ms.runtime_settings.telemetry_enabled) {
         EVLOG_info << "Telemetry enabled";
+    }
+    if (ms.runtime_settings.telemetry_socket_enabled) {
+        EVLOG_info << "Telemetry socket enabled at " << ms.runtime_settings.telemetry_socket_path;
     }
     if (not ms.run_as_user.empty()) {
         EVLOG_info << "EVerest will run as system user: " << ms.run_as_user;
@@ -1616,6 +1634,20 @@ bool Manager::transition_to_running_and_announce(MQTTAbstraction& mqtt_abstracti
     return goto_running_transition;
 }
 
+struct Manager::TelemetrySocket {
+    int fd{-1};
+    std::string path;
+
+    ~TelemetrySocket() {
+        if (fd >= 0) {
+            close(fd);
+        }
+        unlink(path.c_str());
+    }
+};
+
+Manager::~Manager() = default;
+
 /// \brief Handle module startup by publishing metadata, registering handlers, and spawning module processes.
 void Manager::handle_start_modules(const RuntimeContext& ctx) {
     BOOST_LOG_FUNCTION();
@@ -1732,6 +1764,11 @@ void Manager::handle_start_modules(const RuntimeContext& ctx) {
 
         if (std::any_of(standalone_modules.begin(), standalone_modules.end(),
                         [module_id](const auto& element) { return element == module_id; })) {
+            if (config.get_telemetry_receiver() == module_id) {
+                throw std::runtime_error(fmt::format(
+                    "Telemetry receiver {} cannot be started standalone, because it inherits the telemetry socket",
+                    module_id));
+            }
             EVLOG_info << "Not starting standalone module: " << fmt::format(TERMINAL_STYLE_BLUE, "{}", module_id);
             continue;
         }
@@ -1772,9 +1809,44 @@ void Manager::handle_start_modules(const RuntimeContext& ctx) {
                             module_id, module_name, binary_path.string(), javascript_library_path.string(),
                             python_module_path.string()));
         }
+
+        if (config.get_telemetry_receiver() == module_id) {
+            if (modules_to_spawn.back().language != ModuleStartInfo::Language::cpp) {
+                throw std::runtime_error(
+                    fmt::format("Telemetry receiver {} must be a C++ module, because it inherits the telemetry socket",
+                                printable_module_name));
+            }
+            modules_to_spawn.back().inherit_telemetry_fd = true;
+        }
     }
 
-    spawn_modules(modules_to_spawn, ms, m_module_handles);
+    const auto receiver_it = std::find_if(modules_to_spawn.begin(), modules_to_spawn.end(),
+                                          [](const auto& module) { return module.inherit_telemetry_fd; });
+    if (receiver_it != modules_to_spawn.end()) {
+        open_telemetry_socket(ms);
+    }
+    spawn_modules(modules_to_spawn, ms, m_module_handles, m_telemetry_socket ? m_telemetry_socket->fd : -1);
+}
+
+void Manager::open_telemetry_socket(const ManagerSettings& ms) {
+    const auto& path = ms.runtime_settings.telemetry_socket_path;
+    if (m_telemetry_socket and m_telemetry_socket->path == path) {
+        return;
+    }
+    m_telemetry_socket.reset();
+
+    auto socket = std::make_unique<TelemetrySocket>();
+    socket->fd = everest::telemetry::bind_receiver_socket(path, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+    socket->path = path;
+    if (not ms.run_as_user.empty()) {
+        const auto* user = getpwnam(ms.run_as_user.c_str());
+        if (user == nullptr or chown(path.c_str(), user->pw_uid, user->pw_gid) != 0) {
+            throw std::runtime_error(
+                fmt::format("Failed to hand the telemetry socket {} to user {}", path, ms.run_as_user));
+        }
+    }
+    EVLOG_info << "Telemetry socket bound at " << path;
+    m_telemetry_socket = std::move(socket);
 }
 
 Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(RuntimeContext& ctx,

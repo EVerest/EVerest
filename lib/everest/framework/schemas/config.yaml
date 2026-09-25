@@ -61,6 +61,14 @@ properties:
         type: string
       telemetry_enabled:
         type: boolean
+      telemetry_socket_enabled:
+        description: >-
+          Enables telemetry declared in module manifests. The manager binds the telemetry socket and hands it
+          to the module marked as telemetry_receiver.
+        type: boolean
+      telemetry_socket_path:
+        description: Filesystem path of the telemetry datagram socket
+        type: string
       validate_schema:
         type: boolean
       run_as_user:

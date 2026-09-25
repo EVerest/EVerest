@@ -16,11 +16,14 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <everest/io/event/unique_fd.hpp>
 #include <everest/utils/yaml_loader.hpp>
+#include <framework/runtime.hpp>
 #include <framework/telemetry.hpp>
+#include <utils/config.hpp>
 #include <utils/telemetry/catalog.hpp>
 #include <utils/telemetry/module_telemetry.hpp>
 #include <utils/telemetry/transport.hpp>
@@ -505,4 +508,104 @@ TEST_CASE("Telemetry catalog collects declarations, mappings and enum values", "
     auto broken = serialized;
     broken["producer_1"]["elements"]["temperature"]["type"] = "string";
     CHECK_THROWS(broken.get<TelemetryCatalog>());
+}
+
+TEST_CASE("The manager requires exactly one telemetry receiver when telemetry is enabled", "[telemetry]") {
+    const auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+    const auto manager_config = [&bin_dir](const std::string& name) {
+        return Everest::ManagerConfig(Everest::ManagerSettings(bin_dir + name + "/", bin_dir + name + "/config.yaml"));
+    };
+
+    SECTION("One receiver") {
+        const auto config = manager_config("telemetry_receiver");
+        CHECK(config.get_telemetry_receiver() == std::optional<std::string>("telemetry_receiver"));
+
+        const auto catalog = config.get_telemetry_catalog();
+        REQUIRE(catalog.size() == 1);
+        const auto& producer = catalog.at("telemetry_producer");
+        REQUIRE(producer.mapping.has_value());
+        CHECK(producer.mapping->evse == 1);
+        CHECK(producer.mapping->connector == std::optional<int>(2));
+        CHECK(producer.elements.at("mode").enum_values == std::vector<std::string>{"Idle", "Running", "Fault"});
+    }
+    SECTION("No receiver") {
+        CHECK_THROWS_AS(manager_config("telemetry_no_receiver"), Everest::EverestConfigError);
+    }
+    SECTION("Two receivers") {
+        CHECK_THROWS_AS(manager_config("telemetry_two_receivers"), Everest::EverestConfigError);
+    }
+    SECTION("Receiver while telemetry is disabled") {
+        CHECK_THROWS_AS(manager_config("telemetry_receiver_disabled"), Everest::EverestConfigError);
+    }
+    SECTION("Standalone receiver") {
+        CHECK_THROWS_AS(manager_config("telemetry_standalone_receiver"), Everest::EverestConfigError);
+    }
+}
+
+TEST_CASE("Telemetry socket settings reach the runtime settings", "[telemetry]") {
+    const auto bin_dir = Everest::tests::get_bin_dir().string() + "/telemetry_receiver/";
+    const Everest::ManagerSettings ms(bin_dir, bin_dir + "config.yaml");
+    CHECK(ms.runtime_settings.telemetry_socket_enabled);
+    CHECK(ms.runtime_settings.telemetry_socket_path == "/tmp/everest_telemetry_test.sock");
+
+    const json serialized = ms.runtime_settings;
+    const auto round_trip = serialized.get<Everest::RuntimeSettings>();
+    CHECK(round_trip.telemetry_socket_enabled);
+    CHECK(round_trip.telemetry_socket_path == "/tmp/everest_telemetry_test.sock");
+
+    auto without_telemetry_keys = serialized;
+    without_telemetry_keys.erase("telemetry_socket_enabled");
+    without_telemetry_keys.erase("telemetry_socket_path");
+    const auto defaults = without_telemetry_keys.get<Everest::RuntimeSettings>();
+    CHECK_FALSE(defaults.telemetry_socket_enabled);
+    CHECK(defaults.telemetry_socket_path.empty());
+
+    const auto empty_dir = Everest::tests::get_bin_dir().string() + "/valid_telemetry/";
+    const Everest::ManagerSettings default_ms(empty_dir, empty_dir + "config.yaml");
+    CHECK_FALSE(default_ms.runtime_settings.telemetry_socket_enabled);
+    CHECK(default_ms.runtime_settings.telemetry_socket_path == Everest::defaults::TELEMETRY_SOCKET_PATH);
+}
+
+TEST_CASE("The telemetry socket is handed over on the receiver descriptor", "[telemetry]") {
+    const auto dir = make_temp_dir();
+    const auto path = dir + "/telemetry.sock";
+    const everest::lib::io::event::unique_fd socket(bind_receiver_socket(path, 0600));
+    REQUIRE((::fcntl(socket, F_GETFD) & FD_CLOEXEC) != 0);
+
+    auto sender = make_uds_datagram_sender(path);
+    const auto datagram = wire::encode(wire::Sample{"m", "sent_before_fork", 1, 1});
+    REQUIRE(sender->send(datagram.data(), datagram.size()) == SendResult::Ok);
+
+    const auto child = ::fork();
+    REQUIRE(child >= 0);
+    if (child == 0) {
+        int status = 0;
+        try {
+            hand_over_to_receiver_fd(socket);
+            const auto bound = bound_receiver_socket_path(RECEIVER_FD);
+            std::array<std::uint8_t, 256> buffer{};
+            const auto received = ::recv(RECEIVER_FD, buffer.data(), buffer.size(), MSG_DONTWAIT);
+            const auto decoded =
+                received > 0 ? wire::decode(buffer.data(), static_cast<std::size_t>(received)) : wire::DecodeResult{};
+            if (not bound.has_value() or bound.value() != path) {
+                status = 1;
+            } else if ((::fcntl(RECEIVER_FD, F_GETFD) & FD_CLOEXEC) != 0) {
+                status = 2;
+            } else if (not decoded.message.has_value() or
+                       std::get<wire::Sample>(decoded.message.value()).element != "sent_before_fork") {
+                status = 3;
+            }
+        } catch (...) {
+            status = 4;
+        }
+        ::_exit(status);
+    }
+
+    int status = 0;
+    REQUIRE(::waitpid(child, &status, 0) == child);
+    REQUIRE(WIFEXITED(status));
+    CHECK(WEXITSTATUS(status) == 0);
+
+    ::unlink(path.c_str());
+    ::rmdir(dir.c_str());
 }

@@ -22,6 +22,8 @@
 
 #include <fmt/core.h>
 
+#include <utils/telemetry/transport.hpp>
+
 namespace Everest::system {
 
 const auto PARENT_DIED_SIGNAL = SIGTERM;
@@ -129,6 +131,23 @@ pid_t SubProcess::check_child_executed() {
     return m_pid;
 }
 
+namespace {
+// The telemetry receiver's child gets the telemetry socket on RECEIVER_FD before exec, so the pipe the child
+// needs until exec must not occupy it.
+int move_above_telemetry_receiver_fd(int fd) {
+    if (fd > everest::telemetry::RECEIVER_FD) {
+        return fd;
+    }
+    const auto moved = fcntl(fd, F_DUPFD_CLOEXEC, everest::telemetry::RECEIVER_FD + 1);
+    const auto error = errno;
+    close(fd);
+    if (moved < 0) {
+        throw std::runtime_error(fmt::format("Syscall fcntl(F_DUPFD_CLOEXEC) failed ({}), exiting", strerror(error)));
+    }
+    return moved;
+}
+} // namespace
+
 SubProcess SubProcess::create(const std::string& run_as_user) {
     std::array<int, 2> pipefd{};
 
@@ -149,8 +168,8 @@ SubProcess SubProcess::create(const std::string& run_as_user) {
         }
     }
 
-    const auto reading_end_fd = pipefd[0];
-    const auto writing_end_fd = pipefd[1];
+    const auto reading_end_fd = move_above_telemetry_receiver_fd(pipefd[0]);
+    const auto writing_end_fd = move_above_telemetry_receiver_fd(pipefd[1]);
 
     const auto parent_pid = getpid();
 

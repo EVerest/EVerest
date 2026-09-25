@@ -8,6 +8,7 @@
 #include <cstring>
 #include <stdexcept>
 
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -95,6 +96,19 @@ std::string_view to_string(SendResult result) {
         return "send error";
     }
     return "unknown";
+}
+
+void hand_over_to_receiver_fd(int socket_fd) {
+    if (socket_fd == RECEIVER_FD) {
+        if (::fcntl(socket_fd, F_SETFD, 0) != 0) {
+            throw std::runtime_error(std::string("Failed to clear close-on-exec of the telemetry socket: ") +
+                                     std::strerror(errno));
+        }
+        return;
+    }
+    if (::dup2(socket_fd, RECEIVER_FD) < 0) {
+        throw std::runtime_error(std::string("Failed to hand over the telemetry socket: ") + std::strerror(errno));
+    }
 }
 
 std::unique_ptr<DatagramSender> make_uds_datagram_sender(const std::string& path) {

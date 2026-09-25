@@ -47,6 +47,8 @@ void adl_serializer<Everest::RuntimeSettings>::to_json(nlohmann::json& j, const 
          {"modules_dir", r.modules_dir},
          {"telemetry_prefix", r.telemetry_prefix},
          {"telemetry_enabled", r.telemetry_enabled},
+         {"telemetry_socket_enabled", r.telemetry_socket_enabled},
+         {"telemetry_socket_path", r.telemetry_socket_path},
          {"validate_schema", r.validate_schema},
          {"forward_exceptions", r.forward_exceptions}};
 }
@@ -58,6 +60,8 @@ void adl_serializer<Everest::RuntimeSettings>::from_json(const nlohmann::json& j
     r.modules_dir = j.at("modules_dir").get<std::string>();
     r.telemetry_prefix = j.at("telemetry_prefix").get<std::string>();
     r.telemetry_enabled = j.at("telemetry_enabled").get<bool>();
+    r.telemetry_socket_enabled = j.value("telemetry_socket_enabled", false);
+    r.telemetry_socket_path = j.value("telemetry_socket_path", std::string{});
     r.validate_schema = j.at("validate_schema").get<bool>();
     r.forward_exceptions = j.at("forward_exceptions").get<bool>();
 }

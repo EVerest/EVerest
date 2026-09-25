@@ -1,0 +1,14 @@
+active_modules:
+  receiver_a:
+    module: TESTTelemetryReceiver
+  receiver_b:
+    module: TESTTelemetryReceiver
+settings:
+  interfaces_dir: "interfaces"
+  modules_dir: "modules"
+  types_dir: "types"
+  errors_dir: "errors"
+  schemas_dir: "schemas"
+  www_dir: "www"
+  logging_config_file: "logging.ini"
+  telemetry_socket_enabled: true

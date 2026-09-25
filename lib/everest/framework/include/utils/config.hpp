@@ -22,6 +22,7 @@
 #include <utils/error.hpp>
 #include <utils/error/error_type_map.hpp>
 #include <utils/module_config.hpp>
+#include <utils/telemetry/catalog.hpp>
 #include <utils/types.hpp>
 
 namespace Everest {
@@ -309,6 +310,13 @@ private:
     /// Implementations can have overwritten mappings.
     void parse_3_tier_model_mapping();
 
+    std::optional<std::string> m_telemetry_receiver;
+
+    ///
+    /// \brief Checks that exactly one non-standalone module is marked as telemetry_receiver when telemetry is
+    /// enabled, and none otherwise
+    void validate_telemetry_receiver(bool telemetry_socket_enabled);
+
 public:
     ///
     /// \brief Create a ManagerConfig from pre-loaded ModuleConfigurations.
@@ -337,6 +345,14 @@ public:
     /// whether it was found
     everest::config::GetConfigurationParameterResponse
     get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier) const;
+
+    ///
+    /// \returns the id of the module that receives telemetry, if telemetry is enabled
+    const std::optional<std::string>& get_telemetry_receiver() const;
+
+    ///
+    /// \returns the telemetry declarations of all active modules with their mappings and resolved enum values
+    everest::telemetry::TelemetryCatalog get_telemetry_catalog() const;
 };
 
 ///
