@@ -47,6 +47,7 @@
 #include "PersistentStore.hpp"
 #include "SessionLog.hpp"
 #include "VarContainer.hpp"
+#include "bsp_capabilities_store.hpp"
 #include "over_voltage/OverVoltageMonitor.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "voltage_plausibility/VoltagePlausibilityMonitor.hpp"
@@ -195,7 +196,6 @@ public:
     sigslot::signal<int> signalNrOfPhasesAvailable;
     types::powermeter::Powermeter get_latest_powermeter_data_billing();
     types::evse_board_support::HardwareCapabilities get_hw_capabilities();
-    std::atomic<bool> ready_for_capabilities{false};
 
     std::mutex external_local_limits_mutex;
     bool update_max_current_limit(types::energy::ExternalLimits& limits, float max_current_import,
@@ -320,7 +320,7 @@ private:
     types::powermeter::Powermeter latest_powermeter_data_billing;
 
     Everest::Thread energyThreadHandle;
-    everest::lib::util::monitor<types::evse_board_support::HardwareCapabilities> hw_capabilities;
+    BspCapabilitiesStore hw_capabilities{types::evse_board_support::HardwareCapabilities{}};
 
     types::energy::ExternalLimits external_local_energy_limits;
     const float EVSE_ABSOLUTE_MAX_CURRENT = 80.0;
@@ -431,10 +431,24 @@ private:
 
     types::power_supply_DC::ChargingPhase last_power_supply_DC_charging_phase{
         types::power_supply_DC::ChargingPhase::Other};
+    // Written only by set_supported_energy_transfers(), which holds it across the blocking HLC
+    // update_energy_transfer_modes command, so an HLC handler must not call back into EvseManager.
+    // Lock order: this monitor first, then hw_capabilities, powersupply_capabilities_mutex or
+    // dc_external_derate_mutex.
     everest::lib::util::monitor<std::vector<types::iso15118::EnergyTransferMode>> supported_energy_transfers;
-    void publish_and_update_supported_energy_transfers();
-    bool update_supported_energy_transfers(const std::vector<types::iso15118::EnergyTransferMode>& energy_transfers);
-    bool update_supported_energy_transfers(const types::iso15118::EnergyTransferMode& energy_transfer);
+    enum class SendEnergyTransfers {
+        OnChange,
+        Always
+    };
+    // Stores the modes current_modes() returns and sends them, unless send is OnChange and they equal
+    // the stored ones. current_modes() runs while the supported_energy_transfers monitor is held.
+    template <typename ModesFn> void set_supported_energy_transfers(ModesFn current_modes, SendEnergyTransfers send);
+    // Publishes modes and sends them to the HLC. Takes no lock.
+    void send_supported_energy_transfers(const std::vector<types::iso15118::EnergyTransferMode>& modes);
+    std::vector<types::iso15118::EnergyTransferMode> ac_energy_transfers();
+    std::vector<types::iso15118::EnergyTransferMode> ac_core_energy_transfers();
+    std::vector<types::iso15118::EnergyTransferMode> dc_energy_transfers();
+    void recompute_and_publish_supported_dc_energy_transfers();
     std::mutex hlc_ac_parameters_mutex;
     void update_hlc_ac_parameters();
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
