@@ -73,15 +73,29 @@ const std::string cpevent_to_string(CPEvent e) {
 }
 
 IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_, bool lock_connector_in_state_b_,
-                                 bool use_authorized_, bool keep_cable_locked_) :
+                                 bool use_authorized_, bool keep_cable_locked_, int keep_cable_locked_lock_delay_ms_) :
     r_bsp(r_bsp_),
     lock_connector_in_state_b(lock_connector_in_state_b_),
     use_authorized(use_authorized_),
     authorized(!use_authorized_),
-    keep_cable_locked(keep_cable_locked_) {
+    keep_cable_locked(keep_cable_locked_),
+    keep_cable_locked_lock_delay_ms(keep_cable_locked_lock_delay_ms_) {
     // feed the state machine whenever the timer expires
     timeout_state_c1.signal_reached.connect([this]() { feed_state_machine(std::nullopt); });
     timeout_unlock_state_F.signal_reached.connect([this]() { feed_state_machine(std::nullopt); });
+    // Captive lock debounce elapsed: mark the plug seated and re-evaluate so it gets locked. Guard
+    // under the mutex and only if a plug is still present, so a removal racing this expiry cannot
+    // leave a stale "seated" flag that would lock an empty socket.
+    timeout_captive_lock.signal_reached.connect([this]() {
+        {
+            Everest::scoped_lock_timeout lock(state_machine_mutex,
+                                              Everest::MutexDescription::IEC_captive_lock_debounce_reached);
+            if (pp_ampacity > 0.) {
+                captive_lock_delay_elapsed = true;
+            }
+        }
+        feed_state_machine(std::nullopt);
+    });
 
     // Subscribe to bsp driver to receive BspEvents from the hardware
     r_bsp->subscribe_event([this](types::board_support_common::BspEvent const& event) {
@@ -468,6 +482,8 @@ void IECStateMachine::call_allow_power_on_bsp(bool value) {
 }
 
 void IECStateMachine::set_pp_ampacity(types::board_support_common::ProximityPilot const& pp) {
+    bool start_captive_lock_debounce = false;
+    bool stop_captive_lock_debounce = false;
     {
         // Serialized with connector_force_unlock(): a force unlock racing a cable removal must not
         // leave the captive window open on an empty socket.
@@ -494,13 +510,33 @@ void IECStateMachine::set_pp_ampacity(types::board_support_common::ProximityPilo
             pp_ampacity = 0.;
         }
 
-        if (keep_cable_locked and pp_ampacity == 0.) {
-            // Cable removed: the next insertion locks again
-            captive_unlock_window = false;
+        if (keep_cable_locked) {
+            if (pp_ampacity == 0.) {
+                // Cable removed: the next insertion locks again, after the debounce.
+                captive_unlock_window = false;
+                captive_lock_delay_elapsed = false;
+                stop_captive_lock_debounce = true;
+            } else if (not is_locked and not captive_lock_delay_elapsed) {
+                const auto delay = std::chrono::milliseconds(keep_cable_locked_lock_delay_ms.load());
+                if (delay.count() > 0) {
+                    // Plug just detected: give it time to seat before the lock pin extends.
+                    start_captive_lock_debounce = true;
+                } else {
+                    captive_lock_delay_elapsed = true;
+                }
+            }
         }
     }
 
+    // start()/stop() join the timer's wait thread, which acquires state_machine_mutex; keep them out
+    // of the locked section above to avoid the deadlock the other timers guard against the same way.
     if (keep_cable_locked) {
+        if (stop_captive_lock_debounce) {
+            timeout_captive_lock.stop();
+        }
+        if (start_captive_lock_debounce) {
+            timeout_captive_lock.start(std::chrono::milliseconds(keep_cable_locked_lock_delay_ms.load()));
+        }
         feed_state_machine(std::nullopt);
     }
 }
@@ -584,8 +620,13 @@ void IECStateMachine::check_connector_lock() {
     bool should_be_locked_considering_relais_and_force;
 
     if (keep_cable_locked) {
-        const bool plug_present = pp_ampacity > 0.;
-        should_be_locked_considering_relais_and_force = relais_on or (plug_present and not captive_unlock_window);
+        // Lock a freshly detected plug only once the seating debounce has elapsed, so the lock pin
+        // does not jam a half-inserted plug. An engaged lock is latched: pulling the plug against
+        // the lock pin breaks the PP contact before the plug can leave the socket, and that must not
+        // release the lock. Only a force unlock (captive window) or disabling the mode releases it.
+        const bool plug_seated = (pp_ampacity > 0.) and captive_lock_delay_elapsed;
+        should_be_locked_considering_relais_and_force =
+            relais_on or ((plug_seated or is_locked) and not captive_unlock_window);
     } else {
         should_be_locked_considering_relais_and_force =
             relais_on or (should_be_locked and not force_unlocked and authorized);
@@ -620,7 +661,10 @@ void IECStateMachine::set_keep_cable_locked(bool enabled) {
         keep_cable_locked = enabled;
         captive_unlock_window = false;
         force_unlocked = false;
+        // A plug already present when the mode is enabled is considered seated: lock without waiting.
+        captive_lock_delay_elapsed = (pp_ampacity > 0.);
     }
+    timeout_captive_lock.stop();
     feed_state_machine(std::nullopt);
 }
 

@@ -91,7 +91,7 @@ TEST(IECStateMachine, init) {
     module::stub::ModuleAdapterStub module_adapter = module::stub::ModuleAdapterStub();
     std::unique_ptr<evse_board_supportIntf> bsp_if =
         std::make_unique<module::stub::evse_board_supportIntfStub>(module_adapter);
-    module::IECStateMachine state_machine(std::move(bsp_if), true, false, false);
+    module::IECStateMachine state_machine(std::move(bsp_if), true, false, false, 0);
 }
 
 #if 0
@@ -221,7 +221,7 @@ TEST(IECStateMachine, deadlock_test) {
 
     BspStubDeadlock bsp;
     std::unique_ptr<evse_board_supportIntf> bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
-    module::IECStateMachine state_machine(std::move(bsp_if), true, false, false);
+    module::IECStateMachine state_machine(std::move(bsp_if), true, false, false, 0);
 
     std::uint8_t signal_lock_count = 0;
 
@@ -287,7 +287,7 @@ TEST(IECStateMachine, deadlock_fix) {
 
     BspStubDeadlock bsp;
     std::unique_ptr<evse_board_supportIntf> bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
-    module::IECStateMachine state_machine(std::move(bsp_if), true, false, false);
+    module::IECStateMachine state_machine(std::move(bsp_if), true, false, false, 0);
 
     std::uint8_t signal_lock_count = 0;
 
@@ -358,9 +358,11 @@ struct ConnectorLockTest : public testing::Test {
         unlock_count = 0;
     }
 
-    std::unique_ptr<module::IECStateMachine> create_state_machine(bool use_authorized, bool keep_cable_locked = false) {
+    std::unique_ptr<module::IECStateMachine> create_state_machine(bool use_authorized, bool keep_cable_locked = false,
+                                                                  int keep_cable_locked_lock_delay_ms = 0) {
         bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
-        auto sm = std::make_unique<module::IECStateMachine>(bsp_if, true, use_authorized, keep_cable_locked);
+        auto sm = std::make_unique<module::IECStateMachine>(bsp_if, true, use_authorized, keep_cable_locked,
+                                                            keep_cable_locked_lock_delay_ms);
         sm->signal_lock.connect([this]() { lock_count++; });
         sm->signal_unlock.connect([this]() { unlock_count++; });
         sm->enable(true);
@@ -520,7 +522,8 @@ TEST_F(ConnectorLockTest, force_unlock_overrides_authorized) {
 // The cable stays locked in the socket whenever a plug is present (detected
 // via Proximity Pilot), in every CP state including A. Only a force unlock
 // releases it, and only until the cable is removed: the next insertion locks
-// again.
+// again. An engaged lock is latched: PP loss without a force unlock (plug
+// pulled against the lock pin) does not release it.
 
 using Ampacity = types::board_support_common::Ampacity;
 
@@ -531,6 +534,48 @@ TEST_F(ConnectorLockTest, captive_locks_on_plug_present_without_car) {
     set_pp(*sm, Ampacity::A_32);
 
     EXPECT_GT(lock_count, 0) << "captive mode should lock as soon as a plug is present, even in state A";
+}
+
+// The AsyncTimeout poll resolution is 500ms, so a configured delay of D fires in [D, D+500)ms.
+// With a 200ms delay that is up to ~700ms; assertions wait past 1000ms to stay robust.
+TEST_F(ConnectorLockTest, captive_lock_debounce_waits_before_locking) {
+    auto sm = create_state_machine(false, true, 200);
+
+    // Plug detected: must not lock immediately, the plug is not yet seated.
+    set_pp(*sm, Ampacity::A_32);
+    EXPECT_EQ(lock_count, 0) << "captive mode must not lock before the seating debounce elapses";
+
+    // After the debounce, the seated plug locks.
+    std::this_thread::sleep_for(std::chrono::milliseconds(1300));
+    EXPECT_GT(lock_count, 0) << "captive mode should lock once the seating debounce has elapsed";
+}
+
+TEST_F(ConnectorLockTest, captive_lock_debounce_cancelled_if_plug_pulled_back) {
+    auto sm = create_state_machine(false, true, 200);
+
+    set_pp(*sm, Ampacity::A_32); // plug touches PP
+    set_pp(*sm, Ampacity::None); // pulled back out before it seats
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1300));
+    EXPECT_EQ(lock_count, 0) << "a plug pulled back out within the debounce must not lock";
+}
+
+TEST_F(ConnectorLockTest, captive_lock_debounce_removal_racing_expiry_leaves_socket_unlocked) {
+    auto sm = create_state_machine(false, true, 200);
+
+    // Remove while the debounce is still pending: the expiry must not lock the now empty socket,
+    // and a later insertion must re-arm the debounce (not lock immediately).
+    set_pp(*sm, Ampacity::A_32);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    set_pp(*sm, Ampacity::None);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+    EXPECT_EQ(lock_count, 0) << "a removal before the debounce expiry must not lock the empty socket";
+
+    reset_counts();
+    set_pp(*sm, Ampacity::A_32);
+    EXPECT_EQ(lock_count, 0) << "reinsertion after such a removal must re-arm the debounce, not lock at once";
+    std::this_thread::sleep_for(std::chrono::milliseconds(1300));
+    EXPECT_GT(lock_count, 0) << "and then lock once the fresh debounce elapses";
 }
 
 TEST_F(ConnectorLockTest, captive_empty_socket_stays_unlocked) {
@@ -569,6 +614,23 @@ TEST_F(ConnectorLockTest, captive_stays_locked_across_full_session) {
     plug_out(); // back to A: normally this unlocks
 
     EXPECT_EQ(unlock_count, 0) << "captive mode should stay locked when the car unplugs (plug still in socket)";
+}
+
+TEST_F(ConnectorLockTest, captive_pp_loss_without_force_unlock_stays_locked) {
+    auto sm = create_state_machine(false, true);
+
+    set_pp(*sm, Ampacity::A_32);
+    ASSERT_GT(lock_count, 0);
+    reset_counts();
+
+    // Pulling the plug against the engaged lock pin opens the PP contact before the plug
+    // can leave the socket; the lock is latched and must not release on the PP loss.
+    set_pp(*sm, Ampacity::None);
+    EXPECT_EQ(unlock_count, 0) << "PP loss without force unlock must not release the lock";
+
+    // Plug pushed back in: still locked
+    set_pp(*sm, Ampacity::A_32);
+    EXPECT_EQ(unlock_count, 0);
 }
 
 TEST_F(ConnectorLockTest, captive_force_unlock_holds_until_reinsertion) {
@@ -664,7 +726,7 @@ struct CpStateFTest : public testing::Test {
 
     std::unique_ptr<module::IECStateMachine> create_state_machine() {
         bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
-        auto sm = std::make_unique<module::IECStateMachine>(bsp_if, true, false, false);
+        auto sm = std::make_unique<module::IECStateMachine>(bsp_if, true, false, false, 0);
         sm->enable(true);
         return sm;
     }

@@ -349,7 +349,9 @@ config:
       Captive cable mode for AC sockets with a connector lock (fleet/private use): keep the cable locked in the
       socket whenever a plug is present, in every CP state - including state A with no EV attached. The only way
       to unlock is the force_unlock command (e.g. triggered by OCPP UnlockConnector); the connector then stays
-      unlocked until the cable is removed, and the next plug insertion locks it again. Takes precedence over
+      unlocked until the cable is removed, and the next plug insertion locks it again. An engaged lock is latched:
+      losing plug presence without a preceding force_unlock (e.g. the PP contact opening while the plug is pulled
+      against the lock pin) does not release it. Takes precedence over
       lock_connector_in_state_b and unlock_when_deauthorized. Can be changed at runtime via the configuration
       service (applied immediately, no restart required). Requires a BSP that publishes ac_pp_ampacity on every
       change, also outside of charging sessions, and once at startup with the current value (only needed when this
@@ -357,6 +359,16 @@ config:
     type: boolean
     default: false
     mutability: ReadWrite
+  keep_cable_locked_lock_delay_ms:
+    description: >-
+      Captive cable mode only: delay in milliseconds between detecting a plug (ac_pp_ampacity becomes
+      non-zero) and engaging the connector lock. Gives the plug time to seat fully before the lock pin
+      extends, so a lock triggered on the first Proximity Pilot contact cannot jam a half-inserted plug.
+      If the plug is pulled back out again within the delay, no lock is engaged. Set to 0 to lock
+      immediately.
+    type: integer
+    default: 500
+    minimum: 0
   state_F_after_fault_ms:
     description: >-
       Set state F after any fault that stops charging for the specified time in ms while in Charging mode (CX->F(300ms)->C1/B1).

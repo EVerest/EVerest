@@ -306,8 +306,9 @@ void EvseManager::ready() {
         // on_keep_cable_locked_changed() may already fire; same mutex serializes the bsp hand-over.
         std::scoped_lock lock(keep_cable_locked_mutex);
         keep_cable_locked_at_boot = config.keep_cable_locked;
-        bsp = std::make_unique<IECStateMachine>(r_bsp, config.lock_connector_in_state_b,
-                                                config.unlock_when_deauthorized, keep_cable_locked_at_boot);
+        bsp =
+            std::make_unique<IECStateMachine>(r_bsp, config.lock_connector_in_state_b, config.unlock_when_deauthorized,
+                                              keep_cable_locked_at_boot, config.keep_cable_locked_lock_delay_ms);
         bsp_constructed = true;
     }
 

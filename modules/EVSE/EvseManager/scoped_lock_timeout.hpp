@@ -65,6 +65,7 @@ enum class MutexDescription {
     IEC_force_unlock,
     IEC_set_pp_ampacity,
     IEC_set_keep_cable_locked,
+    IEC_captive_lock_debounce_reached,
     EVSE_charger_ready,
     EVSE_set_ev_info,
     EVSE_publish_ev_info,
@@ -193,6 +194,8 @@ static std::string to_string(MutexDescription d) {
         return "IECStateMachine::set_pp_ampacity";
     case MutexDescription::IEC_set_keep_cable_locked:
         return "IECStateMachine::set_keep_cable_locked";
+    case MutexDescription::IEC_captive_lock_debounce_reached:
+        return "IECStateMachine::captive_lock_debounce_reached";
     case MutexDescription::EVSE_charger_ready:
         return "EvseManager.cpp: charger_ready";
     case MutexDescription::EVSE_set_ev_info:
