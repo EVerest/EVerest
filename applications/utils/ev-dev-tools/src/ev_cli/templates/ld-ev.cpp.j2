@@ -66,6 +66,15 @@ std::shared_ptr<Everest::error::ErrorStateMonitor> get_global_error_state_monito
 std::shared_ptr<Everest::config::ConfigServiceClient> get_config_service_client() {
     return adapter.get_config_service_client();
 }
+{% if info.telemetry_receiver %}
+
+everest::telemetry::TelemetryCatalog get_telemetry_catalog() {
+    if (not adapter.get_telemetry_catalog) {
+        return {};
+    }
+    return adapter.get_telemetry_catalog();
+}
+{% endif %}
 
 void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
     using namespace Everest::config;

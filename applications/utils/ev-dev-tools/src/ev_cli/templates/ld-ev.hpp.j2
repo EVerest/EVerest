@@ -94,6 +94,11 @@ std::shared_ptr<Everest::error::ErrorStateMonitor> get_global_error_state_monito
 {% endif %}
 
 std::shared_ptr<Everest::config::ConfigServiceClient> get_config_service_client();
+{% if info.telemetry_receiver %}
+
+/// \brief Telemetry declarations of all active modules with their mappings, see Everest::ModuleAdapter
+everest::telemetry::TelemetryCatalog get_telemetry_catalog();
+{% endif %}
 
 } // namespace module
 

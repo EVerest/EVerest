@@ -181,3 +181,14 @@ def test_module_skeleton_without_telemetry_is_unchanged(everest_dir):
 
     header = (everest_dir / 'modules' / 'Test' / 'Plain' / 'Plain.hpp').read_text()
     assert 'tel' not in header.replace('telemetry', '')
+
+
+def test_loader_of_telemetry_receiver_exposes_the_catalog(everest_dir):
+    manifest = make_manifest()
+    manifest['telemetry_receiver'] = True
+    hpp, cpp = generate_loader(everest_dir, add_module(everest_dir, 'Receiver', manifest))
+    assert 'everest::telemetry::TelemetryCatalog get_telemetry_catalog();' in hpp
+    assert 'return adapter.get_telemetry_catalog();' in cpp
+
+    hpp, cpp = generate_loader(everest_dir, add_module(everest_dir, 'Producer', make_manifest(TELEMETRY)))
+    assert 'get_telemetry_catalog' not in hpp + cpp
