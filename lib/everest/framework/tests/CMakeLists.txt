@@ -90,6 +90,9 @@ setup_test_directory(broken_manifest_2 TESTBrokenManifest2 test_interface)
 setup_test_directory(broken_manifest_3 TESTBrokenManifest3 test_interface)
 setup_test_directory(broken_manifest_4 TESTBrokenManifest4 test_interface)
 setup_test_directory(missing_interface TESTMissingInterface)
+setup_test_directory(broken_manifest_telemetry TESTBrokenManifestTelemetry test_interface)
+setup_test_directory(valid_telemetry TESTValidManifestTelemetry test_interface
+    TYPE_FILES test_telemetry_types.yaml)
 
 setup_test_directory(unknown_impls TESTValidManifest test_interface)
 setup_test_directory(missing_config_entry TESTValidManifest test_interface)

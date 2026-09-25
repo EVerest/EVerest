@@ -1,0 +1,13 @@
+description: "A manifest with an invalid telemetry element"
+provides:
+  main:
+    description: "Main implementation"
+    interface: "test_interface"
+telemetry:
+  temperature:
+    kind: gauge
+    type: string
+    description: A gauge must be numeric
+metadata:
+  license: "https://opensource.org/licenses/Apache-2.0"
+  authors: ["EVerest"]

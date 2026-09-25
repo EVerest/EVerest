@@ -320,6 +320,24 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
             CHECK_THROWS_AS(Everest::ManagerConfig(ms), Everest::EverestConfigError);
         }
     }
+    GIVEN("A config file using a module with a broken telemetry declaration") {
+        auto ms = Everest::ManagerSettings(bin_dir + "broken_manifest_telemetry/",
+                                           bin_dir + "broken_manifest_telemetry/config.yaml");
+        THEN("It should throw Everest::EverestConfigError") {
+            CHECK_THROWS_AS(Everest::ManagerConfig(ms), Everest::EverestConfigError);
+        }
+    }
+    GIVEN("A config file using a module that declares telemetry elements of every kind") {
+        auto ms = Everest::ManagerSettings(bin_dir + "valid_telemetry/", bin_dir + "valid_telemetry/config.yaml");
+        THEN("It should load and keep the telemetry section of the manifest") {
+            auto config = Everest::ManagerConfig(ms);
+            const auto& telemetry = config.get_manifests().at("TESTValidManifestTelemetry").at("telemetry");
+            CHECK(telemetry.size() == 8);
+            CHECK(telemetry.at("temperature").at("kind") == "gauge");
+            CHECK(telemetry.at("mode").at("$ref") == "/test_telemetry_types#/Mode");
+            CHECK(config.get_manifests().at("TESTValidManifestTelemetry").at("telemetry_receiver") == false);
+        }
+    }
     GIVEN("A config file with an unknown implementation config") {
         auto ms = Everest::ManagerSettings(bin_dir + "unknown_impls/", bin_dir + "unknown_impls/config.yaml");
         THEN("It should throw Everest::EverestConfigError") {

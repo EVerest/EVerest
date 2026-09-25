@@ -1,0 +1,46 @@
+description: "A valid manifest declaring telemetry elements of every kind"
+provides:
+  main:
+    description: "Main implementation"
+    interface: "test_interface"
+telemetry:
+  temperature:
+    kind: gauge
+    type: number
+    unit: Celsius
+    description: Board temperature
+  plug_ins:
+    kind: counter
+    type: integer
+    description: Number of plug-in events
+  energy:
+    kind: counter
+    type: number
+    unit: Wh
+    description: Energy delivered
+  fw_state:
+    kind: state
+    type: string
+    enum: [Idle, Measuring, Error]
+    description: Firmware state
+  mode:
+    kind: state
+    type: string
+    $ref: /test_telemetry_types#/Mode
+    description: Operating mode
+  relay_closed:
+    kind: state
+    type: boolean
+    description: Relay state
+  fw_version:
+    kind: state
+    type: string
+    description: Firmware version
+  diagnostics:
+    kind: event
+    type: object
+    $ref: /test_telemetry_types#/Diagnostics
+    description: Diagnostic event
+metadata:
+  license: "https://opensource.org/licenses/Apache-2.0"
+  authors: ["EVerest"]

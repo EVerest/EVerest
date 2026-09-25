@@ -1,0 +1,9 @@
+description: "A module that receives telemetry"
+provides:
+  main:
+    description: "Main implementation"
+    interface: "test_interface"
+telemetry_receiver: true
+metadata:
+  license: "https://opensource.org/licenses/Apache-2.0"
+  authors: ["EVerest"]

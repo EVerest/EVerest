@@ -30,6 +30,162 @@ $defs:
         additionalProperties: true
     additionalProperties: false
     default: {}
+  telemetry_element:
+    description: >-
+      A telemetry element published by this module. The kind decides the generated
+      handle and how sinks can represent the element.
+    type: object
+    required:
+      - kind
+      - type
+      - description
+    properties:
+      kind:
+        type: string
+        enum:
+          - gauge
+          - counter
+          - state
+          - event
+      type:
+        type: string
+        enum:
+          - number
+          - integer
+          - boolean
+          - string
+          - object
+      description:
+        type: string
+        minLength: 2
+      unit:
+        description: Unit of a gauge or counter, spelled like OCPP UnitOfMeasure where OCPP defines it
+        type: string
+        enum:
+          - A
+          - ASU
+          - B
+          - Celsius
+          - dB
+          - dBm
+          - Deg
+          - Fahrenheit
+          - h
+          - Hz
+          - K
+          - kPa
+          - kVA
+          - kVAh
+          - kvar
+          - kvarh
+          - kW
+          - kWh
+          - lx
+          - m
+          - min
+          - ms
+          - N
+          - Ohm
+          - Percent
+          - RH
+          - RPM
+          - s
+          - V
+          - VA
+          - VAh
+          - var
+          - varh
+          - W
+          - Wh
+      enum:
+        description: Inline enum values of a string state
+        type: array
+        minItems: 1
+        uniqueItems: true
+        items:
+          type: string
+          pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+    # "$ref" is matched as a pattern so that no schema tool mistakes it for a reference
+    patternProperties:
+      ^\$ref$:
+        description: Reference to a string enum (state) or an object type (event) in types/
+        type: string
+        pattern: ^/[A-Za-z0-9_/-]+#/[A-Za-z_][A-Za-z0-9_]*$
+      ^x-:
+        description: Extension keys, ignored by tooling
+    additionalProperties: false
+    allOf:
+      - if:
+          required:
+            - kind
+          properties:
+            kind:
+              enum:
+                - gauge
+                - counter
+        then:
+          properties:
+            type:
+              enum:
+                - number
+                - integer
+          not:
+            anyOf:
+              - required:
+                  - enum
+              - required:
+                  - $ref
+      - if:
+          required:
+            - kind
+          properties:
+            kind:
+              const: state
+        then:
+          properties:
+            type:
+              enum:
+                - boolean
+                - string
+          allOf:
+            - not:
+                required:
+                  - unit
+            - not:
+                required:
+                  - enum
+                  - $ref
+            - if:
+                required:
+                  - type
+                properties:
+                  type:
+                    const: boolean
+              then:
+                not:
+                  anyOf:
+                    - required:
+                        - enum
+                    - required:
+                        - $ref
+      - if:
+          required:
+            - kind
+          properties:
+            kind:
+              const: event
+        then:
+          required:
+            - $ref
+          properties:
+            type:
+              const: object
+          not:
+            anyOf:
+              - required:
+                  - unit
+              - required:
+                  - enum
 type: object
 required:
   - description
@@ -176,4 +332,20 @@ properties:
     type: array
     items:
       type: string
+  telemetry:
+    description: >-
+      Telemetry elements published by this module, keyed by element name. ev-cli generates
+      one typed handle per element (see lib/everest/framework/docs/Telemetry.md).
+    type: object
+    patternProperties:
+      ^[a-z][a-z0-9_]{0,62}$:
+        $ref: '#/$defs/telemetry_element'
+    additionalProperties: false
+    default: {}
+  telemetry_receiver:
+    description: >-
+      Marks the module that receives all telemetry. When telemetry is enabled, the manager
+      hands the telemetry socket to exactly one active module with this flag set.
+    type: boolean
+    default: false
 additionalProperties: false

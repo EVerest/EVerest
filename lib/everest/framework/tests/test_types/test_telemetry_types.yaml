@@ -1,0 +1,20 @@
+description: Types referenced by telemetry test manifests
+types:
+  Mode:
+    description: Operating mode
+    type: string
+    enum:
+      - Idle
+      - Running
+      - Fault
+  Diagnostics:
+    description: Diagnostic snapshot
+    type: object
+    additionalProperties: false
+    properties:
+      code:
+        description: Diagnostic code
+        type: integer
+      text:
+        description: Diagnostic text
+        type: string
