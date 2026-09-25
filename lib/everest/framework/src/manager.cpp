@@ -66,6 +66,7 @@ const auto SIGNAL_POLL_TIMEOUT_MS = 50;
 const auto SHUTDOWN_TIMEOUT_MS = 5000;
 const auto FORCE_KILL_GRACE_TIMEOUT_MS = 5000;
 const std::uint8_t MAX_UNEXPECTED_MODULE_RESTARTS = 3;
+const int RECOMMENDED_TELEMETRY_QUEUE_LENGTH = 512;
 
 // Helper struct keeping information on how to start module
 struct ModuleStartInfo {
@@ -1847,6 +1848,16 @@ void Manager::open_telemetry_socket(const ManagerSettings& ms) {
     }
     EVLOG_info << "Telemetry socket bound at " << path;
     m_telemetry_socket = std::move(socket);
+
+    // the kernel queues at most this many datagrams per unix socket; beyond that, telemetry is dropped
+    std::ifstream queue_length_file("/proc/sys/net/unix/max_dgram_qlen");
+    int queue_length = 0;
+    if (queue_length_file >> queue_length and queue_length < RECOMMENDED_TELEMETRY_QUEUE_LENGTH) {
+        EVLOG_warning << fmt::format("net.unix.max_dgram_qlen is {}; telemetry bursts beyond that are dropped. "
+                                     "Consider raising it to at least {} (sysctl -w net.unix.max_dgram_qlen={})",
+                                     queue_length, RECOMMENDED_TELEMETRY_QUEUE_LENGTH,
+                                     RECOMMENDED_TELEMETRY_QUEUE_LENGTH);
+    }
 }
 
 Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(RuntimeContext& ctx,
