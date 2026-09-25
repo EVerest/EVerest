@@ -47,6 +47,20 @@ any experimental option it was given.
      - 2026.10.0
      - Stay alive in Idle when there is nothing startable, instead of exiting
        with an error.
+   * - ``manager --configuration-api`` and its ``configuration_API`` AsyncAPI
+       specification
+     - 2026.10.0
+     - :ref:`Management API <exp_management_apis>` in the manager for
+       configuration slot management, loading raw YAML and updating
+       configuration parameters. The option values, channels, operations and
+       message payloads may change without further notice.
+   * - ``manager --lifecycle-api`` and its ``lifecycle_API`` AsyncAPI
+       specification
+     - 2026.10.0
+     - :ref:`Management API <exp_management_apis>` in the manager for starting
+       and stopping modules and monitoring their status. The option values,
+       channels, operations and message payloads may change without further
+       notice.
    * - :ref:`EEBUS module <everest_modules_EEBUS>`
      - 2026.10.0
      - Bridge to an external EEBUS gRPC service, implementing the Limitation of

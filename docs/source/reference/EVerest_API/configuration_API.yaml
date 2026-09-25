@@ -8,6 +8,10 @@ info:
     API for EVerest modules and clients to interact with the Config Service.
     Provides configuration slot management, module control requests, and
     publication of active slot and configuration update events.
+
+    **Experimental.** This API is exempt from the EVerest stability guarantees and
+    the deprecation period; channels, operations and message payloads may change
+    without further notice until it is promoted to stable.
   license:
     name: Apache-2.0
     url: https://opensource.org/licenses/Apache-2.0
