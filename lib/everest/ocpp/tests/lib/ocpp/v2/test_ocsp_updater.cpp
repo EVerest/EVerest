@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
+#include <cstdlib>
 #include <iostream>
 
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -8,8 +9,10 @@
 #include <comparators.hpp>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include <evse_security_mock.hpp>
+#include <ocpp/common/call_types.hpp>
 #include <ocpp/v2/ocsp_updater.hpp>
 
 namespace ocpp {
@@ -340,5 +343,70 @@ TEST_F(OcspUpdaterTest, test_exception_trigger_when_not_running) {
     ocsp_updater->stop();
     ASSERT_THROW(ocsp_updater->trigger_ocsp_cache_update(), std::logic_error);
 }
+
+/// \brief Converts a raw CALLRESULT frame into the typed response
+static v2::GetCertificateStatusResponse deserialize_call_result(const std::string& raw_frame) {
+    const CallResult<v2::GetCertificateStatusResponse> call_result = json::parse(raw_frame);
+    return call_result.msg;
+}
+
+class OcspUpdaterMalformedResponseTest : public OcspUpdaterTest, public testing::WithParamInterface<const char*> {};
+
+/// \brief A CALLRESULT without a usable status throws during deserialization on the updater thread. That must not
+/// terminate the process; the update is retried instead. Runs in a child process so a regression cannot take the
+/// whole test binary down with it.
+TEST_P(OcspUpdaterMalformedResponseTest, test_malformed_response_does_not_terminate) {
+    const std::string raw_frame = GetParam();
+    EXPECT_THROW(deserialize_call_result(raw_frame), std::exception);
+
+    EXPECT_EXIT(
+        {
+            auto ocsp_updater = std::make_unique<v2::OcspUpdater>(this->evse_security, this->status_update,
+                                                                  std::chrono::hours(167), std::chrono::seconds(0));
+
+            testing::Sequence seq;
+            v2::GetCertificateStatusResponse response_success;
+            response_success.ocspResult = "EXAMPLE OCSP RESULT";
+            response_success.status = v2::GetCertificateStatusEnum::Accepted;
+
+            EXPECT_CALL(*this->evse_security, get_v2g_ocsp_request_data())
+                .Times(1)
+                .InSequence(seq)
+                .WillOnce(testing::Return(this->example_ocsp_data));
+            EXPECT_CALL(*this->charge_point, get_certificate_status(this->example_status_requests[0]))
+                .Times(1)
+                .InSequence(seq)
+                .WillOnce(testing::Invoke([raw_frame](auto) { return deserialize_call_result(raw_frame); }));
+
+            EXPECT_CALL(*this->evse_security, get_v2g_ocsp_request_data())
+                .Times(1)
+                .InSequence(seq)
+                .WillOnce(testing::Return(this->example_ocsp_data));
+            EXPECT_CALL(*this->charge_point, get_certificate_status(testing::_))
+                .Times(3)
+                .InSequence(seq)
+                .WillRepeatedly(testing::Return(response_success));
+            EXPECT_CALL(*this->evse_security, update_ocsp_cache(testing::_, "EXAMPLE OCSP RESULT"))
+                .Times(2)
+                .InSequence(seq)
+                .WillRepeatedly(testing::Return());
+            EXPECT_CALL(*this->evse_security, update_ocsp_cache(testing::_, "EXAMPLE OCSP RESULT"))
+                .Times(1)
+                .InSequence(seq)
+                .WillOnce(SignalCallsCompleteVoid(&this->calls_complete));
+
+            ocsp_updater->start();
+            const bool retried = this->calls_complete.timed_wait(boost::posix_time::second_clock::universal_time() +
+                                                                 boost::posix_time::seconds(5));
+            ocsp_updater->stop();
+            // Skips gmock's exit-time leak check, which would report the fixture's mocks and change the exit status
+            std::_Exit(retried ? 0 : 1);
+        },
+        testing::ExitedWithCode(0), "");
+}
+
+INSTANTIATE_TEST_SUITE_P(MalformedFrames, OcspUpdaterMalformedResponseTest,
+                         testing::Values(R"([3, "42", {}])", R"([3, "42", 12345])", R"([3, "42", "Accepted"])",
+                                         R"([3, "42", {"status": null}])", R"([3, "42", {"status": "test"}])"));
 
 } // namespace ocpp
