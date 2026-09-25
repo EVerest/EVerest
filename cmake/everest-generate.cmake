@@ -672,6 +672,7 @@ function (ev_add_cpp_module MODULE_NAME)
 
             set(GENERATED_MODULE_DIR "${GENERATED_OUTPUT_DIR}/modules")
             set(MODULE_LOADER_DIR ${GENERATED_MODULE_DIR}/${MODULE_NAME})
+            get_target_property(EVEREST_PROJECT_DIRS generate_cpp_files EVEREST_PROJECT_DIRS)
 
             add_custom_command(
                 OUTPUT
@@ -682,7 +683,8 @@ function (ev_add_cpp_module MODULE_NAME)
                         --disable-clang-format
                         --schemas-dir "$<TARGET_PROPERTY:generate_cpp_files,EVEREST_SCHEMA_DIR>"
                         --output-dir ${GENERATED_MODULE_DIR}
-                        ${RELATIVE_MODULE_DIR}
+                        --everest-dir ${EVEREST_PROJECT_DIRS}
+                        -- ${RELATIVE_MODULE_DIR}
                 DEPENDS
                     ${MODULE_PATH}/manifest.yaml
                     "$<TARGET_PROPERTY:ev-cli,MODULE_TEMPLATES>"

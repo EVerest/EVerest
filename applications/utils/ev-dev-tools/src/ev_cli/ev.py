@@ -11,6 +11,7 @@ FIXME (aw): Module documentation.
 
 from ev_cli import __version__
 from ev_cli import helpers
+from ev_cli import telemetry
 from ev_cli.type_parsing import TypeParser
 from ev_cli.error_parsing import ErrorParser
 
@@ -221,6 +222,7 @@ def generate_tmpl_data_for_module(module, module_def):
         },
         'provides': provides,
         'requires': requires,
+        'telemetry': telemetry.parse_module_telemetry(module, module_def),
     }
 
     return tmpl_data

@@ -1,6 +1,6 @@
 {% from "helper_macros.j2" import print_template_info, var_to_cpp, print_spdx_line %}
 {{ print_spdx_line('Apache-2.0') }}
-{{ print_template_info('5') }}
+{{ print_template_info('6') }}
 
 #include "{{ info.ld_ev_header }}"
 
@@ -160,6 +160,13 @@ void register_module_adapter(Everest::ModuleAdapter module_adapter) {
     adapter = std::move(module_adapter);
 }
 
+{% if telemetry.elements %}
+tel::Elements::Elements(everest::telemetry::ModuleTelemetry telemetry) :
+    m_telemetry(std::move(telemetry)){% for element in telemetry.elements %},
+    {{ element.name }}(m_telemetry, "{{ element.name }}"){% endfor %} {
+}
+
+{% endif %}
 std::vector<Everest::cmd> everest_register(const RequirementInitialization& requirement_init) {
     EVLOG_debug << "everest_register() called on module {{ info.name }}";
 
@@ -209,11 +216,15 @@ std::vector<Everest::cmd> everest_register(const RequirementInitialization& requ
     static Everest::MqttProvider mqtt_provider(adapter);
     {% endif %}
     static Everest::TelemetryProvider telemetry_provider(adapter);
+    {% if telemetry.elements %}
+    static tel::Elements tel_elements(adapter.make_telemetry ? adapter.make_telemetry() : everest::telemetry::ModuleTelemetry{});
+    {% endif %}
 
     static {{ info.class_name }} module(
     module_info,
     {%- if info.enable_external_mqtt %}mqtt_provider, {% endif -%}
     {%- if info.enable_telemetry %}telemetry_provider, {% endif -%}
+    {%- if telemetry.elements %}tel_elements, {% endif -%}
     {%- for impl in provides -%}
     std::move(p_{{ impl.id }}){{ ', ' }}
     {%- endfor -%}

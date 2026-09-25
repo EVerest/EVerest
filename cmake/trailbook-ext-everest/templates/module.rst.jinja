@@ -28,5 +28,10 @@
 {{ funcs.h3('Requirements') -}}
 {{ funcs.reqs(data.requires.items()) | rst_indent() -}}
 {%  endif %}
+{%  if data.telemetry %}
+
+{{ funcs.h3('Telemetry') -}}
+{{ funcs.telemetry(data.telemetry.items()) -}}
+{%  endif %}
 
 {{ funcs.metadata(data.metadata) -}}

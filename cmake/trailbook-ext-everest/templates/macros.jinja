@@ -338,6 +338,28 @@ Y
 {%      endfor %}
 {%  endmacro %}
 
+{### Renders the telemetry elements of a module ###}
+{%  macro telemetry(telemetry_data) %}
+
+.. list-table::
+   :header-rows: 1
+
+   * - Element
+     - Kind
+     - Type
+     - Unit
+     - Description
+{%      for element_name, element in telemetry_data %}
+   * - ``{{ element_name }}``
+     - {{ element['kind'] }}
+     - {{ element['$ref'] if '$ref' in element else element['type'] }}{% if 'enum' in element %}: {{ element['enum'] | join(', ') }}{% endif %}
+
+     - {{ element['unit'] if 'unit' in element else '' }}
+     - {{ element['description'] }}
+{%      endfor %}
+
+{%  endmacro %}
+
 {### Renders metadata ###}
 {%  macro metadata(data) %}
 {{ h2('Metadata') -}}

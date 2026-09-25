@@ -3,15 +3,76 @@
 #ifndef {{ info.hpp_guard }}
 #define {{ info.hpp_guard }}
 
-{{ print_template_info('4') }}
+{{ print_template_info('5') }}
 
 #include <framework/ModuleAdapter.hpp>
 #include <framework/everest.hpp>
+{% if telemetry.elements %}
+#include <framework/telemetry.hpp>
+{% endif %}
 #include <utils/config_service_interface.hpp>
 
 #include <everest/logging.hpp>
+{% if telemetry.type_headers %}
+
+{% for type_header in telemetry.type_headers %}
+#include <{{ type_header }}>
+{% endfor %}
+{% endif %}
 
 namespace module {
+{% if telemetry.elements %}
+
+namespace tel {
+{% if telemetry.inline_enums %}
+
+namespace types {
+{% for enum in telemetry.inline_enums %}
+
+/// \brief {{ enum.description }}
+enum class {{ enum.enum_type }} {
+    {% for e in enum.enum %}
+    {{ e }},
+    {% endfor %}
+};
+
+inline std::string_view {{ enum.enum_type | snake_case }}_to_string_view(const {{ enum.enum_type }}& e) {
+    switch (e) {
+    {% for e in enum.enum %}
+    case {{ enum.enum_type }}::{{ e }}:
+        return "{{ e }}";
+    {% endfor %}
+    }
+    throw std::out_of_range("No known string conversion for provided enum of type {{ enum.enum_type }}");
+}
+
+inline void to_json(nlohmann::json& j, const {{ enum.enum_type }}& e) {
+    j = {{ enum.enum_type | snake_case }}_to_string_view(e);
+}
+{% endfor %}
+
+} // namespace types
+{% endif %}
+
+/// \brief Telemetry elements declared in the manifest of {{ info.name }}
+struct Elements {
+    explicit Elements(everest::telemetry::ModuleTelemetry telemetry);
+    Elements(const Elements&) = delete;
+    Elements& operator=(const Elements&) = delete;
+
+private:
+    // declared before the handles, which bind to it on construction
+    everest::telemetry::ModuleTelemetry m_telemetry;
+
+public:
+    {% for element in telemetry.elements %}
+    /// {{ element.description }}
+    everest::telemetry::{{ element.handle }}<{{ element.cpp_type }}> {{ element.name }};
+    {% endfor %}
+};
+
+} // namespace tel
+{% endif %}
 
 // helper class for invoking private functions on module
 struct LdEverest {

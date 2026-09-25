@@ -177,6 +177,13 @@ Traps:
   until the sha256 pins in
   `lib/everest/everest_api_types/tests/expected_{types,interfaces}_file_hashes.csv`
   are updated.
+- Adding the first `telemetry:` element to a manifest adds a `tel::Elements& tel` member
+  to the module class, so `<Name>.hpp` must be regenerated with `ev-cli mod update`;
+  otherwise the build fails with a constructor mismatch. The design is described in
+  `lib/everest/framework/docs/Telemetry.md`.
+
+ev-cli has its own pytest suite in `applications/utils/ev-dev-tools/tests`, registered as
+`ev-dev-tools_pytest` in CTest.
 
 `ev-cli --help` lists the available actions; `--only which` lists the files an action
 would touch.

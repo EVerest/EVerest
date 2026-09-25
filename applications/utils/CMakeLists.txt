@@ -17,6 +17,17 @@ ev_add_pip_package(
     SOURCE_DIRECTORY ev-dev-tools
 )
 
+if(EVEREST_CORE_BUILD_TESTING)
+    add_test(
+        NAME ev-dev-tools_pytest
+        COMMAND ${EV_ACTIVATE_PYTHON_VENV_PATH_TO_VENV}/bin/python -m pytest -p no:cacheprovider
+            ${CMAKE_CURRENT_SOURCE_DIR}/ev-dev-tools/tests
+    )
+    set_tests_properties(ev-dev-tools_pytest
+        PROPERTIES ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/ev-dev-tools/src"
+    )
+endif()
+
 ev_add_pip_package(
     NAME everest-testing
     SOURCE_DIRECTORY everest-testing

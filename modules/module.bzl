@@ -59,6 +59,7 @@ def cc_everest_module(
     $(location //applications/utils/ev-dev-tools:ev-cli) module generate-loader \
         --work-dir `dirname $(location @everest-core//:MODULE.bazel)` \
         --schemas-dir `dirname $(location @everest-core//:MODULE.bazel)`/lib/everest/framework/schemas \
+        --everest-dir `dirname $(location @everest-core//:MODULE.bazel)` \
         --disable-clang-format \
         --output-dir `dirname $(location generated/modules/{module_name}/ld-ev.hpp)`/.. \
         {prefix}

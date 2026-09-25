@@ -98,6 +98,9 @@ public:
         {% if info.enable_telemetry %}
         Everest::TelemetryProvider& telemetry,
         {% endif %}
+        {% if telemetry.elements %}
+        tel::Elements& tel_elements,
+        {% endif %}
         {% for impl in provides %}
         std::unique_ptr<{{ impl.base_class }}> p_{{ impl.id }},
         {% endfor %}
@@ -122,6 +125,9 @@ public:
         {% if info.enable_telemetry %}
         telemetry(telemetry),
         {% endif %}
+        {% if telemetry.elements %}
+        tel(tel_elements),
+        {% endif %}
         {% for impl in provides %}
         p_{{ impl.id }}(std::move(p_{{ impl.id }})),
         {% endfor %}
@@ -141,6 +147,9 @@ public:
     {% endif %}
     {% if info.enable_telemetry %}
     Everest::TelemetryProvider& telemetry;
+    {% endif %}
+    {% if telemetry.elements %}
+    tel::Elements& tel;
     {% endif %}
     {% for impl in provides %}
     const std::unique_ptr<{{ impl.base_class }}> p_{{ impl.id }};
