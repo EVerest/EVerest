@@ -20,7 +20,7 @@ ev_define_dependency(
 
 ev_define_dependency(
     DEPENDENCY_NAME libocpp
-    DEPENDENT_MODULES_LIST OCPP OCPP201)
+    DEPENDENT_MODULES_LIST OCPP OCPP201 OCPPmulti)
 
 ev_define_dependency(
     DEPENDENCY_NAME Josev
