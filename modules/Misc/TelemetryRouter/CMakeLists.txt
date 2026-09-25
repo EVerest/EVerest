@@ -28,6 +28,37 @@ target_link_libraries(${MODULE_NAME}_core
         fmt::fmt
 )
 
+set(EVEREST_TELEMETRY_ROUTER_OTEL "AUTO" CACHE STRING "Build the OpenTelemetry sink of TelemetryRouter (AUTO, ON, OFF)")
+set_property(CACHE EVEREST_TELEMETRY_ROUTER_OTEL PROPERTY STRINGS "AUTO" "ON" "OFF")
+string(TOUPPER "${EVEREST_TELEMETRY_ROUTER_OTEL}" TELEMETRY_ROUTER_OTEL_MODE)
+if (NOT TELEMETRY_ROUTER_OTEL_MODE MATCHES "^(AUTO|ON|OFF)$")
+    message(FATAL_ERROR "EVEREST_TELEMETRY_ROUTER_OTEL must be AUTO, ON or OFF (got '${EVEREST_TELEMETRY_ROUTER_OTEL}')")
+endif()
+
+set(TELEMETRY_ROUTER_WITH_OTEL OFF)
+if (NOT TELEMETRY_ROUTER_OTEL_MODE STREQUAL "OFF")
+    find_package(opentelemetry-cpp CONFIG QUIET)
+    if (opentelemetry-cpp_FOUND AND TARGET opentelemetry-cpp::otlp_http_metric_exporter
+            AND TARGET opentelemetry-cpp::otlp_http_log_record_exporter)
+        set(TELEMETRY_ROUTER_WITH_OTEL ON)
+    elseif (TELEMETRY_ROUTER_OTEL_MODE STREQUAL "ON")
+        message(FATAL_ERROR "EVEREST_TELEMETRY_ROUTER_OTEL=ON but opentelemetry-cpp with the OTLP/HTTP exporters was not found")
+    else()
+        message(STATUS "Building TelemetryRouter without the OpenTelemetry sink: opentelemetry-cpp with the OTLP/HTTP exporters was not found")
+    endif()
+endif()
+
+if (TELEMETRY_ROUTER_WITH_OTEL)
+    message(STATUS "Building TelemetryRouter with the OpenTelemetry sink (opentelemetry-cpp ${opentelemetry-cpp_VERSION})")
+    target_sources(${MODULE_NAME}_core PRIVATE lib/otel_sink.cpp)
+    target_compile_definitions(${MODULE_NAME}_core PUBLIC TELEMETRY_ROUTER_WITH_OTEL)
+    target_link_libraries(${MODULE_NAME}_core
+        PUBLIC
+            opentelemetry-cpp::otlp_http_metric_exporter
+            opentelemetry-cpp::otlp_http_log_record_exporter
+    )
+endif()
+
 target_link_libraries(${MODULE_NAME}
     PRIVATE
         ${MODULE_NAME}_core

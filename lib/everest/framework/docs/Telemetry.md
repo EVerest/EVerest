@@ -23,7 +23,8 @@ flowchart LR
     S -->|inherited on fd 3| R[TelemetryRouter<br/>catalog + rules]
     R --> O[OCPP sink<br/>ocpp.set_variables]
     R --> L[log sink]
-    R -.-> X[further sinks<br/>OpenTelemetry, MQTT bridge]
+    R --> T[OpenTelemetry sink<br/>OTLP/HTTP]
+    R -.-> X[further sinks<br/>MQTT bridge]
     E[external process] -.->|declare + samples| S
 ```
 
@@ -73,7 +74,7 @@ telemetry:
     description: Finished sessions
 ```
 
-| kind | type | meaning | handle | OCPP device model | OpenTelemetry (planned) |
+| kind | type | meaning | handle | OCPP device model | OpenTelemetry |
 | --- | --- | --- | --- | --- | --- |
 | `gauge` | `number`, `integer` | current value | `Gauge<T>::set` | decimal or integer variable | Gauge |
 | `counter` | `number`, `integer` | monotonic count | `Counter<T>::increase` | variable holding the total | monotonic cumulative Sum |
@@ -222,6 +223,9 @@ TelemetryRouter (`modules/Misc/TelemetryRouter`) is the reference receiver.
   batches writes, formats numbers in fixed notation (libocpp rejects exponents), backs off while OCPP rejects
   everything during its startup, and retries unknown variables rarely. The variables must exist in the device
   model; they are provided as component config files.
+- The OpenTelemetry sink exports gauges and counters as observable metrics with their latest value, and states
+  and events as log records, over OTLP/HTTP. It is built when opentelemetry-cpp is found
+  (`EVEREST_TELEMETRY_ROUTER_OTEL`); only TelemetryRouter links it, no other module.
 
 ## Relation to earlier proposals
 
@@ -267,7 +271,7 @@ New code does not build on it. The retirement has three steps:
 
 ## Future work
 
-- OpenTelemetry sink (metrics and logs over OTLP/HTTP) and an MQTT bridge sink.
+- An MQTT bridge sink; building opentelemetry-cpp through edm and Bazel.
 - Telemetry in Rust, Python and JavaScript modules; MessagePack payloads.
 - External producers on top of declarations: a client library or an AsyncAPI relay, publishing the socket path.
 - A runtime query API for the catalog; EVerest modules sending declarations themselves.

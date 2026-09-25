@@ -16,6 +16,11 @@ sinks:
   debug:
     type: log
     max_per_second: 20
+  # Exports to an OpenTelemetry collector; requires TelemetryRouter built with opentelemetry-cpp.
+  # backend:
+  #   type: otel
+  #   endpoint: http://localhost:4318
+  #   export_interval_ms: 30000
 
 default_action: drop
 

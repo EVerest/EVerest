@@ -91,6 +91,33 @@ Sinks
     reported once and retried every ``dead_retry_s``. Without an ``ocpp`` connection the sink only logs what
     it would write.
 
+``otel``
+    Exports telemetry to an OpenTelemetry collector over OTLP/HTTP with protobuf encoding. Gauges and
+    counters become observable gauges and cumulative counters named ``everest.<module_type>.<element>``
+    (target option ``metric_name`` overrides it), exported every ``export_interval_ms`` with their latest value.
+    States become log records on every change, events become log records with the JSON value as body and
+    their top-level scalar fields as ``everest.event.<field>`` attributes (``flatten_event_fields``). With
+    ``states_as_metrics``, boolean and enum states are also exported as gauges: 0/1 per value with the
+    ``everest.state`` attribute. All data carries ``everest.module.id``, ``everest.module.type``,
+    ``everest.element`` and, from the mapping, ``everest.evse.id`` and ``everest.connector.id``.
+
+    .. code-block:: yaml
+
+        backend:
+          type: otel
+          endpoint: http://collector:4318       # /v1/metrics and /v1/logs are appended
+          headers: {Authorization: "Bearer ${env:OTEL_TOKEN}"}
+          export_interval_ms: 30000
+          resource: {service.instance.id: charger-4711}
+          stale_after_s: 300                    # series without new values are no longer exported
+          states_as_metrics: false
+
+    The sink is only available if TelemetryRouter was built with opentelemetry-cpp (1.28 or newer, with the
+    OTLP/HTTP exporters): CMake looks for an installed package with ``find_package(opentelemetry-cpp)``; set
+    ``CMAKE_PREFIX_PATH`` if it is not installed system-wide. ``EVEREST_TELEMETRY_ROUTER_OTEL`` (``AUTO``,
+    ``ON``, ``OFF``) controls whether the sink is built. A rules file using an ``otel`` sink fails to load in a
+    build without it.
+
 Statistics
 ==========
 

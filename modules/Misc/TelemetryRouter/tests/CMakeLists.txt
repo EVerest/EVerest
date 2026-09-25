@@ -11,6 +11,10 @@ target_sources(${TARGET_NAME}
         test_value_format.cpp
 )
 
+if (TELEMETRY_ROUTER_WITH_OTEL)
+    target_sources(${TARGET_NAME} PRIVATE test_otel_sink.cpp)
+endif()
+
 target_include_directories(${TARGET_NAME}
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../lib
