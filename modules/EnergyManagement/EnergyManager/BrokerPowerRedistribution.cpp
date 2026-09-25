@@ -61,6 +61,25 @@ std::optional<float> add_margin(const std::optional<float>& phase, float margin_
     return phase.value() + margin_A;
 }
 
+// The per-phase ampere the site inference's watt grant is worth to this connector. Spread
+// over the phases it actually uses, because that is the shape a cap is expressed in: a
+// grant of 3 x 230 V x 1 A is one ampere on a three phase connector and three on a single
+// phase one. Returns 0 for anything unusable, so the caller adds nothing rather than having
+// to check.
+float distributed_current_A(const std::optional<float>& distributed_W, float nominal_ac_voltage, int active_phases) {
+    if (not distributed_W.has_value() or distributed_W.value() <= 0.f or nominal_ac_voltage <= 0.f) {
+        return 0.f;
+    }
+    return distributed_W.value() / nominal_ac_voltage / static_cast<float>(std::max(active_phases, 1));
+}
+
+std::optional<float> clamp_phase(const std::optional<float>& phase, float max_A) {
+    if (not phase.has_value()) {
+        return std::nullopt;
+    }
+    return std::min(phase.value(), max_A);
+}
+
 // Phase count to assume when a limit declares none. One, not three: an undeclared phase
 // count is missing information, and the safe reading of missing information about a limit
 // is the smaller limit. EnergyNode always declares it (energyImpl.cpp), so this only
@@ -190,12 +209,12 @@ ConnectorInference classify_connector(std::optional<float> allocated_W, std::opt
     return result;
 }
 
-std::optional<SaturatedConnector> to_saturated_connector(const ConnectorInference& connector,
+std::optional<SaturatedConnector> to_saturated_connector(const std::string& uuid, const ConnectorInference& connector,
                                                          const StaticBoundsW& bounds) {
     if (not connector.allocated_W.has_value() or not bounds.max_W.has_value()) {
         return std::nullopt;
     }
-    return SaturatedConnector{connector.allocated_W.value(), bounds.max_W.value()};
+    return SaturatedConnector{uuid, connector.allocated_W.value(), bounds.max_W.value()};
 }
 
 SiteInference infer_site(std::optional<float> grid_limit_W, const PowerMeterAggregator::AggregateResult& aggregate,
@@ -225,7 +244,16 @@ SiteInference infer_site(std::optional<float> grid_limit_W, const PowerMeterAggr
     const float share = gain * (headroom - deadband) / static_cast<float>(saturated.size());
     for (const auto& connector : saturated) {
         const float room = std::max(0.f, connector.max_W - connector.allocated_W);
-        site.increase_W += std::min(share, room);
+        const float granted = std::min(share, room);
+        if (granted <= 0.f) {
+            // A connector already at its maximum is left out rather than recorded as 0 W:
+            // the map is what a broker acts on, and an entry there means "you may take
+            // more". It still counted towards the split, which is what makes the site total
+            // the sum of what was actually granted.
+            continue;
+        }
+        site.increase_W += granted;
+        site.increase_W_by_connector[connector.uuid] = granted;
     }
     return site;
 }
@@ -375,16 +403,34 @@ void BrokerPowerRedistribution::decide_cap(const types::energy::EnergyFlowReques
         run_cap_source = "BrokerPowerRedistribution_SessionStart";
     }
 
+    const int active_phases = limits.ac_number_of_active_phases.value_or(ASSUMED_PHASE_COUNT);
+
     PhaseCurrents candidate;
     std::string source;
     if (measurement_can_limit(context.last_observed_measurement, globals.start_time,
                               redistribution.measurement_max_age)) {
-        const auto measured =
-            measured_phase_currents(context.last_observed_measurement, local_market.nominal_ac_voltage(),
-                                    limits.ac_number_of_active_phases.value_or(1));
-        candidate = {add_margin(measured.L1, redistribution.margin_A), add_margin(measured.L2, redistribution.margin_A),
-                     add_margin(measured.L3, redistribution.margin_A)};
-        source = "BrokerPowerRedistribution_MeasuredPlusMargin";
+        const auto measured = measured_phase_currents(context.last_observed_measurement,
+                                                      local_market.nominal_ac_voltage(), active_phases);
+        // The margin is what lets the connector rise at all; the distributed share is the
+        // part of the site headroom the previous run granted it, and rides on top of the
+        // margin rather than replacing it. Without a fresh measurement there is no share
+        // either: a share is an allowance to draw more than measured, and with nothing
+        // measured that is exactly the open-ended limit the fallback below exists to
+        // prevent.
+        const float distributed_A =
+            distributed_current_A(context.distributed_power_W, local_market.nominal_ac_voltage(), active_phases);
+        const float step_A = redistribution.margin_A + distributed_A;
+        candidate = {add_margin(measured.L1, step_A), add_margin(measured.L2, step_A), add_margin(measured.L3, step_A)};
+
+        // Never above what this connector may draw anyway. The market would clamp it too,
+        // but an unclamped cap would be carried in the context as if the connector had been
+        // allowed that much, which is not what the next run should depart from.
+        const float max_A = limits.ac_max_current_A.value().value;
+        candidate = {clamp_phase(candidate.L1, max_A), clamp_phase(candidate.L2, max_A),
+                     clamp_phase(candidate.L3, max_A)};
+
+        source = distributed_A > 0.f ? "BrokerPowerRedistribution_MeasuredPlusDistributed"
+                                     : "BrokerPowerRedistribution_MeasuredPlusMargin";
     }
     if (not to_scalar_cap(candidate).has_value()) {
         // No usable, fresh reading (or one no current can be derived from): the connector

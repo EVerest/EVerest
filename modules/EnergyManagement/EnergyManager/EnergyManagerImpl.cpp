@@ -204,7 +204,7 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
             // Without an allocation or a static maximum there is nothing to clamp an
             // increase against, so such a connector is not a candidate - and must not be
             // counted among them either, or it would shrink the others' share.
-            if (const auto candidate = to_saturated_connector(connector, bounds)) {
+            if (const auto candidate = to_saturated_connector(node.uuid, connector, bounds)) {
                 saturated.push_back(candidate.value());
             }
         }
@@ -230,10 +230,13 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
     const auto site_edge = site_headroom.update(site.increase_W > 0.f, now, hold_time);
     site.held = site_headroom.held();
 
+    const int granted = grant_site_headroom(site);
+
     if (site_edge == HoldLatch::Edge::Held) {
         EVLOG_info << fmt::format(
-            "power can be increased by {:.0f} W over {} connector(s) (grid limit {}, measured {})", site.increase_W,
-            site.saturated_connectors, format_W(site.grid_limit_W), format_W(site.measured_W));
+            "granting {:.0f} W of headroom to {} of {} saturated connector(s) (grid limit {}, measured {} from {})",
+            site.increase_W, granted, site.saturated_connectors, format_W(site.grid_limit_W), format_W(site.measured_W),
+            to_string(site.meter_source));
     } else if (site_edge == HoldLatch::Edge::Released) {
         EVLOG_info << fmt::format("power can no longer be increased (grid limit {}, measured {}, headroom {})",
                                   format_W(site.grid_limit_W), format_W(site.measured_W), format_W(site.headroom_W));
@@ -246,15 +249,39 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
                                   format_W(site.headroom_W), site.saturated_connectors, site.increase_W,
                                   site.held ? " (held)" : "");
         for (const auto& [uuid, connector] : inference.connectors) {
-            EVLOG_info << fmt::format("  {}: {} allotted {}, measured {}, reducible {:.0f} W{}", uuid,
-                                      to_string(connector.connector_class), format_W(connector.allocated_W),
-                                      format_W(connector.measured_W), connector.reducible_W,
-                                      connector.held ? " (held)" : "");
+            const auto& distributed = contexts.at(uuid).distributed_power_W;
+            EVLOG_info << fmt::format(
+                "  {}: {} allotted {}, measured {}, reducible {:.0f} W{}{}", uuid, to_string(connector.connector_class),
+                format_W(connector.allocated_W), format_W(connector.measured_W), connector.reducible_W,
+                connector.held ? " (held)" : "",
+                distributed.has_value() ? fmt::format(", granted {:.0f} W", distributed.value()) : "");
         }
     }
 
     inference.site = site;
     redistribution_inference = inference;
+}
+
+int EnergyManagerImpl::grant_site_headroom(const SiteInference& site) {
+    // The hold is what keeps a single optimizer cycle of headroom - an EV between two ramp
+    // steps, a load that switched off for a second - from moving an allocation.
+    const bool granting = site.held;
+
+    // Every context, not only the connectors of this run: contexts outlive a run, and a
+    // connector that has left the tree must not keep a grant that nothing will clear.
+    int granted = 0;
+    for (auto& [uuid, context] : contexts) {
+        context.distributed_power_W.reset();
+        if (not granting) {
+            continue;
+        }
+        const auto share = site.increase_W_by_connector.find(uuid);
+        if (share != site.increase_W_by_connector.end()) {
+            context.distributed_power_W = share->second;
+            granted++;
+        }
+    }
+    return granted;
 }
 
 void EnergyManagerImpl::start() {

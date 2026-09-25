@@ -131,12 +131,28 @@ private:
     /// per meter rather than once per optimizer run.
     void warn_about_unparsable_meters(const std::vector<std::string>& unparsable);
 
-    /// \brief Runs the log-only power redistribution inference for one optimizer run, after
-    /// trading. Compares each connector's measurement with the allocation of the previous
-    /// run, the site aggregate with the grid limit, applies the hold time and logs
-    /// candidates on change. Called under energy_mutex.
+    /// \brief Runs the power redistribution inference for one optimizer run, after trading.
+    /// Compares each connector's measurement with the allocation of the previous run, the
+    /// site aggregate with the grid limit, applies the hold time and logs candidates on
+    /// change. Called under energy_mutex.
     void infer_redistribution(const Market& market, const std::vector<std::shared_ptr<Broker>>& brokers,
                               const std::vector<types::energy::EnforcedLimits>& limits);
+
+    /// \brief Writes each connector's share of the site headroom into its BrokerContext, or
+    /// clears it, so the brokers of the next run hand it to the EVs.
+    ///
+    /// It has to be the next run: the inference needs this run's enforced limits to know
+    /// what each connector was allotted, and by the time those exist the trading is over.
+    /// One optimizer interval of delay is also what makes the loop settle - a grant acts on
+    /// a measurement taken before it was handed out, so applying it twice within one
+    /// interval would count the same headroom twice.
+    ///
+    /// Clearing every run rather than only on change is what keeps a grant from outliving
+    /// the condition it was granted under: a connector that stops being saturated, a meter
+    /// that goes stale, or a headroom that closes all simply stop writing an entry.
+    /// \returns the number of connectors that were granted an increase, 0 while the site
+    /// has nothing to hand out
+    int grant_site_headroom(const SiteInference& site);
 
     EnergyManagerConfig config;
     BrokerStrategy broker_strategy;

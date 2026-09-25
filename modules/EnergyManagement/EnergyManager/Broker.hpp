@@ -135,6 +135,7 @@ struct BrokerContext {
         last_observed_measurement = {};
         redistribution_cap_A = std::nullopt;
         redistribution_reduction_pending_since = std::nullopt;
+        distributed_power_W = std::nullopt;
         last_allocated_W.reset();
         under_consuming.reset();
     };
@@ -160,6 +161,13 @@ struct BrokerContext {
     // cap first fell below the applied one. The reduction is applied once it has been
     // pending for the configured hold time; a recovering candidate clears it.
     std::optional<date::utc_clock::time_point> redistribution_reduction_pending_since;
+
+    // Extra import power [W] the site inference granted this connector, on top of what its
+    // own measurement plus the margin allows. Written once per optimizer run by
+    // EnergyManagerImpl and consumed by the broker of the following run, which is the
+    // earliest a figure derived from this run's allocations can be acted on. nullopt while
+    // the site has no headroom to hand this connector.
+    std::optional<float> distributed_power_W;
 
     // Import power [W] the previous optimizer run handed to this connector: the "allotted"
     // side of the power redistribution inference, compared against the measurement of the

@@ -24,9 +24,10 @@ that never actually existed on the installation.
 
 The EnergyManager therefore sums only those readings whose own measurement timestamp lies
 within ``power_meter_aggregation_window_s`` of the optimizer's start time; older readings
-are excluded as stale rather than contributing a wrong value. Only EVSE nodes contribute,
-so no meter is ever counted together with meters it already measures. Power and per phase
-current are aggregated together.
+are excluded as stale rather than contributing a wrong value. The grid connection's own
+meter is used wherever there is one; otherwise the EVSE meters are summed, and then only
+the EVSE nodes contribute, so no meter is ever counted together with meters it already
+measures. Power and per phase current are aggregated together.
 
 Size the window at or above the publish interval of the slowest meter in the tree. A
 window shorter than that discards readings the meter has had no chance to refresh, and
@@ -124,21 +125,23 @@ today by taking the highest of the known phases (the value applies to every phas
 the lowest would starve the phase that legitimately draws most). Trading each phase
 individually needs a per-phase limit in the energy types first.
 
-Power redistribution inference (log only)
-=========================================
+Power redistribution inference
+==============================
 
 With the ``PowerRedistribution`` strategy the EnergyManager compares, after every
 optimizer run, what each connector was allotted in the previous run with what its meter
 now reports, and the aggregated site consumption with the import limit of the grid
-connection. The result is logged; **the inference itself changes no allocation**. The per-connector
-limit above is applied by the broker; acting on the site-level inference is the next
-stage of the power redistribution work.
+connection.
+
+The reduce side is reported only: lowering a connector already happens continuously
+through the measurement based limit above, which needs no inference to do it. The increase
+side is handed out - see `Handing out the site headroom`_.
 
 Per connector, with allotted power ``A`` and measured power ``M``:
 
 - ``M`` more than ``power_redistribution_connector_margin x A`` below ``A``: the connector
-  is *under-consuming*. The allocation could shrink to ``M x (1 + margin)``, but never
-  below the connector's minimum current, so a session is trimmed rather than starved.
+  is *under-consuming*. This is reported, not acted on: the measurement based limit above
+  already holds the connector at what it draws plus the margin.
 - otherwise it consumes its allocation: *saturated* if its own static maximum leaves
   room, *at maximum* if not.
 - without a previous allocation (first run of a session), without a measurement, or with a
@@ -148,8 +151,8 @@ Per connector, with allotted power ``A`` and measured power ``M``:
 
 For the site, with grid limit ``G`` and the site measurement ``S`` (only when every
 contributing meter is fresh, see above): headroom ``G - S`` beyond
-``power_redistribution_site_margin x G`` can be handed to the saturated connectors. The
-reported increase is ``gain x (headroom - deadband)``, split equally and clamped to each
+``power_redistribution_site_margin x G`` is handed to the saturated connectors. The
+increase is ``gain x (headroom - deadband)``, split equally and clamped to each
 connector's static maximum, so the step is large far from the grid limit and vanishes close
 to it. A saturated connector whose static maximum is unknown is not a candidate: there is
 nothing to clamp its share against, and counting it would shrink the share of the
@@ -161,10 +164,46 @@ IEC 61851-1 allows a vehicle up to 5 s to follow a duty cycle change and real ca
 longer, so every ramp looks like under-consumption until the hold expires. Set it above the
 worst case ramp of the vehicles on site; the configured minimum is that 5 s response window.
 
-A report is logged once at info level when the condition becomes held (``power can be
-reduced by ... W``, ``power can be increased by ... W``) and once more when it clears. With
-``debug`` on, every run additionally prints the site headroom, which meter measured it, and
-the classification of every connector.
+A line is logged at info level when a condition becomes held (``power can be reduced by
+... W``, ``granting ... W of headroom to N of M saturated connector(s)``) and once more when
+it clears. With ``debug`` on, every run additionally prints the site headroom, which meter
+measured it, the classification of every connector and what it was granted.
+
+Handing out the site headroom
+-----------------------------
+
+The increase is handed out: every saturated connector receives its share of the headroom on
+top of its measurement based limit, so it climbs faster than one ``redistribution_margin_A``
+per optimizer run while the grid connection has room to spare. Setting
+``power_redistribution_gain`` to ``0`` hands out nothing and reduces the site inference to a
+report - that is how the measurement based limit is kept without the site ever relaxing it.
+
+Three things bound what a connector receives:
+
+- only connectors classed as *saturated* receive a share. A connector that is not using
+  what it already has is not short of an allocation.
+- only a fresh measurement can carry a share. Without one the connector falls back to its
+  minimum current plus the margin, as it does without a distributed share.
+- the connector's own maximum, and after that the energy tree: the share relaxes the
+  measurement based limit and never reaches past what the market would have allocated
+  anyway, so the fuse limits still bound every connector. Whatever the site infers, the
+  fuse decides.
+
+The site figure itself is the grid connection's own meter wherever there is one. Where
+there is not, it is the sum of the EVSE meters, which understates consumption by the whole
+house load and therefore overstates the headroom. The grid limit of the energy tree is what
+keeps that from mattering - it bounds every connector regardless - but it does mean the
+connectors reach that limit faster than the meters can justify. The ``info`` log names
+which of the two meters the figure came from.
+
+A grant reaches the broker one optimizer run after it was inferred, because the inference
+needs the enforced limits of the run it belongs to and those only exist once trading is
+over. That delay is also what makes the loop settle: a grant acts on a measurement taken
+before it was handed out, so applying it twice within one interval would count the same
+headroom twice. In the run after a grant the connector is usually classed as
+under-consuming again - it has been given room it has not yet taken up - and receives
+nothing further until its measurement has caught up. ``redistribution_reduction_hold_s``
+is what holds the raised limit in place while the EV ramps into it.
 
 Where the limits and the measurements come from
 -----------------------------------------------
@@ -209,9 +248,10 @@ Both are read from what the module already computed for the run, not re-derived:
        which is a different decision from a 10 % tolerance per session.
    * - ``power_redistribution_gain``
      - ``0.5``
-     - Fraction of the headroom beyond the deadband that is reported as increase.
-       ``0`` disables the increase report.
+     - Fraction of the headroom beyond the deadband handed to the saturated connectors.
+       ``0`` hands out nothing and leaves the site inference a report.
    * - ``power_redistribution_hold_time_s``
      - ``10``
-     - Time a condition must hold before it is reported [s]. Minimum ``5``, the IEC 61851-1
-       EV response window; it must exceed the worst case ramp of the vehicles on site.
+     - Time a condition must hold before headroom is handed out [s]. Minimum ``5``, the
+       IEC 61851-1 EV response window; it must exceed the worst case ramp of the vehicles
+       on site.

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <chrono>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -14,10 +15,14 @@ namespace module {
 
 // ---------------------------------------------------------------- power redistribution inference
 //
-// Log-only stage of the power redistribution: from what each connector was allotted, what
-// it actually draws and what the grid connection has to spare, infer where power could be
-// reduced or increased. Nothing here changes an allocation; EnergyManagerImpl calls these
-// once per optimizer run and logs the result.
+// From what each connector was allotted, what it actually draws and what the grid
+// connection has to spare, infer where power could be reduced or increased.
+//
+// These are pure functions over one optimizer run. EnergyManagerImpl calls them, logs the
+// result, and hands each connector its share of SiteInference::increase_W_by_connector,
+// which its broker applies on the next run. The reduce side is reported only: lowering a
+// connector already happens continuously through the measurement based cap, which needs no
+// inference to do it.
 
 /// \brief Import limit of the grid connection [W], read from the root Market's offer at the
 /// slot in force. total_power_W wins; otherwise ac_max_current_A times the declared phase
@@ -88,6 +93,8 @@ ConnectorInference classify_connector(std::optional<float> allocated_W, std::opt
 /// all rather than a candidate with a missing bound that every consumer has to decide what
 /// to do about.
 struct SaturatedConnector {
+    /// The connector the share computed for it has to be handed back to.
+    std::string uuid;
     float allocated_W;
     float max_W;
 };
@@ -99,7 +106,7 @@ struct SaturatedConnector {
 /// would be handing out power with nothing to clamp it against, and counting it among the
 /// candidates would shrink everyone else's share on behalf of a connector that cannot use
 /// it.
-std::optional<SaturatedConnector> to_saturated_connector(const ConnectorInference& connector,
+std::optional<SaturatedConnector> to_saturated_connector(const std::string& uuid, const ConnectorInference& connector,
                                                          const StaticBoundsW& bounds);
 
 /// \brief Result of infer_site().
@@ -117,6 +124,10 @@ struct SiteInference {
     /// Proposed increase [W] summed over the saturated connectors. 0 when the headroom is
     /// within the deadband, no connector can take more, or the gain is 0.
     float increase_W{0.f};
+    /// The same increase per connector, which is the form a broker can act on: increase_W
+    /// is a site total and says nothing about who may draw it. Only connectors granted more
+    /// than 0 W appear.
+    std::map<std::string, float> increase_W_by_connector;
     /// True once the condition has held for the configured hold time (set by the caller
     /// from its HoldLatch).
     bool held{false};
@@ -219,8 +230,15 @@ std::optional<float> to_scalar_cap(const PhaseCurrents& cap);
 /// schedule slot covering now (future slots are forecast, and the measurement describes
 /// now), and never below the connector's minimum current. Reductions of the cap are
 /// applied only after they have been pending for the configured hold time; increases are
-/// applied immediately. A connector without a usable, fresh measurement is limited to its
-/// minimum current plus the margin. Nodes offering no AC current limit (DC) are traded
+/// applied immediately.
+///
+/// On top of that measured value the cap carries BrokerContext::distributed_power_W,
+/// the share of the site headroom the previous run's inference granted this connector.
+/// That is what lets a saturated connector climb faster than one margin per run while the
+/// grid connection has room to spare, and it is the path by which the aggregated site
+/// measurement reaches an allocation. power_redistribution_gain 0 grants nothing, which
+/// leaves the cap at measured plus margin. A connector without a usable, fresh measurement
+/// is limited to its minimum current plus the margin. Nodes offering no AC current limit (DC) are traded
 /// like FastCharging.
 ///
 /// Operates on a single connector: the measurement is read from this broker's own market
