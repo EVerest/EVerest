@@ -170,8 +170,12 @@ The budget is **per EV connection and is not refunded by a successful match.**
 Refunding it would mean a link that flaps between up and lost retries forever
 and ``conn_retry_max`` bounds nothing. It is refilled by ``leave_bcd``,
 ``reset`` and ``dlink_terminate`` - the events that end or explicitly restart
-the connection. When it is exhausted the module reports the link down and stays
-``UNMATCHED``: state B0 territory, where EvseManager decides.
+the connection - and by an ``enter_bcd`` out of ``UNMATCHED``, which is the next
+connection (a plug-in; the restart routine re-enters BCD out of its own wait
+state and keeps the budget). Without that, a budget spent on an empty wire -
+EvseManager once restarted matching on an unplug - carried over to the next EV.
+When it is exhausted the module reports the link down and stays ``UNMATCHED``:
+state B0 territory, where EvseManager decides.
 
 .. note::
 
