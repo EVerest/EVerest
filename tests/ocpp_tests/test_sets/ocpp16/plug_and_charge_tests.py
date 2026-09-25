@@ -22,7 +22,7 @@ import pytest
 from validations import (validate_standard_start_transaction,
                                     validate_data_transfer_pnc_get_15118_ev_certificate,
                                     validate_data_transfer_sign_certificate)
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, TestUtility
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_payload, TestUtility
 from everest.testing.ocpp_utils.charge_point_v16 import ChargePoint16
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP16ConfigAdjustment
 from everest_test_utils import *
@@ -79,7 +79,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         r: call.DataTransfer = call.DataTransfer(
-            **await wait_for_and_validate(
+            **await wait_for_payload(
                 test_utility,
                 charge_point_v16,
                 "DataTransfer",
@@ -240,7 +240,7 @@ class TestPlugAndCharge:
         test_controller.plug_in_ac_iso()
         # expect authorize.req
         r: call.DataTransfer = call.DataTransfer(
-            **await wait_for_and_validate(
+            **await wait_for_payload(
                 test_utility,
                 charge_point_v16,
                 "DataTransfer",

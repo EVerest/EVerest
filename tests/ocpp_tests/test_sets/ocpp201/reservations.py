@@ -8,7 +8,7 @@ from unittest.mock import ANY
 
 from everest.testing.ocpp_utils.central_system import CentralSystem
 from everest.testing.ocpp_utils.charge_point_v201 import ChargePoint201
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, TestUtility
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_payload, TestUtility
 from everest.testing.ocpp_utils.fixtures import charge_point_v201
 from everest.testing.core_utils.controller.test_controller_interface import TestController
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP2XConfigAdjustment
@@ -1365,7 +1365,7 @@ async def test_reservation_with_parentid(
 
     # Authorize was accepted because of the correct group id token, transaction is started.
     r: call_201.TransactionEvent = call_201.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility,
             charge_point_v201,
             "TransactionEvent",
