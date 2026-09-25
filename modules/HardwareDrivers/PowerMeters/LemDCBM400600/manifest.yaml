@@ -130,6 +130,24 @@ config:
     default: 5000
     maximum: 20000
     minimum: 1000
+  min_import_current_A:
+    description: >-
+      Minimum current in Ampere in import direction (charging, the direction accumulated in the
+      DCBM's energyImportTotal register) the meter can measure within its accuracy class.
+      Take this value from the device datasheet. Published via the capabilities var of the
+      powermeter interface. A value of 0 means no restriction.
+    type: number
+    default: 0
+    minimum: 0
+  min_export_current_A:
+    description: >-
+      Minimum current in Ampere in export direction (discharging, the direction accumulated in the
+      DCBM's energyExportTotal register) the meter can measure within its accuracy class.
+      Take this value from the device datasheet. Published via the capabilities var of the
+      powermeter interface. A value of 0 means no restriction.
+    type: number
+    default: 0
+    minimum: 0
 
 provides:
   main:
