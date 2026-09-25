@@ -359,6 +359,66 @@ TEST(LinkStateMachine, EndingTheConnectionRefillsTheRetryBudget) {
     EXPECT_EQ(1, f.fsm().retry_count());
 }
 
+// A plug-in after a give_up is the next EV connection: the budget it inherits is full. Bench-found:
+// an unplug out of an EVSE pause left the machine in MATCHING on an empty wire, the three restarts
+// went to nobody, and the truck plugged in three hours later got "3 of 3 restart attempts used".
+TEST(LinkStateMachine, EnterBcdOutOfUnmatchedStartsTheNextConnectionWithAFullBudget) {
+    auto config = default_config();
+    config.conn_retry_max = 1;
+    fixture f(config);
+    f.fsm().enter_bcd(false);
+    f.fsm().link_detect_timeout(false);
+    f.fsm().retry_wait_elapsed(false);
+    f.fsm().link_detect_timeout(false);
+    (void)f.taken();
+    ASSERT_EQ(internal_state::unmatched, f.fsm().state()) << "budget exhausted on the empty wire";
+    ASSERT_EQ(1, f.fsm().retry_count());
+
+    f.fsm().enter_bcd(false);
+    EXPECT_EQ(trace({"timer+sync_repetition@4000", "state:MATCHING", "timer+link_detect@4000"}), f.taken());
+    EXPECT_EQ(0, f.fsm().retry_count());
+
+    f.fsm().link_detect_timeout(false);
+    EXPECT_EQ(internal_state::retry_wait, f.fsm().state()) << "the next connection restarts again";
+    EXPECT_EQ(1, f.fsm().retry_count());
+}
+
+TEST(LinkStateMachine, EnterBcdWithCarrierOutOfUnmatchedAlsoRefills) {
+    auto config = default_config();
+    config.conn_retry_max = 1;
+    fixture f(config);
+    f.reach_matched();
+    f.fsm().carrier_down();
+    f.fsm().link_detect_timeout(false);
+    f.fsm().retry_wait_elapsed(false);
+    f.fsm().link_detect_timeout(false);
+    (void)f.taken();
+    ASSERT_EQ(internal_state::unmatched, f.fsm().state());
+    ASSERT_EQ(1, f.fsm().retry_count());
+
+    f.fsm().enter_bcd(true);
+    EXPECT_EQ(trace({"state:MATCHED", "ready:1"}), f.taken());
+    EXPECT_EQ(0, f.fsm().retry_count());
+}
+
+// The B0-to-B restart of CC.5.2.3.2 re-enters BCD on the same connection: no refill, or the restart
+// routine would loop forever.
+TEST(LinkStateMachine, EnterBcdDuringTheRestartWaitKeepsTheBudgetSpent) {
+    auto config = default_config();
+    config.conn_retry_max = 2;
+    fixture f(config);
+    f.fsm().enter_bcd(false);
+    f.fsm().link_detect_timeout(false);
+    (void)f.taken();
+    ASSERT_EQ(internal_state::retry_wait, f.fsm().state());
+    ASSERT_EQ(1, f.fsm().retry_count());
+
+    f.fsm().enter_bcd(false);
+    EXPECT_EQ(trace({"timer-retry_wait", "timer+sync_repetition@4000", "state:MATCHING", "timer+link_detect@4000"}),
+              f.taken());
+    EXPECT_EQ(1, f.fsm().retry_count());
+}
+
 TEST(LinkStateMachine, DlinkTerminateAndResetAlsoRefillTheRetryBudget) {
     auto config = default_config();
     config.conn_retry_max = 1;

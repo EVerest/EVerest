@@ -157,7 +157,8 @@ struct machine_data {
     // --- retry budget ----------------------------------------------------------------------
 
     // C_conn_retry counts per EV connection; MATCHED does not refund attempts or a flapping link would
-    // retry forever. Refilled by leave_bcd, reset and dlink_terminate.
+    // retry forever. Refilled by leave_bcd, reset, dlink_terminate and by enter_bcd out of Unmatched,
+    // which is the next EV connection (bench-found: a plug-in inherited a budget spent on an empty wire).
     // OPEN: V2G10-052 read literally asks for that refund; Table 8 scopes C_conn_retry to the comm-init
     // phase. If conformance insists, refill on entry to Matched.
     bool retries_left() const {
@@ -298,12 +299,32 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
         }
     };
 
+    /// enter_bcd out of Unmatched is a new EV connection: a plug-in, or EvseManager's own B0-to-B after
+    /// a give_up (its error routine also resets). C_conn_retry is per connection (Table 8), so the budget
+    /// refills. Not on the RestartWait rows: that enter_bcd is the CC.5.2.3.2 restart of the same
+    /// connection and keeps spending attempts.
+    struct new_connection {
+        template <class EVT, class FSM, class Source, class Target>
+        void operator()(EVT const&, FSM& fsm, Source&, Target&) {
+            fsm.d->refill_retries();
+        }
+    };
+
     /// Communication initialization trigger (V2G10-055): open the TT_sync_repetition window. Only on
     /// enter_bcd; a restart after link loss is governed by C_conn_retry, not a repetition.
     struct begin_comm_init {
         template <class EVT, class FSM, class Source, class Target>
         void operator()(EVT const&, FSM& fsm, Source&, Target&) {
             fsm.d->open_sync_window();
+        }
+    };
+
+    /// new_connection followed by begin_comm_init.
+    struct begin_new_connection {
+        template <class EVT, class FSM, class Source, class Target>
+        void operator()(EVT const& evt, FSM& fsm, Source& src, Target& tgt) {
+            new_connection{}(evt, fsm, src, tgt);
+            begin_comm_init{}(evt, fsm, src, tgt);
         }
     };
 
@@ -359,8 +380,8 @@ struct SessionDef : public msm::front::state_machine_def<SessionDef> {
         //    +-------------+---------------------+-------------+-----------------------+-----------------------+
         //    | Source      | Event               | Target      | Action                | Guard                 |
         //    +-------------+---------------------+-------------+-----------------------+-----------------------+
-        Row   < Unmatched   , enter_bcd           , Matched     , none                  , carrier               >,
-        Row   < Unmatched   , enter_bcd           , Matching    , begin_comm_init       , no_carrier            >,
+        Row   < Unmatched   , enter_bcd           , Matched     , new_connection        , carrier               >,
+        Row   < Unmatched   , enter_bcd           , Matching    , begin_new_connection  , no_carrier            >,
         Row   < Matching    , carrier_up          , Matched     , none                  , none                  >,
         Row   < Matching    , link_detect_timeout , Matching    , repeat_comm_init      , may_repeat            >,
         Row   < Matching    , link_detect_timeout , RestartWait , spend_init_retry      , restart_after_failure >,
