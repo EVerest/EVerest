@@ -26,7 +26,8 @@ config:
   CustomMrecErrorMapPath:
     description: >-
       Optional path to a JSON file mapping EVerest error types to OCPP techCodes. Entries overwrite the
-      built-in defaults. Leave empty to use only the defaults.
+      built-in defaults. Leave empty to use only the defaults. A relative path is resolved against the
+      module's share directory.
     type: string
     default: ''
   DatabasePath:
