@@ -296,6 +296,11 @@ private:
                 ScalingPolicy::should_grow(reg_h->workers.size(), size_after_push, oldest_arrival)) {
                 spawn_worker_internal(reg_h);
             }
+            // wakes the supervisor, which sleeps while the queue is empty; notified under the registry lock so the
+            // supervisor cannot miss it between checking the queue and blocking
+            if constexpr (ScalingPolicy::supervisor_tick.has_value()) {
+                m_reg.notify_all();
+            }
         }
     }
 
@@ -309,7 +314,14 @@ private:
 
         *it = std::thread([this, it]() {
             while (true) {
-                auto task_opt = m_action_queue.try_pop(m_idle_timeout);
+                // workers at the minimum count never retire, so they block without a timeout instead of waking up
+                // every idle period
+                bool retirable = false;
+                {
+                    auto reg_h = m_reg.handle();
+                    retirable = reg_h->workers.size() > m_min_threads;
+                }
+                auto task_opt = retirable ? m_action_queue.try_pop(m_idle_timeout) : m_action_queue.wait_and_pop();
                 if (task_opt) {
                     try {
                         task_opt->func();
@@ -359,13 +371,18 @@ private:
     }
 
     /**
-     * @brief Supervisor loop. Periodically re-evaluates the scaling policy so that
+     * @brief Supervisor loop. While tasks are queued it periodically re-evaluates the scaling policy so that
      * time-based policies (e.g. LatencyScaling) scale up when tasks sit in the queue
-     * without any new submission to trigger a check.
+     * without any new submission to trigger a check. It sleeps while the queue is empty.
      */
     void run_supervisor(std::chrono::milliseconds tick) {
         while (true) {
             auto reg_h = m_reg.handle();
+            // an idle pool causes no wakeups: sleep until a task is queued, tick only while tasks are waiting
+            reg_h.wait([&]() { return reg_h->shutdown or m_action_queue.size() > 0; });
+            if (reg_h->shutdown) {
+                return;
+            }
             // wait_for returns true when the predicate is satisfied (shutdown requested),
             // false on timeout.
             if (reg_h.wait_for([&]() { return reg_h->shutdown; }, tick)) {

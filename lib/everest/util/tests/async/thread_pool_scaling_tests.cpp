@@ -554,3 +554,45 @@ TEST(ThreadPoolScalingStressTest, ZombiesReapedConcurrentlyWithTaskExecution) {
     EXPECT_EQ(completed.load(), total_tasks);
     // Destructor must complete cleanly with no unjoined zombie threads
 }
+
+namespace {
+// The only worker blocks until a second task runs; that task is queued once and nothing else is submitted, so only
+// the supervisor can add the worker that resolves the dependency.
+bool dependent_task_runs_without_further_submissions(thread_pool_scaling<LatencyScaling<20, 5>>& pool) {
+    std::promise<void> second_ran;
+    auto second_ran_future = second_ran.get_future().share();
+    std::promise<void> first_done;
+    auto first_done_future = first_done.get_future();
+    pool.run([second_ran_future, &first_done] {
+        const auto status = second_ran_future.wait_for(2s);
+        first_done.set_value();
+        (void)status;
+    });
+    std::this_thread::sleep_for(10ms);
+    pool.run([&second_ran] { second_ran.set_value(); });
+    const bool ran = second_ran_future.wait_for(1s) == std::future_status::ready;
+    first_done_future.wait();
+    return ran;
+}
+} // namespace
+
+/**
+ * @test SupervisorResolvesBlockedWorkerWithoutNewSubmissions
+ * @brief A task queued behind a blocked worker runs although no further task is submitted.
+ */
+TEST(ThreadPoolScalingTest, SupervisorResolvesBlockedWorkerWithoutNewSubmissions) {
+    thread_pool_scaling<LatencyScaling<20, 5>> pool(1, 4, 5s);
+    EXPECT_TRUE(dependent_task_runs_without_further_submissions(pool));
+}
+
+/**
+ * @test SupervisorWakesFromIdle
+ * @brief The supervisor sleeps while the queue is empty and still resolves a blocked worker once work arrives.
+ */
+TEST(ThreadPoolScalingTest, SupervisorWakesFromIdle) {
+    thread_pool_scaling<LatencyScaling<20, 5>> pool(1, 4, 5s);
+    std::this_thread::sleep_for(200ms);
+    EXPECT_TRUE(dependent_task_runs_without_further_submissions(pool));
+    std::this_thread::sleep_for(200ms);
+    EXPECT_TRUE(dependent_task_runs_without_further_submissions(pool));
+}
