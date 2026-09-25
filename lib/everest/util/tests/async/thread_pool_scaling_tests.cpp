@@ -600,8 +600,8 @@ TEST(ThreadPoolScalingTest, SupervisorWakesFromIdle) {
 
 /**
  * @test SupervisorDoesNotSpinAtThreadLimit
- * @brief With every worker blocked at the thread limit and a task overdue, the supervisor re-evaluates at the tick
- * cadence instead of spinning on a deadline in the past.
+ * @brief With every worker blocked at the thread limit and a task overdue, the supervisor sleeps until a worker
+ * retires instead of spinning on a deadline in the past.
  */
 TEST(ThreadPoolScalingTest, SupervisorDoesNotSpinAtThreadLimit) {
     thread_pool_scaling<LatencyScaling<5, 5>> pool(1, 1, 5s);

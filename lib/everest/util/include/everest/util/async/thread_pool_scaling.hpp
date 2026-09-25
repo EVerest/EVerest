@@ -233,6 +233,7 @@ public:
             auto reg_h = m_reg.handle();
             workers_to_join = std::move(reg_h->workers);
             reg_h->workers.clear();
+            m_worker_count = 0;
         }
 
         // 4. Join everything in our stolen list
@@ -341,17 +342,16 @@ private:
      */
     void spawn_worker_internal(handle& reg_h) {
         reg_h->workers.emplace_back();
+        m_worker_count = reg_h->workers.size();
         auto it = std::prev(reg_h->workers.end());
 
         *it = std::thread([this, it]() {
             while (true) {
                 // workers at the minimum count never retire, so they block without a timeout instead of waking up
                 // every idle period
-                bool retirable = false;
-                {
-                    auto reg_h = m_reg.handle();
-                    retirable = reg_h->workers.size() > m_min_threads;
-                }
+                // read without the registry lock, which submitters take on every task; the count only changes under
+                // that lock, and a worker that misses a concurrent spawn merely stays the one that never retires
+                const bool retirable = m_worker_count.load() > m_min_threads;
                 m_idle_workers++;
                 auto task_opt = retirable ? m_action_queue.try_pop(m_idle_timeout) : m_action_queue.wait_and_pop();
                 m_idle_workers--;
@@ -398,6 +398,11 @@ private:
                     if (reg_h->workers.size() > m_min_threads and m_action_queue.size() == 0) {
                         reg_h->zombies.push_back(std::move(*it));
                         reg_h->workers.erase(it);
+                        m_worker_count = reg_h->workers.size();
+                        // a supervisor waiting at the thread limit can grow again
+                        if constexpr (ScalingPolicy::supervisor_tick.has_value()) {
+                            m_reg.notify_all();
+                        }
                         return;
                     }
                 }
@@ -444,12 +449,17 @@ private:
                 continue;
             }
             const auto oldest_arrival = m_action_queue.oldest_arrival();
-            if (reg_h->workers.size() < m_max_threads and
-                ScalingPolicy::should_grow(reg_h->workers.size(), queue_size, oldest_arrival)) {
+            if (reg_h->workers.size() >= m_max_threads) {
+                // no growth is possible until a worker retires, which notifies
+                reg_h.wait([&]() { return reg_h->shutdown or reg_h->workers.size() < m_max_threads; });
+                if (reg_h->shutdown) {
+                    return;
+                }
+            } else if (ScalingPolicy::should_grow(reg_h->workers.size(), queue_size, oldest_arrival)) {
                 spawn_worker_internal(reg_h);
             } else {
-                // tasks keep waiting although the policy does not grow (e.g. at the thread limit): re-evaluate at the
-                // tick cadence instead of spinning on a deadline in the past
+                // tasks keep waiting although the policy does not grow: re-evaluate at the tick cadence instead of
+                // spinning on a deadline in the past
                 not_before = std::chrono::steady_clock::now() + tick;
             }
         }
@@ -461,7 +471,8 @@ private:
 
     thread_safe_bounded_queue<TrackedAction> m_action_queue; ///< Task queue.
     std::atomic<std::size_t> m_idle_workers{0};              ///< Workers blocked waiting for a task.
-    monitor<RegistryData> m_reg;                             ///< Worker registry.
+    std::atomic<std::size_t> m_worker_count{0}; ///< Size of the worker registry, readable without its lock.
+    monitor<RegistryData> m_reg;                ///< Worker registry.
     /// Background scaling supervisor. Only materialized as a real `std::thread`
     /// for policies whose `supervisor_tick` has a value; otherwise collapses to
     /// a `std::monostate` so non-supervisor pools don't carry a dead thread handle.
