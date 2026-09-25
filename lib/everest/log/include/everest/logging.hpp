@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef LOGGING_HPP
 #define LOGGING_HPP
 
@@ -44,6 +44,23 @@ int init(const std::string& logconf, std::string process_name);
 void ffi_log(int level, int line, const std::string& file, const std::string& message);
 
 void update_process_name(std::string process_name);
+
+/// \brief Overrides the process name in log records written by the calling thread; empty restores the process name.
+void set_thread_process_name(const std::string& process_name);
+/// \brief The override set by set_thread_process_name on the calling thread, padded; empty when none is set.
+std::string get_thread_process_name();
+
+/// \brief Sets the calling thread's process name for the lifetime of the object and restores the previous one after.
+class ThreadProcessNameScope {
+public:
+    explicit ThreadProcessNameScope(const std::string& process_name);
+    ~ThreadProcessNameScope();
+    ThreadProcessNameScope(const ThreadProcessNameScope&) = delete;
+    ThreadProcessNameScope& operator=(const ThreadProcessNameScope&) = delete;
+
+private:
+    std::string m_previous;
+};
 std::string trace();
 } // namespace Logging
 

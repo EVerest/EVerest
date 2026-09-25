@@ -1,0 +1,14 @@
+#!/bin/sh
+# usage: run-neo.sh <config name or path> [everest-neo options]
+if [ -z "$1" ]; then
+    echo "usage: $0 <config name or path> [everest-neo options]" >&2
+    exit 2
+fi
+CONFIG="$1"
+shift
+LD_LIBRARY_PATH=@LD_LIBRARY_VAR@:$LD_LIBRARY_PATH \
+PATH=@PATH_VAR@:$PATH \
+everest-neo \
+    --prefix @CMAKE_INSTALL_PREFIX@ \
+    --config "$CONFIG" \
+    "$@"

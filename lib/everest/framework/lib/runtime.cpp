@@ -572,6 +572,138 @@ ModuleCallbacks::ModuleCallbacks(
     shutdown(shutdown) {
 }
 
+ModuleAdapter make_module_adapter(Everest& everest, const std::string& module_id, std::shared_ptr<LocalBus> local) {
+    ModuleAdapter module_adapter;
+
+    module_adapter.call = [&everest](const Requirement& req, const std::string& cmd_name, const Parameters& args) {
+        return everest.call_cmd(req, cmd_name, args);
+    };
+
+    module_adapter.publish = [&everest](const std::string& req, const std::string& var_name, const Value& value) {
+        return everest.publish_var(req, var_name, value);
+    };
+
+    module_adapter.subscribe = [&everest](const Requirement& req, const std::string& var_name,
+                                          const ValueCallback& callback) {
+        return everest.subscribe_var(req, var_name, callback);
+    };
+
+    module_adapter.get_error_manager_impl = [&everest](const std::string& impl_id) {
+        return everest.get_error_manager_impl(impl_id);
+    };
+
+    module_adapter.get_error_state_monitor_impl = [&everest](const std::string& impl_id) {
+        return everest.get_error_state_monitor_impl(impl_id);
+    };
+
+    module_adapter.get_error_factory = [&everest](const std::string& impl_id) {
+        return everest.get_error_factory(impl_id);
+    };
+
+    module_adapter.get_error_manager_req = [&everest](const Requirement& req) {
+        return everest.get_error_manager_req(req);
+    };
+
+    module_adapter.get_error_state_monitor_req = [&everest](const Requirement& req) {
+        return everest.get_error_state_monitor_req(req);
+    };
+
+    module_adapter.get_global_error_manager = [&everest]() { return everest.get_global_error_manager(); };
+
+    module_adapter.get_global_error_state_monitor = [&everest]() { return everest.get_global_error_state_monitor(); };
+
+    module_adapter.get_config_service_client = [&everest]() { return everest.get_config_service_client(); };
+
+    // NOLINTNEXTLINE(modernize-avoid-bind): prefer bind here for readability
+    module_adapter.ext_mqtt_publish = std::bind(&Everest::Everest::external_mqtt_publish, &everest,
+                                                std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+
+    module_adapter.ext_mqtt_subscribe = [&everest](const std::string& topic, const StringHandler& handler) {
+        return everest.provide_external_mqtt_handler(topic, handler);
+    };
+
+    module_adapter.ext_mqtt_subscribe_pair = [&everest](const std::string& topic, const StringPairHandler& handler) {
+        return everest.provide_external_mqtt_handler(topic, handler);
+    };
+
+    module_adapter.telemetry_publish = [&everest](const std::string& category, const std::string& subcategory,
+                                                  const std::string& type, const TelemetryMap& telemetry) {
+        return everest.telemetry_publish(category, subcategory, type, telemetry);
+    };
+
+    module_adapter.get_mapping = [&everest]() { return everest.get_3_tier_model_mapping(); };
+
+    module_adapter.module_id = module_id;
+    module_adapter.local = std::move(local);
+
+    return module_adapter;
+}
+
+ModuleRuntime::ModuleRuntime(std::string module_id, const Config& config, const RuntimeSettings& runtime_settings,
+                             std::shared_ptr<MQTTAbstraction> mqtt, ModuleCallbacks callbacks,
+                             std::shared_ptr<LocalBus> local) :
+    m_module_id(std::move(module_id)),
+    m_config(config),
+    m_runtime_settings(runtime_settings),
+    m_everest(m_module_id, config, runtime_settings.validate_schema, std::move(mqtt), runtime_settings.telemetry_prefix,
+              runtime_settings.telemetry_enabled, runtime_settings.forward_exceptions),
+    m_callbacks(std::move(callbacks)),
+    m_local(std::move(local)) {
+}
+
+bool ModuleRuntime::connect() {
+    return m_everest.connect();
+}
+
+void ModuleRuntime::register_module() {
+    const Logging::ThreadProcessNameScope log_scope(m_config.printable_identifier(m_module_id));
+    m_callbacks.register_module_adapter(make_module_adapter(m_everest, m_module_id, m_local));
+
+    // FIXME (aw): would be nice to move this config related thing toward the module_init function
+    const std::vector<cmd> cmds = m_callbacks.everest_register(m_config.get_requirement_initialization(m_module_id));
+
+    for (const auto& command : cmds) {
+        m_everest.provide_cmd(command);
+    }
+}
+
+void ModuleRuntime::init_module() {
+    const Logging::ThreadProcessNameScope log_scope(m_config.printable_identifier(m_module_id));
+    const auto module_configs = m_config.get_module_configs(m_module_id);
+    auto module_info = m_config.get_module_info(m_module_id);
+    populate_module_info_path_from_runtime_settings(module_info, m_runtime_settings);
+    module_info.telemetry_enabled = m_everest.is_telemetry_enabled();
+    const auto module_mappings = m_everest.get_3_tier_model_mapping();
+    if (module_mappings.has_value()) {
+        module_info.mapping = module_mappings.value().module;
+    }
+
+    m_callbacks.init(module_configs, module_info);
+}
+
+void ModuleRuntime::start() {
+    m_everest.spawn_main_loop_thread();
+
+    // register the modules ready handler with the framework.
+    // this handler gets called when the global ready signal is received.
+    m_everest.register_on_ready_handler(m_callbacks.ready);
+
+    // Register the module shutdown handler with the framework.
+    // This handler is called when the global shutdown signal is received.
+    m_everest.register_on_shutdown_handler(m_callbacks.shutdown);
+
+    // the module should now be ready
+    m_everest.signal_ready();
+}
+
+void ModuleRuntime::wait() {
+    m_everest.wait_for_main_loop_end();
+}
+
+Everest& ModuleRuntime::everest() {
+    return m_everest;
+}
+
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays): pass-through of argc and argv from main()
 ModuleLoader::ModuleLoader(int argc, char* argv[], ModuleCallbacks callbacks, VersionInformation version_information) :
     m_runtime_settings(nullptr),
@@ -653,13 +785,12 @@ int ModuleLoader::initialize() {
         }
         Logging::update_process_name(module_identifier);
 
-        auto everest = Everest(m_module_id, config, rs->validate_schema, m_mqtt, rs->telemetry_prefix,
-                               rs->telemetry_enabled, rs->forward_exceptions);
+        ModuleRuntime runtime(m_module_id, config, *rs, m_mqtt, m_callbacks);
 
         // module import
         EVLOG_debug << fmt::format("Initializing module {}...", module_identifier);
 
-        if (!everest.connect()) {
+        if (!runtime.connect()) {
             if (m_mqtt_settings.broker_socket_path.empty()) {
                 EVLOG_error << fmt::format("Cannot connect to MQTT broker at {}:{}", m_mqtt_settings.broker_host,
                                            m_mqtt_settings.broker_port);
@@ -670,108 +801,15 @@ int ModuleLoader::initialize() {
             return 1;
         }
 
-        ModuleAdapter module_adapter;
-
-        module_adapter.call = [&everest](const Requirement& req, const std::string& cmd_name, const Parameters& args) {
-            return everest.call_cmd(req, cmd_name, args);
-        };
-
-        module_adapter.publish = [&everest](const std::string& req, const std::string& var_name, const Value& value) {
-            return everest.publish_var(req, var_name, value);
-        };
-
-        module_adapter.subscribe = [&everest](const Requirement& req, const std::string& var_name,
-                                              const ValueCallback& callback) {
-            return everest.subscribe_var(req, var_name, callback);
-        };
-
-        module_adapter.get_error_manager_impl = [&everest](const std::string& impl_id) {
-            return everest.get_error_manager_impl(impl_id);
-        };
-
-        module_adapter.get_error_state_monitor_impl = [&everest](const std::string& impl_id) {
-            return everest.get_error_state_monitor_impl(impl_id);
-        };
-
-        module_adapter.get_error_factory = [&everest](const std::string& impl_id) {
-            return everest.get_error_factory(impl_id);
-        };
-
-        module_adapter.get_error_manager_req = [&everest](const Requirement& req) {
-            return everest.get_error_manager_req(req);
-        };
-
-        module_adapter.get_error_state_monitor_req = [&everest](const Requirement& req) {
-            return everest.get_error_state_monitor_req(req);
-        };
-
-        module_adapter.get_global_error_manager = [&everest]() { return everest.get_global_error_manager(); };
-
-        module_adapter.get_global_error_state_monitor = [&everest]() {
-            return everest.get_global_error_state_monitor();
-        };
-
-        module_adapter.get_config_service_client = [&everest]() { return everest.get_config_service_client(); };
-
-        // NOLINTNEXTLINE(modernize-avoid-bind): prefer bind here for readability
-        module_adapter.ext_mqtt_publish =
-            std::bind(&Everest::Everest::external_mqtt_publish, &everest, std::placeholders::_1, std::placeholders::_2,
-                      std::placeholders::_3);
-
-        module_adapter.ext_mqtt_subscribe = [&everest](const std::string& topic, const StringHandler& handler) {
-            return everest.provide_external_mqtt_handler(topic, handler);
-        };
-
-        module_adapter.ext_mqtt_subscribe_pair = [&everest](const std::string& topic,
-                                                            const StringPairHandler& handler) {
-            return everest.provide_external_mqtt_handler(topic, handler);
-        };
-
-        module_adapter.telemetry_publish = [&everest](const std::string& category, const std::string& subcategory,
-                                                      const std::string& type, const TelemetryMap& telemetry) {
-            return everest.telemetry_publish(category, subcategory, type, telemetry);
-        };
-
-        module_adapter.get_mapping = [&everest]() { return everest.get_3_tier_model_mapping(); };
-
-        m_callbacks.register_module_adapter(module_adapter);
-
-        // FIXME (aw): would be nice to move this config related thing toward the module_init function
-        const std::vector<cmd> cmds = m_callbacks.everest_register(config.get_requirement_initialization(m_module_id));
-
-        for (const auto& command : cmds) {
-            everest.provide_cmd(command);
-        }
-
-        const auto module_configs = config.get_module_configs(m_module_id);
-        auto module_info = config.get_module_info(m_module_id);
-        populate_module_info_path_from_runtime_settings(module_info, *rs);
-        module_info.telemetry_enabled = everest.is_telemetry_enabled();
-        const auto module_mappings = everest.get_3_tier_model_mapping();
-        if (module_mappings.has_value()) {
-            module_info.mapping = module_mappings.value().module;
-        }
-
-        m_callbacks.init(module_configs, module_info);
-
-        everest.spawn_main_loop_thread();
-
-        // register the modules ready handler with the framework.
-        // this handler gets called when the global ready signal is received.
-        everest.register_on_ready_handler(m_callbacks.ready);
-
-        // Register the module shutdown handler with the framework.
-        // This handler is called when the global shutdown signal is received.
-        everest.register_on_shutdown_handler(m_callbacks.shutdown);
-
-        // the module should now be ready
-        everest.signal_ready();
+        runtime.register_module();
+        runtime.init_module();
+        runtime.start();
 
         const auto end_time = std::chrono::steady_clock::now();
         EVLOG_info << "Module " << fmt::format(TERMINAL_STYLE_BLUE, "{}", m_module_id) << " initialized ["
                    << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms]";
 
-        everest.wait_for_main_loop_end();
+        runtime.wait();
     } catch (boost::exception& e) {
         EVLOG_critical << fmt::format("Caught top level boost::exception:\n{}", boost::diagnostic_information(e, true));
         shutdown_mqtt();
