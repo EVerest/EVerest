@@ -1290,9 +1290,11 @@ void Charger::process_event(CPEvent cp_event) {
 
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_process_event);
 
-    run_state_machine();
-
-    // Process all event actions that are independent of the current state
+    // The event's plain facts (EV unplugged, contactor open or closed, EV stopped requesting power) go in
+    // before the state machine runs, so no pass acts on a world that is already gone. Bench-found on an MCS
+    // unplug out of ChargingPausedEVSE: a pass on the stale flags saw the EV still plugged in and the pause
+    // reasons just cleared, resumed into PrepareCharging and restarted the data link for a car that had
+    // left, spending the whole C_conn_retry budget on an empty wire.
     process_cp_events_independent(cp_event);
 
     run_state_machine();

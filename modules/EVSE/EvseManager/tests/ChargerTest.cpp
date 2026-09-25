@@ -25,6 +25,7 @@ struct ChargerDerived : public Charger {
     using Charger::get_enable_disable_source_table;
     using Charger::get_hlc_use_5percent_current_session;
     using Charger::get_shared_context;
+    using Charger::process_event;
     using Charger::run_state_machine;
 
     // updated when a non-zero connector is used to enable_disable()
@@ -887,6 +888,58 @@ TEST_F(ChargerDlinkErrorTest, MatchingRestartWhenStoppingToPause) {
     charger->run_state_machine();
 
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Reinit);
+}
+
+// ----------------------------------------------------------------------------
+// An EVSE-initiated HLC pause that is lifted resumes in PrepareCharging and restarts SLAC. Not when the
+// pause is lifted by the unplug itself: the CP event's facts (flag_ev_plugged_in) are applied before the
+// state machine runs, so the pass sees the EV gone and stops instead. Bench-found on MCS, where the
+// resume restarted the data link on an empty wire and spent its whole restart budget there.
+
+struct ChargerEvsePauseTest : public ChargerDlinkErrorTest {
+    int slac_starts{0};
+
+    /// Settled in ChargingPausedEVSE on an EVSE-initiated pause that is still held by NoEnergy.
+    void setup_held_evse_pause() {
+        setup_hlc_session_in(Charger::EvseState::ChargingPausedEVSE);
+        auto& ctx = charger->get_shared_context();
+        ctx.flag_ev_plugged_in = true;
+        ctx.hlc_session_paused_by_evse = true;
+        ctx.hlc_charging_terminate_pause = Charger::HlcTerminatePause::Terminate;
+        charger->signal_slac_start.connect([this] { ++slac_starts; });
+        charger->run_state_machine();
+        ASSERT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+        slac_starts = 0;
+    }
+
+    /// Energy is back: the next pass resumes, unless the EV is gone.
+    void lift_pause() {
+        // The socket caps at the cable rating, which is unset in this fixture.
+        charger->get_shared_context().max_current_cable = 32.0f;
+        charger->set_max_current(16.0f, std::chrono::steady_clock::now() + std::chrono::hours(1));
+    }
+};
+
+TEST_F(ChargerEvsePauseTest, LiftedPauseResumesAndRestartsSlacWhilePluggedIn) {
+    setup_held_evse_pause();
+    lift_pause();
+
+    // PowerOff only records the open contactor; the pass itself does the resuming.
+    charger->process_event(CPEvent::PowerOff);
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_GE(slac_starts, 1);
+}
+
+TEST_F(ChargerEvsePauseTest, UnplugWhilePausedStopsInsteadOfResuming) {
+    setup_held_evse_pause();
+    lift_pause();
+
+    charger->process_event(CPEvent::CarUnplugged);
+
+    EXPECT_FALSE(charger->get_shared_context().flag_ev_plugged_in);
+    EXPECT_NE(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_EQ(slac_starts, 0) << "no SLAC restart for a car that left";
 }
 
 TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWithNominalPwm) {
