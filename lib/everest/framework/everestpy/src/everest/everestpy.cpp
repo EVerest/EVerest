@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include <filesystem>
 #include <fstream>
 
@@ -129,6 +129,7 @@ PYBIND11_MODULE(everestpy, m) {
         .def(py::init<const RuntimeSession&>())
         .def(py::init<const std::string&, const RuntimeSession&>())
         .def("say_hello", &Module::say_hello)
+        .def("close", &Module::close)
         .def("init_done", py::overload_cast<>(&Module::init_done))
         .def("init_done", py::overload_cast<const std::function<void()>&>(&Module::init_done))
         .def("shutdown_handler", py::overload_cast<const std::function<void()>&>(&Module::shutdown_handler))

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef EVERESTPY_MODULE_HPP
 #define EVERESTPY_MODULE_HPP
 
@@ -48,6 +48,9 @@ public:
     void init_done() {
         init_done(nullptr);
     }
+
+    // Stops the MQTT connection and joins its threads. The module is unusable afterwards.
+    void close();
 
     void shutdown_handler(const std::function<void()>& on_shutdown_handler) {
         if (on_shutdown_handler) {
