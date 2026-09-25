@@ -316,8 +316,6 @@ private:
     bool start_transaction();
     void stop_transaction();
 
-    void process_event(CPEvent event);
-
     void set_state(EvseState s);
 
     // This mutex locks all variables related to the state machine
@@ -603,6 +601,7 @@ private:
 protected:
     // provide access for unit tests
     void run_state_machine();
+    void process_event(CPEvent event);
     constexpr auto& get_shared_context() {
         return shared_context;
     }
