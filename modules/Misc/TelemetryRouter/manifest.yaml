@@ -1,0 +1,55 @@
+description: >-
+  Receives the telemetry of all modules and forwards it to sinks such as the OCPP device model, according to
+  the rules in a rules file. Requires settings.telemetry_socket_enabled; the manager hands the telemetry socket
+  to this module.
+config:
+  rules_file:
+    description: >-
+      Rules file (YAML) with the sinks and the ordered forwarding rules. A relative path is resolved against
+      the module's share directory.
+    type: string
+    default: telemetry_rules.yaml
+  strict_rules:
+    description: >-
+      Fail at startup on errors in the rules file. When false, invalid rules and sinks are skipped with an
+      error message.
+    type: boolean
+    default: true
+  socket_receive_buffer_bytes:
+    description: Receive buffer size requested for the telemetry socket
+    type: integer
+    default: 1048576
+  ocpp_flush_interval_ms:
+    description: Default interval of OCPP sinks between two batches of set_variables calls
+    type: integer
+    default: 1000
+  ocpp_min_interval_s:
+    description: Default minimum interval of OCPP sinks between two writes to the same variable
+    type: integer
+    default: 10
+  stats_log_interval_s:
+    description: Interval between two log lines with receive and routing statistics; 0 disables them
+    type: integer
+    default: 60
+  max_dynamic_producers:
+    description: Maximum number of producers that may declare telemetry at runtime
+    type: integer
+    default: 32
+  max_dynamic_elements:
+    description: Maximum number of telemetry elements declared at runtime, over all producers
+    type: integer
+    default: 1024
+provides:
+  main:
+    description: Placeholder implementation, the module only receives and forwards telemetry
+    interface: empty
+requires:
+  ocpp:
+    interface: ocpp
+    min_connections: 0
+    max_connections: 1
+telemetry_receiver: true
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Anton Woellert

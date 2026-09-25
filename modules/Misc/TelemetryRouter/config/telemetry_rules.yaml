@@ -1,0 +1,7 @@
+# Default telemetry rules: all telemetry is dropped.
+#
+# Copy telemetry_rules.example.yaml, adapt it and point the rules_file config key of TelemetryRouter to it.
+version: 1
+sinks: {}
+default_action: drop
+rules: []

@@ -1,0 +1,20 @@
+load("//modules:module.bzl", "cc_everest_module")
+
+IMPLS = [
+    "main",
+]
+
+cc_everest_module(
+    name = "TelemetryRouter",
+    srcs = glob([
+        "*.cpp",
+        "*.hpp",
+        "lib/*.cpp",
+        "lib/*.hpp",
+    ]),
+    impls = IMPLS,
+    deps = [
+        "//lib/everest/io",
+        "//lib/everest/yaml:everest_yaml",
+    ],
+)

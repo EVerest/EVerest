@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Telemetry of the TelemetryExample module with id telemetry_example, mapped to EVSE 1",
+  "type": "object",
+  "name": "TelemetryExample",
+  "instance": "telemetry_example",
+  "evse_id": 1,
+  "properties": {
+    "temperature": {
+      "variable_name": "temperature",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "decimal",
+        "unit": "Celsius"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadOnly"
+        }
+      ],
+      "description": "Simulated board temperature",
+      "type": "number"
+    },
+    "plug_ins": {
+      "variable_name": "plug_ins",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "integer"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadOnly"
+        }
+      ],
+      "description": "Simulated plug-in events",
+      "type": "integer"
+    },
+    "firmware_state": {
+      "variable_name": "firmware_state",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "OptionList",
+        "valuesList": "Idle,Measuring,Error"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadOnly"
+        }
+      ],
+      "description": "Simulated firmware state of an attached device",
+      "type": "string"
+    },
+    "relay_closed": {
+      "variable_name": "relay_closed",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "boolean"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadOnly"
+        }
+      ],
+      "description": "Simulated relay state",
+      "type": "boolean"
+    }
+  }
+}

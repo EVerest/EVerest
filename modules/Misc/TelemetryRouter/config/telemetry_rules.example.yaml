@@ -1,0 +1,46 @@
+# Example telemetry rules for TelemetryRouter.
+#
+# Rules are evaluated in order and the first matching rule decides what happens to an element: it is either
+# dropped or forwarded to one or more sinks. A forwarding rule with "continue: true" lets later rules add
+# further targets. Elements that no rule matches get the default action.
+version: 1
+
+sinks:
+  # Writes values to OCPP device model variables through the ocpp requirement of TelemetryRouter. The
+  # variables must exist in the device model, see component_config/Telemetry_example.json.
+  csms:
+    type: ocpp
+    flush_interval_ms: 1000 # one batch of set_variables calls per interval
+    min_interval_s: 10 # a variable is written at most once per interval
+  # Logs samples, at most max_per_second lines.
+  debug:
+    type: log
+    max_per_second: 20
+
+default_action: drop
+
+rules:
+  - name: silence-simulators
+    match:
+      module_id: "*_simulator"
+    action: drop
+
+  - name: example-to-csms
+    match:
+      module_type: TelemetryExample
+      element: [temperature, plug_ins, firmware_state, relay_closed]
+    forward:
+      - sink: csms
+        component:
+          name: TelemetryExample
+          instance: "${module_id}"
+          evse: auto # EVSE of the producer's mapping in the config; "none" or a number are also possible
+        variable:
+          name: "${element}"
+        deadband: 0.5 # numeric values closer than this to the last written value are not written
+        decimals: 1
+      - sink: debug
+
+  - name: everything-else-to-debug
+    forward:
+      - sink: debug
