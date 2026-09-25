@@ -13,6 +13,7 @@
 
 #include <generated/types/evse_manager.hpp>
 #include <generated/types/grid_support.hpp>
+#include <generated/types/iso15118.hpp>
 
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
@@ -459,6 +460,25 @@ TEST(BuildComponentConfigsTest, DecidedOverloadAssemblesTheSameIso15118Entry) {
         ASSERT_NE(enabled, nullptr);
         EXPECT_EQ(variable_value(*enabled), expected);
     }
+}
+
+TEST(SupportedEnergyTransferModesTest, ReportsOcppNames) {
+    using types::iso15118::EnergyTransferMode;
+    EXPECT_EQ(dmn::supported_energy_transfer_modes_vector_to_string(
+                  {EnergyTransferMode::DC_extended, EnergyTransferMode::DC_BPT}),
+              "DC,DC_BPT");
+}
+
+TEST(SupportedEnergyTransferModesTest, ModesMappingToOneOcppNameAreReportedOnce) {
+    using types::iso15118::EnergyTransferMode;
+    EXPECT_EQ(
+        dmn::supported_energy_transfer_modes_vector_to_string(
+            {EnergyTransferMode::DC_core, EnergyTransferMode::AC_three_phase_core, EnergyTransferMode::DC_extended}),
+        "DC,AC_three_phase");
+}
+
+TEST(SupportedEnergyTransferModesTest, NoModesReportsEmpty) {
+    EXPECT_EQ(dmn::supported_energy_transfer_modes_vector_to_string({}), "");
 }
 
 // The Ac component carries static presence (Available "true"/ReadOnly) and a runtime Enabled control
