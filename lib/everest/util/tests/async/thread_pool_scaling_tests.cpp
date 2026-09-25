@@ -4,6 +4,7 @@
 #include "gtest/gtest.h"
 #include <atomic>
 #include <chrono>
+#include <ctime>
 #include <everest/util/async/thread_pool_scaling.hpp>
 #include <future>
 #include <vector>
@@ -595,4 +596,31 @@ TEST(ThreadPoolScalingTest, SupervisorWakesFromIdle) {
     EXPECT_TRUE(dependent_task_runs_without_further_submissions(pool));
     std::this_thread::sleep_for(200ms);
     EXPECT_TRUE(dependent_task_runs_without_further_submissions(pool));
+}
+
+/**
+ * @test SupervisorDoesNotSpinAtThreadLimit
+ * @brief With every worker blocked at the thread limit and a task overdue, the supervisor re-evaluates at the tick
+ * cadence instead of spinning on a deadline in the past.
+ */
+TEST(ThreadPoolScalingTest, SupervisorDoesNotSpinAtThreadLimit) {
+    thread_pool_scaling<LatencyScaling<5, 5>> pool(1, 1, 5s);
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    std::atomic<bool> second_ran{false};
+    pool.run([released] { released.wait(); });
+    pool.run([&second_ran] { second_ran = true; });
+
+    const auto cpu_before = std::clock();
+    std::this_thread::sleep_for(300ms);
+    const auto cpu_ms = 1000.0 * static_cast<double>(std::clock() - cpu_before) / CLOCKS_PER_SEC;
+    EXPECT_LT(cpu_ms, 50.0);
+    EXPECT_FALSE(second_ran);
+
+    release.set_value();
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (not second_ran and std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(1ms);
+    }
+    EXPECT_TRUE(second_ran);
 }

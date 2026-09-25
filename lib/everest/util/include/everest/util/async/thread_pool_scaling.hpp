@@ -7,6 +7,7 @@
 
 #include "everest/util/async/monitor.hpp"
 #include "everest/util/queue/thread_safe_bounded_queue.hpp"
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -39,7 +40,12 @@ struct TrackedAction {
 
 // A policy advertises whether it needs a background supervisor (and at what
 // cadence) via a single constexpr: `supervisor_tick`. `std::nullopt` means no
-// supervisor; a value means "re-evaluate scaling every <tick> ms".
+// supervisor; a value means "re-evaluate scaling at most every <tick> ms while
+// tasks are queued". A policy may additionally provide
+//   static std::chrono::steady_clock::time_point next_check(std::chrono::steady_clock::time_point oldest_arrival);
+// returning the earliest time at which should_grow() can become true for the
+// oldest queued task; the supervisor then sleeps until that time instead of
+// waking every tick.
 
 /**
  * @brief Greedy scaling policy: grows whenever there is any backlog.
@@ -99,7 +105,22 @@ template <std::size_t ThresholdMs = 10, std::size_t TickMs = 5> struct LatencySc
         const auto wait = std::chrono::duration_cast<std::chrono::milliseconds>(now - oldest_arrival.value());
         return wait.count() > static_cast<long long>(ThresholdMs);
     }
+    /**
+     * @brief Earliest time at which the task that arrived at \p oldest_arrival exceeds the threshold.
+     */
+    static std::chrono::steady_clock::time_point next_check(std::chrono::steady_clock::time_point oldest_arrival) {
+        return oldest_arrival + std::chrono::milliseconds(ThresholdMs + 1);
+    }
 };
+
+/**
+ * @brief Detects whether a scaling policy provides next_check().
+ */
+template <typename Policy, typename = void> struct has_next_check : std::false_type {};
+template <typename Policy>
+struct has_next_check<Policy,
+                      std::void_t<decltype(Policy::next_check(std::declval<std::chrono::steady_clock::time_point>()))>>
+    : std::true_type {};
 
 // --- Thread Pool ---
 
@@ -278,6 +299,7 @@ private:
         std::list<std::thread> workers;  ///< List of active worker threads.
         std::deque<std::thread> zombies; ///< Threads that have exited but not yet been joined.
         bool shutdown = false;           ///< Global shutdown flag.
+        bool supervisor_idle = false;    ///< Supervisor sleeps until a task is queued.
     };
 
     using handle = monitor_handle<RegistryData, std::mutex>; ///< Alias for monitor access.
@@ -289,17 +311,26 @@ private:
     void submit_to_queue(action&& func) {
         std::size_t size_after_push = m_action_queue.push(TrackedAction(std::move(func)));
         auto oldest_arrival = m_action_queue.oldest_arrival();
+        // an idle worker takes the task at once; only a task that queues behind busy workers can need the supervisor
+        const bool task_may_wait = size_after_push > m_idle_workers.load();
 
         if (size_after_push > 0) {
-            auto reg_h = m_reg.handle();
-            if (reg_h->workers.size() < m_max_threads &&
-                ScalingPolicy::should_grow(reg_h->workers.size(), size_after_push, oldest_arrival)) {
-                spawn_worker_internal(reg_h);
+            bool wake_supervisor = false;
+            {
+                auto reg_h = m_reg.handle();
+                if (reg_h->workers.size() < m_max_threads &&
+                    ScalingPolicy::should_grow(reg_h->workers.size(), size_after_push, oldest_arrival)) {
+                    spawn_worker_internal(reg_h);
+                }
+                // Read under the registry lock: the supervisor re-checks the queue under the same lock before it
+                // blocks, so a notification sent after this point cannot be missed. While it waits for a deadline,
+                // newer tasks cannot move that deadline, so it is not woken then.
+                wake_supervisor = task_may_wait and reg_h->supervisor_idle;
             }
-            // wakes the supervisor, which sleeps while the queue is empty; notified under the registry lock so the
-            // supervisor cannot miss it between checking the queue and blocking
             if constexpr (ScalingPolicy::supervisor_tick.has_value()) {
-                m_reg.notify_all();
+                if (wake_supervisor) {
+                    m_reg.notify_all();
+                }
             }
         }
     }
@@ -321,7 +352,9 @@ private:
                     auto reg_h = m_reg.handle();
                     retirable = reg_h->workers.size() > m_min_threads;
                 }
+                m_idle_workers++;
                 auto task_opt = retirable ? m_action_queue.try_pop(m_idle_timeout) : m_action_queue.wait_and_pop();
+                m_idle_workers--;
                 if (task_opt) {
                     try {
                         task_opt->func();
@@ -360,7 +393,9 @@ private:
                     // This only executes if we are NOT shutting down.
                     // Since we are holding the monitor lock and shutdown is false,
                     // we know 'it' is still valid in reg_h->workers.
-                    if (reg_h->workers.size() > m_min_threads) {
+                    // A task pushed while this worker's wait timed out was counted against this worker as idle,
+                    // so nobody woke the supervisor for it; the worker takes it instead of retiring.
+                    if (reg_h->workers.size() > m_min_threads and m_action_queue.size() == 0) {
                         reg_h->zombies.push_back(std::move(*it));
                         reg_h->workers.erase(it);
                         return;
@@ -371,34 +406,51 @@ private:
     }
 
     /**
-     * @brief Supervisor loop. While tasks are queued it periodically re-evaluates the scaling policy so that
+     * @brief Supervisor loop. While tasks are queued it re-evaluates the scaling policy so that
      * time-based policies (e.g. LatencyScaling) scale up when tasks sit in the queue
-     * without any new submission to trigger a check. It sleeps while the queue is empty.
+     * without any new submission to trigger a check. It sleeps while the queue is empty and, for policies
+     * with next_check(), until the oldest task could exceed the threshold.
      */
     void run_supervisor(std::chrono::milliseconds tick) {
+        auto not_before = std::chrono::steady_clock::time_point::min();
         while (true) {
             auto reg_h = m_reg.handle();
-            // an idle pool causes no wakeups: sleep until a task is queued, tick only while tasks are waiting
+            // an idle pool causes no wakeups: sleep until a task is queued
+            reg_h->supervisor_idle = true;
             reg_h.wait([&]() { return reg_h->shutdown or m_action_queue.size() > 0; });
+            reg_h->supervisor_idle = false;
             if (reg_h->shutdown) {
                 return;
             }
-            // wait_for returns true when the predicate is satisfied (shutdown requested),
-            // false on timeout.
-            if (reg_h.wait_for([&]() { return reg_h->shutdown; }, tick)) {
+            const auto first_arrival = m_action_queue.oldest_arrival();
+            if (not first_arrival.has_value()) {
+                // a worker took the task in the meantime
+                continue;
+            }
+
+            // sleep until the oldest queued task could need another worker; newer tasks can only fall due later
+            auto deadline = std::chrono::steady_clock::now() + tick;
+            if constexpr (has_next_check<ScalingPolicy>::value) {
+                deadline = ScalingPolicy::next_check(first_arrival.value());
+            }
+            deadline = std::max(deadline, not_before);
+            if (reg_h.wait_until(deadline, [&]() { return reg_h->shutdown; })) {
                 return;
             }
 
             const std::size_t queue_size = m_action_queue.size();
+            not_before = std::chrono::steady_clock::time_point::min();
             if (queue_size == 0) {
                 continue;
             }
-            if (reg_h->workers.size() >= m_max_threads) {
-                continue;
-            }
             const auto oldest_arrival = m_action_queue.oldest_arrival();
-            if (ScalingPolicy::should_grow(reg_h->workers.size(), queue_size, oldest_arrival)) {
+            if (reg_h->workers.size() < m_max_threads and
+                ScalingPolicy::should_grow(reg_h->workers.size(), queue_size, oldest_arrival)) {
                 spawn_worker_internal(reg_h);
+            } else {
+                // tasks keep waiting although the policy does not grow (e.g. at the thread limit): re-evaluate at the
+                // tick cadence instead of spinning on a deadline in the past
+                not_before = std::chrono::steady_clock::now() + tick;
             }
         }
     }
@@ -408,6 +460,7 @@ private:
     const std::chrono::milliseconds m_idle_timeout; ///< Surplus thread idle timeout.
 
     thread_safe_bounded_queue<TrackedAction> m_action_queue; ///< Task queue.
+    std::atomic<std::size_t> m_idle_workers{0};              ///< Workers blocked waiting for a task.
     monitor<RegistryData> m_reg;                             ///< Worker registry.
     /// Background scaling supervisor. Only materialized as a real `std::thread`
     /// for policies whose `supervisor_tick` has a value; otherwise collapses to
