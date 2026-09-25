@@ -409,8 +409,8 @@ void to_json(json& j, Connector_type const& k) noexcept {
     case Connector_type::cTesla:
         j = "cTesla";
         return;
-    case Connector_type::cJ3400:
-        j = "cJ3400";
+    case Connector_type::cNACS:
+        j = "cNACS";
         return;
     case Connector_type::cG105:
         j = "cG105";
@@ -445,8 +445,8 @@ void from_json(json const& j, Connector_type& k) {
         k = Connector_type::cTesla;
         return;
     }
-    if (s == "cJ3400") {
-        k = Connector_type::cJ3400;
+    if (s == "cNACS") {
+        k = Connector_type::cNACS;
         return;
     }
     if (s == "cG105") {

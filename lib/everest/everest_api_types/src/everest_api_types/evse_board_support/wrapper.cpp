@@ -89,8 +89,8 @@ Connector_type_Internal to_internal_api(Connector_type_External const& val) {
         return TarT::cCCS2;
     case SrcT::cTesla:
         return TarT::cTesla;
-    case SrcT::cJ3400:
-        return TarT::cJ3400;
+    case SrcT::cNACS:
+        return TarT::cNACS;
     case SrcT::cG105:
         return TarT::cG105;
     case SrcT::cMCS:
@@ -116,8 +116,8 @@ Connector_type_External to_external_api(Connector_type_Internal const& val) {
         return TarT::cCCS2;
     case SrcT::cTesla:
         return TarT::cTesla;
-    case SrcT::cJ3400:
-        return TarT::cJ3400;
+    case SrcT::cNACS:
+        return TarT::cNACS;
     case SrcT::cG105:
         return TarT::cG105;
     case SrcT::cMCS:

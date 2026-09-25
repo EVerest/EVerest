@@ -77,7 +77,7 @@ enum class Connector_type {
     cCCS1,
     cCCS2,
     cTesla,
-    cJ3400,
+    cNACS,
     cG105,
     cMCS,
 };
