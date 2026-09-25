@@ -25,6 +25,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     test_message_handler.cpp
     test_message_handler_scaling_policy.cpp
     test_mqtt_abstraction.cpp
+    test_telemetry.cpp
     helpers.cpp
 )
 

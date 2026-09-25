@@ -48,6 +48,10 @@ target_sources(framework
         date.cpp
         runtime.cpp
         message_handler.cpp
+        telemetry/catalog.cpp
+        telemetry/module_telemetry.cpp
+        telemetry/uds_sender.cpp
+        telemetry/wire.cpp
 )
 
 # FIXME (aw): c++17 doesn't need necessarily to be public, but our
