@@ -1,0 +1,65 @@
+EVerest TSC Meeting - 24 September 2026
+======================================
+
+
+Attendance
+----------
+
+
+Voting Members
+~~~~~~~~~~~~~~
+
+- [x] (Chair) Marco Möller [Pionix]
+- [ ] Cornelius Claussen [Pionix] -> vote delegated to Marco
+- [ ] Kai-Uwe Hermann [Pionix]
+- [x] Piet Gömpel [Pionix]
+- [x] Moritz Barsnick [chargebyte]
+- [x] Holger Rapp [Qwello]
+- [ ] S. Shankari [NREL]
+
+
+Other Attendees
+~~~~~~~~~~~~~~~
+- Robert de Leeuw
+- Martin Litre
+- several others
+
+
+Agenda
+------
+
+- Highlights of the month
+- Vulnerability Management Team Update
+- Planning of next EVerest stable release: 2026.10.0
+- Project Himalayas: Federated Testing @ EVerest
+- EVerest Roadmap Session
+- Detecting EVerest based chargers
+
+- Events Recap
+    - Recap: THE EV:ent 2026 https://the-event.tech
+    - Recap: EVerest Community Hackathon
+    - EVerest @ Africa EV Summit
+    - LF Energy Summit Europe
+    - OCA Plugfest @ ESB Headquarters Dublin
+    - CharIn Testival
+- Upcoming Events
+
+- Next TSC on October 22th 2026 at 5pm CET
+
+Action Items
+------------
+- Send out recording and slides to EVerest mailing list
+
+
+Recording:
+----------
+- `https://youtu.be/aSAUuZW31dY <https://youtu.be/aSAUuZW31dY>`_
+
+
+Notes
+-----
+Decisions:
+- none
+
+Other:
+- 
