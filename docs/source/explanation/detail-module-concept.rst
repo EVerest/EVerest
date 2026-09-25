@@ -387,6 +387,8 @@ a few notable members:
   the module;
 * ``mqtt``: handle for MQTT communication, if ``enable_external_mqtt`` was
   enabled in the manifest;
+* ``tel``: typed handles for the telemetry elements declared in the
+  ``telemetry`` section of the manifest (see :ref:`exp-telemetry`);
 * ``init()``: Function called by the framework after initializing this module
   - you may add code to it to add more initialization steps;
 * ``ready()``: Function called by the framework when the deployment is ready

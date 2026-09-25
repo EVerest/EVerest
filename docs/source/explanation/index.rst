@@ -41,6 +41,12 @@ Below that, you will be presented with a categorized list of all articles.
 
         How module configuration is stored in slots, booted from and changed at runtime.
 
+    .. grid-item-card:: Telemetry
+        :link: telemetry
+        :link-type: doc
+
+        How modules declare and publish telemetry and how it is routed to backends.
+
     .. grid-item-card:: Tier Module Mapping
         :link: tier-module-mappings
         :link-type: doc
@@ -123,6 +129,7 @@ Below that, you will be presented with a categorized list of all articles.
     detail-module-concept
     manager-lifecycle
     configuration-service
+    telemetry
     tier-module-mappings
     adapt-everest/index
     energymanagement/index
