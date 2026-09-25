@@ -1,0 +1,20 @@
+active_modules:
+  telemetry_example:
+    module: TelemetryExample
+    mapping:
+      module:
+        evse: 1
+    config_module:
+      publish_interval_ms: 100
+  telemetry_router:
+    module: TelemetryRouter
+    config_module:
+      stats_log_interval_s: 0
+    connections:
+      ocpp:
+        - module_id: probe
+          implementation_id: ProbeModuleOcpp
+  probe:
+    module: ProbeModule
+settings:
+  telemetry_socket_enabled: true
