@@ -1,0 +1,60 @@
+description: >-
+  Example module publishing telemetry elements of every kind: gauges, counters, states and events.
+config:
+  publish_interval_ms:
+    description: Interval between two rounds of simulated telemetry
+    type: integer
+    default: 1000
+provides:
+  main:
+    description: Placeholder implementation, the module only publishes telemetry
+    interface: empty
+telemetry:
+  temperature:
+    kind: gauge
+    type: number
+    unit: Celsius
+    description: Simulated board temperature
+  supply_voltage_raw:
+    kind: gauge
+    type: integer
+    description: Simulated raw ADC reading of the supply voltage
+  plug_ins:
+    kind: counter
+    type: integer
+    description: Simulated plug-in events
+  energy_delivered:
+    kind: counter
+    type: number
+    unit: Wh
+    description: Simulated energy delivered
+  firmware_state:
+    kind: state
+    type: string
+    enum:
+      - Idle
+      - Measuring
+      - Error
+    description: Simulated firmware state of an attached device
+  charge_mode:
+    kind: state
+    type: string
+    $ref: /evse_manager#/ChargeMode
+    description: Simulated power topology
+  relay_closed:
+    kind: state
+    type: boolean
+    description: Simulated relay state
+  firmware_version:
+    kind: state
+    type: string
+    description: Firmware version of the simulated device
+  cp_event:
+    kind: event
+    type: object
+    $ref: /board_support_common#/BspEvent
+    description: Simulated control pilot events
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Anton Woellert

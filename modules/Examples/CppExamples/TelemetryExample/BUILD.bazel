@@ -1,0 +1,14 @@
+load("//modules:module.bzl", "cc_everest_module")
+
+IMPLS = [
+    "main",
+]
+
+cc_everest_module(
+    name = "TelemetryExample",
+    srcs = glob([
+        "*.cpp",
+        "*.hpp",
+    ]),
+    impls = IMPLS,
+)
