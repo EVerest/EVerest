@@ -116,6 +116,8 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::apply_der_capability;
     using ocpp_multi::GenericOcpp::flush_pending_grid_support;
     using ocpp_multi::GenericOcpp::on_grid_support_capability;
+
+    using ocpp_multi::GenericOcpp::map_error;
 };
 
 // creates the OCPP object and performs initialisation before every test

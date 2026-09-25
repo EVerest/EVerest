@@ -15,6 +15,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <filesystem>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -315,6 +316,10 @@ public:
 
     const ModuleInfo& get_module_info() const {
         return m_module_info;
+    }
+
+    void set_share_path(const std::filesystem::path& share) {
+        m_module_info.paths.share = share;
     }
 
     void add_charger_information(const std::string& module_id) {
