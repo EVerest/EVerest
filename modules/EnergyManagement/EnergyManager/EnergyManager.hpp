@@ -40,12 +40,10 @@ struct Conf {
     double redistribution_margin_A;
     bool redistribution_start_with_lower_limit;
     int redistribution_reduction_hold_s;
-    int redistribution_measurement_max_age_s;
     int power_meter_aggregation_window_s;
     double power_redistribution_connector_margin;
     double power_redistribution_site_margin;
     double power_redistribution_gain;
-    int power_redistribution_hold_time_s;
 };
 
 class EnergyManager : public Everest::ModuleBase {

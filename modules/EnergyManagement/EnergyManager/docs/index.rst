@@ -89,12 +89,12 @@ Configuration:
 - ``redistribution_start_with_lower_limit``: start value for a new charging session -
   ``true`` starts at the minimum current plus the margin and ramps up; ``false`` starts
   at the full allocation and tracks down once the reduction hold has elapsed.
-- ``redistribution_reduction_hold_s``: how long a reduction has to stay pending before
-  the limit is lowered. Increases always apply immediately; the hold is what keeps a
-  briefly dipping EV (or a freshly started one with the upper start value) from being
-  cut before it had a chance to draw. ``0`` follows the measurement down immediately.
-- ``redistribution_measurement_max_age_s``: maximum age of a reading, judged by the
-  reading's own timestamp, before it no longer carries the limit.
+- ``redistribution_reduction_hold_s``: how long a condition has to stay pending before it
+  is acted on - a reduction before the limit is lowered, and a reduce or increase condition
+  of the site inference before it is reported or granted. Increases of the measurement
+  based limit always apply immediately; the hold is what keeps a briefly dipping EV (or a
+  freshly started one with the upper start value) from being cut before it had a chance to
+  draw. ``0`` acts on the first run that sees the condition.
 
 A connector without a usable, fresh measurement is limited to its minimum current plus
 the margin rather than left uncapped - a dead meter must not hold an allocation open.
@@ -111,7 +111,9 @@ only, so no value is ever paired with another meter's phases or age. The last ob
 value is retained per connector for the duration of the session and reset on unplug.
 
 Each observation carries the reading's own measurement timestamp alongside its values,
-and ``redistribution_measurement_max_age_s`` is judged against it. This is what lets the
+and ``power_meter_aggregation_window_s`` is judged against it - the module has one
+staleness rule, so a meter is never alive for the connector limit and stale for the site
+aggregate. This is what lets the
 broker tell a live reading from a frozen one: ``EnergyNode`` and ``EvseManager``
 republish the last power meter reading they received in every energy flow request, so a
 meter that stopped updating is indistinguishable from one holding steady unless the
@@ -158,11 +160,12 @@ to it. A saturated connector whose static maximum is unknown is not a candidate:
 nothing to clamp its share against, and counting it would shrink the share of the
 connectors that can actually use one.
 
-Both conditions must hold continuously for ``power_redistribution_hold_time_s`` before they
-are reported. This hold is the **only** thing filtering an EV that is still ramping:
+Both conditions must hold continuously for ``redistribution_reduction_hold_s`` - the same
+hold the measurement based limit waits out before it lowers a connector - before they are
+reported. This hold is the **only** thing filtering an EV that is still ramping:
 IEC 61851-1 allows a vehicle up to 5 s to follow a duty cycle change and real cars ramp over
 longer, so every ramp looks like under-consumption until the hold expires. Set it above the
-worst case ramp of the vehicles on site; the configured minimum is that 5 s response window.
+worst case ramp of the vehicles on site.
 
 A line is logged at info level when a condition becomes held (``power can be reduced by
 ... W``, ``granting ... W of headroom to N of M saturated connector(s)``) and once more when
@@ -250,8 +253,3 @@ Both are read from what the module already computed for the run, not re-derived:
      - ``0.5``
      - Fraction of the headroom beyond the deadband handed to the saturated connectors.
        ``0`` hands out nothing and leaves the site inference a report.
-   * - ``power_redistribution_hold_time_s``
-     - ``10``
-     - Time a condition must hold before headroom is handed out [s]. Minimum ``5``, the
-       IEC 61851-1 EV response window; it must exceed the worst case ramp of the vehicles
-       on site.

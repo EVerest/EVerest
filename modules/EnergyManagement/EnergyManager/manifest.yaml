@@ -110,22 +110,15 @@ config:
     default: true
   redistribution_reduction_hold_s:
     description: >-
-      Hold time in seconds before the PowerRedistribution broker lowers a connector's
-      limit: a reduction is applied only after the measured current has stayed below the
-      current limit for this long. Increases are always applied immediately. Set to 0 to
-      follow the measurement down immediately. Only used with broker_strategy
-      PowerRedistribution.
-    type: integer
-    default: 30
-  redistribution_measurement_max_age_s:
-    description: >-
-      Maximum age in seconds of a power meter reading (judged by the reading's own
-      timestamp) for the PowerRedistribution broker to trust it. EnergyNode and EvseManager
-      republish the last reading they received, so without this check a meter that stopped
-      updating would pin the allocation at whatever it last reported. A reading older than
-      this, or without a usable timestamp, limits the connector to its minimum current plus
-      the margin. Set to 0 to accept any age. Only used with broker_strategy
-      PowerRedistribution.
+      Hold time in seconds for every PowerRedistribution condition that has to survive an
+      EV that is still ramping. The broker lowers a connector's limit only after the
+      measured current has stayed below the current limit for this long, and the site
+      inference acts on a reduce or an increase condition only after it has held this
+      long. Increases of the measurement based limit are always applied immediately. Set
+      to 0 to follow the measurement down immediately and to act on the inference on the
+      first run that sees the condition. IEC 61851-1 allows the EV up to 5 s to follow a
+      duty cycle change and real vehicles ramp over longer, so a value below that reads
+      every ramp as under-consumption. Only used with broker_strategy PowerRedistribution.
     type: integer
     default: 10
   power_meter_aggregation_window_s:
@@ -136,6 +129,8 @@ config:
       sum instead of contributing a stale value. A meter that publishes slowly needs a
       larger window, not none: this is the only guard between a meter that has stopped
       updating and a limit computed from its last reading, so it cannot be switched off.
+      The same window judges the per connector reading the PowerRedistribution broker
+      limits against, so one meter is never alive for one path and stale for the other.
     type: integer
     default: 5
     minimum: 1
@@ -171,18 +166,6 @@ config:
     default: 0.5
     minimum: 0
     maximum: 1
-  power_redistribution_hold_time_s:
-    description: >-
-      Time a reduce or increase condition must hold continuously before it is acted on [s].
-      Measured against the optimizer's start time, so it is independent of update_interval.
-
-      This is the only thing filtering an EV that is still ramping. IEC 61851-1 allows the
-      EV up to 5 s to follow a duty cycle change and real vehicles ramp over longer, so
-      every ramp looks like under-consumption until the hold expires; the minimum is that
-      response window. Set it above the worst case ramp of the vehicles on site.
-    type: integer
-    default: 10
-    minimum: 5
 provides:
   main:
     description: Main interface of the energy manager

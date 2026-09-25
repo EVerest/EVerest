@@ -84,7 +84,7 @@ private:
 EnergyManagerConfig make_redistribution_config(int hold_time_s = 10) {
     auto config = test::make_default_config();
     config.broker_strategy = "PowerRedistribution";
-    config.power_redistribution_hold_time_s = hold_time_s;
+    config.redistribution_reduction_hold_s = hold_time_s;
     return config;
 }
 
@@ -884,8 +884,8 @@ TEST(RedistributionIntegration, TheReduceSideDoesNotAffectAllocations) {
     // The increase side of the inference moves allocations by design (see the
     // SiteDistribution tests). The reduce side does not, and must not: lowering a
     // connector is the measurement based limit's job, and this classification only reports
-    // on it. Neither connector here is saturated, so nothing is ever granted, and two
-    // brokers that differ only in the hold time must allocate identically.
+    // on it. Neither connector here is saturated, so nothing is ever granted, and a broker
+    // that may hand out headroom allocates exactly like one that may not.
     auto make_request = []() {
         auto evse1 = test::make_evse_node("evse1", 32.0f, 6.0f);
         auto evse2 = test::make_evse_node("evse2", 32.0f, 6.0f);
@@ -898,15 +898,16 @@ TEST(RedistributionIntegration, TheReduceSideDoesNotAffectAllocations) {
     };
     const auto request = make_request();
 
-    EnergyManagerImpl reporting_at_once(make_redistribution_config(0),
-                                        [](const std::vector<types::energy::EnforcedLimits>&) {});
-    EnergyManagerImpl reporting_after_hold(make_redistribution_config(10),
-                                           [](const std::vector<types::energy::EnforcedLimits>&) {});
+    auto report_only_config = make_redistribution_config(0);
+    report_only_config.power_redistribution_gain = 0.0;
+
+    EnergyManagerImpl granting(make_redistribution_config(0), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    EnergyManagerImpl report_only(report_only_config, [](const std::vector<types::energy::EnforcedLimits>&) {});
 
     for (int run = 0; run < 3; run++) {
         const auto at = T0 + std::chrono::seconds(run);
-        const auto a = reporting_at_once.run_optimizer(request, at);
-        const auto b = reporting_after_hold.run_optimizer(request, at);
+        const auto a = granting.run_optimizer(request, at);
+        const auto b = report_only.run_optimizer(request, at);
         for (const auto* uuid : {"evse1", "evse2"}) {
             const auto la = test::find_limit(a, uuid);
             const auto lb = test::find_limit(b, uuid);
@@ -916,11 +917,12 @@ TEST(RedistributionIntegration, TheReduceSideDoesNotAffectAllocations) {
                             lb.value().limits_root_side.ac_max_current_A.value().value);
         }
     }
-    // The two disagree about what to report, and still allocated the same.
-    EXPECT_EQ(reporting_at_once.get_redistribution_inference().connectors.at("evse1").connector_class,
-              ConnectorClass::UnderConsuming);
-    EXPECT_TRUE(reporting_at_once.get_redistribution_inference().connectors.at("evse1").held);
-    EXPECT_FALSE(reporting_after_hold.get_redistribution_inference().connectors.at("evse1").held);
+    // Both reported a connector that could give power back, and neither acted on it.
+    const auto inference = granting.get_redistribution_inference();
+    EXPECT_EQ(inference.connectors.at("evse1").connector_class, ConnectorClass::UnderConsuming);
+    EXPECT_TRUE(inference.connectors.at("evse1").held);
+    EXPECT_FLOAT_EQ(inference.site.increase_W, 0.0f);
+    EXPECT_FLOAT_EQ(report_only.get_redistribution_inference().site.increase_W, 0.0f);
 }
 
 // ---------------------------------------------------------------- handing out the headroom

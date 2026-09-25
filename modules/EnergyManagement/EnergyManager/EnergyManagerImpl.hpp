@@ -44,13 +44,11 @@ struct EnergyManagerConfig {
     std::string broker_strategy{"FastCharging"};
     double redistribution_margin_A{2.0};
     bool redistribution_start_with_lower_limit{true};
-    int redistribution_reduction_hold_s{30};
-    int redistribution_measurement_max_age_s{10};
+    int redistribution_reduction_hold_s{10};
     int power_meter_aggregation_window_s{5};
     double power_redistribution_connector_margin{0.1};
     double power_redistribution_site_margin{0.1};
     double power_redistribution_gain{0.5};
-    int power_redistribution_hold_time_s{10};
 };
 
 /// \brief Broker selected by the broker_strategy config option (see manifest.yaml).

@@ -74,7 +74,7 @@ static BrokerFastCharging::EnergyManagerConfig to_broker_fast_charging_config(co
     broker_conf.redistribution.margin_A = config.redistribution_margin_A;
     broker_conf.redistribution.start_with_lower_limit = config.redistribution_start_with_lower_limit;
     broker_conf.redistribution.reduction_hold = std::chrono::seconds(config.redistribution_reduction_hold_s);
-    broker_conf.redistribution.measurement_max_age = std::chrono::seconds(config.redistribution_measurement_max_age_s);
+    broker_conf.redistribution.measurement_max_age = std::chrono::seconds(config.power_meter_aggregation_window_s);
 
     return broker_conf;
 }
@@ -157,7 +157,7 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
     const auto connector_margin = static_cast<float>(config.power_redistribution_connector_margin);
     const auto site_margin = static_cast<float>(config.power_redistribution_site_margin);
     const auto gain = static_cast<float>(config.power_redistribution_gain);
-    const auto hold_time = std::chrono::seconds(config.power_redistribution_hold_time_s);
+    const auto hold_time = std::chrono::seconds(config.redistribution_reduction_hold_s);
     const auto aggregation_window = std::chrono::seconds(config.power_meter_aggregation_window_s);
     const auto now = globals.start_time;
 

@@ -201,8 +201,10 @@ public:
     struct RedistributionConfig {
         float margin_A{2.0f};
         bool start_with_lower_limit{true};
-        std::chrono::seconds reduction_hold{30};
-        std::chrono::seconds measurement_max_age{10};
+        std::chrono::seconds reduction_hold{10};
+        // power_meter_aggregation_window_s: the module has one staleness rule, and a meter
+        // that is stale for the site aggregate is stale for this connector's limit too.
+        std::chrono::seconds measurement_max_age{5};
     };
 
     struct EnergyManagerConfig {
