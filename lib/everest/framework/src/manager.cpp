@@ -834,8 +834,9 @@ void dump_config_and_manifests(const Everest::ManagerConfig& config, const fs::p
 /// Manager options that are experimental per the EVerest deprecation policy: they are part of the
 /// public surface but exempt from the stability guarantees, and may change or be removed in any
 /// release. Keep in sync with docs/source/project/releases/experimental-index.rst.
-constexpr std::array<std::string_view, 5> EXPERIMENTAL_OPTIONS{
-    "graceful-shutdown", "into-idle", "recover-module-crashes", "reset-from-yaml", "idle-on-failure"};
+constexpr std::array<std::string_view, 7> EXPERIMENTAL_OPTIONS{
+    "graceful-shutdown", "into-idle",         "recover-module-crashes", "reset-from-yaml",
+    "idle-on-failure",   "configuration-api", "lifecycle-api"};
 
 /// Emit a single warning naming the experimental options that were actually passed, so an operator
 /// sees at startup that this run depends on unstable surface. Emits nothing when none are used.
@@ -2118,9 +2119,11 @@ int main(int argc, char* argv[]) {
                        "and runtime configuration changes are persisted to user-config/<config-name>.yaml.");
     desc.add_options()("conf", po::value<std::string>(), "Deprecated: Same as --config. Do not use both.");
     desc.add_options()("configuration-api", po::value<std::string>()->implicit_value("ro"),
-                       "Start the ConfigurationAPI. Value must be 'ro' (default) or 'rw' (e.g. '=rw' for read-write)");
+                       "Experimental: Start the configuration_API. Value must be 'ro' (default) or 'rw' (e.g. '=rw' "
+                       "for read-write)");
     desc.add_options()("lifecycle-api", po::value<std::string>()->implicit_value("ro"),
-                       "Start the lifecycle_API. Value must be 'ro' (default) or 'rw' (e.g. '=rw' for read-write)");
+                       "Experimental: Start the lifecycle_API. Value must be 'ro' (default) or 'rw' (e.g. '=rw' for "
+                       "read-write)");
     desc.add_options()("db", po::value<std::string>(),
                        "Full path to the configuration database file. Optional: without --db an in-memory database "
                        "is used and the YAML config is authoritative on every start. With --db and --config, the "

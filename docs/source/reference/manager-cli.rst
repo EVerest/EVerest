@@ -80,6 +80,26 @@ Configuration and Storage
   valid configuration is now the default. Ignored unless both ``--config`` and
   ``--db`` are given. Use ``--reset-from-yaml`` to force re-seeding.
 
+***************
+Management APIs
+***************
+
+Both options start a :ref:`management API <exp_management_apis>` inside the
+manager process, so it stays reachable while no modules are running. Each takes
+an optional value: ``ro`` (the default when the option is given without a
+value) or ``rw``, as in ``--configuration-api=rw``. Any other value is rejected
+and the manager exits with an error.
+
+``--configuration-api[=ro|rw]``
+  **Experimental.** Start the configuration_API. In ``ro`` mode only queries are
+  served; ``rw`` also enables managing configuration slots, loading YAML and
+  changing configuration parameters.
+
+``--lifecycle-api[=ro|rw]``
+  **Experimental.** Start the lifecycle_API. In ``ro`` mode only the module
+  status and version queries are served; ``rw`` also enables requests to start
+  and stop the modules.
+
 ****************
 Module Lifecycle
 ****************
