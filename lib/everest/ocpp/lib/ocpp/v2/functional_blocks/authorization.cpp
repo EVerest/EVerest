@@ -313,6 +313,13 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
                 EVLOG_info << "Found invalid entry in local authorization list but not sending Authorize.req because "
                               "RemoteAuthorization is disabled";
                 response.idTokenInfo.status = AuthorizationStatusEnum::Unknown;
+            } else if (is_online and
+                       this->context.device_model
+                           .get_optional_value<bool>(ControllerComponentVariables::LocalAuthListDisablePostAuthorize)
+                           .value_or(false)) {
+                EVLOG_info << "Found invalid entry in local authorization list: Not sending Authorize.req because "
+                              "LocalAuthListDisablePostAuthorize is enabled";
+                response.idTokenInfo = id_token_info.value();
             } else if (is_online) {
                 // C14.FR.03: If a value found but not valid we shall send an authorize request
                 EVLOG_info << "Found invalid entry in local authorization list: Sending Authorize.req";
