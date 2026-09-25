@@ -98,7 +98,6 @@ private:
     ocpp::v16::GetLogResponse cb_upload_logs(ocpp::v16::GetLogRequest request);
     void cb_variable_listener(const ocpp::v16::KeyValue& key_value);
 
-    ocpp::v16::ErrorInfo convert_error(const Everest::error::Error& error);
     ocpp::v2::AuthorizeResponse validate_pnc(const types::authorization::ProvidedIdToken& provided_token);
     ocpp::v2::AuthorizeResponse validate_standard(const types::authorization::ProvidedIdToken& provided_token);
 
@@ -212,6 +211,10 @@ public:
     static std::optional<ocpp::CiString<50>>
     encode_pause_reasons(const std::optional<types::evse_manager::ChargingPausedEVSEReasons>& reasons);
     static std::string default_vendor_error_code(const Everest::error::Error& error);
+
+protected:
+    // Access for unit tests
+    ocpp::v16::ErrorInfo convert_error(const Everest::error::Error& error);
 };
 
 } // namespace ocpp_multi
