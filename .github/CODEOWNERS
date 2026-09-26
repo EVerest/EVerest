@@ -7,9 +7,9 @@
 # .github
 /.github/ @pietfried @corneliusclaussen
 /.github/workflows/ @pietfried @corneliusclaussen @andistorm
-/.github/workflows/on_label.yaml @andistorm @nzbr
-/.github/workflows/on_pr_auto-label.yaml @andistorm @nzbr @pietfried
-/.github/labeler.yml @andistorm @nzbr @pietfried
+/.github/workflows/on_label.yaml @andistorm @nzbr @pietfried @corneliusclaussen
+/.github/workflows/on_pr_auto-label.yaml @andistorm @nzbr @pietfried @corneliusclaussen
+/.github/labeler.yml @andistorm @nzbr @pietfried @corneliusclaussen
 
 # applications
 /applications/pionix_chargebridge @djchhp @corneliusclaussen
