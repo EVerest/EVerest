@@ -88,6 +88,10 @@ from ocpp.v201.enums import (
 )
 
 
+# GetCertificateStatusResponse.ocspResult is a DER encoded OCSPResponse (RFC 6960), base64 encoded. This is the
+# smallest well-formed one: responseStatus tryLater without responseBytes, i.e. the responder has no status yet.
+OCSP_RESULT_TRY_LATER = "MAMKAQM="
+
 # NOTE: The module name and the `Mode` enum values below are duplicated from
 # `modules/EVSE/OCPPmulti/manifest.yaml`. They must stay in sync with that
 # manifest: `OCPP_MULTI_MODULE_NAME` matches the module directory name and the
@@ -371,7 +375,7 @@ def on_data_transfer(accept_pnc_authorize, exi_generator: EXIGenerator, **kwargs
                             asdict(
                                 call_result201.GetCertificateStatus(
                                     status=GetCertificateStatusEnumType.accepted,
-                                    ocsp_result="anwfdiefnwenfinfinef",
+                                    ocsp_result=OCSP_RESULT_TRY_LATER,
                                 )
                             )
                         )

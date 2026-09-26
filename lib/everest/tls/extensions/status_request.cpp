@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "extensions/status_request.hpp"
 #include "helpers.hpp"
@@ -44,7 +44,7 @@ OCSP_RESPONSE* load_ocsp(const char* filename) {
         }
 
         if (resp == nullptr) {
-            log_error("d2i_OCSP_RESPONSE_bio");
+            log_error(std::string("d2i_OCSP_RESPONSE_bio: ") + filename);
         }
     }
 
