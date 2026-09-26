@@ -17,15 +17,42 @@ std::string rfid_to_string(char const rfid[], size_t length) {
 namespace module {
 namespace main {
 
+namespace {
+
+NfcHandler::RuntimeConfig build_runtime_config(const Conf& config) {
+    NfcHandler::RuntimeConfig runtime_config{
+        .device = config.device,
+        .i2c_address = config.i2c_address,
+        .pin_int = config.pin_int,
+        .pin_enable = config.pin_enable,
+        .pin_fwdnld = config.pin_fwdnld,
+    };
+
+    if (config.transport == "file") {
+        // backwards compatibility: not setting `runtime_config.transport` here
+        // results in `runtime_config` being ignored later completely
+    } else if (config.transport == "i2c") {
+        // map our 'i2c' string config value to library's hex value
+        runtime_config.transport = "0x02";
+    } else if (config.transport == "spi") {
+        // map our 'spi' string config value to library's hex value
+        runtime_config.transport = "0x03";
+    }
+
+    return runtime_config;
+}
+
+} // namespace
+
 void auth_token_providerImpl::init() {
     if (config.disable_nfc_rfid) {
         return;
     }
 
     std::filesystem::path config_path = mod->info.paths.etc / "libnfc_config";
-    EVLOG_info << "Using configuration path " << config_path << " to look for 'libnfc-nci.conf' and 'libnfc-nxp.conf'";
+    EVLOG_debug << "Using configuration path " << config_path << " to look for 'libnfc-nci.conf' and 'libnfc-nxp.conf'";
     try {
-        this->nfc_handler = std::make_unique<NfcHandler>(config_path);
+        this->nfc_handler = std::make_unique<NfcHandler>(config_path, build_runtime_config(config));
     } catch (const std::exception& e) {
         EVLOG_error << "Failed to initialize libnfc handler: " << e.what();
     }
