@@ -85,7 +85,7 @@ To start the live capture session, click on ``Start``.
    SSH credentials with an empty password are not supported for the steps
    above.
    However, in order to start a live capture session without any prior GUI
-   setup using an empty or passwordless SSH connection, simply execute: 
+   setup using an empty or passwordless SSH connection, simply execute:
 
    .. code-block:: bash
 
@@ -119,14 +119,14 @@ In case you want to keep the capture files after a reboot, you need to
 set the logging path, e.g. ``/var/everest-logs/sessions``; otherwise
 the default logging path is ``tmp``, which will be empty on each boot.
 
-To view the captured traffic, you can either download the ``.dump``
+To view the captured traffic, you can either download the ``.pcap``
 files via SCP and use the Wireshark GUI to open the files or in case a
 passwordless *ssh* is set up (``ssh-copy-id``), you can directly open
 the file using:
 
 .. code-block:: bash
 
-   wireshark -k -i <(ssh <user>@<target ip> cat <logging path on target>/ethernet-traffic.dump)
+   wireshark -k -i <(ssh <user>@<target ip> cat <logging path on target>/<device to listen on>-traffic.pcap)
 
 You can now view the decoded messages, e.g.
 
