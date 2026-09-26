@@ -81,6 +81,8 @@ extern "C" {
 #define iso2_eMAID_CHARACTER_SIZE (15 + ASCII_EXTRA_CHAR)
 #define iso2_EVSEID_CHARACTER_SIZE (37 + ASCII_EXTRA_CHAR)
 #define iso2_evccIDType_BYTES_SIZE (6)
+#define iso2_eMAIDElementFragment_Id_CHARACTER_SIZE (EXI_STRING_MAX_LEN + ASCII_EXTRA_CHAR)
+#define iso2_eMAIDElementFragment_CONTENT_CHARACTER_SIZE (EXI_STRING_MAX_LEN + ASCII_EXTRA_CHAR)
 
 
 // enum for function numbers
@@ -2226,6 +2228,28 @@ struct iso2_V2G_Message {
 
 
 
+#define ISO2_HAS_ELEMENT_FRAGMENT_GRAMMAR 1
+
+// Element fragment: name={urn:iso:15118:2:2013:MsgBody}eMAID
+//          EXI 1.0, 8.5.3 Schema-informed Element Fragment Grammar
+//          declared with more than one type: {urn:iso:15118:2:2013:MsgDataTypes}EMAIDType, {urn:iso:15118:2:2013:MsgDataTypes}eMAIDType
+struct iso2_eMAIDElementFragment {
+    // AT({urn:iso:15118:2:2013:MsgDataTypes}Id); event code 4
+    struct {
+        char characters[iso2_eMAIDElementFragment_Id_CHARACTER_SIZE];
+        uint16_t charactersLen;
+    } Id;
+    // CH [untyped value]
+    struct {
+        char characters[iso2_eMAIDElementFragment_CONTENT_CHARACTER_SIZE];
+        uint16_t charactersLen;
+    } CONTENT;
+
+    unsigned int Id_isUsed:1;
+    unsigned int CONTENT_isUsed:1;
+};
+
+
 // root elements of EXI doc
 struct iso2_exiDocument {
     struct iso2_V2G_Message V2G_Message;
@@ -2243,7 +2267,7 @@ struct iso2_exiFragment {
         struct iso2_MeteringReceiptReqType MeteringReceiptReq;
         struct iso2_SalesTariffType SalesTariff;
         struct iso2_SignedInfoType SignedInfo;
-        struct iso2_EMAIDType eMAID;
+        struct iso2_eMAIDElementFragment eMAID;
     };
     unsigned int AuthorizationReq_isUsed:1;
     unsigned int CertificateInstallationReq_isUsed:1;
@@ -2302,6 +2326,7 @@ struct iso2_xmldsigFragment {
 };
 
 // init for structs
+void init_iso2_eMAIDElementFragment(struct iso2_eMAIDElementFragment* eMAIDElementFragment);
 void init_iso2_exiDocument(struct iso2_exiDocument* exiDoc);
 void init_iso2_V2G_Message(struct iso2_V2G_Message* V2G_Message);
 void init_iso2_CostType(struct iso2_CostType* CostType);
