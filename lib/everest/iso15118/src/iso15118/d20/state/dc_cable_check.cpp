@@ -13,7 +13,8 @@ namespace iso15118::d20::state {
 namespace dt = message_20::datatypes;
 
 message_20::DC_CableCheckResponse handle_request(const message_20::DC_CableCheckRequest& req,
-                                                 const d20::Session& session, bool cable_check_done) {
+                                                 const d20::Session& session,
+                                                 const std::optional<bool>& cable_check_success) {
 
     message_20::DC_CableCheckResponse res;
 
@@ -22,13 +23,14 @@ message_20::DC_CableCheckResponse handle_request(const message_20::DC_CableCheck
         return res;
     }
 
-    if (not cable_check_done) {
+    if (not cable_check_success.has_value()) {
         res.processing = dt::Processing::Ongoing;
-    } else {
-        res.processing = dt::Processing::Finished;
+        set_response_code(res, dt::ResponseCode::OK);
+        return res;
     }
 
-    set_response_code(res, dt::ResponseCode::OK);
+    res.processing = dt::Processing::Finished;
+    set_response_code(res, cable_check_success.value() ? dt::ResponseCode::OK : dt::ResponseCode::FAILED);
     return res;
 }
 
@@ -45,7 +47,7 @@ Result DC_CableCheck::feed(Event ev) {
             return {};
         }
 
-        cable_check_done = *control_data;
+        cable_check_success = static_cast<bool>(*control_data);
 
         return {};
     }
@@ -62,17 +64,16 @@ Result DC_CableCheck::feed(Event ev) {
             cable_check_initiated = true;
         }
 
-        const auto res = handle_request(*req, m_ctx.session, cable_check_done);
+        const auto res = handle_request(*req, m_ctx.session, cable_check_success);
 
-        m_ctx.respond(res);
-        m_ctx.feedback.response_code(res.response_code);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
 
-        if (res.response_code >= dt::ResponseCode::FAILED) {
+        if (response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
             return {};
         }
 
-        if (cable_check_done) {
+        if (cable_check_success.has_value() and cable_check_success.value()) {
             return m_ctx.create_state<DC_PreCharge>();
         } else {
             return {};
@@ -80,9 +81,8 @@ Result DC_CableCheck::feed(Event ev) {
     } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
-        m_ctx.respond(res);
+        m_ctx.respond_and_publish_response_code(res);
         m_ctx.session_stopped = true;
-        m_ctx.feedback.response_code(res.response_code);
 
         return {};
     } else {
