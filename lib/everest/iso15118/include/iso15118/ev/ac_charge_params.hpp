@@ -3,12 +3,13 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
 namespace iso15118::ev {
 
 /**
- * EV AC charge parameters. The limits are static for the session; present_active_power is
- * refreshed while it runs.
+ * EV AC charge parameters. The limits are static for the session; present_active_power,
+ * present_voltage, present_frequency and der_alarm_status are refreshed while it runs.
  */
 struct AcChargeParams {
     // The EV's own line count, 1 or 3, not the charger's.
@@ -21,6 +22,13 @@ struct AcChargeParams {
     float min_discharge_power{0.0f};
 
     float present_active_power{0.0f};
+
+    // AC_DER_SAE only. Unset: not measured, and the charge loop uses the profile's nominal values.
+    std::optional<float> present_voltage{};   // V
+    std::optional<float> present_frequency{}; // Hz
+
+    // AC_DER_SAE only: DERAlarmStatus bitmap, AMD1 Table M.9 (Table M.11 for Scheduled).
+    std::uint32_t der_alarm_status{0};
 };
 
 } // namespace iso15118::ev
