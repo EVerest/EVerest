@@ -685,8 +685,9 @@ profile 3 is used; for the ISO 15118-2 SECC leaf only when Plug&Charge is enable
 leafs; the ISO 15118-20 SECC leaf is additionally only maintained when the connection is OCPP 2.1, because a 2.0.1
 CSMS does not know **V2G20Certificate**. Expiry is re-checked every 12 hours
 (``V2GCertificateExpireCheckIntervalSeconds``); the two SECC leafs are checked and renewed independently, and
-because only one **SignCertificate.req** may be outstanding, when both are due the -2 leaf is requested first and the
--20 leaf on the next check. On OCPP 2.1 every **SignCertificate.req** carries a ``requestId`` and a
+because only one **SignCertificate.req** may be outstanding, when both are due one is requested per check,
+alternating which leaf goes first so that a leaf the CSMS never issues does not block the other. On OCPP 2.1 every
+**SignCertificate.req** carries a ``requestId`` and a
 **CertificateSigned.req** whose ``requestId`` does not belong to the outstanding request is rejected (A02.FR.24 /
 A02.FR.26); a SECC leaf request also names the V2G root it shall be issued under in ``hashRootCertificate``
 (A02.FR.27). Candidates are the installed V2G roots whose key algorithm matches the requested leaf (``secp521r1`` or
