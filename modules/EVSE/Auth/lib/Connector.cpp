@@ -52,7 +52,9 @@ bool EVSEContext::is_available() {
     bool occupied = false;
     bool available = false;
     for (const auto& connector : this->connectors) {
-        if (connector.get_state() == ConnectorState::OCCUPIED ||
+        // OCCUPIED without an active transaction means the previous transaction has finished but the cable
+        // is still plugged in (OCPP 1.6 Finishing); a new authorization may start a new transaction (F2)
+        if ((connector.get_state() == ConnectorState::OCCUPIED && this->transaction_active) ||
             connector.get_state() == ConnectorState::FAULTED_OCCUPIED) {
             occupied = true;
         }
