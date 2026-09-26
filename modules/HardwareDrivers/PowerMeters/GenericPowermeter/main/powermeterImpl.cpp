@@ -332,25 +332,76 @@ powermeterImpl::ModbusFunctionType powermeterImpl::select_modbus_function(const 
 }
 
 void powermeterImpl::read_powermeter_values() {
-    static bool pm_values_are_complete{false};
     bool all_pm_registers_success{true};
     for (const auto& register_data : this->pm_configuration) {
-        all_pm_registers_success &= this->read_register(register_data);
+        const auto result = this->read_register(register_data);
+        if (result == RegisterReadResult::SUCCESS) {
+            continue;
+        }
+        all_pm_registers_success = false;
+        if (result == RegisterReadResult::TIMED_OUT) {
+            // The device did not answer at all. Skip the remaining registers of this cycle instead of
+            // running each of them into the full Modbus timeout, so that a CommunicationFault is raised
+            // quickly and other devices on a shared bus are not blocked longer than necessary.
+            break;
+        }
     }
+    // May clear pm_values_are_complete when communication is considered lost.
+    this->update_communication_fault(all_pm_registers_success);
+
     if (all_pm_registers_success) {
-        pm_values_are_complete = true;
+        this->pm_values_are_complete = true;
     }
 
-    if (not pm_values_are_complete) {
-        EVLOG_warning << "No complete set of power meter values has been acquired yet. Not publishing.";
+    if (not this->pm_values_are_complete) {
+        if (not this->publishing_suspended_logged) {
+            EVLOG_warning << "No complete set of power meter values available. Not publishing.";
+            this->publishing_suspended_logged = true;
+        }
         return;
     }
+    this->publishing_suspended_logged = false;
 
     this->pm_last_values.timestamp = Everest::Date::to_rfc3339(date::utc_clock::now());
     this->publish_powermeter(this->pm_last_values);
 }
 
-bool powermeterImpl::read_register(const RegisterData& register_config) {
+void powermeterImpl::update_communication_fault(bool read_cycle_successful) {
+    // A single failed cycle already implies several failed attempts on the wire (SerialCommHub retries
+    // each request internally), but allow one more full cycle before raising: consumers like EvseManager
+    // treat this error as fatal, so a transient bus disturbance should not end a charging session.
+    constexpr uint32_t communication_fault_debounce_cycles = 2;
+
+    if (read_cycle_successful) {
+        this->failed_read_cycles = 0;
+        if (this->error_state_monitor->is_error_active("powermeter/CommunicationFault", "CommunicationError")) {
+            this->clear_error("powermeter/CommunicationFault", "CommunicationError");
+        }
+        return;
+    }
+
+    if (this->failed_read_cycles < communication_fault_debounce_cycles) {
+        this->failed_read_cycles++;
+    }
+
+    if (this->failed_read_cycles < communication_fault_debounce_cycles) {
+        return;
+    }
+
+    // Communication is lost. Stop publishing the last known values: they would otherwise be republished with a
+    // fresh timestamp every cycle and look like current measurements to consumers.
+    this->pm_values_are_complete = false;
+
+    if (not this->error_state_monitor->is_error_active("powermeter/CommunicationFault", "CommunicationError")) {
+        this->raise_error(this->error_factory->create_error(
+            "powermeter/CommunicationFault", "CommunicationError",
+            fmt::format("Lost communication with power meter (model '{}', device id {})", this->config.model,
+                        this->config.powermeter_device_id),
+            Everest::error::Severity::High));
+    }
+}
+
+powermeterImpl::RegisterReadResult powermeterImpl::read_register(const RegisterData& register_config) {
 
     types::serial_comm_hub_requests::Result register_response{};
     std::optional<types::serial_comm_hub_requests::Result> exponent_response;
@@ -373,11 +424,23 @@ bool powermeterImpl::read_register(const RegisterData& register_config) {
                 this->config.powermeter_device_id, register_config.exponent_register - this->config.modbus_base_address,
                 register_config.num_registers);
         }
-        return this->process_response(register_config, std::move(register_response), std::move(exponent_response));
-    } else {
-        // no exponent
-        return this->process_response(register_config, std::move(register_response), std::nullopt);
     }
+
+    const bool timed_out = register_response.status_code == types::serial_comm_hub_requests::StatusCodeEnum::Timeout or
+                           (exponent_response and
+                            exponent_response->status_code == types::serial_comm_hub_requests::StatusCodeEnum::Timeout);
+
+    bool success{false};
+    if (exponent_response) {
+        success = this->process_response(register_config, std::move(register_response), std::move(exponent_response));
+    } else {
+        success = this->process_response(register_config, std::move(register_response), std::nullopt);
+    }
+
+    if (success) {
+        return RegisterReadResult::SUCCESS;
+    }
+    return timed_out ? RegisterReadResult::TIMED_OUT : RegisterReadResult::FAILED;
 }
 
 bool powermeterImpl::process_response(
