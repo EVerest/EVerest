@@ -84,6 +84,36 @@ Other debugging tools that may be useful during development phase are:
    The locale should be set to UTF-8 (otherwise BringUp & Qualification tools
    will look weird).
 
+Rust modules
+============
+
+``everest-core`` builds its Rust modules (``RsPaymentTerminal``, ``RsIskraMeter``
+and the Rust examples) when its ``PACKAGECONFIG`` contains ``rust``:
+
+.. code-block:: bash
+
+   PACKAGECONFIG:append:pn-everest-core = " rust"
+
+The crates need Rust 1.82 or newer, while scarthgap ships 1.75. The Yocto
+Project's `meta-lts-mixins <https://git.yoctoproject.org/meta-lts-mixins/>`_
+repository has a ``scarthgap/rust`` branch that backports a current toolchain
+under the standard recipe names, so it replaces poky's Rust for the whole
+build. Clone that branch and add the layer to your ``bblayers.conf``:
+
+.. code-block:: bash
+
+   git clone -b scarthgap/rust https://git.yoctoproject.org/meta-lts-mixins
+
+If the Rust in the build is too old, ``everest-core`` and ``cxxbridge-cmd-native``
+skip themselves with a message saying so.
+
+The build runs without network access. The recipe fetches every crate of
+``modules/Cargo.lock`` up front (listed in ``everest-core-crates.inc``) and the
+git dependency of ``RsPaymentTerminal`` at the revision its ``Cargo.toml``
+names. After changing a Rust module's dependencies, update ``modules/Cargo.lock``,
+regenerate the crate list with ``bitbake -c update_crates everest-core`` and,
+for a new zvt revision, ``SRCREV`` in ``everest-core-rust.inc``.
+
 ----
 
 **Authors**: Cornelius Claussen, Manuel Ziegler

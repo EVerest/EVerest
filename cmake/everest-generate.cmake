@@ -306,6 +306,11 @@ endmacro()
 if (EVEREST_ENABLE_RS_SUPPORT)
     find_program(CARGO_EXECUTABLE cargo REQUIRED)
 
+    set(EVEREST_RS_TARGET_TRIPLE "${CMAKE_SYSTEM_PROCESSOR}-unknown-linux-gnu" CACHE STRING
+        "Rust target triple for the Rust modules; the default assumes glibc and a CMAKE_SYSTEM_PROCESSOR that names a Rust architecture")
+    set(EVEREST_RS_LINKER "${CMAKE_CXX_COMPILER}" CACHE FILEPATH
+        "Linker cargo invokes for the Rust modules, a bare executable; cross builds pass a wrapper that adds sysroot and linker flags")
+
     # FIXME (aw): the RUST_WORKSPACE_DIR could be user setable!
     set(RUST_WORKSPACE_DIR ${PROJECT_BINARY_DIR}/rust_workspace)
     set(RUST_WORKSPACE_CARGO_FILE ${RUST_WORKSPACE_DIR}/Cargo.toml)
@@ -344,17 +349,15 @@ if (EVEREST_ENABLE_RS_SUPPORT)
     set(RUST_LINK_DEPENDENCIES_FILE ${CMAKE_BINARY_DIR}/everestrs-link-dependencies.txt)
     set(RUST_LINK_DEPENDENCIES "$<TARGET_GENEX_EVAL:everest::everestrs_sys,$<TARGET_PROPERTY:everest::everestrs_sys,EVERESTRS_LINK_DEPENDENCIES>>")
 
-    add_custom_command(OUTPUT ${RUST_LINK_DEPENDENCIES_FILE}
-        COMMAND_EXPAND_LISTS
-        VERBATIM
-        COMMAND
-            echo -e $<LIST:JOIN,${RUST_LINK_DEPENDENCIES},\\n> > "${RUST_LINK_DEPENDENCIES_FILE}"
+    # Written by CMake rather than a shell command: echo's escape handling differs between bash and dash
+    file(GENERATE
+        OUTPUT ${RUST_LINK_DEPENDENCIES_FILE}
+        CONTENT "$<JOIN:${RUST_LINK_DEPENDENCIES},\n>\n"
     )
 
     add_custom_target(generate_rust
         DEPENDS
             ${RUST_WORKSPACE_CARGO_FILE}
-            ${RUST_LINK_DEPENDENCIES_FILE}
     )
 
     # Store the workspace directory as a target property so that it is accessible in different scopes
@@ -364,7 +367,8 @@ if (EVEREST_ENABLE_RS_SUPPORT)
     )
 
     # FIXME (aw): use generator expressions here, but this first needs to be fixed in the build.rs file ...
-    add_custom_target(build_rust_modules ALL
+    # Part of ALL only once ev_add_rs_module registers a module; cargo rejects an empty workspace.
+    add_custom_target(build_rust_modules
         USES_TERMINAL
         COMMENT
             "Build rust modules"
@@ -373,10 +377,10 @@ if (EVEREST_ENABLE_RS_SUPPORT)
             EVEREST_CORE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
             EVEREST_RS_LINK_DEPENDENCIES="${RUST_LINK_DEPENDENCIES_FILE}"
             ${CARGO_EXECUTABLE} build
-            $<IF:$<STREQUAL:$<CONFIG>,Release>,--release,>
+            $<IF:$<CONFIG:Debug>,,--release>
             # explicitly set the linker to match what we're using for C++ to avoid the following issue when cross compiling:
             # https://github.com/rust-lang/rust/issues/28924
-            --config 'target.$<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>.linker = \"${CMAKE_CXX_COMPILER}\"'
+            --config 'target.$<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>.linker = \"${EVEREST_RS_LINKER}\"'
             --target $<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>
         WORKING_DIRECTORY
             ${RUST_WORKSPACE_DIR}
@@ -394,8 +398,7 @@ if (EVEREST_ENABLE_RS_SUPPORT)
 
     set_property(TARGET build_rust_modules
         PROPERTY
-            # FIXME: Don't assume the glibc ABI here. This won't respect musl builds.
-            RUST_TARGET_TRIPLE "${CMAKE_SYSTEM_PROCESSOR}-unknown-linux-gnu"
+            RUST_TARGET_TRIPLE "${EVEREST_RS_TARGET_TRIPLE}"
     )
 
     function (ev_add_rs_module MODULE_NAME)
@@ -424,6 +427,7 @@ if (EVEREST_ENABLE_RS_SUPPORT)
             APPEND
             PROPERTY RUST_MODULE_LIST "${MODULE_NAME}"
         )
+        set_property(TARGET build_rust_modules PROPERTY EXCLUDE_FROM_ALL FALSE)
         get_target_property(RUST_WORKSPACE_DIR generate_rust RUST_WORKSPACE_DIR)
 
         add_custom_command(OUTPUT ${RUST_WORKSPACE_DIR}/${MODULE_NAME}
@@ -444,7 +448,7 @@ if (EVEREST_ENABLE_RS_SUPPORT)
         add_dependencies(generate_rust rust_symlink_module_${MODULE_NAME})
 
         set(EVEREST_MODULE_INSTALL_PREFIX "${CMAKE_INSTALL_LIBEXECDIR}/everest/modules")
-        set(BIN_PREFIX "target/$<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>/$<IF:$<STREQUAL:$<CONFIG>,Release>,release,debug>")
+        set(BIN_PREFIX "target/$<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>/$<IF:$<CONFIG:Debug>,debug,release>")
 
         install(PROGRAMS ${RUST_WORKSPACE_DIR}/${BIN_PREFIX}/${MODULE_NAME}
             DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"
