@@ -606,7 +606,15 @@ void ChargePointV2::on_event_deauthorised(std::int32_t evse_id, std::int32_t con
     check_configured("on_event_deauthorised");
     auto transaction_data = m_callbacks_ptr->transaction_data(evse_id);
     if (transaction_data != nullptr) {
-        transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::StopAuthorized;
+        const auto ev_connection_timeout = get_ev_connection_timeout();
+        // E03.FR.05
+        if (ev_connection_timeout.has_value() and m_callbacks_ptr->transaction_is_ev_connect_timeout(
+                                                      evse_id, std::chrono::seconds(ev_connection_timeout.value()))) {
+            transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::EVConnectTimeout;
+            transaction_data->stop_reason = ocpp::v2::ReasonEnum::Timeout;
+        } else {
+            transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::StopAuthorized;
+        }
     }
     const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::DEAUTHORIZED);
     process_tx_event_effect(evse_id, tx_event_effect, session_event);

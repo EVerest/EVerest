@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -55,8 +56,10 @@ struct TxStartStopConditions {
     bool is_energy_transfered = false;
     bool is_signed_data_received = false;
     bool is_immediate_reset = false;
+    std::optional<std::chrono::steady_clock::time_point> authorized_at;
 
-    void submit_event(const TxEvent tx_event) {
+    void submit_event(const TxEvent tx_event,
+                      const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now()) {
 
         switch (tx_event) {
         case TxEvent::EV_CONNECTED:
@@ -68,9 +71,13 @@ struct TxStartStopConditions {
             break;
         case TxEvent::AUTHORIZED:
             is_authorized = true;
+            if (!authorized_at.has_value()) {
+                authorized_at = now;
+            }
             break;
         case TxEvent::DEAUTHORIZED:
             is_authorized = false;
+            authorized_at.reset();
             break;
         case TxEvent::PARKING_BAY_OCCUPIED:
             is_parking_bay_occupied = true;
@@ -174,7 +181,12 @@ public:
     /// \param evse_id
     /// \param tx_event
     /// \return
-    TxEventEffect submit_event(const int32_t evse_id, const TxEvent tx_event);
+    TxEventEffect submit_event(const int32_t evse_id, const TxEvent tx_event,
+                               const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
+
+    /// \brief True if the authorized tx at \p evse_id had no EV for \p ev_connection_timeout - 1s (Auth starts first)
+    bool is_ev_connect_timeout(int32_t evse_id, std::chrono::seconds ev_connection_timeout,
+                               std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now()) const;
 
     /// \brief Sets the given \p tx_start_points
     void set_tx_start_points(const std::set<TxStartStopPoint>& tx_start_points);

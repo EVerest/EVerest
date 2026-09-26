@@ -307,6 +307,74 @@ async def test_F01_F02_F03(
 
 @pytest.mark.asyncio
 @pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.parametrize(
+    "tx_stop_point", ["Authorized", "PowerPathClosed", "EVConnected,Authorized"]
+)
+async def test_E03_ev_connect_timeout(
+    charge_point_v201: ChargePoint201,
+    test_utility: TestUtility,
+    tx_stop_point: str,
+):
+    """
+    E03.FR.05
+    """
+
+    evse_id = 1
+    remote_start_id = 1
+    id_token = IdTokenType(id_token="DEADBEEF", type=IdTokenTypeEnum.iso14443)
+
+    for component, variable, value in [
+        ("TxCtrlr", "TxStartPoint", "Authorized"),
+        ("TxCtrlr", "TxStopPoint", tx_stop_point),
+        ("TxCtrlr", "EVConnectionTimeOut", "5"),
+        ("AuthCtrlr", "AuthorizeRemoteStart", "false"),
+    ]:
+        r: call_result201.SetVariables = (
+            await charge_point_v201.set_config_variables_req(component, variable, value)
+        )
+        set_variable_result: SetVariableResultType = SetVariableResultType(
+            **r.set_variable_result[0]
+        )
+        assert set_variable_result.attribute_status == SetVariableStatusEnumType.accepted
+
+    await charge_point_v201.request_start_transaction_req(
+        id_token=id_token, remote_start_id=remote_start_id, evse_id=evse_id
+    )
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "RequestStartTransaction",
+        call_result201.RequestStartTransaction(
+            status=RequestStartStopStatusEnumType.accepted
+        ),
+    )
+
+    r: call201.TransactionEvent = call201.TransactionEvent(
+        **await wait_for_and_validate(
+            test_utility,
+            charge_point_v201,
+            "TransactionEvent",
+            {"eventType": "Started"},
+        )
+    )
+    assert r.trigger_reason == TriggerReasonEnumType.remote_start
+
+    # the EV never plugs in
+    r: call201.TransactionEvent = call201.TransactionEvent(
+        **await wait_for_and_validate(
+            test_utility,
+            charge_point_v201,
+            "TransactionEvent",
+            {"eventType": "Ended"},
+        )
+    )
+    transaction = TransactionType(**r.transaction_info)
+    assert r.trigger_reason == TriggerReasonEnumType.ev_connect_timeout
+    assert transaction.stopped_reason == ReasonEnumType.timeout
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
 async def test_F06(
     central_system_v201: CentralSystem,
     test_controller: TestController,

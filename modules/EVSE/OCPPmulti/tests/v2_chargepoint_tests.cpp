@@ -165,6 +165,70 @@ TEST_F(ChargePointV2Test, transactionStopForwardsStartSignedMeterValue) {
     m_chargepoint.on_event_transaction_finished(EVSE_ID, CONNECTOR_ID, session_event);
 }
 
+types::evse_manager::SessionEvent deauthorized_event() {
+    types::evse_manager::SessionEvent session_event;
+    session_event.uuid = SESSION_ID;
+    session_event.timestamp = TIMESTAMP;
+    session_event.event = types::evse_manager::SessionEventEnum::Deauthorized;
+    session_event.connector_id = CONNECTOR_ID;
+    session_event.authorization_event = types::evse_manager::AuthorizationEvent{meter_value_wh(0.0F)};
+    return session_event;
+}
+
+std::vector<ocpp::v2::GetVariableResult> ev_connection_timeout_result(const std::string& value) {
+    ocpp::v2::GetVariableResult result;
+    result.attributeStatus = ocpp::v2::GetVariableStatusEnum::Accepted;
+    result.attributeValue = value;
+    return {result};
+}
+
+// E03.FR.05: deauthorized with no EV once EVConnectionTimeOut elapsed ends the transaction with Timeout
+TEST_F(ChargePointV2Test, deauthorisedAfterEvConnectTimeoutEndsWithTimeout) {
+    make_transaction_data(ocpp::v2::TriggerReasonEnum::Authorized, ocpp::v2::ChargingStateEnum::Idle);
+    ON_CALL(*m_libocpp, get_variables(_)).WillByDefault(Return(ev_connection_timeout_result("30")));
+
+    EXPECT_CALL(m_callbacks, transaction_is_ev_connect_timeout(EVSE_ID, std::chrono::seconds(30)))
+        .WillOnce(Return(true));
+    EXPECT_CALL(m_callbacks, transaction_event(EVSE_ID, module::TxEvent::DEAUTHORIZED))
+        .WillOnce(Return(module::TxEventEffect::STOP_TRANSACTION));
+    EXPECT_CALL(*m_libocpp, on_transaction_finished(EVSE_ID, _, _, ocpp::v2::ReasonEnum::Timeout,
+                                                    ocpp::v2::TriggerReasonEnum::EVConnectTimeout, _, _, _, _));
+    EXPECT_CALL(m_callbacks, transaction_reset(EVSE_ID));
+
+    m_chargepoint.on_event_deauthorised(EVSE_ID, CONNECTOR_ID, deauthorized_event());
+}
+
+// deauthorized before EVConnectionTimeOut elapsed ends the transaction with StopAuthorized
+TEST_F(ChargePointV2Test, deauthorisedBeforeEvConnectTimeoutEndsWithStopAuthorized) {
+    make_transaction_data(ocpp::v2::TriggerReasonEnum::Authorized, ocpp::v2::ChargingStateEnum::Idle);
+    ON_CALL(*m_libocpp, get_variables(_)).WillByDefault(Return(ev_connection_timeout_result("30")));
+
+    EXPECT_CALL(m_callbacks, transaction_is_ev_connect_timeout(EVSE_ID, std::chrono::seconds(30)))
+        .WillOnce(Return(false));
+    EXPECT_CALL(m_callbacks, transaction_event(EVSE_ID, module::TxEvent::DEAUTHORIZED))
+        .WillOnce(Return(module::TxEventEffect::STOP_TRANSACTION));
+    EXPECT_CALL(*m_libocpp, on_transaction_finished(EVSE_ID, _, _, ocpp::v2::ReasonEnum::Other,
+                                                    ocpp::v2::TriggerReasonEnum::StopAuthorized, _, _, _, _));
+    EXPECT_CALL(m_callbacks, transaction_reset(EVSE_ID));
+
+    m_chargepoint.on_event_deauthorised(EVSE_ID, CONNECTOR_ID, deauthorized_event());
+}
+
+// deauthorized with no EV ends the transaction with StopAuthorized when EVConnectionTimeOut cannot be read
+TEST_F(ChargePointV2Test, deauthorisedWithUnreadableEvConnectionTimeoutEndsWithStopAuthorized) {
+    make_transaction_data(ocpp::v2::TriggerReasonEnum::Authorized, ocpp::v2::ChargingStateEnum::Idle);
+    ON_CALL(*m_libocpp, get_variables(_)).WillByDefault(Return(std::vector<ocpp::v2::GetVariableResult>{}));
+
+    EXPECT_CALL(m_callbacks, transaction_is_ev_connect_timeout(_, _)).Times(0);
+    EXPECT_CALL(m_callbacks, transaction_event(EVSE_ID, module::TxEvent::DEAUTHORIZED))
+        .WillOnce(Return(module::TxEventEffect::STOP_TRANSACTION));
+    EXPECT_CALL(*m_libocpp, on_transaction_finished(EVSE_ID, _, _, ocpp::v2::ReasonEnum::Other,
+                                                    ocpp::v2::TriggerReasonEnum::StopAuthorized, _, _, _, _));
+    EXPECT_CALL(m_callbacks, transaction_reset(EVSE_ID));
+
+    m_chargepoint.on_event_deauthorised(EVSE_ID, CONNECTOR_ID, deauthorized_event());
+}
+
 // RequestStartTransaction forwards the group id token to the token sink
 TEST_F(ChargePointV2Test, remoteStartForwardsGroupIdToken) {
     auto callbacks = m_chargepoint.configure_callbacks();
