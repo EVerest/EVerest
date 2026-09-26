@@ -9,6 +9,7 @@
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/ac_charge_loop.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
+#include <iso15118/ev/detail/d20/ac_target_power.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/ev/service_family.hpp>
 #include <iso15118/message/ac_charge_loop.hpp>
@@ -102,27 +103,9 @@ message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const Ac
 
 // Set point of a Dynamic or Scheduled (BPT or not) response; nullopt when the response carries none.
 std::optional<iso15118::d20::AcTargetPower> target_power(const message_20::AC_ChargeLoopResponse& res) {
-    iso15118::d20::AcTargetPower target;
-    const auto copy = [&](const auto& mode) {
-        target.target_active_power_L2 = mode.target_active_power_L2;
-        target.target_active_power_L3 = mode.target_active_power_L3;
-        target.target_reactive_power = mode.target_reactive_power;
-        target.target_reactive_power_L2 = mode.target_reactive_power_L2;
-        target.target_reactive_power_L3 = mode.target_reactive_power_L3;
-    };
-    if (const auto* mode = std::get_if<dt::Dynamic_AC_CLResControlMode>(&res.control_mode)) {
-        target.target_active_power = mode->target_active_power;
-        copy(*mode);
-    } else if (const auto* mode = std::get_if<dt::BPT_Dynamic_AC_CLResControlMode>(&res.control_mode)) {
-        target.target_active_power = mode->target_active_power;
-        copy(*mode);
-    } else if (const auto* mode = std::get_if<dt::Scheduled_AC_CLResControlMode>(&res.control_mode)) {
-        target.target_active_power = mode->target_active_power;
-        copy(*mode);
-    } else if (const auto* mode = std::get_if<dt::BPT_Scheduled_AC_CLResControlMode>(&res.control_mode)) {
-        target.target_active_power = mode->target_active_power;
-        copy(*mode);
-    }
+    auto target = std::visit([&](const auto& mode) { return make_ac_target_power(mode, res.target_frequency); },
+                             res.control_mode);
+    // Without a target power the frequency is dropped too, until a consumer needs a frequency-only target.
     if (not target.target_active_power.has_value()) {
         return std::nullopt;
     }
