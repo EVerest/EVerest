@@ -755,6 +755,32 @@ public:
     }
 };
 
+TEST_F(ChargePointCommonTestFixtureV2, FirmwareNotificationGuardTracksCycleBoundaries) {
+    configure_callbacks_with_mocks();
+    testing::MockFunction<void()> all_connectors_unavailable;
+    callbacks.all_connectors_unavailable_callback = all_connectors_unavailable.AsStdFunction();
+    auto database_handler = create_database_handler();
+    TestChargePoint charge_point(create_evse_connector_structure(), device_model, database_handler,
+                                 create_message_queue(database_handler), TEMP_OUTPUT_PATH,
+                                 std::make_shared<EvseSecurityMock>(), callbacks);
+    charge_point.start();
+
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(1);
+    charge_point.on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+    charge_point.on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+    testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable);
+
+    charge_point.on_firmware_update_status_notification(1, FirmwareStatusEnum::Idle);
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(0);
+    charge_point.on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+    testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable);
+
+    charge_point.on_firmware_update_status_notification(1, FirmwareStatusEnum::Installed);
+    EXPECT_CALL(all_connectors_unavailable, Call()).Times(1);
+    charge_point.on_firmware_update_status_notification(2, FirmwareStatusEnum::InstallScheduled, true);
+    charge_point.stop();
+}
+
 class ChargePointFunctionalityTestFixtureV2 : public ChargePointCommonTestFixtureV2 {
 public:
     ChargePointFunctionalityTestFixtureV2() :

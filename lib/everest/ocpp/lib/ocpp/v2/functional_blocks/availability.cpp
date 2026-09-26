@@ -88,6 +88,17 @@ void Availability::set_scheduled_change_availability_requests(const std::int32_t
     this->scheduled_change_availability_requests[evse_id] = availability_change;
 }
 
+void Availability::drop_non_persistent_scheduled_changes() {
+    for (auto it = this->scheduled_change_availability_requests.begin();
+         it != this->scheduled_change_availability_requests.end();) {
+        if (!it->second.persist) {
+            it = this->scheduled_change_availability_requests.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 void Availability::set_heartbeat_timer_interval(const std::chrono::seconds& interval) {
     this->heartbeat_timer.interval([this]() { this->heartbeat_req(); }, interval);
 }

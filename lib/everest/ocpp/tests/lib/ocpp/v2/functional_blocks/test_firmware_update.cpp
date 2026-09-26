@@ -42,6 +42,7 @@ public:
     MOCK_METHOD(void, heartbeat_req, (bool), (override));
     MOCK_METHOD(void, handle_scheduled_change_availability_requests, (std::int32_t), (override));
     MOCK_METHOD(void, set_scheduled_change_availability_requests, (std::int32_t, AvailabilityChange), (override));
+    MOCK_METHOD(void, drop_non_persistent_scheduled_changes, (), (override));
     MOCK_METHOD(void, set_heartbeat_timer_interval, (const std::chrono::seconds&), (override));
     MOCK_METHOD(void, stop_heartbeat_timer, (), (override));
     MOCK_METHOD(ChangeAvailabilityResponse, change_availability_req, (bool&, const ChangeAvailabilityRequest&),
@@ -359,6 +360,48 @@ TEST_F(FirmwareUpdateDeferredDownloadTest, InvalidCertSupersedingRequestLeavesDe
 
     ASSERT_EQ(callback_invocations.size(), 1);
     EXPECT_EQ(callback_invocations.at(0).requestId, 150);
+}
+
+TEST_F(FirmwareUpdateDeferredDownloadTest, AcceptedRequestResetsCycleStateButRejectedRequestDoesNot) {
+    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::Installing);
+    ASSERT_EQ(firmware_status_notifications().size(), 1);
+
+    callback_response_status = UpdateFirmwareStatusEnum::Rejected;
+    EXPECT_CALL(availability, drop_non_persistent_scheduled_changes()).Times(0);
+    firmware_update->handle_message(make_update_firmware_message(2));
+    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::Installing);
+    EXPECT_EQ(firmware_status_notifications().size(), 1);
+
+    callback_response_status = UpdateFirmwareStatusEnum::Accepted;
+    EXPECT_CALL(availability, drop_non_persistent_scheduled_changes());
+    firmware_update->handle_message(make_update_firmware_message(3));
+    firmware_update->on_firmware_update_status_notification(3, FirmwareStatusEnum::Installing);
+    EXPECT_EQ(firmware_status_notifications().size(), 2);
+}
+
+TEST_F(FirmwareUpdateDeferredDownloadTest, InstallScheduledQueuesBusyEvseAsNonPersistent) {
+    auto& evse = evse_manager->get_mock(1);
+    ON_CALL(*evse_manager, any_transaction_active(_)).WillByDefault(Return(true));
+    ON_CALL(evse, has_active_transaction()).WillByDefault(Return(true));
+
+    EXPECT_CALL(availability, set_scheduled_change_availability_requests(1, _))
+        .WillOnce(Invoke([](std::int32_t, const AvailabilityChange& change) {
+            EXPECT_FALSE(change.persist);
+            EXPECT_EQ(change.request.operationalStatus, OperationalStatusEnum::Inoperative);
+        }));
+
+    firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+}
+
+TEST_F(FirmwareUpdateDeferredDownloadTest, IdleRestoresConnectorsAndDropsPendingChanges) {
+    auto& evse = evse_manager->get_mock(1);
+    ON_CALL(evse, get_number_of_connectors()).WillByDefault(Return(1));
+    firmware_update->on_firmware_update_status_notification(-1, FirmwareStatusEnum::Downloading);
+
+    EXPECT_CALL(evse, restore_connector_operative_status(1));
+    EXPECT_CALL(availability, drop_non_persistent_scheduled_changes());
+
+    firmware_update->on_firmware_update_status_notification(-1, FirmwareStatusEnum::Idle);
 }
 
 } // namespace
