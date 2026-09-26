@@ -15,7 +15,11 @@ from ._configuration.everest_environment_setup import \
     EverestTestEnvironmentSetup, EverestEnvironmentOCPPConfiguration, EverestEnvironmentCoreConfiguration, \
     EverestEnvironmentEvseSecurityConfiguration, EverestEnvironmentPersistentStoreConfiguration
 from everest.testing.core_utils.common import close_mqtt_client
+from everest.testing.core_utils.controller.ev_manager_test_controller import EvManagerTestController
 from everest.testing.core_utils.controller.everest_test_controller import EverestTestController
+from everest.testing.core_utils.controller.evsim_test_controller import EvSimulatorTestController
+from everest.testing.core_utils.controller.test_controller_interface import TestController
+from everest.testing.core_utils.sim_registry import config_has_module
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.network_isolation import (
     NetworkIsolationStrategy,
@@ -163,17 +167,39 @@ def ocpp_configuration(everest_environment):
     yield everest_environment.ocpp_config
 
 @pytest.fixture
-def test_controller(request, tmp_path, everest_core) -> EverestTestController:
+def test_controller(everest_core) -> TestController:
     """Fixture that references the test_controller that can be used for
     control events for the test cases.
+
+    A config that activates `EvManager` is driven by the legacy controller;
+    everything else by the EvSimulator-backed one. Selecting on the config
+    rather than on a marker is what keeps an `EvManager` config usable as a
+    control arm without every test opting in. A config that activates neither
+    keeps the EvSimulator controller, which fails loudly when a test tries to
+    drive an EV that is not there.
     """
 
-    test_controller = EverestTestController(everest_core=everest_core)
+    if config_has_module(everest_core.everest_config_path, "EvManager"):
+        test_controller = EvManagerTestController(everest_core=everest_core)
+    else:
+        test_controller = EverestTestController(everest_core=everest_core)
 
     yield test_controller
 
     # FIXME (aw): proper life time management, shouldn't the fixure start and stop?
     test_controller.stop()
+
+@pytest.fixture
+def evsim_test_controller(everest_core: EverestCore) -> EvSimulatorTestController:
+    """Fixture that yields an EvSimulatorTestController bound to the
+    everest_core fixture; tears down via stop().
+    """
+
+    controller = EvSimulatorTestController(everest_core)
+
+    yield controller
+
+    controller.stop()
 
 @pytest.fixture
 def connected_mqtt_client(everest_core: EverestCore) -> mqtt.Client:

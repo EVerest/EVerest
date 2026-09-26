@@ -71,12 +71,9 @@ active_modules:
         selftest_success: true
     module: IMDSimulator
   ev_manager:
-    module: EvManager
+    module: EvSimulator
     config_module:
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;
       dc_target_current: 20
       dc_target_voltage: 400
     connections:

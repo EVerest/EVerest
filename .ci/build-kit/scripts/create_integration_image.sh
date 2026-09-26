@@ -9,6 +9,14 @@ if [ $retVal -ne 0 ]; then
     exit $retVal
 fi
 
+rsync -a --relative "$EXT_MOUNT/source/./applications/utils/everest-testing/tests" ./
+retVal=$?
+
+if [ $retVal -ne 0 ]; then
+    echo "Failed to copy harness tests"
+    exit $retVal
+fi
+
 python3 -m pip install --break-system-packages \
     $EXT_MOUNT/wheels/everestpy-*.whl \
     $EXT_MOUNT/wheels/everest_testing-*.whl \
