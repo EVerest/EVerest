@@ -821,7 +821,77 @@ TEST_F(AuthorizationTest,
     id_token.idToken = "test_token";
 
     const AuthorizeResponse response = authorization->validate_token(id_token, "", std::nullopt);
-    EXPECT_EQ(response.idTokenInfo.status, AuthorizationStatusEnum::Unknown);
+    EXPECT_EQ(response.idTokenInfo.status, AuthorizationStatusEnum::Invalid);
+    EXPECT_EQ(response.certificateStatus, AuthorizeCertificateStatusEnum::SignatureError);
+}
+
+TEST_F(AuthorizationTest,
+       validate_token_emaid_offline_contract_validation_allowed_certificate_invalid_leaf_signature) {
+    this->set_auth_ctrlr_enabled(this->device_model, true);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
+    this->set_allow_contract_validation_offline(this->device_model, true);
+    this->set_local_authorize_offline(this->device_model, false);
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
+        .WillByDefault(Return(ocpp::CertificateValidationResult::InvalidLeafSignature));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::eMAID;
+    id_token.idToken = "test_token";
+
+    const AuthorizeResponse response = authorization->validate_token(id_token, "", std::nullopt);
+    EXPECT_EQ(response.idTokenInfo.status, AuthorizationStatusEnum::Invalid);
+    EXPECT_EQ(response.certificateStatus, AuthorizeCertificateStatusEnum::SignatureError);
+}
+
+TEST_F(AuthorizationTest, validate_token_emaid_offline_contract_validation_allowed_certificate_invalid_chain) {
+    this->set_auth_ctrlr_enabled(this->device_model, true);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
+    this->set_allow_contract_validation_offline(this->device_model, true);
+    this->set_local_authorize_offline(this->device_model, false);
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
+        .WillByDefault(Return(ocpp::CertificateValidationResult::InvalidChain));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::eMAID;
+    id_token.idToken = "test_token";
+
+    const AuthorizeResponse response = authorization->validate_token(id_token, "", std::nullopt);
+    EXPECT_EQ(response.idTokenInfo.status, AuthorizationStatusEnum::Invalid);
+    EXPECT_EQ(response.certificateStatus, AuthorizeCertificateStatusEnum::CertChainError);
+}
+
+TEST_F(AuthorizationTest, validate_token_emaid_offline_contract_validation_allowed_certificate_issuer_not_found) {
+    this->set_auth_ctrlr_enabled(this->device_model, true);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
+    this->set_allow_contract_validation_offline(this->device_model, true);
+    this->set_local_authorize_offline(this->device_model, false);
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
+        .WillByDefault(Return(ocpp::CertificateValidationResult::IssuerNotFound));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::eMAID;
+    id_token.idToken = "test_token";
+
+    const AuthorizeResponse response = authorization->validate_token(id_token, "", std::nullopt);
+    EXPECT_EQ(response.idTokenInfo.status, AuthorizationStatusEnum::Invalid);
+    EXPECT_EQ(response.certificateStatus, AuthorizeCertificateStatusEnum::CertChainError);
+}
+
+TEST_F(AuthorizationTest, validate_token_emaid_offline_contract_validation_allowed_certificate_unknown) {
+    this->set_auth_ctrlr_enabled(this->device_model, true);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
+    this->set_allow_contract_validation_offline(this->device_model, true);
+    this->set_local_authorize_offline(this->device_model, false);
+    ON_CALL(this->evse_security, verify_certificate(_, DEFAULT_LEAF_CERT_TYPE))
+        .WillByDefault(Return(ocpp::CertificateValidationResult::Unknown));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::eMAID;
+    id_token.idToken = "test_token";
+
+    const AuthorizeResponse response = authorization->validate_token(id_token, "", std::nullopt);
+    EXPECT_EQ(response.idTokenInfo.status, AuthorizationStatusEnum::Invalid);
+    EXPECT_EQ(response.certificateStatus, AuthorizeCertificateStatusEnum::CertChainError);
 }
 
 TEST_F(AuthorizationTest, validate_token_emaid_websocket_disconnected_certificate_no_value) {
