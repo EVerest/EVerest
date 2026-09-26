@@ -2,7 +2,13 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/ev/config_validation.hpp>
 
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <string>
+
+#include <iso15118/sae_modes.hpp>
 
 namespace iso15118::ev {
 
@@ -12,6 +18,110 @@ void check_non_negative(std::vector<std::string>& problems, const char* name, fl
     if (value < 0.0f) {
         problems.emplace_back(std::string{name} + " must not be negative (is " + std::to_string(value) + ")");
     }
+}
+
+// Callers pass the valid range, so NaN fails.
+bool require_profile_value(std::vector<std::string>& problems, const char* name, float value, bool valid,
+                           const char* rule) {
+    if (not valid) {
+        problems.emplace_back(std::string{"sae_profile "} + name + " must be " + rule + " (is " +
+                              std::to_string(value) + ")");
+    }
+    return valid;
+}
+
+void check_finite(std::vector<std::string>& problems, const char* name, float value) {
+    require_profile_value(problems, name, value, std::isfinite(value), "finite");
+}
+
+void check_finite_non_negative(std::vector<std::string>& problems, const char* name, float value) {
+    require_profile_value(problems, name, value, std::isfinite(value) and value >= 0.0f, "finite and not negative");
+}
+
+bool check_finite_positive(std::vector<std::string>& problems, const char* name, float value) {
+    return require_profile_value(problems, name, value, std::isfinite(value) and value > 0.0f, "finite and positive");
+}
+
+void check_power_factor(std::vector<std::string>& problems, const char* name, float value) {
+    require_profile_value(problems, name, value, std::isfinite(value) and value > 0.0f and value <= 1.0f, "in (0, 1]");
+}
+
+std::string hex(std::uint32_t bits) {
+    char text[11];
+    std::snprintf(text, sizeof(text), "0x%08X", static_cast<unsigned int>(bits));
+    return text;
+}
+
+// AMD1 XSD evInverter*Type: maxLength 32, no minLength. cbv2g encodes ASCII only, one byte each.
+void check_inverter_string(std::vector<std::string>& problems, const char* name, const std::string& value) {
+    constexpr std::size_t max_length = 32;
+    if (value.size() > max_length) {
+        problems.emplace_back(std::string{"sae_profile "} + name + " must be at most " + std::to_string(max_length) +
+                              " bytes (is " + std::to_string(value.size()) + ")");
+    }
+}
+
+void check_sae_profile(std::vector<std::string>& problems, const SaeInverterProfile& profile) {
+    check_inverter_string(problems, "inverter_sw_version", profile.inverter_sw_version);
+    if (profile.inverter_hw_version) {
+        check_inverter_string(problems, "inverter_hw_version", *profile.inverter_hw_version);
+    }
+    check_inverter_string(problems, "inverter_manufacturer", profile.inverter_manufacturer);
+    check_inverter_string(problems, "inverter_model", profile.inverter_model);
+    check_inverter_string(problems, "inverter_serial_number", profile.inverter_serial_number);
+
+    const auto modes = profile.supported_modes;
+    if ((modes & ~sae::SAE_MODE_BITMAP_MASK) != 0) {
+        problems.emplace_back("sae_profile supported_modes sets unused bits " +
+                              hex(modes & ~sae::SAE_MODE_BITMAP_MASK));
+    }
+    // AMD1 Table M.6: bits 0 and 1 are inherent to AC DER and always set to 1.
+    constexpr auto inherent = sae::sae_function_bit(sae::DerBitMapFunctions::ChargeFunction) |
+                              sae::sae_function_bit(sae::DerBitMapFunctions::DischargeFunction);
+    if ((modes & inherent) != inherent) {
+        problems.emplace_back("sae_profile supported_modes must set ChargeFunction and DischargeFunction (is " +
+                              hex(modes) + ")");
+    }
+
+    const bool nominal_valid = check_finite_positive(problems, "nominal_voltage_v", profile.nominal_voltage_v);
+    const bool min_valid = check_finite_positive(problems, "minimum_voltage_v", profile.minimum_voltage_v);
+    const bool max_valid = check_finite_positive(problems, "maximum_voltage_v", profile.maximum_voltage_v);
+    if (nominal_valid and min_valid and max_valid) {
+        const auto min = std::to_string(profile.minimum_voltage_v);
+        const auto max = std::to_string(profile.maximum_voltage_v);
+        if (not(profile.maximum_voltage_v > profile.minimum_voltage_v)) {
+            problems.emplace_back("sae_profile maximum_voltage_v (" + max + ") must exceed minimum_voltage_v (" + min +
+                                  ")");
+        } else if (not(profile.nominal_voltage_v >= profile.minimum_voltage_v and
+                       profile.nominal_voltage_v <= profile.maximum_voltage_v)) {
+            problems.emplace_back("sae_profile nominal_voltage_v (" + std::to_string(profile.nominal_voltage_v) +
+                                  ") must lie within [minimum_voltage_v, maximum_voltage_v] = [" + min + ", " + max +
+                                  "]");
+        }
+    }
+    check_finite(problems, "nominal_voltage_offset_v", profile.nominal_voltage_offset_v);
+    check_finite_positive(problems, "nominal_frequency_hz", profile.nominal_frequency_hz);
+
+    check_power_factor(problems, "over_excited_power_factor", profile.over_excited_power_factor);
+    check_power_factor(problems, "under_excited_power_factor", profile.under_excited_power_factor);
+
+    // Totals split per phase.
+    check_finite_non_negative(problems, "max_apparent_power_charging_var_absorption_va",
+                              profile.max_apparent_power_charging_var_absorption_va);
+    check_finite_non_negative(problems, "max_apparent_power_charging_var_injection_va",
+                              profile.max_apparent_power_charging_var_injection_va);
+    check_finite_non_negative(problems, "max_apparent_power_discharging_var_absorption_va",
+                              profile.max_apparent_power_discharging_var_absorption_va);
+    check_finite_non_negative(problems, "max_apparent_power_discharging_var_injection_va",
+                              profile.max_apparent_power_discharging_var_injection_va);
+    check_finite_non_negative(problems, "max_var_absorption_charging_var", profile.max_var_absorption_charging_var);
+    check_finite_non_negative(problems, "max_var_injection_charging_var", profile.max_var_injection_charging_var);
+    check_finite_non_negative(problems, "max_var_absorption_discharging_var",
+                              profile.max_var_absorption_discharging_var);
+    check_finite_non_negative(problems, "max_var_injection_discharging_var", profile.max_var_injection_discharging_var);
+    check_finite_non_negative(problems, "reactive_susceptance_s", profile.reactive_susceptance_s);
+    check_finite_non_negative(problems, "over_excited_discharge_power_w", profile.over_excited_discharge_power_w);
+    check_finite_non_negative(problems, "under_excited_discharge_power_w", profile.under_excited_discharge_power_w);
 }
 
 void check_min_not_above_max(std::vector<std::string>& problems, const char* min_name, float min_value,
@@ -44,6 +154,14 @@ std::vector<std::string> validate_config(const EvConfig& config) {
     // Without SDP there is no security byte to reject, so the configured one has to satisfy the policy.
     if (config.tls.enforce_tls and not config.enable_sdp and config.direct_security != io::v2gtp::Security::TLS) {
         problems.emplace_back("enforce_tls is set but direct_security is not TLS");
+    }
+
+    if (config.cpd_rounds == 0) {
+        problems.emplace_back("cpd_rounds must be positive (is 0)");
+    }
+
+    if (config.energy_service == message_20::datatypes::ServiceCategory::AC_DER_SAE) {
+        check_sae_profile(problems, config.sae_profile);
     }
 
     return problems;
