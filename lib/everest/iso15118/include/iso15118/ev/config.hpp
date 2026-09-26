@@ -15,6 +15,7 @@
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/session/protocol.hpp>
 
+#include <iso15118/ev/d20/secc_clock.hpp>
 #include <iso15118/ev/der_control_functions.hpp>
 #include <iso15118/ev/sae_inverter_profile.hpp>
 #include <iso15118/ev/session_params.hpp>
@@ -49,6 +50,8 @@ struct PausedSession {
     std::array<uint8_t, 8> session_id;
     ProtocolId protocol;
     io::v2gtp::Security security;
+    // -20 only: the resumed session continues this clock ([V2G20-1537]).
+    d20::SeccClock::State secc_clock{};
 };
 
 /**

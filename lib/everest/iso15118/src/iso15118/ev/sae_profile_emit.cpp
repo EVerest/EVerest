@@ -37,7 +37,8 @@ void emit_active_power_limits(Mode& mode, const AcChargeParams& params, dt::AcCo
 
 dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode
 make_sae_cpd_transfer_mode(const SaeInverterProfile& profile, const AcChargeParams& params, dt::AcConnector connector,
-                           dt::Processing processing, std::uint32_t enabled_modes, std::uint64_t update_time) {
+                           dt::Processing processing, std::uint32_t enabled_modes, std::uint64_t update_time,
+                           const d20::SeccClock& secc_clock) {
     dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode mode;
 
     // Every optional not filled from the inputs is set to nullopt explicitly.
@@ -116,7 +117,8 @@ make_sae_cpd_transfer_mode(const SaeInverterProfile& profile, const AcChargePara
     mode.minimum_voltage = dt::from_float(profile.minimum_voltage_v);
     mode.nominal_voltage_offset = dt::from_float(profile.nominal_voltage_offset_v);
     mode.j3072_certified = profile.j3072_certified;
-    mode.j3072_certification_date = seconds_to_microseconds_saturated(profile.j3072_certification_date);
+    mode.j3072_certification_date =
+        secc_clock.from_unix(seconds_to_microseconds_saturated(profile.j3072_certification_date));
     mode.useable_watt_hours = profile.useable_watt_hours;
 
     mode.processing = processing;

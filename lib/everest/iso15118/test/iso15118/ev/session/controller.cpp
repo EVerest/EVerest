@@ -63,6 +63,31 @@ SCENARIO("ISO15118-20 EV Controller copies the AC_DER_SAE config into the sessio
     }
 }
 
+SCENARIO("ISO15118-20 EV Controller resumes a paused session in its SECC time") {
+    GIVEN("An EvConfig resuming a paused -20 session") {
+        ev::d20::SeccClock::State clock{};
+        clock.reference = ev::d20::SeccClock::Reference{5'000'000, std::chrono::steady_clock::now()};
+        clock.last_stamp = 5'000'100;
+
+        ev::EvConfig config{};
+        config.resume = ev::PausedSession{{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
+                                          ProtocolId::ISO15118_20,
+                                          io::v2gtp::Security::NO_TRANSPORT_SECURITY,
+                                          clock};
+
+        WHEN("the session options are built from it") {
+            const auto options = ev::make_session_options(config, {});
+
+            THEN("the clock state arrives unchanged") {
+                REQUIRE(options.secc_clock.reference.has_value());
+                REQUIRE(options.secc_clock.reference->secc_time == 5'000'000);
+                REQUIRE(options.secc_clock.reference->taken_at == clock.reference->taken_at);
+                REQUIRE(options.secc_clock.last_stamp == 5'000'100);
+            }
+        }
+    }
+}
+
 SCENARIO("ISO15118-20 EV Controller shutdown stops the loop") {
     // No SECC responding keeps the reactor in the pre-session phase, far from the
     // 18 s setup timeout, so an early stop can only be shutdown() itself. Does not

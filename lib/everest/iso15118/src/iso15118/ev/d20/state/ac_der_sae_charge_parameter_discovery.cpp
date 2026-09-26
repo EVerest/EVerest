@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
-#include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/state/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
@@ -23,10 +22,9 @@ void send_cpd_request(Context& ctx) {
         (ctx.cpd_rounds_sent() + 1 < ctx.cpd_rounds()) ? dt::Processing::Ongoing : dt::Processing::Finished;
 
     message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest req;
-    setup_header(req.header, ctx.get_session());
     req.transfer_mode =
         make_sae_cpd_transfer_mode(ctx.sae_profile(), ctx.get_ac_params(), ctx.ac_connector(), processing,
-                                   ctx.sae_enabled_modes(), iso15118::d20::now_in_secc_time());
+                                   ctx.sae_enabled_modes(), ctx.secc_clock().now(), ctx.secc_clock());
     ctx.note_cpd_round_sent();
     ctx.send_request(req);
 }
@@ -73,7 +71,7 @@ Result AC_DER_SAE_ChargeParameterDiscovery::feed(Event ev) {
 
     m_ctx.set_sae_enabled_modes(supported_enabled_modes(m_ctx, control));
     m_ctx.set_sae_permit_service(control.enter_service_cpd_res.permit_service);
-    m_ctx.set_sae_settings_update_time(iso15118::d20::now_in_secc_time());
+    m_ctx.set_sae_settings_update_time(m_ctx.secc_clock().now());
     logf_info("SECC enabled SAE DER functions: %s", sae::sae_function_names(m_ctx.sae_enabled_modes()).c_str());
 
     if (not m_ctx.sae_permit_service()) {

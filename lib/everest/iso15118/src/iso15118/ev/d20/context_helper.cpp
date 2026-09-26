@@ -1,24 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
-#include <ctime>
-
 #include <iso15118/detail/helper.hpp>
-#include <iso15118/ev/d20/session_id.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/common_types.hpp>
 
 namespace iso15118::ev::d20 {
 
 namespace dt = message_20::datatypes;
-
-static inline void setup_timestamp(message_20::Header& header) {
-    header.timestamp = static_cast<uint64_t>(std::time(nullptr));
-}
-
-void setup_header(message_20::Header& header, const SessionId& cur_session) {
-    header.session_id = cur_session.get_id();
-    setup_timestamp(header);
-}
 
 bool check_response_code(dt::ResponseCode response_code) {
     switch (response_code) {

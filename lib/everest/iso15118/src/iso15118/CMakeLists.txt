@@ -128,6 +128,7 @@ if(ISO15118_BUILD_EV_SIDE)
         ev/d20/context.cpp
         ev/d20/context_helper.cpp
         ev/d20/engine.cpp
+        ev/d20/secc_clock.cpp
         ev/d20/timeouts.cpp
         ev/d20/state/supported_app_protocol.cpp
         ev/d20/state/session_setup.cpp

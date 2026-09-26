@@ -4,14 +4,11 @@
 
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
-#include <iso15118/ev/d20/session_id.hpp>
 #include <iso15118/ev/d20/states.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/variant.hpp>
 
 namespace iso15118::ev::d20 {
-
-void setup_header(message_20::Header&, const SessionId&);
 
 bool check_response_code(message_20::datatypes::ResponseCode response_code);
 
