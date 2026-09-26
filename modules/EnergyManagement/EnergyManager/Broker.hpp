@@ -59,6 +59,68 @@ struct PhaseCurrents {
     std::optional<float> L3;
 };
 
+/// \brief Tracks how long a condition has held, and reports each edge exactly once.
+///
+/// The power redistribution inference needs the same three things for a connector that is
+/// under-consuming and for a site with headroom: start timing when the condition appears,
+/// call it held once it has lasted the configured time, and say so once per stretch rather
+/// than on every optimizer run. Written out twice they drifted - one copy was reset when a
+/// session ended and the other was reset by nothing at all.
+///
+/// Time is always passed in (the optimizer's start_time) rather than read from the clock,
+/// so a latch matches the run it belongs to.
+class HoldLatch {
+public:
+    /// What update() wants said about this run, at most once per stretch.
+    enum class Edge {
+        None,     ///< nothing to report
+        Held,     ///< the condition has now held long enough; report it
+        Released, ///< a condition that was reported has stopped holding; report that
+    };
+
+    Edge update(bool condition, date::utc_clock::time_point now, std::chrono::seconds hold_time) {
+        if (not condition) {
+            since.reset();
+            condition_held = false;
+            if (not reported) {
+                return Edge::None;
+            }
+            reported = false;
+            return Edge::Released;
+        }
+
+        if (not since.has_value()) {
+            since = now;
+        }
+        condition_held = now - since.value() >= hold_time;
+
+        if (not condition_held or reported) {
+            return Edge::None;
+        }
+        reported = true;
+        return Edge::Held;
+    }
+
+    /// \brief Whether the condition has held for the full hold time, as of the last update().
+    bool held() const {
+        return condition_held;
+    }
+
+    /// \brief Forgets the stretch in progress without reporting a release. For the end of a
+    /// session, where there is no longer a condition to have stopped holding.
+    void reset() {
+        since.reset();
+        reported = false;
+        condition_held = false;
+    }
+
+private:
+    // start_time of the run since which the condition has held continuously.
+    std::optional<date::utc_clock::time_point> since;
+    bool reported{false};
+    bool condition_held{false};
+};
+
 // All context data that is stored in between optimization runs
 struct BrokerContext {
     BrokerContext() {
@@ -73,6 +135,9 @@ struct BrokerContext {
         last_observed_measurement = {};
         redistribution_cap_A = std::nullopt;
         redistribution_reduction_pending_since = std::nullopt;
+        distributed_power_W = std::nullopt;
+        last_allocated_W.reset();
+        under_consuming.reset();
     };
 
     int number_1ph3ph_cycles;
@@ -96,6 +161,22 @@ struct BrokerContext {
     // cap first fell below the applied one. The reduction is applied once it has been
     // pending for the configured hold time; a recovering candidate clears it.
     std::optional<date::utc_clock::time_point> redistribution_reduction_pending_since;
+
+    // Extra import power [W] the site inference granted this connector, on top of what its
+    // own measurement plus the margin allows. Written once per optimizer run by
+    // EnergyManagerImpl and consumed by the broker of the following run, which is the
+    // earliest a figure derived from this run's allocations can be acted on. nullopt while
+    // the site has no headroom to hand this connector.
+    std::optional<float> distributed_power_W;
+
+    // Import power [W] the previous optimizer run handed to this connector: the "allotted"
+    // side of the power redistribution inference, compared against the measurement of the
+    // following run. nullopt before the first run of a session and while not in a session.
+    std::optional<float> last_allocated_W;
+
+    // How long this connector has continuously consumed less than allotted, and whether
+    // that has already been reported for the current stretch.
+    HoldLatch under_consuming;
 };
 
 // base class for different Brokers

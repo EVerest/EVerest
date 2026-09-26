@@ -158,6 +158,31 @@ PowerMeterAggregator::AggregateResult PowerMeterAggregator::aggregate(date::utc_
     return result;
 }
 
+const char* to_string(SiteMeterSource source) {
+    switch (source) {
+    case SiteMeterSource::RootMeter:
+        return "grid connection meter";
+    case SiteMeterSource::LeafSum:
+        return "sum of EVSE meters";
+    case SiteMeterSource::None:
+    default:
+        return "no meter";
+    }
+}
+
+SiteMeterSource collect_site_measurement(const types::energy::EnergyFlowRequest& root,
+                                         PowerMeterAggregator& aggregator) {
+    // energy_usage_root on a non-EVSE root is the connection point's own meter: one reading
+    // that already includes every load behind the fuse, EVSE or not.
+    if (root.node_type != types::energy::NodeType::Evse and root.energy_usage_root.has_value()) {
+        aggregator.update(root.uuid, root.energy_usage_root.value());
+        return SiteMeterSource::RootMeter;
+    }
+
+    collect_leaf_measurements(root, aggregator);
+    return aggregator.size() > 0 ? SiteMeterSource::LeafSum : SiteMeterSource::None;
+}
+
 void collect_leaf_measurements(const types::energy::EnergyFlowRequest& node, PowerMeterAggregator& aggregator) {
     if (node.node_type == types::energy::NodeType::Evse) {
         if (node.energy_usage_leaves.has_value()) {

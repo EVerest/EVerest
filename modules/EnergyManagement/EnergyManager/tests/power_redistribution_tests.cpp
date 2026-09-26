@@ -562,11 +562,11 @@ TEST(PowerRedistributionFairness, UnderConsumingSessionFreesBudgetForTheOthers) 
     const auto results = impl.run_optimizer(request, AT);
 
     const auto limited = test::find_limit(results, "evse1");
-    const auto boosted = test::find_limit(results, "evse2");
+    const auto distributed = test::find_limit(results, "evse2");
     ASSERT_TRUE(limited.has_value());
-    ASSERT_TRUE(boosted.has_value());
+    ASSERT_TRUE(distributed.has_value());
     EXPECT_NEAR(limited.value().limits_root_side.ac_max_current_A.value().value, 10.0f, 0.01f);
-    EXPECT_NEAR(boosted.value().limits_root_side.ac_max_current_A.value().value, 30.0f, 0.01f);
+    EXPECT_NEAR(distributed.value().limits_root_side.ac_max_current_A.value().value, 30.0f, 0.01f);
 }
 
 TEST(PowerRedistributionFairness, EveryConnectorKeepsItsMinimumWhenTheFuseIsTight) {

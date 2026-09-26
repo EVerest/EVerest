@@ -139,6 +139,50 @@ config:
     type: integer
     default: 5
     minimum: 1
+  power_redistribution_connector_margin:
+    description: >-
+      Relative deadband per connector (PowerRedistribution strategy only). A connector counts
+      as under-consuming when its measured power is more than this fraction of its allocation
+      below the allocation. Under-consumption is only logged: the measurement based limit
+      already frees what a connector does not draw, without needing this classification.
+    type: number
+    default: 0.1
+    minimum: 0
+    maximum: 1
+  power_redistribution_site_margin:
+    description: >-
+      Relative reserve kept at the grid connection (PowerRedistribution strategy only). The
+      site counts as having headroom only when the measured site power is more than this
+      fraction of the grid limit below the grid limit. Separate from the connector margin
+      because the two are different engineering decisions: at 0.1 on a 100 kW site this is a
+      permanent 10 kW reserve, while the connector margin is a 10 % tolerance per session.
+    type: number
+    default: 0.1
+    minimum: 0
+    maximum: 1
+  power_redistribution_gain:
+    description: >-
+      Proportional gain of the increase law: a saturated connector is handed this fraction
+      of the headroom beyond the deadband, so steps are large far from the grid limit and
+      vanish close to it. 0 hands out nothing and reduces the site inference to a report,
+      which is how measurement based redistribution is switched off without switching off
+      the strategy.
+    type: number
+    default: 0.5
+    minimum: 0
+    maximum: 1
+  power_redistribution_hold_time_s:
+    description: >-
+      Time a reduce or increase condition must hold continuously before it is acted on [s].
+      Measured against the optimizer's start time, so it is independent of update_interval.
+
+      This is the only thing filtering an EV that is still ramping. IEC 61851-1 allows the
+      EV up to 5 s to follow a duty cycle change and real vehicles ramp over longer, so
+      every ramp looks like under-consumption until the hold expires; the minimum is that
+      response window. Set it above the worst case ramp of the vehicles on site.
+    type: integer
+    default: 10
+    minimum: 5
 provides:
   main:
     description: Main interface of the energy manager

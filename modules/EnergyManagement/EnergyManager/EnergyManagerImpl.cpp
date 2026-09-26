@@ -3,6 +3,7 @@
 
 #include <EnergyManagerImpl.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <iterator>
@@ -124,13 +125,163 @@ void EnergyManagerImpl::warn_about_unparsable_meters(const std::vector<std::stri
     }
 }
 
-PowerMeterAggregator::AggregateResult EnergyManagerImpl::get_leaf_aggregate() const {
+#ifdef BUILD_TESTING_MODULE_ENERGY_MANAGER
+PowerMeterAggregator::AggregateResult EnergyManagerImpl::get_site_aggregate() const {
     std::scoped_lock lock(energy_mutex);
-    return leaf_aggregate;
+    return site_aggregate;
 }
+#endif
 
 EnergyManagerImpl::~EnergyManagerImpl() {
     stop();
+}
+
+#ifdef BUILD_TESTING_MODULE_ENERGY_MANAGER
+RedistributionInference EnergyManagerImpl::get_redistribution_inference() const {
+    std::scoped_lock lock(energy_mutex);
+    return redistribution_inference;
+}
+#endif
+
+namespace {
+
+std::string format_W(const std::optional<float>& value) {
+    return value.has_value() ? fmt::format("{:.0f} W", value.value()) : std::string("n/a");
+}
+
+} // namespace
+
+void EnergyManagerImpl::infer_redistribution(const Market& market, const std::vector<std::shared_ptr<Broker>>& brokers,
+                                             const std::vector<types::energy::EnforcedLimits>& limits) {
+    const auto nominal_ac_voltage = static_cast<float>(config.nominal_ac_voltage);
+    const auto connector_margin = static_cast<float>(config.power_redistribution_connector_margin);
+    const auto site_margin = static_cast<float>(config.power_redistribution_site_margin);
+    const auto gain = static_cast<float>(config.power_redistribution_gain);
+    const auto hold_time = std::chrono::seconds(config.power_redistribution_hold_time_s);
+    const auto aggregation_window = std::chrono::seconds(config.power_meter_aggregation_window_s);
+    const auto now = globals.start_time;
+
+    RedistributionInference inference;
+    std::vector<SaturatedConnector> saturated;
+
+    for (const auto& broker : brokers) {
+        const auto& connector_market = broker->get_local_market();
+        const auto& node = connector_market.energy_flow_request;
+        // The broker loop above created an entry for every connector; at() rather than
+        // operator[] so a future reordering fails loudly instead of quietly inferring on a
+        // default constructed context.
+        auto& ctx = contexts.at(node.uuid);
+        const auto bounds = get_static_bounds_W(connector_market, nominal_ac_voltage);
+
+        // The measurement observed this run is the EV's response to what the previous run
+        // allotted, so those two are the pair to compare - but only while it is a live
+        // reading. The same freshness rule the site aggregate applies holds here: a meter
+        // that stopped publishing keeps reporting its last value in every request, and
+        // without this check a five minute old reading reads as a connector that could give
+        // power back. No measurement at all yields Unknown, which is what an unusable one
+        // deserves too.
+        std::optional<float> measured_W;
+        const auto& observed = ctx.last_observed_measurement;
+        if (observed.power_W.has_value() and is_fresh(observed.measured_at, now, aggregation_window)) {
+            measured_W = observed.power_W.value().total;
+        }
+        auto connector = classify_connector(ctx.last_allocated_W, measured_W, bounds, connector_margin);
+
+        const auto edge =
+            ctx.under_consuming.update(connector.connector_class == ConnectorClass::UnderConsuming, now, hold_time);
+        connector.held = ctx.under_consuming.held();
+
+        if (edge == HoldLatch::Edge::Held) {
+            EVLOG_info << fmt::format("{}: power can be reduced by {:.0f} W (allotted {}, measured {})", node.uuid,
+                                      connector.reducible_W, format_W(connector.allocated_W),
+                                      format_W(connector.measured_W));
+        } else if (edge == HoldLatch::Edge::Released) {
+            EVLOG_info << fmt::format("{}: power can no longer be reduced (allotted {}, measured {})", node.uuid,
+                                      format_W(connector.allocated_W), format_W(connector.measured_W));
+        }
+
+        if (connector.connector_class == ConnectorClass::Saturated) {
+            // Without an allocation or a static maximum there is nothing to clamp an
+            // increase against, so such a connector is not a candidate - and must not be
+            // counted among them either, or it would shrink the others' share.
+            if (const auto candidate = to_saturated_connector(node.uuid, connector, bounds)) {
+                saturated.push_back(candidate.value());
+            }
+        }
+
+        // Remember this run's allocation for the next run's comparison. Only sessions count:
+        // what an unplugged connector is allotted has no consumption to compare against, and
+        // it must not leak into the first run of the next session as a false gap.
+        ctx.last_allocated_W.reset();
+        if (in_session(node)) {
+            const auto limit =
+                std::find_if(limits.begin(), limits.end(), [&node](const auto& l) { return l.uuid == node.uuid; });
+            if (limit != limits.end()) {
+                ctx.last_allocated_W = get_allocated_power_W(*limit, nominal_ac_voltage);
+            }
+        }
+
+        inference.connectors[node.uuid] = connector;
+    }
+
+    auto site = infer_site(get_grid_limit_W(market, nominal_ac_voltage), site_aggregate, saturated, site_margin, gain);
+    site.meter_source = site_meter_source;
+
+    const auto site_edge = site_headroom.update(site.increase_W > 0.f, now, hold_time);
+    site.held = site_headroom.held();
+
+    const int granted = grant_site_headroom(site);
+
+    if (site_edge == HoldLatch::Edge::Held) {
+        EVLOG_info << fmt::format(
+            "granting {:.0f} W of headroom to {} of {} saturated connector(s) (grid limit {}, measured {} from {})",
+            site.increase_W, granted, site.saturated_connectors, format_W(site.grid_limit_W), format_W(site.measured_W),
+            to_string(site.meter_source));
+    } else if (site_edge == HoldLatch::Edge::Released) {
+        EVLOG_info << fmt::format("power can no longer be increased (grid limit {}, measured {}, headroom {})",
+                                  format_W(site.grid_limit_W), format_W(site.measured_W), format_W(site.headroom_W));
+    }
+
+    if (globals.debug) {
+        EVLOG_info << fmt::format("Redistribution: grid limit {}, measured {} ({}), headroom {}, {} saturated, "
+                                  "proposed increase {:.0f} W{}",
+                                  format_W(site.grid_limit_W), format_W(site.measured_W), to_string(site.meter_source),
+                                  format_W(site.headroom_W), site.saturated_connectors, site.increase_W,
+                                  site.held ? " (held)" : "");
+        for (const auto& [uuid, connector] : inference.connectors) {
+            const auto& distributed = contexts.at(uuid).distributed_power_W;
+            EVLOG_info << fmt::format(
+                "  {}: {} allotted {}, measured {}, reducible {:.0f} W{}{}", uuid, to_string(connector.connector_class),
+                format_W(connector.allocated_W), format_W(connector.measured_W), connector.reducible_W,
+                connector.held ? " (held)" : "",
+                distributed.has_value() ? fmt::format(", granted {:.0f} W", distributed.value()) : "");
+        }
+    }
+
+    inference.site = site;
+    redistribution_inference = inference;
+}
+
+int EnergyManagerImpl::grant_site_headroom(const SiteInference& site) {
+    // The hold is what keeps a single optimizer cycle of headroom - an EV between two ramp
+    // steps, a load that switched off for a second - from moving an allocation.
+    const bool granting = site.held;
+
+    // Every context, not only the connectors of this run: contexts outlive a run, and a
+    // connector that has left the tree must not keep a grant that nothing will clear.
+    int granted = 0;
+    for (auto& [uuid, context] : contexts) {
+        context.distributed_power_W.reset();
+        if (not granting) {
+            continue;
+        }
+        const auto share = site.increase_W_by_connector.find(uuid);
+        if (share != site.increase_W_by_connector.end()) {
+            context.distributed_power_W = share->second;
+            granted++;
+        }
+    }
+    return granted;
 }
 
 void EnergyManagerImpl::start() {
@@ -222,13 +373,13 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
     globals.init(start_time, config.schedule_interval_duration, config.schedule_total_duration, config.slice_ampere,
                  config.slice_watt, config.debug, request);
 
-    // Refresh the aggregated leaf measurements for this run. The aggregator is built from
-    // the tree each time, so a connector that disappeared from it stops contributing
-    // without anything having to remember to drop it.
-    PowerMeterAggregator leaf_aggregator(std::chrono::seconds(config.power_meter_aggregation_window_s));
-    collect_leaf_measurements(request, leaf_aggregator);
-    leaf_aggregate = leaf_aggregator.aggregate(globals.start_time);
-    warn_about_unparsable_meters(leaf_aggregate.unparsable_meters);
+    // Refresh the site measurement for this run. The aggregator is built from the tree each
+    // time, so a meter that disappeared from it stops contributing without anything having
+    // to remember to drop it.
+    PowerMeterAggregator site_aggregator(std::chrono::seconds(config.power_meter_aggregation_window_s));
+    site_meter_source = collect_site_measurement(request, site_aggregator);
+    site_aggregate = site_aggregator.aggregate(globals.start_time);
+    warn_about_unparsable_meters(site_aggregate.unparsable_meters);
 
     time_probe optimizer_start;
     optimizer_start.start();
@@ -237,10 +388,10 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
 
     if (globals.debug) {
         // Spell out the absence of a total rather than printing a zero that no meter reported.
-        const auto power = leaf_aggregate.power_W.has_value() ? fmt::format("{}W", leaf_aggregate.power_W.value().total)
+        const auto power = site_aggregate.power_W.has_value() ? fmt::format("{}W", site_aggregate.power_W.value().total)
                                                               : std::string("no reading");
-        EVLOG_info << fmt::format("Aggregated leaf power: {} from {} meter(s), {} stale", power,
-                                  leaf_aggregate.fresh_meters, leaf_aggregate.stale_meters);
+        EVLOG_info << fmt::format("Site power: {} from {} ({} meter(s), {} stale)", power, to_string(site_meter_source),
+                                  site_aggregate.fresh_meters, site_aggregate.stale_meters);
     }
 
     time_probe market_tp;
@@ -348,6 +499,10 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
 
             optimized_values.push_back(std::move(l));
         }
+    }
+
+    if (broker_strategy == BrokerStrategy::PowerRedistribution) {
+        infer_redistribution(market, brokers, optimized_values);
     }
 
     // Print out test case file

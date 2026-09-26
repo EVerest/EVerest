@@ -61,7 +61,202 @@ std::optional<float> add_margin(const std::optional<float>& phase, float margin_
     return phase.value() + margin_A;
 }
 
+// The per-phase ampere the site inference's watt grant is worth to this connector. Spread
+// over the phases it actually uses, because that is the shape a cap is expressed in: a
+// grant of 3 x 230 V x 1 A is one ampere on a three phase connector and three on a single
+// phase one. Returns 0 for anything unusable, so the caller adds nothing rather than having
+// to check.
+float distributed_current_A(const std::optional<float>& distributed_W, float nominal_ac_voltage, int active_phases) {
+    if (not distributed_W.has_value() or distributed_W.value() <= 0.f or nominal_ac_voltage <= 0.f) {
+        return 0.f;
+    }
+    return distributed_W.value() / nominal_ac_voltage / static_cast<float>(std::max(active_phases, 1));
+}
+
+std::optional<float> clamp_phase(const std::optional<float>& phase, float max_A) {
+    if (not phase.has_value()) {
+        return std::nullopt;
+    }
+    return std::min(phase.value(), max_A);
+}
+
+// Phase count to assume when a limit declares none. One, not three: an undeclared phase
+// count is missing information, and the safe reading of missing information about a limit
+// is the smaller limit. EnergyNode always declares it (energyImpl.cpp), so this only
+// covers a node that does not.
+constexpr int ASSUMED_PHASE_COUNT = 1;
+
+// An allocation this close to the static maximum counts as at the maximum. Trading happens
+// in slices of slice_ampere (0.5 A x 230 V = 115 W by default), so 1 W only absorbs
+// floating point noise of the two conversions.
+constexpr float AT_MAXIMUM_TOLERANCE_W = 1.f;
+
+// The limits in force at this node right now, from the offer the brokers traded against
+// rather than from the raw request. Returns nullptr when the node has no schedule at all.
+const types::energy::LimitsReq* active_limits(const Market& market) {
+    const auto& offer = market.get_import_max_available();
+    const auto slot = active_slot_index(offer);
+    if (not slot.has_value()) {
+        return nullptr;
+    }
+    return &offer[slot.value()].limits_to_root;
+}
+
+// Converts a limit to watt with the precedence used throughout: an explicit watt value
+// wins, otherwise the ampere value times the phase count times the nominal voltage.
+// Templated because LimitsReq (schedules) and LimitsRes (enforced limits) name these three
+// fields identically - which is also why they are read off the limit here rather than
+// passed alongside it, where a caller could pair one limit's watts with another's amperes.
+template <typename Limits> std::optional<float> limits_to_W(const Limits& limits, float nominal_ac_voltage) {
+    if (limits.total_power_W.has_value()) {
+        return limits.total_power_W.value().value;
+    }
+    if (limits.ac_max_current_A.has_value()) {
+        const auto phases =
+            limits.ac_max_phase_count.has_value() ? limits.ac_max_phase_count.value().value : ASSUMED_PHASE_COUNT;
+        return limits.ac_max_current_A.value().value * static_cast<float>(phases) * nominal_ac_voltage;
+    }
+    return std::nullopt;
+}
+
 } // namespace
+
+std::optional<float> get_grid_limit_W(const Market& root, float nominal_ac_voltage) {
+    const auto* limits = active_limits(root);
+    if (limits == nullptr) {
+        return std::nullopt;
+    }
+    return limits_to_W(*limits, nominal_ac_voltage);
+}
+
+std::optional<float> get_allocated_power_W(const types::energy::EnforcedLimits& limit, float nominal_ac_voltage) {
+    return limits_to_W(limit.limits_root_side, nominal_ac_voltage);
+}
+
+StaticBoundsW get_static_bounds_W(const Market& connector, float nominal_ac_voltage) {
+    StaticBoundsW bounds;
+    const auto* limits = active_limits(connector);
+    if (limits == nullptr) {
+        return bounds;
+    }
+
+    bounds.max_W = limits_to_W(*limits, nominal_ac_voltage);
+
+    if (limits->ac_min_current_A.has_value()) {
+        // The minimum purchase uses the smallest phase count the connector accepts; a
+        // connector that can charge single phase only needs min current on one phase.
+        const auto phases = limits->ac_min_phase_count.has_value()   ? limits->ac_min_phase_count.value().value
+                            : limits->ac_max_phase_count.has_value() ? limits->ac_max_phase_count.value().value
+                                                                     : ASSUMED_PHASE_COUNT;
+        bounds.min_W = limits->ac_min_current_A.value().value * static_cast<float>(phases) * nominal_ac_voltage;
+    }
+    return bounds;
+}
+
+const char* to_string(ConnectorClass c) {
+    switch (c) {
+    case ConnectorClass::UnderConsuming:
+        return "UnderConsuming";
+    case ConnectorClass::Saturated:
+        return "Saturated";
+    case ConnectorClass::AtMaximum:
+        return "AtMaximum";
+    case ConnectorClass::Unknown:
+    default:
+        return "Unknown";
+    }
+}
+
+ConnectorInference classify_connector(std::optional<float> allocated_W, std::optional<float> measured_W,
+                                      const StaticBoundsW& bounds, float margin) {
+    ConnectorInference result;
+    result.allocated_W = allocated_W;
+    result.measured_W = measured_W;
+
+    if (not allocated_W.has_value() or not measured_W.has_value() or allocated_W.value() <= 0.f) {
+        return result;
+    }
+
+    // Negative is export (see types/units.yaml). This inference is about the import
+    // schedule only, and a discharging connector has no import consumption to compare
+    // against its import allocation. Clamping it to zero instead would read as "consuming
+    // none of what it was allotted" and report the entire allocation as reducible.
+    if (measured_W.value() < 0.f) {
+        return result;
+    }
+
+    const float allocated = allocated_W.value();
+    const float measured = measured_W.value();
+    const float gap = allocated - measured;
+
+    if (gap > margin * allocated) {
+        result.connector_class = ConnectorClass::UnderConsuming;
+        // Shrink to the measurement plus margin, but never below what the EV needs to keep
+        // charging at all: reducing is meant to free unused power, not to starve a session.
+        float target = measured * (1.f + margin);
+        if (bounds.min_W.has_value()) {
+            target = std::max(target, bounds.min_W.value());
+        }
+        result.reducible_W = std::max(0.f, allocated - target);
+        return result;
+    }
+
+    if (bounds.max_W.has_value() and allocated + AT_MAXIMUM_TOLERANCE_W >= bounds.max_W.value()) {
+        result.connector_class = ConnectorClass::AtMaximum;
+    } else {
+        result.connector_class = ConnectorClass::Saturated;
+    }
+    return result;
+}
+
+std::optional<SaturatedConnector> to_saturated_connector(const std::string& uuid, const ConnectorInference& connector,
+                                                         const StaticBoundsW& bounds) {
+    if (not connector.allocated_W.has_value() or not bounds.max_W.has_value()) {
+        return std::nullopt;
+    }
+    return SaturatedConnector{uuid, connector.allocated_W.value(), bounds.max_W.value()};
+}
+
+SiteInference infer_site(std::optional<float> grid_limit_W, const PowerMeterAggregator::AggregateResult& aggregate,
+                         const std::vector<SaturatedConnector>& saturated, float margin, float gain) {
+    SiteInference site;
+    site.grid_limit_W = grid_limit_W;
+    site.saturated_connectors = static_cast<int>(saturated.size());
+
+    // Same trust rule as the aggregator's no-data contract: with any meter stale the sum
+    // undercounts consumption and overstates headroom, so no claim is made at all.
+    if (aggregate.power_W.has_value() and aggregate.fresh_meters > 0 and aggregate.stale_meters == 0) {
+        site.measured_W = aggregate.power_W.value().total;
+    }
+
+    if (not grid_limit_W.has_value() or not site.measured_W.has_value()) {
+        return site;
+    }
+
+    const float headroom = grid_limit_W.value() - site.measured_W.value();
+    site.headroom_W = headroom;
+
+    const float deadband = margin * grid_limit_W.value();
+    if (headroom <= deadband or saturated.empty() or gain <= 0.f) {
+        return site;
+    }
+
+    const float share = gain * (headroom - deadband) / static_cast<float>(saturated.size());
+    for (const auto& connector : saturated) {
+        const float room = std::max(0.f, connector.max_W - connector.allocated_W);
+        const float granted = std::min(share, room);
+        if (granted <= 0.f) {
+            // A connector already at its maximum is left out rather than recorded as 0 W:
+            // the map is what a broker acts on, and an entry there means "you may take
+            // more". It still counted towards the split, which is what makes the site total
+            // the sum of what was actually granted.
+            continue;
+        }
+        site.increase_W += granted;
+        site.increase_W_by_connector[connector.uuid] = granted;
+    }
+    return site;
+}
 
 ObservedMeasurement read_measurement(const types::energy::EnergyFlowRequest& node) {
     const auto* reading = find_reading(node);
@@ -208,16 +403,34 @@ void BrokerPowerRedistribution::decide_cap(const types::energy::EnergyFlowReques
         run_cap_source = "BrokerPowerRedistribution_SessionStart";
     }
 
+    const int active_phases = limits.ac_number_of_active_phases.value_or(ASSUMED_PHASE_COUNT);
+
     PhaseCurrents candidate;
     std::string source;
     if (measurement_can_limit(context.last_observed_measurement, globals.start_time,
                               redistribution.measurement_max_age)) {
-        const auto measured =
-            measured_phase_currents(context.last_observed_measurement, local_market.nominal_ac_voltage(),
-                                    limits.ac_number_of_active_phases.value_or(1));
-        candidate = {add_margin(measured.L1, redistribution.margin_A), add_margin(measured.L2, redistribution.margin_A),
-                     add_margin(measured.L3, redistribution.margin_A)};
-        source = "BrokerPowerRedistribution_MeasuredPlusMargin";
+        const auto measured = measured_phase_currents(context.last_observed_measurement,
+                                                      local_market.nominal_ac_voltage(), active_phases);
+        // The margin is what lets the connector rise at all; the distributed share is the
+        // part of the site headroom the previous run granted it, and rides on top of the
+        // margin rather than replacing it. Without a fresh measurement there is no share
+        // either: a share is an allowance to draw more than measured, and with nothing
+        // measured that is exactly the open-ended limit the fallback below exists to
+        // prevent.
+        const float distributed_A =
+            distributed_current_A(context.distributed_power_W, local_market.nominal_ac_voltage(), active_phases);
+        const float step_A = redistribution.margin_A + distributed_A;
+        candidate = {add_margin(measured.L1, step_A), add_margin(measured.L2, step_A), add_margin(measured.L3, step_A)};
+
+        // Never above what this connector may draw anyway. The market would clamp it too,
+        // but an unclamped cap would be carried in the context as if the connector had been
+        // allowed that much, which is not what the next run should depart from.
+        const float max_A = limits.ac_max_current_A.value().value;
+        candidate = {clamp_phase(candidate.L1, max_A), clamp_phase(candidate.L2, max_A),
+                     clamp_phase(candidate.L3, max_A)};
+
+        source = distributed_A > 0.f ? "BrokerPowerRedistribution_MeasuredPlusDistributed"
+                                     : "BrokerPowerRedistribution_MeasuredPlusMargin";
     }
     if (not to_scalar_cap(candidate).has_value()) {
         // No usable, fresh reading (or one no current can be derived from): the connector

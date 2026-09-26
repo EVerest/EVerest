@@ -42,6 +42,10 @@ inline EnergyManagerConfig make_default_config() {
     c.redistribution_reduction_hold_s = 30;
     c.redistribution_measurement_max_age_s = 10;
     c.power_meter_aggregation_window_s = 5;
+    c.power_redistribution_connector_margin = 0.1;
+    c.power_redistribution_site_margin = 0.1;
+    c.power_redistribution_gain = 0.5;
+    c.power_redistribution_hold_time_s = 10;
     return c;
 }
 
@@ -129,6 +133,20 @@ inline void set_measurement(types::energy::EnergyFlowRequest& node, float power_
     power.total = power_W;
     p.power_W = power;
     node.energy_usage_leaves = p;
+}
+
+// Attach a root-side measurement: the node's own meter. This is what EnergyNode publishes
+// for a grid connection point, and on a site with other loads it is the only meter that
+// sees them.
+inline void set_root_measurement(types::energy::EnergyFlowRequest& node, float power_W,
+                                 const std::string& timestamp = "2026-08-04T12:00:00.000Z") {
+    types::powermeter::Powermeter p;
+    p.timestamp = timestamp;
+    p.energy_Wh_import.total = 0.0f;
+    types::units::Power power;
+    power.total = power_W;
+    p.power_W = power;
+    node.energy_usage_root = p;
 }
 
 // Attach a leaves-side per-phase current measurement. Merges into an existing
