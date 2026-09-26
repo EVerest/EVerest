@@ -4,7 +4,11 @@
 #include "systemImpl.hpp"
 #include "diagnostics_handler.hpp"
 
+#include <chrono>
+#include <ctime>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
 
 #include <everest/run_application/run_application.hpp>
 
@@ -17,6 +21,19 @@ const std::string CONSTANTS = "constants.env";
 const std::string DIAGNOSTICS_UPLOADER = "diagnostics_uploader.sh";
 
 namespace fs = std::filesystem;
+
+std::string systemImpl::create_logs_filename(const std::string& type) {
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t t = std::chrono::system_clock::to_time_t(now);
+
+    std::tm tm{};
+    localtime_r(&t, &tm);
+
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%dT%H-%M-%SZ");
+
+    return type + "-" + oss.str();
+}
 
 // FIXME (aw): this function needs to be refactored into some kind of utility library
 fs::path create_temp_file(const fs::path& dir, const std::string& prefix) {
@@ -69,8 +86,8 @@ systemImpl::handle_upload_logs(types::system::UploadLogsRequest& upload_logs_req
         response.upload_logs_status = types::system::UploadLogsStatus::Accepted;
     }
 
-    const auto date_time = Everest::Date::to_rfc3339(date::utc_clock::now());
-    const auto diagnostics_file_path = create_temp_file(fs::temp_directory_path(), "diagnostics-" + date_time);
+    const auto diagnostics_file_path =
+        create_temp_file(fs::temp_directory_path(), this->create_logs_filename("diagnostics"));
     const auto diagnostics_file_name = diagnostics_file_path.filename().string();
 
     response.upload_logs_status = types::system::UploadLogsStatus::Accepted;
