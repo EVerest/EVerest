@@ -132,13 +132,22 @@ private:
     void scheduled_check_client_certificate_expiration();
     void scheduled_check_v2g_certificate_expiration();
 
-    /// \brief Check one SECC leaf (V2GCertificate or V2G20Certificate) and request a new one when it is missing or
-    /// expires within 30 days
-    /// \return true when a SignCertificate.req was sent
-    bool check_secc_certificate_expiration(const ocpp::CertificateSigningUseEnum& certificate_signing_use);
+    /// \brief Request a new SECC leaf (V2GCertificate or V2G20Certificate) when it is missing or expires within 30
+    /// days
+    /// \return true when a SignCertificate.req for it is outstanding afterwards; false when it is not due or the
+    /// request could not be sent
+    bool renew_secc_certificate_if_due(const ocpp::CertificateSigningUseEnum& certificate_signing_use);
+
+    /// \brief Which SECC leaf goes first when both are due, alternated per check: only one SignCertificate.req can
+    /// be outstanding, and a fixed order would let a leaf the CSMS never issues starve the other
+    bool check_v2g20_leaf_first{false};
 
 public:
     bool v2g20_certificate_installation_enabled() const override;
+
+    /// \brief Requests a new SECC leaf for each one that is missing or expires within 30 days, at most one per
+    /// call. Run by the v2g_certificate_expiration_check_timer.
+    void check_secc_certificates_expiration();
 };
 } // namespace v2
 } // namespace ocpp
