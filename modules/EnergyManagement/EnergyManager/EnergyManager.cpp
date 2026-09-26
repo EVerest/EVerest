@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 #include "EnergyManager.hpp"
 #include "Broker.hpp"
 #include "BrokerFastCharging.hpp"
@@ -25,6 +25,11 @@ void EnergyManager::init() {
     energy_manager_config.switch_3ph1ph_switch_limit_stickyness = config.switch_3ph1ph_switch_limit_stickyness;
     energy_manager_config.switch_3ph1ph_power_hysteresis_W = config.switch_3ph1ph_power_hysteresis_W;
     energy_manager_config.switch_3ph1ph_time_hysteresis_s = config.switch_3ph1ph_time_hysteresis_s;
+    energy_manager_config.broker_strategy = config.broker_strategy;
+    energy_manager_config.redistribution_margin_A = config.redistribution_margin_A;
+    energy_manager_config.redistribution_start_with_lower_limit = config.redistribution_start_with_lower_limit;
+    energy_manager_config.redistribution_reduction_hold_s = config.redistribution_reduction_hold_s;
+    energy_manager_config.redistribution_measurement_max_age_s = config.redistribution_measurement_max_age_s;
 
     const auto enforce_limits_callback = [this](const std::vector<types::energy::EnforcedLimits>& limits) {
         const types::energy::NumberWithSource nonumber = {-9999.0};
@@ -51,6 +56,15 @@ void EnergyManager::ready() {
     invoke_ready(*p_main);
 
     this->impl->start();
+}
+
+void EnergyManager::shutdown() {
+    // Stop the optimizer loop before the implementation goes away. ev-cli added this hook;
+    // leaving it empty would let a thread that reads this module's state keep running past
+    // shutdown, which is exactly what the hook exists to prevent.
+    this->impl->stop();
+
+    invoke_shutdown(*p_main);
 }
 
 } // namespace module
