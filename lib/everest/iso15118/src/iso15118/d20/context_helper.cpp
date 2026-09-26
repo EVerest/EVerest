@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
-#include <ctime>
+#include <chrono>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/helper.hpp>
@@ -23,8 +23,32 @@
 
 namespace iso15118::d20 {
 
-static inline void setup_timestamp(message_20::Header& header) {
-    header.timestamp = static_cast<uint64_t>(std::time(nullptr));
+namespace {
+void setup_timestamp(message_20::Header& header) {
+    const auto secc_time_us = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count());
+    header.timestamp = secc_time_us; // [V2G20-2676] Header timestamp is secc time encoded at microseconds resolution
+}
+
+template <typename Response> Response handle_sequence_error(const d20::Session& session) {
+    Response res;
+    setup_header(res.header, session);
+    return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_SequenceError);
+}
+
+} // namespace
+
+//[V2G20-1529] Note 2
+uint64_t secc_time_s() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+uint64_t secc_time_ms() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count());
 }
 
 bool validate_and_setup_header(message_20::Header& header, const Session& cur_session,
@@ -38,12 +62,6 @@ bool validate_and_setup_header(message_20::Header& header, const Session& cur_se
 void setup_header(message_20::Header& header, const Session& cur_session) {
     header.session_id = cur_session.get_id();
     setup_timestamp(header);
-}
-
-template <typename Response> Response handle_sequence_error(const d20::Session& session) {
-    Response res;
-    setup_header(res.header, session);
-    return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_SequenceError);
 }
 
 // Todo(sl): Not happy at all. Need refactoring. Only ctx.respond and Session is needed. Not the whole Context.
