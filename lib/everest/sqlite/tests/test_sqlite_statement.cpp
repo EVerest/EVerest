@@ -6,6 +6,7 @@
 #include <everest/database/sqlite/statement.hpp>
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <filesystem>
 #include <string>
 
@@ -135,6 +136,43 @@ TEST_F(SQLiteStatementTest, BindInt64NamedParameter) {
     auto select_stmt = db->new_statement("SELECT value FROM test_table WHERE name = 'int64_named';");
     ASSERT_EQ(select_stmt->step(), SQLITE_ROW);
     EXPECT_EQ(select_stmt->column_int64(0), big_value);
+}
+
+TEST_F(SQLiteStatementTest, BindDatetimeAndReadBack) {
+    const auto original =
+        std::chrono::system_clock::time_point{std::chrono::milliseconds{1'704'067'200'123}}; // 2024-01-01T00:00:00.123Z
+
+    auto insert_stmt = db->new_statement("INSERT INTO test_table (name, value, score) VALUES (?, ?, ?);");
+    insert_stmt->bind_text(1, "datetime_test");
+    insert_stmt->bind_datetime(2, original);
+    insert_stmt->bind_double(3, 0.0);
+    ASSERT_EQ(insert_stmt->step(), SQLITE_DONE);
+
+    auto select_stmt = db->new_statement("SELECT value FROM test_table WHERE name = 'datetime_test';");
+    ASSERT_EQ(select_stmt->step(), SQLITE_ROW);
+    EXPECT_EQ(select_stmt->column_int64(0),
+              std::chrono::duration_cast<std::chrono::milliseconds>(original.time_since_epoch()).count());
+    EXPECT_EQ(select_stmt->column_datetime(0), original);
+}
+
+TEST_F(SQLiteStatementTest, BindDatetimeNamedParameter) {
+    const auto original =
+        std::chrono::system_clock::time_point{std::chrono::milliseconds{1'609'459'200'000}}; // 2021-01-01T00:00:00Z
+
+    auto insert_stmt = db->new_statement("INSERT INTO test_table (name, value, score) VALUES (:name, :value, :score);");
+    insert_stmt->bind_text(":name", "datetime_named", SQLiteString::Transient);
+    insert_stmt->bind_datetime(":value", original);
+    insert_stmt->bind_double(":score", 1.0);
+    ASSERT_EQ(insert_stmt->step(), SQLITE_DONE);
+
+    auto select_stmt = db->new_statement("SELECT value FROM test_table WHERE name = 'datetime_named';");
+    ASSERT_EQ(select_stmt->step(), SQLITE_ROW);
+    EXPECT_EQ(select_stmt->column_datetime(0), original);
+}
+
+TEST_F(SQLiteStatementTest, BindDatetimeInvalidParameterThrows) {
+    auto stmt = db->new_statement("SELECT * FROM test_table WHERE value = :value;");
+    EXPECT_THROW(stmt->bind_datetime(":missing", std::chrono::system_clock::now()), std::out_of_range);
 }
 
 TEST_F(SQLiteStatementTest, StatementDestructorFinalizesStatement) {
