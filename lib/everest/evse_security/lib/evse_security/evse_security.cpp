@@ -348,6 +348,19 @@ EvseSecurity::EvseSecurity(const FilePaths& file_paths, const std::optional<std:
 
 EvseSecurity::~EvseSecurity() = default;
 
+void EvseSecurity::set_max_fs_certificate_store_entries(std::uintmax_t value) {
+    const std::lock_guard<std::mutex> guard(EvseSecurity::security_mutex);
+
+    if (value == 0) {
+        EVLOG_warning << "Ignoring invalid max_fs_certificate_store_entries value 0";
+        return;
+    }
+
+    EVLOG_info << "Updating max_fs_certificate_store_entries from " << this->max_fs_certificate_store_entries << " to "
+               << value;
+    this->max_fs_certificate_store_entries = value;
+}
+
 InstallCertificateResult EvseSecurity::install_ca_certificate(const std::string& certificate,
                                                               CaCertificateType certificate_type) {
     const std::lock_guard<std::mutex> guard(EvseSecurity::security_mutex);
