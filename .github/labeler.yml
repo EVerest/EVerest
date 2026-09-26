@@ -1,0 +1,216 @@
+# Path based pull request labels, applied by .github/workflows/on_pr_auto-label.yaml
+# through actions/labeler. Labels are only added, never removed.
+#
+# Extend this file when adding a module tree or library. Labels with release
+# semantics (backport *, include-in-release, EVerestAPI *, experimental,
+# deprecation) stay manual and must not appear here.
+
+changed-files-labels-limit: 10
+
+OCPP:
+  - changed-files:
+      - any-glob-to-any-file:
+          - modules/EVSE/OCPP/**
+          - modules/EVSE/OCPP201/**
+          - modules/EVSE/OCPPmulti/**
+          - lib/everest/ocpp/**
+          - lib/everest/ocpp_module_common/**
+          - tests/ocpp_tests/**
+
+ISO15118:
+  - changed-files:
+      - any-glob-to-any-file:
+          - modules/EVSE/Evse15118D20/**
+          - modules/EVSE/EvseV2G/**
+          - modules/EVSE/IsoMux/**
+          - modules/EVSE/Iso15118InternetVas/**
+          - modules/EVSE/StaticISO15118VASProvider/**
+          - modules/EV/PyEvJosev/**
+          - lib/everest/iso15118/**
+          - lib/everest/cbv2g/**
+          - applications/cbv2g_json_wrapper/**
+
+interfaces:
+  - changed-files:
+      - any-glob-to-any-file:
+          - interfaces/**
+          - types/**
+          - errors/**
+
+EvseManager:
+  - changed-files:
+      - any-glob-to-any-file:
+          - modules/EVSE/EvseManager/**
+
+EV:
+  - changed-files:
+      - any-glob-to-any-file:
+          - modules/EV/**
+          - modules/HardwareDrivers/EV/**
+
+framework:
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/everest/framework/**
+
+ev-cli:
+  - changed-files:
+      - any-glob-to-any-file:
+          - applications/utils/ev-dev-tools/**
+
+dependency manager:
+  - changed-files:
+      - any-glob-to-any-file:
+          - applications/dependency_manager/**
+
+evse-security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - modules/EVSE/EvseSecurity/**
+          - lib/everest/evse_security/**
+
+sqlite:
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/everest/sqlite/**
+
+yocto:
+  - changed-files:
+      - any-glob-to-any-file:
+          - yocto/**
+
+CI/CD:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - .ci/**
+          - applications/containers/**
+
+testing:
+  - changed-files:
+      - any-glob-to-any-file:
+          - tests/**
+          - modules/Testing/**
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - '*.md'
+          - cmake/trailbook/**
+          - cmake/trailbook-ext-everest/**
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - dependencies.yaml
+          - third-party/**
+          - lib/3rd_party/**
+
+devx:
+  - changed-files:
+      - any-glob-to-any-file:
+          - applications/everest_dev_tool/**
+          - applications/devrd/**
+          - AGENTS.md
+          - CLAUDE.md
+          - .clang-format
+          - .prettierrc.yaml
+
+AsyncAPI:
+  - changed-files:
+      - any-glob-to-any-file:
+          - modules/API/EVerestAPI/**
+          - docs/source/reference/EVerest_API/**
+          - lib/everest/everest_api_types/include/**
+          - lib/everest/everest_api_types/private_include/**
+          - lib/everest/everest_api_types/src/**
+          - lib/everest/everest_api_types/tests/manual_tests/**
+          - lib/everest/everest_api_types/tests/test_file_autogenerator/**
+          - lib/everest/everest_api_module_helpers/**
+          - tests/async_api_tests/**
+          - lib/everest/framework/src/management_api/**
+          - lib/everest/framework/tests/api/**
+          - applications/utils/everest-management-api-cli/**
+          - tests/management_api_tests/**
+
+RpcApi:
+  - changed-files:
+      - any-glob-to-any-file:
+          - modules/API/RpcApi/**
+
+configuration:
+  - changed-files:
+      - any-glob-to-any-file:
+          - config/**
+          - lib/everest/ocpp/config/**
+          - modules/API/EVerestAPI/*/manifest.yaml
+          - modules/API/RpcApi/manifest.yaml
+          - modules/EnergyManagement/*/manifest.yaml
+          - modules/EV/*/manifest.yaml
+          - modules/EVSE/*/manifest.yaml
+          - modules/HardwareDrivers/*/*/manifest.yaml
+          - modules/Misc/*/manifest.yaml
+
+EnergyManagement:
+  - changed-files:
+      - any-glob-to-any-file:
+          - modules/EnergyManagement/**
+          - lib/everest/external_energy_limits/**
+          - tests/eebus_tests/**
+
+HardwareDrivers:
+  - changed-files:
+      - any-glob-to-any-file:
+          - modules/HardwareDrivers/**
+          - lib/everest/can_dpm1000/**
+          - lib/everest/gpio/**
+
+Auth:
+  - changed-files:
+      - any-glob-to-any-file:
+          - modules/EVSE/Auth/**
+          - modules/Misc/LocalAllowlistTokenValidator/**
+
+slac:
+  - changed-files:
+      - any-glob-to-any-file:
+          - modules/EVSE/EvseSlac/**
+          - modules/EV/EvSlac/**
+          - lib/everest/slac/**
+
+Simulation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - modules/Simulation/**
+
+io/tls:
+  - changed-files:
+      - any-glob-to-any-file:
+          - lib/everest/io/**
+          - lib/everest/tls/**
+
+bazel:
+  - changed-files:
+      - any-glob-to-any-file:
+          - MODULE.bazel
+          - '**/*.bzl'
+          - third-party/bazel/**
+          - lib/everest/framework/bazel/** 
+
+rust:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.rs'
+          - '**/Cargo.toml'
+          - '**/Cargo.lock'
+          - lib/everest/framework/everestrs/**
+
+cmake:
+  - changed-files:
+      - any-glob-to-any-file:
+          - cmake/**
+          - CMakeLists.txt
+          - module-dependencies.cmake
+          - **/*.cmake
+          - lib/everest/framework/cmake/**
