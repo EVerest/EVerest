@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "extensions/trusted_ca_keys.hpp"
 #include <everest/tls/openssl_util.hpp>
 #include <everest/tls/tls.hpp>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <iterator>
 #include <openssl/ssl.h>
@@ -145,6 +146,31 @@ TEST(OcspCache, init) {
     // std::cout << "digest: " << to_string(digest) << std::endl;
     auto res = cache.lookup(digest);
     EXPECT_NE(res.get(), nullptr);
+}
+
+TEST(OcspCache, loadKeepsTheResponsesThatParse) {
+    // a stale or corrupt cache file must not drop the responses that do parse
+    {
+        std::ofstream garbage("garbage_ocsp_response.der");
+        garbage << "not a DER encoded OCSP response";
+    }
+
+    auto chain = openssl::load_certificates("client_chain.pem");
+    ASSERT_GE(chain.size(), 2);
+
+    tls::OcspCache::digest_t garbage_digest{};
+    tls::OcspCache::digest_t good_digest{};
+    ASSERT_TRUE(tls::OcspCache::digest(garbage_digest, chain[0].get()));
+    ASSERT_TRUE(tls::OcspCache::digest(good_digest, chain[1].get()));
+
+    std::vector<tls::OcspCache::ocsp_entry_t> entries;
+    entries.emplace_back(garbage_digest, "garbage_ocsp_response.der");
+    entries.emplace_back(good_digest, "ocsp_response.der");
+
+    tls::OcspCache cache;
+    EXPECT_FALSE(cache.load(entries));
+    EXPECT_EQ(cache.lookup(garbage_digest).get(), nullptr);
+    EXPECT_NE(cache.lookup(good_digest).get(), nullptr);
 }
 
 TEST(TrustedCaKeys, parseAudi) {
