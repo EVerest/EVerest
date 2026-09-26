@@ -249,6 +249,34 @@ protected:
     };
 };
 
+// \brief Test transmission priority decisions before and after registration is accepted
+TEST(MessageTransmissionPriorityTest, test_non_transactional_discarded_before_registration) {
+    EXPECT_EQ(get_message_transmission_priority(false, false, false, false, false),
+              MessageTransmissionPriority::Discard);
+}
+
+TEST(MessageTransmissionPriorityTest, test_sent_immediately_after_registration) {
+    EXPECT_EQ(get_message_transmission_priority(false, false, true, false, false),
+              MessageTransmissionPriority::SendImmediately);
+    EXPECT_EQ(get_message_transmission_priority(false, false, true, false, false, true),
+              MessageTransmissionPriority::SendImmediately);
+}
+
+TEST(MessageTransmissionPriorityTest, test_transactional_queued_before_registration) {
+    EXPECT_EQ(get_message_transmission_priority(false, false, false, true, false),
+              MessageTransmissionPriority::SendAfterRegistrationStatusAccepted);
+}
+
+TEST(MessageTransmissionPriorityTest, test_queue_all_messages_queued_before_registration) {
+    EXPECT_EQ(get_message_transmission_priority(false, false, false, false, true),
+              MessageTransmissionPriority::SendAfterRegistrationStatusAccepted);
+}
+
+TEST(MessageTransmissionPriorityTest, test_queue_until_accepted_queued_before_registration) {
+    EXPECT_EQ(get_message_transmission_priority(false, false, false, false, false, true),
+              MessageTransmissionPriority::SendAfterRegistrationStatusAccepted);
+}
+
 // \brief Test sending a transactional message
 TEST_F(MessageQueueTest, test_transactional_message_is_sent) {
 
