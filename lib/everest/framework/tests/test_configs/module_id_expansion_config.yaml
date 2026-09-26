@@ -1,0 +1,24 @@
+active_modules:
+  connector_1:
+    module: TESTValidManifest
+    config_module:
+      valid_config_entry: "prefix-${module_id}-${unknown}-${module_id}"
+    config_implementation:
+      main:
+        valid_config_entry: "impl-${module_id}"
+  connector-2:
+    module: TESTValidManifest
+    config_module:
+      valid_config_entry: "/srv/everest/${module_id}"
+    config_implementation:
+      main:
+        valid_config_entry: "unchanged"
+
+settings:
+  interfaces_dir: "interfaces"
+  modules_dir: "modules"
+  types_dir: "types"
+  errors_dir: "errors"
+  schemas_dir: "schemas"
+  www_dir: "www"
+  logging_config_file: "logging.ini"
