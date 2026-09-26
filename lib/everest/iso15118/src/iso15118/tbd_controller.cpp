@@ -436,6 +436,20 @@ config::SSLConfig TbdController::connection_ssl_config() const {
     return ssl_config_snapshot();
 }
 
+void TbdController::update_der_iec_limits(const std::optional<d20::IecDerTransferLimits>& limits) {
+    // Applies to the next session: SessionConfig reads the DER limits at construction.
+    auto s = evse_setup.handle();
+    s->der_iec_limits = limits;
+}
+
+void TbdController::update_der_sae_limits(const std::optional<d20::SaeDerTransferLimits>& limits,
+                                          const std::optional<d20::DerSaeSetupConfig>& setup_config) {
+    // Applies to the next session, as update_der_iec_limits does.
+    auto s = evse_setup.handle();
+    s->der_sae_limits = limits;
+    s->der_sae_setup_config = setup_config;
+}
+
 void TbdController::set_dlink_ready(bool ready) {
     if (sdp_server) {
         sdp_server->set_dlink_ready(ready);
