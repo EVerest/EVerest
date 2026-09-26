@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spyclient-api"
+version = "0.1.0"
+description = "MQTT spy client for the EVerest API, used by the EVerest API command line client"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.8"
+dependencies = [
+    "paho-mqtt>=2.0",
+    "cmd2>=2.4,<3",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.autopep8]
+max_line_length = 120
