@@ -14,8 +14,10 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
+#include "../supported_measurements.hpp"
 #include <optional>
 #include <string>
+#include <vector>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -55,37 +57,36 @@ private:
     virtual void ready() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
-    enum PowermeterRegisters {
-        // do not change order or index of these elements!
-        ENERGY_WH_IMPORT_TOTAL,
-        ENERGY_WH_IMPORT_L1,
-        ENERGY_WH_IMPORT_L2,
-        ENERGY_WH_IMPORT_L3,
-        ENERGY_WH_EXPORT_TOTAL,
-        ENERGY_WH_EXPORT_L1,
-        ENERGY_WH_EXPORT_L2,
-        ENERGY_WH_EXPORT_L3,
-        POWER_W_TOTAL,
-        POWER_W_L1,
-        POWER_W_L2,
-        POWER_W_L3,
-        VOLTAGE_V_DC,
-        VOLTAGE_V_L1,
-        VOLTAGE_V_L2,
-        VOLTAGE_V_L3,
-        REACTIVE_POWER_VAR_TOTAL,
-        REACTIVE_POWER_VAR_L1,
-        REACTIVE_POWER_VAR_L2,
-        REACTIVE_POWER_VAR_L3,
-        CURRENT_A_DC,
-        CURRENT_A_L1,
-        CURRENT_A_L2,
-        CURRENT_A_L3,
-        FREQUENCY_HZ_L1,
-        FREQUENCY_HZ_L2,
-        FREQUENCY_HZ_L3,
-        NUM_PM_REGISTERS
-    };
+    // Register indices live in generic_powermeter::PowermeterRegisterIndex (keep order stable).
+    using PowermeterRegisters = generic_powermeter::PowermeterRegisterIndex;
+    static constexpr auto ENERGY_WH_IMPORT_TOTAL = PowermeterRegisters::ENERGY_WH_IMPORT_TOTAL;
+    static constexpr auto ENERGY_WH_IMPORT_L1 = PowermeterRegisters::ENERGY_WH_IMPORT_L1;
+    static constexpr auto ENERGY_WH_IMPORT_L2 = PowermeterRegisters::ENERGY_WH_IMPORT_L2;
+    static constexpr auto ENERGY_WH_IMPORT_L3 = PowermeterRegisters::ENERGY_WH_IMPORT_L3;
+    static constexpr auto ENERGY_WH_EXPORT_TOTAL = PowermeterRegisters::ENERGY_WH_EXPORT_TOTAL;
+    static constexpr auto ENERGY_WH_EXPORT_L1 = PowermeterRegisters::ENERGY_WH_EXPORT_L1;
+    static constexpr auto ENERGY_WH_EXPORT_L2 = PowermeterRegisters::ENERGY_WH_EXPORT_L2;
+    static constexpr auto ENERGY_WH_EXPORT_L3 = PowermeterRegisters::ENERGY_WH_EXPORT_L3;
+    static constexpr auto POWER_W_TOTAL = PowermeterRegisters::POWER_W_TOTAL;
+    static constexpr auto POWER_W_L1 = PowermeterRegisters::POWER_W_L1;
+    static constexpr auto POWER_W_L2 = PowermeterRegisters::POWER_W_L2;
+    static constexpr auto POWER_W_L3 = PowermeterRegisters::POWER_W_L3;
+    static constexpr auto VOLTAGE_V_DC = PowermeterRegisters::VOLTAGE_V_DC;
+    static constexpr auto VOLTAGE_V_L1 = PowermeterRegisters::VOLTAGE_V_L1;
+    static constexpr auto VOLTAGE_V_L2 = PowermeterRegisters::VOLTAGE_V_L2;
+    static constexpr auto VOLTAGE_V_L3 = PowermeterRegisters::VOLTAGE_V_L3;
+    static constexpr auto REACTIVE_POWER_VAR_TOTAL = PowermeterRegisters::REACTIVE_POWER_VAR_TOTAL;
+    static constexpr auto REACTIVE_POWER_VAR_L1 = PowermeterRegisters::REACTIVE_POWER_VAR_L1;
+    static constexpr auto REACTIVE_POWER_VAR_L2 = PowermeterRegisters::REACTIVE_POWER_VAR_L2;
+    static constexpr auto REACTIVE_POWER_VAR_L3 = PowermeterRegisters::REACTIVE_POWER_VAR_L3;
+    static constexpr auto CURRENT_A_DC = PowermeterRegisters::CURRENT_A_DC;
+    static constexpr auto CURRENT_A_L1 = PowermeterRegisters::CURRENT_A_L1;
+    static constexpr auto CURRENT_A_L2 = PowermeterRegisters::CURRENT_A_L2;
+    static constexpr auto CURRENT_A_L3 = PowermeterRegisters::CURRENT_A_L3;
+    static constexpr auto FREQUENCY_HZ_L1 = PowermeterRegisters::FREQUENCY_HZ_L1;
+    static constexpr auto FREQUENCY_HZ_L2 = PowermeterRegisters::FREQUENCY_HZ_L2;
+    static constexpr auto FREQUENCY_HZ_L3 = PowermeterRegisters::FREQUENCY_HZ_L3;
+    static constexpr auto NUM_PM_REGISTERS = PowermeterRegisters::NUM_PM_REGISTERS;
 
     enum ModbusFunctionType {
         READ_HOLDING_REGISTER,
@@ -120,6 +121,7 @@ private:
                                        const std::string& register_selector, const std::string& sublevel_selector,
                                        const uint8_t offset);
     powermeterImpl::ModbusFunctionType select_modbus_function(const uint8_t function_code);
+    void publish_supported_measurements();
     void read_powermeter_values();
     bool read_register(const RegisterData& register_config);
     bool process_response(
