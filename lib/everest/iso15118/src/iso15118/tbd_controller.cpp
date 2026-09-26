@@ -35,8 +35,8 @@ struct DriverRunningGuard {
 
 TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_, d20::EvseSetupConfig setup_) :
     TbdController(std::move(config_), std::move(callbacks_), std::move(setup_),
-                  [](io::PollManager& poll_manager_, const std::string& interface_name_) {
-                      return std::make_unique<io::ConnectionPlain>(poll_manager_, interface_name_);
+                  [tcp_port = config_.tcp_port](io::PollManager& poll_manager_, const std::string& interface_name_) {
+                      return std::make_unique<io::ConnectionPlain>(poll_manager_, interface_name_, tcp_port);
                   }) {
 }
 
@@ -373,9 +373,10 @@ void TbdController::handle_sdp_server_input() {
     auto connection = [this](bool secure_connection) -> std::unique_ptr<io::IConnection> {
         try {
             if (secure_connection) {
-                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, connection_ssl_config());
+                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, connection_ssl_config(),
+                                                           config.tcp_port);
             }
-            return std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
+            return std::make_unique<io::ConnectionPlain>(poll_manager, interface_name, config.tcp_port);
         } catch (const std::runtime_error& e) {
             logf_error("%s", e.what());
             return nullptr;

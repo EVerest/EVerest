@@ -93,7 +93,7 @@ SCENARIO("ConnectionPlain::read reports a fatal errno as a closed connection") {
         iso15118::io::set_logging_callback([](iso15118::LogLevel, const std::string&) {});
 
         iso15118::io::PollManager poll_manager;
-        iso15118::io::ConnectionPlain connection(poll_manager, LOOPBACK_IFACE);
+        iso15118::io::ConnectionPlain connection(poll_manager, LOOPBACK_IFACE, SERVER_PORT);
 
         std::atomic<bool> connection_open{false};
         std::atomic<bool> reset_done{false};
