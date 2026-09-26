@@ -14,7 +14,6 @@ function(setup_ev_cli)
         endif()
 
         get_target_property(SOURCE_DIRECTORY ev_pip_package_ev-dev-tools SOURCE_DIRECTORY)
-        message(STATUS "Installing ev-cli from: ${SOURCE_DIRECTORY}")
         ev_pip_install_local(
             PACKAGE_NAME "ev-dev-tools"
             PACKAGE_SOURCE_DIRECTORY "${SOURCE_DIRECTORY}"
