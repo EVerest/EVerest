@@ -155,9 +155,8 @@ void Auth::ready() {
                 EVLOG_info << "Call reserved callback for evse id " << evse_id.value();
 
                 if (!this->r_evse_manager.at(evse_id.value() - 1)->call_reserve(reservation_id)) {
-                    EVLOG_warning << "EVSE manager does not allow placing a reservation for evse id " << evse_id.value()
-                                  << ": cancelling reservation.";
-                    this->auth_handler->handle_cancel_reservation(reservation_id);
+                    EVLOG_warning << "EVSE manager does not allow placing a reservation for evse id "
+                                  << evse_id.value();
                     return false;
                 }
             }

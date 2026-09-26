@@ -84,9 +84,26 @@ int32_t AuthHandler::get_evse_id_by_index(const int evse_index) {
 }
 
 void AuthHandler::initialize() {
-    std::lock_guard<std::mutex> lock(this->event_mutex);
-    this->reservation_handler.load_reservations();
-    check_evse_reserved_and_send_updates();
+    std::vector<std::pair<int, int32_t>> to_apply;
+    {
+        std::lock_guard<std::mutex> lock(this->event_mutex);
+        this->reservation_handler.load_reservations();
+        check_evse_reserved_and_send_updates();
+
+        for (const auto& [evse_id, evse_context] : this->evses) {
+            if (!evse_context->reported_enabled) {
+                continue;
+            }
+            const auto reservation_id = this->reservation_handler.take_restored_reservation(evse_id);
+            if (reservation_id.has_value()) {
+                to_apply.emplace_back(evse_id, reservation_id.value());
+            }
+        }
+    }
+
+    for (const auto& [evse_id, reservation_id] : to_apply) {
+        this->apply_restored_reservation(evse_id, reservation_id);
+    }
 }
 
 TokenHandlingResult AuthHandler::on_token(const ProvidedIdToken& provided_token) {
@@ -805,136 +822,149 @@ void AuthHandler::handle_permanent_fault_cleared(const int evse_id, const int32_
 }
 
 void AuthHandler::handle_session_event(const int evse_id, const SessionEvent& event) {
-    std::unique_lock<std::mutex> lk(this->event_mutex);
-    // When connector id is not specified, it is assumed to be '1'.
-    const int32_t connector_id = event.connector_id.value_or(1);
-    if (evse_id <= 0) {
-        EVLOG_error << "Handle session event: Evse id is <= 0: That should not be possible.";
-        return;
-    }
+    std::optional<int32_t> restored_reservation_id;
+    {
+        std::unique_lock<std::mutex> lk(this->event_mutex);
+        // When connector id is not specified, it is assumed to be '1'.
+        const int32_t connector_id = event.connector_id.value_or(1);
+        if (evse_id <= 0) {
+            EVLOG_error << "Handle session event: Evse id is <= 0: That should not be possible.";
+            return;
+        }
 
-    if (connector_id <= 0) {
-        EVLOG_error << "Handle session event: connector id is <= 0: That should not be possible.";
-        return;
-    }
+        if (connector_id <= 0) {
+            EVLOG_error << "Handle session event: connector id is <= 0: That should not be possible.";
+            return;
+        }
 
-    if (this->evses.count(evse_id) == 0) {
-        EVLOG_warning << "Handle session event: no evse found with evse id " << evse_id;
-        return;
-    }
+        if (this->evses.count(evse_id) == 0) {
+            EVLOG_warning << "Handle session event: no evse found with evse id " << evse_id;
+            return;
+        }
 
-    const auto event_type = event.event;
-    bool check_reservations = false;
+        const auto event_type = event.event;
+        bool check_reservations = false;
 
-    switch (event_type) {
-    case SessionEventEnum::SessionStarted: {
+        switch (event_type) {
+        case SessionEventEnum::SessionStarted: {
 
-        // only set plug in timeout when SessionStart is caused by plug in
-        if (event.session_started.value().reason == StartSessionReason::EVConnected) {
-            this->plug_in_queue.push_back(evse_id);
-            this->cv.notify_all();
-            this->evses.at(evse_id)->plugged_in = true;
-            EVLOG_info << "Plug In event for evse#" << evse_id << ", starting auth";
+            // only set plug in timeout when SessionStart is caused by plug in
+            if (event.session_started.value().reason == StartSessionReason::EVConnected) {
+                this->plug_in_queue.push_back(evse_id);
+                this->cv.notify_all();
+                this->evses.at(evse_id)->plugged_in = true;
+                EVLOG_info << "Plug In event for evse#" << evse_id << ", starting auth";
 
-            // only set timeout if there are multiple evses managed by this auth handler
-            // or plug in timeout is explicitly enabled
-            if (this->evses.size() == 1 or !this->plug_in_timeout_enabled) {
-                break;
+                // only set timeout if there are multiple evses managed by this auth handler
+                // or plug in timeout is explicitly enabled
+                if (this->evses.size() == 1 or !this->plug_in_timeout_enabled) {
+                    break;
+                }
+
+                this->evses.at(evse_id)->timeout_timer.timeout(
+                    [this, evse_id]() {
+                        this->evses.at(evse_id)->timeout_in_progress = true;
+                        std::lock_guard<std::mutex> lk(this->event_mutex);
+
+                        EVLOG_info << "Plug In timeout for evse#" << evse_id << ". Replug required for this EVSE";
+                        this->withdraw_authorization_callback(this->evses.at(evse_id)->evse_index);
+
+                        this->plug_in_queue.remove_if([evse_id](int value) { return value == evse_id; });
+                        this->evses.at(evse_id)->plug_in_timeout = true;
+                        this->evses.at(evse_id)->timeout_in_progress = false;
+                        this->cv.notify_all();
+                    },
+                    std::chrono::seconds(this->connection_timeout));
             }
-
-            this->evses.at(evse_id)->timeout_timer.timeout(
-                [this, evse_id]() {
-                    this->evses.at(evse_id)->timeout_in_progress = true;
-                    std::lock_guard<std::mutex> lk(this->event_mutex);
-
-                    EVLOG_info << "Plug In timeout for evse#" << evse_id << ". Replug required for this EVSE";
-                    this->withdraw_authorization_callback(this->evses.at(evse_id)->evse_index);
-
-                    this->plug_in_queue.remove_if([evse_id](int value) { return value == evse_id; });
-                    this->evses.at(evse_id)->plug_in_timeout = true;
-                    this->evses.at(evse_id)->timeout_in_progress = false;
-                    this->cv.notify_all();
-                },
-                std::chrono::seconds(this->connection_timeout));
+        } break;
+        case SessionEventEnum::TransactionStarted: {
+            this->evses.at(evse_id)->plugged_in = true;
+            this->evses.at(evse_id)->transaction_active = true;
+            this->submit_event_for_connector(evse_id, connector_id, ConnectorEvent::TRANSACTION_STARTED);
+            // wait for potentially running timeout task to finish execution
+            this->cv.wait(lk, [&evse = this->evses.at(evse_id)]() { return !evse->timeout_in_progress.load(); });
+            this->evses.at(evse_id)->timeout_timer.stop();
+            check_reservations = true;
+            break;
         }
-    } break;
-    case SessionEventEnum::TransactionStarted: {
-        this->evses.at(evse_id)->plugged_in = true;
-        this->evses.at(evse_id)->transaction_active = true;
-        this->submit_event_for_connector(evse_id, connector_id, ConnectorEvent::TRANSACTION_STARTED);
-        // wait for potentially running timeout task to finish execution
-        this->cv.wait(lk, [&evse = this->evses.at(evse_id)]() { return !evse->timeout_in_progress.load(); });
-        this->evses.at(evse_id)->timeout_timer.stop();
-        check_reservations = true;
-        break;
-    }
-    case SessionEventEnum::TransactionFinished:
-        this->evses.at(evse_id)->transaction_active = false;
-        this->evses.at(evse_id)->identifier.reset();
-        break;
-    case SessionEventEnum::SessionFinished: {
-        this->evses.at(evse_id)->plugged_in = false;
-        this->evses.at(evse_id)->plug_in_timeout = false;
-        this->evses.at(evse_id)->identifier.reset();
-        this->submit_event_for_connector(evse_id, connector_id, ConnectorEvent::SESSION_FINISHED);
-        // wait for potentially running timeout task to finish execution
-        this->cv.wait(lk, [&evse = this->evses.at(evse_id)]() { return !evse->timeout_in_progress.load(); });
-        this->evses.at(evse_id)->timeout_timer.stop();
-        this->plug_in_queue.remove_if([evse_id](int value) { return value == evse_id; });
-        check_reservations = true;
-        break;
-    }
-    case SessionEventEnum::Disabled:
-        this->submit_event_for_connector(evse_id, connector_id, ConnectorEvent::DISABLE);
-        check_reservations = true;
-        break;
-    case SessionEventEnum::Enabled:
-        this->submit_event_for_connector(evse_id, connector_id, ConnectorEvent::ENABLE);
-        check_reservations = true;
-        break;
-    case SessionEventEnum::Deauthorized:
-        this->evses.at(evse_id)->identifier.reset();
-        // wait for potentially running timeout task to finish execution
-        this->cv.wait(lk, [&evse = this->evses.at(evse_id)]() { return !evse->timeout_in_progress.load(); });
-        this->evses.at(evse_id)->timeout_timer.stop();
-        break;
-    case SessionEventEnum::ReservationStart:
-        break;
-    case SessionEventEnum::ReservationEnd: {
-        if (reservation_handler.is_evse_reserved(evse_id)) {
-            reservation_handler.cancel_reservation(evse_id, true);
+        case SessionEventEnum::TransactionFinished:
+            this->evses.at(evse_id)->transaction_active = false;
+            this->evses.at(evse_id)->identifier.reset();
+            break;
+        case SessionEventEnum::SessionFinished: {
+            this->evses.at(evse_id)->plugged_in = false;
+            this->evses.at(evse_id)->plug_in_timeout = false;
+            this->evses.at(evse_id)->identifier.reset();
+            this->submit_event_for_connector(evse_id, connector_id, ConnectorEvent::SESSION_FINISHED);
+            // wait for potentially running timeout task to finish execution
+            this->cv.wait(lk, [&evse = this->evses.at(evse_id)]() { return !evse->timeout_in_progress.load(); });
+            this->evses.at(evse_id)->timeout_timer.stop();
+            this->plug_in_queue.remove_if([evse_id](int value) { return value == evse_id; });
+            check_reservations = true;
+            break;
         }
-        break;
-    }
-    /// explicitly fall through all the SessionEventEnum values we are not handling
-    case SessionEventEnum::Authorized:
-        [[fallthrough]];
-    case SessionEventEnum::AuthRequired:
-        [[fallthrough]];
-    case SessionEventEnum::PrepareCharging:
-        [[fallthrough]];
-    case SessionEventEnum::ChargingStarted:
-        [[fallthrough]];
-    case SessionEventEnum::ChargingPausedEV:
-        [[fallthrough]];
-    case SessionEventEnum::ChargingPausedEVSE:
-        [[fallthrough]];
-    case SessionEventEnum::StoppingCharging:
-        [[fallthrough]];
-    case SessionEventEnum::ChargingFinished:
-        [[fallthrough]];
-    case SessionEventEnum::PluginTimeout:
-        [[fallthrough]];
-    case SessionEventEnum::SwitchingPhases:
-        [[fallthrough]];
-    case SessionEventEnum::SessionResumed:
-        break;
+        case SessionEventEnum::Disabled:
+            this->submit_event_for_connector(evse_id, connector_id, ConnectorEvent::DISABLE);
+            this->evses.at(evse_id)->reported_enabled = false;
+            check_reservations = true;
+            break;
+        case SessionEventEnum::Enabled:
+            this->submit_event_for_connector(evse_id, connector_id, ConnectorEvent::ENABLE);
+            this->evses.at(evse_id)->reported_enabled = true;
+            check_reservations = true;
+            break;
+        case SessionEventEnum::Deauthorized:
+            this->evses.at(evse_id)->identifier.reset();
+            // wait for potentially running timeout task to finish execution
+            this->cv.wait(lk, [&evse = this->evses.at(evse_id)]() { return !evse->timeout_in_progress.load(); });
+            this->evses.at(evse_id)->timeout_timer.stop();
+            break;
+        case SessionEventEnum::ReservationStart:
+            break;
+        case SessionEventEnum::ReservationEnd: {
+            if (reservation_handler.is_evse_reserved(evse_id)) {
+                reservation_handler.cancel_reservation(evse_id, true);
+            }
+            break;
+        }
+        /// explicitly fall through all the SessionEventEnum values we are not handling
+        case SessionEventEnum::Authorized:
+            [[fallthrough]];
+        case SessionEventEnum::AuthRequired:
+            [[fallthrough]];
+        case SessionEventEnum::PrepareCharging:
+            [[fallthrough]];
+        case SessionEventEnum::ChargingStarted:
+            [[fallthrough]];
+        case SessionEventEnum::ChargingPausedEV:
+            [[fallthrough]];
+        case SessionEventEnum::ChargingPausedEVSE:
+            [[fallthrough]];
+        case SessionEventEnum::StoppingCharging:
+            [[fallthrough]];
+        case SessionEventEnum::ChargingFinished:
+            [[fallthrough]];
+        case SessionEventEnum::PluginTimeout:
+            [[fallthrough]];
+        case SessionEventEnum::SwitchingPhases:
+            [[fallthrough]];
+        case SessionEventEnum::SessionResumed:
+            break;
+        }
+
+        // When reservation is started or ended, check if the number of reservations match the number of evses and
+        // send 'reserved' notifications to the evse manager accordingly if needed.
+        if (check_reservations) {
+            this->check_evse_reserved_and_send_updates();
+        }
+
+        if (event_type == SessionEventEnum::Enabled) {
+            restored_reservation_id = this->reservation_handler.take_restored_reservation(evse_id);
+        }
     }
 
-    // When reservation is started or ended, check if the number of reservations match the number of evses and
-    // send 'reserved' notifications to the evse manager accordingly if needed.
-    if (check_reservations) {
-        this->check_evse_reserved_and_send_updates();
+    if (restored_reservation_id.has_value()) {
+        this->apply_restored_reservation(evse_id, restored_reservation_id.value());
     }
 }
 
@@ -1132,6 +1162,21 @@ void AuthHandler::submit_event_for_connector(const int32_t evse_id, const int32_
             this->reservation_handler.on_connector_state_changed(connector.get_state(), evse_id, connector_id);
             break;
         }
+    }
+}
+
+void AuthHandler::apply_restored_reservation(const int evse_id, const int32_t reservation_id) {
+    EVLOG_info << "Applying reservation " << reservation_id << " restored for evse id " << evse_id;
+    if (!this->call_reserved(reservation_id, evse_id)) {
+        if (this->handle_cancel_reservation(reservation_id).first) {
+            this->call_reservation_cancelled(reservation_id, ReservationEndReason::Cancelled, evse_id, true);
+        }
+        return;
+    }
+
+    if (!this->reservation_handler.is_evse_reserved(evse_id, reservation_id)) {
+        // Cancelled or expired while the EvseManager was being called, possibly before it was reserved.
+        this->reservation_cancelled_callback(evse_id, reservation_id, ReservationEndReason::Cancelled, false);
     }
 }
 
