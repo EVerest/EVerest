@@ -22,6 +22,8 @@ std::optional<std::chrono::milliseconds> ongoing_timeout(StateID state,
     switch (state) {
     case StateID::Authorization:
         return (authorization_override.count() > 0) ? authorization_override : ONGOING_AUTHORIZATION;
+    case StateID::AC_DER_SAE_ChargeParameterDiscovery:
+        return ONGOING_CHARGE_PARAMETER_DISCOVERY;
     case StateID::ScheduleExchange:
         return ONGOING_SCHEDULE_EXCHANGE;
     case StateID::DC_CableCheck:
