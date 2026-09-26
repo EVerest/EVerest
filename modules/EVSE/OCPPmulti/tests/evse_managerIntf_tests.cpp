@@ -56,6 +56,7 @@ using ::testing::Return;
 
 TEST_F(GenericOcppRequiresTester, callEnableDisable) {
     // call_enable_disable() used in cb_connector_effective_operative_status
+    // it returns the effective enabled state after the command, not a success flag
 
     using ocpp::v2::OperationalStatusEnum;
 
@@ -63,21 +64,23 @@ TEST_F(GenericOcppRequiresTester, callEnableDisable) {
     interfaces->subscribe_var("evse_manager", "call_enable_disable",
                               [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    interfaces->add_cmd_result("true"_json);
-
     std::int32_t evse_id = 1;
     std::int32_t connector_id = 2;
-    auto new_status{OperationalStatusEnum::Inoperative};
 
+    // a successful disable leaves the connector disabled: report Unavailable
+    interfaces->add_cmd_result("false"_json);
     EXPECT_CALL(chargepoint, on_enabled(_, _)).Times(0);
     EXPECT_CALL(chargepoint, on_unavailable(evse_id, connector_id)).Times(1);
 
-    ocpp->cb_connector_effective_operative_status(evse_id, connector_id, new_status);
+    EXPECT_TRUE(
+        ocpp->cb_connector_effective_operative_status(evse_id, connector_id, OperationalStatusEnum::Inoperative));
 
-    interfaces->add_cmd_result("false"_json);
-    EXPECT_CALL(chargepoint, on_unavailable(evse_id, connector_id)).Times(0);
+    // a successful enable leaves the connector enabled: report enabled
+    interfaces->add_cmd_result("true"_json);
+    EXPECT_CALL(chargepoint, on_unavailable(_, _)).Times(0);
+    EXPECT_CALL(chargepoint, on_enabled(evse_id, connector_id)).Times(1);
 
-    ocpp->cb_connector_effective_operative_status(evse_id, connector_id, OperationalStatusEnum::Operative);
+    EXPECT_TRUE(ocpp->cb_connector_effective_operative_status(evse_id, connector_id, OperationalStatusEnum::Operative));
 
     ASSERT_EQ(received.size(), 2);
     EXPECT_EQ(
@@ -86,6 +89,47 @@ TEST_F(GenericOcppRequiresTester, callEnableDisable) {
     EXPECT_EQ(
         received[1],
         R"({"cmd_source":{"enable_priority":5000,"enable_source":"CSMS","enable_state":"Enable"},"connector_id":2})"_json);
+}
+
+TEST_F(GenericOcppRequiresTester, callEnableDisableOverriddenBySource) {
+    // a higher priority enable/disable source can override the CSMS request:
+    // the effective state is reported, and the request is not signalled as applied
+
+    using ocpp::v2::OperationalStatusEnum;
+
+    std::int32_t evse_id = 1;
+    std::int32_t connector_id = 0;
+
+    // disable requested, but the connector stays enabled
+    interfaces->add_cmd_result("true"_json);
+    EXPECT_CALL(chargepoint, on_unavailable(_, _)).Times(0);
+    EXPECT_CALL(chargepoint, on_enabled(evse_id, connector_id)).Times(1);
+
+    EXPECT_FALSE(
+        ocpp->cb_connector_effective_operative_status(evse_id, connector_id, OperationalStatusEnum::Inoperative));
+
+    // enable requested, but the connector stays disabled
+    interfaces->add_cmd_result("false"_json);
+    EXPECT_CALL(chargepoint, on_enabled(_, _)).Times(0);
+    EXPECT_CALL(chargepoint, on_unavailable(evse_id, connector_id)).Times(1);
+
+    EXPECT_FALSE(
+        ocpp->cb_connector_effective_operative_status(evse_id, connector_id, OperationalStatusEnum::Operative));
+}
+
+TEST_F(GenericOcppRequiresTester, callEnableDisableInvalidEvse) {
+    using ocpp::v2::OperationalStatusEnum;
+
+    std::vector<json> received;
+    interfaces->subscribe_var("evse_manager", "call_enable_disable",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    EXPECT_CALL(chargepoint, on_enabled(_, _)).Times(0);
+    EXPECT_CALL(chargepoint, on_unavailable(_, _)).Times(0);
+
+    EXPECT_FALSE(ocpp->cb_connector_effective_operative_status(0, 1, OperationalStatusEnum::Inoperative));
+
+    EXPECT_TRUE(received.empty());
 }
 
 TEST_F(GenericOcppRequiresTester, callForceUnlock) {
