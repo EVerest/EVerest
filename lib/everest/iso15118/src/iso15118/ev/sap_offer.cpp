@@ -8,6 +8,17 @@
 
 namespace iso15118::ev {
 
+namespace {
+
+const char* iso20_namespace(message_20::datatypes::ServiceCategory service) {
+    if (service == message_20::datatypes::ServiceCategory::AC_DER_SAE) {
+        return ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE;
+    }
+    return is_ac_family(service) ? ISO20_AC_PROTOCOL_NAMESPACE : ISO20_DC_PROTOCOL_NAMESPACE;
+}
+
+} // namespace
+
 std::vector<OfferedProtocol> build_sap_offer(const SapOfferInput& input) {
     std::vector<OfferedProtocol> offer;
     uint8_t counter = 1;
@@ -30,7 +41,7 @@ std::vector<OfferedProtocol> build_sap_offer(const SapOfferInput& input) {
         }
         switch (protocol) {
         case ProtocolId::ISO15118_20:
-            add(ac ? ISO20_AC_PROTOCOL_NAMESPACE : ISO20_DC_PROTOCOL_NAMESPACE, 1, 0, ProtocolId::ISO15118_20);
+            add(iso20_namespace(input.energy_service), 1, 0, ProtocolId::ISO15118_20);
             break;
         case ProtocolId::ISO15118_2:
             add(ISO2_NAMESPACE, 2, 0, ProtocolId::ISO15118_2);

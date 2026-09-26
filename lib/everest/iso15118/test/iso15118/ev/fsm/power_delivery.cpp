@@ -8,6 +8,7 @@
 #include <iso15118/ev/d20/state/power_delivery.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/power_delivery.hpp>
+#include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/type.hpp>
 
 using namespace iso15118;
@@ -110,8 +111,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery transitions to SessionStop on Stop for AC
     REQUIRE(primed.ctx.is_session_stopped() == false);
 }
 
-// AC_BPT rides the same is_ac_family() branch as AC. Widening that predicate for
-// AC_DER_IEC must not drop AC_BPT out of the AC dispatch onto the DC path.
+// AC_BPT shares the AC charge loop; it must not fall onto the DC path.
 SCENARIO("ISO15118-20 EV PowerDelivery transitions to AC_ChargeLoop on OK response for AC_BPT") {
     const ev::feedback::Callbacks callbacks{};
     PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC_BPT, no_seed, Progress::Start};
@@ -146,6 +146,56 @@ SCENARIO("ISO15118-20 EV PowerDelivery transitions to AC_DER_IEC_ChargeLoop on O
     REQUIRE(result.transitioned() == true);
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_DER_IEC_ChargeLoop);
     REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to AC_DER_SAE_ChargeLoop on OK for AC_DER_SAE") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC_DER_SAE, no_seed, Progress::Start};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_DER_SAE_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+// ServiceSelection stops these first; PowerDelivery must not pick a loop for one either.
+SCENARIO("ISO15118-20 EV PowerDelivery stops the session on Start for an unsupported service category") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::WPT, no_seed, Progress::Start};
+
+    expect_stops_session(primed, make_pd_res(SESSION_HEADER, ResponseCode::OK), ev::d20::StateID::PowerDelivery);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to SessionStop on Stop for AC_DER_SAE") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC_DER_SAE, no_seed, Progress::Stop};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+// The AC_DER_SAE_ChargeLoop pauses by requesting a pause and entering PowerDelivery(Stop).
+SCENARIO("ISO15118-20 EV PowerDelivery carries an AC_DER_SAE pause into SessionStop") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_pause = [](FsmStateHelper& helper) { helper.get_context().set_pause_charging_requested(true); };
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, ServiceCategory::AC_DER_SAE, seed_pause,
+                                                      Progress::Stop};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::SessionStopRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->charging_session == message_20::datatypes::ChargingSession::Pause);
 }
 
 SCENARIO("ISO15118-20 EV PowerDelivery accepts OK_PowerToleranceConfirmed") {

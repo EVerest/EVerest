@@ -18,6 +18,8 @@ constexpr auto DIN70121_NAMESPACE = "urn:din:70121:2012:MsgDef";
 constexpr auto ISO2_NAMESPACE = "urn:iso:15118:2:2013:MsgDef";
 constexpr auto ISO20_DC_PROTOCOL_NAMESPACE = "urn:iso:std:iso:15118:-20:DC";
 constexpr auto ISO20_AC_PROTOCOL_NAMESPACE = "urn:iso:std:iso:15118:-20:AC";
+// AMD1 [V2G20-3216].
+constexpr auto ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-SAE";
 
 std::optional<ProtocolId> protocol_id_from_namespace(const std::string& protocol_namespace);
 
