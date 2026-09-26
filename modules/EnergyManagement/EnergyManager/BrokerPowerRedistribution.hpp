@@ -7,6 +7,7 @@
 #include <string>
 
 #include "BrokerFastCharging.hpp"
+#include "PowerMeterAggregator.hpp"
 
 namespace module {
 
@@ -33,10 +34,9 @@ namespace module {
 /// usable timestamp has no age a consumer could check, so it is reported as absent rather
 /// than as "now": EnergyNode and EvseManager republish the last reading they received on
 /// every request, which makes a meter that stopped updating indistinguishable from one
-/// holding steady unless its own timestamp is carried along. Everest::Date::from_rfc3339
-/// does not throw - a default constructed time point is its only failure signal - so the
-/// epoch doubles as the unparsable case, and a meter genuinely reporting 1970 is equally
-/// unusable.
+/// holding steady unless its own timestamp is carried along. Parsing follows
+/// parse_meter_timestamp(), the same rule the aggregator applies, so the two measurement
+/// paths cannot disagree about which readings have a usable age.
 ///
 /// \returns the observed measurement, all fields std::nullopt if the node carries no
 /// measurement at all
@@ -58,11 +58,17 @@ ObservedMeasurement read_measurement(const types::energy::EnergyFlowRequest& nod
 PhaseCurrents measured_phase_currents(const ObservedMeasurement& measurement, float nominal_ac_voltage,
                                       int active_phases);
 
-/// \brief True while \p measurement can carry a limit: it has a value, it has a timestamp
-/// of its own, and that timestamp is not older than \p max_age. EnergyNode and EvseManager
-/// republish the last reading they received on every request, so without the age check a
-/// meter that stopped publishing would pin the allocation at whatever it last reported. A
-/// timestamp in the future is accepted - clock skew is not staleness.
+/// \brief True while \p measurement can carry a limit: it has a value, and it is fresh.
+///
+/// The age is judged by is_fresh(), the module's one staleness rule, so the per connector
+/// limit and the site aggregate cannot disagree about which meters are alive - including at
+/// the boundary, where a reading exactly \p max_age old is stale for both. EnergyNode and
+/// EvseManager republish the last reading they received on every request, so without that
+/// check a meter that stopped publishing would pin the allocation at whatever it last
+/// reported.
+///
+/// What this adds on top of freshness is the value check: a reading that is fresh but
+/// carries neither power nor current has nothing a limit could be derived from.
 ///
 /// \param max_age zero accepts any age
 bool measurement_can_limit(const ObservedMeasurement& measurement, date::utc_clock::time_point now,
