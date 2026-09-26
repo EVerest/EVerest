@@ -70,6 +70,18 @@ types:
       - Error_UtilityInterruptEvent
       - Error_Malfunction
       - Error_EmergencyShutdown
+  CpState:
+    description: >-
+      IEC 61851-1 control pilot state the vehicle applies, reported to the HLC
+      stack for the CP checks tied to the message sequence ([V2G2-847]).
+    type: string
+    enum:
+      - A
+      - B
+      - C
+      - D
+      - E
+      - F
   V2gMessageId:
     description: This element contains the id of the v2g message body
     type: string
@@ -142,6 +154,12 @@ types:
       - DcPreChargeRes
       - DcWeldingDetectionReq
       - DcWeldingDetectionRes
+      - MeteringConfirmationReq
+      - MeteringConfirmationRes
+      - VehicleCheckInReq
+      - VehicleCheckInRes
+      - VehicleCheckOutReq
+      - VehicleCheckOutRes
       - UnknownMessage
   SaeJ2847BidiMode:
     description: Bidi mode for sae j2847_2
@@ -1777,6 +1795,13 @@ types:
         type: number
         minimum: 0
         maximum: 1500
+      min_voltage_limit:
+        description: >-
+          [V] Minimum voltage the EV can accept. Emitted into DC_PreChargeReq and
+          DC_ChargeLoopReq, where it is mandatory, so leaving it unset reports zero.
+        type: number
+        minimum: 0
+        maximum: 1500
       energy_capacity:
         description: "[Wh] Energy capacity of the EV"
         type: number
@@ -1792,6 +1817,26 @@ types:
         type: number
         minimum: 0
         maximum: 1500
+  EvPresentValues:
+    description: >-
+      Values the EV measures during a charging loop. Both are mandatory on the wire. A value
+      never fed is transmitted as zero and reads as a measured zero at the SECC; a field absent
+      from one update keeps its last value. Which one applies depends on the energy transfer
+      mode, hence both are optional: DC carries the voltage, AC the active power.
+    type: object
+    additionalProperties: false
+    properties:
+      present_voltage:
+        description: "[V] Voltage the EV measures at its inlet"
+        type: number
+        minimum: 0
+        maximum: 1500
+      present_active_power:
+        description: >-
+          [W] Active power the EV measures. Negative while discharging (BPT).
+        type: number
+        minimum: -500000
+        maximum: 500000
   DcEvBPTParameters:
     description: BPT settings for dc charging
     type: object
