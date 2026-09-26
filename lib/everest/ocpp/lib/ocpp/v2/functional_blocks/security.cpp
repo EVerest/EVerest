@@ -678,39 +678,55 @@ bool Security::v2g20_certificate_installation_enabled() const {
                .value_or(false);
 }
 
-bool Security::check_secc_certificate_expiration(const ocpp::CertificateSigningUseEnum& certificate_signing_use) {
+bool Security::renew_secc_certificate_if_due(const ocpp::CertificateSigningUseEnum& certificate_signing_use) {
     const auto name = ocpp::conversions::certificate_signing_use_enum_to_string(certificate_signing_use);
     EVLOG_info << "Checking if " << name << " has expired";
     // 0 also when no leaf of that type is installed yet, so the initial certificate is requested the same way
     const int expiry_days_count = this->context.evse_security.get_leaf_expiry_days_count(certificate_signing_use);
-    if (expiry_days_count < 30) {
-        EVLOG_info << name << " is invalid in " << expiry_days_count
-                   << " days. Requesting new certificate with certificate signing request";
-        this->sign_certificate_req(certificate_signing_use);
-        return true;
+    if (expiry_days_count >= 30) {
+        EVLOG_info << name << " is still valid.";
+        return false;
     }
-    EVLOG_info << name << " is still valid.";
-    return false;
+    EVLOG_info << name << " is invalid in " << expiry_days_count
+               << " days. Requesting new certificate with certificate signing request";
+    this->sign_certificate_req(certificate_signing_use);
+    // nothing is sent while another request is outstanding or the CSR cannot be built
+    return this->awaited_certificate_signing_use_enum == certificate_signing_use;
 }
 
-void Security::scheduled_check_v2g_certificate_expiration() {
-    if (this->context.device_model
-            .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
-            .value_or(false)) {
-        // The ISO 15118-2 and ISO 15118-20 SECC leafs are renewed independently. Only one SignCertificate.req
-        // can be outstanding at a time, so when both are due the -2 leaf goes first and the -20 leaf is
-        // requested on the next check (V2GCertificateExpireCheckIntervalSeconds).
-        const bool requested = this->check_secc_certificate_expiration(ocpp::CertificateSigningUseEnum::V2GCertificate);
-        if (this->v2g20_certificate_installation_enabled() and not requested) {
-            this->check_secc_certificate_expiration(ocpp::CertificateSigningUseEnum::V2G20Certificate);
-        }
-    } else {
+void Security::check_secc_certificates_expiration() {
+    if (!this->context.device_model
+             .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
+             .value_or(false)) {
         if (this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::PnCEnabled)
                 .value_or(false)) {
             EVLOG_warning << "PnC is enabled but V2G certificate installation is not, so no certificate expiration "
                              "check is performed.";
         }
+        return;
     }
+
+    if (!this->v2g20_certificate_installation_enabled()) {
+        this->renew_secc_certificate_if_due(ocpp::CertificateSigningUseEnum::V2GCertificate);
+        return;
+    }
+
+    // The ISO 15118-2 and ISO 15118-20 SECC leafs are renewed independently. Only one SignCertificate.req can be
+    // outstanding at a time, so when both are due the second one waits for the next check
+    // (V2GCertificateExpireCheckIntervalSeconds). The leaf that goes first alternates, so that a leaf the CSMS
+    // never issues cannot starve the other.
+    const auto first = this->check_v2g20_leaf_first ? ocpp::CertificateSigningUseEnum::V2G20Certificate
+                                                    : ocpp::CertificateSigningUseEnum::V2GCertificate;
+    const auto second = this->check_v2g20_leaf_first ? ocpp::CertificateSigningUseEnum::V2GCertificate
+                                                     : ocpp::CertificateSigningUseEnum::V2G20Certificate;
+    this->check_v2g20_leaf_first = !this->check_v2g20_leaf_first;
+    if (!this->renew_secc_certificate_if_due(first)) {
+        this->renew_secc_certificate_if_due(second);
+    }
+}
+
+void Security::scheduled_check_v2g_certificate_expiration() {
+    this->check_secc_certificates_expiration();
 
     this->v2g_certificate_expiration_check_timer.interval(std::chrono::seconds(
         this->context.device_model
