@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef MAIN_SYSTEM_IMPL_HPP
 #define MAIN_SYSTEM_IMPL_HPP
 
@@ -14,7 +14,11 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
+#include <atomic>
 #include <filesystem>
+#include <memory>
+
+#include <everest/util/async/monitor.hpp>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -60,11 +64,15 @@ private:
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here
     std::filesystem::path scripts_path;
-    bool log_upload_running{false};
-    std::atomic_bool interrupt_log_upload;
+    std::shared_ptr<std::atomic_bool> interrupt_log_upload = std::make_shared<std::atomic_bool>(false);
+
+    enum class LogUploadState {
+        Idle,
+        Uploading
+    };
+    everest::lib::util::monitor<LogUploadState> log_upload_state{LogUploadState::Idle};
+
     std::thread upload_logs_thread;
-    std::mutex log_upload_mutex;
-    std::condition_variable log_upload_cv;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
