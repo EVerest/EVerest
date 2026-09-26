@@ -126,3 +126,10 @@ echo $password > $CLIENT_CSO_PATH/SECC_LEAF_PASSWORD.txt
 echo $password > $CLIENT_OEM_PATH/OEM_LEAF_PASSWORD.txt
 echo $password > $CLIENT_V2G_PATH/V2G_ROOT_CA_PASSWORD.txt
 echo $password > $CLIENT_VEHICLE_PATH/VEHICLE_LEAF_PASSWORD.txt
+
+# 20) Create a second SECC leaf without the DomainComponent=CPO RDN, signed by CPO_SUB_CA2 like the
+#     conformant one. Used to exercise the [V2G2-875] check on an otherwise valid chain.
+openssl ecparam -genkey -name $EC_CURVE | openssl ec $SYMMETRIC_CIPHER -passout pass:$password -out $CLIENT_CSO_PATH/SECC_LEAF_NO_DC.key
+openssl req -new -key $CLIENT_CSO_PATH/SECC_LEAF_NO_DC.key -passin pass:$password -config configs/seccLeafNoDcCert.cnf -out $CSR_PATH/SECC_LEAF_NO_DC.csr
+openssl x509 -req -in $CSR_PATH/SECC_LEAF_NO_DC.csr -extfile configs/seccLeafNoDcCert.cnf -extensions ext -CA $CA_CSO_PATH/CPO_SUB_CA2.pem -CAkey $CLIENT_CSO_PATH/CPO_SUB_CA2.key -passin pass:$password -set_serial 12363 -days $VALIDITY_SECC_LEAF_CERT -out $CLIENT_CSO_PATH/SECC_LEAF_NO_DC.pem
+cat $CLIENT_CSO_PATH/SECC_LEAF_NO_DC.pem $CA_CSO_PATH/CPO_SUB_CA2.pem $CA_CSO_PATH/CPO_SUB_CA1.pem > $CLIENT_CSO_PATH/CPO_CERT_CHAIN_NO_DC.pem
