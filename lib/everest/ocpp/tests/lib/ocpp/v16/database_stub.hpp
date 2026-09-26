@@ -6,6 +6,8 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+
 #include <test_temp_paths.hpp>
 
 #include <ocpp/v16/charge_point_configuration.hpp>
@@ -69,6 +71,12 @@ struct SQLiteStatementTest : public StatementInterface {
     virtual int bind_null(const std::string& param) {
         return 0;
     }
+    virtual int bind_datetime(const int idx, const std::chrono::system_clock::time_point& val) {
+        return 0;
+    }
+    virtual int bind_datetime(const std::string& param, const std::chrono::system_clock::time_point& val) {
+        return 0;
+    }
     virtual int get_number_of_rows() override {
         return 0;
     }
@@ -89,6 +97,9 @@ struct SQLiteStatementTest : public StatementInterface {
     }
     virtual double column_double(const int idx) {
         return 0.0;
+    }
+    virtual std::chrono::system_clock::time_point column_datetime(const int idx) {
+        return std::chrono::system_clock::time_point{};
     }
     virtual SqliteVariant column_variant(const std::string& name) {
         return 0;
