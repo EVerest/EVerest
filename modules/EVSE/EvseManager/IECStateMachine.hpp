@@ -75,7 +75,7 @@ class IECStateMachine {
 public:
     // We need the r_bsp reference to be able to talk to the bsp driver module
     IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_, bool lock_connector_in_state_b_,
-                    bool use_authorized_);
+                    bool use_authorized_, bool keep_cable_locked_, int keep_cable_locked_lock_delay_ms_);
     // Call when new events from BSP requirement come in. Will signal internal events
     void process_bsp_event(types::board_support_common::BspEvent const& bsp_event);
     // Allow power on from Charger state machine
@@ -102,6 +102,8 @@ public:
     void connector_force_unlock();
 
     void set_authorized(bool a);
+
+    void set_keep_cable_locked(bool enabled);
 
     void set_ev_simplified_mode_evse_limit(bool l) {
         ev_simplified_mode_evse_limit = l;
@@ -143,6 +145,9 @@ private:
     bool cp_state_f_requested{false};
     AsyncTimeout timeout_state_c1;
     AsyncTimeout timeout_unlock_state_F;
+    // Captive mode: debounce between plug detection and engaging the lock, so a lock triggered on the
+    // first PP contact cannot jam a plug that is not yet fully seated.
+    AsyncTimeout timeout_captive_lock;
 
     Everest::timed_mutex_traceable state_machine_mutex;
     void feed_state_machine(std::optional<RawCPState> const& cp_state_opt);
@@ -154,6 +159,16 @@ private:
     // If to pay attention to the authorized flag.
     bool use_authorized{false};
     std::atomic_bool authorized{false};
+
+    // Captive cable mode: lock whenever PP reports a plug, in any CP state; only a force unlock
+    // releases, and only until the cable is removed.
+    std::atomic_bool keep_cable_locked{false};
+    // Open from force unlock until cable removal; suppresses the plug-present lock. Not persisted.
+    std::atomic_bool captive_unlock_window{false};
+    // Delay between plug detection and locking in captive mode (see keep_cable_locked_lock_delay_ms).
+    std::atomic<int> keep_cable_locked_lock_delay_ms{500};
+    // True once the captive lock debounce has elapsed for the currently present plug.
+    std::atomic_bool captive_lock_delay_elapsed{false};
 
     std::atomic_bool is_locked{false};
     std::atomic_bool should_be_locked{false};

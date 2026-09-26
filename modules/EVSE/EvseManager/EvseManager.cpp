@@ -301,7 +301,16 @@ void EvseManager::init() {
 }
 
 void EvseManager::ready() {
-    bsp = std::make_unique<IECStateMachine>(r_bsp, config.lock_connector_in_state_b, config.unlock_when_deauthorized);
+    bool keep_cable_locked_at_boot{false};
+    {
+        // on_keep_cable_locked_changed() may already fire; same mutex serializes the bsp hand-over.
+        std::scoped_lock lock(keep_cable_locked_mutex);
+        keep_cable_locked_at_boot = config.keep_cable_locked;
+        bsp =
+            std::make_unique<IECStateMachine>(r_bsp, config.lock_connector_in_state_b, config.unlock_when_deauthorized,
+                                              keep_cable_locked_at_boot, config.keep_cable_locked_lock_delay_ms);
+        bsp_constructed = true;
+    }
 
     if (config.hack_simplified_mode_limit_10A) {
         bsp->set_ev_simplified_mode_evse_limit(true);
@@ -335,7 +344,27 @@ void EvseManager::ready() {
                          "IEC61851-1:2019 D.6.5 Table D.9 line 4 and should not be used in public environments!";
     }
 
+    if (keep_cable_locked_at_boot) {
+        EVLOG_warning << "Captive cable mode (keep_cable_locked) is enabled: the cable stays locked in the socket in "
+                         "every CP state and is only released by a force unlock. This takes precedence over "
+                         "lock_connector_in_state_b and unlock_when_deauthorized and requires a BSP that publishes "
+                         "ac_pp_ampacity also outside of charging sessions. Intended for fleet/private use.";
+        if (config.charge_mode not_eq "AC") {
+            EVLOG_warning << "keep_cable_locked is only applicable to AC charging with a socket; with charge_mode "
+                          << config.charge_mode
+                          << " no plug presence is detected and the connector will only be locked while the relays "
+                             "are closed!";
+        }
+    }
+
     const auto hw_caps = *hw_capabilities.handle();
+
+    if (keep_cable_locked_at_boot and
+        hw_caps.connector_type == types::evse_board_support::Connector_type::IEC62196Type2Cable) {
+        EVLOG_warning << "keep_cable_locked is enabled on a connector with a fixed attached cable; ac_pp_ampacity has "
+                         "no meaning there, so no plug presence is detected and the connector will only be locked "
+                         "while the relays are closed!";
+    }
     charger = std::make_unique<Charger>(bsp, error_handling, r_powermeter_billing(), store, hw_caps.connector_type,
                                         config.evse_id);
 
@@ -2836,6 +2865,17 @@ void EvseManager::set_external_derating(types::dc_external_derate::ExternalDerat
     if (hlc_enabled and config.charge_mode == "DC") {
         push_powersupply_capabilities_to_hlc();
     }
+}
+
+EvseManager::ConfigChangeResult EvseManager::on_keep_cable_locked_changed(const bool& value) {
+    // Held across set_keep_cable_locked() on purpose: ordering with the bsp construction in ready()
+    // stays trivial, at the cost of blocking this config-service callback for its duration.
+    std::scoped_lock lock(keep_cable_locked_mutex);
+    rw_config.keep_cable_locked = value;
+    if (bsp_constructed) {
+        bsp->set_keep_cable_locked(value);
+    } // else: ready() picks the value up from rw_config
+    return ConfigChangeResult::Accepted();
 }
 
 } // namespace module

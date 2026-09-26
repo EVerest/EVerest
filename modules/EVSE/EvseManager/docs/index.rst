@@ -42,6 +42,39 @@ TODO: AC and DC module graphs and description
 AC Configuration
 ----------------
 
+Captive cable mode
+~~~~~~~~~~~~~~~~~~
+
+For AC sockets with a connector lock in fleet or private installations, the
+cable can be kept permanently locked in the socket as theft protection. Set
+``keep_cable_locked`` to ``true`` to enable this captive cable mode. It requires
+a board_support driver that publishes ``ac_pp_ampacity`` on every change, also
+outside of charging sessions, so that plug presence is known even in CP state A.
+
+With the option enabled:
+
+* The connector locks whenever a plug is present, in every CP state including
+  state A with no EV attached.
+* The lock is latched: losing plug presence without a preceding force unlock
+  (for example the Proximity Pilot contact opening while the cable is pulled
+  against the lock pin) does not release it.
+* The only way to release the cable is the ``force_unlock`` command (for
+  example an OCPP ``UnlockConnector``) or disabling the option again. After a
+  force unlock the connector stays unlocked until the cable is removed; the next
+  plug insertion locks it again.
+* It takes precedence over ``lock_connector_in_state_b`` and
+  ``unlock_when_deauthorized``.
+
+``keep_cable_locked`` can be changed at runtime through the configuration
+service and is applied immediately without a restart.
+
+``keep_cable_locked_lock_delay_ms`` (default ``500``) sets the delay in
+milliseconds between detecting a plug and engaging the lock. It gives the plug
+time to seat fully before the lock pin extends, so a lock triggered on the first
+Proximity Pilot contact cannot jam a half-inserted plug. If the plug is pulled
+back out within the delay, no lock is engaged. Set it to ``0`` to lock
+immediately.
+
 DC Configuration
 ----------------
 
