@@ -62,7 +62,7 @@ TEST(evse_board_support, hardware_capabilities_serialization_emits_cp_state_E) {
 
 TEST(evse_board_support, connector_type_roundtrip_dc_values) {
     const std::vector<std::pair<Connector_type, std::string>> cases = {
-        {Connector_type::cCCS1, "cCCS1"},   {Connector_type::cCCS2, "cCCS2"}, {Connector_type::cTesla, "cTesla"},
+        {Connector_type::cCCS1, "cCCS1"}, {Connector_type::cCCS2, "cCCS2"}, {Connector_type::cTesla, "cTesla"},
         {Connector_type::cNACS, "cNACS"}, {Connector_type::cG105, "cG105"}, {Connector_type::cMCS, "cMCS"},
     };
     for (const auto& [value, expected] : cases) {
