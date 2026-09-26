@@ -454,7 +454,13 @@ void evse_managerImpl::handle_authorize_response(types::authorization::ProvidedI
             // may already be plugged in, so it is recorded whatever the session state.
             mod->use_reservation(validation_result.reservation_id.value());
         }
-        this->mod->charger->authorize(true, provided_token, validation_result);
+        if (!this->mod->charger->authorize(true, provided_token, validation_result)) {
+            if (validation_result.reservation_id.has_value()) {
+                // Auth consumed the reservation for this token, so it ends here although no session uses it.
+                mod->cancel_reservation(true);
+            }
+            return;
+        }
         mod->charger_was_authorized();
     } else if (pnc) {
         // we only send authorization responses to the HLC for PnC rejections. In case of EIM we could
