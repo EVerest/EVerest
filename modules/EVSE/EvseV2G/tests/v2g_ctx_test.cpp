@@ -47,6 +47,8 @@ protected:
 
         EXPECT_EQ(ctx->selected_protocol, V2G_UNKNOWN_PROTOCOL);
         EXPECT_FALSE(ctx->intl_emergency_shutdown);
+        EXPECT_FALSE(ctx->error_shutdown);
+        EXPECT_FALSE(ctx->error_shutdown_reported);
         EXPECT_FALSE(ctx->stop_hlc);
 
         // ctx->is_connection_terminated is updated rather than cleared
@@ -101,6 +103,8 @@ TEST_F(V2gCtxTest, v2g_ctx_init_charging_stateTrue) {
     ctx->state = 10;
     ctx->selected_protocol = V2G_PROTO_DIN70121;
     ctx->intl_emergency_shutdown = true;
+    ctx->error_shutdown = true;
+    ctx->error_shutdown_reported = true;
     ctx->stop_hlc = true;
     ctx->session.renegotiation_required = true;
     ctx->session.is_charging = true;
@@ -119,6 +123,8 @@ TEST_F(V2gCtxTest, v2g_ctx_init_charging_stateFalse) {
     ctx->state = 10;
     ctx->selected_protocol = V2G_PROTO_DIN70121;
     ctx->intl_emergency_shutdown = true;
+    ctx->error_shutdown = true;
+    ctx->error_shutdown_reported = true;
     ctx->stop_hlc = true;
     ctx->session.renegotiation_required = true;
     ctx->session.is_charging = true;

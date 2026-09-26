@@ -257,6 +257,14 @@ struct v2g_context {
     std::atomic<bool>
         intl_emergency_shutdown; /* Is set to true if an internal emergency_shutdown has occurred (send failed response,
                                     configure emergency shutdown in EVSEStatus and close tcp connection) */
+    std::atomic<bool>
+        error_shutdown; /* Is set to true on an error shutdown (IEC 61851-23 Table CC.10, e.g. isolation
+                           fault): energy transfer is already stopped by the EvseManager, but the session
+                           is kept alive so the next response can report the shutdown cause (EVSEStatusCode,
+                           EVSEIsolationStatus) instead of a FAILED response that must omit them */
+    std::atomic<bool> error_shutdown_reported; /* Is set to true once a response carrying the error shutdown status has
+                                                  been sent; subsequent requests that would continue the energy transfer
+                                                  are answered with FAILED */
     std::atomic_bool stop_hlc; /* is set to true if a shutdown of the charging session should be initiated (send failed
                       response and close tcp connection) */
     std::atomic_bool is_connection_terminated; /* Is set to true if the connection is terminated (CP State A/F, shutdown

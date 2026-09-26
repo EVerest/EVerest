@@ -63,6 +63,7 @@ types:
         Error_UtilityInterruptEvent: Utility Interrupt Event, Utility or Equipment operator has requested a temporary reduction in load
         Error_Malfunction: A non-recoverable charger fault has occurred (Isolation Failure, ...). It is permanently faulted.
         Error_EmergencyShutdown: Charging System Incompatibility, Emergency Shutdown or E-Stop button pressed at charging station
+        Error_ErrorShutdown: Error shutdown according to IEC 61851-23 Table CC.10 (e.g. isolation fault). Energy transfer is stopped by the EVSE, but the HLC session is kept alive so the shutdown cause (EVSEStatusCode, EVSEIsolationStatus) can still be reported to the EV.
     type: string
     enum:
       - Error_Contactor
@@ -70,6 +71,7 @@ types:
       - Error_UtilityInterruptEvent
       - Error_Malfunction
       - Error_EmergencyShutdown
+      - Error_ErrorShutdown
   V2gMessageId:
     description: This element contains the id of the v2g message body
     type: string
