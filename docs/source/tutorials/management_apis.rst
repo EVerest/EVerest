@@ -51,8 +51,8 @@ changes are first sent to the modules, and if they accepted them then written to
     Without the ``--db`` command line option the manager keeps the configuration database in
     memory only: it is seeded from the YAML file on every start and everything you change through
     the API is lost when the manager exits. Pass ``--db <path>`` to persist the database in a file.
-    Once the file holds a valid configuration, the database wins over the YAML file on the next
-    start (``--reset-from-yaml`` discards it and re-seeds from the YAML file).
+    Once the boot slot in that file holds modules, the database wins over the YAML file on the next
+    start (``--reset-from-yaml`` replaces its contents from the YAML file again).
 
 The CLI client
 ==============
@@ -140,7 +140,8 @@ We find, there is only a single slot existing (0) and it is used as the *active 
 (the one which is in use *if* the modules are running right now) and also as the one to be
 used for the next restart of the manager process or the next restart of the modules. The slot
 list also carries the metadata of each slot: an optional description, the time of the last
-update and, for a slot seeded from a YAML file, the path of that file.
+update and, for a slot seeded from a YAML file, the path of that file. If that YAML failed to
+load or validate at boot, the slot is empty and its description records the error.
 
 The full configuration stored in a slot can be retrieved:
 
