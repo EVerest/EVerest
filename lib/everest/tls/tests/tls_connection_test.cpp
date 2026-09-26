@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "tls_connection_test.hpp"
 
 #include <arpa/inet.h>
 #include <condition_variable>
 #include <cstring>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <netdb.h>
@@ -606,6 +607,29 @@ TEST_F(TlsTest, TLS13) {
     EXPECT_TRUE(is_set(flags_t::connected));
     EXPECT_TRUE(is_set(flags_t::status_request_cb));
     EXPECT_TRUE(is_set(flags_t::status_request));
+    EXPECT_TRUE(is_reset(flags_t::status_request_v2));
+}
+
+TEST_F(TlsTest, UnloadableOcspResponseDoesNotPreventTls) {
+    // a cached OCSP response that is not DER (stale, corrupt, or written in
+    // another encoding) loses only its certificate's staple; the server still
+    // comes up and serves the chain
+    {
+        std::ofstream garbage("garbage_ocsp_response.der");
+        garbage << "not a DER encoded OCSP response";
+    }
+    server_config.chains[0].ocsp_response_files = {"garbage_ocsp_response.der", "ocsp_response.der"};
+    client_config.status_request = true;
+
+    ASSERT_EQ(server.init(server_config, nullptr), tls::Server::state_t::init_complete);
+    server_thread = std::thread(&run_server, std::ref(server));
+    server.wait_running();
+
+    connect();
+    EXPECT_TRUE(is_set(flags_t::connected));
+    EXPECT_TRUE(is_set(flags_t::status_request_cb));
+    // the leaf's response is the unloadable one, so nothing is stapled
+    EXPECT_TRUE(is_reset(flags_t::status_request));
     EXPECT_TRUE(is_reset(flags_t::status_request_v2));
 }
 
