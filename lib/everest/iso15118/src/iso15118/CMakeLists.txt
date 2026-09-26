@@ -13,6 +13,8 @@ target_sources(iso15118
         misc/cb_exi.cpp
         misc/random.cpp
 
+        sae_modes.cpp
+
         io/connection_plain.cpp
         io/logging.cpp
         io/poll_manager.cpp
