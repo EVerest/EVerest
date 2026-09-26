@@ -60,6 +60,21 @@ void emit_ac_limit(float total, uint8_t phase_count, message_20::datatypes::AcCo
 }
 
 /**
+ * A ratio applies to every line and is not divided. On ThreePhase, L2 and L3 carry it so the base
+ * is L1 [V2G20-1818], not a sum [V2G20-1817].
+ */
+template <typename Base>
+void emit_ac_ratio(float value, message_20::datatypes::AcConnector connector, Base& base,
+                   std::optional<message_20::datatypes::RationalNumber>& l2,
+                   std::optional<message_20::datatypes::RationalNumber>& l3) {
+    const auto line =
+        connector == message_20::datatypes::AcConnector::ThreePhase ? std::make_optional(value) : std::nullopt;
+    base = message_20::datatypes::from_float(value);
+    detail::assign_line(l2, line);
+    detail::assign_line(l3, line);
+}
+
+/**
  * Write one aggregate measurement into a message's base, L2 and L3 elements. A measurement is
  * what the EV draws, so a single-phase connector carries all of it on its one line.
  */
