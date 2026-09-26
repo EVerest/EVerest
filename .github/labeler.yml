@@ -212,5 +212,5 @@ cmake:
           - cmake/**
           - CMakeLists.txt
           - module-dependencies.cmake
-          - **/*.cmake
+          - '**/*.cmake'
           - lib/everest/framework/cmake/**
