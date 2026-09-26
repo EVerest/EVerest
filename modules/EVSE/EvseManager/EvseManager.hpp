@@ -219,7 +219,15 @@ public:
     /// \return True on success.
     ///
     bool reserve(int32_t id, const bool signal_reservation_event = true);
-    int32_t get_reservation_id();
+    ///
+    /// \brief Record the reservation that authorization matched to this session, whatever the session state.
+    ///        Signals no reservation event.
+    /// \param id The reservation id.
+    /// \return False, changing nothing, for a negative id or when the evse is disabled or has a fatal error.
+    ///
+    bool use_reservation(int32_t id);
+    /// \return The reservation id, or nullopt when not reserved or reserved without an id (by connector type).
+    std::optional<int32_t> get_reservation_id_to_report();
 
     bool get_hlc_waiting_for_auth_pnc();
     void set_pnc_enabled(const bool pnc_enabled);

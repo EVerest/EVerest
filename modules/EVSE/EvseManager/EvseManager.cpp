@@ -1554,8 +1554,11 @@ types::evse_board_support::HardwareCapabilities EvseManager::get_hw_capabilities
     return *hw_capabilities.handle();
 }
 
-int32_t EvseManager::get_reservation_id() {
-    Everest::scoped_lock_timeout lock(reservation_mutex, Everest::MutexDescription::EVSE_get_reservation_id);
+std::optional<int32_t> EvseManager::get_reservation_id_to_report() {
+    Everest::scoped_lock_timeout lock(reservation_mutex, Everest::MutexDescription::EVSE_get_reservation_id_to_report);
+    if (not reserved or reservation_id < 0) {
+        return std::nullopt;
+    }
     return reservation_id;
 }
 
@@ -1772,6 +1775,27 @@ bool EvseManager::reserve(int32_t id, const bool signal_reservation_event) {
     }
 
     return false;
+}
+
+bool EvseManager::use_reservation(int32_t id) {
+    if (id < 0) {
+        return false;
+    }
+
+    if (charger->get_current_state() == Charger::EvseState::Disabled) {
+        EVLOG_info << "Not using reservation because charger is disabled.";
+        return false;
+    }
+
+    if (charger->stop_charging_on_fatal_error()) {
+        EVLOG_info << "Not using reservation because of a fatal error.";
+        return false;
+    }
+
+    Everest::scoped_lock_timeout lock(reservation_mutex, Everest::MutexDescription::EVSE_use_reservation);
+    reserved = true;
+    reservation_id = id;
+    return true;
 }
 
 void EvseManager::cancel_reservation(bool signal_event) {

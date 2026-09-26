@@ -4533,13 +4533,13 @@ async def test_reservation_local_start_tx(
     # start charging session
     test_controller.plug_in()
 
-    # expect StartTransaction.req
+    # expect StartTransaction.req with the reservation id
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "StartTransaction",
         call.StartTransaction(
-            1, test_config.authorization_info.valid_id_tag_1, 0, ""
+            1, test_config.authorization_info.valid_id_tag_1, 0, "", reservation_id=0
         ),
         validate_standard_start_transaction,
     )
@@ -4942,13 +4942,13 @@ async def test_reservation_connector_zero_supported(
     # start charging session
     test_controller.plug_in()
 
-    # expect StartTransaction.req
+    # expect StartTransaction.req with the reservation id
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "StartTransaction",
         call.StartTransaction(
-            1, test_config.authorization_info.valid_id_tag_1, 0, ""
+            1, test_config.authorization_info.valid_id_tag_1, 0, "", reservation_id=0
         ),
         validate_standard_start_transaction,
     )
