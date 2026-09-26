@@ -38,12 +38,14 @@ struct EvseSetupConfig {
     bool enable_certificate_install_service;
     d20::DcTransferLimits dc_limits;
     d20::AcTransferLimits ac_limits;
-    std::optional<d20::IecDerTransferLimits> der_limits;
+    std::optional<d20::IecDerTransferLimits> der_iec_limits;
+    std::optional<d20::SaeDerTransferLimits> der_sae_limits;
     std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes;
     std::optional<std::string> custom_protocol{std::nullopt};
     std::optional<d20::AcSetupConfig> ac_setup_config{std::nullopt};
     std::optional<d20::BptSetupConfig> bpt_setup_config{std::nullopt};
     std::optional<d20::DerIecSetupConfig> der_iec_setup_config{std::nullopt};
+    std::optional<d20::DerSaeSetupConfig> der_sae_setup_config{std::nullopt};
     d20::DcTransferLimits powersupply_limits;
     bool selecting_sap_based_on_energy_service{false};
 
@@ -82,6 +84,12 @@ struct EvseSetupConfig {
 struct SessionConfig {
     explicit SessionConfig(EvseSetupConfig);
 
+    /// \brief Replaces the offered energy services.
+    ///
+    /// Every replacement runs the same AC_DER_SAE offer rules as the constructor, so a non-conformant
+    /// AC_DER_SAE cannot re-enter the offer through a mid session service update.
+    void set_supported_energy_transfer_services(std::vector<message_20::datatypes::ServiceCategory> services);
+
     std::string evse_id;
 
     bool cert_install_service;
@@ -106,7 +114,10 @@ struct SessionConfig {
     d20::AcTransferLimits ac_limits;
 
     d20::DerIecSetupConfig der_iec_setup_config;
-    std::optional<d20::IecDerTransferLimits> der_limits;
+    std::optional<d20::IecDerTransferLimits> der_iec_limits;
+
+    std::optional<d20::DerSaeSetupConfig> der_sae_setup_config;
+    std::optional<d20::SaeDerTransferLimits> der_sae_limits;
 
     d20::DcTransferLimits powersupply_limits;
 
