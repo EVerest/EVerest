@@ -2,25 +2,26 @@ set(@LIBRARY_PACKAGE_NAME@_VERSION @PROJECT_VERSION@)
 
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+
 set(EVEREST_SCHEMA_DIR "@PACKAGE_EVEREST_DATADIR@/schemas")
-find_package(everest-log REQUIRED)
-find_package(everest-sqlite REQUIRED)
-find_package(everest-timer REQUIRED)
-find_package(everest-evse_security REQUIRED)
-find_package(everest-api-types REQUIRED)
+find_dependency(Boost REQUIRED COMPONENTS filesystem program_options thread log_setup log headers)
+find_dependency(SQLite3 REQUIRED)
+find_dependency(OpenSSL 3 REQUIRED)
+find_dependency(date REQUIRED)
+find_dependency(nlohmann_json REQUIRED)
+find_dependency(nlohmann_json_schema_validator REQUIRED)
 find_dependency(ryml REQUIRED)
+find_dependency(fmt REQUIRED)
+find_dependency(libwebsockets REQUIRED)
+find_dependency(Threads REQUIRED)
+find_dependency(sdbus-c++ REQUIRED)
 
 set(EV_PROJECT_INFO_SOURCE_DIR "@PACKAGE_EVEREST_DATADIR@/project_info")
 
 include(${CMAKE_CURRENT_LIST_DIR}/ev-project-bootstrap.cmake)
+
 include(${CMAKE_CURRENT_LIST_DIR}/everest-core-targets.cmake)
-
-find_package(everest-framework REQUIRED)
-find_package(everest-tls REQUIRED)
-find_package(everest-helpers REQUIRED)
-find_package(everest-ocpp REQUIRED)
-
-include(CMakeFindDependencyMacro)
 
 ev_add_project(
     EV_PROJECT_DIRECTORY @PACKAGE_EVEREST_DATADIR@
