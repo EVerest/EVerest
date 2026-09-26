@@ -30,7 +30,7 @@ std::tuple<SSL*, SSL_CTX*> tls_util::init_mutual_tls_client(int socket, MutualTl
     }
 
     printf("Client cert: %s\n", config.client_cert.c_str());
-    if (SSL_CTX_use_certificate_file(ctx, config.client_cert.c_str(), SSL_FILETYPE_PEM) != 1) {
+    if (SSL_CTX_use_certificate_chain_file(ctx, config.client_cert.c_str()) != 1) {
         throw std::runtime_error("Could not load client certificate");
     }
 
@@ -106,7 +106,7 @@ std::tuple<SSL*, SSL_CTX*> tls_util::init_mutual_tls_server(int socket, MutualTl
         throw std::runtime_error("Could not load CA certificate");
     }
 
-    if (SSL_CTX_use_certificate_file(ctx, config.server_cert.c_str(), SSL_FILETYPE_PEM) != 1) {
+    if (SSL_CTX_use_certificate_chain_file(ctx, config.server_cert.c_str()) != 1) {
         throw std::runtime_error("Could not load server certificate");
     }
 
