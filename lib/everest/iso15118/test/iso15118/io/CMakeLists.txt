@@ -18,6 +18,10 @@ target_link_libraries(socket_helper_test
 )
 catch_discover_tests(socket_helper_test)
 
+add_executable(test_sdp_packet sdp_packet.cpp)
+target_link_libraries(test_sdp_packet PRIVATE iso15118 Catch2::Catch2WithMain)
+catch_discover_tests(test_sdp_packet)
+
 add_executable(test_sdp_server sdp_server_test.cpp)
 target_link_libraries(test_sdp_server PRIVATE iso15118 Catch2::Catch2WithMain)
 catch_discover_tests(test_sdp_server)
