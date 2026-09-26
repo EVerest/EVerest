@@ -314,6 +314,13 @@ void EvseManager::ready() {
                           config.fail_on_powermeter_errors ? r_powermeter_billing() : EMPTY_POWERMETER_VECTOR, r_slac,
                           r_over_voltage_monitor, config.inoperative_error_use_vendor_id));
 
+    // expose the aggregated error state so other modules (e.g. OCPP) can delay startup reporting
+    error_handling->signal_all_errors_cleared.connect(
+        [this]() {
+            EVLOG_warning << "All errors cleared, charging can continue"; 
+            this->p_evse->publish_all_errors_cleared(true);
+        });
+
     internal_over_voltage_monitor = std::make_unique<OverVoltageMonitor>(
         [this](OverVoltageMonitor::FaultType type, const std::string& description) {
             if (this->error_handling) {
