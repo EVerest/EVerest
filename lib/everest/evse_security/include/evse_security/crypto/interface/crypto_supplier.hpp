@@ -10,6 +10,7 @@
 #include <evse_security/evse_types.hpp>
 #include <evse_security/utils/evse_filesystem_types.hpp>
 
+namespace ctl { struct TrustList; }
 namespace evse_security {
 
 /// @brief All cryptography suppliers must conform to this class. Do not
@@ -39,6 +40,8 @@ public:
     static std::string x509_get_issuer_name_hash(X509Handle* handle);
     static std::string x509_get_common_name(X509Handle* handle);
 
+    static bool decode_ctl(const std::string& data, ctl::TrustList& out);
+
     /// @brief Returns the time validity for a certificate
     /// @param out_valid_in Valid in amount of seconds. A negative value is in the past, a positive one is in the future
     /// (not yet valid)
@@ -62,7 +65,10 @@ public:
     x509_verify_certificate_chain(X509Handle* target, const std::vector<X509Handle*>& parents,
                                   const std::vector<X509Handle*>& untrusted_subcas, bool allow_future_certificates,
                                   const std::optional<fs::path> dir_path, const std::optional<fs::path> file_path);
-
+    
+    /// @brief Serialises the certificate as DER (used for embedding in other structures)
+    static bool x509_to_der(X509Handle* handle, std::vector<std::uint8_t>& out_der);
+    
     /// @brief Checks if the private key is consistent with the provided handle
     static KeyValidationResult x509_check_private_key(X509Handle* handle, std::string private_key,
                                                       std::optional<std::string> password);

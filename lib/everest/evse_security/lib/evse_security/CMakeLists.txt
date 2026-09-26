@@ -12,6 +12,7 @@ target_sources(evse_security
         certificate/x509_wrapper.cpp
 
         utils/evse_filesystem.cpp
+	    utils/load_ctl.cpp
 
         crypto/interface/crypto_supplier.cpp
         crypto/interface/crypto_types.cpp
@@ -22,6 +23,8 @@ if (LIBEVSE_CRYPTO_SUPPLIER_OPENSSL)
         PRIVATE
             crypto/openssl/openssl_crypto_supplier.cpp
             crypto/openssl/openssl_provider.cpp
+            crypto/openssl/ASN1_ctl.cpp
+
     )
 endif()
 

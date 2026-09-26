@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <evse_security/crypto/openssl/openssl_crypto_supplier.hpp>
-
+#include <evse_security/crypto/openssl/ASN1_ctl.hpp>
 #include <everest/logging.hpp>
 
 #include <algorithm>
@@ -23,6 +23,7 @@
 #include <evse_security/crypto/openssl/openssl_provider.hpp>
 #include <evse_security/crypto/openssl/openssl_types.hpp>
 #include <evse_security/utils/evse_filesystem.hpp>
+#include <evse_security/crypto/openssl/ASN1_ctl.hpp>
 
 namespace evse_security {
 
@@ -279,6 +280,18 @@ std::vector<X509Handle_ptr> OpenSSLSupplier::load_certificates(const std::string
     }
 
     return certificates;
+}
+
+bool OpenSSLSupplier::decode_ctl(const std::string& data, ctl::TrustList& out) {
+    try {
+        out = ctl::decode_der(
+            reinterpret_cast<const std::uint8_t*>(data.data()),
+            data.size());
+        return true;
+    } catch (const std::exception& e) {
+        EVLOG_error << "CTL decode failed: " << e.what();
+        return false;
+    }
 }
 
 std::string OpenSSLSupplier::x509_to_string(X509Handle* handle) {
@@ -781,6 +794,24 @@ CertificateSignRequestResult OpenSSLSupplier::x509_generate_csr(const Certificat
     out_csr = std::string(mem_csr->data, mem_csr->length);
 
     return CertificateSignRequestResult::Valid;
+}
+
+bool OpenSSLSupplier::x509_to_der(X509Handle* handle, std::vector<std::uint8_t>& out_der) {
+    X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return false;
+    }
+
+    unsigned char* raw = nullptr;
+    const int len = i2d_X509(x509, &raw);
+    if (len <= 0 || raw == nullptr) {
+        ERR_print_errors_fp(stderr);
+        return false;
+    }
+
+    out_der.assign(raw, raw + len);
+    OPENSSL_free(raw);
+    return true;
 }
 
 bool OpenSSLSupplier::digest_file_sha256(const fs::path& path, std::vector<std::uint8_t>& out_digest) {

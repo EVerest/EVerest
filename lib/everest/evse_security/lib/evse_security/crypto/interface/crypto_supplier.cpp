@@ -84,6 +84,15 @@ CertificateValidationResult AbstractCryptoSupplier::x509_verify_certificate_chai
     default_crypto_supplier_usage_error() return CertificateValidationResult::Unknown;
 }
 
+bool AbstractCryptoSupplier::decode_ctl(const std::string& /*data*/, ctl::TrustList& /*out*/) {
+    default_crypto_supplier_usage_error()
+    return false;
+}
+
+bool AbstractCryptoSupplier::x509_to_der(X509Handle* /*handle*/, std::vector<std::uint8_t>& /*out_der*/) {
+    default_crypto_supplier_usage_error() return false;
+}
+
 KeyValidationResult AbstractCryptoSupplier::x509_check_private_key(X509Handle* /*handle*/, std::string /*private_key*/,
                                                                    std::optional<std::string> /*password*/) {
     default_crypto_supplier_usage_error() return KeyValidationResult::Unknown;

@@ -13,6 +13,9 @@
 #include <evse_security/certificate/x509_wrapper.hpp>
 #include <evse_security/evse_security.hpp>
 #include <evse_security/utils/evse_filesystem.hpp>
+#include <evse_security/utils/load_ctl.hpp>
+#include <evse_security/crypto/openssl/ASN1_ctl.hpp>
+
 
 #include <evse_security/crypto/evse_crypto.hpp>
 
@@ -74,6 +77,8 @@ protected:
         file_paths.directories.csms_leaf_key_directory = fs::path("certs/client/csms/");
         file_paths.directories.secc_leaf_cert_directory = fs::path("certs/client/cso/");
         file_paths.directories.secc_leaf_key_directory = fs::path("certs/client/cso/");
+
+        file_paths.directories.ctl_directory = fs::path("test_ctl_nonexistent");
 
         this->evse_security = std::make_unique<EvseSecurity>(file_paths, "123456");
     }
@@ -206,6 +211,8 @@ protected:
         file_paths.directories.csms_leaf_key_directory = fs::path("certs/client/csms/");
         file_paths.directories.secc_leaf_cert_directory = fs::path("csms_certs_temp/client/");
         file_paths.directories.secc_leaf_key_directory = fs::path("csms_certs_temp/client/");
+
+        file_paths.directories.ctl_directory = fs::path("test_ctl_nonexistent"); // prevents the ctl code from running when it shouldent
 
         this->evse_security = std::make_unique<EvseSecurity>(file_paths, "123456");
     }
@@ -1467,6 +1474,241 @@ TEST_F(EvseSecurityTestsMulti, verify_with_invalid_cert_fails) {
     auto result = this->evse_security->verify_certificate(invalid_cert, types);
 
     ASSERT_EQ(result, CertificateValidationResult::Unknown);
+}
+// ---------------------------------------------------------------------------
+//  CTL model + codec tests
+// ---------------------------------------------------------------------------
+static ctl::TrustList make_ctl(const X509Wrapper& cert,
+                               CaCertificateType type = CaCertificateType::V2G,
+                               ctl::Status status = ctl::Status::Active,
+                               std::uint8_t version = 1,
+                               std::uint16_t seq = 1,
+                               const std::string& nb = "20240101000000Z",
+                               const std::string& na = "20250101000000Z") {
+    ctl::TrustList tl;
+    tl.ctl_version     = version;
+    tl.sequence_number = seq;
+    tl.not_before      = *ctl::GeneralizedTime::parse(nb);
+    tl.not_after       = *ctl::GeneralizedTime::parse(na);
+    tl.roots.push_back(ctl::RootCertificate{type, status, X509Wrapper(cert)});
+    return tl;
+}
+
+TEST_F(EvseSecurityTests, ctl_generalized_time_parse_accepts_valid) {
+    auto t = ctl::GeneralizedTime::parse("20240101123045Z");
+    ASSERT_TRUE(t.has_value());
+    ASSERT_EQ(t->value, "20240101123045Z");
+}
+
+TEST_F(EvseSecurityTests, ctl_generalized_time_parse_rejects_bad_format) {
+    ASSERT_FALSE(ctl::GeneralizedTime::parse("").has_value());
+    ASSERT_FALSE(ctl::GeneralizedTime::parse("20240101123045").has_value());
+    ASSERT_FALSE(ctl::GeneralizedTime::parse("2024-01-01T12:30:45Z").has_value());
+    ASSERT_FALSE(ctl::GeneralizedTime::parse("2024010112304AZ").has_value());
+    ASSERT_FALSE(ctl::GeneralizedTime::parse("2024010112304Z").has_value());
+}
+
+TEST_F(EvseSecurityTests, ctl_is_newer_enforces_strict_monotonicity) {
+    ASSERT_TRUE(ctl::is_newer(1, 2));
+    ASSERT_FALSE(ctl::is_newer(2, 2));
+    ASSERT_FALSE(ctl::is_newer(2, 1));
+}
+
+TEST_F(EvseSecurityTests, ctl_validate_accepts_well_formed) {
+    X509Wrapper cert(read_file_to_string("certs/client/cso/SECC_LEAF.pem"),
+                     EncodingFormat::PEM);
+    auto tl = make_ctl(cert);
+    ASSERT_EQ(ctl::validate(tl), ctl::ValidationError::None);
+}
+
+TEST_F(EvseSecurityTests, ctl_validate_rejects_bad_not_before) {
+    X509Wrapper cert(read_file_to_string("certs/client/cso/SECC_LEAF.pem"),
+                     EncodingFormat::PEM);
+    auto tl = make_ctl(cert);
+    tl.not_before.value = "garbage";
+    ASSERT_EQ(ctl::validate(tl), ctl::ValidationError::BadNotBefore);
+}
+
+TEST_F(EvseSecurityTests, ctl_validate_rejects_bad_not_after) {
+    X509Wrapper cert(read_file_to_string("certs/client/cso/SECC_LEAF.pem"),
+                     EncodingFormat::PEM);
+    auto tl = make_ctl(cert);
+    tl.not_after.value = "2024";
+    ASSERT_EQ(ctl::validate(tl), ctl::ValidationError::BadNotAfter);
+}
+
+TEST_F(EvseSecurityTests, ctl_validate_rejects_inverted_validity) {
+    X509Wrapper cert(read_file_to_string("certs/client/cso/SECC_LEAF.pem"),
+                     EncodingFormat::PEM);
+    auto tl = make_ctl(cert, CaCertificateType::V2G, ctl::Status::Active, 1, 1,
+                       "20250101000000Z", "20240101000000Z");
+    ASSERT_EQ(ctl::validate(tl), ctl::ValidationError::ValidityInverted);
+}
+
+TEST_F(EvseSecurityTests, ctl_validate_rejects_equal_validity) {
+    X509Wrapper cert(read_file_to_string("certs/client/cso/SECC_LEAF.pem"),
+                     EncodingFormat::PEM);
+    auto tl = make_ctl(cert, CaCertificateType::V2G, ctl::Status::Active, 1, 1,
+                       "20240101000000Z", "20240101000000Z");
+    ASSERT_EQ(ctl::validate(tl), ctl::ValidationError::ValidityInverted);
+}
+
+TEST_F(EvseSecurityTests, ctl_roundtrip_preserves_all_fields) {
+    X509Wrapper cert(read_file_to_string("certs/client/cso/SECC_LEAF.pem"),
+                     EncodingFormat::PEM);
+    auto tl = make_ctl(cert, CaCertificateType::MO, ctl::Status::Warning, 3, 42);
+
+    std::vector<std::uint8_t> der = ctl::encode_der(tl);
+    ASSERT_FALSE(der.empty());
+
+    ctl::TrustList decoded = ctl::decode_der(der);
+
+    ASSERT_EQ(decoded.ctl_version,     3u);
+    ASSERT_EQ(decoded.sequence_number, 42u);
+    ASSERT_EQ(decoded.not_before.value, "20240101000000Z");
+    ASSERT_EQ(decoded.not_after.value,  "20250101000000Z");
+    ASSERT_EQ(decoded.roots.size(), 1u);
+    ASSERT_EQ(decoded.roots[0].type,   CaCertificateType::MO);
+    ASSERT_EQ(decoded.roots[0].status, ctl::Status::Warning);
+    ASSERT_TRUE(decoded.roots[0].cert == cert);
+}
+
+TEST_F(EvseSecurityTests, ctl_roundtrip_preserves_multiple_roots) {
+    X509Wrapper cert(read_file_to_string("certs/client/cso/SECC_LEAF.pem"),
+                     EncodingFormat::PEM);
+
+    ctl::TrustList tl;
+    tl.ctl_version     = 1;
+    tl.sequence_number = 1;
+    tl.not_before      = *ctl::GeneralizedTime::parse("20240101000000Z");
+    tl.not_after       = *ctl::GeneralizedTime::parse("20250101000000Z");
+    tl.roots.push_back({CaCertificateType::V2G,  ctl::Status::Active,     X509Wrapper(cert)});
+    tl.roots.push_back({CaCertificateType::MO,   ctl::Status::Warning,    X509Wrapper(cert)});
+    tl.roots.push_back({CaCertificateType::CSMS, ctl::Status::Deprecated, X509Wrapper(cert)});
+    tl.roots.push_back({CaCertificateType::MF,   ctl::Status::Active,     X509Wrapper(cert)});
+
+    auto decoded = ctl::decode_der(ctl::encode_der(tl));
+
+    ASSERT_EQ(decoded.roots.size(), 4u);
+    ASSERT_EQ(decoded.roots[0].type, CaCertificateType::V2G);
+    ASSERT_EQ(decoded.roots[1].type, CaCertificateType::MO);
+    ASSERT_EQ(decoded.roots[2].type, CaCertificateType::CSMS);
+    ASSERT_EQ(decoded.roots[3].type, CaCertificateType::MF);
+    ASSERT_EQ(decoded.roots[0].status, ctl::Status::Active);
+    ASSERT_EQ(decoded.roots[1].status, ctl::Status::Warning);
+    ASSERT_EQ(decoded.roots[2].status, ctl::Status::Deprecated);
+    ASSERT_EQ(decoded.roots[3].status, ctl::Status::Active);
+}
+
+TEST_F(EvseSecurityTests, ctl_decode_rejects_empty_input) {
+    ASSERT_THROW(ctl::decode_der(nullptr, 0), std::runtime_error);
+    std::vector<std::uint8_t> empty;
+    ASSERT_THROW(ctl::decode_der(empty), std::runtime_error);
+}
+
+TEST_F(EvseSecurityTests, ctl_decode_rejects_garbage) {
+    std::vector<std::uint8_t> garbage{0xDE, 0xAD, 0xBE, 0xEF};
+    ASSERT_THROW(ctl::decode_der(garbage), std::runtime_error);
+}
+
+TEST_F(EvseSecurityTests, ctl_decode_rejects_trailing_bytes) {
+    X509Wrapper cert(read_file_to_string("certs/client/cso/SECC_LEAF.pem"),
+                     EncodingFormat::PEM);
+    auto tl  = make_ctl(cert);
+    auto der = ctl::encode_der(tl);
+    der.push_back(0x00);
+    ASSERT_THROW(ctl::decode_der(der), std::runtime_error);
+}
+
+TEST_F(EvseSecurityTests, ctl_install_writes_into_correct_bundle) {
+    X509Wrapper cert(read_file_to_string("certs/client/cso/SECC_LEAF.pem"),
+                     EncodingFormat::PEM);
+
+    const fs::path v2g_path = evse_security->get_verify_location(CaCertificateType::V2G);
+    const fs::path mo_path  = evse_security->get_verify_location(CaCertificateType::MO);
+    ASSERT_FALSE(v2g_path.empty());
+    ASSERT_FALSE(mo_path.empty());
+
+    {
+        X509CertificateBundle v2g(v2g_path, EncodingFormat::PEM);
+        ASSERT_FALSE(v2g.contains_certificate(cert));
+    }
+
+    auto tl = make_ctl(cert, CaCertificateType::V2G, ctl::Status::Active);
+    evse_security->install_ctl(tl);
+
+    X509CertificateBundle v2g(v2g_path, EncodingFormat::PEM);
+    ASSERT_TRUE(v2g.contains_certificate(cert));
+
+    X509CertificateBundle mo(mo_path, EncodingFormat::PEM);
+    ASSERT_FALSE(mo.contains_certificate(cert));
+}
+
+TEST_F(EvseSecurityTests, ctl_install_skips_deprecated_entries) {
+    X509Wrapper cert(read_file_to_string("certs/client/cso/SECC_LEAF.pem"),
+                     EncodingFormat::PEM);
+
+    auto tl = make_ctl(cert, CaCertificateType::V2G, ctl::Status::Deprecated);
+    evse_security->install_ctl(tl);
+
+    const fs::path v2g_path = evse_security->get_verify_location(CaCertificateType::V2G);
+    X509CertificateBundle v2g(v2g_path, EncodingFormat::PEM);
+    ASSERT_FALSE(v2g.contains_certificate(cert));
+}
+
+TEST_F(EvseSecurityTests, ctl_install_is_idempotent) {
+    X509Wrapper cert(read_file_to_string("certs/client/cso/SECC_LEAF.pem"),
+                     EncodingFormat::PEM);
+
+    auto tl = make_ctl(cert, CaCertificateType::V2G, ctl::Status::Active);
+
+    evse_security->install_ctl(tl);
+    evse_security->install_ctl(tl);
+
+    const fs::path v2g_path = evse_security->get_verify_location(CaCertificateType::V2G);
+    X509CertificateBundle v2g(v2g_path, EncodingFormat::PEM);
+
+    int found = 0;
+    for (const auto& c : v2g.split()) {
+        if (c == cert) ++found;
+    }
+    ASSERT_EQ(found, 1);
+}
+
+TEST_F(EvseSecurityTests, ctl_directory_reads_real_ctl) {
+    const fs::path root =
+        fs::temp_directory_path() / fs::path("ctl_real_test_" + std::to_string(::getpid()));
+    fs::remove_all(root);
+    fs::create_directories(root);
+
+    FilePaths paths;
+    paths.csms_ca_bundle = root / "csms_ca.pem";
+    paths.mf_ca_bundle   = root / "mf_ca.pem";
+    paths.mo_ca_bundle   = root / "mo_ca.pem";
+    paths.v2g_ca_bundle  = root / "v2g_ca.pem";
+
+    paths.directories.csms_leaf_cert_directory = root / "csms_leaf_cert";
+    paths.directories.csms_leaf_key_directory  = root / "csms_leaf_key";
+    paths.directories.secc_leaf_cert_directory = root / "secc_leaf_cert";
+    paths.directories.secc_leaf_key_directory  = root / "secc_leaf_key";
+
+    paths.directories.ctl_directory = fs::path("../../../../../lib/everest/evse_security/CTL/");
+    const fs::path real_ctl = fs::path("../../../../../lib/everest/evse_security/CTL/CTL-7-28-2026_NEW-ASN1.der");
+
+    // Fresh EvseSecurity -> constructor scans ctl_directory and applies the CTL.
+    auto fresh = std::make_unique<EvseSecurity>(paths, std::nullopt);
+
+    const fs::path v2g_path = fresh->get_verify_location(CaCertificateType::V2G);
+    ASSERT_FALSE(v2g_path.empty());
+
+    X509CertificateBundle v2g(v2g_path, EncodingFormat::PEM);
+
+    // The real CTL declared 5 roots (see "CTL: applying ... (seq=1, roots=5)"
+    // in the loader log). All 5 must have been installed into the V2G bundle.
+    ASSERT_EQ(v2g.split().size(), 5)
+        << "real CTL roots were not installed into the V2G bundle";
+
+    fs::remove_all(root);
 }
 
 } // namespace evse_security
