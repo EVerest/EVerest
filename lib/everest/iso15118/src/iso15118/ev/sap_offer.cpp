@@ -4,6 +4,8 @@
 
 #include <algorithm>
 
+#include <iso15118/ev/service_family.hpp>
+
 namespace iso15118::ev {
 
 std::vector<OfferedProtocol> build_sap_offer(const SapOfferInput& input) {
@@ -20,19 +22,21 @@ std::vector<OfferedProtocol> build_sap_offer(const SapOfferInput& input) {
         ++counter;
     };
 
+    const bool ac = is_ac_family(input.energy_service);
+
     for (const auto protocol : input.supported_protocols) {
         if (input.resume_protocol.has_value() and protocol != input.resume_protocol.value()) {
             continue;
         }
         switch (protocol) {
         case ProtocolId::ISO15118_20:
-            add(ISO20_DC_PROTOCOL_NAMESPACE, 1, 0, ProtocolId::ISO15118_20);
+            add(ac ? ISO20_AC_PROTOCOL_NAMESPACE : ISO20_DC_PROTOCOL_NAMESPACE, 1, 0, ProtocolId::ISO15118_20);
             break;
         case ProtocolId::ISO15118_2:
             add(ISO2_NAMESPACE, 2, 0, ProtocolId::ISO15118_2);
             break;
         case ProtocolId::DIN70121:
-            if (not input.tls) {
+            if (not ac and not input.tls) {
                 add(DIN70121_NAMESPACE, 2, 0, ProtocolId::DIN70121);
             }
             break;
