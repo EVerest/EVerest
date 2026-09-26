@@ -260,11 +260,16 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
                         response.certificateStatus = AuthorizeCertificateStatusEnum::CertificateExpired;
                         break;
                     case CertificateValidationResult::InvalidSignature:
-                    case CertificateValidationResult::IssuerNotFound:
                     case CertificateValidationResult::InvalidLeafSignature:
+                        response.idTokenInfo.status = AuthorizationStatusEnum::Invalid;
+                        response.certificateStatus = AuthorizeCertificateStatusEnum::SignatureError;
+                        break;
+                    case CertificateValidationResult::IssuerNotFound:
                     case CertificateValidationResult::InvalidChain:
                     case CertificateValidationResult::Unknown:
-                        response.idTokenInfo.status = AuthorizationStatusEnum::Unknown;
+                        // C07.FR.17: unverifiable / invalid chain → CertChainError and Invalid
+                        response.idTokenInfo.status = AuthorizationStatusEnum::Invalid;
+                        response.certificateStatus = AuthorizeCertificateStatusEnum::CertChainError;
                         break;
                     }
                 } else {

@@ -3839,11 +3839,15 @@ ocpp::v2::AuthorizeResponse ChargePointImpl::data_transfer_pnc_authorize(
                     authorize_response.certificateStatus = ocpp::v2::AuthorizeCertificateStatusEnum::CertificateExpired;
                     break;
                 case CertificateValidationResult::InvalidSignature:
-                case CertificateValidationResult::IssuerNotFound:
                 case CertificateValidationResult::InvalidLeafSignature:
+                    authorize_response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Invalid;
+                    authorize_response.certificateStatus = ocpp::v2::AuthorizeCertificateStatusEnum::SignatureError;
+                    break;
+                case CertificateValidationResult::IssuerNotFound:
                 case CertificateValidationResult::InvalidChain:
                 case CertificateValidationResult::Unknown:
-                    authorize_response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Unknown;
+                    authorize_response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Invalid;
+                    authorize_response.certificateStatus = ocpp::v2::AuthorizeCertificateStatusEnum::CertChainError;
                     break;
                 }
             } else {
