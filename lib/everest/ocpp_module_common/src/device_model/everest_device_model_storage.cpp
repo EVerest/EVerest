@@ -702,9 +702,14 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
     this->mappings = config_service_client->get_mappings();
     std::map<ComponentKey, std::vector<DeviceModelVariable>> component_configs;
     std::vector<types::evse_manager::Evse> evses;
+    std::map<int32_t, int32_t> ocpp_evse_id_by_everest_evse_id;
+    int32_t ocpp_evse_id = 0;
 
     for (const auto& evse_manager : r_evse_manager) {
-        const auto evse_info = evse_manager->call_get_evse();
+        auto evse_info = evse_manager->call_get_evse();
+        ocpp_evse_id++;
+        ocpp_evse_id_by_everest_evse_id[evse_info.id] = ocpp_evse_id;
+        evse_info.id = ocpp_evse_id;
         evses.push_back(evse_info);
         const auto& hw_capabilities = evse_hardware_capabilities_map.at(evse_info.id);
 
@@ -743,7 +748,13 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
         if (not mapping.has_value()) {
             continue;
         }
-        iso_extension_evse_ids.push_back(mapping->evse);
+        const auto mapped = ocpp_evse_id_by_everest_evse_id.find(mapping->evse);
+        if (mapped == ocpp_evse_id_by_everest_evse_id.cend()) {
+            EVLOG_error << "iso15118_extensions is mapped to EVSE " << mapping->evse
+                        << ", which this station does not serve; no ISO15118Ctrlr component is provisioned";
+            continue;
+        }
+        iso_extension_evse_ids.push_back(mapped->second);
     }
 
     // This map keeps the None entries that build_der_component_configs drops; disable_other_der_ctrlrs
@@ -769,11 +780,14 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
             const auto& module_mapping = mapping.module.value();
             // in OCPP2.x the id and connectorId of the EVSEType must be > 0
             if (module_mapping.evse > 0) {
-                component_key.evse_id = module_mapping.evse;
-                if (module_mapping.connector.has_value()) {
-                    const auto connector_id = module_mapping.connector.value();
-                    if (connector_id > 0) {
-                        component_key.connector_id = module_mapping.connector;
+                const auto mapped = ocpp_evse_id_by_everest_evse_id.find(module_mapping.evse);
+                if (mapped != ocpp_evse_id_by_everest_evse_id.cend()) {
+                    component_key.evse_id = mapped->second;
+                    if (module_mapping.connector.has_value()) {
+                        const auto connector_id = module_mapping.connector.value();
+                        if (connector_id > 0) {
+                            component_key.connector_id = module_mapping.connector;
+                        }
                     }
                 }
             }
@@ -801,8 +815,14 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
 void EverestDeviceModelStorage::init_evse_components_and_variables(
     const std::map<int32_t, types::evse_board_support::HardwareCapabilities>& evse_hardware_capabilities_map,
     const std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>& evse_supported_energy_transfers) {
+    std::map<int32_t, int32_t> ocpp_evse_id_by_everest_evse_id;
+    int32_t ocpp_evse_id = 0;
+
     for (const auto& evse_manager : r_evse_manager) {
-        const auto evse_info = evse_manager->call_get_evse();
+        auto evse_info = evse_manager->call_get_evse();
+        ocpp_evse_id++;
+        ocpp_evse_id_by_everest_evse_id[evse_info.id] = ocpp_evse_id;
+        evse_info.id = ocpp_evse_id;
         Component evse_component = get_evse_component(evse_info.id);
 
         if (evse_hardware_capabilities_map.find(evse_info.id) != evse_hardware_capabilities_map.end()) {
@@ -847,7 +867,13 @@ void EverestDeviceModelStorage::init_evse_components_and_variables(
         if (!mapping.has_value()) {
             continue;
         }
-        const auto evse_id = mapping->evse;
+        const auto mapped = ocpp_evse_id_by_everest_evse_id.find(mapping->evse);
+        if (mapped == ocpp_evse_id_by_everest_evse_id.cend()) {
+            EVLOG_error << "iso15118_extensions is mapped to EVSE " << mapping->evse
+                        << ", which this station does not serve; no updates are subscribed";
+            continue;
+        }
+        const auto evse_id = mapped->second;
         Component iso15118_component = get_iso15118_component(evse_id);
         extension->subscribe_service_renegotiation_supported(
             [this, iso15118_component](const bool service_renegotiation_supported) {
