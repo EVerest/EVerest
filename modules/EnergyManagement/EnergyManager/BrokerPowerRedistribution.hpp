@@ -41,6 +41,12 @@ std::optional<float> get_grid_limit_W(const Market& root, float nominal_ac_volta
 /// as get_grid_limit_W(). \returns std::nullopt when the limit carries neither watt nor ampere.
 std::optional<float> get_allocated_power_W(const types::energy::EnforcedLimits& limit, float nominal_ac_voltage);
 
+/// \brief The margin [W] the measurement based cap put on top of the connector's own
+/// measurement to arrive at \p limit, i.e. redistribution_margin_A on the phases that
+/// limit declares. 0 for a limit the cap is not expressed against (a watt-only DC node),
+/// where no such gap exists.
+float get_margin_power_W(const types::energy::EnforcedLimits& limit, float margin_A, float nominal_ac_voltage);
+
 /// \brief Import bounds of a connector [W] at the slot in force, from its own Market offer
 /// for the same reasons as get_grid_limit_W().
 struct StaticBoundsW {
@@ -77,14 +83,20 @@ struct ConnectorInference {
 /// \brief Compares what a connector was allotted with what it draws.
 ///
 /// The deadband is relative: a gap of more than \p margin times the allocation counts as
-/// under-consumption. Everything closer is treated as consuming the allocation, which is
+/// under-consumption. It is floored at \p broker_margin_W, the margin the cap itself added
+/// on top of this connector's measurement: a connector that follows its cap exactly is
+/// allotted its measurement plus that margin, so a gap of no more than the margin is the
+/// cap's own doing and says nothing about the EV. Without the floor no connector drawing
+/// less than redistribution_margin_A / power_redistribution_connector_margin could ever be
+/// saturated, and the site could never hand it anything.
+/// Everything closer is treated as consuming the allocation, which is
 /// either Saturated (could take more) or AtMaximum (its static limit is reached, within 1 W).
 /// Without both an allocation and a measurement the class is Unknown: no claim is made on
 /// missing data. A negative measurement is Unknown too: negative is export, the inference
 /// looks only at schedule_import, and a discharging connector consuming none of its import
 /// allocation is not the same thing as one that could give the whole allocation back.
 ConnectorInference classify_connector(std::optional<float> allocated_W, std::optional<float> measured_W,
-                                      const StaticBoundsW& bounds, float margin);
+                                      const StaticBoundsW& bounds, float margin, float broker_margin_W);
 
 /// \brief A connector that could take more power: its current allocation and static maximum.
 ///

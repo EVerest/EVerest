@@ -137,6 +137,7 @@ struct BrokerContext {
         redistribution_reduction_pending_since = std::nullopt;
         distributed_power_W = std::nullopt;
         last_allocated_W.reset();
+        last_margin_W = 0.f;
         under_consuming.reset();
     };
 
@@ -173,6 +174,12 @@ struct BrokerContext {
     // side of the power redistribution inference, compared against the measurement of the
     // following run. nullopt before the first run of a session and while not in a session.
     std::optional<float> last_allocated_W;
+
+    // The part of last_allocated_W that is the cap's own margin above the measurement it
+    // was computed from, on the phases that allocation was expressed in. Paired with
+    // last_allocated_W because the classification has to know how much of the gap it is
+    // looking at the broker put there itself.
+    float last_margin_W{0.f};
 
     // How long this connector has continuously consumed less than allotted, and whether
     // that has already been reported for the current stretch.

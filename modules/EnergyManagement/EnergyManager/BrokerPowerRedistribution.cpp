@@ -133,6 +133,16 @@ std::optional<float> get_allocated_power_W(const types::energy::EnforcedLimits& 
     return limits_to_W(limit.limits_root_side, nominal_ac_voltage);
 }
 
+float get_margin_power_W(const types::energy::EnforcedLimits& limit, float margin_A, float nominal_ac_voltage) {
+    const auto& limits = limit.limits_root_side;
+    if (not limits.ac_max_current_A.has_value() or margin_A <= 0.f) {
+        return 0.f;
+    }
+    const auto phases =
+        limits.ac_max_phase_count.has_value() ? limits.ac_max_phase_count.value().value : ASSUMED_PHASE_COUNT;
+    return margin_A * static_cast<float>(phases) * nominal_ac_voltage;
+}
+
 StaticBoundsW get_static_bounds_W(const Market& connector, float nominal_ac_voltage) {
     StaticBoundsW bounds;
     const auto* limits = active_limits(connector);
@@ -168,7 +178,7 @@ const char* to_string(ConnectorClass c) {
 }
 
 ConnectorInference classify_connector(std::optional<float> allocated_W, std::optional<float> measured_W,
-                                      const StaticBoundsW& bounds, float margin) {
+                                      const StaticBoundsW& bounds, float margin, float broker_margin_W) {
     ConnectorInference result;
     result.allocated_W = allocated_W;
     result.measured_W = measured_W;
@@ -189,11 +199,15 @@ ConnectorInference classify_connector(std::optional<float> allocated_W, std::opt
     const float measured = measured_W.value();
     const float gap = allocated - measured;
 
-    if (gap > margin * allocated) {
+    const float deadband = std::max(margin * allocated, broker_margin_W);
+
+    if (gap > deadband) {
         result.connector_class = ConnectorClass::UnderConsuming;
         // Shrink to the measurement plus margin, but never below what the EV needs to keep
         // charging at all: reducing is meant to free unused power, not to starve a session.
-        float target = measured * (1.f + margin);
+        // Nor below what the cap hands out anyway - the measurement plus the broker's own
+        // margin - which the next run would restore immediately.
+        float target = std::max(measured * (1.f + margin), measured + broker_margin_W);
         if (bounds.min_W.has_value()) {
             target = std::max(target, bounds.min_W.value());
         }

@@ -141,9 +141,17 @@ side is handed out - see `Handing out the site headroom`_.
 
 Per connector, with allotted power ``A`` and measured power ``M``:
 
-- ``M`` more than ``power_redistribution_connector_margin x A`` below ``A``: the connector
-  is *under-consuming*. This is reported, not acted on: the measurement based limit above
-  already holds the connector at what it draws plus the margin.
+- ``M`` more than the deadband below ``A``: the connector is *under-consuming*. This is
+  reported, not acted on: the measurement based limit above already holds the connector at
+  what it draws plus the margin.
+
+  The deadband is ``power_redistribution_connector_margin x A``, but never less than
+  ``redistribution_margin_A`` on the connector's phases. A connector that follows its limit
+  is allotted precisely its own measurement plus that margin, so a gap of no more than the
+  margin is the limit's own doing and says nothing about the EV. Without the floor, no
+  connector drawing less than ``redistribution_margin_A`` divided by the fraction - 18 A at
+  the defaults, whatever the phase count and voltage - could ever count as consuming its
+  allocation, and the site would never hand it anything.
 - otherwise it consumes its allocation: *saturated* if its own static maximum leaves
   room, *at maximum* if not.
 - without a previous allocation (first run of a session), without a measurement, or with a

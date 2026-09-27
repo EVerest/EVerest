@@ -155,6 +155,7 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
                                              const std::vector<types::energy::EnforcedLimits>& limits) {
     const auto nominal_ac_voltage = static_cast<float>(config.nominal_ac_voltage);
     const auto connector_margin = static_cast<float>(config.power_redistribution_connector_margin);
+    const auto margin_A = static_cast<float>(config.redistribution_margin_A);
     const auto site_margin = static_cast<float>(config.power_redistribution_site_margin);
     const auto gain = static_cast<float>(config.power_redistribution_gain);
     const auto hold_time = std::chrono::seconds(config.redistribution_reduction_hold_s);
@@ -185,7 +186,8 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
         if (observed.power_W.has_value() and is_fresh(observed.measured_at, now, aggregation_window)) {
             measured_W = observed.power_W.value().total;
         }
-        auto connector = classify_connector(ctx.last_allocated_W, measured_W, bounds, connector_margin);
+        auto connector =
+            classify_connector(ctx.last_allocated_W, measured_W, bounds, connector_margin, ctx.last_margin_W);
 
         const auto edge =
             ctx.under_consuming.update(connector.connector_class == ConnectorClass::UnderConsuming, now, hold_time);
@@ -213,11 +215,13 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
         // what an unplugged connector is allotted has no consumption to compare against, and
         // it must not leak into the first run of the next session as a false gap.
         ctx.last_allocated_W.reset();
+        ctx.last_margin_W = 0.f;
         if (in_session(node)) {
             const auto limit =
                 std::find_if(limits.begin(), limits.end(), [&node](const auto& l) { return l.uuid == node.uuid; });
             if (limit != limits.end()) {
                 ctx.last_allocated_W = get_allocated_power_W(*limit, nominal_ac_voltage);
+                ctx.last_margin_W = get_margin_power_W(*limit, margin_A, nominal_ac_voltage);
             }
         }
 

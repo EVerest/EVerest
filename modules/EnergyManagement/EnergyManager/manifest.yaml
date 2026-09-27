@@ -140,6 +140,13 @@ config:
       as under-consuming when its measured power is more than this fraction of its allocation
       below the allocation. Under-consumption is only logged: the measurement based limit
       already frees what a connector does not draw, without needing this classification.
+
+      The deadband is never smaller than redistribution_margin_A on the connector's phases,
+      because the limit hands out exactly that much above the measurement: a connector that
+      follows its limit is allotted its own measurement plus the margin, and that gap is the
+      limit's doing, not the EV's. Without that floor no connector drawing less than
+      redistribution_margin_A / this fraction (18 A at the defaults) could ever count as
+      consuming its allocation, and the site could never hand it any headroom.
     type: number
     default: 0.1
     minimum: 0

@@ -235,19 +235,19 @@ TEST(RedistributionHelpers, StaticBoundsPreferTotalPowerForMaximum) {
 // ---------------------------------------------------------------- connector classification
 
 TEST(RedistributionClassify, UnknownWithoutAllocation) {
-    const auto c = classify_connector(std::nullopt, 4000.0f, bounds(1380.0f, 22080.0f), MARGIN);
+    const auto c = classify_connector(std::nullopt, 4000.0f, bounds(1380.0f, 22080.0f), MARGIN, 0.0f);
     EXPECT_EQ(c.connector_class, ConnectorClass::Unknown);
     EXPECT_FLOAT_EQ(c.reducible_W, 0.0f);
 }
 
 TEST(RedistributionClassify, UnknownWithoutMeasurement) {
-    const auto c = classify_connector(11040.0f, std::nullopt, bounds(1380.0f, 22080.0f), MARGIN);
+    const auto c = classify_connector(11040.0f, std::nullopt, bounds(1380.0f, 22080.0f), MARGIN, 0.0f);
     EXPECT_EQ(c.connector_class, ConnectorClass::Unknown);
 }
 
 TEST(RedistributionClassify, UnderConsumingBeyondMargin) {
     // Allotted 11040 W, drawing 4000 W: gap 7040 W >> 10 % of 11040.
-    const auto c = classify_connector(11040.0f, 4000.0f, bounds(1380.0f, 22080.0f), MARGIN);
+    const auto c = classify_connector(11040.0f, 4000.0f, bounds(1380.0f, 22080.0f), MARGIN, 0.0f);
     EXPECT_EQ(c.connector_class, ConnectorClass::UnderConsuming);
     // Target is measured x 1.1 = 4400 W, so 6640 W could be released.
     EXPECT_NEAR(c.reducible_W, 11040.0f - 4400.0f, 0.5f);
@@ -256,30 +256,30 @@ TEST(RedistributionClassify, UnderConsumingBeyondMargin) {
 
 TEST(RedistributionClassify, ReducibleIsFlooredAtMinimumPurchase) {
     // Drawing almost nothing: target 110 W would starve the session; floor at min 1380 W.
-    const auto c = classify_connector(11040.0f, 100.0f, bounds(1380.0f, 22080.0f), MARGIN);
+    const auto c = classify_connector(11040.0f, 100.0f, bounds(1380.0f, 22080.0f), MARGIN, 0.0f);
     EXPECT_EQ(c.connector_class, ConnectorClass::UnderConsuming);
     EXPECT_NEAR(c.reducible_W, 11040.0f - 1380.0f, 0.5f);
 }
 
 TEST(RedistributionClassify, GapWithinMarginIsSaturated) {
     // 5 % below the allocation is inside the 10 % deadband; room up to the maximum remains.
-    const auto c = classify_connector(11040.0f, 10488.0f, bounds(1380.0f, 22080.0f), MARGIN);
+    const auto c = classify_connector(11040.0f, 10488.0f, bounds(1380.0f, 22080.0f), MARGIN, 0.0f);
     EXPECT_EQ(c.connector_class, ConnectorClass::Saturated);
     EXPECT_FLOAT_EQ(c.reducible_W, 0.0f);
 }
 
 TEST(RedistributionClassify, ExactlyAtMarginIsNotUnderConsuming) {
-    const auto c = classify_connector(10000.0f, 9000.0f, bounds(1380.0f, 22080.0f), MARGIN);
+    const auto c = classify_connector(10000.0f, 9000.0f, bounds(1380.0f, 22080.0f), MARGIN, 0.0f);
     EXPECT_EQ(c.connector_class, ConnectorClass::Saturated);
 }
 
 TEST(RedistributionClassify, ConsumingAtStaticMaximumIsAtMaximum) {
-    const auto c = classify_connector(22080.0f, 22000.0f, bounds(1380.0f, 22080.0f), MARGIN);
+    const auto c = classify_connector(22080.0f, 22000.0f, bounds(1380.0f, 22080.0f), MARGIN, 0.0f);
     EXPECT_EQ(c.connector_class, ConnectorClass::AtMaximum);
 }
 
 TEST(RedistributionClassify, ConsumingWithoutKnownMaximumIsSaturated) {
-    const auto c = classify_connector(22080.0f, 22000.0f, bounds(std::nullopt, std::nullopt), MARGIN);
+    const auto c = classify_connector(22080.0f, 22000.0f, bounds(std::nullopt, std::nullopt), MARGIN, 0.0f);
     EXPECT_EQ(c.connector_class, ConnectorClass::Saturated);
 }
 
@@ -289,7 +289,7 @@ TEST(RedistributionClassify, ExportingConnectorMakesNoImportClaim) {
     // allocation. Clamping to zero instead would read as "using none of its allocation" and
     // offer the whole allocation up for redistribution, which is not what a V2G session is
     // doing.
-    const auto c = classify_connector(11040.0f, -500.0f, bounds(1380.0f, 22080.0f), MARGIN);
+    const auto c = classify_connector(11040.0f, -500.0f, bounds(1380.0f, 22080.0f), MARGIN, 0.0f);
     EXPECT_EQ(c.connector_class, ConnectorClass::Unknown);
     EXPECT_FLOAT_EQ(c.reducible_W, 0.0f);
 }
@@ -297,9 +297,35 @@ TEST(RedistributionClassify, ExportingConnectorMakesNoImportClaim) {
 TEST(RedistributionClassify, AConnectorDrawingNothingIsStillUnderConsuming) {
     // Zero is a measurement, not an absence: a plugged-in car that has stopped drawing can
     // genuinely give its allocation back, down to the minimum purchase.
-    const auto c = classify_connector(11040.0f, 0.0f, bounds(1380.0f, 22080.0f), MARGIN);
+    const auto c = classify_connector(11040.0f, 0.0f, bounds(1380.0f, 22080.0f), MARGIN, 0.0f);
     EXPECT_EQ(c.connector_class, ConnectorClass::UnderConsuming);
     EXPECT_NEAR(c.reducible_W, 11040.0f - 1380.0f, 0.5f);
+}
+
+// The cap sits one redistribution_margin_A above the connector's own measurement, so a
+// connector that follows it exactly is allotted exactly that much more than it draws. The
+// deadband is floored at that margin, or no connector drawing less than
+// margin_A / connector_margin (18 A at the defaults) could ever be saturated.
+
+TEST(RedistributionClassify, AGapOfNoMoreThanTheBrokersOwnMarginIsNotUnderConsumption) {
+    // 13 A on three phases: a 1035 W deadband against the 1380 W the cap added itself.
+    const auto c = classify_connector(10350.0f, 8970.0f, bounds(1380.0f, 22080.0f), MARGIN, 1380.0f);
+    EXPECT_EQ(c.connector_class, ConnectorClass::Saturated);
+    EXPECT_FLOAT_EQ(c.reducible_W, 0.0f);
+}
+
+TEST(RedistributionClassify, TheFloorDoesNotHideARealGap) {
+    const auto c = classify_connector(10350.0f, 4000.0f, bounds(1380.0f, 22080.0f), MARGIN, 1380.0f);
+    EXPECT_EQ(c.connector_class, ConnectorClass::UnderConsuming);
+    // Reducible down to the measurement plus the margin the cap will add again anyway.
+    EXPECT_NEAR(c.reducible_W, 10350.0f - (4000.0f + 1380.0f), 0.5f);
+}
+
+TEST(RedistributionClassify, TheWiderOfTheTwoDeadbandsWins) {
+    // 22 kW allocation: the relative deadband (2208 W) is the wider one and still governs,
+    // so a 2080 W gap is inside it although it is larger than the broker's margin.
+    const auto c = classify_connector(22080.0f, 20000.0f, bounds(1380.0f, 30000.0f), MARGIN, 1380.0f);
+    EXPECT_EQ(c.connector_class, ConnectorClass::Saturated);
 }
 
 // ---------------------------------------------------------------- site inference
@@ -584,6 +610,9 @@ TEST(RedistributionIntegration, ZeroHoldTimeHoldsImmediately) {
 
     EnergyManagerImpl impl(make_redistribution_config(0), [](const std::vector<types::energy::EnforcedLimits>&) {});
     impl.run_optimizer(request, T0);
+    // The draw falls away below what the previous run allotted, which is the gap the
+    // measurement based cap did not put there itself.
+    test::set_measurement(request.children[0], 1000.0f, fresh_at(1));
     impl.run_optimizer(request, T0 + std::chrono::seconds(1));
 
     EXPECT_TRUE(impl.get_redistribution_inference().connectors.at("evse1").held);
@@ -596,6 +625,7 @@ TEST(RedistributionIntegration, UnplugClearsTheComparison) {
 
     EnergyManagerImpl impl(make_redistribution_config(0), [](const std::vector<types::energy::EnforcedLimits>&) {});
     impl.run_optimizer(request, T0);
+    test::set_measurement(request.children[0], 1000.0f, fresh_at(1));
     impl.run_optimizer(request, T0 + std::chrono::seconds(1));
     ASSERT_EQ(impl.get_redistribution_inference().connectors.at("evse1").connector_class,
               ConnectorClass::UnderConsuming);
@@ -736,11 +766,13 @@ TEST(RedistributionIntegration, IncreaseReportedAfterHoldForSaturatedConnector) 
 TEST(RedistributionIntegration, StaleConnectorMeasurementMakesNoClaim) {
     auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
     auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
-    // The meter reports 4 kW and then stops updating its timestamp.
     test::set_measurement(request.children[0], 4000.0f, FRESH);
 
     EnergyManagerImpl impl(make_redistribution_config(0), [](const std::vector<types::energy::EnforcedLimits>&) {});
     impl.run_optimizer(request, T0);
+
+    // The draw falls away, and then the meter stops updating its timestamp at that value.
+    test::set_measurement(request.children[0], 1000.0f, fresh_at(1));
 
     // Still fresh one second in: the connector is genuinely under-consuming.
     impl.run_optimizer(request, T0 + std::chrono::seconds(1));
@@ -880,49 +912,36 @@ TEST(RedistributionIntegration, NoIncreaseAtTheFuseLimitWithHouseLoad) {
     EXPECT_FLOAT_EQ(site.increase_W, 0.0f);
 }
 
-TEST(RedistributionIntegration, TheReduceSideDoesNotAffectAllocations) {
+TEST(RedistributionIntegration, AnUnderConsumingConnectorReceivesNoShare) {
     // The increase side of the inference moves allocations by design (see the
-    // SiteDistribution tests). The reduce side does not, and must not: lowering a
-    // connector is the measurement based limit's job, and this classification only reports
-    // on it. Neither connector here is saturated, so nothing is ever granted, and a broker
-    // that may hand out headroom allocates exactly like one that may not.
-    auto make_request = []() {
-        auto evse1 = test::make_evse_node("evse1", 32.0f, 6.0f);
-        auto evse2 = test::make_evse_node("evse2", 32.0f, 6.0f);
-        auto request = test::make_root_node("grid", 40.0f, 30000.0f, {evse1, evse2});
-        // Both draw far less than the measurement based limit allows, so neither is ever
-        // saturated and the site has nobody to hand its headroom to.
-        test::set_measurement(request.children[0], 3000.0f, FRESH);
-        test::set_measurement(request.children[1], 4000.0f, FRESH);
-        return request;
-    };
-    const auto request = make_request();
+    // SiteDistribution tests). The reduce side does not, and must not: lowering a connector
+    // is the measurement based limit's job, and this classification only reports on it. So a
+    // connector that is giving power back is never among the candidates a share is split
+    // over, however much headroom the site has.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 40.0f, 30000.0f, {evse});
+    test::set_measurement(request.children[0], 13800.0f, FRESH);
+    test::set_root_measurement(request, 13800.0f, FRESH);
 
-    auto report_only_config = make_redistribution_config(0);
-    report_only_config.power_redistribution_gain = 0.0;
+    EnergyManagerImpl impl(make_redistribution_config(0), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, T0);
 
-    EnergyManagerImpl granting(make_redistribution_config(0), [](const std::vector<types::energy::EnforcedLimits>&) {});
-    EnergyManagerImpl report_only(report_only_config, [](const std::vector<types::energy::EnforcedLimits>&) {});
+    // The EV drops to a fraction of what it was allotted while the site keeps 27 kW of
+    // headroom to hand out.
+    test::set_measurement(request.children[0], 3000.0f, fresh_at(1));
+    test::set_root_measurement(request, 3000.0f, fresh_at(1));
+    impl.run_optimizer(request, T0 + std::chrono::seconds(1));
 
-    for (int run = 0; run < 3; run++) {
-        const auto at = T0 + std::chrono::seconds(run);
-        const auto a = granting.run_optimizer(request, at);
-        const auto b = report_only.run_optimizer(request, at);
-        for (const auto* uuid : {"evse1", "evse2"}) {
-            const auto la = test::find_limit(a, uuid);
-            const auto lb = test::find_limit(b, uuid);
-            ASSERT_TRUE(la.has_value());
-            ASSERT_TRUE(lb.has_value());
-            EXPECT_FLOAT_EQ(la.value().limits_root_side.ac_max_current_A.value().value,
-                            lb.value().limits_root_side.ac_max_current_A.value().value);
-        }
-    }
-    // Both reported a connector that could give power back, and neither acted on it.
-    const auto inference = granting.get_redistribution_inference();
+    const auto inference = impl.get_redistribution_inference();
     EXPECT_EQ(inference.connectors.at("evse1").connector_class, ConnectorClass::UnderConsuming);
+    EXPECT_GT(inference.connectors.at("evse1").reducible_W, 0.0f);
     EXPECT_TRUE(inference.connectors.at("evse1").held);
+
+    ASSERT_TRUE(inference.site.headroom_W.has_value());
+    EXPECT_GT(inference.site.headroom_W.value(), 0.0f);
+    EXPECT_EQ(inference.site.saturated_connectors, 0);
     EXPECT_FLOAT_EQ(inference.site.increase_W, 0.0f);
-    EXPECT_FLOAT_EQ(report_only.get_redistribution_inference().site.increase_W, 0.0f);
+    EXPECT_TRUE(inference.site.increase_W_by_connector.empty());
 }
 
 // ---------------------------------------------------------------- handing out the headroom
@@ -953,6 +972,28 @@ TEST(SiteDistribution, AGrantNeverLiftsAConnectorAboveItsOwnMaximum) {
     // The connector may draw 24 A; the site has far more than 2 A of headroom to offer it.
     EnergyManagerImpl impl(make_redistribution_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
     EXPECT_NEAR(run_drawing_connector(impl, true, 12, 24.0f), 24.0f, 0.01f);
+}
+
+TEST(SiteDistribution, ASmallerDrawReceivesAShareToo) {
+    // Same site and the same headroom, a smaller EV: 9000 W (13 A) instead of 13800 W
+    // (20 A). Before the deadband was floored at the cap's own margin, this connector was
+    // classed UnderConsuming on every run and the site never handed it anything.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, 30000.0f, {evse});
+
+    EnergyManagerImpl impl(make_redistribution_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    float current_A = 0.0f;
+    for (int t = 0; t <= 12; t++) {
+        test::set_measurement(request.children[0], 9000.0f, fresh_at(t));
+        test::set_root_measurement(request, 9000.0f, fresh_at(t));
+        const auto limits = impl.run_optimizer(request, T0 + std::chrono::seconds(t));
+        current_A = test::find_limit(limits, "evse1").value().limits_root_side.ac_max_current_A.value().value;
+    }
+
+    const float measured_A = 9000.0f / 3.0f / 230.0f;
+    EXPECT_EQ(impl.get_redistribution_inference().connectors.at("evse1").connector_class, ConnectorClass::Saturated);
+    EXPECT_GT(current_A, measured_A + 2.0f + 0.5f);
+    EXPECT_LE(current_A, 32.0f);
 }
 
 TEST(SiteDistribution, ZeroGainHandsOutNothing) {
