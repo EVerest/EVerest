@@ -156,6 +156,8 @@ Result ScheduleExchange::feed(Event ev) {
 
         if (m_ctx.session.is_dc_charger()) {
             max_charge_power = m_ctx.session_config.dc_limits.charge_limits.power.max;
+        } else if (m_ctx.session.is_ac_charger()) {
+            max_charge_power = m_ctx.session_config.ac_limits.charge_power.max;
         }
 
         std::optional<dt::AcConnector> ac_connector{};
