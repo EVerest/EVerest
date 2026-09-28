@@ -4,6 +4,7 @@
 """Broker-free tests: argument parsing, request payloads, and shell robustness."""
 
 import json
+import sys
 import types
 
 import pytest
@@ -339,3 +340,7 @@ def test_parameter_file_errors(text, message):
     from everest_management_api_cli.commands import parse_parameter_file
     with pytest.raises(CommandError, match=message):
         parse_parameter_file(text)
+
+
+if __name__ == "__main__":
+    sys.exit(pytest.main([__file__, "-v"] + sys.argv[1:]))
