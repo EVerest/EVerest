@@ -63,19 +63,13 @@ Specify this user in the EVerest config file in the settings section:
    settings:
     run_as_user: everest
 
+The systemd service should start the manager process as root. It will
+then change the user for the child processes it forks (the modules).
+Alternatively the manager process can be started with the appropriate
+Linux capability to allow user changes.
+
 Some modules need elevated privileges, e.g. SLAC module. Those modules
-should be given individual Linux capabilities like this:
-
-.. code-block:: yaml
-
-    slac:
-      config_implementation:
-        main:
-          device: seth0
-          link_status_detection: true
-      module: EvseSlac
-      capabilities:
-        - CAP_NET_RAW
+should be given individual Linux capabilities via file based capabilities.
 
 Here is a list of capabilities required by the EVerest modules:
 
@@ -87,9 +81,11 @@ Setup             CAP_NET_ADMIN, CAP_NET_RAW, CAP_DAC_OVERRIDE
 PacketSniffer     CAP_NET_RAW
 ================= ============================================
 
-The systemd service should start the manager process as root. It will
-then change the user for the child processes it forks (the modules) and
-set the capabilities as needed.
+.. note::
+
+   Setting Linux capabilities for a module with the ``capabilities`` key
+   in the EVerest config file is no longer supported. The key is still
+   accepted, but the manager ignores it and logs a warning at startup.
 
 - To ensure that internal services cannot be accessed via the powerline connection,
   iptables can be used with the following rules. In this example the powerline module

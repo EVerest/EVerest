@@ -86,7 +86,9 @@ properties:
             #  module name
             pattern: ^[a-zA-Z_][a-zA-Z0-9_-]*$
           capabilities:
-            description: Linux capabilities required to run this module
+            description: >-
+              Deprecated and ignored, a warning is logged if set. Linux capabilities are no longer
+              set by the manager.
             type: array
             items:
               type: string
