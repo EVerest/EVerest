@@ -21,6 +21,7 @@ target_sources(${MODULE_NAME}
         ErrorHandling.cpp
         backtrace.cpp
         PersistentStore.cpp
+        cable_check/PowerSupplyMeasurementWaiter.cpp
         over_voltage/OverVoltageMonitor.cpp
         voltage_plausibility/VoltagePlausibilityMonitor.cpp
 )
