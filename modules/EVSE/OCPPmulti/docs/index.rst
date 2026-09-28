@@ -762,7 +762,9 @@ plus APN settings) with slot 2 as a wired fallback (``"Wired0"``).
 
 A slot is only usable once its profile is complete: ``OcppCsmsUrl``,
 ``SecurityProfile``, ``OcppInterface``, ``OcppTransport`` and ``MessageTimeout``
-are all mandatory, and a slot missing any of them is skipped. The example
+are all mandatory, and a slot missing any of them is skipped. ``Identity`` and
+``BasicAuthPassword`` are optional per slot: when empty, the ``SecurityCtrlr``
+global of the same name is used (B09.FR.16). The example
 ``NetworkConfiguration_1.json`` carries defaults for everything except the URL
 (``SecurityProfile`` ``1``, ``OcppInterface`` ``"Wired0"``, ``OcppTransport``
 ``"JSON"``, ``MessageTimeout`` ``30``), so slot 1 only needs an

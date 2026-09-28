@@ -14,6 +14,7 @@
 ///   * read_network_connection_profile(slot) - configured slot, legacy-synthesis fallback, version filter, nullopt,
 ///   * get_websocket_connection_options(slot) - per-slot fields + identity/password fallbacks + base equivalence
 ///     + nullopt rejections (':' in identity, URL scheme vs security profile),
+///   * check_integrity() - ChargePointId accepted via the SecurityCtrlr/Identity fallback,
 ///   * set_active_network_profile_slot(slot) - persistence + getter redirection,
 ///   * a ConnectivityManager smoke test built over the adapter, and
 ///   * the ocpp16 component-config patcher pinning NetworkConfiguration[slot].OcppInterface to "Any".
@@ -241,6 +242,12 @@ protected:
         ASSERT_EQ(dm->set_value(NC::get_component_variable(slot, NC::Identity).component,
                                 NC::get_component_variable(slot, NC::Identity).variable.value(), AttributeEnum::Actual,
                                 identity, "test"),
+                  SetVariableStatusEnum::Accepted);
+    }
+
+    void clear_actual_value(const ocpp::v2::ComponentVariable& cv) {
+        ASSERT_TRUE(cv.variable.has_value());
+        ASSERT_EQ(dm->clear_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "test"),
                   SetVariableStatusEnum::Accepted);
     }
 
@@ -529,6 +536,35 @@ TEST_F(DeviceModelConnectivityTest, WsOptionsNulloptForSchemeSecurityProfileMism
 
     EXPECT_FALSE(config->get_websocket_connection_options(2).has_value())
         << "an insecure ws:// URL with a TLS security profile must not produce connection options";
+}
+
+// ---------------------------------------------------------------------------
+// check_integrity()
+// ---------------------------------------------------------------------------
+
+// A committed SecurityCtrlr/Identity write clears the active slot's Identity (B09.FR.26). The persisted device model
+// must still pass the integrity check on the next start, since ChargePointId falls back to the global.
+TEST_F(DeviceModelConnectivityTest, IntegrityPassesWithEmptySlotIdentityAndGlobalIdentity) {
+    auto profile = make_slot_profile("ws://active.example.com/ocpp", 1, OCPPInterfaceEnum::Any);
+    profile.identity = "cp001";
+    write_slot_profile(1, profile);
+    ASSERT_NO_THROW(config->check_integrity(config->getNumberOfConnectors()))
+        << "fixture precondition: a fully configured active slot must pass";
+
+    clear_actual_value(NC::get_component_variable(1, NC::Identity));
+    ASSERT_FALSE(dm->get_value<std::string>(CC::SecurityCtrlrIdentity).empty())
+        << "fixture precondition: SecurityCtrlr/Identity must be set";
+
+    EXPECT_NO_THROW(config->check_integrity(config->getNumberOfConnectors()));
+    EXPECT_EQ(config->getChargePointId(), dm->get_value<std::string>(CC::SecurityCtrlrIdentity));
+}
+
+TEST_F(DeviceModelConnectivityTest, IntegrityFailsWithoutSlotAndGlobalIdentity) {
+    write_slot_profile(1, make_slot_profile("ws://active.example.com/ocpp", 1, OCPPInterfaceEnum::Any));
+    clear_actual_value(NC::get_component_variable(1, NC::Identity));
+    clear_actual_value(CC::SecurityCtrlrIdentity);
+
+    EXPECT_THROW(config->check_integrity(config->getNumberOfConnectors()), std::runtime_error);
 }
 
 // ---------------------------------------------------------------------------
