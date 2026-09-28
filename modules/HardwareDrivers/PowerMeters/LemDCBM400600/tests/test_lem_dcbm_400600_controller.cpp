@@ -8,6 +8,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <memory>
 
 namespace module::main {
@@ -26,6 +27,40 @@ public:
     MOCK_METHOD(void, restart_unsafe_period, (), (override));
     LemDCBMTimeSyncHelperMock() : LemDCBMTimeSyncHelper({}, {}){};
 };
+
+// The fields of Conf that the tests actually vary. Everything else is fixed by make_controller_conf()
+// below, so that adding a field to Conf does not silently shift the meaning of every test's config.
+struct ControllerConfOverrides {
+    int init_number_of_http_retries = 0;
+    int init_retry_wait_in_milliseconds = 0;
+    // IT = -1 so that init() does not call set_identification_type()
+    int IT = -1;
+    int transaction_ocmf_fetch_interval_s = 0;
+};
+
+static LemDCBM400600Controller::Conf make_controller_conf(const ControllerConfOverrides& overrides = {}) {
+    return LemDCBM400600Controller::Conf{overrides.init_number_of_http_retries,
+                                         overrides.init_retry_wait_in_milliseconds,
+                                         /*transaction_number_of_http_retries=*/1,
+                                         /*transaction_retry_wait_in_milliseconds=*/0,
+                                         /*cable_id=*/0,
+                                         /*tariff_id=*/0,
+                                         /*meter_timezone=*/{},
+                                         /*meter_dst=*/{},
+                                         /*SC=*/0,
+                                         /*UV=*/{},
+                                         /*UD=*/{},
+                                         overrides.IT,
+                                         /*command_timeout_ms=*/0,
+                                         overrides.transaction_ocmf_fetch_interval_s};
+}
+
+// Performs one iteration of the live measurement poll loop, in the same order as powermeterImpl does:
+// fetch and publish the live measurements first, refresh the fallback OCMF record afterwards.
+static void poll_once(LemDCBM400600Controller& controller) {
+    const auto powermeter = controller.get_powermeter();
+    controller.update_transaction_fallback_ocmf(powermeter.timestamp);
+}
 
 // Fixture class providing
 //   - a http client mock
@@ -92,8 +127,7 @@ protected:
                                                 "publicKey": "A80F10D968E1122F8820F288B23C4E1C0DA912F35B48481274ADFEFE66D7E87E130C7CF2B8047C45CF105041C8C3A57DD242782F755C9443F42DABA9404A67BF"
                                                 })";
 
-    // IT = -1 so that init() does not call set_identification_type()
-    const LemDCBM400600Controller::Conf controller_config{0, 0, 1, 0, 0, 0, {}, {}, 0, {}, {}, -1};
+    const LemDCBM400600Controller::Conf controller_config{make_controller_conf()};
 
     void SetUp() override {
         this->http_client = std::make_unique<HTTPClientMock>();
@@ -218,6 +252,121 @@ TEST_F(LemDCBM400600ControllerTest, test_start_transaction) {
         int(delta.count() / 1E9 / 60),
         48 * 60 -
             3); // delta of max and min stopping time should be 48 hours - 2 minutes wait time and 1 minute safety time
+}
+
+/// \brief Test fallback OCMF is fetched immediately after start and then throttled
+TEST_F(LemDCBM400600ControllerTest, test_fallback_ocmf_fetch_is_immediate_then_throttled) {
+    testing::Sequence seq;
+    EXPECT_CALL(*this->time_sync_helper, sync(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, post("/v1/legal", this->expected_start_transaction_request_body))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{201, R"({"running": true})"}));
+    EXPECT_CALL(*this->time_sync_helper, sync_if_deadline_expired(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, get("/v1/livemeasure"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, this->livemeasure_response}));
+    EXPECT_CALL(*this->http_client, get("/v1/ocmf?transactionId=mock_transaction_id"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, "mock_ocmf_string"}));
+    EXPECT_CALL(*this->time_sync_helper, sync_if_deadline_expired(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, get("/v1/livemeasure"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, this->livemeasure_response}));
+
+    const LemDCBM400600Controller::Conf throttled_controller_config{
+        make_controller_conf({.transaction_ocmf_fetch_interval_s = std::numeric_limits<int>::max()})};
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       throttled_controller_config);
+
+    EXPECT_EQ(controller.start_transaction(this->transaction_request).status,
+              types::powermeter::TransactionRequestStatus::OK);
+    poll_once(controller);
+    poll_once(controller);
+}
+
+/// \brief Test get_powermeter does not fetch the fallback OCMF record itself
+///
+/// The fallback record must be fetched only via update_transaction_fallback_ocmf(), so that the caller
+/// can publish the live measurements before paying for that round trip.
+TEST_F(LemDCBM400600ControllerTest, test_get_powermeter_does_not_fetch_fallback_ocmf) {
+    testing::Sequence seq;
+    EXPECT_CALL(*this->time_sync_helper, sync(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, post("/v1/legal", this->expected_start_transaction_request_body))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{201, R"({"running": true})"}));
+    EXPECT_CALL(*this->time_sync_helper, sync_if_deadline_expired(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, get("/v1/livemeasure"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, this->livemeasure_response}));
+    // Only reached once update_transaction_fallback_ocmf() is called explicitly, never by get_powermeter().
+    bool ocmf_fetched = false;
+    EXPECT_CALL(*this->http_client, get("/v1/ocmf?transactionId=mock_transaction_id"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::DoAll(testing::InvokeWithoutArgs([&ocmf_fetched] { ocmf_fetched = true; }),
+                                 testing::Return(HttpResponse{200, "mock_ocmf_string"})));
+
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       this->controller_config);
+
+    EXPECT_EQ(controller.start_transaction(this->transaction_request).status,
+              types::powermeter::TransactionRequestStatus::OK);
+
+    const auto powermeter = controller.get_powermeter();
+    EXPECT_FALSE(ocmf_fetched) << "get_powermeter() must not fetch the fallback OCMF record";
+
+    controller.update_transaction_fallback_ocmf(powermeter.timestamp);
+    EXPECT_TRUE(ocmf_fetched);
+}
+
+/// \brief Test a failing fallback OCMF fetch does not bypass the throttle
+///
+/// A slow or erroring OCMF endpoint must not be retried on every single poll: that is precisely when the
+/// device can least afford the extra request, and each attempt delays the publication of the live
+/// measurements by up to the command timeout.
+TEST_F(LemDCBM400600ControllerTest, test_failing_fallback_ocmf_fetch_is_still_throttled) {
+    testing::Sequence seq;
+    EXPECT_CALL(*this->time_sync_helper, sync(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, post("/v1/legal", this->expected_start_transaction_request_body))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{201, R"({"running": true})"}));
+    EXPECT_CALL(*this->time_sync_helper, sync_if_deadline_expired(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, get("/v1/livemeasure"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, this->livemeasure_response}));
+    // The single OCMF attempt fails - it must not be repeated on the following polls.
+    EXPECT_CALL(*this->http_client, get("/v1/ocmf?transactionId=mock_transaction_id"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Throw(HttpClientError("mock connection failure")));
+    // Two further polls, each fetching only the live measurements. Any further OCMF request would be
+    // reported by gmock as an unexpected call, since its expectation above is already saturated.
+    for (int poll = 0; poll < 2; poll++) {
+        EXPECT_CALL(*this->time_sync_helper, sync_if_deadline_expired(testing::_)).Times(1).InSequence(seq);
+        EXPECT_CALL(*this->http_client, get("/v1/livemeasure"))
+            .Times(1)
+            .InSequence(seq)
+            .WillOnce(testing::Return(HttpResponse{200, this->livemeasure_response}));
+    }
+
+    const LemDCBM400600Controller::Conf throttled_controller_config{
+        make_controller_conf({.transaction_ocmf_fetch_interval_s = std::numeric_limits<int>::max()})};
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       throttled_controller_config);
+
+    EXPECT_EQ(controller.start_transaction(this->transaction_request).status,
+              types::powermeter::TransactionRequestStatus::OK);
+    poll_once(controller);
+    poll_once(controller);
+    poll_once(controller);
 }
 
 // \brief Test a failed start transaction with the DCBM returning an invalid response
@@ -451,7 +600,8 @@ TEST_F(LemDCBM400600ControllerTest, test_init_meter_id_retry_success) {
             200,
             this->livemeasure_response,
         }));
-    const LemDCBM400600Controller::Conf controller_config{number_of_retries, 1, 1, 0, 0, 0, {}, {}, 0, {}, {}, -1};
+    const LemDCBM400600Controller::Conf controller_config{
+        make_controller_conf({.init_number_of_http_retries = number_of_retries, .init_retry_wait_in_milliseconds = 1})};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
                                        controller_config);
 
@@ -472,7 +622,8 @@ TEST_F(LemDCBM400600ControllerTest, test_init_meter_id_retry_fail_eventually) {
         .WillRepeatedly(testing::Throw(HttpClientError{"mock error"}));
     EXPECT_CALL(*this->time_sync_helper, restart_unsafe_period()).Times(0);
 
-    const LemDCBM400600Controller::Conf controller_config{number_of_retries, 1, 1, 0, 0, 0, {}, {}, 0, {}, {}, -1};
+    const LemDCBM400600Controller::Conf controller_config{
+        make_controller_conf({.init_number_of_http_retries = number_of_retries, .init_retry_wait_in_milliseconds = 1})};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
                                        controller_config);
 
@@ -532,7 +683,7 @@ TEST_F(LemDCBM400600ControllerTest, test_init_sets_it_when_valid) {
 
     SETUP_SUCCESSFUL_INIT(seq);
 
-    const LemDCBM400600Controller::Conf config_with_it{0, 0, 1, 0, 0, 0, {}, {}, 0, {}, {}, 5};
+    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf({.IT = 5})};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
 
     // Act - should not throw
@@ -554,7 +705,7 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_bad_status_code) {
         .InSequence(seq)
         .WillOnce(testing::Return(HttpResponse{500, "Internal Server Error"}));
 
-    const LemDCBM400600Controller::Conf config_with_it{0, 0, 1, 0, 0, 0, {}, {}, 0, {}, {}, 3};
+    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf({.IT = 3})};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
 
     // Act & Verify
@@ -576,7 +727,7 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_rejected) {
         .InSequence(seq)
         .WillOnce(testing::Return(HttpResponse{200, R"({"result": 0})"}));
 
-    const LemDCBM400600Controller::Conf config_with_it{0, 0, 1, 0, 0, 0, {}, {}, 0, {}, {}, 3};
+    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf({.IT = 3})};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
 
     // Act & Verify
@@ -598,7 +749,7 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_malformed_json) {
         .InSequence(seq)
         .WillOnce(testing::Return(HttpResponse{200, "not json"}));
 
-    const LemDCBM400600Controller::Conf config_with_it{0, 0, 1, 0, 0, 0, {}, {}, 0, {}, {}, 3};
+    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf({.IT = 3})};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
 
     // Act & Verify
@@ -620,7 +771,7 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_missing_result_key
         .InSequence(seq)
         .WillOnce(testing::Return(HttpResponse{200, R"({"status": "ok"})"}));
 
-    const LemDCBM400600Controller::Conf config_with_it{0, 0, 1, 0, 0, 0, {}, {}, 0, {}, {}, 3};
+    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf({.IT = 3})};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
 
     // Act & Verify
@@ -641,7 +792,7 @@ TEST_F(LemDCBM400600ControllerTest, test_init_skips_set_it_when_already_configur
 
     SETUP_SUCCESSFUL_INIT(seq);
 
-    const LemDCBM400600Controller::Conf config_with_it{0, 0, 1, 0, 0, 0, {}, {}, 0, {}, {}, 5};
+    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf({.IT = 5})};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
 
     // Act - should not throw
