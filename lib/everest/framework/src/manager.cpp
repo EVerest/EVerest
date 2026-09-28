@@ -41,6 +41,7 @@
 #include <utils/config/storage_userconfig.hpp>
 #include <utils/date.hpp>
 #include <utils/mqtt_abstraction.hpp>
+#include <utils/startup_metadata.hpp>
 #include <utils/status_fifo.hpp>
 
 #include "manager.hpp"
@@ -302,82 +303,7 @@ void sigkill_modules(const std::map<pid_t, std::string>& modules) {
 
 /// \brief Publish startup metadata, register handlers, and spawn module processes.
 void Manager::publish_startup_metadata(const RuntimeContext& ctx) const {
-    const auto& config = *ctx.config;
-    auto& mqtt_abstraction = ctx.mqtt_abstraction;
-    const auto& ms = ctx.ms;
-
-    const auto interface_definitions = config.get_interface_definitions();
-    std::vector<std::string> interface_names;
-    for (auto& interface_definition : interface_definitions.items()) {
-        interface_names.push_back(interface_definition.key());
-    }
-
-    MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, interface_names};
-
-    mqtt_abstraction.publish(fmt::format("{}interfaces", ms.mqtt_settings.everest_prefix), payload, QOS::QOS2, true);
-
-    for (const auto& interface_definition : interface_definitions.items()) {
-
-        MqttMessagePayload interface_definition_payload{MqttMessageType::ConfigurationResponse,
-                                                        interface_definition.value()};
-        mqtt_abstraction.publish(
-            fmt::format("{}interface_definitions/{}", ms.mqtt_settings.everest_prefix, interface_definition.key()),
-            interface_definition_payload, QOS::QOS2, true);
-    }
-
-    const auto type_definitions = config.get_types();
-    std::vector<std::string> type_names;
-    for (auto& type_definition : type_definitions.items()) {
-        type_names.push_back(type_definition.key());
-    }
-
-    MqttMessagePayload type_names_payload{MqttMessageType::ConfigurationResponse, type_names};
-
-    mqtt_abstraction.publish(fmt::format("{}types", ms.mqtt_settings.everest_prefix), type_names_payload, QOS::QOS2,
-                             true);
-    for (const auto& type_definition : type_definitions.items()) {
-
-        MqttMessagePayload type_definition_payload{MqttMessageType::ConfigurationResponse, type_definition.value()};
-
-        // type_definition keys already start with a / so omit it in the topic name
-        mqtt_abstraction.publish(
-            fmt::format("{}type_definitions{}", ms.mqtt_settings.everest_prefix, type_definition.key()),
-            type_definition_payload, QOS::QOS2, true);
-    }
-
-    const auto settings = config.get_settings();
-
-    MqttMessagePayload settings_payload{MqttMessageType::ConfigurationResponse, settings};
-
-    mqtt_abstraction.publish(fmt::format("{}settings", ms.mqtt_settings.everest_prefix), settings_payload, QOS::QOS2,
-                             true);
-
-    if (ms.runtime_settings.validate_schema) {
-        const auto schemas = config.get_schemas();
-
-        MqttMessagePayload schemas_payload{MqttMessageType::ConfigurationResponse, schemas};
-
-        mqtt_abstraction.publish(fmt::format("{}schemas", ms.mqtt_settings.everest_prefix), schemas_payload, QOS::QOS2,
-                                 true);
-    }
-
-    const auto manifests = config.get_manifests();
-    for (const auto& manifest : manifests.items()) {
-        auto manifest_copy = manifest.value();
-        manifest_copy.erase("config");
-
-        MqttMessagePayload manifest_payload{MqttMessageType::ConfigurationResponse, manifest_copy};
-
-        mqtt_abstraction.publish(fmt::format("{}manifests/{}", ms.mqtt_settings.everest_prefix, manifest.key()),
-                                 manifest_payload, QOS::QOS2, true);
-    }
-
-    const auto module_names = config.get_module_names();
-
-    MqttMessagePayload module_names_payload{MqttMessageType::ConfigurationResponse, module_names};
-
-    mqtt_abstraction.publish(fmt::format("{}module_names", ms.mqtt_settings.everest_prefix), module_names_payload,
-                             QOS::QOS2, true);
+    Everest::publish_startup_metadata(*ctx.config, ctx.mqtt_abstraction, ctx.ms);
 }
 
 /// \brief Unregister all module ready handlers and clear tracked ready state.

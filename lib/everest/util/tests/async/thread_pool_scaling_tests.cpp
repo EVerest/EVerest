@@ -4,6 +4,7 @@
 #include "gtest/gtest.h"
 #include <atomic>
 #include <chrono>
+#include <ctime>
 #include <everest/util/async/thread_pool_scaling.hpp>
 #include <future>
 #include <vector>
@@ -534,4 +535,73 @@ TEST(ThreadPoolScalingStressTest, ZombiesReapedConcurrentlyWithTaskExecution) {
     }
     EXPECT_EQ(completed.load(), total_tasks);
     // Destructor must complete cleanly with no unjoined zombie threads
+}
+
+namespace {
+// The only worker blocks until a second task runs; that task is queued once and nothing else is submitted, so only
+// the supervisor can add the worker that resolves the dependency.
+bool dependent_task_runs_without_further_submissions(thread_pool_scaling<LatencyScaling<20, 5>>& pool) {
+    std::promise<void> second_ran;
+    auto second_ran_future = second_ran.get_future().share();
+    std::promise<void> first_done;
+    auto first_done_future = first_done.get_future();
+    pool.run([second_ran_future, &first_done] {
+        const auto status = second_ran_future.wait_for(2s);
+        first_done.set_value();
+        (void)status;
+    });
+    std::this_thread::sleep_for(10ms);
+    pool.run([&second_ran] { second_ran.set_value(); });
+    const bool ran = second_ran_future.wait_for(1s) == std::future_status::ready;
+    first_done_future.wait();
+    return ran;
+}
+} // namespace
+
+/**
+ * @test SupervisorResolvesBlockedWorkerWithoutNewSubmissions
+ * @brief A task queued behind a blocked worker runs although no further task is submitted.
+ */
+TEST(ThreadPoolScalingTest, SupervisorResolvesBlockedWorkerWithoutNewSubmissions) {
+    thread_pool_scaling<LatencyScaling<20, 5>> pool(1, 4, 5s);
+    EXPECT_TRUE(dependent_task_runs_without_further_submissions(pool));
+}
+
+/**
+ * @test SupervisorWakesFromIdle
+ * @brief The supervisor sleeps while the queue is empty and still resolves a blocked worker once work arrives.
+ */
+TEST(ThreadPoolScalingTest, SupervisorWakesFromIdle) {
+    thread_pool_scaling<LatencyScaling<20, 5>> pool(1, 4, 5s);
+    std::this_thread::sleep_for(200ms);
+    EXPECT_TRUE(dependent_task_runs_without_further_submissions(pool));
+    std::this_thread::sleep_for(200ms);
+    EXPECT_TRUE(dependent_task_runs_without_further_submissions(pool));
+}
+
+/**
+ * @test SupervisorDoesNotSpinAtThreadLimit
+ * @brief With every worker blocked at the thread limit and a task overdue, the supervisor sleeps until a worker
+ * retires instead of spinning on a deadline in the past.
+ */
+TEST(ThreadPoolScalingTest, SupervisorDoesNotSpinAtThreadLimit) {
+    thread_pool_scaling<LatencyScaling<5, 5>> pool(1, 1, 5s);
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    std::atomic<bool> second_ran{false};
+    pool.run([released] { released.wait(); });
+    pool.run([&second_ran] { second_ran = true; });
+
+    const auto cpu_before = std::clock();
+    std::this_thread::sleep_for(300ms);
+    const auto cpu_ms = 1000.0 * static_cast<double>(std::clock() - cpu_before) / CLOCKS_PER_SEC;
+    EXPECT_LT(cpu_ms, 50.0);
+    EXPECT_FALSE(second_ran);
+
+    release.set_value();
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (not second_ran and std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(1ms);
+    }
+    EXPECT_TRUE(second_ran);
 }

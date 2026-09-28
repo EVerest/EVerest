@@ -33,6 +33,14 @@ generate_config_run_script(CONFIG sil-evsev2g)
 generate_config_run_script(CONFIG sil-dc-evsev2g)
 generate_config_run_script(CONFIG sil-dc-tls-evsev2g)
 
+if(EVEREST_BUILD_MODULE_PLUGINS)
+    generate_config_run_script(CONFIG CB-EVAL-DC-SIM TEMPLATE run_neo_template.sh.in OUTPUT neo-CB-EVAL-DC-SIM)
+    # generic launcher: run-neo.sh <config> runs any installed or given configuration in one process
+    set(LD_LIBRARY_VAR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
+    set(PATH_VAR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}")
+    configure_file("${EVEREST_CONFIG_ASSET_DIR}/run_neo_any_template.sh.in" "${CMAKE_BINARY_DIR}/run-scripts/run-neo.sh" @ONLY)
+endif()
+
 add_subdirectory(bringup)
 
 # install configs

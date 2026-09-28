@@ -3,26 +3,37 @@
 #ifndef {{ info.hpp_guard }}
 #define {{ info.hpp_guard }}
 
-{{ print_template_info('4') }}
+{{ print_template_info('5') }}
 
 #include <framework/ModuleAdapter.hpp>
 #include <framework/everest.hpp>
+#include <framework/module_plugin.hpp>
 #include <utils/config_service_interface.hpp>
 
 #include <everest/logging.hpp>
 
 namespace module {
 
+class ModuleInstance;
+
 // helper class for invoking private functions on module
 struct LdEverest {
+    // operate on the default instance
     static void init(ModuleConfigs module_configs, const ModuleInfo& info);
     static void ready();
     static void shutdown();
+
+    static void init(ModuleInstance& instance, ModuleConfigs module_configs, const ModuleInfo& info);
+    static void ready(ModuleInstance& instance);
+    static void shutdown(ModuleInstance& instance);
 };
 
+// operate on the default instance
 void register_module_adapter(Everest::ModuleAdapter module_adapter);
-
 std::vector<Everest::cmd> everest_register(const RequirementInitialization& requirement_init);
+
+ModuleInstance& default_instance();
+ModuleInstance& current_instance();
 
 {% if info.enable_global_errors %}
 void subscribe_global_all_errors(

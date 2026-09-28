@@ -415,6 +415,19 @@ A custom policy must provide the same interface as the built-in policies:
           std::optional<std::chrono::steady_clock::time_point> oldest_arrival);
   };
 
+A policy with a ``supervisor_tick`` gets a supervisor thread that re-evaluates
+``should_grow`` while tasks are queued and sleeps while the queue is empty. If
+the policy also provides
+
+.. code-block:: cpp
+
+  static std::chrono::steady_clock::time_point next_check(
+      std::chrono::steady_clock::time_point oldest_arrival);
+
+returning the earliest time at which ``should_grow`` can become true for the
+oldest queued task, the supervisor sleeps until then instead of waking every
+tick. ``LatencyScaling`` provides it.
+
 Create a workspace config from an existing directory tree
 #########################################################
 

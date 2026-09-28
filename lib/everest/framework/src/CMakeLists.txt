@@ -42,6 +42,10 @@ install(
     RUNTIME
 )
 
+if(EVEREST_BUILD_MODULE_PLUGINS)
+    add_subdirectory(neo)
+endif()
+
 # FIXME (aw): the www folder currently always needs to exist, so that the manager does not complain
 install(
     DIRECTORY # intentionally left blank

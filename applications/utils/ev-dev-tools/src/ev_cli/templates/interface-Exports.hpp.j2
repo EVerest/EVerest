@@ -3,7 +3,7 @@
 #ifndef {{ info.hpp_guard }}
 #define {{ info.hpp_guard }}
 
-{{ print_template_info('5') }}
+{{ print_template_info('6') }}
 
 #include <framework/ModuleAdapter.hpp>
 #include <utils/types.hpp>
@@ -45,6 +45,16 @@ public:
     // variables available for subscription
     {% for var in vars %}
     void subscribe_{{ var.name }}(const std::function<void({% if var.json_type != 'null' %}const {{ cpp_type(var) }}&{% endif %})>& listener) {
+        if (_adapter->local) {
+        {% if var.json_type != 'null' %}
+            if (_adapter->local->subscribe<{{ cpp_type(var) }}>(_adapter->module_id, _req, "{{ var.name }}", listener)) {
+        {% else %}
+            if (_adapter->local->subscribe<std::nullptr_t>(_adapter->module_id, _req, "{{ var.name }}",
+                                                            std::function<void(const std::nullptr_t&)>([func = listener](const std::nullptr_t&) { func(); }))) {
+        {% endif %}
+                return;
+            }
+        }
         _adapter->subscribe(_req, "{{ var.name }}", [func = std::move(listener)](const Value& value) {
         {% if 'object_type' in var %}
             func(value);
@@ -97,6 +107,14 @@ public:
     // commands available to call
     {% for cmd in cmds %}
     {{ call_cmd_signature(cmd, info.interface_name) }} {
+        if (_adapter->local) {
+            if (const auto fn = _adapter->local->find_cmd<{{ result_type(cmd.result) }}{% for arg in cmd.args %}, {{ cpp_type(arg) }}{% endfor %}>(_adapter->module_id, _req, "{{ cmd.name }}")) {
+                {{ 'return ' if cmd.result }}(*fn)({% for arg in cmd.args %}{{ arg.name }}{{ ', ' if not loop.last }}{% endfor %});
+            {% if not cmd.result %}
+                return;
+            {% endif %}
+            }
+        }
         {% for arg in cmd.args %}
         {% if 'array_type' in arg %}
         {% if 'array_type_contains_enum' in arg %}

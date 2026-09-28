@@ -85,6 +85,15 @@ option(EVEREST_ENABLE_COVERAGE "Enable code coverage instrumentation and coverag
 option(EVEREST_BUILD_APPLICATIONS "Build applications like drivers for the EVerest stable API" ON)
 option(EVEREST_LIBS_ONLY "Only build libraries, skip modules/applications/config" OFF)
 option(EVEREST_IO_WITH_MQTT "Build MQTT (mosquitto) support in everest::io" ON)
+option(EVEREST_BUILD_MODULE_PLUGINS "Build C++ modules as shared objects loaded by everest-neo" OFF)
+option(EVEREST_LINK_MODULE_PLUGINS_STATIC "Link all C++ modules statically into everest-neo instead of shared objects" OFF)
+if(EVEREST_LINK_MODULE_PLUGINS_STATIC AND NOT EVEREST_BUILD_MODULE_PLUGINS)
+    message(FATAL_ERROR "EVEREST_LINK_MODULE_PLUGINS_STATIC requires EVEREST_BUILD_MODULE_PLUGINS=ON")
+endif()
+# static libraries linked into module shared objects must be position independent
+if(EVEREST_BUILD_MODULE_PLUGINS AND NOT EVEREST_LINK_MODULE_PLUGINS_STATIC)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
 set(EVEREST_INCLUDE_LIBS "" CACHE STRING "Semicolon-separated allowlist of libraries to build (empty = all)")
 set(EVEREST_EXCLUDE_LIBS "" CACHE STRING "Semicolon-separated blocklist of libraries to skip")
 # list of compile options that are passed to modules if EVEREST_ENABLE_COMPILE_WARNINGS=ON
@@ -228,6 +237,10 @@ else()
 endif()
 
 add_subdirectory(lib)
+
+if(EVEREST_LINK_MODULE_PLUGINS_STATIC AND NOT EVEREST_LIBS_ONLY)
+    ev_link_static_modules(everest-neo)
+endif()
 
 if(NOT EVEREST_LIBS_ONLY)
     # config
