@@ -61,18 +61,9 @@ ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connec
     skip_invalid_csms_certificate_notifications(false),
     upload_log_status(UploadLogStatusEnum::Idle),
     bootreason(BootReasonEnum::PowerUp),
-    ocsp_updater(this->evse_security,
-                 [this](GetCertificateStatusRequest req) -> GetCertificateStatusResponse {
-                     try {
-                         return this->send_callback<GetCertificateStatusRequest, GetCertificateStatusResponse>(
-                             MessageType::GetCertificateStatusResponse)(req);
-                     } catch (const UnexpectedMessageTypeFromCSMS& e) {
-                         EVLOG_warning << e.what();
-                     }
-                     GetCertificateStatusResponse response;
-                     response.status = GetCertificateStatusEnum::Failed;
-                     return response;
-                 }),
+    ocsp_updater(
+        this->evse_security,
+        [this](const GetCertificateStatusRequest& request) { return this->get_certificate_status_from_csms(request); }),
     callbacks(callbacks) {
 
     if (!this->device_model) {
@@ -658,6 +649,20 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
     this->device_model->set_value(ControllerComponents::OCPPCommCtrlr, field_length, AttributeEnum::Actual,
                                   std::to_string(ISO15118_GET_EV_CERTIFICATE_EXI_RESPONSE_SIZE),
                                   VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL, true);
+}
+
+GetCertificateStatusResponse ChargePoint::get_certificate_status_from_csms(const GetCertificateStatusRequest& request) {
+    try {
+        return this->send_callback<GetCertificateStatusRequest, GetCertificateStatusResponse>(
+            MessageType::GetCertificateStatusResponse)(request);
+    } catch (const UnexpectedMessageTypeFromCSMS& e) {
+        EVLOG_warning << e.what();
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Malformed GetCertificateStatusResponse from CSMS: " << e.what();
+    }
+    GetCertificateStatusResponse response;
+    response.status = GetCertificateStatusEnum::Failed;
+    return response;
 }
 
 void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message) {
