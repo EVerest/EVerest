@@ -110,6 +110,19 @@ jobs:
       deploy_docs: false
       instance_name: ${{ format('{0} @ {1}', github.ref_name, github.sha) }}
 
+
+  ev-cli-mod-update:
+    name: Modules (ev-cli)
+    uses: ./.github/workflows/job_ev-cli-mod-update.yaml
+    needs:
+      - setup-env
+      - build-build-kit
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
+      build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
+
+
   dco-check:
     name: DCO
     uses: ./.github/workflows/job_dco-check.yaml

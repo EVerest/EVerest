@@ -6,6 +6,8 @@ _cargolock2bb.py_ converts a Cargo.lock file, that can also be loaded via an URL
 
 _check_dependency_versions.py_ parses a snapshot.yaml file and checks if there are new versions of the listed dependencies available
 
+_check_mod_update.py_ runs `ev-cli mod update --force` on every module and reports modules whose generated files do not regenerate cleanly
+
 _config2cmake.py_ parses a EVerest yaml config and prints a CMake command line to only include the modules needed by this config
 
 _create_snapshot.py_ uses EDM to create an snapshot in a temporary subdirectory and postprocesses it to fix common problems
