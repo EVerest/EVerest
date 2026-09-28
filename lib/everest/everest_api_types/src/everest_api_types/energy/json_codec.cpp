@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "energy/json_codec.hpp"
 #include "energy/API.hpp"
@@ -29,6 +29,34 @@ void to_json(json& j, IntegerWithSource const& k) noexcept {
 void from_json(const json& j, IntegerWithSource& k) {
     k.value = j.at("value");
     k.source = j.at("source");
+}
+
+void to_json(json& j, PhaseCurrentsWithSource const& k) noexcept {
+    j = json{
+        {"source", k.source},
+    };
+    if (k.L1) {
+        j["L1"] = k.L1.value();
+    }
+    if (k.L2) {
+        j["L2"] = k.L2.value();
+    }
+    if (k.L3) {
+        j["L3"] = k.L3.value();
+    }
+}
+
+void from_json(const json& j, PhaseCurrentsWithSource& k) {
+    k.source = j.at("source");
+    if (j.contains("L1")) {
+        k.L1.emplace(j.at("L1"));
+    }
+    if (j.contains("L2")) {
+        k.L2.emplace(j.at("L2"));
+    }
+    if (j.contains("L3")) {
+        k.L3.emplace(j.at("L3"));
+    }
 }
 
 void to_json(json& j, FrequencyWattPoint const& k) noexcept {
@@ -105,6 +133,9 @@ void to_json(json& j, LimitsReq const& k) noexcept {
     if (k.ac_max_current_A) {
         j["ac_max_current_A"] = k.ac_max_current_A.value();
     }
+    if (k.ac_max_current_per_phase_A) {
+        j["ac_max_current_per_phase_A"] = k.ac_max_current_per_phase_A.value();
+    }
     if (k.ac_min_current_A) {
         j["ac_min_current_A"] = k.ac_min_current_A.value();
     }
@@ -128,6 +159,9 @@ void from_json(const json& j, LimitsReq& k) {
     }
     if (j.contains("ac_max_current_A")) {
         k.ac_max_current_A.emplace(j.at("ac_max_current_A"));
+    }
+    if (j.contains("ac_max_current_per_phase_A")) {
+        k.ac_max_current_per_phase_A.emplace(j.at("ac_max_current_per_phase_A"));
     }
     if (j.contains("ac_min_current_A")) {
         k.ac_min_current_A.emplace(j.at("ac_min_current_A"));

@@ -136,7 +136,21 @@ std::optional<float> get_grid_limit_W(const Market& root, float nominal_ac_volta
     if (limits == nullptr) {
         return std::nullopt;
     }
-    return limits_to_W(*limits, nominal_ac_voltage);
+    const auto declared =
+        limits->ac_max_phase_count.has_value() ? limits->ac_max_phase_count.value().value : ASSUMED_PHASE_COUNT;
+    if (limits->total_power_W.has_value() or not limits->ac_max_current_per_phase_A.has_value() or declared < 3) {
+        return limits_to_W(*limits, nominal_ac_voltage);
+    }
+    // A limit that differs per phase is worth what its phases add up to.
+    float total_A = 0.f;
+    for (const auto phase : ALL_GRID_PHASES) {
+        const auto on_phase = phase_limit_A(*limits, phase);
+        if (not on_phase.has_value()) {
+            return limits_to_W(*limits, nominal_ac_voltage);
+        }
+        total_A += on_phase.value().value;
+    }
+    return total_A * nominal_ac_voltage;
 }
 
 std::optional<float> get_allocated_power_W(const types::energy::EnforcedLimits& limit, float nominal_ac_voltage,

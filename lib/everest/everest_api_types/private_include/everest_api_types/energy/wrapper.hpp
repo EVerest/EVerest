@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -24,6 +24,12 @@ using IntegerWithSource_External = IntegerWithSource;
 
 IntegerWithSource_Internal to_internal_api(IntegerWithSource_External const& val);
 IntegerWithSource_External to_external_api(IntegerWithSource_Internal const& val);
+
+using PhaseCurrentsWithSource_Internal = ::types::energy::PhaseCurrentsWithSource;
+using PhaseCurrentsWithSource_External = PhaseCurrentsWithSource;
+
+PhaseCurrentsWithSource_Internal to_internal_api(PhaseCurrentsWithSource_External const& val);
+PhaseCurrentsWithSource_External to_external_api(PhaseCurrentsWithSource_Internal const& val);
 
 using FrequencyWattPoint_Internal = ::types::energy::FrequencyWattPoint;
 using FrequencyWattPoint_External = FrequencyWattPoint;

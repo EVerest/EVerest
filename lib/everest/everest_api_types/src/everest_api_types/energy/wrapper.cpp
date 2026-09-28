@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "energy/wrapper.hpp"
 #include "energy/API.hpp"
@@ -73,6 +73,24 @@ IntegerWithSource_External to_external_api(IntegerWithSource_Internal const& val
     return result;
 }
 
+PhaseCurrentsWithSource_Internal to_internal_api(PhaseCurrentsWithSource_External const& val) {
+    PhaseCurrentsWithSource_Internal result;
+    result.L1 = val.L1;
+    result.L2 = val.L2;
+    result.L3 = val.L3;
+    result.source = val.source;
+    return result;
+}
+
+PhaseCurrentsWithSource_External to_external_api(PhaseCurrentsWithSource_Internal const& val) {
+    PhaseCurrentsWithSource_External result;
+    result.L1 = val.L1;
+    result.L2 = val.L2;
+    result.L3 = val.L3;
+    result.source = val.source;
+    return result;
+}
+
 FrequencyWattPoint_Internal to_internal_api(FrequencyWattPoint_External const& val) {
     FrequencyWattPoint_Internal result;
     result.frequency_Hz = val.frequency_Hz;
@@ -131,6 +149,7 @@ LimitsReq_Internal to_internal_api(LimitsReq_External const& val) {
     LimitsReq_Internal result;
     result.total_power_W = optToInternal(val.total_power_W);
     result.ac_max_current_A = optToInternal(val.ac_max_current_A);
+    result.ac_max_current_per_phase_A = optToInternal(val.ac_max_current_per_phase_A);
     result.ac_min_current_A = optToInternal(val.ac_min_current_A);
     result.ac_max_phase_count = optToInternal(val.ac_max_phase_count);
     result.ac_min_phase_count = optToInternal(val.ac_min_phase_count);
@@ -143,6 +162,7 @@ LimitsReq_External to_external_api(LimitsReq_Internal const& val) {
     LimitsReq_External result;
     result.total_power_W = optToExternal(val.total_power_W);
     result.ac_max_current_A = optToExternal(val.ac_max_current_A);
+    result.ac_max_current_per_phase_A = optToExternal(val.ac_max_current_per_phase_A);
     result.ac_min_current_A = optToExternal(val.ac_min_current_A);
     result.ac_max_phase_count = optToExternal(val.ac_max_phase_count);
     result.ac_min_phase_count = optToExternal(val.ac_min_phase_count);

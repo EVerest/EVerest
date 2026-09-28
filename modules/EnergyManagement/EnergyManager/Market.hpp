@@ -30,6 +30,10 @@ using PhaseSet = std::set<Phase>;
 /// \brief What a connector counts as drawing on while nothing says otherwise.
 inline const PhaseSet ALL_GRID_PHASES{Phase::L1, Phase::L2, Phase::L3};
 
+/// \brief The current limit of \p limits on \p phase: the lower of ac_max_current_A and the
+/// phase's entry in ac_max_current_per_phase_A. Empty when neither limits the phase.
+std::optional<types::energy::NumberWithSource> phase_limit_A(const types::energy::LimitsReq& limits, Phase phase);
+
 class globals_t {
 public:
     void init(date::utc_clock::time_point _start_time, int _interval_duration, int _schedule_duration,
@@ -84,8 +88,8 @@ public:
 
     void get_list_of_evses(std::vector<Market*>& list);
     std::vector<Market*> get_list_of_evses();
-    /// \brief What is left to trade here for a connector drawing on \p phases: the ampere
-    /// limit less what is sold on the most loaded of those phases.
+    /// \brief What is left to trade here for a connector drawing on \p phases: on the
+    /// tightest of those phases, its ampere limit less what is sold on it.
     ScheduleReq get_available_energy_import(const PhaseSet& phases = ALL_GRID_PHASES);
     ScheduleReq get_available_energy_export(const PhaseSet& phases = ALL_GRID_PHASES);
     ScheduleSetpoints get_setpoints() {

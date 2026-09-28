@@ -147,6 +147,39 @@ template <typename T> std::optional<T> min_optional(std::optional<T> a, std::opt
     return b;
 }
 
+static std::optional<float> min_of(const std::optional<float>& a, const std::optional<float>& b) {
+    if (a.has_value() and b.has_value()) {
+        return std::min(a.value(), b.value());
+    }
+    return a.has_value() ? a : b;
+}
+
+static std::optional<types::energy::PhaseCurrentsWithSource>
+min_per_phase(const std::optional<types::energy::PhaseCurrentsWithSource>& a,
+              const std::optional<types::energy::PhaseCurrentsWithSource>& b) {
+    if (not a.has_value() or not b.has_value()) {
+        return a.has_value() ? a : b;
+    }
+    types::energy::PhaseCurrentsWithSource merged;
+    merged.L1 = min_of(a.value().L1, b.value().L1);
+    merged.L2 = min_of(a.value().L2, b.value().L2);
+    merged.L3 = min_of(a.value().L3, b.value().L3);
+    merged.source = a.value().source == b.value().source ? a.value().source : a.value().source + "," + b.value().source;
+    return merged;
+}
+
+std::optional<types::energy::NumberWithSource> phase_limit_A(const types::energy::LimitsReq& limits, Phase phase) {
+    std::optional<types::energy::NumberWithSource> on_phase;
+    if (limits.ac_max_current_per_phase_A.has_value()) {
+        const auto& per_phase = limits.ac_max_current_per_phase_A.value();
+        const auto& value = phase == Phase::L1 ? per_phase.L1 : phase == Phase::L2 ? per_phase.L2 : per_phase.L3;
+        if (value.has_value()) {
+            on_phase = types::energy::NumberWithSource{value.value(), per_phase.source};
+        }
+    }
+    return min_optional(limits.ac_max_current_A, on_phase);
+}
+
 template <typename T> std::optional<T> max_optional(std::optional<T> a, std::optional<T> b) {
 
     if (a.has_value() and b.has_value()) {
@@ -263,6 +296,9 @@ ScheduleReq Market::get_max_available_energy(const ScheduleReq& request) {
             a.limits_to_root.ac_max_current_A =
                 min_optional((*r).limits_to_leaves.ac_max_current_A, (*r).limits_to_root.ac_max_current_A);
 
+            a.limits_to_root.ac_max_current_per_phase_A = min_per_phase(
+                (*r).limits_to_leaves.ac_max_current_per_phase_A, (*r).limits_to_root.ac_max_current_per_phase_A);
+
             a.limits_to_root.ac_min_phase_count =
                 max_optional((*r).limits_to_root.ac_min_phase_count, (*r).limits_to_leaves.ac_min_phase_count);
 
@@ -287,21 +323,26 @@ ScheduleReq Market::get_available_energy(const ScheduleReq& max_available, bool 
     for (ScheduleReq::size_type i = 0; i < available.size(); i++) {
         // FIXME: sold_root is the sum of all energy sold, but we need to limit indivdual paths as well
         // add config option for pure star type of cabling here as well.
+        auto& limits = available[i].limits_to_root;
 
-        float sold_current = 0;
-
-        if (sold_root[i].limits_to_root.ac_max_current_A.has_value() and not phases.empty()) {
-            // The phase of the connector's that carries most in the direction traded.
-            float sold_on_phase = add_sold ? std::numeric_limits<float>::max() : std::numeric_limits<float>::lowest();
+        if (not phases.empty()) {
+            // What is left on the tightest of the connector's phases, each phase against its
+            // own limit and what is sold on it in the direction traded.
+            std::optional<types::energy::NumberWithSource> tightest;
             for (const auto phase : phases) {
-                const float sold = sold_phase_A[i][static_cast<int>(phase)];
-                sold_on_phase = add_sold ? std::min(sold_on_phase, sold) : std::max(sold_on_phase, sold);
+                auto left = phase_limit_A(limits, phase);
+                if (not left.has_value()) {
+                    continue;
+                }
+                const float sold = (add_sold ? 1 : -1) * sold_phase_A[i][static_cast<int>(phase)];
+                left.value().value += std::min(sold, 0.f);
+                if (not tightest.has_value() or left.value().value < tightest.value().value) {
+                    tightest = left;
+                }
             }
-            sold_current = (add_sold ? 1 : -1) * sold_on_phase;
+            limits.ac_max_current_A = tightest;
         }
-
-        if (sold_current > 0)
-            sold_current = 0;
+        limits.ac_max_current_per_phase_A.reset();
 
         float sold_watt = 0;
 
@@ -312,11 +353,8 @@ ScheduleReq Market::get_available_energy(const ScheduleReq& max_available, bool 
         if (sold_watt > 0)
             sold_watt = 0;
 
-        if (available[i].limits_to_root.ac_max_current_A.has_value())
-            available[i].limits_to_root.ac_max_current_A.value().value += sold_current;
-
-        if (available[i].limits_to_root.total_power_W.has_value())
-            available[i].limits_to_root.total_power_W.value().value += sold_watt;
+        if (limits.total_power_W.has_value())
+            limits.total_power_W.value().value += sold_watt;
     }
     return available;
 }

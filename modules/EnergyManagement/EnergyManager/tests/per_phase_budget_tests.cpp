@@ -7,6 +7,7 @@
 
 #include <utils/date.hpp>
 
+#include "BrokerPowerRedistribution.hpp"
 #include "EnergyManagerTestHelpers.hpp"
 #include "Market.hpp"
 
@@ -205,6 +206,91 @@ TEST(PerPhaseBudgetLoop, AWattLimitCountsASinglePhaseEvOnce) {
 
     EXPECT_FLOAT_EQ(enforced_current(results, "cp1"), 16.0f);
     EXPECT_FLOAT_EQ(enforced_current(results, "cp2"), 16.0f);
+}
+
+// ---------------------------------------------------------------- limits that differ per phase
+
+namespace {
+
+types::energy::PhaseCurrentsWithSource per_phase(std::optional<float> l1, std::optional<float> l2,
+                                                 std::optional<float> l3) {
+    types::energy::PhaseCurrentsWithSource limit;
+    limit.L1 = l1;
+    limit.L2 = l2;
+    limit.L3 = l3;
+    limit.source = "PER_PHASE";
+    return limit;
+}
+
+void set_per_phase_limit(types::energy::EnergyFlowRequest& node, const types::energy::PhaseCurrentsWithSource& limit) {
+    node.schedule_import[0].limits_to_root.ac_max_current_per_phase_A = limit;
+}
+
+} // namespace
+
+TEST(PerPhaseLimit, BindsOnlyTheConnectorsOnItsPhase) {
+    auto tree = two_evse_tree(32.0f);
+    set_per_phase_limit(tree, per_phase(std::nullopt, 10.0f, std::nullopt));
+    MarketFixture f(tree);
+
+    EXPECT_FLOAT_EQ(available_A(f.root(), {Phase::L1}), 32.0f);
+    EXPECT_FLOAT_EQ(available_A(f.root(), {Phase::L2}), 10.0f);
+    EXPECT_FLOAT_EQ(available_A(f.root(), ALL_GRID_PHASES), 10.0f);
+}
+
+TEST(PerPhaseLimit, NeverRaisesTheLimitForAllPhases) {
+    auto tree = two_evse_tree(32.0f);
+    set_per_phase_limit(tree, per_phase(40.0f, 40.0f, 40.0f));
+    MarketFixture f(tree);
+
+    EXPECT_FLOAT_EQ(available_A(f.root(), ALL_GRID_PHASES), 32.0f);
+}
+
+TEST(PerPhaseLimit, SoldCurrentCountsAgainstEachPhasesOwnLimit) {
+    auto tree = two_evse_tree(32.0f);
+    set_per_phase_limit(tree, per_phase(20.0f, 25.0f, std::nullopt));
+    MarketFixture f(tree);
+
+    f.evse("cp1").trade(trade_of(16.0f), {Phase::L2});
+
+    EXPECT_FLOAT_EQ(available_A(f.root(), {Phase::L1}), 20.0f);
+    EXPECT_FLOAT_EQ(available_A(f.root(), {Phase::L2}), 9.0f);
+    EXPECT_FLOAT_EQ(available_A(f.root(), {Phase::L3}), 32.0f);
+    EXPECT_FLOAT_EQ(available_A(f.root(), ALL_GRID_PHASES), 9.0f);
+}
+
+TEST(PerPhaseLimit, LeavesSideLimitsMergeWithTheRootSide) {
+    auto tree = two_evse_tree(32.0f);
+    tree.schedule_import[0].limits_to_root.ac_max_current_per_phase_A = per_phase(20.0f, std::nullopt, std::nullopt);
+    tree.schedule_import[0].limits_to_leaves.ac_max_current_per_phase_A = per_phase(25.0f, 12.0f, std::nullopt);
+    MarketFixture f(tree);
+
+    EXPECT_FLOAT_EQ(available_A(f.root(), {Phase::L1}), 20.0f);
+    EXPECT_FLOAT_EQ(available_A(f.root(), {Phase::L2}), 12.0f);
+    EXPECT_FLOAT_EQ(available_A(f.root(), {Phase::L3}), 32.0f);
+}
+
+TEST(PerPhaseLimit, GridLimitAddsUpThePhases) {
+    auto tree = two_evse_tree(32.0f);
+    set_per_phase_limit(tree, per_phase(32.0f, 20.0f, 10.0f));
+    MarketFixture f(tree);
+
+    const auto limit = get_grid_limit_W(f.root(), U);
+    ASSERT_TRUE(limit.has_value());
+    EXPECT_FLOAT_EQ(limit.value(), (32.0f + 20.0f + 10.0f) * U);
+}
+
+TEST(PerPhaseLimitLoop, EachSinglePhaseEvGetsWhatItsPhaseAllows) {
+    EnergyManagerImpl impl(make_config(), [](const auto&) {});
+
+    // cp1 draws on L1, cp2 on L2, and only L2 is limited to 10 A.
+    auto tree = mixed_tree(at_plus(0));
+    tree.children.pop_back();
+    set_per_phase_limit(tree, per_phase(std::nullopt, 10.0f, std::nullopt));
+    const auto results = impl.run_optimizer(tree, AT);
+
+    EXPECT_FLOAT_EQ(enforced_current(results, "cp1"), 16.0f);
+    EXPECT_FLOAT_EQ(enforced_current(results, "cp2"), 10.0f);
 }
 
 } // namespace module

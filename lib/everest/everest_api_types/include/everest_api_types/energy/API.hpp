@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -18,6 +18,13 @@ struct NumberWithSource {
 
 struct IntegerWithSource {
     int32_t value;
+    std::string source;
+};
+
+struct PhaseCurrentsWithSource {
+    std::optional<float> L1;
+    std::optional<float> L2;
+    std::optional<float> L3;
     std::string source;
 };
 
@@ -43,6 +50,7 @@ struct PricePerkWh {
 struct LimitsReq {
     std::optional<NumberWithSource> total_power_W;
     std::optional<NumberWithSource> ac_max_current_A;
+    std::optional<PhaseCurrentsWithSource> ac_max_current_per_phase_A;
     std::optional<NumberWithSource> ac_min_current_A;
     std::optional<IntegerWithSource> ac_max_phase_count;
     std::optional<IntegerWithSource> ac_min_phase_count;

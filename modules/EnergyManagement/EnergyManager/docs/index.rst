@@ -149,10 +149,17 @@ three phase connector is sent as 11040 W and uses 3680 W of a site's watt limit.
 power redistribution inference below reads allotted and static maximum power the same
 way.
 
-The limit a connector receives is still one current for the phases it uses: the energy
-interface has no per phase limit. A node limit that differs per phase, such as a per
-phase fuse or an OCPP 2.1 schedule with ``limit_L2`` and ``limit_L3``, cannot be
-expressed yet.
+A node limit can also differ per phase: ``ac_max_current_per_phase_A`` in a schedule entry
+sets L1, L2 and L3 individually, as an OCPP 2.1 schedule with ``limit_L2`` and
+``limit_L3`` does. On every phase the lower of it and ``ac_max_current_A`` applies, a phase
+it omits is limited by ``ac_max_current_A`` only, and root and leaves side limits merge per
+phase like the scalar ones. A connector is offered what is left on the tightest of its
+phases, so a single phase EV on L1 is not held back by a lower limit on L2. Under
+``FastCharging`` every connector counts on all three phases and is held to the tightest
+one. The site's grid limit in the power redistribution inference adds up the three phase
+limits.
+
+The limit a connector receives is still one current for all the phases it uses.
 
 Power redistribution inference
 ==============================
