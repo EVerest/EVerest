@@ -45,6 +45,22 @@ function(eebus_check_dependencies)
         list(APPEND missing "eebus-grpc sources (check EVEREST_DEPENDENCY_ENABLED_EEBUS_GRPC)")
     endif()
 
+    if (NOT Python3_EXECUTABLE)
+        list(APPEND missing "Python interpreter (Python3_EXECUTABLE is not set)")
+    else()
+        foreach(package IN ITEMS grpcio grpcio-tools)
+            execute_process(
+                COMMAND "${Python3_EXECUTABLE}" -m pip show "${package}"
+                RESULT_VARIABLE pip_result
+                OUTPUT_QUIET
+                ERROR_QUIET
+            )
+            if (NOT pip_result EQUAL 0)
+                list(APPEND missing "Python package ${package} (install with '${Python3_EXECUTABLE} -m pip install ${package}')")
+            endif()
+        endforeach()
+    endif()
+
     if (missing)
         set(${arg_RESULT_VAR} FALSE PARENT_SCOPE)
     else()
