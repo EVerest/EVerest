@@ -95,6 +95,8 @@ provides:
           Hack: Do not regenerate NMK on reset, this is not spec compliant and should only be set for debugging purposes.
         type: boolean
         default: false
+capabilities:
+  - CAP_NET_RAW
 metadata:
   base_license: https://directory.fsf.org/wiki/License:BSD-3-Clause-Clear
   license: https://opensource.org/licenses/Apache-2.0

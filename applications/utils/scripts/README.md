@@ -16,4 +16,6 @@ _parsebb.py_ parses .bb files and returns a json object containing the repositor
 
 _replace_license.py_ parses C++ files and replaces license headers with up2date Apache 2.0 headers used in EVerest
 
+_set_module_capabilities.py_ parses the manifest.yaml of every installed module and grants the Linux capabilities listed under `capabilities` as file capabilities on the module binary using setcap
+
 _snapshot2bb.py_ parses a snapshot.yaml file and modifies the corresponding recipe .bb files

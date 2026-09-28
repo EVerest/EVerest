@@ -1664,8 +1664,8 @@ void Manager::handle_start_modules(const RuntimeContext& ctx) {
         const auto& capabilities = module_configurations.at(module_id).capabilities;
         if (capabilities.has_value() and not capabilities->empty()) {
             EVLOG_warning << fmt::format(
-                "Module {} ({}) sets 'capabilities' in the config. This is no longer supported and ignored, grant the "
-                "capabilities as file capabilities on the module binary instead.",
+                "Module {} ({}) sets 'capabilities' in the config. This is no longer supported and ignored, declare "
+                "them in the module manifest and grant them as file capabilities on the module binary instead.",
                 module_id, module_name);
         }
 

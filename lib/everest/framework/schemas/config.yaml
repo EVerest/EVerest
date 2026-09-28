@@ -87,8 +87,8 @@ properties:
             pattern: ^[a-zA-Z_][a-zA-Z0-9_-]*$
           capabilities:
             description: >-
-              Deprecated and ignored, a warning is logged if set. Linux capabilities are no longer
-              set by the manager.
+              Deprecated and ignored, a warning is logged if set. Linux capabilities are declared in
+              the module manifest instead.
             type: array
             items:
               type: string
