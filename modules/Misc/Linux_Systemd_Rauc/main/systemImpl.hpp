@@ -81,7 +81,7 @@ private:
                                             const std::string& diagnostics_file_name,
                                             const std::filesystem::path& diagnostics_file_path,
                                             DiagnosticsHandler::log_result_t create_result);
-    bool wait_for_log_upload_retry(std::chrono::seconds interval);
+    bool log_upload_interrupted_within(std::chrono::seconds interval);
     void finish_log_upload(types::system::LogStatus log_status);
 
     std::thread upload_logs_thread;

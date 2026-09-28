@@ -158,14 +158,14 @@ types::system::LogStatus systemImpl::run_log_upload(const types::system::UploadL
         }
         // after the last attempt only the interrupt is checked
         const auto wait = retries <= total_retries ? retry_interval : std::chrono::seconds(0);
-        if (this->wait_for_log_upload_retry(wait)) {
+        if (this->log_upload_interrupted_within(wait)) {
             break;
         }
     }
     return log_status;
 }
 
-bool systemImpl::wait_for_log_upload_retry(std::chrono::seconds interval) {
+bool systemImpl::log_upload_interrupted_within(std::chrono::seconds interval) {
     if (this->interrupt_log_upload->load()) {
         return true;
     }
