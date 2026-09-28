@@ -51,6 +51,16 @@ bool test_reset_restarts_countdown_with_same_duration() {
            assert_true(t.expired(t0 + 161ms), test_name, "reset must keep the duration");
 }
 
+bool test_expire_at_sets_the_deadline() {
+    const char* test_name = "test_expire_at_sets_the_deadline";
+    timer t{};
+    t.arm(t0, 100ms);
+    t.expire_at(t0 + 30ms);
+    return assert_true(t.deadline() == t0 + 30ms, test_name, "expire_at must set the deadline") and
+           assert_true(not t.expired(t0 + 30ms) and t.expired(t0 + 31ms), test_name,
+                       "expire_at must keep the strictly-after semantics");
+}
+
 bool test_set_duration_keeps_reference() {
     const char* test_name = "test_set_duration_keeps_reference";
     timer t{};
@@ -73,7 +83,7 @@ bool test_set_duration_ms_matches_chrono() {
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 5>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 6>{
         std::make_pair("test_default_constructed_timer_is_expired", test_default_constructed_timer_is_expired),
         std::make_pair("test_armed_timer_expires_strictly_after_deadline",
                        test_armed_timer_expires_strictly_after_deadline),
@@ -81,6 +91,7 @@ int main() {
                        test_reset_restarts_countdown_with_same_duration),
         std::make_pair("test_set_duration_keeps_reference", test_set_duration_keeps_reference),
         std::make_pair("test_set_duration_ms_matches_chrono", test_set_duration_ms_matches_chrono),
+        std::make_pair("test_expire_at_sets_the_deadline", test_expire_at_sets_the_deadline),
     };
 
     int failed_count = 0;

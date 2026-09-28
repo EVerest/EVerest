@@ -487,7 +487,7 @@ void SlacRuntime::start_fsm_if_ready() {
         // publisher that throws here must end in a fault, not in std::terminate.
         try {
             if (!local_fsm_ctrl->init()) {
-                abort_event_loop("Failed to arm the SLAC state machine tick timer.");
+                abort_event_loop("Failed to arm the SLAC state machine timer.");
             }
         } catch (const std::exception& e) {
             abort_event_loop(fmt::format("SLAC state machine start failed: {}", e.what()));
