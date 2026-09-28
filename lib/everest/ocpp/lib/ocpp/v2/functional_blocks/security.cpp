@@ -330,9 +330,6 @@ void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call
         return;
     }
 
-    this->reset_certificate_signing_state();
-    this->certificate_signed_timer.stop();
-
     const auto certificate_chain = call.msg.certificateChain.get();
     ocpp::CertificateSigningUseEnum cert_signing_use; // NOLINT(cppcoreguidelines-init-variables): initialized below
 
@@ -357,17 +354,22 @@ void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call
 
     if (request_id_matches and awaited_certificate_signing_use.has_value() and
         cert_signing_use != awaited_certificate_signing_use.value()) {
-        // A matching requestId proves which SignCertificate.req this answers, so its type wins over a
-        // contradicting certificateType
-        EVLOG_warning << "CertificateSigned.req with requestId " << call.msg.requestId.value()
-                      << " carries certificateType "
+        // Installing the chain under either type could leave a leaf that does not match the key or PKI it is used
+        // with. The outstanding request stays outstanding, so the CSMS can still answer it correctly.
+        EVLOG_warning << "Rejecting CertificateSigned.req with requestId " << call.msg.requestId.value()
+                      << " and certificateType "
                       << ocpp::conversions::certificate_signing_use_enum_to_string(cert_signing_use)
-                      << " but answers a SignCertificate.req for "
+                      << ", it answers a SignCertificate.req for "
                       << ocpp::conversions::certificate_signing_use_enum_to_string(
-                             awaited_certificate_signing_use.value())
-                      << ", installing as the latter";
-        cert_signing_use = awaited_certificate_signing_use.value();
+                             awaited_certificate_signing_use.value());
+        response.statusInfo = make_status_info(reason_code_unspecified, "certificateType does not match requestId");
+        const ocpp::CallResult<CertificateSignedResponse> call_result(response, call.uniqueId);
+        this->context.message_dispatcher.dispatch_call_result(call_result);
+        return;
     }
+
+    this->reset_certificate_signing_state();
+    this->certificate_signed_timer.stop();
 
     const bool is_secc_leaf = (cert_signing_use == ocpp::CertificateSigningUseEnum::V2GCertificate) or
                               (cert_signing_use == ocpp::CertificateSigningUseEnum::V2G20Certificate);

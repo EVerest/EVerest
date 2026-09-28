@@ -1160,8 +1160,8 @@ TEST_F(SecurityTest, certificate_signed_without_type_and_nothing_awaited_is_char
     security.handle_message(create_example_certificate_signed_request("", std::nullopt));
 }
 
-TEST_F(SecurityTest, certificate_signed_matching_request_id_overrides_contradicting_type) {
-    // a matching requestId proves which SignCertificate.req is answered; a contradicting certificateType loses
+TEST_F(SecurityTest, certificate_signed_matching_request_id_with_contradicting_type_rejected_and_keeps_awaiting) {
+    // the chain is installed under neither type, and the outstanding request can still be answered correctly
     this->ocpp_version = ocpp::OcppProtocolVersion::v21;
     set_secc_csr_inputs();
     ocpp::GetCertificateSignRequestResult sign_request_result;
@@ -1175,12 +1175,27 @@ TEST_F(SecurityTest, certificate_signed_matching_request_id_overrides_contradict
     }));
     security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2G20Certificate);
 
+    EXPECT_CALL(evse_security, update_leaf_certificate(_, _)).Times(0);
+    EXPECT_CALL(ocsp_updater, trigger_ocsp_cache_update()).Times(0);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<CertificateSignedResponse>();
+        EXPECT_EQ(response.status, CertificateSignedStatusEnum::Rejected);
+        ASSERT_TRUE(response.statusInfo.has_value());
+        EXPECT_EQ(response.statusInfo->additionalInfo.value().get(), "certificateType does not match requestId");
+    }));
+    security.handle_message(create_example_certificate_signed_request(
+        "", ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate, request_id));
+    EXPECT_TRUE(security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::V2GCertificate).has_value());
+
     EXPECT_CALL(evse_security, update_leaf_certificate("", ocpp::CertificateSigningUseEnum::V2G20Certificate))
         .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
     EXPECT_CALL(ocsp_updater, trigger_ocsp_cache_update()).Times(1);
-    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(1);
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<CertificateSignedResponse>();
+        EXPECT_EQ(response.status, CertificateSignedStatusEnum::Accepted);
+    }));
     security.handle_message(create_example_certificate_signed_request(
-        "", ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate, request_id));
+        "", ocpp::v2::CertificateSigningUseEnum::V2G20Certificate, request_id));
 }
 
 TEST_F(SecurityTest, v2g20_certificate_installation_enabled_requires_v21_and_v2g_installation) {
