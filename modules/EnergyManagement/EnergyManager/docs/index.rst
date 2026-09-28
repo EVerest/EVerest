@@ -261,3 +261,75 @@ Both are read from what the module already computed for the run, not re-derived:
      - ``0.5``
      - Fraction of the headroom beyond the deadband handed to the saturated connectors.
        ``0`` hands out nothing and leaves the site inference a report.
+
+Phase imbalance correction
+==========================
+
+A site fed by three phases may not load one of them much more than the others; grid
+operators typically allow a difference of about 20 A. Single phase EVs make that easy to
+violate: three of them on L2 and none on L1 is 48 A of difference before the building has
+drawn anything. With ``phase_symmetry_enabled`` the EnergyManager keeps the difference
+between the most and the least loaded phase under ``max_phase_imbalance_A``, driven by
+measurements and in three steps per optimizer run:
+
+1. **Aggregate per phase.** The site measurement of the run (see above) says how much each
+   grid phase carries: the grid connection's own meter where there is one, else the sum of
+   the EVSE meters.
+
+2. **Detect the overshoot.** The least loaded phase is the reference. Any phase carrying
+   more than ``max_phase_imbalance_A`` above it has an *overshoot* of that excess, and that
+   is what has to go.
+
+3. **Limit the involved connectors equally.** The overshoot of a phase is divided equally
+   over the connectors *involved* on it, and each of them is limited to what it draws minus
+   its share. Which phases a connector draws on is read from its own per phase measurement
+   (current above 1 A), never guessed from a total.
+
+Only a connector that draws on the overloaded phase **and not on the reference phase** is
+involved. Lowering a connector lowers every phase it draws on by the same amount, so a
+three phase EV cannot change the difference between two phases at all - limiting it would
+cost charging power and correct nothing. That leaves single phase EVs, and two phase EVs
+whose other phase is not the reference; a connector involved on two overloaded phases at
+once is limited by the larger of its two shares, not their sum.
+
+Two worked examples with a 20 A limit. Site at L1 66 A, L2 90 A, L3 66 A: L2 is 24 A above
+the reference, 4 A too much. CP 02 and CP 05 are single phase on L2, so each is limited to
+2 A below what it draws; CP 06 on L1 is left alone. Site at L1 90 A, L2 90 A, L3 66 A: both
+L1 and L2 are 4 A too much. CP 02 and CP 05 on L1 and CP 06 and CP 09 on L2 each give up
+2 A.
+
+A limit is applied in the run that computed it, then **held** for ``phase_imbalance_hold_s``:
+during the hold the connector is left out of the next decisions, so a reading that does
+not yet reflect the limit cannot earn it a second share of the same overshoot. After the
+hold, whatever overshoot remains in fresh measurements is cut again. A limit is
+**released**, in full, once handing back everything it holds would predictably keep every
+phase the connector draws on at least 1 A under ``max_phase_imbalance_A``; released too
+early it would only re-trigger.
+
+A connector is never limited below its minimum current. What cannot be corrected because
+of that - or because no involved connector exists, as with three phase EVs only or with a
+skew that sits in the building load behind the grid meter - is logged once as a *residual*
+and not fought. The correction requires ``broker_strategy`` ``PowerRedistribution``: it is
+the strategy that observes the per phase measurements and applies the limit as one more
+upper bound on the connector's current, next to the measurement based cap. With
+``FastCharging`` the option has no effect. As everywhere in this module an unknown phase
+is absent, not zero: a phase the site meter does not report is neither reference nor
+candidate, and with fewer than two known phases nothing is corrected.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Config option
+     - Default
+     - Description
+   * - ``phase_symmetry_enabled``
+     - ``false``
+     - Switches the correction on. Requires ``broker_strategy`` ``PowerRedistribution``.
+   * - ``max_phase_imbalance_A``
+     - ``20.0``
+     - Largest allowed difference between the most and the least loaded grid phase [A].
+   * - ``phase_imbalance_hold_s``
+     - ``10``
+     - Seconds a limited connector is left alone before it is judged again, so the next
+       decision sees a measurement that reflects the limit. Above the update interval of the
+       slowest meter on the site.

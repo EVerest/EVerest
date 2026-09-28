@@ -44,6 +44,9 @@ struct Conf {
     double power_redistribution_connector_margin;
     double power_redistribution_site_margin;
     double power_redistribution_gain;
+    bool phase_symmetry_enabled;
+    double max_phase_imbalance_A;
+    int phase_imbalance_hold_s;
 };
 
 class EnergyManager : public Everest::ModuleBase {

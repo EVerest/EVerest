@@ -141,6 +141,11 @@ RedistributionInference EnergyManagerImpl::get_redistribution_inference() const 
     std::scoped_lock lock(energy_mutex);
     return redistribution_inference;
 }
+
+ImbalanceResult EnergyManagerImpl::get_phase_imbalance() const {
+    std::scoped_lock lock(energy_mutex);
+    return phase_imbalance;
+}
 #endif
 
 namespace {
@@ -264,6 +269,132 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
 
     inference.site = site;
     redistribution_inference = inference;
+}
+
+namespace {
+
+// Minimum current the connector's own schedule asks for at the slot in force [A]; 0 when
+// it declares none.
+float min_current_A(const Market& connector) {
+    const auto& offer = connector.get_import_max_available();
+    const auto slot = active_slot_index(offer);
+    if (not slot.has_value()) {
+        return 0.f;
+    }
+    const auto& min_current = offer[slot.value()].limits_to_root.ac_min_current_A;
+    return min_current.has_value() ? min_current.value().value : 0.f;
+}
+
+std::string format_phase_report(Phase phase, const PhaseReport& report) {
+    return fmt::format("{} +{:.1f} A (overshoot {:.1f}, corrected {:.1f}, residual {:.1f})", to_string(phase),
+                       report.imbalance_A, report.overshoot_A, report.corrected_A, report.residual_A);
+}
+
+} // namespace
+
+void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::shared_ptr<Broker>>& brokers) {
+    const auto nominal_ac_voltage = static_cast<float>(config.nominal_ac_voltage);
+    const auto max_imbalance_A = static_cast<float>(config.max_phase_imbalance_A);
+    const auto hold_time = std::chrono::seconds(config.phase_imbalance_hold_s);
+    const auto aggregation_window = std::chrono::seconds(config.power_meter_aggregation_window_s);
+    const auto now = globals.start_time;
+
+    // A connector cut less than the hold time ago is left out entirely: its measurement
+    // may not reflect the cut yet, and handing it a second share of the same overshoot is
+    // exactly the stacking the hold exists to prevent.
+    std::vector<ImbalanceConnector> connectors;
+    bool any_on_hold = false;
+    for (const auto& broker : brokers) {
+        const auto& connector_market = broker->get_local_market();
+        const auto& node = connector_market.energy_flow_request;
+        const auto& ctx = contexts.at(node.uuid);
+        if (not in_session(node)) {
+            continue;
+        }
+        if (ctx.phase_imbalance_cap_since.has_value() and now - ctx.phase_imbalance_cap_since.value() < hold_time) {
+            any_on_hold = true;
+            continue;
+        }
+        const auto& measurement = ctx.last_observed_measurement;
+        if (not is_fresh(measurement.measured_at, now, aggregation_window)) {
+            continue;
+        }
+
+        ImbalanceConnector connector;
+        connector.uuid = node.uuid;
+        connector.draws_on = phases_drawn_on(measurement, nominal_ac_voltage);
+        connector.measured_A = measured_current_on(measurement, connector.draws_on, nominal_ac_voltage);
+        connector.min_A = min_current_A(connector_market);
+        connector.cap_A = ctx.phase_imbalance_cap_A;
+        connectors.push_back(connector);
+    }
+
+    const PhaseCurrents site_A{site_aggregate.current_A.L1, site_aggregate.current_A.L2, site_aggregate.current_A.L3};
+    const auto result = correct_phase_imbalance(site_A, connectors, max_imbalance_A);
+
+    std::set<std::string> cut_this_run;
+    for (const auto& cut : result.cuts) {
+        auto& ctx = contexts.at(cut.uuid);
+        ctx.phase_imbalance_cap_A = cut.new_cap_A;
+        ctx.phase_imbalance_cut_A += cut.cut_A;
+        ctx.phase_imbalance_cap_since = now;
+        cut_this_run.insert(cut.uuid);
+        EVLOG_info << fmt::format("{}: phase imbalance, limiting to {:.1f} A", cut.uuid, cut.new_cap_A);
+    }
+
+    // Release, for the connectors eligible this run that got no new cut: once handing back
+    // everything the correction holds would predictably keep every phase the connector
+    // draws on within the limit, the cap is dropped in full. Without a known reference
+    // there is no imbalance to judge that against, and the cap stays.
+    for (const auto& connector : connectors) {
+        auto& ctx = contexts.at(connector.uuid);
+        if (not ctx.phase_imbalance_cap_A.has_value() or cut_this_run.count(connector.uuid) > 0 or
+            not result.reference.has_value()) {
+            continue;
+        }
+        bool releasable = true;
+        for (const auto phase : connector.draws_on) {
+            if (phase == result.reference.value()) {
+                continue;
+            }
+            if (result.report(phase).imbalance_A + ctx.phase_imbalance_cut_A >
+                max_imbalance_A - PHASE_IMBALANCE_RELEASE_HYSTERESIS_A) {
+                releasable = false;
+            }
+        }
+        if (releasable) {
+            EVLOG_info << fmt::format("{}: phase imbalance resolved, releasing the {:.1f} A limit", connector.uuid,
+                                      ctx.phase_imbalance_cap_A.value());
+            ctx.phase_imbalance_cap_A = std::nullopt;
+            ctx.phase_imbalance_cut_A = 0.f;
+            ctx.phase_imbalance_cap_since = std::nullopt;
+        }
+    }
+
+    // A residual is only conclusive once no cut is still settling.
+    if (not any_on_hold) {
+        for (const auto phase : {Phase::L1, Phase::L2, Phase::L3}) {
+            const auto& report = result.report(phase);
+            const auto edge = phase_residual_reported[static_cast<int>(phase)].update(report.residual_A > 0.f, now,
+                                                                                      std::chrono::seconds(0));
+            if (edge == HoldLatch::Edge::Held) {
+                EVLOG_warning << fmt::format(
+                    "phase {}: {:.1f} A above the imbalance limit that limiting connectors cannot correct",
+                    to_string(phase), report.residual_A);
+            } else if (edge == HoldLatch::Edge::Released) {
+                EVLOG_info << fmt::format("phase {}: imbalance is within reach of the connectors again",
+                                          to_string(phase));
+            }
+        }
+    }
+
+    if (globals.debug and result.reference.has_value()) {
+        EVLOG_info << fmt::format("Phase imbalance (reference {}): {}; {}; {}", to_string(result.reference.value()),
+                                  format_phase_report(Phase::L1, result.L1), format_phase_report(Phase::L2, result.L2),
+                                  format_phase_report(Phase::L3, result.L3));
+    }
+
+    phase_imbalance = result;
 }
 
 int EnergyManagerImpl::grant_site_headroom(const SiteInference& site) {
@@ -427,6 +558,10 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
         // mutates the session context.
         brokers.back()->observe();
         // EVLOG_info << fmt::format("Created broker for {}", m->energy_flow_request.uuid);
+    }
+
+    if (config.phase_symmetry_enabled and broker_strategy == BrokerStrategy::PowerRedistribution) {
+        apply_phase_imbalance_correction(brokers);
     }
 
     // for each evse: create a custom offer at their local market place and ask the broker to buy a slice.

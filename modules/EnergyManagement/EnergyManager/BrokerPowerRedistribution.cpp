@@ -484,10 +484,17 @@ void BrokerPowerRedistribution::tradeImpl() {
 }
 
 void BrokerPowerRedistribution::limit_offer_to_cap() {
-    if (not run_cap_A.has_value()) {
-        return;
+    std::optional<float> cap;
+    std::string cap_source = run_cap_source;
+    if (run_cap_A.has_value()) {
+        cap = to_scalar_cap(run_cap_A.value());
     }
-    const auto cap = to_scalar_cap(run_cap_A.value());
+    // The phase imbalance correction's cap is one more upper bound, whichever is lower.
+    const auto& imbalance_cap = context.phase_imbalance_cap_A;
+    if (imbalance_cap.has_value() and (not cap.has_value() or imbalance_cap.value() < cap.value())) {
+        cap = imbalance_cap;
+        cap_source = "PhaseImbalance";
+    }
     if (not cap.has_value()) {
         return;
     }
@@ -514,7 +521,7 @@ void BrokerPowerRedistribution::limit_offer_to_cap() {
         // every round buys on top of the rounds before it.
         const float allowance_A = std::max(cap.value(), floor_A) - sold_current_A(i);
 
-        apply_limit_if_smaller(limits.ac_max_current_A, std::max(0.0f, allowance_A), run_cap_source);
+        apply_limit_if_smaller(limits.ac_max_current_A, std::max(0.0f, allowance_A), cap_source);
         return;
     }
 }

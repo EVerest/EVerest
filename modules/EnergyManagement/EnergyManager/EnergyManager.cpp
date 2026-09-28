@@ -33,6 +33,9 @@ void EnergyManager::init() {
     energy_manager_config.power_redistribution_connector_margin = config.power_redistribution_connector_margin;
     energy_manager_config.power_redistribution_site_margin = config.power_redistribution_site_margin;
     energy_manager_config.power_redistribution_gain = config.power_redistribution_gain;
+    energy_manager_config.phase_symmetry_enabled = config.phase_symmetry_enabled;
+    energy_manager_config.max_phase_imbalance_A = config.max_phase_imbalance_A;
+    energy_manager_config.phase_imbalance_hold_s = config.phase_imbalance_hold_s;
 
     const auto enforce_limits_callback = [this](const std::vector<types::energy::EnforcedLimits>& limits) {
         const types::energy::NumberWithSource nonumber = {-9999.0};
