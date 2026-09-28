@@ -299,21 +299,19 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
     const auto aggregation_window = std::chrono::seconds(config.power_meter_aggregation_window_s);
     const auto now = globals.start_time;
 
-    // A connector cut less than the hold time ago is left out entirely: its measurement
-    // may not reflect the cut yet, and handing it a second share of the same overshoot is
-    // exactly the stacking the hold exists to prevent.
+    // A connector whose cap changed within the hold is settling: its measurement may not
+    // reflect the cap yet, so its cap is not raised again until it does.
     std::vector<ImbalanceConnector> connectors;
-    bool any_on_hold = false;
+    bool any_settling = false;
     for (const auto& broker : brokers) {
         const auto& connector_market = broker->get_local_market();
         const auto& node = connector_market.energy_flow_request;
-        const auto& ctx = contexts.at(node.uuid);
+        auto& ctx = contexts.at(node.uuid);
         if (not in_session(node)) {
             continue;
         }
-        if (ctx.phase_imbalance_cap_since.has_value() and now - ctx.phase_imbalance_cap_since.value() < hold_time) {
-            any_on_hold = true;
-            continue;
+        if (not ctx.phase_imbalance_arrived_at.has_value()) {
+            ctx.phase_imbalance_arrived_at = now;
         }
         const auto& measurement = ctx.last_observed_measurement;
         if (not is_fresh(measurement.measured_at, now, aggregation_window)) {
@@ -326,53 +324,37 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
         connector.measured_A = measured_current_on(measurement, connector.draws_on, nominal_ac_voltage);
         connector.min_A = min_current_A(connector_market);
         connector.cap_A = ctx.phase_imbalance_cap_A;
+        connector.settling =
+            ctx.phase_imbalance_cap_since.has_value() and now - ctx.phase_imbalance_cap_since.value() < hold_time;
+        connector.arrived_at = ctx.phase_imbalance_arrived_at.value();
+        any_settling = any_settling or connector.settling;
         connectors.push_back(connector);
     }
 
     const PhaseCurrents site_A{site_aggregate.current_A.L1, site_aggregate.current_A.L2, site_aggregate.current_A.L3};
     const auto result = correct_phase_imbalance(site_A, connectors, max_imbalance_A);
 
-    std::set<std::string> cut_this_run;
-    for (const auto& cut : result.cuts) {
-        auto& ctx = contexts.at(cut.uuid);
-        ctx.phase_imbalance_cap_A = cut.new_cap_A;
-        ctx.phase_imbalance_cut_A += cut.cut_A;
+    for (const auto& cap : result.caps) {
+        auto& ctx = contexts.at(cap.uuid);
+        ctx.phase_imbalance_cap_A = cap.new_cap_A;
         ctx.phase_imbalance_cap_since = now;
-        cut_this_run.insert(cut.uuid);
-        EVLOG_info << fmt::format("{}: phase imbalance, limiting to {:.1f} A", cut.uuid, cut.new_cap_A);
-    }
-
-    // Release, for the connectors eligible this run that got no new cut: once handing back
-    // everything the correction holds would predictably keep every phase the connector
-    // draws on within the limit, the cap is dropped in full. Without a known reference
-    // there is no imbalance to judge that against, and the cap stays.
-    for (const auto& connector : connectors) {
-        auto& ctx = contexts.at(connector.uuid);
-        if (not ctx.phase_imbalance_cap_A.has_value() or cut_this_run.count(connector.uuid) > 0 or
-            not result.reference.has_value()) {
-            continue;
-        }
-        bool releasable = true;
-        for (const auto phase : connector.draws_on) {
-            if (phase == result.reference.value()) {
-                continue;
-            }
-            if (result.report(phase).imbalance_A + ctx.phase_imbalance_cut_A >
-                max_imbalance_A - PHASE_IMBALANCE_RELEASE_HYSTERESIS_A) {
-                releasable = false;
-            }
-        }
-        if (releasable) {
-            EVLOG_info << fmt::format("{}: phase imbalance resolved, releasing the {:.1f} A limit", connector.uuid,
-                                      ctx.phase_imbalance_cap_A.value());
-            ctx.phase_imbalance_cap_A = std::nullopt;
-            ctx.phase_imbalance_cut_A = 0.f;
-            ctx.phase_imbalance_cap_since = std::nullopt;
+        if (cap.new_cap_A <= 0.f) {
+            EVLOG_info << fmt::format("{}: phase imbalance, paused until its phase has room for it", cap.uuid);
+        } else {
+            EVLOG_info << fmt::format("{}: phase imbalance, {} to {:.1f} A", cap.uuid,
+                                      cap.cut_A >= 0.f ? "limiting" : "raising the limit", cap.new_cap_A);
         }
     }
+    for (const auto& uuid : result.released) {
+        auto& ctx = contexts.at(uuid);
+        EVLOG_info << fmt::format("{}: draws on all phases, releasing the {:.1f} A phase imbalance limit", uuid,
+                                  ctx.phase_imbalance_cap_A.value_or(0.f));
+        ctx.phase_imbalance_cap_A = std::nullopt;
+        ctx.phase_imbalance_cap_since = std::nullopt;
+    }
 
-    // A residual is only conclusive once no cut is still settling.
-    if (not any_on_hold) {
+    // A residual is only conclusive once no cap is still settling.
+    if (not any_settling) {
         for (const auto phase : {Phase::L1, Phase::L2, Phase::L3}) {
             const auto& report = result.report(phase);
             const auto edge = phase_residual_reported[static_cast<int>(phase)].update(report.residual_A > 0.f, now,

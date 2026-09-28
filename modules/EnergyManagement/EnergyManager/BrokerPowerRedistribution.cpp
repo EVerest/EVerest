@@ -479,6 +479,12 @@ void BrokerPowerRedistribution::decide_cap(const types::energy::EnergyFlowReques
 }
 
 void BrokerPowerRedistribution::tradeImpl() {
+    // Paused by the phase imbalance limiting: nothing is bought, so the zero trade stands.
+    // Capping the offer cannot express this, it never goes below the connector's minimum.
+    const auto& imbalance_cap = context.phase_imbalance_cap_A;
+    if (imbalance_cap.has_value() and imbalance_cap.value() <= 0.f) {
+        return;
+    }
     limit_offer_to_cap();
     BrokerFastCharging::tradeImpl();
 }

@@ -1,5 +1,5 @@
 {
-  "description": "Phase imbalance, worked example 2: site L1 90 A, L2 90 A, L3 66 A. cp02 and cp05 on L1, cp06 and cp09 on L2, each gives up 2 A.",
+  "description": "Phase imbalance, worked example 2: site L1 90 A, L2 90 A, L3 66 A. cp02 and cp05 on L1, cp06 and cp09 on L2: each pair may add 27 A against L3 (19 A of difference under the 1 A margin, plus 8 A), 13.5 A each.",
   "start_times": [
     "2026-08-04T12:30:00.000Z"
   ],
@@ -376,7 +376,7 @@
         "limits_root_side": {
           "ac_max_current_A": {
             "source": "PhaseImbalance",
-            "value": 14.0
+            "value": 13.5
           },
           "ac_max_phase_count": {
             "source": "cp02_phase",
@@ -388,7 +388,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "PhaseImbalance",
-                "value": 14.0
+                "value": 13.5
               },
               "ac_max_phase_count": {
                 "source": "cp02_phase",
@@ -405,7 +405,7 @@
         "limits_root_side": {
           "ac_max_current_A": {
             "source": "PhaseImbalance",
-            "value": 14.0
+            "value": 13.5
           },
           "ac_max_phase_count": {
             "source": "cp05_phase",
@@ -417,7 +417,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "PhaseImbalance",
-                "value": 14.0
+                "value": 13.5
               },
               "ac_max_phase_count": {
                 "source": "cp05_phase",
@@ -434,7 +434,7 @@
         "limits_root_side": {
           "ac_max_current_A": {
             "source": "PhaseImbalance",
-            "value": 14.0
+            "value": 13.5
           },
           "ac_max_phase_count": {
             "source": "cp06_phase",
@@ -446,7 +446,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "PhaseImbalance",
-                "value": 14.0
+                "value": 13.5
               },
               "ac_max_phase_count": {
                 "source": "cp06_phase",
@@ -463,7 +463,7 @@
         "limits_root_side": {
           "ac_max_current_A": {
             "source": "PhaseImbalance",
-            "value": 14.0
+            "value": 13.5
           },
           "ac_max_phase_count": {
             "source": "cp09_phase",
@@ -475,7 +475,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "PhaseImbalance",
-                "value": 14.0
+                "value": 13.5
               },
               "ac_max_phase_count": {
                 "source": "cp09_phase",

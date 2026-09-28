@@ -140,8 +140,8 @@ struct BrokerContext {
         last_margin_W = 0.f;
         under_consuming.reset();
         phase_imbalance_cap_A = std::nullopt;
-        phase_imbalance_cut_A = 0.f;
         phase_imbalance_cap_since = std::nullopt;
+        phase_imbalance_arrived_at = std::nullopt;
     };
 
     int number_1ph3ph_cycles;
@@ -188,14 +188,14 @@ struct BrokerContext {
     // that has already been reported for the current stretch.
     HoldLatch under_consuming;
 
-    // Cap the phase imbalance correction holds this connector at [A], the current the
-    // correction has taken from it in total, and the run of its most recent cut (the
-    // hold counts from there). Empty while the connector is not being corrected. Written
-    // by EnergyManagerImpl, applied by BrokerPowerRedistribution as one more upper bound.
-    // Reset by clear() on unplug.
+    // Cap the phase imbalance limiting holds this connector at [A], 0 while it is paused,
+    // the run that last changed it (the hold counts from there), and the run its session
+    // was first seen in (the newest is paused first). Empty while the connector is not
+    // being limited. Written by EnergyManagerImpl, applied by BrokerPowerRedistribution as
+    // one more upper bound. Reset by clear() on unplug.
     std::optional<float> phase_imbalance_cap_A;
-    float phase_imbalance_cut_A{0.f};
     std::optional<date::utc_clock::time_point> phase_imbalance_cap_since;
+    std::optional<date::utc_clock::time_point> phase_imbalance_arrived_at;
 };
 
 // base class for different Brokers

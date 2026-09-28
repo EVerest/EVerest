@@ -162,10 +162,10 @@ private:
     int grant_site_headroom(const SiteInference& site);
 
     /// \brief Runs the phase imbalance correction for one optimizer run: after every
-    /// broker's observe(), before the first trading round, so a cut binds in the run that
-    /// computed it. Writes each cut into its BrokerContext, leaves a connector alone for
-    /// the hold time after a cut, and releases a cut once the phases it draws on have room
-    /// for it again. Called under energy_mutex.
+    /// broker's observe(), before the first trading round, so a cap binds in the run that
+    /// computed it. Writes each cap into its BrokerContext, drops the caps the correction
+    /// releases, and keeps a connector's cap as it is for the hold time after it changed.
+    /// Called under energy_mutex.
     void apply_phase_imbalance_correction(const std::vector<std::shared_ptr<Broker>>& brokers);
 
     EnergyManagerConfig config;

@@ -175,29 +175,29 @@ config:
     maximum: 1
   phase_symmetry_enabled:
     description: >-
-      Keeps the difference between the most and the least loaded grid phase of the site
-      under max_phase_imbalance_A. Each optimizer run compares the per phase site
-      measurement (the grid connection's meter, else the sum of the EVSE meters), and
-      when a phase carries more than the limit above the least loaded one, the overshoot
-      is taken equally from the connectors drawing on that phase but not on the least
-      loaded one - the only connectors that can change the difference. A connector is
-      never limited below its minimum current. Requires broker_strategy
-      PowerRedistribution, which observes the per phase measurements; with FastCharging
-      this option has no effect.
+      Keeps the difference between any two grid phases of the site within
+      max_phase_imbalance_A for the load the manager controls. Each optimizer run splits
+      the per phase site measurement (the grid connection's meter, else the sum of the
+      EVSE meters) into controlled and uncontrolled load, and caps every connector that
+      draws on one or two phases, or on none yet, in advance and in equal shares, so the
+      phases stay within the limit even when each draws its full cap. Where a share falls
+      below a connector's minimum current, the most recently arrived connector is paused.
+      Requires broker_strategy PowerRedistribution, which observes the per phase
+      measurements; with FastCharging this option has no effect.
     type: boolean
     default: false
   max_phase_imbalance_A:
     description: >-
-      Largest difference in ampere allowed between the most and the least loaded grid
-      phase before phase_symmetry_enabled limits connectors.
+      Largest difference in ampere allowed between any two grid phases while
+      phase_symmetry_enabled is set.
     type: number
     default: 20.0
     minimum: 0
   phase_imbalance_hold_s:
     description: >-
-      Seconds a connector is left alone after the phase imbalance correction limited
-      it, so the next decision about it is based on a measurement that reflects the
-      limit. Should exceed the update interval of the slowest meter on the site.
+      Seconds a limit the phase imbalance limiting changed is not raised again, so the
+      next raise is based on a measurement that reflects the change. Should exceed the
+      update interval of the slowest meter on the site.
     type: integer
     default: 10
     minimum: 0

@@ -1,5 +1,5 @@
 {
-  "description": "Phase imbalance, worked example 1: site L1 66 A, L2 90 A, L3 66 A against a 20 A limit. cp02 and cp05 are single phase on L2 and each give up 2 A; cp06 on L1 is left alone.",
+  "description": "Phase imbalance, worked example 1: site L1 66 A, L2 90 A, L3 66 A against a 20 A limit. cp02 and cp05 are single phase on L2 and share 27 A of it, 13.5 A each (19 A of difference under the 1 A margin, plus the 16 A cp06 draws on L1); cp06 keeps its 16 A.",
   "start_times": [
     "2026-08-04T12:30:00.000Z"
   ],
@@ -304,7 +304,7 @@
         "limits_root_side": {
           "ac_max_current_A": {
             "source": "PhaseImbalance",
-            "value": 14.0
+            "value": 13.5
           },
           "ac_max_phase_count": {
             "source": "cp02_phase",
@@ -316,7 +316,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "PhaseImbalance",
-                "value": 14.0
+                "value": 13.5
               },
               "ac_max_phase_count": {
                 "source": "cp02_phase",
@@ -333,7 +333,7 @@
         "limits_root_side": {
           "ac_max_current_A": {
             "source": "PhaseImbalance",
-            "value": 14.0
+            "value": 13.5
           },
           "ac_max_phase_count": {
             "source": "cp05_phase",
@@ -345,7 +345,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "PhaseImbalance",
-                "value": 14.0
+                "value": 13.5
               },
               "ac_max_phase_count": {
                 "source": "cp05_phase",
