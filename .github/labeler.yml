@@ -1,5 +1,6 @@
 # Path based pull request labels, applied by .github/workflows/on_pr_auto-label.yaml
-# through actions/labeler. Labels are only added, never removed.
+# through actions/labeler. Labels are only added, never removed. The size/*
+# label is computed by the workflow itself, not by this file.
 #
 # Extend this file when adding a module tree or library. Labels with release
 # semantics (backport *, include-in-release, EVerestAPI *, experimental,
