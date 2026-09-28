@@ -422,11 +422,11 @@ EvseSecurity::EvseSecurity(const FilePaths& file_paths, const std::optional<std:
             }
         }
     }
-    const fs::path ctl_dir = file_paths.directories.ctl_directory.empty()
-                                ? fs::path("./lib/everest/evse_security/CTL")
-                                : file_paths.directories.ctl_directory;
-    install_ctl_from_directory(ctl_dir, this->ca_bundle_path_map);
-
+    if (!file_paths.directories.ctl_directory.empty()) {
+        install_ctl_from_directory(file_paths.directories.ctl_directory, this->ca_bundle_path_map);
+    } else {
+        EVLOG_info << "CTL: no ctl_directory configured, skipping CTL installation";
+    }                      
     // Start GC timer
     garbage_collect_timer.interval([this]() { this->garbage_collect(); }, this->garbage_collect_time);
 }
