@@ -12,6 +12,9 @@ void grid_supportImpl::init() {
 void grid_supportImpl::ready() {
 }
 
+void grid_supportImpl::shutdown() {
+}
+
 types::grid_support::SetDirectivesResponse
 grid_supportImpl::handle_set_active_directives(types::grid_support::ActiveDirectiveSet& directives) {
     if (not directives.directives.empty()) {
