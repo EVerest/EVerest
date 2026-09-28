@@ -32,6 +32,15 @@ struct ModulePluginEntry {
 
 using ModulePluginEntryFn = const ModulePluginEntry* (*)();
 
+/// One module linked into the host binary, in a table terminated by an entry with a null name.
+struct StaticModulePlugin {
+    const char* module_name;
+    ModulePluginEntryFn entry;
+};
+
 } // namespace Everest
 
 extern "C" const Everest::ModulePluginEntry* everest_module_entry();
+
+/// Defined only when the modules are linked statically into the host.
+extern "C" const Everest::StaticModulePlugin* everest_static_module_plugins() __attribute__((weak));

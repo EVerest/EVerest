@@ -26,6 +26,22 @@ std::int64_t elapsed_ms(std::chrono::steady_clock::time_point since) {
 fs::path plugin_path(const ManagerSettings& ms, const std::string& module_name) {
     return ms.runtime_settings.modules_dir / module_name / (module_name + ".so");
 }
+
+ModulePluginEntryFn static_entry(const std::string& module_name) {
+    if (everest_static_module_plugins == nullptr) {
+        return nullptr;
+    }
+    for (const auto* plugin = everest_static_module_plugins(); plugin->module_name != nullptr; ++plugin) {
+        if (module_name == plugin->module_name) {
+            return plugin->entry;
+        }
+    }
+    return nullptr;
+}
+
+bool is_linked_statically() {
+    return everest_static_module_plugins != nullptr;
+}
 } // namespace
 
 std::vector<std::string> hosted_module_ids(const ManagerConfig& config, const ManagerSettings& ms) {
@@ -34,7 +50,10 @@ std::vector<std::string> hosted_module_ids(const ManagerConfig& config, const Ma
         if (module_config.standalone) {
             EVLOG_warning << fmt::format("Module {} is standalone and not hosted by this process",
                                          config.printable_identifier(module_id));
-        } else if (not fs::exists(plugin_path(ms, module_config.module_name))) {
+        } else if (is_linked_statically() and static_entry(module_config.module_name) == nullptr) {
+            EVLOG_warning << fmt::format("Module {} is not linked into this binary and is not hosted by this process",
+                                         config.printable_identifier(module_id));
+        } else if (not is_linked_statically() and not fs::exists(plugin_path(ms, module_config.module_name))) {
             EVLOG_warning << fmt::format("Module {} has no shared object at {} and is not hosted by this process",
                                          config.printable_identifier(module_id),
                                          plugin_path(ms, module_config.module_name).string());
@@ -68,17 +87,20 @@ std::unique_ptr<ModuleHost::LoadedModule> ModuleHost::load(const std::string& mo
     loaded->load_start = std::chrono::steady_clock::now();
 
     const auto path = plugin_path(m_ms, module_name);
-    loaded->handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
-    if (loaded->handle == nullptr) {
-        throw std::runtime_error(
-            fmt::format("Cannot load module {} from {}: {}", loaded->identifier, path.string(), dlerror()));
-    }
-
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): dlsym returns an untyped symbol address
-    const auto entry_fn = reinterpret_cast<ModulePluginEntryFn>(dlsym(loaded->handle, MODULE_PLUGIN_ENTRY_SYMBOL));
+    auto entry_fn = static_entry(module_name);
     if (entry_fn == nullptr) {
-        throw std::runtime_error(fmt::format("Module {} at {} has no {} symbol", loaded->identifier, path.string(),
-                                             MODULE_PLUGIN_ENTRY_SYMBOL));
+        loaded->handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (loaded->handle == nullptr) {
+            throw std::runtime_error(
+                fmt::format("Cannot load module {} from {}: {}", loaded->identifier, path.string(), dlerror()));
+        }
+
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): dlsym returns an untyped symbol address
+        entry_fn = reinterpret_cast<ModulePluginEntryFn>(dlsym(loaded->handle, MODULE_PLUGIN_ENTRY_SYMBOL));
+        if (entry_fn == nullptr) {
+            throw std::runtime_error(fmt::format("Module {} at {} has no {} symbol", loaded->identifier, path.string(),
+                                                 MODULE_PLUGIN_ENTRY_SYMBOL));
+        }
     }
     const auto* entry = entry_fn();
     if (entry == nullptr or entry->abi_version != MODULE_PLUGIN_ABI_VERSION) {

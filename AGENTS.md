@@ -89,6 +89,13 @@ run `everest-neo` with the union of them, for example under `sudo`.
 Python and Rust modules, `--standalone` modules and per-module process names in the logging
 filter are not available in this mode. The multi-process `manager` cannot start plugin builds.
 
+Adding `-DEVEREST_LINK_MODULE_PLUGINS_STATIC=ON` builds every C++ module as a static library
+instead and links all of them into `everest-neo`, which then looks modules up in a generated
+table rather than loading shared objects. Each module and the libraries defined in its directory
+compile with `module` defined to `everest_module_<Name>`, and each module archive is partially
+linked into one object whose strong symbols are local, so modules stay as separate as under
+`dlopen(RTLD_LOCAL)` while code they share through headers is linked once.
+
 ## Running
 
 Generated run scripts are the simplest entry point:
