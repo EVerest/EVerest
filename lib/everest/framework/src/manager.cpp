@@ -72,21 +72,14 @@ struct ModuleStartInfo {
         javascript,
         python
     };
-    ModuleStartInfo(const std::string& name_, const std::string& printable_name_, Language lang_, const fs::path& path_,
-                    std::vector<std::string> capabilities_) :
-        name(name_),
-        printable_name(printable_name_),
-        language(lang_),
-        path(path_),
-        capabilities(std::move(capabilities_)) {
+    ModuleStartInfo(const std::string& name_, const std::string& printable_name_, Language lang_,
+                    const fs::path& path_) :
+        name(name_), printable_name(printable_name_), language(lang_), path(path_) {
     }
     std::string name;
     std::string printable_name;
     Language language;
     fs::path path;
-
-    // required capabilities of this module
-    std::vector<std::string> capabilities;
 };
 
 namespace {
@@ -260,11 +253,9 @@ void spawn_modules(const std::vector<ModuleStartInfo>& modules, const ManagerSet
 
     for (const auto& module : modules) {
 
-        auto proc_handle = system::SubProcess::create(ms.run_as_user, module.capabilities);
+        auto proc_handle = system::SubProcess::create(ms.run_as_user);
 
         if (proc_handle.is_child()) {
-            // first, check if we need any capabilities
-
             try {
                 exec_module(rs, ms.mqtt_settings, module, proc_handle);
             } catch (const std::exception& err) {
@@ -1670,12 +1661,12 @@ void Manager::handle_start_modules(const RuntimeContext& ctx) {
             return m_modules_ready.emplace(module_id, ModuleReadyInfo{}).first;
         }();
 
-        std::vector<std::string> capabilities =
-            module_configurations.at(module_id).capabilities.value_or(std::vector<std::string>{});
-
-        if (not capabilities.empty()) {
-            EVLOG_info << fmt::format("Module {} wants to acquire the following capabilities: {}", module_name,
-                                      fmt::join(capabilities.begin(), capabilities.end(), " "));
+        const auto& capabilities = module_configurations.at(module_id).capabilities;
+        if (capabilities.has_value() and not capabilities->empty()) {
+            EVLOG_warning << fmt::format(
+                "Module {} ({}) sets 'capabilities' in the config. This is no longer supported and ignored, declare "
+                "them in the module manifest and grant them as file capabilities on the module binary instead.",
+                module_id, module_name);
         }
 
         const Handler module_ready_handler = [this, module_id, &mqtt_abstraction, standalone_modules,
@@ -1749,16 +1740,16 @@ void Manager::handle_start_modules(const RuntimeContext& ctx) {
 
         if (fs::exists(binary_path)) {
             EVLOG_debug << fmt::format("module: {} ({}) provided as binary", module_id, module_name);
-            modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::cpp, binary_path,
-                                          capabilities);
+            modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::cpp,
+                                          binary_path);
         } else if (fs::exists(javascript_library_path)) {
             EVLOG_debug << fmt::format("module: {} ({}) provided as javascript library", module_id, module_name);
             modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::javascript,
-                                          fs::canonical(javascript_library_path), capabilities);
+                                          fs::canonical(javascript_library_path));
         } else if (fs::exists(python_module_path)) {
             EVLOG_verbose << fmt::format("module: {} ({}) provided as python module", module_id, module_name);
             modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::python,
-                                          fs::canonical(python_module_path), capabilities);
+                                          fs::canonical(python_module_path));
         } else {
             if (module_id == "probe" || module_name == "ProbeModule") {
                 EVLOG_error << "You are trying to start the probe module as binary, please check "

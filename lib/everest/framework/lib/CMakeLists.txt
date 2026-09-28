@@ -14,6 +14,7 @@ set_target_properties(framework PROPERTIES SOVERSION ${PROJECT_VERSION})
 
 target_sources(framework
     PRIVATE
+        capabilities.cpp
         config.cpp
         config/mqtt_settings.cpp
         config/settings.cpp

@@ -63,33 +63,67 @@ Specify this user in the EVerest config file in the settings section:
    settings:
     run_as_user: everest
 
+The systemd service should start the manager process as root. It will
+then change the user for the child processes it forks (the modules).
+Alternatively the manager process can be started with the appropriate
+Linux capability to allow user changes.
+
 Some modules need elevated privileges, e.g. SLAC module. Those modules
-should be given individual Linux capabilities like this:
+should be given individual Linux capabilities via file based capabilities.
+A module declares the capabilities it needs in the ``capabilities`` list
+of its ``manifest.yaml``:
 
 .. code-block:: yaml
 
-    slac:
-      config_implementation:
-        main:
-          device: seth0
-          link_status_detection: true
-      module: EvseSlac
-      capabilities:
-        - CAP_NET_RAW
+   capabilities:
+     - CAP_NET_RAW
 
 Here is a list of capabilities required by the EVerest modules:
 
-================= ============================================
-Module name       Capabilities
-================= ============================================
-EvseSlac / EvSlac CAP_NET_RAW
-Setup             CAP_NET_ADMIN, CAP_NET_RAW, CAP_DAC_OVERRIDE
-PacketSniffer     CAP_NET_RAW
-================= ============================================
+================== ============================================
+Module name        Capabilities
+================== ============================================
+EvseSlac / EvSlac  CAP_NET_RAW
+Setup              CAP_NET_ADMIN, CAP_NET_RAW, CAP_DAC_OVERRIDE
+PacketSniffer      CAP_NET_RAW
+Huawei_V100R023C10 CAP_NET_RAW
+================== ============================================
 
-The systemd service should start the manager process as root. It will
-then change the user for the child processes it forks (the modules) and
-set the capabilities as needed.
+The script ``applications/utils/scripts/set_module_capabilities.py`` reads
+the manifests of all installed modules and grants these capabilities to the
+module binaries with ``setcap``. It needs PyYAML, and ``setcap`` requires
+root privileges (``CAP_SETFCAP``):
+
+.. code-block:: bash
+
+   sudo python3 applications/utils/scripts/set_module_capabilities.py \
+       --modules-dir /usr/libexec/everest/modules
+
+Add ``--dry-run`` to only print the ``setcap`` commands. Only compiled
+modules (C++, Rust) can be given file capabilities. Python and JavaScript
+modules are skipped with a warning, since capabilities on the interpreter
+would apply to every script it runs.
+
+The ``everest-core`` recipes of the meta-everest layers inherit the
+``everest_file_capabilities`` class, which runs this script in
+``pkg_postinst`` when the root filesystem is created, so images built with
+them contain the file capabilities without further configuration.
+Installing the package on a running target does not apply them, run the
+script manually in this case.
+
+Run the script again whenever module binaries are replaced, since
+overwriting a file drops its capabilities. File capabilities are ignored
+on file systems mounted with ``nosuid``.
+
+At startup, the framework adds these capabilities to the ambient set of
+the module process, so programs it starts, e.g. ``ip`` called by the Setup
+module, run with the same capabilities.
+
+.. note::
+
+   Setting Linux capabilities for a module with the ``capabilities`` key
+   in the EVerest config file is no longer supported. The key is still
+   accepted, but the manager ignores it and logs a warning at startup.
 
 - To ensure that internal services cannot be accessed via the powerline connection,
   iptables can be used with the following rules. In this example the powerline module

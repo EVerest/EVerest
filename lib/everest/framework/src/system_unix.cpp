@@ -9,21 +9,18 @@
 #include <chrono>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 
 #include <fcntl.h>
 #include <grp.h>
-#include <linux/securebits.h>
 #include <poll.h>
 #include <pwd.h>
 #include <signal.h>
-#include <sys/capability.h>
 #include <sys/prctl.h>
 #include <sys/signalfd.h>
 #include <unistd.h>
 
 #include <fmt/core.h>
-
-#include <utils/helpers.hpp>
 
 namespace Everest::system {
 
@@ -75,57 +72,7 @@ GetPasswdEntryResult get_passwd_entry(const std::string& user_name) {
 }
 } // namespace
 
-bool keep_caps() {
-    // cap_set_secbits was added in libcap 2.30.
-    // LIBCAP_MAJOR/LIBCAP_MINOR are defined in libcap >= 2.64.
-    // For older versions without these macros, fall back to prctl.
-#if defined(LIBCAP_MAJOR) && (LIBCAP_MAJOR > 2 || (LIBCAP_MAJOR == 2 && LIBCAP_MINOR >= 30))
-    return (0 == cap_set_secbits(SECBIT_KEEP_CAPS));
-#else
-    return (0 == prctl(PR_SET_SECUREBITS, SECBIT_KEEP_CAPS));
-#endif
-}
-
-std::string set_caps(const std::vector<std::string>& capabilities) {
-
-    std::vector<cap_value_t> capability_values;
-    capability_values.resize(capabilities.size());
-
-    for (const auto& cap_name : capabilities) {
-        auto& cap_value = capability_values.emplace_back();
-        const auto error = cap_from_name(cap_name.c_str(), &cap_value);
-
-        if (error) {
-            return fmt::format("Failed to get capability value for capability name {}", cap_name);
-        }
-    }
-
-    auto cap_ctx = cap_get_proc();
-    if (cap_set_flag(cap_ctx, CAP_INHERITABLE, Everest::helpers::clamp_to<int>(capability_values.size()),
-                     capability_values.data(), CAP_SET) != 0) {
-        return "Failed to add capability flags to CAP_INHERITABLE";
-    }
-
-    if (cap_set_proc(cap_ctx) != 0) {
-        return "Failed to set capabilities for process";
-    };
-
-    if (cap_free(cap_ctx) != 0) {
-        return "Failed free memory for capability flags";
-    };
-
-    for (const auto cap_value : capability_values) {
-        if (cap_set_ambient(cap_value, CAP_SET) != 0) {
-            return "Failed to add capabilities to ambient set";
-        }
-    }
-
-    return {};
-}
-
 std::string set_real_user(const std::string& user_name) {
-    // Set special capabilities if required by module
-
     const auto entry = get_passwd_entry(user_name);
 
     if (not entry) {
@@ -182,35 +129,7 @@ pid_t SubProcess::check_child_executed() {
     return m_pid;
 }
 
-std::string set_user_and_capabilities(const std::string& run_as_user, const std::vector<std::string>& capabilities) {
-    if (not capabilities.empty()) {
-        // we need to keep caps, otherwise, we'll loose all our capabilities (except inherited)
-        if (system::keep_caps() == false) {
-            return "Keeping capabilities (SECBIT_KEEP_CAPS) failed";
-        }
-    }
-
-    // Set real user for child process
-    std::string error;
-    if (not run_as_user.empty()) {
-        error = system::set_real_user(run_as_user);
-        if (not error.empty()) {
-            return fmt::format("Failed to set real user to: {}", run_as_user);
-        }
-    }
-
-    // Set capabilities for child process
-    if (not capabilities.empty()) {
-        error = system::set_caps(capabilities);
-        if (not error.empty()) {
-            return fmt::format("Failed to set capabilities: {}", error);
-        }
-    }
-
-    return {};
-}
-
-SubProcess SubProcess::create(const std::string& run_as_user, const std::vector<std::string>& capabilities) {
+SubProcess SubProcess::create(const std::string& run_as_user) {
     std::array<int, 2> pipefd{};
 
     const auto flags = O_CLOEXEC;
@@ -246,10 +165,9 @@ SubProcess SubProcess::create(const std::string& run_as_user, const std::vector<
         close(reading_end_fd);
 
         SubProcess handle{writing_end_fd, pid};
-        auto error = set_user_and_capabilities(run_as_user, capabilities);
 
-        if (not error.empty()) {
-            handle.send_error_and_exit(error);
+        if (not run_as_user.empty() and not set_real_user(run_as_user).empty()) {
+            handle.send_error_and_exit(fmt::format("Failed to set real user to: {}", run_as_user));
         }
 
         // FIXME (aw): how does the the forked process does cleanup when receiving PARENT_DIED_SIGNAL compared to
