@@ -41,6 +41,7 @@ struct mDNS_discovery {
     static const std::uint16_t txt_record_limit{1500};
 };
 
+/// Parse an mDNS response. Returns no value for nonresponses or malformed packet structure.
 std::optional<mDNS_discovery> parse_mdns_packet(std::vector<std::uint8_t> const& packet);
 std::vector<std::uint8_t> create_mdns_query(std::string const& name);
 
@@ -50,6 +51,7 @@ std::vector<std::uint8_t> create_mdns_query(std::string const& name);
 std::vector<std::uint8_t> create_mdns_response(mDNS_discovery const& service, std::string const& service_type);
 
 /// Check if an mDNS packet is a query for the given service type or DNS-SD service-type enumeration.
+/// Malformed queries do not match.
 bool is_query_for(std::vector<std::uint8_t> const& packet, std::string const& service_type);
 
 /// Preferred connect address of a discovered service: IPv4 (ip) when present,
