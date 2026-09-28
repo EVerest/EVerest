@@ -3,7 +3,9 @@
 #pragma once
 #include <everest/slac/HomeplugMessage.hpp>
 #include <everest/slac/fsm/evse/context.hpp>
+#include <everest/slac/timer.hpp>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace everest::lib::slac {
@@ -24,7 +26,12 @@ public:
 
     void restart_fsm();
 
+    // Time until the machine next has something to do, measured from the last event; nothing while
+    // it only waits for input.
+    [[nodiscard]] std::optional<timer::tick> next_wakeup() const;
+
 private:
+    void settle();
     void event_post_processing();
     struct Impl;
     std::unique_ptr<Impl> impl;

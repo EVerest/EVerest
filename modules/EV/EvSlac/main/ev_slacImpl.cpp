@@ -269,7 +269,7 @@ void ev_slacImpl::handle_slac_io_ready() {
     if (should_start_fsm) {
         EVLOG_info << kModuleLogPrefix << "SLAC I/O is ready. Starting the SLAC state machine.";
         if (!local_fsm_ctrl->init()) {
-            abort_event_loop("Failed to arm the SLAC state machine tick timer.");
+            abort_event_loop("Failed to arm the SLAC state machine timer.");
         }
     } else if (!local_fsm_ctrl) {
         EVLOG_warning << kModuleLogPrefix << "SLAC I/O ready callback received without an active controller.";

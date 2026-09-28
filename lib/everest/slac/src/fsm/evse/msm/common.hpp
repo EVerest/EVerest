@@ -77,16 +77,12 @@ struct SessionFailed {};
 struct SessionMatched {};
 
 // States
-struct CheckLink : public state<> {
+struct CheckLink : public timeout_state {
     // Entered once per link-check phase; everything that happens inside the state is an internal
     // transition (target `none`), so on_entry never re-runs and the poll cadence is not disturbed.
-    template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
-        to.arm(fsm.ctx->current_time, fsm.link_check_to);
-    }
-
-    timer to;
-    bool state_timeout(timer::tp now) const {
-        return to.expired(now);
+    template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
+        duration = fsm.link_check_to;
+        timeout_state::on_entry(e, fsm);
     }
 };
 struct Lumissil : public CheckLink {

@@ -2183,10 +2183,8 @@ bool test_matched_link_status_neg_debounce_tolerates_transient_flaps() {
 }
 
 // TC_SECC_CMN_VTB_PLCLinkStatus_003: once CM_SLAC_MATCH.CNF is out, a fresh CM_SLAC_PARM.REQ must
-// get no CNF. The FSM exits Matching only on the next update tick, so a PARM.REQ arriving inside
-// that window used to be answered by the Listen region (and, with the same run_id, restarted the
-// completed session). The harness is synchronous: no update runs between message() calls, so the
-// window is hit deterministically.
+// get no CNF and must not restart the completed session. Matching ends within the event that
+// delivered CM_SLAC_MATCH.REQ, so no later PARM.REQ can reach the Listen region.
 bool test_parm_req_after_match_cnf_gets_no_cnf() {
     const char* test_name = "test_parm_req_after_match_cnf_gets_no_cnf";
     ContextCallbacks callbacks{};
@@ -2229,8 +2227,8 @@ bool test_parm_req_after_match_cnf_gets_no_cnf() {
     machine.message(create_cm_atten_char_rsp(ev_mac, run_id));
     machine.message(create_cm_slac_match_req(ev_mac, run_id, evse_mac));
 
-    if (!assert_true(ctx.status.match_state == SlacState::Matching, test_name,
-                     "expected the FSM to still be in Matching right after CM_SLAC_MATCH.REQ")) {
+    if (!assert_true(ctx.status.match_state != SlacState::Matching, test_name,
+                     "expected the FSM to leave Matching within the CM_SLAC_MATCH.REQ event")) {
         return false;
     }
     const auto parm_cnf_after_match = count_slac_parm_cnf(sent_messages);
@@ -2362,6 +2360,122 @@ bool test_matched_link_status_neg_debounce_clamps_invalid_to_one() {
     });
     return assert_true(left_matched, test_name,
                        "clamped debounce_count=0 did not tear down on the first negative link-status CNF");
+}
+
+// The machine names how long until its earliest deadline, one tick past it, and nothing while it
+// only waits for input, so the module can sleep until then instead of polling.
+bool test_next_wakeup_tracks_the_active_timers() {
+    const char* test_name = "test_next_wakeup_tracks_the_active_timers";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+    callbacks.now = test_clock.source();
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+    slac_fsm machine(ctx);
+    auto const just_after = [](auto deadline) { return std::chrono::ceil<timer::tick>(deadline) + timer::tick{1}; };
+    auto const waits = [&](auto deadline, const char* what) {
+        return assert_true(machine.next_wakeup() == just_after(deadline), test_name, what);
+    };
+    auto const idles = [&](const char* what) {
+        return assert_true(not machine.next_wakeup().has_value(), test_name, what);
+    };
+
+    machine.restart_fsm();
+    if (!waits(ctx.slac_config.request_info_delay, "Init does not wait for the request_info_delay")) {
+        return false;
+    }
+    if (!wait_for_match_state(ctx, SlacState::Reset, machine, 200) ||
+        !waits(ctx.slac_config.set_key_timeout, "Reset does not wait for the set_key_timeout")) {
+        return false;
+    }
+    machine.message(create_cm_set_key_cnf(defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS));
+    if (ctx.status.match_state != SlacState::Idle ||
+        !idles("Idle reports a wake-up although it only waits for input")) {
+        return false;
+    }
+    machine.enter_bcd();
+    if (!waits(ctx.slac_config.slac_init_timeout,
+               "Matching without a session does not wait for the slac_init_timeout")) {
+        return false;
+    }
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0C};
+    machine.message(create_cm_slac_parm_req(ev_mac, fill_run_id(0x80)));
+    if (!waits(std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS),
+               "a session's TT_match_sequence is not the earliest deadline")) {
+        return false;
+    }
+
+    machine.leave_bcd();
+    machine.enter_bcd();
+    machine.message(create_cm_validate_req(ev_mac));
+    if (!waits(std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS),
+               "an armed CM_VALIDATE step 1 does not wait for its repetition")) {
+        return false;
+    }
+    machine.message(create_cm_validate_req(ev_mac, /*pilot_timer=*/2));
+    if (!waits(300ms, "a CM_VALIDATE step 2 does not wait for the toggle window")) {
+        return false;
+    }
+
+    machine.leave_bcd();
+    machine.enter_bcd();
+    test_clock.advance(ctx.slac_config.slac_init_timeout + 1ms);
+    machine.update();
+    return ctx.status.match_state == SlacState::Failed &&
+           idles("Failed reports a wake-up although it only waits for input");
+}
+
+// Matched keeps a wake-up only for the CM_AMP_MAP exchange (or the link poll); without either it
+// sleeps until a frame or a command arrives.
+bool test_next_wakeup_in_matched_follows_the_amp_map() {
+    const char* test_name = "test_next_wakeup_in_matched_follows_the_amp_map";
+    auto const matched_wait = [&](bool initiate_amp_map) -> std::optional<std::optional<timer::tick>> {
+        ContextCallbacks callbacks{};
+        std::vector<SentMessage> sent_messages;
+        callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+            sent_messages.push_back({sent_messages.size(), hp_message});
+            return true;
+        };
+        callbacks.now = test_clock.source();
+        Context ctx(callbacks);
+        configure_common(ctx);
+        ctx.slac_config.link_status.do_detect = false;
+        ctx.slac_config.initiate_amp_map = initiate_amp_map;
+        ctx.slac_config.amp_map_len = 4;
+        ctx.slac_config.amp_map_data = {0xFF, 0xFF};
+        EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+        std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+        slac_fsm machine(ctx);
+        machine.restart_fsm();
+        EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0D};
+        if (!enter_matching_state(ctx, machine) ||
+            !perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, fill_run_id(0x81), SlacState::Matched,
+                                         700)) {
+            return std::nullopt;
+        }
+        return machine.next_wakeup();
+    };
+
+    auto const with_amp_map = matched_wait(true);
+    if (!assert_true(with_amp_map.has_value(), test_name, "did not reach Matched with the amp map on")) {
+        return false;
+    }
+    if (!assert_true(*with_amp_map == std::chrono::milliseconds(defs::TT_MATCH_RESPONSE_MS) + timer::tick{1}, test_name,
+                     "Matched does not wait for the CM_AMP_MAP retransmission")) {
+        return false;
+    }
+    auto const without = matched_wait(false);
+    if (!assert_true(without.has_value(), test_name, "did not reach Matched with the amp map off")) {
+        return false;
+    }
+    return assert_true(not without->has_value(), test_name,
+                       "Matched without link poll or amp map reports a wake-up although it only waits for input");
 }
 
 // An unplug is signalled by leave_bcd alone: EvseManager only follows up with reset(false) when
@@ -2707,7 +2821,7 @@ bool test_matched_poll_and_amp_map_retransmit_run_in_the_same_tick() {
 }
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 39>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 41>{
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
                        test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
@@ -2768,6 +2882,9 @@ int main() {
                        test_matched_link_status_poll_interval_is_configurable),
         std::make_pair("test_matched_link_status_neg_debounce_clamps_invalid_to_one",
                        test_matched_link_status_neg_debounce_clamps_invalid_to_one),
+        std::make_pair("test_next_wakeup_tracks_the_active_timers", test_next_wakeup_tracks_the_active_timers),
+        std::make_pair("test_next_wakeup_in_matched_follows_the_amp_map",
+                       test_next_wakeup_in_matched_follows_the_amp_map),
         std::make_pair("test_leave_bcd_recovers_from_failed_state", test_leave_bcd_recovers_from_failed_state),
         std::make_pair("test_restart_fsm_from_matched_emits_dlink_ready_false",
                        test_restart_fsm_from_matched_emits_dlink_ready_false),

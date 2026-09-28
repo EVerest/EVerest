@@ -117,7 +117,7 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
         > {};
     // clang-format on
     // An event no row handles in the current state is dropped. Frames and commands that arrive in
-    // the wrong state are worth a debug line; the 10 ms update tick is not.
+    // the wrong state are worth a debug line; an idle update is not.
     template <class FSM, class Event> void no_transition(Event const& e, FSM&, int state) {
         if constexpr (std::is_same_v<Event, message>) {
             std::ostringstream ss;

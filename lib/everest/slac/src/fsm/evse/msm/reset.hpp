@@ -84,6 +84,10 @@ struct Reset_def : public state_machine_def<Reset_def> {
     bool state_timeout(timer::tp now) const {
         return set_key_timer_expired(now);
     }
+    void deadlines(earliest_deadline& next) const {
+        next.offer(set_key_timer);
+    }
 };
+static_assert(has_deadlines<Reset_def>::value);
 
 } // namespace everest::lib::slac::msm::reset_sm

@@ -109,6 +109,11 @@ struct Matched_def : public state_machine_def<Matched_def> {
     int consecutive_neg_link_status{0};
     int neg_link_status_threshold{1};
     fsm::evse::AmpMapHandler amp_map; // SECC-initiated CM_AMP_MAP exchange (ISO 15118-3 A.9.6)
+
+    void deadlines(earliest_deadline& next) const {
+        amp_map.deadlines(next);
+    }
 };
+static_assert(has_deadlines<Matched_def>::value);
 
 } // namespace everest::lib::slac::msm::matched_sm
