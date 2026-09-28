@@ -20,7 +20,7 @@ SCENARIO("ISO15118-20 scheduled DC schedule exchange state transitions") {
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
     session::feedback::Callbacks callbacks{};
 
-    auto state_helper = FsmStateHelper(d20::SessionConfig(evse_setup), pause_ctx, callbacks);
+    auto state_helper = FsmStateHelper(session::SessionConfig(evse_setup), pause_ctx, callbacks);
     auto& ctx = state_helper.get_context();
 
     GIVEN("Good case - Scheduled control mode") {
