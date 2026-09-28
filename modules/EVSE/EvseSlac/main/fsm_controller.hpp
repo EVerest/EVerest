@@ -18,12 +18,16 @@ public:
     bool signal_leave_bcd();
     void run();
 
+    /// \brief Makes run() return; safe to call from another thread.
+    void quit();
+
 private:
     bool signal_simple_event(slac::fsm::evse::Event ev);
     slac::fsm::evse::Context& ctx;
     slac::fsm::evse::FSM fsm;
 
     bool running{false};
+    bool quit_requested{false};
 
     std::mutex feed_mtx;
     std::condition_variable new_event_cv;
