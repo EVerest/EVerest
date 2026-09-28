@@ -1,0 +1,92 @@
+name: ev-cli Module Update Check
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Which runner to use'
+        required: false
+        default: 'ubuntu-24.04'
+        type: string
+      build_kit_artifact_name:
+        description: 'The name of the build kit artifact to download'
+        required: true
+        type: string
+      build_kit_image_tag:
+        description: 'The tag of the build-kit image to run the check in'
+        required: true
+        type: string
+      build_kit_scripts_directory:
+        description: 'Directory in the repository where the build kit scripts are located'
+        required: false
+        default: '.ci/build-kit/scripts'
+        type: string
+
+jobs:
+  ev-cli-mod-update:
+    name: check
+    runs-on: ${{ inputs.runner }}
+    # Not mandatory yet: the job fails when a module would lose hand-written code, but it must
+    # not block a merge.
+    continue-on-error: true
+    env:
+      REPORT_NAME: ev-cli-mod-update-report
+    steps:
+      - name: Download build-kit image
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.build_kit_artifact_name }}
+      - name: Load build-kit image
+        run: |
+          docker load -i build-kit.tar
+          docker image tag ${{ inputs.build_kit_image_tag }} build-kit
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          path: source
+      - name: Setup run scripts
+        run: |
+          mkdir scripts
+          rsync -a source/${{ inputs.build_kit_scripts_directory }}/ scripts
+      - name: Check that ev-cli mod update --force is a no-op
+        id: check
+        run: |
+          set +e
+          docker run \
+          --env REPORT_NAME="${REPORT_NAME}" \
+          --volume "${{ github.workspace }}:/ext" \
+          --name ev-cli-mod-update-container \
+          build-kit run-script check_mod_update
+          echo "exit_code=$?" >> "${GITHUB_OUTPUT}"
+      - name: Write report to job summary
+        if: ${{ always() && steps.check.outcome != 'skipped' }}
+        run: cat "${REPORT_NAME}.md" >> "${GITHUB_STEP_SUMMARY}"
+      - name: Upload report
+        if: ${{ always() && steps.check.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: error
+          name: ${{ env.REPORT_NAME }}
+          path: ${{ env.REPORT_NAME }}.*
+      - name: Grade the findings
+        run: |
+          # 0: everything regenerates cleanly -> pass
+          # 1: only template refreshes pending -> pass with a warning
+          # 2: hand-written code would be lost, or ev-cli cannot update a module -> fail
+          # 3: the checker itself could not run -> fail
+          case "${{ steps.check.outputs.exit_code }}" in
+            0)
+              echo "Every module regenerates to a zero diff."
+              ;;
+            1)
+              echo "::warning title=ev-cli mod update::Some modules need a template refresh, see the job summary"
+              ;;
+            2)
+              echo "::error title=ev-cli mod update::Some modules would lose hand-written code or cannot be updated, see the job summary"
+              exit 1
+              ;;
+            *)
+              echo "::error title=ev-cli mod update::The checker did not run (exit code ${{ steps.check.outputs.exit_code }})"
+              exit 1
+              ;;
+          esac
