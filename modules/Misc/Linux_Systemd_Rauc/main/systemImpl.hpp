@@ -15,10 +15,14 @@
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <memory>
+#include <string>
 
 #include <everest/util/async/monitor.hpp>
+
+#include "../diagnostics_handler.hpp"
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -71,6 +75,14 @@ private:
         Uploading
     };
     everest::lib::util::monitor<LogUploadState> log_upload_state{LogUploadState::Idle};
+
+    void begin_log_upload();
+    types::system::LogStatus run_log_upload(const types::system::UploadLogsRequest& upload_logs_request,
+                                            const std::string& diagnostics_file_name,
+                                            const std::filesystem::path& diagnostics_file_path,
+                                            DiagnosticsHandler::log_result_t create_result);
+    bool wait_for_log_upload_retry(std::chrono::seconds interval);
+    void finish_log_upload(types::system::LogStatus log_status);
 
     std::thread upload_logs_thread;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
