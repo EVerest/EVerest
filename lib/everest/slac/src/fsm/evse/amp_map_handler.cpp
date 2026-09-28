@@ -30,6 +30,12 @@ bool AmpMapHandler::retransmit_due(timer::tp now) const {
     return awaiting_cnf_ and timer_.expired(now);
 }
 
+void AmpMapHandler::deadlines(earliest_deadline& next) const {
+    if (awaiting_cnf_) {
+        next.offer(timer_);
+    }
+}
+
 void AmpMapHandler::retransmit(Context& ctx) {
     if (retries_ < defs::C_EV_MATCH_RETRY) {
         retries_++;

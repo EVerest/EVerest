@@ -23,7 +23,7 @@ public:
     void signal_new_slac_message(slac::messages::HomeplugMessage const&);
 
     // Any thread. The FSM is not thread-safe and the event loop drives it from socket receives and
-    // the retrigger timer, so these hand the event to the loop through fd_event_handler::add_action,
+    // its deadline timer, so these hand the event to the loop through fd_event_handler::add_action,
     // the one member of the handler that is safe to call from another thread. Its task queue is FIFO,
     // so an enter_bcd followed by a leave_bcd between two polls is seen in that order. Dropped (false)
     // while the controller is stopped or not registered with a handler.
@@ -35,14 +35,16 @@ public:
     // FSM context for CM_VALIDATE BCB-toggle detection. Thread-safe atomic write, no event-loop hop.
     void signal_count_bc(int count);
 
-    // Called on the loop thread when a posted command threw out of the state machine. The handler
-    // swallows exceptions from posted actions, so without this the failure would be invisible. The
-    // controller is still active when the handler runs: the handler owns the teardown (reset path
+    // Called on the loop thread when a step threw out of the machine or its timer could not be armed.
+    // (A throw inside a transition never leaves Boost.MSM; what arrives here comes from the
+    // publishers that run after it.) The event handler swallows exceptions from posted actions, so
+    // without this the failure would be invisible.
+    // The controller is still active when the handler runs: the handler owns the teardown (reset path
     // for the consumer, then stop()). Without a handler the controller stops itself and logs.
     void set_fatal_handler(FatalHandler handler);
 
-    // Starts the machine and arms the 10 ms tick that drives every timeout in it. False if the tick
-    // timer could not be armed; the machine must not be considered running then.
+    // Starts the machine and arms the timer for its first deadline. False if the timer could not be
+    // armed; the machine must not be considered running then.
     [[nodiscard]] bool init();
     void stop();
     void teardown();
@@ -53,15 +55,13 @@ public:
 private:
     using timer_fd = io::event::timer_fd;
 
-    // Queue \p task on the loop thread; false if not registered with a handler or not active. The
-    // task runs guarded: an exception stops the controller and reports through the fatal handler,
-    // naming \p command.
+    // Queue \p task on the loop thread; false if not registered with a handler or not active.
     bool post(char const* command, std::function<void()> task);
+    // Loop thread: run \p task on the machine, then arm the timer for the machine's next deadline.
+    // A throw or a timer failure reports through the fatal handler, naming \p command.
     void run_guarded(char const* command, std::function<void()> const& task);
+    bool schedule();
     void handle_retrigger();
-    void handle_reset();
-    void handle_enter_bcd();
-    void handle_leave_bcd();
 
     slac::fsm::evse::Context& ctx;
     slac::slac_fsm fsm;

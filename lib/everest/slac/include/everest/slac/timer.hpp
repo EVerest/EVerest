@@ -4,6 +4,7 @@
 #pragma once
 
 #include <chrono>
+#include <optional>
 
 namespace everest::lib::slac {
 
@@ -17,7 +18,6 @@ public:
     using tick = std::chrono::microseconds;
 
     // Set the duration without moving the reference; the deadline becomes reference + duration.
-    // (CheckLink relies on this to re-arm the poll cadence without restarting the countdown.)
     template <class Rep, class Period> void set_duration(std::chrono::duration<Rep, Period> value) {
         duration = std::chrono::duration_cast<tick>(value);
     }
@@ -25,6 +25,9 @@ public:
 
     // (Re)start the countdown at \p now, keeping the duration.
     void reset(tp now);
+
+    // Expire at \p deadline, whatever the duration was.
+    void expire_at(tp deadline);
 
     // set_duration followed by reset.
     template <class Rep, class Period> void arm(tp now, std::chrono::duration<Rep, Period> value) {
@@ -44,6 +47,21 @@ public:
 private:
     tp reference{};
     tick duration{0};
+};
+
+// Folds timers into the wait until the earliest one still ahead of `now`. An expired timer is
+// skipped: the machine already had its chance to act on it, so it needs no wake-up for it.
+class earliest_deadline {
+public:
+    explicit earliest_deadline(timer::tp at);
+    void offer(timer const& t);
+    // Time to wait from `now` until the earliest deadline has passed: one tick beyond it, since
+    // expired() is strictly after.
+    [[nodiscard]] std::optional<timer::tick> wait() const;
+
+private:
+    timer::tp now;
+    std::optional<timer::tp> earliest;
 };
 
 } // namespace everest::lib::slac

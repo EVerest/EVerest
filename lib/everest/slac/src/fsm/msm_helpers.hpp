@@ -22,6 +22,8 @@
 
 #include <chrono>
 #include <cstdint>
+#include <type_traits>
+#include <utility>
 
 namespace everest::lib::slac::msm {
 using namespace boost::msm::front;
@@ -74,13 +76,6 @@ struct is_message_of_type {
 };
 
 // Actions
-struct trigger_update {
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        fsm.process_event(update{});
-    }
-};
-
 template <class MsgT>
 struct send_default_msg {
     template <class Evt, class Fsm, class SrcT, class TarT>
@@ -93,18 +88,7 @@ struct send_default_msg {
 };
 
 // States
-template <std::uint32_t TimeoutMS> struct timeout_ms_state : public state<> {
-    template <class Event, class Fsm>
-    void on_entry(Event const&, Fsm& fsm) {
-        to.arm(fsm.ctx->current_time, std::chrono::milliseconds(TimeoutMS));
-    }
-
-    timer to;
-    bool state_timeout(timer::tp now) const {
-        return to.expired(now);
-    }
-};
-// A timeout state whose duration is set by the deriving state before it forwards to on_entry.
+// A state that arms `to` for `duration` on entry; deriving states set the duration first.
 struct timeout_state : public state<> {
     template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
         to.arm(fsm.ctx->current_time, duration);
@@ -114,9 +98,26 @@ struct timeout_state : public state<> {
     bool state_timeout(timer::tp now) const {
         return to.expired(now);
     }
+    void deadlines(earliest_deadline& next) const {
+        next.offer(to);
+    }
 
     std::chrono::milliseconds duration{0};
 };
+template <std::uint32_t TimeoutMS> struct timeout_ms_state : public timeout_state {
+    template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
+        duration = std::chrono::milliseconds(TimeoutMS);
+        timeout_state::on_entry(e, fsm);
+    }
+};
+
+// Whether a state or sub-machine reports its timers; a def that owns one asserts this, since a
+// hook the trait does not see would leave the machine without its wake-up.
+template <typename T, typename = void> struct has_deadlines : std::false_type {};
+template <typename T>
+struct has_deadlines<T, std::void_t<decltype(std::declval<T const&>().deadlines(std::declval<earliest_deadline&>()))>>
+    : std::true_type {};
+static_assert(has_deadlines<timeout_state>::value);
 
 // clang-format on
 

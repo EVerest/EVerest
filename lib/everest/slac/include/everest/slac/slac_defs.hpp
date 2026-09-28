@@ -47,8 +47,11 @@ inline constexpr int C_EV_MATCH_RETRY = 2;
 // so the legacy EV stack retried up to this many times. Kept as the default for behavioral parity.
 inline constexpr int C_EV_PARM_REQ_ATTEMPTS = 100;
 inline constexpr int C_EV_MATCH_MNBC = 10;
-inline constexpr int TP_EV_BATCH_MSG_INTERVAL_MS =
-    40; // 20ms - 50ms, interval between start_atten_char and mnbc_sound msgs
+// 20 ms - 50 ms between the start_atten_char and mnbc_sound frames. The cadence sits near the low
+// end so the whole batch stays well inside the EVSE's TT_EVSE_match_MNBC window; the minimum is
+// what a frame sent late still keeps to the next one.
+inline constexpr int TP_EV_BATCH_MSG_INTERVAL_MS = 25;
+inline constexpr int TP_EV_BATCH_MSG_INTERVAL_MIN_MS = 20;
 inline constexpr int TT_EV_ATTEN_RESULTS_MS = 1200; // max. 1200ms
 inline constexpr int TT_EVSE_MATCH_MNBC_MS = 600;
 inline constexpr int TT_MATCH_SEQUENCE_MS = 400;

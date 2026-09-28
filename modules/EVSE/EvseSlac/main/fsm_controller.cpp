@@ -5,15 +5,18 @@
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/util/misc/bind.hpp>
 
+#include <cerrno>
+#include <cstring>
+
 FSMController::FSMController(slac::fsm::evse::Context& context) : ctx(context), fsm(ctx) {
+    m_retrigger.set_single_shot(true);
 }
 
 bool FSMController::init() {
     ctx.log_info("Starting the SLAC state machine");
     active.store(true);
     fsm.restart_fsm();
-    if (not m_retrigger.set_timeout_ms(10)) {
-        // Without the tick no timeout ever fires; Init would never even reach Reset.
+    if (not schedule()) {
         stop();
         return false;
     }
@@ -33,10 +36,7 @@ void FSMController::teardown() {
 }
 
 void FSMController::signal_new_slac_message(slac::messages::HomeplugMessage const& msg) {
-    if (!active.load()) {
-        return;
-    }
-    fsm.message(msg);
+    run_guarded("message", [&] { fsm.message(msg); });
 }
 
 void FSMController::set_fatal_handler(FatalHandler handler) {
@@ -56,12 +56,16 @@ bool FSMController::post(char const* command, std::function<void()> task) {
 }
 
 void FSMController::run_guarded(char const* command, std::function<void()> const& task) {
-    // fd_event_handler::run_actions swallows exceptions; a command that throws out of the state
-    // machine would otherwise vanish, leaving the machine half-transitioned and nothing in the log.
+    if (!active.load()) {
+        return;
+    }
     std::string failure;
     try {
         task();
-        return;
+        if (schedule()) {
+            return;
+        }
+        failure = std::string("could not arm the timer: ") + std::strerror(errno);
     } catch (const std::exception& e) {
         failure = e.what();
     } catch (...) {
@@ -78,16 +82,31 @@ void FSMController::run_guarded(char const* command, std::function<void()> const
     }
 }
 
+// The loop wakes the machine only for its earliest deadline; with none pending the timer stays off.
+bool FSMController::schedule() {
+    auto const wait = fsm.next_wakeup();
+    return wait ? m_retrigger.set_timeout(*wait) : m_retrigger.disarm();
+}
+
 bool FSMController::signal_reset() {
-    return post("reset", [this] { handle_reset(); });
+    return post("reset", [this] {
+        ctx.log_info("Signal reset");
+        fsm.reset();
+    });
 }
 
 bool FSMController::signal_enter_bcd() {
-    return post("enter_bcd", [this] { handle_enter_bcd(); });
+    return post("enter_bcd", [this] {
+        ctx.log_info("Signal enter_bcd");
+        fsm.enter_bcd();
+    });
 }
 
 bool FSMController::signal_leave_bcd() {
-    return post("leave_bcd", [this] { handle_leave_bcd(); });
+    return post("leave_bcd", [this] {
+        ctx.log_info("Signal leave_bcd");
+        fsm.leave_bcd();
+    });
 }
 
 void FSMController::signal_count_bc(int count) {
@@ -97,34 +116,7 @@ void FSMController::signal_count_bc(int count) {
 }
 
 void FSMController::handle_retrigger() {
-    if (!active.load()) {
-        return;
-    }
-    fsm.update();
-}
-
-void FSMController::handle_reset() {
-    if (!active.load()) {
-        return;
-    }
-    ctx.log_info("Signal reset");
-    fsm.reset();
-}
-
-void FSMController::handle_enter_bcd() {
-    if (!active.load()) {
-        return;
-    }
-    ctx.log_info("Signal enter_bcd");
-    fsm.enter_bcd();
-}
-
-void FSMController::handle_leave_bcd() {
-    if (!active.load()) {
-        return;
-    }
-    ctx.log_info("Signal leave_bcd");
-    fsm.leave_bcd();
+    run_guarded("update", [this] { fsm.update(); });
 }
 
 bool FSMController::register_events(everest::lib::io::event::fd_event_handler& handler) {

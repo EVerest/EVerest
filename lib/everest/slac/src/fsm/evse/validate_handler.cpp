@@ -69,6 +69,12 @@ bool ValidateHandler::needs_service(timer::tp now) const {
     return (armed_ or step2_pending_) and timer_.expired(now);
 }
 
+void ValidateHandler::deadlines(earliest_deadline& next) const {
+    if (armed_ or step2_pending_) {
+        next.offer(timer_);
+    }
+}
+
 void ValidateHandler::tick(Context& ctx) {
     if (step2_pending_) {
         // EvseManager counts one B->C edge per BCB toggle, so the delta since the baseline IS

@@ -40,10 +40,9 @@ template <class Fsm> bool all_sessions_failed(Fsm& fsm) {
 
 // Guards
 struct is_slac_param_req : public is_message_of_type<slac::defs::MMTYPE_CM_SLAC_PARAM | slac::defs::MMTYPE_MODE_REQ> {};
-// A session in MatchComplete means CM_SLAC_MATCH.CNF is out, but Matching is only exited on the
-// next update tick. In that window (and per ISO 15118-3 whenever an AVLN is up) a fresh
-// CM_SLAC_PARM.REQ must get no CNF (TC_SECC_CMN_VTB_PLCLinkStatus_003) and must not restart the
-// completed session.
+// A session in MatchComplete (CM_SLAC_MATCH.CNF is out) ends Matching within the event that
+// delivered the CM_SLAC_MATCH.REQ, which is what keeps a later CM_SLAC_PARM.REQ unanswered
+// (TC_SECC_CMN_VTB_PLCLinkStatus_003).
 struct has_matched_session {
     template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
         return any_session_matched(fsm);
@@ -51,11 +50,6 @@ struct has_matched_session {
 };
 
 // Actions
-struct ignore_parm_req {
-    template <class Fsm, class SrcT, class TarT> void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
-        fsm.ctx->log_info("Ignoring CM_SLAC_PARM.REQ, match already completed");
-    }
-};
 struct pipe_event {
     template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
         for (auto& elem : fsm.sessions) {

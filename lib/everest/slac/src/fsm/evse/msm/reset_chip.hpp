@@ -21,24 +21,16 @@ namespace everest::lib::slac::msm::reset_chip_sm {
 
 struct ResetChip_def : public state_machine_def<ResetChip_def> {
     // States
-    struct Delay : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
-            to.arm(fsm.ctx->current_time, fsm.ctx->slac_config.chip_reset.delay);
-        }
-
-        timer to;
-        bool state_timeout(timer::tp now) const {
-            return to.expired(now);
+    struct Delay : public timeout_state {
+        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
+            duration = fsm.ctx->slac_config.chip_reset.delay;
+            timeout_state::on_entry(e, fsm);
         }
     };
-    struct Sent : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const&, Fsm& fsm) {
-            to.arm(fsm.ctx->current_time, fsm.ctx->slac_config.chip_reset.timeout);
-        }
-
-        timer to;
-        bool state_timeout(timer::tp now) const {
-            return to.expired(now);
+    struct Sent : public timeout_state {
+        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
+            duration = fsm.ctx->slac_config.chip_reset.timeout;
+            timeout_state::on_entry(e, fsm);
         }
     };
     // clang-format off
@@ -54,7 +46,7 @@ struct ResetChip_def : public state_machine_def<ResetChip_def> {
         //    | Source   | Event   | Target   | Action            | Guard             |
         //    +----------+---------+----------+-------------------+-------------------+
         Row   < Delay    , update  , Sent     , send_message      , timeout           >,
-        Row   < Sent     , message , Received , trigger_update    , is_reset_message  >,
+        Row   < Sent     , message , Received , none              , is_reset_message  >,
         Row   < Sent     , update  , Done     , none              , reset_done        >,
         Row   < Sent     , update  , Done     , none              , reset_unsupported >,
         Row   < Sent     , update  , Done     , log_reset_timeout , timeout           >,

@@ -9,7 +9,6 @@
 #include <cstdlib>
 #include <net/ethernet.h>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -17,6 +16,8 @@
 #include <everest/slac/ev_slac_fsm.hpp>
 #include <everest/slac/fsm/ev/context.hpp>
 #include <everest/slac/slac_utils.hpp>
+
+#include "mock_clock.hpp"
 
 using namespace everest::lib::slac;
 using namespace everest::lib::slac::fsm::ev;
@@ -39,10 +40,12 @@ struct TestHarness {
     bool saw_dlink_true = false;
 
     ContextCallbacks callbacks{};
+    test::MockClock clock;
     Context ctx;
     ev_slac_fsm machine;
 
     explicit TestHarness() : ctx(callbacks, Context::EV_PLC_MAC), machine(ctx) {
+        callbacks.now = clock.source();
         callbacks.send_raw_slac = [this](messages::HomeplugMessage& hp_message) {
             sent_messages.push_back(hp_message);
             return true;
@@ -66,6 +69,22 @@ struct TestHarness {
         callbacks.log_warn = [this](const std::string& message) { warning_messages.push_back(message); };
     }
 };
+
+void advance_and_update(TestHarness& harness, long long ms) {
+    harness.clock.advance_ms(ms);
+    harness.machine.update();
+}
+
+// Sleeps exactly as long as the machine asked for, as the module does; false when it asked for nothing.
+bool wake(TestHarness& harness) {
+    auto const wait = harness.machine.next_wakeup();
+    if (not wait) {
+        return false;
+    }
+    harness.clock.advance(*wait);
+    harness.machine.update();
+    return true;
+}
 
 bool assert_true(bool cond, const char* test_name, const char* details) {
     if (not cond) {
@@ -367,7 +386,6 @@ bool run_matching_with_full_sounding_sequence(TestHarness& harness, const char* 
     auto const start_atten_count_before = count_cm_start_atten_char_ind(harness.sent_messages);
     auto const sound_count_before = count_cm_mnbc_sound_ind(harness.sent_messages);
     harness.machine.message(create_cm_slac_parm_cnf(evse_mac, run_id));
-    harness.machine.update();
 
     auto const expected_start_count = start_atten_count_before + defs::C_EV_START_ATTEN_CHAR_INDS;
     auto const expected_sound_count = sound_count_before + defs::C_EV_MATCH_MNBC;
@@ -377,7 +395,9 @@ bool run_matching_with_full_sounding_sequence(TestHarness& harness, const char* 
             count_cm_mnbc_sound_ind(harness.sent_messages) == expected_sound_count) {
             break;
         }
-        harness.machine.update();
+        if (!wake(harness)) {
+            break;
+        }
     }
 
     if (!assert_true(harness.saw_matching_state, test_name, "did not publish MATCHING after valid CM_SLAC_PARM.CNF")) {
@@ -594,7 +614,6 @@ bool test_cm_slac_parm_cnf_sounding_sequence() {
     auto const sound_count_before = count_cm_mnbc_sound_ind(harness.sent_messages);
     EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
     harness.machine.message(create_cm_slac_parm_cnf(evse_mac, run_id));
-    harness.machine.update();
 
     auto const expected_start_count = start_atten_count_before + defs::C_EV_START_ATTEN_CHAR_INDS;
     auto const expected_sound_count = sound_count_before + defs::C_EV_MATCH_MNBC;
@@ -604,7 +623,9 @@ bool test_cm_slac_parm_cnf_sounding_sequence() {
             count_cm_mnbc_sound_ind(harness.sent_messages) == expected_sound_count) {
             break;
         }
-        harness.machine.update();
+        if (!wake(harness)) {
+            break;
+        }
     }
 
     if (!assert_true(harness.saw_matching_state, test_name, "did not publish MATCHING after valid CM_SLAC_PARM.CNF")) {
@@ -898,8 +919,7 @@ bool test_wait_atten_char_ind_in_wait_state_accepts_late_result() {
     auto const match_req_count_before = count_cm_slac_match_req(harness.sent_messages);
     auto const warning_count_before = harness.warning_messages.size();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(defs::TT_MATCH_RESPONSE_MS + 10));
-    harness.machine.update();
+    advance_and_update(harness, defs::TT_MATCH_RESPONSE_MS + 10);
 
     if (!assert_true(warning_count_before == harness.warning_messages.size(), test_name,
                      "EV transitioned to failed state before CM_ATTEN_CHAR.IND")) {
@@ -1316,6 +1336,131 @@ bool test_reset_after_matched_returns_to_unmatched() {
     return true;
 }
 
+// The machine names how long until its earliest deadline, and nothing while it only waits for
+// input, so the module can sleep until then instead of polling.
+bool test_next_wakeup_tracks_the_active_timers() {
+    const char* test_name = "test_next_wakeup_tracks_the_active_timers";
+
+    TestHarness harness{};
+    if (!init_unmatched(harness, test_name)) {
+        return false;
+    }
+    if (!assert_true(not harness.machine.next_wakeup().has_value(), test_name,
+                     "Idle reports a wake-up although it only waits for input")) {
+        return false;
+    }
+
+    harness.machine.trigger_matching();
+    if (!assert_true(harness.machine.next_wakeup() == harness.ctx.slac_config.parm_req_timeout + timer::tick{1},
+                     test_name, "WaitParmCnf does not wait for the parm_req_timeout")) {
+        return false;
+    }
+
+    RunId run_id{};
+    if (!assert_true(parse_run_id_from_parm_req(harness.sent_messages.front(), run_id), test_name,
+                     "CM_SLAC_PARM.REQ payload was not parseable")) {
+        return false;
+    }
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    harness.machine.message(create_cm_slac_parm_cnf(evse_mac, run_id));
+    if (!assert_true(count_cm_start_atten_char_ind(harness.sent_messages) == 1, test_name,
+                     "the first CM_START_ATTEN_CHAR.IND did not go out with CM_SLAC_PARM.CNF")) {
+        return false;
+    }
+    return assert_true(harness.machine.next_wakeup() ==
+                           std::chrono::milliseconds(defs::TP_EV_BATCH_MSG_INTERVAL_MS) + timer::tick{1},
+                       test_name, "Sounding does not wait for TP_EV_batch_msg_interval");
+}
+
+// Driven only by its own wake-ups, the sounding batch sends one frame per interval, anchored to the
+// batch start, and finishes well inside the EVSE's TT_EVSE_match_MNBC window.
+bool test_sounding_batch_is_paced_and_fits_the_evse_window() {
+    const char* test_name = "test_sounding_batch_is_paced_and_fits_the_evse_window";
+
+    TestHarness harness{};
+    if (!init_unmatched(harness, test_name)) {
+        return false;
+    }
+    harness.machine.trigger_matching();
+    RunId run_id{};
+    if (!assert_true(parse_run_id_from_parm_req(harness.sent_messages.front(), run_id), test_name,
+                     "CM_SLAC_PARM.REQ payload was not parseable")) {
+        return false;
+    }
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    auto const frames = [&] {
+        return count_cm_start_atten_char_ind(harness.sent_messages) + count_cm_mnbc_sound_ind(harness.sent_messages);
+    };
+    auto const batch = defs::C_EV_START_ATTEN_CHAR_INDS + defs::C_EV_MATCH_MNBC;
+    harness.machine.message(create_cm_slac_parm_cnf(evse_mac, run_id));
+    auto const batch_start = harness.clock.now();
+    for (auto sent = frames(); sent < batch; sent = frames()) {
+        if (!wake(harness) ||
+            !assert_true(frames() == sent + 1, test_name, "a wake-up did not send exactly one frame")) {
+            return false;
+        }
+    }
+    auto const span = harness.clock.now() - batch_start;
+    auto const interval = std::chrono::milliseconds(defs::TP_EV_BATCH_MSG_INTERVAL_MS);
+    if (!assert_true(span == (batch - 1) * interval + timer::tick{1}, test_name,
+                     "the batch cadence drifted from the batch start")) {
+        return false;
+    }
+    return assert_true(span <= std::chrono::milliseconds(defs::TT_EVSE_MATCH_MNBC_MS) / 2 + timer::tick{1}, test_name,
+                       "the batch uses more than half of the EVSE's TT_EVSE_match_MNBC window");
+}
+
+// A wake-up that arrives more than an interval late must not strand the batch behind a deadline
+// that has already passed: the remaining frames keep the minimum spacing and catch up on the
+// anchored cadence.
+bool test_sounding_batch_recovers_from_a_late_wakeup() {
+    const char* test_name = "test_sounding_batch_recovers_from_a_late_wakeup";
+
+    TestHarness harness{};
+    if (!init_unmatched(harness, test_name)) {
+        return false;
+    }
+    harness.machine.trigger_matching();
+    RunId run_id{};
+    if (!assert_true(parse_run_id_from_parm_req(harness.sent_messages.front(), run_id), test_name,
+                     "CM_SLAC_PARM.REQ payload was not parseable")) {
+        return false;
+    }
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    auto const frames = [&] {
+        return count_cm_start_atten_char_ind(harness.sent_messages) + count_cm_mnbc_sound_ind(harness.sent_messages);
+    };
+    auto const batch = defs::C_EV_START_ATTEN_CHAR_INDS + defs::C_EV_MATCH_MNBC;
+    auto const interval = std::chrono::milliseconds(defs::TP_EV_BATCH_MSG_INTERVAL_MS);
+    auto const min_gap = std::chrono::milliseconds(defs::TP_EV_BATCH_MSG_INTERVAL_MIN_MS);
+    auto const late_by = 30ms;
+
+    harness.machine.message(create_cm_slac_parm_cnf(evse_mac, run_id));
+    auto const batch_start = harness.clock.now();
+    std::vector<timer::tp> sent_at{batch_start};
+    harness.clock.advance(late_by);
+    while (frames() < batch) {
+        auto const wait = harness.machine.next_wakeup();
+        if (!assert_true(wait.has_value() && *wait < std::chrono::milliseconds(defs::TT_EV_ATTEN_RESULTS_MS) / 2,
+                         test_name, "the batch stalled on a deadline in the past")) {
+            return false;
+        }
+        harness.clock.advance(*wait);
+        harness.machine.update();
+        if (frames() > sent_at.size()) {
+            sent_at.push_back(harness.clock.now());
+        }
+    }
+    for (std::size_t i = 1; i < sent_at.size(); ++i) {
+        if (!assert_true(sent_at[i] - sent_at[i - 1] >= min_gap, test_name,
+                         "two sounding frames were closer than the minimum spacing")) {
+            return false;
+        }
+    }
+    return assert_true(harness.clock.now() - batch_start == (batch - 1) * interval + timer::tick{1}, test_name,
+                       "the batch did not catch up on the anchored cadence after the late wake-up");
+}
+
 bool test_timeout_failure_reaches_failed_state() {
     const char* test_name = "test_timeout_failure_reaches_failed_state";
 
@@ -1335,8 +1480,7 @@ bool test_timeout_failure_reaches_failed_state() {
          i < 10 && count_state(harness.state_messages, "UNMATCHED") == unmatched_state_count_before_matching &&
          harness.warning_messages.size() == warning_count_before_matching;
          ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        harness.machine.update();
+        advance_and_update(harness, 1);
     }
 
     if (!assert_true(harness.warning_messages.size() > warning_count_before_matching, test_name,
@@ -1388,8 +1532,7 @@ bool test_parm_req_attempts_config_controls_retry_count() {
     // Drive timeout-based retries until the FSM exhausts the attempts and fails.
     const auto unmatched_before = count_state(harness.state_messages, "UNMATCHED");
     for (int i = 0; i < 50 && count_state(harness.state_messages, "UNMATCHED") == unmatched_before; ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        harness.machine.update();
+        advance_and_update(harness, 1);
     }
 
     if (!assert_true(has_warning(harness.warning_messages, "EV MSM entered failed"), test_name,
@@ -1405,7 +1548,7 @@ bool test_parm_req_attempts_config_controls_retry_count() {
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 19>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 22>{
         std::make_pair("test_trigger_matching_emits_single_parm_request",
                        test_trigger_matching_emits_single_parm_request),
         std::make_pair("test_trigger_matching_immediately_after_reset_emits_single_parm_request",
@@ -1434,6 +1577,11 @@ int main() {
         std::make_pair("test_short_cm_set_key_cnf_is_ignored_in_wait_set_key_cnf",
                        test_short_cm_set_key_cnf_is_ignored_in_wait_set_key_cnf),
         std::make_pair("test_reset_after_matched_returns_to_unmatched", test_reset_after_matched_returns_to_unmatched),
+        std::make_pair("test_next_wakeup_tracks_the_active_timers", test_next_wakeup_tracks_the_active_timers),
+        std::make_pair("test_sounding_batch_is_paced_and_fits_the_evse_window",
+                       test_sounding_batch_is_paced_and_fits_the_evse_window),
+        std::make_pair("test_sounding_batch_recovers_from_a_late_wakeup",
+                       test_sounding_batch_recovers_from_a_late_wakeup),
         std::make_pair("test_timeout_failure_reaches_failed_state", test_timeout_failure_reaches_failed_state),
         std::make_pair("test_parm_req_attempts_config_controls_retry_count",
                        test_parm_req_attempts_config_controls_retry_count),

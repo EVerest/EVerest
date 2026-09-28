@@ -66,7 +66,31 @@ struct SlacEVFSM_def : state_machine_def<SlacEVFSM_def> {
             timeout_state::on_entry(event, fsm);
         }
     };
-    struct Sounding : public timeout_ms_state<defs::TT_EV_ATTEN_RESULTS_MS> {};
+    struct Sounding : public timeout_ms_state<defs::TT_EV_ATTEN_RESULTS_MS> {
+        template <class Event, class Fsm> void on_entry(Event const& event, Fsm& fsm) {
+            timeout_ms_state::on_entry(event, fsm);
+            batch_start = fsm.ctx->current_time;
+            next_sound = {};
+        }
+        // Frame n is due n intervals after the batch started, so wake-up lateness does not add up,
+        // but never closer than the minimum spacing to the frame just sent: a late frame is caught up
+        // over the following ones instead of leaving a deadline in the past.
+        void pace(int frames_sent, timer::tp now) {
+            auto const anchored = batch_start + frames_sent * interval;
+            next_sound.expire_at(std::max(anchored, now + minimum_gap));
+        }
+
+        static constexpr std::chrono::milliseconds interval{defs::TP_EV_BATCH_MSG_INTERVAL_MS};
+        static constexpr std::chrono::milliseconds minimum_gap{defs::TP_EV_BATCH_MSG_INTERVAL_MIN_MS};
+        void deadlines(earliest_deadline& next) const {
+            timeout_state::deadlines(next);
+            next.offer(next_sound);
+        }
+
+        timer::tp batch_start{};
+        timer next_sound;
+    };
+    static_assert(has_deadlines<Sounding>::value);
     struct WaitAttenCharInd : public timeout_ms_state<defs::TT_EV_ATTEN_RESULTS_MS> {};
     struct WaitMatchCnf : public timeout_state {
         template <class Event, class Fsm> void on_entry(Event const& event, Fsm& fsm) {
@@ -255,7 +279,8 @@ struct SlacEVFSM_def : state_machine_def<SlacEVFSM_def> {
     struct should_continue_sounding {
         template <class Evt, class Fsm, class SrcT, class TarT>
         bool operator()(Evt const&, Fsm& fsm, SrcT& src, TarT&) {
-            return not src.state_timeout(fsm.ctx->current_time) &&
+            auto const now = fsm.ctx->current_time;
+            return not src.state_timeout(now) && src.next_sound.expired(now) &&
                    (fsm.start_atten_char_count < defs::C_EV_START_ATTEN_CHAR_INDS ||
                     fsm.mnbc_sound_count < defs::C_EV_MATCH_MNBC);
         }
@@ -302,8 +327,10 @@ struct SlacEVFSM_def : state_machine_def<SlacEVFSM_def> {
     };
 
     struct send_next_sounding {
-        template <class Evt, class Fsm, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+        template <class Evt, class Fsm, class SrcT, class TarT>
+        void operator()(Evt const&, Fsm& fsm, SrcT& src, TarT&) {
             sounding_messages::send_next_sounding(fsm);
+            src.pace(fsm.start_atten_char_count + fsm.mnbc_sound_count, fsm.ctx->current_time);
         }
     };
 
