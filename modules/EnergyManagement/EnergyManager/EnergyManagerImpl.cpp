@@ -177,7 +177,8 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
         // operator[] so a future reordering fails loudly instead of quietly inferring on a
         // default constructed context.
         auto& ctx = contexts.at(node.uuid);
-        const auto bounds = get_static_bounds_W(connector_market, nominal_ac_voltage);
+        const auto phases_drawn = static_cast<int>(ctx.phases_in_use.size());
+        const auto bounds = get_static_bounds_W(connector_market, nominal_ac_voltage, phases_drawn);
 
         // The measurement observed this run is the EV's response to what the previous run
         // allotted, so those two are the pair to compare - but only while it is a live
@@ -225,8 +226,8 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
             const auto limit =
                 std::find_if(limits.begin(), limits.end(), [&node](const auto& l) { return l.uuid == node.uuid; });
             if (limit != limits.end()) {
-                ctx.last_allocated_W = get_allocated_power_W(*limit, nominal_ac_voltage);
-                ctx.last_margin_W = get_margin_power_W(*limit, margin_A, nominal_ac_voltage);
+                ctx.last_allocated_W = get_allocated_power_W(*limit, nominal_ac_voltage, phases_drawn);
+                ctx.last_margin_W = get_margin_power_W(*limit, margin_A, nominal_ac_voltage, phases_drawn);
             }
         }
 
@@ -560,7 +561,7 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
             //     create local offer at evse's marketplace
 
             offer_tp.start();
-            Offer local_offer(broker->get_local_market());
+            Offer local_offer(broker->get_local_market(), broker->trading_phases());
             offer_tp.pause();
 
             // ask broker to trade

@@ -23,12 +23,6 @@ namespace module {
 // and the brokers' observations, applies the caps as BrokerContext::phase_imbalance_cap_A
 // (0 pauses the connector), and owns the hold timing.
 
-enum class Phase {
-    L1,
-    L2,
-    L3,
-};
-
 /// \brief One connector as the limiting sees it.
 struct ImbalanceConnector {
     std::string uuid;

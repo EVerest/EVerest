@@ -86,7 +86,9 @@ config:
           interval. Only connectors in state Charging are limited, never below their
           minimum current, and only on AC current limits (nodes offering only a watt
           limit, e.g. DC, are traded like FastCharging). A connector without a usable,
-          fresh measurement is limited to its minimum current plus the margin.
+          fresh measurement is limited to its minimum current plus the margin. The
+          budget is kept per grid phase: a connector's purchase counts only on the
+          phases its meter shows it drawing on, amperes and watts alike.
     type: string
     enum:
       - FastCharging

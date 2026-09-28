@@ -124,8 +124,35 @@ The limit is computed per phase - from the measured per-phase current, falling b
 per-phase power over the nominal voltage, then to the total power spread over the active
 phases - and collapsed to the single ``ac_max_current_A`` the energy interface expresses
 today by taking the highest of the known phases (the value applies to every phase, so
-the lowest would starve the phase that legitimately draws most). Trading each phase
-individually needs a per-phase limit in the energy types first.
+the lowest would starve the phase that legitimately draws most).
+
+Per phase budget
+----------------
+
+With ``PowerRedistribution`` the budget of every node is kept per grid phase: a node's
+``ac_max_current_A`` applies to L1, L2 and L3 separately, and what a connector buys only
+counts on the phases its own meter shows it drawing on (current above 1 A). A single
+phase EV at 16 A on L1 therefore leaves the full limit on L2 and L3 for the others, and a
+connector is offered what is left on the most loaded of its phases. ``FastCharging``
+keeps counting every purchase on all three phases.
+
+A connector counts on all three phases until its meter shows otherwise: while it draws
+nothing, has no fresh reading, or reports only a total, since it may then draw on any. A
+phase is added the run the meter shows it, and dropped only once the narrower set has held
+for ``redistribution_reduction_hold_s``, so an EV still ramping up is not given away the
+phases it is about to use.
+
+Watt limits are spent the same way. A connector converts a watt limit into current with
+the phase count it declares, so the watt figure it is sent stays at that count; on the
+path above it the purchase counts for the phases actually drawn. 16 A on one phase of a
+three phase connector is sent as 11040 W and uses 3680 W of a site's watt limit. The
+power redistribution inference below reads allotted and static maximum power the same
+way.
+
+The limit a connector receives is still one current for the phases it uses: the energy
+interface has no per phase limit. A node limit that differs per phase, such as a per
+phase fuse or an OCPP 2.1 schedule with ``limit_L2`` and ``limit_L3``, cannot be
+expressed yet.
 
 Power redistribution inference
 ==============================

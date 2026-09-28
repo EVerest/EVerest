@@ -142,6 +142,8 @@ struct BrokerContext {
         phase_imbalance_cap_A = std::nullopt;
         phase_imbalance_cap_since = std::nullopt;
         phase_imbalance_arrived_at = std::nullopt;
+        phases_in_use = ALL_GRID_PHASES;
+        phases_narrower_since = std::nullopt;
     };
 
     int number_1ph3ph_cycles;
@@ -196,6 +198,14 @@ struct BrokerContext {
     std::optional<float> phase_imbalance_cap_A;
     std::optional<date::utc_clock::time_point> phase_imbalance_cap_since;
     std::optional<date::utc_clock::time_point> phase_imbalance_arrived_at;
+
+    // Grid phases the connector's trades count on, from its own per phase measurement.
+    // All three while it draws nothing or has no usable reading, since it may then start on
+    // any. A phase is added the run it is drawn on, and dropped only once the narrower set
+    // has held for the reduction hold (the run it first did is phases_narrower_since): an EV
+    // ramping up may not yet draw on every phase it will use. Reset by clear() on unplug.
+    PhaseSet phases_in_use{ALL_GRID_PHASES};
+    std::optional<date::utc_clock::time_point> phases_narrower_since;
 };
 
 // base class for different Brokers
@@ -254,6 +264,12 @@ public:
     // loop that creates the brokers. Trading must not depend on it: the default does
     // nothing, and a strategy that only trades never overrides it.
     virtual void observe() {
+    }
+
+    // Grid phases this broker's trades count on in the market. All three unless the
+    // strategy knows better.
+    virtual PhaseSet trading_phases() const {
+        return ALL_GRID_PHASES;
     }
 
     Market& get_local_market();

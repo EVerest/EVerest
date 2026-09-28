@@ -4,8 +4,10 @@
 #define MARKET_HPP
 
 // headers for required interface implementations
+#include <array>
 #include <generated/interfaces/energy/Interface.hpp>
 #include <optional>
+#include <set>
 #include <utils/date.hpp>
 #include <vector>
 
@@ -16,6 +18,17 @@ namespace module {
 typedef std::vector<types::energy::ScheduleReqEntry> ScheduleReq;
 typedef std::vector<types::energy::ScheduleResEntry> ScheduleRes;
 typedef std::vector<types::energy::ScheduleSetpointEntry> ScheduleSetpoints;
+
+enum class Phase {
+    L1,
+    L2,
+    L3,
+};
+
+using PhaseSet = std::set<Phase>;
+
+/// \brief What a connector counts as drawing on while nothing says otherwise.
+inline const PhaseSet ALL_GRID_PHASES{Phase::L1, Phase::L2, Phase::L3};
 
 class globals_t {
 public:
@@ -58,14 +71,23 @@ public:
     Market(const types::energy::EnergyFlowRequest& _energy_flow_request, const float __nominal_ac_voltage,
            Market* __parent = nullptr);
 
-    void trade(const ScheduleRes& s);
+    /// \brief Books a trade of the connector at this node here and on the path to the root.
+    ///
+    /// The current counts on \p phases only, the grid phases the connector draws on. Its
+    /// watt figure stays as traded at this node, where it is what the connector is sent,
+    /// but counts on the path above for \p phases only: a connector converts a watt limit
+    /// with the phase count it declares, while a single phase EV on a three phase connector
+    /// draws that power on one phase.
+    void trade(const ScheduleRes& s, const PhaseSet& phases = ALL_GRID_PHASES);
 
     bool is_root();
 
     void get_list_of_evses(std::vector<Market*>& list);
     std::vector<Market*> get_list_of_evses();
-    ScheduleReq get_available_energy_import();
-    ScheduleReq get_available_energy_export();
+    /// \brief What is left to trade here for a connector drawing on \p phases: the ampere
+    /// limit less what is sold on the most loaded of those phases.
+    ScheduleReq get_available_energy_import(const PhaseSet& phases = ALL_GRID_PHASES);
+    ScheduleReq get_available_energy_export(const PhaseSet& phases = ALL_GRID_PHASES);
     ScheduleSetpoints get_setpoints() {
         return setpoints;
     };
@@ -103,10 +125,13 @@ private:
     ScheduleReq import_max_available, export_max_available;
     ScheduleSetpoints setpoints;
     ScheduleRes sold_root;
+    // Current sold through this node per slot and grid phase [A], signed like sold_root.
+    std::vector<std::array<float, 3>> sold_phase_A;
     std::vector<ScheduleRes> sold_leaves;
 
     ScheduleReq get_max_available_energy(const ScheduleReq& request);
-    ScheduleReq get_available_energy(const ScheduleReq& available, bool add_sold);
+    ScheduleReq get_available_energy(const ScheduleReq& available, bool add_sold, const PhaseSet& phases);
+    void book(const ScheduleRes& traded, const PhaseSet& phases);
     ScheduleSetpoints resample(const ScheduleSetpoints& request);
 };
 

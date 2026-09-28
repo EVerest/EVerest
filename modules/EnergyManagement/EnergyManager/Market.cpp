@@ -2,8 +2,10 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "Market.hpp"
+#include <algorithm>
 #include <everest/logging.hpp>
 #include <fmt/core.h>
+#include <limits>
 
 namespace module {
 
@@ -280,7 +282,7 @@ ScheduleReq Market::get_max_available_energy(const ScheduleReq& request) {
     return available;
 }
 
-ScheduleReq Market::get_available_energy(const ScheduleReq& max_available, bool add_sold) {
+ScheduleReq Market::get_available_energy(const ScheduleReq& max_available, bool add_sold, const PhaseSet& phases) {
     ScheduleReq available = max_available;
     for (ScheduleReq::size_type i = 0; i < available.size(); i++) {
         // FIXME: sold_root is the sum of all energy sold, but we need to limit indivdual paths as well
@@ -288,8 +290,14 @@ ScheduleReq Market::get_available_energy(const ScheduleReq& max_available, bool 
 
         float sold_current = 0;
 
-        if (sold_root[i].limits_to_root.ac_max_current_A.has_value()) {
-            sold_current = (add_sold ? 1 : -1) * sold_root[i].limits_to_root.ac_max_current_A.value().value;
+        if (sold_root[i].limits_to_root.ac_max_current_A.has_value() and not phases.empty()) {
+            // The phase of the connector's that carries most in the direction traded.
+            float sold_on_phase = add_sold ? std::numeric_limits<float>::max() : std::numeric_limits<float>::lowest();
+            for (const auto phase : phases) {
+                const float sold = sold_phase_A[i][static_cast<int>(phase)];
+                sold_on_phase = add_sold ? std::min(sold_on_phase, sold) : std::max(sold_on_phase, sold);
+            }
+            sold_current = (add_sold ? 1 : -1) * sold_on_phase;
         }
 
         if (sold_current > 0)
@@ -313,12 +321,12 @@ ScheduleReq Market::get_available_energy(const ScheduleReq& max_available, bool 
     return available;
 }
 
-ScheduleReq Market::get_available_energy_import() {
-    return get_available_energy(import_max_available, false);
+ScheduleReq Market::get_available_energy_import(const PhaseSet& phases) {
+    return get_available_energy(import_max_available, false, phases);
 }
 
-ScheduleReq Market::get_available_energy_export() {
-    return get_available_energy(export_max_available, true);
+ScheduleReq Market::get_available_energy_export(const PhaseSet& phases) {
+    return get_available_energy(export_max_available, true, phases);
 }
 
 float get_watt_from_freq_table(const std::vector<types::energy::FrequencyWattPoint>& table, float freq) {
@@ -420,6 +428,7 @@ Market::Market(const types::energy::EnergyFlowRequest& _energy_flow_request, con
     // EVLOG_info << "Create market for " << _energy_flow_request.uuid;
 
     sold_root = globals.empty_schedule_res;
+    sold_phase_A.assign(sold_root.size(), {0.f, 0.f, 0.f});
 
     if (not energy_flow_request.schedule_import.empty()) {
         import_max_available = get_max_available_energy(energy_flow_request.schedule_import);
@@ -545,12 +554,38 @@ static void schedule_add(ScheduleRes& a, const ScheduleRes& b) {
     }
 }
 
-void Market::trade(const ScheduleRes& traded) {
+void Market::book(const ScheduleRes& traded, const PhaseSet& phases) {
     schedule_add(sold_root, traded);
+    for (ScheduleRes::size_type i = 0; i < traded.size() and i < sold_phase_A.size(); i++) {
+        if (not traded[i].limits_to_root.ac_max_current_A.has_value()) {
+            continue;
+        }
+        for (const auto phase : phases) {
+            sold_phase_A[i][static_cast<int>(phase)] += traded[i].limits_to_root.ac_max_current_A.value().value;
+        }
+    }
+}
 
-    // propagate to root
-    if (!is_root()) {
-        parent()->trade(traded);
+void Market::trade(const ScheduleRes& traded, const PhaseSet& phases) {
+    book(traded, phases);
+    if (is_root()) {
+        return;
+    }
+
+    ScheduleRes upstream = traded;
+    for (auto& entry : upstream) {
+        auto& limits = entry.limits_to_root;
+        if (not limits.total_power_W.has_value() or not limits.ac_max_phase_count.has_value()) {
+            continue;
+        }
+        const int declared = limits.ac_max_phase_count.value().value;
+        const int drawn = static_cast<int>(phases.size());
+        if (declared > 0 and drawn < declared) {
+            limits.total_power_W.value().value *= static_cast<float>(drawn) / static_cast<float>(declared);
+        }
+    }
+    for (Market* node = parent(); node != nullptr; node = node->parent()) {
+        node->book(upstream, phases);
     }
 }
 
