@@ -1,6 +1,11 @@
 # API module documentation
 This module is responsible for providing a simple MQTT based API to EVerest internals
 
+> **Deprecated** in 2026.10.0, earliest removal in 2027.04.0. Use the EVerest API
+> modules under `modules/API/EVerestAPI/` instead, see the
+> [Active Deprecation Index](../../../docs/source/project/releases/deprecation-index.rst)
+> for the topic mapping.
+
 ## Periodically published variables for each connected EvseManager
 This module periodically publishes the following variables for each connected EvseManager.
 
