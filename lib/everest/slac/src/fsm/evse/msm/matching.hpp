@@ -44,8 +44,6 @@ struct Matching_def : public state_machine_def<Matching_def> {
     using fail_matching = should_transition_to_failed_matching;
     using reset_matching = should_reset_instead_of_fail;
     using not_validate_req = Not_<is_validate_req>;
-    using new_parm_req = And_<is_slac_param_req, Not_<has_matched_session>>;
-    using late_parm_req = And_<is_slac_param_req, has_matched_session>;
     // clang-format off
     struct transition_table : boost::mpl::vector<
         //    +--------+---------+---------+-----------------------+------------------------+
@@ -55,8 +53,7 @@ struct Matching_def : public state_machine_def<Matching_def> {
         Row   < Init   , update  , Failed  , none                  , fail_matching          >,
         Row   < Init   , update  , Init    , reset_matching_subfsm , reset_matching         >,
         //    +--------+---------+---------+-----------------------+------------------------+
-        Row   < Listen , message , Listen  , add_session           , new_parm_req           >,
-        Row   < Listen , message , Listen  , ignore_parm_req       , late_parm_req          >,
+        Row   < Listen , message , Listen  , add_session           , is_slac_param_req      >,
         Row   < Listen , message , Listen  , handle_validate_req   , is_validate_req        >,
         Row   < Listen , update  , Listen  , validate_tick         , validate_needs_service >,
         //    +--------+---------+---------+-----------------------+------------------------+
@@ -102,6 +99,14 @@ struct Matching_def : public state_machine_def<Matching_def> {
     bool state_timeout(timer::tp now) const {
         return to.expired(now);
     }
+    void deadlines(earliest_deadline& next) const {
+        next.offer(to);
+        validate.deadlines(next);
+        if (ctx->validation_done) {
+            next.offer(ctx->validation_match_window);
+        }
+    }
 };
+static_assert(has_deadlines<Matching_def>::value);
 
 } // namespace everest::lib::slac::msm::matching_sm

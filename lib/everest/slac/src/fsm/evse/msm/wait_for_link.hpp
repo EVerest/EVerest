@@ -73,6 +73,10 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
     bool state_timeout(timer::tp now) const {
         return to.expired(now);
     }
+    void deadlines(earliest_deadline& next) const {
+        next.offer(to);
+    }
 };
+static_assert(has_deadlines<WaitForLink_def>::value);
 
 } // namespace everest::lib::slac::msm::wait_for_link_sm
