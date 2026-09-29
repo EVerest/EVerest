@@ -138,8 +138,9 @@ Per phase budget
 With ``PowerRedistribution`` the budget of every node is kept per grid phase: a node's
 ``ac_max_current_A`` applies to L1, L2 and L3 separately, and what a connector buys only
 counts on the phases its own meter shows it drawing on (current above 1 A). Those phases are
-taken as grid phases: the connector's meter reading must be in grid phase order, with the
-charger's ``phase_rotation_grid_side`` already applied. On a rotated charger whose reading
+taken as grid phases: the connector's meter reading must be in grid phase order, which
+EvseManager's ``phase_rotation_car_side`` provides for a charger connected with rotated
+phases. On a rotated charger whose reading
 is in connector order, a single phase EV is booked on the wrong grid phase, which a limit
 that differs per phase or the phase imbalance limiting then applies to the wrong phase. A single
 phase EV at 16 A on L1 therefore leaves the full limit on L2 and L3 for the others, and a

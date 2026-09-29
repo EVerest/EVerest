@@ -497,6 +497,20 @@ config:
       - 'STR'
       - 'TRS'
     default: 'RST'
+  phase_rotation_car_side:
+    description: >-
+      Maps the per-phase values of the car side powermeter onto grid L1/L2/L3 before
+      they are used in energy_flow_request.energy_usage_leaves, with the same notation as
+      phase_rotation_grid_side. The EnergyManager reads the phases a vehicle draws on from
+      this meter, so on a charger connected to the grid with rotated phases set it to that
+      rotation: a single phase vehicle draws on the charger's L1, which is grid L2 for STR
+      and grid L3 for TRS.
+    type: string
+    enum:
+      - 'RST'
+      - 'STR'
+      - 'TRS'
+    default: 'RST'
 provides:
   evse:
     interface: evse_manager
