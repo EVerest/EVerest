@@ -128,6 +128,17 @@ config:
       PowerRedistribution.
     type: integer
     default: 10
+  power_meter_aggregation_window_s:
+    description: >-
+      Validity window for power meter readings when aggregating multiple meters [s].
+      Power meters in the energy tree report at different times; a reading whose own
+      measurement timestamp is older than this window is excluded from the aggregated
+      sum instead of contributing a stale value. A meter that publishes slowly needs a
+      larger window, not none: this is the only guard between a meter that has stopped
+      updating and a limit computed from its last reading, so it cannot be switched off.
+    type: integer
+    default: 5
+    minimum: 1
 provides:
   main:
     description: Main interface of the energy manager

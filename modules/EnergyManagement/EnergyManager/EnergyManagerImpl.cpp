@@ -5,11 +5,14 @@
 
 #include <chrono>
 #include <fstream>
+#include <iterator>
+#include <set>
 
 #include "Broker.hpp"
 #include "BrokerFastCharging.hpp"
 #include "BrokerPowerRedistribution.hpp"
 #include "Market.hpp"
+#include "PowerMeterAggregator.hpp"
 
 namespace module {
 
@@ -101,6 +104,29 @@ EnergyManagerImpl::EnergyManagerImpl(
     broker_strategy(to_broker_strategy(config.broker_strategy)),
     enforced_limits_callback(enforced_limits_callback) {
     this->energy_flow_request.node_type = types::energy::NodeType::Undefined;
+}
+
+void EnergyManagerImpl::warn_about_unparsable_meters(const std::vector<std::string>& unparsable) {
+    // Warn once per meter, not once per optimizer cycle: a permanently broken meter would
+    // otherwise produce a warning every second, around the clock. A meter that starts
+    // delivering usable timestamps again is allowed to warn a second time later.
+    const std::set<std::string> current(unparsable.begin(), unparsable.end());
+
+    for (const auto& uuid : current) {
+        if (warned_unparsable_meters.insert(uuid).second) {
+            EVLOG_warning << "cannot parse the power meter timestamp of meter " << uuid
+                          << ", treating its readings as stale until it recovers";
+        }
+    }
+
+    for (auto it = warned_unparsable_meters.begin(); it != warned_unparsable_meters.end();) {
+        it = current.count(*it) == 0 ? warned_unparsable_meters.erase(it) : std::next(it);
+    }
+}
+
+PowerMeterAggregator::AggregateResult EnergyManagerImpl::get_leaf_aggregate() const {
+    std::scoped_lock lock(energy_mutex);
+    return leaf_aggregate;
 }
 
 EnergyManagerImpl::~EnergyManagerImpl() {
@@ -196,10 +222,26 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
     globals.init(start_time, config.schedule_interval_duration, config.schedule_total_duration, config.slice_ampere,
                  config.slice_watt, config.debug, request);
 
+    // Refresh the aggregated leaf measurements for this run. The aggregator is built from
+    // the tree each time, so a connector that disappeared from it stops contributing
+    // without anything having to remember to drop it.
+    PowerMeterAggregator leaf_aggregator(std::chrono::seconds(config.power_meter_aggregation_window_s));
+    collect_leaf_measurements(request, leaf_aggregator);
+    leaf_aggregate = leaf_aggregator.aggregate(globals.start_time);
+    warn_about_unparsable_meters(leaf_aggregate.unparsable_meters);
+
     time_probe optimizer_start;
     optimizer_start.start();
     if (globals.debug)
         EVLOG_info << "\033[1;44m---------------- Run energy optimizer ---------------- \033[1;0m";
+
+    if (globals.debug) {
+        // Spell out the absence of a total rather than printing a zero that no meter reported.
+        const auto power = leaf_aggregate.power_W.has_value() ? fmt::format("{}W", leaf_aggregate.power_W.value().total)
+                                                              : std::string("no reading");
+        EVLOG_info << fmt::format("Aggregated leaf power: {} from {} meter(s), {} stale", power,
+                                  leaf_aggregate.fresh_meters, leaf_aggregate.stale_meters);
+    }
 
     time_probe market_tp;
 
