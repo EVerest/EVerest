@@ -5,12 +5,8 @@
 // mrec_fixture.hpp, never from the production mapping tables.
 
 #include "mrec_fixture.hpp"
-#include "stubs/v2_chargepoint_stub.hpp"
+#include "v16_error_test_helpers.hpp"
 
-#include <ModuleAdapterStub.hpp>
-#include <v16_chargepoint.hpp>
-
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <set>
@@ -19,46 +15,10 @@
 namespace {
 
 using namespace ocpp_multi;
-using testing::NiceMock;
+using namespace v16_error_test;
 
-constexpr const char* ERROR_UUID = "mrec-error-uuid-1";
-
-// expose the protected test seam
-struct TestChargePointV16 : public ChargePointV16 {
-    using ChargePointV16::ChargePointV16;
-    using ChargePointV16::convert_error;
-};
-
-Everest::error::Error make_error(std::string_view type, const std::string& message = {},
-                                 const std::string& sub_type = {}) {
-    Everest::error::Error error;
-    error.type = std::string(type);
-    error.sub_type = sub_type;
-    error.message = message;
-    error.description = "a description";
-    error.origin = ImplementationIdentifier("bsp_1", "main", Mapping(1, 1));
-    error.vendor_id = "error-vendor";
-    error.timestamp = date::utc_clock::now();
-    error.uuid = Everest::error::UUID(ERROR_UUID);
-    return error;
-}
-
-std::string opt_str(const std::optional<ocpp::CiString<50>>& value) {
-    return value.has_value() ? value->get() : std::string("<unset>");
-}
-
-std::string opt_str(const std::optional<ocpp::CiString<255>>& value) {
-    return value.has_value() ? value->get() : std::string("<unset>");
-}
-
-class ChargePointV16MrecFreeze : public testing::Test {
+class ChargePointV16MrecFreeze : public ChargePointV16ErrorTest {
 protected:
-    module::stub::QuietModuleAdapterStub m_adapter;
-    Requirement m_requirement{"ocpp", 0};
-    evse_securityIntf m_security{&m_adapter, m_requirement, "security", std::nullopt};
-    NiceMock<stubs::GenericChargePointCallbacksMock> m_callbacks;
-    TestChargePointV16 m_chargepoint{m_callbacks, m_security};
-
     // compares every field of the ErrorInfo handed to libocpp
     static void expect_mrec_error_info(const ocpp::v16::ErrorInfo& info, const Everest::error::Error& error,
                                        const mrec_fixture::Entry& entry, const std::string& expected_info) {
