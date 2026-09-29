@@ -1,0 +1,51 @@
+stateDiagram-v2
+    [*] --> SupportedAppProtocol
+
+    SupportedAppProtocol --> SessionSetup : protocol namespace agreed
+
+    SessionSetup --> AuthorizationSetup : new session
+    SessionSetup --> AC_ChargeParameterDiscovery : resumed session, AC or AC_BPT
+    SessionSetup --> AC_DER_IEC_ChargeParameterDiscovery : resumed session, AC_DER_IEC
+    SessionSetup --> AC_DER_SAE_ChargeParameterDiscovery : resumed session, AC_DER_SAE
+    SessionSetup --> DC_ChargeParameterDiscovery : resumed session, DC, DC_BPT, MCS or MCS_BPT
+
+    AuthorizationSetup --> Authorization
+    Authorization --> ServiceDiscovery : authorization accepted
+    ServiceDiscovery --> ServiceDetail
+    ServiceDetail --> ServiceSelection
+    ServiceSelection --> ServiceSelection : further ServiceDetailReq
+
+    ServiceSelection --> AC_ChargeParameterDiscovery : AC or AC_BPT selected
+    ServiceSelection --> AC_DER_IEC_ChargeParameterDiscovery : AC_DER_IEC selected
+    ServiceSelection --> AC_DER_SAE_ChargeParameterDiscovery : AC_DER_SAE selected
+    ServiceSelection --> DC_ChargeParameterDiscovery : DC, DC_BPT, MCS or MCS_BPT selected
+
+    AC_ChargeParameterDiscovery --> ScheduleExchange
+    DC_ChargeParameterDiscovery --> ScheduleExchange
+
+    AC_DER_IEC_ChargeParameterDiscovery --> AC_DER_IEC_ChargeParameterDiscovery : EV Processing Ongoing
+    AC_DER_IEC_ChargeParameterDiscovery --> ScheduleExchange : EV Processing Finished
+
+    AC_DER_SAE_ChargeParameterDiscovery --> AC_DER_SAE_ChargeParameterDiscovery : EV Processing Ongoing
+    AC_DER_SAE_ChargeParameterDiscovery --> ScheduleExchange : EV Processing Finished
+    AC_DER_SAE_ChargeParameterDiscovery --> ServiceDetail : ServiceDiscoveryReq, EV restarts service selection
+
+    ScheduleExchange --> PowerDelivery : AC, AC_DER_IEC or AC_DER_SAE
+    ScheduleExchange --> DC_CableCheck : DC, DC_BPT, MCS or MCS_BPT
+    DC_CableCheck --> DC_PreCharge : cable check done
+    DC_PreCharge --> PowerDelivery : EV Processing Finished
+
+    PowerDelivery --> AC_ChargeLoop : contactor closed
+    PowerDelivery --> AC_DER_IEC_ChargeLoop : contactor closed
+    PowerDelivery --> AC_DER_SAE_ChargeLoop : contactor closed
+    PowerDelivery --> DC_ChargeLoop
+    PowerDelivery --> SessionStop : shutdown requested, AC family
+    PowerDelivery --> DC_WeldingDetection : shutdown requested, DC family
+
+    AC_ChargeLoop --> SessionStop : PowerDeliveryReq Stop or shutdown
+    AC_DER_IEC_ChargeLoop --> SessionStop : PowerDeliveryReq Stop or shutdown
+    AC_DER_SAE_ChargeLoop --> SessionStop : PowerDeliveryReq Stop or shutdown
+    DC_ChargeLoop --> DC_WeldingDetection : PowerDeliveryReq Stop or shutdown
+    DC_WeldingDetection --> SessionStop : EV Processing Finished
+
+    SessionStop --> [*]

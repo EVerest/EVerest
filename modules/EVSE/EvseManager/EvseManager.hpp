@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -63,6 +63,7 @@ struct Conf {
     bool payment_enable_eim;
     bool payment_enable_contract;
     double ac_nominal_voltage;
+    double ac_nominal_frequency;
     double ac_max_reactive_power;
     bool ev_receipt_required;
     bool session_logging;
@@ -71,6 +72,7 @@ struct Conf {
     bool has_ventilation;
     std::string charge_mode;
     bool supported_iso_ac_bpt;
+    std::string iso15118_der_flavor;
     bool ac_hlc_enabled;
     bool ac_hlc_use_5percent;
     bool ac_enforce_hlc;
@@ -297,6 +299,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

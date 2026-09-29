@@ -3,10 +3,13 @@
 #include "der_setup.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
+#include <everest/logging.hpp>
 #include <iso15118/d20/der_functions.hpp>
 #include <iso15118/message/common_types.hpp>
+#include <iso15118/sae_modes.hpp>
 
 #include "conversions.hpp"
 
@@ -27,6 +30,95 @@ iso15118::d20::IecDerTransferLimits build_iec_der_transfer_limits(const iso15118
         limits.max_discharge_power = dt::from_float(0.0f);
     }
     return limits;
+}
+
+iso15118::d20::SaeDerTransferLimits build_sae_der_transfer_limits(const iso15118::d20::AcTransferLimits& ac_limits,
+                                                                  std::optional<float> evse_max_reactive_power,
+                                                                  std::uint32_t nominal_voltage) {
+    iso15118::d20::SaeDerTransferLimits limits{};
+
+    limits.nominal_charge_power = ac_limits.charge_power.max;
+    if (ac_limits.discharge_power.has_value()) {
+        limits.nominal_discharge_power = ac_limits.discharge_power.value().max;
+        limits.max_discharge_power = ac_limits.discharge_power.value().max;
+    } else {
+        limits.nominal_discharge_power = dt::from_float(0.0f);
+        limits.max_discharge_power = dt::from_float(0.0f);
+    }
+
+    // All four are mandatory on the wire, so an absent or zero capability yields explicit zeros.
+    // Absorption is reported non-negative and injection non-positive, so both signs use the magnitude
+    // of the configured capability.
+    const auto reactive_magnitude = std::fabs(evse_max_reactive_power.value_or(0.0f));
+    const auto absorption = dt::from_float(reactive_magnitude);
+    const auto injection = dt::from_float(-reactive_magnitude);
+    auto& reactive = limits.reactive_power_limits;
+    reactive.maximum_var_absorption_during_charging = absorption;
+    reactive.maximum_var_injection_during_charging = injection;
+    reactive.maximum_var_absorption_during_discharging = absorption;
+    reactive.maximum_var_injection_during_discharging = injection;
+
+    const auto nominal_voltage_f = static_cast<float>(nominal_voltage);
+    auto& grid = limits.grid_limits;
+    grid.nominal_frequency = ac_limits.nominal_frequency;
+    grid.nominal_voltage = dt::from_float(nominal_voltage_f);
+    grid.nominal_voltage_offset = dt::from_float(0.0f);
+    grid.maximum_voltage = dt::from_float(nominal_voltage_f * OVER_VOLTAGE_TRIP_FRACTION);
+    grid.minimum_voltage = dt::from_float(nominal_voltage_f * UNDER_VOLTAGE_TRIP_FRACTION);
+
+    return limits;
+}
+
+DerLimitsDerivation derive_der_limits(const std::vector<dt::ServiceCategory>& services,
+                                      const iso15118::d20::AcTransferLimits& ac_limits,
+                                      std::optional<float> evse_max_reactive_power,
+                                      std::optional<std::uint32_t> nominal_voltage) {
+    DerLimitsDerivation derivation{};
+    derivation.nominal_frequency = dt::from_RationalNumber(ac_limits.nominal_frequency);
+    derivation.nominal_voltage = nominal_voltage.value_or(0);
+
+    const auto advertised = [&services](dt::ServiceCategory service) {
+        return std::find(services.begin(), services.end(), service) != services.end();
+    };
+
+    if (advertised(dt::ServiceCategory::AC_DER_IEC)) {
+        derivation.iec_limits = build_iec_der_transfer_limits(ac_limits);
+    }
+
+    if (advertised(dt::ServiceCategory::AC_DER_SAE)) {
+        if (derivation.nominal_frequency <= 0.0f or derivation.nominal_voltage == 0) {
+            derivation.sae_status = SaeDerStatus::GridParametersMissing;
+        } else {
+            derivation.sae_limits =
+                build_sae_der_transfer_limits(ac_limits, evse_max_reactive_power, derivation.nominal_voltage);
+            derivation.sae_setup_config =
+                iso15118::d20::make_inert_default_sae_setup_config(static_cast<float>(derivation.nominal_voltage));
+            derivation.sae_status = SaeDerStatus::Ready;
+        }
+    }
+
+    return derivation;
+}
+
+DerApplyTransitions apply_derivation(const DerLimitsDerivation& derived, DerAppliedState& current) {
+    DerApplyTransitions transitions{};
+
+    if (derived.iec_limits.has_value()) {
+        current.iec_limits = derived.iec_limits;
+        transitions.iec_assigned = true;
+    }
+
+    if (derived.sae_limits.has_value()) {
+        current.sae_limits = derived.sae_limits;
+        current.sae_setup_config = derived.sae_setup_config;
+        transitions.sae = DerSaeApplyTransition::Assigned;
+    } else if (current.sae_limits.has_value()) {
+        transitions.sae = DerSaeApplyTransition::KeptPrevious;
+    } else {
+        transitions.sae = DerSaeApplyTransition::NeverDerived;
+    }
+
+    return transitions;
 }
 
 types::iso15118::DERChargingParameters to_der_charging_parameters(const dt::DER_AC_CPDReqEnergyTransferMode& ev) {
@@ -64,6 +156,90 @@ types::iso15118::DERChargingParameters to_der_charging_parameters(const dt::DER_
 
     // supported-DER-control bitmap is in ServiceDetail, not CPDReq; the caller fills
     // ev_supported_dercontrol via map_ev_supported_der_controls, so it is left unset here.
+
+    return params;
+}
+
+types::iso15118::DERChargingParameters
+to_der_charging_parameters(const dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode& ev) {
+    using DT = types::grid_support::DirectiveType;
+    using iso15118::sae::DerBitMapFunctions;
+    using iso15118::sae::sae_function_bit;
+
+    types::iso15118::DERChargingParameters params{};
+
+    // SAE function bit -> grid_support DirectiveType. Over-excited constant power factor is var
+    // injection (FixedPFInject), under-excited is var absorption (FixedPFAbsorb).
+    static constexpr std::pair<DerBitMapFunctions, DT> table[] = {
+        {DerBitMapFunctions::EnterService, DT::EnterService},
+        {DerBitMapFunctions::ConstantPowerFactorUnderExcitedFunction, DT::FixedPFAbsorb},
+        {DerBitMapFunctions::ConstantPowerFactorOverExcitedFunction, DT::FixedPFInject},
+        {DerBitMapFunctions::ConstantReactivePowerFunction, DT::FixedVar},
+        {DerBitMapFunctions::FrequencyDroopFunction, DT::FreqDroop},
+        {DerBitMapFunctions::HighFrequencyMayTripFunction, DT::HFMayTrip},
+        {DerBitMapFunctions::HighFrequencyMustTripFunction, DT::HFMustTrip},
+        {DerBitMapFunctions::HighVoltageMayTripFunction, DT::HVMayTrip},
+        {DerBitMapFunctions::HighVoltageMomentaryCessationFunction, DT::HVMomCess},
+        {DerBitMapFunctions::HighVoltageMustTripFunction, DT::HVMustTrip},
+        {DerBitMapFunctions::LowFrequencyMustTripFunction, DT::LFMustTrip},
+        {DerBitMapFunctions::LowVoltageMayTripFunction, DT::LVMayTrip},
+        {DerBitMapFunctions::LowVoltageMomentaryCessationFunction, DT::LVMomCess},
+        {DerBitMapFunctions::LowVoltageMustTripFunction, DT::LVMustTrip},
+        {DerBitMapFunctions::LimitMaximumActiveDischargePowerFunction, DT::LimitMaxDischarge},
+        {DerBitMapFunctions::VoltVarFunction, DT::VoltVar},
+        {DerBitMapFunctions::VoltWattFunction, DT::VoltWatt},
+        {DerBitMapFunctions::WattVarFunction, DT::WattVar},
+    };
+
+    // Reserved bits are outside the SAE bitmap: a non-conforming EV or a scrambled codec.
+    const auto reserved = ev.supported_modes & ~iso15118::sae::SAE_MODE_BITMAP_MASK;
+    if (reserved != 0) {
+        EVLOG_warning << "SAE DER supported-modes bitmap carries reserved bits, ignoring them: " << std::hex
+                      << std::showbase << reserved;
+    }
+
+    std::vector<DT> supported;
+    std::uint32_t mapped_mask = 0;
+    for (const auto& [function, directive] : table) {
+        if ((ev.supported_modes & sae_function_bit(function)) != 0) {
+            supported.push_back(directive);
+        }
+        mapped_mask |= sae_function_bit(function);
+    }
+
+    // Bits with no DirectiveType counterpart are dropped. The never-enableable ones (charge,
+    // discharge, charge loop target powers) are set by every conforming EV, so they only get a
+    // debug line; the genuinely informative drops stay at info.
+    const auto dropped = ev.supported_modes & iso15118::sae::SAE_MODE_BITMAP_MASK & ~mapped_mask;
+    const auto expected_drops = dropped & iso15118::sae::SAE_NOT_ENABLEABLE_MASK;
+    const auto informative_drops = dropped & ~iso15118::sae::SAE_NOT_ENABLEABLE_MASK;
+    if (expected_drops != 0) {
+        EVLOG_debug << "SAE DER functions without a grid_support DirectiveType counterpart dropped from "
+                       "ev_supported_dercontrol: "
+                    << iso15118::sae::sae_function_names(expected_drops);
+    }
+    if (informative_drops != 0) {
+        EVLOG_info << "SAE DER functions without a grid_support DirectiveType counterpart dropped from "
+                      "ev_supported_dercontrol: "
+                   << iso15118::sae::sae_function_names(informative_drops);
+    }
+
+    if (not supported.empty()) {
+        // ev_supported_dercontrol has minItems:1, so the empty case stays unset.
+        params.ev_supported_dercontrol = std::move(supported);
+    }
+
+    params.ev_over_excited_power_factor =
+        dt::from_RationalNumber(ev.excitation_limits.specified_over_excited_power_factor);
+    params.ev_over_excited_max_discharge_power =
+        dt::from_RationalNumber(ev.excitation_limits.specified_over_excited_discharge_power);
+    params.ev_under_excited_power_factor =
+        dt::from_RationalNumber(ev.excitation_limits.specified_under_excited_power_factor);
+    params.ev_under_excited_max_discharge_power =
+        dt::from_RationalNumber(ev.excitation_limits.specified_under_excited_discharge_power);
+
+    params.ev_session_total_discharge_energy_available =
+        charger::convert_from_optional(ev.session_total_discharge_energy_available);
 
     return params;
 }
