@@ -337,11 +337,22 @@ time.
        policy adds another worker.
    * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS``
      - ``5``
-     - Supervisor tick, in milliseconds, for the ``latency`` policy.
+     - Back-off, in milliseconds, before the ``latency`` policy's supervisor
+       re-evaluates a queued task it just added a worker for or decided not to
+       add one for. It is not a periodic tick: an idle pool causes no
+       supervisor wakeups.
    * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD``
      - ``3``
      - Queue size threshold at which the ``fixed_size`` policy adds another
        worker.
+   * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT_FLOOR``
+     - ``4``
+     - Lower bound for the pool's maximum worker count. The maximum is this
+       value or the number of CPU cores, whichever is larger. The pool grows so
+       that a handler blocked waiting for another message still lets that
+       message be handled; such threads do not run in parallel, so a bound
+       from the core count alone would leave a single-core target unable to
+       grow.
    * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER``
      - (empty)
      - Header to include when the policy is ``custom``.
@@ -414,6 +425,23 @@ A custom policy must provide the same interface as the built-in policies:
           std::size_t queue_size,
           std::optional<std::chrono::steady_clock::time_point> oldest_arrival);
   };
+
+``should_grow`` is evaluated on every submission below the thread limit. A
+policy with a ``supervisor_tick`` additionally gets a supervisor thread that
+re-evaluates ``should_grow`` for tasks that queue behind busy workers, backing
+off one tick after each evaluation. It sleeps while the queue is empty and, at
+the thread limit, until a worker retires. If the policy also provides
+
+.. code-block:: cpp
+
+  static std::chrono::steady_clock::time_point next_check(
+      std::chrono::steady_clock::time_point oldest_arrival);
+
+the supervisor sleeps until that time instead of waking every tick.
+``next_check`` must return a time no later than the first time ``should_grow``
+can become true for a queue whose oldest task arrived at ``oldest_arrival``
+(an earlier time is harmless: the supervisor then retries every tick), and it
+must be non-decreasing in ``oldest_arrival``. ``LatencyScaling`` provides it.
 
 Create a workspace config from an existing directory tree
 #########################################################

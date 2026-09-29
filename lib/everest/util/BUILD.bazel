@@ -1,5 +1,15 @@
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
+
+config_setting(
+    name = "_linux",
+    constraint_values = ["@platforms//os:linux"],
+)
+
+LINUX_TEST_INCOMPATIBLE = select({
+    ":_linux": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+}) + CROSS_TEST_INCOMPATIBLE
 
 cc_library(
     name = "util",
@@ -16,4 +26,49 @@ cc_test(
         ":util",
         "@googletest//:gtest_main",
     ],
+)
+
+cc_test(
+    name = "thread_pool_scaling_reliability_tests",
+    srcs = ["tests/reliability/thread_pool_scaling_reliability_tests.cpp"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":util",
+        "@googletest//:gtest_main",
+    ],
+)
+
+_THREAD_POOL_PROBES = [
+    "thread_pool_allocation_probe",
+    "thread_pool_cold_chain_probe",
+    "thread_pool_drain_bursts_probe",
+    "thread_pool_faults_probe",
+    "thread_pool_late_submit_probe",
+    "thread_pool_liveness_probe",
+    "thread_pool_shutdown_probe",
+    "thread_pool_stress_fault_probe",
+]
+
+[
+    cc_binary(
+        name = probe,
+        srcs = [
+            "tests/reliability/probes/{}.cpp".format(probe),
+            "tests/reliability/probes/probe_support.hpp",
+        ],
+        cxxopts = ["-std=c++17"],
+        linkopts = ["-ldl", "-pthread"],
+        target_compatible_with = LINUX_TEST_INCOMPATIBLE,
+        deps = [":util"],
+    )
+    for probe in _THREAD_POOL_PROBES
+]
+
+cc_test(
+    name = "thread_pool_scaling_probe_driver",
+    srcs = ["tests/reliability/thread_pool_scaling_probe_driver.cpp"],
+    cxxopts = ["-std=c++17"],
+    data = [":" + probe for probe in _THREAD_POOL_PROBES],
+    target_compatible_with = LINUX_TEST_INCOMPATIBLE,
+    deps = ["@googletest//:gtest_main"],
 )

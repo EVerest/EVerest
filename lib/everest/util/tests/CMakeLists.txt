@@ -24,3 +24,5 @@ target_link_libraries(everest_util_tests
 
 include(GoogleTest)
 gtest_discover_tests(everest_util_tests)
+
+add_subdirectory(reliability)

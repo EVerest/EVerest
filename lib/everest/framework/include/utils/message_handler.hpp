@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <map>
@@ -29,6 +30,16 @@ constexpr std::size_t THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS =
     detail::MESSAGE_HANDLER_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS;
 constexpr std::chrono::seconds THREAD_POOL_SCALING_IDLE_TIMEOUT{2};
 constexpr std::size_t THREAD_POOL_SCALING_MIN_THREAD_COUNT = 1;
+constexpr std::size_t THREAD_POOL_SCALING_MAX_THREAD_COUNT_FLOOR =
+    detail::MESSAGE_HANDLER_THREAD_POOL_SCALING_MAX_THREAD_COUNT_FLOOR;
+
+/// \brief Maximum worker count of the message handler pool: the configured floor or the number of CPU cores,
+/// whichever is larger. The pool grows to let handlers that block waiting for another message make progress
+/// (see #2102); those threads do not run in parallel, so the core count alone is the wrong bound: on a single core
+/// it equals the minimum and the pool could never grow, and std::thread::hardware_concurrency() may return 0.
+inline std::size_t thread_pool_scaling_max_thread_count() {
+    return std::max<std::size_t>(THREAD_POOL_SCALING_MAX_THREAD_COUNT_FLOOR, std::thread::hardware_concurrency());
+}
 constexpr std::size_t MAX_PENDING_MESSAGES_PER_TOPIC = 100;
 
 /// \brief Handles message dispatching and thread-safe queuing of different message types.

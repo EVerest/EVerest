@@ -34,9 +34,11 @@ set_property(CACHE EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY PROPERTY STRINGS
 set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS "50" CACHE STRING
     "Maximum queued task wait time in milliseconds before latency scaling grows the framework message handler pool")
 set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS "5" CACHE STRING
-    "Supervisor tick in milliseconds for framework message handler latency scaling")
+    "Back-off in milliseconds before the latency scaling supervisor of the framework message handler re-evaluates a queued task")
 set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD "3" CACHE STRING
     "Queue size threshold for framework message handler fixed-size scaling")
+set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT_FLOOR "4" CACHE STRING
+    "Lower bound for the maximum worker count of the framework message handler pool; the maximum is this value or the number of CPU cores, whichever is larger")
 set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER "" CACHE STRING
     "Header to include when EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY=custom")
 set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE "" CACHE STRING
@@ -47,7 +49,8 @@ set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_INCLUDE_DIR "" CACHE PAT
 foreach(_scaling_option IN ITEMS
         EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS
         EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS
-        EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD)
+        EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD
+        EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT_FLOOR)
     if(NOT ${_scaling_option} MATCHES "^[1-9][0-9]*$")
         message(FATAL_ERROR
             "${_scaling_option} must be a positive integer, got '${${_scaling_option}}'")

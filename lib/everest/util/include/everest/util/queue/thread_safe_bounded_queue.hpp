@@ -36,6 +36,14 @@ public:
     using size_type = typename simple_queue<T>::size_type;
 
     /**
+     * @brief What \ref emplace_tracked reports about the queue at the moment of the push.
+     */
+    struct push_result {
+        size_type size;              ///< Size of the queue after the push. 0 if the queue is stopped.
+        size_type waiting_consumers; ///< Consumers blocked in \p pop, \p wait_and_pop or a \p try_pop with timeout.
+    };
+
+    /**
      * @brief Constructor for the bounded queue.
      * @param[in] max_size The maximum number of elements allowed in the queue.
      * A value of 0 indicates an unbounded queue.
@@ -70,17 +78,37 @@ public:
      * @return The size of the queue after emplace. Returns 0 if the queue is stopped.
      */
     template <class... Args> size_type emplace(Args&&... args) {
+        return emplace_tracked(std::forward<Args>(args)...).size;
+    }
+
+    /**
+     * @brief Construct a new element in-place at the end of the queue and report the consumers waiting for it.
+     * @details Blocks the caller if the queue has reached its \p max_size. Both values of the result are taken
+     * under the queue lock at the moment of the push: every counted consumer is inside a blocking pop and takes at
+     * most one element before it returns, so if \p size exceeds \p waiting_consumers at least one element is not
+     * claimed by a waiting consumer.
+     * @param[in] args Arguments forwarded to construct the data element.
+     * @return The size of the queue after the push (0 if the queue is stopped) and the number of waiting consumers.
+     */
+    template <class... Args> [[nodiscard]] push_result emplace_tracked(Args&&... args) {
         std::unique_lock lock(m_mtx);
         if (m_max_size > 0) {
             m_cv_producer.wait(lock, [this]() { return m_queue.size() < m_max_size || m_stop; });
         }
 
         if (m_stop) {
-            return 0;
+            return {0, m_waiting_consumers};
         }
 
-        m_queue.emplace(std::forward<Args>(args)...);
-        auto result = m_queue.size();
+        try {
+            m_queue.emplace(std::forward<Args>(args)...);
+        } catch (...) {
+            // this producer may have consumed the notification a pop sent for the space it did not use; pass it
+            // on, otherwise another producer blocked above stays asleep although there is room
+            m_cv_producer.notify_one();
+            throw;
+        }
+        const push_result result{m_queue.size(), m_waiting_consumers};
         lock.unlock();
         m_cv_consumer.notify_one();
         return result;
@@ -158,6 +186,16 @@ public:
         return m_queue.size();
     }
 
+    /**
+     * @brief Safely returns the number of consumers currently blocked inside a pop.
+     * @details A snapshot; to decide whether a pushed element has a consumer waiting for it use the count that
+     * \ref emplace_tracked reports together with the push.
+     */
+    size_type waiting_consumers() const {
+        std::lock_guard lock(m_mtx);
+        return m_waiting_consumers;
+    }
+
 private:
     /**
      * @brief Internal implementation of the pop logic.
@@ -168,10 +206,16 @@ private:
         std::unique_lock lock(m_mtx);
         auto wait_predicate = [this]() { return not m_queue.empty() or m_stop; };
 
+        // counted under the lock while inside the wait, so a producer sees exactly the consumers that will take an
+        // element before they return (see emplace_tracked)
         if (timeout_ms < 0) {
+            ++m_waiting_consumers;
             m_cv_consumer.wait(lock, wait_predicate);
+            --m_waiting_consumers;
         } else if (timeout_ms > 0) {
+            ++m_waiting_consumers;
             (void)m_cv_consumer.wait_for(lock, std::chrono::milliseconds(timeout_ms), wait_predicate);
+            --m_waiting_consumers;
         }
 
         // if the queue is still empty, we return a nullopt. Note that this would be implicitly
@@ -192,5 +236,6 @@ private:
     std::condition_variable m_cv_consumer; ///< Condition variable for consumers waiting for data.
     std::condition_variable m_cv_producer; ///< Condition variable for producers waiting for space.
     bool m_stop{false};                    ///< Flag indicating the queue is shutting down.
+    size_type m_waiting_consumers{0};      ///< Consumers currently inside a blocking pop. Guarded by m_mtx.
 };
 } // namespace everest::lib::util

@@ -4,8 +4,11 @@
 #include "gtest/gtest.h"
 #include <atomic>
 #include <chrono>
+#include <ctime>
 #include <everest/util/async/thread_pool_scaling.hpp>
 #include <future>
+#include <mutex>
+#include <random>
 #include <vector>
 
 using namespace std::chrono_literals;
@@ -553,4 +556,431 @@ TEST(ThreadPoolScalingStressTest, ZombiesReapedConcurrentlyWithTaskExecution) {
     }
     EXPECT_EQ(completed.load(), total_tasks);
     // Destructor must complete cleanly with no unjoined zombie threads
+}
+
+namespace {
+// The only worker blocks until a second task runs; that task is queued once and nothing else is submitted, so only
+// the supervisor can add the worker that resolves the dependency.
+bool dependent_task_runs_without_further_submissions(thread_pool_scaling<LatencyScaling<20, 5>>& pool) {
+    std::promise<void> second_ran;
+    auto second_ran_future = second_ran.get_future().share();
+    std::promise<void> first_done;
+    auto first_done_future = first_done.get_future();
+    pool.run([second_ran_future, &first_done] {
+        const auto status = second_ran_future.wait_for(2s);
+        first_done.set_value();
+        (void)status;
+    });
+    std::this_thread::sleep_for(10ms);
+    pool.run([&second_ran] { second_ran.set_value(); });
+    const bool ran = second_ran_future.wait_for(1s) == std::future_status::ready;
+    first_done_future.wait();
+    return ran;
+}
+} // namespace
+
+/**
+ * @test SupervisorResolvesBlockedWorkerWithoutNewSubmissions
+ * @brief A task queued behind a blocked worker runs although no further task is submitted.
+ */
+TEST(ThreadPoolScalingTest, SupervisorResolvesBlockedWorkerWithoutNewSubmissions) {
+    thread_pool_scaling<LatencyScaling<20, 5>> pool(1, 4, 5s);
+    EXPECT_TRUE(dependent_task_runs_without_further_submissions(pool));
+}
+
+/**
+ * @test SupervisorWakesFromIdle
+ * @brief The supervisor sleeps while the queue is empty and still resolves a blocked worker once work arrives.
+ * The idle timeout is short so that the worker added in the first round has retired before the second round;
+ * otherwise that worker would take the dependent task and the supervisor would not be involved again.
+ */
+TEST(ThreadPoolScalingTest, SupervisorWakesFromIdle) {
+    thread_pool_scaling<LatencyScaling<20, 5>> pool(1, 4, 50ms);
+    std::this_thread::sleep_for(200ms);
+    EXPECT_TRUE(dependent_task_runs_without_further_submissions(pool));
+    std::this_thread::sleep_for(300ms);
+    EXPECT_TRUE(dependent_task_runs_without_further_submissions(pool));
+}
+
+/**
+ * @test SupervisorWokenForTaskQueuedBehindJustPoppedTask
+ * @brief A task submitted in the moment the only worker has popped the previous task, but not yet started it, must
+ * still reach the supervisor. The submission gap is swept over the first microseconds after the first task so that
+ * the pop of that task and the second submission interleave; a pool that counts the popping worker as idle leaves
+ * the second task unattended until the first one gives up. The interleaving needs a second core, so this test
+ * cannot detect the regression on a single core; ThreadSafeBoundedQueueTest.WaitingConsumersExcludePoppedConsumer
+ * pins the counting deterministically.
+ */
+TEST(ThreadPoolScalingTest, SupervisorWokenForTaskQueuedBehindJustPoppedTask) {
+    std::mt19937 rng(1);
+    for (int i = 0; i < 200; ++i) {
+        std::promise<void> second_ran;
+        auto second_ran_future = second_ran.get_future().share();
+        std::promise<void> first_done;
+        auto first_done_future = first_done.get_future();
+        thread_pool_scaling<LatencyScaling<2, 1>> pool(1, 4, 60s);
+        std::this_thread::sleep_for(1ms);
+        pool.run([second_ran_future, &first_done] {
+            (void)second_ran_future.wait_for(300ms);
+            first_done.set_value();
+        });
+        // sleep_for cannot produce gaps in the microsecond range, hence the busy wait
+        const auto gap = std::chrono::nanoseconds(rng() % 50000);
+        const auto start = std::chrono::steady_clock::now();
+        while (std::chrono::steady_clock::now() - start < gap) {
+        }
+        pool.run([&second_ran] { second_ran.set_value(); });
+        const bool resolved = second_ran_future.wait_for(200ms) == std::future_status::ready;
+        EXPECT_TRUE(resolved) << "iteration " << i << ", gap " << gap.count() << " ns";
+        first_done_future.wait();
+        if (not resolved) {
+            break;
+        }
+    }
+}
+
+namespace {
+// LatencyScaling that records when it decided to grow.
+struct RecordingLatencyScaling : LatencyScaling<20, 5> {
+    static inline std::mutex mutex;
+    static inline std::vector<std::chrono::steady_clock::time_point> grow_decisions;
+    static bool should_grow(std::size_t current_workers, std::size_t queue_size,
+                            std::optional<std::chrono::steady_clock::time_point> oldest_arrival) {
+        const bool grow = LatencyScaling<20, 5>::should_grow(current_workers, queue_size, oldest_arrival);
+        if (grow) {
+            std::lock_guard lock(mutex);
+            grow_decisions.push_back(std::chrono::steady_clock::now());
+        }
+        return grow;
+    }
+};
+} // namespace
+
+/**
+ * @test SupervisorBacksOffAfterSpawning
+ * @brief After adding a worker for an overdue task the supervisor waits at least one tick before it evaluates the
+ * same task again, since the new worker needs a moment to pop it. Without the back-off it spawns once per loop until
+ * the task is gone or the limit is reached.
+ */
+TEST(ThreadPoolScalingTest, SupervisorBacksOffAfterSpawning) {
+    {
+        std::lock_guard lock(RecordingLatencyScaling::mutex);
+        RecordingLatencyScaling::grow_decisions.clear();
+    }
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    std::promise<void> second_ran;
+    auto second_ran_future = second_ran.get_future();
+    thread_pool_scaling<RecordingLatencyScaling> pool(1, 16, 60s);
+    pool.run([released] { released.wait(); });
+    // the second task is submitted well within the threshold, so only the supervisor decides to grow for it
+    std::this_thread::sleep_for(2ms);
+    pool.run([&second_ran] { second_ran.set_value(); });
+    EXPECT_EQ(second_ran_future.wait_for(1s), std::future_status::ready);
+    release.set_value();
+
+    std::lock_guard lock(RecordingLatencyScaling::mutex);
+    const auto& decisions = RecordingLatencyScaling::grow_decisions;
+    ASSERT_GE(decisions.size(), 1u);
+    for (std::size_t i = 1; i < decisions.size(); ++i) {
+        EXPECT_GE(decisions[i] - decisions[i - 1], 5ms) << "grow decisions " << i - 1 << " and " << i;
+    }
+}
+
+/**
+ * @test SupervisorDoesNotSpinAtThreadLimit
+ * @brief With every worker blocked at the thread limit and a task overdue, the supervisor sleeps until a worker
+ * retires instead of spinning on a deadline in the past.
+ */
+TEST(ThreadPoolScalingTest, SupervisorDoesNotSpinAtThreadLimit) {
+    thread_pool_scaling<LatencyScaling<5, 5>> pool(1, 1, 5s);
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    std::atomic<bool> second_ran{false};
+    pool.run([released] { released.wait(); });
+    pool.run([&second_ran] { second_ran = true; });
+
+    const auto cpu_before = std::clock();
+    std::this_thread::sleep_for(300ms);
+    const auto cpu_ms = 1000.0 * static_cast<double>(std::clock() - cpu_before) / CLOCKS_PER_SEC;
+    EXPECT_LT(cpu_ms, 50.0);
+    EXPECT_FALSE(second_ran);
+
+    release.set_value();
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (not second_ran and std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(1ms);
+    }
+    EXPECT_TRUE(second_ran);
+}
+
+// =================================================================
+// 4. Shutdown Tests
+// =================================================================
+
+/**
+ * @test DestructorDrainsDependencyOfRunningTask
+ * @brief A task that waits for a second, already accepted task must not be stranded by destruction: the pool keeps
+ * scaling for accepted tasks while it drains, so the second task gets a worker of its own.
+ */
+TEST(ThreadPoolScalingShutdownTest, DestructorDrainsDependencyOfRunningTask) {
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    std::promise<void> entered;
+    auto entered_future = entered.get_future();
+    std::atomic<bool> timed_out{false};
+    const auto start = std::chrono::steady_clock::now();
+    {
+        thread_pool_scaling<LatencyScaling<20, 5>> pool(1, 4, 60s);
+        pool.run([&] {
+            entered.set_value();
+            timed_out = released.wait_for(2s) != std::future_status::ready;
+        });
+        entered_future.wait();
+        pool.run([&release] { release.set_value(); });
+    }
+    EXPECT_FALSE(timed_out);
+    EXPECT_LT(std::chrono::steady_clock::now() - start, 1s);
+}
+
+/**
+ * @test DestructorRunsQueuedTaskOfWorkerlessPool
+ * @brief A pool with a minimum of zero workers gets a worker for the drain, with and without a supervisor.
+ */
+TEST(ThreadPoolScalingShutdownTest, DestructorRunsQueuedTaskOfWorkerlessPool) {
+    std::atomic<int> done{0};
+    {
+        thread_pool_scaling<LatencyScaling<100, 5>> pool(0, 4, 60s);
+        pool.run([&done] { ++done; });
+    }
+    EXPECT_EQ(done, 1);
+    {
+        thread_pool_scaling<GreedyScaling> pool(0, 4, 60s);
+        pool.run([&done] { ++done; });
+    }
+    EXPECT_EQ(done, 2);
+}
+
+/**
+ * @test DestructorExitsSupervisorWaitingAtThreadLimit
+ * @brief With every worker busy at the thread limit and a task queued, destruction waits for the workers to drain
+ * the queue and returns; the supervisor parked at the limit must not keep the destructor waiting.
+ */
+TEST(ThreadPoolScalingShutdownTest, DestructorExitsSupervisorWaitingAtThreadLimit) {
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    std::atomic<int> done{0};
+    std::thread releaser;
+    const auto start = std::chrono::steady_clock::now();
+    {
+        thread_pool_scaling<LatencyScaling<5, 5>> pool(1, 1, 60s);
+        pool.run([released] { released.wait(); });
+        pool.run([&done] { ++done; });
+        std::this_thread::sleep_for(30ms); // the supervisor has found the overdue task and parked at the limit
+        releaser = std::thread([&release] {
+            std::this_thread::sleep_for(100ms);
+            release.set_value();
+        });
+    }
+    releaser.join();
+    EXPECT_EQ(done, 1);
+    EXPECT_LT(std::chrono::steady_clock::now() - start, 1s);
+}
+
+/**
+ * @test DestructorDrainsTaskAcceptedAfterTimedOutPop
+ * @brief A surplus worker whose timed pop has just expired must not exit on shutdown while a task accepted in the
+ * meantime is queued: it still occupies the only slot, so no other worker could take that task. The destruction is
+ * timed close to the idle timeout to make the timed-out pop and the shutdown coincide. The window is a few hundred
+ * nanoseconds wide, so this test is a smoke test only; the stress harness kept with the review notes reproduces the
+ * hang within a few thousand rounds.
+ */
+TEST(ThreadPoolScalingShutdownTest, DestructorDrainsTaskAcceptedAfterTimedOutPop) {
+    for (int i = 0; i < 300; ++i) {
+        std::atomic<int> done{0};
+        {
+            thread_pool_scaling<LatencyScaling<0, 1>> pool(0, 1, 1ms);
+            pool([] {}).wait();
+            std::this_thread::sleep_for(std::chrono::microseconds(800 + i % 400));
+            pool.run([&done] { ++done; });
+        }
+        ASSERT_EQ(done, 1) << "iteration " << i;
+    }
+}
+
+/**
+ * @test DestructorNeverStrandsChildSubmittedDuringShutdown
+ * @brief A running task that submits a child during destruction and waits for it must observe either the child's
+ * result (accepted before the queue closed, drained with growth) or a broken promise (rejected after the queue
+ * closed), and destruction must return promptly. What it must never see is an accepted child that nobody runs.
+ */
+TEST(ThreadPoolScalingShutdownTest, DestructorNeverStrandsChildSubmittedDuringShutdown) {
+    for (int i = 0; i < 200; ++i) {
+        std::promise<void> entered;
+        auto entered_future = entered.get_future();
+        std::atomic<int> outcome{0}; // 1 = child ran, 2 = child rejected, 3 = timed out waiting
+        const auto start = std::chrono::steady_clock::now();
+        {
+            thread_pool_scaling<LatencyScaling<2, 1>> pool(1, 2, 60s);
+            pool.run([&pool, &entered, &outcome, i] {
+                entered.set_value();
+                std::this_thread::sleep_for(std::chrono::microseconds(i % 50));
+                auto child = pool([] { return 1; });
+                if (child.wait_for(1s) != std::future_status::ready) {
+                    outcome = 3;
+                    return;
+                }
+                try {
+                    outcome = child.get() == 1 ? 1 : 3;
+                } catch (const std::future_error& e) {
+                    outcome = e.code() == std::future_errc::broken_promise ? 2 : 3;
+                }
+            });
+            entered_future.wait();
+        }
+        ASSERT_NE(outcome, 3) << "iteration " << i;
+        ASSERT_LT(std::chrono::steady_clock::now() - start, 1s) << "iteration " << i;
+    }
+}
+
+/**
+ * @test DestructorDrainsDependencyWithoutSupervisor
+ * @brief A policy without supervisor cannot grow for a queued task on its own; destruction starts a worker for it.
+ * Greedy scaling does not grow for a single queued task, so the first task only starts once the second is queued
+ * behind it, and the second is left to the drain.
+ */
+TEST(ThreadPoolScalingShutdownTest, DestructorDrainsDependencyWithoutSupervisor) {
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    std::promise<void> entered;
+    auto entered_future = entered.get_future();
+    std::atomic<bool> timed_out{false};
+    const auto start = std::chrono::steady_clock::now();
+    {
+        thread_pool_scaling<GreedyScaling> pool(0, 2, 60s);
+        pool.run([&] {
+            entered.set_value();
+            timed_out = released.wait_for(2s) != std::future_status::ready;
+        });
+        pool.run([&release] { release.set_value(); });
+        entered_future.wait();
+    }
+    EXPECT_FALSE(timed_out);
+    EXPECT_LT(std::chrono::steady_clock::now() - start, 1s);
+}
+
+/**
+ * @test DestructorKeepsConcurrencyLimit
+ * @brief Destruction must not add an executor: with a limit of one worker, a queued task waits for the running
+ * one, so callbacks never overlap even while the pool is torn down.
+ */
+TEST(ThreadPoolScalingShutdownTest, DestructorKeepsConcurrencyLimit) {
+    std::atomic<int> active{0};
+    std::atomic<int> peak{0};
+    std::atomic<int> completed{0};
+    const auto callback = [&] {
+        const int now_active = ++active;
+        int seen = peak.load();
+        while (seen < now_active and not peak.compare_exchange_weak(seen, now_active)) {
+        }
+        std::this_thread::sleep_for(50ms);
+        --active;
+        ++completed;
+    };
+    {
+        thread_pool_scaling<LatencyScaling<5, 5>> pool(1, 1, 60s);
+        pool.run(callback);
+        std::this_thread::sleep_for(10ms);
+        pool.run(callback);
+    }
+    EXPECT_EQ(completed, 2);
+    EXPECT_EQ(peak, 1);
+}
+
+/**
+ * @test DestructorDrainsChainOfDependencies
+ * @brief Three accepted tasks each waiting for the next one are drained on destruction by starting a worker for
+ * each queued task that a running one waits for, within the limit.
+ */
+TEST(ThreadPoolScalingShutdownTest, DestructorDrainsChainOfDependencies) {
+    std::promise<void> b_done;
+    auto b_done_future = b_done.get_future().share();
+    std::promise<void> c_done;
+    auto c_done_future = c_done.get_future().share();
+    std::promise<void> entered;
+    auto entered_future = entered.get_future();
+    std::atomic<int> timed_out{0};
+    const auto start = std::chrono::steady_clock::now();
+    {
+        thread_pool_scaling<LatencyScaling<50, 5>> pool(1, 3, 60s);
+        pool.run([&] {
+            entered.set_value();
+            if (b_done_future.wait_for(2s) != std::future_status::ready) {
+                ++timed_out;
+            }
+        });
+        entered_future.wait();
+        pool.run([&] {
+            if (c_done_future.wait_for(2s) != std::future_status::ready) {
+                ++timed_out;
+            }
+            b_done.set_value();
+        });
+        pool.run([&c_done] { c_done.set_value(); });
+    }
+    EXPECT_EQ(timed_out, 0);
+    EXPECT_LT(std::chrono::steady_clock::now() - start, 1s);
+}
+
+/**
+ * @test DestructorGrowsWorkerlessPoolBeyondPolicy
+ * @brief A zero-minimum pool with a policy that never grows for so few tasks accepts dependent work without any
+ * worker; destruction starts the workers the drain needs regardless of the policy.
+ */
+TEST(ThreadPoolScalingShutdownTest, DestructorGrowsWorkerlessPoolBeyondPolicy) {
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    std::atomic<bool> timed_out{false};
+    std::atomic<int> completed{0};
+    const auto start = std::chrono::steady_clock::now();
+    {
+        thread_pool_scaling<FixedSizeScaling<100>> pool(0, 2, 60s);
+        pool.run([&] {
+            timed_out = released.wait_for(2s) != std::future_status::ready;
+            ++completed;
+        });
+        pool.run([&] {
+            release.set_value();
+            ++completed;
+        });
+        std::this_thread::sleep_for(10ms); // nothing runs: no worker, and the policy does not grow for two tasks
+        EXPECT_EQ(completed, 0);
+    }
+    EXPECT_EQ(completed, 2);
+    EXPECT_FALSE(timed_out);
+    EXPECT_LT(std::chrono::steady_clock::now() - start, 1s);
+}
+
+/**
+ * @test MaximumBelowMinimumIsRaisedToMinimum
+ * @brief A maximum below the minimum would silently stop every growth decision; the pool raises it to the minimum,
+ * so the minimum workers exist and run concurrently.
+ */
+TEST(ThreadPoolScalingTest, MaximumBelowMinimumIsRaisedToMinimum) {
+    thread_pool_scaling<LatencyScaling<5, 5>> pool(2, 0, 60s);
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    std::atomic<int> entered{0};
+    for (int i = 0; i < 2; ++i) {
+        pool.run([released, &entered] {
+            ++entered;
+            released.wait();
+        });
+    }
+    const auto deadline = std::chrono::steady_clock::now() + 1s;
+    while (entered < 2 and std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(1ms);
+    }
+    EXPECT_EQ(entered, 2);
+    release.set_value();
 }
