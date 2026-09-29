@@ -41,6 +41,7 @@ std::string read_file_to_string(const fs::path filepath) {
     buffer << t.rdbuf();
     return buffer.str();
 }
+
 bool equal_certificate_strings(const std::string& cert1, const std::string& cert2) {
     for (int i = 0; i < cert1.length(); ++i) {
         if (i < cert1.length() && i < cert2.length()) {
@@ -57,6 +58,8 @@ namespace evse_security {
 class EvseSecurityTests : public ::testing::Test {
 protected:
     std::unique_ptr<EvseSecurity> evse_security;
+
+    virtual bool enforce_cert_profiles() const { return false; }
 
     void SetUp() override {
         fs::remove_all("certs");
@@ -77,7 +80,10 @@ protected:
         file_paths.directories.secc_leaf_cert_directory = fs::path("certs/client/cso/");
         file_paths.directories.secc_leaf_key_directory = fs::path("certs/client/cso/");
 
-        this->evse_security = std::make_unique<EvseSecurity>(file_paths, "123456");
+        this->evse_security = std::make_unique<EvseSecurity>(
+            file_paths, "123456",
+            std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+            enforce_cert_profiles());
     }
 
     void TearDown() override {
@@ -102,6 +108,11 @@ protected:
     void install_certs() override {
         std::system("./generate_test_certs_leaf_multi.sh");
     }
+};
+
+class EvseSecurityTestsWithRules : public EvseSecurityTests {
+protected:
+    bool enforce_cert_profiles() const override { return true; }
 };
 
 class EvseSecurityTestsExpired : public EvseSecurityTests {
@@ -316,7 +327,6 @@ TEST_F(EvseSecurityTests, verify_certificate_counts) {
     // None were defined
     ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::MORootCertificate}), 3);
 }
-#if NOT ENFORCE_CERTIFICATE_RULES
 TEST_F(EvseSecurityTestsMulti, verify_multi_root_leaf_retrieval) {
     auto result =
         this->evse_security->get_all_valid_certificates_info(LeafCertificateType::CSMS, EncodingFormat::PEM, false);
@@ -375,7 +385,6 @@ TEST_F(EvseSecurityTestsMultiLeaf, verify_multi_leaf_retrieval) {
     ASSERT_EQ(chain1.child_certificate_hash_data[0].debug_common_name, std::string("CPOSubCA2"));
     ASSERT_EQ(chain1.child_certificate_hash_data[1].debug_common_name, std::string("CPOSubCA1"));
 }
-#endif
 
 TEST_F(EvseSecurityTests, verify_normal_keygen) {
     KeyGenerationInfo info;
@@ -879,7 +888,6 @@ TEST_F(EvseSecurityTests, delete_sub_ca_2) {
                            }),
               certs_after_delete.end());
 }
-#if NOT ENFORCE_CERTIFICATE_RULES
 TEST_F(EvseSecurityTests, get_installed_certificates_chain_order) {
     std::vector<CertificateType> certificate_types;
     certificate_types.push_back(CertificateType::V2GCertificateChain);
@@ -950,7 +958,7 @@ TEST_F(EvseSecurityTests, leaf_cert_starts_in_future_accepted) {
     ASSERT_EQ(v2g_keypair_after.info.value().key, v2g_keypair_before.info.value().key);
     ASSERT_EQ(v2g_keypair_after.info.value().password, v2g_keypair_before.info.value().password);
 }
-#endif
+
 
 TEST_F(EvseSecurityTests, expired_leaf_cert_rejected) {
     const auto new_root_ca = read_file_to_string(std::filesystem::path("expired_leaf/V2G_ROOT_CA.pem"));
@@ -983,7 +991,6 @@ TEST_F(EvseSecurityTests, verify_full_filesystem_install_reject) {
     const auto result = this->evse_security->install_ca_certificate(new_root_ca_1, CaCertificateType::CSMS);
     ASSERT_TRUE(result == InstallCertificateResult::CertificateStoreMaxLengthExceeded);
 }
-#if NOT ENFORCE_CERTIFICATE_RULES
 TEST_F(EvseSecurityTestsMultiLeaf, verify_ocsp_request_multi_valid) {
     // Verify the OCSP request when we have multiple possible valid certificates
     OCSPRequestDataList data = this->evse_security->get_v2g_ocsp_request_data();
@@ -1014,7 +1021,6 @@ TEST_F(EvseSecurityTestsMultiLeaf, verify_ocsp_request_multi_valid) {
             return ocsp_data.certificate_hash_data.value().debug_common_name == std::string("SECCGridSyncCert");
         }) != data.ocsp_request_data_list.end());
 }
-#endif
 TEST_F(EvseSecurityTests, verify_ocsp_request_mo_generate) {
     // Read a leaf, should work since this SECC will be tested against both MO and V2G
     const auto secc_leaf = read_file_to_string("certs/client/cso/SECC_LEAF.pem");
@@ -1089,7 +1095,6 @@ TEST_F(EvseSecurityTests, verify_ocsp_request_mo_generate) {
     ASSERT_TRUE(has_intermediate_2);
 }
 
-#if NOT ENFORCE_CERTIFICATE_RULES
 TEST_F(EvseSecurityTests, verify_ocsp_cache) {
     std::string ocsp_mock_response_data = "OCSP_MOCK_RESPONSE_DATA";
     std::string ocsp_mock_response_data_v2 = "OCSP_MOCK_RESPONSE_DATA_V2";
@@ -1268,7 +1273,7 @@ TEST_F(EvseSecurityTests, verify_ocsp_garbage_collect) {
 
     ASSERT_EQ(existing, 0);
 }
-#endif 
+ 
 TEST_F(EvseSecurityTestsExpired, verify_expired_leaf_deletion) {
     // Check that the FS is not full
     ASSERT_FALSE(evse_security->is_filesystem_full());
@@ -1449,7 +1454,7 @@ TEST_F(EvseSecurityTestsMulti, verify_with_invalid_cert_fails) {
 // ============================================================
 // enforce_certificate_rules tests
 // ============================================================
-TEST_F(EvseSecurityTests, verify_valid_cso_cpo_subca1_passes_rules) {
+TEST_F(EvseSecurityTestsWithRules, verify_valid_cso_cpo_subca1_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/CSO-CPOSub-CA1__GOOD.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "CSO-CPOSub-CA1__GOOD.pem not found, skipping";
 
@@ -1461,7 +1466,7 @@ TEST_F(EvseSecurityTests, verify_valid_cso_cpo_subca1_passes_rules) {
     EXPECT_EQ(result, 1) << "Valid CSO-CPO Sub-CA 1 should pass rules";
 }
 
-TEST_F(EvseSecurityTests, verify_valid_cso_cpo_subca2_passes_rules) {
+TEST_F(EvseSecurityTestsWithRules, verify_valid_cso_cpo_subca2_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/CSO-CPOSub-CA2__GOOD.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "CSO-CPOSub-CA2__GOOD.pem not found, skipping";
 
@@ -1473,7 +1478,7 @@ TEST_F(EvseSecurityTests, verify_valid_cso_cpo_subca2_passes_rules) {
     EXPECT_EQ(result, 1) << "Valid CSO-CPO Sub-CA 2 should pass rules";
 }
 
-TEST_F(EvseSecurityTests, verify_mo_root_ca_missing_ski_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_mo_root_ca_missing_ski_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/MO-EMSPRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPRootCA__BAD_NID82... not found, skipping";
 
@@ -1485,7 +1490,7 @@ TEST_F(EvseSecurityTests, verify_mo_root_ca_missing_ski_fails) {
     EXPECT_EQ(result, 0) << "MO Root CA missing Subject Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_mo_root_ca_unexpected_aki_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_mo_root_ca_unexpected_aki_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/MO-EMSPRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPRootCA__BAD_NID90... not found, skipping";
 
@@ -1497,7 +1502,7 @@ TEST_F(EvseSecurityTests, verify_mo_root_ca_unexpected_aki_fails) {
     EXPECT_EQ(result, 0) << "MO Root CA with unexpected Authority Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_valid_mo_root_ca_passes_rules) {
+TEST_F(EvseSecurityTestsWithRules, verify_valid_mo_root_ca_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/MO-EMSPRootCA__GOOD.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPRootCA__GOOD.pem not found, skipping";
 
@@ -1509,7 +1514,7 @@ TEST_F(EvseSecurityTests, verify_valid_mo_root_ca_passes_rules) {
     EXPECT_EQ(result, 1) << "Valid MO Root CA should pass rules";
 }
 
-TEST_F(EvseSecurityTests, verify_valid_mo_subca1_passes_rules) {
+TEST_F(EvseSecurityTestsWithRules, verify_valid_mo_subca1_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/MO-EMSPSub-CA1__GOOD.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPSub-CA1__GOOD.pem not found, skipping";
 
@@ -1521,7 +1526,7 @@ TEST_F(EvseSecurityTests, verify_valid_mo_subca1_passes_rules) {
     EXPECT_EQ(result, 1) << "Valid MO Sub-CA 1 should pass rules";
 }
 
-TEST_F(EvseSecurityTests, verify_valid_mo_subca2_passes_rules) {
+TEST_F(EvseSecurityTestsWithRules, verify_valid_mo_subca2_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/MO-EMSPSub-CA2__GOOD.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPSub-CA2__GOOD.pem not found, skipping";
 
@@ -1533,7 +1538,7 @@ TEST_F(EvseSecurityTests, verify_valid_mo_subca2_passes_rules) {
     EXPECT_EQ(result, 1) << "Valid MO Sub-CA 2 should pass rules";
 }
 
-TEST_F(EvseSecurityTests, verify_valid_ocsp_passes_rules) {
+TEST_F(EvseSecurityTestsWithRules, verify_valid_ocsp_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/OCSP__GOOD.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OCSP__GOOD.pem not found, skipping";
 
@@ -1545,7 +1550,7 @@ TEST_F(EvseSecurityTests, verify_valid_ocsp_passes_rules) {
     EXPECT_EQ(result, 1) << "Valid OCSP should pass rules";
 }
 
-TEST_F(EvseSecurityTests, verify_valid_oem_root_ca_passes_rules) {
+TEST_F(EvseSecurityTestsWithRules, verify_valid_oem_root_ca_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/OEMRootCA__GOOD.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OEMRootCA__GOOD.pem not found, skipping";
 
@@ -1557,7 +1562,7 @@ TEST_F(EvseSecurityTests, verify_valid_oem_root_ca_passes_rules) {
     EXPECT_EQ(result, 1) << "Valid OEM Root CA should pass rules";
 }
 
-TEST_F(EvseSecurityTests, verify_oem_subca1_missing_ski_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_oem_subca1_missing_ski_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/OEMSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OEMSub-CA1__BAD_NID82... not found, skipping";
 
@@ -1569,7 +1574,7 @@ TEST_F(EvseSecurityTests, verify_oem_subca1_missing_ski_fails) {
     EXPECT_EQ(result, 0) << "OEM Sub-CA 1 missing Subject Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_valid_oem_subca1_passes_rules) {
+TEST_F(EvseSecurityTestsWithRules, verify_valid_oem_subca1_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/OEMSub-CA1__GOOD.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OEMSub-CA1__GOOD.pem not found, skipping";
 
@@ -1581,7 +1586,7 @@ TEST_F(EvseSecurityTests, verify_valid_oem_subca1_passes_rules) {
     EXPECT_EQ(result, 1) << "Valid OEM Sub-CA 1 should pass rules";
 }
 
-TEST_F(EvseSecurityTests, verify_valid_oem_subca2_passes_rules) {
+TEST_F(EvseSecurityTestsWithRules, verify_valid_oem_subca2_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/OEMSub-CA2__GOOD.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OEMSub-CA2__GOOD.pem not found, skipping";
 
@@ -1593,7 +1598,7 @@ TEST_F(EvseSecurityTests, verify_valid_oem_subca2_passes_rules) {
     EXPECT_EQ(result, 1) << "Valid OEM Sub-CA 2 should pass rules";
 }
 
-TEST_F(EvseSecurityTests, verify_valid_v2g_root_ca_passes_rules) {
+TEST_F(EvseSecurityTestsWithRules, verify_valid_v2g_root_ca_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/V2GRootCA__GOOD.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "V2GRootCA__GOOD.pem not found, skipping";
 
@@ -1605,7 +1610,7 @@ TEST_F(EvseSecurityTests, verify_valid_v2g_root_ca_passes_rules) {
     EXPECT_EQ(result, 1) << "Valid V2G Root CA should pass rules";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_contract_leaf_missing_crl_distribution_points_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_contract_leaf_missing_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/ContractLeaf__BAD_NID103_MissingCRLDistributionPoints.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "ContractLeaf__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
 
@@ -1617,7 +1622,7 @@ TEST_F(EvseSecurityTests, verify_invalid_contract_leaf_missing_crl_distribution_
     EXPECT_EQ(result, 0) << "Contract Leaf missing CRL Distribution Points should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_contract_leaf_missing_subject_key_identifier_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_contract_leaf_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/ContractLeaf__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "ContractLeaf__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
@@ -1629,7 +1634,7 @@ TEST_F(EvseSecurityTests, verify_invalid_contract_leaf_missing_subject_key_ident
     EXPECT_EQ(result, 0) << "Contract Leaf missing Subject Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_cso_cpo_subca1_unexpected_crl_distribution_points_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_cso_cpo_subca1_unexpected_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/CSO-CPOSub-CA1__BAD_NID103_UnexpectedCRLDistributionPoints.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "CSO-CPOSub-CA1__BAD_NID103_UnexpectedCRLDistributionPoints.pem not found, skipping";
 
@@ -1641,7 +1646,7 @@ TEST_F(EvseSecurityTests, verify_invalid_cso_cpo_subca1_unexpected_crl_distribut
     EXPECT_EQ(result, 0) << "CSO-CPO Sub-CA 1 with unexpected CRL Distribution Points should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_cso_cpo_subca1_missing_subject_key_identifier_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_cso_cpo_subca1_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/CSO-CPOSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "CSO-CPOSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
@@ -1653,7 +1658,7 @@ TEST_F(EvseSecurityTests, verify_invalid_cso_cpo_subca1_missing_subject_key_iden
     EXPECT_EQ(result, 0) << "CSO-CPO Sub-CA 1 missing Subject Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_cso_cpo_subca2_unexpected_crl_distribution_points_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_cso_cpo_subca2_unexpected_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/CSO-CPOSub-CA2__BAD_NID103_UnexpectedCRLDistributionPoints.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "CSO-CPOSub-CA2__BAD_NID103_UnexpectedCRLDistributionPoints.pem not found, skipping";
 
@@ -1665,7 +1670,7 @@ TEST_F(EvseSecurityTests, verify_invalid_cso_cpo_subca2_unexpected_crl_distribut
     EXPECT_EQ(result, 0) << "CSO-CPO Sub-CA 2 with unexpected CRL Distribution Points should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_cso_cpo_subca2_missing_subject_key_identifier_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_cso_cpo_subca2_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/CSO-CPOSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "CSO-CPOSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
@@ -1677,7 +1682,7 @@ TEST_F(EvseSecurityTests, verify_invalid_cso_cpo_subca2_missing_subject_key_iden
     EXPECT_EQ(result, 0) << "CSO-CPO Sub-CA 2 missing Subject Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_mo_emsp_subca1_missing_crl_distribution_points_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_mo_emsp_subca1_missing_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/MO-EMSPSub-CA1__BAD_NID103_MissingCRLDistributionPoints.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPSub-CA1__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
 
@@ -1689,7 +1694,7 @@ TEST_F(EvseSecurityTests, verify_invalid_mo_emsp_subca1_missing_crl_distribution
     EXPECT_EQ(result, 0) << "MO-EMSP Sub-CA 1 missing CRL Distribution Points should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_mo_emsp_subca1_missing_subject_key_identifier_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_mo_emsp_subca1_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/MO-EMSPSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
@@ -1701,7 +1706,7 @@ TEST_F(EvseSecurityTests, verify_invalid_mo_emsp_subca1_missing_subject_key_iden
     EXPECT_EQ(result, 0) << "MO-EMSP Sub-CA 1 missing Subject Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_mo_emsp_subca2_missing_crl_distribution_points_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_mo_emsp_subca2_missing_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/MO-EMSPSub-CA2__BAD_NID103_MissingCRLDistributionPoints.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPSub-CA2__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
 
@@ -1713,7 +1718,7 @@ TEST_F(EvseSecurityTests, verify_invalid_mo_emsp_subca2_missing_crl_distribution
     EXPECT_EQ(result, 0) << "MO-EMSP Sub-CA 2 missing CRL Distribution Points should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_mo_emsp_subca2_missing_subject_key_identifier_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_mo_emsp_subca2_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/MO-EMSPSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
@@ -1725,7 +1730,7 @@ TEST_F(EvseSecurityTests, verify_invalid_mo_emsp_subca2_missing_subject_key_iden
     EXPECT_EQ(result, 0) << "MO-EMSP Sub-CA 2 missing Subject Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_ocsp_unexpected_crl_distribution_points_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_ocsp_unexpected_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OCSP__BAD_NID103_UnexpectedCRLDistributionPoints.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OCSP__BAD_NID103_UnexpectedCRLDistributionPoints.pem not found, skipping";
 
@@ -1737,7 +1742,7 @@ TEST_F(EvseSecurityTests, verify_invalid_ocsp_unexpected_crl_distribution_points
     EXPECT_EQ(result, 0) << "OCSP with unexpected CRL Distribution Points should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_ocsp_missing_subject_key_identifier_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_ocsp_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OCSP__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OCSP__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
@@ -1749,7 +1754,7 @@ TEST_F(EvseSecurityTests, verify_invalid_ocsp_missing_subject_key_identifier_fai
     EXPECT_EQ(result, 0) << "OCSP missing Subject Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_oem_provisional_missing_crl_distribution_points_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_provisional_missing_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMProvisional__BAD_NID103_MissingCRLDistributionPoints.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OEMProvisional__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
 
@@ -1761,7 +1766,7 @@ TEST_F(EvseSecurityTests, verify_invalid_oem_provisional_missing_crl_distributio
     EXPECT_EQ(result, 0) << "OEM Provisional missing CRL Distribution Points should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_oem_provisional_missing_subject_key_identifier_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_provisional_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMProvisional__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OEMProvisional__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
@@ -1773,7 +1778,7 @@ TEST_F(EvseSecurityTests, verify_invalid_oem_provisional_missing_subject_key_ide
     EXPECT_EQ(result, 0) << "OEM Provisional missing Subject Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_oem_root_ca_missing_subject_key_identifier_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_root_ca_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OEMRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
@@ -1785,7 +1790,7 @@ TEST_F(EvseSecurityTests, verify_invalid_oem_root_ca_missing_subject_key_identif
     EXPECT_EQ(result, 0) << "OEM Root CA missing Subject Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_oem_root_ca_unexpected_authority_key_identifier_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_root_ca_unexpected_authority_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OEMRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem not found, skipping";
 
@@ -1797,7 +1802,7 @@ TEST_F(EvseSecurityTests, verify_invalid_oem_root_ca_unexpected_authority_key_id
     EXPECT_EQ(result, 0) << "OEM Root CA with unexpected Authority Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_oem_subca1_missing_crl_distribution_points_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_subca1_missing_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMSub-CA1__BAD_NID103_MissingCRLDistributionPoints.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OEMSub-CA1__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
 
@@ -1809,7 +1814,7 @@ TEST_F(EvseSecurityTests, verify_invalid_oem_subca1_missing_crl_distribution_poi
     EXPECT_EQ(result, 0) << "OEM Sub-CA 1 missing CRL Distribution Points should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_oem_subca2_missing_crl_distribution_points_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_subca2_missing_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMSub-CA2__BAD_NID103_MissingCRLDistributionPoints.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OEMSub-CA2__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
 
@@ -1821,7 +1826,7 @@ TEST_F(EvseSecurityTests, verify_invalid_oem_subca2_missing_crl_distribution_poi
     EXPECT_EQ(result, 0) << "OEM Sub-CA 2 missing CRL Distribution Points should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_oem_subca2_missing_subject_key_identifier_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_subca2_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "OEMSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
@@ -1833,7 +1838,7 @@ TEST_F(EvseSecurityTests, verify_invalid_oem_subca2_missing_subject_key_identifi
     EXPECT_EQ(result, 0) << "OEM Sub-CA 2 missing Subject Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_secc_leaf_unexpected_crl_distribution_points_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_secc_leaf_unexpected_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/SECCLeaf__BAD_NID103_UnexpectedCRLDistributionPoints.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "SECCLeaf__BAD_NID103_UnexpectedCRLDistributionPoints.pem not found, skipping";
 
@@ -1857,7 +1862,7 @@ TEST_F(EvseSecurityTests, verify_invalid_secc_leaf_missing_subject_key_identifie
     EXPECT_EQ(result, 0) << "SECC Leaf missing Subject Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_v2g_root_ca_missing_subject_key_identifier_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_v2g_root_ca_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/V2GRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "V2GRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
@@ -1869,7 +1874,7 @@ TEST_F(EvseSecurityTests, verify_invalid_v2g_root_ca_missing_subject_key_identif
     EXPECT_EQ(result, 0) << "V2G Root CA missing Subject Key Identifier should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_v2g_root_ca_unexpected_authority_key_identifier_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_v2g_root_ca_unexpected_authority_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/V2GRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "V2GRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem not found, skipping";
 

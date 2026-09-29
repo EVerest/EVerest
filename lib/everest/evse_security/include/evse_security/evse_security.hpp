@@ -94,7 +94,8 @@ public:
                  const std::optional<std::uintmax_t>& max_fs_usage_bytes = std::nullopt,
                  const std::optional<std::uintmax_t>& max_fs_certificate_store_entries = std::nullopt,
                  const std::optional<std::chrono::seconds>& csr_expiry = std::nullopt,
-                 const std::optional<std::chrono::seconds>& garbage_collect_time = std::nullopt);
+                 const std::optional<std::chrono::seconds>& garbage_collect_time = std::nullopt,
+                 bool enforce_cert_profiles = false);
 
     /// @brief Destructor
     ~EvseSecurity();
@@ -348,6 +349,8 @@ private:
     std::chrono::seconds csr_expiry;
     // Default time to garbage collect
     std::chrono::seconds garbage_collect_time;
+    // Enforce certificate profile rules during chain verification
+    bool enforce_cert_profiles;
 
     // GC timer
     Everest::SteadyTimer garbage_collect_timer;

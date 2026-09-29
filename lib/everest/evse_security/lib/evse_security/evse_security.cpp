@@ -289,14 +289,16 @@ EvseSecurity::EvseSecurity(const FilePaths& file_paths, const std::optional<std:
                            const std::optional<std::uintmax_t>& max_fs_usage_bytes,
                            const std::optional<std::uintmax_t>& max_fs_certificate_store_entries,
                            const std::optional<std::chrono::seconds>& csr_expiry,
-                           const std::optional<std::chrono::seconds>& garbage_collect_time) :
+                           const std::optional<std::chrono::seconds>& garbage_collect_time,
+                           bool enforce_cert_profiles) :
     private_key_password(private_key_password),
     directories(file_paths.directories),
     links(file_paths.links),
     max_fs_usage_bytes(max_fs_usage_bytes.value_or(DEFAULT_MAX_FILESYSTEM_SIZE)),
     max_fs_certificate_store_entries(max_fs_certificate_store_entries.value_or(DEFAULT_MAX_CERTIFICATE_ENTRIES)),
     csr_expiry(csr_expiry.value_or(DEFAULT_CSR_EXPIRY)),
-    garbage_collect_time(garbage_collect_time.value_or(DEFAULT_GARBAGE_COLLECT_TIME)) {
+    garbage_collect_time(garbage_collect_time.value_or(DEFAULT_GARBAGE_COLLECT_TIME)),
+    enforce_cert_profiles(enforce_cert_profiles) {
     static_assert(sizeof(std::uint8_t) == 1, "uint8_t not equal to 1 byte!");
 
     const std::vector<fs::path> dirs = {
@@ -1450,7 +1452,7 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
                 if (is_valid) {
                     any_valid_certificate = true;
 
-                    #if ENFORCE_CERT_PROFILES
+                    if (enforce_cert_profiles) {
                         for (size_t i = 0; i < chain.size(); ++i) {
                             std::string subType;
                             if (i == 0)
@@ -1460,13 +1462,13 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
                             else
                                 subType = "intermediate";
                             
-                            if (enforce_certificate_rules(chain.at(i)) == 0) {
+                            if (enforce_certificate_rules(chain.at(i)) != 1) {
                                 EVLOG_error << "Certificate chain invalid at " << subType;
                                 result.status = GetCertificateInfoStatus::NotFoundValid;
                                 return false; // skip this chain
                             }
                         }
-                    #endif
+                    }
                     // Search for the private key
                     auto priv_key_path =
                         get_private_key_path_of_certificate(chain.at(0), key_dir, this->private_key_password);
