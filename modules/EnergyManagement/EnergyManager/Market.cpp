@@ -29,7 +29,7 @@ void globals_t::init(date::utc_clock::time_point _start_time, int _interval_dura
     }
 
     create_empty_schedule(empty_schedule_req);
-    active_slot = find_active_slot();
+    active_slot = static_cast<int>(active_slot_index(empty_schedule_req).value_or(0));
 
     create_empty_schedule(zero_schedule_res);
 
@@ -93,31 +93,6 @@ void globals_t::add_timestamps(const types::energy::EnergyFlowRequest& energy_fl
     // recurse to all children
     for (auto& c : energy_flow_request.children)
         add_timestamps(c);
-}
-
-int globals_t::find_active_slot() const {
-    const auto& schedule = empty_schedule_req;
-    if (schedule.empty()) {
-        return 0;
-    }
-    std::vector<date::utc_clock::time_point> slot_start;
-    slot_start.reserve(schedule.size());
-    for (const auto& entry : schedule) {
-        slot_start.push_back(Everest::Date::from_rfc3339(entry.timestamp));
-    }
-
-    if (start_time < slot_start.front()) {
-        return 0;
-    }
-    if (start_time > slot_start.back()) {
-        return static_cast<int>(slot_start.size()) - 1;
-    }
-    for (std::size_t n = 0; n + 1 < slot_start.size(); n++) {
-        if (start_time > slot_start[n] and start_time < slot_start[n + 1]) {
-            return static_cast<int>(n);
-        }
-    }
-    return 0;
 }
 
 template <typename T> void globals_t::create_empty_schedule(T& s) {
@@ -225,28 +200,14 @@ std::optional<ScheduleReq::size_type> active_slot_index(const ScheduleReq& sched
         return std::nullopt;
     }
 
-    const auto& now = globals.start_time;
-    const auto at = [&schedule](ScheduleReq::size_type n) {
-        return Everest::Date::from_rfc3339(schedule[n].timestamp);
-    };
-
-    if (now < at(0)) {
-        // The whole schedule is still in the future; the first slot is the one to come.
-        return 0;
-    }
-
-    if (now > at(schedule.size() - 1)) {
-        // The whole schedule is in the past; the last slot is the one still standing.
-        return schedule.size() - 1;
-    }
-
-    for (ScheduleReq::size_type n = 0; n + 1 < schedule.size(); n++) {
-        if (now > at(n) and now < at(n + 1)) {
-            return n;
+    ScheduleReq::size_type active = 0;
+    for (ScheduleReq::size_type n = 0; n < schedule.size(); n++) {
+        if (Everest::Date::from_rfc3339(schedule[n].timestamp) > globals.start_time) {
+            break;
         }
+        active = n;
     }
-
-    return 0;
+    return active;
 }
 
 ScheduleReq Market::get_max_available_energy(const ScheduleReq& request) {

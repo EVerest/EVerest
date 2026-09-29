@@ -233,7 +233,10 @@ Both are read from what the module already computed for the run, not re-derived:
   Reading ``schedule_import[0].limits_to_root`` instead would skip all three. On the sites
   this feature exists for that is not a detail: an external limit (an OCPP charging profile,
   any DLM input) is exactly what produces a multi-slot schedule and a one-sided limit, and
-  each difference overstates the limit.
+  each difference overstates the limit. A limit that carries both a watt and an ampere value
+  counts as the lower of the two, with the ampere value converted over the declared phases
+  and the nominal voltage. The slot in force is the last one that has started, including
+  one starting exactly at the optimizer's start time.
 
 - **The site measurement** is the grid connection's own power meter
   (``energy_usage_root`` on the root node) wherever there is one, falling back to the sum of

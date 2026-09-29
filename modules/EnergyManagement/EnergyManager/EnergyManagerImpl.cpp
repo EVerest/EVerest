@@ -137,7 +137,7 @@ void EnergyManagerImpl::warn_about_meter_timestamps(const PowerMeterAggregator::
 #ifdef BUILD_TESTING_MODULE_ENERGY_MANAGER
 PowerMeterAggregator::AggregateResult EnergyManagerImpl::get_site_aggregate() const {
     std::scoped_lock lock(energy_mutex);
-    return site_aggregate;
+    return m_site_aggregate;
 }
 #endif
 
@@ -148,7 +148,7 @@ EnergyManagerImpl::~EnergyManagerImpl() {
 #ifdef BUILD_TESTING_MODULE_ENERGY_MANAGER
 RedistributionInference EnergyManagerImpl::get_redistribution_inference() const {
     std::scoped_lock lock(energy_mutex);
-    return redistribution_inference;
+    return m_redistribution_inference;
 }
 #endif
 
@@ -237,11 +237,12 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
         inference.connectors[node.uuid] = connector;
     }
 
-    auto site = infer_site(get_grid_limit_W(market, nominal_ac_voltage), site_aggregate, saturated, site_margin, gain);
-    site.meter_source = site_meter_source;
+    auto site =
+        infer_site(get_grid_limit_W(market, nominal_ac_voltage), m_site_aggregate, saturated, site_margin, gain);
+    site.meter_source = m_site_meter_source;
 
-    const auto site_edge = site_headroom.update(site.increase_W > 0.f, now, hold_time);
-    site.held = site_headroom.held();
+    const auto site_edge = m_site_headroom.update(site.increase_W > 0.f, now, hold_time);
+    site.held = m_site_headroom.held();
 
     const int granted = grant_site_headroom(site);
 
@@ -272,7 +273,7 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
     }
 
     inference.site = site;
-    redistribution_inference = inference;
+    m_redistribution_inference = inference;
 }
 
 int EnergyManagerImpl::grant_site_headroom(const SiteInference& site) {
@@ -370,9 +371,9 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
 
     // Rebuilt every run, so a meter that left the tree stops contributing.
     PowerMeterAggregator site_aggregator(std::chrono::seconds(config.power_meter_aggregation_window_s));
-    site_meter_source = collect_site_measurement(request, site_aggregator);
-    site_aggregate = site_aggregator.aggregate(globals.start_time);
-    warn_about_meter_timestamps(site_aggregate);
+    m_site_meter_source = collect_site_measurement(request, site_aggregator);
+    m_site_aggregate = site_aggregator.aggregate(globals.start_time);
+    warn_about_meter_timestamps(m_site_aggregate);
 
     time_probe optimizer_start;
     optimizer_start.start();
@@ -380,10 +381,12 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
         EVLOG_info << "\033[1;44m---------------- Run energy optimizer ---------------- \033[1;0m";
 
     if (globals.debug) {
-        const auto power = site_aggregate.power_W.has_value() ? fmt::format("{}W", site_aggregate.power_W.value().total)
-                                                              : std::string("no reading");
-        EVLOG_info << fmt::format("Site power: {} from {} ({} meter(s), {} stale)", power, to_string(site_meter_source),
-                                  site_aggregate.fresh_meters, site_aggregate.stale_meters);
+        const auto power = m_site_aggregate.power_W.has_value()
+                               ? fmt::format("{}W", m_site_aggregate.power_W.value().total)
+                               : std::string("no reading");
+        EVLOG_info << fmt::format("Site power: {} from {} ({} meter(s), {} stale)", power,
+                                  to_string(m_site_meter_source), m_site_aggregate.fresh_meters,
+                                  m_site_aggregate.stale_meters);
     }
 
     time_probe market_tp;
@@ -465,19 +468,7 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
 
             l.schedule = sold_energy;
 
-            // select root limit from schedule based on globals.start_time
-            l.limits_root_side = sold_energy[0].limits_to_root;
-
-            for (const auto& s : sold_energy) {
-                const auto schedule_time = Everest::Date::from_rfc3339(s.timestamp);
-                if (globals.start_time < schedule_time) {
-                    // all further schedules will be further into the future
-                    break;
-                } else {
-                    // use this schedule as the starting point
-                    l.limits_root_side = s.limits_to_root;
-                }
-            }
+            l.limits_root_side = sold_energy[globals.active_slot].limits_to_root;
 
             optimized_values.push_back(l);
 

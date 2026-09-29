@@ -157,21 +157,16 @@ private:
 
     std::map<std::string, BrokerContext> contexts;
 
-    // Aggregated site power meter reading of the most recent optimizer run. The aggregator
-    // that produces it is a local of that run: it holds nothing worth keeping between runs,
-    // and a member would have to be cleared by hand to stop a departed meter contributing.
-    PowerMeterAggregator::AggregateResult site_aggregate;
-    SiteMeterSource site_meter_source{SiteMeterSource::None};
+    PowerMeterAggregator::AggregateResult m_site_aggregate;
+    SiteMeterSource m_site_meter_source{SiteMeterSource::None};
 
     // Meters already warned about, so each fault is logged once until the meter recovers.
     std::set<std::string> m_warned_unparsable_meters;
     std::set<std::string> m_warned_future_meters;
 
-    RedistributionInference redistribution_inference;
-    // How long the site has continuously had headroom to hand out, and whether that has
-    // already been reported. The same latch BrokerContext uses per connector, so the two
-    // cannot drift apart the way two hand-written copies did.
-    HoldLatch site_headroom;
+    RedistributionInference m_redistribution_inference;
+    // How long the site has continuously had headroom to hand out.
+    HoldLatch m_site_headroom;
 };
 
 } // namespace module

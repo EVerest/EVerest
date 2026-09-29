@@ -37,7 +37,6 @@ private:
     void create_timestamps(const types::energy::EnergyFlowRequest& energy_flow_request);
     void add_timestamps(const types::energy::EnergyFlowRequest& energy_flow_request);
     template <typename T> void create_empty_schedule(T& s);
-    int find_active_slot() const;
     std::vector<date::utc_clock::time_point> timestamps;
 };
 
@@ -112,10 +111,11 @@ private:
     ScheduleSetpoints resample(const ScheduleSetpoints& request);
 };
 
-/// \brief Index of the schedule slot in force at globals.start_time.
+/// \brief Index of the schedule slot in force at globals.start_time: the last slot that has
+/// started, including one starting exactly then.
 ///
-/// Clamps: a schedule that starts in the future reports its first slot, one that ended in
-/// the past its last. An empty schedule has no slot and reports std::nullopt.
+/// A schedule that starts in the future reports its first slot. An empty schedule has no
+/// slot and reports std::nullopt.
 std::optional<ScheduleReq::size_type> active_slot_index(const ScheduleReq& schedule);
 
 float get_watt_from_freq_table(const std::vector<types::energy::FrequencyWattPoint>& table, float freq);

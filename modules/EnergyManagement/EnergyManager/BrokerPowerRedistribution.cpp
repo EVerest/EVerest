@@ -87,21 +87,20 @@ const types::energy::LimitsReq* active_limits(const Market& market) {
     return &offer[slot.value()].limits_to_root;
 }
 
-// Converts a limit to watt with the precedence used throughout: an explicit watt value
-// wins, otherwise the ampere value times the phase count times the nominal voltage.
-// Templated because LimitsReq (schedules) and LimitsRes (enforced limits) name these three
-// fields identically - which is also why they are read off the limit here rather than
-// passed alongside it, where a caller could pair one limit's watts with another's amperes.
+// A limit in watt: the lower of the watt value and ampere x phases x nominal voltage, since
+// both apply. LimitsReq and LimitsRes name these fields identically.
 template <typename Limits> std::optional<float> limits_to_W(const Limits& limits, float nominal_ac_voltage) {
+    std::optional<float> limit_W;
     if (limits.total_power_W.has_value()) {
-        return limits.total_power_W.value().value;
+        limit_W = limits.total_power_W.value().value;
     }
     if (limits.ac_max_current_A.has_value()) {
         const auto phases =
             limits.ac_max_phase_count.has_value() ? limits.ac_max_phase_count.value().value : ASSUMED_PHASE_COUNT;
-        return limits.ac_max_current_A.value().value * static_cast<float>(phases) * nominal_ac_voltage;
+        const float current_W = limits.ac_max_current_A.value().value * static_cast<float>(phases) * nominal_ac_voltage;
+        limit_W = limit_W.has_value() ? std::min(limit_W.value(), current_W) : current_W;
     }
-    return std::nullopt;
+    return limit_W;
 }
 
 } // namespace

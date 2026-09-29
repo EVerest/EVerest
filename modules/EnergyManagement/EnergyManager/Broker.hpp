@@ -40,16 +40,8 @@ struct PhaseCurrents {
     std::optional<float> L3;
 };
 
-/// \brief Tracks how long a condition has held, and reports each edge exactly once.
-///
-/// The power redistribution inference needs the same three things for a connector that is
-/// under-consuming and for a site with headroom: start timing when the condition appears,
-/// call it held once it has lasted the configured time, and say so once per stretch rather
-/// than on every optimizer run. Written out twice they drifted - one copy was reset when a
-/// session ended and the other was reset by nothing at all.
-///
-/// Time is always passed in (the optimizer's start_time) rather than read from the clock,
-/// so a latch matches the run it belongs to.
+/// \brief Tracks how long a condition has held, and reports each edge exactly once per
+/// stretch. Time is passed in (the optimizer's start_time), not read from the clock.
 class HoldLatch {
 public:
     /// What update() wants said about this run, at most once per stretch.
@@ -61,45 +53,45 @@ public:
 
     Edge update(bool condition, date::utc_clock::time_point now, std::chrono::seconds hold_time) {
         if (not condition) {
-            since.reset();
-            condition_held = false;
-            if (not reported) {
+            m_since.reset();
+            m_condition_held = false;
+            if (not m_reported) {
                 return Edge::None;
             }
-            reported = false;
+            m_reported = false;
             return Edge::Released;
         }
 
-        if (not since.has_value()) {
-            since = now;
+        if (not m_since.has_value()) {
+            m_since = now;
         }
-        condition_held = now - since.value() >= hold_time;
+        m_condition_held = now - m_since.value() >= hold_time;
 
-        if (not condition_held or reported) {
+        if (not m_condition_held or m_reported) {
             return Edge::None;
         }
-        reported = true;
+        m_reported = true;
         return Edge::Held;
     }
 
     /// \brief Whether the condition has held for the full hold time, as of the last update().
     bool held() const {
-        return condition_held;
+        return m_condition_held;
     }
 
     /// \brief Forgets the stretch in progress without reporting a release. For the end of a
     /// session, where there is no longer a condition to have stopped holding.
     void reset() {
-        since.reset();
-        reported = false;
-        condition_held = false;
+        m_since.reset();
+        m_reported = false;
+        m_condition_held = false;
     }
 
 private:
     // start_time of the run since which the condition has held continuously.
-    std::optional<date::utc_clock::time_point> since;
-    bool reported{false};
-    bool condition_held{false};
+    std::optional<date::utc_clock::time_point> m_since;
+    bool m_reported{false};
+    bool m_condition_held{false};
 };
 
 // All context data that is stored in between optimization runs

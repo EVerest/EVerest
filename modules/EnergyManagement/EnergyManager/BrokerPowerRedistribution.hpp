@@ -15,25 +15,16 @@ namespace module {
 
 // ---------------------------------------------------------------- power redistribution inference
 //
-// From what each connector was allotted, what it actually draws and what the grid
-// connection has to spare, infer where power could be reduced or increased.
-//
-// These are pure functions over one optimizer run. EnergyManagerImpl calls them, logs the
-// result, and hands each connector its share of SiteInference::increase_W_by_connector,
-// which its broker applies on the next run. The reduce side is reported only: lowering a
-// connector already happens continuously through the measurement based cap, which needs no
-// inference to do it.
+// Pure functions over one optimizer run that infer, from allocation, measurement and grid
+// headroom, where power could be reduced or increased. Only the increase side acts: each
+// connector's share of SiteInference::increase_W_by_connector is applied by its broker on
+// the next run. Reductions already happen through the measurement based cap.
 
-/// \brief Import limit of the grid connection [W], read from the root Market's offer at the
-/// slot in force. total_power_W wins; otherwise ac_max_current_A times the declared phase
-/// count times the nominal voltage.
+/// \brief Import limit of the grid connection [W] at the slot in force: the lower of
+/// total_power_W and ac_max_current_A x declared phase count x nominal voltage.
 ///
-/// The offer, not the raw request: Market::get_max_available_energy() has already resampled
-/// the schedule onto the optimizer's timestamp grid, taken the minimum of the leaves side
-/// and root side limits and divided by the conversion efficiency. Reading
-/// schedule_import[0].limits_to_root instead skips all three, and each one skipped
-/// overstates the limit - on a multi-slot external schedule, or a limit expressed only on
-/// the leaves side, by whatever the two happen to differ by.
+/// Read from the root Market's offer, which is already resampled, the minimum of both sides
+/// and corrected for efficiency, not from the raw request.
 /// \returns std::nullopt when the root has no import schedule at all
 std::optional<float> get_grid_limit_W(const Market& root, float nominal_ac_voltage);
 
@@ -52,7 +43,7 @@ float get_margin_power_W(const types::energy::EnforcedLimits& limit, float margi
 struct StaticBoundsW {
     /// Smallest purchase that still charges: ac_min_current_A x min phase count x U.
     std::optional<float> min_W;
-    /// total_power_W, else ac_max_current_A x max phase count x U.
+    /// The lower of total_power_W and ac_max_current_A x max phase count x U.
     std::optional<float> max_W;
 };
 
