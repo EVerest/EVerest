@@ -23,7 +23,7 @@ if (LIBEVSE_CRYPTO_SUPPLIER_OPENSSL)
         PRIVATE
             crypto/openssl/openssl_crypto_supplier.cpp
             crypto/openssl/openssl_provider.cpp
-            crypto/openssl/ASN1_ctl.cpp
+            crypto/openssl/openssl_ASN1_ctl.cpp
 
     )
 endif()
