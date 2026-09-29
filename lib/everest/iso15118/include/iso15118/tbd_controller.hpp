@@ -100,6 +100,9 @@ public:
     // session (the handshake reads the session config); priority order is kept.
     void update_supported_protocols(const std::vector<ProtocolId>&);
     void update_ac_limits(const d20::AcTransferLimits&);
+    // AC nominal voltage and connector phases (EvseManager update_ac_parameters), the ISO 15118-20
+    // counterpart of update_pre20_energy_transfer_modes. Applied to the next session.
+    void update_ac_setup_config(const d20::AcSetupConfig&);
     void update_iso2_ac_max_current(float ampere);
     // ISO 15118-2 / DIN SPEC 70121 physical EVSE parameters (EvseManager set_charging_parameters).
     void update_physical_values(const d20::PhysicalValues&);
@@ -153,6 +156,16 @@ private:
 
     // callbacks for sdp server
     void handle_sdp_server_input();
+
+    // The endpoint announced for the current session, so a repeated SDP request can be answered again
+    // until the EV connects. The response is unicast: if the EV does not answer neighbour discovery in
+    // time, the kernel drops it and only a repeat reaches the EV.
+    struct SdpOffer {
+        io::v2gtp::Security requested; // the EV's request after the TLS negotiation strategy
+        io::v2gtp::Security offered;   // what the response announces (differs on the plain-TCP fallback)
+        io::Ipv6EndPoint endpoint;
+    };
+    std::optional<SdpOffer> sdp_offer;
 
     // Runs one poll_manager.poll() step using next_event; returns false if poll()
     // threw, so the caller can break out of its loop.

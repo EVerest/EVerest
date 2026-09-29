@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d2/state/cable_check.hpp>
 
 #include <iso15118/d2/state/pre_charge.hpp>
@@ -66,14 +66,8 @@ void CableCheck::enter() {
 
 Result CableCheck::process_request(const message_2::CableCheckRequest& req) {
     if (not cable_check_initiated) {
-        // On a renegotiation loop-back cable_check_done is already true: the contactor stayed closed
-        // (8.7.4.3 NOTE 1), so isolation is still valid and a physical re-test is neither possible nor
-        // required. Re-signalling START_CABLE_CHECK would drive EvseManager::cable_check(), which ABORTS
-        // because the Charger has left PrepareCharging -- so skip the trigger and answer Finished at once.
-        if (not m_ctx.evse().cable_check_done) {
-            m_ctx.feedback.signal(session::feedback::Signal::START_CABLE_CHECK);
-            m_ctx.start_timeout(d20::TimeoutType::ONGOING, TIMEOUT_CABLE_CHECK_MS);
-        }
+        m_ctx.feedback.signal(session::feedback::Signal::START_CABLE_CHECK);
+        m_ctx.start_timeout(d20::TimeoutType::ONGOING, TIMEOUT_CABLE_CHECK_MS);
         cable_check_initiated = true;
     }
 
@@ -153,10 +147,8 @@ Result CableCheck::on_request(const message_2::Variant& received) {
 
     m_ctx.report_ev_status(req->dc_ev_status);
 
-    // [V2G2-916]..[V2G2-918]: on the initial cable check the EV must reach CP State C/D within the
-    // performance time. A renegotiation loop-back keeps CP C/D and is not gated.
-    if (not m_ctx.evse().cable_check_done and m_ctx.evse().current_cp_state != d20::CpState::C and
-        m_ctx.evse().current_cp_state != d20::CpState::D) {
+    // [V2G2-916]..[V2G2-918]: the EV must reach CP State C/D within the performance time.
+    if (m_ctx.evse().current_cp_state != d20::CpState::C and m_ctx.evse().current_cp_state != d20::CpState::D) {
         pending_req = *req;
         m_ctx.arm_cp_state_timeout(CP_STATE_PERFORMANCE_TIME_MS);
         return {};

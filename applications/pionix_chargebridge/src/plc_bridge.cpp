@@ -25,6 +25,15 @@ char const* to_string(charge_bridge::carrier_fallback fallback) {
     return fallback == charge_bridge::carrier_fallback::warn ? "warn" : "fail";
 }
 
+// IPv6 DAD keeps the link-local address tentative for ~1-2 s after every carrier up, and nothing can bind to a
+// tentative address (EADDRNOTAVAIL), so the SECC's TCP/TLS server misses the first SDP requests of a session. The
+// PLC link is point-to-point; DAD protects nothing on it.
+bool disable_ipv6_dad(std::string const& device) {
+    std::ofstream accept_dad("/proc/sys/net/ipv6/conf/" + device + "/accept_dad");
+    accept_dad << 0 << std::flush;
+    return static_cast<bool>(accept_dad);
+}
+
 } // namespace
 
 namespace charge_bridge {
@@ -91,6 +100,14 @@ plc_bridge::plc_bridge(plc_bridge_config const& config, everest::lib::io::event:
         m_tap_on_error = id not_eq 0;
         m_tap_ready = id == 0;
         if (id == 0) {
+            // A re-created device starts from the kernel defaults again. In firmware mode its carrier is still off
+            // here, so the address the next carrier up assigns is never tentative.
+            if (not disable_ipv6_dad(m_tap_name) and not m_dad_failure_reported) {
+                m_dad_failure_reported = true;
+                utilities::print_error(identifier, "PLC/TAP", -1)
+                    << "cannot disable IPv6 DAD on " << m_tap_name
+                    << ", the first SDP requests after each carrier up may be lost" << std::endl;
+            }
             // Up-edge: the tap device was (re-)created, which replayed open()'s carrier argument, so
             // the applied state is whatever open() established - not what we pushed before the reset.
             // Re-seed it, otherwise the no-op guard in apply_carrier() would suppress the re-assert.

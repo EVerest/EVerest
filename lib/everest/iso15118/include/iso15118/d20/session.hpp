@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <iso15118/d20/der_functions.hpp>
+#include <iso15118/d20/ev_power_profile.hpp>
 #include <iso15118/io/sha_hash.hpp>
 #include <iso15118/message/common_types.hpp>
 
@@ -209,6 +210,9 @@ public:
     AuthorizationData authorization;
 
     bool service_renegotiation_supported{false};
+
+    // From the EV's latest PowerDeliveryReq that carried one.
+    std::optional<EvPowerProfile> ev_power_profile{};
 
 private:
     // NOTE (aw): could be const

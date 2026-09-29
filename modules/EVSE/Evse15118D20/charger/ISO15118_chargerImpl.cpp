@@ -1277,6 +1277,9 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         case Signal::DC_OPEN_CONTACTOR:
             publish_dc_open_contactor(nullptr);
             break;
+        case Signal::DC_RENEGOTIATION_STARTED:
+            publish_dc_renegotiation_started(nullptr);
+            break;
         case Signal::AC_CLOSE_CONTACTOR:
             publish_ac_close_contactor(nullptr);
             break;
@@ -1297,6 +1300,9 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         case Signal::DLINK_ERROR:
             report_hlc_session_failed();
             publish_dlink_error(nullptr);
+            break;
+        case Signal::PAUSE_NOTIFIED:
+            publish_pause_notified(nullptr);
             break;
         }
     };
@@ -1592,6 +1598,7 @@ void ISO15118_chargerImpl::handle_setup(types::iso15118::EVSEID& evse_id,
 
     std::scoped_lock lock(GEL);
     setup_config.evse_id = evse_id.evse_id; // TODO(SL): Check format for d20
+    setup_config.evse_id_din = evse_id.evse_id_din.value_or("");
 
     setup_steps_done.set(SetupStep::SETUP);
 }
@@ -2132,6 +2139,7 @@ void ISO15118_chargerImpl::handle_update_ac_parameters(types::iso15118::AcParame
 
         if (controller) {
             controller->update_ac_limits(setup_config.ac_limits);
+            controller->update_ac_setup_config(ac_setup_config);
         }
     }
 

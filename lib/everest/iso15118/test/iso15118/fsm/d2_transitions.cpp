@@ -845,6 +845,76 @@ SCENARIO("ISO 15118-2 SECC isolation status in ChargeParameterDiscoveryRes") {
     }
 }
 
+SCENARIO("ISO 15118-2 SECC DC renegotiation") {
+
+    // IEC 61851-23:2023 CC.3.6: side B is disabled, the EV opens its contactor and changes to CP B, and
+    // the session continues as a normal startup including a new cable check.
+    GIVEN("A DC machine in the charge loop") {
+        Secc secc;
+        to_current_demand(secc);
+        secc.drive(current_demand_req());
+
+        WHEN("The EV renegotiates") {
+            secc.signals.clear();
+            secc.drive(power_delivery_req(dt::ChargeProgress::Renegotiate));
+
+            THEN("The charge loop ends and the module is told about the renegotiation") {
+                const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                REQUIRE(secc.fsm.state() == StateID::ChargeParameterDiscovery);
+                REQUIRE(secc.saw_signal(session::feedback::Signal::CHARGE_LOOP_FINISHED));
+                REQUIRE(secc.saw_signal(session::feedback::Signal::DC_RENEGOTIATION_STARTED));
+                REQUIRE_FALSE(secc.fsm.context().evse().cable_check_done);
+            }
+
+            AND_WHEN("The EV returns to CP C and requests the cable check") {
+                secc.drive(charge_parameter_req(dt::EnergyTransferMode::DC_extended));
+                REQUIRE(secc.fsm.state() == StateID::CableCheck);
+                secc.fsm.context().set_cp_state(d20::CpState::B);
+                secc.fsm.context().set_cp_state(d20::CpState::C);
+                secc.signals.clear();
+                secc.drive(message_2::CableCheckRequest{});
+
+                THEN("A physical cable check runs instead of an immediate Finished") {
+                    const auto res = secc.fsm.response<message_2::CableCheckResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(res->evse_processing == dt::EVSEProcessing::Ongoing);
+                    REQUIRE(secc.saw_signal(session::feedback::Signal::START_CABLE_CHECK));
+                }
+
+                AND_WHEN("The cable check finishes") {
+                    secc.fsm.control(d20::CableCheckFinished{true});
+                    secc.drive(message_2::CableCheckRequest{});
+
+                    THEN("PreCharge follows") {
+                        const auto res = secc.fsm.response<message_2::CableCheckResponse>();
+                        REQUIRE(res.has_value());
+                        REQUIRE(res->evse_processing == dt::EVSEProcessing::Finished);
+                        REQUIRE(secc.fsm.state() == StateID::PreChargeStart);
+                    }
+                }
+            }
+        }
+    }
+
+    GIVEN("An AC machine in the charge loop") {
+        Secc secc(dt::EnergyTransferMode::AC_three_phase_core);
+        to_ac_charge_loop(secc);
+
+        WHEN("The EV renegotiates") {
+            secc.signals.clear();
+            secc.drive(power_delivery_req(dt::ChargeProgress::Renegotiate));
+
+            THEN("No DC renegotiation is reported") {
+                REQUIRE(secc.fsm.state() == StateID::ChargeParameterDiscovery);
+                REQUIRE_FALSE(secc.saw_signal(session::feedback::Signal::DC_RENEGOTIATION_STARTED));
+            }
+        }
+    }
+}
+
 SCENARIO("ISO 15118-2 SECC no-energy pause") {
 
     Secc secc;
@@ -1805,6 +1875,65 @@ SCENARIO("ISO 15118-2 SECC gates a post-charge SessionStopReq on CP State B") {
                     REQUIRE(secc.fsm.context().session_stopped);
                 }
             }
+        }
+    }
+}
+
+SCENARIO("ISO 15118-2 SECC resumes a PnC-paused session") {
+
+    // The module withdraws Contract once the session is authorized, so a resume sees pnc_enabled false.
+    auto config = make_pnc_config();
+    config.pnc_enabled = false;
+
+    const dt::SessionId paused_session_id{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+
+    const auto resume = [&](Secc& secc) {
+        secc.fsm.context().pause_ctx = d2::PauseContext{paused_session_id, dt::PaymentOption::Contract};
+        message_2::SessionSetupRequest req;
+        req.header.session_id = paused_session_id;
+        req.evcc_id = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
+        secc.fsm.drive(req);
+        secc.session_id = secc.fsm.context().get_session_id();
+        secc.drive(message_2::ServiceDiscoveryRequest{});
+    };
+
+    GIVEN("A PnC pause resumed over TLS") {
+        Secc secc{config, {}};
+        resume(secc);
+
+        THEN("Only Contract is offered [V2G2-741]") {
+            const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
+            REQUIRE(res.has_value());
+            REQUIRE(res->response_code == dt::ResponseCode::OK);
+            REQUIRE(res->payment_option_list.size() == 1);
+            REQUIRE(res->payment_option_list[0] == dt::PaymentOption::Contract);
+        }
+
+        WHEN("The EV selects Contract again") {
+            message_2::PaymentServiceSelectionRequest req;
+            req.selected_payment_option = dt::PaymentOption::Contract;
+            req.selected_service_list.push_back({CHARGE_SERVICE_ID, std::nullopt});
+            secc.drive(req);
+
+            THEN("The selection is accepted and the machine moves to PaymentDetails") {
+                const auto res = secc.fsm.response<message_2::PaymentServiceSelectionResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                REQUIRE(secc.fsm.state() == StateID::Identification);
+            }
+        }
+    }
+
+    GIVEN("A PnC pause resumed over plain TCP") {
+        config.tls_active = false;
+        Secc secc{config, {}};
+        resume(secc);
+
+        THEN("Contract is not offered [V2G2-632]") {
+            const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
+            REQUIRE(res.has_value());
+            REQUIRE(res->payment_option_list.size() == 1);
+            REQUIRE(res->payment_option_list[0] == dt::PaymentOption::ExternalPayment);
         }
     }
 }

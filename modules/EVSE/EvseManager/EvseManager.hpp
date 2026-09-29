@@ -43,6 +43,7 @@
 
 #include "CarManufacturer.hpp"
 #include "Charger.hpp"
+#include "CpStateFrameEmitter.hpp"
 #include "ErrorHandling.hpp"
 #include "PersistentStore.hpp"
 #include "SessionLog.hpp"
@@ -132,6 +133,8 @@ struct Conf {
     int dc_ramp_ampere_per_second;
     bool enable_nodered_interface;
     std::string phase_rotation_grid_side;
+    bool debug_emit_cp_state_hpav_frames;
+    std::string debug_cp_state_hpav_device;
 };
 
 class EvseManager : public Everest::ModuleBase {
@@ -250,6 +253,8 @@ public:
 
     void ready_to_start_charging();
 
+    // Declared before bsp so it outlives the IECStateMachine signals connected to it.
+    std::unique_ptr<CpStateFrameEmitter> cp_state_frame_emitter;
     std::unique_ptr<IECStateMachine> bsp;
     std::unique_ptr<ErrorHandling> error_handling;
     std::unique_ptr<PersistentStore> store;
@@ -365,6 +370,11 @@ private:
     std::atomic<std::chrono::steady_clock::time_point> latest_target_current_low_pass_last_update{};
     std::atomic<double> latest_target_voltage{0.};
     std::atomic<double> latest_target_current{0.};
+    // Ramp to 0 A before an ISO 15118-20 pause in dynamic control mode (see Charger::get_dc_pause_ramp_start()):
+    // which ramp the start current belongs to, and the setpoint it started from.
+    std::mutex dc_pause_ramp_mutex;
+    std::optional<std::chrono::steady_clock::time_point> dc_pause_ramp_start;
+    double dc_pause_ramp_from_A{0.};
     std::atomic<double> last_power_supply_voltage{0.};
     std::atomic<double> last_power_supply_current{0.};
 
@@ -425,6 +435,7 @@ private:
     bool check_voltage_to_protective_earth_in_range(types::isolation_monitor::IsolationMeasurement m);
 
     static constexpr double CABLECHECK_CURRENT_LIMIT{2};
+    static constexpr double PRECHARGE_MIN_CURRENT_A{2};
     static constexpr double CABLECHECK_INSULATION_FAULT_RESISTANCE_OHM{100000.};
     static constexpr double CABLECHECK_MCS_INSULATION_FAULT_RESISTANCE_OHM{125000.};
     static constexpr double CABLECHECK_SAFE_VOLTAGE{60.};

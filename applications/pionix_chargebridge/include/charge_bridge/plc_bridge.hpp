@@ -105,6 +105,7 @@ private:
     std::string m_tap_name;
     std::optional<mac_address> m_tap_mac;
     bool m_tap_mac_failure_reported{false};
+    bool m_dad_failure_reported{false};
 };
 
 } // namespace charge_bridge

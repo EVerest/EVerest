@@ -235,7 +235,8 @@ Result AC_ChargeLoop::feed(Event ev) {
             first_entry_in_charge_loop = false;
         }
 
-        const auto res = handle_request(*req, m_ctx.session, stop, pause, target_frequency, target_powers,
+        const bool notify_pause = pause_notification.update(pause and not stop, m_ctx.session, m_ctx.feedback);
+        const auto res = handle_request(*req, m_ctx.session, stop, notify_pause, target_frequency, target_powers,
                                         present_powers, dynamic_parameters);
 
         m_ctx.respond(res);

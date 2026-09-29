@@ -9,7 +9,10 @@ DER services of ISO 15118-20 Amendment 1, ``AC_DER_IEC`` (Annex L) and
 ``AC_DER_SAE`` (Annex M), and a ``grid_support`` provider that accepts active DER
 directives and raises grid alarms from EV-reported grid-event conditions.
 It also offers ISO 15118-2 and DIN SPEC 70121 (see ``supported_ISO15118_2``
-and ``supported_DIN70121``).
+and ``supported_DIN70121``). DIN SPEC 70121 sends the EVSEID from EvseManager's
+``evse_id_din`` (DIN SPEC 91286 as hexBinary, e.g. ``49A80737A45678``); when that
+is empty the eMI3 ``evse_id`` is packed instead, which only works for ids made of
+digits and ``*``, so an eMI3 id like ``DE*PNX*E12345*1`` is sent as ``0x00``.
 
 TLS and SECC leaf certificates
 ==============================
@@ -398,5 +401,23 @@ grid code restarts service selection.
 
 Terminations that any state performs on a ``SessionStopReq`` or a sequence error
 are omitted, since they end the session rather than move it to another state.
+
+On a DC ``PowerDeliveryReq`` with ``Stop``, or any ``PowerDeliveryReq`` while a
+shutdown is requested, ``current_demand_finished`` and ``dc_open_contactor`` are
+published before the response, and the response is held
+until ``ac_contactor_closed(false)`` reports the power path off, for at most 500 ms.
+The EV leaves state C as soon as it has the response, so this withdraws the power
+permissive first (IEC 61851-23-3 Table CC.111, t103 before t105). An MCS board
+support treats a C exit under a standing permissive as an emergency shutdown
+(CC.4.3).
+
+A pause requested with ``pause_charging`` is sent as ``EVSENotification`` ``Pause``
+with ``NotificationMaxDelay`` 60 s ([V2G20-1850]). In scheduled control mode it may
+only be sent while the applied entry of the EV's power profile, from its latest
+``PowerDeliveryReq``, is 0 kW ([V2G20-1198]): until then every charge loop response
+goes out without it and the check is repeated. ``pause_notified`` is published once
+the notification has gone out. In dynamic control mode the SECC has to bring the power
+to 0 kW before asking ([V2G20-2115]); EvseManager does that before it requests the
+pause.
 
 .. mermaid:: d20-state-machine.mmd
