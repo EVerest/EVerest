@@ -115,8 +115,9 @@ float measured_current_on(const ObservedMeasurement& measurement, const std::set
 /// The load the manager does not control on phase p, U_p, is what \p site_A reports on it
 /// minus what the capped connectors draw there. For every ordered pair of known phases
 /// (p, q), the connectors that can load p but not q share a budget of
-/// max_phase_imbalance_A - PHASE_IMBALANCE_HYSTERESIS_A - (U_p - U_q), plus what the
-/// connectors on q but not p draw now: a connector drawing on one or two phases counts where
+/// max_phase_imbalance_A - PHASE_IMBALANCE_HYSTERESIS_A - (U_p - U_q) - \p unmeasured_A, plus
+/// what the connectors on q but not p draw now, but no more than their resulting caps: a
+/// connector drawing on one or two phases counts where
 /// it draws, one drawing nothing counts on every p, as it may start on any single phase. A
 /// connector on all three phases loads every phase alike and is never capped.
 ///
@@ -124,7 +125,8 @@ float measured_current_on(const ObservedMeasurement& measurement, const std::set
 /// settling or drawing nothing counts as wanting more than any share; one drawing clearly
 /// below its cap after the hold counts as wanting a little more than it draws, never less
 /// than its minimum. A share below a connector's minimum
-/// pauses the newest such connector (cap 0) and shares again.
+/// pauses the newest such connector (cap 0) and shares again. A cap is 0 or at least the
+/// connector's minimum.
 ///
 /// Room is handed out only once it is free: a connector whose cap is lowered still counts
 /// at what it draws until it has followed, so a connector whose cap rises, or a new one,
@@ -133,8 +135,11 @@ float measured_current_on(const ObservedMeasurement& measurement, const std::set
 /// up, and otherwise moves only by PHASE_IMBALANCE_DEADBAND_A or more; a settling cap is
 /// not raised. A phase the aggregate does not report takes part in no budget, and with
 /// fewer than two known phases nothing is decided.
+///
+/// \p unmeasured_A is what the connectors without a fresh measurement may draw together; it
+/// may sit on any phase, so every budget keeps it free.
 ImbalanceResult correct_phase_imbalance(const PhaseCurrents& site_A, const std::vector<ImbalanceConnector>& connectors,
-                                        float max_phase_imbalance_A);
+                                        float max_phase_imbalance_A, float unmeasured_A = 0.f);
 
 const char* to_string(Phase phase);
 

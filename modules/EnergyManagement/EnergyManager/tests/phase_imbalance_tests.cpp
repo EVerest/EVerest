@@ -553,4 +553,38 @@ TEST(PhaseImbalanceLoop, NoSiteMeasurementMeansNoCorrection) {
     EXPECT_TRUE(impl.get_phase_imbalance().caps.empty());
 }
 
+TEST(PhaseImbalanceLoop, AConnectorWithoutAMeasurementIsBookedOnEveryPhase) {
+    EnergyManagerImpl impl(make_imbalance_config(), [](const auto&) {});
+
+    // cp05's reading is an hour old. It may still draw its 6 A minimum plus the 2 A margin on
+    // whichever phase it is, so cp02 has 8 A less on L2 than the 11 A it would get alone.
+    auto tree = make_example_tree(90.0f, 16.0f, at_plus(0));
+    test::set_measurement_current(tree.children[1], std::nullopt, 16.0f, std::nullopt, at_plus(-3600));
+    impl.run_optimizer(tree, AT);
+
+    const auto cap = cap_of(impl.get_phase_imbalance(), "cp02");
+    ASSERT_TRUE(cap.has_value());
+    EXPECT_FLOAT_EQ(cap.value(), 0.0f);
+    EXPECT_FALSE(cap_of(impl.get_phase_imbalance(), "cp05").has_value());
+}
+
+TEST(PhaseImbalanceLoop, AStaleMeterInALeafSumDecidesNothing) {
+    EnergyManagerImpl impl(make_imbalance_config(), [](const auto&) {});
+
+    auto tree = make_example_tree(90.0f, 16.0f, at_plus(0));
+    tree.energy_usage_root.reset();
+    for (auto& evse : tree.children) {
+        auto& reading = evse.energy_usage_leaves.value();
+        types::units::Power power;
+        power.total = 16.0f * VOLTAGE;
+        reading.power_W = power;
+    }
+    tree.children[1].energy_usage_leaves.value().timestamp = at_plus(-3600);
+    const auto results = impl.run_optimizer(tree, AT);
+
+    EXPECT_TRUE(impl.get_phase_imbalance().caps.empty());
+    EXPECT_FALSE(impl.get_phase_imbalance().reference.has_value());
+    EXPECT_FLOAT_EQ(enforced_current(results, "cp02"), 16.0f);
+}
+
 } // namespace module

@@ -305,7 +305,14 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
 
     // A connector whose cap changed within the hold is settling: its measurement may not
     // reflect the cap yet, so its cap is not raised again until it does.
+    // A stale meter's load is missing from a leaf sum, so its phases cannot be judged.
+    if (m_site_meter_source == SiteMeterSource::LeafSum and m_site_aggregate.stale_meters > 0) {
+        phase_imbalance = {};
+        return;
+    }
+
     std::vector<ImbalanceConnector> connectors;
+    float unmeasured_A = 0.f;
     bool any_settling = false;
     for (const auto& broker : brokers) {
         const auto& connector_market = broker->get_local_market();
@@ -319,6 +326,13 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
         }
         const auto& measurement = ctx.last_observed_measurement;
         if (not is_fresh(measurement.measured_at, now, aggregation_window)) {
+            // Without a measurement the redistribution cap holds it at its minimum plus the
+            // margin, and a phase imbalance cap may hold it lower still.
+            float may_draw_A = min_current_A(connector_market) + static_cast<float>(config.redistribution_margin_A);
+            if (ctx.phase_imbalance_cap_A.has_value()) {
+                may_draw_A = std::min(may_draw_A, ctx.phase_imbalance_cap_A.value());
+            }
+            unmeasured_A += std::max(0.f, may_draw_A);
             continue;
         }
 
@@ -337,7 +351,7 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
 
     const PhaseCurrents site_A{m_site_aggregate.current_A.L1, m_site_aggregate.current_A.L2,
                                m_site_aggregate.current_A.L3};
-    const auto result = correct_phase_imbalance(site_A, connectors, max_imbalance_A);
+    const auto result = correct_phase_imbalance(site_A, connectors, max_imbalance_A, unmeasured_A);
 
     for (const auto& cap : result.caps) {
         auto& ctx = contexts.at(cap.uuid);

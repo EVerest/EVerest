@@ -324,15 +324,20 @@ connector draws the current, rather than reacting once a meter shows the oversho
 2. **Budget every pair of phases.** For phases p and q, the connectors that can load p but
    not q may add at most ``max_phase_imbalance_A`` less a 1 A margin, less the difference
    the uncontrolled load already puts between p and q, plus what the connectors on q alone
-   draw now. Which phases a connector draws on is read from its own per phase measurement
-   (current above 1 A), never guessed from a total. A connector that draws nothing yet, a
-   newly plugged in EV, may start on any single phase, so it counts on every phase.
+   draw now, but no more than the limits this run gives them. Which phases a connector draws
+   on is read from its own per phase measurement (current above 1 A), never guessed from a
+   total. A connector that draws nothing yet, a newly plugged in EV, may start on any single
+   phase, so it counts on every phase. A connector whose meter has no fresh reading keeps
+   its limit; what it may draw, its minimum current plus ``redistribution_margin_A`` or its
+   imbalance limit if lower, is kept free in every budget, as its phase is unknown.
 
 3. **Share each budget equally.** Every connector gets the same share. One drawing clearly
    below its limit (1 A or more) counts as wanting a little more than it draws and leaves
    the rest to the others. Where a share falls below a connector's minimum current, the
    most recently arrived such connector is **paused** (0 A) and the budget is shared among
-   the others; it resumes once its share reaches its minimum again.
+   the others; it resumes once its share reaches its minimum again. A limit is therefore
+   either 0 A or at least the connector's minimum: one within 0.2 A of the minimum keeps the
+   minimum, which the margin in the budgets absorbs.
 
 A connector on all three phases loads every phase alike and cannot change a difference, so
 it is never limited: once a new EV is seen drawing on all three phases its limit is
@@ -359,7 +364,9 @@ The invariant covers rising load: every connector may draw up to its limit and t
 stay within ``max_phase_imbalance_A``. An EV that draws less or stops cannot be prevented
 from doing so, and the next run shares the difference anew. A difference in the load the
 manager does not control, such as a building behind the grid meter, cannot be limited
-either: what of it exceeds the limit is logged once as a *residual*. The limiting requires
+either: what of it exceeds the limit is logged once as a *residual*. When the site
+measurement is the sum of the EVSE meters and one of them is stale, the per phase load is
+unknown and nothing is decided that run. The limiting requires
 ``broker_strategy`` ``PowerRedistribution``: it is the strategy that observes the per phase
 measurements and applies the limit as one more upper bound on the connector's current,
 next to the measurement based cap. With ``FastCharging`` the option has no effect. As
